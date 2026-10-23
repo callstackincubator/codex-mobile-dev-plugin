@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { build } from "esbuild";
-import { assertBuildEnvironment, telemetryBuildEnvironment } from "../scripts/telemetry-build.mjs";
+import { assertBuildEnvironment, telemetryBuildEnvironment } from "../tooling/telemetry-build.mjs";
 
 const execute = promisify(execFile);
 
@@ -41,9 +41,9 @@ test("packaged Node and native telemetry share the explicit build environment", 
   const probe = join(directory, "probe.mjs");
   const configPath = join(directory, "telemetry-environment.json");
   const contents = `
-    import "./src/server/instrument.ts";
+    import "./packages/core/src/instrument.ts";
     import * as Sentry from "@sentry/node";
-    import { nativeCollectorCommand } from "./src/server/native-telemetry.ts";
+    import { nativeCollectorCommand } from "./packages/core/src/native-telemetry.ts";
     const client = Sentry.getClient();
     const options = client.getOptions();
     const command = nativeCollectorCommand("/tmp/collector");

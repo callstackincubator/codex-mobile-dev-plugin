@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { Baguette } from "../src/server/baguette.ts";
+import { Baguette } from "../packages/core/src/baguette.ts";
 import { fakeBaguette, UDID } from "./fixtures.ts";
 
 test("booting a running simulator skips the route that can repair input", async t => {

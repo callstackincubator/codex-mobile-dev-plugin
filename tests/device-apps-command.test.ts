@@ -5,13 +5,13 @@ import type { Envelope } from "@sentry/core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { runDiscoveryCommand, annotateDiscoveryCommand } from "../src/server/device-apps/command.ts";
-import type { DiscoveryCommand, DiscoveryCause } from "../src/shared/device-apps-command-diagnostics.ts";
-import { getDiscoveryCommandDiagnostic } from "../src/shared/device-apps-command-diagnostics.ts";
-import { deviceAppsDiagnostic, annotateDeviceAppsError, DEVICE_APPS_DIAGNOSTIC_META } from "../src/shared/device-apps-diagnostics.ts";
-import { expectedOutcome } from "../src/shared/error-reporting.ts";
-import { scrubErrorEvent } from "../src/shared/telemetry.ts";
-import { registerDeviceAppsTool } from "../src/server/device-apps/tools.ts";
+import { runDiscoveryCommand, annotateDiscoveryCommand } from "../packages/core/src/device-apps/command.ts";
+import type { DiscoveryCommand, DiscoveryCause } from "../packages/shared/src/device-apps-command-diagnostics.ts";
+import { getDiscoveryCommandDiagnostic } from "../packages/shared/src/device-apps-command-diagnostics.ts";
+import { deviceAppsDiagnostic, annotateDeviceAppsError, DEVICE_APPS_DIAGNOSTIC_META } from "../packages/shared/src/device-apps-diagnostics.ts";
+import { expectedOutcome } from "../packages/shared/src/error-reporting.ts";
+import { scrubErrorEvent } from "../packages/shared/src/telemetry.ts";
+import { registerDeviceAppsTool } from "../packages/core/src/device-apps/tools.ts";
 
 const options: { encoding: "utf8"; timeout: number; maxBuffer: number } = { encoding: "utf8", timeout: 3000, maxBuffer: 4096 };
 

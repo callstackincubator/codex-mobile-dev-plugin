@@ -6,10 +6,10 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createDeviceApps } from "./device-apps-fixtures.ts";
-import { LogsPanel } from "../src/ui/logs-panel.ts";
+import { LogsPanel } from "../packages/ui/src/logs-panel.ts";
 import type { App } from "@modelcontextprotocol/ext-apps";
-import type { PanelContext } from "../src/ui/model-context.ts";
-import type { LogEntry } from "../src/shared/logs.ts";
+import type { PanelContext } from "../packages/ui/src/model-context.ts";
+import type { LogEntry } from "../packages/shared/src/logs.ts";
 
 test("the rendered log list follows batches, pauses for user scrolling, and resumes at the bottom", async t => {
   const dom = new JSDOM('<div id="root"></div>', { pretendToBeVisual: true });
@@ -83,7 +83,7 @@ test("the rendered log list follows batches, pauses for user scrolling, and resu
     await rm(directory, { recursive: true, force: true });
   });
   const output = resolve(directory, "logs-view.mjs");
-  await build({ entryPoints: ["src/ui/components/logs-view.tsx"], outfile: output, bundle: true, format: "esm", platform: "node", jsx: "automatic",
+  await build({ entryPoints: ["packages/ui/src/components/logs-view.tsx"], outfile: output, bundle: true, format: "esm", platform: "node", jsx: "automatic",
     external: ["react", "react/*", "react-dom", "react-dom/*", "@legendapp/list/react", "lucide-react", "@base-ui/react/*", "radix-ui", "react-resizable-panels"] });
   const url = pathToFileURL(output);
   const { LogsView } = await import(url.href);

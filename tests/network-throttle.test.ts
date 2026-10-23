@@ -3,10 +3,10 @@ import assert from "node:assert/strict";
 import { createServer, request, type Server } from "node:http";
 import { connect, createServer as createNetServer } from "node:net";
 import { PassThrough } from "node:stream";
-import { LinkPacer, ThrottleProxy, isLocalDestination, relay } from "../src/server/network-throttle/proxy.ts";
-import { AndroidNetworkThrottle, parseThrottleState } from "../src/server/network-throttle/android.ts";
-import type { Commands } from "../src/server/app-control/commands.ts";
-import { expectedOutcome } from "../src/shared/error-reporting.ts";
+import { LinkPacer, ThrottleProxy, isLocalDestination, relay } from "../packages/core/src/network-throttle/proxy.ts";
+import { AndroidNetworkThrottle, parseThrottleState } from "../packages/core/src/network-throttle/android.ts";
+import type { Commands } from "../packages/core/src/app-control/commands.ts";
+import { expectedOutcome } from "../packages/shared/src/error-reporting.ts";
 
 const marker = "mobile_dev_network_throttle";
 

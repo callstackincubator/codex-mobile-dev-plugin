@@ -10,18 +10,18 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import { WebSocket } from "ws";
-import { buildServeEmu } from "../scripts/build-serve-emu.mjs";
-import type { ScrcpySession, VideoPacket } from "../runtimes/serve-emu/src/scrcpy.ts";
-import { androidStartupMessageSchema } from "../src/shared/android-startup-diagnostics.ts";
-import type { StartupMessage } from "../runtimes/serve-emu/src/startup-diagnostics.ts";
+import { buildServeEmu } from "../tooling/build-serve-emu.mjs";
+import type { ScrcpySession, VideoPacket } from "../packages/runtimes/serve-emu/src/scrcpy.ts";
+import { androidStartupMessageSchema } from "../packages/shared/src/android-startup-diagnostics.ts";
+import type { StartupMessage } from "../packages/runtimes/serve-emu/src/startup-diagnostics.ts";
 
 const execute = promisify(execFile);
 let directory: string;
 let runtime: {
-  startServer: typeof import("../runtimes/serve-emu/src/server.ts").startServer;
-  serve: typeof import("../runtimes/serve-emu/src/node-server.ts").serve;
-  FramedReader: typeof import("../runtimes/serve-emu/src/scrcpy.ts").FramedReader;
-  ControlInputQueue: typeof import("../runtimes/serve-emu/src/control-input-queue.ts").ControlInputQueue;
+  startServer: typeof import("../packages/runtimes/serve-emu/src/server.ts").startServer;
+  serve: typeof import("../packages/runtimes/serve-emu/src/node-server.ts").serve;
+  FramedReader: typeof import("../packages/runtimes/serve-emu/src/scrcpy.ts").FramedReader;
+  ControlInputQueue: typeof import("../packages/runtimes/serve-emu/src/control-input-queue.ts").ControlInputQueue;
 };
 
 before(async () => {
@@ -39,7 +39,7 @@ before(async () => {
     'export { FramedReader } from "./scrcpy.ts";',
     'export { ControlInputQueue } from "./control-input-queue.ts";',
   ].join("\n");
-  const resolveDir = resolve("runtimes/serve-emu/src");
+  const resolveDir = resolve("packages/runtimes/serve-emu/src");
   await build({
     stdin: { contents: source, resolveDir, loader: "ts" }, outfile: output,
     bundle: true, platform: "node", format: "esm", target: "node22.18",

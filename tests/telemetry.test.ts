@@ -10,20 +10,20 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { z } from "zod";
-import { MeasurementWindow, sampleTrace, scrubErrorEvent, scrubMetric, scrubSpan, sampleMetric, createErrorEventFilter, METRIC_SAMPLE_RATE, TELEMETRY_META_KEY } from "../src/shared/telemetry.ts";
-import { captureServerError, installTracePropagation, instrumentMcpServer, IOSLogProcessingTelemetry, recordAndroidBackendStartup, recordPluginUpdate, recordIosMirrorSharing } from "../src/server/telemetry.ts";
-import { ExpectedOperationError, FailureEpisodes } from "../src/shared/error-reporting.ts";
-import { parseResourceInput } from "../src/server/resource-input.ts";
-import { openRequestSession } from "../src/server/request-session.ts";
-import { registerDeviceAppsTool } from "../src/server/device-apps/tools.ts";
-import { directoryBytes } from "../src/server/storage-metrics.ts";
-import { SimulatorUnavailableError } from "../src/server/simulator-unavailable.ts";
-import { registerDeviceChoiceTools } from "../src/server/device-choice-tools.ts";
-import { listIosDevices, registerIosDeviceTools } from "../src/server/ios-devices.ts";
-import { createDrivers, registerAppControlTools } from "../src/server/app-control/tools.ts";
+import { MeasurementWindow, sampleTrace, scrubErrorEvent, scrubMetric, scrubSpan, sampleMetric, createErrorEventFilter, METRIC_SAMPLE_RATE, TELEMETRY_META_KEY } from "../packages/shared/src/telemetry.ts";
+import { captureServerError, installTracePropagation, instrumentMcpServer, IOSLogProcessingTelemetry, recordAndroidBackendStartup, recordPluginUpdate, recordIosMirrorSharing } from "../packages/core/src/telemetry.ts";
+import { ExpectedOperationError, FailureEpisodes } from "../packages/shared/src/error-reporting.ts";
+import { parseResourceInput } from "../packages/core/src/resource-input.ts";
+import { openRequestSession } from "../packages/core/src/request-session.ts";
+import { registerDeviceAppsTool } from "../packages/core/src/device-apps/tools.ts";
+import { directoryBytes } from "../packages/core/src/storage-metrics.ts";
+import { SimulatorUnavailableError } from "../packages/core/src/simulator-unavailable.ts";
+import { registerDeviceChoiceTools } from "../packages/core/src/device-choice-tools.ts";
+import { listIosDevices, registerIosDeviceTools } from "../packages/core/src/ios-devices.ts";
+import { createDrivers, registerAppControlTools } from "../packages/core/src/app-control/tools.ts";
 import type { OpenAIFormResult } from "@openai/mcp-extensions/server";
 import { adapterClient } from "./agent-device-fixtures.ts";
-import { setDiscoveryCommandDiagnostic } from "../src/shared/device-apps-command-diagnostics.ts";
+import { setDiscoveryCommandDiagnostic } from "../packages/shared/src/device-apps-command-diagnostics.ts";
 
 function contains(text: string, fragment: string, expected = true) {
   const included = text.includes(fragment);
@@ -655,7 +655,7 @@ test("Node runtime metrics report CPU, memory and event-loop measurements with c
 });
 
 test("definition failure tags survive Sentry scrubbing with surface, release and anonymous attribution", async t => {
-  const { parseDefinitionDiagnostic, setDefinitionDiagnostic } = await import("../src/shared/simulator-definition-diagnostics.ts");
+  const { parseDefinitionDiagnostic, setDefinitionDiagnostic } = await import("../packages/shared/src/simulator-definition-diagnostics.ts");
   const envelopes: Envelope[] = [];
   Sentry.init({
     dsn: "https://public@example.com/1", defaultIntegrations: false, beforeSend: scrubErrorEvent,
@@ -816,8 +816,8 @@ test("failure episode memory is bounded and inactivity starts a new episode", ()
 });
 
 test("Android startup diagnostics retain stage, device state and anonymous error attribution without private content", async t => {
-  const { recordAndroidStartupStages, recordAndroidStartupContext, recordAndroidStartupDeviceState, recordAndroidBackendStop } = await import("../src/server/telemetry.ts");
-  const { setAndroidStartupDiagnostic } = await import("../src/shared/android-startup-diagnostics.ts");
+  const { recordAndroidStartupStages, recordAndroidStartupContext, recordAndroidStartupDeviceState, recordAndroidBackendStop } = await import("../packages/core/src/telemetry.ts");
+  const { setAndroidStartupDiagnostic } = await import("../packages/shared/src/android-startup-diagnostics.ts");
   const envelopes: Envelope[] = [];
   Sentry.init({
     dsn: "https://public@example.com/1", defaultIntegrations: false, environment: "release", release: "mobile-dev@test",

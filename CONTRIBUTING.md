@@ -3,6 +3,27 @@
 This guide covers building the plugin, installing it locally, and working on its UI
 and native helpers. To use the prebuilt plugin, see the [README](README.md#install).
 
+## Repository layout
+
+The repository is an npm workspace. Host-independent code lives in `packages/`; each
+product that ships it lives in `apps/`.
+
+| Path | Contents |
+| --- | --- |
+| `packages/shared` (`@mobile-dev/shared`) | Protocol types and pure logic used by the server and every UI host. |
+| `packages/core` (`@mobile-dev/core`) | The MCP server, device runtimes and tool handlers. |
+| `packages/ui` (`@mobile-dev/ui`) | Host-independent React views, panel controllers, theme and UI telemetry. |
+| `packages/native` | Native helper sources; `packages/native/vendor` holds their verified prebuilt binaries. |
+| `packages/runtimes` | Pinned Node runtimes bundled into the server (agent-device, serve-emu). |
+| `apps/codex-plugin` | The Codex manifest, MCP launcher, skills, assets and the Codex panel shell (toolbar, update banner, MCP Apps entries). |
+| `tooling` | Build, packaging, release and smoke-test scripts. Run them from the repository root. |
+
+Import across packages with the workspace name and an explicit extension, for example
+`@mobile-dev/shared/logs.ts`. `packages/ui` never imports from an app; host-specific
+chrome belongs in that host's app. `npm run build` writes the shared runtime and the
+Codex panel to `dist/`, and `npm run package` assembles the Codex plugin from `dist/` and
+`apps/codex-plugin`. The published `release/latest` layout is unchanged.
+
 ## Development requirements
 
 - An Apple Silicon Mac with Xcode 27 and Swift 6.4 or later selected as the active
@@ -63,13 +84,13 @@ changing native code or shared native telemetry; the build validates source and
 binary hashes. For UI or server edits with unchanged native sources, run the build,
 relevant checks, and packaging steps again.
 
-`vendor:baguette` downloads the pinned official release and checks its SHA-256. It keeps the full resource bundle and rebuilds the same v0.2.1 source with Swift 6.4 or later because the official binary crashes in Swift task allocation on macOS 27. Preparing Baguette requires Xcode 27, Git, and network access to fetch its pinned source and Swift dependencies. `rebuild:baguette` repeats the source build. `vendor/baguette/release.json` records the source commit, compiler version, and rebuilt binary SHA-256.
+`vendor:baguette` downloads the pinned official release and checks its SHA-256. It keeps the full resource bundle and rebuilds the same v0.2.1 source with Swift 6.4 or later because the official binary crashes in Swift task allocation on macOS 27. Preparing Baguette requires Xcode 27, Git, and network access to fetch its pinned source and Swift dependencies. `rebuild:baguette` repeats the source build. `packages/native/vendor/baguette/release.json` records the source commit, compiler version, and rebuilt binary SHA-256.
 
-`vendor:agent-device` installs the exact npm packages in `runtimes/agent-device/package-lock.json` with package scripts disabled. `build` copies this full runtime into `dist/agent-device`, records its integrity and lockfile hash in `release.json`, and saves its version-matched help in the control skill. The installed plugin needs no npm install or runtime download. Xcode compiles the shipped Apple runner source on its first use.
+`vendor:agent-device` installs the exact npm packages in `packages/runtimes/agent-device/package-lock.json` with package scripts disabled. `build` copies this full runtime into `dist/agent-device`, records its integrity and lockfile hash in `release.json`, and saves its version-matched help in the control skill. The installed plugin needs no npm install or runtime download. Xcode compiles the shipped Apple runner source on its first use.
 
 `build` also bundles JavaScript and CSS with esbuild and copies Baguette into `dist/baguette`. It does not run TypeScript, lint, Biome, visual checks, or React Doctor.
 
-`package` copies built files into `release/marketplace/plugins/mobile-dev` and creates the ZIP. It includes agent-device's runtime `node_modules`, licenses, and Apple runner source. The Codex compatibility manifest lives at `.codex-plugin/plugin.json` and declares `.mcp.json`. The MCP entry invokes `scripts/launch-mcp.sh` through `/bin/sh` and explicitly forwards `HOME` and the telemetry settings. The launcher directly executes Codex's bundled Node at `$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node`. `npm start` uses the same launcher. The source repo's existing build-codex-native-plugins skill stays outside that release package.
+`package` copies built files into `release/marketplace/plugins/mobile-dev` and creates the ZIP. It includes agent-device's runtime `node_modules`, licenses, and Apple runner source. The Codex compatibility manifest lives at `apps/codex-plugin/.codex-plugin/plugin.json` and declares `.mcp.json`. The MCP entry invokes `apps/codex-plugin/scripts/launch-mcp.sh` (`scripts/launch-mcp.sh` inside the package) through `/bin/sh` and explicitly forwards `HOME` and the telemetry settings. The launcher directly executes Codex's bundled Node at `$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node`. `npm start` uses the same launcher. The source repo's build-codex-native-plugins skill in `apps/codex-plugin/skills` stays outside that release package.
 
 `test` checks MCP contracts, frame reads, input validation, and capture cleanup against a local fixture, plus runtime selection and argument forwarding with Node absent from PATH or another Node present. `test:package` copies the release package into a temporary directory and uses its actual MCP launch configuration with a system-only PATH. The smoke-test caller supplies an isolated home with the Codex runtime cache layout and its test Node executable; the MCP process has a system-only PATH. Run these checks with the Codex bundled Node executable to verify the packaged runtime. It checks native addon loading, sidebar/chat entrypoints, UI resources, and telemetry attribution, starts bundled Baguette, reads the real device list, and checks shutdown. It does not boot or change a simulator. Run it on an Apple Silicon Mac with Xcode.
 
@@ -124,7 +145,7 @@ last working UI. Set `MOBILE_DEV_PLUGIN_ROOT` for a nonstandard plugin install.
 
 ## UI conventions
 
-The panel uses React and shadcn/ui with preset `b0`, Nova controls, neutral colors, Inter, and Lucide icons. The build bundles the SVGs and font files into the HTML; the panel needs no external asset requests. Use the preset components in `src/ui/components/ui` for controls, forms, notices, and empty states. Compose the views with Tailwind utilities. `src/ui/style.css` only covers device frames, Codex layout, and base rules; preset tokens live in `src/ui/theme.css`. The log list uses the [Legend List React DOM entrypoint](https://www.legendapp.com/open-source/list/v3/react/getting-started/).
+The panel uses React and shadcn/ui with preset `b0`, Nova controls, neutral colors, Inter, and Lucide icons. The build bundles the SVGs and font files into the HTML; the panel needs no external asset requests. Use the preset components in `packages/ui/src/components/ui` for controls, forms, notices, and empty states. Compose the views with Tailwind utilities. `packages/ui/src/style.css` only covers device frames, Codex layout, and base rules; preset tokens live in `packages/ui/src/theme.css`. The log list uses the [Legend List React DOM entrypoint](https://www.legendapp.com/open-source/list/v3/react/getting-started/).
 
 Panels, toolbars, settings areas, and footers use transparent backgrounds so they blend with the host. Add a panel background only when the user asks to highlight that area.
 
@@ -136,8 +157,8 @@ helpers. Local builds use the `development` environment; public packages require
 `npm run build:release` and `npm run package:release`. Keep credentials, source maps,
 and native symbols outside the package.
 
-Bump the plugin version for plugin changes and keep `.codex-plugin/plugin.json`, `package.json`,
-both root versions in `package-lock.json`, and `src/shared/version.ts` in sync.
+Bump the plugin version for plugin changes and keep `apps/codex-plugin/.codex-plugin/plugin.json`, `package.json`,
+both root versions in `package-lock.json`, and `packages/shared/src/version.ts` in sync.
 See [GitHub releases](docs/releases.md) for tagging, CI packaging, symbol uploads,
 and marketplace publishing.
 

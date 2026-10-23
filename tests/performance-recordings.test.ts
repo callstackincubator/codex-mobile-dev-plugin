@@ -4,10 +4,10 @@ import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout } from "node:timers/promises";
-import { DisplayFpsSessions } from "../src/server/fps/sessions.ts";
-import { CpuSessions } from "../src/server/cpu/sessions.ts";
-import { PerformanceRecordings, RecordingStore } from "../src/server/performance-recordings.ts";
-import { summarizeRecording } from "../src/shared/recordings.ts";
+import { DisplayFpsSessions } from "../packages/core/src/fps/sessions.ts";
+import { CpuSessions } from "../packages/core/src/cpu/sessions.ts";
+import { PerformanceRecordings, RecordingStore } from "../packages/core/src/performance-recordings.ts";
+import { summarizeRecording } from "../packages/shared/src/recordings.ts";
 import { recordingFixture, unavailableFps } from "./recording-fixtures.ts";
 
 test("range summaries weight interval overlap, preserve CPU above 100%, zero memory, and missing values", () => {

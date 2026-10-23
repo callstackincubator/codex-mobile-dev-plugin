@@ -2,14 +2,14 @@ import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { WebSocketServer } from "ws";
-import { inspectReactNative, readSnapshot, type InspectorNode } from "../src/server/react-native-inspector.ts";
-import { collectReactNativeTree } from "../src/server/react-native-snapshot.js";
+import { inspectReactNative, readSnapshot, type InspectorNode } from "../packages/core/src/react-native-inspector.ts";
+import { collectReactNativeTree } from "../packages/core/src/react-native-snapshot.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { Baguette } from "../src/server/baguette.ts";
+import { Baguette } from "../packages/core/src/baguette.ts";
 import { createTestPlugin, fakeBaguette, fakeSimulatorInput, UDID } from "./fixtures.ts";
-import { screenComponents, componentAt, componentsAt } from "../src/shared/screen-annotations.ts";
-import { ServeEmu } from "../src/server/serve-emu.ts";
+import { screenComponents, componentAt, componentsAt } from "../packages/shared/src/screen-annotations.ts";
+import { ServeEmu } from "../packages/core/src/serve-emu.ts";
 import { fakeInspectionSdk } from "./android-inspection-fixtures.ts";
 
 const card = { source: "react-native", role: "Pressable", label: "Row", frame: { x: 10, y: 100, width: 350, height: 70 }, children: [

@@ -1,7 +1,7 @@
 import test from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { IosVideo } from "../src/ui/ios-video.ts";
+import { IosVideo } from "../packages/ui/src/ios-video.ts";
 
 function mockBitmap(t: TestContext, decode: (...args: unknown[]) => unknown) {
   const previous = Object.getOwnPropertyDescriptor(globalThis, "createImageBitmap");

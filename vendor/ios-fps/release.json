@@ -1,7 +1,0 @@
-{
-  "target": "darwin-arm64",
-  "sourceSHA256": "56fdb7ecdd640be23255861d2317fffc59eae6d0131394efd2d16f906bf23f9d",
-  "binarySHA256": "b5b59348193efd80c77181bff1c911d7c671f314e96311e6ff9913d912e5b7b7",
-  "bytes": 2584320,
-  "ideviceCommit": "a64b8867815b3da17b5c927531bdba877e8456ef"
-}

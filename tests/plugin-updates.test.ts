@@ -6,9 +6,9 @@ import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { PluginUpdates, registerPluginUpdateTools, resolveCodexCli } from "../src/server/plugin-updates.ts";
-import type { RunCodex } from "../src/server/plugin-updates.ts";
-import { compareReleaseVersions, pluginUpdateSchema } from "../src/shared/plugin-updates.ts";
+import { PluginUpdates, registerPluginUpdateTools, resolveCodexCli } from "../packages/core/src/plugin-updates.ts";
+import type { RunCodex } from "../packages/core/src/plugin-updates.ts";
+import { compareReleaseVersions, pluginUpdateSchema } from "../packages/shared/src/plugin-updates.ts";
 
 async function profile(t: test.TestContext) {
   const parent = tmpdir();

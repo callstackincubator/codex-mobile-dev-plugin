@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
-import { publicRelease } from "../scripts/public-release.mjs";
+import { publicRelease } from "../tooling/public-release.mjs";
 
 function git(directory: string, args: string[]) {
   return execFileSync("git", args, {
@@ -26,12 +26,12 @@ async function fixture(t: TestContext) {
   git(repository, ["config", "user.email", "release@example.com"]);
   git(repository, ["config", "commit.gpgsign", "false"]);
   git(repository, ["remote", "add", "origin", remote]);
-  await mkdir(`${repository}/src/shared`, { recursive: true });
-  await mkdir(`${repository}/.codex-plugin`, { recursive: true });
-  await writeFile(`${repository}/.codex-plugin/plugin.json`, '{"name":"mobile-dev","version":"1.2.3"}');
+  await mkdir(`${repository}/packages/shared/src`, { recursive: true });
+  await mkdir(`${repository}/apps/codex-plugin/.codex-plugin`, { recursive: true });
+  await writeFile(`${repository}/apps/codex-plugin/.codex-plugin/plugin.json`, '{"name":"mobile-dev","version":"1.2.3"}');
   await writeFile(`${repository}/package.json`, '{"version":"1.2.3"}');
   await writeFile(`${repository}/package-lock.json`, '{"version":"1.2.3","packages":{"":{"version":"1.2.3"}}}');
-  await writeFile(`${repository}/src/shared/version.ts`, 'export const PLUGIN_VERSION = "1.2.3";\n');
+  await writeFile(`${repository}/packages/shared/src/version.ts`, 'export const PLUGIN_VERSION = "1.2.3";\n');
   git(repository, ["add", "."]);
   git(repository, ["commit", "-m", "chore(release): prepare release"]);
   return { repository, remote };

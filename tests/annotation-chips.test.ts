@@ -2,9 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { App } from "@modelcontextprotocol/ext-apps";
 import type { OpenAIExtensions } from "@openai/mcp-extensions/app";
-import type { ScreenAnnotation } from "../src/shared/screen-annotations.ts";
-import { PanelContext } from "../src/ui/model-context.ts";
-import { ANNOTATION_EDIT_GUIDANCE, ANNOTATION_EDIT_PROMPT, formatAnnotationContext, formatAnnotationMessage } from "../src/shared/screen-annotations.ts";
+import type { ScreenAnnotation } from "../packages/shared/src/screen-annotations.ts";
+import { PanelContext } from "../packages/ui/src/model-context.ts";
+import { ANNOTATION_EDIT_GUIDANCE, ANNOTATION_EDIT_PROMPT, formatAnnotationContext, formatAnnotationMessage } from "../packages/shared/src/screen-annotations.ts";
 
 const annotation: ScreenAnnotation = {
   id: "header-note", number: 1, text: "Make this\n  smaller.",

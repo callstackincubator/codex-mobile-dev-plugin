@@ -5,7 +5,7 @@ import {
   parseReactPick,
   reactSelectionEvidence,
   type ReactSelectionRecording,
-} from "../src/shared/tracesift-react-selection.ts";
+} from "../packages/shared/src/tracesift-react-selection.ts";
 
 /**
  * A small recording in the shape Explore is handed; two commits, since a pick

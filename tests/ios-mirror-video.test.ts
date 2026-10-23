@@ -1,8 +1,8 @@
 import test from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { PhysicalIosVideo } from "../src/ui/ios-mirror-video.ts";
-import type { IosVideoBatch } from "../src/shared/ios-video.ts";
+import { PhysicalIosVideo } from "../packages/ui/src/ios-mirror-video.ts";
+import type { IosVideoBatch } from "../packages/shared/src/ios-video.ts";
 
 const configuration = { revision: 1, width: 1216, height: 2656, codec: "hvc1.1.6.L150.B0", description: "AQ==" };
 const batch = (key = true, generation = 1): IosVideoBatch => ({ generation, sequence: 1, dropped: 0, configuration, frames: [{ sequence: 1, key, timestamp: 0, data: "AA==" }] });

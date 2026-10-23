@@ -14,9 +14,9 @@ for (const reducedMotion of [false, true]) {
       stdin: { contents: `
         import { createRoot } from "react-dom/client";
         import { flushSync } from "react-dom";
-        import { RecordingCard } from "./src/ui/components/recording-card.tsx";
-        import { RecordingController } from "./src/ui/recording-controller.ts";
-        import { startUiTelemetry, stopUiTelemetry } from "./src/ui/telemetry.ts";
+        import { RecordingCard } from "./packages/ui/src/components/recording-card.tsx";
+        import { RecordingController } from "./packages/ui/src/recording-controller.ts";
+        import { startUiTelemetry, stopUiTelemetry } from "./packages/ui/src/telemetry.ts";
         export function mount(app, result, extensions) {
           startUiTelemetry(app);
           const controller = new RecordingController(app, extensions);
@@ -33,7 +33,7 @@ for (const reducedMotion of [false, true]) {
     const dom = new JSDOM(html, { pretendToBeVisual: true, runScripts: "outside-only", url: "https://mobile-dev.test/" });
     const window = dom.window;
     window.Math.random = () => 0;
-    const styles = await readFile("src/ui/style.css", "utf8");
+    const styles = await readFile("packages/ui/src/style.css", "utf8");
     const style = window.document.createElement("style");
     style.textContent = styles;
     window.document.head.append(style);

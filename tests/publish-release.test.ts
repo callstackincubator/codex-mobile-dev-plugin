@@ -4,7 +4,7 @@ import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test, type TestContext } from "node:test";
-import { publishRelease } from "../scripts/publish-release.mjs";
+import { publishRelease } from "../tooling/publish-release.mjs";
 
 function git(directory: string, args: string[]) {
   return execFileSync("git", args, {

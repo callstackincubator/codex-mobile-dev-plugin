@@ -1,10 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { Baguette } from "../src/server/baguette.ts";
-import { compositeBezelGeometry } from "../src/shared/bezel.ts";
-import { definitionSchema } from "../src/server/baguette.ts";
-import { readBezel } from "../src/server/bezel.ts";
+import { Baguette } from "../packages/core/src/baguette.ts";
+import { compositeBezelGeometry } from "../packages/shared/src/bezel.ts";
+import { definitionSchema } from "../packages/core/src/baguette.ts";
+import { readBezel } from "../packages/core/src/bezel.ts";
 import { UDID, PNG } from "./fixtures.ts";
 
 const geometry = { rect: { x: 18, y: 18, width: 400, height: 872 }, viewport: { width: 436, height: 908 }, clipRadius: 62 };

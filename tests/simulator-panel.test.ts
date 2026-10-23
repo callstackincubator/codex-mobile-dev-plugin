@@ -1,19 +1,19 @@
-import { getDevicePicker } from "../src/ui/device-picker.ts";
+import { getDevicePicker } from "../packages/ui/src/device-picker.ts";
 import test from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import type { App } from "@modelcontextprotocol/ext-apps";
-import type { PanelContext } from "../src/ui/model-context.ts";
-import { createSimulatorPanel } from "../src/ui/simulator-panel.ts";
-import { getDeviceSettings } from "../src/ui/device-settings.ts";
-import { getScreenAnnotations } from "../src/ui/screen-annotations.ts";
-import type { PhysicalIosDevice } from "../src/shared/ios-devices.ts";
-import type { PhysicalAndroidDevice } from "../src/shared/android-devices.ts";
-import type { SimulatorDevice } from "../src/shared/protocol.ts";
-import type { ScreenAnnotation } from "../src/shared/screen-annotations.ts";
-import type { ScreenshotAttachment } from "../src/ui/model-context.ts";
-import { WorkspaceDevices } from "../src/ui/workspace-devices.ts";
-import type { DeviceLayout } from "../src/ui/device-layout.ts";
+import type { PanelContext } from "../packages/ui/src/model-context.ts";
+import { createSimulatorPanel } from "../packages/ui/src/simulator-panel.ts";
+import { getDeviceSettings } from "../packages/ui/src/device-settings.ts";
+import { getScreenAnnotations } from "../packages/ui/src/screen-annotations.ts";
+import type { PhysicalIosDevice } from "../packages/shared/src/ios-devices.ts";
+import type { PhysicalAndroidDevice } from "../packages/shared/src/android-devices.ts";
+import type { SimulatorDevice } from "../packages/shared/src/protocol.ts";
+import type { ScreenAnnotation } from "../packages/shared/src/screen-annotations.ts";
+import type { ScreenshotAttachment } from "../packages/ui/src/model-context.ts";
+import { WorkspaceDevices } from "../packages/ui/src/workspace-devices.ts";
+import type { DeviceLayout } from "../packages/ui/src/device-layout.ts";
 
 const physicalBezel = { rect: { x: 27, y: 18, width: 400, height: 872 }, viewport: { width: 454, height: 908 }, clipRadius: 62, image: "data:image/png;base64,AQID", mask: "data:image/png;base64,BAUG" };
 

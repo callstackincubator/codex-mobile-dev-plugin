@@ -1,7 +1,7 @@
 import test from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { encodeScreenshotAttachment, SCREENSHOT_ATTACHMENT_MAX_BYTES } from "../src/ui/screenshot-attachment.ts";
+import { encodeScreenshotAttachment, SCREENSHOT_ATTACHMENT_MAX_BYTES } from "../packages/ui/src/screenshot-attachment.ts";
 
 type Encoding = { width: number; height: number; quality: number; type: string };
 

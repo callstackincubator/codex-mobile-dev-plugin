@@ -4,9 +4,9 @@ import { setImmediate } from "node:timers/promises";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { CpuSessions } from "../src/server/cpu/sessions.ts";
-import { registerCpuTools } from "../src/server/cpu/tools.ts";
-import { Baguette } from "../src/server/baguette.ts";
+import { CpuSessions } from "../packages/core/src/cpu/sessions.ts";
+import { registerCpuTools } from "../packages/core/src/cpu/tools.ts";
+import { Baguette } from "../packages/core/src/baguette.ts";
 import { fakeBaguette, UDID } from "./fixtures.ts";
 
 function textData(result: { content?: unknown }) {

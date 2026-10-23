@@ -9,14 +9,14 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { z } from "zod";
 import { annotateDeviceAppsError, deviceAppsDiagnostic, deviceAppsDiagnosticSchema, getDeviceAppsDiagnostic,
-  withDeviceAppsDiagnostic, DEVICE_APPS_DIAGNOSTIC_META } from "../src/shared/device-apps-diagnostics.ts";
-import { readDeviceApps } from "../src/server/device-apps/sources.ts";
-import { registerDeviceAppsTool } from "../src/server/device-apps/tools.ts";
-import { registerCpuTools } from "../src/server/cpu/tools.ts";
-import { CpuSessions } from "../src/server/cpu/sessions.ts";
-import { Baguette } from "../src/server/baguette.ts";
-import { SimulatorUnavailableError } from "../src/server/simulator-unavailable.ts";
-import { scrubErrorEvent } from "../src/shared/telemetry.ts";
+  withDeviceAppsDiagnostic, DEVICE_APPS_DIAGNOSTIC_META } from "../packages/shared/src/device-apps-diagnostics.ts";
+import { readDeviceApps } from "../packages/core/src/device-apps/sources.ts";
+import { registerDeviceAppsTool } from "../packages/core/src/device-apps/tools.ts";
+import { registerCpuTools } from "../packages/core/src/cpu/tools.ts";
+import { CpuSessions } from "../packages/core/src/cpu/sessions.ts";
+import { Baguette } from "../packages/core/src/baguette.ts";
+import { SimulatorUnavailableError } from "../packages/core/src/simulator-unavailable.ts";
+import { scrubErrorEvent } from "../packages/shared/src/telemetry.ts";
 
 test("discovery classification preserves original errors and never derives telemetry from their text", async () => {
   const missing = new Error("PRIVATE_COMMAND PRIVATE_PATH PRIVATE_DEVICE");
@@ -161,7 +161,7 @@ test("diagnostic metadata rejects unknown values and extra fields rather than fo
 
 test("UI discovery leaves server errors with the server and reports transport and malformed responses", async t => {
   const root = process.cwd();
-  const built = await build({ stdin: { contents: 'export * from "./src/ui/telemetry.ts"; export { DeviceAppsStore } from "./src/ui/device-apps.ts";', resolveDir: root, loader: "ts" },
+  const built = await build({ stdin: { contents: 'export * from "./packages/ui/src/telemetry.ts"; export { DeviceAppsStore } from "./packages/ui/src/device-apps.ts";', resolveDir: root, loader: "ts" },
     bundle: true, write: false, format: "iife", globalName: "Telemetry", platform: "browser", target: "chrome120",
     define: { "process.env.NODE_ENV": '"production"' },
   });

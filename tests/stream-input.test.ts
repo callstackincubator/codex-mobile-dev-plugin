@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { StreamInput } from "../src/ui/stream-input.ts";
-import type { StreamMessage } from "../src/ui/stream-input.ts";
+import { StreamInput } from "../packages/ui/src/stream-input.ts";
+import type { StreamMessage } from "../packages/ui/src/stream-input.ts";
 import { SCREEN } from "./fixtures.ts";
 
 test("slow input coalesces pointer moves while preserving down/up and hardware-button order", async () => {

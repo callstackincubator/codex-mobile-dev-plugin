@@ -1,0 +1,8 @@
+{
+  "name": "@mobile-dev/codex-plugin",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Codex plugin: manifest, skills and the Codex panel shell.",
+  "exports": { "./*": "./src/*" }
+}

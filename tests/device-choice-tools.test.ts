@@ -6,10 +6,10 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { OpenAIExtensions, OpenAIFormSchema } from "@openai/mcp-extensions/server";
 import type { OpenAIFormResult } from "@openai/mcp-extensions/server";
-import { deviceChoiceForm, registerDeviceChoiceTools, resolveDeviceChoices } from "../src/server/device-choice-tools.ts";
-import type { DeviceChoiceSources } from "../src/server/device-choice-tools.ts";
-import { deviceChoiceInputSchema } from "../src/shared/device-choice.ts";
-import type { Status } from "../src/shared/protocol.ts";
+import { deviceChoiceForm, registerDeviceChoiceTools, resolveDeviceChoices } from "../packages/core/src/device-choice-tools.ts";
+import type { DeviceChoiceSources } from "../packages/core/src/device-choice-tools.ts";
+import { deviceChoiceInputSchema } from "../packages/shared/src/device-choice.ts";
+import type { Status } from "../packages/shared/src/protocol.ts";
 
 const simulatorId = "11111111-1111-4111-8111-111111111111";
 const input = {

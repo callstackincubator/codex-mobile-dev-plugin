@@ -1,12 +1,12 @@
 import { createServer } from "node:http";
 import { once } from "node:events";
 import { WebSocketServer } from "ws";
-import type { InputStatus } from "../src/server/simulator-input.ts";
-import { createPlugin } from "../src/server/plugin.ts";
-import { createCpuSessions } from "../src/server/cpu/sessions.ts";
+import type { InputStatus } from "../packages/core/src/simulator-input.ts";
+import { createPlugin } from "../packages/core/src/plugin.ts";
+import { createCpuSessions } from "../packages/core/src/cpu/sessions.ts";
 
 export async function createTestPlugin(...parameters: Parameters<typeof createPlugin>) {
-  const root = new URL("../vendor/android-cpu/", import.meta.url);
+  const root = new URL("../packages/native/vendor/android-cpu/", import.meta.url);
   parameters[6] = await createCpuSessions(root);
   return createPlugin(...parameters);
 }

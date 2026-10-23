@@ -3,10 +3,10 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { parseIOSLog, parseLogcat, parseMetroEvent } from "../src/server/log-parsers.ts";
-import { startNativeLogs } from "../src/server/native-logs.ts";
-import { nativeLogTargetSchema } from "../src/shared/logs.ts";
-import type { LogRecord, NativeLogTarget } from "../src/shared/logs.ts";
+import { parseIOSLog, parseLogcat, parseMetroEvent } from "../packages/core/src/log-parsers.ts";
+import { startNativeLogs } from "../packages/core/src/native-logs.ts";
+import { nativeLogTargetSchema } from "../packages/shared/src/logs.ts";
+import type { LogRecord, NativeLogTarget } from "../packages/shared/src/logs.ts";
 import { UDID } from "./fixtures.ts";
 
 function parse(fields: Record<string, unknown>, hideSystemLogs = true) {

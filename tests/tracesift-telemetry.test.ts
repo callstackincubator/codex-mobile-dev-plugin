@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import * as Sentry from "@sentry/node";
 import type { Envelope } from "@sentry/core";
-import { scrubMetric } from "../src/shared/telemetry.ts";
-import { recordTraceSiftOperation, recordTraceSiftPayload } from "../src/server/telemetry.ts";
+import { scrubMetric } from "../packages/shared/src/telemetry.ts";
+import { recordTraceSiftOperation, recordTraceSiftPayload } from "../packages/core/src/telemetry.ts";
 
 test("TraceSift operation metrics retain only bounded product attribution", async t => {
   const envelopes: Envelope[] = [];

@@ -3,17 +3,17 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
-import { releaseMetadata } from "../scripts/release-metadata.mjs";
+import { releaseMetadata } from "../tooling/release-metadata.mjs";
 
 async function fixture(t: TestContext) {
   const parent = tmpdir();
   const prefix = join(parent, "mobile-dev-release-metadata-");
   const directory = await mkdtemp(prefix);
   t.after(async () => { await rm(directory, { recursive: true, force: true }); });
-  const sourceDirectory = join(directory, "src/shared");
+  const sourceDirectory = join(directory, "packages/shared/src");
   await mkdir(sourceDirectory, { recursive: true });
-  await mkdir(`${directory}/.codex-plugin`, { recursive: true });
-  await writeFile(`${directory}/.codex-plugin/plugin.json`, '{"name":"mobile-dev","version":"1.2.3"}');
+  await mkdir(`${directory}/apps/codex-plugin/.codex-plugin`, { recursive: true });
+  await writeFile(`${directory}/apps/codex-plugin/.codex-plugin/plugin.json`, '{"name":"mobile-dev","version":"1.2.3"}');
   await writeFile(`${directory}/package.json`, '{"version":"1.2.3"}');
   await writeFile(`${directory}/package-lock.json`, '{"version":"1.2.3","packages":{"":{"version":"1.2.3"}}}');
   await writeFile(`${sourceDirectory}/version.ts`, 'export const PLUGIN_VERSION = "1.2.3";\n');
@@ -41,7 +41,7 @@ test("release metadata rejects inconsistent package and runtime versions", async
     ["package.json", '{"version":"1.2.4"}', /package.json version/],
     ["package-lock.json", '{"version":"1.2.4"}', /package-lock.json version/],
     ["package-lock.json", '{"version":"1.2.3","packages":{"":{"version":"1.2.4"}}}', /root package version/],
-    ["src/shared/version.ts", 'export const PLUGIN_VERSION = "1.2.4";', /src\/shared\/version.ts/],
+    ["packages/shared/src/version.ts", 'export const PLUGIN_VERSION = "1.2.4";', /packages\/shared\/src\/version.ts/],
   ];
   for (const [file, contents, expectedError] of changes) {
     const directory = await fixture(t);
@@ -53,7 +53,7 @@ test("release metadata rejects inconsistent package and runtime versions", async
 
 test("release metadata rejects manifest values that could escape artifact paths or outputs", async t => {
   const directory = await fixture(t);
-  await writeFile(`${directory}/.codex-plugin/plugin.json`, '{"name":"mobile-dev","version":"../1.2.3"}');
+  await writeFile(`${directory}/apps/codex-plugin/.codex-plugin/plugin.json`, '{"name":"mobile-dev","version":"../1.2.3"}');
   const result = releaseMetadata("v../1.2.3", directory);
   await assert.rejects(result, /semantic release version/);
 });

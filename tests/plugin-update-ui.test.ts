@@ -12,8 +12,8 @@ async function banner(t: test.TestContext, app: unknown) {
       import { createElement } from "react";
       import { createRoot } from "react-dom/client";
       import { flushSync } from "react-dom";
-      import { PluginUpdateController } from "./src/ui/plugin-updates.ts";
-      import { PluginUpdateBanner } from "./src/ui/components/plugin-update-banner.tsx";
+      import { PluginUpdateController } from "./apps/codex-plugin/src/plugin-updates.ts";
+      import { PluginUpdateBanner } from "./apps/codex-plugin/src/components/plugin-update-banner.tsx";
       export function mount(app) {
         const controller = new PluginUpdateController(app);
         const element = document.getElementById("root");

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createRecordingCpuSeries, createRecordingFpsSeries, findRecordingChangeRanges } from "../src/ui/recording-series.ts";
+import { createRecordingCpuSeries, createRecordingFpsSeries, findRecordingChangeRanges } from "../packages/ui/src/recording-series.ts";
 import { recordingFixture } from "./recording-fixtures.ts";
 
 test("CPU readings cover their preceding measured intervals starting at zero", () => {

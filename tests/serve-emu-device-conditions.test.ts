@@ -6,7 +6,7 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
 
-type Adb = typeof import("../runtimes/serve-emu/src/adb.ts");
+type Adb = typeof import("../packages/runtimes/serve-emu/src/adb.ts");
 type Exec = NonNullable<Parameters<Adb["getStatusBar"]>[1]>;
 let directory: string;
 let adb: Adb;
@@ -15,7 +15,7 @@ let adb: Adb;
 before(async () => {
   directory = await mkdtemp(join(tmpdir(), "mobile-dev-emu-conditions-"));
   const output = join(directory, "adb.mjs");
-  await build({ entryPoints: [resolve("runtimes/serve-emu/src/adb.ts")], outfile: output, bundle: true, platform: "node", format: "esm", target: "node22.18" });
+  await build({ entryPoints: [resolve("packages/runtimes/serve-emu/src/adb.ts")], outfile: output, bundle: true, platform: "node", format: "esm", target: "node22.18" });
   adb = await import(pathToFileURL(output).href);
 });
 

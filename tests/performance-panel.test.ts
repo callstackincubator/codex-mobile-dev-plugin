@@ -2,11 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { setImmediate } from "node:timers/promises";
 import type { App } from "@modelcontextprotocol/ext-apps";
-import type { DeviceApp } from "../src/shared/device-apps.ts";
-import type { CpuBatch, CpuSample, CpuTarget } from "../src/shared/cpu.ts";
-import type { SimulatorDevice } from "../src/shared/protocol.ts";
+import type { DeviceApp } from "../packages/shared/src/device-apps.ts";
+import type { CpuBatch, CpuSample, CpuTarget } from "../packages/shared/src/cpu.ts";
+import type { SimulatorDevice } from "../packages/shared/src/protocol.ts";
 import { createDeviceApps } from "./device-apps-fixtures.ts";
-import { PerformancePanel } from "../src/ui/performance-panel.ts";
+import { PerformancePanel } from "../packages/ui/src/performance-panel.ts";
 import { UDID, OTHER_UDID } from "./fixtures.ts";
 
 const device = { udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS" };

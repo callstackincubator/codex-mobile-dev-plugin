@@ -6,16 +6,16 @@ import { join } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { decodeMmkv, guessMmkvValue } from "../src/server/app-storage/mmkv.ts";
-import { classifyFiles, parseDataStorePreferences, parsePlistXml, parseSharedPreferences, plistEntries } from "../src/server/app-storage/formats.ts";
-import { clearStore, readStorage } from "../src/server/app-storage/reader.ts";
-import type { AppContainer } from "../src/server/app-storage/container.ts";
-import { runAsError } from "../src/server/app-storage/container.ts";
-import { registerAppStorageTools } from "../src/server/app-storage/tools.ts";
-import type { AppDriver } from "../src/server/app-control/driver.ts";
-import type { Commands } from "../src/server/app-control/commands.ts";
-import { storageSnapshotSchema } from "../src/shared/app-storage.ts";
-import { expectedOutcome } from "../src/shared/error-reporting.ts";
+import { decodeMmkv, guessMmkvValue } from "../packages/core/src/app-storage/mmkv.ts";
+import { classifyFiles, parseDataStorePreferences, parsePlistXml, parseSharedPreferences, plistEntries } from "../packages/core/src/app-storage/formats.ts";
+import { clearStore, readStorage } from "../packages/core/src/app-storage/reader.ts";
+import type { AppContainer } from "../packages/core/src/app-storage/container.ts";
+import { runAsError } from "../packages/core/src/app-storage/container.ts";
+import { registerAppStorageTools } from "../packages/core/src/app-storage/tools.ts";
+import type { AppDriver } from "../packages/core/src/app-control/driver.ts";
+import type { Commands } from "../packages/core/src/app-control/commands.ts";
+import { storageSnapshotSchema } from "../packages/shared/src/app-storage.ts";
+import { expectedOutcome } from "../packages/shared/src/error-reporting.ts";
 
 const fixtures = join(import.meta.dirname, "fixtures/app-storage/mmkv");
 const mmkv = async (id: string) => [await readFile(join(fixtures, id)), await readFile(join(fixtures, `${id}.crc`))] as const;
@@ -212,8 +212,8 @@ test("storage tools stop the app before clearing and reset everything when no st
 });
 
 test("the change feed records keys added, changed, and removed between reads, and labels SDK stores", async () => {
-  const { diffSnapshots } = await import("../src/ui/storage-panel.ts");
-  const { changedFields, bytesAsText, isSdkStore, storeTitle } = await import("../src/ui/storage-labels.ts");
+  const { diffSnapshots } = await import("../packages/ui/src/storage-panel.ts");
+  const { changedFields, bytesAsText, isSdkStore, storeTitle } = await import("../packages/ui/src/storage-labels.ts");
   const snapshot = (readAt: number, entries: [string, string][], entryCount = entries.length) => storageSnapshotSchema.parse({ platform: "ios", bundleId: "com.example", readAt, files: [], fileCount: 0, totalBytes: 0,
     stores: [{ id: "mmkv:a", kind: "mmkv", name: "a", path: "a", status: "ok", bytes: 0, entryCount, entries: entries.map(([key, value]) => ({ key, type: "string", value, bytes: value.length })) }] });
   const first = snapshot(1, [["kept", "1"], ["edited", "1"], ["dropped", "x"]]);
@@ -235,7 +235,7 @@ test("the change feed records keys added, changed, and removed between reads, an
 test("simulator resets empty the container but keep its layout, metadata, and cfprefsd in sync", async () => {
   const { mkdtemp, mkdir, writeFile, readdir, rm } = await import("node:fs/promises");
   const { tmpdir } = await import("node:os");
-  const { SimulatorContainer } = await import("../src/server/app-storage/container.ts");
+  const { SimulatorContainer } = await import("../packages/core/src/app-storage/container.ts");
   const root = await mkdtemp(join(tmpdir(), "mobile-dev-storage-"));
   try {
     for (const directory of ["Documents/mmkv", "Library/Preferences", "Library/Caches/images", "tmp", "SystemData"]) await mkdir(join(root, directory), { recursive: true });
@@ -253,7 +253,7 @@ test("simulator resets empty the container but keep its layout, metadata, and cf
 });
 
 test("the change feed hides SDK changes until the toggle shows them", async () => {
-  const { StoragePanel, shownChanges } = await import("../src/ui/storage-panel.ts");
+  const { StoragePanel, shownChanges } = await import("../packages/ui/src/storage-panel.ts");
   const deviceApps = { subscribe: () => () => {}, getSnapshot: () => ({ device: undefined }) };
   const panel = new StoragePanel({} as never, deviceApps as never);
   const store = { id: "s", kind: "user-defaults" as const, name: "n", path: "p" };
@@ -271,9 +271,9 @@ test("database tables are read page by page with blobs redacted, and unknown tab
   const { mkdtemp, mkdir, rm } = await import("node:fs/promises");
   const { tmpdir } = await import("node:os");
   const { execFileSync } = await import("node:child_process");
-  const { SimulatorContainer } = await import("../src/server/app-storage/container.ts");
-  const { readTable } = await import("../src/server/app-storage/reader.ts");
-  const { systemCommands } = await import("../src/server/app-control/commands.ts");
+  const { SimulatorContainer } = await import("../packages/core/src/app-storage/container.ts");
+  const { readTable } = await import("../packages/core/src/app-storage/reader.ts");
+  const { systemCommands } = await import("../packages/core/src/app-control/commands.ts");
   const root = await mkdtemp(join(tmpdir(), "mobile-dev-table-"));
   try {
     await mkdir(join(root, "Documents"), { recursive: true });
@@ -295,7 +295,7 @@ test("database tables are read page by page with blobs redacted, and unknown tab
 });
 
 test("XML parsers skip comments, declarations, and doctypes, including ones that hide elements", async () => {
-  const { parsePlistXml, parseSharedPreferences } = await import("../src/server/app-storage/formats.ts");
+  const { parsePlistXml, parseSharedPreferences } = await import("../packages/core/src/app-storage/formats.ts");
   const plist = `<?xml version="1.0"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "x"><plist><dict>
     <!-- <key>hidden</key><string>no</string> --><key>kept</key><!-- between --><string>yes</string></dict></plist>`;
   assert.deepEqual(parsePlistXml(plist), { kept: "yes" });
@@ -305,7 +305,7 @@ test("XML parsers skip comments, declarations, and doctypes, including ones that
 });
 
 test("Expo's internal preferences count as SDK data and AsyncStorage's Android database is titled like iOS", async () => {
-  const { isSdkStore, storeTitle } = await import("../src/ui/storage-labels.ts");
+  const { isSdkStore, storeTitle } = await import("../packages/ui/src/storage-labels.ts");
   assert.equal(isSdkStore({ name: "expo.modules.kotlin.PersistentDataManager", path: "shared_prefs/expo.modules.kotlin.PersistentDataManager.xml" }), true);
   assert.equal(isSdkStore({ name: "dev.mobile.storagetest_preferences", path: "shared_prefs/dev.mobile.storagetest_preferences.xml" }), false);
   assert.equal(storeTitle({ kind: "async-storage", name: "RKStorage" }, "dev.mobile.storagetest"), "default");

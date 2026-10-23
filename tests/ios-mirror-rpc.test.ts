@@ -7,10 +7,10 @@ import { createConnection } from "node:net";
 import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import { randomUUID } from "node:crypto";
-import { IosMirrorHub } from "../src/server/ios-mirror-hub.ts";
-import { createIosMirrorServer } from "../src/server/ios-mirror-server.ts";
-import { connectIosCapture } from "../src/server/ios-mirror-client.ts";
-import type { NativeCapture } from "../src/server/ios-native-capture.ts";
+import { IosMirrorHub } from "../packages/core/src/ios-mirror-hub.ts";
+import { createIosMirrorServer } from "../packages/core/src/ios-mirror-server.ts";
+import { connectIosCapture } from "../packages/core/src/ios-mirror-client.ts";
+import type { NativeCapture } from "../packages/core/src/ios-native-capture.ts";
 
 async function message(child: ChildProcess) {
   const result = await once(child, "message", { signal: AbortSignal.timeout(5000) });

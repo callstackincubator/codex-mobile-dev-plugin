@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import type { CpuSample } from "../src/shared/cpu.ts";
-import { createMemorySeries, formatMemory } from "../src/ui/components/performance/memorySeries.ts";
+import type { CpuSample } from "../packages/shared/src/cpu.ts";
+import { createMemorySeries, formatMemory } from "../packages/ui/src/components/performance/memorySeries.ts";
 
 test("memory series shows the first reading before a CPU interval exists and converts bytes to MiB", () => {
   const baseline: CpuSample = { time: 0, interval: 0, cpuPercent: null, memoryBytes: 104857600, threads: [] };

@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { gzipSync } from "node:zlib";
-import { TraceSiftController } from "../src/ui/tracesift-controller.ts";
-import { getUiTelemetryAttributes } from "../src/ui/telemetry.ts";
+import { TraceSiftController } from "../packages/ui/src/tracesift-controller.ts";
+import { getUiTelemetryAttributes } from "../packages/ui/src/telemetry.ts";
 
 const analysis = {
   apiVersion: 1, analysisId: "private-analysis", profileType: "react", title: "Profile", summary: { rootCount: 1, commitCount: 3, totalCommitRenderDurationMs: 50, peakCommitDurationMs: 30, commitsOverBudget: 1, omittedEvidenceCommitCount: 0 },

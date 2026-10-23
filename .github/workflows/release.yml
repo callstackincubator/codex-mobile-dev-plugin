@@ -43,8 +43,8 @@ jobs:
           cache: npm
           cache-dependency-path: |
             package-lock.json
-            runtimes/agent-device/package-lock.json
-            runtimes/serve-emu/package-lock.json
+            packages/runtimes/agent-device/package-lock.json
+            packages/runtimes/serve-emu/package-lock.json
 
       - name: Validate release version and tag
         id: release
@@ -52,7 +52,7 @@ jobs:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           git show-ref --verify "refs/tags/$RELEASE_TAG"
-          node scripts/release-metadata.mjs
+          node tooling/release-metadata.mjs
 
       - name: Check Sentry configuration
         env:
@@ -88,7 +88,7 @@ jobs:
         id: native
         env:
           GH_TOKEN: ${{ github.token }}
-        run: node scripts/release-native.mjs
+        run: node tooling/release-native.mjs
 
       - name: Run tests
         run: |
@@ -209,7 +209,7 @@ jobs:
         run: |
           gh api "repos/$GH_REPO/releases" --paginate \
             --jq '.[] | select(.draft == false) | .tag_name' > "$RUNNER_TEMP/published-release-tags.txt"
-          node scripts/release-notes.mjs \
+          node tooling/release-notes.mjs \
             "$RUNNER_TEMP/published-release-tags.txt" "$RUNNER_TEMP/release-notes.md"
           gh release create "$RELEASE_TAG" \
             "release/mobile-dev-$RELEASE_VERSION-darwin-arm64.zip" \
@@ -248,4 +248,4 @@ jobs:
         run: |
           mkdir "$RUNNER_TEMP/mobile-dev-marketplace"
           unzip -q "release/mobile-dev-$RELEASE_VERSION-darwin-arm64.zip" -d "$RUNNER_TEMP/mobile-dev-marketplace"
-          node scripts/publish-release.mjs "$RUNNER_TEMP/mobile-dev-marketplace"
+          node tooling/publish-release.mjs "$RUNNER_TEMP/mobile-dev-marketplace"

@@ -1,22 +1,22 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { setImmediate } from "node:timers/promises";
-import { FrameTimeline } from "../src/server/fps/frame-timeline.ts";
-import type { FpsMonitorOptions } from "../src/server/fps/source.ts";
-import type { FrameReading } from "../src/server/fps/frame-timeline.ts";
-import { DisplayFpsSessions } from "../src/server/fps/sessions.ts";
-import { createFpsSeries } from "../src/ui/components/performance/fpsSeries.ts";
-import { DisplayFpsPanel } from "../src/ui/display-fps-panel.ts";
-import type { DisplayFpsState } from "../src/ui/display-fps-panel.ts";
+import { FrameTimeline } from "../packages/core/src/fps/frame-timeline.ts";
+import type { FpsMonitorOptions } from "../packages/core/src/fps/source.ts";
+import type { FrameReading } from "../packages/core/src/fps/frame-timeline.ts";
+import { DisplayFpsSessions } from "../packages/core/src/fps/sessions.ts";
+import { createFpsSeries } from "../packages/ui/src/components/performance/fpsSeries.ts";
+import { DisplayFpsPanel } from "../packages/ui/src/display-fps-panel.ts";
+import type { DisplayFpsState } from "../packages/ui/src/display-fps-panel.ts";
 import type { App } from "@modelcontextprotocol/ext-apps";
-import type { DisplayFpsBatch } from "../src/shared/display-fps.ts";
+import type { DisplayFpsBatch } from "../packages/shared/src/display-fps.ts";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { registerDisplayFpsTools } from "../src/server/fps/tools.ts";
+import { registerDisplayFpsTools } from "../packages/core/src/fps/tools.ts";
 import { createDeviceApps } from "./device-apps-fixtures.ts";
-import { PerformancePanel } from "../src/ui/performance-panel.ts";
-import type { CpuBatch } from "../src/shared/cpu.ts";
+import { PerformancePanel } from "../packages/ui/src/performance-panel.ts";
+import type { CpuBatch } from "../packages/shared/src/cpu.ts";
 
 function encode(value: bigint | number) {
   let remaining = BigInt(value);

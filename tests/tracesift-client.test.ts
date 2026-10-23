@@ -5,7 +5,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { TraceSiftClient, TraceSiftError } from "../src/server/tracesift-client.ts";
+import { TraceSiftClient, TraceSiftError } from "../packages/core/src/tracesift-client.ts";
 
 const token = "integration-token-long-enough";
 const instance = "service-instance";

@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { App } from "@modelcontextprotocol/ext-apps";
-import type { DeviceApps } from "../src/shared/device-apps.ts";
-import { DeviceAppsStore } from "../src/ui/device-apps.ts";
+import type { DeviceApps } from "../packages/shared/src/device-apps.ts";
+import { DeviceAppsStore } from "../packages/ui/src/device-apps.ts";
 import { AppVisibility } from "./device-apps-fixtures.ts";
 import { UDID, OTHER_UDID } from "./fixtures.ts";
 

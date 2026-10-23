@@ -3,8 +3,8 @@ import test from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { registerTraceSiftTools } from "../src/server/tracesift-tools.ts";
-import type { TraceSiftClient } from "../src/server/tracesift-client.ts";
+import { registerTraceSiftTools } from "../packages/core/src/tracesift-tools.ts";
+import type { TraceSiftClient } from "../packages/core/src/tracesift-client.ts";
 
 /**
  * The payload crosses the boundary the card's frame will: the SDK validates the

@@ -3,10 +3,10 @@ import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { setImmediate } from "node:timers/promises";
 import type { App } from "@modelcontextprotocol/ext-apps";
-import type { ForegroundApp } from "../src/shared/device-apps.ts";
-import type { LogOptions, LogEntry, MetroTarget } from "../src/shared/logs.ts";
-import type { PanelContext } from "../src/ui/model-context.ts";
-import { LogsPanel } from "../src/ui/logs-panel.ts";
+import type { ForegroundApp } from "../packages/shared/src/device-apps.ts";
+import type { LogOptions, LogEntry, MetroTarget } from "../packages/shared/src/logs.ts";
+import type { PanelContext } from "../packages/ui/src/model-context.ts";
+import { LogsPanel } from "../packages/ui/src/logs-panel.ts";
 import { createDeviceApps } from "./device-apps-fixtures.ts";
 import { UDID, OTHER_UDID } from "./fixtures.ts";
 

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ReconnectLoop, StopReconnectError } from "../src/ui/reconnect.ts";
+import { ReconnectLoop, StopReconnectError } from "../packages/ui/src/reconnect.ts";
 
 test("the panel recovers from a failed read and Pause cancels its live loop", async () => {
   const loop = new ReconnectLoop([0]);

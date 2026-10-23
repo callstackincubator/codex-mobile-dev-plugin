@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ServeEmu } from "../src/server/serve-emu.ts";
+import { ServeEmu } from "../packages/core/src/serve-emu.ts";
 
 test("shutdown waits for adb removal, preserves the AVD name, and tolerates a repeat stop", async t => {
   const sdk = await mkdtemp(join(tmpdir(), "mobile-dev-shutdown-"));

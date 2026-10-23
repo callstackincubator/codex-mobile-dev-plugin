@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { IosMirrorSessions } from "../src/server/ios-mirror.ts";
-import type { IosCapture, NativeTouchSample } from "../src/server/ios-native-capture.ts";
+import { IosMirrorSessions } from "../packages/core/src/ios-mirror.ts";
+import type { IosCapture, NativeTouchSample } from "../packages/core/src/ios-native-capture.ts";
 
 function fixture() {
   let closed = 0;

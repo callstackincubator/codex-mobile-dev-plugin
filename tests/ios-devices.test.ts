@@ -4,8 +4,8 @@ import { execFile } from "node:child_process";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { listIosDevices, registerIosDeviceTools } from "../src/server/ios-devices.ts";
-import { physicalIosDeviceSchema, physicalConnectionLabel } from "../src/shared/ios-devices.ts";
+import { listIosDevices, registerIosDeviceTools } from "../packages/core/src/ios-devices.ts";
+import { physicalIosDeviceSchema, physicalConnectionLabel } from "../packages/shared/src/ios-devices.ts";
 
 const coreDeviceId = "11111111-1111-4111-8111-111111111111";
 const udid = "00008110-000A0B1C2D3E4000";

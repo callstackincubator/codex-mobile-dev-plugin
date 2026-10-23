@@ -1,6 +1,6 @@
 #include <assert.h>
 #define main collector_main
-#include "../../native/ios-logs/collector.c"
+#include "../../packages/native/ios-logs/collector.c"
 #undef main
 void mobile_dev_telemetry_init(const char *component) { (void)component; }
 double mobile_dev_telemetry_now(void) { return 0; }

@@ -1,7 +1,7 @@
 import test from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { AndroidVideo, videoPacket } from "../src/ui/android-video.ts";
+import { AndroidVideo, videoPacket } from "../packages/ui/src/android-video.ts";
 
 const key = Buffer.from([0, 0, 0, 1, 0x67, 0x64, 0, 0x28, 0, 0, 0, 1, 0x65, 1]);
 const delta = Buffer.from([0, 0, 0, 1, 0x41, 1]);

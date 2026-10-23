@@ -3,11 +3,11 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { CallToolRequest, CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { createAgentDeviceAdapter, type AgentDeviceBackend } from "../src/server/agent-device-adapter.ts";
-import { installTracePropagation } from "../src/server/telemetry.ts";
+import { createAgentDeviceAdapter, type AgentDeviceBackend } from "../packages/core/src/agent-device-adapter.ts";
+import { installTracePropagation } from "../packages/core/src/telemetry.ts";
 
 const catalogClient = new Client({ name: "agent-device-schema-test", version: "1" });
-const runtimeUrl = new URL("../runtimes/agent-device/node_modules/agent-device/bin/agent-device.mjs", import.meta.url);
+const runtimeUrl = new URL("../packages/runtimes/agent-device/node_modules/agent-device/bin/agent-device.mjs", import.meta.url);
 const runtimeTransport = new StdioClientTransport({
   command: process.execPath, args: [runtimeUrl.pathname, "mcp"], stderr: "pipe",
   env: { AGENT_DEVICE_NO_UPDATE_NOTIFIER: "1" },

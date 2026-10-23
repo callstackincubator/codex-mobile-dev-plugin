@@ -7,20 +7,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
-import { StartupDiagnostics, adbStartupOutcome } from "../runtimes/serve-emu/src/startup-diagnostics.ts";
-import type { StartupMessage } from "../runtimes/serve-emu/src/startup-diagnostics.ts";
-import type { ScrcpyDependencies } from "../runtimes/serve-emu/src/scrcpy.ts";
-import { androidStartupMessageSchema, androidDeviceState, setAndroidStartupDiagnostic, androidStartupDiagnosticTags } from "../src/shared/android-startup-diagnostics.ts";
-import type { AndroidStartupContext } from "../src/shared/android-startup-diagnostics.ts";
+import { StartupDiagnostics, adbStartupOutcome } from "../packages/runtimes/serve-emu/src/startup-diagnostics.ts";
+import type { StartupMessage } from "../packages/runtimes/serve-emu/src/startup-diagnostics.ts";
+import type { ScrcpyDependencies } from "../packages/runtimes/serve-emu/src/scrcpy.ts";
+import { androidStartupMessageSchema, androidDeviceState, setAndroidStartupDiagnostic, androidStartupDiagnosticTags } from "../packages/shared/src/android-startup-diagnostics.ts";
+import type { AndroidStartupContext } from "../packages/shared/src/android-startup-diagnostics.ts";
 
 let directory: string;
-let startScrcpy: typeof import("../runtimes/serve-emu/src/scrcpy.ts").startScrcpy;
-let ProcessExecutor: typeof import("../runtimes/serve-emu/src/exec.ts").ProcessExecutor;
+let startScrcpy: typeof import("../packages/runtimes/serve-emu/src/scrcpy.ts").startScrcpy;
+let ProcessExecutor: typeof import("../packages/runtimes/serve-emu/src/exec.ts").ProcessExecutor;
 before(async () => {
   const prefix = join(tmpdir(), "android-startup-diagnostics-");
   directory = await mkdtemp(prefix);
   const output = join(directory, "runtime.mjs");
-  const sourceDirectory = new URL("../runtimes/serve-emu/src", import.meta.url);
+  const sourceDirectory = new URL("../packages/runtimes/serve-emu/src", import.meta.url);
   await build({
     stdin: { contents: 'export { startScrcpy } from "./scrcpy.ts"; export { ProcessExecutor } from "./exec.ts";', resolveDir: sourceDirectory.pathname, loader: "ts" },
     outfile: output, bundle: true, format: "esm", platform: "node", target: "node22.18",

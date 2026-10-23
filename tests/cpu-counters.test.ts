@@ -1,6 +1,6 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { CpuCounterSampler, parseCpuCounters } from "../src/server/cpu/counters.ts";
+import { CpuCounterSampler, parseCpuCounters } from "../packages/core/src/cpu/counters.ts";
 
 const profile = (time: number, retired: number, threads: string) =>
   `elapsed_usec:${time};task_used_usec:${retired};phys_footprint:104857600;${threads}`;

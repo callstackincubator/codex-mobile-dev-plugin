@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { androidFrameGeometry } from "../src/ui/android-frame-geometry.ts";
+import { androidFrameGeometry } from "../packages/ui/src/android-frame-geometry.ts";
 
 test("Android nine-patch keeps the complete video ratio inside the available space", () => {
   for (const [width, height] of [[1080, 2400], [1080, 2424], [2400, 1080], [1600, 2560]]) {

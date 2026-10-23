@@ -1,9 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { NativeTelemetryRelay, nativeCollectorCommand, parseNativeEnvelope } from "../src/server/native-telemetry.ts";
-import { SENTRY_NATIVE_DSN, SENTRY_RELEASE } from "../src/shared/telemetry.ts";
-import { getTelemetryIdentity } from "../src/server/telemetry-identity.ts";
+import { NativeTelemetryRelay, nativeCollectorCommand, parseNativeEnvelope } from "../packages/core/src/native-telemetry.ts";
+import { SENTRY_NATIVE_DSN, SENTRY_RELEASE } from "../packages/shared/src/telemetry.ts";
+import { getTelemetryIdentity } from "../packages/core/src/telemetry-identity.ts";
 
 function encode(type: string, payload: unknown, dsn = SENTRY_NATIVE_DSN) {
   const json = JSON.stringify(payload);
@@ -91,7 +91,7 @@ test("Android launch commands propagate release, environment, anonymous identity
 });
 
 test("the C SDK and the host relay use the same native project", async () => {
-  const sourceUrl = new URL("../native/telemetry/telemetry.c", import.meta.url);
+  const sourceUrl = new URL("../packages/native/telemetry/telemetry.c", import.meta.url);
   const source = await readFile(sourceUrl, "utf8");
   assert.ok(source.includes(SENTRY_NATIVE_DSN));
 });

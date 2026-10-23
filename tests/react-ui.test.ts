@@ -5,20 +5,20 @@ import { JSDOM } from "jsdom";
 import { mkdtemp, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { LogsPanel } from "../src/ui/logs-panel.ts";
+import { LogsPanel } from "../packages/ui/src/logs-panel.ts";
 import { createDeviceApps } from "./device-apps-fixtures.ts";
-import { PerformancePanel } from "../src/ui/performance-panel.ts";
-import { StoragePanel } from "../src/ui/storage-panel.ts";
-import { TraceSiftPanel } from "../src/ui/tracesift-panel.ts";
-import { RecordingController } from "../src/ui/recording-controller.ts";
+import { PerformancePanel } from "../packages/ui/src/performance-panel.ts";
+import { StoragePanel } from "../packages/ui/src/storage-panel.ts";
+import { TraceSiftPanel } from "../packages/ui/src/tracesift-panel.ts";
+import { RecordingController } from "../packages/ui/src/recording-controller.ts";
 import { recordingFixture } from "./recording-fixtures.ts";
 import type { App } from "@modelcontextprotocol/ext-apps";
-import type { PanelContext } from "../src/ui/model-context.ts";
-import { logKey } from "../src/shared/logs.ts";
-import type { StackedLog } from "../src/shared/logs.ts";
-import type { CpuBatch } from "../src/shared/cpu.ts";
+import type { PanelContext } from "../packages/ui/src/model-context.ts";
+import { logKey } from "../packages/shared/src/logs.ts";
+import type { StackedLog } from "../packages/shared/src/logs.ts";
+import type { CpuBatch } from "../packages/shared/src/cpu.ts";
 import { UDID } from "./fixtures.ts";
-import type { DeviceLayout } from "../src/ui/device-layout.ts";
+import type { DeviceLayout } from "../packages/ui/src/device-layout.ts";
 
 test("React log controls filter virtual rows, attach full logs, and preserve simulator DOM", async t => {
   const dom = new JSDOM('<html><body><div id="root"></div></body></html>', { pretendToBeVisual: true, url: "http://localhost" });
@@ -57,7 +57,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
     await rm(directory, { recursive: true, force: true });
   });
   const output = resolve(directory, "workspace.mjs");
-  await build({ stdin: { contents: 'export { Workspace } from "./src/ui/components/workspace.tsx"; export { getDeviceSettings } from "./src/ui/device-settings.ts"; export { getDevicePicker } from "./src/ui/device-picker.ts"; export { getAppTools } from "./src/ui/app-tools.ts";', resolveDir: process.cwd(), loader: "ts" }, outfile: output, bundle: true, format: "esm", platform: "node", jsx: "automatic",
+  await build({ stdin: { contents: 'export { Workspace } from "./apps/codex-plugin/src/components/workspace.tsx"; export { getDeviceSettings } from "./packages/ui/src/device-settings.ts"; export { getDevicePicker } from "./packages/ui/src/device-picker.ts"; export { getAppTools } from "./packages/ui/src/app-tools.ts";', resolveDir: process.cwd(), loader: "ts" }, outfile: output, bundle: true, format: "esm", platform: "node", jsx: "automatic",
     external: ["recharts", "react", "react/*", "react-dom", "react-dom/*", "@legendapp/list/react", "radix-ui", "lucide-react", "@base-ui/react/*", "react-resizable-panels"] });
   const { Workspace, getDeviceSettings, getDevicePicker, getAppTools } = await import(pathToFileURL(output).href);
   const { act, createElement, Profiler } = await import("react");

@@ -1,9 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { activeDeviceLayout, initialPanelDevice } from "../src/ui/device-layout.ts";
-import { panelTargetSchema } from "../src/shared/panel-target.ts";
-import type { SimulatorDevice } from "../src/shared/protocol.ts";
-import type { PanelTarget } from "../src/shared/panel-target.ts";
+import { activeDeviceLayout, initialPanelDevice } from "../packages/ui/src/device-layout.ts";
+import { panelTargetSchema } from "../packages/shared/src/panel-target.ts";
+import type { SimulatorDevice } from "../packages/shared/src/protocol.ts";
+import type { PanelTarget } from "../packages/shared/src/panel-target.ts";
 
 const iosSimulator: SimulatorDevice = { udid: "ios", name: "iPhone", state: "Booted", runtime: "iOS", platform: "ios", kind: "simulator" };
 const androidEmulator: SimulatorDevice = { udid: "emulator-5554", name: "Pixel", state: "Booted", runtime: "Android", platform: "android", kind: "emulator" };

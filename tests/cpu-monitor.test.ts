@@ -1,9 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type Socket } from "node:net";
-import { GdbPacketDecoder, encodePacket } from "../src/server/cpu/gdb.ts";
-import { startIosCpuMonitor } from "../src/server/cpu/monitor.ts";
-import type { CpuReading } from "../src/server/cpu/counters.ts";
+import { GdbPacketDecoder, encodePacket } from "../packages/core/src/cpu/gdb.ts";
+import { startIosCpuMonitor } from "../packages/core/src/cpu/monitor.ts";
+import type { CpuReading } from "../packages/core/src/cpu/counters.ts";
 import { createConnection } from "node:net";
 
 async function connectSocket(host: string, port: number, signal: AbortSignal): Promise<Socket> {

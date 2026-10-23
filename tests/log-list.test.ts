@@ -1,9 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { LogList } from "../src/ui/log-list.ts";
-import { logKey } from "../src/shared/logs.ts";
-import type { LogEntry, StackedLog } from "../src/shared/logs.ts";
-import type { PanelContext } from "../src/ui/model-context.ts";
+import { LogList } from "../packages/ui/src/log-list.ts";
+import { logKey } from "../packages/shared/src/logs.ts";
+import type { LogEntry, StackedLog } from "../packages/shared/src/logs.ts";
+import type { PanelContext } from "../packages/ui/src/model-context.ts";
 
 function fixture() {
   const context = { canAttach: true, attachedKey: undefined as string | undefined, onChange() {},

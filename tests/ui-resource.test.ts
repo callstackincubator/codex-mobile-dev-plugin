@@ -4,7 +4,7 @@ import { mkdtemp, writeFile, rm, mkdir, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { loadUIResource } from "../src/server/ui-resource.ts";
+import { loadUIResource } from "../packages/core/src/ui-resource.ts";
 
 test("live UI is opt-in, changes revision on edits, and falls back when the watcher stops", async t => {
   const directory = await mkdtemp(join(tmpdir(), "mobile-dev-ui-"));

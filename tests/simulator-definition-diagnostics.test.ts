@@ -2,9 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { once } from "node:events";
-import { Baguette } from "../src/server/baguette.ts";
-import { definitionDiagnosticTags, getDefinitionDiagnostic, parseDefinitionDiagnostic } from "../src/shared/simulator-definition-diagnostics.ts";
-import baguetteRelease from "../vendor/baguette-release.json" with { type: "json" };
+import { Baguette } from "../packages/core/src/baguette.ts";
+import { definitionDiagnosticTags, getDefinitionDiagnostic, parseDefinitionDiagnostic } from "../packages/shared/src/simulator-definition-diagnostics.ts";
+import baguetteRelease from "../packages/native/vendor/baguette-release.json" with { type: "json" };
 const UDID = "B5C969F6-58A4-4C31-AB12-FB9E56D681DE";
 
 const diagnostic = {

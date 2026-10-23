@@ -4,10 +4,10 @@ import { createServer } from "node:http";
 import { WebSocketServer } from "ws";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { ServeEmu, androidDisplaySize } from "../src/server/serve-emu.ts";
-import { AndroidStreams, androidInput } from "../src/server/android-streams.ts";
-import { videoPacket } from "../src/ui/android-video.ts";
-import { Baguette } from "../src/server/baguette.ts";
+import { ServeEmu, androidDisplaySize } from "../packages/core/src/serve-emu.ts";
+import { AndroidStreams, androidInput } from "../packages/core/src/android-streams.ts";
+import { videoPacket } from "../packages/ui/src/android-video.ts";
+import { Baguette } from "../packages/core/src/baguette.ts";
 import { createTestPlugin, fakeBaguette, fakeSimulatorInput, PNG } from "./fixtures.ts";
 import { fakeInspectionSdk } from "./android-inspection-fixtures.ts";
 

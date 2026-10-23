@@ -1,11 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { setImmediate } from "node:timers/promises";
-import { CpuSessions } from "../src/server/cpu/sessions.ts";
-import { CpuBuffer } from "../src/server/cpu/buffer.ts";
-import { parseRunningApps } from "../src/server/device-apps/apps.ts";
-import type { CpuMonitor } from "../src/server/cpu/monitor.ts";
-import type { CpuReading } from "../src/server/cpu/counters.ts";
+import { CpuSessions } from "../packages/core/src/cpu/sessions.ts";
+import { CpuBuffer } from "../packages/core/src/cpu/buffer.ts";
+import { parseRunningApps } from "../packages/core/src/device-apps/apps.ts";
+import type { CpuMonitor } from "../packages/core/src/cpu/monitor.ts";
+import type { CpuReading } from "../packages/core/src/cpu/counters.ts";
 import { UDID } from "./fixtures.ts";
 
 const target = { deviceId: UDID, bundleId: "com.example.app" };

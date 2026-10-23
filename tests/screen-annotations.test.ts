@@ -1,10 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { accessibilityScreen, componentAt, componentsAt, screenComponents, screenSize, formatAnnotationContext, screenSelectionContext, ANNOTATION_EDIT_GUIDANCE } from "../src/shared/screen-annotations.ts";
-import { ScreenAnnotationsStore } from "../src/ui/screen-annotations.ts";
-import type { InspectedTree } from "../src/ui/screen-annotations.ts";
-import type { ScreenAnnotation } from "../src/shared/screen-annotations.ts";
-import { PanelContext } from "../src/ui/model-context.ts";
+import { accessibilityScreen, componentAt, componentsAt, screenComponents, screenSize, formatAnnotationContext, screenSelectionContext, ANNOTATION_EDIT_GUIDANCE } from "../packages/shared/src/screen-annotations.ts";
+import { ScreenAnnotationsStore } from "../packages/ui/src/screen-annotations.ts";
+import type { InspectedTree } from "../packages/ui/src/screen-annotations.ts";
+import type { ScreenAnnotation } from "../packages/shared/src/screen-annotations.ts";
+import { PanelContext } from "../packages/ui/src/model-context.ts";
 import { App } from "@modelcontextprotocol/ext-apps";
 import { AppBridge } from "@modelcontextprotocol/ext-apps/app-bridge";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";

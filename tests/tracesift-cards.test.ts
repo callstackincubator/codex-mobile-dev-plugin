@@ -40,9 +40,9 @@ test("compact TraceSift cards preserve CPU and React evidence", async t => {
     stdin: { contents: `
       import { createRoot } from "react-dom/client";
       import { flushSync } from "react-dom";
-      import { TraceSiftCards } from "./src/ui/components/tracesift-cards.tsx";
-      import { TraceSiftController } from "./src/ui/tracesift-controller.ts";
-      import { startUiTelemetry, stopUiTelemetry } from "./src/ui/telemetry.ts";
+      import { TraceSiftCards } from "./packages/ui/src/components/tracesift-cards.tsx";
+      import { TraceSiftController } from "./packages/ui/src/tracesift-controller.ts";
+      import { startUiTelemetry, stopUiTelemetry } from "./packages/ui/src/telemetry.ts";
       export async function mount(app, result) {
         startUiTelemetry(app);
         const controller = new TraceSiftController(app); controller.hostChanged();

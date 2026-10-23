@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { FrameArrivals } from "../src/ui/frame-arrivals.ts";
+import { FrameArrivals } from "../packages/ui/src/frame-arrivals.ts";
 
 function response(uri: string, serverPreparedAt: number) {
   return { jsonrpc: "2.0", id: 1, result: { contents: [{ uri, _meta: { serverPreparedAt } }] } };

@@ -4,12 +4,12 @@ import { createDeviceApps } from "./device-apps-fixtures.ts";
 import assert from "node:assert/strict";
 import { setImmediate } from "node:timers/promises";
 import type { App } from "@modelcontextprotocol/ext-apps";
-import type { PanelContext } from "../src/ui/model-context.ts";
-import type { LogOptions, LogRecord } from "../src/shared/logs.ts";
-import type { LogSink } from "../src/server/native-logs.ts";
-import { LogSessions } from "../src/server/log-sessions.ts";
-import { LogsPanel } from "../src/ui/logs-panel.ts";
-import type { PhysicalIosDevice } from "../src/shared/ios-devices.ts";
+import type { PanelContext } from "../packages/ui/src/model-context.ts";
+import type { LogOptions, LogRecord } from "../packages/shared/src/logs.ts";
+import type { LogSink } from "../packages/core/src/native-logs.ts";
+import { LogSessions } from "../packages/core/src/log-sessions.ts";
+import { LogsPanel } from "../packages/ui/src/logs-panel.ts";
+import type { PhysicalIosDevice } from "../packages/shared/src/ios-devices.ts";
 
 function createPanel(app: App, t: TestContext) {
   const deviceApps = createDeviceApps(app);

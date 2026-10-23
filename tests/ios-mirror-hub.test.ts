@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { setImmediate as tick } from "node:timers/promises";
-import { IosMirrorHub } from "../src/server/ios-mirror-hub.ts";
-import type { NativeBatch, NativeCapture, NativeTouchSample } from "../src/server/ios-native-capture.ts";
+import { IosMirrorHub } from "../packages/core/src/ios-mirror-hub.ts";
+import type { NativeBatch, NativeCapture, NativeTouchSample } from "../packages/core/src/ios-native-capture.ts";
 
 function fixture() {
   let opens = 0;

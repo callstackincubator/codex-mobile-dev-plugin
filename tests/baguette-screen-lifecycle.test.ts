@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { promisify } from "node:util";
-import { serializeScreenLifecycle } from "../scripts/baguette-screen-lifecycle.mjs";
+import { serializeScreenLifecycle } from "../tooling/baguette-screen-lifecycle.mjs";
 
 const execute = promisify(execFile);
 const fixtureDirectory = new URL("./fixtures/baguette-screen/", import.meta.url);
@@ -37,7 +37,7 @@ test("screen cleanup waits for active reads, supports callback shutdown and clea
   const updated = serializeScreenLifecycle(adapter);
   const adapterPath = join(directory, "SimulatorKitScreen.swift");
   await writeFile(adapterPath, updated);
-  const testsUrl = new URL("../native/baguette/ScreenLifecycleTests.swift", import.meta.url);
+  const testsUrl = new URL("../packages/native/baguette/ScreenLifecycleTests.swift", import.meta.url);
   const testsPath = join(directory, "ScreenLifecycleTests.swift");
   await copyFile(testsUrl, testsPath);
   const runnerPath = join(directory, "TestMain.swift");

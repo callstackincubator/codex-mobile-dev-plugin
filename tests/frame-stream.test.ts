@@ -1,12 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { setImmediate } from "node:timers/promises";
-import { FrameStream, decodeJpeg } from "../src/ui/frame-stream.ts";
-import type { Bitmap } from "../src/ui/frame-stream.ts";
-import type { ObservedRead } from "../src/ui/frame-stream.ts";
-import { epochNow } from "../src/shared/stream.ts";
-import { readFrame } from "../src/ui/read-frame.ts";
-import { StopReconnectError } from "../src/ui/reconnect.ts";
+import { FrameStream, decodeJpeg } from "../packages/ui/src/frame-stream.ts";
+import type { Bitmap } from "../packages/ui/src/frame-stream.ts";
+import type { ObservedRead } from "../packages/ui/src/frame-stream.ts";
+import { epochNow } from "../packages/shared/src/stream.ts";
+import { readFrame } from "../packages/ui/src/read-frame.ts";
+import { StopReconnectError } from "../packages/ui/src/reconnect.ts";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;

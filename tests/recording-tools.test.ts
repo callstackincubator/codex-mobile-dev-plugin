@@ -6,10 +6,10 @@ import { tmpdir } from "node:os";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { RecordingStore, PerformanceRecordings } from "../src/server/performance-recordings.ts";
-import { registerRecordingTools } from "../src/server/recording-tools.ts";
-import { RECORDING_URI } from "../src/shared/recordings.ts";
-import { COMPARISON_URI } from "../src/shared/performance-comparison.ts";
+import { RecordingStore, PerformanceRecordings } from "../packages/core/src/performance-recordings.ts";
+import { registerRecordingTools } from "../packages/core/src/recording-tools.ts";
+import { RECORDING_URI } from "../packages/shared/src/recordings.ts";
+import { COMPARISON_URI } from "../packages/shared/src/performance-comparison.ts";
 import { recordingFixture, unavailableFps } from "./recording-fixtures.ts";
 
 test("recording tools distinguish data, inline rendering, workspace opening and exact-range retrieval", async t => {

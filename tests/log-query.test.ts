@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { compileLogQuery, composeAppLogQuery, quoteLogQueryValue } from "../src/ui/log-query.ts";
-import type { LogRecord } from "../src/shared/logs.ts";
+import { compileLogQuery, composeAppLogQuery, quoteLogQueryValue } from "../packages/ui/src/log-query.ts";
+import type { LogRecord } from "../packages/shared/src/logs.ts";
 
 const now = Date.parse("2026-10-02T12:00:00Z");
 const log: LogRecord = {

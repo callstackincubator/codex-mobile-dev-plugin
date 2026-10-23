@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { threadLabel } from "../src/ui/components/performance/threadLabels.ts";
+import { threadLabel } from "../packages/ui/src/components/performance/threadLabels.ts";
 
 test("iOS labels use exact native names for verified roles and number unnamed threads", () => {
   const gc = threadLabel("hades", 2, "ios");

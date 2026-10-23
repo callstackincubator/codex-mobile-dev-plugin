@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import type { CpuSample } from "../src/shared/cpu.ts";
-import { createCpuSeries, orderCpuThreads } from "../src/ui/components/performance/cpuSeries.ts";
-import type { ThreadHistory } from "../src/ui/performance/types.ts";
+import type { CpuSample } from "../packages/shared/src/cpu.ts";
+import { createCpuSeries, orderCpuThreads } from "../packages/ui/src/components/performance/cpuSeries.ts";
+import type { ThreadHistory } from "../packages/ui/src/performance/types.ts";
 
 test("weights the CPU average by measured time and excludes unknown readings", () => {
   const samples: CpuSample[] = [

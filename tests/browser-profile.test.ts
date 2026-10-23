@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { BrowserProfile } from "../src/ui/browser-profile.ts";
+import { BrowserProfile } from "../packages/ui/src/browser-profile.ts";
 
 test("response and decode correlations clip overlapping events without double counting", () => {
   const profile = new BrowserProfile(["longtask", "long-animation-frame"]);

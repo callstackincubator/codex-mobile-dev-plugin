@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { startNativeLogs } from "../src/server/native-logs.ts";
-import type { LogRecord } from "../src/shared/logs.ts";
+import { startNativeLogs } from "../packages/core/src/native-logs.ts";
+import type { LogRecord } from "../packages/shared/src/logs.ts";
 import { UDID } from "./fixtures.ts";
 
 test("simulator foreground logs select the PID upstream and retain only that process", { skip: process.platform !== "darwin" }, async t => {

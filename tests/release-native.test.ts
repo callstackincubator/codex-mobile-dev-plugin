@@ -5,7 +5,7 @@ import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
-import { downloadNativeArtifact, findNativeArtifact, nativeArtifactKey, nativeHelpers, prepareNativeHelper, restoreNativeArtifact, saveNativeArtifact } from "../scripts/release-native.mjs";
+import { downloadNativeArtifact, findNativeArtifact, nativeArtifactKey, nativeHelpers, prepareNativeHelper, restoreNativeArtifact, saveNativeArtifact } from "../tooling/release-native.mjs";
 
 const toolchain = { shared: { node: "22", cmake: "4" }, darwin: "Xcode 27", swift: "6.4", rust: "1.98.1", android: "NDK 27", iosLogs: "OpenSSL 3" };
 
@@ -24,14 +24,14 @@ async function fixture(t: TestContext) {
   execFileSync("git", ["init", "--quiet", directory]);
   const scripts: Record<string, string> = {};
   for (const helper of nativeHelpers) {
-    scripts[helper.command] = `node scripts/${helper.scripts[0]}`;
-    await put(directory, `native/${helper.name}/source`, "native source\n");
-    for (const file of helper.scripts) await put(directory, `scripts/${file}`, "build script\n");
+    scripts[helper.command] = `node tooling/${helper.scripts[0]}`;
+    await put(directory, `packages/native/${helper.name}/source`, "native source\n");
+    for (const file of helper.scripts) await put(directory, `tooling/${file}`, "build script\n");
     for (const file of helper.inputs) await put(directory, file, '{"sourceCommit":"pinned"}\n');
   }
-  await put(directory, "scripts/native-telemetry.mjs", "SDK configuration\n");
-  await put(directory, "scripts/release-native.mjs", "artifact configuration\n");
-  await put(directory, "native/telemetry/telemetry.c", "shared telemetry\n");
+  await put(directory, "tooling/native-telemetry.mjs", "SDK configuration\n");
+  await put(directory, "tooling/release-native.mjs", "artifact configuration\n");
+  await put(directory, "packages/native/telemetry/telemetry.c", "shared telemetry\n");
   const metadata = JSON.stringify({ version: "1.2.3", scripts });
   await put(directory, "package.json", metadata);
   execFileSync("git", ["add", "."], { cwd: directory });
@@ -39,13 +39,13 @@ async function fixture(t: TestContext) {
 }
 
 async function payload(directory: string, helper: typeof nativeHelpers[number]) {
-  await put(directory, `vendor/${helper.name}/release.json`, '{"sourceSHA256":"source"}\n');
-  await put(directory, `vendor/${helper.name}/LICENSE`, "license\n");
+  await put(directory, `packages/native/vendor/${helper.name}/release.json`, '{"sourceSHA256":"source"}\n');
+  await put(directory, `packages/native/vendor/${helper.name}/LICENSE`, "license\n");
   for (const binary of helper.binaries) {
     if (binary.endsWith(".bundle")) {
-      await put(directory, `vendor/${helper.name}/${binary}/Info.plist`, "bundle\n");
+      await put(directory, `packages/native/vendor/${helper.name}/${binary}/Info.plist`, "bundle\n");
     } else {
-      const path = `vendor/${helper.name}/${binary}`;
+      const path = `packages/native/vendor/${helper.name}/${binary}`;
       await put(directory, path, "native binary\n");
       const absolute = join(directory, path);
       await chmod(absolute, 0o755);
@@ -66,7 +66,7 @@ test("native keys ignore plugin versions and unrelated UI edits", async t => {
   metadata.version = "1.2.4";
   const updated = JSON.stringify(metadata);
   await put(directory, "package.json", updated);
-  await put(directory, "src/ui/app.tsx", "different UI\n");
+  await put(directory, "apps/codex-plugin/src/app.tsx", "different UI\n");
   const after = await nativeArtifactKey(helper, toolchain, directory);
   assert.equal(after, before);
 });
@@ -74,8 +74,8 @@ test("native keys ignore plugin versions and unrelated UI edits", async t => {
 test("native keys include helper sources, added files, scripts, pins and shared telemetry", async t => {
   const directory = await fixture(t);
   for (const helper of nativeHelpers) {
-    const files = [`native/${helper.name}/source`, `scripts/${helper.scripts[0]}`, ...helper.inputs,
-      "scripts/native-telemetry.mjs", "scripts/release-native.mjs", "native/telemetry/telemetry.c"];
+    const files = [`packages/native/${helper.name}/source`, `tooling/${helper.scripts[0]}`, ...helper.inputs,
+      "tooling/native-telemetry.mjs", "tooling/release-native.mjs", "packages/native/telemetry/telemetry.c"];
     for (const file of files) {
       const before = await nativeArtifactKey(helper, toolchain, directory);
       const original = await readFile(`${directory}/${file}`, "utf8");
@@ -85,7 +85,7 @@ test("native keys include helper sources, added files, scripts, pins and shared 
       await put(directory, file, original);
     }
     const before = await nativeArtifactKey(helper, toolchain, directory);
-    const addition = `native/${helper.name}/new-source`;
+    const addition = `packages/native/${helper.name}/new-source`;
     await put(directory, addition, "added\n");
     execFileSync("git", ["add", addition], { cwd: directory });
     const after = await nativeArtifactKey(helper, toolchain, directory);
@@ -109,7 +109,7 @@ test("native keys invalidate only helpers affected by source and toolchain chang
     const afterShared = await nativeArtifactKey(helper, changedShared, directory);
     assert.notEqual(afterShared, before);
     if (helper.name !== "ios-logs") {
-      await put(directory, "native/ios-logs/source", "unrelated log change\n");
+      await put(directory, "packages/native/ios-logs/source", "unrelated log change\n");
       const afterLogs = await nativeArtifactKey(helper, toolchain, directory);
       assert.equal(afterLogs, before);
     }
@@ -187,15 +187,15 @@ test("native artifacts round-trip all helpers, matching symbols, support files a
     const key = await nativeArtifactKey(helper, toolchain, source);
     const archive = join(source, `${helper.name}.tar.gz`);
     await saveNativeArtifact(helper, key, archive, source);
-    await put(destination, `vendor/${helper.name}/stale-file`, "obsolete\n");
+    await put(destination, `packages/native/vendor/${helper.name}/stale-file`, "obsolete\n");
     await restoreNativeArtifact(helper, key, archive, destination);
-    const license = await readFile(`${destination}/vendor/${helper.name}/LICENSE`, "utf8");
+    const license = await readFile(`${destination}/packages/native/vendor/${helper.name}/LICENSE`, "utf8");
     assert.equal(license, "license\n");
-    const stale = stat(`${destination}/vendor/${helper.name}/stale-file`);
+    const stale = stat(`${destination}/packages/native/vendor/${helper.name}/stale-file`);
     await assert.rejects(stale, { code: "ENOENT" });
     for (const binary of helper.binaries) {
       if (binary.endsWith(".bundle")) continue;
-      const binaryStat = await stat(`${destination}/vendor/${helper.name}/${binary}`);
+      const binaryStat = await stat(`${destination}/packages/native/vendor/${helper.name}/${binary}`);
       assert.equal(binaryStat.mode & 0o777, 0o755);
     }
     for (const symbol of helper.symbols) {
@@ -221,7 +221,7 @@ test("native artifacts reject mismatched keys and changed symbols before replaci
   execFileSync("tar", ["-xzf", archive, "-C", staging]);
   const symbolPath = `${helper.symbols[0]}/Contents/Resources/DWARF/program`;
   await put(staging, symbolPath, "wrong symbols\n");
-  execFileSync("tar", ["-czf", archive, "-C", staging, ".native-artifact.json", "vendor/baguette", ...helper.symbols]);
+  execFileSync("tar", ["-czf", archive, "-C", staging, ".native-artifact.json", "packages/native/vendor/baguette", ...helper.symbols]);
   const corrupted = restoreNativeArtifact(helper, "expected", archive, destination);
   await assert.rejects(corrupted, /integrity check failed/);
   const original = await readFile(`${destination}/${symbolPath}`, "utf8");
@@ -254,7 +254,7 @@ test("cold builds produce artifacts and warm releases restore them without invok
   assert.equal(builds, 1);
   const saved = join(directory, "saved.tar.gz");
   await copyFile(cold.archive, saved);
-  const vendor = join(directory, "vendor/baguette");
+  const vendor = join(directory, "packages/native/vendor/baguette");
   await rm(vendor, { recursive: true });
   async function hit(path: string) {
     if (path.startsWith("actions/artifacts?")) return { artifacts: [artifact(1, cold.key)] };
@@ -265,7 +265,7 @@ test("cold builds produce artifacts and warm releases restore them without invok
   assert.equal(warm.action, "restored");
   assert.equal(builds, 1);
   assert.equal(downloads, 1);
-  const binary = await readFile(`${directory}/vendor/baguette/Baguette`, "utf8");
+  const binary = await readFile(`${directory}/packages/native/vendor/baguette/Baguette`, "utf8");
   assert.equal(binary, "native binary\n");
 });
 

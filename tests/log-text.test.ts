@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { logText } from "../src/ui/log-text.ts";
+import { logText } from "../packages/ui/src/log-text.ts";
 
 test("embedded Hermes stacks leave the whole error message visible and retain Metro's call site", () => {
   const message = "[recordLike] Failed to record like: TypeError:\nCannot read property 'id' of undefined";

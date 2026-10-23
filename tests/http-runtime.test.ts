@@ -111,8 +111,8 @@ async function probe(moduleUrl: URL, closeExport: string) {
 }
 
 test("server startup prevents socket QoS crashes and preserves fetch behavior and shutdown", async () => {
-  const instrument = new URL("../src/server/instrument.ts", import.meta.url);
-  const telemetry = new URL("../src/server/telemetry.ts", import.meta.url);
+  const instrument = new URL("../packages/core/src/instrument.ts", import.meta.url);
+  const telemetry = new URL("../packages/core/src/telemetry.ts", import.meta.url);
   // The startup import selects the dispatcher before any outgoing request.
   const contents = `import ${JSON.stringify(instrument.href)}; export { closeServerTelemetry } from ${JSON.stringify(telemetry.href)};`;
   const encoded = encodeURIComponent(contents);
@@ -125,7 +125,7 @@ test("the bundled dispatcher works without dependencies beside the generated mod
   const prefix = join(temporary, "mobile-dev-http-runtime-");
   const directory = await mkdtemp(prefix);
   t.after(() => rm(directory, { recursive: true, force: true }));
-  const sourceUrl = new URL("../src/server/http-runtime.ts", import.meta.url);
+  const sourceUrl = new URL("../packages/core/src/http-runtime.ts", import.meta.url);
   const source = fileURLToPath(sourceUrl);
   const outfile = join(directory, "runtime.mjs");
   await build({

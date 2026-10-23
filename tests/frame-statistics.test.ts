@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { summarizeDisplayFrames } from "../src/shared/frame-statistics.ts";
-import type { DisplayFrame, DisplayFpsSample } from "../src/shared/display-fps.ts";
+import { summarizeDisplayFrames } from "../packages/shared/src/frame-statistics.ts";
+import type { DisplayFrame, DisplayFpsSample } from "../packages/shared/src/display-fps.ts";
 
 const ORIGIN = 9_007_199_254_740_993n;
 

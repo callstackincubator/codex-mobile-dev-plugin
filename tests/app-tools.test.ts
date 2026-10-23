@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { AppToolsStore } from "../src/ui/app-tools.ts";
+import { AppToolsStore } from "../packages/ui/src/app-tools.ts";
 
 test("the app tools store follows the foreground app and keeps the last app after it exits", async () => {
   const store = new AppToolsStore();
@@ -137,7 +137,7 @@ test("icons for devices with many apps are requested in batches the server accep
 });
 
 test("the shared icon cache fetches each app once per device across panels and retries failures", async () => {
-  const { AppIconStore } = await import("../src/ui/app-icons.ts");
+  const { AppIconStore } = await import("../packages/ui/src/app-icons.ts");
   const icons = new AppIconStore();
   const requests: unknown[] = [];
   let fail = true;

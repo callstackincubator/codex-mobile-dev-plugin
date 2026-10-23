@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { StreamSessions } from "../src/server/stream-sessions.ts";
-import { Baguette } from "../src/server/baguette.ts";
+import { StreamSessions } from "../packages/core/src/stream-sessions.ts";
+import { Baguette } from "../packages/core/src/baguette.ts";
 import { fakeBaguette, UDID, SCREEN, PNG } from "./fixtures.ts";
 
 test("panel sessions carry frames and validated input without a browser socket", async t => {

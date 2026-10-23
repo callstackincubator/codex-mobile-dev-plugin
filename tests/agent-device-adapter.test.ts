@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { compactAgentDeviceTool } from "../src/server/agent-device-catalog.ts";
+import { compactAgentDeviceTool } from "../packages/core/src/agent-device-catalog.ts";
 import { adapterClient, upstreamCatalog } from "./agent-device-fixtures.ts";
 
 const tools = upstreamCatalog.tools.map(compactAgentDeviceTool);
@@ -51,15 +51,15 @@ test("device selection belongs to setup and discovery while interactions require
       assert.equal(schema.properties?.[option], undefined);
     }
   }
-  const configUrl = new URL("../runtimes/agent-device/config.json", import.meta.url);
+  const configUrl = new URL("../packages/runtimes/agent-device/config.json", import.meta.url);
   const text = await readFile(configUrl, "utf8");
   const config = JSON.parse(text);
   assert.deepEqual(config, {}, "Global platform and form selectors must not override a named session");
 });
 
 test("packaged defaults do not bypass native session device binding", async () => {
-  const configUrl = new URL("../runtimes/agent-device/config.json", import.meta.url);
-  const cliConfigUrl = new URL("../runtimes/agent-device/node_modules/agent-device/dist/src/cli-config.js", import.meta.url);
+  const configUrl = new URL("../packages/runtimes/agent-device/config.json", import.meta.url);
+  const cliConfigUrl = new URL("../packages/runtimes/agent-device/node_modules/agent-device/dist/src/cli-config.js", import.meta.url);
   // These exports belong to the pinned 0.20.9 runtime; keep this check with its version update.
   const configuration = await import(cliConfigUrl.href);
   assert.equal(typeof configuration.t, "function");

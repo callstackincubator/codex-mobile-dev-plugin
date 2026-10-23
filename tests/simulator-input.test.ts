@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { setImmediate } from "node:timers/promises";
-import { SimulatorInputService } from "../src/server/simulator-input.ts";
+import { SimulatorInputService } from "../packages/core/src/simulator-input.ts";
 import { UDID, OTHER_UDID } from "./fixtures.ts";
 
 function deferred<T>() {

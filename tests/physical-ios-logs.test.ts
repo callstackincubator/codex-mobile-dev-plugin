@@ -11,17 +11,17 @@ import { pathToFileURL } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { nativeLogTargetSchema } from "../src/shared/logs.ts";
-import type { LogRecord, LogSourceStatus } from "../src/shared/logs.ts";
-import type { PhysicalIosDevice } from "../src/shared/ios-devices.ts";
-import { physicalIosLogCommand } from "../src/server/physical-ios-logs.ts";
-import type { PhysicalIosLogTarget } from "../src/server/physical-ios-logs.ts";
-import { startNativeLogs } from "../src/server/native-logs.ts";
-import { LogSessions } from "../src/server/log-sessions.ts";
-import { registerLogTools } from "../src/server/log-tools.ts";
-import { Baguette } from "../src/server/baguette.ts";
-import { parseIOSLog } from "../src/server/log-parsers.ts";
-import { listIosDevices } from "../src/server/ios-devices.ts";
+import { nativeLogTargetSchema } from "../packages/shared/src/logs.ts";
+import type { LogRecord, LogSourceStatus } from "../packages/shared/src/logs.ts";
+import type { PhysicalIosDevice } from "../packages/shared/src/ios-devices.ts";
+import { physicalIosLogCommand } from "../packages/core/src/physical-ios-logs.ts";
+import type { PhysicalIosLogTarget } from "../packages/core/src/physical-ios-logs.ts";
+import { startNativeLogs } from "../packages/core/src/native-logs.ts";
+import { LogSessions } from "../packages/core/src/log-sessions.ts";
+import { registerLogTools } from "../packages/core/src/log-tools.ts";
+import { Baguette } from "../packages/core/src/baguette.ts";
+import { parseIOSLog } from "../packages/core/src/log-parsers.ts";
+import { listIosDevices } from "../packages/core/src/ios-devices.ts";
 
 const execute = promisify(execFile);
 const phone: PhysicalIosDevice = {
@@ -219,7 +219,7 @@ test("MCP validates physical devices independently of Baguette and closes the au
 test("the native decoder handles missing labels, escapes arbitrary messages, and rejects malformed bounds", { skip: process.platform !== "darwin" }, async t => {
   const temporary = await mkdtemp(join(tmpdir(), "mobile-dev-ios-log-decoder-"));
   t.after(() => rm(temporary, { recursive: true, force: true }));
-  const root = resolve("vendor/ios-logs");
+  const root = resolve("packages/native/vendor/ios-logs");
   for (const name of ["libplist-2.8.0", "libimobiledevice-1.4.0"]) {
     await execute("tar", ["-xjf", `${root}/sources/${name}.tar.bz2`, "-C", temporary]);
   }

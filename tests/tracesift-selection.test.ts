@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildSelectionPrompt, frameSelectionEvidence, type SelectionCard } from "../src/shared/tracesift-selection.ts";
+import { buildSelectionPrompt, frameSelectionEvidence, type SelectionCard } from "../packages/shared/src/tracesift-selection.ts";
 
 /**
  * A small task tree in the shape Explore is handed. `0.1.2` is the dotted sibling

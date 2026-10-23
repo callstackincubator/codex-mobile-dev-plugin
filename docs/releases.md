@@ -3,9 +3,9 @@
 [Back to README](../README.md) · [Contributing](../CONTRIBUTING.md)
 
 The `Release plugin` workflow in `.github/workflows/release.yml` runs when you push
-an existing commit with a `v<version>` tag. The tag must match `.codex-plugin/plugin.json`,
+an existing commit with a `v<version>` tag. The tag must match `apps/codex-plugin/.codex-plugin/plugin.json`,
 `package.json`, both root versions in `package-lock.json`, and
-`src/shared/version.ts`. After committing your changes, run from the repository root:
+`packages/shared/src/version.ts`. After committing your changes, run from the repository root:
 
 ```sh
 npm run public-release
@@ -27,7 +27,7 @@ fresh extraction of the actual ZIP. CI also validates the tagged commit message,
 including when the tag was pushed directly.
 
 Each native helper has a reusable Actions artifact containing its complete vendor
-directory and matching Sentry symbols. `scripts/release-native.mjs` fingerprints
+directory and matching Sentry symbols. `tooling/release-native.mjs` fingerprints
 the helper's tracked native sources, shared telemetry, build scripts, pinned
 dependencies, npm build command, and relevant installed toolchain versions.
 Plugin version bumps and UI/server edits do not change these fingerprints.

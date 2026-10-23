@@ -9,9 +9,9 @@ test("comparison overlays, toggles, shared selections and Ask retain original ru
     stdin: { contents: `
       import { createRoot } from "react-dom/client";
       import { flushSync } from "react-dom";
-      import { ComparisonCard } from "./src/ui/components/comparison-card.tsx";
-      import { ComparisonController } from "./src/ui/comparison-controller.ts";
-      import { startUiTelemetry, stopUiTelemetry } from "./src/ui/telemetry.ts";
+      import { ComparisonCard } from "./packages/ui/src/components/comparison-card.tsx";
+      import { ComparisonController } from "./packages/ui/src/comparison-controller.ts";
+      import { startUiTelemetry, stopUiTelemetry } from "./packages/ui/src/telemetry.ts";
       export function mount(app, result) {
         startUiTelemetry(app);
         const controller = new ComparisonController(app);

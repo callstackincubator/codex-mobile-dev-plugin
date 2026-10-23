@@ -5,8 +5,8 @@ import { chmod, copyFile, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { baguetteEnvironment } from "../src/server/baguette-runtime.ts";
-import { removeBaguetteToolchainRpaths } from "../scripts/baguette-rpaths.mjs";
+import { baguetteEnvironment } from "../packages/core/src/baguette-runtime.ts";
+import { removeBaguetteToolchainRpaths } from "../tooling/baguette-rpaths.mjs";
 
 const execute = promisify(execFile);
 const spanLoadCommands = `Load command 1
@@ -157,7 +157,7 @@ test("a relocated Baguette loads the selected Xcode library after its build-tool
   const root = await mkdtemp(prefix);
   t.after(() => rm(root, { recursive: true, force: true }));
   const binary = join(root, "Baguette");
-  await copyFile("vendor/baguette/Baguette", binary);
+  await copyFile("packages/native/vendor/baguette/Baguette", binary);
   await removeBaguetteToolchainRpaths(binary);
   const commands = await execute("otool", ["-l", binary]);
   const blocks = commands.stdout.split("Load command");

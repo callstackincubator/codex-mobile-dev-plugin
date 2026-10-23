@@ -5,8 +5,8 @@ import { JSDOM } from "jsdom";
 import { mkdtemp, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { PerformancePanel } from "../src/ui/performance-panel.ts";
-import type { CpuSample } from "../src/shared/cpu.ts";
+import type { PerformancePanel } from "../packages/ui/src/performance-panel.ts";
+import type { CpuSample } from "../packages/shared/src/cpu.ts";
 
 test("performance tracks share immediate zoom, fill a fixed scale, and preserve scrolled history", async t => {
   const dom = new JSDOM('<div id="root"></div>', { pretendToBeVisual: true });
@@ -61,7 +61,7 @@ test("performance tracks share immediate zoom, fill a fixed scale, and preserve 
     await rm(directory, { recursive: true, force: true });
   });
   const output = resolve(directory, "performance-view.mjs");
-  await build({ entryPoints: ["src/ui/components/performance-view.tsx"], outfile: output,
+  await build({ entryPoints: ["packages/ui/src/components/performance-view.tsx"], outfile: output,
     bundle: true, format: "esm", platform: "node", jsx: "automatic",
     external: ["react", "react/*", "react-dom", "react-dom/*", "@legendapp/list/react", "lucide-react", "@base-ui/react/*", "radix-ui"],
     plugins: [{ name: "observe-chart-inputs", setup(builder) {

@@ -6,7 +6,7 @@ The Agent Device MCP entry and skill are currently disabled; their implementatio
 
 ## Shared app discovery
 
-`src/ui/device-apps.ts` owns one `DeviceAppsStore` per workspace. Device selection
+`packages/ui/src/device-apps.ts` owns one `DeviceAppsStore` per workspace. Device selection
 feeds this store; it polls every three seconds while the panel is visible and the
 selected device is connected, including before Performance opens. Consumers share
 `subscribe` and `getSnapshot` (also usable with React's `useSyncExternalStore`).
@@ -16,7 +16,7 @@ Device changes, hidden panels, disconnection, and disposal cancel pending work,
 clear foreground state, and ignore late results. A failed query is not a confirmed
 absence: consumers should check `ready` before interpreting `foregroundApp: null`.
 
-`src/server/device-apps/` contains platform discovery, exposed through the existing
+`packages/core/src/device-apps/` contains platform discovery, exposed through the existing
 `mobile_performance_sources` tool. Android reads the top resumed activity from ADB;
 iOS simulators read the frontmost accessibility translation's PID without walking
 the UI tree; paired iPhones retain their accessibility-audit PID query. Foreground
@@ -167,7 +167,7 @@ frames** back off empties the set — the bar that explains picking goes with th
 mode, so the picks go with it, and a send never carries a set whose count the
 reader can no longer see.
 
-**Investigate selected** writes its own hand-off, in `src/shared/tracesift-selection.ts`
+**Investigate selected** writes its own hand-off, in `packages/shared/src/tracesift-selection.ts`
 rather than through `mobile_get_tracesift_handoff`. The picks exist only in this
 frame and the whole call tree is already in it, so a round trip could not have
 answered the question anyway — and an older installed service is never asked
@@ -184,7 +184,7 @@ looking at.
 The same switch, over a recording. **Select components** turns the render tree
 and the component table from navigating to collecting, and **Investigate
 selected components** writes its own hand-off from
-`src/shared/tracesift-react-selection.ts`. The state is the one field the task
+`packages/shared/src/tracesift-react-selection.ts`. The state is the one field the task
 side uses, because it is the same shape; what differs is the id, the arithmetic
 and the words.
 

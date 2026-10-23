@@ -2,8 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { access, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { createPhysicalIosBezelReader } from "../src/server/physical-ios-bezel.ts";
-import type { PhysicalIosDevice } from "../src/shared/ios-devices.ts";
+import { createPhysicalIosBezelReader } from "../packages/core/src/physical-ios-bezel.ts";
+import type { PhysicalIosDevice } from "../packages/shared/src/ios-devices.ts";
 
 const phone: PhysicalIosDevice = {
   udid: "00008150-0000111122223333", coreDeviceId: "11111111-1111-4111-8111-111111111111",

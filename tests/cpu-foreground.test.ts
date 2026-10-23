@@ -4,9 +4,9 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { foregroundPhysicalPid, foregroundSimulatorPid, foregroundAndroidApp, parseAndroidForegroundPackage } from "../src/server/device-apps/foreground.ts";
-import { readDeviceApps } from "../src/server/device-apps/sources.ts";
-import type { DeviceApp } from "../src/shared/device-apps.ts";
+import { foregroundPhysicalPid, foregroundSimulatorPid, foregroundAndroidApp, parseAndroidForegroundPackage } from "../packages/core/src/device-apps/foreground.ts";
+import { readDeviceApps } from "../packages/core/src/device-apps/sources.ts";
+import type { DeviceApp } from "../packages/shared/src/device-apps.ts";
 
 const udid = "00008150-001068280AE8C01C";
 

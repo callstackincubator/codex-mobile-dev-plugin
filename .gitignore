@@ -1,11 +1,11 @@
 node_modules/
 .husky/_/
 dist/
-vendor/baguette/
+packages/native/vendor/baguette/
 release/
 .DS_Store
 *.log
 .local-dev/
 .sentry/
 .env.sentry-build-plugin
-native/ios-mirror/target/
+packages/native/ios-mirror/target/

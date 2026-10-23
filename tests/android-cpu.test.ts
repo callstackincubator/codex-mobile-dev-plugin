@@ -6,13 +6,13 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createHash } from "node:crypto";
-import { AndroidCpuSampler, androidSampleSchema } from "../src/server/cpu/android-counters.ts";
-import { startAndroidCpuMonitor, deployAndroidCollector, loadAndroidCollector } from "../src/server/cpu/android.ts";
-import { createCpuSessions } from "../src/server/cpu/sessions.ts";
-import type { CpuSessions } from "../src/server/cpu/sessions.ts";
-import { parseAndroidApps } from "../src/server/device-apps/apps.ts";
-import { cpuTargetSchema } from "../src/shared/cpu.ts";
-import type { CpuTarget } from "../src/shared/cpu.ts";
+import { AndroidCpuSampler, androidSampleSchema } from "../packages/core/src/cpu/android-counters.ts";
+import { startAndroidCpuMonitor, deployAndroidCollector, loadAndroidCollector } from "../packages/core/src/cpu/android.ts";
+import { createCpuSessions } from "../packages/core/src/cpu/sessions.ts";
+import type { CpuSessions } from "../packages/core/src/cpu/sessions.ts";
+import { parseAndroidApps } from "../packages/core/src/device-apps/apps.ts";
+import { cpuTargetSchema } from "../packages/shared/src/cpu.ts";
+import type { CpuTarget } from "../packages/shared/src/cpu.ts";
 
 const sample = (timestampUs = "1000000", processTicks = "100", threads = [
   { tid: 123, start: "50", ticks: "60", name: "main" }, { tid: 124, start: "51", ticks: "40", name: "worker" },
@@ -101,7 +101,7 @@ test("closing during Android collector startup cancels and waits for the helper"
 
 test("Android deployment verifies ABI binaries and atomically replaces the executable", async () => {
   const commands: string[][] = [];
-  const root = new URL("../vendor/android-cpu/", import.meta.url);
+  const root = new URL("../packages/native/vendor/android-cpu/", import.meta.url);
   const collector = await loadAndroidCollector(root);
   const arm64 = collector.get("arm64-v8a");
   assert.ok(arm64);
@@ -145,7 +145,7 @@ test("Android CPU sessions reconnect after the original plugin cache is removed"
     }
   });
   const original = join(temporary, "plugin-cache", "old-version", "dist", "android-cpu");
-  await cp("vendor/android-cpu", original, { recursive: true });
+  await cp("packages/native/vendor/android-cpu", original, { recursive: true });
   const root = pathToFileURL(`${original}/`);
   const sessions = await createCpuSessions(root);
   cpu = sessions;
@@ -217,7 +217,7 @@ test("collector startup verifies every ABI before retaining its bytes", async t 
   const prefix = join(temporaryBase, "mobile-dev-cpu-integrity-test-");
   const temporary = await mkdtemp(prefix);
   t.after(() => rm(temporary, { recursive: true, force: true }));
-  await cp("vendor/android-cpu", temporary, { recursive: true });
+  await cp("packages/native/vendor/android-cpu", temporary, { recursive: true });
   const binary = join(temporary, "x86", "mobile-dev-cpu");
   await writeFile(binary, "corrupted");
   const root = pathToFileURL(`${temporary}/`);
@@ -226,7 +226,7 @@ test("collector startup verifies every ABI before retaining its bytes", async t 
 });
 
 test("failed Android deployment removes host staging and the partial device upload", async () => {
-  const root = new URL("../vendor/android-cpu/", import.meta.url);
+  const root = new URL("../packages/native/vendor/android-cpu/", import.meta.url);
   const collector = await loadAndroidCollector(root);
   const commands: string[][] = [];
   let stagedFile = "";
@@ -248,7 +248,7 @@ test("failed Android deployment removes host staging and the partial device uplo
 test("native /proc parser handles spaces, closing parentheses and newlines in thread names", async t => {
   const temporary = await mkdtemp(join(tmpdir(), "mobile-cpu-parser-"));
   t.after(() => rm(temporary, { recursive: true, force: true }));
-  const path = resolve("native/android-cpu/collector.c");
+  const path = resolve("packages/native/android-cpu/collector.c");
   const name = "worker ) name\n";
   const fixture = `123 (${name}) S 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20`;
   const harness = `#define COLLECTOR_TEST\n#include ${JSON.stringify(path)}\n#include <assert.h>\nint main(void) { Counter c = {0}; char stat[] = ${JSON.stringify(fixture)}; assert(parse_stat(stat, &c) == 0); assert(c.ticks == 23); assert(c.start == 19); assert(strcmp(c.name, ${JSON.stringify(name)}) == 0); json_string(c.name); char bad[] = "123 (name) S 1"; assert(parse_stat(bad, &c) == -1); return 0; }\n`;
@@ -265,7 +265,7 @@ test("native memory parser uses the device page size and rejects malformed or ov
   const prefix = join(temporaryBase, "mobile-memory-parser-");
   const temporary = await mkdtemp(prefix);
   t.after(() => rm(temporary, { recursive: true, force: true }));
-  const sourcePath = resolve("native/android-cpu/collector.c");
+  const sourcePath = resolve("packages/native/android-cpu/collector.c");
   const include = JSON.stringify(sourcePath);
   const harness = `#define COLLECTOR_TEST
 #include ${include}

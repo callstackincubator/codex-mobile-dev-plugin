@@ -6,8 +6,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { build } from "esbuild";
-import { loadTelemetryIdentity } from "../src/server/telemetry-identity.ts";
-import { isAnonymousUserId, isTelemetrySessionId, validateTelemetryIdentity } from "../src/shared/telemetry-identity.ts";
+import { loadTelemetryIdentity } from "../packages/core/src/telemetry-identity.ts";
+import { isAnonymousUserId, isTelemetrySessionId, validateTelemetryIdentity } from "../packages/shared/src/telemetry-identity.ts";
 
 const execute = promisify(execFile);
 
@@ -40,7 +40,7 @@ test("concurrent MCP processes publish one complete installation ID", async t =>
   const root = await mkdtemp(prefix);
   t.after(() => rm(root, { recursive: true, force: true }));
   const directory = join(root, "telemetry");
-  const moduleUrl = new URL("../src/server/telemetry-identity.ts", import.meta.url);
+  const moduleUrl = new URL("../packages/core/src/telemetry-identity.ts", import.meta.url);
   const moduleLiteral = JSON.stringify(moduleUrl.href);
   const code = `import { loadTelemetryIdentity } from ${moduleLiteral}; const identity = loadTelemetryIdentity(process.argv[1]); console.log(JSON.stringify(identity));`;
   const jobs = Array.from({ length: 12 }, () => execute(process.execPath, ["--input-type=module", "-e", code, directory]));
@@ -83,10 +83,10 @@ test("server startup sets the same user and session on Node scope and both nativ
   const config = join(output, "telemetry-environment.json");
   await writeFile(config, '{"environment":"development"}');
   const contents = `
-    import "./src/server/instrument.ts";
+    import "./packages/core/src/instrument.ts";
     import * as Sentry from "@sentry/node";
-    import { getTelemetryIdentity } from "./src/server/telemetry-identity.ts";
-    import { nativeCollectorCommand } from "./src/server/native-telemetry.ts";
+    import { getTelemetryIdentity } from "./packages/core/src/telemetry-identity.ts";
+    import { nativeCollectorCommand } from "./packages/core/src/native-telemetry.ts";
     const client = Sentry.getClient();
     const transport = client.getTransport();
     transport.send = async () => ({ statusCode: 200 });

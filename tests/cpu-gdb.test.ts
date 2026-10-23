@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { encodePacket, GdbPacketDecoder, ProfileAssembler } from "../src/server/cpu/gdb.ts";
+import { encodePacket, GdbPacketDecoder, ProfileAssembler } from "../packages/core/src/cpu/gdb.ts";
 
 test("handles packets split at every TCP byte boundary and acknowledgements", () => {
   const decoder = new GdbPacketDecoder();

@@ -1,22 +1,22 @@
-import { SENTRY_ORIGIN } from "../src/shared/telemetry.ts";
+import { SENTRY_ORIGIN } from "../packages/shared/src/telemetry.ts";
 import { setImmediate } from "node:timers/promises";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { SimulatorInputService } from "../src/server/simulator-input.ts";
+import { SimulatorInputService } from "../packages/core/src/simulator-input.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { OpenAIUiToolMetadataSchema, OpenAIUiResourceMetadataSchema } from "@openai/mcp-extensions/server";
-import { APP_URI, WORKSPACE_URI } from "../src/server/plugin.ts";
-import { RECORDING_URI } from "../src/shared/recordings.ts";
-import { COMPARISON_URI } from "../src/shared/performance-comparison.ts";
-import { TRACESIFT_URI } from "../src/shared/tracesift.ts";
-import { Baguette } from "../src/server/baguette.ts";
-import { parseBaseUrl } from "../src/shared/protocol.ts";
+import { APP_URI, WORKSPACE_URI } from "../packages/core/src/plugin.ts";
+import { RECORDING_URI } from "../packages/shared/src/recordings.ts";
+import { COMPARISON_URI } from "../packages/shared/src/performance-comparison.ts";
+import { TRACESIFT_URI } from "../packages/shared/src/tracesift.ts";
+import { Baguette } from "../packages/core/src/baguette.ts";
+import { parseBaseUrl } from "../packages/shared/src/protocol.ts";
 import { createTestPlugin, fakeBaguette, fakeSimulatorInput, UDID, OTHER_UDID, SCREEN, PNG } from "./fixtures.ts";
-import { getTelemetryIdentity } from "../src/server/telemetry-identity.ts";
-import manifest from "../.codex-plugin/plugin.json" with { type: "json" };
+import { getTelemetryIdentity } from "../packages/core/src/telemetry-identity.ts";
+import manifest from "../apps/codex-plugin/.codex-plugin/plugin.json" with { type: "json" };
 
 test("both opening tools accept optional device intent and preserve it in their results", async t => {
   const fake = await fakeBaguette();

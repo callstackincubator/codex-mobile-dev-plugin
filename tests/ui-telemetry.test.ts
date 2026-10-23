@@ -16,7 +16,7 @@ function contains(text: string, fragment: string, expected = true) {
 test("UI heap collection uses the existing timer, active context and byte units in both environments", async t => {
   const root = process.cwd();
   const built = await build({
-    stdin: { contents: 'export * from "./src/ui/telemetry.ts";', resolveDir: root, loader: "ts" },
+    stdin: { contents: 'export * from "./packages/ui/src/telemetry.ts";', resolveDir: root, loader: "ts" },
     bundle: true, write: false, format: "iife", globalName: "Telemetry", platform: "browser", target: "chrome120",
     define: { "process.env.NODE_ENV": '"production"' },
   });
@@ -125,7 +125,7 @@ test("UI heap collection uses the existing timer, active context and byte units 
 test("UI heap collection handles unavailable APIs, invalid bytes, hidden startup and opt-out", async t => {
   const root = process.cwd();
   const built = await build({
-    stdin: { contents: 'export * from "./src/ui/telemetry.ts";', resolveDir: root, loader: "ts" },
+    stdin: { contents: 'export * from "./packages/ui/src/telemetry.ts";', resolveDir: root, loader: "ts" },
     bundle: true, write: false, format: "iife", globalName: "Telemetry", platform: "browser", target: "chrome120",
     define: { "process.env.NODE_ENV": '"production"' },
   });
@@ -179,7 +179,7 @@ test("UI heap collection handles unavailable APIs, invalid bytes, hidden startup
 test("browser errors use the served environment regardless of live-reload markers", async t => {
   const root = process.cwd();
   const built = await build({
-    stdin: { contents: 'export * from "./src/ui/telemetry.ts";', resolveDir: root, loader: "ts" },
+    stdin: { contents: 'export * from "./packages/ui/src/telemetry.ts";', resolveDir: root, loader: "ts" },
     bundle: true, write: false, format: "iife", globalName: "Telemetry", platform: "browser", target: "chrome120",
     define: { "process.env.NODE_ENV": '"production"' },
   });
@@ -232,7 +232,7 @@ test("browser errors use the served environment regardless of live-reload marker
 test("browser telemetry labels surface measurements, propagates traces, and flushes on teardown", async t => {
   const root = process.cwd();
   const built = await build({
-    stdin: { contents: 'export * from "./src/ui/telemetry.ts"; export { RecordingController } from "./src/ui/recording-controller.ts"; export * as Sentry from "@sentry/react"; export { ScreenAnnotationsStore } from "./src/ui/screen-annotations.ts"; export { PanelContext } from "./src/ui/model-context.ts"; export { LogList } from "./src/ui/log-list.ts"; export { LogsPanel } from "./src/ui/logs-panel.ts"; export { DeviceAppsStore } from "./src/ui/device-apps.ts"; export { encodeScreenshotAttachment } from "./src/ui/screenshot-attachment.ts";', resolveDir: root, loader: "ts" },
+    stdin: { contents: 'export * from "./packages/ui/src/telemetry.ts"; export { RecordingController } from "./packages/ui/src/recording-controller.ts"; export * as Sentry from "@sentry/react"; export { ScreenAnnotationsStore } from "./packages/ui/src/screen-annotations.ts"; export { PanelContext } from "./packages/ui/src/model-context.ts"; export { LogList } from "./packages/ui/src/log-list.ts"; export { LogsPanel } from "./packages/ui/src/logs-panel.ts"; export { DeviceAppsStore } from "./packages/ui/src/device-apps.ts"; export { encodeScreenshotAttachment } from "./packages/ui/src/screenshot-attachment.ts";', resolveDir: root, loader: "ts" },
     bundle: true, write: false, format: "iife", globalName: "Telemetry", platform: "browser", target: "chrome120",
     define: { "process.env.NODE_ENV": '"production"' },
   });
@@ -525,7 +525,7 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
 test("shared app discovery measures the active context and excludes cancelled or cross-surface work", async t => {
   const root = process.cwd();
   const built = await build({
-    stdin: { contents: 'export * from "./src/ui/telemetry.ts"; export { DeviceAppsStore } from "./src/ui/device-apps.ts";', resolveDir: root, loader: "ts" },
+    stdin: { contents: 'export * from "./packages/ui/src/telemetry.ts"; export { DeviceAppsStore } from "./packages/ui/src/device-apps.ts";', resolveDir: root, loader: "ts" },
     bundle: true, write: false, format: "iife", globalName: "Telemetry", platform: "browser", target: "chrome120",
     define: { "process.env.NODE_ENV": '"production"' },
   });
@@ -603,7 +603,7 @@ test("shared app discovery measures the active context and excludes cancelled or
 test("stream retries exclude expected host lifecycle failures and retain unexpected timeouts", async t => {
   const root = process.cwd();
   const built = await build({
-    stdin: { contents: 'export * from "./src/ui/telemetry.ts";', resolveDir: root, loader: "ts" },
+    stdin: { contents: 'export * from "./packages/ui/src/telemetry.ts";', resolveDir: root, loader: "ts" },
     bundle: true, write: false, format: "iife", globalName: "Telemetry", platform: "browser", target: "chrome120",
     define: { "process.env.NODE_ENV": '"production"' },
   });

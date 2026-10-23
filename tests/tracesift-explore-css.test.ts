@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { exploreUILayerCSS } from "../scripts/explore-css.mjs";
-import { TRACE_SIFT_EXPLORE_CLASS } from "../src/shared/tracesift-explore.ts";
+import { exploreUILayerCSS } from "../tooling/explore-css.mjs";
+import { TRACE_SIFT_EXPLORE_CLASS } from "../packages/shared/src/tracesift-explore.ts";
 
 /**
  * The contract between the folded Explore stylesheet and the renderer. When the

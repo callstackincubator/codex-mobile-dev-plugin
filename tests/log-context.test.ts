@@ -2,11 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { App } from "@modelcontextprotocol/ext-apps";
 import type { OpenAIExtensions, OpenAIModelContextHostState } from "@openai/mcp-extensions/app";
-import { PanelContext, type ScreenshotAttachment } from "../src/ui/model-context.ts";
-import { stackLogs } from "../src/shared/logs.ts";
+import { PanelContext, type ScreenshotAttachment } from "../packages/ui/src/model-context.ts";
+import { stackLogs } from "../packages/shared/src/logs.ts";
 import { UDID } from "./fixtures.ts";
-import type { PhysicalIosDevice } from "../src/shared/ios-devices.ts";
-import type { PhysicalAndroidDevice } from "../src/shared/android-devices.ts";
+import type { PhysicalIosDevice } from "../packages/shared/src/ios-devices.ts";
+import type { PhysicalAndroidDevice } from "../packages/shared/src/android-devices.ts";
 
 const simulator = { udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS 26" };
 const log = stackLogs([{ timestamp: "2026-09-30T12:00:00Z", message: "Request failed", level: "error", source: "js", origin: "metro", stack: "at load (App.tsx:9:3)", sequence: 1 }])[0];

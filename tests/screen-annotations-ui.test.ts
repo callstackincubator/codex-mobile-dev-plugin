@@ -5,7 +5,7 @@ import { JSDOM } from "jsdom";
 import { mkdtemp, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { PanelContext } from "../src/ui/model-context.ts";
+import { PanelContext } from "../packages/ui/src/model-context.ts";
 import type { App } from "@modelcontextprotocol/ext-apps";
 import type { OpenAIExtensions } from "@openai/mcp-extensions/app";
 
@@ -29,7 +29,7 @@ test("the simulator toolbar opens notes, saves blue markers, and lets users edit
   let cleanup = async () => {};
   t.after(async () => { await cleanup(); dom.window.close(); for (const [key, descriptor] of previous) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else Reflect.deleteProperty(globalThis, key); } await rm(directory, { recursive: true, force: true }); });
   const output = resolve(directory, "annotations.mjs");
-  await build({ stdin: { contents: 'export { SimulatorView } from "./src/ui/components/simulator-view.tsx"; export { getScreenAnnotations } from "./src/ui/screen-annotations.ts";', resolveDir: process.cwd(), loader: "ts" }, outfile: output, bundle: true, format: "esm", platform: "node", jsx: "automatic", external: ["react", "react/*", "react-dom", "react-dom/*", "radix-ui", "lucide-react", "@base-ui/react/*"] });
+  await build({ stdin: { contents: 'export { SimulatorView } from "./packages/ui/src/components/simulator-view.tsx"; export { getScreenAnnotations } from "./packages/ui/src/screen-annotations.ts";', resolveDir: process.cwd(), loader: "ts" }, outfile: output, bundle: true, format: "esm", platform: "node", jsx: "automatic", external: ["react", "react/*", "react-dom", "react-dom/*", "radix-ui", "lucide-react", "@base-ui/react/*"] });
   const { SimulatorView, getScreenAnnotations } = await import(pathToFileURL(output).href);
   const { act, createElement } = await import("react"); const { createRoot } = await import("react-dom/client");
   const root = createRoot(dom.window.document.getElementById("root")!);

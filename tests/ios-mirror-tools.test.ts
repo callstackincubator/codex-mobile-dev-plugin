@@ -3,10 +3,10 @@ import assert from "node:assert/strict";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { registerIosMirrorTools } from "../src/server/ios-mirror-tools.ts";
-import { IosMirrorSessions } from "../src/server/ios-mirror.ts";
-import type { PhysicalIosDevice } from "../src/shared/ios-devices.ts";
-import type { Bezel } from "../src/shared/bezel.ts";
+import { registerIosMirrorTools } from "../packages/core/src/ios-mirror-tools.ts";
+import { IosMirrorSessions } from "../packages/core/src/ios-mirror.ts";
+import type { PhysicalIosDevice } from "../packages/shared/src/ios-devices.ts";
+import type { Bezel } from "../packages/shared/src/bezel.ts";
 
 const screenshotBytes = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
 

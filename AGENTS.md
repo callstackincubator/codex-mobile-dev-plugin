@@ -1,5 +1,12 @@
 # Project instructions
 
+## Repository layout
+
+This is an npm workspace: shared code lives in `packages/` (`shared`, `core`, `ui`,
+`native`, `runtimes`) and each shipped product in `apps/`. Keep host-specific chrome
+in its app and out of `packages/ui`. See
+[CONTRIBUTING.md](CONTRIBUTING.md#repository-layout).
+
 ## Commit messages
 
 Use Conventional Commits for new source commits and pull request titles, for
@@ -26,13 +33,13 @@ new telemetry when existing coverage already answers the relevant questions.
   monitored device/app's data. Browser frame intervals are callback pacing, and
   device input round trips end at acknowledgement; neither is device rendered FPS
   or touch-to-photon latency.
-- Reuse `src/ui/telemetry.ts`: `recordUiTiming`, `setUiGauge`, `countUiEvent`,
+- Reuse `packages/ui/src/telemetry.ts`: `recordUiTiming`, `setUiGauge`, `countUiEvent`,
   `setUiSurface`, `setUiTelemetryContext`, and `markUiSurfaceReady`. Use
-  `captureUiError` and `src/server/telemetry.ts`'s `captureServerError` for relevant
+  `captureUiError` and `packages/core/src/telemetry.ts`'s `captureServerError` for relevant
   handled failures. Keep SDK initialization centralized in the existing UI and
   server telemetry modules, with shared sampling and scrubbing in
-  `src/shared/telemetry.ts`.
-- Native helpers share `native/telemetry/telemetry.c` and its Rust wrapper. Reuse
+  `packages/shared/src/telemetry.ts`.
+- Native helpers share `packages/native/telemetry/telemetry.c` and its Rust wrapper. Reuse
   their bounded timing windows and resource sampler. Rebuild affected helpers
   after changing shared telemetry, retain matching symbols in `.sentry/native`,
   and upload them to `codex-mobile-dev-native` with the same plugin release.
