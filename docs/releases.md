@@ -86,7 +86,7 @@ is independent of the source history, so development ignore rules do not exclude
 force pushes. Older or repeated versions leave the latest payload unchanged.
 New marketplace commits use `chore(release): release mobile-dev <version>`.
 
-Use the [installation and update commands](../README.md#install).
+Use the [installation and update commands](../CONTRIBUTING.md#install-from-the-github-marketplace).
 The prebuilt marketplace is named `mobile-dev`, separate from the
 `mobile-dev-local` development marketplace. A release branch does not change
 repository visibility.

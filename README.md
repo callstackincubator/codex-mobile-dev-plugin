@@ -1,31 +1,29 @@
-# Mobile Dev for Codex
+# Mobile Dev
 
-Keep iOS and Android devices beside your Codex desktop chat while building,
-running, and debugging mobile apps. Mobile Dev works with Expo, React Native,
-SwiftUI, and other native mobile projects.
+Build, run, and debug iOS and Android apps without leaving your AI coding tool.
+Mobile Dev keeps devices beside your agent's chat and works with Expo, React
+Native, SwiftUI, and other native mobile projects.
+
+- [Live devices beside your chat](#live-devices-beside-your-chat): stream iOS and
+  Android simulators, emulators, and physical devices.
+- [Device control, inspection and annotations](#device-control-inspection-and-annotations):
+  let your agent tap, type, and inspect your app, and annotate elements for it.
+- [Native and JavaScript logs](#native-and-javascript-logs): iOS, Android, and
+  Metro logs in one filterable view.
+- [Live performance monitoring and improvements](#live-performance-monitoring-and-improvements):
+  CPU, memory, and FPS charts, with recordings your agent can analyze.
+- [App storage](#app-storage): browse and watch what your app saves, without
+  adding code to it.
 
 ## Install
 
-Install the prebuilt plugin from the release marketplace:
+### Codex
 
-```sh
-codex plugin marketplace add https://github.com/callstackincubator/codex-mobile-dev-plugin.git --ref release/latest
-codex plugin add mobile-dev@mobile-dev
-```
+**[Add Mobile Dev to Codex](https://chatgpt.com/plugins/plugins_6ac4c117f76881918d3676e851fa4005)**
+from the plugin directory, then open a new chat.
 
-Open a new chat after installing. The package includes the built plugin and
-bundled runtimes; no plugin build or `npm install` is needed.
-
-Mobile Dev shows a banner when a newer release is ready to install. Click
-**Update**, then fully quit and reopen Codex after it finishes.
-
-You can also update an existing installation from the terminal:
-
-```sh
-codex plugin marketplace upgrade mobile-dev
-```
-
-Fully quit and reopen Codex after updating.
+To install the prebuilt plugin from this repository instead, see
+[Install from the GitHub marketplace](CONTRIBUTING.md#install-from-the-github-marketplace).
 
 ## Features
 
@@ -35,7 +33,7 @@ Stream iOS simulators, Android emulators, and connected iPhones, iPads, and Andr
 ![](/img/screenshot_side_by_side.png)
 
 ### Device control, inspection and annotations
-Select and boot simulators or emulators, interact with taps and drags, type on supported devices, and let Codex inspect accessibility elements and control your app through MCP tools. Select an element or screen region and leave instructions for Codex, with React Native component and source details when available.
+Select and boot simulators or emulators, interact with taps and drags, type on supported devices, and let your agent inspect accessibility elements and control your app through MCP tools. Select an element or screen region and leave instructions for your agent, with React Native component and source details when available.
 
 ![](/img/screenshot_annotations.png)
 
@@ -45,7 +43,7 @@ Read iOS unified logs, Android logcat, and Metro console messages together. Foll
 ![](/img/screenshot_logs.png)
 
 ### Live performance monitoring and improvements
-Track app CPU and memory, expand individual thread charts, and view device-wide Display FPS on supported devices. Ask Codex to record an interaction, inspect interactive charts in chat, compare runs, and analyze selected ranges. Android recordings include display frame pacing and jank statistics.
+Track app CPU and memory, expand individual thread charts, and view device-wide Display FPS on supported devices. Ask your agent to record an interaction, inspect interactive charts in chat, compare runs, and analyze selected ranges. Android recordings include display frame pacing and jank statistics.
 
 ![](/img/screenshot_performance.png)
 
@@ -61,9 +59,9 @@ See [storage privacy and review checks](docs/storage-privacy.md).
 
 ## Requirements
 
-The prebuilt plugin targets Codex desktop on an Apple Silicon Mac and uses
-Codex's bundled Node runtime from its workspace dependency cache. Install the
-tools for the platforms you use:
+Mobile Dev runs on an Apple Silicon Mac. In Codex desktop, the prebuilt plugin
+uses Codex's bundled Node runtime from its workspace dependency cache. Install
+the tools for the platforms you use:
 
 | Platform or feature | Requirements |
 | --- | --- |
@@ -84,15 +82,15 @@ its device panel, inspection, logs, and performance tools.
 
 ## Get started
 
-Open Mobile Dev from the Codex sidebar, or ask Codex to open the simulator beside
-this chat. Pick a device from the toolbar; selecting a stopped simulator or AVD
+Ask your agent to open the simulator beside this chat. In Codex, you can also
+open Mobile Dev from the sidebar. Pick a device from the toolbar; selecting a stopped simulator or AVD
 boots it. Use the iOS and Android toggles to show either platform or both.
 
 Click an iOS simulator or Android screen to focus it, then press **Command-V** to
 paste text into the device. Paste accepts up to 4,096 printable US-ASCII characters;
 line breaks and other characters show a notice without sending partial text.
 
-Ask Codex to work with your app, for example:
+Ask your agent to work with your app, for example:
 
 - “Build and run my Expo app in the simulator beside this chat.”
 - “Read the app logs and help me fix this error.”
