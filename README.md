@@ -82,15 +82,15 @@ its device panel, inspection, logs, and performance tools.
 
 ## Get started
 
-Open Mobile Dev from the Codex sidebar, or ask Codex to open the simulator beside
-this chat. Pick a device from the toolbar; selecting a stopped simulator or AVD
+Ask your agent to open the simulator beside this chat. In Codex, you can also
+open Mobile Dev from the sidebar. Pick a device from the toolbar; selecting a stopped simulator or AVD
 boots it. Use the iOS and Android toggles to show either platform or both.
 
 Click an iOS simulator or Android screen to focus it, then press **Command-V** to
 paste text into the device. Paste accepts up to 4,096 printable US-ASCII characters;
 line breaks and other characters show a notice without sending partial text.
 
-Ask Codex to work with your app, for example:
+Ask your agent to work with your app, for example:
 
 - “Build and run my Expo app in the simulator beside this chat.”
 - “Read the app logs and help me fix this error.”
