@@ -44,7 +44,8 @@ new telemetry when existing coverage already answers the relevant questions.
 - Native helpers share `packages/native/telemetry/telemetry.c` and its Rust wrapper. Reuse
   their bounded timing windows and resource sampler. Rebuild affected helpers
   after changing shared telemetry, retain matching symbols in `.sentry/native`,
-  and upload them to `codex-mobile-dev-native` with the same plugin release.
+  and upload them to the native project in `tooling/sentry-projects.mjs` with the same
+  plugin release.
 - Use sampled traces for meaningful operations spanning UI and server work. The
   existing MCP wrapper propagates trace context; preserve it when changing the
   bridge. Use bounded aggregate metrics for frequent frame, polling, processing,
