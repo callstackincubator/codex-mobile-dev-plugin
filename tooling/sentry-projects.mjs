@@ -3,7 +3,7 @@
  * events keep arriving if a project is renamed; only these slugs must follow.
  */
 export const SENTRY_PROJECTS = {
-  ui: "codex-mobile-dev-ui",
-  server: "codex-mobile-dev-server",
-  native: "codex-mobile-dev-native",
+  ui: "mobile-dev-ui",
+  server: "mobile-dev-server",
+  native: "mobile-dev-native",
 };
