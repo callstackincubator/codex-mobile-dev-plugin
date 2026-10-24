@@ -526,16 +526,18 @@ test("native device picker measures preparation and outcomes without private for
   t.after(async () => { await client.close(); await server.close(); await Sentry.close(); });
   await server.connect(serverTransport);
   await client.connect(clientTransport);
-  const arguments_ = { message: "PRIVATE_QUESTION", context: "PRIVATE_OPERATION", devices: [
+  const arguments_ = { selectionMode: "single", message: "PRIVATE_QUESTION", context: "PRIVATE_OPERATION", devices: [
     { platform: "android", kind: "physical", deviceId: "PRIVATE_SERIAL", appName: "PRIVATE_APP" },
   ] };
   for (const action of ["accept", "cancel", "decline"] as const) {
     answer = action === "accept" ? { action, content: { device: "device-1" } } : { action };
-    const result = await client.callTool({ name: "mobile_choose_devices", arguments: arguments_ });
+    const result = await client.callTool({ name: "mobile_show_devices", arguments: arguments_ });
     assert.equal(result.isError, undefined);
   }
+  const browse = await client.callTool({ name: "mobile_show_devices", arguments: {} });
+  assert.equal(browse.isError, undefined);
   answer = { action: "accept", content: { device: "not-offered" } };
-  const invalid = await client.callTool({ name: "mobile_choose_devices", arguments: arguments_ });
+  const invalid = await client.callTool({ name: "mobile_show_devices", arguments: arguments_ });
   assert.equal(invalid.isError, true);
   await Sentry.close();
   const encoded = JSON.stringify(envelopes);
@@ -545,6 +547,8 @@ test("native device picker measures preparation and outcomes without private for
   contains(encoded, "PRIVATE", false);
   contains(encoded, "device-1", false);
   contains(encoded, "selection_mode");
+  contains(encoded, "rendered");
+  contains(encoded, "browse");
   contains(encoded, "millisecond");
   const items = envelopes.flatMap(envelope => envelope[1]);
   const errors = items.filter(item => item[0].type === "event");

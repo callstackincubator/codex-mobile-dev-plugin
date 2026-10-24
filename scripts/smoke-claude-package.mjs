@@ -41,10 +41,9 @@ try {
     transport.stderr?.on("data", chunk => { diagnostics = (diagnostics + chunk).slice(-5000); });
     try {
       await client.connect(transport);
-      assert.match(client.getInstructions(), /otherwise in chat/);
+      assert.match(client.getInstructions(), /in chat when it is unsupported/);
       const { tools } = await client.listTools();
-      assert.equal(tools.some(tool => tool.name === "mobile_choose_devices"), forms);
-      for (const name of ["mobile_open_workspace", "mobile_open_simulator", "mobile_list_simulators", "mobile_list_android_devices"]) {
+      for (const name of ["mobile_show_devices", "mobile_open_workspace", "mobile_open_simulator", "mobile_list_simulators", "mobile_list_android_devices"]) {
         assert.ok(tools.some(tool => tool.name === name), name);
       }
       const workspace = tools.find(tool => tool.name === "mobile_open_workspace");

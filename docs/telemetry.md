@@ -309,6 +309,14 @@ Counters record range selection, run toggles and Ask actions. No recording IDs,
 titles, selections or device measurements enter this telemetry. The comparison
 MCP operation retains the existing sampled server trace and handled-error path.
 
+Devices cards use the `devices` surface and view with shared readiness, interaction,
+frame pacing and teardown coverage. `ui.devices.process` measures result validation
+in milliseconds, and `ui.devices.message_ack` ends when the host acknowledges the
+Use message. Gauges report the listed and selected device counts. Counters record
+`ui.devices.boot`, `ui.devices.stop`, their `_failed` variants and
+`ui.devices.send`; boot and stop calls also keep the shared `ui.action` /
+`ui.action.result` counters and sampled MCP client spans. Device names, IDs, runtimes, questions and chat text are never sent.
+
 `ui.annotations.tree_processing` measures local element processing in milliseconds, including React Native nodes when available. Since 0.1.66, normal inspection validates flat records here; server-side tree flattening falls within `ui.annotations.inspection`, which measures the MCP inspection round trip, including native accessibility and optional Metro work. `ui.annotations.runtime_available` counts snapshots with runtime elements. `ui.annotations.inspection_fallback` counts native-tool retries. `ui.annotations.inspection_truncated` counts snapshots that reach the collector's work or measurement limits. Inspection timing includes failed calls and retries. It uses the current simulator surface and the same bounded timing windows as other UI measurements. Tree contents and selected regions are not sent to Sentry.
 
 Since 0.1.69, inspection timing also includes the bounded Metro source-map lookup. `ui.annotations.source_available` counts snapshots with at least one resolved source location; `ui.annotations.message_build` measures text construction for Send to chat. Source-map transport failures use the existing server error handler with a fixed message. Source paths, component names, creation stacks, note text and images are never sent to Sentry.
@@ -397,11 +405,15 @@ mechanisms; they do not by themselves identify the cause of an ADB stall.
 
 Unhandled JavaScript errors and rejected promises, React render errors, and handled MCP tool failures produce issues. Expected stopped-device errors and cancelled operations are excluded. Sentry traces 10% of ordinary tool actions, continuing the UI trace through the MCP bridge. Frame reads, polling, discovery and pointer input are excluded from trace sampling. The SDK does not record MCP arguments or results.
 
-Native device requests retain the ordinary sampled MCP trace. `device_picker.prepare`
+Device requests retain the ordinary sampled MCP trace. `device_picker.prepare`
 measures candidate discovery/validation in milliseconds, excluding time spent waiting
 for the user. `device_picker.result` counts accept, cancel, decline, unsupported and
-failed outcomes; `device_picker.selected` records only the number of selected devices.
-Attributes contain only the selection mode and outcome. Unexpected handled failures
+failed outcomes, plus `rendered` when the card is returned; `device_picker.selected`
+records only the number of selected devices. Attributes contain only the selection
+mode (`none` when browsing), outcome and a fixed `mode` (`form`, `card`, `browse`).
+Since the picker became `mobile_show_devices`, `prepare` also covers discovery of
+every device when candidates are omitted, so browse durations are not comparable
+with earlier validation-only samples; filter by `mode`. Unexpected handled failures
 use fixed messages. Device IDs/names, app labels, questions, operation details and
 thumbnails are never sent to Sentry. The form is rendered by the host, so plugin UI
 readiness/render timing cannot measure that surface.
