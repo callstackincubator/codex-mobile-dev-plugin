@@ -150,6 +150,41 @@ duplicate servers. Rebuild, repackage, and reinstall to update a bundled copy.
 Local builds retain the `development` telemetry environment. Public releases use
 `npm run build:release` and `npm run package:claude -- --release`.
 
+### Cursor local development
+
+Complete the first-time runtime and native-helper setup under [Build and package](#build-and-package),
+then run from this checkout with Node.js 22.19 or later:
+
+```sh
+npm run build
+npm run cursor:config
+```
+
+1. Merge the `mobile-dev` entry from `.local-dev/cursor-mcp.json` into the
+   `mcpServers` object in `~/.cursor/mcp.json`, preserving other servers. Use the
+   global file rather than a project's `.cursor/mcp.json`: the snippet uses absolute
+   paths to this checkout and the Node executable running the generator.
+2. Reload Cursor, check that `mobile-dev` is enabled in the MCP section of Cursor Settings, and
+   ask **“Open Mobile Dev”** in a new agent chat.
+
+After UI or server edits, run `npm run build` and reload Cursor. Regenerate the
+config if the checkout or Node path changes.
+
+To create and check a plugin folder for manual installation instead:
+
+```sh
+npm run package:cursor
+npm run test:cursor
+```
+
+This writes the Cursor plugin folder `release/cursor-plugin/mobile-dev`. Its
+`.cursor-plugin/plugin.json` starts `${CURSOR_PLUGIN_ROOT}/dist/server.mjs` with
+Node.js from `PATH` and leaves out the Codex manifest, `.mcp.json`, and launcher.
+Follow the [manual installation steps](README.md#cursor-manual-installation).
+Remove the `mobile-dev` development entry before installing the plugin to avoid
+duplicate servers. Public releases use `npm run build:release` and
+`npm run package:cursor -- --release`.
+
 ## Live React UI development
 
 In Codex, run `npm run dev` after installing the plugin. It watches the UI sources and
