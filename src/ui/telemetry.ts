@@ -243,8 +243,8 @@ export function startUiTelemetry(app: App) {
   running = enabled;
   if (running === false) return;
   const requestedView = document.documentElement.dataset.view;
-  const view = requestedView === "recording" || requestedView === "workspace" || requestedView === "comparison" || requestedView === "tracesift" ? requestedView : "panel";
-  if (view === "recording" || view === "comparison" || view === "tracesift") surface = view;
+  const view = requestedView === "recording" || requestedView === "workspace" || requestedView === "comparison" || requestedView === "tracesift" || requestedView === "devices" ? requestedView : "panel";
+  if (view === "recording" || view === "comparison" || view === "tracesift" || view === "devices") surface = view;
   attributes = { ...attributes, surface, view };
   Sentry.setTags({ component: "ui", surface, view });
   Sentry.setAttributes(attributes);

@@ -75,7 +75,7 @@ test("the native request waits for a single answer and returns verified device I
   await server.connect(serverTransport);
   await client.connect(clientTransport);
   let completed = false;
-  const pending = client.callTool({ name: "mobile_choose_devices", arguments: input }).then(result => { completed = true; return result; });
+  const pending = client.callTool({ name: "mobile_show_devices", arguments: { ...input, selectionMode: "single" } }).then(result => { completed = true; return result; });
   await displayed;
   assert.equal(completed, false);
   answer({ action: "accept", content: { device: "device-1" } });
@@ -110,7 +110,7 @@ for (const action of ["accept", "cancel", "decline", "invalid", "duplicate", "em
     });
     await server.connect(serverTransport);
     await client.connect(clientTransport);
-    const result = await client.callTool({ name: "mobile_choose_devices", arguments: { ...input, selectionMode: "multiple" } });
+    const result = await client.callTool({ name: "mobile_show_devices", arguments: { ...input, selectionMode: "multiple" } });
     if (action === "accept") {
       assert.equal(result.isError, undefined);
       const selected = result.structuredContent?.devices;
@@ -126,7 +126,7 @@ for (const action of ["accept", "cancel", "decline", "invalid", "duplicate", "em
   });
 }
 
-test("unsupported hosts fail explicitly without discovering devices or taking action", async t => {
+test("hosts without forms or cards fail a choice explicitly without discovering devices", async t => {
   const server = new McpServer({ name: "device-choices", version: "1" });
   const extensions = new OpenAIExtensions(server);
   const fail = async (): Promise<Status> => { throw new Error("Should not discover"); };
@@ -136,11 +136,11 @@ test("unsupported hosts fail explicitly without discovering devices or taking ac
   t.after(async () => { await client.close(); await server.close(); });
   await server.connect(serverTransport);
   await client.connect(clientTransport);
-  const result = await client.callTool({ name: "mobile_choose_devices", arguments: input });
+  const result = await client.callTool({ name: "mobile_show_devices", arguments: { ...input, selectionMode: "single" } });
   assert.equal(result.isError, true);
   const content = result.content;
   assert.ok(Array.isArray(content) && content[0].type === "text");
-  assert.match(content[0].text, /does not support OpenAI native request forms/);
+  assert.match(content[0].text, /neither a native request form nor an app card/);
 });
 
 test("discovery rejects duplicate, missing, wrong-kind and unauthorized candidates", async () => {
@@ -177,4 +177,67 @@ test("physical devices use hardware IDs; stopped simulators remain selectable fo
   assert.ok("oneOf" in field && Array.isArray(field.oneOf));
   assert.match(field.oneOf[0].description ?? "", /Stopped/);
   assert.equal(field.default, undefined, "No target is silently preselected.");
+});
+
+async function connectedClient(t: test.TestContext, discovery: DeviceChoiceSources, capabilities = {}) {
+  const server = new McpServer({ name: "device-choices", version: "1" });
+  registerDeviceChoiceTools(server, new OpenAIExtensions(server), discovery);
+  const client = new Client({ name: "card-host", version: "1" }, { capabilities });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  t.after(async () => { await client.close(); await server.close(); });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  return client;
+}
+const cardHost = { extensions: { "io.modelcontextprotocol/ui": { mimeTypes: ["text/html;profile=mcp-app"] } } };
+function text(result: Awaited<ReturnType<Client["callTool"]>>) {
+  const content = result.content;
+  assert.ok(Array.isArray(content) && content[0].type === "text");
+  return content[0].text;
+}
+
+test("browsing lists every source in the card and tolerates an unavailable backend", async t => {
+  const discovery = sources();
+  discovery.physicalIos = async () => { throw new Error("devicectl needs Xcode 27."); };
+  const client = await connectedClient(t, discovery, cardHost);
+  const result = await client.callTool({ name: "mobile_show_devices", arguments: {} });
+  assert.equal(result.isError, undefined);
+  assert.equal(result.structuredContent?.mode, "browse");
+  const devices = result.structuredContent?.devices;
+  assert.ok(Array.isArray(devices));
+  assert.deepEqual(devices.map(device => device.deviceId), [simulatorId, "emulator-5554"]);
+  assert.deepEqual(result.structuredContent?.errors, ["devicectl needs Xcode 27."]);
+  assert.match(text(result), /Showing 2 devices in the Mobile Dev card \(2 running, 0 stopped\)\. Do not repeat the list\./);
+  assert.match(text(result), /devicectl needs Xcode 27/);
+});
+
+test("browsing without app cards returns the device list as text", async t => {
+  const discovery = sources();
+  discovery.physicalIos = async () => [];
+  const client = await connectedClient(t, discovery);
+  const result = await client.callTool({ name: "mobile_show_devices", arguments: {} });
+  const listed = JSON.parse(text(result));
+  assert.equal(listed.length, 2);
+});
+
+test("choosing in a card host renders selectable candidates and asks the model to wait", async t => {
+  const discovery = sources();
+  discovery.physicalIos = async () => [{
+    udid: "00008140-0011223344556677", coreDeviceId: simulatorId, name: "Away iPhone", model: "iPhone 17", productType: "iPhone18,1",
+    state: "disconnected", runtime: "iOS 27", platform: "ios", kind: "physical", transportType: "localNetwork", pairingState: "paired",
+  }];
+  const client = await connectedClient(t, discovery, cardHost);
+  const result = await client.callTool({ name: "mobile_show_devices", arguments: { message: "Which device?", selectionMode: "multiple" } });
+  assert.equal(result.structuredContent?.mode, "choose");
+  assert.equal(result.structuredContent?.selectionMode, "multiple");
+  const devices = result.structuredContent?.devices;
+  assert.ok(Array.isArray(devices));
+  assert.equal(devices.some(device => device.name === "Away iPhone"), false, "Disconnected devices cannot be chosen.");
+  assert.match(text(result), /Wait for the user to choose in the card/);
+});
+
+test("a choice requires a message", async t => {
+  const client = await connectedClient(t, sources(), cardHost);
+  const result = await client.callTool({ name: "mobile_show_devices", arguments: { selectionMode: "single" } });
+  assert.equal(result.isError, true);
 });
