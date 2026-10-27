@@ -1,0 +1,7 @@
+{
+  "name": "mobile-dev-ios-mirror",
+  "napi": 8,
+  "target": "darwin-arm64",
+  "sourceSHA256": "5ca682ceb1d2b729264dfa7cdcd7e26f6e2a84a212e98643afe2c11f4f955c0b",
+  "binarySHA256": "b21a48eecb2dc3a28003c8ad94ed9e745e565fe6287d7ef832e954eedf56bdc0"
+}
