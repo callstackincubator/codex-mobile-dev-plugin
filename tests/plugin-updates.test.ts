@@ -333,3 +333,16 @@ test("catalog RPC errors are fixed messages and requests stop when aborted", asy
   abort.abort();
   await assert.rejects(pending);
 });
+
+test("migration recognizes the renamed official GitHub repository", async t => {
+  const directory = await profile(t);
+  const calls: string[][] = [];
+  const { run, readStore } = cliFixture(directory, calls, { storeInstalled: true, source: "https://github.com/callstackincubator/mobile-dev.git" });
+  const updates = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.166", run, readStore });
+  const notice = await updates.check();
+  assert.equal(notice.status, "migration");
+  const migrated = await updates.migrate();
+  assert.equal(migrated.status, "migrated");
+  const removed = calls.some(call => call[1] === "remove" && call[2] === "mobile-dev@mobile-dev");
+  assert.equal(removed, true);
+});

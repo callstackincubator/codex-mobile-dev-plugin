@@ -157,3 +157,10 @@ prematurely announcing a store update or allowing a migration downgrade.
 in a temporary profile using a local Git mirror, with a fixture for the store
 catalog and package. It does not install or remove plugins in the user's account.
 It requires `codex` on PATH or `CODEX_CLI_PATH`.
+
+The repository was renamed from `codex-mobile-dev-plugin` to `mobile-dev` before
+this transition release. Version 0.1.163's GitHub update check rejects the redirect
+from the old release API URL. Existing GitHub users can receive the transition
+build by running `codex plugin marketplace upgrade mobile-dev`, then fully quitting
+and reopening Codex. Git follows the repository redirect. Migration recognizes
+both official repository URLs when verifying the legacy marketplace.

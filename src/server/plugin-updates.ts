@@ -17,7 +17,7 @@ import { captureServerError, recordPluginUpdate } from "./telemetry.ts";
 import { resolveTelemetryEnvironment } from "./telemetry-environment.ts";
 
 const execute = promisify(execFile);
-const repository = "callstackincubator/codex-mobile-dev-plugin";
+const repositories = ["callstackincubator/codex-mobile-dev-plugin", "callstackincubator/mobile-dev"];
 const storeMarketplace = "openai-curated-remote";
 const githubPlugin = "mobile-dev@mobile-dev";
 const checkIntervalMs = 60 * 60 * 1000;
@@ -162,8 +162,8 @@ export async function readPluginStore(cwd: string, options: { path?: string; env
 }
 
 function isReleaseRepository(source: string): boolean {
-  return source === `https://github.com/${repository}` || source === `https://github.com/${repository}.git`
-    || source === `git@github.com:${repository}.git` || source === `ssh://git@github.com/${repository}.git`;
+  return repositories.some(repository => source === `https://github.com/${repository}` || source === `https://github.com/${repository}.git`
+    || source === `git@github.com:${repository}.git` || source === `ssh://git@github.com/${repository}.git`);
 }
 
 function githubInstalled(catalog: Catalog): boolean {
