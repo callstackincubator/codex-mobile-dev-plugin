@@ -1,0 +1,8 @@
+{
+  "name": "@mobile-dev/mcp-app",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The MCP Apps panel shell shared by every MCP Apps host: Codex, Claude Desktop and others.",
+  "exports": { "./*": "./src/*" }
+}

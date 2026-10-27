@@ -4,9 +4,29 @@
 
 The Agent Device MCP entry and skill are currently disabled; their implementation and bundled runtime are retained for later reactivation.
 
+## Hosts
+
+The server (`packages/core`), the shared UI (`packages/ui`) and the MCP Apps panel
+(`packages/mcp-app`) run in every host. Codex and Claude Desktop load the panel as an
+MCP App: the `App` from ext-apps carries tool calls and resource reads through the
+host, and the panel adapts to the capabilities each host advertises. The Mac app
+(`apps/mac`) starts the server over stdio and relays its JSON-RPC lines to a web view,
+whose page calls the server with an MCP client.
+
+A host adds to the shared pieces without changing them:
+
+- **Server:** each host's entry calls `runStdioServer` with its `ServerFeature`s.
+  Codex adds the self-updater, which installs through Codex's marketplace; the Mac
+  app adds its page resource; Claude Desktop runs the shared server unchanged.
+- **Panel:** a host's page entry calls `startMcpApp` with its chrome. Codex adds the
+  update banner; Claude Desktop uses the shared entry.
+- **Views:** shared views depend only on `HostBridge`, the subset of `App` they use,
+  plus optional host context attachments. `DeviceWorkspace` keeps the iOS and Android
+  panels, their selection and layout identical in every host.
+
 ## Shared app discovery
 
-`src/ui/device-apps.ts` owns one `DeviceAppsStore` per workspace. Device selection
+`packages/ui/src/device-apps.ts` owns one `DeviceAppsStore` per workspace. Device selection
 feeds this store; it polls every three seconds while the panel is visible and the
 selected device is connected, including before Performance opens. Consumers share
 `subscribe` and `getSnapshot` (also usable with React's `useSyncExternalStore`).
@@ -16,7 +36,7 @@ Device changes, hidden panels, disconnection, and disposal cancel pending work,
 clear foreground state, and ignore late results. A failed query is not a confirmed
 absence: consumers should check `ready` before interpreting `foregroundApp: null`.
 
-`src/server/device-apps/` contains platform discovery, exposed through the existing
+`packages/core/src/device-apps/` contains platform discovery, exposed through the existing
 `mobile_performance_sources` tool. Android reads the top resumed activity from ADB;
 iOS simulators read the frontmost accessibility translation's PID without walking
 the UI tree; paired iPhones retain their accessibility-audit PID query. Foreground
@@ -77,7 +97,9 @@ Annotations send text only. Each note includes the user request, element label, 
 ## Native device requests
 
 When a mobile task has ambiguous targets, `mobile_choose_devices` asks the user
-through Codex's native inline request form. The agent discovers suitable devices
+through Codex's native inline request form. The server lists this tool only for
+clients that advertise the `openai/elicitation` form extension; other hosts ask in
+chat. The agent discovers suitable devices
 first, then supplies their IDs, platform and kind, a task-specific question, and
 optional operation details. The form shows canonical device names, platform/type,
 runtime, optional verified app labels, and platform phone illustrations. Use
@@ -167,7 +189,7 @@ frames** back off empties the set — the bar that explains picking goes with th
 mode, so the picks go with it, and a send never carries a set whose count the
 reader can no longer see.
 
-**Investigate selected** writes its own hand-off, in `src/shared/tracesift-selection.ts`
+**Investigate selected** writes its own hand-off, in `packages/shared/src/tracesift-selection.ts`
 rather than through `mobile_get_tracesift_handoff`. The picks exist only in this
 frame and the whole call tree is already in it, so a round trip could not have
 answered the question anyway — and an older installed service is never asked
@@ -184,7 +206,7 @@ looking at.
 The same switch, over a recording. **Select components** turns the render tree
 and the component table from navigating to collecting, and **Investigate
 selected components** writes its own hand-off from
-`src/shared/tracesift-react-selection.ts`. The state is the one field the task
+`packages/shared/src/tracesift-react-selection.ts`. The state is the one field the task
 side uses, because it is the same shape; what differs is the id, the arithmetic
 and the words.
 

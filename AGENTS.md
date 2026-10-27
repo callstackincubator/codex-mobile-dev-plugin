@@ -1,5 +1,21 @@
 # Project instructions
 
+## Repository layout
+
+This is an npm workspace: shared code lives in `packages/` (`shared`, `core`, `ui`,
+`mcp-app`, `skills`, `native`, `runtimes`) and each shipped product in `apps/` (`codex-plugin`,
+`claude`, `mac`). Keep host chrome out of `packages/ui`: chrome every MCP Apps
+host shares goes in `packages/mcp-app`, chrome for one host in its app. Drive host
+differences from advertised capabilities rather than host names. See
+[CONTRIBUTING.md](CONTRIBUTING.md#repository-layout).
+
+## Host and visual tests
+
+`tooling/hosts` tests every target's real server and page in stand-in hosts on Linux.
+After an intended UI change, refresh the screenshots with
+`npm run test:visual:docker -- --update-snapshots` (never on macOS directly) and
+check the diffs. See [CONTRIBUTING.md](CONTRIBUTING.md#host-regression-and-visual-tests).
+
 ## Commit messages
 
 Use Conventional Commits for new source commits and pull request titles, for
@@ -26,16 +42,17 @@ new telemetry when existing coverage already answers the relevant questions.
   monitored device/app's data. Browser frame intervals are callback pacing, and
   device input round trips end at acknowledgement; neither is device rendered FPS
   or touch-to-photon latency.
-- Reuse `src/ui/telemetry.ts`: `recordUiTiming`, `setUiGauge`, `countUiEvent`,
+- Reuse `packages/ui/src/telemetry.ts`: `recordUiTiming`, `setUiGauge`, `countUiEvent`,
   `setUiSurface`, `setUiTelemetryContext`, and `markUiSurfaceReady`. Use
-  `captureUiError` and `src/server/telemetry.ts`'s `captureServerError` for relevant
+  `captureUiError` and `packages/core/src/telemetry.ts`'s `captureServerError` for relevant
   handled failures. Keep SDK initialization centralized in the existing UI and
   server telemetry modules, with shared sampling and scrubbing in
-  `src/shared/telemetry.ts`.
-- Native helpers share `native/telemetry/telemetry.c` and its Rust wrapper. Reuse
+  `packages/shared/src/telemetry.ts`.
+- Native helpers share `packages/native/telemetry/telemetry.c` and its Rust wrapper. Reuse
   their bounded timing windows and resource sampler. Rebuild affected helpers
   after changing shared telemetry, retain matching symbols in `.sentry/native`,
-  and upload them to `codex-mobile-dev-native` with the same plugin release.
+  and upload them to the native project in `tooling/sentry-projects.mjs` with the same
+  plugin release.
 - Use sampled traces for meaningful operations spanning UI and server work. The
   existing MCP wrapper propagates trace context; preserve it when changing the
   bridge. Use bounded aggregate metrics for frequent frame, polling, processing,
@@ -62,7 +79,7 @@ new telemetry when existing coverage already answers the relevant questions.
   Node feature change into native Sentry setup incidentally.
 - Verify instrumentation on the changed execution path, including surface
   attribution and observer/timer cleanup where relevant. Use the existing
-  `tests/telemetry.test.ts` and `tests/ui-telemetry.test.ts` for meaningful telemetry
+  `packages/core/test/telemetry.test.ts` and `packages/ui/test/ui-telemetry.test.ts` for meaningful telemetry
   behavior checks. In the completion summary, state what coverage was added or
   preserved, or why existing coverage is sufficient.
 
