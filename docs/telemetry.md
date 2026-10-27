@@ -2,6 +2,31 @@
 
 [Back to README](../README.md) · [Contributing](../CONTRIBUTING.md)
 
+## Hosts
+
+Since 0.1.165, UI and server telemetry carry a `host` tag and attribute with one of
+`codex`, `claude`, `mac` or `other`. Codex, Claude Desktop and other MCP Apps hosts
+load the same panel and server; the Mac app runs the same server and shared UI.
+Behavior never depends on this value; it only attributes measurements and errors.
+
+- The Mac page names itself (`data-host="mac"`); the Mac app also starts the server
+  with `MOBILE_DEV_HOST=mac`.
+- MCP Apps panels are labelled once connected: `codex` when the host advertises
+  OpenAI extensions, otherwise the host's reported name mapped by `telemetryHost`
+  (`claude` for Claude, else `other`). Calls before connecting carry no host.
+- The server labels itself from the connecting MCP client's name on initialize and
+  reports `other` until then.
+- The server's metadata allowlist accepts only these four values; the raw host or
+  client name is never sent.
+
+Earlier releases have no `host` value. Surfaces, measurement names, units and
+boundaries are unchanged in every host.
+
+The Mac app loads its page through the server's `ui://mobile-dev/mac.html` resource,
+so the page receives the same server-owned environment, opt-out and anonymous
+identity as the Codex panel. Mac builds are development-only for now; the SwiftUI
+shell has no native Sentry SDK.
+
 ## Volume policy
 
 Since 0.1.164, application metrics in the UI, Node servers and native helpers use
@@ -245,21 +270,22 @@ another; each caller keeps its own timing name (`ui.app_tools.icons`, `ui.storag
 Results that finish after a surface or device change are not recorded. Recent URLs
 and the last picked app stay in the panel's local storage and are never sent.
 
-The Storage tool (`mobile_app_storage`, `mobile_app_storage_table`, `mobile_clear_app_storage`) uses the `storage`
+The Storage tool (`mobile_app_storage`, `mobile_app_storage_table`, `mobile_app_storage_file`, `mobile_clear_app_storage`) uses the `storage`
 surface. The server records `app_storage.operation.duration` in milliseconds and
-`app_storage.operation.samples` per operation (`read`, `clear`, `reset`, `table`) with the device
+`app_storage.operation.samples` per operation (`read`, `clear`, `reset`, `table`, `file`) with the device
 platform and a success or failure outcome. The duration covers listing the data
 directory, reading and decoding the requested stores, filtering results before
 returning them, and for clears stopping the app first. Scoped reads skip decoding
 unselected stores; duration therefore depends on the requested scope. Unexpected failures report under `app_storage.<operation>` with a fixed
 message; a release Android build, a missing app, or a stopped device counts only
-through `server.error.outcome`. The panel records `ui.storage.list_apps`, `.icons`, `.read`, `.table`,
+through `server.error.outcome`. The panel records `ui.storage.list_apps`, `.icons`, `.read`, `.table`, `.file`,
 `.clear`, `.reset`, and `.launch` round trips, `ui.storage.process` for validating
 a snapshot and computing the Changes feed, gauges `ui.storage.stores` and `ui.storage.entries`,
 and counts `ui.storage.failure`. Bundle IDs, store names, paths, keys, values, and
 file names are never sent to Sentry. Filtered table names and cell values from
-`mobile_app_storage_table` are returned to the host application; this is separate
-from telemetry. See [storage result filtering](storage-privacy.md). Since 0.1.161 the Changes tab reads storage again every
+`mobile_app_storage_table`, and filtered file contents from `mobile_app_storage_file`,
+are returned to the host application; this is separate from telemetry. See
+[storage result filtering](storage-privacy.md). Since 0.1.161 the Changes tab reads storage again every
 5 seconds while it is open and the page is visible; each read is one `ui.storage.read`
 sample, and the interval stops when the tab, panel, or page is hidden.
 
@@ -346,7 +372,7 @@ Since 0.1.99, `ui.logs.query_parse` measures query compilation in milliseconds o
 
 `ui.logs.retention` measures bounded buffer updates in milliseconds. `ui.logs.evicted` counts rows removed locally to meet the shared row and text limits; `ui.logs.dropped` still counts only rows lost from the server buffer. Existing filter timing and row gauges cover the resulting list. These measurements contain no log text or source metadata.
 
-The React UI reports to `codex-mobile-dev-ui` (project `4512181027471440`). The main Node MCP server and the agent-device launcher report to `codex-mobile-dev-server`, distinguished by the `component` attribute. Native helpers report to `codex-mobile-dev-native`: Baguette, physical iOS mirroring, iOS FPS and logs, and Android CPU and FPS collectors. All three projects use release `mobile-dev@<plugin version>`.
+Since 0.1.165 the projects are named `mobile-dev-ui`, `mobile-dev-server` and `mobile-dev-native`; they were `codex-mobile-dev-*` before. Project IDs and DSNs are unchanged, so history and incoming events continue in the same projects. The React UI reports to `mobile-dev-ui` (project `4512181027471440`). The main Node MCP server and the agent-device launcher report to `mobile-dev-server`, distinguished by the `component` attribute. Native helpers report to `mobile-dev-native`: Baguette, physical iOS mirroring, iOS FPS and logs, and Android CPU and FPS collectors. All three projects use release `mobile-dev@<plugin version>`.
 
 TraceSift cards use the `tracesift` surface, which is also the workspace tool of the same name: the tool's upload pane, cards and explorer are the same surface the inline card reports, so its measurements stay comparable across the two entry points and the server's metadata validation accepts `tracesift` as both a surface and a view. `tracesift.operation.duration` measures local service readiness as part of analysis, profile upload and analysis, stable host-view registration when the host supplies it, persisted-analysis restoration from either a host view or replayed tool input, handoff generation, and invoking `tracesift explore` with a persisted compact analysis, in milliseconds; `tracesift.operation.samples` records the bounded operation and success/failure outcome. `ui.tracesift.pick` measures the app-to-server round trip that opens the host's file dialog and waits for a choice, so a slow dialog is told apart from a slow analysis; `ui.tracesift.pick_cancelled` counts dialogs closed without a file and `ui.tracesift.pick_failed` counts hosts with no dialog at all, and `tracesift.operation` adds a `pick` operation for the same call on the server. `ui.tracesift.analyze` measures the panel-initiated analysis round trip, counted by `ui.tracesift.analyze` and `ui.tracesift.analyze_failed`; the server's existing `analyze` and `ready` operations still measure the service side of that same work, whether the model or the panel started it. `ui.tracesift.project_pick` measures the folder dialog's round trip, with `ui.tracesift.project_chosen` and `project_cancelled` for its outcome and `project_failed` for a dialog or store that could not be used; `ui.tracesift.project_hit` and `project_miss` count whether a saved folder was still there when the panel opened, and `tracesift.operation` adds a `project` operation for both server calls. These say whether readers are choosing a project at all, which is what Investigate now waits for; the folder's path and name are never attributes of any of them. `ui.tracesift.reset` counts returning to the upload pane, which also sets `tracesift_view` to `upload` and clears the card gauge so a dropped reading's figures are not read against the next one. `ui.tracesift.process` measures result validation, `ui.tracesift.remember` measures the app-to-server registration round trip for a live card, `ui.tracesift.restore` measures the app-to-server restore round trip after a card view is recreated, `ui.tracesift.handoff` measures the app-to-server handoff round trip, and `ui.tracesift.message_ack` ends when the host acknowledges the investigation message. `ui.tracesift.explore` counts opening the embedded explorer, and `ui.tracesift.payload` measures that app-to-server round trip, which carries the finding's full call tree or commit timeline through MCP; `ui.tracesift.payload_bytes` records how large those delivered payloads are, and `tracesift.operation` adds a `payload` operation for the same fetch on the server. Since Explore renders in-panel, the older meaning of `ui.tracesift.explore` (a successful CLI browser launch) now belongs to the `ui.tracesift.explore_browser` counter and its `ui.tracesift.explore_browser` timing and `ui.tracesift.explore_browser_failed` counter. `ui.tracesift.explore_too_large` counts the findings the bridge refused on size or serialization depth, which Explore then opens in the browser window instead of reporting as a failure; those opens are counted and timed by the `ui.tracesift.explore_browser` measurements like any other browser launch, so a rise in panel refusals is read against them rather than against `ui.tracesift.explore_failed`. Explorer readiness reuses `ui.surface.ready`, which the tool restarts from the moment it is opened rather than from the workspace frame that holds it, and `tracesift_view` distinguishes `cards`, `explorer` and the tool's `upload` pane so explorer work is not attributed to the card list; navigating back resets that context. `tracesift_profile` distinguishes a `cpu` recording from a `react` one, taken from the analysis when it arrives, so the two explorers' payload and processing timings are not read as one figure; it is set with the analysis and never derived from the device, the profile's contents or its path. Picking inside the explorer counts `ui.tracesift.pick_on` and `pick_off` for the mode, `ui.tracesift.frame_add` and `frame_remove` per click, and `pick_clear` for emptying the set, which switching picking off with picks standing also counts; `ui.tracesift.selected_frames` gauges how many picks the open reading holds and is reset to zero whenever that set is dropped — emptying it, switching picking off, closing the explorer, or taking a new analysis — so one reading's picks are never read against another's. The same counters and gauge cover both explorers: since 0.1.157 a React recording's components are picked the same way a CPU task's frames are, told apart by `tracesift_profile` rather than by counter names, so the measurement boundaries stay comparable across releases. Sending them counts `ui.tracesift.pick_investigate`, with `pick_investigate_empty` when the reader sent nothing placeable and `pick_investigate_failed` when the description could not be built at all; delivery reuses the existing `ui.tracesift.message_ack` timing and the composer and delivery counters. A card-count gauge and bounded counters cover registration successes and failures, restore hits, misses and failures, Investigate actions, Explore openings and failures, hand-off copies and copy failures, handoff failures, composer unavailability, send failures, and unconfirmed delivery. Readiness, shared interaction, visibility, and cleanup measurements use the existing UI aggregation. The chosen file's name is shown in the pane while analysis runs, and the chosen project folder is shown above the findings and named in the hand-off sent to the chat; neither is ever sent as telemetry. Profile paths and contents, filenames, card text, frame, component and file names, selected frame and component names and their node, fiber and commit identifiers, task, root, and commit indices, analysis/card/host-view identifiers, handoffs, service URLs, process identifiers, tokens, and TraceSift diagnostics are never added to telemetry; replayed profile inputs are hashed only for local lookup. Expected setup, validation, expiry, cancellation, and version outcomes use existing expected-error classification; unexpected transport and malformed-response failures retain handled server/UI error coverage. These measurements describe plugin and local-service work, not the profiled app's performance.
 
@@ -444,7 +470,7 @@ Error and crash events carry only a generated anonymous `user.id` and a `telemet
 
 Session Replay, minidumps, screenshots and profiling are disabled. Requests, account details, app log content, tool payloads, automatic console breadcrumbs and exception source context are excluded. JavaScript error text redacts common tokens, identifiers, URLs, email addresses and local home paths. Native reports retain source basenames and debug IDs, omit absolute module paths, and never send Rust panic payloads. Safe product attributes and source locations remain available for diagnosis. `MOBILE_DEV_TELEMETRY=off` disables reporting across JavaScript and native helpers.
 
-Builds generate debug IDs and source maps under the ignored `.sentry/` directory. Native rebuilds retain macOS dSYMs and unstripped Android ELF files in `.sentry/native` before stripping the bundled binaries. Release runs can reuse each helper's exact build artifact, restoring the vendor files and matching symbols together after SHA-256 verification. Reused symbols are still uploaded by the current release's Sentry step. Native helpers receive the current release and environment at runtime, so reuse preserves release attribution, measurement boundaries and debug IDs. Symbols, source maps and the upload credential are excluded from the plugin package. Native builds require CMake and Ninja, with an Android NDK for Android collectors. The SDK source archive is pinned and checked by SHA-256. Store the organization build token in the ignored `.env.sentry-build-plugin` file at the repository root:
+Builds generate debug IDs and source maps under the ignored `.sentry/` directory. Each page and server bundle keeps its maps in its own folder: `.sentry/ui/<page>` (`mcp-app`, `codex`, `mac`) and `.sentry/server` with host servers under `.sentry/server/<host>`. `npm run sentry:upload` uploads both trees, so every host's bundles share the release and its debug IDs. Host servers keep the shared server's component, metric names and boundaries; Codex's `plugin.update.*` metrics now come only from Codex's server. Native rebuilds retain macOS dSYMs and unstripped Android ELF files in `.sentry/native` before stripping the bundled binaries. Release runs can reuse each helper's exact build artifact, restoring the vendor files and matching symbols together after SHA-256 verification. Reused symbols are still uploaded by the current release's Sentry step. Native helpers receive the current release and environment at runtime, so reuse preserves release attribution, measurement boundaries and debug IDs. Symbols, source maps and the upload credential are excluded from the plugin package. Native builds require CMake and Ninja, with an Android NDK for Android collectors. The SDK source archive is pinned and checked by SHA-256. Store the organization build token in the ignored `.env.sentry-build-plugin` file at the repository root:
 
 ```dotenv
 SENTRY_AUTH_TOKEN=your_org_token

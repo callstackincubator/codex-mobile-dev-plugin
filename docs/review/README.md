@@ -1,7 +1,7 @@
 # Marketplace review package
 
 The canonical five positive and three negative cases, expected tools/results, and
-release notes are in `.codex-plugin/plugin.json` under `extensions.com.openai`.
+release notes are in `apps/codex-plugin/.codex-plugin/plugin.json` under `extensions.com.openai`.
 These are **test specifications**, not claims that the final submission passed.
 Run them against the exact ZIP to be submitted, in fresh chats where indicated.
 

@@ -1,7 +1,7 @@
 # Storage results and sensitive data
 
-`mobile_app_storage` and `mobile_app_storage_table` return data to the host and to
-the Storage panel. Sentry scrubbing does not cover this boundary. The storage
+`mobile_app_storage`, `mobile_app_storage_table`, and `mobile_app_storage_file`
+return data to the host and to the Storage panel. Sentry scrubbing does not cover this boundary. The storage
 reader now filters complete values before length truncation or MCP serialization;
 the text and structured results contain the same filtered data. There is no
 raw-value flag or panel-only bypass.
@@ -14,7 +14,8 @@ raw-value flag or panel-only bypass.
 - Credential-shaped text such as authorization headers, JWTs, common provider
   tokens, private keys, URL credentials, credential assignments, email addresses,
   and long opaque strings that may encode credentials.
-- Binary values, including SQLite blobs and decoded key/value binary entries.
+- Binary values, including SQLite blobs, decoded key/value binary entries, and the
+  contents of binary files.
 - Generic SQLite value columns when the same row's key/name label identifies a
   sensitive field, including when the caller projects only the value column.
 - Malformed JSON-like values and values beyond bounded redaction depth/size limits
@@ -52,13 +53,20 @@ needed for credential filtering. Known sensitive columns and blobs are replaced
 in the SQL result itself. Use a small `limit` and explicit `offset`. Temporary
 SQLite copies are cleaned up as before.
 
+`mobile_app_storage_file` reads one file from the listing; suspicious paths are
+rejected like they are omitted from listings. JSON, property list, and
+NSKeyedArchiver contents are filtered as one structured value with the file name as
+context, so a sensitive file name such as `session.json` withholds the whole file.
+Text files are withheld when they contain credential-like text. Binary files return
+no content. Files over the preview size limit are not read.
+
 File counts/sizes describe the requested scope after suspicious paths are
 excluded, not the complete disk usage. Entry counts describe decoded entries
 before the optional key projection and display cap.
 
 ## Verification
 
-Run `node --test tests/app-storage.test.ts tests/app-storage-redaction.test.ts`.
+Run `node --test packages/core/test/app-storage.test.ts packages/core/test/app-storage-redaction.test.ts`.
 The tests exercise real MCP responses, both output channels, selected/unselected
 stores, nested and malformed JSON, redaction before truncation, credential column
 projection, actual SQLite blobs and key/value rows, static errors, pagination,
