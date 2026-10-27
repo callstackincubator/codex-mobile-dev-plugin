@@ -1,0 +1,8 @@
+{
+  "name": "@mobile-dev/ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Host-agnostic React views and panel controllers.",
+  "exports": { "./*": "./src/*" }
+}

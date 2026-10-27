@@ -1,0 +1,704 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { accessibilityScreen, componentAt, componentsAt, screenComponents, screenSize, formatAnnotationContext, screenSelectionContext, ANNOTATION_EDIT_GUIDANCE } from "../../shared/src/screen-annotations.ts";
+import { ScreenAnnotationsStore } from "../src/screen-annotations.ts";
+import type { InspectedTree } from "../src/screen-annotations.ts";
+import type { ScreenAnnotation } from "../../shared/src/screen-annotations.ts";
+import { PanelContext } from "../src/model-context.ts";
+import { App } from "@modelcontextprotocol/ext-apps";
+import { AppBridge } from "@modelcontextprotocol/ext-apps/app-bridge";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import type { OpenAIModelContextHostState } from "@openai/mcp-extensions/app";
+import { PNG, UDID } from "../../test-support/fixtures.ts";
+import type { HostAttachments } from "../src/host-bridge.ts";
+
+const simulator = { udid: UDID, name: "iPhone", runtime: "iOS 26", state: "Booted", platform: "ios" as const };
+const capture = { screenshot: { id: "screen-1", data: PNG.toString("base64"), capturedAt: "2026-10-01T10:00:00Z" }, screen: { width: 393, height: 852, units: "points" as const } };
+const component = { name: "Continue", identifier: "continue-button", role: "AXButton", depth: 2, bounds: { x: 10, y: 20, width: 100, height: 40 } };
+const annotation: ScreenAnnotation = { ...capture, id: "note-1", number: 1, text: "Make this button larger", simulator, point: { x: 50, y: 40 }, component };
+
+function fixture(messageApp?: App) {
+  let current: OpenAIModelContextHostState | undefined;
+  let failure: string | undefined;
+  let failuresLeft = Infinity;
+  let sendFailures = 0;
+  let imageMessages = false;
+  let imageAttachments = true;
+  let rejected = false;
+  let gate: Promise<void> | undefined;
+  const updates: Parameters<App["updateModelContext"]>[0][] = [];
+  const messages: Parameters<App["sendMessage"]>[0][] = [];
+  const context = new PanelContext({
+    getHostCapabilities: () => ({ experimental: { "openai/message": {} }, message: { text: {}, ...(imageMessages ? { image: {} } : {}) }, updateModelContext: imageAttachments ? { image: {} } : {} }),
+    async sendMessage(message: Parameters<App["sendMessage"]>[0], options: Parameters<App["sendMessage"]>[1]) { if (sendFailures-- > 0) throw new Error("MCP app messages require an available composer"); messages.push(message); return messageApp ? messageApp.sendMessage(message, options) : { isError: rejected }; },
+  } as unknown as App, () => ({
+    getCurrent: () => current,
+    async update(params: Parameters<App["updateModelContext"]>[0]) {
+      updates.push(params); await gate;
+      if (failure && failuresLeft-- > 0) throw new Error(failure);
+      current = { ...params, updateId: String(updates.length) }; return { updateId: current.updateId };
+    },
+  }) as unknown as HostAttachments);
+  const store = new ScreenAnnotationsStore();
+  store.connect(context); store.configure(simulator, false); store.capture = () => capture;
+  store.readTree = async () => ({ tree: { elements: [{ ...component, label: component.name, frame: component.bounds }] } });
+  return { context, store, updates, messages,
+    clear() { current = null; context.hostChanged(); },
+    remove(id: string) { if (current) current = { ...current, updateId: "removed", content: current.content?.filter(item => item._meta?.["mobile-dev/annotationId"] !== id) }; context.hostChanged(); },
+    fail() { failure = "Host refused context"; }, reject(value = true) { rejected = value; }, hold(value?: Promise<void>) { gate = value; },
+    noComposer(count = Infinity) { failure = "MCP model context requires an available composer"; failuresLeft = count; },
+    restoreComposer() { failure = undefined; }, imageMessages() { imageMessages = true; }, noImages() { imageAttachments = false; }, delayMessageComposer(count = 1) { sendFailures = count; },
+  };
+}
+
+test("iOS hit testing selects nested elements and ignores hidden nodes and empty container frames", () => {
+  const components = screenComponents({ role: "AXApplication", frame: { x: 0, y: 0, width: 0, height: 0 }, children: [
+    { role: "AXButton", label: "Continue", identifier: "continue", frame: component.bounds, children: [{ role: "AXStaticText", label: "Text", frame: { x: 20, y: 30, width: 30, height: 10 } }] },
+    { label: "Hidden", hidden: true, frame: component.bounds },
+  ] });
+  assert.equal(componentAt(components, { x: 25, y: 35 })?.name, "Text");
+  assert.equal(componentAt(components, { x: 60, y: 40 })?.identifier, "continue");
+  assert.equal(componentAt(components, { x: 110, y: 40 }), undefined);
+});
+
+test("Android hit testing uses pixel bounds and chooses the smallest flat node", () => {
+  const components = screenComponents({ nodes: [
+    { className: "android.widget.FrameLayout", bounds: { left: 0, top: 0, right: 1080, bottom: 2400 } },
+    { text: "Sign in", resourceId: "app:id/sign_in", className: "android.widget.Button", bounds: { left: 80, top: 160, right: 300, bottom: 240 } },
+  ] });
+  const hit = componentAt(components, { x: 100, y: 200 });
+  assert.equal(hit?.name, "Sign in"); assert.equal(hit?.bounds.width, 220); assert.equal(hit?.identifier, "app:id/sign_in");
+});
+
+test("downscaled Android video selects full-resolution accessibility bounds without changing node identity", () => {
+  const components = screenComponents({ nodes: [
+    { className: "android.widget.FrameLayout", bounds: { left: 0, top: 0, right: 1080, bottom: 2400 } },
+    { text: "Continue", resourceId: "app:id/continue", className: "android.widget.Button", bounds: { left: 270, top: 1200, right: 810, bottom: 1350 } },
+  ] }, 576 / 1080);
+  const hit = componentAt(components, { x: 288, y: 680 }, { width: 576, height: 1280 });
+  assert.equal(hit?.name, "Continue");
+  assert.equal(hit?.identifier, "app:id/continue");
+  assert.deepEqual(hit?.bounds, { x: 144, y: 640, width: 288, height: 80 });
+});
+
+test("screen-wide containers never win and smaller controls beat deeper containers", () => {
+  const screen = { width: 393, height: 852 };
+  const components = screenComponents({ role: "AXApplication", frame: { x: 0, y: 0, ...screen }, children: [
+    { role: "AXWindow", frame: { x: 0, y: 0, ...screen }, children: [
+      { role: "AXGroup", frame: { x: 0, y: 0, ...screen } },
+      { role: "AXGroup", frame: { x: 5, y: 10, width: 300, height: 300 }, children: [
+        { role: "AXGroup", frame: { x: 5, y: 10, width: 300, height: 300 } },
+      ] },
+      { role: "AXButton", label: "Continue", frame: component.bounds },
+    ] },
+  ] });
+  assert.equal(components.some(item => item.role === "AXApplication" || item.role === "AXWindow"), false);
+  assert.equal(componentAt(components, { x: 50, y: 40 }, screen)?.name, "Continue");
+  assert.equal(componentAt(components, { x: 350, y: 500 }, screen), undefined);
+});
+
+test("a card painted on top hides the slightly smaller next card under a stack", () => {
+  const card = (key: string, inset: number) => ({ source: "react-native", role: "Animated(View)", react: { component: "Animated(View)", owners: [], key }, frame: { x: inset, y: inset, width: 400 - inset * 2, height: 600 - inset * 2 }, children: [
+    { source: "react-native", role: "RCTImageView", frame: { x: inset, y: inset, width: 400 - inset * 2, height: 600 - inset * 2 }, children: [] },
+    { source: "react-native", role: "RCTView", frame: { x: 20 + inset, y: 500, width: 90, height: 30 }, children: [
+      { source: "react-native", role: "RCTText", label: `${key} chip`, frame: { x: 30 + inset, y: 505, width: 70, height: 20 }, children: [] },
+    ] },
+  ] });
+  // The next card renders first and is inset, so its elements are smaller and offset.
+  const components = screenComponents([{ source: "react-native", role: "View", frame: { x: 0, y: 0, width: 400, height: 600 }, children: [card("preview", 8), card("active", 0)] }]);
+  const screen = { width: 402, height: 874 };
+  assert.equal(componentAt(components, { x: 45, y: 515 }, screen)?.label, "active chip");
+  assert.equal(componentAt(components, { x: 25, y: 515 }, screen)?.role, "RCTView");
+  const enclosing = componentsAt(components, { x: 45, y: 515 }, screen);
+  assert.deepEqual(enclosing.map(item => item.role), ["RCTText", "RCTView", "Animated(View)", "View"]);
+  assert.equal(enclosing[2].react?.key, "active");
+  assert.equal(componentAt(components, { x: 200, y: 300 }, screen)?.role, "RCTImageView");
+  assert.ok(componentsAt(components, { x: 200, y: 300 }, screen).every(item => item.react?.key !== "preview"));
+
+  // A later transparent container does not hide content beneath it.
+  const overlay = screenComponents([{ source: "react-native", role: "View", frame: { x: 0, y: 0, width: 400, height: 600 }, children: [
+    { source: "react-native", role: "RCTText", label: "Under overlay", frame: { x: 10, y: 10, width: 100, height: 20 }, children: [] },
+    { source: "react-native", role: "RCTView", frame: { x: 0, y: 0, width: 200, height: 200 }, children: [] },
+  ] }]);
+  assert.equal(componentAt(overlay, { x: 20, y: 15 }, screen)?.label, "Under overlay");
+});
+
+test("a sparse accessibility tree supports explicit regions without pixel guesses", async () => {
+  const f = fixture();
+  f.store.readTree = async () => ({ tree: { role: "AXApplication", frame: { x: 0, y: 0, width: 393, height: 852 } } });
+  await f.store.toggle();
+  f.store.hover({ x: 150, y: 280 });
+  assert.equal(f.store.getSnapshot().hovered, undefined);
+  assert.equal(f.store.beginSelection({ x: 300, y: 450 }), true);
+  f.store.moveSelection({ x: 20, y: 400 });
+  assert.deepEqual(f.store.getSnapshot().selectionBounds, { x: 20, y: 400, width: 280, height: 50 });
+  f.store.endSelection({ x: 20, y: 400 });
+  assert.equal(f.store.getSnapshot().selectionBounds, undefined);
+  assert.deepEqual(f.store.getSnapshot().draft?.component.bounds, { x: 20, y: 400, width: 280, height: 50 });
+  assert.equal(f.store.getSnapshot().draft?.component.role, "manual-region");
+  f.store.setText("Make this button bigger"); await f.store.save();
+  assert.match(JSON.stringify(f.updates.at(-1)?.content), /Source: unavailable \(manual region\)/);
+  f.store.dispose();
+});
+
+test("pending inspection accepts clicks and upgrades the open note when elements arrive", async () => {
+  const f = fixture();
+  let release!: (result: InspectedTree) => void;
+  f.store.readTree = () => new Promise(resolve => { release = resolve; });
+  const reading = f.store.toggle();
+  assert.equal(f.store.getSnapshot().loading, true);
+  assert.equal(f.store.beginSelection({ x: 50, y: 40 }), true);
+  f.store.endSelection({ x: 50, y: 40 });
+  assert.equal(f.store.getSnapshot().draft?.component.name, "Screen point");
+  f.store.setText("Make this wider");
+  release({ tree: { label: "Continue", role: "AXButton", frame: component.bounds } });
+  await reading;
+  assert.equal(f.store.getSnapshot().draft?.component.name, "Continue");
+  assert.equal(f.store.getSnapshot().draft?.text, "Make this wider");
+  f.store.dispose();
+});
+
+test("the accessibility screen size replaces a smaller bezel cutout and rescales pending pointer state", async () => {
+  const f = fixture();
+  // The bezel cutout reports 400×872 for a 402×874 device; element bounds use the real screen.
+  f.store.capture = () => ({ ...capture, screen: { width: 400, height: 872, units: "points" } });
+  let release!: (result: InspectedTree) => void;
+  f.store.readTree = () => new Promise(resolve => { release = resolve; });
+  const reading = f.store.toggle();
+  f.store.hover({ x: 200, y: 436 });
+  assert.equal(f.store.beginSelection({ x: 100, y: 218 }), true);
+  f.store.hover({ x: 300, y: 654 });
+  release({ tree: [{ label: "Info", role: "AXButton", frame: { x: 334.3, y: 550.7, width: 32.7, height: 32.3 } }], screen: { width: 402, height: 874 } });
+  await reading;
+  const state = f.store.getSnapshot();
+  assert.deepEqual(state.capture?.screen, { width: 402, height: 874, units: "points" });
+  assert.deepEqual(Object.values(state.selectionBounds!).map(value => Math.round(value * 10) / 10), [100.5, 218.5, 201, 437]);
+  f.store.cancelSelection();
+  f.store.hover({ x: 350, y: 567 });
+  assert.equal(f.store.getSnapshot().hovered?.label, "Info");
+
+  // Pixel captures keep their size, and the MCP boundary rejects invalid sizes.
+  f.store.exit();
+  f.store.capture = () => ({ ...capture, screen: { width: 1080, height: 2400, units: "pixels" } });
+  f.store.readTree = async () => ({ tree: [], screen: { width: 402, height: 874 } });
+  await f.store.toggle();
+  assert.equal(f.store.getSnapshot().capture?.screen.width, 1080);
+  assert.equal(screenSize({ width: -1, height: 874 }), undefined);
+  assert.equal(screenSize({ width: 402, height: "874" }), undefined);
+  assert.deepEqual(accessibilityScreen({ role: "AXApplication", frame: { x: 0, y: 0, width: 402, height: 874 } }), { width: 402, height: 874 });
+  assert.equal(accessibilityScreen({ role: "AXWindow", frame: { x: 0, y: 0, width: 402, height: 874 } }), undefined);
+  f.store.dispose();
+});
+
+test("pending or failed inspection keeps manual region selection working", async () => {
+  const f = fixture();
+  let reject!: (error: Error) => void;
+  f.store.readTree = () => new Promise((_resolve, fail) => { reject = fail; });
+  const reading = f.store.toggle();
+  f.store.beginSelection({ x: 10, y: 20 });
+  f.store.endSelection({ x: 110, y: 60 });
+  reject(new Error("Request timed out"));
+  await reading;
+  assert.equal(f.store.getSnapshot().draft?.component.role, "manual-region");
+  assert.deepEqual(f.store.getSnapshot().draft?.component.bounds, component.bounds);
+  f.store.dispose();
+});
+
+test("real parents remain selectable without choosing overlapping siblings", async () => {
+  const tree = { role: "AXGroup", label: "Card", frame: { x: 10, y: 100, width: 350, height: 70 }, children: [
+    { role: "AXStaticText", label: "Title", frame: { x: 30, y: 120, width: 150, height: 20 } },
+    { role: "AXGroup", label: "Overlapping sibling", frame: { x: 20, y: 110, width: 200, height: 40 } },
+  ] };
+  const items = screenComponents(tree);
+  const candidates = componentsAt(items, { x: 40, y: 125 }, capture.screen);
+  assert.deepEqual(candidates.map(item => item.name), ["Title", "Card"]);
+  assert.equal(candidates[0].parentId, candidates[1].nodeId);
+  assert.equal(componentAt(items, { x: 300, y: 130 }, capture.screen)?.name, "Card");
+  const f = fixture();
+  f.store.readTree = async () => ({ tree });
+  await f.store.toggle();
+  f.store.select({ x: 40, y: 125 });
+  assert.deepEqual(f.store.getSnapshot().draft?.selection?.ancestors.map(item => item.name), ["Card"]);
+  assert.deepEqual(f.store.getSnapshot().draft?.selection?.siblings.map(item => item.name), ["Overlapping sibling"]);
+  f.store.setText("Keep this note");
+  f.store.chooseComponent(f.store.getSnapshot().candidates[1]);
+  assert.equal(f.store.getSnapshot().draft?.component.name, "Card");
+  assert.equal(f.store.getSnapshot().draft?.text, "Keep this note");
+  assert.deepEqual(f.store.getSnapshot().draft?.selection?.ancestors, []);
+  assert.deepEqual(f.store.getSnapshot().draft?.selection?.children.map(item => item.name), ["Title", "Overlapping sibling"]);
+  f.store.dispose();
+});
+
+test("a child deletion identifies one repeated instance and keeps enclosing rows and siblings outside the target", async () => {
+  const f = fixture();
+  const source = { file: "/project/src/Row.tsx", line: 25, column: 7 };
+  const rows = [0, 1].map(index => ({ source: "react-native", role: "View", label: `Row ${index + 1}`, nodeId: `row-${index}`, frame: { x: 10, y: 100 + index * 90, width: 350, height: 70 },
+    react: { component: "Row", owners: ["HomeScreen"], key: `item-${index}`, source: { ...source, line: 20 } }, children: [
+      { source: "react-native", role: "RCTText", label: `Title ${index + 1}`, nodeId: `title-${index}`, frame: { x: 30, y: 110 + index * 90, width: 150, height: 20 }, react: { component: "Text", owners: ["HomeScreen", "Row"], source: { ...source, line: 24 } } },
+      { source: "react-native", role: "RCTText", label: "Subtitle", nodeId: `subtitle-${index}`, frame: { x: 30, y: 140 + index * 90, width: 150, height: 20 }, react: { component: "Text", owners: ["HomeScreen", "Row"], source } },
+    ],
+  }));
+  f.store.readTree = async () => ({ tree: rows });
+  await f.store.toggle();
+  f.store.select({ x: 40, y: 235 }); f.store.setText("Remove this subtitle"); await f.store.save();
+  const saved = f.context.screenAnnotations[0];
+  assert.equal(saved.component.nodeId, "subtitle-1");
+  assert.deepEqual(saved.selection?.instance, { index: 2, total: 2 });
+  const text = formatAnnotationContext(saved);
+  assert.match(text, /Selected node: "subtitle-1"/);
+  assert.match(text, /Source: \/project\/src\/Row\.tsx:25:7/);
+  assert.match(text, /Bounds: 30,230,150,20 points/);
+  assert.match(text, /Visible instance: 2 of 2/);
+  assert.match(text, /Enclosing elements \(nearest first; outside selection\):\n"Row 2".*key "item-1"/);
+  assert.match(text, /Siblings \(outside selection; 1 total\):\n"Title 2"/);
+  assert.doesNotMatch(text, /Title 1|Row 1/);
+  assert.match(ANNOTATION_EDIT_GUIDANCE, /Removing a selected child must preserve its enclosing container and siblings/);
+  await f.store.send();
+  const attached = f.updates.at(-1)!.content!.find(item => item._meta?.["mobile-dev/annotationId"] === saved.id)!;
+  assert.equal(attached.type === "text" ? attached.text : "", text);
+  f.store.dispose();
+});
+
+test("flat accessibility records and manual regions never invent a parent or siblings", () => {
+  const items = screenComponents([{ ...component, nodeId: "selected" }, { ...component, name: "Other", nodeId: "other" }]);
+  const selected = screenSelectionContext(items, items[0]);
+  assert.deepEqual(selected?.ancestors, []);
+  assert.deepEqual(selected?.siblings, []);
+  assert.deepEqual(selected?.children, []);
+  assert.equal(screenSelectionContext(items, { ...component, source: "screen", role: "manual-region" }), undefined);
+});
+
+test("selection context bounds cyclic ancestry and preserves repeated React owner names", () => {
+  const items = screenComponents([
+    { ...component, nodeId: "child", parentId: "parent", source: "react-native", react: { component: "Text", owners: ["Screen", "Row", "Row", "Text"] } },
+    { ...component, nodeId: "parent", parentId: "child", name: "Parent" },
+  ]);
+  const selection = screenSelectionContext(items, items[0]);
+  assert.deepEqual(selection?.ancestors.map(item => item.nodeId), ["parent"]);
+  assert.match(formatAnnotationContext({ ...annotation, component: items[0], selection }), /React: Screen > Row > Row > Text/);
+});
+
+test("an enclosing owner source remains a search hint rather than an exact selected element location", () => {
+  const text = formatAnnotationContext({ ...annotation, component: { ...component, source: "react-native", react: { component: "Text", owners: ["Card"], key: "subtitle", sourceKind: "owner", source: { file: "/project/src/Screen.tsx", line: 10 } } } });
+  assert.match(text, /Owner source \(search hint, selected element source unavailable\): \/project\/src\/Screen\.tsx:10/);
+  assert.doesNotMatch(text, /^Source: \/project/m);
+  assert.match(text, /React key: "subtitle"/);
+  assert.match(text, /Bounds: 10,20,100,40 points/);
+});
+
+test("flat MCP snapshots retain element names, depths and real parents", async () => {
+  const tree = { source: "react-native", role: "Pressable", label: "Card", frame: { x: 10, y: 100, width: 350, height: 70 }, children: [
+    { source: "react-native", role: "Text", label: "Title", frame: { x: 30, y: 120, width: 150, height: 20 } },
+    { source: "react-native", role: "View", frame: { x: 20, y: 110, width: 200, height: 40 } },
+  ] };
+  const items = screenComponents(tree);
+  const snapshot = JSON.parse(JSON.stringify(items));
+  assert.deepEqual(screenComponents(snapshot), items);
+  const f = fixture();
+  f.store.readTree = async () => ({ tree: snapshot });
+  await f.store.toggle();
+  f.store.hover({ x: 300, y: 130 });
+  assert.equal(f.store.getSnapshot().hovered?.name, "Card");
+  f.store.select({ x: 40, y: 125 });
+  assert.deepEqual(f.store.getSnapshot().candidates.map(item => item.name), ["Title", "Card"]);
+  f.store.chooseComponent(f.store.getSnapshot().candidates[1]);
+  assert.equal(f.store.getSnapshot().draft?.component.name, "Card");
+  f.store.dispose();
+});
+
+test("a saved and sent note retains its source location, owners, testID and nearby text", async () => {
+  const react = { component: "Text", owners: ["HomeScreen", "CardRow", "Text"], source: { file: "/project/src/HomeScreen.tsx", line: 49, column: 11, functionName: "HomeScreen.renderItem" } };
+  const f = fixture();
+  f.store.readTree = async () => ({ tree: [{ ...component, source: "react-native", react, label: "Continue" }, { name: "Go to the next step", label: "Go to the next step", role: "Text", bounds: { x: 10, y: 65, width: 100, height: 20 } }] });
+  await f.store.toggle(); f.store.select({ x: 50, y: 40 }); f.store.setText("Make this larger"); await f.store.save();
+  assert.deepEqual(f.context.screenAnnotations[0].component.react, react);
+  assert.deepEqual(f.context.screenAnnotations[0].nearbyText, ["Go to the next step"]);
+  const message = f.updates.at(-1)!.content!.find(item => item._meta?.["mobile-dev/annotationId"] === f.context.screenAnnotations[0].id)!;
+  await f.store.send();
+  assert.equal(message.type, "text");
+  if (message.type !== "text") return;
+  assert.match(message.text, /Source: \/project\/src\/HomeScreen\.tsx:49:11/);
+  assert.match(message.text, /React: HomeScreen > CardRow > Text/);
+  assert.match(message.text, /testID: "continue-button"/);
+  assert.match(message.text, /Nearby:.*Go to the next step/);
+  assert.match(message.text, /Bounds: 10,20,100,40 points/);
+  assert.doesNotMatch(message.text, /screenshot|note-1|screen-1/);
+  f.store.dispose();
+});
+
+test("native and manual annotations do not invent React components or source locations", () => {
+  assert.match(formatAnnotationContext(annotation), /Source: unavailable \(accessibility\)/);
+  assert.doesNotMatch(formatAnnotationContext(annotation), /React:|Source: \//);
+  const manual = { ...annotation, component: { ...component, source: "screen" as const, role: "manual-region" } };
+  assert.match(formatAnnotationContext(manual), /Source: unavailable \(manual region\)/);
+  assert.doesNotMatch(formatAnnotationContext(manual), /React:|Source: \//);
+});
+
+test("region drags clamp to screen bounds and cancel without creating a note", async () => {
+  const f = fixture();
+  await f.store.toggle();
+  f.store.beginSelection({ x: 10, y: 10 });
+  f.store.moveSelection({ x: 900, y: 900 });
+  assert.deepEqual(f.store.getSnapshot().selectionBounds, { x: 10, y: 10, width: 383, height: 842 });
+  f.store.cancelSelection();
+  f.store.endSelection({ x: 50, y: 50 });
+  assert.equal(f.store.getSnapshot().draft, undefined);
+  f.store.beginSelection({ x: 20, y: 20 });
+  f.store.configure(simulator, true);
+  f.store.endSelection({ x: 100, y: 100 });
+  assert.equal(f.store.getSnapshot().draft, undefined);
+  assert.equal(f.store.getSnapshot().selectionBounds, undefined);
+  f.store.dispose();
+});
+
+test("multiple notes attach as text, keep captures local, and survive device changes", async () => {
+  const f = fixture();
+  f.context.selectSimulator(simulator);
+  await f.context.attachAnnotation(annotation);
+  await f.context.attachAnnotation({ ...annotation, id: "note-2", number: 2, text: "Use a darker color" });
+  const update = f.updates.at(-1)!;
+  assert.equal(update.content?.filter(item => item.type === "image").length, 0);
+  assert.doesNotMatch(JSON.stringify(update), new RegExp(capture.screenshot.data));
+  assert.deepEqual(update.structuredContent?.annotationIds, ["note-1", "note-2"]);
+  assert.match(JSON.stringify(update.content), /continue-button/);
+  assert.match(JSON.stringify(update.content), /Make this button larger/);
+  assert.equal(update.structuredContent?.screenAnnotations, undefined);
+  assert.match(formatAnnotationContext(annotation), /Bounds: 10,20,100,40/);
+  f.store.configure({ ...simulator, udid: "other-device" }, false);
+  assert.equal(f.store.getSnapshot().annotations.length, 0);
+  assert.equal(f.context.screenAnnotations.length, 2);
+  f.store.configure(simulator, false);
+  assert.equal(f.store.getSnapshot().annotations.length, 2);
+  await f.context.removeAnnotation("note-1");
+  assert.equal(f.updates.at(-1)?.content?.filter(item => item.type === "image").length, 0);
+  await f.context.removeAnnotation("note-2");
+  assert.equal(f.updates.at(-1)?.content?.filter(item => item.type === "image").length, 0);
+  f.store.dispose();
+});
+
+test("annotations work on text-only hosts and preserve explicitly attached screenshots", async () => {
+  const f = fixture(); f.noImages();
+  assert.equal(f.context.canAttachScreenshots, false);
+  await f.context.attachAnnotation(annotation);
+  await f.context.sendAnnotationsToChat(simulator.udid);
+  assert.equal(f.messages[0].content.some(item => item.type === "image"), false);
+  const images = fixture();
+  await images.context.attachScreenshot({ id: "explicit", data: "/9j/2Q==", mimeType: "image/jpeg", simulator });
+  await images.context.attachAnnotation(annotation);
+  assert.equal(images.updates.at(-1)?.content?.filter(item => item.type === "image").length, 1);
+  assert.equal(images.updates.at(-1)?.content?.find(item => item.type === "image")?._meta?.["mobile-dev/screenshotId"], "explicit");
+  f.store.dispose(); images.store.dispose();
+});
+
+test("host removals clear markers and a later device selection does not reattach notes", async () => {
+  const f = fixture();
+  await f.context.attachAnnotation(annotation);
+  await f.context.attachAnnotation({ ...annotation, id: "note-2", number: 2 });
+  f.remove("note-1"); assert.equal(f.store.getSnapshot().annotations.length, 1);
+  f.clear(); assert.equal(f.store.getSnapshot().annotations.length, 0);
+  f.context.selectSimulator(simulator); await f.context.attach(undefined);
+  assert.deepEqual(f.updates.at(-1)?.structuredContent?.annotationIds, []);
+  f.store.dispose();
+});
+
+test("a failed annotation write preserves the draft for retry", async () => {
+  const f = fixture(); await f.store.toggle(); f.store.select({ x: 50, y: 40 }); f.store.setText("Make this wider");
+  f.fail(); await f.store.save();
+  assert.equal(f.context.screenAnnotations.length, 0);
+  assert.equal(f.store.getSnapshot().draft?.text, "Make this wider");
+  assert.match(f.store.getSnapshot().error, /Host refused/);
+  assert.equal(f.store.getSnapshot().busy, false);
+  f.store.dispose();
+});
+
+test("a host clear during a write wins and removes the note and image", async () => {
+  const f = fixture(); let release!: () => void;
+  f.hold(new Promise<void>(resolve => { release = resolve; }));
+  const writing = f.context.attachAnnotation(annotation);
+  await new Promise(resolve => setTimeout(resolve, 0)); f.clear(); release();
+  assert.equal(await writing, false);
+  await f.context.attach(undefined);
+  assert.deepEqual(f.updates.at(-1)?.structuredContent?.annotationIds, []);
+  assert.equal(f.updates.at(-1)?.content?.some(item => item.type === "image"), false);
+  f.store.dispose();
+});
+
+test("selecting supports hover, multiple notes, edits, regions, and Escape without stale tree updates", async () => {
+  const f = fixture(); await f.store.toggle();
+  f.store.hover({ x: 50, y: 40 }); assert.equal(f.store.getSnapshot().hovered?.name, "Continue");
+  f.store.select({ x: 50, y: 40 }); f.store.setText("Make it bigger"); await f.store.save();
+  assert.equal(f.store.getSnapshot().annotations.length, 1); assert.equal(f.store.getSnapshot().draft, undefined);
+  f.store.select({ x: 250, y: 250 }); assert.equal(f.store.getSnapshot().draft?.component.name, "Screen point");
+  f.store.setText("Add a heading"); await f.store.save();
+  assert.equal(f.store.getSnapshot().annotations[1].number, 2);
+  f.store.edit(f.context.screenAnnotations[0]); f.store.setText("Make it blue"); await f.store.save();
+  assert.equal(f.context.screenAnnotations.length, 2); assert.equal(f.context.screenAnnotations.at(-1)?.text, "Make it blue");
+  f.store.exit();
+  let release!: (result: InspectedTree) => void;
+  f.store.readTree = () => new Promise(resolve => { release = resolve; });
+  const reading = f.store.toggle(); f.store.exit(); release({ tree: { elements: [component] } }); await reading;
+  assert.equal(f.store.getSnapshot().selecting, false); assert.equal(f.store.getSnapshot().loading, false);
+  f.store.dispose();
+});
+
+test("send preserves every note in text attachments without automatic screenshots, and reports rejection", async () => {
+  const f = fixture();
+  await f.context.attachAnnotation(annotation);
+  await f.context.attachAnnotation({ ...annotation, id: "note-2", number: 2, text: "Use a darker color" });
+  f.reject(); await f.store.send();
+  assert.match(f.store.getSnapshot().error, /Could not send/);
+  assert.equal(f.context.screenAnnotations.length, 2);
+  f.reject(false); await f.store.send();
+  assert.equal(f.messages.length, 2);
+  assert.match(JSON.stringify(f.updates.at(-1)?.content), /Make this button larger/);
+  assert.match(JSON.stringify(f.updates.at(-1)?.content), /Use a darker color/);
+  assert.match(JSON.stringify(f.updates.at(-1)?.content), /393/);
+  assert.equal(f.messages[0].content[0].type, "text");
+  assert.match(JSON.stringify(f.messages[0].content), /Apply these annotations/);
+  assert.equal(f.updates.at(-1)?.content?.some(item => item.type === "image"), false);
+  assert.equal(f.messages[0].content.some(item => item.type === "image"), false);
+  assert.equal(f.context.screenAnnotations.length, 0);
+  assert.deepEqual(f.messages[0]._meta?.["openai/message"], { target: "active", send: true });
+  f.store.dispose();
+});
+
+test("an annotation retries while a restored chat registers its composer", async () => {
+  const f = fixture(); f.noComposer(1);
+  await f.store.toggle(); f.store.select({ x: 50, y: 40 }); f.store.setText("Make this wider"); await f.store.save();
+  assert.equal(f.updates.length, 2);
+  assert.equal(f.context.annotationsPending, false);
+  assert.equal(f.store.getSnapshot().annotations.length, 1);
+  assert.match(f.store.getSnapshot().status, /Attached/);
+  f.store.dispose();
+});
+
+test("an unavailable composer keeps notes locally and reattaches them on return", async () => {
+  const f = fixture(); f.noComposer();
+  await f.store.toggle(); f.store.select({ x: 50, y: 40 }); f.store.setText("Make this wider"); await f.store.save();
+  assert.equal(f.context.annotationsPending, true);
+  assert.equal(f.store.getSnapshot().draft, undefined);
+  assert.match(f.store.getSnapshot().status, /Note saved/);
+  f.clear(); assert.equal(f.context.screenAnnotations.length, 1);
+  f.restoreComposer(); f.context.resume();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(f.context.annotationsPending, false);
+  assert.equal(f.updates.at(-1)?.content?.some(item => item.type === "image"), false);
+  f.store.dispose();
+});
+
+test("even image-capable chats send annotations as text without a composer context write", async () => {
+  const f = fixture(); await f.context.attachAnnotation(annotation);
+  const writes = f.updates.length;
+  f.imageMessages(); f.noComposer(); f.delayMessageComposer();
+  await f.store.send();
+  assert.equal(f.updates.length, writes);
+  assert.equal(f.messages.length, 1);
+  assert.equal(f.messages[0].content.filter(item => item.type === "image").length, 0);
+  assert.equal(f.context.screenAnnotations.length, 0);
+  assert.equal(f.store.getSnapshot().error, "");
+  f.store.dispose();
+});
+
+test("clearing notes during a composer retry cancels the message", async () => {
+  const f = fixture(); await f.context.attachAnnotation(annotation); f.imageMessages(); f.delayMessageComposer();
+  const sending = f.context.sendAnnotationsToChat(simulator.udid);
+  const rejected = assert.rejects(sending, /removed from chat before sending/);
+  await new Promise(resolve => setTimeout(resolve, 0)); f.clear();
+  await rejected;
+  assert.equal(f.messages.length, 0);
+  f.store.dispose();
+});
+
+test("a second batch survives a missing composer and sends after a manual retry", async () => {
+  const f = fixture(); await f.context.attachAnnotation(annotation); await f.store.send();
+  await f.context.attachAnnotation({ ...annotation, id: "next-batch", text: "SECOND_BATCH" });
+  f.delayMessageComposer(Infinity); await f.store.send();
+  assert.equal(f.store.getSnapshot().busy, false);
+  assert.equal(f.store.getSnapshot().sending, false);
+  assert.match(f.store.getSnapshot().sendError, /The host could not find this chat's input/);
+  assert.equal(f.context.screenAnnotations.length, 1);
+  assert.match(f.store.messageText, /SECOND_BATCH/);
+  assert.doesNotMatch(f.store.messageText, /Make this button larger|data:image|AA==/);
+  f.delayMessageComposer(0); await f.store.send();
+  assert.equal(f.messages.length, 2);
+  assert.equal(f.messages[1].content[0].type, "text");
+  assert.equal(f.store.getSnapshot().sendError, "");
+  assert.equal(f.context.screenAnnotations.length, 0);
+  f.store.dispose();
+});
+
+test("a stalled SDK send times out, unlocks after a stream reset, and never resends automatically", async t => {
+  const app = new App({ name: "annotation-test", version: "1" }, {}, { autoResize: false });
+  const bridge = new AppBridge(null, { name: "host-test", version: "1" }, { message: { text: {} } });
+  let attempts = 0;
+  bridge.onmessage = async () => { attempts++; return new Promise(() => {}); };
+  const [appTransport, hostTransport] = InMemoryTransport.createLinkedPair();
+  await bridge.connect(hostTransport); await app.connect(appTransport);
+  const f = fixture(app);
+  t.after(async () => { f.store.dispose(); await app.close(); await bridge.close(); });
+  await f.context.attachAnnotation(annotation);
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const sending = f.store.send();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(f.store.getSnapshot().sending, true);
+  f.store.configure(simulator, true); f.store.configure(simulator, false);
+  await f.store.send();
+  assert.equal(attempts, 1, "A stream reset must not allow a duplicate send.");
+  t.mock.timers.tick(5000); await sending;
+  assert.equal(f.store.getSnapshot().busy, false);
+  assert.equal(f.store.getSnapshot().sending, false);
+  assert.match(f.store.getSnapshot().sendError, /did not confirm delivery.*before retrying/);
+  assert.equal(f.context.screenAnnotations.length, 1);
+  t.mock.timers.tick(60000); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(attempts, 1);
+  bridge.onmessage = async () => { attempts++; return {}; };
+  await f.store.send();
+  assert.equal(attempts, 2);
+  assert.equal(f.store.getSnapshot().sendError, "");
+  assert.equal(f.context.screenAnnotations.length, 0);
+});
+
+test("a fresh annotation batch starts at one after chat clears or sends the prior batch", async () => {
+  const f = fixture(); await f.store.toggle();
+  f.store.select({ x: 50, y: 40 }); f.store.setText("First"); await f.store.save();
+  f.clear(); f.store.select({ x: 50, y: 40 });
+  assert.equal(f.store.getSnapshot().draft?.number, 1);
+  f.store.setText("Second batch"); await f.store.save(); await f.store.send();
+  f.store.configure(simulator, true); f.store.configure(simulator, false);
+  await f.store.toggle(); f.store.select({ x: 50, y: 40 });
+  assert.equal(f.store.getSnapshot().draft?.number, 1);
+  f.store.setText("Keep this draft"); f.store.configure(simulator, true);
+  assert.equal(f.store.getSnapshot().draft?.text, "Keep this draft");
+  f.store.dispose();
+});
+
+test("standard hosts receive readable, self-locating drafts and retain selection context until explicitly cleared", async () => {
+  const messages: Parameters<App["sendMessage"]>[0][] = [];
+  const updates: Parameters<App["updateModelContext"]>[0][] = [];
+  const context = new PanelContext({
+    getHostCapabilities: () => ({ updateModelContext: { text: {}, structuredContent: {} }, message: { text: {} } }),
+    async updateModelContext(params) { updates.push(params); return {}; },
+    async sendMessage(params) { messages.push(params); return {}; },
+  } as App, () => undefined);
+  await context.attachAnnotation(annotation);
+  assert.equal(context.screenAnnotations.length, 1);
+  await context.attachAnnotation({ ...annotation, id: "android-note", simulator: { ...simulator, udid: "android", name: "Pixel", platform: "android" } });
+  await context.sendAnnotationsToChat();
+  assert.match(JSON.stringify(messages[0].content), /Make this button larger/);
+  assert.match(JSON.stringify(messages[0].content), /iPhone/);
+  assert.match(JSON.stringify(messages[0].content), /Pixel/);
+  // The draft must locate each target without the host exposing widget context.
+  const draft = messages[0].content.map(item => item.type === "text" ? item.text : "").join("\n");
+  assert.match(draft, /Locator: AXButton; identifier "continue-button"; bounds 10,20,100,40 points; point 50,40; device /);
+  assert.match(draft, /device android/);
+  assert.doesNotMatch(draft, /reopen|creation site/);
+  assert.match(JSON.stringify(updates.at(-1)?.content), /Bounds:|AXButton/);
+  assert.match(JSON.stringify(updates.at(-1)?.content), /Device:.*Pixel/);
+  assert.match(JSON.stringify(updates.at(-1)?.content), /creation site/);
+  assert.equal(context.attachmentCount, 2);
+  await context.clearAttachments();
+  assert.equal(messages[0]._meta, undefined);
+  assert.equal(context.attachmentCount, 0);
+  assert.deepEqual(updates.at(-1)?.structuredContent?.annotationIds, []);
+});
+
+
+test("a standard annotation draft waits for context and preserves notes when context or message fails", async () => {
+  let failContext = false;
+  let sends = 0;
+  let rejectMessage = true;
+  const context = new PanelContext({
+    getHostCapabilities: () => ({ updateModelContext: { text: {} }, message: { text: {} } }),
+    async updateModelContext() { if (failContext) throw new Error("Context unavailable"); return {}; },
+    async sendMessage() { sends++; return { isError: rejectMessage }; },
+  } as unknown as App, () => undefined);
+  await context.attachAnnotation(annotation);
+  failContext = true;
+  await assert.rejects(context.sendAnnotationsToChat(), /Context unavailable/);
+  assert.equal(sends, 0);
+  assert.equal(context.attachmentCount, 1);
+  failContext = false;
+  await assert.rejects(context.sendAnnotationsToChat(), /Could not send/);
+  assert.equal(context.attachmentCount, 1);
+  rejectMessage = false;
+  await context.sendAnnotationsToChat();
+  assert.equal(sends, 2);
+  assert.equal(context.attachmentCount, 1);
+});
+
+test("editing a note while its context is publishing prevents an obsolete draft", async () => {
+  let release: (() => void) | undefined;
+  let hold = false;
+  let sends = 0;
+  const context = new PanelContext({
+    getHostCapabilities: () => ({ updateModelContext: { text: {} }, message: { text: {} } }),
+    async updateModelContext() { if (hold) { hold = false; await new Promise<void>(resolve => { release = resolve; }); } return {}; },
+    async sendMessage() { sends++; return {}; },
+  } as unknown as App, () => undefined);
+  await context.attachAnnotation(annotation);
+  hold = true;
+  const sending = context.sendAnnotationsToChat();
+  const rejected = assert.rejects(sending, /Notes changed/);
+  await new Promise(resolve => setImmediate(resolve));
+  const editing = context.attachAnnotation({ ...annotation, text: "Updated request" });
+  release!();
+  await Promise.all([rejected, editing]);
+  assert.equal(sends, 0);
+  assert.equal(context.screenAnnotations[0].text, "Updated request");
+});
+
+test("native MCP Apps handshake publishes retrievable selection evidence before the chat draft", async t => {
+  const app = new App({ name: "annotation-native-test", version: "1" }, {}, { autoResize: false });
+  const bridge = new AppBridge(null, { name: "native-host-fixture", version: "1" }, {
+    updateModelContext: { text: {} }, message: { text: {} },
+  });
+  let shared: Parameters<App["updateModelContext"]>[0] | undefined;
+  let acknowledge: (() => void) | undefined;
+  let hold = false;
+  const messages: Parameters<App["sendMessage"]>[0][] = [];
+  bridge.onupdatemodelcontext = async params => {
+    if (hold) { hold = false; await new Promise<void>(resolve => { acknowledge = resolve; }); }
+    shared = params;
+    return {};
+  };
+  bridge.onmessage = async message => { messages.push(message); return {}; };
+  const [appTransport, hostTransport] = InMemoryTransport.createLinkedPair();
+  t.after(async () => { await app.close(); await bridge.close(); });
+  await bridge.connect(hostTransport); await app.connect(appTransport);
+  const context = new PanelContext(app, () => undefined);
+  await context.attachAnnotation(annotation);
+  await context.attachAnnotation({ ...annotation, id: "note-2", number: 2, text: "Only change this instance", component: {
+    ...component, identifier: "second-continue-button", bounds: { x: 200, y: 300, width: 60, height: 30 },
+  } });
+  hold = true;
+  const preparing = context.sendAnnotationsToChat();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(messages.length, 0, "Do not prepare a draft until the host acknowledges selection context.");
+  acknowledge!();
+  await preparing;
+  assert.equal(messages.length, 1);
+  assert.match(JSON.stringify(messages[0].content), /Only change this instance/);
+  // Identically labelled targets stay distinct in the draft itself, because the
+  // host may never show widget context to the model.
+  const draft = messages[0].content.map(item => item.type === "text" ? item.text : "").join("\n");
+  assert.match(draft, /#1 "Continue": Make this button larger\n  Locator: AXButton; identifier "continue-button"; bounds 10,20,100,40 points/);
+  assert.match(draft, /#2 "Continue": Only change this instance\n  Locator: AXButton; identifier "second-continue-button"; bounds 200,300,60,30 points/);
+  assert.doesNotMatch(draft, /reopen/);
+  assert.equal(messages[0]._meta, undefined);
+  // Hosts can fetch this snapshot on the later user turn, even after the draft
+  // was acknowledged. Both identically labelled targets must remain distinct.
+  const fetched = shared!.content!.filter(item => item.type === "text").map(item => item.text).join("\n");
+  assert.match(fetched, /Identifier: "continue-button"/);
+  assert.match(fetched, /Bounds: 10,20,100,40 points/);
+  assert.match(fetched, /Identifier: "second-continue-button"/);
+  assert.match(fetched, /Bounds: 200,300,60,30 points/);
+  assert.match(fetched, /Apply each Edit as a request/);
+  assert.equal(shared!.structuredContent, undefined, "Selection evidence must be in text, without requiring structured-content support.");
+  assert.ok(shared!.content!.every(item => item._meta === undefined));
+  assert.equal(context.screenAnnotations.length, 2);
+  context.hostChanged();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.match(JSON.stringify(shared!.content), /second-continue-button/);
+  await context.clearAttachments();
+  assert.doesNotMatch(JSON.stringify(shared!.content), /continue-button/);
+});

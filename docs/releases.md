@@ -3,9 +3,9 @@
 [Back to README](../README.md) · [Contributing](../CONTRIBUTING.md)
 
 The `Release plugin` workflow in `.github/workflows/release.yml` runs when you push
-an existing commit with a `v<version>` tag. The tag must match `.codex-plugin/plugin.json`,
-`package.json`, both root versions in `package-lock.json`, and
-`src/shared/version.ts`. After committing your changes, run from the repository root:
+an existing commit with a `v<version>` tag. The tag must match the root `package.json`,
+both root versions in `package-lock.json`, and `packages/shared/src/version.ts`; host
+manifests take the version at package time. After committing your changes, run from the repository root:
 
 ```sh
 npm run public-release
@@ -27,7 +27,7 @@ fresh extraction of the actual ZIP. CI also validates the tagged commit message,
 including when the tag was pushed directly.
 
 Each native helper has a reusable Actions artifact containing its complete vendor
-directory and matching Sentry symbols. `scripts/release-native.mjs` fingerprints
+directory and matching Sentry symbols. `tooling/release-native.mjs` fingerprints
 the helper's tracked native sources, shared telemetry, build scripts, pinned
 dependencies, npm build command, and relevant installed toolchain versions.
 Plugin version bumps and UI/server edits do not change these fingerprints.
@@ -86,7 +86,7 @@ is independent of the source history, so development ignore rules do not exclude
 force pushes. Older or repeated versions leave the latest payload unchanged.
 New marketplace commits use `chore(release): release mobile-dev <version>`.
 
-Use the [installation and update commands](../README.md#install).
+Use the [installation and update commands](../CONTRIBUTING.md#install-from-the-github-marketplace).
 The prebuilt marketplace is named `mobile-dev`, separate from the
 `mobile-dev-local` development marketplace. A release branch does not change
 repository visibility.

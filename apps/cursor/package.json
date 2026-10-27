@@ -1,0 +1,7 @@
+{
+  "name": "@mobile-dev/cursor",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Cursor: the Cursor plugin manifest for the shared server and MCP Apps panel."
+}

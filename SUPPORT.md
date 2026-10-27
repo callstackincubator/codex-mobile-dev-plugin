@@ -7,7 +7,7 @@ reports, or privacy requests.
 ## Bugs and setup questions
 
 Use "Mobile Dev support" in the email subject, or open a
-[GitHub issue](https://github.com/callstackincubator/codex-mobile-dev-plugin/issues).
+[GitHub issue](https://github.com/callstackincubator/mobile-dev/issues).
 Include the plugin and host versions, macOS/device OS versions, the feature
 involved, expected and actual behavior, and minimal reproduction steps.
 
