@@ -5,18 +5,19 @@
 ## Hosts
 
 Since 0.1.165, UI and server telemetry carry a `host` tag and attribute with one of
-`codex`, `claude`, `mac` or `other`. Codex, Claude Desktop and other MCP Apps hosts
-load the same panel and server; the Mac app runs the same server and shared UI.
+`codex`, `claude`, `cursor`, `mac` or `other`. Codex, Claude, Cursor and other MCP
+Apps hosts load the same panel and server; the Mac app runs the same server and shared UI.
 Behavior never depends on this value; it only attributes measurements and errors.
 
 - The Mac page names itself (`data-host="mac"`); the Mac app also starts the server
   with `MOBILE_DEV_HOST=mac`.
 - MCP Apps panels are labelled once connected: `codex` when the host advertises
   OpenAI extensions, otherwise the host's reported name mapped by `telemetryHost`
-  (`claude` for Claude, else `other`). Calls before connecting carry no host.
+  (`claude` for Claude, `cursor` for Cursor, else `other`). Cursor is labelled since
+  its plugin was added. Calls before connecting carry no host.
 - The server labels itself from the connecting MCP client's name on initialize and
   reports `other` until then.
-- The server's metadata allowlist accepts only these four values; the raw host or
+- The server's metadata allowlist accepts only these values; the raw host or
   client name is never sent.
 
 Earlier releases have no `host` value. Surfaces, measurement names, units and
