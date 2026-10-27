@@ -138,7 +138,8 @@ export function registerDeviceChoiceTools(server: McpServer, extensions: Pick<Op
           if (mode !== "browse") devices = devices.filter(isSelectableDevice);
           // The native form offers a bounded list; running devices are the likeliest targets.
           if (mode === "form") devices = devices.sort((a, b) => Number(isRunningDevice(b)) - Number(isRunningDevice(a))).slice(0, FORM_OPTION_LIMIT);
-          if (devices.length === 0 && errors.length > 0) throw new SimulatorUnavailableError(errors.join(" "));
+          // Browsing still shows the card with each backend's note; a choice needs a candidate.
+          if (mode !== "browse" && devices.length === 0 && errors.length > 0) throw new SimulatorUnavailableError(errors.join(" "));
         }
       } finally {
         const duration = performance.now() - startedAt;

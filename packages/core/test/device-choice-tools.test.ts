@@ -241,3 +241,14 @@ test("a choice requires a message", async t => {
   const result = await client.callTool({ name: "mobile_show_devices", arguments: { selectionMode: "single" } });
   assert.equal(result.isError, true);
 });
+
+test("browsing with no device backend still shows the card with each backend's note", async t => {
+  const fail = async (): Promise<never> => { throw new Error("Backend unavailable."); };
+  const client = await connectedClient(t, { simulators: fail, android: fail, physicalIos: fail }, cardHost);
+  const result = await client.callTool({ name: "mobile_show_devices", arguments: {} });
+  assert.equal(result.isError, undefined);
+  assert.deepEqual(result.structuredContent?.devices, []);
+  assert.equal((result.structuredContent?.errors as string[]).length, 3);
+  const choice = await client.callTool({ name: "mobile_show_devices", arguments: { message: "Which device?", selectionMode: "single" } });
+  assert.equal(choice.isError, true);
+});
