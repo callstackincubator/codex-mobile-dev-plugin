@@ -109,6 +109,21 @@ jobs:
           unzip -q "$RELEASE_ARCHIVE" -d "$RUNNER_TEMP/mobile-dev-release"
           npm run test:package -- "$RUNNER_TEMP/mobile-dev-release"
 
+      - name: Package and check the Claude plugin
+        run: |
+          npm run package:claude -- --release
+          npm run test:claude
+          tar -czf release/mobile-dev-claude-plugin.tar.gz -C release/claude-plugin mobile-dev
+
+      - name: Save Claude plugin
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: mobile-dev-${{ steps.release.outputs.version }}-claude-plugin
+          path: release/mobile-dev-claude-plugin.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
       - name: Upload Sentry source maps and native symbols
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
@@ -249,3 +264,38 @@ jobs:
           mkdir "$RUNNER_TEMP/mobile-dev-marketplace"
           unzip -q "release/mobile-dev-$RELEASE_VERSION-darwin-arm64.zip" -d "$RUNNER_TEMP/mobile-dev-marketplace"
           node apps/codex-plugin/tooling/publish-release.mjs "$RUNNER_TEMP/mobile-dev-marketplace"
+
+  publish-claude:
+    needs: [build, release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    concurrency:
+      group: release-claude
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: refs/tags/${{ needs.build.outputs.tag }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22.23.2'
+
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: mobile-dev-${{ needs.build.outputs.version }}-claude-plugin
+          path: release
+
+      # The directory submission and Claude Code marketplace both track release/claude.
+      - name: Publish the Claude plugin branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.build.outputs.tag }}
+          RELEASE_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+        run: |
+          mkdir "$RUNNER_TEMP/mobile-dev-claude"
+          tar -xzf release/mobile-dev-claude-plugin.tar.gz -C "$RUNNER_TEMP/mobile-dev-claude"
+          node apps/claude/tooling/publish-release.mjs "$RUNNER_TEMP/mobile-dev-claude/mobile-dev"

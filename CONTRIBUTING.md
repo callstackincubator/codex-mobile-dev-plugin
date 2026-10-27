@@ -23,7 +23,7 @@ host as an argument.
 | `packages/runtimes` | Pinned Node runtimes bundled into the server (agent-device, serve-emu). |
 | `packages/skills` | Agent skills for the shared tools; each host's package step includes the ones its host supports. |
 | `apps/codex-plugin` | Codex: manifest, launcher, assets, and its own server (`server/`, the self-updater) and panel (`ui/`, the update banner). |
-| `apps/claude` | Claude: the Claude Desktop extension (`manifest.json`, MCPB) and the Claude Code plugin (`.claude-plugin/plugin.json`). Both run the shared server and panel unchanged. |
+| `apps/claude` | Claude: the Claude Code plugin manifest (`.claude-plugin/plugin.json`), its Node launcher (`scripts/`), Node check hook (`hooks/`), README and setup-skill overrides, and the `release/claude` publisher (`tooling/`). It runs the shared server and panel unchanged. |
 | `apps/cursor` | Cursor: the Cursor plugin manifest (`.cursor-plugin/plugin.json`). It runs the shared server and panel unchanged. |
 | `apps/mac` | The Mac app: a SwiftUI shell (`Sources/`), the page it hosts (`web/`) and its server (`server/`). |
 | `packages/test-support` | Fixtures shared by tests across packages and apps. |
@@ -267,49 +267,45 @@ Open a new chat after installing, then open Mobile Dev from the sidebar.
 
 `npm run package` writes the local ZIP to `release/mobile-dev-<version>-darwin-arm64.zip`. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
 
-### Claude Desktop local development
+### Claude local development
 
 Complete the first-time runtime and native-helper setup under [Build and package](#build-and-package),
-then run from this checkout with Node.js 22.19 or later:
+then build and package the plugin with Node.js 22.19 or later:
 
 ```sh
 npm run build
-npm run claude:config
-```
-
-1. Open Claude Desktop **Settings > Developer > Edit Config**. On macOS, this is
-   `~/Library/Application Support/Claude/claude_desktop_config.json`.
-2. Merge the `mobile-dev` entry from `.local-dev/claude-desktop-config.json` into
-   the existing `mcpServers` object, preserving other servers and settings. The
-   snippet uses absolute paths to this checkout and the Node executable running
-   the generator.
-3. Fully quit and reopen Claude, start a new conversation, and ask **“Open Mobile Dev.”**
-   Approve the connector when prompted; use **Expand** when available.
-
-After UI or server edits, run `npm run build` and fully restart Claude. This
-workflow uses the checkout directly and needs no repackaging. Regenerate the
-config if the checkout or Node path changes. For connection failures, check
-**Settings > Developer** for the server status and logs.
-
-To create and check a bundle for manual installation instead:
-
-```sh
 npm run package:claude
 npm run test:claude
+claude plugin validate --strict ./release/claude-plugin/mobile-dev
+claude --plugin-dir ./release/claude-plugin/mobile-dev
 ```
 
-This writes `release/mobile-dev-<version>-claude-desktop-darwin-arm64.mcpb` and
-the Claude plugin folder `release/claude-plugin/mobile-dev`. The plugin folder
-uses `apps/claude/.claude-plugin/plugin.json`, which starts `dist/server.mjs` with Node.js
-22.19 or later from `PATH`, and leaves out the Codex manifest, `.mcp.json`, and
-launcher. Check it with `claude plugin validate ./release/claude-plugin/mobile-dev`,
-or load it with `claude --plugin-dir ./release/claude-plugin/mobile-dev`.
-Follow the [manual installation steps](README.md#claude-desktop-manual-installation).
-Remove the `mobile-dev` development entry before installing the bundle to avoid
-duplicate servers. Rebuild, repackage, and reinstall to update a bundled copy.
+`package:claude` writes the plugin folder `release/claude-plugin/mobile-dev` from
+`apps/claude`: the manifest, `scripts/launch-node.sh`, `hooks/hooks.json`, the
+Claude README, and the shared skills with `apps/claude/skills` files replacing
+theirs. It leaves out the Codex manifest, `.mcp.json`, launcher, and skill
+metadata, and npm's `.bin` symlinks. The manifest starts the server through
+`launch-node.sh`, which finds Node.js 22.19 or later on `PATH` or in Homebrew, nvm,
+fnm, Volta, mise, and asdf locations, because Claude opened from the Dock does not
+inherit the shell's `PATH`. The SessionStart hook runs the same script with
+`--check` and tells the user and Claude when no usable Node is found.
+`test:claude` copies the folder to a path with spaces, runs the hook, and starts
+the server through the launcher. Repackage after UI or server edits and restart
+the Claude Code session.
+
+To use a checkout directly in Claude Desktop's chat instead, run `npm run claude:config`
+and merge the `mobile-dev` entry from `.local-dev/claude-desktop-config.json` into
+**Settings > Developer > Edit Config** (`~/Library/Application Support/Claude/claude_desktop_config.json`),
+preserving other servers. Fully quit and reopen Claude, then ask **“Open Mobile Dev.”**
+Run `npm run build` and restart Claude after edits.
 
 Local builds retain the `development` telemetry environment. Public releases use
-`npm run build:release` and `npm run package:claude -- --release`.
+`npm run build:release` and `npm run package:claude -- --release`. The release
+workflow then makes the `release/claude` branch hold only the plugin, in
+`plugins/mobile-dev`, and a root marketplace that lists it, and tags it
+`claude-v<version>`. Users add it with
+`claude plugin marketplace add callstackincubator/codex-mobile-dev-plugin@release/claude`,
+and the Claude directory submission tracks `plugins/mobile-dev` on the same branch.
 
 ### Cursor local development
 

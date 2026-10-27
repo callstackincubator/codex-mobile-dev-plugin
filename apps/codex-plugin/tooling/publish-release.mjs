@@ -8,7 +8,7 @@ import { assertBuildEnvironment } from "../../../tooling/telemetry-build.mjs";
 
 const branch = "refs/heads/release/latest";
 
-function compareVersions(incoming, previous) {
+export function compareVersions(incoming, previous) {
   const incomingParts = incoming.split("-");
   const previousParts = previous.split("-");
   const incomingCore = incomingParts[0].split(".");
@@ -48,7 +48,7 @@ function compareVersions(incoming, previous) {
   return 0;
 }
 
-function gitEnvironment(remote, token) {
+export function gitEnvironment(remote, token) {
   const env = { ...process.env };
   if (token) {
     const url = new URL(remote);

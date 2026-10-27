@@ -31,23 +31,21 @@ from the plugin directory, then open a new chat.
 To install the prebuilt plugin from this repository instead, see
 [Install from the GitHub marketplace](CONTRIBUTING.md#install-from-the-github-marketplace).
 
-### Claude Desktop: manual installation
+### Claude
 
-On an Apple Silicon Mac, obtain a `mobile-dev-<version>-claude-desktop-darwin-arm64.mcpb`
-bundle from the person sharing the preview, or [build one locally](CONTRIBUTING.md#claude-desktop-local-development).
-The Claude bundle is not yet published through this repository's release workflow.
+On an Apple Silicon Mac with Node.js 22.19 or later, add the prebuilt plugin from
+this repository's `release/claude` branch in Claude Code:
 
-1. Open Claude Desktop **Settings > Extensions > Advanced settings**.
-2. Under **Extension Developer**, click **Install Extension…**, select the `.mcpb`
-   file, and confirm installation. You can also open the file with Claude Desktop.
-3. Fully quit and reopen Claude, then start a new conversation and ask **"Open Mobile Dev."**
-4. Approve the connector when prompted. Click **Expand** to use the larger view
-   when available; Mobile Dev does not add a permanent Claude sidebar entry.
+```sh
+claude plugin marketplace add callstackincubator/codex-mobile-dev-plugin@release/claude
+claude plugin install mobile-dev@mobile-dev
+```
 
-The bundle includes the plugin and native helpers; Claude supplies Node, so no
-`npm install` is needed. Install a newer `.mcpb` manually to update. Use either
-the bundle or the [local development connection](CONTRIBUTING.md#claude-desktop-local-development)
-to avoid duplicate Mobile Dev servers. See [Claude's installation guide](https://support.claude.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop).
+Start a new session and ask **"Open Mobile Dev."** Approve the tool calls when
+prompted. Run `claude plugin update mobile-dev@mobile-dev` to update. Mobile Dev
+finds Node on `PATH` or in the usual Homebrew, nvm, fnm, Volta, mise, and asdf
+locations, and Claude tells you at the start of a session if none is usable. To
+work on the plugin itself, see [Claude local development](CONTRIBUTING.md#claude-local-development).
 
 ### Cursor: manual installation
 
@@ -130,8 +128,8 @@ See [storage privacy and review checks](docs/storage-privacy.md).
 
 Mobile Dev runs on an Apple Silicon Mac. In Codex desktop, the prebuilt plugin
 uses Codex's bundled Node runtime from its workspace dependency cache; the Claude
-Desktop bundle uses Claude's Node runtime, the Cursor plugin uses Node.js from
-`PATH`, and the Mac app bundles its own. Install the tools for the platforms you use:
+plugin finds Node.js 22.19 or later on `PATH` or in common install locations, the
+Cursor plugin uses Node.js from `PATH`, and the Mac app bundles its own. Install the tools for the platforms you use:
 
 | Platform or feature | Requirements |
 | --- | --- |
@@ -191,12 +189,12 @@ product in `apps/`:
 | --- | --- |
 | `packages/core` | The MCP server, device runtimes, and tool handlers |
 | `packages/ui` | The device panels and tools every host shows |
-| `packages/mcp-app` | The MCP Apps panel that Codex and Claude Desktop load |
+| `packages/mcp-app` | The MCP Apps panel that Codex and Claude load |
 | `packages/shared` | Types and logic the server and UI both use |
 | `packages/skills` | Agent skills for the shared tools |
 | `packages/native`, `packages/runtimes` | Native helpers and bundled Node runtimes |
 | `apps/codex-plugin` | The Codex plugin: manifest, updater, and update banner |
-| `apps/claude` | Claude: the Claude Desktop extension and Claude Code plugin manifests |
+| `apps/claude` | Claude: the Claude Code plugin manifest, Node launcher and release branch publisher |
 | `apps/cursor` | Cursor: the Cursor plugin manifest |
 | `apps/mac` | The Mac app: SwiftUI window and its page |
 

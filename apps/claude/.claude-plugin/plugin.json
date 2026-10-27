@@ -6,8 +6,8 @@
     "name": "Callstack",
     "email": "hello@callstack.com"
   },
-  "homepage": "https://github.com/callstackincubator/mobile-dev",
-  "repository": "https://github.com/callstackincubator/mobile-dev",
+  "homepage": "https://github.com/callstackincubator/codex-mobile-dev-plugin",
+  "repository": "https://github.com/callstackincubator/codex-mobile-dev-plugin",
   "license": "MIT",
   "keywords": [
     "ios",
@@ -20,14 +20,15 @@
     "performance"
   ],
   "icon": "./assets/icon.svg",
-  "documentationUrl": "https://github.com/callstackincubator/mobile-dev#readme",
-  "supportUrl": "https://github.com/callstackincubator/mobile-dev/blob/main/SUPPORT.md",
-  "privacyPolicyUrl": "https://github.com/callstackincubator/mobile-dev/blob/main/PRIVACY.md",
-  "termsOfServiceUrl": "https://github.com/callstackincubator/mobile-dev/blob/main/TERMS.md",
+  "documentationUrl": "https://github.com/callstackincubator/codex-mobile-dev-plugin/tree/release/claude/plugins/mobile-dev#readme",
+  "supportUrl": "https://github.com/callstackincubator/codex-mobile-dev-plugin/blob/main/SUPPORT.md",
+  "privacyPolicyUrl": "https://github.com/callstackincubator/codex-mobile-dev-plugin/blob/main/PRIVACY.md",
+  "termsOfServiceUrl": "https://github.com/callstackincubator/codex-mobile-dev-plugin/blob/main/TERMS.md",
   "mcpServers": {
     "mobile-dev": {
-      "command": "node",
+      "command": "/bin/sh",
       "args": [
+        "${CLAUDE_PLUGIN_ROOT}/scripts/launch-node.sh",
         "${CLAUDE_PLUGIN_ROOT}/dist/server.mjs"
       ]
     }
