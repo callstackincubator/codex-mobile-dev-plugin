@@ -1,9 +1,9 @@
 import type { App } from "@modelcontextprotocol/ext-apps";
-import { pluginReleaseUrl, pluginUpdateSchema } from "../shared/plugin-updates.ts";
+import { PLUGIN_STORE_URL, pluginUpdateSchema } from "../shared/plugin-updates.ts";
 import type { PluginUpdate } from "../shared/plugin-updates.ts";
 import { captureUiError, countUiEvent } from "@mobile-dev/ui/telemetry.ts";
 
-export type UpdateSnapshot = { update?: PluginUpdate; busy: boolean; error: string; dismissedVersion?: string };
+export type UpdateSnapshot = { update?: PluginUpdate; busy: boolean; error: string; dismissedVersion?: string; storeOpened?: boolean };
 
 export class PluginUpdateController {
   private readonly app: Pick<App, "callServerTool" | "openLink">;
@@ -43,47 +43,47 @@ export class PluginUpdateController {
     clearInterval(this.timer);
     this.timer = undefined;
     if (this.disposed || this.available === false || this.visibility.visibilityState === "hidden") return;
-    if (this.snapshot.update?.status === "disabled" || this.snapshot.update?.status === "updated") return;
+    if (this.snapshot.update?.status === "disabled" || this.snapshot.update?.status === "migrated") return;
     void this.check();
     this.timer = setInterval(() => { void this.check(); }, 15 * 60 * 1000);
   };
 
   async check() {
-    if (this.disposed || this.checking || this.snapshot.busy || this.snapshot.update?.status === "updated") return;
+    if (this.disposed || this.checking || this.snapshot.busy || this.snapshot.update?.status === "migrated") return;
     this.checking = true;
     try {
       const result = await this.app.callServerTool({ name: "mobile_check_plugin_update", arguments: {} }, { signal: this.abort.signal });
       if (result.isError) return;
       const update = pluginUpdateSchema.parse(result.structuredContent?.update);
       this.publish({ update });
-      if (update.status === "disabled" || update.status === "updated") clearInterval(this.timer);
+      if (update.status === "disabled" || update.status === "migrated") clearInterval(this.timer);
     } catch {
       // Update checks must not block or replace the device workspace.
     } finally { this.checking = false; }
   }
 
-  async install() {
-    if (this.disposed || this.snapshot.busy || this.snapshot.update?.status !== "available") return;
+  async migrate() {
+    if (this.disposed || this.snapshot.busy || this.snapshot.update?.status !== "migration") return;
     this.publish({ busy: true, error: "" });
     try {
-      const result = await this.app.callServerTool({ name: "mobile_install_plugin_update", arguments: {} }, { signal: this.abort.signal, timeout: 180000 });
+      const result = await this.app.callServerTool({ name: "mobile_migrate_plugin_to_store", arguments: {} }, { signal: this.abort.signal, timeout: 180000 });
       if (result.isError) {
         const texts = result.content.filter(item => item.type === "text");
         const messages = texts.map(item => item.text);
         const message = messages.join("\n");
-        this.publish({ error: message || "Could not update Mobile Dev. Try again." });
+        this.publish({ error: message || "Could not finish migration. Try again." });
         return;
       }
       const update = pluginUpdateSchema.parse(result.structuredContent?.update);
-      if (update.status !== "updated") throw new Error("The plugin update did not finish.");
+      if (update.status !== "migrated") throw new Error("The store migration did not finish.");
       clearInterval(this.timer);
       this.publish({ update });
-      countUiEvent("ui.plugin_update.installed");
+      countUiEvent("ui.plugin_update.migrated");
     } catch {
       if (this.abort.signal.aborted) return;
-      this.publish({ error: "Could not confirm the update. Try again." });
-      const error = new Error("The plugin update request failed.");
-      captureUiError(error, "plugin.update.install");
+      this.publish({ error: "Could not confirm the migration. Try again." });
+      const error = new Error("The store migration request failed.");
+      captureUiError(error, "plugin.update.migrate");
     } finally {
       this.publish({ busy: false });
     }
@@ -95,19 +95,20 @@ export class PluginUpdateController {
     countUiEvent("ui.plugin_update.dismissed");
   }
 
-  async openReleaseNotes() {
-    const version = this.snapshot.update?.latestVersion;
-    if (version === undefined) return;
+  async openStore() {
+    if (this.disposed || this.snapshot.busy) return;
+    this.publish({ busy: true, error: "" });
     try {
-      const url = pluginReleaseUrl(version);
-      const result = await this.app.openLink({ url }, { signal: this.abort.signal });
-      if (result.isError) throw new Error("Could not open the release notes.");
+      const result = await this.app.openLink({ url: PLUGIN_STORE_URL }, { signal: this.abort.signal });
+      if (result.isError) throw new Error("Could not open the plugin store.");
+      this.publish({ storeOpened: true });
+      countUiEvent("ui.plugin_update.store_opened");
     } catch {
       if (this.abort.signal.aborted) return;
-      this.publish({ error: "Could not open release notes. Try again." });
-      const error = new Error("Could not open plugin release notes.");
-      captureUiError(error, "plugin.update.release_notes");
-    }
+      this.publish({ error: "Could not open the plugin store. Try again." });
+      const error = new Error("Could not open the plugin store.");
+      captureUiError(error, "plugin.update.store");
+    } finally { this.publish({ busy: false }); }
   }
 
   dispose() {
