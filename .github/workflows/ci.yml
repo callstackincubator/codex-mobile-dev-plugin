@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The weekly dependency update starts CI on its pull request this way.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -101,7 +103,7 @@ jobs:
   visual-report:
     name: Visual diff comment
     needs: visual
-    if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    if: always() && (github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -118,10 +120,18 @@ jobs:
           name: visual-regression
           path: visual-regression
 
-      - name: Comment the screenshot diffs
+      - name: Find the pull request
+        id: pr
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          NUMBER: ${{ github.event.pull_request.number }}
+        run: echo "number=${NUMBER:-$(gh pr list -R "$GITHUB_REPOSITORY" --head "$GITHUB_REF_NAME" --state open --json number -q '.[0].number')}" >> "$GITHUB_OUTPUT"
+
+      - name: Comment the screenshot diffs
+        if: steps.pr.outputs.number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           VISUAL_RESULT: ${{ needs.visual.result }}
         run: node tooling/hosts/report-diffs.mjs visual-regression

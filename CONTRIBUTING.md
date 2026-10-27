@@ -184,6 +184,36 @@ with `gh run download <run> -n visual-regression` and `npx playwright show-repor
 visual-regression/playwright-report`. Keep the image tag in `ci.yml` in step with
 `@playwright/test`.
 
+## Weekly dependency updates
+
+[`dependency-updates.yml`](.github/workflows/dependency-updates.yml) runs every Monday
+(or from the Actions tab) on the release build's Mac runner and keeps one pull
+request, `deps/weekly`, current:
+
+1. [`update-dependencies.mjs`](tooling/update-dependencies.mjs) applies every
+   compatible update: npm packages in all workspaces and both device runtimes,
+   pinned GitHub Actions, Baguette, sentry-native, the iOS log reader's
+   libimobiledevice sources and the iPhone mirror's Rust crates. Compatible means the
+   same major version, or the same minor for 0.x. Breaking versions, the serve-emu
+   fork, scrcpy, Perfetto and unreleased Git pins are listed in the pull request for a
+   person to update.
+2. `release-native.mjs` rebuilds the native helpers whose pins changed.
+3. [`dependency-checks.mjs`](tooling/dependency-checks.mjs) runs the unit tests,
+   build, package, the packaged server, a simulator stream with a Baguette restart
+   and the Codex regression tests.
+4. If a check fails and the `ANTHROPIC_API_KEY` secret is set, Claude Code fixes the
+   code or Baguette's patches (or reverts one update it cannot make work), and the
+   checks run again. Its changes are a separate `fix(deps)` commit with notes in the
+   pull request.
+5. The pull request lists what changed and the check results, and CI adds the Linux
+   unit tests, Codex regression tests and the visual comparison with main.
+
+Run `node tooling/update-dependencies.mjs` to see available updates without changing
+anything. Without a `DEPENDENCY_UPDATES_TOKEN` secret (a token with `contents`,
+`pull-requests` and `workflows` write access), action pins are only reported, because
+the workflow token cannot edit workflow files. Physical-iPhone features need a
+device: try mirroring and logs on one before merging when their pins changed.
+
 ## Native iOS test app
 
 The repo includes a small [SwiftUI test app](examples/ios-test-app/README.md) for

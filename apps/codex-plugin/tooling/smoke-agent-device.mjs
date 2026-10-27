@@ -19,12 +19,13 @@ try {
   assert.ok(config, "Agent Device is disabled in this package; this smoke test requires its MCP entry to be enabled.");
   assert.deepEqual(config.args, ["./scripts/launch-mcp.sh", "./dist/agent-device-server.mjs"]);
   const metadata = JSON.parse(await readFile(join(plugin, "dist/agent-device/release.json"), "utf8"));
-  assert.equal(metadata.version, "0.20.9");
+  const pinned = JSON.parse(await readFile("packages/runtimes/agent-device/package.json", "utf8")).dependencies["agent-device"];
+  assert.equal(metadata.version, pinned);
   assert.match(metadata.integrity, /^sha512-/);
   await access(join(plugin, "dist/agent-device/node_modules/agent-device/LICENSE"));
   await access(join(plugin, "dist/agent-device/node_modules/agent-device/dist/apple/runner/AgentDeviceRunner/AgentDeviceRunner.xcodeproj/project.pbxproj"));
   const workflow = await readFile(join(plugin, "skills/agent-device/references/workflow.md"), "utf8");
-  assert.ok(workflow.startsWith("agent-device 0.20.9"));
+  assert.ok(workflow.startsWith(`agent-device ${pinned}`));
   const fixtureHome = await createLaunchHome(temporary, process.execPath);
   transport = new StdioClientTransport({
     command: config.command, args: config.args, cwd: plugin, stderr: "pipe",

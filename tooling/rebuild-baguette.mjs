@@ -122,7 +122,12 @@ export async function rebuildBaguette(sourceDirectory) {
       await execute("xcrun", ["swift", "build", "-c", "release", "--product", "Baguette"], {
         cwd: source, timeout: 600000, maxBuffer: 20 * 1024 * 1024,
       });
-    } catch (error) { throw new Error(`Baguette build failed. ${String(error.stderr ?? error.message).slice(-5000)}`); }
+    } catch (error) {
+      // Swift prints each diagnostic in a long command transcript; lead with the diagnostics.
+      const output = `${error.stdout ?? ""}\n${error.stderr ?? error.message}`.replaceAll(/\x1b\[[0-9;]*m/g, "");
+      const diagnostics = [...new Set(output.split("\n").filter(line => /\.swift:\d+:\d+: (error|fatal error):/.test(line)))].slice(0, 40).join("\n");
+      throw new Error(`Baguette build failed.\n${diagnostics || output.slice(-5000)}`);
+    }
     const completedSourceHash = await baguetteTelemetrySourceHash();
     if (completedSourceHash !== sourceHash) throw new Error("Baguette integration sources changed during compilation. Run the rebuild again.");
     const executable = join(source, ".build/release/Baguette");
