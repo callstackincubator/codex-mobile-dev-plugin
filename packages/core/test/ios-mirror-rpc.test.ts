@@ -98,7 +98,7 @@ test("disconnect during native startup closes the eventual subscription", async 
   assert.equal(hub.snapshot().captures, 0);
 });
 
-test("service shutdown rejects pending video reads and releases its capture", async t => {
+test("service shutdown rejects pending video reads and releases its capture", { skip: process.platform !== "darwin" && "macOS socket shutdown semantics" }, async t => {
   let finishRead!: () => void;
   let closes = 0;
   const hub = new IosMirrorHub(async () => ({

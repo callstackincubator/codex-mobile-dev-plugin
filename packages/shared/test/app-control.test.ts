@@ -43,7 +43,7 @@ function fixture(respond: (file: string, args: string[], input?: string) => stri
     if (result instanceof Error) throw result;
     return result;
   };
-  const drivers = createDrivers({ run, readBinary: async () => Buffer.alloc(0), adb: async () => "adb", aapt2: async () => null });
+  const drivers = createDrivers({ run, readBinary: async () => Buffer.alloc(0), adb: async () => "adb", aapt2: async () => null, platform: "darwin" });
   return { simulator: drivers(ios), emulator: drivers(android), calls };
 }
 

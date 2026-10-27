@@ -106,7 +106,7 @@ process.stdin.resume();
 process.stdin.once('end', () => server.close());
 `;
 
-test("the device bridge accepts fragmented readiness, forwards raw GDB bytes and closes its child once", async t => {
+test("the device bridge accepts fragmented readiness, forwards raw GDB bytes and closes its child once", { skip: process.platform !== "darwin" && "needs macOS" }, async t => {
   const binary = await helper(t, echoHelper);
   const abort = new AbortController();
   const transport = await openPhysicalDebugserver(udid, abort.signal, binary);
@@ -122,7 +122,7 @@ test("the device bridge accepts fragmented readiness, forwards raw GDB bytes and
   assert.equal(transport.socket.destroyed, true);
 });
 
-test("aborting an established device bridge releases its socket and native helper", async t => {
+test("aborting an established device bridge releases its socket and native helper", { skip: process.platform !== "darwin" && "needs macOS" }, async t => {
   const binary = await helper(t, echoHelper);
   const abort = new AbortController();
   const transport = await openPhysicalDebugserver(udid, abort.signal, binary);
@@ -132,7 +132,7 @@ test("aborting an established device bridge releases its socket and native helpe
   assert.equal(transport.socket.destroyed, true);
 });
 
-test("device bridge startup exposes device errors and cancels a helper waiting for a connection", async t => {
+test("device bridge startup exposes device errors and cancels a helper waiting for a connection", { skip: process.platform !== "darwin" && "needs macOS" }, async t => {
   const failed = await helper(t, "process.stderr.write('Developer disk image is not mounted'); process.exit(1);");
   const signal = new AbortController();
   const opening = openPhysicalDebugserver(udid, signal.signal, failed);

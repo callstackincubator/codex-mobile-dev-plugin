@@ -9,7 +9,11 @@ import { androidSdkRoots } from "../android-sdk.ts";
 export type CommandOptions = { timeout: number; input?: string; maxBuffer?: number };
 export type CommandRunner = (file: string, args: string[], options: CommandOptions) => Promise<string>;
 export type BinaryRunner = (file: string, args: string[], options: { timeout: number }) => Promise<Buffer>;
-export type Commands = { run: CommandRunner; readBinary: BinaryRunner; adb: () => Promise<string>; aapt2: () => Promise<string | null> };
+export type Commands = {
+  run: CommandRunner; readBinary: BinaryRunner; adb: () => Promise<string>; aapt2: () => Promise<string | null>;
+  /** The host OS the commands run on. Simulator tools need macOS. */
+  platform?: NodeJS.Platform;
+};
 
 const run: CommandRunner = (file, args, { timeout, input, maxBuffer = 8 * 1024 * 1024 }) => new Promise((resolve, reject) => {
   const child = execFile(file, args, { encoding: "utf8", timeout, maxBuffer }, (error, stdout, stderr) => {

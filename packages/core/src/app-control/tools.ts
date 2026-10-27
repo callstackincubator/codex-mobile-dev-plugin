@@ -25,7 +25,7 @@ export function createDrivers(commands: Commands = systemCommands): DriverFactor
       return new AndroidDriver(deviceId, commands, cache);
     }
     if (!udidSchema.safeParse(deviceId).success) throw new ExpectedOperationError("invalid_input", "App tools support iOS simulators and Android devices. Pass an iOS simulator UDID.");
-    if (process.platform !== "darwin") throw new ExpectedOperationError("unsupported_platform", "iOS simulators require macOS and Xcode.");
+    if ((commands.platform ?? process.platform) !== "darwin") throw new ExpectedOperationError("unsupported_platform", "iOS simulators require macOS and Xcode.");
     return new SimulatorDriver(deviceId, commands, cache);
   };
 }

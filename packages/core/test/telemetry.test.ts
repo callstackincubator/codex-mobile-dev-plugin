@@ -1023,7 +1023,7 @@ test("app control reports unexpected command failures without command output and
   };
   const server = new McpServer({ name: "app-control-telemetry", version: "1" });
   instrumentMcpServer(server);
-  registerAppControlTools(server, createDrivers({ run, readBinary: async () => Buffer.alloc(0), adb: async () => "adb", aapt2: async () => null }));
+  registerAppControlTools(server, createDrivers({ run, readBinary: async () => Buffer.alloc(0), adb: async () => "adb", aapt2: async () => null, platform: "darwin" }));
   const client = new Client({ name: "test", version: "1" });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   t.after(async () => { await client.close(); await server.close(); await Sentry.close(); });
