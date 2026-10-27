@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 
 // Generate a snippet only; never replace the user's existing Claude configuration.
 await access("dist/server.mjs");
-const manifest = JSON.parse(await readFile("apps/claude-desktop/manifest.json", "utf8"));
+const manifest = JSON.parse(await readFile("apps/claude/manifest.json", "utf8"));
 const config = {
   mcpServers: {
     "mobile-dev": {

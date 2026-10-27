@@ -177,7 +177,7 @@ product in `apps/`:
 | `packages/skills` | Agent skills for the shared tools |
 | `packages/native`, `packages/runtimes` | Native helpers and bundled Node runtimes |
 | `apps/codex-plugin` | The Codex plugin: manifest, updater, and update banner |
-| `apps/claude-desktop` | The Claude Desktop bundle manifest |
+| `apps/claude` | Claude: the Claude Desktop extension and Claude Code plugin manifests |
 | `apps/mac` | The Mac app: SwiftUI window and its page |
 
 To build a host, install a local package, or contribute changes, see
@@ -201,3 +201,8 @@ for implementation details.
 
 For help, email [hello@callstack.com](mailto:hello@callstack.com).
 See [Support](SUPPORT.md) for reporting bugs, security issues, and privacy requests.
+
+## License
+
+Mobile Dev is available under the [MIT License](LICENSE). Bundled third-party
+components keep their own licenses; see [Third-party notices](THIRD_PARTY_NOTICES.md).

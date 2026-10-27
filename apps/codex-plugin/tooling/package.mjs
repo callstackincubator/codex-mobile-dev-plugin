@@ -17,7 +17,7 @@ const plugin = `${marketplace}/plugins/${manifest.name}`;
 await rm(plugin, { recursive: true, force: true });
 await mkdir(plugin, { recursive: true });
 await copyFile(`${source}/.mcp.json`, `${plugin}/.mcp.json`);
-for (const path of ["README.md", "THIRD_PARTY_NOTICES.md", "PRIVACY.md", "TERMS.md", "SUPPORT.md"]) await copyFile(path, `${plugin}/${path}`);
+for (const path of ["README.md", "LICENSE", "THIRD_PARTY_NOTICES.md", "PRIVACY.md", "TERMS.md", "SUPPORT.md"]) await copyFile(path, `${plugin}/${path}`);
 await stageRuntime(`${plugin}/dist`);
 await buildCodexHost(telemetryEnvironment, `${plugin}/dist`);
 for (const path of [".codex-plugin", "assets"]) await cp(`${source}/${path}`, `${plugin}/${path}`, { recursive: true, verbatimSymlinks: true });

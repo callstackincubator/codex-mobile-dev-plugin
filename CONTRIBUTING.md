@@ -19,7 +19,7 @@ packages know no host by name.
 | `packages/runtimes` | Pinned Node runtimes bundled into the server (agent-device, serve-emu). |
 | `packages/skills` | Agent skills for the shared tools; each host's package step includes the ones its host supports. |
 | `apps/codex-plugin` | Codex: manifest, launcher, assets, and its own server (`server/`, the self-updater) and panel (`ui/`, the update banner). |
-| `apps/claude-desktop` | Claude Desktop: the MCPB manifest. It runs the shared server and panel unchanged. |
+| `apps/claude` | Claude: the Claude Desktop extension (`manifest.json`, MCPB) and the Claude Code plugin (`.claude-plugin/plugin.json`). Both run the shared server and panel unchanged. |
 | `apps/mac` | The Mac app: a SwiftUI shell (`Sources/`), the page it hosts (`web/`) and its server (`server/`). |
 | `packages/test-support` | Fixtures shared by tests across packages and apps. |
 | `tooling` | Shared build, native, release and device smoke-test scripts. Run them from the repository root. |
@@ -230,7 +230,12 @@ npm run package:claude
 npm run test:claude
 ```
 
-This writes `release/mobile-dev-<version>-claude-desktop-darwin-arm64.mcpb`.
+This writes `release/mobile-dev-<version>-claude-desktop-darwin-arm64.mcpb` and
+the Claude plugin folder `release/claude-plugin/mobile-dev`. The plugin folder
+uses `apps/claude/.claude-plugin/plugin.json`, which starts `dist/server.mjs` with Node.js
+22.19 or later from `PATH`, and leaves out the Codex manifest, `.mcp.json`, and
+launcher. Check it with `claude plugin validate ./release/claude-plugin/mobile-dev`,
+or load it with `claude --plugin-dir ./release/claude-plugin/mobile-dev`.
 Follow the [manual installation steps](README.md#claude-desktop-manual-installation).
 Remove the `mobile-dev` development entry before installing the bundle to avoid
 duplicate servers. Rebuild, repackage, and reinstall to update a bundled copy.

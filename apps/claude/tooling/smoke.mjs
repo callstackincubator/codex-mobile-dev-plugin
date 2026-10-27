@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { access, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, cp, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -64,4 +64,44 @@ try {
       throw error;
     } finally { await client.close(); await transport.close(); }
   }
+
+  // Claude plugin folder: copy it to a path with spaces, as an install cache would.
+  const plugin = join(temporary, "plugin with spaces");
+  await cp(resolve("release/claude-plugin/mobile-dev"), plugin, { recursive: true, verbatimSymlinks: true });
+  const pluginManifest = JSON.parse(await readFile(join(plugin, ".claude-plugin/plugin.json"), "utf8"));
+  assert.equal(pluginManifest.name, "mobile-dev");
+  assert.equal(pluginManifest.version, metadata.version);
+  assert.equal(pluginManifest.license, "MIT");
+  const server = pluginManifest.mcpServers["mobile-dev"];
+  assert.equal(server.command, "node");
+  assert.deepEqual(server.args, ["${CLAUDE_PLUGIN_ROOT}/dist/server.mjs"]);
+  for (const path of ["LICENSE", "README.md", "PRIVACY.md", "skills/mobile-dev/SKILL.md", "skills/mobile-dev-setup/SKILL.md", "dist/app.html"]) {
+    await access(join(plugin, path));
+  }
+  // Codex-only files would load the Codex launcher or enable the Codex updater.
+  for (const path of [".mcp.json", ".codex-plugin", "scripts/launch-mcp.sh"]) {
+    await assert.rejects(access(join(plugin, path)), path);
+  }
+  const client = new Client({ name: "claude-plugin-smoke", version: "1" }, { capabilities: {} });
+  const transport = new StdioClientTransport({
+    command: process.execPath, args: server.args.map(arg => arg.replaceAll("${CLAUDE_PLUGIN_ROOT}", plugin)),
+    cwd: temporary, stderr: "pipe",
+    env: { PATH: "/usr/bin:/bin:/usr/sbin:/sbin", HOME: home, CLAUDE_PLUGIN_ROOT: plugin,
+      MOBILE_DEV_TELEMETRY: "off", MOBILE_DEV_ENVIRONMENT: "release" },
+  });
+  let diagnostics = "";
+  transport.stderr?.on("data", chunk => { diagnostics = (diagnostics + chunk).slice(-5000); });
+  try {
+    await client.connect(transport);
+    const { tools } = await client.listTools();
+    for (const name of ["mobile_open_workspace", "mobile_open_simulator", "mobile_list_simulators", "mobile_list_android_devices"]) {
+      assert.ok(tools.some(tool => tool.name === name), name);
+    }
+    // The Codex updater belongs to Codex's server; the plugin runs the shared one.
+    assert.equal(tools.some(tool => tool.name.includes("plugin_update")), false);
+    console.log("Claude Code plugin: manifest, payload, MCP startup from the plugin root and no Codex updater passed.");
+  } catch (error) {
+    if (diagnostics) console.error(diagnostics);
+    throw error;
+  } finally { await client.close(); await transport.close(); }
 } finally { await rm(temporary, { recursive: true, force: true }); }
