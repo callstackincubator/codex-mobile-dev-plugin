@@ -1,50 +1,35 @@
 # Mobile Dev
 
-Keep iOS and Android devices beside your chat while building, running, and
-debugging mobile apps. Mobile Dev works with Expo, React Native, SwiftUI, and
-other native mobile projects.
+Build, run, and debug iOS and Android apps without leaving your AI coding tool.
+Mobile Dev keeps devices beside your agent's chat and works with Expo, React
+Native, SwiftUI, and other native mobile projects.
 
-Mobile Dev runs in three places, all on the same server and device panel:
-
-| Host | How it shows | Status |
-| --- | --- | --- |
-| [Codex](#codex) | A plugin panel beside the chat, or fullscreen | Released |
-| [Claude Desktop](#claude-desktop-manual-installation) | An MCP App in the conversation, with an expanded view when available | Development preview |
-| [Mac app](#mac-app) | A standalone window with a native sidebar, no chat | Development preview, build from source |
-
-- [Live devices beside your chat](#live-devices-beside-your-chat): stream simulators, emulators, and physical devices.
-- [Device control, inspection and annotations](#device-control-inspection-and-annotations): tap, type, inspect elements, and leave notes for the agent.
-- [App control](#app-control): install, launch, and stop apps, open deep links, send pushes, and set permissions and languages.
-- [Device settings and network conditions](#device-settings-and-network-conditions): appearance, text size, rotation, location, status bar, and throttled networks.
-- [Native and JavaScript logs](#native-and-javascript-logs): iOS, Android, and Metro logs in one stream.
-- [Live performance monitoring and improvements](#live-performance-monitoring-and-improvements): CPU, memory, Display FPS, recordings, and comparisons.
-- [Profile analysis with TraceSift](#profile-analysis-with-tracesift): measured findings from CPU and React profiles, with an explorer.
-- [App storage](#app-storage): inspect and watch what an app saves, without adding code.
+- [Live devices beside your chat](#live-devices-beside-your-chat): stream iOS and
+  Android simulators, emulators, and physical devices.
+- [Device control, inspection and annotations](#device-control-inspection-and-annotations):
+  let your agent tap, type, and inspect your app, and annotate elements for it.
+- [App control](#app-control): install, launch, and stop apps, open deep links,
+  send pushes, and set permissions and languages.
+- [Device settings and network conditions](#device-settings-and-network-conditions):
+  appearance, text size, rotation, location, status bar, and slow networks.
+- [Native and JavaScript logs](#native-and-javascript-logs): iOS, Android, and
+  Metro logs in one filterable view.
+- [Live performance monitoring and improvements](#live-performance-monitoring-and-improvements):
+  CPU, memory, and FPS charts, with recordings your agent can analyze.
+- [Profile analysis with TraceSift](#profile-analysis-with-tracesift): measured
+  findings from CPU and React profiles, with an explorer.
+- [App storage](#app-storage): browse and watch what your app saves, without
+  adding code to it.
 
 ## Install
 
 ### Codex
 
-Install the prebuilt plugin from the release marketplace:
+**[Add Mobile Dev to Codex](https://chatgpt.com/plugins/plugins_6ac4c117f76881918d3676e851fa4005)**
+from the plugin directory, then open a new chat.
 
-```sh
-codex plugin marketplace add https://github.com/callstackincubator/mobile-dev.git --ref release/latest
-codex plugin add mobile-dev@mobile-dev
-```
-
-Open a new chat after installing. The package includes the built plugin and
-bundled runtimes; no plugin build or `npm install` is needed.
-
-Mobile Dev shows a banner when a newer release is ready to install. Click
-**Update**, then fully quit and reopen Codex after it finishes.
-
-You can also update an existing installation from the terminal:
-
-```sh
-codex plugin marketplace upgrade mobile-dev
-```
-
-Fully quit and reopen Codex after updating.
+To install the prebuilt plugin from this repository instead, see
+[Install from the GitHub marketplace](CONTRIBUTING.md#install-from-the-github-marketplace).
 
 ### Claude Desktop: manual installation
 
@@ -90,7 +75,7 @@ Stream iOS simulators, Android emulators, and connected iPhones, iPads, and Andr
 ![](/img/screenshot_side_by_side.png)
 
 ### Device control, inspection and annotations
-Select and boot simulators or emulators, interact with taps and drags, type on supported devices, and let the agent inspect accessibility elements and control your app through MCP tools. Select an element or screen region and leave instructions for the agent, with React Native component and source details when available.
+Select and boot simulators or emulators, interact with taps and drags, type on supported devices, and let your agent inspect accessibility elements and control your app through MCP tools. Select an element or screen region and leave instructions for your agent, with React Native component and source details when available.
 
 ![](/img/screenshot_annotations.png)
 
@@ -106,7 +91,7 @@ Read iOS unified logs, Android logcat, and Metro console messages together. Foll
 ![](/img/screenshot_logs.png)
 
 ### Live performance monitoring and improvements
-Track app CPU and memory, expand individual thread charts, and view device-wide Display FPS on supported devices. Ask the agent to record an interaction, inspect interactive charts in chat, compare runs, and analyze selected ranges. Android recordings include display frame pacing and jank statistics.
+Track app CPU and memory, expand individual thread charts, and view device-wide Display FPS on supported devices. Ask your agent to record an interaction, inspect interactive charts in chat, compare runs, and analyze selected ranges. Android recordings include display frame pacing and jank statistics.
 
 ![](/img/screenshot_performance.png)
 
@@ -125,10 +110,10 @@ See [storage privacy and review checks](docs/storage-privacy.md).
 
 ## Requirements
 
-Every host needs an Apple Silicon Mac. The Codex plugin uses Codex's bundled Node
-runtime from its workspace dependency cache, the Claude Desktop bundle uses
-Claude's Node runtime, and the Mac app bundles its own. Install the tools for the
-platforms you use:
+Mobile Dev runs on an Apple Silicon Mac. In Codex desktop, the prebuilt plugin
+uses Codex's bundled Node runtime from its workspace dependency cache; the Claude
+Desktop bundle uses Claude's Node runtime, and the Mac app bundles its own. Install
+the tools for the platforms you use:
 
 | Platform or feature | Requirements |
 | --- | --- |
@@ -150,24 +135,20 @@ its device panel, inspection, logs, and performance tools.
 
 ## Get started
 
-In Codex, open Mobile Dev from the sidebar or ask to open the simulator beside
-this chat. In Claude Desktop, ask **"Open Mobile Dev"** in a conversation with the
-connector enabled, then use **Expand** when available. In the Mac app, pick a tool and
-the platforms in the sidebar.
-
-Pick a device from the toolbar; selecting a stopped simulator or AVD
+Ask your agent to open the simulator beside this chat. In Codex, you can also
+open Mobile Dev from the sidebar. Pick a device from the toolbar; selecting a stopped simulator or AVD
 boots it. Use the iOS and Android toggles to show either platform or both.
 
 Click an iOS simulator or Android screen to focus it, then press **Command-V** to
 paste text into the device. Paste accepts up to 4,096 printable US-ASCII characters;
 line breaks and other characters show a notice without sending partial text.
 
-Ask your assistant to work with your app, for example:
+Ask your agent to work with your app, for example:
 
-- "Build and run my Expo app in the simulator beside this chat."
-- "Read the app logs and help me fix this error."
-- "Record CPU and memory for 30 seconds while I scroll checkout."
-- "Compare these two performance recordings."
+- “Build and run my Expo app in the simulator beside this chat.”
+- “Read the app logs and help me fix this error.”
+- “Record CPU and memory for 30 seconds while I scroll checkout.”
+- “Compare these two performance recordings.”
 
 Open Logs, Performance, Storage, or TraceSift to inspect the selected device. Use Screenshot to attach
 an image to your next message, or Select to annotate an element or region with an
@@ -201,6 +182,7 @@ product in `apps/`:
 
 To build a host, install a local package, or contribute changes, see
 [CONTRIBUTING.md](https://github.com/callstackincubator/mobile-dev/blob/main/CONTRIBUTING.md).
+Implementation and release details live in the linked contributor documentation.
 
 ## Privacy and support
 
