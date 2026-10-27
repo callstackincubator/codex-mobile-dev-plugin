@@ -1,7 +1,7 @@
 import { chatMessage } from "./chat-message.ts";
 import type { HostBridge } from "./host-bridge.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { comparisonDuration, comparisonSchema } from "@mobile-dev/shared/performance-comparison.ts";
+import { comparisonDuration, comparisonReferenceSchema, comparisonSchema } from "@mobile-dev/shared/performance-comparison.ts";
 import type { PerformanceComparison } from "@mobile-dev/shared/performance-comparison.ts";
 import { recordingRangeSchema } from "@mobile-dev/shared/recordings.ts";
 import type { RecordingRange } from "@mobile-dev/shared/recordings.ts";
@@ -11,6 +11,8 @@ type ComparisonState = {
   comparison?: PerformanceComparison;
   hiddenIds: ReadonlySet<string>;
   range?: RecordingRange;
+  /** Showing previews without frame detail: the full recordings are loading, or this host cannot load them. */
+  preview?: "loading" | "only";
   canMessage: boolean;
   busy: boolean;
   error: string;
@@ -22,6 +24,7 @@ export class ComparisonController {
   private listeners = new Set<() => void>();
   private disposed = false;
   private readyAt = performance.now();
+  private abort = new AbortController();
 
   constructor(app: HostBridge) { this.app = app; }
   subscribe = (listener: () => void) => {
@@ -47,9 +50,54 @@ export class ComparisonController {
       this.update({ error });
       return;
     }
-    if (result.structuredContent?.recordings === undefined) return;
+    const data = result.structuredContent;
+    if (data === undefined) return;
+    if (data.recordings !== undefined) {
+      this.show(data, undefined);
+      return;
+    }
+    // The comparison tool sends recording IDs and, when they fit, previews without frame
+    // detail. Hosts that let cards call tools then load the full recordings.
+    const reference = comparisonReferenceSchema.safeParse(data);
+    if (reference.success === false) return;
+    const { title, recordingIds, range, previews } = reference.data;
+    const canLoad = this.app.getHostCapabilities()?.serverTools !== undefined;
+    if (previews) {
+      countUiEvent("ui.comparison.preview");
+      this.show({ title, recordings: previews, ...(range ? { range } : {}) }, canLoad ? "loading" : "only");
+    }
+    if (canLoad) void this.load({ title, recordingIds, range });
+    else if (previews === undefined) this.update({ error: "This app cannot load long recordings into a comparison card. Compare them in Mobile Dev instead." });
+  }
+  private async load({ title, recordingIds, range }: { title: string; recordingIds: string[]; range?: RecordingRange }) {
     const startedAt = performance.now();
-    const comparison = comparisonSchema.parse(result.structuredContent);
+    try {
+      const results = await Promise.all(recordingIds.map(recordingId => this.app.callServerTool(
+        { name: "mobile_read_performance_recording", arguments: { recordingId } }, { signal: this.abort.signal })));
+      if (this.disposed) return;
+      const failed = results.find(result => result.isError === true);
+      if (failed) {
+        this.update({ error: failed.content.filter(item => item.type === "text").map(item => item.text).join("\n") });
+        return;
+      }
+      // A host that trims large results drops the structured samples; say so rather than load forever.
+      const recordings = results.map(result => {
+        if (result.structuredContent?.recording === undefined) throw new Error("The host returned a recording without its samples.");
+        return result.structuredContent.recording;
+      });
+      recordUiTiming("ui.comparison.load", performance.now() - startedAt);
+      this.show({ title, recordings, ...(range ? { range } : {}) }, undefined);
+    } catch (error) {
+      if (this.disposed) return;
+      captureUiError(error, "comparison.load");
+      // Previews already on screen stay; the card only lacks frame detail.
+      if (this.state.preview) this.update({ preview: "only" });
+      else this.update({ error: "Could not load these recordings. Reopen the comparison to try again." });
+    }
+  }
+  private show(data: unknown, preview: ComparisonState["preview"]) {
+    const startedAt = performance.now();
+    const comparison = comparisonSchema.parse(data);
     setUiSurface("comparison");
     const platform = comparison.recordings[0].target.platform;
     const samePlatform = comparison.recordings.every(recording => recording.target.platform === platform);
@@ -68,8 +116,14 @@ export class ComparisonController {
     setUiGauge("ui.comparison.display_frames", displayFrames);
     const elapsed = performance.now() - startedAt;
     recordUiTiming("ui.comparison.process", elapsed);
-    this.update({ comparison, range: comparison.range, hiddenIds: new Set(), error: "" });
-    markUiSurfaceReady(this.readyAt);
+    // Full recordings replacing their previews keep the runs hidden and range selected meanwhile.
+    const previous = this.state.comparison;
+    const upgrade = this.state.preview !== undefined && previous !== undefined
+      && previous.recordings.map(run => run.id).join() === comparison.recordings.map(run => run.id).join();
+    this.update(upgrade
+      ? { comparison, preview, error: "" }
+      : { comparison, preview, range: comparison.range, hiddenIds: new Set(), error: "" });
+    if (upgrade === false) markUiSurfaceReady(this.readyAt);
   }
   select = (range?: RecordingRange) => {
     const comparison = this.state.comparison;
@@ -114,5 +168,5 @@ export class ComparisonController {
       this.update({ error: text });
     } finally { this.update({ busy: false }); }
   }
-  dispose() { this.disposed = true; this.listeners.clear(); }
+  dispose() { this.disposed = true; this.abort.abort(); this.listeners.clear(); }
 }

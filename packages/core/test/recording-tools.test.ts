@@ -49,7 +49,15 @@ test("recording tools distinguish data, inline rendering, workspace opening and 
   const comparisonArguments = { recordingIds: [recording.id, second.id], range: { start: 12, end: 18 } };
   const comparison = await client.callTool({ name: "mobile_compare_performance_recordings", arguments: comparisonArguments });
   assert.equal(comparison.isError, undefined);
-  assert.deepEqual(comparison.structuredContent?.recordings, [recording, second]);
+  // The card reads each recording itself; the result names them and summarizes the range.
+  assert.equal(comparison.structuredContent?.recordings, undefined);
+  assert.deepEqual(comparison.structuredContent?.recordingIds, [recording.id, second.id]);
+  assert.deepEqual(comparison.structuredContent?.range, { start: 12, end: 18 });
+  const previews = comparison.structuredContent?.previews as (typeof recording)[] | undefined;
+  assert.deepEqual(previews?.map(preview => preview.id), [recording.id, second.id]);
+  const comparisonText = comparison.content.map(item => item.type === "text" ? item.text : "").join("");
+  assert.match(comparisonText, /Checkout scroll · Run 2/);
+  assert.match(comparisonText, /mobile_read_performance_recording/);
   const summaries = comparison.structuredContent?.summaries;
   assert.ok(Array.isArray(summaries));
   assert.deepEqual(summaries[1].range, { start: 12, end: 15 });
@@ -78,7 +86,21 @@ test("recording tools distinguish data, inline rendering, workspace opening and 
   for (const name of ["mobile_read_performance_recording", "mobile_render_performance_recording", "mobile_open_performance_recording"]) {
     const result = await client.callTool({ name, arguments: { recordingId: recording.id, range: { start: 12, end: 18 } } });
     assert.equal(result.isError, undefined);
-    assert.deepEqual(result.structuredContent?.recording, recording);
+    if (name === "mobile_read_performance_recording") assert.deepEqual(result.structuredContent?.recording, recording);
+    else {
+      // Showing a recording sends its identity, never its samples: hosts cap tool results.
+      assert.equal(result.structuredContent?.recording, undefined);
+      assert.equal(result.structuredContent?.recordingId, recording.id);
+      assert.equal(result.structuredContent?.title, recording.title);
+      const text = result.content.map(item => item.type === "text" ? item.text : "").join("");
+      assert.match(text, new RegExp(`recordingId ${recording.id}`));
+      // A preview for cards that cannot read the recording: every sample, no thread or frame detail.
+      const preview = result.structuredContent?.preview as typeof recording | undefined;
+      assert.equal(preview?.samples.length, recording.samples.length);
+      assert.ok(preview?.samples.every(sample => sample.threads.length === 0));
+      assert.ok(preview?.fps.samples.every(sample => sample.frameTimeline === undefined));
+      assert.ok(JSON.stringify(result).length < 45_000, `${name} fits a host's tool result cap`);
+    }
     assert.deepEqual(result.structuredContent?.range, { start: 12, end: 18 });
     const summary = result.structuredContent?.summary;
     assert.ok(summary && typeof summary === "object" && "peakCpuPercent" in summary);

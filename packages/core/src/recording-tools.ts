@@ -4,14 +4,15 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { cpuTargetSchema } from "@mobile-dev/shared/cpu.ts";
 import type { CpuTarget } from "@mobile-dev/shared/cpu.ts";
-import { RECORDING_URI, recordingIdSchema, recordingRangeSchema, recordingSchema, summarizeRecording } from "@mobile-dev/shared/recordings.ts";
+import { RECORDING_URI, recordingIdSchema, recordingPreviews, recordingRangeSchema, recordingReferenceSchema, recordingSchema, summarizeRecording } from "@mobile-dev/shared/recordings.ts";
+import type { PerformanceRecording, RecordingRange } from "@mobile-dev/shared/recordings.ts";
 import { errorMessage } from "@mobile-dev/shared/protocol.ts";
 import { captureServerError } from "./telemetry.ts";
 import type { PerformanceRecordings } from "./performance-recordings.ts";
 import { displayFrameSchema } from "@mobile-dev/shared/display-fps.ts";
 import { readRecordingFrames } from "./recording-frames.ts";
 import { nullableDisplayFrameStatsSchema } from "@mobile-dev/shared/frame-statistics.ts";
-import { COMPARISON_URI, comparisonIdsSchema, comparisonSchema, comparisonTitleSchema, summarizeComparison } from "@mobile-dev/shared/performance-comparison.ts";
+import { COMPARISON_URI, comparisonIdsSchema, comparisonReferenceSchema, comparisonSchema, comparisonTitleSchema, summarizeComparison } from "@mobile-dev/shared/performance-comparison.ts";
 
 const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 const visibility: ("app" | "model")[] = ["app", "model"];
@@ -24,6 +25,36 @@ const summarySchema = z.object({
   sampleCount: z.number(), threads: z.array(z.object({ id: z.string(), name: z.string(), averageCpuPercent: z.number(), peakCpuPercent: z.number() })),
 });
 const outputSchema = { recording: recordingSchema, summary: summarySchema, range: recordingRangeSchema.optional() };
+// Tools that show a recording return its identity, summary and a preview; the card reads the full samples.
+const referenceOutputSchema = { ...recordingReferenceSchema.shape, summary: summarySchema };
+type RecordingSummary = ReturnType<typeof summarizeRecording>;
+
+const percent = (value: number) => `${value.toFixed(1)}%`;
+// Apps can run hundreds of threads; the agent gets the busiest, the card computes its own.
+const REFERENCE_THREADS = 10;
+const busiest = (summary: RecordingSummary) => ({ ...summary, threads: summary.threads.slice(0, REFERENCE_THREADS) });
+const megabytes = (bytes: number) => `${(bytes / 1_048_576).toFixed(1)} MB`;
+
+/** One line of measured numbers for the model, in place of the samples the card shows. */
+function describeMeasurements(summary: RecordingSummary) {
+  const parts: string[] = [];
+  if (summary.averageCpuPercent !== null && summary.peakCpuPercent !== null) parts.push(`CPU average ${percent(summary.averageCpuPercent)}, peak ${percent(summary.peakCpuPercent)} (100% is one core)`);
+  if (summary.firstMemoryBytes !== null && summary.lastMemoryBytes !== null) {
+    const change = summary.memoryChangeBytes ?? summary.lastMemoryBytes - summary.firstMemoryBytes;
+    parts.push(`memory ${megabytes(summary.firstMemoryBytes)} to ${megabytes(summary.lastMemoryBytes)} (${change >= 0 ? "+" : "-"}${megabytes(Math.abs(change))})`);
+  }
+  if (summary.averageFps !== null) parts.push(`Display FPS average ${summary.averageFps.toFixed(1)}${summary.minimumFps === null ? "" : `, minimum ${summary.minimumFps.toFixed(1)}`}`);
+  if (summary.frameStats?.jankRatePercent != null) parts.push(`jank rate ${percent(summary.frameStats.jankRatePercent)}`);
+  const threads = summary.threads.slice(0, 3).map(thread => `${thread.name || `thread ${thread.id}`} ${percent(thread.averageCpuPercent)}`);
+  if (threads.length > 0) parts.push(`busiest threads ${threads.join(", ")}`);
+  return parts.length > 0 ? parts.join("; ") : "no samples yet";
+}
+
+function describeRecording(recording: PerformanceRecording, summary: RecordingSummary, range?: RecordingRange) {
+  const span = range ? `${range.start}–${range.end}s of ` : "";
+  return `Showing ${span}“${recording.title}” (${recording.status}, ${recording.durationSeconds}s on ${recording.deviceName}, ${summary.sampleCount} samples) in an interactive chart. `
+    + `${describeMeasurements(summary)}. The chart reads the samples itself; for sample-level detail call mobile_read_performance_recording with recordingId ${recording.id}.`;
+}
 const pageNumber = z.number();
 const pageInteger = pageNumber.int();
 const nonnegativePageInteger = pageInteger.nonnegative();
@@ -99,19 +130,28 @@ export function registerRecordingTools(server: McpServer, recordings: Performanc
     },
     annotations: read, _meta: { ui: { visibility } },
   }, readFrames);
+  const showRecording = safe(async ({ recordingId, range }: z.infer<z.ZodObject<typeof inputSchema>>) => {
+    const recording = await recordings.read(recordingId);
+    const summary = summarizeRecording(recording, range);
+    const [preview] = recordingPreviews([recording]) ?? [];
+    const structuredContent = {
+      recordingId: recording.id, title: recording.title, status: recording.status, durationSeconds: recording.durationSeconds,
+      ...(range ? { range } : {}), summary: busiest(summary), ...(preview ? { preview } : {}),
+    };
+    return { content: [{ type: "text", text: describeRecording(recording, summary, range) }], structuredContent };
+  });
   registerAppTool(server, "mobile_render_performance_recording", {
     title: "Show an interactive performance chart in chat",
-    description: "Show a saved CPU/memory/FPS recording as an inline interactive chart with shared drag selection, thread breakdown, Ask and Open in Mobile Dev. Android frame data adds jank rate, classification coverage, dropped frames and frame-interval P50/P95/P99, updating with the selected range. Call this when reporting scrolling FPS/jank or comparing implementations so the user sees the chart alongside the analysis. The full timeline stays visible; automatic change highlights do not select or limit a range. Omit range unless the user requested a selection. Pass recording.id from mobile_record_performance or mobile_list_performance_recordings. Active runs update until finished. Data tools return measurements without rendering a chart.",
-    inputSchema, outputSchema, annotations: read, _meta: { ui: { resourceUri: RECORDING_URI, visibility } },
-  }, readRecording);
+    description: "Show a saved CPU/memory/FPS recording as an inline interactive chart with shared drag selection, thread breakdown, Ask and Open in Mobile Dev. Android frame data adds jank rate, classification coverage, dropped frames and frame-interval P50/P95/P99, updating with the selected range. Call this when reporting scrolling FPS/jank or comparing implementations so the user sees the chart alongside the analysis. The full timeline stays visible; automatic change highlights do not select or limit a range. Omit range unless the user requested a selection. Pass recording.id from mobile_record_performance or mobile_list_performance_recordings. Active runs update until finished. Data tools return measurements without rendering a chart. Returns the recording ID and summary numbers; the chart reads the samples itself, so use mobile_read_performance_recording for sample-level detail.",
+    inputSchema, outputSchema: referenceOutputSchema, annotations: read, _meta: { ui: { resourceUri: RECORDING_URI, visibility } },
+  }, showRecording);
   registerAppTool(server, "mobile_open_performance_recording", {
     title: "Open a recording in Mobile Dev",
     description: "Open the saved recording and selected time range in the Mobile Dev workspace. Does not start a live performance collector or boot a device.",
-    inputSchema, outputSchema, annotations: read, _meta: { ui: { resourceUri: workspaceUri, visibility } },
-  }, readRecording);
+    inputSchema, outputSchema: referenceOutputSchema, annotations: read, _meta: { ui: { resourceUri: workspaceUri, visibility } },
+  }, showRecording);
   const comparisonTitle = comparisonTitleSchema.default("Performance comparison");
   const optionalComparisonRange = recordingRangeSchema.optional();
-  const comparisonRecordings = z.array(recordingSchema);
   const nullableComparisonRange = recordingRangeSchema.nullable();
   const nullableComparisonSummary = summarySchema.nullable();
   const comparisonSummary = z.object({ recordingId: recordingIdSchema, range: nullableComparisonRange, summary: nullableComparisonSummary });
@@ -123,14 +163,9 @@ export function registerRecordingTools(server: McpServer, recordings: Performanc
   };
   registerAppTool(server, "mobile_compare_performance_recordings", {
     title: "Compare performance runs in an inline overlay chart",
-    description: "Overlay 2–6 distinct completed CPU, memory and FPS recordings in chat, aligned at recording start in elapsed seconds. Pass recordingIds from mobile_list_performance_recordings, an optional title and shared range. Finish active runs first. The interactive card has a color per run, visibility toggles, shared range selection and per-run summaries. Different durations retain their original time scale; missing data stays gaps. Android RSS and iOS physical footprint use separate memory tracks. Device-wide FPS cannot attribute changes to one app. Returns original recordings and interval-weighted summaries, clipped to each run's duration; a run outside the range has a null summary. Use this tool when comparing runs or implementations so the user sees their timelines together.",
+    description: "Overlay 2–6 distinct completed CPU, memory and FPS recordings in chat, aligned at recording start in elapsed seconds. Pass recordingIds from mobile_list_performance_recordings, an optional title and shared range. Finish active runs first. The interactive card has a color per run, visibility toggles, shared range selection and per-run summaries. Different durations retain their original time scale; missing data stays gaps. Android RSS and iOS physical footprint use separate memory tracks. Device-wide FPS cannot attribute changes to one app. Returns original recordings and interval-weighted summaries, clipped to each run's duration; a run outside the range has a null summary. Use this tool when comparing runs or implementations so the user sees their timelines together. Returns per-run summaries and recording IDs; the chart reads the samples itself.",
     inputSchema: comparisonInput,
-    outputSchema: {
-      title: comparisonTitleSchema,
-      recordings: comparisonRecordings,
-      range: optionalComparisonRange,
-      summaries: comparisonSummaries,
-    },
+    outputSchema: { ...comparisonReferenceSchema.shape, summaries: comparisonSummaries },
     annotations: read, _meta: { ui: { resourceUri: COMPARISON_URI, visibility } },
   }, safe(async ({ recordingIds, title, range }: z.infer<z.ZodObject<typeof comparisonInput>>) => {
     const reads = recordingIds.map(id => {
@@ -138,10 +173,21 @@ export function registerRecordingTools(server: McpServer, recordings: Performanc
       return recording;
     });
     const runs = await Promise.all(reads);
+    // Validate the runs here so the card only fails on reading them, not on comparing them.
     const comparison = comparisonSchema.parse({ title, recordings: runs, range });
     const summaries = summarizeComparison(comparison.recordings, comparison.range);
-    const structuredContent = { ...comparison, summaries };
-    const text = JSON.stringify(structuredContent);
+    const previews = recordingPreviews(comparison.recordings);
+    const structuredContent = {
+      title: comparison.title, recordingIds, ...(comparison.range ? { range: comparison.range } : {}),
+      summaries: summaries.map(entry => ({ ...entry, summary: entry.summary && busiest(entry.summary) })),
+      ...(previews ? { previews } : {}),
+    };
+    const lines = comparison.recordings.map((recording, index) => {
+      const summary = summaries[index].summary;
+      return `${index + 1}. “${recording.title}” (${recording.durationSeconds}s on ${recording.deviceName}): ${summary ? describeMeasurements(summary) : "no samples in the range"}`;
+    });
+    const text = `Showing “${comparison.title}”, ${comparison.recordings.length} runs aligned at recording start, in an interactive overlay chart. `
+      + `${lines.join(" ")} The chart reads the samples itself; for sample-level detail call mobile_read_performance_recording with each recordingId.`;
     return { content: [{ type: "text", text }], structuredContent };
   }));
   registerAppTool(server, "mobile_finish_performance_recording", {

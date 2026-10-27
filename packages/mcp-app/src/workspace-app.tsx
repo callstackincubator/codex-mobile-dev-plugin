@@ -118,7 +118,8 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
     openDevices(input.arguments ?? {});
   };
   app.ontoolresult = result => {
-    if (result.structuredContent?.recording !== undefined) {
+    // mobile_open_performance_recording sends the recording's ID (older servers send the recording).
+    if (result.structuredContent?.recording !== undefined || result.structuredContent?.recordingId !== undefined) {
       try { recordingController.accept(result); }
       catch (error) { captureUiError(error, "recording.workspace_result"); }
       return;

@@ -331,6 +331,14 @@ measured curve with the fill following it. Since 0.1.85, the entrance pause is
 550 ms and change highlights fade in after drawing finishes. The intentional
 pause and highlight fade are excluded from the reveal timing;
 `ui.recording.message_ack` ends when the host acknowledges a button's message. Since 0.1.98, `ui.recording.context_attach` measures the preceding context attachment round trip in milliseconds, including failed writes. Both use the active recording surface. Recording IDs, titles, ranges and context text remain local. Handled action errors use a fixed telemetry message.
+Since 0.1.168, the tools that show a recording send its ID, summary and, when it fits,
+a preview (every sample, without per-thread CPU or Android frame timelines) instead of
+its full samples, because hosts cap tool results. The card draws the preview at once and,
+where the host lets cards call tools, reads the full recording with
+`mobile_read_performance_recording`. Readiness ends at the first chart drawn, preview or
+full. `ui.recording.preview` counts previews shown, and `ui.recording.load` measures the
+full read in milliseconds. Failed reads, including a host returning the recording without
+its structured samples, are handled errors with a fixed message; a preview on screen stays.
 `ui.recording.samples` counts samples held by the visible card, and bounded event
 counts record range selections and Ask/Open actions. `storage.bytes` with
 `kind: recordings` measures local saved-file storage. Recording polling is excluded
@@ -339,7 +347,9 @@ contains device CPU/memory values, recording IDs, titles or selected intervals.
 
 Comparison cards use the `comparison` surface and view, preserving shared
 readiness, interaction, browser frame pacing and teardown coverage. Bounded
-`ui.comparison.process` measures result validation, `ui.comparison.derive` covers
+`ui.comparison.process` measures result validation; since 0.1.168, comparisons use
+previews as single recordings do when they fit: `ui.comparison.preview` counts them and
+`ui.comparison.load` measures reading every compared recording. `ui.comparison.derive` covers
 overlay series and whole-run summaries, and `ui.comparison.summary` covers shared
 selection summaries. `ui.comparison.commit` measures the card render through its
 DOM commit in milliseconds; it does not measure paint or device rendering.

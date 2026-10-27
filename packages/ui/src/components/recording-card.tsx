@@ -199,12 +199,13 @@ export function RecordingCard({ controller, detailed = false }: { controller: Re
         {hasFps && <RecordingChart key={`${recording.id}:fps`} label="Display FPS" info={displayScope} metricLabel="Average" metric={fpsReading(derived.total.averageFps)} data={derived.fps} duration={recording.durationSeconds} range={range} changes={changes.fps} color="#36a269" unit="fps" onDrag={setDrag} onSelect={controller.select} />}
         {hasDisplayData && <p className="recording-footnote">{displayScope}</p>}
         {recording.status === "finishing" && <p className="recording-footnote" role="status">Finishing the recording…</p>}
+        {state.preview === "only" && <p className="recording-footnote">This app shows CPU, memory and FPS without thread or frame detail. Open the recording in Mobile Dev for all of it.</p>}
       </div>
       <aside className="recording-sidebar" aria-label="Recording summary and actions">
         <RecordingOverview duration={recording.durationSeconds} range={range} changes={[...changes.cpu, ...changes.memory, ...changes.fps]} onClear={() => { setDrag(undefined); controller.select(undefined); }} />
         {hasCpu && <section className="recording-breakdown" aria-label="Thread CPU usage">
           <div className="recording-section-heading"><h3>Threads</h3><RecordingInfo label="threads">Busiest recorded threads, ordered by average CPU usage in the {range ? "selected range" : "entire recording"}. 100% CPU is one core.</RecordingInfo></div>
-          {shownThreads.length > 0 ? <dl>{shownThreads.map(thread => <div key={thread.id}><dt title={thread.id}>{thread.name || `Thread ${thread.id}`}</dt><dd>{percent(thread.averageCpuPercent)}</dd></div>)}</dl> : <p>No thread CPU measurements in this range.</p>}
+          {state.preview ? <p>{state.preview === "loading" ? "Loading thread detail…" : "Thread detail needs the full recording, which this app does not let cards read."}</p> : shownThreads.length > 0 ? <dl>{shownThreads.map(thread => <div key={thread.id}><dt title={thread.id}>{thread.name || `Thread ${thread.id}`}</dt><dd>{percent(thread.averageCpuPercent)}</dd></div>)}</dl> : <p>No thread CPU measurements in this range.</p>}
         </section>}
         {(hasFps || selectedFrameStats !== null) && <section className="recording-display-summary" aria-label="Display statistics">
           <div className="recording-section-heading"><h3>Display</h3><RecordingInfo label="display statistics">{displayScope} Statistics use the {range ? "selected range" : "entire recording"}.</RecordingInfo></div>

@@ -1,13 +1,15 @@
 import { chatMessage } from "./chat-message.ts";
 import type { HostAttachmentsSource, HostBridge } from "./host-bridge.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { recordingRangeSchema, recordingSchema, summarizeRecording } from "@mobile-dev/shared/recordings.ts";
+import { recordingRangeSchema, recordingReferenceSchema, recordingSchema, summarizeRecording } from "@mobile-dev/shared/recordings.ts";
 import type { PerformanceRecording, RecordingRange } from "@mobile-dev/shared/recordings.ts";
 import { captureUiError, countUiEvent, markUiSurfaceReady, recordUiTiming, setUiGauge, setUiSurface, setUiTelemetryContext } from "./telemetry.ts";
 
 type RecordingState = {
   recording?: PerformanceRecording;
   range?: RecordingRange;
+  /** Showing a preview without thread or frame detail: the full recording is loading, or this host cannot load it. */
+  preview?: "loading" | "only";
   canMessage: boolean;
   busy: boolean;
   error: string;
@@ -56,12 +58,31 @@ export class RecordingController {
       return;
     }
     const data = result.structuredContent;
-    if (data === undefined || data.recording === undefined) return;
+    if (data === undefined) return;
+    if (data.recording !== undefined) {
+      this.present(recordingSchema.parse(data.recording), data.range, undefined);
+      return;
+    }
+    // The tools that show a recording send its ID and, when it fits, a preview without
+    // thread or frame detail. Hosts that let cards call tools then load the full recording.
+    const reference = recordingReferenceSchema.safeParse(data);
+    if (reference.success === false) return;
+    const { recordingId, range, preview } = reference.data;
+    const canLoad = this.app.getHostCapabilities()?.serverTools !== undefined;
+    if (preview) {
+      countUiEvent("ui.recording.preview");
+      this.present(preview, range, canLoad ? "loading" : "only");
+    }
+    if (canLoad) void this.load(recordingId, range);
+    else if (preview === undefined) this.update({ error: "This host cannot load the recording. Open it in Mobile Dev instead." });
+  }
+  private present(recording: PerformanceRecording, requestedRange: unknown, preview: RecordingState["preview"]) {
     const startedAt = performance.now();
-    const recording = recordingSchema.parse(data.recording);
     const changedRecording = this.state.recording?.id !== recording.id;
     const previousRange = changedRecording ? undefined : this.state.range;
-    const range = data.range === undefined ? previousRange : recordingRangeSchema.parse(data.range);
+    // The full recording replacing its preview keeps the range selected meanwhile.
+    const upgrade = changedRecording === false && this.state.preview !== undefined;
+    const range = upgrade || requestedRange === undefined ? previousRange : recordingRangeSchema.parse(requestedRange);
     if (range) summarizeRecording(recording, range);
     if (changedRecording || this.visible) {
       setUiSurface("recording");
@@ -75,8 +96,27 @@ export class RecordingController {
       recordUiTiming("ui.recording.process", elapsed);
       if (changedRecording) markUiSurfaceReady(this.readyAt);
     }
-    this.update({ recording, range, error: recording.error ?? "" });
+    this.update({ recording, range, preview, error: recording.error ?? "" });
     this.schedule();
+  }
+  private async load(recordingId: string, range?: RecordingRange) {
+    const startedAt = performance.now();
+    try {
+      const result = await this.app.callServerTool({
+        name: "mobile_read_performance_recording", arguments: { recordingId, ...(range ? { range } : {}) },
+      }, { signal: this.abort.signal });
+      if (this.disposed) return;
+      // A host that trims large results drops the structured samples; say so rather than load forever.
+      if (result.isError !== true && result.structuredContent?.recording === undefined) throw new Error("The host returned the recording without its samples.");
+      recordUiTiming("ui.recording.load", performance.now() - startedAt);
+      this.accept(result);
+    } catch (error) {
+      if (this.disposed) return;
+      captureUiError(error, "recording.load");
+      // A preview already on screen stays; the card only lacks thread and frame detail.
+      if (this.state.preview) this.update({ preview: "only" });
+      else this.update({ error: "Could not load this recording. Reopen it to try again." });
+    }
   }
   select = (range?: RecordingRange) => {
     const recording = this.state.recording;
