@@ -96,3 +96,32 @@ jobs:
             playwright-report
             test-results
           retention-days: 7
+
+  # Posts main's screenshots, this pull request's and their diffs as a PR comment.
+  visual-report:
+    name: Visual diff comment
+    needs: visual
+    if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        continue-on-error: true
+        with:
+          name: visual-regression
+          path: visual-regression
+
+      - name: Comment the screenshot diffs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          VISUAL_RESULT: ${{ needs.visual.result }}
+        run: node tooling/hosts/report-diffs.mjs visual-regression

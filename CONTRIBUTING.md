@@ -176,8 +176,11 @@ npm run test:visual:docker -- --update-snapshots
 Visual baselines live in `tooling/hosts/screenshots` and are rendered in the pinned
 Playwright Linux image, so take and update them through `test:visual:docker` rather
 than on macOS. After an intended UI change, update them and review the image diff
-in the pull request. A failing CI run uploads the Playwright report with expected,
-actual and diff images. Keep the image tag in `ci.yml` in step with
+in the pull request. When screenshots change, CI comments on the pull request with
+main's image, the pull request's and their diff (stored on the `visual-diffs`
+branch), and uploads the Playwright report, which has a before/after slider: open it
+with `gh run download <run> -n visual-regression` and `npx playwright show-report
+visual-regression/playwright-report`. Keep the image tag in `ci.yml` in step with
 `@playwright/test`.
 
 ## Native iOS test app
