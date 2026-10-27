@@ -50,26 +50,35 @@ if (changed.length === 0) {
   git(checkout, "remote", "add", "origin", remote);
   try { git(checkout, "fetch", "-q", "--depth", "1", "origin", branch); git(checkout, "checkout", "-q", "FETCH_HEAD"); }
   catch { git(checkout, "checkout", "-q", "--orphan", branch); }
-  // Keep only this pull request's latest images; the comment pins them by commit.
+  // Two commits per run: main's screenshots and the diffs, then this pull request's
+  // screenshots over main's at the same paths. GitHub shows the second commit as an
+  // image change with 2-up, swipe and onion skin views. Only this pull request's
+  // latest run is kept; the comment pins its images by commit.
   const folder = `pr-${pr}`;
+  const commitAll = message => {
+    git(checkout, "add", "-A");
+    git(checkout, "-c", "user.name=github-actions[bot]", "-c", "user.email=41898282+github-actions[bot]@users.noreply.github.com",
+      "commit", "-q", "--allow-empty", "-m", message);
+    return git(checkout, "rev-parse", "HEAD").trim();
+  };
   rmSync(join(checkout, folder), { recursive: true, force: true });
   for (const image of changed) {
-    for (const kind of ["expected", "actual", "diff"]) cpSync(image[kind], join(checkout, folder, `${image.name}-${kind}.png`));
+    cpSync(image.expected, join(checkout, folder, `${image.name}.png`));
+    cpSync(image.diff, join(checkout, folder, "diff", `${image.name}.png`));
   }
-  git(checkout, "add", "-A");
-  git(checkout, "-c", "user.name=github-actions[bot]", "-c", "user.email=41898282+github-actions[bot]@users.noreply.github.com",
-    "commit", "-q", "-m", `chore: visual diffs for #${pr}`);
+  const before = commitAll(`chore: main's screenshots for #${pr}`);
+  for (const image of changed) cpSync(image.actual, join(checkout, folder, `${image.name}.png`));
+  const after = commitAll(`chore: #${pr}'s screenshots`);
   git(checkout, "push", "-q", "origin", `HEAD:refs/heads/${branch}`);
-  const commit = git(checkout, "rev-parse", "HEAD").trim();
   rmSync(checkout, { recursive: true, force: true });
-  const url = file => `https://raw.githubusercontent.com/${repository}/${commit}/${folder}/${file}`;
+  const raw = (commit, file) => `https://raw.githubusercontent.com/${repository}/${commit}/${folder}/${file}`;
   const rows = changed.map(({ name }) =>
-    `| \`${name}\` | <img src="${url(`${name}-expected.png`)}" width="260"> | <img src="${url(`${name}-actual.png`)}" width="260"> | <img src="${url(`${name}-diff.png`)}" width="260"> |`);
+    `| \`${name}\` | <img src="${raw(before, `${name}.png`)}" width="260"> | <img src="${raw(after, `${name}.png`)}" width="260"> | <img src="${raw(before, `diff/${name}.png`)}" width="260"> |`);
   body = [
     marker,
     "### Visual regression (codex)",
     "",
-    `${changed.length} screenshot${changed.length === 1 ? "" : "s"} differ from main. Click an image for full size; the [run's Playwright report](${runUrl}) has a before/after slider.`,
+    `${changed.length} screenshot${changed.length === 1 ? "" : "s"} differ from main. **[Compare them with swipe and onion skin](https://github.com/${repository}/commit/${after})**: pick a mode above each image. Click an image here for full size, or open the [run's Playwright report](${runUrl}).`,
     "",
     "| Screen | main | this PR | diff |",
     "| --- | --- | --- | --- |",
