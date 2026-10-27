@@ -15,8 +15,7 @@ import { registerAppStorageTools } from "./app-storage/tools.ts";
 import { ServeEmu } from "./serve-emu.ts";
 import { Baguette } from "./baguette.ts";
 import { listIosDevices, registerIosDeviceTools } from "./ios-devices.ts";
-import { registerDeviceChoiceTools } from "./device-choice-tools.ts";
-import { DEVICES_URI } from "@mobile-dev/shared/device-choice.ts";
+import { deviceChoiceFormSupport, registerDeviceChoiceTools } from "./device-choice-tools.ts";
 import { LogSessions } from "./log-sessions.ts";
 import { registerLogTools } from "./log-tools.ts";
 import { CpuSessions, createCpuSessions } from "./cpu/sessions.ts";
@@ -41,9 +40,9 @@ import type { SimulatorDirectory } from "./simulator-directory.ts";
 
 export { APP_URI, WORKSPACE_URI } from "./panel-tools.ts";
 
-const PANEL_INSTRUCTIONS = "For mobile app development, open mobile_open_simulator before the first device launch, or reuse the open view. Use selected device IDs. When the user asks to list or see devices, show them with mobile_show_devices instead of writing a list. If a task has ambiguous device targets, ask the user with mobile_show_devices and a selectionMode, or in chat when it is unsupported; proceed only after they choose. For a local CPU or React profile path, use mobile_analyze_profile to show TraceSift findings, then wait for the user to choose Investigate. See the Mobile Dev skill, when installed, for device control, logs, profiles, and performance workflows.";
+const PANEL_INSTRUCTIONS = "For mobile app development, open mobile_open_simulator before the first device launch, or reuse the open view. Use selected device IDs. When the user asks to see their devices, open or reuse the view, whose device menu lists them. If a task has ambiguous device targets, ask the user with mobile_choose_devices when it is available, otherwise in chat; proceed only after they choose. For a local CPU or React profile path, use mobile_analyze_profile to show TraceSift findings, then wait for the user to choose Investigate. See the Mobile Dev skill, when installed, for device control, logs, profiles, and performance workflows.";
 // Hosts without the panel show devices themselves, when they can.
-const TOOL_INSTRUCTIONS = "For mobile app development, read logs, record CPU, memory and FPS, and inspect app storage with these tools; control devices with the device_* tools when the server has them. Mobile Dev shows no device view here: when the user asks to open or see a simulator or emulator, use the host's own simulator view if it has one, such as Claude Code's iOS Simulator or Android Emulator. Use device IDs from tool results; never invent them. When the user asks to list or see devices, show them with mobile_show_devices instead of writing a list. Show recordings with mobile_render_performance_recording and comparisons with mobile_compare_performance_recordings. For a local CPU or React profile path, use mobile_analyze_profile to show TraceSift findings. See the Mobile Dev skill, when installed, for logs, profiles, and performance workflows.";
+const TOOL_INSTRUCTIONS = "For mobile app development, read logs, record CPU, memory and FPS, and inspect app storage with these tools; control devices with the device_* tools when the server has them. Mobile Dev shows no device view here: when the user asks to open or see a simulator or emulator, use the host's own simulator view if it has one, such as Claude Code's iOS Simulator or Android Emulator. Use device IDs from tool results; never invent them. If a task has ambiguous device targets, ask the user with mobile_choose_devices when it is available, otherwise in chat; proceed only after they choose. Show recordings with mobile_render_performance_recording and comparisons with mobile_compare_performance_recordings. For a local CPU or React profile path, use mobile_analyze_profile to show TraceSift findings. See the Mobile Dev skill, when installed, for logs, profiles, and performance workflows.";
 
 /** Gives a served UI page the server's telemetry environment, opt-out and anonymous identity. */
 export function configureUI(content: string): string {
@@ -85,13 +84,19 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
     instructions: panels ? PANEL_INSTRUCTIONS : TOOL_INSTRUCTIONS,
   });
   instrumentMcpServer(server);
-  addToolIcons(server, { mobile_open_workspace: PHONE_ICONS, mobile_open_simulator: PHONE_ICONS, mobile_show_devices: PHONE_ICONS });
+  addToolIcons(server, { mobile_open_workspace: PHONE_ICONS, mobile_open_simulator: PHONE_ICONS, mobile_choose_devices: PHONE_ICONS });
   const extensions = new OpenAIExtensions(server);
-  // Hosts with the native form get it; others get the devices card, or a text list.
-  registerDeviceChoiceTools(server, extensions, {
-    simulators: () => simulators.start(), android: () => android.list(), physicalIos: listIosDevices,
-  });
-  server.server.oninitialized = () => setServerTelemetryHost(server.server.getClientVersion()?.name);
+  // Device choices use the host's native form; the tool is listed only for hosts that render one.
+  let deviceChoiceRegistered = false;
+  server.server.oninitialized = () => {
+    setServerTelemetryHost(server.server.getClientVersion()?.name);
+    const form = deviceChoiceFormSupport(server.server.getClientCapabilities());
+    if (deviceChoiceRegistered || form === undefined) return;
+    deviceChoiceRegistered = true;
+    registerDeviceChoiceTools(server, extensions, {
+      simulators: () => simulators.start(), android: () => android.list(), physicalIos: listIosDevices,
+    }, form);
+  };
   registerIosDeviceTools(server);
   registerLogTools(server, logs, simulators);
   const validateCpuDevice = registerCpuTools(server, cpu, simulators);
@@ -134,7 +139,6 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
     ["mobile-dev-recording", RECORDING_URI, "recording"],
     ["mobile-dev-comparison", COMPARISON_URI, "comparison"],
     ["mobile-dev-tracesift", TRACESIFT_URI, "tracesift"],
-    ["mobile-dev-devices", DEVICES_URI, "devices"],
   ]) {
     const readCard = async (uri: URL) => {
       const resource = typeof html === "string" ? { html } : await html();

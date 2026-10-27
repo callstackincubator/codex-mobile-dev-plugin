@@ -36,7 +36,10 @@ async function withServer(label, args, env, capabilities, check) {
     // Behavior follows client capabilities, not the host's name.
     assert.match(client.getInstructions(), panels ? /in chat when it is unsupported/ : /the host's own simulator view/);
     const { tools } = await client.listTools();
-    for (const tool of ["mobile_show_devices", ...expectedTools]) assert.ok(tools.some(candidate => candidate.name === tool), tool);
+    for (const tool of expectedTools) assert.ok(tools.some(candidate => candidate.name === tool), tool);
+    // Device choices use the host's native form; without one the agent asks in chat.
+    const forms = capabilities.extensions?.["openai/elicitation"] !== undefined || capabilities.elicitation !== undefined;
+    assert.equal(tools.some(tool => tool.name === "mobile_choose_devices"), forms);
     if (panels === false) for (const tool of panelTools) assert.equal(tools.some(candidate => candidate.name === tool), false, tool);
     const view = tools.find(tool => tool.name === (panels ? "mobile_open_workspace" : "mobile_render_performance_recording"));
     const resource = await client.readResource({ uri: view._meta.ui.resourceUri });
@@ -105,17 +108,14 @@ try {
   for (const path of [...codexOnlyPaths, ...otherManifests]) await assert.rejects(access(join(plugin, path)), path);
   const args = server.args.map(arg => arg.replaceAll(`\${${host.root}}`, plugin));
   for (const environment of ["development", "release"]) {
-    // Without forms or MCP Apps, device choices fall back to chat.
-    await withServer("plugin", args, { MOBILE_DEV_ENVIRONMENT: environment, [host.root]: plugin }, {}, async client => {
-      const choice = await client.callTool({ name: "mobile_show_devices", arguments: { message: "Which device?", selectionMode: "single" } });
-      assert.equal(choice.isError, true);
-      assert.match(choice.content[0].text, /ask the user in chat/);
+    // Hosts with MCP's own forms, such as Claude Code, get the device chooser.
+    await withServer("plugin", args, { MOBILE_DEV_ENVIRONMENT: environment, [host.root]: plugin }, { elicitation: {} }, async client => {
       // agent-device's runtime starts from the plugin's own copy on the first command.
       if (panels === false) {
         const devices = await client.callTool({ name: "device_devices", arguments: { platform: "ios" } });
         assert.doesNotMatch(devices.content[0].text, /Agent Device could not/);
       }
     });
-    console.log(`${environment}: ${host.label} plugin manifest, payload, startup from the plugin root, chat fallback and no Codex updater passed.`);
+    console.log(`${environment}: ${host.label} plugin manifest, payload, startup from the plugin root, device chooser and no Codex updater passed.`);
   }
 } finally { await rm(temporary, { recursive: true, force: true }); }

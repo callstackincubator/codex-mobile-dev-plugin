@@ -12,7 +12,6 @@ import { APP_URI, WORKSPACE_URI } from "../src/plugin.ts";
 import { RECORDING_URI } from "../../shared/src/recordings.ts";
 import { COMPARISON_URI } from "../../shared/src/performance-comparison.ts";
 import { TRACESIFT_URI } from "../../shared/src/tracesift.ts";
-import { DEVICES_URI } from "../../shared/src/device-choice.ts";
 import { Baguette } from "../src/baguette.ts";
 import { SimulatorUnavailableError } from "../src/simulator-unavailable.ts";
 import { parseBaseUrl } from "../../shared/src/protocol.ts";
@@ -41,22 +40,27 @@ test("both opening tools accept optional device intent and preserve it in their 
   assert.equal(boots.length, 0);
 });
 
-test("the devices tool is listed for every client with its card", async t => {
+test("the device chooser is listed only for hosts with a native form", async t => {
   const fake = await fakeBaguette();
   t.after(() => fake.close());
-  for (const forms of [false, true]) {
+  for (const [capabilities, listed] of [
+    [{}, false],
+    [{ extensions: { "io.modelcontextprotocol/ui": { mimeTypes: ["text/html;profile=mcp-app"] } } }, false],
+    [{ extensions: { "openai/elicitation": { form: {} } } }, true],
+    [{ elicitation: {} }, true],
+  ] as const) {
     const plugin = await createTestPlugin("<html></html>", { baguette: new Baguette(fake.url), simulatorInput: fakeSimulatorInput() });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-    const capabilities = forms ? { extensions: { "openai/elicitation": { form: {} } } } : {};
     const client = new Client({ name: "device-choice-host", version: "1" }, { capabilities });
     await plugin.server.connect(serverTransport);
     await client.connect(clientTransport);
-    const { tools } = await client.listTools();
-    const choice = tools.find(tool => tool.name === "mobile_show_devices");
-    assert.ok(choice?.icons?.length);
-    const resourceUri = (choice._meta?.ui as { resourceUri?: string } | undefined)?.resourceUri;
-    assert.equal(resourceUri, DEVICES_URI);
-    assert.match(client.getInstructions() ?? "", /mobile_show_devices instead of writing a list/);
+    const choice = (await client.listTools()).tools.find(tool => tool.name === "mobile_choose_devices");
+    assert.equal(choice !== undefined, listed, JSON.stringify(capabilities));
+    if (choice) {
+      assert.ok(choice.icons?.length);
+      assert.equal(choice._meta?.ui, undefined, "The chooser has no card.");
+    }
+    assert.match(client.getInstructions() ?? "", /mobile_choose_devices when it is available, otherwise in chat/);
     await client.close(); await plugin.close();
   }
 });
@@ -250,9 +254,6 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
   const traceSiftResource = await client.readResource({ uri: TRACESIFT_URI });
   assert.match(traceSiftResource.contents[0].text as string, /data-view="tracesift"/);
   assert.deepEqual(traceSiftResource.contents[0]._meta, recordingResource.contents[0]._meta);
-  const devicesResource = await client.readResource({ uri: DEVICES_URI });
-  assert.match(devicesResource.contents[0].text as string, /data-view="devices"/);
-  assert.deepEqual(devicesResource.contents[0]._meta, recordingResource.contents[0]._meta);
   const analyzeProfile = tools.tools.find(tool => tool.name === "mobile_analyze_profile");
   assert.deepEqual(analyzeProfile?._meta?.ui, { resourceUri: TRACESIFT_URI, visibility: ["app", "model"] });
   assert.deepEqual(tools.tools.find(tool => tool.name === "mobile_remember_tracesift_analysis")?._meta?.ui, { visibility: ["app"] });
@@ -546,10 +547,10 @@ test("without the panel, the server keeps its cards and finds simulators without
   await client.connect(clientTransport);
   assert.match(client.getInstructions() ?? "", /the host's own simulator view/);
   const names = (await client.listTools()).tools.map(tool => tool.name);
-  for (const name of ["mobile_show_devices", "mobile_logs_session", "mobile_record_performance", "mobile_render_performance_recording", "mobile_compare_performance_recordings", "mobile_analyze_profile", "mobile_list_apps", "mobile_app_storage"]) {
+  for (const name of ["mobile_logs_session", "mobile_record_performance", "mobile_render_performance_recording", "mobile_compare_performance_recordings", "mobile_analyze_profile", "mobile_list_apps", "mobile_app_storage"]) {
     assert.ok(names.includes(name), name);
   }
-  for (const name of ["mobile_open_simulator", "mobile_open_workspace", "mobile_list_simulators", "mobile_send_input", "mobile_screenshot", "mobile_stream_session", "mobile_list_android_devices", "mobile_android_stream_session", "mobile_inspect_ui", "mobile_device_settings", "mobile_ios_mirror_session", "mobile_open_performance_recording", "mobile_app_icons"]) {
+  for (const name of ["mobile_open_simulator", "mobile_open_workspace", "mobile_list_simulators", "mobile_send_input", "mobile_screenshot", "mobile_stream_session", "mobile_list_android_devices", "mobile_android_stream_session", "mobile_inspect_ui", "mobile_device_settings", "mobile_ios_mirror_session", "mobile_open_performance_recording", "mobile_app_icons", "mobile_choose_devices"]) {
     assert.equal(names.includes(name), false, name);
   }
   await assert.rejects(client.readResource({ uri: APP_URI }));

@@ -33,7 +33,7 @@ export function validateTelemetryEnvironment(value: unknown): TelemetryEnvironme
   throw new Error("Sentry environment must be development or release.");
 }
 
-export type Surface = "logs" | "performance" | "storage" | "simulator" | "recording" | "comparison" | "tracesift" | "devices";
+export type Surface = "logs" | "performance" | "storage" | "simulator" | "recording" | "comparison" | "tracesift";
 export type TelemetryAttributes = Record<string, string | number | boolean>;
 type Options = NonNullable<Parameters<typeof init>[0]>;
 type ErrorEvent = Parameters<NonNullable<Options["beforeSend"]>>[0];

@@ -530,7 +530,7 @@ test("native device picker measures preparation and outcomes without private for
     async android() { return { connected: true, managed: false, baseUrl: "", devices: [
       { udid: "PRIVATE_SERIAL", name: "PRIVATE_DEVICE_NAME", runtime: "Android", state: "Booted", platform: "android", kind: "physical" },
     ] }; },
-  });
+  }, "openai");
   const client = new Client({ name: "picker-host", version: "1" }, { capabilities: { extensions: { "openai/elicitation": { form: {} } } } });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   t.after(async () => { await client.close(); await server.close(); await Sentry.close(); });
@@ -541,13 +541,11 @@ test("native device picker measures preparation and outcomes without private for
   ] };
   for (const action of ["accept", "cancel", "decline"] as const) {
     answer = action === "accept" ? { action, content: { device: "device-1" } } : { action };
-    const result = await client.callTool({ name: "mobile_show_devices", arguments: arguments_ });
+    const result = await client.callTool({ name: "mobile_choose_devices", arguments: arguments_ });
     assert.equal(result.isError, undefined);
   }
-  const browse = await client.callTool({ name: "mobile_show_devices", arguments: {} });
-  assert.equal(browse.isError, undefined);
   answer = { action: "accept", content: { device: "not-offered" } };
-  const invalid = await client.callTool({ name: "mobile_show_devices", arguments: arguments_ });
+  const invalid = await client.callTool({ name: "mobile_choose_devices", arguments: arguments_ });
   assert.equal(invalid.isError, true);
   await Sentry.close();
   const encoded = JSON.stringify(envelopes);
@@ -557,8 +555,7 @@ test("native device picker measures preparation and outcomes without private for
   contains(encoded, "PRIVATE", false);
   contains(encoded, "device-1", false);
   contains(encoded, "selection_mode");
-  contains(encoded, "rendered");
-  contains(encoded, "browse");
+  contains(encoded, "openai");
   contains(encoded, "millisecond");
   const items = envelopes.flatMap(envelope => envelope[1]);
   const errors = items.filter(item => item[0].type === "event");
