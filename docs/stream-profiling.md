@@ -106,8 +106,8 @@ The ordinary input requests are fast: p95 was 1.18 ms in the instrumented run.
 The long requests represent only about 2% of samples, so p95 alone hides the
 periodic freezes. The panel's ordered input queue waits for each acknowledgment;
 pending moves are coalesced while a check is outstanding. Source locations:
-`src/server/simulator-input.ts` (`status`/`check`), `src/server/plugin.ts`
-(`blockedInput`/`mobile_stream_input`), and `src/ui/stream-input.ts` (`drain`).
+`packages/core/src/simulator-input.ts` (`status`/`check`), `packages/core/src/plugin.ts`
+(`blockedInput`/`mobile_stream_input`), and `packages/ui/src/stream-input.ts` (`drain`).
 
 This establishes a plugin-side cause of periodic interaction lag. It does not
 establish the cause of any additional frame-rate limit in the embedded panel.
@@ -462,8 +462,8 @@ including new elements, time formatting, and event listeners; it then replaces
 the entire list. Reading `scrollHeight` immediately afterward to follow the
 latest logs forces synchronous style/layout. The embedded script's actual
 source positions confirm these functions and the scroll-height read, matching
-`src/ui/log-list.ts:68`, `:83`, and `:87`; the call originates at
-`src/ui/logs-panel.ts:136`.
+`packages/ui/src/log-list.ts:68`, `:83`, and `:87`; the call originates at
+`packages/ui/src/logs-panel.ts:136`.
 
 | Trace measurement | Value |
 | --- | ---: |

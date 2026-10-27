@@ -3,9 +3,9 @@
 [Back to README](../README.md) · [Contributing](../CONTRIBUTING.md)
 
 The `Release plugin` workflow in `.github/workflows/release.yml` runs when you push
-an existing commit with a `v<version>` tag. The tag must match `.codex-plugin/plugin.json`,
-`package.json`, both root versions in `package-lock.json`, and
-`src/shared/version.ts`. After committing your changes, run from the repository root:
+an existing commit with a `v<version>` tag. The tag must match the root `package.json`,
+both root versions in `package-lock.json`, and `packages/shared/src/version.ts`; host
+manifests take the version at package time. After committing your changes, run from the repository root:
 
 ```sh
 npm run public-release
@@ -27,7 +27,7 @@ fresh extraction of the actual ZIP. CI also validates the tagged commit message,
 including when the tag was pushed directly.
 
 Each native helper has a reusable Actions artifact containing its complete vendor
-directory and matching Sentry symbols. `scripts/release-native.mjs` fingerprints
+directory and matching Sentry symbols. `tooling/release-native.mjs` fingerprints
 the helper's tracked native sources, shared telemetry, build scripts, pinned
 dependencies, npm build command, and relevant installed toolchain versions.
 Plugin version bumps and UI/server edits do not change these fingerprints.
@@ -120,7 +120,7 @@ The update banner opens the store listing through the host's link API. Store
 updates are installed there. The old Git marketplace upgrade tool is removed.
 
 For GitHub installations, migration requires a published store version of at
-least **0.1.166**, and at least the running plugin version. The user installs and
+least **0.1.167**, and at least the running plugin version. The user installs and
 enables the store version, then clicks **Finish migration**. An app-only MCP tool
 checks the exact remote identity, enabled installation, installed `localVersion`,
 and package manifest before removing `mobile-dev@mobile-dev` and the verified
@@ -138,11 +138,11 @@ forwarded by the MCP manifest. The plugin never restarts Codex automatically.
 The existing release workflow can build and publish the GitHub transition release
 before store review completes:
 
-1. Release **0.1.166** through the normal GitHub workflow. Existing GitHub versions
+1. Release **0.1.167** through the normal GitHub workflow. Existing GitHub versions
    can update to it through their existing updater.
 2. Upload that release's ZIP to the **existing Mobile Dev store listing**, then
    complete review and publish it.
-3. Once the Codex catalog exposes 0.1.166, the transition build offers migration.
+3. Once the Codex catalog exposes 0.1.167, the transition build offers migration.
    Until then, it keeps the GitHub installation working and offers no migration
    to the older store package. Catalog checks can delay the banner by up to one
    hour after publication.
