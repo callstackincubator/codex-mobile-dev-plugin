@@ -789,3 +789,26 @@ test("TraceSift reports React picks it cannot place rather than sending an empty
   assert.match(controller.getSnapshot().error, /Nothing is selected yet. Turn on Select components/);
   controller.dispose();
 });
+
+test("TraceSift shows findings only, with no tool calls, where the host does not let cards call tools", async () => {
+  const calls: unknown[] = [];
+  // Claude Code renders cards but advertises neither server tools nor messages.
+  const app = {
+    getHostCapabilities: () => ({}),
+    getHostContext: () => hostContext,
+    async callServerTool(input: unknown) { calls.push(input); throw new Error("must not call"); },
+  };
+  const controller = new TraceSiftController(app as never);
+  controller.hostChanged();
+  await controller.loadProject();
+  controller.accept({ content: [], structuredContent: analysis });
+  await controller.restore("view-1");
+  await controller.openExplore("react-commit-1-2");
+  const state = controller.getSnapshot();
+  assert.equal(state.canCallTools, false);
+  assert.equal(state.analysis?.cards.length, 1);
+  assert.equal(state.error, "");
+  assert.match(state.notice, /does not let the card open Explore/);
+  assert.deepEqual(calls, []);
+  controller.dispose();
+});

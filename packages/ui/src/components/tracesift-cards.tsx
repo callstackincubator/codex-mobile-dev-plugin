@@ -54,6 +54,8 @@ function ChartSwitch({ kind, onChange }: { kind: ContributionChartKind; onChange
  */
 function CardFooter({ cardId, controller, canExplore }: { cardId: string; controller: TraceSiftController; canExplore: boolean }) {
   const state = controller.getSnapshot();
+  // Every action reads from the server; hosts that do not let cards call it get the findings only.
+  if (!state.canCallTools) return null;
   const busy = Boolean(state.busyCard) || Boolean(state.handoffCard) || Boolean(state.openingExploreCard);
   const copied = state.copiedCard === cardId;
   return <div className="hotspot-footer">
@@ -185,8 +187,11 @@ export function TraceSiftCards({ controller, onReset }: { controller: TraceSiftC
       </div>
     </div>
 
-    <ProjectBar controller={controller} />
-    {!state.canInvestigate && <p className="tracesift-error" role="status">
+    {state.canCallTools && <ProjectBar controller={controller} />}
+    {!state.canCallTools && <p className="tracesift-notice" role="status">
+      This app shows TraceSift's findings, but does not let the card investigate or explore them. Ask the agent to investigate a card, for example “investigate task #1”.
+    </p>}
+    {state.canCallTools && !state.canInvestigate && <p className="tracesift-error" role="status">
       This host cannot call the card handoff tool or send a message to the active chat. Ask the agent to investigate a card by name instead.
     </p>}
     {state.error && <p className="tracesift-error" role="alert">{state.error}</p>}

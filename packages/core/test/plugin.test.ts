@@ -257,7 +257,8 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
   assert.deepEqual(tools.tools.find(tool => tool.name === "mobile_remember_tracesift_analysis")?._meta?.ui, { visibility: ["app"] });
   assert.deepEqual(tools.tools.find(tool => tool.name === "mobile_restore_tracesift_analysis")?._meta?.ui, { visibility: ["app"] });
   assert.deepEqual(tools.tools.find(tool => tool.name === "mobile_restore_tracesift_analysis_by_input")?._meta?.ui, { visibility: ["app"] });
-  assert.deepEqual(tools.tools.find(tool => tool.name === "mobile_get_tracesift_handoff")?._meta?.ui, { visibility: ["app"] });
+  // The agent fetches a card's handoff itself where the host does not let the card call tools.
+  assert.deepEqual(tools.tools.find(tool => tool.name === "mobile_get_tracesift_handoff")?._meta?.ui, { visibility: ["app", "model"] });
   assert.match(workspaceResource.contents[0].text as string, /data-view="workspace" data-layout="split"/);
   assert.equal(WORKSPACE_URI, `ui://mobile-dev/${manifest.version}/workspace.html`);
   const previousWorkspace = await client.readResource({ uri: "ui://mobile-dev/0.1.52/workspace.html" });
