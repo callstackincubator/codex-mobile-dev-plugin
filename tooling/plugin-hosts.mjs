@@ -1,25 +1,21 @@
-// Hosts that load a plugin folder through their own manifest in `apps/<host>`. They
-// start the shared server with Node from PATH at the manifest's plugin-root variable.
-// Adding such a host is a manifest, an icon and an entry here.
-export const pluginHosts = {
-  claude: {
-    label: "Claude", manifest: ".claude-plugin", root: "CLAUDE_PLUGIN_ROOT",
-    // Claude Desktop also installs a self-contained MCPB bundle.
-    desktopBundle: "apps/claude/manifest.json",
-    config: { file: "claude-desktop-config.json", server: {}, target: "Claude Desktop Settings > Developer > Edit Config, then fully restart Claude" },
-  },
-  cursor: {
-    label: "Cursor", manifest: ".cursor-plugin", root: "CURSOR_PLUGIN_ROOT",
-    config: { file: "cursor-mcp.json", server: { type: "stdio" }, target: "~/.cursor/mcp.json, then reload Cursor" },
-  },
-};
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 
-export const documents = ["README.md", "LICENSE", "THIRD_PARTY_NOTICES.md", "PRIVACY.md", "TERMS.md", "SUPPORT.md"];
+/**
+ * Hosts that load a plugin folder through their own manifest. Each is an app with a
+ * `plugin-host.json`: its manifest folder, the plugin-root variable its manifest
+ * starts the shared server from, an optional desktop bundle manifest, and the local
+ * config snippet. Adding such a host is adding that app; these scripts find it.
+ */
+export const pluginHosts = Object.fromEntries(readdirSync("apps")
+  .filter(name => existsSync(`apps/${name}/plugin-host.json`))
+  .map(name => [name, JSON.parse(readFileSync(`apps/${name}/plugin-host.json`, "utf8"))]));
+
 // Codex-only files would load the Codex launcher or manifest.
 export const codexOnlyPaths = [".mcp.json", "mcp.json", ".codex-plugin", "scripts/launch-mcp.sh"];
 
 export function pluginHost(name) {
   const host = pluginHosts[name];
   if (host === undefined) throw new Error(`Pass a host: ${Object.keys(pluginHosts).join(" or ")}.`);
-  return { ...host, app: `apps/${name}` };
+  const app = `apps/${name}`;
+  return { ...host, app, desktopBundle: host.desktopBundle && `${app}/${host.desktopBundle}` };
 }

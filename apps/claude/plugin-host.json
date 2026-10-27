@@ -1,0 +1,11 @@
+{
+  "label": "Claude",
+  "manifest": ".claude-plugin",
+  "root": "CLAUDE_PLUGIN_ROOT",
+  "desktopBundle": "manifest.json",
+  "config": {
+    "file": "claude-desktop-config.json",
+    "server": {},
+    "target": "Claude Desktop Settings > Developer > Edit Config, then fully restart Claude"
+  }
+}

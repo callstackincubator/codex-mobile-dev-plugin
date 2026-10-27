@@ -2,8 +2,8 @@ import { execFileSync } from "node:child_process";
 import { cp, copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { telemetryBuildEnvironment } from "./telemetry-build.mjs";
-import { assertRuntime, releaseVersion, stageRuntime } from "./host-runtime.mjs";
-import { documents, pluginHost } from "./plugin-hosts.mjs";
+import { assertRuntime, RELEASE_DOCUMENTS as documents, releaseVersion, stageRuntime } from "./host-runtime.mjs";
+import { pluginHost } from "./plugin-hosts.mjs";
 
 // Packages the shared server and MCP Apps panel for a plugin host: the host-neutral
 // runtime plus the host's manifest, without Codex-only files.

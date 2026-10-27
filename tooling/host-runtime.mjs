@@ -1,6 +1,9 @@
 import { access, cp, readFile } from "node:fs/promises";
 import { assertBuildEnvironment } from "./telemetry-build.mjs";
 
+/** The documents every host's package ships beside the runtime. */
+export const RELEASE_DOCUMENTS = ["README.md", "LICENSE", "THIRD_PARTY_NOTICES.md", "PRIVACY.md", "TERMS.md", "SUPPORT.md"];
+
 /** Copies the host-neutral runtime from `dist/` into a host's package. */
 export async function stageRuntime(directory) {
   await cp("dist", directory, { recursive: true, verbatimSymlinks: true });
