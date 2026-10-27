@@ -14,6 +14,7 @@ import { COMPARISON_URI } from "../../shared/src/performance-comparison.ts";
 import { TRACESIFT_URI } from "../../shared/src/tracesift.ts";
 import { DEVICES_URI } from "../../shared/src/device-choice.ts";
 import { Baguette } from "../src/baguette.ts";
+import { SimulatorUnavailableError } from "../src/simulator-unavailable.ts";
 import { parseBaseUrl } from "../../shared/src/protocol.ts";
 import { createTestPlugin, fakeBaguette, fakeSimulatorInput, UDID, OTHER_UDID, SCREEN, PNG } from "../../test-support/fixtures.ts";
 import { getTelemetryIdentity } from "../src/telemetry-identity.ts";
@@ -526,3 +527,37 @@ async function assertClosed(client: Client, uri: string) {
   assert.equal(message.state, "failed");
   assert.match(message.error, /expired or closed/);
 }
+
+test("without the panel, the server keeps its cards and finds simulators without Baguette", async t => {
+  const reads: string[] = [];
+  const simulators = {
+    async start() { reads.push("start"); return { connected: true, managed: false, baseUrl: "", devices: [{ udid: UDID, name: "iPhone 17", state: "Shutdown", runtime: "iOS 26.0" }] }; },
+    async device(udid: string, mustBeBooted = false) {
+      reads.push(udid);
+      if (mustBeBooted) throw new SimulatorUnavailableError("The simulator is stopped. Boot it first.");
+      return { udid, name: "iPhone 17", state: "Shutdown", runtime: "iOS 26.0" };
+    },
+  };
+  const plugin = await createTestPlugin('<html data-view="panel"></html>', { panels: false, simulators, baguette: new Baguette(new URL("http://127.0.0.1:9")) });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "no-panel-host", version: "1" });
+  t.after(async () => { await client.close(); await plugin.close(); });
+  await plugin.server.connect(serverTransport);
+  await client.connect(clientTransport);
+  assert.match(client.getInstructions() ?? "", /the host's own simulator view/);
+  const names = (await client.listTools()).tools.map(tool => tool.name);
+  for (const name of ["mobile_show_devices", "mobile_logs_session", "mobile_record_performance", "mobile_render_performance_recording", "mobile_compare_performance_recordings", "mobile_analyze_profile", "mobile_list_apps", "mobile_app_storage"]) {
+    assert.ok(names.includes(name), name);
+  }
+  for (const name of ["mobile_open_simulator", "mobile_open_workspace", "mobile_list_simulators", "mobile_send_input", "mobile_screenshot", "mobile_stream_session", "mobile_list_android_devices", "mobile_android_stream_session", "mobile_inspect_ui", "mobile_device_settings", "mobile_ios_mirror_session", "mobile_open_performance_recording", "mobile_app_icons"]) {
+    assert.equal(names.includes(name), false, name);
+  }
+  await assert.rejects(client.readResource({ uri: APP_URI }));
+  await assert.rejects(client.readResource({ uri: WORKSPACE_URI }));
+  const card = await client.readResource({ uri: RECORDING_URI });
+  assert.match(String(card.contents[0].text), /data-view="recording"/);
+  const logs = await client.callTool({ name: "mobile_logs_session", arguments: { options: { native: { platform: "ios", deviceId: UDID } } } });
+  assert.equal(logs.isError, true);
+  assert.match((logs.content as { text: string }[])[0].text, /Boot it first/);
+  assert.deepEqual(reads, [UDID]);
+});

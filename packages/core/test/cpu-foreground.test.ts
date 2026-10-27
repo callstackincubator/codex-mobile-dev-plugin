@@ -180,3 +180,9 @@ if (args[3] === 'dumpsys') {
   const cancelled = foregroundAndroidApp("123", abort.signal);
   await assert.rejects(cancelled, /abort/i);
 });
+
+test("simulator foreground detection is unknown in builds without Baguette", async () => {
+  const missing = pathToFileURL(join(tmpdir(), "mobile-dev-missing-baguette", "Baguette"));
+  const pid = await foregroundSimulatorPid(udid, undefined, missing, async () => { throw new Error("must not prepare Baguette"); });
+  assert.equal(pid, null);
+});

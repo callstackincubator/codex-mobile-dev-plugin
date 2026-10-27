@@ -7,6 +7,7 @@ import { telemetryBuildEnvironment } from "./telemetry-build.mjs";
 import { buildServeEmu } from "./build-serve-emu.mjs";
 import { buildUIPage } from "./ui-page.mjs";
 import { buildServerBundles } from "./server-bundle.mjs";
+import { agentDeviceCatalog } from "./agent-device-catalog.mjs";
 import { access, copyFile, cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -105,6 +106,7 @@ const workflow = execFileSync(process.execPath, [resolve(`${runtime}/node_module
   encoding: "utf8", env: { ...process.env, AGENT_DEVICE_NO_UPDATE_NOTIFIER: "1" },
 });
 await writeFile("packages/skills/agent-device/references/workflow.md", workflow);
+await writeFile("dist/agent-device/tools.json", JSON.stringify(await agentDeviceCatalog("dist/agent-device"), null, 1) + "\n");
 await buildServeEmu("dist/serve-emu");
 // The host-neutral runtime: the shared server, its services and the MCP Apps panel
 // as hosts without their own chrome load it. A host that adds to them builds its

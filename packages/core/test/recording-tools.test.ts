@@ -158,3 +158,25 @@ test("recording tools distinguish data, inline rendering, workspace opening and 
   const conflict = await client.callTool({ name: "mobile_record_performance", arguments: { target: recording.target, title: "Another run" } });
   assert.equal(conflict.isError, true);
 });
+
+test("without a workspace, recordings show only in chat and their cards leave out opening one", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "mobile-dev-recording-tools-"));
+  const store = new RecordingStore(directory);
+  const recording = recordingFixture();
+  await store.save(recording);
+  const recordings = new PerformanceRecordings({ open() { throw new Error("Not used"); }, async read() { throw new Error("Not running"); }, async closeSession() {} }, unavailableFps, store);
+  const server = new McpServer({ name: "recordings-test", version: "1" });
+  registerRecordingTools(server, recordings, async () => "Pixel");
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "recordings-client", version: "1" });
+  t.after(async () => { await client.close(); await server.close(); await recordings.close(); await rm(directory, { recursive: true, force: true }); });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  const { tools } = await client.listTools();
+  assert.equal(tools.some(tool => tool.name === "mobile_open_performance_recording"), false);
+  const rendering = tools.find(tool => tool.name === "mobile_render_performance_recording");
+  assert.doesNotMatch(rendering?.description ?? "", /Open in Mobile Dev/);
+  const shown = await client.callTool({ name: "mobile_render_performance_recording", arguments: { recordingId: recording.id } });
+  assert.equal(shown.structuredContent?.recordingId, recording.id);
+  assert.deepEqual(shown._meta, { "mobile-dev/workspace": false });
+});

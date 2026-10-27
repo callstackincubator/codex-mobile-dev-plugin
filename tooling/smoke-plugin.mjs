@@ -17,6 +17,11 @@ const version = await releaseVersion();
 const temporary = await mkdtemp(join(tmpdir(), `mobile-dev-${name}-`));
 const home = join(temporary, "home");
 await mkdir(home);
+// Hosts without the panel run their own server with cards and agent-device's commands.
+const panels = host.panels !== false;
+const panelTools = ["mobile_open_workspace", "mobile_open_simulator", "mobile_list_simulators", "mobile_list_android_devices", "mobile_stream_session", "mobile_open_performance_recording"];
+const expectedTools = panels ? panelTools : ["mobile_render_performance_recording", "mobile_logs_session", "device_open", "device_snapshot"];
+const panelFiles = ["dist/baguette/Baguette", "dist/ios-mirror/darwin-arm64.node", "dist/agent-device-server.mjs", "dist/serve-emu/src/cli.mjs"];
 
 async function withServer(label, args, env, capabilities, check) {
   const client = new Client({ name: `${name}-${label}-smoke`, version: "1" }, { capabilities });
@@ -29,13 +34,12 @@ async function withServer(label, args, env, capabilities, check) {
   try {
     await client.connect(transport);
     // Behavior follows client capabilities, not the host's name.
-    assert.match(client.getInstructions(), /in chat when it is unsupported/);
+    assert.match(client.getInstructions(), panels ? /in chat when it is unsupported/ : /the host's own simulator view/);
     const { tools } = await client.listTools();
-    for (const tool of ["mobile_show_devices", "mobile_open_workspace", "mobile_open_simulator", "mobile_list_simulators", "mobile_list_android_devices"]) {
-      assert.ok(tools.some(candidate => candidate.name === tool), tool);
-    }
-    const workspace = tools.find(tool => tool.name === "mobile_open_workspace");
-    const resource = await client.readResource({ uri: workspace._meta.ui.resourceUri });
+    for (const tool of ["mobile_show_devices", ...expectedTools]) assert.ok(tools.some(candidate => candidate.name === tool), tool);
+    if (panels === false) for (const tool of panelTools) assert.equal(tools.some(candidate => candidate.name === tool), false, tool);
+    const view = tools.find(tool => tool.name === (panels ? "mobile_open_workspace" : "mobile_render_performance_recording"));
+    const resource = await client.readResource({ uri: view._meta.ui.resourceUri });
     const html = resource.contents[0].text;
     assert.ok(html.includes(`name="mobile-dev-environment" content="${env.MOBILE_DEV_ENVIRONMENT}"`));
     assert.match(html, /name="mobile-dev-telemetry" content="off"/);
@@ -61,9 +65,10 @@ async function smokeDesktopBundle() {
   assert.equal(manifest.server.mcp_config.command, "node");
   assert.equal(manifest.server.mcp_config.env, undefined);
   assert.equal(manifest.compatibility.runtimes.node, metadata.engines.node);
-  for (const path of [manifest.server.entry_point, "dist/app.html", "dist/baguette/Baguette", "dist/ios-mirror/darwin-arm64.node", "dist/agent-device-server.mjs", "dist/serve-emu/src/cli.mjs"]) {
+  for (const path of [manifest.server.entry_point, "dist/app.html", ...panels ? panelFiles : ["dist/agent-device/tools.json"]]) {
     await access(join(directory, path));
   }
+  if (panels === false) for (const path of panelFiles) await assert.rejects(access(join(directory, path)), path);
   // No Codex installation, no PATH Node lookup, and no dependency on package cwd.
   const args = manifest.server.mcp_config.args.map(arg => arg.replaceAll("${__dirname}", directory));
   for (const [environment, forms] of [["development", false], ["release", false], ["development", true]]) {
@@ -71,7 +76,7 @@ async function smokeDesktopBundle() {
     await withServer("desktop", args, { MOBILE_DEV_ENVIRONMENT: environment }, capabilities, async (client, resource) => {
       assert.doesNotMatch(resource.contents[0].text, /data-host=/);
       assert.deepEqual(resource.contents[0]._meta.ui.permissions, { clipboardWrite: {} });
-      assert.match(resource.contents[0].text, /data-view="workspace"/);
+      assert.match(resource.contents[0].text, panels ? /data-view="workspace"/ : /data-view="recording"/);
       assert.match(resource.contents[0].text, /ui.workspace.display_mode_changed/);
     });
     console.log(`${environment}${forms ? "/forms" : ""}: ${host.label} Desktop bundle startup, tools, UI resource and no Codex updater passed.`);
@@ -91,9 +96,11 @@ try {
   const server = manifest.mcpServers["mobile-dev"];
   assert.equal(server.command, "node");
   assert.deepEqual(server.args, [`\${${host.root}}/dist/server.mjs`]);
-  for (const path of ["LICENSE", "README.md", "PRIVACY.md", "skills/mobile-dev/SKILL.md", "skills/mobile-dev-setup/SKILL.md", "dist/app.html", "dist/baguette/Baguette", "dist/ios-mirror/darwin-arm64.node"]) {
+  const skills = host.skills ?? ["mobile-dev", "mobile-dev-setup"];
+  for (const path of ["LICENSE", "README.md", "PRIVACY.md", "dist/app.html", ...skills.map(skill => `skills/${skill.split("/").at(-1)}/SKILL.md`), ...panels ? panelFiles : []]) {
     await access(join(plugin, path));
   }
+  if (panels === false) for (const path of panelFiles) await assert.rejects(access(join(plugin, path)), path);
   const otherManifests = Object.entries(pluginHosts).filter(([other]) => other !== name).map(([, other]) => other.manifest);
   for (const path of [...codexOnlyPaths, ...otherManifests]) await assert.rejects(access(join(plugin, path)), path);
   const args = server.args.map(arg => arg.replaceAll(`\${${host.root}}`, plugin));
@@ -103,6 +110,11 @@ try {
       const choice = await client.callTool({ name: "mobile_show_devices", arguments: { message: "Which device?", selectionMode: "single" } });
       assert.equal(choice.isError, true);
       assert.match(choice.content[0].text, /ask the user in chat/);
+      // agent-device's runtime starts from the plugin's own copy on the first command.
+      if (panels === false) {
+        const devices = await client.callTool({ name: "device_devices", arguments: { platform: "ios" } });
+        assert.doesNotMatch(devices.content[0].text, /Agent Device could not/);
+      }
     });
     console.log(`${environment}: ${host.label} plugin manifest, payload, startup from the plugin root, chat fallback and no Codex updater passed.`);
   }

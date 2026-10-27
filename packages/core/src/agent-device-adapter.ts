@@ -2,10 +2,10 @@ import { Ajv, type ValidateFunction } from "ajv";
 import * as Sentry from "@sentry/node";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import type { RequestOptions } from "@modelcontextprotocol/sdk/shared/protocol.js";
+import type { RequestHandlerExtra, RequestOptions } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import {
   CallToolRequestSchema, CallToolResultSchema, ListToolsRequestSchema,
-  type CallToolRequest, type CallToolResult, type Tool,
+  type CallToolRequest, type CallToolResult, type ServerNotification, type ServerRequest, type Tool,
 } from "@modelcontextprotocol/sdk/types.js";
 import { PLUGIN_VERSION } from "@mobile-dev/shared/version.ts";
 import { captureServerError } from "./telemetry.ts";
@@ -26,8 +26,47 @@ export function agentDeviceBackend(client: Client): AgentDeviceBackend {
   };
 }
 
-function invalid(message: string): CallToolResult {
+export function invalid(message: string): CallToolResult {
   return { isError: true, content: [{ type: "text", text: message }] };
+}
+
+type CallExtra = Pick<RequestHandlerExtra<ServerRequest, ServerNotification>, "signal" | "sendNotification">;
+
+/**
+ * Forwards a call to agent-device, relaying its progress; long runs such as builds keep
+ * the call open while they report it. Reports failures other than unavailable devices
+ * and sessions, without their details.
+ */
+export async function forwardAgentDeviceCall(backend: AgentDeviceBackend, params: CallToolRequest["params"], extra: CallExtra): Promise<CallToolResult> {
+  const name = params.name;
+  try {
+    const options: RequestOptions = {
+      signal: extra.signal,
+      timeout: 30 * 60 * 1000,
+      resetTimeoutOnProgress: true,
+      onprogress: async progress => {
+        const progressToken = params._meta?.progressToken;
+        if (progressToken === undefined) return;
+        await extra.sendNotification({ method: "notifications/progress", params: { ...progress, progressToken } });
+      },
+    };
+    const result = await backend.callTool(params, options);
+    if (result.isError) {
+      const code = result.structuredContent?.code;
+      const unavailable = code === "DEVICE_NOT_FOUND" || code === "DEVICE_IN_USE" || code === "SESSION_NOT_FOUND";
+      if (unavailable === false) {
+        const error = new Error("Agent Device command failed.");
+        captureServerError(error, `agent_device.${name}`);
+      }
+    }
+    return result;
+  } catch (error) {
+    if (extra.signal.aborted) throw error;
+    console.error("[mobile-dev] Agent Device tool transport failed:", error);
+    const failure = new Error("Agent Device tool transport failed.");
+    captureServerError(failure, `agent_device.${name}`);
+    return invalid("Agent Device could not complete the command. Check the local runtime diagnostics.");
+  }
 }
 
 export async function createAgentDeviceAdapter(backend: AgentDeviceBackend): Promise<Server> {
@@ -59,36 +98,9 @@ export async function createAgentDeviceAdapter(backend: AgentDeviceBackend): Pro
     const issue = validateInput(name, input, validators);
     if (issue !== undefined) return invalid(issue);
     return Sentry.startSpan({ name: `tools/call ${name}`, op: "mcp.server", attributes: { "mcp.tool.name": name } }, async span => {
-      try {
-        const options: RequestOptions = {
-          signal: extra.signal,
-          timeout: 30 * 60 * 1000,
-          resetTimeoutOnProgress: true,
-          onprogress: async progress => {
-            const progressToken = request.params._meta?.progressToken;
-            if (progressToken === undefined) return;
-            await extra.sendNotification({ method: "notifications/progress", params: { ...progress, progressToken } });
-          },
-        };
-        const result = await backend.callTool(request.params, options);
-        if (result.isError) {
-          span.setStatus({ code: 2 });
-          const code = result.structuredContent?.code;
-          const unavailable = code === "DEVICE_NOT_FOUND" || code === "DEVICE_IN_USE" || code === "SESSION_NOT_FOUND";
-          if (unavailable === false) {
-            const error = new Error("Agent Device command failed.");
-            captureServerError(error, `agent_device.${name}`);
-          }
-        }
-        return result;
-      } catch (error) {
-        span.setStatus({ code: 2 });
-        if (extra.signal.aborted) throw error;
-        console.error("[mobile-dev] Agent Device tool transport failed:", error);
-        const failure = new Error("Agent Device tool transport failed.");
-        captureServerError(failure, `agent_device.${name}`);
-        return invalid("Agent Device could not complete the command. Check the local runtime diagnostics.");
-      }
+      const result = await forwardAgentDeviceCall(backend, request.params, extra);
+      if (result.isError) span.setStatus({ code: 2 });
+      return result;
     });
   });
   return server;

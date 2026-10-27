@@ -23,7 +23,7 @@ host as an argument.
 | `packages/runtimes` | Pinned Node runtimes bundled into the server (agent-device, serve-emu). |
 | `packages/skills` | Agent skills for the shared tools; each host's package step includes the ones its host supports. |
 | `apps/codex-plugin` | Codex: manifest, launcher, assets, and its own server (`server/`, the self-updater) and panel (`ui/`, the update banner). |
-| `apps/claude` | Claude: the Claude Desktop extension (`manifest.json`, MCPB) and the Claude Code plugin (`.claude-plugin/plugin.json`). Both run the shared server and panel unchanged. |
+| `apps/claude` | Claude: the Claude Desktop extension (`manifest.json`, MCPB) and the Claude Code plugin (`.claude-plugin/plugin.json`). Both run Claude's server (`server/`): the shared server without the panel, plus agent-device's commands, with the skill in `skills/`. |
 | `apps/cursor` | Cursor: the Cursor plugin manifest (`.cursor-plugin/plugin.json`). It runs the shared server and panel unchanged. |
 | `apps/mac` | The Mac app: a SwiftUI shell (`Sources/`), the page it hosts (`web/`) and its server (`server/`). |
 | `packages/test-support` | Fixtures shared by tests across packages and apps. |
@@ -298,13 +298,22 @@ npm run package:claude
 npm run test:claude
 ```
 
-This writes `release/mobile-dev-<version>-claude-desktop-darwin-arm64.mcpb` and
-the Claude plugin folder `release/claude-plugin/mobile-dev`. The plugin folder
-uses `apps/claude/.claude-plugin/plugin.json`, which starts `dist/server.mjs` with Node.js
-22.19 or later from `PATH`, and leaves out the Codex manifest, `.mcp.json`, and
-launcher. Check it with `claude plugin validate ./release/claude-plugin/mobile-dev`,
-or load it with `claude --plugin-dir ./release/claude-plugin/mobile-dev`.
-Follow the [manual installation steps](README.md#claude-desktop-manual-installation).
+This writes `release/mobile-dev-<version>-claude-desktop-darwin-arm64.mcpb`, the
+Claude plugin folder `release/claude-plugin/mobile-dev` with its ZIP, and a local
+`mobile-dev-local` marketplace in `release/claude-plugin`. Both packages run
+Claude's server (`apps/claude/server`), built over the parts of the runtime that
+`apps/claude/plugin-host.json` lists: no panel, Baguette, serve-emu or iOS mirror,
+with agent-device's commands as `device_*` tools and the skill in
+`apps/claude/skills`. Packaging fails if a file exceeds the Claude plugin
+directory's 5 MiB limit. The development connection above runs the shared server,
+with the panel. The plugin folder uses `apps/claude/.claude-plugin/plugin.json`, which
+starts `dist/server.mjs` with Node.js 22.19 or later from `PATH`, and leaves out the
+Codex manifest, `.mcp.json`, and launcher. Check it with
+`claude plugin validate ./release/claude-plugin`, load it with
+`claude --plugin-dir ./release/claude-plugin/mobile-dev`, or install it with
+`claude plugin marketplace add ./release/claude-plugin` and
+`claude plugin install mobile-dev@mobile-dev-local`.
+Follow the [installation steps](README.md#claude-code-and-claude-desktop).
 Remove the `mobile-dev` development entry before installing the bundle to avoid
 duplicate servers. Rebuild, repackage, and reinstall to update a bundled copy.
 

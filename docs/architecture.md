@@ -2,7 +2,7 @@
 
 [Back to README](../README.md) · [Contributing](../CONTRIBUTING.md)
 
-The Agent Device MCP entry and skill are currently disabled; their implementation and bundled runtime are retained for later reactivation.
+Claude's server serves agent-device's commands as `device_*` tools. The separate Agent Device MCP entry and its skill stay disabled in the other hosts; their implementation and bundled runtime are retained for later reactivation.
 
 ## Hosts
 
@@ -17,9 +17,17 @@ A host adds to the shared pieces without changing them:
 
 - **Server:** each host's entry calls `runStdioServer` with its `ServerFeature`s.
   Codex adds the self-updater, which installs through Codex's marketplace; the Mac
-  app adds its page resource; Claude and Cursor run the shared server unchanged.
+  app adds its page resource; Cursor runs the shared server unchanged. Claude shows
+  simulators itself, so its entry (`apps/claude/server`) passes `panels: false`,
+  which leaves out the panel and workspace and the tools only they use (see
+  `registerPanels`), and adds agent-device's commands. Its chat cards stay, and
+  simctl finds simulators in place of Baguette.
+- **Runtime:** a host's `plugin-host.json` can list the parts of `dist/` it ships
+  and a server build of its own. Claude ships neither Baguette, serve-emu nor the
+  iOS mirror, and its server splits into chunks, keeping every file under the
+  Claude plugin directory's 5 MiB limit.
 - **Panel:** a host's page entry calls `startMcpApp` with its chrome. Codex adds the
-  update banner; Claude Desktop uses the shared entry.
+  update banner; Claude uses the shared entry, for its cards.
 - **Views:** shared views depend only on `HostBridge`, the subset of `App` they use,
   plus optional host context attachments. `DeviceWorkspace` keeps the iOS and Android
   panels, their selection and layout identical in every host.

@@ -97,6 +97,24 @@ after updating so its MCP process and UI use the refreshed files. This is an exp
 not a promise of immediate automatic background updates. The first successful
 release with this workflow creates the branch.
 
+## Claude packages
+
+The same build packages Claude with `npm run package:claude -- --release` and
+checks the extracted plugin ZIP and the desktop bundle with `npm run test:claude`,
+including that no file exceeds the Claude plugin directory's 5 MiB limit. The
+GitHub release attaches `mobile-dev-<version>-claude-plugin-darwin-arm64.zip` and
+`mobile-dev-<version>-claude-desktop-darwin-arm64.mcpb` beside the Codex ZIP; both
+are also kept as one Actions artifact for 30 days.
+
+The `publish-claude` job then publishes the plugin to `release/claude`, with a
+Claude Code marketplace named `mobile-dev` at the branch root
+(`.claude-plugin/marketplace.json`) and the plugin in `plugins/mobile-dev`. Like
+`release/latest`, the branch starts independently of the source history, advances
+without force pushes, and keeps the newest version when an older or repeated one is
+published. Users install it with the commands in the
+[README](../README.md#claude-code-and-claude-desktop). To submit to Anthropic's
+plugin directory, point the submission at the plugin folder on that branch.
+
 ## Store updates and the GitHub migration
 
 Release builds read the published store version through the app-server

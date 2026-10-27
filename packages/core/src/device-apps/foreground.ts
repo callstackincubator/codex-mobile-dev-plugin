@@ -1,5 +1,6 @@
 import { runDiscoveryCommand, annotateDiscoveryCommand } from "./command.ts";
 import { fileURLToPath } from "node:url";
+import { existsSync } from "node:fs";
 import { z } from "zod";
 import { adbPath } from "../native-logs.ts";
 import { baguetteEnvironment, BAGUETTE_RUNTIME_TIMEOUT_MS } from "../baguette-runtime.ts";
@@ -26,6 +27,8 @@ export async function foregroundPhysicalPid(deviceId: string, signal?: AbortSign
 export async function foregroundSimulatorPid(deviceId: string, signal?: AbortSignal,
   helper = new URL("./baguette/Baguette", import.meta.url), runtime = baguetteEnvironment): Promise<number | null> {
   const path = fileURLToPath(helper);
+  // Builds without the panel leave Baguette out; the foreground app is then unknown.
+  if (existsSync(path) === false) return null;
   const cancellation = signal ?? AbortSignal.timeout(10000);
   const startedAt = performance.now();
   let environment: NodeJS.ProcessEnv;

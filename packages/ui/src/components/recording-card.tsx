@@ -221,7 +221,7 @@ export function RecordingCard({ controller, detailed = false }: { controller: Re
         </section>}
         <div className="recording-actions">
           <Button disabled={state.canMessage === false || state.busy || hasReadings === false} onClick={() => { void controller.send("ask"); }}><MessageCircleIcon />{range ? "Ask about this range" : "Ask about recording"}</Button>
-          {detailed === false && <Button variant="outline" disabled={state.canMessage === false || state.busy} onClick={() => { void controller.send("open"); }}><ExternalLinkIcon />Open in Mobile Dev</Button>}
+          {detailed === false && state.canOpen && <Button variant="outline" disabled={state.canMessage === false || state.busy} onClick={() => { void controller.send("open"); }}><ExternalLinkIcon />Open in Mobile Dev</Button>}
           {state.canMessage === false && <p>This host does not support sending chart selections to chat.</p>}
         </div>
         {state.error && <p role="alert" className="recording-error">{state.error}</p>}

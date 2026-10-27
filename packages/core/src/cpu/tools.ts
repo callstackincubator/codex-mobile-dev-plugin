@@ -9,7 +9,7 @@ import { z } from "zod";
 import { cpuTargetSchema } from "@mobile-dev/shared/cpu.ts";
 import type { CpuTarget } from "@mobile-dev/shared/cpu.ts";
 import { errorMessage } from "@mobile-dev/shared/protocol.ts";
-import type { Baguette } from "../baguette.ts";
+import type { SimulatorDirectory } from "../simulator-directory.ts";
 import { readDeviceApps } from "../device-apps/sources.ts";
 import { withDeviceAppsDiagnostic } from "@mobile-dev/shared/device-apps-diagnostics.ts";
 import { registerDeviceAppsTool } from "../device-apps/tools.ts";
@@ -33,7 +33,7 @@ function safe<T>(handler: (input: T) => Promise<CallToolResult>) {
   };
 }
 
-export function registerCpuTools(server: McpServer, cpu: CpuSessions, baguette: Baguette,
+export function registerCpuTools(server: McpServer, cpu: CpuSessions, simulators: SimulatorDirectory,
   sources = { apps: readDeviceApps, androidDevices: listAndroidLogDevices, iosDevices: listIosDevices }) {
   async function validateDevice(device: { platform: "ios" | "android"; deviceId: string; kind?: "simulator" | "physical" }) {
     if (device.platform === "ios" && device.kind === "physical") {
@@ -43,7 +43,7 @@ export function registerCpuTools(server: McpServer, cpu: CpuSessions, baguette: 
       return connected.name;
     }
     if (device.platform === "ios") {
-      const simulator = await baguette.device(device.deviceId, true);
+      const simulator = await simulators.device(device.deviceId, true);
       return simulator.name;
     }
     const devices = await sources.androidDevices();

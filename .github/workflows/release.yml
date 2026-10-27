@@ -99,6 +99,7 @@ jobs:
         run: |
           npm run build:release
           npm run package:release
+          npm run package:claude -- --release
 
       - name: Validate the extracted release ZIP
         env:
@@ -108,6 +109,15 @@ jobs:
           mkdir "$RUNNER_TEMP/mobile-dev-release"
           unzip -q "$RELEASE_ARCHIVE" -d "$RUNNER_TEMP/mobile-dev-release"
           npm run test:package -- "$RUNNER_TEMP/mobile-dev-release"
+
+      # Claude's packages ship without the panel, and every file under the plugin directory's 5 MiB limit.
+      - name: Validate the extracted Claude packages
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          mkdir "$RUNNER_TEMP/mobile-dev-claude"
+          unzip -q "release/mobile-dev-$RELEASE_VERSION-claude-plugin-darwin-arm64.zip" -d "$RUNNER_TEMP/mobile-dev-claude"
+          npm run test:claude -- "$RUNNER_TEMP/mobile-dev-claude"
 
       - name: Upload Sentry source maps and native symbols
         env:
@@ -120,6 +130,17 @@ jobs:
         with:
           name: mobile-dev-${{ steps.release.outputs.version }}-darwin-arm64
           path: ${{ steps.release.outputs.archive }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+      - name: Save Claude packages
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: mobile-dev-${{ steps.release.outputs.version }}-claude
+          path: |
+            release/mobile-dev-${{ steps.release.outputs.version }}-claude-plugin-darwin-arm64.zip
+            release/mobile-dev-${{ steps.release.outputs.version }}-claude-desktop-darwin-arm64.mcpb
           if-no-files-found: error
           compression-level: 0
           retention-days: 30
@@ -200,6 +221,11 @@ jobs:
           name: mobile-dev-${{ needs.build.outputs.version }}-darwin-arm64
           path: release
 
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: mobile-dev-${{ needs.build.outputs.version }}-claude
+          path: release
+
       - name: Publish GitHub release with linked commit titles
         env:
           GH_TOKEN: ${{ github.token }}
@@ -213,6 +239,8 @@ jobs:
             "$RUNNER_TEMP/published-release-tags.txt" "$RUNNER_TEMP/release-notes.md"
           gh release create "$RELEASE_TAG" \
             "release/mobile-dev-$RELEASE_VERSION-darwin-arm64.zip" \
+            "release/mobile-dev-$RELEASE_VERSION-claude-plugin-darwin-arm64.zip" \
+            "release/mobile-dev-$RELEASE_VERSION-claude-desktop-darwin-arm64.mcpb" \
             --verify-tag --notes-file "$RUNNER_TEMP/release-notes.md" --title "Mobile Dev $RELEASE_VERSION"
 
   publish:
@@ -249,3 +277,39 @@ jobs:
           mkdir "$RUNNER_TEMP/mobile-dev-marketplace"
           unzip -q "release/mobile-dev-$RELEASE_VERSION-darwin-arm64.zip" -d "$RUNNER_TEMP/mobile-dev-marketplace"
           node apps/codex-plugin/tooling/publish-release.mjs "$RUNNER_TEMP/mobile-dev-marketplace"
+
+  # Claude Code installs the plugin from this branch as a marketplace.
+  publish-claude:
+    needs: [build, release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    concurrency:
+      group: release-claude
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: refs/tags/${{ needs.build.outputs.tag }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22.23.2'
+
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: mobile-dev-${{ needs.build.outputs.version }}-claude
+          path: release
+
+      - name: Publish the Claude Code marketplace
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.build.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+          RELEASE_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+        run: |
+          mkdir "$RUNNER_TEMP/mobile-dev-claude"
+          unzip -q "release/mobile-dev-$RELEASE_VERSION-claude-plugin-darwin-arm64.zip" -d "$RUNNER_TEMP/mobile-dev-claude"
+          node apps/claude/tooling/publish-release.mjs "$RUNNER_TEMP/mobile-dev-claude"

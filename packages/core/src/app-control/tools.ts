@@ -36,8 +36,10 @@ type ToolInput<Shape extends z.ZodRawShape> = Target & z.infer<z.ZodObject<Shape
 const bundleId = bundleIdSchema.describe("App bundle ID or Android package name.");
 const payloadSchema = z.record(z.string(), z.unknown()).refine(value => typeof value.aps === "object" && value.aps !== null, "Payload needs an aps object.");
 
-export function registerAppControlTools(server: McpServer, driverFor: DriverFactory = createDrivers()) {
+/** Without `panels`, the tools only the panel calls stay out. */
+export function registerAppControlTools(server: McpServer, driverFor: DriverFactory = createDrivers(), { panels = true } = {}) {
   function tool<Shape extends z.ZodRawShape>(name: string, action: string, config: ToolConfig<Shape>, handler: (driver: AppDriver, input: ToolInput<Shape>) => Promise<Record<string, unknown>>) {
+    if (config.panelOnly && panels === false) return;
     const inputSchema: z.ZodRawShape = { ...appTargetShape, ...config.inputSchema };
     registerAppTool(server, name, {
       title: config.title, description: config.description, inputSchema,

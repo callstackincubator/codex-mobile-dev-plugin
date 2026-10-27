@@ -11,6 +11,8 @@ type RecordingState = {
   /** Showing a preview without thread or frame detail: the full recording is loading, or this host cannot load it. */
   preview?: "loading" | "only";
   canMessage: boolean;
+  /** The server has a workspace to open the recording in. */
+  canOpen: boolean;
   busy: boolean;
   error: string;
 };
@@ -18,7 +20,7 @@ type RecordingState = {
 export class RecordingController {
   private readonly app: HostBridge;
   private readonly attachments: HostAttachmentsSource;
-  private state: RecordingState = { canMessage: false, busy: false, error: "" };
+  private state: RecordingState = { canMessage: false, canOpen: true, busy: false, error: "" };
   private listeners = new Set<() => void>();
   private timer?: ReturnType<typeof setTimeout>;
   private disposed = false;
@@ -59,6 +61,8 @@ export class RecordingController {
     }
     const data = result.structuredContent;
     if (data === undefined) return;
+    // Servers without the panel say so; earlier servers always had one.
+    this.update({ canOpen: result._meta?.["mobile-dev/workspace"] !== false });
     if (data.recording !== undefined) {
       this.present(recordingSchema.parse(data.recording), data.range, undefined);
       return;
@@ -74,7 +78,7 @@ export class RecordingController {
       this.present(preview, range, canLoad ? "loading" : "only");
     }
     if (canLoad) void this.load(recordingId, range);
-    else if (preview === undefined) this.update({ error: "This host cannot load the recording. Open it in Mobile Dev instead." });
+    else if (preview === undefined) this.update({ error: this.state.canOpen ? "This host cannot load the recording. Open it in Mobile Dev instead." : "This host cannot load the recording." });
   }
   private present(recording: PerformanceRecording, requestedRange: unknown, preview: RecordingState["preview"]) {
     const startedAt = performance.now();

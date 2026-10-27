@@ -175,3 +175,15 @@ test("comparison previews show where cards cannot call tools", async t => {
   assert.deepEqual(calls, []);
   controller.dispose();
 });
+
+test("a server without a workspace keeps the card from offering to open one", async t => {
+  const recording = recordingFixture();
+  const { cards, app, close } = load(() => { throw new Error("must not read"); }, { cardsCallTools: false });
+  t.after(close);
+  const controller = new cards.RecordingController(app);
+  assert.equal(controller.getSnapshot().canOpen, true, "Earlier servers always had the workspace");
+  controller.accept({ ...reference(recording), _meta: { "mobile-dev/workspace": false } });
+  assert.equal(controller.getSnapshot().canOpen, false);
+  assert.equal(controller.getSnapshot().error, "This host cannot load the recording.");
+  controller.dispose();
+});

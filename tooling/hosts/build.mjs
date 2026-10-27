@@ -1,6 +1,9 @@
+import { existsSync } from "node:fs";
 import { copyFile, cp, mkdir, rm, writeFile } from "node:fs/promises";
 import { build } from "esbuild";
 import { buildCodexHost } from "../../apps/codex-plugin/tooling/build.mjs";
+import { buildHost as buildClaudeHost } from "../../apps/claude/tooling/build.mjs";
+import { agentDeviceCatalog } from "../agent-device-catalog.mjs";
 import { buildServerBundles } from "../server-bundle.mjs";
 import { buildUIPage } from "../ui-page.mjs";
 
@@ -9,7 +12,8 @@ import { buildUIPage } from "../ui-page.mjs";
  * browser host that loads them. Only the JavaScript is built, beside the helpers
  * committed to the repository that the server reads at startup; Baguette and the
  * device runtimes stay out. This runs on Linux, and the tests exercise what needs
- * no device.
+ * no device. Claude's target lists agent-device's commands from the vendored runtime
+ * (`npm run vendor:agent-device`).
  */
 export const HOST_TESTS = ".host-tests";
 const environment = "development";
@@ -31,10 +35,14 @@ const sharedPage = output => buildUIPage({
 });
 
 const targets = {
-  // Claude Desktop and Claude Code load the host-neutral server and panel.
+  // Claude Desktop and Claude Code load Claude's server, without the panel, and the
+  // shared page for its cards.
   async claude(directory) {
     await sharedPage(`${directory}/app.html`);
-    await buildServerBundles({ entryPoints: { server: "packages/core/src/index.ts" }, outdir: directory, sentryDirectory: ".sentry/host-tests/claude" });
+    if (existsSync("packages/runtimes/agent-device/node_modules/agent-device") === false) throw new Error("Run npm run vendor:agent-device to build Claude's target.");
+    await mkdir(`${directory}/agent-device`, { recursive: true });
+    await writeFile(`${directory}/agent-device/tools.json`, JSON.stringify(await agentDeviceCatalog("packages/runtimes/agent-device")));
+    await buildClaudeHost(directory, { sentryDirectory: ".sentry/host-tests/claude" });
   },
   codex: directory => buildCodexHost(environment, directory),
   async mac(directory) {
