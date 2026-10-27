@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { build } from "esbuild";
 import { JSDOM } from "jsdom";
 
-const update = { status: "available", currentVersion: "0.1.164", latestVersion: "0.1.165" };
+const update = { status: "available", currentVersion: "0.1.165", latestVersion: "0.1.166" };
 
 async function banner(t: test.TestContext, app: unknown) {
   const dom = new JSDOM('<html><body><div id="root"></div></body></html>', { pretendToBeVisual: true, runScripts: "outside-only", url: "https://mobile-dev.test" });
@@ -51,7 +51,7 @@ test("store updates open the exact listing without installing through GitHub", a
   const view = await banner(t, app);
   view.controller.setAvailable(true);
   await view.settle();
-  assert.match(view.dom.window.document.body.textContent!, /0.1.165 is available in the plugin store/);
+  assert.match(view.dom.window.document.body.textContent!, /0.1.166 is available in the plugin store/);
   const open = view.button("Open plugin store");
   open.click();
   await view.settle();

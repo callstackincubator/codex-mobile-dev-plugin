@@ -49,7 +49,7 @@ function cliFixture(directory: string, calls: string[][], options: FixtureOption
       if (options.keepGithub !== true) github = false;
       return { pluginId: "mobile-dev@mobile-dev" };
     }
-    const version = options.storeVersion ?? "0.1.165";
+    const version = options.storeVersion ?? "0.1.166";
     if (options.storeInstalled) await storeManifest(directory, options.installedVersion ?? version);
     const store = {
       pluginId: "mobile-dev@openai-curated-remote", name: "mobile-dev", marketplaceName: "openai-curated-remote",
@@ -59,7 +59,7 @@ function cliFixture(directory: string, calls: string[][], options: FixtureOption
     const installed = [];
     const available = [];
     const legacy = {
-      pluginId: "mobile-dev@mobile-dev", name: "mobile-dev", marketplaceName: "mobile-dev", version: "0.1.165", installed: true, enabled: true,
+      pluginId: "mobile-dev@mobile-dev", name: "mobile-dev", marketplaceName: "mobile-dev", version: "0.1.166", installed: true, enabled: true,
       source: { source: "local", path: "fixture" }, marketplaceSource: { sourceType: "git", source },
     };
     legacy.installed = github;
@@ -70,21 +70,21 @@ function cliFixture(directory: string, calls: string[][], options: FixtureOption
     return { installed, available };
   };
   const readStore: ReadStore = async () => ({
-    remotePluginId: options.storeId ?? PLUGIN_STORE_ID, name: "mobile-dev", version: options.storeVersion ?? "0.1.165",
-    localVersion: options.storeInstalled ? options.installedVersion ?? options.storeVersion ?? "0.1.165" : null,
+    remotePluginId: options.storeId ?? PLUGIN_STORE_ID, name: "mobile-dev", version: options.storeVersion ?? "0.1.166",
+    localVersion: options.storeInstalled ? options.installedVersion ?? options.storeVersion ?? "0.1.166" : null,
     installed: options.storeInstalled ?? false, enabled: options.storeEnabled ?? true,
   });
   return { run, readStore };
 }
 
 function githubRoot(directory: string) {
-  return join(directory, "plugins/cache/mobile-dev/mobile-dev/0.1.165");
+  return join(directory, "plugins/cache/mobile-dev/mobile-dev/0.1.166");
 }
 
 test("update comparisons use numerical release versions", () => {
   const numeric = compareReleaseVersions("0.1.100", "0.1.99");
-  const equal = compareReleaseVersions("0.1.165", "0.1.165");
-  const older = compareReleaseVersions("0.1.165", "0.2.0");
+  const equal = compareReleaseVersions("0.1.166", "0.1.166");
+  const older = compareReleaseVersions("0.1.166", "0.2.0");
   assert.equal(numeric, 1);
   assert.equal(equal, 0);
   assert.equal(older, -1);
@@ -93,32 +93,32 @@ test("update comparisons use numerical release versions", () => {
 test("the store catalog is the sole update source and checks are shared across chats", async t => {
   const directory = await profile(t);
   const calls: string[][] = [];
-  const fixture = { github: false, storeVersion: "0.1.165", storeInstalled: true, installedVersion: "0.1.164" };
+  const fixture = { github: false, storeVersion: "0.1.166", storeInstalled: true, installedVersion: "0.1.165" };
   const { run, readStore } = cliFixture(directory, calls, fixture);
   let now = 1000000;
-  const options = { enabled: true, currentVersion: "0.1.164", profile: directory, run, readStore, now: () => now };
+  const options = { enabled: true, currentVersion: "0.1.165", profile: directory, run, readStore, now: () => now };
   const updates = new PluginUpdates(options);
   const pending = [updates.check(), updates.check()];
   const initial = await Promise.all(pending);
   assert.equal(initial[0].status, "available");
-  assert.equal(initial[0].latestVersion, "0.1.165");
+  assert.equal(initial[0].latestVersion, "0.1.166");
   assert.equal(initial[1].status, "available");
   const another = new PluginUpdates(options);
   await another.check();
   assert.deepEqual(calls, [["plugin", "list", "--available", "--json"]]);
-  fixture.storeVersion = "0.1.166";
+  fixture.storeVersion = "0.1.167";
   now += 60 * 60 * 1000;
   const next = await another.check();
-  assert.equal(next.latestVersion, "0.1.166");
+  assert.equal(next.latestVersion, "0.1.167");
   assert.equal(calls.length, 2);
 });
 
 test("pending review and a newer GitHub build never offer an older store migration", async t => {
-  for (const version of ["0.1.163", "0.1.165"]) {
+  for (const version of ["0.1.163", "0.1.166"]) {
     const directory = await profile(t);
     const calls: string[][] = [];
     const { run, readStore } = cliFixture(directory, calls, { storeVersion: version, storeInstalled: true });
-    const updates = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.166", run, readStore });
+    const updates = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.167", run, readStore });
     const status = await updates.check();
     assert.equal(status.status, "current");
     const migration = updates.migrate();
@@ -128,7 +128,7 @@ test("pending review and a newer GitHub build never offer an older store migrati
   const directory = await profile(t);
   const calls: string[][] = [];
   const { run, readStore } = cliFixture(directory, calls, { storeVersion: "0.1.163" });
-  const updates = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.164", run, readStore });
+  const updates = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.165", run, readStore });
   const status = await updates.check();
   assert.equal(status.status, "current");
 });
@@ -141,11 +141,11 @@ test("legacy GitHub update caches cannot advertise unpublished store versions", 
   const text = JSON.stringify({ checkedAt: Date.now(), latestVersion: "9.9.9", installedVersion: "9.9.9" });
   await writeFile(path, text);
   const calls: string[][] = [];
-  const { run, readStore } = cliFixture(directory, calls, { github: false, storeVersion: "0.1.165" });
-  const updates = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.165", run, readStore });
+  const { run, readStore } = cliFixture(directory, calls, { github: false, storeVersion: "0.1.166" });
+  const updates = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.166", run, readStore });
   const status = await updates.check();
   assert.equal(status.status, "current");
-  assert.equal(status.latestVersion, "0.1.165");
+  assert.equal(status.latestVersion, "0.1.166");
   assert.equal(calls.length, 1);
 });
 
@@ -183,7 +183,7 @@ test("migration is offered for the same version and verifies the store before an
     const directory = await profile(t);
     const calls: string[][] = [];
     const { run, readStore } = cliFixture(directory, calls, fixture);
-    const updates = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.165", run, readStore });
+    const updates = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.166", run, readStore });
     const notice = await updates.check();
     assert.equal(notice.status, "migration");
     assert.equal(notice.storeInstalled, false);
@@ -198,7 +198,7 @@ test("migration removes only GitHub, preserves data, deduplicates clicks and per
   const calls: string[][] = [];
   const { run, readStore } = cliFixture(directory, calls, { storeInstalled: true });
   const pluginRoot = githubRoot(directory);
-  const options = { enabled: true, profile: directory, pluginRoot, currentVersion: "0.1.165", run, readStore };
+  const options = { enabled: true, profile: directory, pluginRoot, currentVersion: "0.1.166", run, readStore };
   const dataPath = join(directory, "recording.json");
   await writeFile(dataPath, "saved recording");
   const updates = new PluginUpdates(options);
@@ -220,7 +220,7 @@ test("migration removes only GitHub, preserves data, deduplicates clicks and per
   const another = new PluginUpdates(options);
   const restart = await another.check();
   assert.equal(restart.status, "migrated");
-  const storeRoot = join(directory, "plugins/cache/openai-curated-remote/mobile-dev/0.1.165");
+  const storeRoot = join(directory, "plugins/cache/openai-curated-remote/mobile-dev/0.1.166");
   const restarted = new PluginUpdates({ ...options, pluginRoot: storeRoot });
   const current = await restarted.check();
   assert.equal(current.status, "current");
@@ -237,7 +237,7 @@ test("wrong marketplaces, failed deletion and unremoved GitHub installations nev
     const directory = await profile(t);
     const calls: string[][] = [];
     const { run, readStore } = cliFixture(directory, calls, { ...fixture, storeInstalled: true });
-    const updates = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.165", run, readStore });
+    const updates = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.166", run, readStore });
     const migration = updates.migrate();
     await assert.rejects(migration);
     if (fixture.source !== undefined) assert.equal(calls.some(call => call[1] === "remove"), false);
@@ -249,10 +249,10 @@ test("cleanup can resume when plugin removal succeeded but marketplace removal f
   const calls: string[][] = [];
   const fixture = { storeInstalled: true, marketplaceRemoveFails: true };
   const { run, readStore } = cliFixture(directory, calls, fixture);
-  const updates = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.165", run, readStore });
+  const updates = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.166", run, readStore });
   const migration = updates.migrate();
   await assert.rejects(migration);
-  const anotherChat = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.165", run, readStore });
+  const anotherChat = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.166", run, readStore });
   const notice = await anotherChat.check();
   assert.equal(notice.status, "migration");
   fixture.marketplaceRemoveFails = false;
@@ -305,7 +305,7 @@ for await (const line of lines) {
   } else if (${reject}) {
     error = { message: "PRIVATE_CATALOG_ERROR" };
   } else if (message.method === "plugin/read" && message.params.remoteMarketplaceName === "openai-curated-remote" && message.params.pluginName === "mobile-dev") {
-    result = { plugin: { summary: { remotePluginId: "${PLUGIN_STORE_ID}", name: "mobile-dev", version: "0.1.166", localVersion: "0.1.165", installed: true, enabled: true } } };
+    result = { plugin: { summary: { remotePluginId: "${PLUGIN_STORE_ID}", name: "mobile-dev", version: "0.1.167", localVersion: "0.1.166", installed: true, enabled: true } } };
   } else error = { message: "unexpected request" };
   const response = JSON.stringify({ id: message.id, result, error });
   console.log("null");
@@ -319,8 +319,8 @@ for await (const line of lines) {
 test("the catalog RPC preserves published and installed versions separately", async t => {
   const fixture = await catalogServer(t);
   const plugin = await readPluginStore(fixture.directory, { path: fixture.executable });
-  assert.equal(plugin.version, "0.1.166");
-  assert.equal(plugin.localVersion, "0.1.165");
+  assert.equal(plugin.version, "0.1.167");
+  assert.equal(plugin.localVersion, "0.1.166");
   assert.equal(plugin.remotePluginId, PLUGIN_STORE_ID);
 });
 

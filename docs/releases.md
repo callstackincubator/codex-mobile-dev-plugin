@@ -120,7 +120,7 @@ The update banner opens the store listing through the host's link API. Store
 updates are installed there. The old Git marketplace upgrade tool is removed.
 
 For GitHub installations, migration requires a published store version of at
-least **0.1.165**, and at least the running plugin version. The user installs and
+least **0.1.166**, and at least the running plugin version. The user installs and
 enables the store version, then clicks **Finish migration**. An app-only MCP tool
 checks the exact remote identity, enabled installation, installed `localVersion`,
 and package manifest before removing `mobile-dev@mobile-dev` and the verified
@@ -138,11 +138,11 @@ forwarded by the MCP manifest. The plugin never restarts Codex automatically.
 The existing release workflow can build and publish the GitHub transition release
 before store review completes:
 
-1. Release **0.1.165** through the normal GitHub workflow. Existing GitHub versions
+1. Release **0.1.166** through the normal GitHub workflow. Existing GitHub versions
    can update to it through their existing updater.
 2. Upload that release's ZIP to the **existing Mobile Dev store listing**, then
    complete review and publish it.
-3. Once the Codex catalog exposes 0.1.165, the transition build offers migration.
+3. Once the Codex catalog exposes 0.1.166, the transition build offers migration.
    Until then, it keeps the GitHub installation working and offers no migration
    to the older store package. Catalog checks can delay the banner by up to one
    hour after publication.

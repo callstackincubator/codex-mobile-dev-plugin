@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const PLUGIN_STORE_ID = "plugins_6ac4c117f76881918d3676e851fa4005";
 export const PLUGIN_STORE_URL = `https://chatgpt.com/plugins/${PLUGIN_STORE_ID}`;
-export const STORE_MIGRATION_VERSION = "0.1.165";
+export const STORE_MIGRATION_VERSION = "0.1.166";
 
 const versionTextSchema = z.string();
 export const releaseVersionSchema = versionTextSchema.regex(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/);

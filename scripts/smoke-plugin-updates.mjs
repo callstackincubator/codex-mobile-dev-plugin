@@ -52,7 +52,7 @@ try {
   await writeJson(catalogPath, { name: "mobile-dev", plugins: [{ name: "mobile-dev", source: { source: "local", path: "./plugins/mobile-dev" } }] });
   const mcpPath = join(plugin, ".mcp.json");
   await writeJson(mcpPath, { mcpServers: { "mobile-dev": { command: "/bin/echo", args: ["update fixture"], cwd: "." } } });
-  await release("0.1.165");
+  await release("0.1.166");
   http = createServer(async (request, response) => {
     try {
       const url = new URL(request.url, "http://localhost");
@@ -68,15 +68,15 @@ try {
   await git(["config", "--global", `url.${mirrorUrl}.insteadOf`, repositoryUrl]);
   await codex(["plugin", "marketplace", "add", repositoryUrl, "--ref", "release/latest", "--json"]);
   const initial = await codex(["plugin", "add", "mobile-dev@mobile-dev", "--json"]);
-  assert.equal(initial.version, "0.1.165");
+  assert.equal(initial.version, "0.1.166");
   const initialMcp = await codex(["mcp", "get", "mobile-dev", "--json"]);
   const installedCwd = resolve(initialMcp.transport.cwd);
-  const storeDirectory = join(profile, "plugins/cache/openai-curated-remote/mobile-dev/0.1.165/.codex-plugin");
+  const storeDirectory = join(profile, "plugins/cache/openai-curated-remote/mobile-dev/0.1.166/.codex-plugin");
   await mkdir(storeDirectory, { recursive: true });
-  await writeJson(join(storeDirectory, "plugin.json"), { name: "mobile-dev", version: "0.1.165" });
+  await writeJson(join(storeDirectory, "plugin.json"), { name: "mobile-dev", version: "0.1.166" });
   const store = {
     pluginId: "mobile-dev@openai-curated-remote", name: "mobile-dev", marketplaceName: "openai-curated-remote",
-    version: "0.1.165", installed: true, enabled: true, source: { source: "remote", id: PLUGIN_STORE_ID },
+    version: "0.1.166", installed: true, enabled: true, source: { source: "remote", id: PLUGIN_STORE_ID },
   };
   const run = async args => {
     const result = await codex(args);
@@ -84,9 +84,9 @@ try {
     return result;
   };
   const readStore = async () => ({
-    remotePluginId: PLUGIN_STORE_ID, name: "mobile-dev", version: "0.1.165", localVersion: "0.1.165", installed: true, enabled: true,
+    remotePluginId: PLUGIN_STORE_ID, name: "mobile-dev", version: "0.1.166", localVersion: "0.1.166", installed: true, enabled: true,
   });
-  const options = { enabled: true, profile, pluginRoot: installedCwd, currentVersion: "0.1.165", run, readStore };
+  const options = { enabled: true, profile, pluginRoot: installedCwd, currentVersion: "0.1.166", run, readStore };
   const updates = new PluginUpdates(options);
   process.chdir(installedCwd);
   const available = await updates.check();
@@ -107,7 +107,7 @@ try {
   assert.equal(notice.status, "migrated");
   const retry = await updates.migrate();
   assert.equal(retry.status, "migrated");
-  const storeRoot = join(profile, "plugins/cache/openai-curated-remote/mobile-dev/0.1.165");
+  const storeRoot = join(profile, "plugins/cache/openai-curated-remote/mobile-dev/0.1.166");
   const restarted = new PluginUpdates({ ...options, pluginRoot: storeRoot });
   const current = await restarted.check();
   assert.equal(current.status, "current");

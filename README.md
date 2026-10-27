@@ -27,7 +27,7 @@ is available, click **Open plugin store** to update there, then fully quit and
 reopen Codex.
 
 Existing GitHub installations offer **Install from plugin store** once version
-0.1.165 or newer is published there. Install and enable the store version, return
+0.1.166 or newer is published there. Install and enable the store version, return
 to Mobile Dev, and click **Finish migration**. This verifies the store package,
 removes the GitHub plugin and its marketplace, and preserves local recordings and
 saved data. Fully quit and reopen Codex afterward. The migration is offered only

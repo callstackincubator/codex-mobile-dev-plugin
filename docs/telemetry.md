@@ -102,7 +102,7 @@ coverage remains on this path with the same boundaries and units. Execution and
 invalid-response errors use fixed messages without implying a network failure;
 raw CLI errors and output are not sent to telemetry.
 
-Since 0.1.165, update checks measure the Codex store catalog lookup instead of
+Since 0.1.166, update checks measure the Codex store catalog lookup instead of
 GitHub HTTP requests. The existing operation count and duration names and units
 remain unchanged. The `install` operation is replaced by `migrate`, covering
 verification and GitHub cleanup; its successful outcome is `migrated`. Checks can
