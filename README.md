@@ -28,8 +28,16 @@ Native, SwiftUI, and other native mobile projects.
 **[Add Mobile Dev to Codex](https://chatgpt.com/plugins/plugins_6ac4c117f76881918d3676e851fa4005)**
 from the plugin directory, then open a new chat.
 
-To install the prebuilt plugin from this repository instead, see
-[Install from the GitHub marketplace](CONTRIBUTING.md#install-from-the-github-marketplace).
+Mobile Dev checks the version published in the plugin store. When a newer version
+is available, click **Open plugin store** to update there, then fully quit and
+reopen Codex.
+
+Existing GitHub installations offer **Install from plugin store** once version
+0.1.167 or newer is published there. Install and enable the store version, return
+to Mobile Dev, and click **Finish migration**. This verifies the store package,
+removes the GitHub plugin and its marketplace, and preserves local recordings and
+saved data. Fully quit and reopen Codex afterward. The migration is offered only
+when the store version is at least as new as the running GitHub version.
 
 ### Claude Desktop: manual installation
 
