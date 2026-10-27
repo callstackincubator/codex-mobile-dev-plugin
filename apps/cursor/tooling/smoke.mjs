@@ -57,7 +57,7 @@ try {
       assert.equal(choice.isError, true);
       assert.match(choice.content[0].text, /ask the user in chat/);
       // The Codex updater belongs to Codex's server; this plugin runs the shared one.
-      assert.equal(tools.some(tool => tool.name.includes("plugin_update")), false);
+      assert.equal(tools.some(tool => tool.name.includes("plugin_")), false);
       console.log(`${environment}: Cursor plugin manifest, payload, MCP startup from the plugin root, chat fallback and no Codex updater passed.`);
     } catch (error) {
       if (diagnostics) console.error(diagnostics);
