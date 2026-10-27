@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { cp, copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { telemetryBuildEnvironment } from "./telemetry-build.mjs";
 import { assertRuntime, RELEASE_DOCUMENTS as documents, releaseVersion, stageRuntime } from "./host-runtime.mjs";
 import { pluginHost } from "./plugin-hosts.mjs";
@@ -40,3 +40,16 @@ for (const skill of ["mobile-dev", "mobile-dev-setup"]) await cp(`packages/skill
 for (const path of documents) await copyFile(path, `${directory}/${path}`);
 await writeFile(`${directory}/${host.manifest}/plugin.json`, JSON.stringify({ name: pluginName, version, ...fields }, null, 2) + "\n");
 console.log(`${host.label} plugin: ${directory}`);
+
+// A host that installs plugins from a marketplace gets a local one beside the plugin,
+// as Codex does from release/marketplace.
+if (host.marketplace) {
+  const root = resolve(`release/${name}-plugin`);
+  const catalog = {
+    name: host.marketplace.name, description: `${host.label} plugin built from this checkout`, owner: { name: fields.author?.name ?? "Callstack" },
+    plugins: [{ name: pluginName, source: `./${pluginName}`, description: fields.description, version }],
+  };
+  await mkdir(dirname(`${root}/${host.marketplace.manifest}`), { recursive: true });
+  await writeFile(`${root}/${host.marketplace.manifest}`, JSON.stringify(catalog, null, 2) + "\n");
+  console.log(`${host.label} marketplace: ${root}`);
+}
