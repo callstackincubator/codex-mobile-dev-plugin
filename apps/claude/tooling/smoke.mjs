@@ -54,9 +54,9 @@ try {
       assert.ok(html.includes(`name="mobile-dev-environment" content="${environment}"`));
       assert.match(html, /name="mobile-dev-telemetry" content="off"/);
       assert.match(html, /ui.workspace.display_mode_changed/);
-      assert.doesNotMatch(html, /Retry update/, "The shared panel has no Codex update banner.");
+      assert.doesNotMatch(html, /plugin store/, "The shared panel has no Codex update banner.");
       // The Codex updater belongs to Codex's server; this bundle runs the shared one.
-      assert.equal(tools.some(tool => tool.name.includes("plugin_update")), false);
+      assert.equal(tools.some(tool => tool.name.includes("plugin_")), false);
       console.log(`${environment}${forms ? "/forms" : ""}: relocated MCP startup, tools, UI resource and no Codex updater passed.`);
     } catch (error) {
       if (diagnostics) console.error(diagnostics);
@@ -97,7 +97,7 @@ try {
       assert.ok(tools.some(tool => tool.name === name), name);
     }
     // The Codex updater belongs to Codex's server; the plugin runs the shared one.
-    assert.equal(tools.some(tool => tool.name.includes("plugin_update")), false);
+    assert.equal(tools.some(tool => tool.name.includes("plugin_")), false);
     console.log("Claude Code plugin: manifest, payload, MCP startup from the plugin root and no Codex updater passed.");
   } catch (error) {
     if (diagnostics) console.error(diagnostics);
