@@ -10,6 +10,7 @@
     "packages/test-support",
     "apps/codex-plugin",
     "apps/claude",
+    "apps/cursor",
     "apps/mac"
   ],
   "type": "module",
@@ -49,6 +50,9 @@
     "claude:config": "node apps/claude/tooling/config.mjs",
     "package:claude": "node apps/claude/tooling/package.mjs",
     "test:claude": "node apps/claude/tooling/smoke.mjs",
+    "cursor:config": "node apps/cursor/tooling/config.mjs",
+    "package:cursor": "node apps/cursor/tooling/package.mjs",
+    "test:cursor": "node apps/cursor/tooling/smoke.mjs",
     "vendor:serve-emu": "node tooling/vendor-serve-emu.mjs",
     "dev": "node apps/codex-plugin/tooling/dev-ui.mjs",
     "dev:off": "node apps/codex-plugin/tooling/dev-ui.mjs --off",

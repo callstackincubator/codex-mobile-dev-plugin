@@ -713,7 +713,7 @@ test("UI telemetry attributes each call to the host that renders the page", asyn
     assert.equal(calls[0]._meta?.["mobile-dev/telemetry"].host, expected);
     await api.stopUiTelemetry();
     if (attribute === "") {
-      for (const [name, label] of [["Codex Desktop", "codex"], ["openai-codex", "codex"], ["Claude", "claude"], ["claude-ai", "claude"], ["PRIVATE_HOST", "other"], [undefined, "other"]] as const) {
+      for (const [name, label] of [["Codex Desktop", "codex"], ["openai-codex", "codex"], ["Claude", "claude"], ["claude-ai", "claude"], ["cursor-vscode", "cursor"], ["PRIVATE_HOST", "other"], [undefined, "other"]] as const) {
         assert.equal(api.telemetryHost(name), label);
       }
     }

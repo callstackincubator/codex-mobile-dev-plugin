@@ -20,6 +20,7 @@ packages know no host by name.
 | `packages/skills` | Agent skills for the shared tools; each host's package step includes the ones its host supports. |
 | `apps/codex-plugin` | Codex: manifest, launcher, assets, and its own server (`server/`, the self-updater) and panel (`ui/`, the update banner). |
 | `apps/claude` | Claude: the Claude Desktop extension (`manifest.json`, MCPB) and the Claude Code plugin (`.claude-plugin/plugin.json`). Both run the shared server and panel unchanged. |
+| `apps/cursor` | Cursor: the Cursor plugin manifest (`.cursor-plugin/plugin.json`). It runs the shared server and panel unchanged. |
 | `apps/mac` | The Mac app: a SwiftUI shell (`Sources/`), the page it hosts (`web/`) and its server (`server/`). |
 | `packages/test-support` | Fixtures shared by tests across packages and apps. |
 | `tooling` | Shared build, native, release and device smoke-test scripts. Run them from the repository root. |
@@ -305,6 +306,42 @@ duplicate servers. Rebuild, repackage, and reinstall to update a bundled copy.
 
 Local builds retain the `development` telemetry environment. Public releases use
 `npm run build:release` and `npm run package:claude -- --release`.
+
+### Cursor local development
+
+Complete the first-time runtime and native-helper setup under [Build and package](#build-and-package),
+then run from this checkout with Node.js 22.19 or later:
+
+```sh
+npm run build
+npm run cursor:config
+```
+
+1. Merge the `mobile-dev` entry from `.local-dev/cursor-mcp.json` into the
+   `mcpServers` object in `~/.cursor/mcp.json`, preserving other servers. Use the
+   global file rather than a project's `.cursor/mcp.json`: the snippet uses absolute
+   paths to this checkout and the Node executable running the generator.
+2. Reload Cursor, check that `mobile-dev` is enabled in the MCP section of Cursor Settings, and
+   ask **“Open Mobile Dev”** in a new agent chat.
+
+After UI or server edits, run `npm run build` and reload Cursor. Regenerate the
+config if the checkout or Node path changes.
+
+To create and check a plugin folder for manual installation instead:
+
+```sh
+npm run package:cursor
+npm run test:cursor
+```
+
+This writes the Cursor plugin folder `release/cursor-plugin/mobile-dev` from the shared
+runtime. It uses `apps/cursor/.cursor-plugin/plugin.json`, which starts
+`${CURSOR_PLUGIN_ROOT}/dist/server.mjs` with Node.js from `PATH`, and leaves out the
+Codex manifest, `.mcp.json`, launcher and updater.
+Follow the [manual installation steps](README.md#cursor-manual-installation).
+Remove the `mobile-dev` development entry before installing the plugin to avoid
+duplicate servers. Public releases use `npm run build:release` and
+`npm run package:cursor -- --release`.
 
 ## Live React UI development
 

@@ -49,6 +49,24 @@ The bundle includes the plugin and native helpers; Claude supplies Node, so no
 the bundle or the [local development connection](CONTRIBUTING.md#claude-desktop-local-development)
 to avoid duplicate Mobile Dev servers. See [Claude's installation guide](https://support.claude.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop).
 
+### Cursor: manual installation
+
+On an Apple Silicon Mac with Node.js 22.19 or later on `PATH`, obtain the
+`mobile-dev` Cursor plugin folder from the person sharing the preview, or
+[build one locally](CONTRIBUTING.md#cursor-local-development). The Cursor plugin is
+not yet published to the Cursor Marketplace.
+
+1. Copy the `mobile-dev` folder to `~/.cursor/plugins/local/mobile-dev`.
+2. Run **Developer: Reload Window**, or restart Cursor, and confirm Mobile Dev
+   appears under **Customize**.
+3. Start a new agent chat and ask **"Open Mobile Dev."** Approve the tool calls
+   when prompted.
+
+Cursor renders the Mobile Dev views where MCP Apps are available. Otherwise tools
+return text, and the agent asks you to choose devices in chat. Copy a newer folder
+and reload to update. Use either the plugin or the [local development connection](CONTRIBUTING.md#cursor-local-development)
+to avoid duplicate Mobile Dev servers. See [Cursor's plugin guide](https://cursor.com/docs/plugins).
+
 ### Mac app
 
 The Mac app shows the devices and tools in their own window, without a chat. Pick
@@ -112,8 +130,8 @@ See [storage privacy and review checks](docs/storage-privacy.md).
 
 Mobile Dev runs on an Apple Silicon Mac. In Codex desktop, the prebuilt plugin
 uses Codex's bundled Node runtime from its workspace dependency cache; the Claude
-Desktop bundle uses Claude's Node runtime, and the Mac app bundles its own. Install
-the tools for the platforms you use:
+Desktop bundle uses Claude's Node runtime, the Cursor plugin uses Node.js from
+`PATH`, and the Mac app bundles its own. Install the tools for the platforms you use:
 
 | Platform or feature | Requirements |
 | --- | --- |
@@ -136,7 +154,8 @@ its device panel, inspection, logs, and performance tools.
 ## Get started
 
 Ask your agent to open the simulator beside this chat. In Codex, you can also
-open Mobile Dev from the sidebar. Pick a device from the toolbar; selecting a stopped simulator or AVD
+open Mobile Dev from the sidebar; in Cursor, ask **"Open Mobile Dev"** in an agent chat.
+Pick a device from the toolbar; selecting a stopped simulator or AVD
 boots it. Use the iOS and Android toggles to show either platform or both.
 
 Click an iOS simulator or Android screen to focus it, then press **Command-V** to
@@ -178,6 +197,7 @@ product in `apps/`:
 | `packages/native`, `packages/runtimes` | Native helpers and bundled Node runtimes |
 | `apps/codex-plugin` | The Codex plugin: manifest, updater, and update banner |
 | `apps/claude` | Claude: the Claude Desktop extension and Claude Code plugin manifests |
+| `apps/cursor` | Cursor: the Cursor plugin manifest |
 | `apps/mac` | The Mac app: SwiftUI window and its page |
 
 To build a host, install a local package, or contribute changes, see

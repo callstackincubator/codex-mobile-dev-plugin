@@ -108,7 +108,8 @@ to identify the legacy Git marketplace for cleanup. GitHub tags and releases do
 not advertise store updates. Successful checks
 are cached for one hour across chats in the active Codex profile; unavailable
 checks retry after fifteen minutes. Old GitHub update caches are discarded.
-Development builds do not check or migrate public installations.
+Development builds do not check or migrate public installations. The Claude and
+Cursor packages run the shared server, which has no updater.
 
 The app-server plugin API is under development. This integration deliberately
 accepts its compatibility risk. If discovery fails or its response no longer

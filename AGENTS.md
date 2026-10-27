@@ -4,7 +4,7 @@
 
 This is an npm workspace: shared code lives in `packages/` (`shared`, `core`, `ui`,
 `mcp-app`, `skills`, `native`, `runtimes`) and each shipped product in `apps/` (`codex-plugin`,
-`claude`, `mac`). Keep host chrome out of `packages/ui`: chrome every MCP Apps
+`claude`, `cursor`, `mac`). Keep host chrome out of `packages/ui`: chrome every MCP Apps
 host shares goes in `packages/mcp-app`, chrome for one host in its app. Drive host
 differences from advertised capabilities rather than host names. See
 [CONTRIBUTING.md](CONTRIBUTING.md#repository-layout).
