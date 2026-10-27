@@ -40,10 +40,9 @@ try {
     transport.stderr?.on("data", chunk => { diagnostics = (diagnostics + chunk).slice(-5000); });
     try {
       await client.connect(transport);
-      assert.match(client.getInstructions(), /otherwise in chat/);
+      assert.match(client.getInstructions(), /in chat when it is unsupported/);
       const { tools } = await client.listTools();
-      assert.equal(tools.some(tool => tool.name === "mobile_choose_devices"), forms);
-      for (const name of ["mobile_open_workspace", "mobile_open_simulator", "mobile_list_simulators", "mobile_list_android_devices"]) {
+      for (const name of ["mobile_show_devices", "mobile_open_workspace", "mobile_open_simulator", "mobile_list_simulators", "mobile_list_android_devices"]) {
         assert.ok(tools.some(tool => tool.name === name), name);
       }
       const workspace = tools.find(tool => tool.name === "mobile_open_workspace");
@@ -55,9 +54,9 @@ try {
       assert.ok(html.includes(`name="mobile-dev-environment" content="${environment}"`));
       assert.match(html, /name="mobile-dev-telemetry" content="off"/);
       assert.match(html, /ui.workspace.display_mode_changed/);
-      assert.doesNotMatch(html, /Retry update/, "The shared panel has no Codex update banner.");
+      assert.doesNotMatch(html, /plugin store/, "The shared panel has no Codex update banner.");
       // The Codex updater belongs to Codex's server; this bundle runs the shared one.
-      assert.equal(tools.some(tool => tool.name.includes("plugin_update")), false);
+      assert.equal(tools.some(tool => tool.name.includes("plugin_")), false);
       console.log(`${environment}${forms ? "/forms" : ""}: relocated MCP startup, tools, UI resource and no Codex updater passed.`);
     } catch (error) {
       if (diagnostics) console.error(diagnostics);
@@ -98,7 +97,7 @@ try {
       assert.ok(tools.some(tool => tool.name === name), name);
     }
     // The Codex updater belongs to Codex's server; the plugin runs the shared one.
-    assert.equal(tools.some(tool => tool.name.includes("plugin_update")), false);
+    assert.equal(tools.some(tool => tool.name.includes("plugin_")), false);
     console.log("Claude Code plugin: manifest, payload, MCP startup from the plugin root and no Codex updater passed.");
   } catch (error) {
     if (diagnostics) console.error(diagnostics);

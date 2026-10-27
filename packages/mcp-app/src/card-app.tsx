@@ -17,7 +17,7 @@ type CardController = { hostChanged(): void; accept(result: CallToolResult): voi
  */
 export function startCardApp<C extends CardController>(card: {
   name: string;
-  surface: Surface & ("recording" | "comparison" | "tracesift");
+  surface: Surface & ("recording" | "comparison" | "tracesift" | "devices");
   fallback: string;
   create(app: App): C;
   render(controller: C): ReactNode;

@@ -22,7 +22,7 @@ device tools.
 
 1. Open the panel beside the chat with `mobile_open_simulator` by default. For an existing app, open it when starting device work; for a new app, open it before the first device launch. Reuse an open Mobile Dev panel. Use `mobile_open_workspace` when the user asks for fullscreen. Use device-list tools without opening the panel when the user requests a tool-only workflow or the host cannot show panels. A request limited to planning, docs, code review, or compilation does not need a panel or a device launch.
    Both opening tools accept optional `platform` (`ios` or `android`), `kind` (`simulator`, `emulator`, or `physical`), and `deviceId`. Pass only intent established by the user's request or app project: for example, `{ platform: "android", kind: "emulator" }` for Android emulator work, or `{ platform: "ios", kind: "physical" }` for an explicitly requested physical iPhone. Omit undecided fields for open-ended work. Pass `deviceId` only after discovering the exact device; discovery can precede opening when needed to identify a named target. A missing matching device stays unselected instead of connecting to another target. Opening selects a stopped simulator or AVD without booting it. Follow later manual selections.
-2. Use the task and app project to choose the platform. Follow the user's device choice; otherwise reuse a compatible device shared by the panel, then a suitable running simulator or emulator. If no suitable device runs, choose a compatible installed simulator or AVD. Pick among equivalent devices yourself for routine app development. When the intended target is ambiguous (for example, the app is open on several devices for a performance run), use `mobile_choose_devices` to ask through the native request form. Read device IDs from tool results or panel context; never invent them.
+2. Use the task and app project to choose the platform. Follow the user's device choice; otherwise reuse a compatible device shared by the panel, then a suitable running simulator or emulator. If no suitable device runs, choose a compatible installed simulator or AVD. Pick among equivalent devices yourself for routine app development. When the intended target is ambiguous (for example, the app is open on several devices for a performance run), use `mobile_show_devices` with a `selectionMode` to ask the user. Read device IDs from tool results or panel context; never invent them.
 3. Boot a chosen stopped iOS simulator with `mobile_boot_simulator`, or an Android AVD with `mobile_boot_android_emulator`. A mobile app development request permits choosing and booting a suitable installed simulator without a separate device-choice question. Reuse running devices without rebooting them. Follow the Android section below for device discovery and serials. Opening the panel alone does not boot a device.
 4. Build the app with the app project's own tools and the chosen device ID; the project's run command may also install and launch it. To restart an already installed app, use `mobile_launch_app` instead of rebuilding. Follow the project's framework skills where available. Before starting an app dev server, check for an existing server from that project and reuse it. Keep the same device for the panel, build target, and agent control; read the panel's shared IDs before acting and follow later user selections. Leave the panel and app available while continuing app work. Do not launch the app when the user asks only for compilation.
 5. Agent Device is temporarily disabled in this plugin while iterating on inline performance charts. Use the available Mobile Dev tools; do not search for Agent Device tools or start its CLI separately.
@@ -43,20 +43,27 @@ These tools work on iOS simulators and Android devices with `{ platform, deviceI
 
 The panel's settings button opens the same controls under its App tab. Its Device tab also switches to a clean status bar (9:41, full battery and signal) for screenshots and simulates LTE, 3G, Edge, or offline networks. Those device settings are panel-only, so ask the user to set them. Android throttling applies right away to standard app networking such as fetch and OkHttp, leaves local dev servers like Metro at full speed, and is unavailable while the device uses its own proxy. iOS throttling applies to URLSession and fetch requests in apps launched after it was turned on, so relaunch the app after the user enables it.
 
-### Choosing a task's devices
+### Showing and choosing devices
 
-When the user's task leaves the target unclear, discover suitable candidates with
-`mobile_list_simulators`, `mobile_list_ios_devices`, or `mobile_list_android_devices`,
-then call `mobile_choose_devices`. Pass a task-specific `message`, optional `context`
-for operation details, and `devices` containing each candidate's `platform`, `kind`
+When the user asks to list or see their devices, call `mobile_show_devices` with no
+arguments. It shows an interactive card; reply with at most a one-line summary and
+do not repeat the list. Keep the list tools for your own lookups.
+
+When the user's task leaves the target unclear, call `mobile_show_devices` with a
+task-specific `message` and `selectionMode`. Omit `devices` to offer every selectable
+device, or discover suitable candidates with `mobile_list_simulators`,
+`mobile_list_ios_devices`, or `mobile_list_android_devices` and pass them. Pass
+optional `context` for operation details, and `devices` containing each candidate's `platform`, `kind`
 (`simulator`, `emulator`, or `physical`) and `deviceId` from its discovered `udid`.
 Physical iOS uses the hardware UDID, never the CoreDevice ID. Set `appName` only
 after verifying that app on the candidate; for profiling, use
 `mobile_performance_sources` and offer only suitable running targets.
 
-The default `selectionMode: "single"` asks for one device. Use `"multiple"` when
-the task supports several targets or the user wants a comparison. The tool waits
-for the user's answer and returns `action` and verified `devices`. After
+Use `selectionMode: "single"` for one device and `"multiple"` when the task supports
+several targets or the user wants a comparison. With a native request form the tool
+waits for the user's answer and returns `action` and verified `devices`. Otherwise
+it shows the choice in the card and returns immediately; wait for the user's chat
+reply naming the devices, and do not start the pending task before it. After
 `action: "accept"`, keep each returned device ID with its platform and kind while
 performing the task. Selection does not boot a device, open a panel, launch an app,
 or start a recording. For Android CPU targets omit `kind`; for physical iOS CPU

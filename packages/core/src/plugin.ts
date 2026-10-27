@@ -23,7 +23,8 @@ import { registerAndroidTools } from "./android-tools.ts";
 import { Baguette } from "./baguette.ts";
 import { registerIosMirrorTools } from "./ios-mirror-tools.ts";
 import { listIosDevices, registerIosDeviceTools } from "./ios-devices.ts";
-import { registerDeviceChoiceTools, supportsDeviceChoiceForms } from "./device-choice-tools.ts";
+import { registerDeviceChoiceTools } from "./device-choice-tools.ts";
+import { DEVICES_URI } from "@mobile-dev/shared/device-choice.ts";
 import { StreamSessions } from "./stream-sessions.ts";
 import { LogSessions } from "./log-sessions.ts";
 import { registerLogTools } from "./log-tools.ts";
@@ -119,21 +120,16 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
   const streams = new StreamSessions(baguette);
   const fps = new DisplayFpsSessions();
   const server = new McpServer({ name: "mobile-dev", version: PLUGIN_VERSION }, {
-    instructions: "For mobile app development, open mobile_open_simulator before the first device launch, or reuse the open view. Use selected device IDs. If a task has ambiguous device targets, discover candidates and ask the user with mobile_choose_devices when it is available, otherwise in chat; proceed only after they choose. For a local CPU or React profile path, use mobile_analyze_profile to show TraceSift findings, then wait for the user to choose Investigate. See the Mobile Dev skill, when installed, for device control, logs, profiles, and performance workflows.",
+    instructions: "For mobile app development, open mobile_open_simulator before the first device launch, or reuse the open view. Use selected device IDs. When the user asks to list or see devices, show them with mobile_show_devices instead of writing a list. If a task has ambiguous device targets, ask the user with mobile_show_devices and a selectionMode, or in chat when it is unsupported; proceed only after they choose. For a local CPU or React profile path, use mobile_analyze_profile to show TraceSift findings, then wait for the user to choose Investigate. See the Mobile Dev skill, when installed, for device control, logs, profiles, and performance workflows.",
   });
   instrumentMcpServer(server);
-  addToolIcons(server, { mobile_open_workspace: PHONE_ICONS, mobile_open_simulator: PHONE_ICONS, mobile_choose_devices: PHONE_ICONS });
+  addToolIcons(server, { mobile_open_workspace: PHONE_ICONS, mobile_open_simulator: PHONE_ICONS, mobile_show_devices: PHONE_ICONS });
   const extensions = new OpenAIExtensions(server);
-  // The native form is a client extension; list the tool only for hosts that render it.
-  let deviceChoiceRegistered = false;
-  server.server.oninitialized = () => {
-    setServerTelemetryHost(server.server.getClientVersion()?.name);
-    if (deviceChoiceRegistered || !supportsDeviceChoiceForms(server.server.getClientCapabilities())) return;
-    deviceChoiceRegistered = true;
-    registerDeviceChoiceTools(server, extensions, {
-      simulators: () => baguette.start(), android: () => android.list(), physicalIos: listIosDevices,
-    });
-  };
+  // Hosts with the native form get it; others get the devices card, or a text list.
+  registerDeviceChoiceTools(server, extensions, {
+    simulators: () => baguette.start(), android: () => android.list(), physicalIos: listIosDevices,
+  });
+  server.server.oninitialized = () => setServerTelemetryHost(server.server.getClientVersion()?.name);
   registerIosDeviceTools(server);
   const closeIosMirror = registerIosMirrorTools(server, APP_URI);
   registerLogTools(server, logs, baguette);
@@ -218,6 +214,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
     ["mobile-dev-recording", RECORDING_URI, "recording"],
     ["mobile-dev-comparison", COMPARISON_URI, "comparison"],
     ["mobile-dev-tracesift", TRACESIFT_URI, "tracesift"],
+    ["mobile-dev-devices", DEVICES_URI, "devices"],
   ]) {
     const readCard = async (uri: URL) => {
       const resource = typeof html === "string" ? { html } : await html();

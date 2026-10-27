@@ -7,7 +7,7 @@
 | `mobile_open_simulator` | Open the native panel, optionally targeting a platform, device kind, or discovered device ID |
 | `mobile_open_workspace` | Open fullscreen with the same optional device targeting |
 | `mobile_list_simulators` | Start the bundled backend if needed and list devices |
-| `mobile_choose_devices` | Ask through the native inline form for one or several verified task targets |
+| `mobile_show_devices` | Show devices in an inline card with Boot/Stop, or ask the user to choose task targets through the native form or the card |
 | `mobile_list_ios_devices` | Discover physical iPhones and iPads with USB/Wi-Fi, pairing state, UDID, and CoreDevice ID |
 | `mobile_start_baguette` | Retry or reconnect the bundled backend |
 | `mobile_boot_simulator` | Boot one listed device |

@@ -94,14 +94,26 @@ The MCP server returns a flat element list with `nodeId`, `parentId` and `depth`
 
 Annotations send text only. Each note includes the user request, element label, test ID when present, React component and owner names when available, and nearby text. React debug creation stacks resolve through one bounded request to the matching Metro server's `/symbolicate` endpoint. Source maps supply an app file, line, column and function so the agent can open the element's JSX directly. This is the element creation site, not necessarily the component definition. Library frames and unresolved bundle locations never become edit locations. Missing source maps leave selection working and mark the source location unavailable. Coordinates remain a fallback. The paused image stays local for editing; use Screenshot separately to attach an image.
 
-## Native device requests
+## Devices card and device requests
 
-When a mobile task has ambiguous targets, `mobile_choose_devices` asks the user
-through Codex's native inline request form. The server lists this tool only for
-clients that advertise the `openai/elicitation` form extension; other hosts ask in
-chat. The agent discovers suitable devices
-first, then supplies their IDs, platform and kind, a task-specific question, and
-optional operation details. The form shows canonical device names, platform/type,
+`mobile_show_devices` is the one user-facing device tool. Without `selectionMode`
+it lists every discovered simulator, emulator and physical device in an inline
+card, grouped as running, physical, then stopped by runtime. The user can boot or
+stop simulators and emulators from the card and send selected devices to chat. A
+backend that cannot list devices (no Android SDK, older Xcode) leaves the others
+listed with a note. The tool's text result is a short summary so the model does
+not repeat the list; hosts without app cards receive the list as text instead.
+
+When a mobile task has ambiguous targets, the agent sets `selectionMode` with a
+task-specific `message`. Hosts that advertise the `openai/elicitation` form
+extension (Codex) get the native inline request form described below, and the card
+then shows only the outcome. Hosts that render MCP app cards get the same card with
+only selectable candidates and a Use button that sends the choice to chat; this
+call returns immediately and tells the model to wait for that reply. Hosts with
+neither return an error so the agent asks in chat. Candidate `devices` are
+optional: omitted, the tool discovers them itself, and the form offers at most 20,
+running devices first. The agent may instead supply discovered IDs, platform and
+kind, plus optional operation details. The form shows canonical device names, platform/type,
 runtime, optional verified app labels, and platform phone illustrations. Use
 `selectionMode: "multiple"` to let the user choose several devices. No device is
 preselected.
@@ -113,9 +125,8 @@ apps, open streams or start recordings. Stopped simulators/AVDs can be offered f
 build tasks; profiling candidates should already be running. Physical iOS uses
 the hardware UDID and requires a connected paired device.
 
-This local MCP connection uses the OpenAI Extensions SDK's native form elicitation.
-The host must advertise `extensions["openai/elicitation"].form`; unsupported hosts
-return an explicit error. Codex owns layout and button labels, so the native form
+The form uses the OpenAI Extensions SDK's native form elicitation and requires
+`extensions["openai/elicitation"].form`. Codex owns layout and button labels, so the native form
 does not reproduce custom footer buttons from a design mockup. Thumbnails are
 illustrations, not captured app screens.
 

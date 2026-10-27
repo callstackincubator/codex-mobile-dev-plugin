@@ -41,6 +41,14 @@ test.describe("MCP Apps hosts", () => {
     await expect(view.getByRole("button", { name: "Back to chat" })).toHaveCount(target === "codex" ? 0 : 1);
   });
 
+  test("asking for devices shows the devices card", async ({ openView, pageErrors }) => {
+    const { view } = await openView("mobile_show_devices", { displayMode: "inline" });
+    // The card lists the devices it finds; with no device tools at all (as on CI) it
+    // shows why discovery failed instead.
+    await expect(view.getByRole("heading", { name: "Devices", exact: true }).or(view.getByRole("alert"))).toBeVisible();
+    expect(pageErrors).toEqual([]);
+  });
+
   test("the panel beside the chat opens inline", async ({ openView, pageErrors }) => {
     const { view } = await openView("mobile_open_simulator", { displayMode: "inline" });
     await expect(view.locator("#ios-panel, #android-panel").first()).toBeAttached();

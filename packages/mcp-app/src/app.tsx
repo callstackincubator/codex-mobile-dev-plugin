@@ -5,8 +5,10 @@ import { OpenAIExtensions } from "@openai/mcp-extensions/app";
 import { traceSiftProfileInputSchema } from "@mobile-dev/shared/tracesift.ts";
 import { ComparisonController } from "@mobile-dev/ui/comparison-controller.ts";
 import { ComparisonCard } from "@mobile-dev/ui/components/comparison-card.tsx";
+import { DevicesCard } from "@mobile-dev/ui/components/devices-card.tsx";
 import { RecordingCard } from "@mobile-dev/ui/components/recording-card.tsx";
 import { TraceSiftCards } from "@mobile-dev/ui/components/tracesift-cards.tsx";
+import { DevicesController } from "@mobile-dev/ui/devices-controller.ts";
 import { RecordingController } from "@mobile-dev/ui/recording-controller.ts";
 import { TraceSiftController } from "@mobile-dev/ui/tracesift-controller.ts";
 import { startCardApp } from "./card-app.tsx";
@@ -46,6 +48,11 @@ export function startMcpApp(options: { workspace?: WorkspaceOptions } = {}) {
     },
     // The inline card investigates too, so it needs the same project the panel saved.
     connected: controller => void controller.loadProject(),
+  });
+  else if (view === "devices") startCardApp({
+    name: "mobile-dev-devices", surface: "devices", fallback: "These devices could not render. Ask again to list them.",
+    create: app => new DevicesController(app),
+    render: controller => <DevicesCard controller={controller} />,
   });
   else startWorkspaceApp(options.workspace);
 }

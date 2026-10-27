@@ -249,8 +249,8 @@ export function startUiTelemetry(app: HostBridge) {
   running = enabled;
   if (running === false) return;
   const requestedView = document.documentElement.dataset.view;
-  const view = requestedView === "recording" || requestedView === "workspace" || requestedView === "comparison" || requestedView === "tracesift" ? requestedView : "panel";
-  if (view === "recording" || view === "comparison" || view === "tracesift") surface = view;
+  const view = requestedView === "recording" || requestedView === "workspace" || requestedView === "comparison" || requestedView === "tracesift" || requestedView === "devices" ? requestedView : "panel";
+  if (view === "recording" || view === "comparison" || view === "tracesift" || view === "devices") surface = view;
   // A page that names its host carries it from the start; MCP Apps panels learn it on connect.
   const host = document.documentElement.dataset.host === "mac" ? "mac" : undefined;
   attributes = { ...attributes, surface, view, ...(host ? { host } : {}) };
