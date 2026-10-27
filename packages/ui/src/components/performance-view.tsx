@@ -58,7 +58,8 @@ export function PerformanceView({ panel }: { panel: PerformancePanel }) {
         </PopoverContent>
       </Popover>
     </header>
-    <div className="relative flex min-h-0 flex-col">
+    {/* The timeline's sticky column and fades layer within the chart, below the host's menus. */}
+    <div className="relative isolate flex min-h-0 flex-col">
       <div ref={setScrollElement} onScroll={handleScroll} className="min-h-0 overflow-auto" data-performance-scroll>
         {state.sourceError && <Alert variant="destructive" className="rounded-none border-x-0 border-t-0"><AlertDescription>{state.sourceError}</AlertDescription></Alert>}
         <div ref={container} style={{ width: contentWidth, minWidth: "100%" }} onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave} aria-label="Live CPU, memory and display FPS">
