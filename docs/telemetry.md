@@ -13,8 +13,8 @@ Behavior never depends on this value; it only attributes measurements and errors
   with `MOBILE_DEV_HOST=mac`.
 - MCP Apps panels are labelled once connected: `codex` when the host advertises
   OpenAI extensions, otherwise the host's reported name mapped by `telemetryHost`
-  (`claude` for Claude, `cursor` for Cursor, else `other`). Cursor is labelled since
-  its plugin was added. Calls before connecting carry no host.
+  (`claude` for Claude, `cursor` for Cursor, else `other`). Before the Cursor plugin,
+  Cursor sessions were reported as `other`. Calls before connecting carry no host.
 - The server labels itself from the connecting MCP client's name on initialize and
   reports `other` until then.
 - The server's metadata allowlist accepts only these values; the raw host or
@@ -127,6 +127,19 @@ roots. Existing installation duration, outcome, handled-error, and MCP tracing
 coverage remains on this path with the same boundaries and units. Execution and
 invalid-response errors use fixed messages without implying a network failure;
 raw CLI errors and output are not sent to telemetry.
+
+Since 0.1.167, update checks measure the Codex store catalog lookup instead of
+GitHub HTTP requests. The existing operation count and duration names and units
+remain unchanged. The `install` operation is replaced by `migrate`, covering
+verification and GitHub cleanup; its successful outcome is `migrated`. Checks can
+report `migration` while the GitHub installation remains. UI events
+`ui.plugin_update.store_opened` and `ui.plugin_update.migrated` distinguish opening
+the store from completing cleanup; the old `installed` event is removed. Fixed
+migration errors retain handled-error coverage. A missing or disabled store
+installation is an expected user action condition and does not report an error.
+No CLI output, store metadata,
+versions, paths, or user data are included. Disposal aborts CLI requests and clears
+the UI timer and visibility listener.
 
 Since 0.1.129, discovery command failures retain bounded `discovery_command`, `discovery_cause`,
 `discovery_termination`, and optional `discovery_signal` tags. Failed exception

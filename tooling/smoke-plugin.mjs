@@ -39,9 +39,9 @@ async function withServer(label, args, env, capabilities, check) {
     const html = resource.contents[0].text;
     assert.ok(html.includes(`name="mobile-dev-environment" content="${env.MOBILE_DEV_ENVIRONMENT}"`));
     assert.match(html, /name="mobile-dev-telemetry" content="off"/);
-    assert.doesNotMatch(html, /Retry update/, "The shared panel has no Codex update banner.");
+    assert.doesNotMatch(html, /plugin store/, "The shared panel has no Codex update banner.");
     // The Codex updater belongs to Codex's server; these packages run the shared one.
-    assert.equal(tools.some(tool => tool.name.includes("plugin_update")), false);
+    assert.equal(tools.some(tool => tool.name.includes("plugin_")), false);
     await check(client, resource);
   } catch (error) {
     if (diagnostics) console.error(diagnostics);

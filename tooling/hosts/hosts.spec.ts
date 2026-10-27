@@ -19,8 +19,8 @@ test.describe("MCP Apps hosts", () => {
   });
 
   test("only Codex ships the plugin updater", async ({ server, target }) => {
-    const updater = server.tools.filter(tool => tool.name.includes("plugin_update")).map(tool => tool.name).sort();
-    expect(updater).toEqual(target === "codex" ? ["mobile_check_plugin_update", "mobile_install_plugin_update"] : []);
+    const updater = server.tools.filter(tool => tool.name.includes("plugin_")).map(tool => tool.name).sort();
+    expect(updater).toEqual(target === "codex" ? ["mobile_check_plugin_update", "mobile_migrate_plugin_to_store"] : []);
   });
 
   test("the workspace opens every tool without errors", async ({ openView, pageErrors }) => {
