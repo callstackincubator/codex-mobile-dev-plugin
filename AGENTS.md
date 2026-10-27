@@ -9,6 +9,13 @@ host shares goes in `packages/mcp-app`, chrome for one host in its app. Drive ho
 differences from advertised capabilities rather than host names. See
 [CONTRIBUTING.md](CONTRIBUTING.md#repository-layout).
 
+## Host and visual tests
+
+`tooling/hosts` tests every target's real server and page in stand-in hosts on Linux.
+After an intended UI change, refresh the screenshots with
+`npm run test:visual:docker -- --update-snapshots` (never on macOS directly) and
+check the diffs. See [CONTRIBUTING.md](CONTRIBUTING.md#host-regression-and-visual-tests).
+
 ## Commit messages
 
 Use Conventional Commits for new source commits and pull request titles, for

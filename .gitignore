@@ -9,3 +9,6 @@ release/
 .sentry/
 .env.sentry-build-plugin
 packages/native/ios-mirror/target/
+.host-tests/
+test-results/
+playwright-report/

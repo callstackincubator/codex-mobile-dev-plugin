@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+env:
+  HUSKY: '0'
+  MOBILE_DEV_TELEMETRY: 'off'
+
+jobs:
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22.23.2'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            packages/runtimes/agent-device/package-lock.json
+            packages/runtimes/serve-emu/package-lock.json
+
+      - name: Install dependencies and device runtimes
+        run: |
+          npm ci --no-audit --no-fund
+          npm run vendor:agent-device
+          npm run vendor:serve-emu
+
+      # macOS-only paths skip themselves here; the release build runs the full suite on macOS.
+      - run: npm test
+      - run: npm run typecheck:telemetry
+
+  # Codex is the only target on main. Add claude and mac here once they ship.
+  hosts:
+    name: Regression (codex)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      # Keep in step with @playwright/test in package.json.
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
+      options: --user 1001
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build:hosts -- codex
+      - run: npx playwright test -c tooling/hosts --project codex --grep-invert @visual
+
+      - if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: regression-codex
+          path: |
+            playwright-report
+            test-results
+          retention-days: 7
+
+  visual:
+    name: Visual regression (codex)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
+      options: --user 1001
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build:hosts -- codex
+      - run: npx playwright test -c tooling/hosts --project codex --grep @visual
+
+      # The report shows expected, actual and diff images for each changed screenshot.
+      - if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: visual-regression
+          path: |
+            playwright-report
+            test-results
+          retention-days: 7

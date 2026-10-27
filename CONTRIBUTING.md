@@ -151,6 +151,35 @@ The host installs a cache copy. After changing source, rebuild and package, then
 
 `npm run test:ios-mirror-sharing -- <hardware UDID>` opens independent MCP processes for the same iPhone, pauses one reader, closes one panel, and joins another. It verifies frame fan-out and recovery without sending input. It excludes the iframe bridge and browser rendering. Close Device Hub’s mirror before running it.
 
+## Host regression and visual tests
+
+Pull requests run [CI](.github/workflows/ci.yml) on Linux: the unit tests (macOS-only paths
+skip themselves), a Codex regression job and a Codex visual regression job. The
+`claude` and `mac` regression projects run locally until those targets ship. The host jobs need no Mac, simulator or host app. `build:hosts` builds
+each target's real server and page without the native helpers, and Playwright drives
+them in [`tooling/hosts`](tooling/hosts):
+
+- Codex and Claude load their panel in a stand-in MCP Apps host. It advertises
+  each host's capabilities and style tokens from [`profiles.ts`](tooling/hosts/profiles.ts)
+  and answers the panel through the real server over stdio. Update a profile when a
+  host changes what it advertises.
+- The Mac app's page loads the way its `PageLoader` does, with a stand-in for the
+  WebKit relay.
+
+```sh
+npm run build:hosts            # or: npm run build:hosts -- codex
+npm run test:hosts             # regression checks, any OS
+npm run test:visual:docker     # screenshots in the CI image (needs Docker)
+npm run test:visual:docker -- --update-snapshots
+```
+
+Visual baselines live in `tooling/hosts/screenshots` and are rendered in the pinned
+Playwright Linux image, so take and update them through `test:visual:docker` rather
+than on macOS. After an intended UI change, update them and review the image diff
+in the pull request. A failing CI run uploads the Playwright report with expected,
+actual and diff images. Keep the image tag in `ci.yml` in step with
+`@playwright/test`.
+
 ## Native iOS test app
 
 The repo includes a small [SwiftUI test app](examples/ios-test-app/README.md) for
