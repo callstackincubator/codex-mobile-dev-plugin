@@ -97,26 +97,63 @@ after updating so its MCP process and UI use the refreshed files. This is an exp
 not a promise of immediate automatic background updates. The first successful
 release with this workflow creates the branch.
 
-Release builds check for updates when Mobile Dev becomes visible. The server
-checks GitHub's latest full release and the public `release/latest` manifest;
-their versions must agree before the banner offers an update. Successful checks
+## Store updates and the GitHub migration
+
+Release builds read the published store version through the app-server
+`plugin/read` RPC, matching Mobile Dev's exact remote store ID. The experimental
+API is enabled explicitly; it preserves the catalog `version` separately from
+`localVersion`. The CLI listing prefers the installed version and cannot serve as
+the update source once a store plugin is installed. The CLI listing is used only
+to identify the legacy Git marketplace for cleanup. GitHub tags and releases do
+not advertise store updates. Successful checks
 are cached for one hour across chats in the active Codex profile; unavailable
-checks retry after fifteen minutes. Development builds do not check or install
-public updates. The embedded UI needs no GitHub network permissions.
+checks retry after fifteen minutes. Old GitHub update caches are discarded.
+Development builds do not check or migrate public installations.
 
-The Update button calls an app-only MCP tool. It locates the CLI process that
-launched the plugin, verifies the `mobile-dev` Git marketplace belongs to this
-repository, and runs `codex plugin marketplace upgrade mobile-dev --json`.
-CLI discovery and update commands run from the Codex profile directory so they
-remain usable when upgrading removes the running plugin's old directory.
-Success requires an error-free result for the selected marketplace and
-verification of the new manifest in Codex's installed plugin cache, including
-when the marketplace reports no changed roots because the update is already
-installed. The plugin preserves the restart notice across
-chats until the new version runs. It does not restart Codex automatically.
-`CODEX_HOME` is forwarded by the MCP manifest so updates use the same profile.
+The app-server plugin API is under development. This integration deliberately
+accepts its compatibility risk. If discovery fails or its response no longer
+matches, the check stays unavailable and retries; it never uses a GitHub version
+as an alternative. The temporary app-server process closes after each lookup,
+and disposal aborts pending requests.
 
-`npm run test:updates` verifies the update flow with the real Codex CLI in a
-temporary profile and a local Git mirror. It checks refreshed cache files and
-the restart notice without changing the user's installation or fetching a
-public plugin package. It requires `codex` on PATH or `CODEX_CLI_PATH`.
+The update banner opens the store listing through the host's link API. Store
+updates are installed there. The old Git marketplace upgrade tool is removed.
+
+For GitHub installations, migration requires a published store version of at
+least **0.1.165**, and at least the running plugin version. The user installs and
+enables the store version, then clicks **Finish migration**. An app-only MCP tool
+checks the exact remote identity, enabled installation, installed `localVersion`,
+and package manifest before removing `mobile-dev@mobile-dev` and the verified
+official Git marketplace. It verifies
+the store installation again afterward. Local development marketplaces and user
+data are preserved. Cleanup can be retried after partial completion. A running
+GitHub process retains its restart notice across chats until Codex restarts.
+
+CLI discovery and commands use the stable Codex profile directory because
+removing the GitHub plugin deletes its installation directory. `CODEX_HOME` is
+forwarded by the MCP manifest. The plugin never restarts Codex automatically.
+
+### Roll out the migration
+
+The existing release workflow can build and publish the GitHub transition release
+before store review completes:
+
+1. Release **0.1.165** through the normal GitHub workflow. Existing GitHub versions
+   can update to it through their existing updater.
+2. Upload that release's ZIP to the **existing Mobile Dev store listing**, then
+   complete review and publish it.
+3. Once the Codex catalog exposes 0.1.165, the transition build offers migration.
+   Until then, it keeps the GitHub installation working and offers no migration
+   to the older store package. Catalog checks can delay the banner by up to one
+   hour after publication.
+
+One package serves both channels; a second GitHub version is not required after
+store approval. The minimum migration version stays fixed for future releases.
+The live 0.1.163 store package must not be used for migration: it still has the
+GitHub updater. Later GitHub releases may run ahead of store review without
+prematurely announcing a store update or allowing a migration downgrade.
+
+`npm run test:updates` exercises the real Codex CLI's Git installation and removal
+in a temporary profile using a local Git mirror, with a fixture for the store
+catalog and package. It does not install or remove plugins in the user's account.
+It requires `codex` on PATH or `CODEX_CLI_PATH`.

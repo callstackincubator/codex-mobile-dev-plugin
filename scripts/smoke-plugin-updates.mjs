@@ -6,6 +6,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
+import { PLUGIN_STORE_ID } from "../src/shared/plugin-updates.ts";
 import { createCodexRunner, PluginUpdates, resolveCodexCli } from "../src/server/plugin-updates.ts";
 
 const execute = promisify(execFile);
@@ -51,7 +52,7 @@ try {
   await writeJson(catalogPath, { name: "mobile-dev", plugins: [{ name: "mobile-dev", source: { source: "local", path: "./plugins/mobile-dev" } }] });
   const mcpPath = join(plugin, ".mcp.json");
   await writeJson(mcpPath, { mcpServers: { "mobile-dev": { command: "/bin/echo", args: ["update fixture"], cwd: "." } } });
-  await release("0.1.1");
+  await release("0.1.165");
   http = createServer(async (request, response) => {
     try {
       const url = new URL(request.url, "http://localhost");
@@ -67,47 +68,50 @@ try {
   await git(["config", "--global", `url.${mirrorUrl}.insteadOf`, repositoryUrl]);
   await codex(["plugin", "marketplace", "add", repositoryUrl, "--ref", "release/latest", "--json"]);
   const initial = await codex(["plugin", "add", "mobile-dev@mobile-dev", "--json"]);
-  assert.equal(initial.version, "0.1.1");
+  assert.equal(initial.version, "0.1.165");
   const initialMcp = await codex(["mcp", "get", "mobile-dev", "--json"]);
   const installedCwd = resolve(initialMcp.transport.cwd);
-  await release("0.1.2");
-  const fetchRelease = async input => {
-    const url = String(input);
-    const data = url.includes("api.github.com")
-      ? { tag_name: "v0.1.2", draft: false, prerelease: false }
-      : { name: "mobile-dev", version: "0.1.2" };
-    const text = JSON.stringify(data);
-    return new Response(text);
+  const storeDirectory = join(profile, "plugins/cache/openai-curated-remote/mobile-dev/0.1.165/.codex-plugin");
+  await mkdir(storeDirectory, { recursive: true });
+  await writeJson(join(storeDirectory, "plugin.json"), { name: "mobile-dev", version: "0.1.165" });
+  const store = {
+    pluginId: "mobile-dev@openai-curated-remote", name: "mobile-dev", marketplaceName: "openai-curated-remote",
+    version: "0.1.165", installed: true, enabled: true, source: { source: "remote", id: PLUGIN_STORE_ID },
   };
-  const options = { enabled: true, profile, currentVersion: "0.1.1", run: codex, fetch: fetchRelease };
+  const run = async args => {
+    const result = await codex(args);
+    if (args[1] === "list") result.installed.push(store);
+    return result;
+  };
+  const readStore = async () => ({
+    remotePluginId: PLUGIN_STORE_ID, name: "mobile-dev", version: "0.1.165", localVersion: "0.1.165", installed: true, enabled: true,
+  });
+  const options = { enabled: true, profile, pluginRoot: installedCwd, currentVersion: "0.1.165", run, readStore };
   const updates = new PluginUpdates(options);
   process.chdir(installedCwd);
   const available = await updates.check();
-  assert.equal(available.status, "available");
-  const installed = await updates.install();
-  assert.equal(installed.status, "updated");
-  assert.equal(installed.latestVersion, "0.1.2");
+  assert.equal(available.status, "migration");
+  const migrated = await updates.migrate();
+  assert.equal(migrated.status, "migrated");
   const oldDirectory = access(installedCwd);
   await assert.rejects(oldDirectory, { code: "ENOENT" });
+  const storePath = join(storeDirectory, "plugin.json");
+  await access(storePath);
   const resolution = resolveCodexCli(process.pid, profile);
   await assert.rejects(resolution, /Could not locate the Codex executable/);
-  const mcp = await codex(["mcp", "get", "mobile-dev", "--json"]);
-  const refreshedCwd = resolve(mcp.transport.cwd);
-  const usesNewVersion = refreshedCwd.endsWith("/mobile-dev/mobile-dev/0.1.2");
-  assert.ok(usesNewVersion);
+  const marketplaces = await codex(["plugin", "marketplace", "list", "--json"]);
+  const oldMarketplace = marketplaces.marketplaces.find(entry => entry.name === "mobile-dev");
+  assert.equal(oldMarketplace, undefined);
   const anotherChat = new PluginUpdates(options);
   const notice = await anotherChat.check();
-  assert.equal(notice.status, "updated");
-  const cachePath = join(profile, "mobile-dev/updates.json");
-  await rm(cachePath);
-  const retry = new PluginUpdates(options);
-  const retried = await retry.install();
-  assert.equal(retried.status, "updated");
-  assert.equal(retried.latestVersion, "0.1.2");
-  const restarted = new PluginUpdates({ ...options, currentVersion: "0.1.2" });
+  assert.equal(notice.status, "migrated");
+  const retry = await updates.migrate();
+  assert.equal(retry.status, "migrated");
+  const storeRoot = join(profile, "plugins/cache/openai-curated-remote/mobile-dev/0.1.165");
+  const restarted = new PluginUpdates({ ...options, pluginRoot: storeRoot });
   const current = await restarted.check();
   assert.equal(current.status, "current");
-  console.log("Verified real Codex CLI upgrade from a removed plugin working directory, installed cache, already-installed retries, and restart notices using a local Git mirror.");
+  console.log("Verified real Codex CLI Git plugin and marketplace removal from the deleted working directory, store-package preservation, retries, and restart notices. Store catalog/install state uses a fixture.");
 } finally {
   process.chdir(originalCwd);
   if (http) http.close();

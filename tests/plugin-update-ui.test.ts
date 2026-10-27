@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { build } from "esbuild";
 import { JSDOM } from "jsdom";
 
-const update = { status: "available", currentVersion: "0.1.131", latestVersion: "0.1.132" };
+const update = { status: "available", currentVersion: "0.1.164", latestVersion: "0.1.165" };
 
 async function banner(t: test.TestContext, app: unknown) {
   const dom = new JSDOM('<html><body><div id="root"></div></body></html>', { pretendToBeVisual: true, runScripts: "outside-only", url: "https://mobile-dev.test" });
@@ -38,14 +38,37 @@ async function banner(t: test.TestContext, app: unknown) {
   return { dom, ...mounted, settle, button };
 }
 
-test("the banner handles progress, failures, retry, release notes, and restart instructions", async t => {
-  let installs = 0;
-  let finish: (value: unknown) => void = () => {};
+test("store updates open the exact listing without installing through GitHub", async t => {
   const links: string[] = [];
+  const tools: string[] = [];
   const app = {
     async callServerTool({ name }: { name: string }) {
-      if (name === "mobile_check_plugin_update") return { content: [], structuredContent: { update } };
-      installs++;
+      tools.push(name);
+      return { content: [], structuredContent: { update } };
+    },
+    async openLink({ url }: { url: string }) { links.push(url); return {}; },
+  };
+  const view = await banner(t, app);
+  view.controller.setAvailable(true);
+  await view.settle();
+  assert.match(view.dom.window.document.body.textContent!, /0.1.165 is available in the plugin store/);
+  const open = view.button("Open plugin store");
+  open.click();
+  await view.settle();
+  assert.deepEqual(links, ["https://chatgpt.com/plugins/plugins_6ac4c117f76881918d3676e851fa4005"]);
+  assert.deepEqual(tools, ["mobile_check_plugin_update"]);
+});
+
+test("migration installs through the store before cleanup and handles progress, retry and restart", async t => {
+  let migrations = 0;
+  let finish: (value: unknown) => void = () => {};
+  const links: string[] = [];
+  const migration = { ...update, status: "migration", storeInstalled: false };
+  const app = {
+    async callServerTool({ name }: { name: string }) {
+      if (name === "mobile_check_plugin_update") return { content: [], structuredContent: { update: migration } };
+      assert.equal(name, "mobile_migrate_plugin_to_store");
+      migrations++;
       return new Promise(resolve => { finish = resolve; });
     },
     async openLink({ url }: { url: string }) { links.push(url); return {}; },
@@ -53,28 +76,28 @@ test("the banner handles progress, failures, retry, release notes, and restart i
   const view = await banner(t, app);
   view.controller.setAvailable(true);
   await view.settle();
-  assert.match(view.dom.window.document.body.textContent!, /Mobile Dev 0.1.132 is available/);
-  const releaseNotes = view.button("Release notes");
-  releaseNotes.click();
+  const open = view.button("Install from plugin store");
+  open.click();
   await view.settle();
-  assert.deepEqual(links, ["https://github.com/callstackincubator/codex-mobile-dev-plugin/releases/tag/v0.1.132"]);
-  const install = view.button("Update");
-  install.click();
-  install.click();
+  assert.equal(links.length, 1);
+  assert.equal(migrations, 0);
+  const migrate = view.button("Finish migration");
+  migrate.click();
+  migrate.click();
   await view.settle();
-  assert.equal(installs, 1);
-  const updating = view.button("Updating…");
-  assert.equal(updating.disabled, true);
-  finish({ isError: true, content: [{ type: "text", text: "Network unavailable" }] });
+  assert.equal(migrations, 1);
+  const finishing = view.button("Finishing…");
+  assert.equal(finishing.disabled, true);
+  finish({ isError: true, content: [{ type: "text", text: "Install and enable the store version first" }] });
   await view.settle();
-  assert.match(view.dom.window.document.body.textContent!, /Network unavailable/);
-  const retry = view.button("Retry update");
+  assert.match(view.dom.window.document.body.textContent!, /Install and enable the store version first/);
+  const retry = view.button("Finish migration");
   retry.click();
   await view.settle();
-  finish({ content: [], structuredContent: { update: { ...update, status: "updated" } } });
+  finish({ content: [], structuredContent: { update: { ...migration, status: "migrated", storeInstalled: true } } });
   await view.settle();
-  assert.equal(installs, 2);
-  assert.match(view.dom.window.document.body.textContent!, /Quit and reopen Codex to use the new version/);
+  assert.equal(migrations, 2);
+  assert.match(view.dom.window.document.body.textContent!, /Quit and reopen Codex to use the store version/);
   const busy = view.dom.window.document.querySelector('[aria-busy="true"]');
   assert.equal(busy, null);
   await view.controller.check();
@@ -83,6 +106,27 @@ test("the banner handles progress, failures, retry, release notes, and restart i
   await view.settle();
   const dismissed = view.dom.window.document.querySelector("aside");
   assert.equal(dismissed, null);
+});
+
+test("failed store links stay retryable and an installed store copy can go straight to cleanup", async t => {
+  let available = false;
+  const app = {
+    async callServerTool() { return { content: [], structuredContent: { update: { ...update, status: "migration", storeInstalled: available } } }; },
+    async openLink() { return { isError: true }; },
+  };
+  const view = await banner(t, app);
+  view.controller.setAvailable(true);
+  await view.settle();
+  const open = view.button("Install from plugin store");
+  open.click();
+  await view.settle();
+  assert.match(view.dom.window.document.body.textContent!, /Could not open the plugin store/);
+  assert.equal(view.controller.getSnapshot().storeOpened, undefined);
+  available = true;
+  await view.controller.check();
+  await view.settle();
+  const finish = view.button("Finish migration");
+  assert.equal(finish.disabled, false);
 });
 
 test("hidden workspaces do not check, dismissed versions stay hidden, and teardown cancels requests", async t => {

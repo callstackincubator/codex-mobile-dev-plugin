@@ -265,14 +265,14 @@ test("plugin update metrics measure plugin work without device context and honor
     await Sentry.close();
   });
   recordPluginUpdate("check", "available", 80);
-  recordPluginUpdate("install", "updated", 2000);
-  recordPluginUpdate("install", "failed", 3000);
+  recordPluginUpdate("migrate", "migrated", 2000);
+  recordPluginUpdate("migrate", "failed", 3000);
   await Sentry.flush();
   const sent = JSON.stringify(envelopes);
-  for (const fragment of ["plugin.update.operations", "plugin.update.duration", "millisecond", '"operation":{"value":"check"', '"outcome":{"value":"updated"', '"outcome":{"value":"failed"']) contains(sent, fragment);
+  for (const fragment of ["plugin.update.operations", "plugin.update.duration", "millisecond", '"operation":{"value":"check"', '"outcome":{"value":"migrated"', '"outcome":{"value":"failed"']) contains(sent, fragment);
   for (const fragment of ["device_platform", "device_kind", "latestVersion", "currentVersion", "user.id", "telemetry_session"]) contains(sent, fragment, false);
   process.env.MOBILE_DEV_TELEMETRY = "off";
-  recordPluginUpdate("install", "updated", 999);
+  recordPluginUpdate("migrate", "migrated", 999);
   await Sentry.flush();
   const afterOptOut = JSON.stringify(envelopes);
   assert.equal(afterOptOut, sent);
