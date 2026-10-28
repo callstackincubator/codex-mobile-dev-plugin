@@ -60,31 +60,14 @@ from that project. To restart an installed app, use `mobile_launch_app` instead 
 rebuilding. Do not launch the app when the user asks only for compilation, and do not
 run type checks, lint, or visual checks unless asked.
 
-The `device_*` tools are the bundled agent-device runtime's commands; `device_open`
-is its `open` command, and so on. No install or separate server is needed.
-
-1. Call `device_open` with the app, the device's `platform` and `udid` (iOS) or
-   `serial` (Android), a short `session` name, and `foreground: true`. Reuse that
-   session for every later call. If the app ID is unknown, find it with
-   `device_apps` first. Pass device selection once; later commands take only the
-   session.
-2. Read the refs `device_open` returns, or call `device_snapshot` with
-   `interactiveOnly: true`. `device_press` and `device_fill` take a `target` such as
-   `{ "kind": "ref", "ref": "@e12" }` from the latest result, or
-   `{ "kind": "selector", "selector": "label=\"Search\"" }`. Prefer refs and selectors
-   to coordinates.
-3. Call `device_press`, `device_fill`, or `device_scroll` with `settle: true` and
-   continue from the returned diff. `device_fill` replaces text; `device_type`
-   appends to the focused field. Run stateful commands in order within a session.
-4. Verify the result with `device_wait`, `device_is`, `device_get`, or `device_find`
-   with a read-only `action` such as `exists`; without one it taps the match.
-   An accepted input does not prove the app changed.
-5. Call `device_close` when finished, without `shutdown`, to leave the device running.
-
-The first iOS interaction builds agent-device's XCTest runner with the local Xcode
-and caches it under `~/.agent-device/apple-runner`, which takes a minute. Android
-uses the installed SDK's adb. Claude Code's simulator `control` tool can also tap and
-read the screen it shows; use one of the two for a flow rather than mixing them.
+The `device_*` tools are the bundled agent-device runtime's commands; follow the
+agent-device skill to drive the app. In short: call `device_open` with the app, the
+device's `platform` and `udid` (iOS) or `serial` (Android), a short `session` name, and
+`foreground: true`; act on refs from the latest snapshot with `settle: true`; verify
+the requested result with a named expectation; and call `device_close` without
+`shutdown` to leave the device running. Claude Code's simulator `control` tool can
+also tap and read the screen it shows; use one of the two for a flow rather than
+mixing them.
 
 The `mobile_*` app tools take `{ platform, deviceId }` and work on iOS simulators and
 Android devices, not physical iPhones:

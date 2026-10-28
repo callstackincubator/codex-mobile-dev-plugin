@@ -23,7 +23,7 @@ host as an argument.
 | `packages/runtimes` | Pinned Node runtimes bundled into the server (agent-device, serve-emu). |
 | `packages/skills` | Agent skills for the shared tools; each host's package step includes the ones its host supports. |
 | `apps/codex-plugin` | Codex: manifest, launcher, assets, and its own server (`server/`, the self-updater) and panel (`ui/`, the update banner). |
-| `apps/claude` | Claude: the Claude Desktop extension (`manifest.json`, MCPB) and the Claude Code plugin (`.claude-plugin/plugin.json`). Both run Claude's server (`server/`): the shared server without the panel, plus agent-device's commands, with the skill in `skills/`. |
+| `apps/claude` | Claude: the Claude Desktop extension (`manifest.json`, MCPB) and the Claude Code plugin (`.claude-plugin/plugin.json`). Both run Claude's server (`server/`): the shared server without the panel, plus agent-device's commands, with its skill in `skills/` and the shared agent-device skill. |
 | `apps/cursor` | Cursor: the Cursor plugin manifest (`.cursor-plugin/plugin.json`). It runs the shared server and panel unchanged. |
 | `apps/mac` | The Mac app: a SwiftUI shell (`Sources/`), the page it hosts (`web/`) and its server (`server/`). |
 | `packages/test-support` | Fixtures shared by tests across packages and apps. |
@@ -138,7 +138,7 @@ relevant checks, and packaging steps again.
 
 `vendor:baguette` downloads the pinned official release and checks its SHA-256. It keeps the full resource bundle and rebuilds the same v0.2.1 source with Swift 6.4 or later because the official binary crashes in Swift task allocation on macOS 27. Preparing Baguette requires Xcode 27, Git, and network access to fetch its pinned source and Swift dependencies. `rebuild:baguette` repeats the source build. `packages/native/vendor/baguette/release.json` records the source commit, compiler version, and rebuilt binary SHA-256.
 
-`vendor:agent-device` installs the exact npm packages in `packages/runtimes/agent-device/package-lock.json` with package scripts disabled. `build` copies this full runtime into `dist/agent-device`, records its integrity and lockfile hash in `release.json`, and copies the commands the plugin servers serve, `packages/runtimes/agent-device/tools.json`. After changing the pin, run `npm run catalog:agent-device` to rewrite that catalog; a unit test checks it against the pinned runtime, and the weekly dependency update rewrites it. The installed plugin needs no npm install or runtime download. Xcode compiles the shipped Apple runner source on its first use.
+`vendor:agent-device` installs the exact npm packages in `packages/runtimes/agent-device/package-lock.json` with package scripts disabled. `build` copies this full runtime into `dist/agent-device`, records its integrity and lockfile hash in `release.json`, and copies the commands the plugin servers serve, `packages/runtimes/agent-device/tools.json`. After changing the pin, run `npm run catalog:agent-device` to rewrite that catalog and the agent-device skill's workflow guide (`packages/skills/agent-device/references/workflow.md`, the runtime's `help workflow`); unit tests check both against the pinned runtime, and the weekly dependency update rewrites them. The installed plugin needs no npm install or runtime download. Xcode compiles the shipped Apple runner source on its first use.
 
 `build` also bundles JavaScript and CSS with esbuild and copies Baguette into `dist/baguette`. It does not run TypeScript, lint, Biome, visual checks, or React Doctor.
 
@@ -301,8 +301,8 @@ Claude plugin folder `release/claude-plugin/mobile-dev` with its ZIP, and a loca
 `mobile-dev-local` marketplace in `release/claude-plugin`. Both packages run
 Claude's server (`apps/claude/server`), built over the runtime without the panel's
 parts (`"panel": false` in `apps/claude/plugin-host.json`): no Baguette, serve-emu or
-iOS mirror, with agent-device's commands as `device_*` tools and the skill in
-`apps/claude/skills`. Packaging fails if a file exceeds the Claude plugin
+iOS mirror, with agent-device's commands as `device_*` tools, the skill in
+`apps/claude/skills` and the shared agent-device skill. Packaging fails if a file exceeds the Claude plugin
 directory's 5 MiB limit. The plugin folder uses `apps/claude/.claude-plugin/plugin.json`, which
 starts `dist/server.mjs` with Node.js 22.19 or later from `PATH`, and leaves out the
 Codex manifest, `.mcp.json`, and launcher. Check it with

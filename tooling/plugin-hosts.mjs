@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 
 /**
  * Hosts that load a plugin folder through their own manifest. Each is an app with a
@@ -12,7 +13,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
  *     leave out the panel's parts of the runtime.
  *   - `build`: an optional module in the app exporting `buildHost(outdir)`, which
  *     builds the host's own server into its staged runtime.
- *   - `skills`: the app's skill folders, instead of the shared ones.
+ *   - `skills`: the skill folders it ships, relative to the app, instead of the shared ones.
  *   - `maxFileBytes`: the host's file size limit; packaging fails past it.
  * Adding such a host is adding that app; these scripts find it.
  */
@@ -23,7 +24,8 @@ export const pluginHosts = Object.fromEntries(readdirSync("apps")
 // Codex-only files would load the Codex launcher or manifest.
 export const codexOnlyPaths = [".mcp.json", "mcp.json", ".codex-plugin", "scripts/launch-mcp.sh"];
 
-const sharedSkills = ["packages/skills/mobile-dev", "packages/skills/mobile-dev-setup"];
+/** The skills a plugin ships unless its host names its own. */
+export const sharedSkills = ["packages/skills/mobile-dev", "packages/skills/mobile-dev-setup", "packages/skills/agent-device"];
 
 /** A host's settings with its app's paths resolved and defaults applied. */
 export function pluginHost(name) {
@@ -34,6 +36,6 @@ export function pluginHost(name) {
     ...host, app, panel: host.panel !== false,
     desktopBundle: host.desktopBundle && `${app}/${host.desktopBundle}`,
     build: host.build && `${app}/${host.build}`,
-    skills: host.skills?.map(path => `${app}/${path}`) ?? sharedSkills,
+    skills: host.skills?.map(path => join(app, path)) ?? sharedSkills,
   };
 }

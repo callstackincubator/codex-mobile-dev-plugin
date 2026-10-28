@@ -100,7 +100,7 @@ try {
   const server = manifest.mcpServers["mobile-dev"];
   assert.equal(server.command, "node");
   assert.deepEqual(server.args, [`\${${host.root}}/dist/server.mjs`]);
-  for (const path of ["LICENSE", "README.md", "PRIVACY.md", "dist/app.html", ...host.skills.map(skill => `skills/${basename(skill)}/SKILL.md`), ...panels ? panelFiles : []]) {
+  for (const path of ["LICENSE", "README.md", "PRIVACY.md", "dist/app.html", ...host.skills.map(skill => `skills/${basename(skill)}/SKILL.md`), "skills/agent-device/references/workflow.md", ...panels ? panelFiles : []]) {
     await access(join(plugin, path));
   }
   if (panels === false) for (const path of panelFiles) await assert.rejects(access(join(plugin, path)), path);

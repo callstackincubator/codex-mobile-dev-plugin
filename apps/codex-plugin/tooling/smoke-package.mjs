@@ -52,9 +52,8 @@ try {
   assert.equal(nodeVersion.error, undefined);
   assert.equal(nodeVersion.status, 0, nodeVersion.stderr);
   assert.equal(nodeVersion.stdout.trim(), process.version);
-  const inactiveSkill = join(plugin, "skills/agent-device/SKILL.md");
-  const skillAccess = access(inactiveSkill);
-  await assert.rejects(skillAccess, { code: "ENOENT" });
+  // The agent drives devices with agent-device's skill and the runtime's own guide.
+  for (const path of ["SKILL.md", "agents/openai.yaml", "references/workflow.md"]) await access(join(plugin, "skills/agent-device", path));
   await access(join(plugin, "dist/baguette/Baguette"));
   await access(join(plugin, "dist/baguette/Baguette_Baguette.bundle/Web"));
   const mirrorServicePath = join(plugin, "dist/ios-mirror-service.mjs");

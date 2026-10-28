@@ -1,8 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { agentDeviceCatalog, compactAgentDeviceTool } from "../src/agent-device-catalog.ts";
-import { agentDeviceCatalogFile, upstreamCatalog } from "../../test-support/agent-device-fixtures.ts";
+import { agentDeviceCatalogFile, agentDeviceGuideFile, runtimeUrl, upstreamCatalog } from "../../test-support/agent-device-fixtures.ts";
 
 const tools = upstreamCatalog.tools.map(compactAgentDeviceTool);
 function tool(name: string) {
@@ -76,4 +77,11 @@ test("the committed catalog is the pinned runtime's commands that Mobile Dev ser
   const names = committed.map((entry: { name: string }) => entry.name);
   for (const name of ["logs", "perf", "install-from-source", "artifacts", "viewport", "tv-remote", "audio"]) assert.equal(names.includes(name), false, name);
   assert.ok(committed.every((entry: { outputSchema?: unknown }) => entry.outputSchema === undefined), "The tools return agent-device's own results.");
+});
+
+test("the agent-device skill's workflow guide is the pinned runtime's own", async () => {
+  // Regenerate it with npm run catalog:agent-device after changing the pin.
+  const env = { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", AGENT_DEVICE_NO_UPDATE_NOTIFIER: "1" };
+  const help = execFileSync(process.execPath, [runtimeUrl.pathname, "help", "workflow"], { env, encoding: "utf8" });
+  assert.equal(await readFile(agentDeviceGuideFile, "utf8"), help);
 });

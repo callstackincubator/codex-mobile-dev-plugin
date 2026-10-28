@@ -10,7 +10,7 @@ import { installTracePropagation, instrumentMcpServer } from "../core/src/teleme
 
 // The pinned runtime's own tool list, as its MCP server reports it.
 const catalogClient = new Client({ name: "agent-device-schema-test", version: "1" });
-const runtimeUrl = new URL("../runtimes/agent-device/node_modules/agent-device/bin/agent-device.mjs", import.meta.url);
+export const runtimeUrl = new URL("../runtimes/agent-device/node_modules/agent-device/bin/agent-device.mjs", import.meta.url);
 const runtimeTransport = new StdioClientTransport({
   command: process.execPath, args: [runtimeUrl.pathname, "mcp"], stderr: "pipe",
   env: { AGENT_DEVICE_NO_UPDATE_NOTIFIER: "1" },
@@ -21,6 +21,8 @@ await catalogClient.close();
 
 /** The catalog Mobile Dev ships. */
 export const agentDeviceCatalogFile = new URL("../runtimes/agent-device/tools.json", import.meta.url);
+/** The workflow guide the agent-device skill ships. */
+export const agentDeviceGuideFile = new URL("../skills/agent-device/references/workflow.md", import.meta.url);
 
 /**
  * A client of an instrumented server with the `device_*` tools, over a fake runtime that

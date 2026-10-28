@@ -14,6 +14,6 @@
   },
   "panel": false,
   "build": "tooling/build.mjs",
-  "skills": ["skills/mobile-dev"],
+  "skills": ["skills/mobile-dev", "../../packages/skills/agent-device"],
   "maxFileBytes": 5242880
 }
