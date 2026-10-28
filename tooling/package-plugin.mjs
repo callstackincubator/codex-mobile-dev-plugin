@@ -1,8 +1,8 @@
 import { execFileSync } from "node:child_process";
-import { cp, copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { cp, copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { telemetryBuildEnvironment } from "./telemetry-build.mjs";
-import { assertRuntime, RELEASE_DOCUMENTS as documents, releaseVersion, stageRuntime } from "./host-runtime.mjs";
+import { assertRuntime, oversizedFiles, RELEASE_DOCUMENTS as documents, releaseVersion, stageRuntime } from "./host-runtime.mjs";
 import { pluginHost } from "./plugin-hosts.mjs";
 import { pluginMarketplace } from "./plugin-marketplace.mjs";
 
@@ -29,11 +29,9 @@ if (host.build) {
 // A host whose store limits file sizes fails here rather than in review.
 async function assertFileSizes(directory) {
   if (host.maxFileBytes === undefined) return;
-  for (const entry of await readdir(directory, { recursive: true, withFileTypes: true })) {
-    if (entry.isFile() === false) continue;
-    const path = join(entry.parentPath, entry.name);
-    const { size } = await stat(path);
-    if (size > host.maxFileBytes) throw new Error(`${path} is ${size} bytes, over ${host.label}'s ${host.maxFileBytes}-byte file limit.`);
+  const oversized = await oversizedFiles(directory, host.maxFileBytes);
+  if (oversized.length > 0) {
+    throw new Error(`Over ${host.label}'s ${host.maxFileBytes}-byte file limit in ${directory}:\n${oversized.map(({ path, size }) => `  ${path}: ${size} bytes`).join("\n")}`);
   }
 }
 

@@ -157,8 +157,8 @@ The host installs a cache copy. After changing source, rebuild and package, then
 ## Host regression and visual tests
 
 Pull requests run [CI](.github/workflows/ci.yml) on Linux: the unit tests (macOS-only paths
-skip themselves), a Codex regression job and a Codex visual regression job. The
-`claude` and `mac` regression projects run locally until those targets ship. The host jobs need no Mac, simulator or host app. `build:hosts` builds
+skip themselves), Codex and Claude regression jobs and a Codex visual regression job. The
+`mac` regression project runs locally until that target ships. The host jobs need no Mac, simulator or host app. `build:hosts` builds
 each target's real server and page without the native helpers, and Playwright drives
 them in [`tooling/hosts`](tooling/hosts):
 
@@ -168,6 +168,10 @@ them in [`tooling/hosts`](tooling/hosts):
   host changes what it advertises.
 - The Mac app's page loads the way its `PageLoader` does, with a stand-in for the
   WebKit relay.
+- Each target's package limits: Codex's server against [Codex's tool limits](docs/architecture.md#runtime),
+  the same measurement `npm run check:mcp-budget` makes for a packaged plugin, and every
+  runtime file of a host with `maxFileBytes` in its `plugin-host.json`, such as Claude's
+  5 MiB, against that limit.
 
 ```sh
 npm run build:hosts            # or: npm run build:hosts -- codex

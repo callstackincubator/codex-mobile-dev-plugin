@@ -1,5 +1,5 @@
-import { access, cp, readFile } from "node:fs/promises";
-import { relative, sep } from "node:path";
+import { access, cp, readFile, readdir, stat } from "node:fs/promises";
+import { join, relative, sep } from "node:path";
 import { assertBuildEnvironment } from "./telemetry-build.mjs";
 
 /** The documents every host's package ships beside the runtime. */
@@ -30,6 +30,18 @@ export async function stageRuntime(directory, { panel = true } = {}) {
     recursive: true, verbatimSymlinks: true,
     filter: source => panel || PANEL_PARTS.includes(relative("dist", source).split(sep)[0]) === false,
   });
+}
+
+/** Files under `directory` larger than `maxBytes`, leaving out its top-level entries in `skip`. */
+export async function oversizedFiles(directory, maxBytes, skip = []) {
+  const oversized = [];
+  for (const entry of await readdir(directory, { recursive: true, withFileTypes: true })) {
+    const path = join(entry.parentPath, entry.name);
+    if (entry.isFile() === false || skip.includes(relative(directory, path).split(sep)[0])) continue;
+    const { size } = await stat(path);
+    if (size > maxBytes) oversized.push({ path: relative(directory, path), size });
+  }
+  return oversized;
 }
 
 /** The release version every host ships, from the workspace's package.json. */

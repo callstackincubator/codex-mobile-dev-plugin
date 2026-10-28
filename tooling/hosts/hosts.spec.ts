@@ -1,5 +1,12 @@
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
+import { codexToolBudget } from "../../apps/codex-plugin/tooling/codex-tool-limits.mjs";
+import { oversizedFiles, PANEL_PARTS } from "../host-runtime.mjs";
+import { pluginHost, pluginHosts } from "../plugin-hosts.mjs";
 import { expect, test } from "./fixtures.ts";
+
+const root = join(import.meta.dirname, "../..");
 
 // Regression checks for each shipped target, against its real server and page
 // in a stand-in for its host. Device-backed behavior needs a simulator or emulator
@@ -19,6 +26,25 @@ test.describe("MCP Apps hosts", () => {
         expect(() => ajv.compile(schema), `${tool.name} ${kind}`).not.toThrow();
       }
     }
+  });
+
+  // Platform limits the packages must fit, checked on every pull request rather than at release.
+  test("every model-visible tool fits Codex's tool limits", async ({ server, target }) => {
+    test.skip(target !== "codex", "Only Codex limits tool specifications.");
+    const [name] = Object.keys(JSON.parse(readFileSync(join(root, "apps/codex-plugin/.mcp.json"), "utf8")).mcpServers);
+    // The Agent Plugin format, a plugin.json at the plugin root, also limits each tool and their total.
+    const agentPlugin = existsSync(join(root, "apps/codex-plugin/plugin.json"));
+    const budget = codexToolBudget({ server: name, instructions: server.client.getInstructions(), tools: server.tools, agentPlugin });
+    expect(budget.oversized, "Input schemas Codex compacts or tools it hides").toEqual([]);
+    expect(budget.overTotal, `${budget.bytes} bytes of tools over the Agent Plugin total`).toBe(false);
+  });
+
+  test("every runtime file fits the host's file size limit", async ({ target }) => {
+    test.skip(pluginHosts[target]?.maxFileBytes === undefined, "This host has no file size limit.");
+    const host = pluginHost(target);
+    // The built runtime holds every large file the package ships; packaging checks the whole package again.
+    const oversized = await oversizedFiles(join(root, ".host-tests", target), host.maxFileBytes, host.panel ? [] : PANEL_PARTS);
+    expect(oversized, `Files over ${host.label}'s ${host.maxFileBytes}-byte limit`).toEqual([]);
   });
 
   test("only Codex ships the plugin updater", async ({ server, target }) => {

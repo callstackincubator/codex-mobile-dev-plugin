@@ -14,7 +14,8 @@ import { join } from "node:path";
  *   - `build`: an optional module in the app exporting `buildHost(outdir)`, which
  *     builds the host's own server into its staged runtime.
  *   - `skills`: the skill folders it ships, relative to the app, instead of the shared ones.
- *   - `maxFileBytes`: the host's file size limit; packaging fails past it.
+ *   - `maxFileBytes`: the host's file size limit; packaging and the host regression
+ *     tests fail past it.
  * Adding such a host is adding that app; these scripts find it.
  */
 export const pluginHosts = Object.fromEntries(readdirSync("apps")
