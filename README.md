@@ -40,8 +40,10 @@ Android Emulator pane. Mobile Dev adds device control through the bundled
 and Metro logs, app control and storage, interactive CPU, memory and FPS charts in
 chat, and TraceSift findings.
 
-On an Apple Silicon Mac with Node.js 22.19 or later on `PATH`, install the Claude
-Code plugin from this repository's `release/claude` branch:
+On an Apple Silicon Mac with Node.js 22.19 or later, install the Claude Code plugin
+from this repository's `release/claude` branch. It finds Node on `PATH` or where
+Homebrew, nvm, fnm, Volta, mise or asdf install it, and Claude tells you at the start
+of a session when none is found:
 
 ```sh
 claude plugin marketplace add https://github.com/callstackincubator/mobile-dev.git#release/claude
@@ -71,6 +73,8 @@ What the Claude version runs on your Mac, besides its Node.js server:
   there.
 - **Developer tools** already on your Mac: `xcrun simctl`, `devicectl`, `adb`, and
   the Android emulator, and TraceSift when you analyze a profile.
+- **A Node.js launcher and a session check** in the Claude Code plugin, which find
+  Node.js and start the server.
 
 It sends plugin errors and aggregate measurements to Sentry, as described under
 [Privacy and support](#privacy-and-support), and nothing else to Callstack;

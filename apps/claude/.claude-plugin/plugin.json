@@ -26,8 +26,9 @@
   "termsOfServiceUrl": "https://github.com/callstackincubator/mobile-dev/blob/main/TERMS.md",
   "mcpServers": {
     "mobile-dev": {
-      "command": "node",
+      "command": "/bin/sh",
       "args": [
+        "${CLAUDE_PLUGIN_ROOT}/scripts/launch-node.sh",
         "${CLAUDE_PLUGIN_ROOT}/dist/server.mjs"
       ]
     }

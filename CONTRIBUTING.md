@@ -308,8 +308,14 @@ parts (`"panel": false` in `apps/claude/plugin-host.json`): no Baguette, serve-e
 iOS mirror, with agent-device's commands as `device_*` tools, the skill in
 `apps/claude/skills` and the shared agent-device skill. Packaging fails if a file exceeds the Claude plugin
 directory's 5 MiB limit. The plugin folder uses `apps/claude/.claude-plugin/plugin.json`, which
-starts `dist/server.mjs` with Node.js 22.19 or later from `PATH`, and leaves out the
-Codex manifest, `.mcp.json`, and launcher. Check it with
+starts `dist/server.mjs` through `scripts/launch-node.sh`. Claude opened from the Dock
+starts plugins without the shell's `PATH`, so the launcher also looks for Node.js 22.19
+or later where Homebrew, nvm, fnm, Volta, mise and asdf install it, and a
+`SessionStart` hook (`hooks/hooks.json`) runs it with `--check` to tell the user and
+Claude when none is found. The folder ships `apps/claude/README.md`, which the Claude
+plugin directory lists, instead of the repository's README. It leaves out the Codex
+manifest, `.mcp.json`, Codex's launcher, Codex skill metadata (`agents/openai.yaml`)
+and npm's `.bin` symlinks, which plugin directories reject. Check it with
 `claude plugin validate ./release/claude-plugin`, load it with
 `claude --plugin-dir ./release/claude-plugin/mobile-dev`, or install it with
 `claude plugin marketplace add ./release/claude-plugin` and
