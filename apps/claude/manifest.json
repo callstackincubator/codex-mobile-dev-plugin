@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "mobile-dev",
   "display_name": "Mobile Dev",
-  "description": "Inspect local iOS and Android devices, logs and performance in Claude Desktop. Initial Apple Silicon development preview.",
+  "description": "Control local iOS and Android devices, read their logs, and chart app performance in Claude Desktop. Initial Apple Silicon development preview.",
   "author": {
     "name": "Callstack"
   },

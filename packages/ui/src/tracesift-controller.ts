@@ -1,4 +1,5 @@
 import { chatMessage } from "./chat-message.ts";
+import { cardsCallTools } from "./host-bridge.ts";
 import type { HostBridge } from "./host-bridge.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { traceSiftAnalysisSchema, traceSiftHandoffSchema, traceSiftRestoreSchema, type TraceSiftAnalysis, type TraceSiftProfileType } from "@mobile-dev/shared/tracesift.ts";
@@ -11,6 +12,8 @@ import { captureUiError, countUiEvent, markUiSurfaceReady, recordUiTiming, setUi
 type State = {
   analysis?: TraceSiftAnalysis;
   canInvestigate: boolean;
+  /** Whether the host lets this card call the server; Explore, the project and hand-offs need it. */
+  canCallTools: boolean;
   /** The host's theme, which TraceSift's components take from a class, not the document attribute. */
   dark: boolean;
   busyCard?: string;
@@ -64,7 +67,7 @@ function composerUnavailable(error: unknown) {
 }
 
 export class TraceSiftController {
-  private state: State = { canInvestigate: false, dark: false, error: "", notice: "", chartKind: "bar", projectBusy: false };
+  private state: State = { canInvestigate: false, canCallTools: false, dark: false, error: "", notice: "", chartKind: "bar", projectBusy: false };
   private listeners = new Set<() => void>();
   private disposed = false;
   private readyAt = performance.now();
@@ -104,7 +107,8 @@ export class TraceSiftController {
     // TraceSift's components read their theme from a `.dark` ancestor, not the
     // document attribute the rest of this frame uses.
     this.update({
-      canInvestigate: Boolean(capabilities?.serverTools && capabilities?.message?.text),
+      canInvestigate: cardsCallTools(this.app) && Boolean(capabilities?.message?.text),
+      canCallTools: cardsCallTools(this.app),
       dark: this.app.getHostContext()?.theme === "dark",
     });
   }
@@ -148,6 +152,7 @@ export class TraceSiftController {
   };
   private remember = (viewId: string | number, analysisId: string): Promise<void> => {
     const run = async () => {
+      if (!cardsCallTools(this.app)) return;
       const startedAt = performance.now();
       try {
         const result = await this.app.callServerTool({ name: "mobile_remember_tracesift_analysis", arguments: { viewId, analysisId } });
@@ -165,7 +170,7 @@ export class TraceSiftController {
     return this.rememberChain;
   };
   restore = async (viewId: string | number) => {
-    if (this.disposed || this.state.analysis) return;
+    if (this.disposed || this.state.analysis || !cardsCallTools(this.app)) return;
     const token = ++this.restoreToken;
     const startedAt = performance.now();
     try {
@@ -185,7 +190,7 @@ export class TraceSiftController {
     }
   };
   private restoreInput = async (path: string, profileType: TraceSiftProfileType) => {
-    if (this.disposed || this.state.analysis) return;
+    if (this.disposed || this.state.analysis || !cardsCallTools(this.app)) return;
     const token = ++this.restoreToken;
     const startedAt = performance.now();
     try {
@@ -286,6 +291,10 @@ export class TraceSiftController {
     if (!analysis || this.disposed || this.state.openingExploreCard || this.state.explorer) return;
     const card = analysis.cards.find(entry => entry.id === cardId);
     if (!card) return;
+    if (!cardsCallTools(this.app)) {
+      this.update({ notice: "This app does not let the card open Explore. Ask the agent about this card." });
+      return;
+    }
     this.update({ openingExploreCard: cardId, error: "", notice: "" });
     const startedAt = performance.now();
     try {
@@ -585,6 +594,7 @@ export class TraceSiftController {
    * theme and context change.
    */
   loadProject = async () => {
+    if (!cardsCallTools(this.app)) return;
     this.update({ projectBusy: true });
     try {
       const result = await this.app.callServerTool({ name: "mobile_get_tracesift_project", arguments: {} });

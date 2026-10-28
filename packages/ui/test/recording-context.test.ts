@@ -37,7 +37,7 @@ function fixture(t: TestContext, pills = true) {
       return { isError: sendFailure };
     },
   } as unknown as App;
-  const controller = new RecordingController(app, () => pills ? modelContext : undefined);
+  const controller = new RecordingController(app, { attachments: () => pills ? modelContext : undefined, workspace: true });
   const recording = recordingWithFramesFixture();
   controller.hostChanged();
   controller.accept({ content: [], structuredContent: { recording } });

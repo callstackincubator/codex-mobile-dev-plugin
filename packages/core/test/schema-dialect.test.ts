@@ -4,6 +4,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { declareSchemaDialect, JSON_SCHEMA_2020_12 } from "../src/schema-dialect.ts";
 import { createTestPlugin } from "../../test-support/fixtures.ts";
+import { createPanel } from "../src/panel-tools.ts";
 
 // Keywords whose meaning differs between draft-07 and 2020-12. Relabelling the
 // SDK's draft-07 output is exact only while no tool schema uses them.
@@ -21,7 +22,7 @@ function draft07Keywords(schema: unknown, path = ""): string[] {
 }
 
 test("every tool declares JSON Schema 2020-12 and uses no draft-07-only keyword", async t => {
-  const plugin = await createTestPlugin("<html></html>");
+  const plugin = await createTestPlugin("<html></html>", { panel: createPanel() });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   declareSchemaDialect(serverTransport);
   const client = new Client({ name: "schema-dialect", version: "1" });

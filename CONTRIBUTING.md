@@ -23,7 +23,7 @@ host as an argument.
 | `packages/runtimes` | Pinned Node runtimes bundled into the server (agent-device, serve-emu). |
 | `packages/skills` | Agent skills for the shared tools; each host's package step includes the ones its host supports. |
 | `apps/codex-plugin` | Codex: manifest, launcher, assets, and its own server (`server/`, the self-updater) and panel (`ui/`, the update banner). |
-| `apps/claude` | Claude: the Claude Desktop extension (`manifest.json`, MCPB) and the Claude Code plugin (`.claude-plugin/plugin.json`). Both run the shared server and panel unchanged. |
+| `apps/claude` | Claude: the Claude Desktop extension (`manifest.json`, MCPB) and the Claude Code plugin (`.claude-plugin/plugin.json`). Both run Claude's server (`server/`): the shared server without the panel, plus agent-device's commands, with its skill in `skills/` and the shared agent-device skill. |
 | `apps/cursor` | Cursor: the Cursor plugin manifest (`.cursor-plugin/plugin.json`). It runs the shared server and panel unchanged. |
 | `apps/mac` | The Mac app: a SwiftUI shell (`Sources/`), the page it hosts (`web/`) and its server (`server/`). |
 | `packages/test-support` | Fixtures shared by tests across packages and apps. |
@@ -138,7 +138,7 @@ relevant checks, and packaging steps again.
 
 `vendor:baguette` downloads the pinned official release and checks its SHA-256. It keeps the full resource bundle and rebuilds the same v0.2.1 source with Swift 6.4 or later because the official binary crashes in Swift task allocation on macOS 27. Preparing Baguette requires Xcode 27, Git, and network access to fetch its pinned source and Swift dependencies. `rebuild:baguette` repeats the source build. `packages/native/vendor/baguette/release.json` records the source commit, compiler version, and rebuilt binary SHA-256.
 
-`vendor:agent-device` installs the exact npm packages in `packages/runtimes/agent-device/package-lock.json` with package scripts disabled. `build` copies this full runtime into `dist/agent-device`, records its integrity and lockfile hash in `release.json`, and saves its version-matched help in the control skill. The installed plugin needs no npm install or runtime download. Xcode compiles the shipped Apple runner source on its first use.
+`vendor:agent-device` installs the exact npm packages in `packages/runtimes/agent-device/package-lock.json` with package scripts disabled. `build` copies this full runtime into `dist/agent-device`, records its integrity and lockfile hash in `release.json`, and copies the commands the plugin servers serve, `packages/runtimes/agent-device/tools.json`. After changing the pin, run `npm run catalog:agent-device` to rewrite that catalog and the agent-device skill's workflow guide (`packages/skills/agent-device/references/workflow.md`, the runtime's `help workflow`); unit tests check both against the pinned runtime, and the weekly dependency update rewrites them. The installed plugin needs no npm install or runtime download. Xcode compiles the shipped Apple runner source on its first use.
 
 `build` also bundles JavaScript and CSS with esbuild and copies Baguette into `dist/baguette`. It does not run TypeScript, lint, Biome, visual checks, or React Doctor.
 
@@ -147,8 +147,6 @@ relevant checks, and packaging steps again.
 `test` checks MCP contracts, frame reads, input validation, and capture cleanup against a local fixture, plus runtime selection and argument forwarding with Node absent from PATH or another Node present. `test:package` copies the release package into a temporary directory and uses its actual MCP launch configuration with a system-only PATH. The smoke-test caller supplies an isolated home with the Codex runtime cache layout and its test Node executable; the MCP process has a system-only PATH. Run these checks with the Codex bundled Node executable to verify the packaged runtime. It checks native addon loading, sidebar/chat entrypoints, UI resources, and telemetry attribution, starts bundled Baguette, reads the real device list, and checks shutdown. It does not boot or change a simulator. Run it on an Apple Silicon Mac with Xcode.
 
 `test:codex-plugin` requires the Codex CLI (`codex` on PATH or `CODEX_CLI_PATH`). It installs the package into a temporary Codex profile, asks Codex to resolve the installed MCP configuration, then starts that exact command and working directory with no Node on MCP PATH. It checks the sidebar resource and telemetry opt-out without changing the user's plugins or devices. Pass an extracted ZIP directory to test the shipped artifact. The compatibility manifest uses `cwd: "."`; `${PLUGIN_ROOT}` is not expanded in this format and would become a nonexistent subdirectory of the installed cache.
-
-`test:agent-device` requires reactivating the Agent Device MCP entry first. It starts the retained MCP server from a copied package with no global CLI on its PATH. It checks the control tools, pinned runtime, isolated state directory, real iOS device list, and daemon cleanup. It does not open an app, take screenshots, or send input.
 
 `npm run test:reconnect -- <UDID>` tests an already booted simulator with a copied package. It terminates only that test package's own Baguette process and checks that the same stream resumes with a new bundled process. It never boots a simulator, repairs input, or sends gestures.
 
@@ -159,8 +157,8 @@ The host installs a cache copy. After changing source, rebuild and package, then
 ## Host regression and visual tests
 
 Pull requests run [CI](.github/workflows/ci.yml) on Linux: the unit tests (macOS-only paths
-skip themselves), a Codex regression job and a Codex visual regression job. The
-`claude` and `mac` regression projects run locally until those targets ship. The host jobs need no Mac, simulator or host app. `build:hosts` builds
+skip themselves), Codex and Claude regression jobs and a Codex visual regression job. The
+`mac` regression project runs locally until that target ships. The host jobs need no Mac, simulator or host app. `build:hosts` builds
 each target's real server and page without the native helpers, and Playwright drives
 them in [`tooling/hosts`](tooling/hosts):
 
@@ -170,6 +168,10 @@ them in [`tooling/hosts`](tooling/hosts):
   host changes what it advertises.
 - The Mac app's page loads the way its `PageLoader` does, with a stand-in for the
   WebKit relay.
+- Each target's package limits: Codex's server against [Codex's tool limits](docs/architecture.md#runtime),
+  the same measurement `npm run check:mcp-budget` makes for a packaged plugin, and every
+  runtime file of a host with `maxFileBytes` in its `plugin-host.json`, such as Claude's
+  5 MiB, against that limit.
 
 ```sh
 npm run build:hosts            # or: npm run build:hosts -- codex
@@ -274,6 +276,7 @@ then run from this checkout with Node.js 22.19 or later:
 
 ```sh
 npm run build
+npm run package:claude
 npm run claude:config
 ```
 
@@ -281,14 +284,13 @@ npm run claude:config
    `~/Library/Application Support/Claude/claude_desktop_config.json`.
 2. Merge the `mobile-dev` entry from `.local-dev/claude-desktop-config.json` into
    the existing `mcpServers` object, preserving other servers and settings. The
-   snippet uses absolute paths to this checkout and the Node executable running
-   the generator.
-3. Fully quit and reopen Claude, start a new conversation, and ask **“Open Mobile Dev.”**
-   Approve the connector when prompted; use **Expand** when available.
+   snippet runs Claude's packaged server in `release/claude-plugin/mobile-dev` with
+   the Node executable running the generator.
+3. Fully quit and reopen Claude, start a new conversation, and ask, for example,
+   **“List my iOS simulators with Mobile Dev.”** Approve the connector when prompted.
 
-After UI or server edits, run `npm run build` and fully restart Claude. This
-workflow uses the checkout directly and needs no repackaging. Regenerate the
-config if the checkout or Node path changes. For connection failures, check
+After UI or server edits, run `npm run build` and `npm run package:claude`, then
+fully restart Claude. Regenerate the config if the checkout or Node path changes. For connection failures, check
 **Settings > Developer** for the server status and logs.
 
 To create and check a bundle for manual installation instead:
@@ -298,13 +300,21 @@ npm run package:claude
 npm run test:claude
 ```
 
-This writes `release/mobile-dev-<version>-claude-desktop-darwin-arm64.mcpb` and
-the Claude plugin folder `release/claude-plugin/mobile-dev`. The plugin folder
-uses `apps/claude/.claude-plugin/plugin.json`, which starts `dist/server.mjs` with Node.js
-22.19 or later from `PATH`, and leaves out the Codex manifest, `.mcp.json`, and
-launcher. Check it with `claude plugin validate ./release/claude-plugin/mobile-dev`,
-or load it with `claude --plugin-dir ./release/claude-plugin/mobile-dev`.
-Follow the [manual installation steps](README.md#claude-desktop-manual-installation).
+This writes `release/mobile-dev-<version>-claude-desktop-darwin-arm64.mcpb`, the
+Claude plugin folder `release/claude-plugin/mobile-dev` with its ZIP, and a local
+`mobile-dev-local` marketplace in `release/claude-plugin`. Both packages run
+Claude's server (`apps/claude/server`), built over the runtime without the panel's
+parts (`"panel": false` in `apps/claude/plugin-host.json`): no Baguette, serve-emu or
+iOS mirror, with agent-device's commands as `device_*` tools, the skill in
+`apps/claude/skills` and the shared agent-device skill. Packaging fails if a file exceeds the Claude plugin
+directory's 5 MiB limit. The plugin folder uses `apps/claude/.claude-plugin/plugin.json`, which
+starts `dist/server.mjs` with Node.js 22.19 or later from `PATH`, and leaves out the
+Codex manifest, `.mcp.json`, and launcher. Check it with
+`claude plugin validate ./release/claude-plugin`, load it with
+`claude --plugin-dir ./release/claude-plugin/mobile-dev`, or install it with
+`claude plugin marketplace add ./release/claude-plugin` and
+`claude plugin install mobile-dev@mobile-dev-local`.
+Follow the [installation steps](README.md#claude-code-and-claude-desktop).
 Remove the `mobile-dev` development entry before installing the bundle to avoid
 duplicate servers. Rebuild, repackage, and reinstall to update a bundled copy.
 
@@ -391,6 +401,6 @@ and marketplace publishing.
   annotations, and native device requests.
 - [Using devices](docs/devices.md), [app logs](docs/logs.md), and
   [performance](docs/performance.md): detailed behavior and platform limitations.
-- [MCP tools](docs/mcp-tools.md): tool catalog and retained Agent Device integration.
+- [MCP tools](docs/mcp-tools.md): tool catalog, including agent-device's `device_*` tools.
 - [Agent workflow cases](docs/agent-workflow.md): manual checks in fresh chats.
 - [Stream profiling](docs/stream-profiling.md): performance findings and historical measurements.

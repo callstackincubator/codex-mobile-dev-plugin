@@ -166,6 +166,7 @@ export function ComparisonCard({ controller }: { controller: ComparisonControlle
       {comparison.recordings.map(recording => recording.error && <p key={recording.id} className="recording-error">{recording.title}: {recording.error}</p>)}
       <div className="comparison-actions"><Button disabled={state.canMessage === false || state.busy} onClick={() => { void controller.ask(); }}><MessageCircleIcon />{range ? "Ask about this range" : "Ask about this comparison"}</Button></div>
       {state.canMessage === false && <p className="recording-footnote">This host does not support sending chart selections to chat.</p>}
+      {state.preview === "only" && <p className="recording-footnote">This app shows CPU, memory and FPS without frame detail, so jank and frame intervals are blank.{state.workspace && " Compare the recordings in Mobile Dev for all of it."}</p>}
       {state.error && <p role="alert" className="recording-error">{state.error}</p>}
     </div>
   </article>;

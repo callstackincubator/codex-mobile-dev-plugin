@@ -28,7 +28,7 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
   // Codex shows context as composer attachments through OpenAI's extension.
   const attachments = () => extensions.modelContext;
   const panels = WorkspaceTools.create(app, attachments);
-  const recordingController = new RecordingController(app, attachments);
+  const recordingController = new RecordingController(app, { attachments, workspace: true });
   const extension = options.extension?.(app);
   const reactRoot = createRoot(document.getElementById("root")!);
   function renderWorkspace(automaticLayout?: DeviceLayout) {
@@ -118,7 +118,8 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
     openDevices(input.arguments ?? {});
   };
   app.ontoolresult = result => {
-    if (result.structuredContent?.recording !== undefined) {
+    // mobile_open_performance_recording sends the recording's ID (older servers send the recording).
+    if (result.structuredContent?.recording !== undefined || result.structuredContent?.recordingId !== undefined) {
       try { recordingController.accept(result); }
       catch (error) { captureUiError(error, "recording.workspace_result"); }
       return;

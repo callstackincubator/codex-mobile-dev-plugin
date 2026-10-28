@@ -47,6 +47,41 @@ export const recordingSchema = z.object({
   error: z.string().optional(),
 });
 export type PerformanceRecording = z.infer<typeof recordingSchema>;
+
+/**
+ * A recording small enough to travel inside a tool result: every CPU, memory and FPS
+ * sample at its original time to 10 ms, rounded, without per-thread CPU or Android frame
+ * timelines, which make up nearly all of a recording's size. A five-minute
+ * recording drops from hundreds of kilobytes to about 25 KB.
+ */
+export function recordingPreview(recording: PerformanceRecording): PerformanceRecording {
+  const round = (value: number, digits: number) => Number(value.toFixed(digits));
+  const reading = (value: number | null, digits: number) => value === null ? null : round(value, digits);
+  return {
+    ...recording,
+    samples: recording.samples.map(sample => ({
+      time: round(sample.time, 2), interval: round(sample.interval, 2),
+      cpuPercent: reading(sample.cpuPercent, 1), memoryBytes: reading(sample.memoryBytes, 0), threads: [],
+    })),
+    fps: { ...recording.fps, samples: recording.fps.samples.map(sample => ({ time: round(sample.time, 2), interval: round(sample.interval, 2), fps: reading(sample.fps, 1) })) },
+  };
+}
+
+/**
+ * What the tools that show a recording return: its identity and, when it fits, a
+ * preview, never its full samples. Hosts cap tool results (Codex turns one over
+ * about 50 KB into truncated text), and some let cards call tools while others do
+ * not. A card draws the preview at once and reads the full recording with
+ * mobile_read_performance_recording where the host allows it.
+ */
+export const recordingReferenceSchema = z.object({
+  recordingId: recordingIdSchema,
+  title: recordingSchema.shape.title,
+  status: recordingSchema.shape.status,
+  durationSeconds: recordingSchema.shape.durationSeconds,
+  range: recordingRangeSchema.optional(),
+  preview: recordingSchema.optional(),
+});
 export type RecordingRange = z.infer<typeof recordingRangeSchema>;
 export type RecordingSummary = {
   peakCpuPercent: number | null;

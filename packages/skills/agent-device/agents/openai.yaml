@@ -1,13 +1,10 @@
 interface:
-  display_name: "Simulator control"
-  short_description: "Drive iOS apps with bundled agent-device tools"
-  default_prompt: "Inspect and control the app on my selected iOS simulator."
+  display_name: "Device control"
+  short_description: "Drive apps on simulators and devices with agent-device"
+  default_prompt: "Open my app on the selected simulator and check the current screen."
 
 dependencies:
   tools:
     - type: "mcp"
-      value: "agent-device"
-      description: "Bundled official agent-device MCP tools"
-    - type: "mcp"
       value: "mobile-dev"
-      description: "Baguette simulator panel and device selection"
+      description: "Bundled agent-device commands as device_* tools"

@@ -31,23 +31,50 @@ from the plugin directory, then open a new chat.
 To install the prebuilt plugin from this repository instead, see
 [Install from the GitHub marketplace](CONTRIBUTING.md#install-from-the-github-marketplace).
 
-### Claude Desktop: manual installation
+### Claude Code and Claude Desktop
 
-On an Apple Silicon Mac, obtain a `mobile-dev-<version>-claude-desktop-darwin-arm64.mcpb`
-bundle from the person sharing the preview, or [build one locally](CONTRIBUTING.md#claude-desktop-local-development).
-The Claude bundle is not yet published through this repository's release workflow.
+Claude shows simulators itself, so the Claude version of Mobile Dev has no device
+panel: in Claude Code, ask to see a device and Claude opens its own iOS Simulator or
+Android Emulator pane. Mobile Dev adds device control through the bundled
+[agent-device](https://agent-device.dev/) runtime, native
+and Metro logs, app control and storage, interactive CPU, memory and FPS charts in
+chat, and TraceSift findings.
 
-1. Open Claude Desktop **Settings > Extensions > Advanced settings**.
-2. Under **Extension Developer**, click **Install Extension…**, select the `.mcpb`
-   file, and confirm installation. You can also open the file with Claude Desktop.
-3. Fully quit and reopen Claude, then start a new conversation and ask **"Open Mobile Dev."**
-4. Approve the connector when prompted. Click **Expand** to use the larger view
-   when available; Mobile Dev does not add a permanent Claude sidebar entry.
+On an Apple Silicon Mac with Node.js 22.19 or later on `PATH`, install the Claude
+Code plugin from this repository's `release/claude` branch:
 
-The bundle includes the plugin and native helpers; Claude supplies Node, so no
-`npm install` is needed. Install a newer `.mcpb` manually to update. Use either
-the bundle or the [local development connection](CONTRIBUTING.md#claude-desktop-local-development)
-to avoid duplicate Mobile Dev servers. See [Claude's installation guide](https://support.claude.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop).
+```sh
+claude plugin marketplace add https://github.com/callstackincubator/mobile-dev.git#release/claude
+claude plugin install mobile-dev@mobile-dev
+```
+
+Or in a session, `/plugin install mobile-dev --marketplace https://github.com/callstackincubator/mobile-dev.git#release/claude`.
+Run `claude plugin marketplace update mobile-dev` to update.
+
+For Claude Desktop chats, download `mobile-dev-<version>-claude-desktop-darwin-arm64.mcpb`
+from the [latest release](https://github.com/callstackincubator/mobile-dev/releases/latest),
+open **Settings > Extensions > Advanced settings**, and under **Extension Developer**
+click **Install Extension…** and select the file, or open it with Claude Desktop.
+Claude supplies Node for the bundle. Install a newer `.mcpb` to update. Use either
+the plugin or bundle, or the [local development connection](CONTRIBUTING.md#claude-desktop-local-development),
+to avoid duplicate Mobile Dev servers.
+
+What the Claude version runs on your Mac, besides its Node.js server:
+
+- **agent-device**, its bundled Node.js runtime, for device control. On first iOS
+  use it builds its XCTest runner from the included source with your Xcode and
+  caches it in `~/.agent-device/apple-runner`; it keeps session state and logs in
+  a temporary directory.
+- **Native helpers** for logs and measurements: a physical iPhone log reader built
+  on libimobiledevice, an iOS FPS and foreground-app reader, and Android CPU and
+  FPS collectors that it copies to a connected Android device with `adb` and runs
+  there.
+- **Developer tools** already on your Mac: `xcrun simctl`, `devicectl`, `adb`, and
+  the Android emulator, and TraceSift when you analyze a profile.
+
+It sends plugin errors and aggregate measurements to Sentry, as described under
+[Privacy and support](#privacy-and-support), and nothing else to Callstack;
+profiles go only to the TraceSift service on your Mac.
 
 ### Cursor: manual installation
 
@@ -93,7 +120,7 @@ Stream iOS simulators, Android emulators, and connected iPhones, iPads, and Andr
 ![](/img/screenshot_side_by_side.png)
 
 ### Device control, inspection and annotations
-Select and boot simulators or emulators, interact with taps and drags, type on supported devices, and let your agent inspect accessibility elements and control your app through MCP tools. Select an element or screen region and leave instructions for your agent, with React Native component and source details when available.
+Select and boot simulators or emulators, interact with taps and drags, type on supported devices, and let your agent inspect accessibility elements and control your app through the bundled [agent-device](https://agent-device.dev/) runtime. Select an element or screen region and leave instructions for your agent, with React Native component and source details when available.
 
 ![](/img/screenshot_annotations.png)
 
@@ -196,7 +223,7 @@ product in `apps/`:
 | `packages/skills` | Agent skills for the shared tools |
 | `packages/native`, `packages/runtimes` | Native helpers and bundled Node runtimes |
 | `apps/codex-plugin` | The Codex plugin: manifest, updater, and update banner |
-| `apps/claude` | Claude: the Claude Desktop extension and Claude Code plugin manifests |
+| `apps/claude` | Claude: its server without the panel, skill, and the Claude Desktop extension and Claude Code plugin manifests |
 | `apps/cursor` | Cursor: the Cursor plugin manifest |
 | `apps/mac` | The Mac app: SwiftUI window and its page |
 

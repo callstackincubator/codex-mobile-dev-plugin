@@ -52,9 +52,8 @@ try {
   assert.equal(nodeVersion.error, undefined);
   assert.equal(nodeVersion.status, 0, nodeVersion.stderr);
   assert.equal(nodeVersion.stdout.trim(), process.version);
-  const inactiveSkill = join(plugin, "skills/agent-device/SKILL.md");
-  const skillAccess = access(inactiveSkill);
-  await assert.rejects(skillAccess, { code: "ENOENT" });
+  // The agent drives devices with agent-device's skill and the runtime's own guide.
+  for (const path of ["SKILL.md", "agents/openai.yaml", "references/workflow.md"]) await access(join(plugin, "skills/agent-device", path));
   await access(join(plugin, "dist/baguette/Baguette"));
   await access(join(plugin, "dist/baguette/Baguette_Baguette.bundle/Web"));
   const mirrorServicePath = join(plugin, "dist/ios-mirror-service.mjs");
@@ -112,7 +111,10 @@ try {
   await access(join(plugin, "dist/ios-fps/third-party-licenses.txt"));
   for (const abi of ["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]) await access(join(plugin, `dist/android-fps/${abi}/mobile-dev-fps`));
   for (const name of ["mobile_display_fps_session", "mobile_read_display_fps", "mobile_display_fps_close", "mobile_read_performance_frames"]) assert.ok(tools.tools.some(tool => tool.name === name));
-  for (const name of ["mobile_list_ios_devices", "mobile_list_android_devices", "mobile_boot_android_emulator", "mobile_android_stream_session", "mobile_android_screenshot", "mobile_ios_mirror_session", "mobile_ios_mirror_reset", "mobile_ios_mirror_close"]) assert.ok(tools.tools.some(tool => tool.name === name));
+  for (const name of ["mobile_list_ios_devices", "mobile_list_android_devices", "mobile_boot_android_emulator", "mobile_android_stream_session", "mobile_ios_mirror_session", "mobile_ios_mirror_reset", "mobile_ios_mirror_close"]) assert.ok(tools.tools.some(tool => tool.name === name));
+  // The agent controls apps with agent-device's commands, served from the package's catalog.
+  for (const name of ["device_open", "device_snapshot", "device_press", "device_screenshot"]) assert.ok(tools.tools.some(tool => tool.name === name), name);
+  await access(join(plugin, "dist/agent-device/tools.json"));
   const physicalMirror = tools.tools.find(tool => tool.name === "mobile_ios_mirror_session");
   assert.deepEqual(physicalMirror._meta.ui.visibility, ["app"]);
   await access(join(plugin, "dist/serve-emu/src/cli.mjs"));
@@ -223,6 +225,10 @@ try {
   const listed = await client.callTool({ name: "mobile_list_simulators", arguments: {} });
   assert.equal(listed.structuredContent?.baseUrl, baseUrl);
   console.log(`Copied package started its bundled Baguette and returned ${panel.structuredContent.devices.length} simulators.`);
+  // agent-device's runtime starts from the package's own copy on the first command.
+  const devices = await client.callTool({ name: "device_devices", arguments: { platform: "ios" } }, undefined, { timeout: 60000 });
+  assert.doesNotMatch(devices.content[0].text, /Agent Device could not/);
+  console.log("Copied package started its bundled agent-device runtime.");
   await client.close();
   const deadline = Date.now() + 5000;
   let stopped = false;

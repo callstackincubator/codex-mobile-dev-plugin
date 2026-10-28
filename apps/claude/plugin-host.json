@@ -7,5 +7,13 @@
     "file": "claude-desktop-config.json",
     "server": {},
     "target": "Claude Desktop Settings > Developer > Edit Config, then fully restart Claude"
-  }
+  },
+  "marketplace": {
+    "name": "mobile-dev-local",
+    "manifest": ".claude-plugin/marketplace.json"
+  },
+  "panel": false,
+  "build": "tooling/build.mjs",
+  "skills": ["skills/mobile-dev", "../../packages/skills/agent-device"],
+  "maxFileBytes": 5242880
 }

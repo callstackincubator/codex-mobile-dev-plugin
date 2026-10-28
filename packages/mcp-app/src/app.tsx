@@ -5,13 +5,12 @@ import { OpenAIExtensions } from "@openai/mcp-extensions/app";
 import { traceSiftProfileInputSchema } from "@mobile-dev/shared/tracesift.ts";
 import { ComparisonController } from "@mobile-dev/ui/comparison-controller.ts";
 import { ComparisonCard } from "@mobile-dev/ui/components/comparison-card.tsx";
-import { DevicesCard } from "@mobile-dev/ui/components/devices-card.tsx";
 import { RecordingCard } from "@mobile-dev/ui/components/recording-card.tsx";
 import { TraceSiftCards } from "@mobile-dev/ui/components/tracesift-cards.tsx";
-import { DevicesController } from "@mobile-dev/ui/devices-controller.ts";
 import { RecordingController } from "@mobile-dev/ui/recording-controller.ts";
 import { TraceSiftController } from "@mobile-dev/ui/tracesift-controller.ts";
 import { startCardApp } from "./card-app.tsx";
+import { startRetiredCard } from "./retired-card.tsx";
 import { startWorkspaceApp } from "./workspace-app.tsx";
 import type { WorkspaceOptions } from "./workspace-extension.ts";
 
@@ -21,17 +20,19 @@ import type { WorkspaceOptions } from "./workspace-extension.ts";
  */
 export function startMcpApp(options: { workspace?: WorkspaceOptions } = {}) {
   const view = document.documentElement.dataset.view;
+  // Servers with Mobile Dev's workspace say so on their cards, which can then open recordings there.
+  const workspace = document.documentElement.dataset.workspace !== undefined;
   if (view === "recording") startCardApp({
     name: "mobile-dev-recording", surface: "recording", fallback: "This recording could not render. Reopen it to try again.",
     create: app => {
       const extensions = new OpenAIExtensions(app);
-      return new RecordingController(app, () => extensions.modelContext);
+      return new RecordingController(app, { attachments: () => extensions.modelContext, workspace });
     },
     render: controller => <RecordingCard controller={controller} />,
   });
   else if (view === "comparison") startCardApp({
     name: "mobile-dev-comparison", surface: "comparison", fallback: "This comparison could not render. Reopen it to try again.",
-    create: app => new ComparisonController(app),
+    create: app => new ComparisonController(app, { workspace }),
     render: controller => <ComparisonCard controller={controller} />,
   });
   else if (view === "tracesift") startCardApp({
@@ -49,10 +50,7 @@ export function startMcpApp(options: { workspace?: WorkspaceOptions } = {}) {
     // The inline card investigates too, so it needs the same project the panel saved.
     connected: controller => void controller.loadProject(),
   });
-  else if (view === "devices") startCardApp({
-    name: "mobile-dev-devices", surface: "devices", fallback: "These devices could not render. Ask again to list them.",
-    create: app => new DevicesController(app),
-    render: controller => <DevicesCard controller={controller} />,
-  });
+  // Chats keep devices cards from releases before device choice moved to the host's own form.
+  else if (view === "devices") startRetiredCard("This device list came from an earlier version of Mobile Dev. Ask again to choose a device.");
   else startWorkspaceApp(options.workspace);
 }

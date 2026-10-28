@@ -45,7 +45,10 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
       const analysis = await client.analyze(path, profileType, context.signal,
         (outcome, duration) => recordTraceSiftOperation("ready", outcome, duration));
       recordTraceSiftOperation("analyze", "success", performance.now() - startedAt);
-      return { content: [{ type: "text", text: `TraceSift found ${analysis.cards.length} ${analysis.profileType === "cpu" ? "task" : "React commit"} cards. Show the inline cards and wait for the user to choose Investigate.` }], structuredContent: analysis };
+      // Name each card with its ID so the agent can fetch a card's handoff where the card cannot.
+      const kind = analysis.profileType === "cpu" ? "task" : "React commit";
+      const cards = analysis.cards.map((card, index) => `#${index + 1} (card ${card.id}, ${Math.round(card.durationMs)} ms): ${card.headline}`).join("; ");
+      return { content: [{ type: "text", text: `TraceSift found ${analysis.cards.length} ${kind} cards in analysis ${analysis.analysisId}: ${cards}. Show the inline cards and wait for the user to choose Investigate.` }], structuredContent: analysis };
     } catch (error) { return failure(error, "analyze", startedAt, context.signal); }
   });
 
@@ -224,17 +227,18 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
 
   registerAppTool(server, "mobile_get_tracesift_handoff", {
     title: "Get a TraceSift card handoff",
-    description: "Return the authoritative TraceSift investigation handoff for a selected card. May start the local TraceSift service. This app-only action is called by the inline card after the user presses Investigate.",
+    description: "Return the authoritative TraceSift investigation handoff for one card of an analysis, by the analysisId and card ID mobile_analyze_profile reports. The inline card calls it when the user presses Investigate; call it yourself only when the user asks to investigate a card the card cannot hand off. May start the local TraceSift service.",
     inputSchema: { analysisId: z.string().min(1).max(256), cardId: z.string().min(1).max(256) },
     outputSchema: traceSiftHandoffSchema.shape, annotations: localService,
-    _meta: { ui: { visibility: ["app"] } },
+    _meta: { ui: { visibility } },
   }, async ({ analysisId, cardId }, context) => {
     const startedAt = performance.now();
     try {
       const handoff = await client.handoff(analysisId, cardId, context.signal);
       recordTraceSiftOperation("handoff", "success", performance.now() - startedAt);
       const structuredContent = { apiVersion: 1 as const, handoff };
-      return { content: [{ type: "text", text: "TraceSift handoff ready." }], structuredContent };
+      // The handoff is the evidence an investigation starts from; the agent reads it as text.
+      return { content: [{ type: "text", text: handoff }], structuredContent };
     } catch (error) { return failure(error, "handoff", startedAt, context.signal); }
   });
 }

@@ -19,7 +19,7 @@ for (const reducedMotion of [false, true]) {
         import { startUiTelemetry, stopUiTelemetry } from "./packages/ui/src/telemetry.ts";
         export function mount(app, result, attachments) {
           startUiTelemetry(app);
-          const controller = new RecordingController(app, attachments);
+          const controller = new RecordingController(app, { attachments, workspace: true });
           controller.hostChanged();
           controller.accept(result);
           const root = createRoot(document.getElementById("root"));

@@ -1,14 +1,13 @@
 import { parseResourceInput } from "./resource-input.ts";
 import { openRequestSession } from "./request-session.ts";
 import type { ServerRequestContext } from "./request-session.ts";
-import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { ServeEmu, androidIdSchema } from "./serve-emu.ts";
-import { AndroidStreams, androidInput } from "./android-streams.ts";
+import { AndroidStreams } from "./android-streams.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
 import { errorMessage, inputSchema } from "@mobile-dev/shared/protocol.ts";
 import { captureServerError } from "./telemetry.ts";
@@ -44,23 +43,13 @@ export function registerAndroidTools(server: McpServer, android: ServeEmu, appUr
     const status = await android[action](deviceId);
     return result(status, `${action === "boot" ? "Booted" : "Shut down"} ${deviceId}.`);
   }));
-  server.registerTool("mobile_android_describe_ui", {
-    title: "Read Android UI", description: "Read the selected running Android device's accessibility tree. Bounds use full-resolution display pixels; screen gives the active display width and height.", inputSchema: deviceInput, annotations: read,
+  // The panel's annotations fall back to this tree; the agent reads screens with device_snapshot.
+  registerAppTool(server, "mobile_android_describe_ui", {
+    title: "Read Android UI", description: "Read the selected running Android device's accessibility tree. Bounds use full-resolution display pixels; screen gives the active display width and height.",
+    inputSchema: deviceInput, annotations: read, _meta: { ui: { visibility: ["app"] } },
   }, guarded(async ({ deviceId }: { deviceId: string }) => {
     const { tree, screen } = await android.accessibility(deviceId);
     return result({ deviceId, tree, screen }, JSON.stringify({ tree, screen }));
-  }));
-  server.registerTool("mobile_android_send_input", {
-    title: "Send Android input", description: "Send a tap, swipe, button, key, or text to the selected running Android device. Coordinates use screen pixels with matching width and height.",
-    inputSchema: { ...deviceInput, input: inputSchema }, annotations: write,
-  }, guarded(async ({ deviceId, input }: { deviceId: string; input: unknown }) => {
-    const message = androidInput(input);
-    if (message.type === "touch") throw new ExpectedOperationError("invalid_input", "Use tap or swipe for direct Android input. Touch events need an active panel stream.");
-    const backend = await android.start(deviceId);
-    const type = message.type as string;
-    const path = ["home", "back", "recents", "power"].includes(type) ? "/api/key" : `/api/${type}`;
-    const acknowledgement = await android.json(backend.url, path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(type === "home" || type === "back" || type === "recents" || type === "power" ? { key: type, record: false } : { ...message, record: false }) });
-    return result({ deviceId, acknowledgement }, "Android accepted the input. Read the screen to confirm the result.");
   }));
   async function captureScreenshot(deviceId: string) {
     const backend = await android.start(deviceId);
@@ -70,12 +59,6 @@ export function registerAndroidTools(server: McpServer, android: ServeEmu, appUr
     if (bytes.length > 16 * 1024 * 1024 || !bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) throw new Error("serve-emu returned an invalid or oversized PNG screenshot.");
     return bytes;
   }
-  server.registerTool("mobile_android_screenshot", {
-    title: "Capture Android screen", description: "Return a PNG screenshot of the selected running Android device.", inputSchema: deviceInput, annotations: read,
-  }, guarded(async ({ deviceId }: { deviceId: string }) => {
-    const bytes = await captureScreenshot(deviceId);
-    return { content: [{ type: "image", mimeType: "image/png", data: bytes.toString("base64") }], structuredContent: { deviceId } };
-  }));
   registerAppTool(server, "mobile_android_capture_screenshot", {
     title: "Android screenshot to chat and clipboard",
     description: "Capture the selected Android screen as a PNG and copy it to the clipboard. Return the image for the panel to attach to chat.",
@@ -118,5 +101,5 @@ export function registerAndroidTools(server: McpServer, android: ServeEmu, appUr
     title: "Close Android panel stream", description: "Close one panel stream and leave its Android device running.",
     inputSchema: { sessionId: sessionIdSchema }, annotations: write, _meta: { ui: { visibility: ["app"] } },
   }, guarded(async ({ sessionId }: { sessionId: string }) => { streams.closeSession(sessionId); return result({}, "Android stream closed."); }));
-  return () => { streams.close(); android.dispose(); };
+  return () => { streams.close(); };
 }

@@ -10,6 +10,7 @@ import { videoPacket } from "../../ui/src/android-video.ts";
 import { Baguette } from "../src/baguette.ts";
 import { createTestPlugin, fakeBaguette, fakeSimulatorInput, PNG } from "../../test-support/fixtures.ts";
 import { fakeInspectionSdk } from "../../test-support/android-inspection-fixtures.ts";
+import { createPanel } from "../src/panel-tools.ts";
 
 const ID = "emulator-5554";
 const SCREEN = { width: 1080, height: 2400 };
@@ -152,7 +153,7 @@ test("Android streams relay video, validate batches, and refuse a device switch"
 
 test("Android MCP flow lists without booting, captures, streams, and closes", async t => {
   const fake = await fakeAndroid(); const ios = await fakeBaguette();
-  const plugin = await createTestPlugin("<canvas></canvas>", { baguette: new Baguette(ios.url), simulatorInput: fakeSimulatorInput(), android: fake.backend, copyScreenshot: async bytes => { assert.deepEqual(bytes, PNG); } });
+  const plugin = await createTestPlugin("<canvas></canvas>", { panel: createPanel({ baguette: new Baguette(ios.url), simulatorInput: fakeSimulatorInput(), copyScreenshot: async bytes => { assert.deepEqual(bytes, PNG); } }), android: fake.backend });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "android-test", version: "1" });
   t.after(async () => { await client.close(); await plugin.close(); await fake.close(); await ios.close(); });
@@ -160,14 +161,9 @@ test("Android MCP flow lists without booting, captures, streams, and closes", as
   const listed = await client.callTool({ name: "mobile_list_android_devices", arguments: {} });
   assert.equal((listed.structuredContent?.devices as { udid: string }[])[0].udid, ID);
   assert.deepEqual(fake.backend.boots, []); assert.equal(fake.sockets.clients.size, 0);
-  const screenshot = await client.callTool({ name: "mobile_android_screenshot", arguments: { deviceId: ID } });
-  assert.deepEqual(screenshot.content[0], { type: "image", mimeType: "image/png", data: PNG.toString("base64") });
   const captured = await client.callTool({ name: "mobile_android_capture_screenshot", arguments: { deviceId: ID } });
-  assert.deepEqual(captured.content[0], screenshot.content[0]);
+  assert.deepEqual(captured.content[0], { type: "image", mimeType: "image/png", data: PNG.toString("base64") });
   assert.equal(captured.structuredContent?.copied, true);
-  const input = await client.callTool({ name: "mobile_android_send_input", arguments: { deviceId: ID, input: { type: "button", button: "back" } } });
-  assert.equal(input.isError, undefined);
-  assert.deepEqual(fake.inputs.at(-1), { path: "/api/key", body: { key: "back", record: false } });
   const session = await client.callTool({ name: "mobile_android_stream_session", arguments: { deviceId: ID } });
   assert.equal(session.isError, undefined);
   const id = session._meta?.sessionId;

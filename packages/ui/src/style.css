@@ -2,7 +2,7 @@
 html[data-theme="dark"] { color-scheme: dark; }
 html, body, #root { height: 100%; overflow: hidden; }
 body { font-size: 12px; }
-html:is([data-view="recording"], [data-view="comparison"], [data-view="tracesift"], [data-view="devices"]), html:is([data-view="recording"], [data-view="comparison"], [data-view="tracesift"], [data-view="devices"]) body, html:is([data-view="recording"], [data-view="comparison"], [data-view="tracesift"], [data-view="devices"]) #root { height: auto; overflow: visible; }
+html:is([data-view="recording"], [data-view="comparison"], [data-view="tracesift"]), html:is([data-view="recording"], [data-view="comparison"], [data-view="tracesift"]) body, html:is([data-view="recording"], [data-view="comparison"], [data-view="tracesift"]) #root { height: auto; overflow: visible; }
 html[data-view="recording"], html[data-view="recording"] body, html[data-view="recording"] #root { margin: 0; padding: 0; }
 .recording-card { container-type: inline-size; margin: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--background); color: var(--foreground); font-size: 13px; overflow: hidden; }
 .recording-header { display: flex; align-items: center; gap: 16px; padding: 18px 22px; border-bottom: 1px solid var(--border); }

@@ -3,7 +3,7 @@ import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
-import type { Baguette } from "./baguette.ts";
+import type { Simctl } from "./simctl.ts";
 import type { LogSessions } from "./log-sessions.ts";
 import { logOptionsSchema } from "@mobile-dev/shared/logs.ts";
 import type { LogOptions } from "@mobile-dev/shared/logs.ts";
@@ -30,7 +30,7 @@ function safe<T>(handler: (input: T) => Promise<CallToolResult>) {
   };
 }
 
-export function registerLogTools(server: McpServer, logs: LogSessions, baguette: Baguette, discoverIosDevices = listIosDevices) {
+export function registerLogTools(server: McpServer, logs: LogSessions, simulators: Pick<Simctl, "device">, discoverIosDevices = listIosDevices) {
   server.registerResource("log-batch", new ResourceTemplate("logs://mobile-dev/{sessionId}/batch?after={sequence}", { list: undefined }), {
     mimeType: "application/json", description: "Read a batch from an authorized Mobile Dev log session. Idle sessions expire after five minutes.",
   }, async (uri, variables) => {
@@ -59,7 +59,7 @@ export function registerLogTools(server: McpServer, logs: LogSessions, baguette:
   }, safe(async ({ options }: { options: LogOptions }) => {
     if (options.native?.platform === "ios") {
       if (options.native.kind === "physical") await physicalIosLogDevice(options.native.deviceId, discoverIosDevices);
-      else await baguette.device(options.native.deviceId, true);
+      else await simulators.device(options.native.deviceId, true);
     }
     if (options.native?.platform === "android" && !(await listAndroidLogDevices()).some(device => device.id === options.native?.deviceId)) {
       throw new ExpectedOperationError("device_unavailable", "The selected Android device is absent or unauthorized. Refresh log sources.");

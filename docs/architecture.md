@@ -2,7 +2,7 @@
 
 [Back to README](../README.md) · [Contributing](../CONTRIBUTING.md)
 
-The Agent Device MCP entry and skill are currently disabled; their implementation and bundled runtime are retained for later reactivation.
+The plugin servers for Codex, Claude and Cursor serve agent-device's commands as `device_*` tools, which the agent controls apps with.
 
 ## Hosts
 
@@ -15,11 +15,24 @@ whose page calls the server with an MCP client.
 
 A host adds to the shared pieces without changing them:
 
-- **Server:** each host's entry calls `runStdioServer` with its `ServerFeature`s.
-  Codex adds the self-updater, which installs through Codex's marketplace; the Mac
-  app adds its page resource; Claude and Cursor run the shared server unchanged.
+- **Server:** each host's entry calls `runStdioServer` with Mobile Dev's panel, where
+  the host shows it, and its `ServerFeature`s. The panel (`createPanel` in
+  `packages/core/src/panel-tools.ts`) owns Baguette, the panel and workspace pages and
+  the tools only they use, opening recordings in the workspace, the App tab's reads
+  and the native device form. Codex, Cursor's shared entry and the Mac app pass it.
+  Codex and Cursor add agent-device's commands, and Codex the self-updater, which
+  installs through Codex's marketplace; the Mac app, which has no agent, adds its page
+  resource. Claude shows simulators itself, so its entry (`apps/claude/server`) passes
+  no panel and adds agent-device's commands; its chat cards stay. Every host lists simulators for logs, CPU and device choices with
+  simctl, without starting Baguette.
+- **Runtime:** a host's `plugin-host.json` can leave out the panel's parts of `dist/`
+  (`"panel": false`, see `PANEL_PARTS` in `tooling/host-runtime.mjs`) and name a
+  server build of its own. Claude ships neither Baguette, serve-emu nor the iOS
+  mirror, and its server loads after telemetry as a separate module, so esbuild
+  splits it into chunks beside `server.mjs`, keeping every file under the Claude
+  plugin directory's 5 MiB limit.
 - **Panel:** a host's page entry calls `startMcpApp` with its chrome. Codex adds the
-  update banner; Claude Desktop uses the shared entry.
+  update banner; Claude uses the shared entry, for its cards.
 - **Views:** shared views depend only on `HostBridge`, the subset of `App` they use,
   plus optional host context attachments. `DeviceWorkspace` keeps the iOS and Android
   panels, their selection and layout identical in every host.
@@ -50,13 +63,42 @@ and preserves its chosen recording target across foreground changes.
 
 Each MCP process owns one bundled Baguette child process. It selects a free loopback port, launches `dist/baguette/Baguette serve --host 127.0.0.1 --port <port> --no-plugins`, and shares that child across its tool calls and panel sessions. It does not use a separate Baguette server on port 8421. An opening failure returns an error the panel can show.
 
-The retained, currently inactive Agent Device entry point is `dist/agent-device-server.mjs`, which launches the official bundled `agent-device mcp` with Node through an SDK adapter. The adapter publishes all 55 operations, preserves their typed command arguments and output contracts, and validates inputs before forwarding them. State paths, remote daemon credentials, runner configuration and output-format settings belong to the plugin and are absent from tool inputs. Batch steps use the same compact contracts. Device selectors remain on setup, discovery, installation and script tools; interactions require a named session and reuse the upstream runtime's device binding. There is no global platform override. File operations retain `cwd` where it is relevant.
+The plugin servers serve agent-device's commands as `device_<command>` tools
+(`packages/core/src/agent-device-tools.ts`), registered from
+`packages/runtimes/agent-device/tools.json`, which `npm run catalog:agent-device` writes
+from the pinned runtime and a unit test checks against it. The catalog keeps the
+runtime's typed command arguments and leaves out the commands Mobile Dev's own tools
+cover (`logs`, `perf`) and those for remote daemons, TVs and browsers. State paths,
+remote daemon credentials, runner configuration and output-format settings belong to
+the plugin and are absent from tool inputs. Batch steps use the same compact contracts.
+Device selectors remain on setup, discovery, installation and script tools;
+interactions require a named session and reuse the upstream runtime's device binding.
+There is no global platform override. File operations retain `cwd` where it is relevant.
+Each command carries the annotations of Mobile Dev's own matching tools, since
+agent-device declares none: hosts run reads, device input and app control without
+asking, and ask before commands that install apps, run scripts or app-defined events,
+write files where the agent says, read or replace the clipboard, or reach development
+servers. `screenshot`, `open` and `close` leave out their file outputs so they can run
+without asking. `catalog:agent-device` fails on a new upstream command until it is
+classified in `commandAnnotations`.
+They replace the panel's former model tools for screenshots, accessibility reads and
+input; the panel keeps `mobile_describe_ui` and `mobile_android_describe_ui` as
+app-only tools for its annotations.
 
-The wrapper uses an explicit empty package config and a private temporary state directory. Default platform and form selectors would bypass the native session's device binding, so those are set only through device setup commands. It clears inherited agent-device settings so a global or cloud daemon cannot take over this connection. Commands start its local daemon as needed. On MCP shutdown, the wrapper runs the bundled `daemon stop --state-dir <own-directory> --clean` command, which checks the daemon's PID identity and releases its runner leases. It keeps logs and artifacts in that state directory for later reads. Call agent-device `session` with `action: "state-dir"` to find it.
+The first command starts the bundled `agent-device mcp` with Node
+(`AgentDeviceRuntime`), with an explicit empty package config and a private temporary
+state directory. Default platform and form selectors would bypass the native session's
+device binding, so those are set only through device setup commands. It clears
+inherited agent-device settings so a global or cloud daemon cannot take over this
+connection. An unexpected exit restarts it on the next command. On MCP shutdown, the
+server runs the bundled `daemon stop --state-dir <own-directory> --clean` command, which
+checks the daemon's PID identity and releases its runner leases. It keeps logs and
+artifacts in that state directory for later reads. Call `device_session` with
+`action: "state-dir"` to find it.
 
-`npm run check:mcp-budget` reads the packaged servers' catalogs, estimates their model-visible specifications, and checks them against [Codex's tool limits](https://github.com/openai/codex/blob/main/codex-rs/core/src/mcp_tool_exposure.rs). Codex compacts any MCP tool input schema over 5,000 bytes, dropping descriptions, so the check fails when one exceeds it. Codex's 8,000-byte per-tool and 64,000-byte combined limits apply only to Agent Plugins, whose manifest is `plugin.json` at the plugin root; tools past them are hidden from the model. This plugin uses `.codex-plugin/plugin.json`, the legacy format, so those limits do not apply. Moving to the Agent Plugin format would hide part of the catalog, which is about 64 KB. On models that support tool search, Codex defers MCP tools from every plugin: they leave the initial tool list but stay discoverable and callable.
+`npm run check:mcp-budget` reads the packaged servers' catalogs, estimates their model-visible specifications, and checks them against [Codex's tool limits](https://github.com/openai/codex/blob/main/codex-rs/core/src/mcp_tool_exposure.rs). Codex compacts any MCP tool input schema over 5,000 bytes, dropping descriptions, so the check fails when one exceeds it. The host regression tests make the same measurement of Codex's server on every pull request. Codex's 8,000-byte per-tool and 64,000-byte combined limits apply only to Agent Plugins, whose manifest is `plugin.json` at the plugin root; tools past them are hidden from the model. This plugin uses `.codex-plugin/plugin.json`, the legacy format, so those limits do not apply. Moving to the Agent Plugin format would hide part of the catalog, which is about 160 KB with agent-device's commands. On models that support tool search, Codex defers MCP tools from every plugin: they leave the initial tool list but stay discoverable and callable.
 
-Use the panel's UDID and a named agent-device session for agent work. Refs belong to the latest snapshot or settled diff in that session. `press` and `fill` take a target such as `{ "kind": "ref", "ref": "@e12" }` or `{ "kind": "selector", "selector": "label=\"Search\"" }`. Use actual refs from the current result. Closing a session can close its app; leave `shutdown` unset to keep the simulator running. Another live agent-device daemon can own a runner lease. End that owner's work or choose another simulator instead of releasing its live claim.
+Use the device's UDID or serial and a named agent-device session for agent work. Refs belong to the latest snapshot or settled diff in that session. `press` and `fill` take a target such as `{ "kind": "ref", "ref": "@e12" }` or `{ "kind": "selector", "selector": "label=\"Search\"" }`. Use actual refs from the current result. Closing a session can close its app; leave `shutdown` unset to keep the simulator running. Another live agent-device daemon can own a runner lease. End that owner's work or choose another simulator instead of releasing its live claim.
 
 The app gets a random stream session through an app-only MCP tool. The MCP server opens a WebSocket to its bundled Baguette, keeps the latest JPEG, and returns it through `resources/read`. The iOS viewer requests 60 FPS, overlaps reads with JPEG decoding, and paints only the newest decoded frame. Frame and decode queues stay bounded; older pending frames are discarded. JPEG bytes are base64-encoded only when a reader requests the latest frame. The app sends input through an app-only tool that checks each message. Frames and input stay inside the host's MCP bridge. The UI sends telemetry to Sentry's configured ingestion origin.
 
@@ -94,29 +136,25 @@ The MCP server returns a flat element list with `nodeId`, `parentId` and `depth`
 
 Annotations send text only. Each note includes the user request, element label, test ID when present, React component and owner names when available, and nearby text. React debug creation stacks resolve through one bounded request to the matching Metro server's `/symbolicate` endpoint. Source maps supply an app file, line, column and function so the agent can open the element's JSX directly. This is the element creation site, not necessarily the component definition. Library frames and unresolved bundle locations never become edit locations. Missing source maps leave selection working and mark the source location unavailable. Coordinates remain a fallback. The paused image stays local for editing; use Screenshot separately to attach an image.
 
-## Devices card and device requests
+## Device requests
 
-`mobile_show_devices` is the one user-facing device tool. Without `selectionMode`
-it lists every discovered simulator, emulator and physical device in an inline
-card, grouped as running, physical, then stopped by runtime. The user can boot or
-stop simulators and emulators from the card and send selected devices to chat. A
-backend that cannot list devices (no Android SDK, older Xcode) leaves the others
-listed with a note. The tool's text result is a short summary so the model does
-not repeat the list; hosts without app cards receive the list as text instead.
-
-When a mobile task has ambiguous targets, the agent sets `selectionMode` with a
-task-specific `message`. Hosts that advertise the `openai/elicitation` form
-extension (Codex) get the native inline request form described below, and the card
-then shows only the outcome. Hosts that render MCP app cards get the same card with
-only selectable candidates and a Use button that sends the choice to chat; this
-call returns immediately and tells the model to wait for that reply. Hosts with
-neither return an error so the agent asks in chat. Candidate `devices` are
-optional: omitted, the tool discovers them itself, and the form offers at most 20,
-running devices first. The agent may instead supply discovered IDs, platform and
-kind, plus optional operation details. The form shows canonical device names, platform/type,
-runtime, optional verified app labels, and platform phone illustrations. Use
-`selectionMode: "multiple"` to let the user choose several devices. No device is
-preselected.
+Showing devices belongs to the panel's device menu, or to the host's own simulator
+views in Claude Code. When a mobile task has ambiguous targets in a host with the
+panel, the agent asks with `mobile_choose_devices` and a task-specific `message`. The
+tool is listed only for hosts that render a native request form: OpenAI's
+`openai/elicitation` form extension (Codex), preferred for its thumbnails, or MCP's
+own form elicitation. Other hosts never see it, and the agent asks in chat. Claude's
+server has no panel and no device form: Claude asks with its own question card,
+which also shows in the desktop app's Code tab, where MCP forms are declined unseen.
+Candidate
+`devices` are optional: omitted, the tool discovers them itself, and the form offers
+at most 20 selectable devices, running ones first; a backend that cannot list
+devices (no Android SDK, older Xcode) leaves the others offered. The agent may
+instead supply discovered IDs, platform and kind, plus optional operation details.
+The form shows canonical device names, platform/type, runtime and optional verified
+app labels; OpenAI's adds platform phone illustrations, and MCP's titled options
+carry the details in each title. Use `selectionMode: "multiple"` to let the user
+choose several devices. No device is preselected.
 
 The tool waits for an answer and returns `action` and selected `devices`, checking
 their availability both before opening the form and after acceptance. Cancellation
@@ -125,10 +163,10 @@ apps, open streams or start recordings. Stopped simulators/AVDs can be offered f
 build tasks; profiling candidates should already be running. Physical iOS uses
 the hardware UDID and requires a connected paired device.
 
-The form uses the OpenAI Extensions SDK's native form elicitation and requires
-`extensions["openai/elicitation"].form`. Codex owns layout and button labels, so the native form
-does not reproduce custom footer buttons from a design mockup. Thumbnails are
-illustrations, not captured app screens.
+The host owns the form's layout and button labels, so it does not reproduce custom
+footer buttons from a design mockup. Thumbnails are illustrations, not captured app
+screens. An inline devices card was removed before it shipped in a release: listing
+belongs to the panel or the host's simulator views, and choices to forms.
 
 ## Embedded TraceSift explorer
 

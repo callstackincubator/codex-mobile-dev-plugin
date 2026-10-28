@@ -1,6 +1,7 @@
 import { copyFile, cp, mkdir, rm, writeFile } from "node:fs/promises";
 import { build } from "esbuild";
 import { buildCodexHost } from "../../apps/codex-plugin/tooling/build.mjs";
+import { buildHost as buildClaudeHost } from "../../apps/claude/tooling/build.mjs";
 import { buildServerBundles } from "../server-bundle.mjs";
 import { buildUIPage } from "../ui-page.mjs";
 
@@ -21,6 +22,9 @@ async function runtime(target) {
   for (const helper of ["android-cpu", "android-fps", "ios-fps", "ios-logs", "ios-mirror"]) {
     await cp(`packages/native/vendor/${helper}`, `${directory}/${helper}`, { recursive: true });
   }
+  // The agent-device commands Codex's, Cursor's and Claude's servers register.
+  await mkdir(`${directory}/agent-device`, { recursive: true });
+  await copyFile("packages/runtimes/agent-device/tools.json", `${directory}/agent-device/tools.json`);
   return directory;
 }
 
@@ -31,10 +35,11 @@ const sharedPage = output => buildUIPage({
 });
 
 const targets = {
-  // Claude Desktop and Claude Code load the host-neutral server and panel.
+  // Claude Desktop and Claude Code load Claude's server, without the panel, and the
+  // shared page for its cards.
   async claude(directory) {
     await sharedPage(`${directory}/app.html`);
-    await buildServerBundles({ entryPoints: { server: "packages/core/src/index.ts" }, outdir: directory, sentryDirectory: ".sentry/host-tests/claude" });
+    await buildClaudeHost(directory, { sentryDirectory: ".sentry/host-tests/claude" });
   },
   codex: directory => buildCodexHost(environment, directory),
   async mac(directory) {

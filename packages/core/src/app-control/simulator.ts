@@ -1,7 +1,7 @@
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
-import { foregroundSimulatorPid } from "../device-apps/foreground.ts";
+import type { SimulatorForeground } from "../device-apps/foreground.ts";
 import { runningSimulatorApps } from "../device-apps/apps.ts";
 import { ExpectedOperationError, expectedOutcome } from "@mobile-dev/shared/error-reporting.ts";
 import { bundleIdSchema, platformPermissions } from "@mobile-dev/shared/app-control.ts";
@@ -49,11 +49,13 @@ export class SimulatorDriver implements AppDriver {
   private readonly deviceId: string;
   private readonly commands: Commands;
   private readonly cache: AppDetailsCache;
+  private readonly foreground: SimulatorForeground;
 
-  constructor(deviceId: string, commands: Commands, cache: AppDetailsCache) {
+  constructor(deviceId: string, commands: Commands, cache: AppDetailsCache, foreground: SimulatorForeground) {
     this.deviceId = deviceId;
     this.commands = commands;
     this.cache = cache;
+    this.foreground = foreground;
   }
 
   private async simctl(action: string, args: string[], { timeout = 30000, input, known = [], tolerate }: SimctlOptions = {}) {
@@ -78,7 +80,7 @@ export class SimulatorDriver implements AppDriver {
   async installed() { return (await this.listing()).map(({ bundleId, name }) => ({ bundleId, name })); }
   // One launchctl listing names both the running apps and the foreground app's process.
   async activity() {
-    const [running, pid] = await Promise.all([runningSimulatorApps(this.deviceId).catch(() => []), foregroundSimulatorPid(this.deviceId).catch(() => null)]);
+    const [running, pid] = await Promise.all([runningSimulatorApps(this.deviceId).catch(() => []), this.foreground(this.deviceId).catch(() => null)]);
     return { foreground: running.find(app => app.pid === pid)?.bundleId ?? null, running };
   }
 
