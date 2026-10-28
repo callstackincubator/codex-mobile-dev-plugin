@@ -10,6 +10,7 @@ import { videoPacket } from "../../ui/src/android-video.ts";
 import { Baguette } from "../src/baguette.ts";
 import { createTestPlugin, fakeBaguette, fakeSimulatorInput, PNG } from "../../test-support/fixtures.ts";
 import { fakeInspectionSdk } from "../../test-support/android-inspection-fixtures.ts";
+import { createPanel } from "../src/panel-tools.ts";
 
 const ID = "emulator-5554";
 const SCREEN = { width: 1080, height: 2400 };
@@ -152,7 +153,7 @@ test("Android streams relay video, validate batches, and refuse a device switch"
 
 test("Android MCP flow lists without booting, captures, streams, and closes", async t => {
   const fake = await fakeAndroid(); const ios = await fakeBaguette();
-  const plugin = await createTestPlugin("<canvas></canvas>", { baguette: new Baguette(ios.url), simulatorInput: fakeSimulatorInput(), android: fake.backend, copyScreenshot: async bytes => { assert.deepEqual(bytes, PNG); } });
+  const plugin = await createTestPlugin("<canvas></canvas>", { panel: createPanel({ baguette: new Baguette(ios.url), simulatorInput: fakeSimulatorInput(), copyScreenshot: async bytes => { assert.deepEqual(bytes, PNG); } }), android: fake.backend });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "android-test", version: "1" });
   t.after(async () => { await client.close(); await plugin.close(); await fake.close(); await ios.close(); });

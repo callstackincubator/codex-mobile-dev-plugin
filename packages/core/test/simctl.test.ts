@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseSimulatorList, SimctlSimulators, simulatorRuntimeName } from "../src/simulator-directory.ts";
+import { parseSimulatorList, Simctl, simulatorRuntimeName } from "../src/simctl.ts";
 import { SimulatorUnavailableError } from "../src/simulator-unavailable.ts";
 import { OTHER_UDID, UDID } from "../../test-support/fixtures.ts";
 
@@ -21,9 +21,9 @@ test("simctl's listing reads as Baguette's: available simulators, booted first, 
   ]);
 });
 
-test("the simctl directory finds a simulator by UDID and requires a booted one where asked", async () => {
+test("simctl finds a simulator by UDID and requires a booted one where asked", async () => {
   const calls: string[][] = [];
-  const simulators = new SimctlSimulators(async args => { calls.push(args); return listing; });
+  const simulators = new Simctl(async args => { calls.push(args); return listing; });
   assert.equal((await simulators.device(UDID, true)).name, "iPhone 18 Pro");
   assert.deepEqual(calls[0], ["simctl", "list", "devices", "--json"]);
   await assert.rejects(simulators.device(OTHER_UDID, true), (error: Error) => error instanceof SimulatorUnavailableError && /Boot it first/.test(error.message));
@@ -32,8 +32,8 @@ test("the simctl directory finds a simulator by UDID and requires a booted one w
 });
 
 test("a missing Xcode reports why simulators cannot be listed", async () => {
-  const simulators = new SimctlSimulators(async () => { throw new Error("xcrun: error: unable to find utility \"simctl\""); });
-  const status = await simulators.start();
+  const simulators = new Simctl(async () => { throw new Error("xcrun: error: unable to find utility \"simctl\""); });
+  const status = await simulators.list();
   assert.equal(status.connected, false);
   assert.match(status.error ?? "", /Install Xcode/);
   await assert.rejects(simulators.device(UDID), /Install Xcode/);

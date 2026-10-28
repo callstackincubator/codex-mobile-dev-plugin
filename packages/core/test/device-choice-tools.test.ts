@@ -38,7 +38,7 @@ test("the native request waits for a single answer and returns verified device I
   let androidReads = 0;
   const readAndroid = discovery.android;
   discovery.android = async () => { androidReads++; return readAndroid(); };
-  registerDeviceChoiceTools(server, extensions, discovery, "openai", { unseenAnswerMs: 0 });
+  registerDeviceChoiceTools(server, extensions, discovery, "openai");
   const client = new Client({ name: "native-host", version: "1" }, { capabilities: { extensions: { "openai/elicitation": { form: {} } } } });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   t.after(async () => { await client.close(); await server.close(); });
@@ -91,7 +91,7 @@ for (const action of ["accept", "cancel", "decline", "invalid", "duplicate", "em
     const server = new McpServer({ name: "device-choices", version: "1" });
     const extensions = new OpenAIExtensions(server);
     const discovery = sources();
-    registerDeviceChoiceTools(server, extensions, discovery, "openai", { unseenAnswerMs: 0 });
+    registerDeviceChoiceTools(server, extensions, discovery, "openai");
     const client = new Client({ name: "native-host", version: "1" }, { capabilities: { extensions: { "openai/elicitation": { form: {} } } } });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     t.after(async () => { await client.close(); await server.close(); });
@@ -171,9 +171,9 @@ test("hosts are offered the form they render, preferring OpenAI's", () => {
   assert.equal(deviceChoiceFormSupport(undefined), undefined);
 });
 
-async function mcpFormClient(t: test.TestContext, discovery: DeviceChoiceSources, answer: (request: z.infer<typeof ElicitRequestSchema>) => unknown, unseenAnswerMs = 0) {
+async function mcpFormClient(t: test.TestContext, discovery: DeviceChoiceSources, answer: (request: z.infer<typeof ElicitRequestSchema>) => unknown) {
   const server = new McpServer({ name: "device-choices", version: "1" });
-  registerDeviceChoiceTools(server, new OpenAIExtensions(server), discovery, "mcp", { unseenAnswerMs });
+  registerDeviceChoiceTools(server, new OpenAIExtensions(server), discovery, "mcp");
   // An empty elicitation capability means forms.
   const client = new Client({ name: "mcp-form-host", version: "1" }, { capabilities: { elicitation: {} } });
   client.setRequestHandler(ElicitRequestSchema, async request => answer(request) as never);
@@ -238,23 +238,4 @@ test("a choice requires a message, and fails with each backend's note when none 
   const choice = await client.callTool({ name: "mobile_choose_devices", arguments: { message: "Which device?" } });
   assert.equal(choice.isError, true);
   assert.match(text(choice), /Backend unavailable/);
-});
-
-test("a host that declines the form unseen makes the agent ask in chat for the rest of the session", async t => {
-  let asked = 0;
-  const client = await mcpFormClient(t, sources(), () => { asked++; return { action: "decline" }; }, 500);
-  const result = await client.callTool({ name: "mobile_choose_devices", arguments: { ...input, selectionMode: "single" } });
-  assert.equal(result.isError, undefined, "Nothing failed; the question moves to chat.");
-  assert.deepEqual(result.structuredContent, { action: "unavailable", devices: [] });
-  assert.match(text(result), /cannot show the device form.*Ask the user which device to use, with your own question tool if you have one or in chat/);
-  assert.equal(asked, 1);
-  const { tools } = await client.listTools();
-  assert.equal(tools.some(tool => tool.name === "mobile_choose_devices"), false);
-});
-
-test("a person declining the form takes longer and stops the task", async t => {
-  const client = await mcpFormClient(t, sources(), async () => { await new Promise(resolve => setTimeout(resolve, 60)); return { action: "decline" }; }, 50);
-  const result = await client.callTool({ name: "mobile_choose_devices", arguments: { ...input, selectionMode: "single" } });
-  assert.deepEqual(result.structuredContent, { action: "decline", devices: [] });
-  assert.ok((await client.listTools()).tools.some(tool => tool.name === "mobile_choose_devices"));
 });

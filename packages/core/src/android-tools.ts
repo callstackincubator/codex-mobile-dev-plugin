@@ -118,5 +118,5 @@ export function registerAndroidTools(server: McpServer, android: ServeEmu, appUr
     title: "Close Android panel stream", description: "Close one panel stream and leave its Android device running.",
     inputSchema: { sessionId: sessionIdSchema }, annotations: write, _meta: { ui: { visibility: ["app"] } },
   }, guarded(async ({ sessionId }: { sessionId: string }) => { streams.closeSession(sessionId); return result({}, "Android stream closed."); }));
-  return () => { streams.close(); android.dispose(); };
+  return () => { streams.close(); };
 }

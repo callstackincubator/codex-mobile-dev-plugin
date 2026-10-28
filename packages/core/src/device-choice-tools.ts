@@ -20,9 +20,6 @@ export type DeviceChoiceSources = {
 export type DeviceChoiceForm = "openai" | "mcp";
 
 const FORM_OPTION_LIMIT = 20;
-// Nobody can read a device list and close it this fast. Hosts that advertise forms but
-// cannot show them, such as the Claude desktop app's Code tab, decline unseen at once.
-const UNSEEN_ANSWER_MS = 500;
 
 function deviceDetails(device: DeviceChoice) {
   const platform = device.platform === "ios" ? "iOS" : "Android";
@@ -34,37 +31,26 @@ function deviceDetails(device: DeviceChoice) {
   return details.join(" · ");
 }
 
-/** OpenAI's form shows each device with its details and a phone thumbnail. */
-export function deviceChoiceForm(input: DeviceChoiceInput, devices: DeviceChoice[]): OpenAIForm {
-  const options: OpenAIFormOption[] = devices.map((device, index) => ({
-    const: `device-${index + 1}`, title: device.name, description: deviceDetails(device), "x-openai-thumbnail": deviceChoiceThumbnails[device.platform],
-  }));
-  if (input.selectionMode === "multiple") return {
-    type: "object", required: ["devices"], properties: {
-      devices: { type: "array", description: input.context, minItems: 1, maxItems: devices.length, items: { anyOf: options } },
-    },
-  };
-  return {
-    type: "object", required: ["device"], properties: {
-      device: { type: "string", description: input.context, oneOf: options },
-    },
-  };
+/** A form offering the devices as `options`: one device, or several when the input asks for them. */
+function choiceForm<Option extends { const: string; title: string }>(input: DeviceChoiceInput, options: Option[], labels?: { device: string; devices: string }) {
+  const description = input.context === undefined ? {} : { description: input.context };
+  const [key, field] = input.selectionMode === "multiple"
+    ? ["devices", { type: "array" as const, ...labels && { title: labels.devices }, ...description, minItems: 1, maxItems: options.length, items: { anyOf: options } }] as const
+    : ["device", { type: "string" as const, ...labels && { title: labels.device }, ...description, oneOf: options }] as const;
+  return { type: "object" as const, required: [key], properties: { [key]: field } };
 }
 
-/** MCP's titled enums carry only a title, so it includes the device's details. */
+/** OpenAI's form shows each device with its details and a phone thumbnail. */
+export function deviceChoiceForm(input: DeviceChoiceInput, devices: DeviceChoice[]): OpenAIForm {
+  return choiceForm(input, devices.map((device, index): OpenAIFormOption => ({
+    const: `device-${index + 1}`, title: device.name, description: deviceDetails(device), "x-openai-thumbnail": deviceChoiceThumbnails[device.platform],
+  })));
+}
+
+/** MCP's titled options carry only a title, so it includes the device's details. */
 export function mcpDeviceChoiceForm(input: DeviceChoiceInput, devices: DeviceChoice[]): ElicitRequestFormParams["requestedSchema"] {
-  const options = devices.map((device, index) => ({ const: `device-${index + 1}`, title: `${device.name} (${deviceDetails(device)})` }));
-  const description = input.context;
-  if (input.selectionMode === "multiple") return {
-    type: "object", required: ["devices"], properties: {
-      devices: { type: "array", title: "Devices", ...(description ? { description } : {}), minItems: 1, maxItems: devices.length, items: { anyOf: options } },
-    },
-  };
-  return {
-    type: "object", required: ["device"], properties: {
-      device: { type: "string", title: "Device", ...(description ? { description } : {}), oneOf: options },
-    },
-  };
+  return choiceForm(input, devices.map((device, index) => ({ const: `device-${index + 1}`, title: `${device.name} (${deviceDetails(device)})` })),
+    { device: "Device", devices: "Devices" });
 }
 
 async function statusDevices(read: () => Promise<Status>) {
@@ -122,19 +108,18 @@ export function deviceChoiceFormSupport(capabilities: ClientCapabilities | undef
 }
 
 /**
- * Asks the user to choose task devices in the host's native form. Hosts without one do
- * not list the tool; the agent asks in chat. Showing devices belongs to the panel, or
- * to the host's own simulator views.
+ * Asks the user to choose task devices in the host's native form. The server lists it
+ * only for hosts that render one; elsewhere the agent asks in chat. Showing devices
+ * belongs to the panel's device menu.
  */
-export function registerDeviceChoiceTools(server: McpServer, extensions: Pick<OpenAIExtensions, "elicitInput">, sources: DeviceChoiceSources, form: DeviceChoiceForm,
-  { unseenAnswerMs = UNSEEN_ANSWER_MS } = {}) {
-  const tool = server.registerTool("mobile_choose_devices", {
+export function registerDeviceChoiceTools(server: McpServer, extensions: Pick<OpenAIExtensions, "elicitInput">, sources: DeviceChoiceSources, form: DeviceChoiceForm) {
+  server.registerTool("mobile_choose_devices", {
     title: "Choose devices",
     description: "Ask the user to choose the devices for a task in a native form when the target is ambiguous, for example which device to run or profile on. Set selectionMode single or multiple and a message explaining the task; context supplies operation details such as duration. Omit devices to offer every selectable device, running ones first, or pass candidates with platform, kind and deviceId from a device list. Add appName only when you have verified the app is on that device. The call waits for the user: on action accept use only the returned devices; cancel or decline means do not perform the pending task. It never boots devices, launches apps or starts recording.",
     inputSchema: deviceChoiceInputSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
   }, async (input: DeviceChoiceInput, extra): Promise<CallToolResult> => {
-    const attributes = { selection_mode: input.selectionMode, mode: "form", form };
+    const attributes = { selection_mode: input.selectionMode, form };
     let stage: "prepare" | "request" | "validate" = "prepare";
     try {
       const startedAt = performance.now();
@@ -156,20 +141,9 @@ export function registerDeviceChoiceTools(server: McpServer, extensions: Pick<Op
       const references: DeviceChoiceReference[] = devices.map(({ platform, kind, deviceId, appName }) => ({ platform, kind, deviceId, ...(appName ? { appName } : {}) }) as DeviceChoiceReference);
       stage = "request";
       const options = { signal: extra.signal, timeout: 600_000 };
-      const askedAt = performance.now();
       const answer: ElicitResult = form === "openai"
         ? await extensions.elicitInput({ mode: "form", message: input.message, requestedSchema: deviceChoiceForm(input, devices) }, options)
         : await server.server.elicitInput({ message: input.message, requestedSchema: mcpDeviceChoiceForm(input, devices) }, options);
-      if (answer.action !== "accept" && performance.now() - askedAt < unseenAnswerMs) {
-        // The host declined without showing the form; the rest of this session asks in chat.
-        // Not an error: nothing failed, the question moves to chat.
-        Sentry.metrics.count("device_picker.result", 1, { attributes: { ...attributes, outcome: "unseen" } });
-        tool.disable();
-        return {
-          content: [{ type: "text", text: "This app cannot show the device form, so the user has not chosen yet. Ask the user which device to use, with your own question tool if you have one or in chat, and do not start the pending task until they answer." }],
-          structuredContent: { action: "unavailable", devices: [] },
-        };
-      }
       if (answer.action !== "accept") {
         Sentry.metrics.count("device_picker.result", 1, { attributes: { ...attributes, outcome: answer.action } });
         return { content: [{ type: "text", text: "Device selection cancelled. Do not start the pending task." }], structuredContent: { action: answer.action, devices: [] } };

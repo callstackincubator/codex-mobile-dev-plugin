@@ -3,7 +3,7 @@ import { runningDeviceApps } from "./apps.ts";
 import { foregroundPhysicalPid, foregroundSimulatorPid, foregroundAndroidApp } from "./foreground.ts";
 import { withDeviceAppsDiagnostic } from "@mobile-dev/shared/device-apps-diagnostics.ts";
 
-const defaultSources = {
+export const deviceAppSources = {
   apps: runningDeviceApps,
   physical: foregroundPhysicalPid,
   simulator: foregroundSimulatorPid,
@@ -12,7 +12,7 @@ const defaultSources = {
 
 export async function readDeviceApps(deviceId: string, signal?: AbortSignal,
   platform: "ios" | "android" = "ios", kind?: "simulator" | "physical",
-  sources = defaultSources): Promise<DeviceApps> {
+  sources = deviceAppSources): Promise<DeviceApps> {
   const running = withDeviceAppsDiagnostic(() => sources.apps(deviceId, signal, platform, kind), "running_apps", platform, kind);
   if (platform === "android") {
     const detection = withDeviceAppsDiagnostic(() => sources.android(deviceId, signal), "foreground", platform, kind);

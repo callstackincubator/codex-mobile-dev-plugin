@@ -10,11 +10,10 @@ import { LogBuffer } from "../src/log-buffer.ts";
 import { LogSessions } from "../src/log-sessions.ts";
 import { metroTargets, startMetroLogs } from "../src/metro-logs.ts";
 import { runLogProcess } from "../src/native-logs.ts";
-import { Baguette } from "../src/baguette.ts";
 import { stackLogs, formatLogContext, logOptionsSchema } from "../../shared/src/logs.ts";
 import type { LogEntry, LogRecord } from "../../shared/src/logs.ts";
 import type { LogSink } from "../src/native-logs.ts";
-import { createTestPlugin, fakeBaguette, fakeSimulatorInput, UDID, OTHER_UDID } from "../../test-support/fixtures.ts";
+import { createTestPlugin, fakeSimctl, UDID, OTHER_UDID } from "../../test-support/fixtures.ts";
 
 const record: LogRecord = { timestamp: "2026-09-30T12:00:00.000Z", level: "warn", source: "js", origin: "ios", process: "Example", message: "Request failed" };
 
@@ -131,11 +130,11 @@ test("Metro connects only the chosen target, enables Runtime, and cleans up its 
 });
 
 test("MCP log sessions validate devices and expose batches without browser network access", async t => {
-  const fake = await fakeBaguette(); let sink: LogSink | undefined; let stopped = false;
+  let sink: LogSink | undefined; let stopped = false;
   const logs = new LogSessions({ native: (_target, next) => { sink = next; return async () => { stopped = true; }; }, metro: () => async () => {} });
-  const plugin = await createTestPlugin("<head></head><title>Logs</title>", { baguette: new Baguette(fake.url), simulatorInput: fakeSimulatorInput(), logs });
+  const plugin = await createTestPlugin("<head></head><title>Logs</title>", { simulators: fakeSimctl(), logs });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair(); const client = new Client({ name: "logs-test", version: "1" });
-  t.after(async () => { await client.close(); await plugin.close(); await fake.close(); });
+  t.after(async () => { await client.close(); await plugin.close(); });
   await plugin.server.connect(serverTransport); await client.connect(clientTransport);
   const invalid = await client.callTool({ name: "mobile_logs_session", arguments: { options: { native: { platform: "ios", deviceId: OTHER_UDID } } } });
   assert.equal(invalid.isError, true); assert.equal(sink, undefined);

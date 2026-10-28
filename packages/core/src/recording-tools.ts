@@ -95,9 +95,12 @@ function safe<T>(handler: (input: T) => Promise<CallToolResult>) {
   };
 }
 
-/** Without a `workspaceUri`, as in hosts without the panel, recordings show only in chat cards. */
+/** Shows a saved recording, as the chart card and the workspace do. */
+export type ShowRecording = (input: z.infer<z.ZodObject<typeof inputSchema>>) => Promise<CallToolResult>;
+
+/** Registers the recording tools; returns the handler that shows a recording, for the workspace's own tool. */
 export function registerRecordingTools(server: McpServer, recordings: PerformanceRecordings,
-  validateDevice: (target: CpuTarget) => Promise<string>, workspaceUri?: string) {
+  validateDevice: (target: CpuTarget) => Promise<string>): ShowRecording {
   registerAppTool(server, "mobile_record_performance", {
     title: "Record CPU, memory, and FPS for a timed run",
     description: "Always record native process/thread CPU, memory, and device-wide Display FPS together, even when the user asks about only one metric. Returns immediately with recording.id and status connecting; wait for status recording before asking the user to perform the interaction. Recording stops automatically after durationSeconds of sampling, detaches both collectors, and saves original samples locally after a brief finishing phase for delayed FPS readings. Uses the same target and device/development prerequisites as mobile_cpu_session; stop any existing CPU monitor for this app and FPS monitor for this device first. FPS requires Android 12+ or physical iOS 17.4+; unsupported or failed FPS is omitted from the chart while CPU and memory still save. Device-wide FPS cannot attribute a slowdown to one app. Use mobile_read_performance_recording to check readiness and completion, then mobile_render_performance_recording to show the interactive chart in chat. 100% CPU is one core. Android memory is RSS; iOS memory is physical footprint.",
@@ -140,7 +143,7 @@ export function registerRecordingTools(server: McpServer, recordings: Performanc
     },
     annotations: read, _meta: { ui: { visibility } },
   }, readFrames);
-  const showRecording = safe(async ({ recordingId, range }: z.infer<z.ZodObject<typeof inputSchema>>) => {
+  const showRecording: ShowRecording = safe(async ({ recordingId, range }: Parameters<ShowRecording>[0]) => {
     const recording = await recordings.read(recordingId);
     const summary = summarizeRecording(recording, range);
     const structuredContent = {
@@ -152,13 +155,8 @@ export function registerRecordingTools(server: McpServer, recordings: Performanc
   });
   registerAppTool(server, "mobile_render_performance_recording", {
     title: "Show an interactive performance chart in chat",
-    description: `Show a saved CPU/memory/FPS recording as an inline interactive chart with shared drag selection, thread breakdown, ${workspaceUri ? "Ask and Open in Mobile Dev" : "and Ask"}. Android frame data adds jank rate, classification coverage, dropped frames and frame-interval P50/P95/P99, updating with the selected range. Call this when reporting scrolling FPS/jank or comparing implementations so the user sees the chart alongside the analysis. The full timeline stays visible; automatic change highlights do not select or limit a range. Omit range unless the user requested a selection. Pass recording.id from mobile_record_performance or mobile_list_performance_recordings. Active runs update until finished. Data tools return measurements without rendering a chart. Returns the recording ID and summary numbers; the chart reads the samples itself, so use mobile_read_performance_recording for sample-level detail.`,
+    description: "Show a saved CPU/memory/FPS recording as an inline interactive chart with shared drag selection, thread breakdown and Ask. Android frame data adds jank rate, classification coverage, dropped frames and frame-interval P50/P95/P99, updating with the selected range. Call this when reporting scrolling FPS/jank or comparing implementations so the user sees the chart alongside the analysis. The full timeline stays visible; automatic change highlights do not select or limit a range. Omit range unless the user requested a selection. Pass recording.id from mobile_record_performance or mobile_list_performance_recordings. Active runs update until finished. Data tools return measurements without rendering a chart. Returns the recording ID and summary numbers; the chart reads the samples itself, so use mobile_read_performance_recording for sample-level detail.",
     inputSchema, outputSchema: referenceOutputSchema, annotations: read, _meta: { ui: { resourceUri: RECORDING_URI, visibility } },
-  }, showRecording);
-  if (workspaceUri) registerAppTool(server, "mobile_open_performance_recording", {
-    title: "Open a recording in Mobile Dev",
-    description: "Open the saved recording and selected time range in the Mobile Dev workspace. Does not start a live performance collector or boot a device.",
-    inputSchema, outputSchema: referenceOutputSchema, annotations: read, _meta: { ui: { resourceUri: workspaceUri, visibility } },
   }, showRecording);
   const comparisonTitle = comparisonTitleSchema.default("Performance comparison");
   const optionalComparisonRange = recordingRangeSchema.optional();
@@ -219,4 +217,14 @@ export function registerRecordingTools(server: McpServer, recordings: Performanc
     const text = JSON.stringify({ recordings: items });
     return { content: [{ type: "text", text }], structuredContent: { recordings: items } };
   }));
+  return showRecording;
+}
+
+/** Opens a saved recording in Mobile Dev's workspace; the panel registers it with its page. */
+export function registerOpenRecordingTool(server: McpServer, showRecording: ShowRecording, workspaceUri: string) {
+  registerAppTool(server, "mobile_open_performance_recording", {
+    title: "Open a recording in Mobile Dev",
+    description: "Open the saved recording and selected time range in the Mobile Dev workspace. Does not start a live performance collector or boot a device.",
+    inputSchema, outputSchema: referenceOutputSchema, annotations: read, _meta: { ui: { resourceUri: workspaceUri, visibility } },
+  }, showRecording);
 }

@@ -4,8 +4,8 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { foregroundPhysicalPid, foregroundSimulatorPid, foregroundAndroidApp, parseAndroidForegroundPackage } from "../src/device-apps/foreground.ts";
-import { readDeviceApps } from "../src/device-apps/sources.ts";
+import { foregroundPhysicalPid, foregroundSimulatorPid, foregroundAndroidApp, parseAndroidForegroundPackage, unknownSimulatorForeground } from "../src/device-apps/foreground.ts";
+import { deviceAppSources, readDeviceApps } from "../src/device-apps/sources.ts";
 import type { DeviceApp } from "../../shared/src/device-apps.ts";
 
 const udid = "00008150-001068280AE8C01C";
@@ -181,8 +181,9 @@ if (args[3] === 'dumpsys') {
   await assert.rejects(cancelled, /abort/i);
 });
 
-test("simulator foreground detection is unknown in builds without Baguette", async () => {
-  const missing = pathToFileURL(join(tmpdir(), "mobile-dev-missing-baguette", "Baguette"));
-  const pid = await foregroundSimulatorPid(udid, undefined, missing, async () => { throw new Error("must not prepare Baguette"); });
-  assert.equal(pid, null);
+test("without the panel's Baguette, a simulator's apps list with no foreground app", async () => {
+  const apps: DeviceApp[] = [{ bundleId: "app.a", pid: 123 }, { bundleId: "app.b", pid: 456 }];
+  const listed = await readDeviceApps(udid, undefined, "ios", "simulator", { ...deviceAppSources, apps: async () => apps, simulator: unknownSimulatorForeground });
+  assert.equal(listed.foregroundApp, null);
+  assert.deepEqual(listed.apps.map(app => app.foreground), [false, false]);
 });

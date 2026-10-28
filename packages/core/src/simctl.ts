@@ -5,15 +5,6 @@ import { errorMessage, udidSchema } from "@mobile-dev/shared/protocol.ts";
 import type { SimulatorDevice, Status } from "@mobile-dev/shared/protocol.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
 
-/**
- * Finds iOS simulators for the tools that target one, such as logs and CPU. Baguette
- * does this where the panel runs it; hosts without the panel read simctl instead.
- */
-export type SimulatorDirectory = {
-  start(): Promise<Status>;
-  device(udid: string, mustBeBooted?: boolean): Promise<SimulatorDevice>;
-};
-
 const execute = promisify(execFile);
 const listing = z.object({
   devices: z.record(z.string(), z.array(z.object({
@@ -40,15 +31,18 @@ export function parseSimulatorList(output: string): SimulatorDevice[] {
   return simulators.sort((a, b) => Number(b.state === "Booted") - Number(a.state === "Booted") || a.name.localeCompare(b.name));
 }
 
-/** Lists simulators with `xcrun simctl`, without starting a backend. */
-export class SimctlSimulators implements SimulatorDirectory {
+/**
+ * Lists iOS simulators with `xcrun simctl` for the tools that target one, such as logs,
+ * CPU and device choices, without starting the panel's simulator backend.
+ */
+export class Simctl {
   private readonly run: (args: string[]) => Promise<string>;
 
   constructor(run = async (args: string[]) => (await execute("xcrun", args, { timeout: 15000, maxBuffer: 8 * 1024 * 1024 })).stdout) {
     this.run = run;
   }
 
-  async start(): Promise<Status> {
+  async list(): Promise<Status> {
     try {
       const devices = parseSimulatorList(await this.run(["simctl", "list", "devices", "--json"]));
       return { connected: true, managed: false, baseUrl: "", devices };
@@ -59,7 +53,7 @@ export class SimctlSimulators implements SimulatorDirectory {
 
   async device(udid: string, mustBeBooted = false) {
     udidSchema.parse(udid);
-    const status = await this.start();
+    const status = await this.list();
     if (!status.connected) throw new SimulatorUnavailableError(status.error ?? "Cannot list iOS simulators.");
     const device = status.devices.find(item => item.udid === udid);
     if (!device) throw new SimulatorUnavailableError("This simulator is no longer available. List the simulators again.");

@@ -3,17 +3,18 @@ import { openRequestSession } from "./request-session.ts";
 import type { ServerRequestContext } from "./request-session.ts";
 import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { registerAppResource, registerAppTool } from "@modelcontextprotocol/ext-apps/server";
+import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
 import type { CallToolResult, ReadResourceResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { PLUGIN_VERSION } from "@mobile-dev/shared/version.ts";
+import { SENTRY_ORIGIN } from "@mobile-dev/shared/telemetry.ts";
 import { errorMessage, inputSchema, streamMessageSchema, udidSchema } from "@mobile-dev/shared/protocol.ts";
 import { panelTargetSchema } from "@mobile-dev/shared/panel-target.ts";
 import type { PanelTarget } from "@mobile-dev/shared/panel-target.ts";
 import { captureServerError } from "./telemetry.ts";
 import { registerEarlierReleases } from "./earlier-releases.ts";
 import { readBezel } from "./bezel.ts";
-import type { Baguette } from "./baguette.ts";
+import { Baguette } from "./baguette.ts";
 import type { ServeEmu } from "./serve-emu.ts";
 import { registerAndroidTools } from "./android-tools.ts";
 import { registerIosMirrorTools } from "./ios-mirror-tools.ts";
@@ -22,9 +23,16 @@ import { registerDeviceSettingsTools } from "./device-settings.ts";
 import { StreamSessions } from "./stream-sessions.ts";
 import type { CpuSessions } from "./cpu/sessions.ts";
 import type { DisplayFpsSessions } from "./fps/sessions.ts";
+import { SimulatorInputService } from "./simulator-input.ts";
 import type { InputStatus, SimulatorInput } from "./simulator-input.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
-import type { copyPNGToClipboard } from "./clipboard.ts";
+import { copyPNGToClipboard } from "./clipboard.ts";
+import { registerPanelAppControlTools } from "./app-control/tools.ts";
+import type { DriverFactory } from "./app-control/tools.ts";
+import { registerOpenRecordingTool } from "./recording-tools.ts";
+import type { ShowRecording } from "./recording-tools.ts";
+import { foregroundSimulatorPid } from "./device-apps/foreground.ts";
+import type { SimulatorForeground } from "./device-apps/foreground.ts";
 
 export const APP_URI = `ui://mobile-dev/${PLUGIN_VERSION}/simulator.html`;
 export const WORKSPACE_URI = `ui://mobile-dev/${PLUGIN_VERSION}/workspace.html`;
@@ -56,24 +64,55 @@ function guarded<T>(handler: (input: T, context: ServerRequestContext) => Promis
   };
 }
 
-/** The services the panel runs on. */
-export type PanelServices = {
-  baguette: Baguette;
-  simulatorInput: SimulatorInput;
+const INSTRUCTIONS = "For mobile app development, open mobile_open_simulator before the first device launch, or reuse the open view. Use selected device IDs. When the user asks to see their devices, open or reuse the view, whose device menu lists them. If a task has ambiguous device targets, ask the user with mobile_choose_devices when it is available, otherwise in chat; proceed only after they choose. For a local CPU or React profile path, use mobile_analyze_profile to show TraceSift findings, then wait for the user to choose Investigate. See the Mobile Dev skill, when installed, for device control, logs, profiles, and performance workflows.";
+
+/** Mobile Dev's own device views, which a host adds to the server it runs (see createPanel). */
+export type Panel = {
+  /** The server's instructions, for a server with the panel. */
+  instructions: string;
+  /** Finds a simulator's foreground app with the panel's Baguette. */
+  simulatorForeground: SimulatorForeground;
+  /** Registers the panel's resources and tools; returns its cleanup. */
+  register(server: McpServer, shared: PanelShared): () => Promise<void>;
+};
+
+/** What the server shares with its panel. */
+export type PanelShared = {
   android: ServeEmu;
   cpu: CpuSessions;
   fps: DisplayFpsSessions;
-  copyScreenshot: typeof copyPNGToClipboard;
+  drivers: DriverFactory;
+  /** The page every view loads, configured for this server. */
+  page(): Promise<string>;
+  showRecording: ShowRecording;
+};
+
+/** Services the panel runs on; tests replace them with fakes. */
+export type PanelOptions = {
+  baguette?: Baguette;
+  simulatorInput?: SimulatorInput;
+  copyScreenshot?: typeof copyPNGToClipboard;
 };
 
 /**
- * Registers the live device panel and workspace with the tools only they use: device
+ * Mobile Dev's live device panel and workspace with the tools only they use: device
  * streams and input, screenshots, UI inspection, device settings, physical iPhone
- * mirroring and Baguette's simulator controls. Hosts that show devices themselves
- * leave the panel out. Returns its cleanup.
+ * mirroring, Baguette's simulator controls, the App tab's reads, opening recordings in
+ * the workspace and asking for devices in a native form. Hosts that show devices
+ * themselves, such as Claude, leave it out.
  */
-export function registerPanels(server: McpServer, services: PanelServices, readApp: (uri: URL) => Promise<ReadResourceResult>) {
-  const { baguette, simulatorInput, android, cpu, fps, copyScreenshot } = services;
+export function createPanel({ baguette = new Baguette(), simulatorInput, copyScreenshot = copyPNGToClipboard }: PanelOptions = {}): Panel {
+  return {
+    instructions: INSTRUCTIONS,
+    simulatorForeground: foregroundSimulatorPid,
+    register: (server, shared) => registerPanel(server, shared, {
+      baguette, copyScreenshot, simulatorInput: simulatorInput ?? new SimulatorInputService(udid => baguette.repairInput(udid)),
+    }),
+  };
+}
+
+function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, showRecording }: PanelShared,
+  { baguette, simulatorInput, copyScreenshot }: Required<PanelOptions>) {
   const streams = new StreamSessions(baguette);
   const closeIosMirror = registerIosMirrorTools(server, APP_URI);
   const closeInspection = registerInspectionTools(server, baguette, android);
@@ -83,9 +122,25 @@ export function registerPanels(server: McpServer, services: PanelServices, readA
     await Promise.all([closeCpu, closeFps]);
   });
   const closeDeviceSettings = registerDeviceSettingsTools(server, baguette, android);
+  registerPanelAppControlTools(server, drivers);
+  registerOpenRecordingTool(server, showRecording, WORKSPACE_URI);
 
-  const automaticRepairs = new Map<string, { attemptedAt: number; pending: Promise<{ inputStatus: InputStatus; inputRepairMessage: string }> }>();
-  async function panelInputStatus(udid: string) {
+  const readApp = async (uri: URL): Promise<ReadResourceResult> => {
+    const content = await page();
+    return { contents: [{
+      uri: uri.href, mimeType: RESOURCE_MIME_TYPE, text: uri.href.endsWith("/workspace.html")
+        ? content.replace('data-view="panel"', 'data-view="workspace"').replace('data-layout="stacked"', 'data-layout="split"')
+        : content,
+      _meta: {
+        ui: { permissions: { clipboardWrite: {} }, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } },
+        "openai/ui": { preferredDisplayMode: "fullscreen", availableDisplayModes: ["inline", "fullscreen"] },
+      },
+    }] };
+  };
+
+  type PanelInputStatus = { inputStatus: InputStatus; inputRepairMessage?: string };
+  const automaticRepairs = new Map<string, { attemptedAt: number; pending: Promise<PanelInputStatus> }>();
+  async function panelInputStatus(udid: string): Promise<PanelInputStatus> {
     const inputStatus = await simulatorInput.status(udid, { fresh: true });
     if (inputStatus.state !== "blocked") return { inputStatus };
     const previous = automaticRepairs.get(udid);
@@ -333,6 +388,7 @@ export function registerPanels(server: McpServer, services: PanelServices, readA
     // Clearing Android throttles waits on adb, so it runs alongside the other cleanup.
     const deviceSettingsClosed = closeDeviceSettings();
     closeInspection(); closeAndroid(); streams.close();
-    await Promise.all([closeIosMirror(), deviceSettingsClosed]);
+    try { await Promise.all([closeIosMirror(), deviceSettingsClosed]); }
+    finally { baguette.dispose(); }
   };
 }

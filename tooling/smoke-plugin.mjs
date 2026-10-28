@@ -34,12 +34,12 @@ async function withServer(label, args, env, capabilities, check) {
   try {
     await client.connect(transport);
     // Behavior follows client capabilities, not the host's name.
-    assert.match(client.getInstructions(), panels ? /in chat when it is unsupported/ : /the host's own simulator view/);
+    assert.match(client.getInstructions(), panels ? /mobile_open_simulator/ : /the host's own simulator view/);
     const { tools } = await client.listTools();
     for (const tool of expectedTools) assert.ok(tools.some(candidate => candidate.name === tool), tool);
-    // Device choices use the host's native form; without one the agent asks in chat.
+    // The panel's device form is listed for hosts that render forms; elsewhere the agent asks in chat.
     const forms = capabilities.extensions?.["openai/elicitation"] !== undefined || capabilities.elicitation !== undefined;
-    assert.equal(tools.some(tool => tool.name === "mobile_choose_devices"), forms);
+    assert.equal(tools.some(tool => tool.name === "mobile_choose_devices"), panels && forms);
     if (panels === false) for (const tool of panelTools) assert.equal(tools.some(candidate => candidate.name === tool), false, tool);
     const view = tools.find(tool => tool.name === (panels ? "mobile_open_workspace" : "mobile_render_performance_recording"));
     const resource = await client.readResource({ uri: view._meta.ui.resourceUri });
@@ -108,7 +108,6 @@ try {
   for (const path of [...codexOnlyPaths, ...otherManifests]) await assert.rejects(access(join(plugin, path)), path);
   const args = server.args.map(arg => arg.replaceAll(`\${${host.root}}`, plugin));
   for (const environment of ["development", "release"]) {
-    // Hosts with MCP's own forms, such as Claude Code, get the device chooser.
     await withServer("plugin", args, { MOBILE_DEV_ENVIRONMENT: environment, [host.root]: plugin }, { elicitation: {} }, async client => {
       // agent-device's runtime starts from the plugin's own copy on the first command.
       if (panels === false) {

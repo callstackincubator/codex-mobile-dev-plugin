@@ -15,13 +15,16 @@ whose page calls the server with an MCP client.
 
 A host adds to the shared pieces without changing them:
 
-- **Server:** each host's entry calls `runStdioServer` with its `ServerFeature`s.
-  Codex adds the self-updater, which installs through Codex's marketplace; the Mac
-  app adds its page resource; Cursor runs the shared server unchanged. Claude shows
-  simulators itself, so its entry (`apps/claude/server`) passes `panels: false`,
-  which leaves out the panel and workspace and the tools only they use (see
-  `registerPanels`), and adds agent-device's commands. Its chat cards stay, and
-  simctl finds simulators in place of Baguette.
+- **Server:** each host's entry calls `runStdioServer` with Mobile Dev's panel, where
+  the host shows it, and its `ServerFeature`s. The panel (`createPanel` in
+  `packages/core/src/panel-tools.ts`) owns Baguette, the panel and workspace pages and
+  the tools only they use, opening recordings in the workspace, the App tab's reads
+  and the native device form. Codex, Cursor's shared entry and the Mac app pass it;
+  Codex adds the self-updater, which installs through Codex's marketplace, and the
+  Mac app its page resource. Claude shows simulators itself, so its entry
+  (`apps/claude/server`) passes no panel and adds agent-device's commands; its chat
+  cards stay. Every host lists simulators for logs, CPU and device choices with
+  simctl, without starting Baguette.
 - **Runtime:** a host's `plugin-host.json` can list the parts of `dist/` it ships
   and a server build of its own. Claude ships neither Baguette, serve-emu nor the
   iOS mirror, and its server splits into chunks, keeping every file under the
@@ -105,16 +108,14 @@ Annotations send text only. Each note includes the user request, element label, 
 ## Device requests
 
 Showing devices belongs to the panel's device menu, or to the host's own simulator
-views in Claude Code. When a mobile task has ambiguous targets, the agent asks with
-`mobile_choose_devices` and a task-specific `message`. The tool is listed only for
-hosts that render a native request form: OpenAI's `openai/elicitation` form
-extension (Codex), preferred for its thumbnails, or MCP's own form elicitation
-(Claude Code). Other hosts never see it, and the agent asks in chat. Some hosts
-advertise forms but decline them unseen: the Claude desktop app's Code tab runs
-Claude Code without a form handler, so every request is declined at once. A
-decline within 500 ms, faster than anyone can read the form, is treated as unseen:
-the tool returns `action: "unavailable"`, tells the agent to ask in chat, and leaves
-the session's tool list. Candidate
+views in Claude Code. When a mobile task has ambiguous targets in a host with the
+panel, the agent asks with `mobile_choose_devices` and a task-specific `message`. The
+tool is listed only for hosts that render a native request form: OpenAI's
+`openai/elicitation` form extension (Codex), preferred for its thumbnails, or MCP's
+own form elicitation. Other hosts never see it, and the agent asks in chat. Claude's
+server has no panel and no device form: Claude asks with its own question card,
+which also shows in the desktop app's Code tab, where MCP forms are declined unseen.
+Candidate
 `devices` are optional: omitted, the tool discovers them itself, and the form offers
 at most 20 selectable devices, running ones first; a backend that cannot list
 devices (no Android SDK, older Xcode) leaves the others offered. The agent may

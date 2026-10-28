@@ -46,9 +46,8 @@ Read device IDs from tool results; never invent them.
   `mobile_list_ios_devices`, running ones first, each with its type and OS version,
   and let the user name another. Leave out devices that cannot do the task, such as
   a disconnected or unpaired iPhone, or a stopped device for a recording; for
-  profiling, offer the targets `mobile_performance_sources` finds. Without a question tool, use
-  `mobile_choose_devices`; if it returns `action: "unavailable"` (the app cannot
-  show its form), ask in chat. Wait for the answer before the pending task; asking
+  profiling, offer the targets `mobile_performance_sources` finds. Without a
+  question tool, ask in chat. Wait for the answer before the pending task; asking
   boots nothing.
 - When the user asks to see their devices, open Claude Code's simulator pane as
   above; answer a question about which devices exist briefly from `device_devices`.

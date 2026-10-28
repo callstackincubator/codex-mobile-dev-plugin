@@ -7,7 +7,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { RecordingStore, PerformanceRecordings } from "../src/performance-recordings.ts";
-import { registerRecordingTools, RESULT_BYTES } from "../src/recording-tools.ts";
+import { registerOpenRecordingTool, registerRecordingTools, RESULT_BYTES } from "../src/recording-tools.ts";
 import { RECORDING_URI } from "../../shared/src/recordings.ts";
 import { COMPARISON_URI } from "../../shared/src/performance-comparison.ts";
 import { longestRecordingFixture, recordingFixture, unavailableFps } from "../../test-support/recording-fixtures.ts";
@@ -30,7 +30,8 @@ test("recording tools distinguish data, inline rendering, workspace opening and 
   await store.save(recording);
   const recordings = new PerformanceRecordings({ open() { throw new Error("Already monitoring this app"); }, async read() { throw new Error("Not running"); }, async closeSession() {} }, unavailableFps, store);
   const server = new McpServer({ name: "recordings-test", version: "1" });
-  registerRecordingTools(server, recordings, async () => "Pixel", "ui://test/workspace.html");
+  const showRecording = registerRecordingTools(server, recordings, async () => "Pixel");
+  registerOpenRecordingTool(server, showRecording, "ui://test/workspace.html");
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "recordings-client", version: "1" });
   t.after(async () => { await client.close(); await server.close(); await recordings.close(); await rm(directory, { recursive: true, force: true }); });
@@ -159,7 +160,7 @@ test("recording tools distinguish data, inline rendering, workspace opening and 
   assert.equal(conflict.isError, true);
 });
 
-test("without a workspace, recordings show only in chat and their cards leave out opening one", async t => {
+test("recordings show in chat cards; opening them in the workspace is the panel's tool", async t => {
   const directory = await mkdtemp(join(tmpdir(), "mobile-dev-recording-tools-"));
   const store = new RecordingStore(directory);
   const recording = recordingFixture();
