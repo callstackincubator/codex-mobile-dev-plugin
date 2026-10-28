@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { chmod, copyFile, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -17,7 +17,8 @@ const spanLoadCommands = `Load command 1
 async function fixture(t: { after(callback: () => Promise<void>): void }) {
   const temporary = tmpdir();
   const prefix = join(temporary, "baguette-runtime-");
-  const root = await mkdtemp(prefix);
+  const directory = await mkdtemp(prefix);
+  const root = await realpath(directory);
   t.after(() => rm(root, { recursive: true, force: true }));
   const developer = join(root, "Custom Xcode.app/Contents/Developer");
   const tools = join(developer, "usr/bin");
@@ -32,8 +33,10 @@ async function fixture(t: { after(callback: () => Promise<void>): void }) {
   return { root, developer, libraries, library, xcodebuild };
 }
 
-test("Baguette discovers a custom selected Xcode and limits its loader environment to that toolchain", async t => {
+test("Baguette resolves the selected Xcode symlink and limits its loader environment to that toolchain", async t => {
   const f = await fixture(t);
+  const selectedDeveloper = join(f.root, "Selected Xcode");
+  await symlink(f.developer, selectedDeveloper);
   const previous = process.env.DYLD_LIBRARY_PATH;
   process.env.DYLD_LIBRARY_PATH = "/unrelated/toolchain";
   t.after(() => {
@@ -47,10 +50,11 @@ test("Baguette discovers a custom selected Xcode and limits its loader environme
     assert.equal(options.signal.aborted, false);
     if (command === "/usr/bin/xcode-select") {
       assert.deepEqual(args, ["--print-path"]);
-      return { stdout: f.developer + "\n" };
+      return { stdout: selectedDeveloper + "\n" };
     }
     if (command === "/usr/bin/otool") {
       assert.deepEqual(args, ["-l", "/relocated plugin/Baguette"]);
+      assert.equal(options.env?.DEVELOPER_DIR, f.developer);
       return { stdout: spanLoadCommands };
     }
     assert.equal(command, "/usr/bin/xcrun");
@@ -164,7 +168,8 @@ test("a relocated Baguette loads the selected Xcode library after its build-tool
   const rpaths = blocks.filter(block => block.includes("LC_RPATH"));
   for (const rpath of rpaths) assert.equal(rpath.includes("/Toolchains/"), false);
   const selection = await execute("/usr/bin/xcode-select", ["--print-path"]);
-  const developer = selection.stdout.trim();
+  const selectedDeveloper = selection.stdout.trim();
+  const developer = await realpath(selectedDeveloper);
   const customDeveloper = join(root, "My Custom Xcode/Developer");
   const customParent = join(root, "My Custom Xcode");
   await mkdir(customParent);
@@ -177,7 +182,7 @@ test("a relocated Baguette loads the selected Xcode library after its build-tool
   });
   const controller = new AbortController();
   const environment = await baguetteEnvironment(binary, controller.signal);
-  assert.equal(environment.DEVELOPER_DIR, customDeveloper);
+  assert.equal(environment.DEVELOPER_DIR, developer);
   assert.ok(environment.DYLD_LIBRARY_PATH);
   environment.MOBILE_DEV_TELEMETRY = "off";
   environment.DYLD_PRINT_LIBRARIES = "1";

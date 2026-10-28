@@ -19,8 +19,9 @@ export async function baguetteEnvironment(executable: string, signal: AbortSigna
     const selection = await run("/usr/bin/xcode-select", ["--print-path"], {
       signal: discoverySignal, encoding: "utf8", maxBuffer: 64 * 1024,
     });
-    developer = selection.stdout.trim();
-    if (isAbsolute(developer) === false) throw new Error("Invalid developer directory.");
+    const selectedDeveloper = selection.stdout.trim();
+    if (isAbsolute(selectedDeveloper) === false) throw new Error("Invalid developer directory.");
+    developer = await realpath(selectedDeveloper);
     const xcodebuild = join(developer, "usr/bin/xcodebuild");
     await access(xcodebuild, constants.X_OK);
   } catch {
@@ -32,7 +33,6 @@ export async function baguetteEnvironment(executable: string, signal: AbortSigna
   // Only the selected toolchain supplies Baguette's additional Swift libraries.
   delete environment.DYLD_LIBRARY_PATH;
   try {
-    const toolchainRoot = await realpath(developer);
     const commands = await run("/usr/bin/otool", ["-l", executable], {
       env: environment, signal: discoverySignal, encoding: "utf8", maxBuffer: 1024 * 1024,
     });
@@ -54,7 +54,7 @@ export async function baguetteEnvironment(executable: string, signal: AbortSigna
     const discovered = new Set<string>();
     for (const library of libraries) {
       const physicalLibrary = await realpath(library);
-      const location = relative(toolchainRoot, physicalLibrary);
+      const location = relative(developer, physicalLibrary);
       if (isAbsolute(library) === false || location.startsWith("Toolchains/") === false) {
         throw new Error("Swift library is outside the selected Xcode toolchain.");
       }
