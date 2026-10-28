@@ -44,7 +44,9 @@ Read device IDs from tool results; never invent them.
   (`AskUserQuestion`), which Claude shows as a card in the terminal and the desktop
   app. Offer the 2–4 likeliest devices from `device_devices` and
   `mobile_list_ios_devices`, running ones first, each with its type and OS version,
-  and let the user name another. Without a question tool, use
+  and let the user name another. Leave out devices that cannot do the task, such as
+  a disconnected or unpaired iPhone, or a stopped device for a recording; for
+  profiling, offer the targets `mobile_performance_sources` finds. Without a question tool, use
   `mobile_choose_devices`; if it returns `action: "unavailable"` (the app cannot
   show its form), ask in chat. Wait for the answer before the pending task; asking
   boots nothing.
