@@ -162,9 +162,13 @@ export function registerDeviceChoiceTools(server: McpServer, extensions: Pick<Op
         : await server.server.elicitInput({ message: input.message, requestedSchema: mcpDeviceChoiceForm(input, devices) }, options);
       if (answer.action !== "accept" && performance.now() - askedAt < unseenAnswerMs) {
         // The host declined without showing the form; the rest of this session asks in chat.
+        // Not an error: nothing failed, the question moves to chat.
         Sentry.metrics.count("device_picker.result", 1, { attributes: { ...attributes, outcome: "unseen" } });
         tool.disable();
-        return { isError: true, content: [{ type: "text", text: "This app closed the device form without showing it, so the user chose nothing. Ask the user in chat which device to use, and do not start the pending task until they answer." }] };
+        return {
+          content: [{ type: "text", text: "This app cannot show the device form, so the user has not chosen yet. Ask the user in chat which device to use, and do not start the pending task until they answer." }],
+          structuredContent: { action: "unavailable", devices: [] },
+        };
       }
       if (answer.action !== "accept") {
         Sentry.metrics.count("device_picker.result", 1, { attributes: { ...attributes, outcome: answer.action } });

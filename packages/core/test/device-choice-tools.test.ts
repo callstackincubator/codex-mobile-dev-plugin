@@ -244,8 +244,9 @@ test("a host that declines the form unseen makes the agent ask in chat for the r
   let asked = 0;
   const client = await mcpFormClient(t, sources(), () => { asked++; return { action: "decline" }; }, 500);
   const result = await client.callTool({ name: "mobile_choose_devices", arguments: { ...input, selectionMode: "single" } });
-  assert.equal(result.isError, true);
-  assert.match(text(result), /closed the device form without showing it.*Ask the user in chat/);
+  assert.equal(result.isError, undefined, "Nothing failed; the question moves to chat.");
+  assert.deepEqual(result.structuredContent, { action: "unavailable", devices: [] });
+  assert.match(text(result), /cannot show the device form.*Ask the user in chat/);
   assert.equal(asked, 1);
   const { tools } = await client.listTools();
   assert.equal(tools.some(tool => tool.name === "mobile_choose_devices"), false);

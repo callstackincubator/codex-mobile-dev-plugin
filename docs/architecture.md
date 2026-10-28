@@ -113,7 +113,8 @@ extension (Codex), preferred for its thumbnails, or MCP's own form elicitation
 advertise forms but decline them unseen: the Claude desktop app's Code tab runs
 Claude Code without a form handler, so every request is declined at once. A
 decline within 500 ms, faster than anyone can read the form, is treated as unseen:
-the tool tells the agent to ask in chat and leaves the session's tool list. Candidate
+the tool returns `action: "unavailable"`, tells the agent to ask in chat, and leaves
+the session's tool list. Candidate
 `devices` are optional: omitted, the tool discovers them itself, and the form offers
 at most 20 selectable devices, running ones first; a backend that cannot list
 devices (no Android SDK, older Xcode) leaves the others offered. The agent may
