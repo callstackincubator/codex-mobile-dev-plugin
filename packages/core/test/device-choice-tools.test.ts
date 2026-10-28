@@ -246,7 +246,7 @@ test("a host that declines the form unseen makes the agent ask in chat for the r
   const result = await client.callTool({ name: "mobile_choose_devices", arguments: { ...input, selectionMode: "single" } });
   assert.equal(result.isError, undefined, "Nothing failed; the question moves to chat.");
   assert.deepEqual(result.structuredContent, { action: "unavailable", devices: [] });
-  assert.match(text(result), /cannot show the device form.*Ask the user in chat/);
+  assert.match(text(result), /cannot show the device form.*Ask the user which device to use, with your own question tool if you have one or in chat/);
   assert.equal(asked, 1);
   const { tools } = await client.listTools();
   assert.equal(tools.some(tool => tool.name === "mobile_choose_devices"), false);

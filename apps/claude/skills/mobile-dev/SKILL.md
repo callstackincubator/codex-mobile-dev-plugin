@@ -40,12 +40,14 @@ Read device IDs from tool results; never invent them.
   their hardware UDIDs; physical iOS tools need that UDID, never the CoreDevice ID.
 - `device_boot` boots a chosen simulator or emulator; `device_shutdown` stops one.
   A request to develop an app permits booting a suitable installed device.
-- When the target is ambiguous, ask with `mobile_choose_devices`, a task-specific
-  `message`, and `selectionMode`: Claude Code in the terminal shows a form and the
-  call returns the user's choice. On `cancel` or `decline`, stop the pending task.
-  Where the tool is missing, or it returns `action: "unavailable"` because the app
-  cannot show the form (as the desktop app's Code tab), ask in chat. Selection boots
-  nothing.
+- When the target is ambiguous, ask with your own question tool
+  (`AskUserQuestion`), which Claude shows as a card in the terminal and the desktop
+  app. Offer the 2–4 likeliest devices from `device_devices` and
+  `mobile_list_ios_devices`, running ones first, each with its type and OS version,
+  and let the user name another. Without a question tool, use
+  `mobile_choose_devices`; if it returns `action: "unavailable"` (the app cannot
+  show its form), ask in chat. Wait for the answer before the pending task; asking
+  boots nothing.
 - When the user asks to see their devices, open Claude Code's simulator pane as
   above; answer a question about which devices exist briefly from `device_devices`.
 

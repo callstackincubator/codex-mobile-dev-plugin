@@ -166,7 +166,7 @@ export function registerDeviceChoiceTools(server: McpServer, extensions: Pick<Op
         Sentry.metrics.count("device_picker.result", 1, { attributes: { ...attributes, outcome: "unseen" } });
         tool.disable();
         return {
-          content: [{ type: "text", text: "This app cannot show the device form, so the user has not chosen yet. Ask the user in chat which device to use, and do not start the pending task until they answer." }],
+          content: [{ type: "text", text: "This app cannot show the device form, so the user has not chosen yet. Ask the user which device to use, with your own question tool if you have one or in chat, and do not start the pending task until they answer." }],
           structuredContent: { action: "unavailable", devices: [] },
         };
       }
