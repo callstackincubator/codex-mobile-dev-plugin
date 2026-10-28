@@ -530,7 +530,7 @@ test("native device picker measures preparation and outcomes without private for
     async android() { return { connected: true, managed: false, baseUrl: "", devices: [
       { udid: "PRIVATE_SERIAL", name: "PRIVATE_DEVICE_NAME", runtime: "Android", state: "Booted", platform: "android", kind: "physical" },
     ] }; },
-  }, "openai");
+  }, "openai", { unseenAnswerMs: 0 });
   const client = new Client({ name: "picker-host", version: "1" }, { capabilities: { extensions: { "openai/elicitation": { form: {} } } } });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   t.after(async () => { await client.close(); await server.close(); await Sentry.close(); });

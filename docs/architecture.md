@@ -109,7 +109,11 @@ views in Claude Code. When a mobile task has ambiguous targets, the agent asks w
 `mobile_choose_devices` and a task-specific `message`. The tool is listed only for
 hosts that render a native request form: OpenAI's `openai/elicitation` form
 extension (Codex), preferred for its thumbnails, or MCP's own form elicitation
-(Claude Code). Other hosts never see it, and the agent asks in chat. Candidate
+(Claude Code). Other hosts never see it, and the agent asks in chat. Some hosts
+advertise forms but decline them unseen: the Claude desktop app's Code tab runs
+Claude Code without a form handler, so every request is declined at once. A
+decline within 500 ms, faster than anyone can read the form, is treated as unseen:
+the tool tells the agent to ask in chat and leaves the session's tool list. Candidate
 `devices` are optional: omitted, the tool discovers them itself, and the form offers
 at most 20 selectable devices, running ones first; a backend that cannot list
 devices (no Android SDK, older Xcode) leaves the others offered. The agent may

@@ -450,7 +450,7 @@ Unhandled JavaScript errors and rejected promises, React render errors, and hand
 Device requests retain the ordinary sampled MCP trace. `device_picker.prepare`
 measures candidate discovery/validation in milliseconds, excluding time spent waiting
 for the user. `device_picker.result` counts accept, cancel, decline and failed
-outcomes; `device_picker.selected` records only the number of selected devices.
+outcomes, and `unseen` when the host declines the form faster than a person could; `device_picker.selected` records only the number of selected devices.
 Attributes contain only the selection mode, outcome, a fixed `mode` (`form`) and
 `form`, the native form used (`openai` or `mcp`). The `card` and `browse` modes and
 the `unsupported` and `rendered` outcomes belonged to the removed devices card, and

@@ -41,9 +41,11 @@ Read device IDs from tool results; never invent them.
 - `device_boot` boots a chosen simulator or emulator; `device_shutdown` stops one.
   A request to develop an app permits booting a suitable installed device.
 - When the target is ambiguous, ask with `mobile_choose_devices`, a task-specific
-  `message`, and `selectionMode`: Claude Code shows a form and the call returns the
-  user's choice. On `cancel` or `decline`, stop the pending task. Where the tool is
-  missing, ask in chat. Selection boots nothing.
+  `message`, and `selectionMode`: Claude Code in the terminal shows a form and the
+  call returns the user's choice. On `cancel` or `decline`, stop the pending task.
+  Where the tool is missing, or it reports that the app closed the form without
+  showing it (as the desktop app's Code tab does), ask in chat. Selection boots
+  nothing.
 - When the user asks to see their devices, open Claude Code's simulator pane as
   above; answer a question about which devices exist briefly from `device_devices`.
 

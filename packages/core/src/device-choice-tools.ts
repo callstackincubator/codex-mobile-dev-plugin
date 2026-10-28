@@ -20,6 +20,9 @@ export type DeviceChoiceSources = {
 export type DeviceChoiceForm = "openai" | "mcp";
 
 const FORM_OPTION_LIMIT = 20;
+// Nobody can read a device list and close it this fast. Hosts that advertise forms but
+// cannot show them, such as the Claude desktop app's Code tab, decline unseen at once.
+const UNSEEN_ANSWER_MS = 500;
 
 function deviceDetails(device: DeviceChoice) {
   const platform = device.platform === "ios" ? "iOS" : "Android";
@@ -123,8 +126,9 @@ export function deviceChoiceFormSupport(capabilities: ClientCapabilities | undef
  * not list the tool; the agent asks in chat. Showing devices belongs to the panel, or
  * to the host's own simulator views.
  */
-export function registerDeviceChoiceTools(server: McpServer, extensions: Pick<OpenAIExtensions, "elicitInput">, sources: DeviceChoiceSources, form: DeviceChoiceForm) {
-  server.registerTool("mobile_choose_devices", {
+export function registerDeviceChoiceTools(server: McpServer, extensions: Pick<OpenAIExtensions, "elicitInput">, sources: DeviceChoiceSources, form: DeviceChoiceForm,
+  { unseenAnswerMs = UNSEEN_ANSWER_MS } = {}) {
+  const tool = server.registerTool("mobile_choose_devices", {
     title: "Choose devices",
     description: "Ask the user to choose the devices for a task in a native form when the target is ambiguous, for example which device to run or profile on. Set selectionMode single or multiple and a message explaining the task; context supplies operation details such as duration. Omit devices to offer every selectable device, running ones first, or pass candidates with platform, kind and deviceId from a device list. Add appName only when you have verified the app is on that device. The call waits for the user: on action accept use only the returned devices; cancel or decline means do not perform the pending task. It never boots devices, launches apps or starts recording.",
     inputSchema: deviceChoiceInputSchema,
@@ -152,9 +156,16 @@ export function registerDeviceChoiceTools(server: McpServer, extensions: Pick<Op
       const references: DeviceChoiceReference[] = devices.map(({ platform, kind, deviceId, appName }) => ({ platform, kind, deviceId, ...(appName ? { appName } : {}) }) as DeviceChoiceReference);
       stage = "request";
       const options = { signal: extra.signal, timeout: 600_000 };
+      const askedAt = performance.now();
       const answer: ElicitResult = form === "openai"
         ? await extensions.elicitInput({ mode: "form", message: input.message, requestedSchema: deviceChoiceForm(input, devices) }, options)
         : await server.server.elicitInput({ message: input.message, requestedSchema: mcpDeviceChoiceForm(input, devices) }, options);
+      if (answer.action !== "accept" && performance.now() - askedAt < unseenAnswerMs) {
+        // The host declined without showing the form; the rest of this session asks in chat.
+        Sentry.metrics.count("device_picker.result", 1, { attributes: { ...attributes, outcome: "unseen" } });
+        tool.disable();
+        return { isError: true, content: [{ type: "text", text: "This app closed the device form without showing it, so the user chose nothing. Ask the user in chat which device to use, and do not start the pending task until they answer." }] };
+      }
       if (answer.action !== "accept") {
         Sentry.metrics.count("device_picker.result", 1, { attributes: { ...attributes, outcome: answer.action } });
         return { content: [{ type: "text", text: "Device selection cancelled. Do not start the pending task." }], structuredContent: { action: answer.action, devices: [] } };
