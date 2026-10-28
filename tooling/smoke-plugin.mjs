@@ -21,7 +21,7 @@ await mkdir(home);
 const panels = host.panels !== false;
 const panelTools = ["mobile_open_workspace", "mobile_open_simulator", "mobile_list_simulators", "mobile_list_android_devices", "mobile_stream_session", "mobile_open_performance_recording"];
 const expectedTools = panels ? panelTools : ["mobile_render_performance_recording", "mobile_logs_session", "device_open", "device_snapshot"];
-const panelFiles = ["dist/baguette/Baguette", "dist/ios-mirror/darwin-arm64.node", "dist/agent-device-server.mjs", "dist/serve-emu/src/cli.mjs"];
+const panelFiles = ["dist/baguette/Baguette", "dist/ios-mirror/darwin-arm64.node", "dist/serve-emu/src/cli.mjs"];
 
 async function withServer(label, args, env, capabilities, check) {
   const client = new Client({ name: `${name}-${label}-smoke`, version: "1" }, { capabilities });

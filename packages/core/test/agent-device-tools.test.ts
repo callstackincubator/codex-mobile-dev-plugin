@@ -1,84 +1,111 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import type { CallToolRequest, CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import type { TestContext } from "node:test";
-import { compactAgentDeviceTool } from "../src/agent-device-catalog.ts";
-import { agentDeviceTools } from "../src/agent-device-tools.ts";
-import type { AgentDeviceBackend } from "../src/agent-device-adapter.ts";
-import { upstreamCatalog } from "../../test-support/agent-device-fixtures.ts";
+import { agentDeviceClient } from "../../test-support/agent-device-fixtures.ts";
 
-const catalog = upstreamCatalog.tools.map(compactAgentDeviceTool);
-
-async function serve(t: TestContext, connect?: () => Promise<AgentDeviceBackend>) {
-  const calls: CallToolRequest["params"][] = [];
-  let connections = 0;
-  let closed = 0;
-  const result: CallToolResult = { content: [{ type: "text", text: "Done" }], structuredContent: { accepted: true } };
-  const backend: AgentDeviceBackend = {
-    async listTools() { throw new Error("The catalog is static."); },
-    async callTool(params) { calls.push(params); return result; },
-  };
-  const runtime = {
-    async connect() { connections++; return connect ? connect() : backend; },
-    async close() { closed++; },
-  };
-  const server = new McpServer({ name: "agent-device-tools-test", version: "1" });
-  const cleanup = agentDeviceTools(catalog, runtime)(server);
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: "agent-device-tools-client", version: "1" });
-  t.after(async () => { await client.close(); await server.close(); });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
-  return { client, calls, cleanup, counts: () => ({ connections, closed }) };
+function text(result: { content: unknown }) {
+  return (result.content as { text: string }[])[0].text;
 }
 
-test("agent-device commands are device_ tools with their compact schemas, except those Mobile Dev covers", async t => {
-  const { client, counts } = await serve(t);
+test("agent-device commands are device_ tools with their compact schemas, and listing them starts nothing", async t => {
+  const { client, counts } = await agentDeviceClient(t);
   const { tools } = await client.listTools();
   const names = tools.map(tool => tool.name);
   for (const name of ["device_open", "device_snapshot", "device_press", "device_fill", "device_batch", "device_devices"]) assert.ok(names.includes(name), name);
-  for (const name of ["device_logs", "device_perf", "device_install-from-source", "device_viewport", "logs", "open"]) assert.equal(names.includes(name), false, name);
+  for (const name of ["device_logs", "device_perf", "open", "logs"]) assert.equal(names.includes(name), false, name);
   const press = tools.find(tool => tool.name === "device_press");
   assert.deepEqual(press?.inputSchema.required?.toSorted(), ["session", "target"]);
-  assert.equal(press?.description, catalog.find(tool => tool.name === "press")?.description);
-  assert.equal(counts().connections, 0, "Listing tools does not start the runtime");
-});
-
-test("a call starts the runtime and forwards the command under its own name", async t => {
-  const { client, calls, cleanup, counts } = await serve(t);
-  const target = { kind: "ref", ref: "@e12" };
-  const result = await client.callTool({ name: "device_press", arguments: { session: "checkout", target, settle: true } });
-  assert.deepEqual(result.structuredContent, { accepted: true });
-  assert.deepEqual(calls.map(call => [call.name, call.arguments]), [["press", { session: "checkout", target, settle: true }]]);
-  await client.callTool({ name: "device_snapshot", arguments: { session: "checkout", interactiveOnly: true } });
-  assert.equal(counts().connections, 2, "Each call asks the runtime, which reuses its process");
-  await cleanup?.();
-  assert.equal(counts().closed, 1);
-});
-
-test("invalid inputs and batch steps fail before reaching the runtime", async t => {
-  const { client, calls, counts } = await serve(t);
-  const missingTarget = await client.callTool({ name: "device_press", arguments: { session: "checkout" } });
-  assert.equal(missingTarget.isError, true);
-  const hidden = await client.callTool({ name: "device_snapshot", arguments: { session: "checkout", stateDir: "/tmp" } });
-  assert.equal(hidden.isError, true);
-  const step = await client.callTool({ name: "device_batch", arguments: { session: "checkout", steps: [{ command: "press", input: {} }] } });
-  assert.equal(step.isError, true);
-  assert.match((step.content as { text: string }[])[0].text, /Batch step 1: Invalid press arguments/);
-  const omitted = await client.callTool({ name: "device_batch", arguments: { session: "checkout", steps: [{ command: "logs", input: {} }] } });
-  assert.match((omitted.content as { text: string }[])[0].text, /Unknown Agent Device command: logs/);
-  const save = await client.callTool({ name: "device_session", arguments: { action: "save-script" } });
-  assert.match((save.content as { text: string }[])[0].text, /requires a named session/);
-  assert.deepEqual(calls, []);
   assert.equal(counts().connections, 0);
 });
 
-test("a runtime that cannot start returns an error result", async t => {
-  const { client } = await serve(t, async () => { throw new Error("spawn node ENOENT"); });
+test("forwarding preserves named sessions, metadata and native results without repeating selectors", async t => {
+  const { client, calls, result } = await agentDeviceClient(t);
+  const metadata = { "sentry-trace": "1234567890abcdef1234567890abcdef-1234567890abcdef-0" };
+  await client.callTool({ name: "device_open", arguments: { session: "ios-task", app: "Example", platform: "ios", udid: "selected-ios" } });
+  await client.callTool({ name: "device_open", arguments: { session: "android-task", app: "Example", platform: "android", serial: "selected-android" } });
+  const target = { kind: "ref", ref: "@e1" };
+  const input = { session: "android-task", target, settle: true };
+  const returned = await client.callTool({ name: "device_press", arguments: input, _meta: metadata });
+  assert.deepEqual(returned, result);
+  assert.deepEqual(calls[2], { name: "press", arguments: input, _meta: metadata });
+  const iosInput = { session: "ios-task", interactiveOnly: true };
+  await client.callTool({ name: "device_snapshot", arguments: iosInput });
+  assert.deepEqual(calls[3].arguments, iosInput);
+});
+
+test("invalid and hidden options fail before reaching the runtime", async t => {
+  const { client, calls, counts } = await agentDeviceClient(t);
+  const invalid = [
+    { name: "device_open", arguments: { platform: "ios", udid: "selected" } },
+    { name: "device_open", arguments: { session: "task", app: "Example" } },
+    { name: "device_snapshot", arguments: {} },
+    { name: "device_snapshot", arguments: { session: "  " } },
+    { name: "device_snapshot", arguments: { session: "task", udid: "other-device" } },
+    { name: "device_snapshot", arguments: { session: "task", stateDir: "/other-state" } },
+    { name: "device_snapshot", arguments: { session: "task", daemonBaseUrl: "http://other-daemon" } },
+    { name: "device_snapshot", arguments: { session: "task", responseLevel: "full" } },
+    { name: "device_press", arguments: { session: "task", target: { kind: "ref", x: 1, y: 2 } } },
+    { name: "device_press", arguments: { session: "task", target: { kind: "point", x: 1, y: 2 }, timeoutMs: 0 } },
+    { name: "device_session", arguments: { action: "save-script" } },
+  ];
+  for (const params of invalid) {
+    const result = await client.callTool(params);
+    assert.equal(result.isError, true, `${params.name} ${JSON.stringify(params.arguments)}`);
+  }
+  assert.equal(calls.length, 0);
+  assert.equal(counts().connections, 0);
+});
+
+test("batch steps obey each command's schema and inherit the outer session", async t => {
+  const { client, calls } = await agentDeviceClient(t);
+  const steps = [{ command: "snapshot", input: { interactiveOnly: true } }];
+  const result = await client.callTool({ name: "device_batch", arguments: { session: "task", steps } });
+  assert.equal(result.isError, undefined);
+  assert.deepEqual(calls[0].arguments, { session: "task", steps });
+  for (const input of [{ udid: "other-device" }, { stateDir: "/other-state" }, { unsupported: true }]) {
+    const rejected = await client.callTool({ name: "device_batch", arguments: { session: "task", steps: [{ command: "snapshot", input }] } });
+    assert.equal(rejected.isError, true);
+  }
+  const press = await client.callTool({ name: "device_batch", arguments: { session: "task", steps: [{ command: "press", input: {} }] } });
+  assert.match(text(press), /Batch step 1: Invalid press arguments/);
+  const omitted = await client.callTool({ name: "device_batch", arguments: { session: "task", steps: [{ command: "logs", input: {} }] } });
+  assert.match(text(omitted), /Unknown Agent Device command: logs/);
+  assert.equal(calls.length, 1);
+});
+
+test("read-only discovery and state lookup work before opening an app", async t => {
+  const { client, calls } = await agentDeviceClient(t);
+  await client.callTool({ name: "device_devices", arguments: { platform: "ios" } });
+  await client.callTool({ name: "device_session", arguments: { action: "state-dir" } });
+  await client.callTool({ name: "device_session", arguments: { action: "list" } });
+  assert.equal(calls.length, 3);
+});
+
+test("MCP cancellation reaches the runtime's request", async t => {
+  let entered: (() => void) | undefined;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  let wasCancelled = false;
+  const { client } = await agentDeviceClient(t, async (_params, options) => {
+    entered?.();
+    await new Promise<void>(resolve => {
+      options.signal?.addEventListener("abort", () => { wasCancelled = true; resolve(); }, { once: true });
+    });
+    options.signal?.throwIfAborted();
+    return { content: [] };
+  });
+  const controller = new AbortController();
+  const pending = client.callTool({ name: "device_wait", arguments: { session: "task", kind: "duration", durationMs: 10000 } }, undefined, { signal: controller.signal });
+  await started;
+  controller.abort();
+  await assert.rejects(pending);
+  await new Promise<void>(resolve => { setImmediate(resolve); });
+  assert.equal(wasCancelled, true);
+});
+
+test("a runtime that cannot start returns an error result, and closing the server closes the runtime", async t => {
+  const { client, cleanup, counts } = await agentDeviceClient(t, undefined, async () => { throw new Error("spawn node ENOENT"); });
   const result = await client.callTool({ name: "device_devices", arguments: { platform: "ios" } });
   assert.equal(result.isError, true);
-  assert.match((result.content as { text: string }[])[0].text, /Agent Device could not start/);
+  assert.match(text(result), /Agent Device could not start/);
+  await cleanup?.();
+  assert.equal(counts().closed, 1);
 });

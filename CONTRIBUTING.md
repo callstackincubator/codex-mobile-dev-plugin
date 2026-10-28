@@ -138,7 +138,7 @@ relevant checks, and packaging steps again.
 
 `vendor:baguette` downloads the pinned official release and checks its SHA-256. It keeps the full resource bundle and rebuilds the same v0.2.1 source with Swift 6.4 or later because the official binary crashes in Swift task allocation on macOS 27. Preparing Baguette requires Xcode 27, Git, and network access to fetch its pinned source and Swift dependencies. `rebuild:baguette` repeats the source build. `packages/native/vendor/baguette/release.json` records the source commit, compiler version, and rebuilt binary SHA-256.
 
-`vendor:agent-device` installs the exact npm packages in `packages/runtimes/agent-device/package-lock.json` with package scripts disabled. `build` copies this full runtime into `dist/agent-device`, records its integrity and lockfile hash in `release.json`, and saves its version-matched help in the control skill. The installed plugin needs no npm install or runtime download. Xcode compiles the shipped Apple runner source on its first use.
+`vendor:agent-device` installs the exact npm packages in `packages/runtimes/agent-device/package-lock.json` with package scripts disabled. `build` copies this full runtime into `dist/agent-device`, records its integrity and lockfile hash in `release.json`, and copies the commands Claude's server serves, `packages/runtimes/agent-device/tools.json`. After changing the pin, run `npm run catalog:agent-device` to rewrite that catalog; a unit test checks it against the pinned runtime, and the weekly dependency update rewrites it. The installed plugin needs no npm install or runtime download. Xcode compiles the shipped Apple runner source on its first use.
 
 `build` also bundles JavaScript and CSS with esbuild and copies Baguette into `dist/baguette`. It does not run TypeScript, lint, Biome, visual checks, or React Doctor.
 
@@ -147,8 +147,6 @@ relevant checks, and packaging steps again.
 `test` checks MCP contracts, frame reads, input validation, and capture cleanup against a local fixture, plus runtime selection and argument forwarding with Node absent from PATH or another Node present. `test:package` copies the release package into a temporary directory and uses its actual MCP launch configuration with a system-only PATH. The smoke-test caller supplies an isolated home with the Codex runtime cache layout and its test Node executable; the MCP process has a system-only PATH. Run these checks with the Codex bundled Node executable to verify the packaged runtime. It checks native addon loading, sidebar/chat entrypoints, UI resources, and telemetry attribution, starts bundled Baguette, reads the real device list, and checks shutdown. It does not boot or change a simulator. Run it on an Apple Silicon Mac with Xcode.
 
 `test:codex-plugin` requires the Codex CLI (`codex` on PATH or `CODEX_CLI_PATH`). It installs the package into a temporary Codex profile, asks Codex to resolve the installed MCP configuration, then starts that exact command and working directory with no Node on MCP PATH. It checks the sidebar resource and telemetry opt-out without changing the user's plugins or devices. Pass an extracted ZIP directory to test the shipped artifact. The compatibility manifest uses `cwd: "."`; `${PLUGIN_ROOT}` is not expanded in this format and would become a nonexistent subdirectory of the installed cache.
-
-`test:agent-device` requires reactivating the Agent Device MCP entry first. It starts the retained MCP server from a copied package with no global CLI on its PATH. It checks the control tools, pinned runtime, isolated state directory, real iOS device list, and daemon cleanup. It does not open an app, take screenshots, or send input.
 
 `npm run test:reconnect -- <UDID>` tests an already booted simulator with a copied package. It terminates only that test package's own Baguette process and checks that the same stream resumes with a new bundled process. It never boots a simulator, repairs input, or sends gestures.
 
@@ -400,6 +398,6 @@ and marketplace publishing.
   annotations, and native device requests.
 - [Using devices](docs/devices.md), [app logs](docs/logs.md), and
   [performance](docs/performance.md): detailed behavior and platform limitations.
-- [MCP tools](docs/mcp-tools.md): tool catalog and retained Agent Device integration.
+- [MCP tools](docs/mcp-tools.md): tool catalog, including Claude's agent-device tools.
 - [Agent workflow cases](docs/agent-workflow.md): manual checks in fresh chats.
 - [Stream profiling](docs/stream-profiling.md): performance findings and historical measurements.

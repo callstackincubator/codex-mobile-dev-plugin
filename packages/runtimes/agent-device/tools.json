@@ -1,0 +1,3018 @@
+[
+ {
+  "name": "alert",
+  "description": "Inspect, wait for, accept, or dismiss a platform alert. Use get before acting when the alert content matters; accept and dismiss change the active alert state.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "action": {
+     "type": "string",
+     "enum": [
+      "get",
+      "accept",
+      "dismiss",
+      "wait"
+     ]
+    },
+    "timeoutMs": {
+     "type": "integer"
+    },
+    "noRecord": {
+     "type": "boolean",
+     "description": "Do not record this action."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "session"
+   ]
+  }
+ },
+ {
+  "name": "app-switcher",
+  "description": "Open the device app switcher to inspect or change foreground apps. This changes the visible system UI and may move focus away from the current app.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "noRecord": {
+     "type": "boolean",
+     "description": "Do not record this action."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "session"
+   ]
+  }
+ },
+ {
+  "name": "apps",
+  "description": "List the apps installed on the selected device. Include system or OEM apps only when they are needed as automation targets.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "platform": {
+     "type": "string",
+     "enum": [
+      "apple",
+      "android",
+      "harmonyos",
+      "vega",
+      "linux",
+      "web",
+      "ios",
+      "macos"
+     ],
+     "description": "Platform selector used to resolve a device."
+    },
+    "device": {
+     "type": "string",
+     "description": "Device name selector."
+    },
+    "udid": {
+     "type": "string",
+     "description": "iOS device UDID selector."
+    },
+    "serial": {
+     "type": "string",
+     "description": "Android device or Vega VVD serial selector."
+    },
+    "appsFilter": {
+     "type": "string",
+     "enum": [
+      "user-installed",
+      "all"
+     ],
+     "description": "Restrict the listing to user-installed apps, or include system and OEM apps."
+    }
+   },
+   "additionalProperties": false,
+   "required": []
+  }
+ },
+ {
+  "name": "appstate",
+  "description": "Show foreground app/activity",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "platform": {
+     "type": "string",
+     "enum": [
+      "apple",
+      "android",
+      "harmonyos",
+      "vega",
+      "linux",
+      "web",
+      "ios",
+      "macos"
+     ],
+     "description": "Platform selector used to resolve a device."
+    },
+    "device": {
+     "type": "string",
+     "description": "Device name selector."
+    },
+    "udid": {
+     "type": "string",
+     "description": "iOS device UDID selector."
+    },
+    "serial": {
+     "type": "string",
+     "description": "Android device or Vega VVD serial selector."
+    }
+   },
+   "additionalProperties": false,
+   "required": []
+  }
+ },
+ {
+  "name": "back",
+  "description": "Navigate back in the app or through system navigation. Use in-app for the app navigation stack and system when the platform back behavior is required.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "mode": {
+     "type": "string",
+     "enum": [
+      "in-app",
+      "system"
+     ]
+    },
+    "settle": {
+     "type": "boolean",
+     "description": "After the action, wait for the UI to go quiet and return the settled diff vs the pre-action tree in the same response. Best-effort; never fails the action."
+    },
+    "settleQuietMs": {
+     "type": "integer",
+     "description": "Settle: quiet window in milliseconds (default 500).",
+     "minimum": 0
+    },
+    "timeoutMs": {
+     "type": "integer",
+     "description": "Settle: wait deadline in milliseconds (default 10000).",
+     "minimum": 1
+    },
+    "noRecord": {
+     "type": "boolean",
+     "description": "Do not record this action."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "session"
+   ]
+  }
+ },
+ {
+  "name": "batch",
+  "description": "Execute multiple commands in one daemon request",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "cwd": {
+     "type": "string",
+     "description": "Working directory for command execution."
+    },
+    "steps": {
+     "type": "array",
+     "description": "Structured batch steps. Each step uses a command name and the same input object as that command tool.",
+     "items": {
+      "type": "object",
+      "properties": {
+       "command": {
+        "type": "string",
+        "enum": [
+         "devices",
+         "capabilities",
+         "doctor",
+         "apps",
+         "boot",
+         "shutdown",
+         "appstate",
+         "perf",
+         "logs",
+         "network",
+         "audio",
+         "test",
+         "clipboard",
+         "keyboard",
+         "install",
+         "reinstall",
+         "push",
+         "trigger-app-event",
+         "open",
+         "close",
+         "snapshot",
+         "diff",
+         "wait",
+         "alert",
+         "settings",
+         "react-native",
+         "record",
+         "trace",
+         "find",
+         "click",
+         "fill",
+         "longpress",
+         "press",
+         "type",
+         "get",
+         "is",
+         "back",
+         "gesture",
+         "home",
+         "tv-remote",
+         "orientation",
+         "scroll",
+         "swipe",
+         "focus",
+         "screenshot",
+         "app-switcher",
+         "install-from-source"
+        ],
+        "description": "Command name to run with structured input."
+       },
+       "input": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "Structured command input for the nested command. Use the matching MCP tool schema for this object."
+       },
+       "runtime": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "Optional per-step runtime payload."
+       }
+      },
+      "required": [
+       "command",
+       "input"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "onError": {
+     "type": "string",
+     "enum": [
+      "stop"
+     ],
+     "description": "Batch failure policy."
+    },
+    "maxSteps": {
+     "type": "integer",
+     "description": "Maximum number of steps accepted for this batch.",
+     "minimum": 1,
+     "maximum": 1000
+    },
+    "out": {
+     "type": "string",
+     "description": "Optional output path for command artifacts."
+    }
+   },
+   "required": [
+    "steps",
+    "session"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "boot",
+  "description": "Boot or prepare the selected device or simulator so later commands can target it. The device is chosen through the device-selection inputs, not by naming it here.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "platform": {
+     "type": "string",
+     "enum": [
+      "apple",
+      "android",
+      "harmonyos",
+      "vega",
+      "linux",
+      "web",
+      "ios",
+      "macos"
+     ],
+     "description": "Platform selector used to resolve a device."
+    },
+    "device": {
+     "type": "string",
+     "description": "Device name selector."
+    },
+    "udid": {
+     "type": "string",
+     "description": "iOS device UDID selector."
+    },
+    "serial": {
+     "type": "string",
+     "description": "Android device or Vega VVD serial selector."
+    },
+    "headless": {
+     "type": "boolean",
+     "description": "Boot without showing simulator UI when supported."
+    }
+   },
+   "additionalProperties": false,
+   "required": []
+  }
+ },
+ {
+  "name": "capabilities",
+  "description": "List the commands supported by the selected device or active session. Use device-selection inputs when checking support before a session is open.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "platform": {
+     "type": "string",
+     "enum": [
+      "apple",
+      "android",
+      "harmonyos",
+      "vega",
+      "linux",
+      "web",
+      "ios",
+      "macos"
+     ],
+     "description": "Platform selector used to resolve a device."
+    },
+    "device": {
+     "type": "string",
+     "description": "Device name selector."
+    },
+    "udid": {
+     "type": "string",
+     "description": "iOS device UDID selector."
+    },
+    "serial": {
+     "type": "string",
+     "description": "Android device or Vega VVD serial selector."
+    }
+   },
+   "additionalProperties": false,
+   "required": []
+  }
+ },
+ {
+  "name": "click",
+  "description": "Activate a UI target by snapshot ref, selector, or coordinates. Prefer a ref or selector after a snapshot; use coordinates only when semantic targeting is unavailable. This can change app state; use settle or verify to confirm the result without a follow-up snapshot.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "target": {
+     "oneOf": [
+      {
+       "type": "object",
+       "properties": {
+        "kind": {
+         "type": "string",
+         "const": "ref"
+        },
+        "ref": {
+         "type": "string",
+         "description": "Snapshot element ref such as @e12."
+        },
+        "label": {
+         "type": "string",
+         "description": "Optional human label for the ref."
+        }
+       },
+       "required": [
+        "kind",
+        "ref"
+       ],
+       "additionalProperties": false
+      },
+      {
+       "type": "object",
+       "properties": {
+        "kind": {
+         "type": "string",
+         "const": "selector"
+        },
+        "selector": {
+         "type": "string",
+         "description": "Agent-device selector expression."
+        }
+       },
+       "required": [
+        "kind",
+        "selector"
+       ],
+       "additionalProperties": false
+      },
+      {
+       "type": "object",
+       "properties": {
+        "kind": {
+         "type": "string",
+         "const": "point"
+        },
+        "x": {
+         "type": "number"
+        },
+        "y": {
+         "type": "number"
+        }
+       },
+       "required": [
+        "kind",
+        "x",
+        "y"
+       ],
+       "additionalProperties": false
+      }
+     ],
+     "description": "UI element ref, selector, or screen point."
+    },
+    "button": {
+     "type": "string",
+     "enum": [
+      "primary",
+      "secondary",
+      "middle"
+     ],
+     "description": "Pointer button for platforms that support mouse buttons."
+    },
+    "depth": {
+     "type": "integer",
+     "description": "Snapshot traversal depth.",
+     "minimum": 0
+    },
+    "scope": {
+     "type": "string",
+     "description": "Snapshot scope selector used before resolution."
+    },
+    "raw": {
+     "type": "boolean",
+     "description": "Use raw snapshot data during selector resolution."
+    },
+    "count": {
+     "type": "integer",
+     "description": "Number of press/click repetitions.",
+     "minimum": 1
+    },
+    "intervalMs": {
+     "type": "integer",
+     "description": "Delay between repeated press/click actions.",
+     "minimum": 0
+    },
+    "holdMs": {
+     "type": "integer",
+     "description": "Hold duration for each action.",
+     "minimum": 0
+    },
+    "jitterPx": {
+     "type": "integer",
+     "description": "Randomization radius in pixels.",
+     "minimum": 0
+    },
+    "doubleTap": {
+     "type": "boolean",
+     "description": "Request a double-tap action."
+    },
+    "verify": {
+     "type": "boolean",
+     "description": "Capture cheap post-action evidence (AX digest, node counts, changedFromBefore) instead of a follow-up snapshot."
+    },
+    "settle": {
+     "type": "boolean",
+     "description": "After the action, wait for the UI to go quiet and return the settled diff vs the pre-action tree in the same response. Best-effort; never fails the action."
+    },
+    "settleQuietMs": {
+     "type": "integer",
+     "description": "Settle: quiet window in milliseconds (default 500).",
+     "minimum": 0
+    },
+    "timeoutMs": {
+     "type": "integer",
+     "description": "Settle: wait deadline in milliseconds (default 10000).",
+     "minimum": 1
+    },
+    "noRecord": {
+     "type": "boolean",
+     "description": "Do not record this action."
+    }
+   },
+   "required": [
+    "target",
+    "session"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "clipboard",
+  "description": "Read the current device clipboard text, or replace its contents with the given text.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "action": {
+     "type": "string",
+     "enum": [
+      "read",
+      "write"
+     ]
+    },
+    "text": {
+     "type": "string"
+    },
+    "noRecord": {
+     "type": "boolean",
+     "description": "Do not record this action."
+    }
+   },
+   "required": [
+    "action",
+    "session"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "close",
+  "description": "Close the named app, or close the active session app when app is omitted. Use shutdown only when the selected simulator or emulator should also stop.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "app": {
+     "type": "string",
+     "description": "Optional app to close."
+    },
+    "shutdown": {
+     "type": "boolean",
+     "description": "Shutdown the session/device where supported."
+    },
+    "saveScript": {
+     "oneOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "string"
+      }
+     ]
+    },
+    "force": {
+     "type": "boolean",
+     "description": "Overwrite an existing --save-script target instead of refusing (alias: --overwrite)."
+    },
+    "noRecord": {
+     "type": "boolean",
+     "description": "Do not record this action."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "session"
+   ]
+  }
+ },
+ {
+  "name": "debug",
+  "description": "Symbolicate Apple crash artifacts with matching dSYM UUIDs. This debug namespace is intentionally narrow: use logs for app logs, network for HTTP evidence, perf for performance samples, record/trace for media and traces, and react-devtools for React Native profiles.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "cwd": {
+     "type": "string",
+     "description": "Working directory for command execution."
+    },
+    "action": {
+     "type": "string",
+     "enum": [
+      "symbols"
+     ]
+    },
+    "artifact": {
+     "type": "string",
+     "description": "Apple crash artifact path (.ips, .crash, or .log)."
+    },
+    "dsym": {
+     "type": "string",
+     "description": "Path to a matching .dSYM bundle."
+    },
+    "searchPath": {
+     "type": "string",
+     "description": "Directory to scan for matching .dSYM bundles."
+    },
+    "out": {
+     "type": "string",
+     "description": "Output path for the symbolicated artifact."
+    }
+   },
+   "required": [
+    "action",
+    "artifact"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "devices",
+  "description": "List available devices and simulators that can be selected for automation. Use platform, device, udid, or serial inputs on later commands to target one result.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "platform": {
+     "type": "string",
+     "enum": [
+      "apple",
+      "android",
+      "harmonyos",
+      "vega",
+      "linux",
+      "web",
+      "ios",
+      "macos"
+     ],
+     "description": "Platform selector used to resolve a device."
+    },
+    "device": {
+     "type": "string",
+     "description": "Device name selector."
+    },
+    "udid": {
+     "type": "string",
+     "description": "iOS device UDID selector."
+    },
+    "serial": {
+     "type": "string",
+     "description": "Android device or Vega VVD serial selector."
+    }
+   },
+   "additionalProperties": false,
+   "required": []
+  }
+ },
+ {
+  "name": "diff",
+  "description": "Compare accessibility snapshots or screenshots to identify UI changes. Use snapshot comparisons for semantic tree changes and screenshot comparisons for pixel differences.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "cwd": {
+     "type": "string",
+     "description": "Working directory for command execution."
+    },
+    "kind": {
+     "type": "string",
+     "const": "snapshot"
+    },
+    "out": {
+     "type": "string"
+    },
+    "interactiveOnly": {
+     "type": "boolean"
+    },
+    "depth": {
+     "type": "integer"
+    },
+    "scope": {
+     "type": "string"
+    },
+    "raw": {
+     "type": "boolean"
+    },
+    "noRecord": {
+     "type": "boolean",
+     "description": "Do not record this action."
+    }
+   },
+   "required": [
+    "kind",
+    "session"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "doctor",
+  "description": "Diagnose device, app, development-server, and React Native or Expo readiness issues. Returns compact evidence for local inventory, sessions, optional app discovery, toolchains, and server reachability. On iOS simulators it also warms the XCTest runner build cache in the background when missing, so run it before the first Apple snapshot or interaction of a session.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "platform": {
+     "type": "string",
+     "enum": [
+      "apple",
+      "android",
+      "harmonyos",
+      "vega",
+      "linux",
+      "web",
+      "ios",
+      "macos"
+     ],
+     "description": "Platform selector used to resolve a device."
+    },
+    "device": {
+     "type": "string",
+     "description": "Device name selector."
+    },
+    "udid": {
+     "type": "string",
+     "description": "iOS device UDID selector."
+    },
+    "serial": {
+     "type": "string",
+     "description": "Android device or Vega VVD serial selector."
+    },
+    "targetApp": {
+     "type": "string",
+     "description": "Installed app package/bundle id or app name to verify without opening a session."
+    },
+    "remote": {
+     "type": "boolean",
+     "description": "Check remote connection setup instead of local device inventory."
+    }
+   },
+   "additionalProperties": false,
+   "required": []
+  }
+ },
+ {
+  "name": "events",
+  "description": "Read the daemon-owned session event timeline as paged JSON-friendly entries",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "limit": {
+     "type": "integer"
+    },
+    "cursor": {
+     "type": "string"
+    }
+   },
+   "additionalProperties": false,
+   "required": []
+  }
+ },
+ {
+  "name": "fill",
+  "description": "Replace text in a UI input selected by snapshot ref, selector, or coordinates. Prefer refs or selectors after snapshot; use recordAs to keep sensitive text out of a recorded replay while sending it to the live app.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "target": {
+     "oneOf": [
+      {
+       "type": "object",
+       "properties": {
+        "kind": {
+         "type": "string",
+         "const": "ref"
+        },
+        "ref": {
+         "type": "string",
+         "description": "Snapshot element ref such as @e12."
+        },
+        "label": {
+         "type": "string",
+         "description": "Optional human label for the ref."
+        }
+       },
+       "required": [
+        "kind",
+        "ref"
+       ],
+       "additionalProperties": false
+      },
+      {
+       "type": "object",
+       "properties": {
+        "kind": {
+         "type": "string",
+         "const": "selector"
+        },
+        "selector": {
+         "type": "string",
+         "description": "Agent-device selector expression."
+        }
+       },
+       "required": [
+        "kind",
+        "selector"
+       ],
+       "additionalProperties": false
+      },
+      {
+       "type": "object",
+       "properties": {
+        "kind": {
+         "type": "string",
+         "const": "point"
+        },
+        "x": {
+         "type": "number"
+        },
+        "y": {
+         "type": "number"
+        }
+       },
+       "required": [
+        "kind",
+        "x",
+        "y"
+       ],
+       "additionalProperties": false
+      }
+     ],
+     "description": "UI element ref, selector, or screen point."
+    },
+    "text": {
+     "type": "string",
+     "description": "Text to enter into the target."
+    },
+    "delayMs": {
+     "type": "integer",
+     "description": "Delay between typed characters.",
+     "minimum": 0
+    },
+    "recordAs": {
+     "type": "string",
+     "description": "When script recording is armed, send text to the live app but publish it as ${VAR}. Use an uppercase replay variable name such as PASSWORD."
+    },
+    "depth": {
+     "type": "integer",
+     "description": "Snapshot traversal depth.",
+     "minimum": 0
+    },
+    "scope": {
+     "type": "string",
+     "description": "Snapshot scope selector used before resolution."
+    },
+    "raw": {
+     "type": "boolean",
+     "description": "Use raw snapshot data during selector resolution."
+    },
+    "verify": {
+     "type": "boolean",
+     "description": "Capture cheap post-action evidence (AX digest, node counts, changedFromBefore) instead of a follow-up snapshot."
+    },
+    "settle": {
+     "type": "boolean",
+     "description": "After the action, wait for the UI to go quiet and return the settled diff vs the pre-action tree in the same response. Best-effort; never fails the action."
+    },
+    "settleQuietMs": {
+     "type": "integer",
+     "description": "Settle: quiet window in milliseconds (default 500).",
+     "minimum": 0
+    },
+    "timeoutMs": {
+     "type": "integer",
+     "description": "Settle: wait deadline in milliseconds (default 10000).",
+     "minimum": 1
+    },
+    "noRecord": {
+     "type": "boolean",
+     "description": "Do not record this action."
+    }
+   },
+   "required": [
+    "target",
+    "text",
+    "session"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "find",
+  "description": "Find by text/label/value/role/id and run action",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "locator": {
+     "type": "string",
+     "enum": [
+      "any",
+      "text",
+      "label",
+      "value",
+      "role",
+      "id"
+     ]
+    },
+    "query": {
+     "type": "string"
+    },
+    "action": {
+     "type": "string",
+     "enum": [
+      "click",
+      "focus",
+      "exists",
+      "list",
+      "getText",
+      "getAttrs",
+      "wait",
+      "fill",
+      "type"
+     ]
+    },
+    "value": {
+     "type": "string"
+    },
+    "timeoutMs": {
+     "type": "integer"
+    },
+    "first": {
+     "type": "boolean"
+    },
+    "last": {
+     "type": "boolean"
+    },
+    "depth": {
+     "type": "integer"
+    },
+    "raw": {
+     "type": "boolean"
+    },
+    "noRecord": {
+     "type": "boolean",
+     "description": "Do not record this action."
+    },
+    "record": {
+     "type": "boolean",
+     "description": "Force-record this out-of-band observation into a repair-armed heal (mutually exclusive with noRecord). Authored replay steps are recorded automatically and never need this. On find, valid only for a read-only action."
+    }
+   },
+   "required": [
+    "query",
+    "session"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "focus",
+  "description": "Move input focus to explicit screen coordinates without entering text. Prefer semantic interactions when a snapshot ref or selector is available; use type or fill after focus.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "x": {
+     "type": "number",
+     "description": "X coordinate."
+    },
+    "y": {
+     "type": "number",
+     "description": "Y coordinate."
+    },
+    "noRecord": {
+     "type": "boolean",
+     "description": "Do not record this action."
+    }
+   },
+   "required": [
+    "x",
+    "y",
+    "session"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "gesture",
+  "description": "Perform a structured pan, fling, swipe, pinch, rotate, transform, or drag gesture. Select the gesture kind, then provide only the inputs that apply to that kind.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "kind": {
+     "type": "string",
+     "enum": [
+      "pan",
+      "fling",
+      "swipe",
+      "pinch",
+      "rotate",
+      "transform",
+      "drag"
+     ],
+     "description": "Gesture variant."
+    },
+    "direction": {
+     "type": "string",
+     "enum": [
+      "up",
+      "down",
+      "left",
+      "right"
+     ],
+     "description": "Fling direction."
+    },
+    "preset": {
+     "type": "string",
+     "enum": [
+      "left",
+      "right",
+      "left-edge",
+      "right-edge"
+     ],
+     "description": "Swipe preset."
+    },
+    "origin": {
+     "type": "object",
+     "description": "Gesture origin point.",
+     "properties": {
+      "x": {
+       "type": "number"
+      },
+      "y": {
+       "type": "number"
+      }
+     },
+     "required": [
+      "x",
+      "y"
+     ],
+     "additionalProperties": false
+    },
+    "delta": {
+     "type": "object",
+     "description": "Movement delta for pan or transform gestures.",
+     "properties": {
+      "x": {
+       "type": "number"
+      },
+      "y": {
+       "type": "number"
+      }
+     },
+     "required": [
+      "x",
+      "y"
+     ],
+     "additionalProperties": false
+    },
+    "distance": {
+     "type": "integer",
+     "description": "Fling distance.",
+     "minimum": 0
+    },
+    "scale": {
+     "type": "number",
+     "description": "Pinch or transform scale."
+    },
+    "degrees": {
+     "type": "number",
+     "description": "Rotation in degrees."
+    },
+    "durationMs": {
+     "type": "integer",
+     "description": "Pan/transform duration.",
+     "minimum": 16,
+     "maximum": 10000
+    },
+    "pointerCount": {
+     "type": "integer",
+     "description": "Pan touch pointer count (1 or 2).",
+     "minimum": 1,
+     "maximum": 2
+    },
+    "source": {
+     "type": "string",
+     "description": "Drag source @ref or selector."
+    },
+    "destination": {
+     "type": "string",
+     "description": "Drag destination @ref or selector."
+    },
+    "sourceHoldMs": {
+     "type": "integer",
+     "description": "Drag activation hold duration.",
+     "minimum": 1,
+     "maximum": 10000
+    },
+    "moveMs": {
+     "type": "integer",
+     "description": "Drag movement duration.",
+     "minimum": 16,
+     "maximum": 10000
+    },
+    "destinationHoldMs": {
+     "type": "integer",
+     "description": "Hold before releasing at the destination.",
+     "minimum": 0,
+     "maximum": 10000
+    },
+    "noRecord": {
+     "type": "boolean",
+     "description": "Do not record this action."
+    }
+   },
+   "required": [
+    "kind",
+    "session"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "get",
+  "description": "Read text or accessibility attributes from a snapshot ref or selector without changing the app. Use format text for visible content or attrs for the element attribute map.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "target": {
+     "oneOf": [
+      {
+       "type": "object",
+       "properties": {
+        "kind": {
+         "type": "string",
+         "const": "ref"
+        },
+        "ref": {
+         "type": "string",
+         "description": "Snapshot element ref such as @e12."
+        },
+        "label": {
+         "type": "string",
+         "description": "Optional human label for the ref."
+        }
+       },
+       "required": [
+        "kind",
+        "ref"
+       ],
+       "additionalProperties": false
+      },
+      {
+       "type": "object",
+       "properties": {
+        "kind": {
+         "type": "string",
+         "const": "selector"
+        },
+        "selector": {
+         "type": "string",
+         "description": "Agent-device selector expression."
+        }
+       },
+       "required": [
+        "kind",
+        "selector"
+       ],
+       "additionalProperties": false
+      }
+     ],
+     "description": "UI element ref, selector, or screen point."
+    },
+    "format": {
+     "type": "string",
+     "enum": [
+      "text",
+      "attrs"
+     ]
+    },
+    "depth": {
+     "type": "integer",
+     "description": "Snapshot traversal depth.",
+     "minimum": 0
+    },
+    "scope": {
+     "type": "string",
+     "description": "Snapshot scope selector used before resolution."
+    },
+    "raw": {
+     "type": "boolean",
+     "description": "Use raw snapshot data during selector resolution."
+    },
+    "noRecord": {
+     "type": "boolean",
+     "description": "Do not record this action."
+    },
+    "record": {
+     "type": "boolean",
+     "description": "Force-record this out-of-band observation into a repair-armed heal (mutually exclusive with noRecord). Authored replay steps are recorded automatically and never need this. On find, valid only for a read-only action."
+    }
+   },
+   "required": [
+    "format",
+    "target",
+    "session"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "home",
+  "description": "Send the selected device to its home screen. This leaves the app session open but moves the foreground away from the app.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "noRecord": {
+     "type": "boolean",
+     "description": "Do not record this action."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "session"
+   ]
+  }
+ },
+ {
+  "name": "install",
+  "description": "Install an app binary from a local path. Provide an app identifier with the path when the target needs explicit app selection; use reinstall to replace an already installed app.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "platform": {
+     "type": "string",
+     "enum": [
+      "apple",
+      "android",
+      "harmonyos",
+      "vega",
+      "linux",
+      "web",
+      "ios",
+      "macos"
+     ],
+     "description": "Platform selector used to resolve a device."
+    },
+    "device": {
+     "type": "string",
+     "description": "Device name selector."
+    },
+    "udid": {
+     "type": "string",
+     "description": "iOS device UDID selector."
+    },
+    "serial": {
+     "type": "string",
+     "description": "Android device or Vega VVD serial selector."
+    },
+    "cwd": {
+     "type": "string",
+     "description": "Working directory for command execution."
+    },
+    "app": {
+     "type": "string",
+     "description": "Optional app identifier hint."
+    },
+    "appPath": {
+     "type": "string",
+     "description": "Path to app binary."
+    },
+    "noRecord": {
+     "type": "boolean",
+     "description": "Do not record this action."
+    }
+   },
+   "required": [
+    "appPath"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "is",
+  "description": "Check whether a selector satisfies a UI predicate such as visible, hidden, editable, selected, focused, or text. Use wait when the condition may appear asynchronously.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "predicate": {
+     "type": "string",
+     "enum": [
+      "visible",
+      "hidden",
+      "exists",
+      "editable",
+      "selected",
+      "focused",
+      "text"
+     ]
+    },
+    "selector": {
+     "type": "string"
+    },
+    "value": {
+     "type": "string"
+    },
+    "depth": {
+     "type": "integer",
+     "description": "Snapshot traversal depth.",
+     "minimum": 0
+    },
+    "scope": {
+     "type": "string",
+     "description": "Snapshot scope selector used before resolution."
+    },
+    "raw": {
+     "type": "boolean",
+     "description": "Use raw snapshot data during selector resolution."
+    },
+    "noRecord": {
+     "type": "boolean",
+     "description": "Do not record this action."
+    },
+    "record": {
+     "type": "boolean",
+     "description": "Force-record this out-of-band observation into a repair-armed heal (mutually exclusive with noRecord). Authored replay steps are recorded automatically and never need this. On find, valid only for a read-only action."
+    }
+   },
+   "required": [
+    "predicate",
+    "selector",
+    "session"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "keyboard",
+  "description": "Inspect Android keyboard visibility/type or press/dismiss the device keyboard. To hide the keyboard, use keyboard dismiss. It taps the keyboard dismiss/hide key when one is exposed, verifies the keyboard closed, and reports UNSUPPORTED_OPERATION when no dismiss key exists — background taps are never attempted.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "action": {
+     "type": "string",
+     "enum": [
+      "status",
+      "dismiss",
+      "enter",
+      "return"
+     ]
+    },
+    "noRecord": {
+     "type": "boolean",
+     "description": "Do not record this action."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "session"
+   ]
+  }
+ },
+ {
+  "name": "longpress",
+  "description": "Hold a UI target by snapshot ref, selector, or coordinates to open a context menu or perform another hold gesture. Set durationMs when the default hold duration is unsuitable.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "target": {
+     "oneOf": [
+      {
+       "type": "object",
+       "properties": {
+        "kind": {
+         "type": "string",
+         "const": "ref"
+        },
+        "ref": {
+         "type": "string",
+         "description": "Snapshot element ref such as @e12."
+        },
+        "label": {
+         "type": "string",
+         "description": "Optional human label for the ref."
+        }
+       },
+       "required": [
+        "kind",
+        "ref"
+       ],
+       "additionalProperties": false
+      },
+      {
+       "type": "object",
+       "properties": {
+        "kind": {
+         "type": "string",
+         "const": "selector"
+        },
+        "selector": {
+         "type": "string",
+         "description": "Agent-device selector expression."
+        }
+       },
+       "required": [
+        "kind",
+        "selector"
+       ],
+       "additionalProperties": false
+      },
+      {
+       "type": "object",
+       "properties": {
+        "kind": {
+         "type": "string",
+         "const": "point"
+        },
+        "x": {
+         "type": "number"
+        },
+        "y": {
+         "type": "number"
+        }
+       },
+       "required": [
+        "kind",
+        "x",
+        "y"
+       ],
+       "additionalProperties": false
+      }
+     ],
+     "description": "UI element ref, selector, or screen point."
+    },
+    "durationMs": {
+     "type": "integer",
+     "description": "Long press duration in milliseconds.",
+     "minimum": 0
+    },
+    "depth": {
+     "type": "integer",
+     "description": "Snapshot traversal depth.",
+     "minimum": 0
+    },
+    "scope": {
+     "type": "string",
+     "description": "Snapshot scope selector used before resolution."
+    },
+    "raw": {
+     "type": "boolean",
+     "description": "Use raw snapshot data during selector resolution."
+    },
+    "settle": {
+     "type": "boolean",
+     "description": "After the action, wait for the UI to go quiet and return the settled diff vs the pre-action tree in the same response. Best-effort; never fails the action."
+    },
+    "settleQuietMs": {
+     "type": "integer",
+     "description": "Settle: quiet window in milliseconds (default 500).",
+     "minimum": 0
+    },
+    "timeoutMs": {
+     "type": "integer",
+     "description": "Settle: wait deadline in milliseconds (default 10000).",
+     "minimum": 1
+    },
+    "noRecord": {
+     "type": "boolean",
+     "description": "Do not record this action."
+    }
+   },
+   "required": [
+    "target",
+    "session"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "metro",
+  "description": "Prepare a React Native development server or ask connected apps to reload, using the development server this session is bound to. Provide explicit runtime inputs only to override that binding for one call. The binding is cleared when the session closes, and a fresh open without runtime hints also clears any leftover binding from a previous same-name session.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "cwd": {
+     "type": "string",
+     "description": "Working directory for command execution."
+    },
+    "action": {
+     "type": "string",
+     "enum": [
+      "prepare",
+      "reload"
+     ]
+    },
+    "projectRoot": {
+     "type": "string"
+    },
+    "kind": {
+     "type": "string"
+    },
+    "publicBaseUrl": {
+     "type": "string"
+    },
+    "proxyBaseUrl": {
+     "type": "string"
+    },
+    "bearerToken": {
+     "type": "string"
+    },
+    "bridgeScope": {
+     "type": "object",
+     "additionalProperties": true
+    },
+    "launchUrl": {
+     "type": "string"
+    },
+    "port": {
+     "type": "integer"
+    },
+    "listenHost": {
+     "type": "string"
+    },
+    "statusHost": {
+     "type": "string"
+    },
+    "startupTimeoutMs": {
+     "type": "integer"
+    },
+    "probeTimeoutMs": {
+     "type": "integer"
+    },
+    "reuseExisting": {
+     "type": "boolean"
+    },
+    "installDependenciesIfNeeded": {
+     "type": "boolean"
+    },
+    "runtimeFilePath": {
+     "type": "string"
+    },
+    "logPath": {
+     "type": "string"
+    },
+    "metroHost": {
+     "type": "string"
+    },
+    "metroPort": {
+     "type": "integer"
+    },
+    "bundleUrl": {
+     "type": "string"
+    },
+    "timeoutMs": {
+     "type": "integer"
+    }
+   },
+   "required": [
+    "action"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "network",
+  "description": "Dump recent HTTP(s) traffic parsed from the session app log",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "action": {
+     "type": "string",
+     "enum": [
+      "dump",
+      "log"
+     ]
+    },
+    "limit": {
+     "type": "integer"
+    },
+    "include": {
+     "type": "string",
+     "enum": [
+      "summary",
+      "headers",
+      "body",
+      "all"
+     ]
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "session"
+   ]
+  }
+ },
+ {
+  "name": "open",
+  "description": "Boot the selected device when needed, then open an app, deep link, or URL in a session. Use the app or URL inputs to choose what becomes the foreground automation target. Metro and debug runtime hints given here are recorded as the session's dev-server binding, so a later reload reuses them; a fresh open without them clears any binding left by a previous same-name session.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "platform": {
+     "type": "string",
+     "enum": [
+      "apple",
+      "android",
+      "harmonyos",
+      "vega",
+      "linux",
+      "web",
+      "ios",
+      "macos"
+     ],
+     "description": "Platform selector used to resolve a device."
+    },
+    "device": {
+     "type": "string",
+     "description": "Device name selector."
+    },
+    "udid": {
+     "type": "string",
+     "description": "iOS device UDID selector."
+    },
+    "serial": {
+     "type": "string",
+     "description": "Android device or Vega VVD serial selector."
+    },
+    "cwd": {
+     "type": "string",
+     "description": "Working directory for command execution."
+    },
+    "app": {
+     "type": "string",
+     "description": "App name, bundle id, package, or URL."
+    },
+    "url": {
+     "type": "string",
+     "description": "Optional URL passed with an app shell."
+    },
+    "surface": {
+     "type": "string",
+     "enum": [
+      "app",
+      "frontmost-app",
+      "desktop",
+      "menubar"
+     ],
+     "description": "macOS presentation surface to open: the app itself, the frontmost app, the desktop, or the menu bar."
+    },
+    "activity": {
+     "type": "string",
+     "description": "Android activity name."
+    },
+    "launchConsole": {
+     "type": "string",
+     "description": "Launch console mode."
+    },
+    "launchArgs": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "Launch arguments forwarded verbatim to the platform launch command."
+    },
+    "relaunch": {
+     "type": "boolean",
+     "description": "Force relaunch."
+    },
+    "foreground": {
+     "type": "boolean",
+     "description": "Include an initial interactive snapshot in a fresh open response. With no app argument, discover the sole running app on the sole booted iOS simulator; ambiguous environments fail closed."
+    },
+    "saveScript": {
+     "oneOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "string"
+      }
+     ]
+    },
+    "force": {
+     "type": "boolean",
+     "description": "Overwrite an existing --save-script target instead of refusing (alias: --overwrite)."
+    },
+    "deviceHub": {
+     "type": "boolean",
+     "description": "Use Xcode Device Hub when surfacing Apple simulators."
+    },
+    "testIme": {
+     "type": "boolean",
+     "description": "Activate the headless Android test IME for deterministic Unicode text entry (default on for emulators; opt-in on real devices)."
+    },
+    "noRecord": {
+     "type": "boolean",
+     "description": "Do not record this action."
+    },
+    "metroHost": {
+     "type": "string",
+     "description": "Session-scoped Metro/debug host hint applied to the opened app."
+    },
+    "metroPort": {
+     "type": "integer",
+     "description": "Session-scoped Metro/debug port hint applied to the opened app. On an emulator/simulator the host defaults to the loopback alias (Android 10.0.2.2, iOS 127.0.0.1) when --metro-host is omitted; physical devices still require an explicit --metro-host.",
+     "minimum": 1,
+     "maximum": 65535
+    },
+    "bundleUrl": {
+     "type": "string",
+     "description": "Session-scoped bundle URL hint applied to the opened app."
+    },
+    "launchUrl": {
+     "type": "string",
+     "description": "Session-scoped launch URL hint applied to the opened app."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "session",
+    "platform"
+   ]
+  }
+ },
+ {
+  "name": "orientation",
+  "description": "Set device orientation on iOS and Android",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "orientation": {
+     "type": "string",
+     "enum": [
+      "portrait",
+      "portrait-upside-down",
+      "landscape-left",
+      "landscape-right"
+     ]
+    },
+    "noRecord": {
+     "type": "boolean",
+     "description": "Do not record this action."
+    }
+   },
+   "required": [
+    "orientation",
+    "session"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "press",
+  "description": "Short-press a UI target by snapshot ref, selector, or coordinates. Use longpress instead when the target requires a context-menu or hold gesture.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "target": {
+     "oneOf": [
+      {
+       "type": "object",
+       "properties": {
+        "kind": {
+         "type": "string",
+         "const": "ref"
+        },
+        "ref": {
+         "type": "string",
+         "description": "Snapshot element ref such as @e12."
+        },
+        "label": {
+         "type": "string",
+         "description": "Optional human label for the ref."
+        }
+       },
+       "required": [
+        "kind",
+        "ref"
+       ],
+       "additionalProperties": false
+      },
+      {
+       "type": "object",
+       "properties": {
+        "kind": {
+         "type": "string",
+         "const": "selector"
+        },
+        "selector": {
+         "type": "string",
+         "description": "Agent-device selector expression."
+        }
+       },
+       "required": [
+        "kind",
+        "selector"
+       ],
+       "additionalProperties": false
+      },
+      {
+       "type": "object",
+       "properties": {
+        "kind": {
+         "type": "string",
+         "const": "point"
+        },
+        "x": {
+         "type": "number"
+        },
+        "y": {
+         "type": "number"
+        }
+       },
+       "required": [
+        "kind",
+        "x",
+        "y"
+       ],
+       "additionalProperties": false
+      }
+     ],
+     "description": "UI element ref, selector, or screen point."
+    },
+    "depth": {
+     "type": "integer",
+     "description": "Snapshot traversal depth.",
+     "minimum": 0
+    },
+    "scope": {
+     "type": "string",
+     "description": "Snapshot scope selector used before resolution."
+    },
+    "raw": {
+     "type": "boolean",
+     "description": "Use raw snapshot data during selector resolution."
+    },
+    "count": {
+     "type": "integer",
+     "description": "Number of press/click repetitions.",
+     "minimum": 1
+    },
+    "intervalMs": {
+     "type": "integer",
+     "description": "Delay between repeated press/click actions.",
+     "minimum": 0
+    },
+    "holdMs": {
+     "type": "integer",
+     "description": "Hold duration for each action.",
+     "minimum": 0
+    },
+    "jitterPx": {
+     "type": "integer",
+     "description": "Randomization radius in pixels.",
+     "minimum": 0
+    },
+    "doubleTap": {
+     "type": "boolean",
+     "description": "Request a double-tap action."
+    },
+    "verify": {
+     "type": "boolean",
+     "description": "Capture cheap post-action evidence (AX digest, node counts, changedFromBefore) instead of a follow-up snapshot."
+    },
+    "settle": {
+     "type": "boolean",
+     "description": "After the action, wait for the UI to go quiet and return the settled diff vs the pre-action tree in the same response. Best-effort; never fails the action."
+    },
+    "settleQuietMs": {
+     "type": "integer",
+     "description": "Settle: quiet window in milliseconds (default 500).",
+     "minimum": 0
+    },
+    "timeoutMs": {
+     "type": "integer",
+     "description": "Settle: wait deadline in milliseconds (default 10000).",
+     "minimum": 1
+    },
+    "noRecord": {
+     "type": "boolean",
+     "description": "Do not record this action."
+    }
+   },
+   "required": [
+    "target",
+    "session"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "push",
+  "description": "Deliver push notification payloads to an installed app.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "app": {
+     "type": "string"
+    },
+    "payload": {
+     "oneOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "object",
+       "additionalProperties": true
+      }
+     ]
+    },
+    "noRecord": {
+     "type": "boolean",
+     "description": "Do not record this action."
+    }
+   },
+   "required": [
+    "app",
+    "payload",
+    "session"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "react-native",
+  "description": "Run supported React Native automation helpers. Use dismiss-overlay to close a visible development error overlay before continuing normal UI automation.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "action": {
+     "type": "string",
+     "enum": [
+      "dismiss-overlay"
+     ]
+    },
+    "noRecord": {
+     "type": "boolean",
+     "description": "Do not record this action."
+    }
+   },
+   "required": [
+    "action",
+    "session"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "record",
+  "description": "Start or stop a screen recording for the active app session or, where supported, the selected device. Long Android recordings can return multiple video artifacts; HarmonyOS supports whole-screen recording on physical devices.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "cwd": {
+     "type": "string",
+     "description": "Working directory for command execution."
+    },
+    "action": {
+     "type": "string",
+     "enum": [
+      "start",
+      "stop"
+     ]
+    },
+    "path": {
+     "type": "string"
+    },
+    "fps": {
+     "type": "integer"
+    },
+    "quality": {
+     "type": "string",
+     "enum": [
+      "medium",
+      "high"
+     ]
+    },
+    "hideTouches": {
+     "type": "boolean"
+    },
+    "recordingScope": {
+     "type": "string",
+     "enum": [
+      "app",
+      "device",
+      "system"
+     ]
+    },
+    "noRecord": {
+     "type": "boolean",
+     "description": "Do not record this action."
+    }
+   },
+   "required": [
+    "action",
+    "session"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "reinstall",
+  "description": "Replace an installed app with a binary from a local path. Use this when preserving the same app identity while installing a new build on the selected device.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "platform": {
+     "type": "string",
+     "enum": [
+      "apple",
+      "android",
+      "harmonyos",
+      "vega",
+      "linux",
+      "web",
+      "ios",
+      "macos"
+     ],
+     "description": "Platform selector used to resolve a device."
+    },
+    "device": {
+     "type": "string",
+     "description": "Device name selector."
+    },
+    "udid": {
+     "type": "string",
+     "description": "iOS device UDID selector."
+    },
+    "serial": {
+     "type": "string",
+     "description": "Android device or Vega VVD serial selector."
+    },
+    "cwd": {
+     "type": "string",
+     "description": "Working directory for command execution."
+    },
+    "app": {
+     "type": "string"
+    },
+    "appPath": {
+     "type": "string",
+     "description": "Path to app binary."
+    },
+    "noRecord": {
+     "type": "boolean",
+     "description": "Do not record this action."
+    }
+   },
+   "required": [
+    "app",
+    "appPath"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "replay",
+  "description": "Run a recorded automation script, including compatible Maestro YAML flows. A script without a terminal close leaves its session active for subsequent automation.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "platform": {
+     "type": "string",
+     "enum": [
+      "apple",
+      "android",
+      "harmonyos",
+      "vega",
+      "linux",
+      "web",
+      "ios",
+      "macos"
+     ],
+     "description": "Platform selector used to resolve a device."
+    },
+    "device": {
+     "type": "string",
+     "description": "Device name selector."
+    },
+    "udid": {
+     "type": "string",
+     "description": "iOS device UDID selector."
+    },
+    "serial": {
+     "type": "string",
+     "description": "Android device or Vega VVD serial selector."
+    },
+    "cwd": {
+     "type": "string",
+     "description": "Working directory for command execution."
+    },
+    "path": {
+     "type": "string"
+    },
+    "update": {
+     "type": "boolean"
+    },
+    "backend": {
+     "type": "string"
+    },
+    "maestro": {
+     "type": "boolean"
+    },
+    "env": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    },
+    "metroHost": {
+     "type": "string",
+     "description": "Metro/debug host hint inherited by replay-opened sessions."
+    },
+    "metroPort": {
+     "type": "integer",
+     "description": "Metro/debug port hint inherited by replay-opened sessions."
+    },
+    "bundleUrl": {
+     "type": "string",
+     "description": "Bundle URL hint inherited by replay-opened sessions."
+    },
+    "resumeFrom": {
+     "type": "integer"
+    },
+    "resumePlanDigest": {
+     "type": "string"
+    },
+    "keepSession": {
+     "type": "boolean",
+     "description": "Leave the session active by suppressing exactly an authored terminal close in native .ad."
+    },
+    "timeoutMs": {
+     "type": "integer",
+     "description": "Maximum wall-clock duration for the replay request."
+    },
+    "saveScript": {
+     "oneOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "string"
+      }
+     ]
+    },
+    "force": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "path"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "screenshot",
+  "description": "Capture a screenshot of the active app or web session. Choose the capture scope, density, size, or annotations through the corresponding input fields when needed.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "cwd": {
+     "type": "string",
+     "description": "Working directory for command execution."
+    },
+    "path": {
+     "type": "string",
+     "description": "Output path."
+    },
+    "overlayRefs": {
+     "type": "boolean"
+    },
+    "pixelDensity": {
+     "type": "integer",
+     "description": "Output screenshot pixel density in pixels per logical point.",
+     "minimum": 1
+    },
+    "fullscreen": {
+     "type": "boolean"
+    },
+    "scale": {
+     "type": "number",
+     "description": "Screenshot scale factor.",
+     "minimum": 0.01,
+     "maximum": 1
+    },
+    "stabilize": {
+     "type": "boolean"
+    },
+    "normalizeStatusBar": {
+     "type": "boolean"
+    },
+    "surface": {
+     "type": "string",
+     "enum": [
+      "app",
+      "frontmost-app",
+      "desktop",
+      "menubar"
+     ]
+    },
+    "noRecord": {
+     "type": "boolean",
+     "description": "Do not record this action."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "session"
+   ]
+  }
+ },
+ {
+  "name": "scroll",
+  "description": "Scroll in a direction, or toward the top/bottom edge of scrollable content.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "direction": {
+     "type": "string",
+     "enum": [
+      "up",
+      "down",
+      "left",
+      "right",
+      "top",
+      "bottom"
+     ]
+    },
+    "amount": {
+     "type": "number",
+     "description": "Platform scroll amount."
+    },
+    "pixels": {
+     "type": "integer",
+     "description": "Pixel scroll amount.",
+     "minimum": 0
+    },
+    "durationMs": {
+     "type": "integer",
+     "description": "Scroll duration in milliseconds when the backend supports pacing.",
+     "minimum": 0,
+     "maximum": 10000
+    },
+    "settle": {
+     "type": "boolean",
+     "description": "After the action, wait for the UI to go quiet and return the settled diff vs the pre-action tree in the same response. Best-effort; never fails the action."
+    },
+    "settleQuietMs": {
+     "type": "integer",
+     "description": "Settle: quiet window in milliseconds (default 500).",
+     "minimum": 0
+    },
+    "timeoutMs": {
+     "type": "integer",
+     "description": "Settle: wait deadline in milliseconds (default 10000).",
+     "minimum": 1
+    },
+    "noRecord": {
+     "type": "boolean",
+     "description": "Do not record this action."
+    }
+   },
+   "required": [
+    "direction",
+    "session"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "session",
+  "description": "List active sessions, print the effective daemon state directory, or publish an armed open-to-destination script without closing its session",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "cwd": {
+     "type": "string",
+     "description": "Working directory for command execution."
+    },
+    "action": {
+     "type": "string",
+     "enum": [
+      "list",
+      "state-dir",
+      "save-script"
+     ],
+     "description": "list shows active sessions; state-dir prints the daemon state directory; save-script publishes an armed recording without teardown."
+    },
+    "path": {
+     "type": "string",
+     "description": "Optional .ad output path for save-script."
+    },
+    "force": {
+     "type": "boolean",
+     "description": "Atomically replace an existing save-script target."
+    }
+   },
+   "additionalProperties": false,
+   "required": []
+  }
+ },
+ {
+  "name": "settings",
+  "description": "Change supported operating-system settings, animation scales, appearance, or app permissions on the selected target. Platform support varies by setting and action.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "setting": {
+     "type": "string"
+    },
+    "state": {
+     "type": "string"
+    },
+    "app": {
+     "type": "string"
+    },
+    "latitude": {
+     "type": "number"
+    },
+    "longitude": {
+     "type": "number"
+    },
+    "permission": {
+     "type": "string"
+    },
+    "mode": {
+     "type": "string",
+     "enum": [
+      "full",
+      "limited"
+     ]
+    },
+    "noRecord": {
+     "type": "boolean",
+     "description": "Do not record this action."
+    }
+   },
+   "required": [
+    "setting",
+    "state",
+    "session"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "shutdown",
+  "description": "Shutdown a selected simulator or emulator.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "platform": {
+     "type": "string",
+     "enum": [
+      "apple",
+      "android",
+      "harmonyos",
+      "vega",
+      "linux",
+      "web",
+      "ios",
+      "macos"
+     ],
+     "description": "Platform selector used to resolve a device."
+    },
+    "device": {
+     "type": "string",
+     "description": "Device name selector."
+    },
+    "udid": {
+     "type": "string",
+     "description": "iOS device UDID selector."
+    },
+    "serial": {
+     "type": "string",
+     "description": "Android device or Vega VVD serial selector."
+    }
+   },
+   "additionalProperties": false,
+   "required": []
+  }
+ },
+ {
+  "name": "snapshot",
+  "description": "Capture the accessibility tree or compare it with the previous session baseline. Use the returned refs for subsequent semantic interactions and the diff option to verify UI changes.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "interactiveOnly": {
+     "type": "boolean"
+    },
+    "depth": {
+     "type": "integer"
+    },
+    "scope": {
+     "type": "string"
+    },
+    "raw": {
+     "type": "boolean"
+    },
+    "customActions": {
+     "type": "boolean",
+     "description": "Name the affordances an element merged away (iOS UIAccessibilityCustomAction, React Native accessibilityActions) — a card whose reply/options controls are not separate elements still lists them here. The names are for PLANNING, not invocation: there is no API to trigger them, so reach the affordance through the element detail screen, through the same control exposed as a labeled element elsewhere, or by coordinates from its rect. iOS simulator only; costs one accessibility round trip per merged element."
+    },
+    "forceFull": {
+     "type": "boolean"
+    },
+    "timeoutMs": {
+     "type": "integer",
+     "description": "Maximum wall-clock time for the snapshot command."
+    },
+    "noRecord": {
+     "type": "boolean",
+     "description": "Do not record this action."
+    },
+    "record": {
+     "type": "boolean",
+     "description": "Force-record this out-of-band observation into a repair-armed heal (mutually exclusive with noRecord). Authored replay steps are recorded automatically and never need this."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "session"
+   ]
+  }
+ },
+ {
+  "name": "swipe",
+  "description": "Quick coordinate fling with optional repeat pattern.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "from": {
+     "type": "object",
+     "description": "Swipe start point.",
+     "properties": {
+      "x": {
+       "type": "number"
+      },
+      "y": {
+       "type": "number"
+      }
+     },
+     "required": [
+      "x",
+      "y"
+     ],
+     "additionalProperties": false
+    },
+    "to": {
+     "type": "object",
+     "description": "Swipe end point.",
+     "properties": {
+      "x": {
+       "type": "number"
+      },
+      "y": {
+       "type": "number"
+      }
+     },
+     "required": [
+      "x",
+      "y"
+     ],
+     "additionalProperties": false
+    },
+    "count": {
+     "type": "integer",
+     "description": "Number of swipe repetitions.",
+     "minimum": 1,
+     "maximum": 200
+    },
+    "pauseMs": {
+     "type": "integer",
+     "description": "Pause between repeated swipes.",
+     "minimum": 0,
+     "maximum": 10000
+    },
+    "pattern": {
+     "type": "string",
+     "enum": [
+      "one-way",
+      "ping-pong"
+     ]
+    },
+    "noRecord": {
+     "type": "boolean",
+     "description": "Do not record this action."
+    }
+   },
+   "required": [
+    "from",
+    "to",
+    "session"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "test",
+  "description": "Run one or more replay scripts as a serial test suite",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "platform": {
+     "type": "string",
+     "enum": [
+      "apple",
+      "android",
+      "harmonyos",
+      "vega",
+      "linux",
+      "web",
+      "ios",
+      "macos"
+     ],
+     "description": "Platform selector used to resolve a device."
+    },
+    "device": {
+     "type": "string",
+     "description": "Device name selector."
+    },
+    "udid": {
+     "type": "string",
+     "description": "iOS device UDID selector."
+    },
+    "serial": {
+     "type": "string",
+     "description": "Android device or Vega VVD serial selector."
+    },
+    "cwd": {
+     "type": "string",
+     "description": "Working directory for command execution."
+    },
+    "paths": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    },
+    "update": {
+     "type": "boolean"
+    },
+    "backend": {
+     "type": "string"
+    },
+    "maestro": {
+     "type": "boolean"
+    },
+    "env": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    },
+    "metroHost": {
+     "type": "string",
+     "description": "Metro/debug host hint inherited by each test session."
+    },
+    "metroPort": {
+     "type": "integer",
+     "description": "Metro/debug port hint inherited by each test session."
+    },
+    "bundleUrl": {
+     "type": "string",
+     "description": "Bundle URL hint inherited by each test session."
+    },
+    "failFast": {
+     "type": "boolean"
+    },
+    "timeoutMs": {
+     "type": "integer"
+    },
+    "retries": {
+     "type": "integer"
+    },
+    "recordVideo": {
+     "type": "boolean"
+    },
+    "artifactsDir": {
+     "type": "string"
+    },
+    "shardAll": {
+     "type": "integer"
+    },
+    "shardSplit": {
+     "type": "integer"
+    }
+   },
+   "required": [
+    "paths"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "trace",
+  "description": "Start or stop trace-log capture and return the resulting artifact when capture ends. Use the same artifact path for the matching start and stop requests when an explicit path is required.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "cwd": {
+     "type": "string",
+     "description": "Working directory for command execution."
+    },
+    "action": {
+     "type": "string",
+     "enum": [
+      "start",
+      "stop"
+     ]
+    },
+    "path": {
+     "type": "string"
+    },
+    "noRecord": {
+     "type": "boolean",
+     "description": "Do not record this action."
+    }
+   },
+   "required": [
+    "action",
+    "session"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "trigger-app-event",
+  "description": "Ask the app to handle an app-defined automation or test event, with an optional structured payload. Call this only for event names and payload shapes the app documents.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "event": {
+     "type": "string",
+     "description": "Name of an app-defined automation or test event the app documents."
+    },
+    "payload": {
+     "type": "object",
+     "additionalProperties": true,
+     "description": "Structured payload passed to the event, in the shape the app documents for it."
+    },
+    "noRecord": {
+     "type": "boolean",
+     "description": "Do not record this action."
+    }
+   },
+   "required": [
+    "event",
+    "session"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "type",
+  "description": "Append text to the currently focused input. Use fill when the existing field value should be replaced, and focus first when no input is active.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "text": {
+     "type": "string",
+     "description": "Text to type."
+    },
+    "delayMs": {
+     "type": "integer",
+     "description": "Delay between typed characters.",
+     "minimum": 0
+    },
+    "noRecord": {
+     "type": "boolean",
+     "description": "Do not record this action."
+    }
+   },
+   "required": [
+    "text",
+    "session"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "wait",
+  "description": "Wait for a duration, text, snapshot ref, selector, or stable UI. Use text, ref, or selector for a specific readiness condition; stable waits until the UI stays quiet for the requested window.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "kind": {
+     "type": "string",
+     "enum": [
+      "duration",
+      "text",
+      "ref",
+      "selector",
+      "stable"
+     ]
+    },
+    "durationMs": {
+     "type": "integer"
+    },
+    "text": {
+     "type": "string"
+    },
+    "ref": {
+     "type": "string"
+    },
+    "selector": {
+     "type": "string"
+    },
+    "stable": {
+     "type": "boolean"
+    },
+    "quietMs": {
+     "type": "integer"
+    },
+    "timeoutMs": {
+     "type": "integer"
+    },
+    "depth": {
+     "type": "integer"
+    },
+    "scope": {
+     "type": "string"
+    },
+    "raw": {
+     "type": "boolean"
+    },
+    "noRecord": {
+     "type": "boolean",
+     "description": "Do not record this action."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "session"
+   ]
+  }
+ }
+]

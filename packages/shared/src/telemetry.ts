@@ -46,7 +46,8 @@ const frequentTools = new Set([
   "mobile_read_display_fps", "mobile_logs_keep_alive", "mobile_log_sources", "mobile_performance_sources",
   "mobile_read_performance_recording",
   "mobile_list_simulators", "mobile_list_ios_devices", "mobile_list_android_devices",
-  "devices", "apps", "appstate", "capabilities", "session", "events",
+  // agent-device's discovery and state lookups, as Claude's server serves them.
+  "device_devices", "device_apps", "device_appstate", "device_capabilities", "device_session", "device_events",
 ]);
 
 export function isFrequentTool(name: string): boolean {

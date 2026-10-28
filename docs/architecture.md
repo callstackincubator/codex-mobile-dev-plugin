@@ -2,7 +2,7 @@
 
 [Back to README](../README.md) · [Contributing](../CONTRIBUTING.md)
 
-Claude's server serves agent-device's commands as `device_*` tools. The separate Agent Device MCP entry and its skill stay disabled in the other hosts; their implementation and bundled runtime are retained for later reactivation.
+Claude's server serves agent-device's commands as `device_*` tools; the other hosts do not use agent-device yet.
 
 ## Hosts
 
@@ -61,13 +61,33 @@ and preserves its chosen recording target across foreground changes.
 
 Each MCP process owns one bundled Baguette child process. It selects a free loopback port, launches `dist/baguette/Baguette serve --host 127.0.0.1 --port <port> --no-plugins`, and shares that child across its tool calls and panel sessions. It does not use a separate Baguette server on port 8421. An opening failure returns an error the panel can show.
 
-The retained, currently inactive Agent Device entry point is `dist/agent-device-server.mjs`, which launches the official bundled `agent-device mcp` with Node through an SDK adapter. The adapter publishes all 55 operations, preserves their typed command arguments and output contracts, and validates inputs before forwarding them. State paths, remote daemon credentials, runner configuration and output-format settings belong to the plugin and are absent from tool inputs. Batch steps use the same compact contracts. Device selectors remain on setup, discovery, installation and script tools; interactions require a named session and reuse the upstream runtime's device binding. There is no global platform override. File operations retain `cwd` where it is relevant.
+Claude's server serves agent-device's commands as `device_<command>` tools
+(`packages/core/src/agent-device-tools.ts`), registered from
+`packages/runtimes/agent-device/tools.json`, which `npm run catalog:agent-device` writes
+from the pinned runtime and a unit test checks against it. The catalog keeps the
+runtime's typed command arguments and leaves out the commands Mobile Dev's own tools
+cover (`logs`, `perf`) and those for remote daemons, TVs and browsers. State paths,
+remote daemon credentials, runner configuration and output-format settings belong to
+the plugin and are absent from tool inputs. Batch steps use the same compact contracts.
+Device selectors remain on setup, discovery, installation and script tools;
+interactions require a named session and reuse the upstream runtime's device binding.
+There is no global platform override. File operations retain `cwd` where it is relevant.
+Other hosts can add the same `agentDeviceTools` feature to their server entry.
 
-The wrapper uses an explicit empty package config and a private temporary state directory. Default platform and form selectors would bypass the native session's device binding, so those are set only through device setup commands. It clears inherited agent-device settings so a global or cloud daemon cannot take over this connection. Commands start its local daemon as needed. On MCP shutdown, the wrapper runs the bundled `daemon stop --state-dir <own-directory> --clean` command, which checks the daemon's PID identity and releases its runner leases. It keeps logs and artifacts in that state directory for later reads. Call agent-device `session` with `action: "state-dir"` to find it.
+The first command starts the bundled `agent-device mcp` with Node
+(`AgentDeviceRuntime`), with an explicit empty package config and a private temporary
+state directory. Default platform and form selectors would bypass the native session's
+device binding, so those are set only through device setup commands. It clears
+inherited agent-device settings so a global or cloud daemon cannot take over this
+connection. An unexpected exit restarts it on the next command. On MCP shutdown, the
+server runs the bundled `daemon stop --state-dir <own-directory> --clean` command, which
+checks the daemon's PID identity and releases its runner leases. It keeps logs and
+artifacts in that state directory for later reads. Call `device_session` with
+`action: "state-dir"` to find it.
 
 `npm run check:mcp-budget` reads the packaged servers' catalogs, estimates their model-visible specifications, and checks them against [Codex's tool limits](https://github.com/openai/codex/blob/main/codex-rs/core/src/mcp_tool_exposure.rs). Codex compacts any MCP tool input schema over 5,000 bytes, dropping descriptions, so the check fails when one exceeds it. Codex's 8,000-byte per-tool and 64,000-byte combined limits apply only to Agent Plugins, whose manifest is `plugin.json` at the plugin root; tools past them are hidden from the model. This plugin uses `.codex-plugin/plugin.json`, the legacy format, so those limits do not apply. Moving to the Agent Plugin format would hide part of the catalog, which is about 64 KB. On models that support tool search, Codex defers MCP tools from every plugin: they leave the initial tool list but stay discoverable and callable.
 
-Use the panel's UDID and a named agent-device session for agent work. Refs belong to the latest snapshot or settled diff in that session. `press` and `fill` take a target such as `{ "kind": "ref", "ref": "@e12" }` or `{ "kind": "selector", "selector": "label=\"Search\"" }`. Use actual refs from the current result. Closing a session can close its app; leave `shutdown` unset to keep the simulator running. Another live agent-device daemon can own a runner lease. End that owner's work or choose another simulator instead of releasing its live claim.
+Use the device's UDID or serial and a named agent-device session for agent work. Refs belong to the latest snapshot or settled diff in that session. `press` and `fill` take a target such as `{ "kind": "ref", "ref": "@e12" }` or `{ "kind": "selector", "selector": "label=\"Search\"" }`. Use actual refs from the current result. Closing a session can close its app; leave `shutdown` unset to keep the simulator running. Another live agent-device daemon can own a runner lease. End that owner's work or choose another simulator instead of releasing its live claim.
 
 The app gets a random stream session through an app-only MCP tool. The MCP server opens a WebSocket to its bundled Baguette, keeps the latest JPEG, and returns it through `resources/read`. The iOS viewer requests 60 FPS, overlaps reads with JPEG decoding, and paints only the newest decoded frame. Frame and decode queues stay bounded; older pending frames are discarded. JPEG bytes are base64-encoded only when a reader requests the latest frame. The app sends input through an app-only tool that checks each message. Frames and input stay inside the host's MCP bridge. The UI sends telemetry to Sentry's configured ingestion origin.
 

@@ -7,9 +7,7 @@ import { telemetryBuildEnvironment } from "./telemetry-build.mjs";
 import { buildServeEmu } from "./build-serve-emu.mjs";
 import { buildUIPage } from "./ui-page.mjs";
 import { buildServerBundles } from "./server-bundle.mjs";
-import { agentDeviceCatalog } from "./agent-device-catalog.mjs";
 import { access, copyFile, cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { dirname, resolve } from "node:path";
 
@@ -101,12 +99,8 @@ await writeFile("dist/agent-device/release.json", JSON.stringify({
   name: installed.name, version: installed.version, url: pinned.resolved, integrity: pinned.integrity,
   lockfileSHA256: createHash("sha256").update(lock).digest("hex"),
 }, null, 2) + "\n");
-await mkdir("packages/skills/agent-device/references", { recursive: true });
-const workflow = execFileSync(process.execPath, [resolve(`${runtime}/node_modules/agent-device/bin/agent-device.mjs`), "help", "workflow"], {
-  encoding: "utf8", env: { ...process.env, AGENT_DEVICE_NO_UPDATE_NOTIFIER: "1" },
-});
-await writeFile("packages/skills/agent-device/references/workflow.md", workflow);
-await writeFile("dist/agent-device/tools.json", JSON.stringify(await agentDeviceCatalog("dist/agent-device"), null, 1) + "\n");
+// The commands Claude's server registers without starting the runtime (npm run catalog:agent-device).
+await copyFile(`${runtime}/tools.json`, "dist/agent-device/tools.json");
 await buildServeEmu("dist/serve-emu");
 // The host-neutral runtime: the shared server, its services and the MCP Apps panel
 // as hosts without their own chrome load it. A host that adds to them builds its
@@ -122,7 +116,7 @@ const pageMetafiles = [
 ];
 const serverMetafiles = [
   await buildServerBundles({
-    entryPoints: { server: "packages/core/src/index.ts", "agent-device-server": "packages/core/src/agent-device-server.mjs", "ios-mirror-service": "packages/core/src/ios-mirror-service.ts" },
+    entryPoints: { server: "packages/core/src/index.ts", "ios-mirror-service": "packages/core/src/ios-mirror-service.ts" },
     outdir: "dist", sentryDirectory: ".sentry/server",
   }),
 ];

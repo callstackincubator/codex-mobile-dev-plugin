@@ -23,7 +23,7 @@ import { registerDeviceChoiceTools } from "../src/device-choice-tools.ts";
 import { listIosDevices, registerIosDeviceTools } from "../src/ios-devices.ts";
 import { createDrivers, registerAppControlTools } from "../src/app-control/tools.ts";
 import type { OpenAIFormResult } from "@openai/mcp-extensions/server";
-import { adapterClient } from "../../test-support/agent-device-fixtures.ts";
+import { agentDeviceClient } from "../../test-support/agent-device-fixtures.ts";
 import { setDiscoveryCommandDiagnostic } from "../../shared/src/device-apps-command-diagnostics.ts";
 
 function contains(text: string, fragment: string, expected = true) {
@@ -181,13 +181,14 @@ test("UI timing windows retain exact totals, reset, and ignore invalid measureme
 test("high frequency reads and input avoid trace sampling even with a sampled parent", () => {
   let inherited = 0;
   const inherit = (rate: number) => { inherited++; return rate; };
-  for (const name of ["resources/read frame://private-session", "notifications/tools/list_changed", "tools/call mobile_stream_input", "tools/call mobile_ios_mirror_input", "tools/call mobile_read_cpu", "tools/call devices", "tools/call session", "tools/call events"]) {
+  for (const name of ["resources/read frame://private-session", "notifications/tools/list_changed", "tools/call mobile_stream_input", "tools/call mobile_ios_mirror_input", "tools/call mobile_read_cpu", "tools/call device_devices", "tools/call device_session", "tools/call device_events"]) {
     const rate = sampleTrace(name, inherit);
     assert.equal(rate, 0);
   }
   assert.equal(inherited, 0);
   const rate = sampleTrace("tools/call mobile_cpu_session", inherit);
   assert.equal(rate, 0.1);
+  assert.equal(sampleTrace("tools/call device_press", inherit), 0.1);
   const screenshotRate = sampleTrace("tools/call mobile_ios_mirror_capture_screenshot", inherit);
   assert.equal(screenshotRate, 0.1);
 });
@@ -303,7 +304,7 @@ test("shared iOS capture metrics retain surface attribution and honor opt-out", 
   assert.equal(JSON.stringify(envelopes), sent);
 });
 
-test("Agent Device adapter continues traces and reports failures without native tool payloads", async t => {
+test("agent-device tools continue traces and report failures without native tool payloads", async t => {
   const envelopes: Envelope[] = [];
   Sentry.init({
     dsn: "https://public@example.com/1", defaultIntegrations: false,
@@ -313,7 +314,7 @@ test("Agent Device adapter continues traces and reports failures without native 
   t.after(async () => { await Sentry.close(); });
   let observedTrace: string | undefined;
   let calls = 0;
-  const { client } = await adapterClient(t, async () => {
+  const { client } = await agentDeviceClient(t, async () => {
     calls++;
     const span = Sentry.getActiveSpan();
     observedTrace = span?.spanContext().traceId;
@@ -322,21 +323,20 @@ test("Agent Device adapter continues traces and reports failures without native 
     return { isError: true, content: [{ type: "text", text: "PRIVATE_NATIVE_RESULT" }] };
   });
   const traceId = "1234567890abcdef1234567890abcdef";
-  await client.callTool({ name: "type", arguments: { session: "PRIVATE_SESSION", text: "PRIVATE_NATIVE_ARGUMENT" }, _meta: {
+  await client.callTool({ name: "device_type", arguments: { session: "PRIVATE_SESSION", text: "PRIVATE_NATIVE_ARGUMENT" }, _meta: {
     "sentry-trace": `${traceId}-1234567890abcdef-1`,
   } });
   assert.equal(observedTrace, traceId);
-  await client.callTool({ name: "type", arguments: { session: "PRIVATE_SESSION", text: "PRIVATE_NATIVE_ARGUMENT" } });
+  await client.callTool({ name: "device_type", arguments: { session: "PRIVATE_SESSION", text: "PRIVATE_NATIVE_ARGUMENT" } });
   await Sentry.flush();
   const encoded = JSON.stringify(envelopes);
   contains(encoded, "PRIVATE_", false);
   contains(encoded, traceId);
   contains(encoded, "Agent Device command failed.");
   contains(encoded, "Agent Device tool transport failed.");
-  contains(encoded, "agent_device.catalog.ready");
   const items = envelopes.flatMap(envelope => envelope[1]);
   const errors = items.filter(item => item[0].type === "event");
-  await client.callTool({ name: "type", arguments: { session: "PRIVATE_SESSION", text: "PRIVATE_NATIVE_ARGUMENT" } });
+  await client.callTool({ name: "device_type", arguments: { session: "PRIVATE_SESSION", text: "PRIVATE_NATIVE_ARGUMENT" } });
   await Sentry.flush();
   const afterItems = envelopes.flatMap(envelope => envelope[1]);
   const afterErrors = afterItems.filter(item => item[0].type === "event");

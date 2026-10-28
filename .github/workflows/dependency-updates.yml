@@ -82,6 +82,7 @@ jobs:
         run: |
           npm ci --no-audit --no-fund
           npm run vendor:agent-device
+          npm run catalog:agent-device
           npm run vendor:serve-emu
 
       # Rebuilds each helper whose pins or sources changed and restores the rest from

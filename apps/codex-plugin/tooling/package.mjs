@@ -21,7 +21,6 @@ for (const path of RELEASE_DOCUMENTS) await copyFile(path, `${plugin}/${path}`);
 await stageRuntime(`${plugin}/dist`);
 await buildCodexHost(telemetryEnvironment, `${plugin}/dist`);
 for (const path of [".codex-plugin", "assets"]) await cp(`${source}/${path}`, `${plugin}/${path}`, { recursive: true, verbatimSymlinks: true });
-// Codex loads skills; the inactive agent-device skill stays out until its server returns.
 for (const skill of ["mobile-dev", "mobile-dev-setup"]) await cp(`packages/skills/${skill}`, `${plugin}/skills/${skill}`, { recursive: true, verbatimSymlinks: true });
 await writeFile(`${plugin}/.codex-plugin/plugin.json`, JSON.stringify(manifest, null, 2) + "\n");
 await mkdir(`${plugin}/scripts`, { recursive: true });

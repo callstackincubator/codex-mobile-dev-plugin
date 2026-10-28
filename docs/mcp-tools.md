@@ -42,7 +42,7 @@
 | `mobile_read_performance_frames` | Read Android jank/pacing statistics and page through exact display frames |
 | `mobile_display_fps_close` | Stop FPS collection and release the tracing connection |
 
-When reactivated, the `agent-device` MCP server exposes the pinned runtime's official operations through compact, validated schemas, including `open`, `snapshot`, `press`, `fill`, `type`, `scroll`, `wait`, `find`, `get`, `is`, `close`, and debugging tools. Their input schemas describe each command. The source [control skill](../skills/agent-device/SKILL.md), currently excluded from the package, explains session ordering and links to the version-matched guide.
+Claude's server adds the pinned agent-device runtime's commands as `device_*` tools with compact, validated schemas, including `device_open`, `device_snapshot`, `device_press`, `device_fill`, `device_type`, `device_scroll`, `device_wait`, `device_find`, `device_get`, `device_is`, `device_close`, and debugging tools. Their input schemas describe each command; `logs` and `perf` are left out for Mobile Dev's own tools.The source [control skill](../skills/agent-device/SKILL.md), currently excluded from the package, explains session ordering and links to the version-matched guide.
 
 
 ## TraceSift annotations

@@ -43,6 +43,20 @@ export function compactAgentDeviceTool(tool: Tool): Tool {
   return { ...tool, inputSchema: { ...tool.inputSchema, properties, required, additionalProperties: false } };
 }
 
+// Commands that Mobile Dev's own tools cover (logs, performance), or that need a remote
+// daemon, a TV or a browser.
+const omitted = new Set(["logs", "perf", "install-from-source", "artifacts", "viewport", "tv-remote", "audio"]);
+
+/**
+ * The agent-device commands Mobile Dev serves, with compact schemas and without output
+ * schemas, since the tools return agent-device's own results. `npm run
+ * catalog:agent-device` writes it from the pinned runtime.
+ */
+export function agentDeviceCatalog(tools: Tool[]): Tool[] {
+  return tools.filter(tool => omitted.has(tool.name) === false).map(compactAgentDeviceTool)
+    .map(({ name, title, description, inputSchema, annotations }) => ({ name, title, description, inputSchema, annotations }));
+}
+
 export function isObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && Array.isArray(value) === false;
 }

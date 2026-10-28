@@ -1,9 +1,7 @@
-import { existsSync } from "node:fs";
 import { copyFile, cp, mkdir, rm, writeFile } from "node:fs/promises";
 import { build } from "esbuild";
 import { buildCodexHost } from "../../apps/codex-plugin/tooling/build.mjs";
 import { buildHost as buildClaudeHost } from "../../apps/claude/tooling/build.mjs";
-import { agentDeviceCatalog } from "../agent-device-catalog.mjs";
 import { buildServerBundles } from "../server-bundle.mjs";
 import { buildUIPage } from "../ui-page.mjs";
 
@@ -12,8 +10,7 @@ import { buildUIPage } from "../ui-page.mjs";
  * browser host that loads them. Only the JavaScript is built, beside the helpers
  * committed to the repository that the server reads at startup; Baguette and the
  * device runtimes stay out. This runs on Linux, and the tests exercise what needs
- * no device. Claude's target lists agent-device's commands from the vendored runtime
- * (`npm run vendor:agent-device`).
+ * no device.
  */
 export const HOST_TESTS = ".host-tests";
 const environment = "development";
@@ -39,9 +36,8 @@ const targets = {
   // shared page for its cards.
   async claude(directory) {
     await sharedPage(`${directory}/app.html`);
-    if (existsSync("packages/runtimes/agent-device/node_modules/agent-device") === false) throw new Error("Run npm run vendor:agent-device to build Claude's target.");
     await mkdir(`${directory}/agent-device`, { recursive: true });
-    await writeFile(`${directory}/agent-device/tools.json`, JSON.stringify(await agentDeviceCatalog("packages/runtimes/agent-device")));
+    await copyFile("packages/runtimes/agent-device/tools.json", `${directory}/agent-device/tools.json`);
     await buildClaudeHost(directory, { sentryDirectory: ".sentry/host-tests/claude" });
   },
   codex: directory => buildCodexHost(environment, directory),

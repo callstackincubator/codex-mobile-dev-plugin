@@ -1,53 +1,84 @@
 import { readFileSync } from "node:fs";
 import { z } from "zod";
-import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
-import { forwardAgentDeviceCall, invalid } from "./agent-device-adapter.ts";
-import type { AgentDeviceBackend } from "./agent-device-adapter.ts";
+import type { RequestHandlerExtra, RequestOptions } from "@modelcontextprotocol/sdk/shared/protocol.js";
+import type { CallToolRequest, CallToolResult, ServerNotification, ServerRequest, Tool } from "@modelcontextprotocol/sdk/types.js";
 import { isObject } from "./agent-device-catalog.ts";
 import { AgentDeviceRuntime } from "./agent-device-runtime.ts";
+import type { AgentDeviceBackend } from "./agent-device-runtime.ts";
 import type { ServerFeature } from "./server-feature.ts";
 import { captureServerError } from "./telemetry.ts";
 
-/** Each agent-device command is the tool `device_<command>`, beside Mobile Dev's own tools. */
-export const AGENT_DEVICE_TOOL_PREFIX = "device_";
-
-// Commands that Mobile Dev's own tools cover (logs, performance), or that need a remote
-// daemon, a TV or a browser.
-const omitted = new Set(["logs", "perf", "install-from-source", "artifacts", "viewport", "tv-remote", "audio"]);
-
-type Runtime = { connect(): Promise<AgentDeviceBackend>; close(): Promise<void> };
 type Schemas = Map<string, z.ZodType>;
+type CallExtra = Pick<RequestHandlerExtra<ServerRequest, ServerNotification>, "signal" | "sendNotification" | "_meta">;
 
-/** The compact agent-device catalog that `npm run build` writes beside the runtime. */
+/** The catalog `npm run build` copies beside the runtime (see agentDeviceCatalog). */
 export function readAgentDeviceCatalog(url = new URL("./agent-device/tools.json", import.meta.url)): Tool[] {
   return JSON.parse(readFileSync(url, "utf8"));
 }
 
 /**
- * Serves agent-device's commands from the host's server, for hosts that load one server
- * per plugin. The runtime starts on the first command.
+ * Serves agent-device's commands as `device_<command>` tools from the host's own server,
+ * for hosts that load one server per plugin. The runtime starts on the first command.
  */
-export function agentDeviceTools(catalog: Tool[], runtime: Runtime = new AgentDeviceRuntime()): ServerFeature {
+export function agentDeviceTools(catalog: Tool[], runtime: Pick<AgentDeviceRuntime, "connect" | "close"> = new AgentDeviceRuntime()): ServerFeature {
   return server => {
-    const tools = catalog.filter(tool => omitted.has(tool.name) === false);
-    const schemas: Schemas = new Map(tools.map(tool => [tool.name, z.fromJSONSchema(tool.inputSchema as z.core.JSONSchema.JSONSchema)]));
-    for (const tool of tools) {
-      server.registerTool(`${AGENT_DEVICE_TOOL_PREFIX}${tool.name}`, {
-        title: tool.title, description: tool.description, inputSchema: schemas.get(tool.name), annotations: tool.annotations,
-      }, async (input: Record<string, unknown>, extra): Promise<CallToolResult> => {
-        const issue = stepIssue(tool.name, input, schemas);
+    const schemas: Schemas = new Map();
+    for (const tool of catalog) {
+      // The catalog's input schemas are JSON Schema objects, which zod reads as such.
+      const inputSchema = z.fromJSONSchema(tool.inputSchema as z.core.JSONSchema.JSONSchema);
+      schemas.set(tool.name, inputSchema);
+      server.registerTool(`device_${tool.name}`, { title: tool.title, description: tool.description, inputSchema, annotations: tool.annotations }, async (input, extra) => {
+        // The server validated the input against this object schema; its callback type cannot express that.
+        const args = input as Record<string, unknown>;
+        const issue = stepIssue(tool.name, args, schemas);
         if (issue !== undefined) return invalid(issue);
         let backend: AgentDeviceBackend;
         try { backend = await runtime.connect(); }
-        catch {
-          captureServerError(new Error("Agent Device adapter failed to start."), "agent_device.start");
+        catch (error) {
+          console.error("[mobile-dev] agent-device failed to start:", error);
+          captureServerError(new Error("Agent Device failed to start."), "agent_device.start");
           return invalid("Agent Device could not start. Check the local runtime diagnostics.");
         }
-        return forwardAgentDeviceCall(backend, { name: tool.name, arguments: input, _meta: extra._meta }, extra);
+        return forward(backend, { name: tool.name, arguments: args, _meta: extra._meta }, extra);
       });
     }
     return () => runtime.close();
   };
+}
+
+function invalid(message: string): CallToolResult {
+  return { isError: true, content: [{ type: "text", text: message }] };
+}
+
+/**
+ * Forwards a command, relaying its progress: long runs such as builds keep the call open
+ * while they report it. Reports failures other than unavailable devices and sessions,
+ * without their details.
+ */
+async function forward(backend: AgentDeviceBackend, params: CallToolRequest["params"], extra: CallExtra): Promise<CallToolResult> {
+  try {
+    const options: RequestOptions = {
+      signal: extra.signal,
+      timeout: 30 * 60 * 1000,
+      resetTimeoutOnProgress: true,
+      onprogress: async progress => {
+        const progressToken = params._meta?.progressToken;
+        if (progressToken === undefined) return;
+        await extra.sendNotification({ method: "notifications/progress", params: { ...progress, progressToken } });
+      },
+    };
+    const result = await backend.callTool(params, options);
+    const code = result.structuredContent?.code;
+    if (result.isError && code !== "DEVICE_NOT_FOUND" && code !== "DEVICE_IN_USE" && code !== "SESSION_NOT_FOUND") {
+      captureServerError(new Error("Agent Device command failed."), `agent_device.${params.name}`);
+    }
+    return result;
+  } catch (error) {
+    if (extra.signal.aborted) throw error;
+    console.error("[mobile-dev] Agent Device tool transport failed:", error);
+    captureServerError(new Error("Agent Device tool transport failed."), `agent_device.${params.name}`);
+    return invalid("Agent Device could not complete the command. Check the local runtime diagnostics.");
+  }
 }
 
 // The server validates each tool's own input; batch steps name other commands, and saving
