@@ -1,8 +1,16 @@
 import { access, cp, readFile } from "node:fs/promises";
+import { relative, sep } from "node:path";
 import { assertBuildEnvironment } from "./telemetry-build.mjs";
 
 /** The documents every host's package ships beside the runtime. */
 export const RELEASE_DOCUMENTS = ["README.md", "LICENSE", "THIRD_PARTY_NOTICES.md", "PRIVACY.md", "TERMS.md", "SUPPORT.md"];
+
+/**
+ * The parts of `dist/` only Mobile Dev's panel uses: Baguette for iOS simulators,
+ * serve-emu for Android, and physical iPhone mirroring with its service. Hosts whose
+ * server has no panel leave them out.
+ */
+export const PANEL_PARTS = ["baguette", "serve-emu", "ios-mirror", "ios-mirror-service.mjs"];
 
 // The files `npm run build` must produce, under dist/.
 const RUNTIME_FILES = [
@@ -16,13 +24,12 @@ const RUNTIME_FILES = [
   "agent-device/tools.json",
 ];
 
-/**
- * Copies the host-neutral runtime from `dist/` into a host's package: all of it, or only
- * the top-level `parts` a host ships.
- */
-export async function stageRuntime(directory, parts) {
-  if (parts === undefined) return cp("dist", directory, { recursive: true, verbatimSymlinks: true });
-  for (const part of parts) await cp(`dist/${part}`, `${directory}/${part}`, { recursive: true, verbatimSymlinks: true });
+/** Copies the host-neutral runtime from `dist/` into a host's package, without the panel's parts for hosts without it. */
+export async function stageRuntime(directory, { panel = true } = {}) {
+  await cp("dist", directory, {
+    recursive: true, verbatimSymlinks: true,
+    filter: source => panel || PANEL_PARTS.includes(relative("dist", source).split(sep)[0]) === false,
+  });
 }
 
 /** The release version every host ships, from the workspace's package.json. */
@@ -31,13 +38,8 @@ export async function releaseVersion() {
   return metadata.version;
 }
 
-/**
- * Checks that `npm run build` produced a complete runtime for `environment`, or the
- * `parts` of it a host ships, before a host packages it.
- */
-export async function assertRuntime(environment, parts) {
+/** Checks that `npm run build` produced a complete runtime for `environment` before a host packages it. */
+export async function assertRuntime(environment) {
   await assertBuildEnvironment("dist", environment);
-  for (const path of RUNTIME_FILES) {
-    if (parts === undefined || parts.includes(path.split("/")[0])) await access(`dist/${path}`);
-  }
+  for (const path of RUNTIME_FILES) await access(`dist/${path}`);
 }

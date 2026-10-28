@@ -26,7 +26,8 @@ let starting: Promise<void> | undefined;
 async function startService() {
   if (starting) return starting;
   starting = (async () => {
-    const bundled = import.meta.url.endsWith("/server.mjs");
+    // Bundles, and the chunks they split into, sit in dist/ beside the service.
+    const bundled = import.meta.url.endsWith(".mjs");
     const entry = bundled ? "./ios-mirror-service.mjs" : "./ios-mirror-service.ts";
     const url = new URL(entry, import.meta.url);
     const path = fileURLToPath(url);

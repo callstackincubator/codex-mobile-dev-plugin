@@ -25,10 +25,12 @@ A host adds to the shared pieces without changing them:
   (`apps/claude/server`) passes no panel and adds agent-device's commands; its chat
   cards stay. Every host lists simulators for logs, CPU and device choices with
   simctl, without starting Baguette.
-- **Runtime:** a host's `plugin-host.json` can list the parts of `dist/` it ships
-  and a server build of its own. Claude ships neither Baguette, serve-emu nor the
-  iOS mirror, and its server splits into chunks, keeping every file under the
-  Claude plugin directory's 5 MiB limit.
+- **Runtime:** a host's `plugin-host.json` can leave out the panel's parts of `dist/`
+  (`"panel": false`, see `PANEL_PARTS` in `tooling/host-runtime.mjs`) and name a
+  server build of its own. Claude ships neither Baguette, serve-emu nor the iOS
+  mirror, and its server loads after telemetry as a separate module, so esbuild
+  splits it into chunks beside `server.mjs`, keeping every file under the Claude
+  plugin directory's 5 MiB limit.
 - **Panel:** a host's page entry calls `startMcpApp` with its chrome. Codex adds the
   update banner; Claude uses the shared entry, for its cards.
 - **Views:** shared views depend only on `HostBridge`, the subset of `App` they use,

@@ -1,9 +1,11 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { access, cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { assertBuildEnvironment } from "./telemetry-build.mjs";
 
-export function compareVersions(incoming, previous) {
+function compareVersions(incoming, previous) {
   const incomingParts = incoming.split("-");
   const previousParts = previous.split("-");
   const incomingCore = incomingParts[0].split(".");
@@ -43,7 +45,7 @@ export function compareVersions(incoming, previous) {
   return 0;
 }
 
-export function gitEnvironment(remote, token) {
+function gitEnvironment(remote, token) {
   const env = { ...process.env };
   if (token) {
     const url = new URL(remote);
@@ -59,13 +61,41 @@ export function gitEnvironment(remote, token) {
 }
 
 /**
- * Publishes a release as one commit on a branch of its own, replacing the previous
- * release's files, so a host can install the branch as a marketplace. The branch only
- * moves forward: an older or repeated version leaves it unchanged. `catalog` is the
- * marketplace file every release on the branch has, named `name`; `write` fills the
- * emptied checkout.
+ * Publishes a packaged plugin release to a branch of this repository, so its host can
+ * install the branch as a marketplace: the plugin at `pluginPath` and the marketplace
+ * file at `catalogPath`, which `catalog(manifest)` lists it in. Each release is one
+ * commit replacing the previous release's files, and the branch only moves forward: an
+ * older or repeated version leaves it unchanged. The package must be a release build
+ * of mobile-dev whose version matches `tag` and that has every `requiredFiles` path.
  */
-export async function publishBranch({ branch, version, remote, token, catalog, name, write }) {
+export async function publishPluginRelease({ manifestPath, requiredFiles, branch, pluginPath, catalogPath, catalog }, { pluginDirectory, tag, remote, token }) {
+  const manifest = JSON.parse(await readFile(`${pluginDirectory}/${manifestPath}`, "utf8"));
+  const version = manifest.version;
+  const validVersion = typeof version === "string" && /^\d+\.\d+\.\d+(?:-[\da-zA-Z.-]+)?$/.test(version);
+  if (manifest.name !== "mobile-dev" || validVersion === false || tag !== `v${version}`) {
+    throw new Error("The packaged mobile-dev version must match the release tag.");
+  }
+  await assertBuildEnvironment(`${pluginDirectory}/dist`, "release");
+  for (const path of requiredFiles) await access(`${pluginDirectory}/${path}`);
+  const listing = catalog(manifest);
+  return publishBranch({
+    branch, version, remote, token, catalogPath, name: listing.name,
+    async write(directory) {
+      await cp(pluginDirectory, `${directory}/${pluginPath}`, { recursive: true, verbatimSymlinks: true });
+      await mkdir(dirname(`${directory}/${catalogPath}`), { recursive: true });
+      await writeFile(`${directory}/${catalogPath}`, JSON.stringify(listing, null, 2) + "\n");
+    },
+  });
+}
+
+/** Publishes the package path given on the command line, as the release workflow runs `scriptUrl`. */
+export async function publishFromCommandLine(scriptUrl, publish) {
+  if (process.argv[1] === undefined || resolve(process.argv[1]) !== fileURLToPath(scriptUrl)) return;
+  const result = await publish({ pluginDirectory: resolve(process.argv[2]), tag: process.env.RELEASE_TAG, remote: process.env.RELEASE_REPOSITORY_URL, token: process.env.GH_TOKEN });
+  console.log(JSON.stringify(result));
+}
+
+async function publishBranch({ branch, version, remote, token, catalogPath, name, write }) {
   const ref = `refs/heads/${branch}`;
   const env = gitEnvironment(remote, token);
   const directory = await mkdtemp(join(tmpdir(), "mobile-dev-publish-"));
@@ -87,7 +117,7 @@ export async function publishBranch({ branch, version, remote, token, catalog, n
     if (existing.status === 0) {
       git(["fetch", "--depth=1", "origin", ref]);
       git(["checkout", "--detach", "FETCH_HEAD"]);
-      const previousCatalog = JSON.parse(await readFile(`${directory}/${catalog}`, "utf8"));
+      const previousCatalog = JSON.parse(await readFile(`${directory}/${catalogPath}`, "utf8"));
       if (previousCatalog.name !== name) throw new Error(`${branch} must contain the ${name} marketplace.`);
       const subject = git(["log", "-1", "--format=%s"]).trim();
       const previousRelease = subject.match(/ (\d+\.\d+\.\d+(?:-[\da-zA-Z.-]+)?)$/);

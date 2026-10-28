@@ -76,7 +76,8 @@ async function renderBezel(device: PhysicalIosDevice, run: BezelCommand, runtime
   }
   if (selected === undefined) throw new Error(`Xcode has no Apple device frame for ${device.model} (${device.productType}). Install its device type in Xcode.`);
   const { type, profile } = selected;
-  const root = import.meta.url.endsWith("/server.mjs") ? "./baguette/" : "../../native/vendor/baguette/";
+  // Bundles, and the chunks they split into, sit in dist/ beside the helpers.
+  const root = import.meta.url.endsWith(".mjs") ? "./baguette/" : "../../native/vendor/baguette/";
   const url = new URL(`${root}Baguette`, import.meta.url);
   const executable = fileURLToPath(url);
   const signal = AbortSignal.timeout(commandOptions.timeout);

@@ -12,19 +12,8 @@
     "name": "mobile-dev-local",
     "manifest": ".claude-plugin/marketplace.json"
   },
-  "panels": false,
-  "server": "tooling/build.mjs",
-  "runtime": [
-    "agent-device",
-    "android-cpu",
-    "android-fps",
-    "app.html",
-    "ios-fps",
-    "ios-logs",
-    "telemetry",
-    "telemetry-environment.json",
-    "third-party-licenses.txt"
-  ],
+  "panel": false,
+  "build": "tooling/build.mjs",
   "skills": ["skills/mobile-dev"],
   "maxFileBytes": 5242880
 }

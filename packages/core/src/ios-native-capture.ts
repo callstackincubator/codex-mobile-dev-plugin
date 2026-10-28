@@ -15,7 +15,8 @@ let addon: NativeAddon | undefined;
 export async function openNativeIosCapture(udid: string): Promise<NativeCapture> {
   if (process.platform !== "darwin" || process.arch !== "arm64") throw new ExpectedOperationError("unsupported_platform", "Physical iOS mirroring requires an Apple Silicon Mac.");
   if (addon === undefined) {
-    const bundled = import.meta.url.endsWith("/ios-mirror-service.mjs");
+    // Bundles, and the chunks they split into, sit in dist/ beside the addon.
+    const bundled = import.meta.url.endsWith(".mjs");
     const root = bundled ? "./ios-mirror/" : "../../native/vendor/ios-mirror/";
     const url = new URL(`${root}darwin-arm64.node`, import.meta.url);
     const path = fileURLToPath(url);

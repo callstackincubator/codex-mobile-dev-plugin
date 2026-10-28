@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { access, cp, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { releaseVersion } from "./host-runtime.mjs";
+import { PANEL_PARTS, releaseVersion } from "./host-runtime.mjs";
 import { codexOnlyPaths, pluginHost, pluginHosts } from "./plugin-hosts.mjs";
 
 // Checks a plugin host's packages from a copy in a path with spaces:
@@ -18,10 +18,10 @@ const temporary = await mkdtemp(join(tmpdir(), `mobile-dev-${name}-`));
 const home = join(temporary, "home");
 await mkdir(home);
 // Hosts without the panel run their own server with cards and agent-device's commands.
-const panels = host.panels !== false;
+const panels = host.panel;
 const panelTools = ["mobile_open_workspace", "mobile_open_simulator", "mobile_list_simulators", "mobile_list_android_devices", "mobile_stream_session", "mobile_open_performance_recording"];
 const expectedTools = panels ? panelTools : ["mobile_render_performance_recording", "mobile_logs_session", "device_open", "device_snapshot"];
-const panelFiles = ["dist/baguette/Baguette", "dist/ios-mirror/darwin-arm64.node", "dist/serve-emu/src/cli.mjs"];
+const panelFiles = PANEL_PARTS.map(part => `dist/${part}`);
 
 async function withServer(label, args, env, capabilities, check) {
   const client = new Client({ name: `${name}-${label}-smoke`, version: "1" }, { capabilities });
@@ -46,8 +46,8 @@ async function withServer(label, args, env, capabilities, check) {
     const html = resource.contents[0].text;
     assert.ok(html.includes(`name="mobile-dev-environment" content="${env.MOBILE_DEV_ENVIRONMENT}"`));
     assert.match(html, /name="mobile-dev-telemetry" content="off"/);
-    assert.doesNotMatch(html, /plugin store/, "The shared panel has no Codex update banner.");
-    // The Codex updater belongs to Codex's server; these packages run the shared one.
+    assert.doesNotMatch(html, /plugin store/, "The shared page has no Codex update banner.");
+    // The Codex updater belongs to Codex's server, not these hosts'.
     assert.equal(tools.some(tool => tool.name.includes("plugin_")), false);
     await check(client, resource);
   } catch (error) {
@@ -99,8 +99,7 @@ try {
   const server = manifest.mcpServers["mobile-dev"];
   assert.equal(server.command, "node");
   assert.deepEqual(server.args, [`\${${host.root}}/dist/server.mjs`]);
-  const skills = host.skills ?? ["mobile-dev", "mobile-dev-setup"];
-  for (const path of ["LICENSE", "README.md", "PRIVACY.md", "dist/app.html", ...skills.map(skill => `skills/${skill.split("/").at(-1)}/SKILL.md`), ...panels ? panelFiles : []]) {
+  for (const path of ["LICENSE", "README.md", "PRIVACY.md", "dist/app.html", ...host.skills.map(skill => `skills/${basename(skill)}/SKILL.md`), ...panels ? panelFiles : []]) {
     await access(join(plugin, path));
   }
   if (panels === false) for (const path of panelFiles) await assert.rejects(access(join(plugin, path)), path);

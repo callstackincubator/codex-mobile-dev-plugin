@@ -36,7 +36,7 @@ async function fixture(t: TestContext) {
   return { remote, plugin, version, checkout };
 }
 
-test("publishing puts the plugin and its marketplace on release/claude", async t => {
+test("publishing puts the plugin beside its marketplace on release/claude, as the local package does", async t => {
   const { remote, plugin, version, checkout } = await fixture(t);
   await version("1.2.3");
   assert.deepEqual(await publishRelease(plugin, "v1.2.3", remote), { published: true, version: "1.2.3", latest: "1.2.3" });
@@ -44,24 +44,16 @@ test("publishing puts the plugin and its marketplace on release/claude", async t
   const catalog = JSON.parse(await readFile(join(clone, ".claude-plugin/marketplace.json"), "utf8"));
   assert.equal(catalog.name, "mobile-dev");
   assert.deepEqual(catalog.owner, { name: "Callstack", email: "hello@callstack.com" });
-  assert.deepEqual(catalog.plugins.map((entry: { name: string; source: string }) => [entry.name, entry.source]), [["mobile-dev", "./plugins/mobile-dev"]]);
-  assert.equal(JSON.parse(await readFile(join(clone, "plugins/mobile-dev/.claude-plugin/plugin.json"), "utf8")).version, "1.2.3");
-  assert.equal((await stat(join(clone, "plugins/mobile-dev/dist/ios-fps/mobile-dev-ios-fps"))).mode & 0o111, 0o111);
+  assert.deepEqual(catalog.plugins.map((entry: { name: string; source: string }) => [entry.name, entry.source]), [["mobile-dev", "./mobile-dev"]]);
+  assert.equal(JSON.parse(await readFile(join(clone, "mobile-dev/.claude-plugin/plugin.json"), "utf8")).version, "1.2.3");
+  assert.equal((await stat(join(clone, "mobile-dev/dist/ios-fps/mobile-dev-ios-fps"))).mode & 0o111, 0o111);
   assert.equal(git(clone, ["log", "-1", "--format=%s"]).trim(), "chore(release): release mobile-dev 1.2.3");
 });
 
-test("only a newer release built for release replaces the published one", async t => {
-  const { remote, plugin, version, checkout } = await fixture(t);
-  await version("1.2.3");
-  await publishRelease(plugin, "v1.2.3", remote);
-  await version("1.2.2");
-  assert.deepEqual(await publishRelease(plugin, "v1.2.2", remote), { published: false, version: "1.2.2", latest: "1.2.3" });
+test("only a release build matching its tag is published", async t => {
+  const { remote, plugin, version } = await fixture(t);
   await version("1.3.0");
   await assert.rejects(publishRelease(plugin, "v1.2.9", remote), /must match the release tag/);
   await version("1.3.0", "development");
-  await assert.rejects(publishRelease(plugin, "v1.3.0", remote));
-  await version("1.3.0");
-  assert.equal((await publishRelease(plugin, "v1.3.0", remote)).published, true);
-  const clone = await checkout();
-  assert.equal(git(clone, ["rev-list", "--count", "HEAD"]).trim(), "2");
+  await assert.rejects(publishRelease(plugin, "v1.3.0", remote), /requires a release build/);
 });

@@ -4,24 +4,25 @@ import { basename, dirname, join, resolve } from "node:path";
 import { telemetryBuildEnvironment } from "./telemetry-build.mjs";
 import { assertRuntime, RELEASE_DOCUMENTS as documents, releaseVersion, stageRuntime } from "./host-runtime.mjs";
 import { pluginHost } from "./plugin-hosts.mjs";
+import { pluginMarketplace } from "./plugin-marketplace.mjs";
 
-// Packages the shared server and MCP Apps panel for a plugin host: the host-neutral
-// runtime, or the parts of it the host ships with its own server, plus the host's
-// manifest, without Codex-only files.
+// Packages the shared server and MCP Apps views for a plugin host: the host-neutral
+// runtime, without the panel's parts for hosts without it, the host's own server where
+// it builds one, and the host's manifest, without Codex-only files.
 //   node tooling/package-plugin.mjs <claude|cursor> [--release]
 const name = process.argv[2];
 const host = pluginHost(name);
 const environment = telemetryBuildEnvironment(process.argv.slice(3));
-await assertRuntime(environment, host.runtime);
+await assertRuntime(environment);
 const version = await releaseVersion();
 
 // Stage the runtime once, so the desktop bundle and the plugin ship the same files with
 // the same Sentry debug IDs.
 const runtime = resolve(`release/${name}-runtime`);
 await rm(runtime, { recursive: true, force: true });
-await stageRuntime(runtime, host.runtime);
-if (host.server) {
-  const { buildHost } = await import(resolve(host.app, host.server));
+await stageRuntime(runtime, { panel: host.panel });
+if (host.build) {
+  const { buildHost } = await import(resolve(host.build));
   await buildHost(runtime);
 }
 
@@ -59,9 +60,7 @@ await rm(directory, { recursive: true, force: true });
 await mkdir(`${directory}/${host.manifest}`, { recursive: true });
 await cp(runtime, `${directory}/dist`, { recursive: true, verbatimSymlinks: true });
 await cp(`${host.app}/assets`, `${directory}/assets`, { recursive: true });
-// Hosts with skills of their own ship those instead of the shared ones.
-const skills = host.skills?.map(path => `${host.app}/${path}`) ?? ["packages/skills/mobile-dev", "packages/skills/mobile-dev-setup"];
-for (const skill of skills) await cp(skill, `${directory}/skills/${basename(skill)}`, { recursive: true, verbatimSymlinks: true });
+for (const skill of host.skills) await cp(skill, `${directory}/skills/${basename(skill)}`, { recursive: true, verbatimSymlinks: true });
 for (const path of documents) await copyFile(path, `${directory}/${path}`);
 await writeFile(`${directory}/${host.manifest}/plugin.json`, JSON.stringify({ name: pluginName, version, ...fields }, null, 2) + "\n");
 await assertFileSizes(directory);
@@ -76,10 +75,7 @@ console.log(`${host.label} plugin: ${directory}\n${host.label} plugin ZIP: ${arc
 // as Codex does from release/marketplace.
 if (host.marketplace) {
   const root = resolve(`release/${name}-plugin`);
-  const catalog = {
-    name: host.marketplace.name, description: `${host.label} plugin built from this checkout`, owner: { name: fields.author?.name ?? "Callstack" },
-    plugins: [{ name: pluginName, source: `./${pluginName}`, description: fields.description, version }],
-  };
+  const catalog = pluginMarketplace(host.marketplace.name, `${host.label} plugin built from this checkout`, { name: pluginName, ...fields });
   await mkdir(dirname(`${root}/${host.marketplace.manifest}`), { recursive: true });
   await writeFile(`${root}/${host.marketplace.manifest}`, JSON.stringify(catalog, null, 2) + "\n");
   console.log(`${host.label} marketplace: ${root}`);

@@ -272,6 +272,7 @@ then run from this checkout with Node.js 22.19 or later:
 
 ```sh
 npm run build
+npm run package:claude
 npm run claude:config
 ```
 
@@ -279,14 +280,13 @@ npm run claude:config
    `~/Library/Application Support/Claude/claude_desktop_config.json`.
 2. Merge the `mobile-dev` entry from `.local-dev/claude-desktop-config.json` into
    the existing `mcpServers` object, preserving other servers and settings. The
-   snippet uses absolute paths to this checkout and the Node executable running
-   the generator.
-3. Fully quit and reopen Claude, start a new conversation, and ask **“Open Mobile Dev.”**
-   Approve the connector when prompted; use **Expand** when available.
+   snippet runs Claude's packaged server in `release/claude-plugin/mobile-dev` with
+   the Node executable running the generator.
+3. Fully quit and reopen Claude, start a new conversation, and ask, for example,
+   **“List my iOS simulators with Mobile Dev.”** Approve the connector when prompted.
 
-After UI or server edits, run `npm run build` and fully restart Claude. This
-workflow uses the checkout directly and needs no repackaging. Regenerate the
-config if the checkout or Node path changes. For connection failures, check
+After UI or server edits, run `npm run build` and `npm run package:claude`, then
+fully restart Claude. Regenerate the config if the checkout or Node path changes. For connection failures, check
 **Settings > Developer** for the server status and logs.
 
 To create and check a bundle for manual installation instead:
@@ -299,12 +299,11 @@ npm run test:claude
 This writes `release/mobile-dev-<version>-claude-desktop-darwin-arm64.mcpb`, the
 Claude plugin folder `release/claude-plugin/mobile-dev` with its ZIP, and a local
 `mobile-dev-local` marketplace in `release/claude-plugin`. Both packages run
-Claude's server (`apps/claude/server`), built over the parts of the runtime that
-`apps/claude/plugin-host.json` lists: no panel, Baguette, serve-emu or iOS mirror,
-with agent-device's commands as `device_*` tools and the skill in
+Claude's server (`apps/claude/server`), built over the runtime without the panel's
+parts (`"panel": false` in `apps/claude/plugin-host.json`): no Baguette, serve-emu or
+iOS mirror, with agent-device's commands as `device_*` tools and the skill in
 `apps/claude/skills`. Packaging fails if a file exceeds the Claude plugin
-directory's 5 MiB limit. The development connection above runs the shared server,
-with the panel. The plugin folder uses `apps/claude/.claude-plugin/plugin.json`, which
+directory's 5 MiB limit. The plugin folder uses `apps/claude/.claude-plugin/plugin.json`, which
 starts `dist/server.mjs` with Node.js 22.19 or later from `PATH`, and leaves out the
 Codex manifest, `.mcp.json`, and launcher. Check it with
 `claude plugin validate ./release/claude-plugin`, load it with

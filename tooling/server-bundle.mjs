@@ -17,7 +17,7 @@ import { execFileSync } from "node:child_process";
  */
 export async function buildServerBundles({ entryPoints, outdir, sentryDirectory, splitting = false }) {
   const result = await build({
-    entryPoints, outdir, outExtension: { ".js": ".mjs" }, bundle: true, splitting, chunkNames: "[name]-[hash]",
+    entryPoints, outdir, outExtension: { ".js": ".mjs" }, bundle: true, splitting,
     format: "esm", platform: "node", target: "node22", minify: false, legalComments: "eof", metafile: true,
     sourcemap: "external",
     plugins: [sentryEsbuildPlugin({ project: SENTRY_PROJECTS.server, telemetry: false, sourcemaps: { disable: true }, release: { inject: false, create: false, finalize: false } })],

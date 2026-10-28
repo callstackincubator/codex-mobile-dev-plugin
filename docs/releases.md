@@ -71,9 +71,9 @@ tags and draft releases do not truncate the list. The first public release lists
 the full source history. Later releases also include a link to the full diff.
 
 Download `mobile-dev-<version>-darwin-arm64.zip` directly from the release's
-assets for manual store upload. The same ZIP is also retained as an Actions
-artifact for 30 days; extract the Actions artifact wrapper before uploading the
-plugin ZIP. Publishing a GitHub release does not submit or publish it to the OpenAI
+assets for manual store upload. The same ZIP is also retained, with the
+Claude packages, as one Actions artifact for 30 days; extract the Actions artifact
+wrapper before uploading the plugin ZIP. Publishing a GitHub release does not submit or publish it to the OpenAI
 plugin directory. A tag that already has a GitHub release will fail release
 creation rather than replace existing assets; download the ZIP from the completed
 build job or use a new version for a new release.
@@ -103,12 +103,13 @@ The same build packages Claude with `npm run package:claude -- --release` and
 checks the extracted plugin ZIP and the desktop bundle with `npm run test:claude`,
 including that no file exceeds the Claude plugin directory's 5 MiB limit. The
 GitHub release attaches `mobile-dev-<version>-claude-plugin-darwin-arm64.zip` and
-`mobile-dev-<version>-claude-desktop-darwin-arm64.mcpb` beside the Codex ZIP; both
-are also kept as one Actions artifact for 30 days.
+`mobile-dev-<version>-claude-desktop-darwin-arm64.mcpb` beside the Codex ZIP; all
+three are also kept as one Actions artifact for 30 days.
 
-The `publish-claude` job then publishes the plugin to `release/claude`, with a
-Claude Code marketplace named `mobile-dev` at the branch root
-(`.claude-plugin/marketplace.json`) and the plugin in `plugins/mobile-dev`. Like
+The `publish` job runs once per host. For Claude it publishes the plugin to
+`release/claude`, laid out as the local package in `release/claude-plugin`: a Claude
+Code marketplace named `mobile-dev` at the branch root
+(`.claude-plugin/marketplace.json`) and the plugin in `mobile-dev/`. Like
 `release/latest`, the branch starts independently of the source history, advances
 without force pushes, and keeps the newest version when an older or repeated one is
 published. Users install it with the commands in the
