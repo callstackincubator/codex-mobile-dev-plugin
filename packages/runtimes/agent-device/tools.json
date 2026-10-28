@@ -32,6 +32,11 @@
    "required": [
     "session"
    ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "openWorldHint": false
   }
  },
  {
@@ -55,6 +60,11 @@
    "required": [
     "session"
    ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "openWorldHint": false
   }
  },
  {
@@ -106,6 +116,11 @@
    },
    "additionalProperties": false,
    "required": []
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "openWorldHint": false
   }
  },
  {
@@ -149,6 +164,11 @@
    },
    "additionalProperties": false,
    "required": []
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "openWorldHint": false
   }
  },
  {
@@ -193,6 +213,11 @@
    "required": [
     "session"
    ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "openWorldHint": false
   }
  },
  {
@@ -311,6 +336,11 @@
     "session"
    ],
    "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": true,
+   "openWorldHint": false
   }
  },
  {
@@ -358,6 +388,11 @@
    },
    "additionalProperties": false,
    "required": []
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "openWorldHint": false
   }
  },
  {
@@ -401,6 +436,11 @@
    },
    "additionalProperties": false,
    "required": []
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "openWorldHint": false
   }
  },
  {
@@ -555,6 +595,11 @@
     "session"
    ],
    "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "openWorldHint": false
   }
  },
  {
@@ -589,6 +634,11 @@
     "session"
    ],
    "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": true,
+   "openWorldHint": false
   }
  },
  {
@@ -611,20 +661,6 @@
      "type": "boolean",
      "description": "Shutdown the session/device where supported."
     },
-    "saveScript": {
-     "oneOf": [
-      {
-       "type": "boolean"
-      },
-      {
-       "type": "string"
-      }
-     ]
-    },
-    "force": {
-     "type": "boolean",
-     "description": "Overwrite an existing --save-script target instead of refusing (alias: --overwrite)."
-    },
     "noRecord": {
      "type": "boolean",
      "description": "Do not record this action."
@@ -634,6 +670,11 @@
    "required": [
     "session"
    ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "openWorldHint": false
   }
  },
  {
@@ -680,6 +721,11 @@
     "artifact"
    ],
    "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": true,
+   "openWorldHint": false
   }
  },
  {
@@ -723,6 +769,11 @@
    },
    "additionalProperties": false,
    "required": []
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "openWorldHint": false
   }
  },
  {
@@ -770,6 +821,11 @@
     "session"
    ],
    "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": true,
+   "openWorldHint": false
   }
  },
  {
@@ -821,6 +877,11 @@
    },
    "additionalProperties": false,
    "required": []
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "openWorldHint": true
   }
  },
  {
@@ -844,6 +905,11 @@
    },
    "additionalProperties": false,
    "required": []
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "openWorldHint": false
   }
  },
  {
@@ -979,6 +1045,11 @@
     "session"
    ],
    "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "openWorldHint": false
   }
  },
  {
@@ -1053,6 +1124,11 @@
     "session"
    ],
    "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "openWorldHint": false
   }
  },
  {
@@ -1086,6 +1162,11 @@
     "session"
    ],
    "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "openWorldHint": false
   }
  },
  {
@@ -1228,6 +1309,11 @@
     "session"
    ],
    "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "openWorldHint": false
   }
  },
  {
@@ -1322,6 +1408,11 @@
     "session"
    ],
    "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "openWorldHint": false
   }
  },
  {
@@ -1345,6 +1436,11 @@
    "required": [
     "session"
    ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "openWorldHint": false
   }
  },
  {
@@ -1406,6 +1502,11 @@
     "appPath"
    ],
    "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": true,
+   "openWorldHint": false
   }
  },
  {
@@ -1466,6 +1567,11 @@
     "session"
    ],
    "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "openWorldHint": false
   }
  },
  {
@@ -1498,6 +1604,11 @@
    "required": [
     "session"
    ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "openWorldHint": false
   }
  },
  {
@@ -1620,6 +1731,11 @@
     "session"
    ],
    "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "openWorldHint": false
   }
  },
  {
@@ -1711,6 +1827,11 @@
     "action"
    ],
    "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "openWorldHint": true
   }
  },
  {
@@ -1749,6 +1870,11 @@
    "required": [
     "session"
    ]
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "openWorldHint": false
   }
  },
  {
@@ -1834,20 +1960,6 @@
      "type": "boolean",
      "description": "Include an initial interactive snapshot in a fresh open response. With no app argument, discover the sole running app on the sole booted iOS simulator; ambiguous environments fail closed."
     },
-    "saveScript": {
-     "oneOf": [
-      {
-       "type": "boolean"
-      },
-      {
-       "type": "string"
-      }
-     ]
-    },
-    "force": {
-     "type": "boolean",
-     "description": "Overwrite an existing --save-script target instead of refusing (alias: --overwrite)."
-    },
     "deviceHub": {
      "type": "boolean",
      "description": "Use Xcode Device Hub when surfacing Apple simulators."
@@ -1884,6 +1996,11 @@
     "session",
     "platform"
    ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "openWorldHint": false
   }
  },
  {
@@ -1917,6 +2034,11 @@
     "session"
    ],
    "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "openWorldHint": false
   }
  },
  {
@@ -2062,6 +2184,11 @@
     "session"
    ],
    "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "openWorldHint": false
   }
  },
  {
@@ -2101,6 +2228,11 @@
     "session"
    ],
    "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "openWorldHint": false
   }
  },
  {
@@ -2131,6 +2263,11 @@
     "session"
    ],
    "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "openWorldHint": false
   }
  },
  {
@@ -2190,6 +2327,11 @@
     "session"
    ],
    "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": true,
+   "openWorldHint": false
   }
  },
  {
@@ -2251,6 +2393,11 @@
     "appPath"
    ],
    "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": true,
+   "openWorldHint": false
   }
  },
  {
@@ -2357,6 +2504,11 @@
     "path"
    ],
    "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": true,
+   "openWorldHint": false
   }
  },
  {
@@ -2370,14 +2522,6 @@
      "minLength": 1,
      "pattern": "\\S",
      "description": "Named session opened with open."
-    },
-    "cwd": {
-     "type": "string",
-     "description": "Working directory for command execution."
-    },
-    "path": {
-     "type": "string",
-     "description": "Output path."
     },
     "overlayRefs": {
      "type": "boolean"
@@ -2420,6 +2564,11 @@
    "required": [
     "session"
    ]
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "openWorldHint": false
   }
  },
  {
@@ -2484,6 +2633,11 @@
     "session"
    ],
    "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "openWorldHint": false
   }
  },
  {
@@ -2522,6 +2676,11 @@
    },
    "additionalProperties": false,
    "required": []
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": true,
+   "openWorldHint": false
   }
  },
  {
@@ -2572,6 +2731,11 @@
     "session"
    ],
    "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "openWorldHint": false
   }
  },
  {
@@ -2615,6 +2779,11 @@
    },
    "additionalProperties": false,
    "required": []
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "openWorldHint": false
   }
  },
  {
@@ -2665,6 +2834,11 @@
    "required": [
     "session"
    ]
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "openWorldHint": false
   }
  },
  {
@@ -2743,6 +2917,11 @@
     "session"
    ],
    "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "openWorldHint": false
   }
  },
  {
@@ -2846,6 +3025,11 @@
     "paths"
    ],
    "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": true,
+   "openWorldHint": false
   }
  },
  {
@@ -2884,6 +3068,11 @@
     "session"
    ],
    "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": true,
+   "openWorldHint": false
   }
  },
  {
@@ -2917,6 +3106,11 @@
     "session"
    ],
    "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": true,
+   "openWorldHint": false
   }
  },
  {
@@ -2950,6 +3144,11 @@
     "session"
    ],
    "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "openWorldHint": false
   }
  },
  {
@@ -3013,6 +3212,11 @@
    "required": [
     "session"
    ]
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "openWorldHint": false
   }
  }
 ]

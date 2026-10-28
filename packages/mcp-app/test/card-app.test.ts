@@ -12,8 +12,9 @@ const built = await build({
 });
 
 // Every chat card shares one bootstrap: it renders, connects to the host, applies the
-// host's styles, labels telemetry, and tears down when the host asks.
-for (const view of ["recording", "comparison", "tracesift"] as const) test(`the ${view} card connects, styles itself and tears down`, async t => {
+// host's styles, labels telemetry, and tears down when the host asks. Devices cards that
+// chats saved from earlier releases say so the same way.
+for (const view of ["recording", "comparison", "tracesift", "devices"] as const) test(`the ${view} card connects, styles itself and tears down`, async t => {
   const dom = new JSDOM(`<html data-view="${view}"><head><meta name="mobile-dev-environment" content="development"><meta name="mobile-dev-telemetry" content="off"></head><body><div id="root"></div></body></html>`, {
     pretendToBeVisual: true, runScripts: "outside-only", url: "https://mobile-dev.test/",
   });
@@ -47,7 +48,9 @@ for (const view of ["recording", "comparison", "tracesift"] as const) test(`the 
   window.eval(built.outputFiles[0].text);
   await until(() => initialized, "connect");
   await until(() => window.document.documentElement.dataset.theme === "dark" || window.document.documentElement.classList.contains("dark"), "apply the host theme");
-  assert.ok(window.document.getElementById("root")?.childElementCount, "The card renders into the page.");
+  // React commits the first render on its own schedule, which can follow the theme.
+  await until(() => Boolean(window.document.getElementById("root")?.childElementCount), "render into the page");
+  if (view === "devices") assert.match(window.document.getElementById("root")!.textContent ?? "", /earlier version of Mobile Dev/);
   if (view === "tracesift") await until(() => calls.includes("mobile_get_tracesift_project"), "load the saved TraceSift project");
   send({ id: "teardown", method: "ui/resource-teardown", params: {} });
   await until(() => tornDown, "acknowledge teardown");

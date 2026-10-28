@@ -10,6 +10,7 @@ import { TraceSiftCards } from "@mobile-dev/ui/components/tracesift-cards.tsx";
 import { RecordingController } from "@mobile-dev/ui/recording-controller.ts";
 import { TraceSiftController } from "@mobile-dev/ui/tracesift-controller.ts";
 import { startCardApp } from "./card-app.tsx";
+import { startRetiredCard } from "./retired-card.tsx";
 import { startWorkspaceApp } from "./workspace-app.tsx";
 import type { WorkspaceOptions } from "./workspace-extension.ts";
 
@@ -49,5 +50,7 @@ export function startMcpApp(options: { workspace?: WorkspaceOptions } = {}) {
     // The inline card investigates too, so it needs the same project the panel saved.
     connected: controller => void controller.loadProject(),
   });
+  // Chats keep devices cards from releases before device choice moved to the host's own form.
+  else if (view === "devices") startRetiredCard("This device list came from an earlier version of Mobile Dev. Ask again to choose a device.");
   else startWorkspaceApp(options.workspace);
 }

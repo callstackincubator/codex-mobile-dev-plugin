@@ -109,22 +109,24 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
       html: revision && revision !== uri.searchParams.get("after") ? configureUI(content) : undefined,
     }) }] };
   });
+  const readCard = (view: string) => async (uri: URL) => {
+    // Cards from a server with the workspace can open recordings there.
+    const content = (await page()).replace('data-view="panel"', `data-view="${view}"${panel ? " data-workspace" : ""}`);
+    return { contents: [{ uri: uri.href, mimeType: RESOURCE_MIME_TYPE, text: content, _meta: {
+      ui: { prefersBorder: true, permissions: { clipboardWrite: {} }, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } },
+      "openai/ui": { preferredDisplayMode: "inline", availableDisplayModes: ["inline", "fullscreen"] },
+    } }] };
+  };
   for (const [name, resourceUri, view] of [
     ["mobile-dev-recording", RECORDING_URI, "recording"],
     ["mobile-dev-comparison", COMPARISON_URI, "comparison"],
     ["mobile-dev-tracesift", TRACESIFT_URI, "tracesift"],
   ]) {
-    const readCard = async (uri: URL) => {
-      // Cards from a server with the workspace can open recordings there.
-      const content = (await page()).replace('data-view="panel"', `data-view="${view}"${panel ? " data-workspace" : ""}`);
-      return { contents: [{ uri: uri.href, mimeType: RESOURCE_MIME_TYPE, text: content, _meta: {
-        ui: { prefersBorder: true, permissions: { clipboardWrite: {} }, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } },
-        "openai/ui": { preferredDisplayMode: "inline", availableDisplayModes: ["inline", "fullscreen"] },
-      } }] };
-    };
-    registerAppResource(server, name, resourceUri, {}, readCard);
-    registerEarlierReleases(server, `${name}-earlier`, view, readCard);
+    registerAppResource(server, name, resourceUri, {}, readCard(view));
+    registerEarlierReleases(server, `${name}-earlier`, view, readCard(view));
   }
+  // Devices cards that chats saved from earlier releases say they came from one.
+  registerEarlierReleases(server, "mobile-dev-devices-earlier", "devices", readCard("devices"));
   const closePanel = panel?.register(server, { android, cpu, fps, drivers, page, showRecording });
   const featureCleanups = features.flatMap(feature => feature(server) ?? []);
 

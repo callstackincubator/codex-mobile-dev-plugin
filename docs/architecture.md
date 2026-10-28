@@ -74,6 +74,13 @@ the plugin and are absent from tool inputs. Batch steps use the same compact con
 Device selectors remain on setup, discovery, installation and script tools;
 interactions require a named session and reuse the upstream runtime's device binding.
 There is no global platform override. File operations retain `cwd` where it is relevant.
+Each command carries the annotations of Mobile Dev's own matching tools, since
+agent-device declares none: hosts run reads, device input and app control without
+asking, and ask before commands that install apps, run scripts or app-defined events,
+write files where the agent says, read or replace the clipboard, or reach development
+servers. `screenshot`, `open` and `close` leave out their file outputs so they can run
+without asking. `catalog:agent-device` fails on a new upstream command until it is
+classified in `commandAnnotations`.
 They replace the panel's former model tools for screenshots, accessibility reads and
 input; the panel keeps `mobile_describe_ui` and `mobile_android_describe_ui` as
 app-only tools for its annotations.

@@ -182,8 +182,8 @@ test("UI surfaces and live reload receive the server's anonymous identity and op
   assert.equal(disabledIncludesSession, false);
 });
 
-test("cached side tabs load the current UI through old resource addresses", async t => {
-  const html = "<!doctype html><title>Current simulator</title><canvas></canvas>";
+test("cached side tabs and saved cards load the current UI through old resource addresses", async t => {
+  const html = '<!doctype html><html data-view="panel"><title>Current simulator</title><canvas></canvas></html>';
   const plugin = await createTestPlugin(html, { panel: createPanel() });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "cached-panel-test", version: "1" });
@@ -205,9 +205,10 @@ test("cached side tabs load the current UI through old resource addresses", asyn
     assert.equal(contents[0].uri, uri);
     assert.equal(contents[0].mimeType, "text/html;profile=mcp-app");
   }
-  for (const page of ["recording", "comparison"]) {
-    const { contents } = await client.readResource({ uri: `ui://mobile-dev/0.1.147/${page}.html` });
+  for (const page of ["recording", "comparison", "tracesift", "devices"]) {
+    const { contents } = await client.readResource({ uri: `ui://mobile-dev/0.1.169/${page}.html` });
     assert.equal((contents[0]._meta?.["openai/ui"] as { preferredDisplayMode: string }).preferredDisplayMode, "inline", `a saved ${page} card from an earlier release still loads`);
+    assert.match(contents[0].text as string, new RegExp(`data-view="${page}"`));
   }
   for (const uri of ["ui://mobile-dev/v999/simulator.html", "ui://mobile-dev/latest/simulator.html", "ui://mobile-dev/0.1.147/other.html"]) {
     await assert.rejects(client.readResource({ uri }), /not found/);
