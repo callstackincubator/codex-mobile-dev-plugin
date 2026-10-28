@@ -8,7 +8,7 @@ import type { CallToolResult, ReadResourceResult } from "@modelcontextprotocol/s
 import { z } from "zod";
 import { PLUGIN_VERSION } from "@mobile-dev/shared/version.ts";
 import { SENTRY_ORIGIN } from "@mobile-dev/shared/telemetry.ts";
-import { errorMessage, inputSchema, streamMessageSchema, udidSchema } from "@mobile-dev/shared/protocol.ts";
+import { errorMessage, streamMessageSchema, udidSchema } from "@mobile-dev/shared/protocol.ts";
 import { panelTargetSchema } from "@mobile-dev/shared/panel-target.ts";
 import type { PanelTarget } from "@mobile-dev/shared/panel-target.ts";
 import { captureServerError } from "./telemetry.ts";
@@ -64,7 +64,7 @@ function guarded<T>(handler: (input: T, context: ServerRequestContext) => Promis
   };
 }
 
-const INSTRUCTIONS = "For mobile app development, open mobile_open_simulator before the first device launch, or reuse the open view. Use selected device IDs. When the user asks to see their devices, open or reuse the view, whose device menu lists them. If a task has ambiguous device targets, ask the user with mobile_choose_devices when it is available, otherwise in chat; proceed only after they choose. For a local CPU or React profile path, use mobile_analyze_profile to show TraceSift findings, then wait for the user to choose Investigate. See the Mobile Dev skill, when installed, for device control, logs, profiles, and performance workflows.";
+const INSTRUCTIONS = "For mobile app development, open mobile_open_simulator before the first device launch, or reuse the open view. Use selected device IDs. Control apps with the device_* tools when the server has them. When the user asks to see their devices, open or reuse the view, whose device menu lists them. If a task has ambiguous device targets, ask the user with mobile_choose_devices when it is available, otherwise in chat; proceed only after they choose. For a local CPU or React profile path, use mobile_analyze_profile to show TraceSift findings, then wait for the user to choose Investigate. See the Mobile Dev skill, when installed, for device control, logs, profiles, and performance workflows.";
 
 /** Mobile Dev's own device views, which a host adds to the server it runs (see createPanel). */
 export type Panel = {
@@ -259,26 +259,14 @@ function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, sh
     }));
   }
 
-  server.registerTool("mobile_describe_ui", {
-    title: "Read simulator UI", description: "Read the selected booted simulator's accessibility tree and frames in device points before sending input.",
-    inputSchema: deviceInput, annotations: read,
+  // The panel's annotations fall back to this tree; the agent reads screens with device_snapshot.
+  registerAppTool(server, "mobile_describe_ui", {
+    title: "Read simulator UI", description: "Read the selected booted simulator's accessibility tree and frames in device points.",
+    inputSchema: deviceInput, annotations: read, _meta: { ui: { visibility: ["app"] } },
   }, guarded(async ({ udid }: { udid: string }) => {
     await baguette.device(udid, true);
     const tree = await baguette.describeUi(udid);
     return result({ udid, tree }, JSON.stringify(tree));
-  }));
-
-  server.registerTool("mobile_send_input", {
-    title: "Send simulator input", description: "Send a tap, swipe, hardware button, key, or printable US-ASCII text to a booted simulator. Read its UI first. Width and height must match the device screen in points.",
-    inputSchema: { ...deviceInput, input: inputSchema }, annotations: write,
-  }, guarded(async ({ udid, input }: { udid: string; input: z.infer<typeof inputSchema> }) => {
-    await baguette.device(udid, true);
-    const blocked = await blockedInput(udid);
-    if (blocked) return blocked;
-    const acknowledgement = await baguette.json(`/simulators/${udid}/input`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
-    });
-    return result({ udid, acknowledgement }, "Baguette accepted the input. Read the screen to confirm the result.");
   }));
 
   registerAppTool(server, "mobile_repair_input", {
@@ -305,14 +293,6 @@ function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, sh
     }
     return bytes;
   }
-
-  server.registerTool("mobile_screenshot", {
-    title: "Capture simulator screen", description: "Return a PNG screenshot of the selected booted simulator for the model to inspect.",
-    inputSchema: deviceInput, annotations: read,
-  }, guarded(async ({ udid }: { udid: string }) => {
-    const bytes = await captureScreenshot(udid);
-    return { content: [{ type: "image", mimeType: "image/png", data: bytes.toString("base64") }, { type: "text", text: `Screen of ${udid}.` }], structuredContent: { udid } };
-  }));
 
   registerAppTool(server, "mobile_capture_screenshot", {
     title: "Screenshot to chat and clipboard",

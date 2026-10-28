@@ -12,9 +12,7 @@
 | `mobile_start_baguette` | Retry or reconnect the bundled backend |
 | `mobile_boot_simulator` | Boot one listed device |
 | `mobile_shutdown_simulator` | Shut down one listed device |
-| `mobile_describe_ui` | Read a booted device's accessibility tree |
-| `mobile_screenshot` | Return a booted device's PNG screenshot |
-| `mobile_send_input` | Send validated input in device points |
+| `mobile_describe_ui` | Read a booted device's accessibility tree for panel annotations, app-only |
 | `mobile_repair_input` | Reclaim input from Device Hub, closing running apps |
 | `mobile_stream_session` | Create a panel stream, app-only |
 | `mobile_ios_mirror_input` | Send physical iOS panel touches for the current video generation, app-only |
@@ -42,7 +40,7 @@
 | `mobile_read_performance_frames` | Read Android jank/pacing statistics and page through exact display frames |
 | `mobile_display_fps_close` | Stop FPS collection and release the tracing connection |
 
-Claude's server adds the pinned agent-device runtime's commands as `device_*` tools with compact, validated schemas, including `device_open`, `device_snapshot`, `device_press`, `device_fill`, `device_type`, `device_scroll`, `device_wait`, `device_find`, `device_get`, `device_is`, `device_close`, and debugging tools. Their input schemas describe each command; `logs` and `perf` are left out for Mobile Dev's own tools.The source [control skill](../skills/agent-device/SKILL.md), currently excluded from the package, explains session ordering and links to the version-matched guide.
+The plugin servers for Codex, Claude and Cursor add the pinned agent-device runtime's commands as `device_*` tools with compact, validated schemas, including `device_open`, `device_snapshot`, `device_screenshot`, `device_press`, `device_fill`, `device_type`, `device_scroll`, `device_wait`, `device_find`, `device_get`, `device_is`, `device_close`, and debugging tools. The agent reads screens and sends input with them; `device_screenshot` also returns the saved image. Their input schemas describe each command; `logs` and `perf` are left out for Mobile Dev's own tools. The Mobile Dev skill explains session ordering.
 
 
 ## TraceSift annotations

@@ -120,7 +120,7 @@ Stream iOS simulators, Android emulators, and connected iPhones, iPads, and Andr
 ![](/img/screenshot_side_by_side.png)
 
 ### Device control, inspection and annotations
-Select and boot simulators or emulators, interact with taps and drags, type on supported devices, and let your agent inspect accessibility elements and control your app through MCP tools. Select an element or screen region and leave instructions for your agent, with React Native component and source details when available.
+Select and boot simulators or emulators, interact with taps and drags, type on supported devices, and let your agent inspect accessibility elements and control your app through the bundled [agent-device](https://agent-device.dev/) runtime. Select an element or screen region and leave instructions for your agent, with React Native component and source details when available.
 
 ![](/img/screenshot_annotations.png)
 

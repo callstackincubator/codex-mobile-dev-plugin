@@ -2,7 +2,7 @@
 
 [Back to README](../README.md) · [Contributing](../CONTRIBUTING.md)
 
-Claude's server serves agent-device's commands as `device_*` tools; the other hosts do not use agent-device yet.
+The plugin servers for Codex, Claude and Cursor serve agent-device's commands as `device_*` tools, which the agent controls apps with.
 
 ## Hosts
 
@@ -19,11 +19,11 @@ A host adds to the shared pieces without changing them:
   the host shows it, and its `ServerFeature`s. The panel (`createPanel` in
   `packages/core/src/panel-tools.ts`) owns Baguette, the panel and workspace pages and
   the tools only they use, opening recordings in the workspace, the App tab's reads
-  and the native device form. Codex, Cursor's shared entry and the Mac app pass it;
-  Codex adds the self-updater, which installs through Codex's marketplace, and the
-  Mac app its page resource. Claude shows simulators itself, so its entry
-  (`apps/claude/server`) passes no panel and adds agent-device's commands; its chat
-  cards stay. Every host lists simulators for logs, CPU and device choices with
+  and the native device form. Codex, Cursor's shared entry and the Mac app pass it.
+  Codex and Cursor add agent-device's commands, and Codex the self-updater, which
+  installs through Codex's marketplace; the Mac app, which has no agent, adds its page
+  resource. Claude shows simulators itself, so its entry (`apps/claude/server`) passes
+  no panel and adds agent-device's commands; its chat cards stay. Every host lists simulators for logs, CPU and device choices with
   simctl, without starting Baguette.
 - **Runtime:** a host's `plugin-host.json` can leave out the panel's parts of `dist/`
   (`"panel": false`, see `PANEL_PARTS` in `tooling/host-runtime.mjs`) and name a
@@ -63,7 +63,7 @@ and preserves its chosen recording target across foreground changes.
 
 Each MCP process owns one bundled Baguette child process. It selects a free loopback port, launches `dist/baguette/Baguette serve --host 127.0.0.1 --port <port> --no-plugins`, and shares that child across its tool calls and panel sessions. It does not use a separate Baguette server on port 8421. An opening failure returns an error the panel can show.
 
-Claude's server serves agent-device's commands as `device_<command>` tools
+The plugin servers serve agent-device's commands as `device_<command>` tools
 (`packages/core/src/agent-device-tools.ts`), registered from
 `packages/runtimes/agent-device/tools.json`, which `npm run catalog:agent-device` writes
 from the pinned runtime and a unit test checks against it. The catalog keeps the
@@ -74,7 +74,9 @@ the plugin and are absent from tool inputs. Batch steps use the same compact con
 Device selectors remain on setup, discovery, installation and script tools;
 interactions require a named session and reuse the upstream runtime's device binding.
 There is no global platform override. File operations retain `cwd` where it is relevant.
-Other hosts can add the same `agentDeviceTools` feature to their server entry.
+They replace the panel's former model tools for screenshots, accessibility reads and
+input; the panel keeps `mobile_describe_ui` and `mobile_android_describe_ui` as
+app-only tools for its annotations.
 
 The first command starts the bundled `agent-device mcp` with Node
 (`AgentDeviceRuntime`), with an explicit empty package config and a private temporary
@@ -87,7 +89,7 @@ checks the daemon's PID identity and releases its runner leases. It keeps logs a
 artifacts in that state directory for later reads. Call `device_session` with
 `action: "state-dir"` to find it.
 
-`npm run check:mcp-budget` reads the packaged servers' catalogs, estimates their model-visible specifications, and checks them against [Codex's tool limits](https://github.com/openai/codex/blob/main/codex-rs/core/src/mcp_tool_exposure.rs). Codex compacts any MCP tool input schema over 5,000 bytes, dropping descriptions, so the check fails when one exceeds it. Codex's 8,000-byte per-tool and 64,000-byte combined limits apply only to Agent Plugins, whose manifest is `plugin.json` at the plugin root; tools past them are hidden from the model. This plugin uses `.codex-plugin/plugin.json`, the legacy format, so those limits do not apply. Moving to the Agent Plugin format would hide part of the catalog, which is about 64 KB. On models that support tool search, Codex defers MCP tools from every plugin: they leave the initial tool list but stay discoverable and callable.
+`npm run check:mcp-budget` reads the packaged servers' catalogs, estimates their model-visible specifications, and checks them against [Codex's tool limits](https://github.com/openai/codex/blob/main/codex-rs/core/src/mcp_tool_exposure.rs). Codex compacts any MCP tool input schema over 5,000 bytes, dropping descriptions, so the check fails when one exceeds it. Codex's 8,000-byte per-tool and 64,000-byte combined limits apply only to Agent Plugins, whose manifest is `plugin.json` at the plugin root; tools past them are hidden from the model. This plugin uses `.codex-plugin/plugin.json`, the legacy format, so those limits do not apply. Moving to the Agent Plugin format would hide part of the catalog, which is about 160 KB with agent-device's commands. On models that support tool search, Codex defers MCP tools from every plugin: they leave the initial tool list but stay discoverable and callable.
 
 Use the device's UDID or serial and a named agent-device session for agent work. Refs belong to the latest snapshot or settled diff in that session. `press` and `fill` take a target such as `{ "kind": "ref", "ref": "@e12" }` or `{ "kind": "selector", "selector": "label=\"Search\"" }`. Use actual refs from the current result. Closing a session can close its app; leave `shutdown` unset to keep the simulator running. Another live agent-device daemon can own a runner lease. End that owner's work or choose another simulator instead of releasing its live claim.
 

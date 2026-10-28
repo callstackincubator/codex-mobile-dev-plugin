@@ -17,10 +17,11 @@ const version = await releaseVersion();
 const temporary = await mkdtemp(join(tmpdir(), `mobile-dev-${name}-`));
 const home = join(temporary, "home");
 await mkdir(home);
-// Hosts without the panel run their own server with cards and agent-device's commands.
+// Hosts without the panel run their own server with cards.
 const panels = host.panel;
 const panelTools = ["mobile_open_workspace", "mobile_open_simulator", "mobile_list_simulators", "mobile_list_android_devices", "mobile_stream_session", "mobile_open_performance_recording"];
-const expectedTools = panels ? panelTools : ["mobile_render_performance_recording", "mobile_logs_session", "device_open", "device_snapshot"];
+// Every host's agent controls apps with agent-device's commands.
+const expectedTools = [...panels ? panelTools : ["mobile_render_performance_recording", "mobile_logs_session"], "device_open", "device_snapshot"];
 const panelFiles = PANEL_PARTS.map(part => `dist/${part}`);
 
 async function withServer(label, args, env, capabilities, check) {
@@ -68,7 +69,7 @@ async function smokeDesktopBundle() {
   assert.equal(manifest.server.mcp_config.command, "node");
   assert.equal(manifest.server.mcp_config.env, undefined);
   assert.equal(manifest.compatibility.runtimes.node, metadata.engines.node);
-  for (const path of [manifest.server.entry_point, "dist/app.html", ...panels ? panelFiles : ["dist/agent-device/tools.json"]]) {
+  for (const path of [manifest.server.entry_point, "dist/app.html", "dist/agent-device/tools.json", ...panels ? panelFiles : []]) {
     await access(join(directory, path));
   }
   if (panels === false) for (const path of panelFiles) await assert.rejects(access(join(directory, path)), path);
@@ -109,10 +110,8 @@ try {
   for (const environment of ["development", "release"]) {
     await withServer("plugin", args, { MOBILE_DEV_ENVIRONMENT: environment, [host.root]: plugin }, { elicitation: {} }, async client => {
       // agent-device's runtime starts from the plugin's own copy on the first command.
-      if (panels === false) {
-        const devices = await client.callTool({ name: "device_devices", arguments: { platform: "ios" } });
-        assert.doesNotMatch(devices.content[0].text, /Agent Device could not/);
-      }
+      const devices = await client.callTool({ name: "device_devices", arguments: { platform: "ios" } });
+      assert.doesNotMatch(devices.content[0].text, /Agent Device could not/);
     });
     console.log(`${environment}: ${host.label} plugin manifest, payload, startup from the plugin root, device chooser and no Codex updater passed.`);
   }

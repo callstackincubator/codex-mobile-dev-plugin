@@ -138,7 +138,7 @@ relevant checks, and packaging steps again.
 
 `vendor:baguette` downloads the pinned official release and checks its SHA-256. It keeps the full resource bundle and rebuilds the same v0.2.1 source with Swift 6.4 or later because the official binary crashes in Swift task allocation on macOS 27. Preparing Baguette requires Xcode 27, Git, and network access to fetch its pinned source and Swift dependencies. `rebuild:baguette` repeats the source build. `packages/native/vendor/baguette/release.json` records the source commit, compiler version, and rebuilt binary SHA-256.
 
-`vendor:agent-device` installs the exact npm packages in `packages/runtimes/agent-device/package-lock.json` with package scripts disabled. `build` copies this full runtime into `dist/agent-device`, records its integrity and lockfile hash in `release.json`, and copies the commands Claude's server serves, `packages/runtimes/agent-device/tools.json`. After changing the pin, run `npm run catalog:agent-device` to rewrite that catalog; a unit test checks it against the pinned runtime, and the weekly dependency update rewrites it. The installed plugin needs no npm install or runtime download. Xcode compiles the shipped Apple runner source on its first use.
+`vendor:agent-device` installs the exact npm packages in `packages/runtimes/agent-device/package-lock.json` with package scripts disabled. `build` copies this full runtime into `dist/agent-device`, records its integrity and lockfile hash in `release.json`, and copies the commands the plugin servers serve, `packages/runtimes/agent-device/tools.json`. After changing the pin, run `npm run catalog:agent-device` to rewrite that catalog; a unit test checks it against the pinned runtime, and the weekly dependency update rewrites it. The installed plugin needs no npm install or runtime download. Xcode compiles the shipped Apple runner source on its first use.
 
 `build` also bundles JavaScript and CSS with esbuild and copies Baguette into `dist/baguette`. It does not run TypeScript, lint, Biome, visual checks, or React Doctor.
 
@@ -397,6 +397,6 @@ and marketplace publishing.
   annotations, and native device requests.
 - [Using devices](docs/devices.md), [app logs](docs/logs.md), and
   [performance](docs/performance.md): detailed behavior and platform limitations.
-- [MCP tools](docs/mcp-tools.md): tool catalog, including Claude's agent-device tools.
+- [MCP tools](docs/mcp-tools.md): tool catalog, including agent-device's `device_*` tools.
 - [Agent workflow cases](docs/agent-workflow.md): manual checks in fresh chats.
 - [Stream profiling](docs/stream-profiling.md): performance findings and historical measurements.

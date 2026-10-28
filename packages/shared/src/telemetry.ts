@@ -42,11 +42,11 @@ type StreamedSpanJSON = Parameters<NonNullable<Options["beforeSendSpan"]>>[0];
 type Metric = Parameters<NonNullable<Options["beforeSendMetric"]>>[0];
 
 const frequentTools = new Set([
-  "mobile_stream_input", "mobile_android_stream_input", "mobile_android_send_input", "mobile_ios_mirror_input", "mobile_read_logs", "mobile_read_cpu",
+  "mobile_stream_input", "mobile_android_stream_input", "mobile_ios_mirror_input", "mobile_read_logs", "mobile_read_cpu",
   "mobile_read_display_fps", "mobile_logs_keep_alive", "mobile_log_sources", "mobile_performance_sources",
   "mobile_read_performance_recording",
   "mobile_list_simulators", "mobile_list_ios_devices", "mobile_list_android_devices",
-  // agent-device's discovery and state lookups, as Claude's server serves them.
+  // agent-device's discovery and state lookups, as the plugin servers serve them.
   "device_devices", "device_apps", "device_appstate", "device_capabilities", "device_session", "device_events",
 ]);
 

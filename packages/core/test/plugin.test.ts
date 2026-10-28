@@ -15,7 +15,7 @@ import { TRACESIFT_URI } from "../../shared/src/tracesift.ts";
 import { Baguette } from "../src/baguette.ts";
 import { SimulatorUnavailableError } from "../src/simulator-unavailable.ts";
 import { parseBaseUrl } from "../../shared/src/protocol.ts";
-import { createTestPlugin, fakeBaguette, fakeSimulatorInput, UDID, OTHER_UDID, SCREEN, PNG } from "../../test-support/fixtures.ts";
+import { createTestPlugin, fakeBaguette, fakeSimulatorInput, UDID, PNG } from "../../test-support/fixtures.ts";
 import { getTelemetryIdentity } from "../src/telemetry-identity.ts";
 import manifest from "../../../package.json" with { type: "json" };
 
@@ -324,18 +324,12 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
   const closedPanel = await client.callTool({ name: "mobile_stream_close", arguments: { sessionId: session._meta?.sessionId } });
   assert.equal(closedPanel.isError, undefined);
   await assertClosed(client, session._meta?.frameUri as string);
+  // The panel's annotations read the accessibility tree; the agent uses device_snapshot.
+  const describeUi = tools.tools.find(tool => tool.name === "mobile_describe_ui");
+  assert.deepEqual((describeUi?._meta?.ui as { visibility: string[] }).visibility, ["app"]);
   const readUI = await client.callTool({ name: "mobile_describe_ui", arguments: { udid: UDID } });
   assert.ok(JSON.stringify(readUI.structuredContent).includes("Continue"));
-  const screenshot = await client.callTool({ name: "mobile_screenshot", arguments: { udid: UDID } });
-  const image = (screenshot.content as { type: string; data: string }[]).find(item => item.type === "image")!;
-  assert.deepEqual(Buffer.from(image.data, "base64"), PNG);
-  const input = { type: "tap", x: 10, y: 20, ...SCREEN };
-  await client.callTool({ name: "mobile_send_input", arguments: { udid: UDID, input } });
-  assert.deepEqual(fake.inputs.at(-1), input);
-  fake.setInputFailure();
-  const rejected = await client.callTool({ name: "mobile_send_input", arguments: { udid: UDID, input } });
-  assert.equal(rejected.isError, true);
-  assert.match(JSON.stringify(rejected.content), /input rejected/);
+  for (const name of ["mobile_send_input", "mobile_screenshot"]) assert.equal(tools.tools.some(tool => tool.name === name), false, name);
   const active = await client.callTool({ name: "mobile_stream_session", arguments: { udid: UDID } });
   const stopped = await client.callTool({ name: "mobile_shutdown_simulator", arguments: { udid: UDID } });
   assert.equal((stopped.structuredContent?.devices as { state: string; udid: string }[]).find(item => item.udid === UDID)?.state, "Shutdown");
@@ -347,8 +341,6 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
   assert.equal((booted.structuredContent?.devices as { state: string; udid: string }[]).find(item => item.udid === UDID)?.state, "Booted");
   const unknown = await client.callTool({ name: "mobile_boot_simulator", arguments: { udid: "810F8795-62F8-4B9D-A3D2-6AC9FDF585A2" } });
   assert.equal(unknown.isError, true);
-  const invalid = await client.callTool({ name: "mobile_send_input", arguments: { udid: OTHER_UDID, input: { type: "tap", x: 2, y: 2 } } });
-  assert.equal(invalid.isError, true);
 });
 
 test("the toolbar capture copies the returned PNG and still returns it when clipboard copying fails", async t => {
@@ -372,7 +364,6 @@ test("the toolbar capture copies the returned PNG and still returns it when clip
   assert.deepEqual(Buffer.from(image.data, "base64"), copies[0]);
   assert.deepEqual(copies[0], PNG);
   assert.equal(first.structuredContent?.copied, true);
-  await client.callTool({ name: "mobile_screenshot", arguments: { udid: UDID } });
   assert.equal(copies.length, 1);
   copyFails = true;
   const failed = await client.callTool({ name: "mobile_capture_screenshot", arguments: { udid: UDID } });
@@ -403,8 +394,6 @@ test("Device Hub blockage repairs automatically, limits repeated repairs, and pe
   const blocked = await client.callTool({ name: "mobile_stream_input", arguments: { sessionId: session._meta?.sessionId, messages: [{ type: "button", button: "home" }] } });
   assert.equal(blocked.isError, true);
   assert.equal(blocked._meta?.streamDisconnected, true);
-  const modelInput = await client.callTool({ name: "mobile_send_input", arguments: { udid: UDID, input: { type: "tap", x: 10, y: 20, ...SCREEN } } });
-  assert.equal(modelInput._meta?.inputBlocked, true);
   const shadowed = await client.callTool({ name: "mobile_stream_session", arguments: { udid: UDID } });
   assert.deepEqual(shadowed.structuredContent?.inputStatus, { state: "ready" });
   assert.match(shadowed.structuredContent?.inputRepairMessage as string, /repaired automatically/);
@@ -551,7 +540,7 @@ test("without the panel, the server keeps its cards and finds simulators without
   for (const name of ["mobile_logs_session", "mobile_record_performance", "mobile_render_performance_recording", "mobile_compare_performance_recordings", "mobile_analyze_profile", "mobile_list_apps", "mobile_app_storage"]) {
     assert.ok(names.includes(name), name);
   }
-  for (const name of ["mobile_open_simulator", "mobile_open_workspace", "mobile_list_simulators", "mobile_send_input", "mobile_screenshot", "mobile_stream_session", "mobile_list_android_devices", "mobile_android_stream_session", "mobile_inspect_ui", "mobile_device_settings", "mobile_ios_mirror_session", "mobile_open_performance_recording", "mobile_app_icons", "mobile_choose_devices"]) {
+  for (const name of ["mobile_open_simulator", "mobile_open_workspace", "mobile_list_simulators", "mobile_describe_ui", "mobile_stream_session", "mobile_list_android_devices", "mobile_android_stream_session", "mobile_inspect_ui", "mobile_device_settings", "mobile_ios_mirror_session", "mobile_open_performance_recording", "mobile_app_icons", "mobile_choose_devices"]) {
     assert.equal(names.includes(name), false, name);
   }
   await assert.rejects(client.readResource({ uri: APP_URI }));

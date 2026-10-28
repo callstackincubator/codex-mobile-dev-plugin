@@ -22,6 +22,9 @@ async function runtime(target) {
   for (const helper of ["android-cpu", "android-fps", "ios-fps", "ios-logs", "ios-mirror"]) {
     await cp(`packages/native/vendor/${helper}`, `${directory}/${helper}`, { recursive: true });
   }
+  // The agent-device commands Codex's, Cursor's and Claude's servers register.
+  await mkdir(`${directory}/agent-device`, { recursive: true });
+  await copyFile("packages/runtimes/agent-device/tools.json", `${directory}/agent-device/tools.json`);
   return directory;
 }
 
@@ -36,8 +39,6 @@ const targets = {
   // shared page for its cards.
   async claude(directory) {
     await sharedPage(`${directory}/app.html`);
-    await mkdir(`${directory}/agent-device`, { recursive: true });
-    await copyFile("packages/runtimes/agent-device/tools.json", `${directory}/agent-device/tools.json`);
     await buildClaudeHost(directory, { sentryDirectory: ".sentry/host-tests/claude" });
   },
   codex: directory => buildCodexHost(environment, directory),

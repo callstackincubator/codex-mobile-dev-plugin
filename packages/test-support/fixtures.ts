@@ -37,7 +37,6 @@ export function fakeSimulatorInput() {
 
 export async function fakeBaguette() {
   let state = "Booted";
-  let inputFails = false;
   let sendFrames = true;
   let lifecycleState: string | undefined;
   let lifecycleFails = false;
@@ -65,11 +64,6 @@ export async function fakeBaguette() {
       state = lifecycleState ?? "Booted"; response.end('{"ok":true}');
     } else if (path.endsWith("/shutdown")) {
       state = "Shutdown"; response.end('{"ok":true}');
-    } else if (path.endsWith("/input")) {
-      let body = "";
-      for await (const chunk of request) body += chunk;
-      inputs.push(JSON.parse(body));
-      response.end(inputFails ? '{"ok":false,"error":"input rejected"}' : '{"ok":true}');
     } else if (path.endsWith("/describe-ui.json")) {
       response.end(JSON.stringify({ elements: [{ label: "Continue", frame: { x: 10, y: 20, width: 100, height: 40 } }] }));
     } else if (path.endsWith("/screenshot.png")) {
@@ -93,7 +87,6 @@ export async function fakeBaguette() {
   return {
     url: `http://127.0.0.1:${address.port}`, inputs, requests, websocket,
     setState(next: string) { state = next; },
-    setInputFailure() { inputFails = true; },
     setFrames(enabled: boolean) { sendFrames = enabled; },
     setLifecycleState(next?: string) { lifecycleState = next; },
     setLifecycleFailure(enabled: boolean) { lifecycleFails = enabled; },

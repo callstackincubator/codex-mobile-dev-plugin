@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { z } from "zod";
 import type { RequestHandlerExtra, RequestOptions } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type { CallToolRequest, CallToolResult, ServerNotification, ServerRequest, Tool } from "@modelcontextprotocol/sdk/types.js";
@@ -72,13 +73,36 @@ async function forward(backend: AgentDeviceBackend, params: CallToolRequest["par
     if (result.isError && code !== "DEVICE_NOT_FOUND" && code !== "DEVICE_IN_USE" && code !== "SESSION_NOT_FOUND") {
       captureServerError(new Error("Agent Device command failed."), `agent_device.${params.name}`);
     }
-    return result;
+    return params.name === "screenshot" ? withScreenshot(result) : result;
   } catch (error) {
     if (extra.signal.aborted) throw error;
     console.error("[mobile-dev] Agent Device tool transport failed:", error);
     captureServerError(new Error("Agent Device tool transport failed."), `agent_device.${params.name}`);
     return invalid("Agent Device could not complete the command. Check the local runtime diagnostics.");
   }
+}
+
+const MAX_SCREENSHOT_BYTES = 16 * 1024 * 1024;
+const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+const JPEG_SIGNATURE = Buffer.from([0xff, 0xd8, 0xff]);
+
+/**
+ * agent-device saves a screenshot to a file and returns its path; the model sees the
+ * screen only as an image, so attach the saved PNG or JPEG.
+ */
+async function withScreenshot(result: CallToolResult): Promise<CallToolResult> {
+  const path = result.structuredContent?.path;
+  if (result.isError || typeof path !== "string") return result;
+  let bytes: Buffer;
+  try { bytes = await readFile(path); }
+  catch (error) {
+    console.error("[mobile-dev] Agent Device screenshot could not be read:", error);
+    captureServerError(new Error("Agent Device screenshot could not be read."), "agent_device.screenshot");
+    return result;
+  }
+  const mimeType = bytes.subarray(0, 8).equals(PNG_SIGNATURE) ? "image/png" : bytes.subarray(0, 3).equals(JPEG_SIGNATURE) ? "image/jpeg" : undefined;
+  if (mimeType === undefined || bytes.length > MAX_SCREENSHOT_BYTES) return result;
+  return { ...result, content: [...result.content, { type: "image", mimeType, data: bytes.toString("base64") }] };
 }
 
 // The server validates each tool's own input; batch steps name other commands, and saving

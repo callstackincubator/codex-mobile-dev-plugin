@@ -76,7 +76,8 @@ is its `open` command, and so on. No install or separate server is needed.
 3. Call `device_press`, `device_fill`, or `device_scroll` with `settle: true` and
    continue from the returned diff. `device_fill` replaces text; `device_type`
    appends to the focused field. Run stateful commands in order within a session.
-4. Verify the result with `device_wait`, `device_is`, `device_get`, or `device_find`.
+4. Verify the result with `device_wait`, `device_is`, `device_get`, or `device_find`
+   with a read-only `action` such as `exists`; without one it taps the match.
    An accepted input does not prove the app changed.
 5. Call `device_close` when finished, without `shutdown`, to leave the device running.
 

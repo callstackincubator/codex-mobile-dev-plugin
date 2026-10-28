@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { agentDeviceClient } from "../../test-support/agent-device-fixtures.ts";
+import { PNG } from "../../test-support/fixtures.ts";
 
 function text(result: { content: unknown }) {
   return (result.content as { text: string }[])[0].text;
@@ -30,6 +34,23 @@ test("forwarding preserves named sessions, metadata and native results without r
   const iosInput = { session: "ios-task", interactiveOnly: true };
   await client.callTool({ name: "device_snapshot", arguments: iosInput });
   assert.deepEqual(calls[3].arguments, iosInput);
+});
+
+test("a screenshot returns the saved image beside agent-device's own result", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "mobile-dev-agent-device-screenshot-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const path = join(directory, "screenshot.png");
+  await writeFile(path, PNG);
+  const saved = { content: [{ type: "text" as const, text: path }], structuredContent: { path, width: 402, height: 874 } };
+  const { client } = await agentDeviceClient(t, async () => saved);
+  const shot = await client.callTool({ name: "device_screenshot", arguments: { session: "ios-task" } });
+  assert.deepEqual(shot.content, [...saved.content, { type: "image", mimeType: "image/png", data: PNG.toString("base64") }]);
+  assert.deepEqual(shot.structuredContent, saved.structuredContent);
+
+  await writeFile(path, "not an image");
+  assert.deepEqual((await client.callTool({ name: "device_screenshot", arguments: { session: "ios-task" } })).content, saved.content);
+  await rm(path);
+  assert.deepEqual((await client.callTool({ name: "device_screenshot", arguments: { session: "ios-task" } })).content, saved.content);
 });
 
 test("invalid and hidden options fail before reaching the runtime", async t => {

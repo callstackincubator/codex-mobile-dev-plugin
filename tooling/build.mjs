@@ -97,7 +97,7 @@ await writeFile("dist/agent-device/release.json", JSON.stringify({
   name: installed.name, version: installed.version, url: pinned.resolved, integrity: pinned.integrity,
   lockfileSHA256: createHash("sha256").update(lock).digest("hex"),
 }, null, 2) + "\n");
-// The commands Claude's server registers without starting the runtime (npm run catalog:agent-device).
+// The commands the plugin servers register without starting the runtime (npm run catalog:agent-device).
 await copyFile(`${runtime}/tools.json`, "dist/agent-device/tools.json");
 await buildServeEmu("dist/serve-emu");
 // The host-neutral runtime: the shared server, its services and the MCP Apps panel
