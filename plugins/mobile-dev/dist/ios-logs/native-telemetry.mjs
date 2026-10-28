@@ -8,7 +8,7 @@ const archiveSHA256 = "e510b714ac0fb5c24b08011e07c5b13fa01c9bd0f40708356e4af022a
 const root = resolve(".local-dev/sentry-native");
 
 export async function nativeTelemetrySourceHash(hash) {
-  for (const file of ["native/telemetry/telemetry.h", "native/telemetry/telemetry.c", "scripts/native-telemetry.mjs"]) {
+  for (const file of ["packages/native/telemetry/telemetry.h", "packages/native/telemetry/telemetry.c", "tooling/native-telemetry.mjs"]) {
     const bytes = await readFile(file);
     hash.update(file);
     hash.update(bytes);

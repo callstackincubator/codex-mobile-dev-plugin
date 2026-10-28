@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 
-// runtimes/serve-emu/src/cli.ts
+// packages/runtimes/serve-emu/src/cli.ts
 import { parseArgs } from "node:util";
 import { randomBytes as randomBytes2 } from "node:crypto";
 
-// runtimes/serve-emu/src/exec.ts
+// packages/runtimes/serve-emu/src/exec.ts
 import {
   spawn
 } from "node:child_process";
@@ -433,7 +433,7 @@ function getExecSnapshot() {
   return defaultExecutor.snapshot();
 }
 
-// runtimes/serve-emu/src/adb.ts
+// packages/runtimes/serve-emu/src/adb.ts
 var ADB_QUERY_TIMEOUT_MS = 2e3;
 var ADB_MUTATION_TIMEOUT_MS = 5e3;
 var ADB_SCREENSHOT_TIMEOUT_MS = 8e3;
@@ -673,7 +673,7 @@ async function setStatusBar(serial, mode, runExec = execText) {
   return getStatusBar(serial, runExec);
 }
 
-// runtimes/serve-emu/src/emulator.ts
+// packages/runtimes/serve-emu/src/emulator.ts
 import { spawn as spawn2 } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -924,14 +924,14 @@ async function startEmulator(opts, dependencies = {}) {
   }
 }
 
-// runtimes/serve-emu/src/scrcpy.ts
+// packages/runtimes/serve-emu/src/scrcpy.ts
 import { spawn as spawn3 } from "node:child_process";
 import { createConnection } from "node:net";
 import { setTimeout as sleep2 } from "node:timers/promises";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 
-// runtimes/serve-emu/scripts/fetch-scrcpy.ts
+// packages/runtimes/serve-emu/scripts/fetch-scrcpy.ts
 import { access } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join as join2 } from "node:path";
@@ -944,7 +944,7 @@ async function ensureScrcpyServer() {
   return SCRCPY_SERVER_PATH;
 }
 
-// runtimes/serve-emu/src/startup-diagnostics.ts
+// packages/runtimes/serve-emu/src/startup-diagnostics.ts
 var StartupTimeoutError = class extends Error {
 };
 function startupErrorOutcome(error) {
@@ -1049,7 +1049,7 @@ var StartupDiagnostics = class {
   }
 };
 
-// runtimes/serve-emu/src/scrcpy.ts
+// packages/runtimes/serve-emu/src/scrcpy.ts
 var DEVICE_JAR_CACHE_PATH = `/data/local/tmp/serve-emu-scrcpy-server-v${SCRCPY_VERSION}.jar`;
 var DEFAULT_TIMEOUTS = {
   pushMs: 3e4,
@@ -2006,11 +2006,11 @@ async function readFrame(reader, protocol) {
   };
 }
 
-// runtimes/serve-emu/src/server.ts
+// packages/runtimes/serve-emu/src/server.ts
 import { readFile as readFile2 } from "node:fs/promises";
 import { WebSocket as WebSocket2 } from "ws";
 
-// runtimes/serve-emu/src/node-server.ts
+// packages/runtimes/serve-emu/src/node-server.ts
 import { createServer, ServerResponse } from "node:http";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -2171,12 +2171,12 @@ async function serve(options) {
   return server;
 }
 
-// runtimes/serve-emu/src/server.ts
+// packages/runtimes/serve-emu/src/server.ts
 import { timingSafeEqual } from "node:crypto";
 import { dirname as dirname2, join as join4 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 
-// runtimes/serve-emu/src/accessibility.ts
+// packages/runtimes/serve-emu/src/accessibility.ts
 var SELECTOR_STRING_FIELDS = [
   "id",
   "text",
@@ -2366,7 +2366,7 @@ function parseAccessibilityXml(xml) {
   return nodes;
 }
 
-// runtimes/serve-emu/src/api/api-error.ts
+// packages/runtimes/serve-emu/src/api/api-error.ts
 var API_ERROR_STATUS = {
   invalid_request: 400,
   invalid_json: 400,
@@ -2422,7 +2422,7 @@ function internalApiError(cause) {
   });
 }
 
-// runtimes/serve-emu/src/api/router.ts
+// packages/runtimes/serve-emu/src/api/router.ts
 var METHOD_ORDER = [
   "GET",
   "HEAD",
@@ -2525,7 +2525,7 @@ function createApiRouter(definitions, options = {}) {
   };
 }
 
-// runtimes/serve-emu/src/app-management.ts
+// packages/runtimes/serve-emu/src/app-management.ts
 import { randomBytes } from "node:crypto";
 var AppManagementError = class extends Error {
   constructor(code, message, options) {
@@ -2758,7 +2758,7 @@ function grantPermission(serial, packageNameValue, permissionValue, dependencies
   );
 }
 
-// runtimes/serve-emu/src/api/routes/applications.ts
+// packages/runtimes/serve-emu/src/api/routes/applications.ts
 function applicationRoutes() {
   return [
     {
@@ -2842,7 +2842,7 @@ function applicationRoutes() {
   ];
 }
 
-// runtimes/serve-emu/src/api/routes/devices.ts
+// packages/runtimes/serve-emu/src/api/routes/devices.ts
 function deviceRoutes() {
   return [
     {
@@ -3309,7 +3309,7 @@ function deviceRoutes() {
   ];
 }
 
-// runtimes/serve-emu/src/api/routes/input.ts
+// packages/runtimes/serve-emu/src/api/routes/input.ts
 function inputRoutes() {
   return [
     {
@@ -3347,7 +3347,7 @@ function inputRoutes() {
   ];
 }
 
-// runtimes/serve-emu/src/app-info.ts
+// packages/runtimes/serve-emu/src/app-info.ts
 async function adbShell(serial, args, timeout = 4e3, runExec = execText) {
   const result = await runExec("adb", ["-s", serial, "shell", ...args], { timeout });
   if (result.status !== 0 || result.error) {
@@ -3449,7 +3449,7 @@ async function getForegroundApp(serial, runExec = execText) {
   };
 }
 
-// runtimes/serve-emu/src/api/routes/inspection.ts
+// packages/runtimes/serve-emu/src/api/routes/inspection.ts
 function inspectionRoutes() {
   return [
     {
@@ -3557,10 +3557,10 @@ function inspectionRoutes() {
   ];
 }
 
-// runtimes/serve-emu/src/control-input-queue.ts
+// packages/runtimes/serve-emu/src/control-input-queue.ts
 import { setTimeout as sleep3 } from "node:timers/promises";
 
-// runtimes/serve-emu/src/input.ts
+// packages/runtimes/serve-emu/src/input.ts
 var TYPE_INJECT_KEYCODE = 0;
 var TYPE_INJECT_TEXT = 1;
 var TYPE_INJECT_TOUCH = 2;
@@ -3868,7 +3868,7 @@ function compileGesture(gesture, screenValue) {
   };
 }
 
-// runtimes/serve-emu/src/control-input-queue.ts
+// packages/runtimes/serve-emu/src/control-input-queue.ts
 var DEFAULT_CONTROL_QUEUE_MAX_DEPTH = 128;
 var DEFAULT_CONTROL_QUEUE_MAX_BYTES = 1024 * 1024;
 var ControlInputError = class extends Error {
@@ -4290,7 +4290,7 @@ function positiveInteger(value, name) {
   return value;
 }
 
-// runtimes/serve-emu/src/frame-stat-window.ts
+// packages/runtimes/serve-emu/src/frame-stat-window.ts
 var FrameStatWindow = class {
   #capacity;
   #intervalsMs;
@@ -4348,7 +4348,7 @@ var FrameStatWindow = class {
   }
 };
 
-// runtimes/serve-emu/src/logcat.ts
+// packages/runtimes/serve-emu/src/logcat.ts
 import {
   spawn as spawn4
 } from "node:child_process";
@@ -4972,7 +4972,7 @@ var LogcatHub = class {
   }
 };
 
-// runtimes/serve-emu/src/route-playback.ts
+// packages/runtimes/serve-emu/src/route-playback.ts
 var RoutePlaybackConflictError = class extends Error {
   constructor(message) {
     super(message);
@@ -5363,7 +5363,7 @@ var RoutePlayback = class {
   }
 };
 
-// runtimes/serve-emu/src/session-recorder.ts
+// packages/runtimes/serve-emu/src/session-recorder.ts
 var DEFAULT_MAX_SESSION_EVENTS = 2e3;
 var DEFAULT_MAX_SESSION_BYTES = 1024 * 1024;
 var SessionReplayValidationError = class extends Error {
@@ -5734,14 +5734,14 @@ var SessionRecorder = class {
   }
 };
 
-// runtimes/serve-emu/src/session-replay-lifecycle.ts
+// packages/runtimes/serve-emu/src/session-replay-lifecycle.ts
 async function disposeReplayBefore(opts) {
   opts.stopRoute();
   await opts.recorder.dispose();
   return opts.afterReplayStopped();
 }
 
-// runtimes/serve-emu/src/device-session-context.ts
+// packages/runtimes/serve-emu/src/device-session-context.ts
 var FRAME_STAT_WINDOW = 240;
 var SessionChangedError = class extends Error {
   constructor(expectedGeneration, activeGeneration) {
@@ -6083,7 +6083,7 @@ var DeviceSessionManager = class {
   }
 };
 
-// runtimes/serve-emu/src/location.ts
+// packages/runtimes/serve-emu/src/location.ts
 function finiteNumber3(value, name) {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     throw new Error(`${name} must be a finite number`);
@@ -6175,7 +6175,7 @@ async function setEmulatorLocationAsync(serial, fix, signalOrExec, runExecOverri
   assertGeoFixOutput(result.status, output2);
 }
 
-// runtimes/serve-emu/src/route-playback-api.ts
+// packages/runtimes/serve-emu/src/route-playback-api.ts
 function routePlaybackErrorResponse(error, status = routePlaybackErrorStatus(error)) {
   return Response.json(
     {
@@ -6186,7 +6186,7 @@ function routePlaybackErrorResponse(error, status = routePlaybackErrorStatus(err
   );
 }
 
-// runtimes/serve-emu/src/api/routes/location.ts
+// packages/runtimes/serve-emu/src/api/routes/location.ts
 function locationRoutes() {
   return [
     {
@@ -6324,7 +6324,7 @@ function locationRoutes() {
   ];
 }
 
-// runtimes/serve-emu/src/request-body.ts
+// packages/runtimes/serve-emu/src/request-body.ts
 var HTTP_BODY_ERROR_STATUS = {
   "payload-too-large": 413,
   "too-many-body-chunks": 413,
@@ -6514,7 +6514,7 @@ async function readJsonLimited(request, maxBytes, externalSignal) {
   }
 }
 
-// runtimes/serve-emu/src/session-api.ts
+// packages/runtimes/serve-emu/src/session-api.ts
 var DEFAULT_SESSION_PAGE_LIMIT = 50;
 var MAX_SESSION_PAGE_LIMIT = 200;
 function positiveSafeInteger(value, name) {
@@ -6537,7 +6537,7 @@ function parseSessionPageQuery(searchParams) {
   return rawBefore === null ? { limit } : { limit, before: positiveSafeInteger(rawBefore, "before") };
 }
 
-// runtimes/serve-emu/src/session-replay-api.ts
+// packages/runtimes/serve-emu/src/session-replay-api.ts
 function sessionReplayErrorResponse(error, status = sessionReplayErrorStatus(error)) {
   return Response.json(
     {
@@ -6580,7 +6580,7 @@ function clearSessionReplayResponse(recorder) {
   }
 }
 
-// runtimes/serve-emu/src/session-replay-session.ts
+// packages/runtimes/serve-emu/src/session-replay-session.ts
 function abortReason2(signal) {
   return signal.reason instanceof Error ? signal.reason : new DOMException("session replay cancelled", "AbortError");
 }
@@ -6607,7 +6607,7 @@ function createSessionReplayHandlers(opts) {
   };
 }
 
-// runtimes/serve-emu/src/api/routes/session.ts
+// packages/runtimes/serve-emu/src/api/routes/session.ts
 function sessionRoutes() {
   return [
     {
@@ -6730,7 +6730,7 @@ function sessionRoutes() {
   ];
 }
 
-// runtimes/serve-emu/src/api/routes/index.ts
+// packages/runtimes/serve-emu/src/api/routes/index.ts
 function createApiRoutes() {
   return [
     ...deviceRoutes(),
@@ -6742,7 +6742,7 @@ function createApiRoutes() {
   ];
 }
 
-// runtimes/serve-emu/src/json-response.ts
+// packages/runtimes/serve-emu/src/json-response.ts
 function emptyMetric() {
   return {
     responses: 0,
@@ -6803,7 +6803,7 @@ var JsonResponseTracker = class {
   }
 };
 
-// runtimes/serve-emu/src/multipart-upload.ts
+// packages/runtimes/serve-emu/src/multipart-upload.ts
 import Busboy from "@fastify/busboy";
 import { createWriteStream } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -7378,7 +7378,7 @@ async function stageMultipartUpload(request, options) {
   }
 }
 
-// runtimes/serve-emu/src/server/backpressure.ts
+// packages/runtimes/serve-emu/src/server/backpressure.ts
 function frameDeliveryDecision(options) {
   if (options.bufferedBytes > options.closeThresholdBytes) {
     return "close-slow-client";
@@ -7392,7 +7392,7 @@ function frameDeliveryDecision(options) {
   return "send";
 }
 
-// runtimes/serve-emu/src/session-recovery-watchdog.ts
+// packages/runtimes/serve-emu/src/session-recovery-watchdog.ts
 var SYSTEM_RECOVERY_WATCHDOG_CLOCK = {
   now: Date.now,
   setInterval: (callback, intervalMs) => setInterval(callback, intervalMs),
@@ -7539,7 +7539,7 @@ var SessionRecoveryWatchdog = class {
   }
 };
 
-// runtimes/serve-emu/src/session-status.ts
+// packages/runtimes/serve-emu/src/session-status.ts
 function terminalTransitionAllowed(current, next) {
   if (current === "error") return false;
   if (current !== "streaming" && next !== "error") return false;
@@ -7559,7 +7559,7 @@ function procExitDetail(code, signal) {
   };
 }
 
-// runtimes/serve-emu/src/shared/frame-meta.ts
+// packages/runtimes/serve-emu/src/shared/frame-meta.ts
 var FRAME_META_MAGIC = 1397050709;
 var FRAME_META_VERSION = 2;
 var FRAME_META_HEADER_BYTES = 24;
@@ -7575,7 +7575,7 @@ function writeFrameMetaHeader(target, meta) {
   view.setBigUint64(16, BigInt(Math.round(meta.serverTsMs * 1e3)), false);
 }
 
-// runtimes/serve-emu/src/shared/control-contracts.ts
+// packages/runtimes/serve-emu/src/shared/control-contracts.ts
 function isRecord4(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -7672,7 +7672,7 @@ function parseGesture2(value) {
   }
 }
 
-// runtimes/serve-emu/src/shared/websocket-contracts.ts
+// packages/runtimes/serve-emu/src/shared/websocket-contracts.ts
 function record(value, name) {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new TypeError(`${name} must be an object`);
@@ -7727,7 +7727,7 @@ function parseWsClientMessage(value) {
   };
 }
 
-// runtimes/serve-emu/src/upload-manager.ts
+// packages/runtimes/serve-emu/src/upload-manager.ts
 var UploadManagerError = class extends Error {
   constructor(code, message, context, options) {
     super(message, options);
@@ -8057,7 +8057,7 @@ var UploadManager = class {
   }
 };
 
-// runtimes/serve-emu/src/server.ts
+// packages/runtimes/serve-emu/src/server.ts
 var __dirname2 = dirname2(fileURLToPath2(import.meta.url));
 var UI_DIR = join4(__dirname2, "..", "dist", "ui");
 var DEFAULT_HOST = "127.0.0.1";
@@ -9255,7 +9255,7 @@ async function startServer(opts, dependencies = {}) {
   };
 }
 
-// runtimes/serve-emu/src/cli.ts
+// packages/runtimes/serve-emu/src/cli.ts
 var startupReportSent;
 async function exitAfterDiagnostics(code) {
   await startupReportSent;

@@ -7,30 +7,30 @@ import { buildNativeSentry, nativeTelemetrySourceHash, nativeSentryLicense } fro
 export async function iosLogsSourceHash() {
   const hash = createHash("sha256");
   for (const file of ["collector.c", "dependencies.json"]) {
-    const bytes = await readFile(`native/ios-logs/${file}`);
+    const bytes = await readFile(`packages/native/ios-logs/${file}`);
     hash.update(file);
     hash.update(bytes);
   }
-  const script = await readFile("scripts/build-ios-logs.mjs");
+  const script = await readFile("tooling/build-ios-logs.mjs");
   hash.update(script);
   await nativeTelemetrySourceHash(hash);
   return hash.digest("hex");
 }
 
-const buildScriptPath = resolve("scripts/build-ios-logs.mjs");
+const buildScriptPath = resolve("tooling/build-ios-logs.mjs");
 const executedScriptPath = process.argv[1] ? resolve(process.argv[1]) : undefined;
 if (executedScriptPath === buildScriptPath) {
   if (process.platform !== "darwin" || process.arch !== "arm64") throw new Error("Build the physical iOS log reader on an Apple Silicon Mac.");
   const root = resolve(".local-dev/ios-logs");
   const prefix = `${root}/prefix`;
-  const output = resolve("vendor/ios-logs");
+  const output = resolve("packages/native/vendor/ios-logs");
   const openssl = process.env.MOBILE_DEV_OPENSSL_PREFIX ?? "/opt/homebrew/opt/openssl@3";
   const sdk = await buildNativeSentry();
   const sslVersion = execFileSync(`${openssl}/bin/openssl`, ["version"], { encoding: "utf8" });
   const sslVersionText = sslVersion.trim();
   const environment = { ...process.env, PKG_CONFIG_PATH: `${prefix}/lib/pkgconfig:${openssl}/lib/pkgconfig`,
     CFLAGS: "-O2 -arch arm64 -mmacosx-version-min=14.0", LDFLAGS: "-arch arm64 -mmacosx-version-min=14.0" };
-  const dependenciesText = await readFile("native/ios-logs/dependencies.json", "utf8");
+  const dependenciesText = await readFile("packages/native/ios-logs/dependencies.json", "utf8");
   const dependencies = JSON.parse(dependenciesText);
   await rm(prefix, { recursive: true, force: true });
   await mkdir(root, { recursive: true });
@@ -72,7 +72,7 @@ if (executedScriptPath === buildScriptPath) {
   const flags = trimmedFlags.split(/\s+/);
   const executable = `${output}/mobile-dev-ios-logs`;
   execFileSync("clang", ["-std=c11", "-O2", "-g", "-Wall", "-Wextra", "-Werror", "-arch", "arm64", "-mmacosx-version-min=14.0",
-    "-DSENTRY_BUILD_STATIC=1", "-I", sdk.include, "native/ios-logs/collector.c", "native/telemetry/telemetry.c",
+    "-DSENTRY_BUILD_STATIC=1", "-I", sdk.include, "packages/native/ios-logs/collector.c", "packages/native/telemetry/telemetry.c",
     sdk.library, "-lcurl", ...flags, "-o", executable], { stdio: "inherit" });
   const symbols = resolve(".sentry/native/darwin-arm64/mobile-dev-ios-logs.dSYM");
   await mkdir(".sentry/native/darwin-arm64", { recursive: true });

@@ -1,5 +1,5 @@
 
-!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="0fbab36b-d425-52a9-9582-83d7873b424c")}catch(e){}}();
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="0de028b3-b375-5dc1-a7de-109c2198cac6")}catch(e){}}();
 ;(function(){var g=globalThis.__SENTRY_ORCHESTRION__=globalThis.__SENTRY_ORCHESTRION__||{};g.bundler=g.bundler||new Set();})();import { createRequire as mobileDevBundleRequire } from 'node:module'; const require = mobileDevBundleRequire(import.meta.url);
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -1207,22 +1207,22 @@ var require_util = __commonJS({
       }
       return url2;
     }
-    function getHostname2(host) {
-      if (host[0] === "[") {
-        const idx2 = host.indexOf("]");
+    function getHostname2(host2) {
+      if (host2[0] === "[") {
+        const idx2 = host2.indexOf("]");
         assert2(idx2 !== -1);
-        return host.substring(1, idx2);
+        return host2.substring(1, idx2);
       }
-      const idx = host.indexOf(":");
-      if (idx === -1) return host;
-      return host.substring(0, idx);
+      const idx = host2.indexOf(":");
+      if (idx === -1) return host2;
+      return host2.substring(0, idx);
     }
-    function getServerName(host) {
-      if (!host) {
+    function getServerName(host2) {
+      if (!host2) {
         return null;
       }
-      assert2(typeof host === "string");
-      const servername = getHostname2(host);
+      assert2(typeof host2 === "string");
+      const servername = getHostname2(host2);
       if (net3.isIP(servername)) {
         return "";
       }
@@ -1998,11 +1998,11 @@ var require_diagnostics = __commonJS({
         "undici:client:beforeConnect",
         (evt) => {
           const {
-            connectParams: { version: version2, protocol, port, host }
+            connectParams: { version: version2, protocol, port, host: host2 }
           } = evt;
           debugLog3(
             "connecting to %s%s using %s%s",
-            host,
+            host2,
             port ? `:${port}` : "",
             protocol,
             version2
@@ -2013,11 +2013,11 @@ var require_diagnostics = __commonJS({
         "undici:client:connected",
         (evt) => {
           const {
-            connectParams: { version: version2, protocol, port, host }
+            connectParams: { version: version2, protocol, port, host: host2 }
           } = evt;
           debugLog3(
             "connected to %s%s using %s%s",
-            host,
+            host2,
             port ? `:${port}` : "",
             protocol,
             version2
@@ -2028,12 +2028,12 @@ var require_diagnostics = __commonJS({
         "undici:client:connectError",
         (evt) => {
           const {
-            connectParams: { version: version2, protocol, port, host },
+            connectParams: { version: version2, protocol, port, host: host2 },
             error: error63
           } = evt;
           debugLog3(
             "connection to %s%s using %s%s errored - %s",
-            host,
+            host2,
             port ? `:${port}` : "",
             protocol,
             version2,
@@ -5190,13 +5190,13 @@ var require_connect = __commonJS({
       const sessionCache = new SessionCache(maxCachedSessions == null ? 100 : maxCachedSessions);
       timeout = timeout == null ? 1e4 : timeout;
       allowH2 = allowH2 != null ? allowH2 : true;
-      return function connect3({ hostname: hostname4, host, protocol, port, servername, localAddress, httpSocket }, callback) {
+      return function connect3({ hostname: hostname4, host: host2, protocol, port, servername, localAddress, httpSocket }, callback) {
         let socket;
         if (protocol === "https:") {
           if (!tls2) {
             tls2 = __require("node:tls");
           }
-          servername = servername || options.servername || util2.getServerName(host) || null;
+          servername = servername || options.servername || util2.getServerName(host2) || null;
           const sessionKey = servername || hostname4;
           assert2(sessionKey);
           const session = customSession || sessionCache.get(sessionKey) || null;
@@ -10187,7 +10187,7 @@ var require_client_h1 = __commonJS({
       }
     }
     function writeH1(client2, request2) {
-      const { method, path, host, upgrade, blocking, reset } = request2;
+      const { method, path, host: host2, upgrade, blocking, reset } = request2;
       let { body, headers, contentLength } = request2;
       const expectsPayload = method === "PUT" || method === "POST" || method === "PATCH" || method === "QUERY" || method === "PROPFIND" || method === "PROPPATCH";
       if (util2.isFormDataLike(body)) {
@@ -10265,8 +10265,8 @@ var require_client_h1 = __commonJS({
       setTypeOfService(socket, request2);
       let header = `${method} ${path} HTTP/1.1\r
 `;
-      if (typeof host === "string") {
-        header += `host: ${host}\r
+      if (typeof host2 === "string") {
+        header += `host: ${host2}\r
 `;
       } else {
         header += client2[kHostHeader];
@@ -11384,13 +11384,13 @@ var require_client_h2 = __commonJS({
       const headersTimeout = request2.headersTimeout ?? client2[kHeadersTimeout];
       const bodyTimeout = request2.bodyTimeout ?? client2[kBodyTimeout];
       const session = client2[kHTTP2Session];
-      const { method, path, host, upgrade, expectContinue, signal, protocol, headers: reqHeaders } = request2;
+      const { method, path, host: host2, upgrade, expectContinue, signal, protocol, headers: reqHeaders } = request2;
       if (upgrade != null && upgrade !== "websocket") {
         util2.errorRequest(client2, request2, new InvalidArgumentError(`Custom upgrade "${upgrade}" not supported over HTTP/2`));
         return false;
       }
       const headers = buildRequestHeaders(reqHeaders);
-      headers[HTTP2_HEADER_AUTHORITY] = host || client2[kHostAuthority];
+      headers[HTTP2_HEADER_AUTHORITY] = host2 || client2[kHostAuthority];
       headers[HTTP2_HEADER_METHOD] = method;
       const state = {
         abort: null,
@@ -12332,7 +12332,7 @@ var require_client = __commonJS({
     function connect3(client2) {
       assert2(!client2[kConnecting]);
       assert2(!client2[kHTTPContext]);
-      let { host, hostname: hostname4, protocol, port } = client2[kUrl];
+      let { host: host2, hostname: hostname4, protocol, port } = client2[kUrl];
       if (hostname4[0] === "[") {
         const idx = hostname4.indexOf("]");
         assert2(idx !== -1);
@@ -12344,7 +12344,7 @@ var require_client = __commonJS({
       if (channels.beforeConnect.hasSubscribers) {
         channels.beforeConnect.publish({
           connectParams: {
-            host,
+            host: host2,
             hostname: hostname4,
             protocol,
             port,
@@ -12357,7 +12357,7 @@ var require_client = __commonJS({
       }
       try {
         client2[kConnector]({
-          host,
+          host: host2,
           hostname: hostname4,
           protocol,
           port,
@@ -12365,7 +12365,7 @@ var require_client = __commonJS({
           localAddress: client2[kLocalAddress]
         }, (err, socket) => {
           if (err) {
-            handleConnectError(client2, err, { host, hostname: hostname4, protocol, port });
+            handleConnectError(client2, err, { host: host2, hostname: hostname4, protocol, port });
             client2[kResume]();
             return;
           }
@@ -12379,7 +12379,7 @@ var require_client = __commonJS({
             client2[kHTTPContext] = socket.alpnProtocol === "h2" ? connectH2(client2, socket) : connectH1(client2, socket);
           } catch (err2) {
             socket.destroy().on("error", noop);
-            handleConnectError(client2, err2, { host, hostname: hostname4, protocol, port });
+            handleConnectError(client2, err2, { host: host2, hostname: hostname4, protocol, port });
             client2[kResume]();
             return;
           }
@@ -12391,7 +12391,7 @@ var require_client = __commonJS({
           if (channels.connected.hasSubscribers) {
             channels.connected.publish({
               connectParams: {
-                host,
+                host: host2,
                 hostname: hostname4,
                 protocol,
                 port,
@@ -12407,11 +12407,11 @@ var require_client = __commonJS({
           client2[kResume]();
         });
       } catch (err) {
-        handleConnectError(client2, err, { host, hostname: hostname4, protocol, port });
+        handleConnectError(client2, err, { host: host2, hostname: hostname4, protocol, port });
         client2[kResume]();
       }
     }
-    function handleConnectError(client2, err, { host, hostname: hostname4, protocol, port }) {
+    function handleConnectError(client2, err, { host: host2, hostname: hostname4, protocol, port }) {
       if (client2.destroyed) {
         return;
       }
@@ -12419,7 +12419,7 @@ var require_client = __commonJS({
       if (channels.connectError.hasSubscribers) {
         channels.connectError.publish({
           connectParams: {
-            host,
+            host: host2,
             hostname: hostname4,
             protocol,
             port,
@@ -19454,21 +19454,21 @@ var require_dns = __commonJS({
       }
       return false;
     }
-    function withHostHeader(host, headers) {
+    function withHostHeader(host2, headers) {
       const normalizedHeaders = normalizeHeaders(headers);
       if (hasHostHeader(normalizedHeaders)) {
         return normalizedHeaders;
       }
       if (Array.isArray(normalizedHeaders)) {
-        return ["host", host, ...normalizedHeaders];
+        return ["host", host2, ...normalizedHeaders];
       }
       if (normalizedHeaders && typeof normalizedHeaders === "object") {
         return {
-          host,
+          host: host2,
           ...normalizedHeaders
         };
       }
-      return { host };
+      return { host: host2 };
     }
     var DNSStorage = class {
       #maxItems = 0;
@@ -30956,7 +30956,7 @@ ${captureLines}` : capture.stack;
   }
 });
 
-// src/server/http-runtime.ts
+// packages/core/src/http-runtime.ts
 var import_undici = __toESM(require_undici(), 1);
 var dispatcher = new import_undici.Agent();
 (0, import_undici.setGlobalDispatcher)(dispatcher);
@@ -30964,7 +30964,7 @@ function closeHttpRuntime() {
   return dispatcher.destroy();
 }
 
-// src/server/instrument.ts
+// packages/core/src/instrument.ts
 import { mkdirSync as mkdirSync2 } from "node:fs";
 import { homedir as homedir2 } from "node:os";
 import { join as join9 } from "node:path";
@@ -33125,8 +33125,8 @@ function isValidProtocol(protocol) {
   return protocol === "http" || protocol === "https";
 }
 function dsnToString(dsn, withPassword = false) {
-  const { host, path, pass, port, projectId, protocol, publicKey } = dsn;
-  return `${protocol}://${publicKey}${withPassword && pass ? `:${pass}` : ""}@${host}${port ? `:${port}` : ""}/${path ? `${path}/` : path}${projectId}`;
+  const { host: host2, path, pass, port, projectId, protocol, publicKey } = dsn;
+  return `${protocol}://${publicKey}${withPassword && pass ? `:${pass}` : ""}@${host2}${port ? `:${port}` : ""}/${path ? `${path}/` : path}${projectId}`;
 }
 function dsnFromString(str) {
   const match2 = DSN_REGEX.exec(str);
@@ -33136,7 +33136,7 @@ function dsnFromString(str) {
     });
     return void 0;
   }
-  const [protocol, publicKey, pass = "", host = "", port = "", lastPath = ""] = match2.slice(1);
+  const [protocol, publicKey, pass = "", host2 = "", port = "", lastPath = ""] = match2.slice(1);
   let path = "";
   let projectId = lastPath;
   const split = projectId.split("/");
@@ -33150,7 +33150,7 @@ function dsnFromString(str) {
       projectId = projectMatch[0];
     }
   }
-  return dsnFromComponents({ host, pass, path, projectId, port, protocol, publicKey });
+  return dsnFromComponents({ host: host2, pass, path, projectId, port, protocol, publicKey });
 }
 function dsnFromComponents(components) {
   return {
@@ -33193,18 +33193,18 @@ function validateDsn(dsn) {
   }
   return true;
 }
-function extractOrgIdFromDsnHost(host) {
-  const match2 = host.match(ORG_ID_REGEX);
+function extractOrgIdFromDsnHost(host2) {
+  const match2 = host2.match(ORG_ID_REGEX);
   return match2?.[1];
 }
 function extractOrgIdFromClient(client2) {
   const options = client2.getOptions();
-  const { host } = client2.getDsn() || {};
+  const { host: host2 } = client2.getDsn() || {};
   let org_id;
   if (options.orgId) {
     org_id = String(options.orgId);
-  } else if (host) {
-    org_id = extractOrgIdFromDsnHost(host);
+  } else if (host2) {
+    org_id = extractOrgIdFromDsnHost(host2);
   }
   return org_id;
 }
@@ -38071,8 +38071,8 @@ function stripUrlQueryAndFragment(urlPath) {
   return urlPath.split(/[?#]/, 1)[0];
 }
 function getSanitizedUrlString(url2) {
-  const { protocol, host, path } = url2;
-  const filteredHost = host?.replace(/^.*@/, "[filtered]:[filtered]@").replace(/(:80)$/, "").replace(/(:443)$/, "") || "";
+  const { protocol, host: host2, path } = url2;
+  const filteredHost = host2?.replace(/^.*@/, "[filtered]:[filtered]@").replace(/(:80)$/, "").replace(/(:443)$/, "") || "";
   return `${protocol ? `${protocol}://` : ""}${filteredHost}${path || ""}`;
 }
 function stripDataUrlContent(url2, includeDataPrefix = true) {
@@ -38243,13 +38243,13 @@ function winterCGRequestToRequestData(req) {
 function httpRequestToRequestData(request2) {
   const headers = request2.headers || {};
   const forwardedHost = typeof headers["x-forwarded-host"] === "string" ? headers["x-forwarded-host"] : void 0;
-  const host = forwardedHost || (typeof headers.host === "string" ? headers.host : void 0);
+  const host2 = forwardedHost || (typeof headers.host === "string" ? headers.host : void 0);
   const forwardedProto = typeof headers["x-forwarded-proto"] === "string" ? headers["x-forwarded-proto"] : void 0;
   const protocol = forwardedProto || request2.protocol || (request2.socket?.encrypted ? "https" : "http");
   const url2 = request2.url || "";
   const absoluteUrl = getAbsoluteUrl({
     url: url2,
-    host,
+    host: host2,
     protocol
   });
   const data = request2.body || void 0;
@@ -38266,13 +38266,13 @@ function httpRequestToRequestData(request2) {
 function getAbsoluteUrl({
   url: url2,
   protocol,
-  host
+  host: host2
 }) {
   if (url2?.startsWith("http")) {
     return url2;
   }
-  if (url2 && host) {
-    return `${protocol}://${host}${url2}`;
+  if (url2 && host2) {
+    return `${protocol}://${host2}${url2}`;
   }
   return void 0;
 }
@@ -38825,16 +38825,16 @@ function isLocalhostRequest(request2, ipAddress) {
       if (!HOST_HEADERS.includes(name.toLowerCase())) {
         continue;
       }
-      const host = value?.split(":")[0];
-      if (host && LOCAL_DOMAINS.includes(host)) {
+      const host2 = value?.split(":")[0];
+      if (host2 && LOCAL_DOMAINS.includes(host2)) {
         return true;
       }
     }
   }
   return false;
 }
-function hostMatchesOrIsSubdomainOf(host, domain2) {
-  return host === domain2 || host.endsWith(`.${domain2}`);
+function hostMatchesOrIsSubdomainOf(host2, domain2) {
+  return host2 === domain2 || host2.endsWith(`.${domain2}`);
 }
 
 // node_modules/@sentry/core/build/esm/vendor/getIpAddress.js
@@ -41401,8 +41401,8 @@ function buildServerSpanWrap(options) {
       const userAgent = headers["user-agent"];
       const ips = headers["x-forwarded-for"];
       const httpVersion = request2.httpVersion;
-      const host = headers.host;
-      const hostname4 = host?.replace(/^(.*)(:[0-9]{1,5})/, "$1") || "localhost";
+      const host2 = headers.host;
+      const hostname4 = host2?.replace(/^(.*)(:[0-9]{1,5})/, "$1") || "localhost";
       const scheme = fullUrl.startsWith("https") ? "https" : "http";
       const { socket } = request2;
       const { localAddress, localPort, remoteAddress, remotePort } = socket ?? {};
@@ -45357,11 +45357,11 @@ function _getOperationName(sanitizedQuery, command) {
   return operationMatch?.[1]?.toUpperCase();
 }
 function _buildConnectionContext(options) {
-  const host = options.host?.[0] || "localhost";
+  const host2 = options.host?.[0] || "localhost";
   const port = options.port?.[0] || 5432;
   return {
     ATTR_DB_NAMESPACE: typeof options.database === "string" && options.database !== "" ? options.database : void 0,
-    ATTR_SERVER_ADDRESS: host,
+    ATTR_SERVER_ADDRESS: host2,
     ATTR_SERVER_PORT: String(port)
   };
 }
@@ -51196,9 +51196,9 @@ function getStoredProcedureName(command, args) {
   const name = typeof raw === "string" ? raw : Buffer.isBuffer(raw) ? raw.toString() : void 0;
   return name && name !== "?" ? name : void 0;
 }
-function getServerTarget({ host, port }) {
+function getServerTarget({ host: host2, port }) {
   const hasPort = typeof port === "number" || typeof port === "string" && !!port;
-  return typeof host === "string" && host && hasPort ? `${host}:${port}` : void 0;
+  return typeof host2 === "string" && host2 && hasPort ? `${host2}:${port}` : void 0;
 }
 function getRedisQueryNaming(command, args, connection) {
   const storedProcedure = getStoredProcedureName(command, args);
@@ -51468,10 +51468,10 @@ var DB_SYSTEM_VALUE_REDIS2 = "redis";
 function getConnectionOptions(self2) {
   return { host: self2?.options?.host, port: self2?.options?.port };
 }
-function connectionAttributes(host, port) {
+function connectionAttributes(host2, port) {
   return {
     [Ca]: DB_SYSTEM_VALUE_REDIS2,
-    ...host != null ? { [mg]: host } : {},
+    ...host2 != null ? { [mg]: host2 } : {},
     ...port != null ? { [_g]: port } : {},
     [SEMANTIC_ATTRIBUTE_SENTRY_ORIGIN]: ORIGIN8
   };
@@ -51486,15 +51486,15 @@ function startIORedisCommandSpan(data, cacheOptions) {
     return void 0;
   }
   tracedCommands.add(command);
-  const { host, port } = getConnectionOptions(data.self);
+  const { host: host2, port } = getConnectionOptions(data.self);
   const statement = defaultDbStatementSerializer(command.name, command.args ?? []);
   const { streamedName, attributes: namingAttributes } = getRedisQueryNaming(command.name, command.args ?? [], {
-    host,
+    host: host2,
     port
   });
   const attributes = {
     [gd]: "client",
-    ...connectionAttributes(host, port),
+    ...connectionAttributes(host2, port),
     [Ad]: re,
     [ha]: command.name,
     ...namingAttributes,
@@ -51525,12 +51525,12 @@ function instrumentIoredis(options) {
   bindTracingChannelToSpan(
     connectChannel,
     (data) => {
-      const { host, port } = getConnectionOptions(data.self);
+      const { host: host2, port } = getConnectionOptions(data.self);
       return startInactiveSpan({
         name: "connect",
         attributes: {
           [gd]: "client",
-          ...connectionAttributes(host, port),
+          ...connectionAttributes(host2, port),
           [Ad]: _e
         }
       });
@@ -51558,11 +51558,11 @@ function stripCommandOptions(args) {
 }
 function nodeRedisAttributes(options) {
   const socket = options?.socket;
-  const host = socket?.path ?? socket?.host ?? "localhost";
+  const host2 = socket?.path ?? socket?.host ?? "localhost";
   const port = socket?.path != null ? void 0 : socket?.port ?? 6379;
   return {
     [Ca]: DB_SYSTEM_VALUE_REDIS3,
-    [mg]: host,
+    [mg]: host2,
     ...port != null ? { [_g]: port } : {},
     [SEMANTIC_ATTRIBUTE_SENTRY_ORIGIN]: ORIGIN9
   };
@@ -52762,12 +52762,12 @@ function isCommandEntry(value) {
   return Array.isArray(value);
 }
 function getV4SpanAttributes(connectionCtx, ns, command, operation, origin) {
-  let host;
+  let host2;
   let port;
   if (connectionCtx) {
     const hostParts = typeof connectionCtx.address === "string" ? connectionCtx.address.split(":") : "";
     if (hostParts.length === 2) {
-      host = hostParts[0];
+      host2 = hostParts[0];
       port = hostParts[1];
     }
   }
@@ -52779,19 +52779,19 @@ function getV4SpanAttributes(connectionCtx, ns, command, operation, origin) {
   } else {
     commandObj = command;
   }
-  return getSpanAttributes2(ns.db, ns.collection, host, port, commandObj, operation, origin);
+  return getSpanAttributes2(ns.db, ns.collection, host2, port, commandObj, operation, origin);
 }
-function getSpanAttributes2(dbName, dbCollection, host, port, commandObj, operation, origin) {
+function getSpanAttributes2(dbName, dbCollection, host2, port, commandObj, operation, origin) {
   const attributes = {
     [SEMANTIC_ATTRIBUTE_SENTRY_ORIGIN]: origin,
     [Ca]: DB_SYSTEM_VALUE_MONGODB,
     [ma]: dbName,
     [ca]: dbCollection,
     [ha]: operation,
-    [ATTR_DB_CONNECTION_STRING]: `mongodb://${host}:${port}/${dbName}`
+    [ATTR_DB_CONNECTION_STRING]: `mongodb://${host2}:${port}/${dbName}`
   };
-  if (host && port) {
-    attributes[mg] = host;
+  if (host2 && port) {
+    attributes[mg] = host2;
     const portNumber = parseInt(port, 10);
     if (!isNaN(portNumber)) {
       attributes[_g] = portNumber;
@@ -52820,23 +52820,23 @@ function getV3CommandOperation(command) {
   return void 0;
 }
 function getV3SpanAttributes(ns, topology, command, operation, origin) {
-  let host;
+  let host2;
   let port;
   if (topology?.s) {
-    host = topology.s.options?.host ?? topology.s.host;
+    host2 = topology.s.options?.host ?? topology.s.host;
     port = (topology.s.options?.port ?? topology.s.port)?.toString();
-    if (host == null || port == null) {
+    if (host2 == null || port == null) {
       const address = topology.description?.address;
       if (address) {
         const segments = address.split(":");
-        host = segments[0];
+        host2 = segments[0];
         port = segments[1];
       }
     }
   }
   const [dbName, dbCollection] = ns.toString().split(".");
   const commandObj = command?.query ?? command?.q ?? command;
-  return getSpanAttributes2(dbName, dbCollection, host, port, commandObj, operation, origin);
+  return getSpanAttributes2(dbName, dbCollection, host2, port, commandObj, operation, origin);
 }
 function startMongoSpan(attributes) {
   const operation = attributes[ha];
@@ -53276,7 +53276,7 @@ function instrumentMysql() {
     tracingChannel2(CHANNELS.MYSQL_QUERY),
     (data) => {
       const sql = extractSql(data.arguments[0]);
-      const { host, port, database, user } = getConnectionConfig(data.self);
+      const { host: host2, port, database, user } = getConnectionConfig(data.self);
       const portNumber = typeof port === "string" ? parseInt(port, 10) : port;
       const portIsNumber = typeof portNumber === "number" && !isNaN(portNumber);
       data._sentryCallerScope = getCurrentScope();
@@ -53290,12 +53290,12 @@ function instrumentMysql() {
           [gd]: "client",
           [Ca]: DB_SYSTEM_NAME_VALUE_MYSQL,
           [SEMANTIC_ATTRIBUTE_SENTRY_ORIGIN]: "auto.db.mysql",
-          [ATTR_DB_CONNECTION_STRING2]: getJDBCString(host, portIsNumber ? portNumber : void 0, database),
+          [ATTR_DB_CONNECTION_STRING2]: getJDBCString(host2, portIsNumber ? portNumber : void 0, database),
           ...database ? { [ma]: database } : {},
           ...user ? { [Pa]: user } : {},
           ...queryText ? { [Sa]: queryText } : {},
           [Ta]: querySummary,
-          [mg]: host,
+          [mg]: host2,
           [_g]: portIsNumber ? portNumber : void 0
         }
       });
@@ -53341,8 +53341,8 @@ function getConnectionConfig(connection) {
     user: config3.user
   };
 }
-function getJDBCString(host, port, database) {
-  let s3 = `jdbc:mysql://${host || "localhost"}`;
+function getJDBCString(host2, port, database) {
+  let s3 = `jdbc:mysql://${host2 || "localhost"}`;
   if (typeof port === "number") {
     s3 += `:${port}`;
   }
@@ -53460,14 +53460,14 @@ function extractSql2(firstArg) {
   return void 0;
 }
 function getConnectionAttributes(config3) {
-  const { host, port, database, user } = config3?.connectionConfig ?? config3 ?? {};
+  const { host: host2, port, database, user } = config3?.connectionConfig ?? config3 ?? {};
   const portNumber = typeof port === "string" ? parseInt(port, 10) : port;
   const portIsNumber = typeof portNumber === "number" && !isNaN(portNumber);
   return {
     [ma]: database || void 0,
     [Pa]: user || void 0,
     // oxlint-disable-next-line typescript/no-deprecated
-    [mg]: host || void 0,
+    [mg]: host2 || void 0,
     // oxlint-disable-next-line typescript/no-deprecated
     [_g]: portIsNumber ? portNumber : void 0
   };
@@ -53692,7 +53692,7 @@ function getPoolConnectionAttributes(opts) {
     url2 = void 0;
   }
   const database = url2?.pathname.slice(1) || opts.database;
-  const host = url2?.hostname || opts.host;
+  const host2 = url2?.hostname || opts.host;
   const port = Number(url2?.port) || (Number.isInteger(opts.port) ? opts.port : void 0);
   const user = url2?.username || opts.user;
   return {
@@ -53703,7 +53703,7 @@ function getPoolConnectionAttributes(opts) {
     [ma]: database,
     [_g]: port,
     // these two come from a url parse and slice, can be ''
-    [mg]: host || void 0,
+    [mg]: host2 || void 0,
     [Pa]: user || void 0
   };
 }
@@ -53718,10 +53718,10 @@ function getConnectionString(params) {
       return "postgresql://localhost:5432/";
     }
   }
-  const host = params.host || "localhost";
+  const host2 = params.host || "localhost";
   const port = params.port || 5432;
   const database = params.database || "";
-  return `postgresql://${host}:${port}/${database}`;
+  return `postgresql://${host2}:${port}/${database}`;
 }
 var postgresIntegration = defineIntegration(_postgresIntegration);
 
@@ -55765,8 +55765,8 @@ var _httpServerSpansIntegration = ((options = {}) => {
           const headers = request2.headers;
           const userAgent = headers["user-agent"];
           const httpVersion = request2.httpVersion;
-          const host = headers.host;
-          const hostname4 = host?.replace(/^(.*)(:[0-9]{1,5})/, "$1") || "localhost";
+          const host2 = headers.host;
+          const hostname4 = host2?.replace(/^(.*)(:[0-9]{1,5})/, "$1") || "localhost";
           const scheme = fullUrl.startsWith("https") ? "https" : "http";
           const requestMethod = normalizedRequest.method || request2.method?.toUpperCase();
           const method = requestMethod || "GET";
@@ -57956,13 +57956,13 @@ var HttpsProxyAgent = class extends Agent3 {
     this.proxy = typeof proxy === "string" ? new URL(proxy) : proxy;
     this.proxyHeaders = opts?.headers ?? {};
     debugLog2("Creating new HttpsProxyAgent instance: %o", this.proxy.href);
-    const host = (this.proxy.hostname || this.proxy.host).replace(/^\[|\]$/g, "");
+    const host2 = (this.proxy.hostname || this.proxy.host).replace(/^\[|\]$/g, "");
     const port = this.proxy.port ? parseInt(this.proxy.port, 10) : this.proxy.protocol === "https:" ? 443 : 80;
     this.connectOpts = {
       // Attempt to negotiate http/1.1 for proxy servers that support http/2
       ALPNProtocols: ["http/1.1"],
       ...opts ? omit(opts, "headers") : null,
-      host,
+      host: host2,
       port
     };
   }
@@ -57988,14 +57988,14 @@ var HttpsProxyAgent = class extends Agent3 {
       socket = net2.connect(this.connectOpts);
     }
     const headers = typeof this.proxyHeaders === "function" ? this.proxyHeaders() : { ...this.proxyHeaders };
-    const host = net2.isIPv6(opts.host) ? `[${opts.host}]` : opts.host;
-    let payload = `CONNECT ${host}:${opts.port} HTTP/1.1\r
+    const host2 = net2.isIPv6(opts.host) ? `[${opts.host}]` : opts.host;
+    let payload = `CONNECT ${host2}:${opts.port} HTTP/1.1\r
 `;
     if (proxy.username || proxy.password) {
       const auth = `${decodeURIComponent(proxy.username)}:${decodeURIComponent(proxy.password)}`;
       headers["Proxy-Authorization"] = `Basic ${Buffer.from(auth).toString("base64")}`;
     }
-    headers.Host = `${host}:${opts.port}`;
+    headers.Host = `${host2}:${opts.port}`;
     if (!headers["Proxy-Connection"]) {
       headers["Proxy-Connection"] = this.keepAlive ? "Keep-Alive" : "close";
     }
@@ -62156,10 +62156,10 @@ var nodeRuntimeMetricsIntegration = defineIntegration((options = {}) => {
   };
 });
 
-// src/shared/version.ts
-var PLUGIN_VERSION = "0.1.163";
+// packages/shared/src/version.ts
+var PLUGIN_VERSION = "0.1.169";
 
-// src/shared/telemetry-identity.ts
+// packages/shared/src/telemetry-identity.ts
 function isAnonymousUserId(value) {
   return typeof value === "string" && /^anon_[a-f0-9]{32}$/.test(value);
 }
@@ -62167,7 +62167,7 @@ function isTelemetrySessionId(value) {
   return typeof value === "string" && /^run_[a-f0-9]{32}$/.test(value);
 }
 
-// src/shared/device-apps-command-diagnostics.ts
+// packages/shared/src/device-apps-command-diagnostics.ts
 var diagnostics2 = /* @__PURE__ */ new WeakMap();
 function getDiscoveryCommandDiagnostic(error63) {
   if (error63 === null || typeof error63 !== "object") return;
@@ -62185,7 +62185,7 @@ function discoveryCommandTags(error63) {
   return tags;
 }
 
-// src/shared/error-reporting.ts
+// packages/shared/src/error-reporting.ts
 var ExpectedOperationError = class extends Error {
   outcome;
   constructor(outcome, message) {
@@ -62198,7 +62198,13 @@ function expectedOutcome(error63) {
   const command = getDiscoveryCommandDiagnostic(error63);
   if (command?.termination === "deadline") return;
   if (command?.cause === "cancelled") return "cancelled";
+  if (command?.cause === "device_not_found" || command?.cause === "device_not_booted" || command?.cause === "device_offline" || command?.cause === "device_unauthorized") return "device_unavailable";
+  if (command?.cause === "foreground_unavailable") return "app_unavailable";
+  if (command?.cause === "unsupported_service") return "unsupported_platform";
   if (error63 instanceof Error && error63.name === "AbortError") return "cancelled";
+  const category = errorCategory(error63);
+  if (category === "host_thread_missing") return "session_closed";
+  if (category === "cancellation") return "cancelled";
 }
 var categories = /* @__PURE__ */ new WeakMap();
 function errorCategory(error63) {
@@ -62216,10 +62222,12 @@ function errorCategory(error63) {
   return "unexpected";
 }
 
-// src/shared/telemetry.ts
+// packages/shared/src/telemetry.ts
 var SENTRY_SERVER_DSN = "https://2ee03a9449e1f1b48e3e7c7606b6f562@o4512180958068736.ingest.de.sentry.io/4512181033173072";
 var SENTRY_RELEASE = `mobile-dev@${PLUGIN_VERSION}`;
 var TELEMETRY_INTERVAL_MS = 3e4;
+var METRIC_SAMPLE_RATE = 5e-3;
+var HANDLED_ERROR_SAMPLE_RATE = 0.05;
 function validateTelemetryEnvironment(value) {
   if (value === "development" || value === "release") return value;
   throw new Error("Sentry environment must be development or release.");
@@ -62329,8 +62337,49 @@ function scrubMetric(metric) {
   delete metric.attributes["session.id"];
   return metric;
 }
+function sampleMetric(metric) {
+  const sample = Math.random();
+  if (sample >= METRIC_SAMPLE_RATE) return null;
+  const scrubbed = scrubMetric(metric);
+  scrubbed.attributes ??= {};
+  scrubbed.attributes["telemetry.sample_rate"] = METRIC_SAMPLE_RATE;
+  return scrubbed;
+}
+function createErrorEventFilter() {
+  const reported = /* @__PURE__ */ new Set();
+  let windowStarted = Date.now();
+  let handledReports = 0;
+  return (event, hint) => {
+    const scrubbed = scrubErrorEvent(event, hint);
+    if (scrubbed === null) return null;
+    const now = Date.now();
+    if (now - windowStarted >= 36e5) {
+      reported.clear();
+      handledReports = 0;
+      windowStarted = now;
+    }
+    const exceptions = scrubbed.exception?.values ?? [];
+    const unhandled = exceptions.some((exception) => exception.mechanism?.handled === false);
+    if (unhandled === false) {
+      if (handledReports >= 20) return null;
+      const sample = Math.random();
+      if (sample >= HANDLED_ERROR_SAMPLE_RATE) return null;
+    }
+    const signatures = exceptions.map((exception) => {
+      const frames = exception.stacktrace?.frames;
+      const frame = frames?.at(-1);
+      return [exception.type, exception.value, frame?.filename, frame?.function, frame?.lineno];
+    });
+    const signature = JSON.stringify([scrubbed.fingerprint, scrubbed.message, signatures]);
+    if (reported.has(signature)) return null;
+    if (reported.size >= 256) return null;
+    reported.add(signature);
+    if (unhandled === false) handledReports++;
+    return scrubbed;
+  };
+}
 
-// src/server/telemetry-environment.ts
+// packages/core/src/telemetry-environment.ts
 import { readFileSync as readFileSync5 } from "node:fs";
 var configUrl = new URL("./telemetry-environment.json", import.meta.url);
 var configText = readFileSync5(configUrl, "utf8");
@@ -62343,7 +62392,7 @@ function resolveTelemetryEnvironment() {
 }
 var TELEMETRY_ENVIRONMENT = resolveTelemetryEnvironment();
 
-// src/server/telemetry-identity.ts
+// packages/core/src/telemetry-identity.ts
 import { randomBytes } from "node:crypto";
 import { linkSync, mkdirSync, readFileSync as readFileSync6, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -62393,7 +62442,7 @@ function getTelemetryIdentity() {
   return identity;
 }
 
-// src/server/instrument.ts
+// packages/core/src/instrument.ts
 var identity2 = getTelemetryIdentity();
 if (identity2) {
   process.env.MOBILE_DEV_NATIVE_USER_ID = identity2.userId;
@@ -62422,9 +62471,9 @@ var client = init({
     return selected;
   },
   tracesSampler: (context2) => sampleTrace(context2.name, context2.inheritOrSampleWith),
-  beforeSend: scrubErrorEvent,
+  beforeSend: createErrorEventFilter(),
   beforeSendSpan: scrubSpan,
-  beforeSendMetric: scrubMetric,
+  beforeSendMetric: sampleMetric,
   beforeBreadcrumb: (breadcrumb) => breadcrumb.category === "mobile-dev" ? breadcrumb : null
 });
 var executable = process.argv[1] ?? "";
@@ -62432,6 +62481,9 @@ var mirrorService = executable.endsWith("ios-mirror-service.mjs") || executable.
 var component = mirrorService ? "ios-mirror-service" : executable.endsWith("agent-device-server.mjs") ? "agent-device-wrapper" : "server";
 setTag("component", component);
 setAttribute("component", component);
+var host = process.env.MOBILE_DEV_HOST === "mac" ? "mac" : "other";
+setTag("host", host);
+setAttribute("host", host);
 client?.on("spanStart", (span) => {
   const scope = getIsolationScope();
   const data = scope.getScopeData();
@@ -62440,19 +62492,19 @@ client?.on("spanStart", (span) => {
   }
 });
 
-// src/server/ios-mirror-service.ts
+// packages/core/src/ios-mirror-service.ts
 import { execFile as execFile2 } from "node:child_process";
 import { chmod, unlink } from "node:fs/promises";
 import { promisify as promisify2 } from "node:util";
 
-// src/shared/ios-mirror-errors.ts
+// packages/shared/src/ios-mirror-errors.ts
 var IosMirrorInputBusyError = class extends ExpectedOperationError {
   constructor() {
     super("invalid_input", "Another panel is currently touching this iPhone.");
   }
 };
 
-// src/server/ios-mirror-hub.ts
+// packages/core/src/ios-mirror-hub.ts
 var IosMirrorHub = class {
   devices = /* @__PURE__ */ new Map();
   operations = /* @__PURE__ */ new Map();
@@ -62681,7 +62733,7 @@ var IosMirrorHub = class {
   }
 };
 
-// src/server/ios-native-capture.ts
+// packages/core/src/ios-native-capture.ts
 import { createRequire as createRequire3 } from "node:module";
 import { existsSync as existsSync2 } from "node:fs";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
@@ -62690,7 +62742,7 @@ async function openNativeIosCapture(udid) {
   if (process.platform !== "darwin" || process.arch !== "arm64") throw new ExpectedOperationError("unsupported_platform", "Physical iOS mirroring requires an Apple Silicon Mac.");
   if (addon === void 0) {
     const bundled = import.meta.url.endsWith("/ios-mirror-service.mjs");
-    const root = bundled ? "./ios-mirror/" : "../../vendor/ios-mirror/";
+    const root = bundled ? "./ios-mirror/" : "../../native/vendor/ios-mirror/";
     const url2 = new URL(`${root}darwin-arm64.node`, import.meta.url);
     const path = fileURLToPath4(url2);
     if (existsSync2(path) === false) throw new Error("The physical iOS capture addon is missing. Run npm run rebuild:ios-mirror and rebuild the plugin.");
@@ -62701,7 +62753,7 @@ async function openNativeIosCapture(udid) {
   return addon.openDevice(udid);
 }
 
-// src/server/ios-mirror-server.ts
+// packages/core/src/ios-mirror-server.ts
 import { createServer } from "node:net";
 
 // node_modules/zod/v4/classic/external.js
@@ -82372,7 +82424,7 @@ function date4(params) {
   return _coercedDate(ZodDate, params);
 }
 
-// src/shared/ios-video.ts
+// packages/shared/src/ios-video.ts
 var encoded = external_exports.string().max(8 * 1024 * 1024);
 var iosVideoBatchSchema = external_exports.object({
   generation: external_exports.number().int().nonnegative(),
@@ -82388,7 +82440,7 @@ var iosVideoBatchSchema = external_exports.object({
   frames: external_exports.array(external_exports.object({ sequence: external_exports.number().int().positive(), data: encoded, timestamp: external_exports.number().finite().nonnegative(), key: external_exports.boolean() })).max(8)
 });
 
-// src/server/ios-mirror-rpc.ts
+// packages/core/src/ios-mirror-rpc.ts
 var id = external_exports.number().int().positive();
 var mirrorRequestSchema = external_exports.discriminatedUnion("method", [
   external_exports.object({ id, method: external_exports.literal("open"), udid: external_exports.string().min(1).max(64) }),
@@ -82407,7 +82459,7 @@ var mirrorReplySchema = external_exports.object({ id, result: external_exports.u
 var mirrorSocketPath = `/tmp/mobile-dev-ios-mirror-${process.getuid?.() ?? "local"}-v1.sock`;
 var maximumReplyBytes = 16 * 1024 * 1024;
 
-// src/server/ios-mirror-server.ts
+// packages/core/src/ios-mirror-server.ts
 function createIosMirrorServer(hub2, idle2, active2) {
   const sockets = /* @__PURE__ */ new Set();
   const cleanup = /* @__PURE__ */ new Set();
@@ -82523,16 +82575,16 @@ function createIosMirrorServer(hub2, idle2, active2) {
   };
 }
 
-// src/server/telemetry.ts
+// packages/core/src/telemetry.ts
 import { AsyncLocalStorage as AsyncLocalStorage3 } from "node:async_hooks";
 
-// src/server/native-telemetry.ts
+// packages/core/src/native-telemetry.ts
 var transport;
 async function closeNativeTelemetry() {
   if (transport !== void 0) await transport.flush(2e3);
 }
 
-// src/shared/simulator-definition-diagnostics.ts
+// packages/shared/src/simulator-definition-diagnostics.ts
 var stages = external_exports.enum([
   "simulator_lookup",
   "profile_read",
@@ -82578,7 +82630,7 @@ function definitionDiagnosticTags(error63) {
   };
 }
 
-// src/shared/protocol.ts
+// packages/shared/src/protocol.ts
 var udidSchema = external_exports.uuid();
 var point = external_exports.number().finite().min(0).max(1e4);
 var size = external_exports.number().finite().positive().max(1e4);
@@ -82614,7 +82666,7 @@ var streamMessageSchema = external_exports.union([
   external_exports.object({ type: external_exports.literal("set_scale"), scale: external_exports.number().int().min(1).max(4) }).strict()
 ]);
 
-// src/shared/device-apps-diagnostics.ts
+// packages/shared/src/device-apps-diagnostics.ts
 var stage = external_exports.enum(["device_validation", "running_apps", "foreground", "discovery", "transport", "response"]);
 var failure2 = external_exports.enum(["missing_executable", "timeout", "command_failed", "invalid_response", "cancelled", "unknown"]);
 var platform2 = external_exports.enum(["ios", "android"]);
@@ -82639,7 +82691,7 @@ function deviceAppsDiagnosticTags(error63) {
   };
 }
 
-// runtimes/serve-emu/src/startup-diagnostics.ts
+// packages/shared/src/android-startup-diagnostics.ts
 var startupStages = [
   "locate-server",
   "hash-server",
@@ -82659,8 +82711,6 @@ var startupStages = [
   "cleanup-jars"
 ];
 var startupOutcomes = ["ok", "nonzero", "timeout", "aborted", "offline", "unauthorized", "missing", "closed", "spawn-error", "error"];
-
-// src/shared/android-startup-diagnostics.ts
 var stageSchema = external_exports.enum(startupStages);
 var outcomeSchema = external_exports.enum(startupOutcomes);
 var measurement = external_exports.number().finite().min(0).max(6e7);
@@ -82713,7 +82763,7 @@ function androidStartupDiagnosticTags(error63) {
   };
 }
 
-// src/server/telemetry.ts
+// packages/core/src/telemetry.ts
 function recordIosMirrorSharing(captures, subscribers, dropped) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes = { component: "ios-mirror-service", surface: "simulator", device_platform: "ios", device_kind: "physical" };
@@ -82751,7 +82801,7 @@ async function closeServerTelemetry() {
   }
 }
 
-// src/server/ios-mirror-service.ts
+// packages/core/src/ios-mirror-service.ts
 var lockPath = mirrorSocketPath + ".lock";
 var run = promisify2(execFile2);
 var owned = false;
@@ -82838,4 +82888,4 @@ undici/lib/web/websocket/frame.js:
   (*! ws. MIT License. Einar Otto Stangvik <einaros@gmail.com> *)
 */
 
-//# debugId=0fbab36b-d425-52a9-9582-83d7873b424c
+//# debugId=0de028b3-b375-5dc1-a7de-109c2198cac6

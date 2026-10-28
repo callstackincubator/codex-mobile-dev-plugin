@@ -1,4 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
+#ifdef __APPLE__
+#define _DARWIN_C_SOURCE
+#endif
 #include "telemetry.h"
 #include <sentry.h>
 #include <errno.h>
@@ -148,11 +151,18 @@ static sentry_value_t scrub_event(sentry_value_t event, sentry_hint_t *hint, voi
 
 static sentry_value_t scrub_metric(sentry_value_t metric, void *state) {
     (void)state;
+    if (arc4random_uniform(200) != 0) {
+        sentry_value_decref(metric);
+        return sentry_value_new_null();
+    }
     sentry_value_t attributes = sentry_value_get_by_key(metric, "attributes");
     const char *fields[] = { "user.id", "user.name", "user.email", "telemetry_session", "session.id" };
     for (size_t index = 0; index < sizeof(fields) / sizeof(fields[0]); index++) {
         sentry_value_remove_by_key(attributes, fields[index]);
     }
+    sentry_value_t rate = sentry_value_new_double(0.005);
+    sentry_value_t sample_rate = sentry_value_new_attribute(rate, NULL);
+    sentry_value_set_by_key(attributes, "telemetry.sample_rate", sample_rate);
     return metric;
 }
 
