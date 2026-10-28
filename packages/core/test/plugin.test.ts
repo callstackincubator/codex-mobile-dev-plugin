@@ -242,7 +242,8 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
   assert.equal((workspace._meta?.ui as { resourceUri: string }).resourceUri, WORKSPACE_URI);
   const workspaceResource = await client.readResource({ uri: WORKSPACE_URI });
   const recordingResource = await client.readResource({ uri: RECORDING_URI });
-  assert.match(recordingResource.contents[0].text as string, /data-view="recording"/);
+  // Cards from a server with the workspace can open recordings there.
+  assert.match(recordingResource.contents[0].text as string, /data-view="recording" data-workspace/);
   assert.equal(recordingResource.contents[0].mimeType, "text/html;profile=mcp-app");
   assert.deepEqual(recordingResource.contents[0]._meta?.["openai/ui"], { preferredDisplayMode: "inline", availableDisplayModes: ["inline", "fullscreen"] });
   assert.deepEqual(recordingResource.contents[0]._meta?.ui, { prefersBorder: true, permissions: { clipboardWrite: {} }, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } });
@@ -557,6 +558,7 @@ test("without the panel, the server keeps its cards and finds simulators without
   await assert.rejects(client.readResource({ uri: WORKSPACE_URI }));
   const card = await client.readResource({ uri: RECORDING_URI });
   assert.match(String(card.contents[0].text), /data-view="recording"/);
+  assert.doesNotMatch(String(card.contents[0].text), /data-workspace/);
   const logs = await client.callTool({ name: "mobile_logs_session", arguments: { options: { native: { platform: "ios", deviceId: UDID } } } });
   assert.equal(logs.isError, true);
   assert.match((logs.content as { text: string }[])[0].text, /Boot it first/);

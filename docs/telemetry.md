@@ -337,9 +337,12 @@ its full samples, because hosts cap tool results. The card draws the preview at 
 where the host lets cards call tools, reads the full recording with
 `mobile_read_performance_recording`. Readiness ends at the first chart drawn, preview or
 full. `ui.recording.preview` counts previews shown, and `ui.recording.load` measures the
-full read in milliseconds. Failed reads, including a host returning the recording without
-its structured samples, are handled errors with a fixed message; a preview on screen stays.
-`ui.recording.samples` counts samples held by the visible card, and bounded event
+full read in milliseconds. `ui.recording.process` and the `ui.recording.samples`,
+`fps_samples` and `display_frames` gauges describe full recordings only, so they stay
+comparable with releases that sent full recordings; previews are only counted. A host
+returning the recording without its structured samples is a handled error with a fixed
+message; a server's own refusal, such as a deleted recording, is shown without a report.
+Either way a preview on screen stays. Bounded event
 counts record range selections and Ask/Open actions. `storage.bytes` with
 `kind: recordings` measures local saved-file storage. Recording polling is excluded
 from trace sampling, and hidden cards stop polling. None of these measurements
@@ -349,7 +352,8 @@ Comparison cards use the `comparison` surface and view, preserving shared
 readiness, interaction, browser frame pacing and teardown coverage. Bounded
 `ui.comparison.process` measures result validation; since 0.1.168, comparisons use
 previews as single recordings do when they fit: `ui.comparison.preview` counts them and
-`ui.comparison.load` measures reading every compared recording. `ui.comparison.derive` covers
+`ui.comparison.load` measures reading every compared recording. As for recordings,
+`ui.comparison.process` and the comparison size gauges describe full recordings only. `ui.comparison.derive` covers
 overlay series and whole-run summaries, and `ui.comparison.summary` covers shared
 selection summaries. `ui.comparison.commit` measures the card render through its
 DOM commit in milliseconds; it does not measure paint or device rendering.

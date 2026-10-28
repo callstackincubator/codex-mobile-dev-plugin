@@ -44,7 +44,7 @@ test("a recording reference makes the card read the recording with its range", a
   const controller = new cards.RecordingController(app);
   controller.accept({ content: [], structuredContent: { recordingId: recording.id, title: recording.title, status: "finished", durationSeconds: 30, range: { start: 2, end: 8 }, summary: {} } });
   await until(() => controller.getSnapshot().recording !== undefined);
-  assert.deepEqual(plain(calls), [{ name: "mobile_read_performance_recording", arguments: { recordingId: recording.id, range: { start: 2, end: 8 } } }]);
+  assert.deepEqual(plain(calls), [{ name: "mobile_read_performance_recording", arguments: { recordingId: recording.id } }]);
   assert.equal(controller.getSnapshot().recording.id, recording.id);
   assert.deepEqual(plain(controller.getSnapshot().range), { start: 2, end: 8 });
   controller.dispose();
@@ -176,14 +176,61 @@ test("comparison previews show where cards cannot call tools", async t => {
   controller.dispose();
 });
 
-test("a server without a workspace keeps the card from offering to open one", async t => {
+test("cards offer to open a recording only where the server has the workspace, also after loading it", async t => {
   const recording = recordingFixture();
-  const { cards, app, close } = load(() => { throw new Error("must not read"); }, { cardsCallTools: false });
+  const { cards, app, close } = load(() => ({ content: [], structuredContent: { recording, summary: {} } }));
+  t.after(close);
+  const withWorkspace = new cards.RecordingController(app, { workspace: true });
+  assert.equal(withWorkspace.getSnapshot().canOpen, true);
+  withWorkspace.dispose();
+  const controller = new cards.RecordingController(app);
+  controller.accept(reference(recording, { preview: recordingPreview(recording) }));
+  await until(() => controller.getSnapshot().preview === undefined);
+  assert.equal(controller.getSnapshot().canOpen, false);
+  controller.dispose();
+});
+
+test("a full read the server refuses keeps the preview instead of loading forever", async t => {
+  const recording = recordingFixture();
+  const { cards, app, close } = load(() => ({ isError: true, content: [{ type: "text", text: "Recording not found." }] }));
   t.after(close);
   const controller = new cards.RecordingController(app);
-  assert.equal(controller.getSnapshot().canOpen, true, "Earlier servers always had the workspace");
-  controller.accept({ ...reference(recording), _meta: { "mobile-dev/workspace": false } });
-  assert.equal(controller.getSnapshot().canOpen, false);
-  assert.equal(controller.getSnapshot().error, "This host cannot load the recording.");
+  controller.accept(reference(recording, { preview: recordingPreview(recording) }));
+  await until(() => controller.getSnapshot().preview === "only");
+  assert.equal(controller.getSnapshot().error, "");
+  controller.dispose();
+});
+
+test("a newer recording replaces one still loading, whichever read finishes last", async t => {
+  const first = recordingFixture();
+  const second = { ...recordingFixture(), id: "44b7030b-a74e-466f-aeb0-bcd3ae8af972", title: "Run 2" };
+  let releaseFirst!: () => void;
+  const firstRead = new Promise<void>(resolve => { releaseFirst = resolve; });
+  const { cards, app, close } = load(async call => {
+    if (call.arguments.recordingId === first.id) await firstRead;
+    return { content: [], structuredContent: { recording: call.arguments.recordingId === first.id ? first : second, summary: {} } };
+  });
+  t.after(close);
+  const controller = new cards.RecordingController(app, { workspace: true });
+  controller.accept(reference(first, { preview: recordingPreview(first) }));
+  controller.accept(reference(second, { preview: recordingPreview(second) }));
+  await until(() => controller.getSnapshot().preview === undefined);
+  releaseFirst();
+  await setTimeout(20);
+  assert.equal(controller.getSnapshot().recording.id, second.id);
+  assert.equal(controller.getSnapshot().preview, undefined);
+  controller.dispose();
+});
+
+test("comparison previews stay when a full read is refused", async t => {
+  const first = recordingFixture();
+  const second = { ...recordingFixture(), id: "44b7030b-a74e-466f-aeb0-bcd3ae8af972", title: "Run 2" };
+  const { cards, app, close } = load(() => ({ isError: true, content: [{ type: "text", text: "Recording not found." }] }));
+  t.after(close);
+  const controller = new cards.ComparisonController(app);
+  controller.accept({ content: [], structuredContent: { title: "Before and after", recordingIds: [first.id, second.id], summaries: [], previews: [recordingPreview(first), recordingPreview(second)] } });
+  await until(() => controller.getSnapshot().preview === "only");
+  assert.equal(controller.getSnapshot().comparison.recordings.length, 2);
+  assert.equal(controller.getSnapshot().error, "");
   controller.dispose();
 });

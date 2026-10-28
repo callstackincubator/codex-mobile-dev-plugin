@@ -4,7 +4,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { cpuTargetSchema } from "@mobile-dev/shared/cpu.ts";
 import type { CpuTarget } from "@mobile-dev/shared/cpu.ts";
-import { RECORDING_URI, recordingIdSchema, recordingPreviews, recordingRangeSchema, recordingReferenceSchema, recordingSchema, summarizeRecording } from "@mobile-dev/shared/recordings.ts";
+import { RECORDING_URI, recordingIdSchema, recordingPreview, recordingRangeSchema, recordingReferenceSchema, recordingSchema, summarizeRecording } from "@mobile-dev/shared/recordings.ts";
 import type { PerformanceRecording, RecordingRange } from "@mobile-dev/shared/recordings.ts";
 import { errorMessage } from "@mobile-dev/shared/protocol.ts";
 import { captureServerError } from "./telemetry.ts";
@@ -28,6 +28,15 @@ const outputSchema = { recording: recordingSchema, summary: summarySchema, range
 // Tools that show a recording return its identity, summary and a preview; the card reads the full samples.
 const referenceOutputSchema = { ...recordingReferenceSchema.shape, summary: summarySchema };
 type RecordingSummary = ReturnType<typeof summarizeRecording>;
+// Codex keeps about 50 KB of a tool result and turns larger ones into truncated text
+// without their structured content. Results that show a recording stay under this.
+export const RESULT_BYTES = 45_000;
+
+/** The result with `extra` in its structured content when the whole result still fits every host. */
+function withinResultBytes(result: CallToolResult & { structuredContent: Record<string, unknown> }, extra: Record<string, unknown>): CallToolResult {
+  const extended = { ...result, structuredContent: { ...result.structuredContent, ...extra } };
+  return Buffer.byteLength(JSON.stringify(extended)) <= RESULT_BYTES ? extended : result;
+}
 
 const percent = (value: number) => `${value.toFixed(1)}%`;
 // Apps can run hundreds of threads; the agent gets the busiest, the card computes its own.
@@ -134,13 +143,12 @@ export function registerRecordingTools(server: McpServer, recordings: Performanc
   const showRecording = safe(async ({ recordingId, range }: z.infer<z.ZodObject<typeof inputSchema>>) => {
     const recording = await recordings.read(recordingId);
     const summary = summarizeRecording(recording, range);
-    const [preview] = recordingPreviews([recording]) ?? [];
     const structuredContent = {
       recordingId: recording.id, title: recording.title, status: recording.status, durationSeconds: recording.durationSeconds,
-      ...(range ? { range } : {}), summary: busiest(summary), ...(preview ? { preview } : {}),
+      ...(range ? { range } : {}), summary: busiest(summary),
     };
-    // Cards offer Open in Mobile Dev unless the server has no workspace to open.
-    return { content: [{ type: "text", text: describeRecording(recording, summary, range) }], structuredContent, ...(workspaceUri ? {} : { _meta: { "mobile-dev/workspace": false } }) };
+    const result = { content: [{ type: "text" as const, text: describeRecording(recording, summary, range) }], structuredContent };
+    return withinResultBytes(result, { preview: recordingPreview(recording) });
   });
   registerAppTool(server, "mobile_render_performance_recording", {
     title: "Show an interactive performance chart in chat",
@@ -178,11 +186,9 @@ export function registerRecordingTools(server: McpServer, recordings: Performanc
     // Validate the runs here so the card only fails on reading them, not on comparing them.
     const comparison = comparisonSchema.parse({ title, recordings: runs, range });
     const summaries = summarizeComparison(comparison.recordings, comparison.range);
-    const previews = recordingPreviews(comparison.recordings);
     const structuredContent = {
       title: comparison.title, recordingIds, ...(comparison.range ? { range: comparison.range } : {}),
       summaries: summaries.map(entry => ({ ...entry, summary: entry.summary && busiest(entry.summary) })),
-      ...(previews ? { previews } : {}),
     };
     const lines = comparison.recordings.map((recording, index) => {
       const summary = summaries[index].summary;
@@ -190,7 +196,7 @@ export function registerRecordingTools(server: McpServer, recordings: Performanc
     });
     const text = `Showing “${comparison.title}”, ${comparison.recordings.length} runs aligned at recording start, in an interactive overlay chart. `
       + `${lines.join(" ")} The chart reads the samples itself; for sample-level detail call mobile_read_performance_recording with each recordingId.`;
-    return { content: [{ type: "text", text }], structuredContent };
+    return withinResultBytes({ content: [{ type: "text", text }], structuredContent }, { previews: comparison.recordings.map(recordingPreview) });
   }));
   registerAppTool(server, "mobile_finish_performance_recording", {
     title: "Finish and save a performance recording early",

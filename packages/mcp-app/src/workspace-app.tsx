@@ -28,7 +28,7 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
   // Codex shows context as composer attachments through OpenAI's extension.
   const attachments = () => extensions.modelContext;
   const panels = WorkspaceTools.create(app, attachments);
-  const recordingController = new RecordingController(app, attachments);
+  const recordingController = new RecordingController(app, { attachments, workspace: true });
   const extension = options.extension?.(app);
   const reactRoot = createRoot(document.getElementById("root")!);
   function renderWorkspace(automaticLayout?: DeviceLayout) {

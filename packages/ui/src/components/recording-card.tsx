@@ -199,7 +199,7 @@ export function RecordingCard({ controller, detailed = false }: { controller: Re
         {hasFps && <RecordingChart key={`${recording.id}:fps`} label="Display FPS" info={displayScope} metricLabel="Average" metric={fpsReading(derived.total.averageFps)} data={derived.fps} duration={recording.durationSeconds} range={range} changes={changes.fps} color="#36a269" unit="fps" onDrag={setDrag} onSelect={controller.select} />}
         {hasDisplayData && <p className="recording-footnote">{displayScope}</p>}
         {recording.status === "finishing" && <p className="recording-footnote" role="status">Finishing the recording…</p>}
-        {state.preview === "only" && <p className="recording-footnote">This app shows CPU, memory and FPS without thread or frame detail. Open the recording in Mobile Dev for all of it.</p>}
+        {state.preview === "only" && <p className="recording-footnote">This app shows CPU, memory and FPS without thread or frame detail.{state.canOpen && " Open the recording in Mobile Dev for all of it."}</p>}
       </div>
       <aside className="recording-sidebar" aria-label="Recording summary and actions">
         <RecordingOverview duration={recording.durationSeconds} range={range} changes={[...changes.cpu, ...changes.memory, ...changes.fps]} onClear={() => { setDrag(undefined); controller.select(undefined); }} />

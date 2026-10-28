@@ -19,17 +19,19 @@ import type { WorkspaceOptions } from "./workspace-extension.ts";
  */
 export function startMcpApp(options: { workspace?: WorkspaceOptions } = {}) {
   const view = document.documentElement.dataset.view;
+  // Servers with Mobile Dev's workspace say so on their cards, which can then open recordings there.
+  const workspace = document.documentElement.dataset.workspace !== undefined;
   if (view === "recording") startCardApp({
     name: "mobile-dev-recording", surface: "recording", fallback: "This recording could not render. Reopen it to try again.",
     create: app => {
       const extensions = new OpenAIExtensions(app);
-      return new RecordingController(app, () => extensions.modelContext);
+      return new RecordingController(app, { attachments: () => extensions.modelContext, workspace });
     },
     render: controller => <RecordingCard controller={controller} />,
   });
   else if (view === "comparison") startCardApp({
     name: "mobile-dev-comparison", surface: "comparison", fallback: "This comparison could not render. Reopen it to try again.",
-    create: app => new ComparisonController(app),
+    create: app => new ComparisonController(app, { workspace }),
     render: controller => <ComparisonCard controller={controller} />,
   });
   else if (view === "tracesift") startCardApp({

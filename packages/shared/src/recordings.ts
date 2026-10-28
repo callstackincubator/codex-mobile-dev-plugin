@@ -48,9 +48,6 @@ export const recordingSchema = z.object({
 });
 export type PerformanceRecording = z.infer<typeof recordingSchema>;
 
-/** The size a recording preview must stay within, so its tool result fits every host. */
-export const RECORDING_PREVIEW_BYTES = 40_000;
-
 /**
  * A recording small enough to travel inside a tool result: every CPU, memory and FPS
  * sample at its original time to 10 ms, rounded, without per-thread CPU or Android frame
@@ -68,12 +65,6 @@ export function recordingPreview(recording: PerformanceRecording): PerformanceRe
     })),
     fps: { ...recording.fps, samples: recording.fps.samples.map(sample => ({ time: round(sample.time, 2), interval: round(sample.interval, 2), fps: reading(sample.fps, 1) })) },
   };
-}
-
-/** A preview of the recordings when together they fit a tool result, else undefined. */
-export function recordingPreviews(recordings: PerformanceRecording[]) {
-  const previews = recordings.map(recordingPreview);
-  return JSON.stringify(previews).length <= RECORDING_PREVIEW_BYTES ? previews : undefined;
 }
 
 /**

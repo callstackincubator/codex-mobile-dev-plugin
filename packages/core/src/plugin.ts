@@ -143,7 +143,8 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
     const readCard = async (uri: URL) => {
       const resource = typeof html === "string" ? { html } : await html();
       const configured = configureUI(resource.html);
-      const content = configured.replace('data-view="panel"', `data-view="${view}"`);
+      // Cards from a server with the workspace can open recordings there.
+      const content = configured.replace('data-view="panel"', `data-view="${view}"${panels ? " data-workspace" : ""}`);
       return { contents: [{ uri: uri.href, mimeType: RESOURCE_MIME_TYPE, text: content, _meta: {
         ui: { prefersBorder: true, permissions: { clipboardWrite: {} }, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } },
         "openai/ui": { preferredDisplayMode: "inline", availableDisplayModes: ["inline", "fullscreen"] },

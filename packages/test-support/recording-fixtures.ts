@@ -16,6 +16,18 @@ export function recordingFixture(): PerformanceRecording {
   };
 }
 
+/** The longest recording, sampled every second with FPS and a busy app's threads. */
+export function longestRecordingFixture(): PerformanceRecording {
+  const recording = recordingFixture();
+  recording.durationSeconds = 300;
+  const threads = Array.from({ length: 160 }, (_, index) => ({ id: String(1000 + index), name: `com.example.worker.thread-${index}`, cpuPercent: 12.345678 }));
+  recording.samples = Array.from({ length: 300 }, (_, index) => ({
+    time: index + 0.123456789, interval: 1.004567, cpuPercent: 123.456789, memoryBytes: 4_862_137_896.5, threads,
+  }));
+  recording.fps = { status: "finished", samples: Array.from({ length: 300 }, (_, index) => ({ time: index + 0.5123456, interval: 1.0012345, fps: 59.87654321 })) };
+  return recording;
+}
+
 export function recordingWithFramesFixture(): PerformanceRecording {
   const recording = recordingFixture();
   recording.fps.samples[0].frameTimeline = { clock: "boottime", intervalEndNs: "1000000000", frames: [

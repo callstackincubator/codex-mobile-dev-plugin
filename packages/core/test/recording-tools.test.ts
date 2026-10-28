@@ -7,10 +7,10 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { RecordingStore, PerformanceRecordings } from "../src/performance-recordings.ts";
-import { registerRecordingTools } from "../src/recording-tools.ts";
+import { registerRecordingTools, RESULT_BYTES } from "../src/recording-tools.ts";
 import { RECORDING_URI } from "../../shared/src/recordings.ts";
 import { COMPARISON_URI } from "../../shared/src/performance-comparison.ts";
-import { recordingFixture, unavailableFps } from "../../test-support/recording-fixtures.ts";
+import { longestRecordingFixture, recordingFixture, unavailableFps } from "../../test-support/recording-fixtures.ts";
 
 test("recording tools distinguish data, inline rendering, workspace opening and exact-range retrieval", async t => {
   const directory = await mkdtemp(join(tmpdir(), "mobile-dev-recording-tools-"));
@@ -178,5 +178,33 @@ test("without a workspace, recordings show only in chat and their cards leave ou
   assert.doesNotMatch(rendering?.description ?? "", /Open in Mobile Dev/);
   const shown = await client.callTool({ name: "mobile_render_performance_recording", arguments: { recordingId: recording.id } });
   assert.equal(shown.structuredContent?.recordingId, recording.id);
-  assert.deepEqual(shown._meta, { "mobile-dev/workspace": false });
+});
+
+test("results that show recordings fit a host's result limit, leaving out previews that do not", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "mobile-dev-recording-tools-"));
+  const store = new RecordingStore(directory);
+  const longest = longestRecordingFixture();
+  const second = { ...longestRecordingFixture(), id: "44b7030b-a74e-466f-aeb0-bcd3ae8af972" };
+  const short = { ...recordingFixture(), id: "27cfecab-d99c-4533-90dd-e14a7cb0087b" };
+  const shortSecond = { ...recordingFixture(), id: "5d1f3c0e-8a4b-4e2a-9c61-0f7e2b9d4a13" };
+  for (const recording of [longest, second, short, shortSecond]) await store.save(recording);
+  const recordings = new PerformanceRecordings({ open() { throw new Error("Not used"); }, async read() { throw new Error("Not running"); }, async closeSession() {} }, unavailableFps, store);
+  const server = new McpServer({ name: "recordings-test", version: "1" });
+  registerRecordingTools(server, recordings, async () => "Pixel");
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "recordings-client", version: "1" });
+  t.after(async () => { await client.close(); await server.close(); await recordings.close(); await rm(directory, { recursive: true, force: true }); });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  const bytes = (result: unknown) => Buffer.byteLength(JSON.stringify(result));
+  // The longest recording still carries its preview, for cards that cannot read it.
+  const shown = await client.callTool({ name: "mobile_render_performance_recording", arguments: { recordingId: longest.id } });
+  assert.ok(shown.structuredContent?.preview);
+  assert.ok(bytes(shown) <= RESULT_BYTES, `${bytes(shown)} bytes`);
+  const compared = await client.callTool({ name: "mobile_compare_performance_recordings", arguments: { recordingIds: [longest.id, second.id] } });
+  assert.equal(compared.structuredContent?.previews, undefined);
+  assert.equal((compared.structuredContent?.summaries as unknown[]).length, 2);
+  assert.ok(bytes(compared) <= RESULT_BYTES);
+  const fits = await client.callTool({ name: "mobile_compare_performance_recordings", arguments: { recordingIds: [short.id, shortSecond.id] } });
+  assert.equal((fits.structuredContent?.previews as unknown[]).length, 2);
 });
