@@ -13,6 +13,7 @@ import { buttonMarginsSchema } from "@mobile-dev/shared/bezel.ts";
 import { definitionDeviceState, getDefinitionDiagnostic, parseDefinitionDiagnostic, setDefinitionDiagnostic } from "@mobile-dev/shared/simulator-definition-diagnostics.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
+import { annotateDeviceCommand, backendCommand } from "@mobile-dev/shared/device-command-diagnostics.ts";
 import { baguetteEnvironment } from "./baguette-runtime.ts";
 import { captureServerError, recordAccessibilityBridgeRestart } from "./telemetry.ts";
 
@@ -59,13 +60,14 @@ export class Baguette {
   }
 
   async json(path: string, options: RequestInit = {}, timeout = 10000): Promise<unknown> {
+    const command = backendCommand("baguette", path);
     const response = await fetch(new URL(path, this.baseUrl), {
       ...options, redirect: "error", signal: AbortSignal.any([
         this.lifecycle.signal, AbortSignal.timeout(timeout), ...(options.signal ? [options.signal] : []),
       ]),
-    });
+    }).catch(error => { throw annotateDeviceCommand(error, command); });
     if (response.ok === false) {
-      const error = new Error(`Baguette returned HTTP ${response.status} for ${path}.`);
+      const error = annotateDeviceCommand(new Error(`Baguette returned HTTP ${response.status} for ${path}.`), command, { failure: "http_status", status: response.status });
       if (response.status === 404 && /^\/simulators\/[^/]+\/definition\.json$/.test(path)) {
         const payload = await readDefinitionFailure(response);
         const diagnostic = parseDefinitionDiagnostic(payload);
@@ -74,8 +76,8 @@ export class Baguette {
       }
       throw error;
     }
-    const payload = await response.json();
-    if (payload?.ok === false) throw new Error(payload.error ?? "Baguette rejected the request.");
+    const payload = await response.json().catch(error => { throw annotateDeviceCommand(error, command); });
+    if (payload?.ok === false) throw annotateDeviceCommand(new Error(payload.error ?? "Baguette rejected the request."), command, { failure: "rejected" });
     return payload;
   }
 
@@ -217,6 +219,11 @@ export class Baguette {
   async device(udid: string, mustBeBooted = false) {
     udidSchema.parse(udid);
     await this.start();
+    return this.listedDevice(udid, mustBeBooted);
+  }
+
+  // The simulator as a running Baguette lists it; this never starts Baguette.
+  async listedDevice(udid: string, mustBeBooted = false) {
     const status = await this.status();
     if (!status.connected) throw new Error(status.error);
     const device = status.devices.find(item => item.udid === udid);
