@@ -10,8 +10,8 @@ type Platform = "ios" | "android";
 
 /**
  * The iOS and Android device panels of one workspace, shared by every host.
- * The host renders `SimulatorView` for both platforms before constructing this,
- * and owns the chrome that changes the layout.
+ * The host renders `SimulatorView` for each of `panels`, and owns the chrome that
+ * changes the layout.
  */
 export class DeviceWorkspace {
   readonly panels: readonly [ReturnType<typeof createSimulatorPanel>, ReturnType<typeof createSimulatorPanel>];
@@ -27,13 +27,10 @@ export class DeviceWorkspace {
   }) {
     this.tools = tools;
     this.connectionFailed = options.connectionFailed;
-    const create = (platform: Platform) => {
-      const root = document.getElementById(`${platform}-panel`)!;
-      return createSimulatorPanel(app, root, platform, tools.context, (_device, active) => {
-        if (active) this.activePlatform = platform;
-        this.updateSelection();
-      });
-    };
+    const create = (platform: Platform) => createSimulatorPanel(app, platform, tools.context, (_device, active) => {
+      if (active) this.activePlatform = platform;
+      this.updateSelection();
+    });
     this.panels = [create("ios"), create("android")];
     this.devices = new WorkspaceDevices(this.panels, layout => {
       this.changeLayout(layout);
@@ -42,27 +39,25 @@ export class DeviceWorkspace {
   }
 
   updateSelection() {
-    const visible = this.panels.filter(panel => !panel.root.hidden);
+    const visible = this.panels.filter(panel => panel.visible);
     const active = visible.find(panel => panel.platform === this.activePlatform) ?? visible[0];
     const selected = active?.selected;
     setUiTelemetryContext({ device_platform: selected?.platform, device_kind: selected?.kind });
     this.tools.context.selectSimulators(visible.flatMap(panel => panel.selected ? [panel.selected] : []), selected);
     this.tools.deviceApps.selectDevice(selected);
-    for (const panel of this.panels) panel.root.dataset.active = String(panel === active);
+    for (const panel of this.panels) panel.setActive(panel === active);
   }
 
   changeLayout(layout: DeviceLayout, manual = false) {
     if (manual) this.devices.selectLayout();
     setUiTelemetryContext({ layout });
     if (layout === "ios" || layout === "android") this.activePlatform = layout;
-    for (const panel of this.panels) {
-      panel.root.hidden = layout !== "both" && layout !== panel.platform;
-    }
-    requestAnimationFrame(() => { for (const panel of this.panels) if (!panel.root.hidden) panel.fitScreen(); });
+    for (const panel of this.panels) panel.setVisible(layout === "both" || layout === panel.platform);
+    requestAnimationFrame(() => { for (const panel of this.panels) if (panel.visible) panel.fitScreen(); });
     this.updateSelection();
     if (manual) {
       for (const panel of this.panels) {
-        if (panel.root.hidden === false) void panel.resume().catch(this.connectionFailed);
+        if (panel.visible) void panel.resume().catch(this.connectionFailed);
       }
     }
   }

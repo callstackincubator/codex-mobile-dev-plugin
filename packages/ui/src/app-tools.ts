@@ -2,7 +2,7 @@ import { z } from "zod";
 import { appLanguageSchema, appLinksSchema, appPermissionsSchema, installedAppsSchema, platformPermissions } from "@mobile-dev/shared/app-control.ts";
 import type { AppPermission, AppPermissionEntry, InstalledApp, PermissionState } from "@mobile-dev/shared/app-control.ts";
 import { measureUiOperation } from "./telemetry.ts";
-import { elementStores } from "./element-store.ts";
+import { Store } from "./store.ts";
 import { appIcons } from "./app-icons.ts";
 import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 
@@ -49,16 +49,20 @@ const openSection = storedValue("mobile-dev:app-section:v1", z.enum(["permission
 const lastPicked = storedValue("mobile-dev:last-app:v1", z.record(z.string(), z.string()), {});
 const deviceDefaults = { loading: false, apps: [], runningBundleIds: [], bundleId: null, permissions: null, links: [], language: undefined, busy: null, error: "", status: "" } satisfies Partial<AppToolsState>;
 
-export class AppToolsStore {
-  private state: AppToolsState = { platform: "ios", deviceId: "", disabled: true, ...deviceDefaults, recentUrls: recentUrls.read(), section: openSection.read() };
-  private listeners = new Set<() => void>();
+/** Calls an app tool on the panel's device and returns its structured content. */
+export type AppToolCall = (name: string, args: Record<string, unknown>) => Promise<unknown>;
+
+export class AppToolsStore extends Store<AppToolsState> {
+  private readonly call: AppToolCall;
+  private disposed = false;
   private revision = 0;
   // simctl cannot read privacy decisions, so iOS rows show what this panel last applied.
   private applied = new Map<string, PermissionState>();
-  call?: (name: string, args: Record<string, unknown>) => Promise<unknown>;
-  subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
-  getSnapshot = () => this.state;
-  private update(patch: Partial<AppToolsState>) { this.state = { ...this.state, ...patch }; for (const listener of this.listeners) listener(); }
+
+  constructor(call: AppToolCall) {
+    super({ platform: "ios", deviceId: "", disabled: true, ...deviceDefaults, recentUrls: recentUrls.read(), section: openSection.read() });
+    this.call = call;
+  }
 
   configure(platform: "ios" | "android", deviceId: string, disabled: boolean) {
     if (deviceId === this.state.deviceId && platform === this.state.platform) {
@@ -79,14 +83,14 @@ export class AppToolsStore {
   }
 
   private tool(name: string, args: Record<string, unknown> = {}) {
-    if (!this.call) return Promise.reject(new Error("This host cannot call the plugin's app tools."));
+    if (this.disposed) return Promise.reject(new Error("This host cannot call the plugin's app tools."));
     return this.call(name, { platform: this.state.platform, deviceId: this.state.deviceId, ...args });
   }
 
   private measure<T>(action: AppToolAction, work: () => Promise<T>) { return measureUiOperation(`ui.app_tools.${action}`, "ui.app_tools.failure", work); }
 
   async load() {
-    if (!this.call || this.state.disabled || this.state.loading) return;
+    if (this.disposed || this.state.disabled || this.state.loading) return;
     const current = this.current();
     this.update({ loading: true, error: "" });
     try {
@@ -160,7 +164,7 @@ export class AppToolsStore {
 
   private async run(action: AppToolAction, describe: (app: AppEntry) => string, work: (app: AppEntry, current: () => boolean) => Promise<void>) {
     const app = this.app;
-    if (!app || !this.call || this.state.disabled || this.state.busy) return;
+    if (!app || this.disposed || this.state.disabled || this.state.busy) return;
     const current = this.current();
     this.update({ busy: action, error: "", status: "" });
     try {
@@ -234,9 +238,5 @@ export class AppToolsStore {
     });
   }
 
-  dispose() { this.call = undefined; this.configure(this.state.platform, "", true); }
+  dispose() { this.disposed = true; this.configure(this.state.platform, "", true); this.close(); }
 }
-
-const stores = elementStores(() => new AppToolsStore());
-export const bindAppTools = stores.bind;
-export const getAppTools = stores.get;

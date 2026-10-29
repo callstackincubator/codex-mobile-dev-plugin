@@ -15,6 +15,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@mobile-de
 import { useMediaQuery } from "@mobile-dev/ui/components/use-media-query.ts";
 import { setUiSurface, setUiTelemetryContext } from "@mobile-dev/ui/telemetry.ts";
 import type { RecordingController } from "@mobile-dev/ui/recording-controller.ts";
+import type { SimulatorPanel } from "@mobile-dev/ui/simulator-panel.ts";
 import { RecordingCard } from "@mobile-dev/ui/components/recording-card.tsx";
 
 import type { DeviceLayout } from "@mobile-dev/ui/device-layout.ts";
@@ -30,7 +31,7 @@ const tools = {
 type Tool = keyof typeof tools;
 const isTool = (value: string): value is Tool => value in tools;
 
-export function Workspace({ panels, recordingController, banner, displayModeControl, contextControl, automaticLayout, onLayout }: { panels: WorkspaceTools; recordingController: RecordingController; banner?: ReactNode; displayModeControl?: ReactNode; contextControl?: ReactNode; automaticLayout?: DeviceLayout; onLayout: (layout: DeviceLayout, manual?: boolean) => void }) {
+export function Workspace({ panels, devices: [ios, android], recordingController, banner, displayModeControl, contextControl, automaticLayout, onLayout }: { panels: WorkspaceTools; devices: readonly [SimulatorPanel, SimulatorPanel]; recordingController: RecordingController; banner?: ReactNode; displayModeControl?: ReactNode; contextControl?: ReactNode; automaticLayout?: DeviceLayout; onLayout: (layout: DeviceLayout, manual?: boolean) => void }) {
   const { logs, performance, storage, tracesift } = panels;
   const [tool, setTool] = useState<Tool>("logs");
   const [savedVisible, setSavedVisible] = useState(false);
@@ -123,9 +124,9 @@ export function Workspace({ panels, recordingController, banner, displayModeCont
   const simulatorPanel = <ResizablePanel key="simulators" id="simulators-resizable" minSize="0%" maxSize="100%" collapsible collapsedSize="0px" defaultSize={split ? "36%" : "60%"} onResize={size => setSimulatorsCollapsed(size.inPixels < 1)}>
     <div className="flex h-full min-h-0 flex-col">
       <ResizablePanelGroup id="simulator-panels" groupRef={simulatorGroupRef} orientation="horizontal" className="min-h-0 flex-1" aria-label="Simulators">
-        <ResizablePanel id="ios-resizable" defaultSize="100%" minSize="0px" maxSize="100%" collapsible collapsedSize="0px"><SimulatorView platform="ios" visible={layout === "ios" || layout === "both"} /></ResizablePanel>
+        <ResizablePanel id="ios-resizable" defaultSize="100%" minSize="0px" maxSize="100%" collapsible collapsedSize="0px"><SimulatorView panel={ios} visible={layout === "ios" || layout === "both"} /></ResizablePanel>
         <ResizableHandle hidden={layout !== "both"} disabled={layout !== "both"} aria-label="Resize iOS and Android simulators" />
-        <ResizablePanel id="android-resizable" defaultSize="0%" minSize="0px" maxSize="100%" collapsible collapsedSize="0px"><SimulatorView platform="android" visible={layout === "android" || layout === "both"} /></ResizablePanel>
+        <ResizablePanel id="android-resizable" defaultSize="0%" minSize="0px" maxSize="100%" collapsible collapsedSize="0px"><SimulatorView panel={android} visible={layout === "android" || layout === "both"} /></ResizablePanel>
       </ResizablePanelGroup>
       {bottomToolbar && toolbar}
     </div>

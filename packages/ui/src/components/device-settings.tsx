@@ -1,8 +1,8 @@
 import { useEffect, useId, useState, useSyncExternalStore } from "react";
 import { AppWindowIcon, MapPinIcon, MinusIcon, MoonIcon, PlusIcon, RotateCwIcon, Settings2Icon, SmartphoneIcon, SunIcon } from "lucide-react";
 import { contentSizes, networkConditions, networkPresets, type NetworkCondition } from "@mobile-dev/shared/device-settings.ts";
-import { bindDeviceSettings, DeviceSettingsStore } from "../device-settings";
-import { AppToolsStore, bindAppTools } from "../app-tools";
+import type { DeviceSettingsStore } from "../device-settings";
+import type { AppToolsStore } from "../app-tools";
 import { AppTools } from "./app-tools";
 import { AnimatedHeight } from "./animated-height";
 import { Button } from "./ui/button";
@@ -157,9 +157,7 @@ function LocationGroup({ platform, location, store }: { platform: "ios" | "andro
   </Group>;
 }
 
-export function DeviceSettings({ platform }: { platform: "ios" | "android" }) {
-  const [store] = useState(() => new DeviceSettingsStore());
-  const [appTools] = useState(() => new AppToolsStore());
+export function DeviceSettings({ platform, store, appTools }: { platform: "ios" | "android"; store: DeviceSettingsStore; appTools: AppToolsStore }) {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const appState = useSyncExternalStore(appTools.subscribe, appTools.getSnapshot);
   const [open, setOpen] = useState(false);
@@ -170,7 +168,7 @@ export function DeviceSettings({ platform }: { platform: "ios" | "android" }) {
   const disabled = state.disabled;
   useEffect(() => { if (state.disabled) setOpen(false); }, [state.disabled]);
   useEffect(() => { setOpen(false); }, [state.deviceId]);
-  return <div data-element="settings" className="ml-auto" ref={element => { if (element) { bindDeviceSettings(element, store); bindAppTools(element, appTools); } }}>
+  return <div data-element="settings" className="ml-auto">
     <Popover open={open} onOpenChange={value => {
       if (!value) { setOpen(false); return; }
       void appTools.load();

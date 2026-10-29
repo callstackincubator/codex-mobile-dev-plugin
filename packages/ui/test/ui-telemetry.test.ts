@@ -287,13 +287,14 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
     if (sendFailure) throw new Error("PRIVATE_SEND_ERROR");
     return {};
   } }, () => ({ getCurrent: () => undefined, async update() { return { updateId: "PRIVATE_UPDATE" }; } }));
-  const store = new api.ScreenAnnotationsStore();
+  const store = new api.ScreenAnnotationsStore({
+    capture: () => ({ screenshot: { id: "PRIVATE_CAPTURE", data: "PRIVATE_IMAGE", capturedAt: "2026-10-01T10:00:00Z" }, screen: { width: 402, height: 874, units: "points" } }),
+    readTree: async () => ({ tree: [{ source: "react-native", role: "RCTText", label: "PRIVATE_LABEL", bounds: { x: 10, y: 20, width: 100, height: 40 }, react: {
+    component: "PRIVATE_COMPONENT", owners: ["PRIVATE_OWNER"], key: "PRIVATE_REACT_KEY", source: { file: "/Users/alice/private.tsx", line: 49, column: 11 },
+  } }] }),
+  });
   store.connect(context);
   store.configure({ udid: "PRIVATE_DEVICE", name: "PRIVATE_DEVICE_NAME", runtime: "iOS 26", state: "Booted", platform: "ios", kind: "simulator" }, false);
-  store.capture = () => ({ screenshot: { id: "PRIVATE_CAPTURE", data: "PRIVATE_IMAGE", capturedAt: "2026-10-01T10:00:00Z" }, screen: { width: 402, height: 874, units: "points" } });
-  store.readTree = async () => ({ tree: [{ source: "react-native", role: "RCTText", label: "PRIVATE_LABEL", bounds: { x: 10, y: 20, width: 100, height: 40 }, react: {
-    component: "PRIVATE_COMPONENT", owners: ["PRIVATE_OWNER"], key: "PRIVATE_REACT_KEY", source: { file: "/Users/alice/private.tsx", line: 49, column: 11 },
-  } }] });
   await store.toggle(); store.select({ x: 50, y: 40 }); store.setText("PRIVATE_NOTE"); await store.save(); await store.send();
   store.select({ x: 50, y: 40 }); store.setText("PRIVATE_NOTE_AGAIN"); await store.save();
   for (const failure of ["timeout", "composer", "unexpected", ""]) { sendFailure = failure; await store.send(); }

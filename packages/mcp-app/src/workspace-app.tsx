@@ -30,16 +30,16 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
   const panels = WorkspaceTools.create(app, attachments);
   const recordingController = new RecordingController(app, { attachments, workspace: true });
   const extension = options.extension?.(app);
+  const devices = new DeviceWorkspace(app, panels, { onAutomaticLayout: renderWorkspace, connectionFailed });
   const reactRoot = createRoot(document.getElementById("root")!);
   function renderWorkspace(automaticLayout?: DeviceLayout) {
     const workspace = <ErrorBoundary fallback={<p role="alert">Mobile Dev could not render. Reopen the panel to try again.</p>}>
-      <Workspace panels={panels} recordingController={recordingController} banner={extension?.banner} displayModeControl={options.displayModeControl === false ? undefined : <DisplayModeButton app={app} />} contextControl={<ContextAttachments context={panels.context} />} automaticLayout={automaticLayout} onLayout={changeLayout} />
+      <Workspace panels={panels} devices={devices.panels} recordingController={recordingController} banner={extension?.banner} displayModeControl={options.displayModeControl === false ? undefined : <DisplayModeButton app={app} />} contextControl={<ContextAttachments context={panels.context} />} automaticLayout={automaticLayout} onLayout={changeLayout} />
     </ErrorBoundary>;
     reactRoot.render(workspace);
   }
   flushSync(() => { renderWorkspace(); });
 
-  const devices = new DeviceWorkspace(app, panels, { onAutomaticLayout: renderWorkspace, connectionFailed });
   panels.logs.setLayout(document.documentElement.dataset.view === "workspace");
   devices.changeLayout("none");
 

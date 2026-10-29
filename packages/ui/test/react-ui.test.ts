@@ -20,6 +20,12 @@ import type { StackedLog } from "../../shared/src/logs.ts";
 import type { CpuBatch } from "../../shared/src/cpu.ts";
 import { UDID } from "../../test-support/fixtures.ts";
 import type { DeviceLayout } from "../src/device-layout.ts";
+import { DevicePickerStore } from "../src/device-picker.ts";
+import { DeviceSettingsStore } from "../src/device-settings.ts";
+import { AppToolsStore } from "../src/app-tools.ts";
+import type { AppToolCall } from "../src/app-tools.ts";
+import type { DeviceSetting, DeviceSettings } from "../../shared/src/device-settings.ts";
+import { panelView } from "./simulator-fixture.ts";
 
 test("React log controls filter virtual rows, attach full logs, and preserve simulator DOM", async t => {
   const dom = new JSDOM('<html><body><div id="root"></div></body></html>', { pretendToBeVisual: true, url: "http://localhost" });
@@ -58,9 +64,19 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
     await rm(directory, { recursive: true, force: true });
   });
   const output = resolve(directory, "workspace.mjs");
-  await build({ stdin: { contents: 'export { Workspace } from "./packages/mcp-app/src/components/workspace.tsx"; export { getDeviceSettings } from "./packages/ui/src/device-settings.ts"; export { getDevicePicker } from "./packages/ui/src/device-picker.ts"; export { getAppTools } from "./packages/ui/src/app-tools.ts";', resolveDir: process.cwd(), loader: "ts" }, outfile: output, bundle: true, format: "esm", platform: "node", jsx: "automatic",
+  await build({ stdin: { contents: 'export { Workspace } from "./packages/mcp-app/src/components/workspace.tsx";', resolveDir: process.cwd(), loader: "ts" }, outfile: output, bundle: true, format: "esm", platform: "node", jsx: "automatic",
     external: ["recharts", "react", "react/*", "react-dom", "react-dom/*", "@legendapp/list/react", "radix-ui", "lucide-react", "@base-ui/react/*", "react-resizable-panels"] });
-  const { Workspace, getDeviceSettings, getDevicePicker, getAppTools } = await import(pathToFileURL(output).href);
+  const { Workspace } = await import(pathToFileURL(output).href);
+  // The iOS panel's view stores; the test plays the panel behind them.
+  let pickerRefreshes = 0;
+  let deviceChanges = 0;
+  let stopDevice = async (_id: string) => {};
+  const pickerStore = new DevicePickerStore({ select() { deviceChanges++; }, stop: id => stopDevice(id), async refresh() { pickerRefreshes++; } });
+  let settingsRequest = async (_change?: DeviceSetting): Promise<Partial<DeviceSettings>> => ({});
+  const iosSettings = new DeviceSettingsStore({ request: change => settingsRequest(change), setFrame() {} });
+  let appCall: AppToolCall = async () => ({});
+  const appTools = new AppToolsStore((name, args) => appCall(name, args));
+  const devices = [panelView("ios", { picker: pickerStore, settings: iosSettings, appTools }), panelView("android")] as const;
   const { act, createElement, Profiler } = await import("react");
   const { createRoot } = await import("react-dom/client");
   let sentLog: StackedLog | undefined;
@@ -129,7 +145,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   let commits = 0;
   const onLayout = (layout: string) => { layouts.push(layout); };
   const renderWorkspace = (automaticLayout?: DeviceLayout) => {
-    const workspace = createElement(Workspace, { panels, recordingController, automaticLayout, onLayout });
+    const workspace = createElement(Workspace, { panels, devices, recordingController, automaticLayout, onLayout });
     const profiled = createElement(Profiler, { id: "workspace", onRender() { commits++; } }, workspace);
     root.render(profiled);
   };
@@ -157,20 +173,17 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   layouts.length = 0;
   const picker = dom.window.document.querySelector('[data-element="devices"] [data-slot="select-trigger"]');
   assert.ok(picker);
-  const pickerElement = dom.window.document.querySelector('#ios-panel [data-element="devices"]')!;
-  const pickerStore = getDevicePicker(pickerElement);
-  let pickerRefreshes = 0;
-  pickerStore.refresh = async () => { pickerRefreshes++; };
-  let deviceChanges = 0;
-  pickerElement.addEventListener("change", () => { deviceChanges++; });
-  await act(async () => { pickerStore.update({ value: "iphone", disabled: false, items: [{ value: "iphone", label: "iPhone", running: true, canStop: true }, { value: "ipad", label: "iPad", running: false, canStop: false }] }); });
+  await act(async () => {
+    pickerStore.show({ value: "iphone", placeholder: "Select a device", items: [{ value: "iphone", label: "iPhone", running: true, canStop: true }, { value: "ipad", label: "iPad", running: false, canStop: false }] });
+    pickerStore.disabled = false;
+  });
   await act(async () => { (picker as HTMLButtonElement).click(); });
   await act(async () => { (dom.window.document.querySelector('[data-device-option="iphone"]') as HTMLButtonElement).click(); });
   assert.equal(deviceChanges, 1, "Reselecting a running device retries its connection.");
   assert.equal(pickerRefreshes, 1);
   deviceChanges = 0;
   let stoppedDevice = "";
-  pickerStore.stop = async (id: string) => { stoppedDevice = id; pickerStore.update({ items: [{ value: "iphone", label: "iPhone", running: false, canStop: false }, { value: "ipad", label: "iPad", running: false, canStop: false }] }); };
+  stopDevice = async (id: string) => { stoppedDevice = id; pickerStore.show({ value: pickerStore.value, placeholder: "Select a device", items: [{ value: "iphone", label: "iPhone", running: false, canStop: false }, { value: "ipad", label: "iPad", running: false, canStop: false }] }); };
   await act(async () => { (picker as HTMLButtonElement).click(); });
   const stopButton = dom.window.document.querySelector('[aria-label="Stop iPhone"]') as HTMLButtonElement;
   assert.ok(stopButton);
@@ -182,9 +195,8 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   assert.equal(pickerStore.value, "iphone");
   await act(async () => { (dom.window.document.querySelector('[data-device-option="iphone"]') as HTMLButtonElement).click(); });
   assert.equal(deviceChanges, 1);
-  const iosSettings = getDeviceSettings(dom.window.document.querySelector('#ios-panel [data-element="settings"]'));
   const changes: unknown[] = [];
-  iosSettings.request = async (change: unknown) => { changes.push(change); return { appearance: "light", contentSize: "large", increaseContrast: false, locationSupported: true }; };
+  settingsRequest = async change => { changes.push(change); return { appearance: "light", contentSize: "large", increaseContrast: false, locationSupported: true }; };
   await act(async () => { iosSettings.configure("iphone", false); });
   const settingsButton = dom.window.document.querySelector('[aria-label="iOS device settings"]') as HTMLButtonElement;
   await act(async () => { settingsButton.click(); });
@@ -201,7 +213,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   assert.deepEqual(changes.at(-1), { setting: "contentSize", value: "accessibility-large" });
   assert.ok(dom.window.document.querySelector('[data-slot="popover-content"][aria-label="Device settings"]'));
   let finishAppearance!: (value: object) => void;
-  iosSettings.request = async (change: unknown) => { changes.push(change); return new Promise(resolve => { finishAppearance = resolve; }); };
+  settingsRequest = async change => { changes.push(change); return new Promise(resolve => { finishAppearance = resolve; }); };
   const appearanceTabs = settingsPopover.querySelectorAll<HTMLButtonElement>('[role="tab"]');
   const darkAppearance = Array.from(appearanceTabs).find(tab => tab.textContent === "Dark");
   assert.ok(darkAppearance);
@@ -217,9 +229,8 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   assert.equal(iosSettings.getSnapshot().frame, false);
   await act(async () => { settingsButton.click(); });
   assert.equal(dom.window.document.querySelector("canvas"), canvas);
-  const appTools = getAppTools(dom.window.document.querySelector('#ios-panel [data-element="settings"]'));
   const appCalls: { name: string; args: Record<string, unknown> }[] = [];
-  appTools.call = async (name: string, args: Record<string, unknown>) => {
+  appCall = async (name: string, args: Record<string, unknown>) => {
     appCalls.push({ name, args });
     if (name === "mobile_list_apps") return { apps: [{ bundleId: "com.acme.shop", name: "Acme Shop" }, { bundleId: "dev.other", name: "Other" }], foregroundBundleId: "com.acme.shop", runningBundleIds: ["com.acme.shop"] };
     if (name === "mobile_app_permissions") return { permissions: [{ permission: "location", state: null }, { permission: "photos", state: null }] };
@@ -230,7 +241,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
     if (name === "mobile_set_app_language") return { language: args.language, launched: args.bundleId };
     return {};
   };
-  iosSettings.request = async (change: { setting: string; value: unknown } | undefined) => {
+  settingsRequest = async change => {
     if (change) { changes.push(change); return { [change.setting]: change.value }; }
     return { appearance: "light", contentSize: "large", increaseContrast: false, locationSupported: true, statusBar: "live", network: "normal" };
   };

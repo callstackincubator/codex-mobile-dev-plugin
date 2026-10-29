@@ -21,14 +21,6 @@ startUiTelemetry(bridge);
 const panels = WorkspaceTools.create(bridge);
 let tool: ToolName | undefined;
 let layout: DeviceLayout = "none";
-const reactRoot = createRoot(document.getElementById("root")!);
-function render() {
-  reactRoot.render(<ErrorBoundary fallback={<p role="alert">Mobile Dev could not render. Reload the window to try again.</p>}>
-    <MacWorkspace panels={panels} tool={tool} layout={layout} />
-  </ErrorBoundary>);
-}
-flushSync(render);
-
 const devices = new DeviceWorkspace(bridge, panels, {
   onAutomaticLayout: next => {
     layout = next;
@@ -37,6 +29,14 @@ const devices = new DeviceWorkspace(bridge, panels, {
   },
   connectionFailed,
 });
+const reactRoot = createRoot(document.getElementById("root")!);
+function render() {
+  reactRoot.render(<ErrorBoundary fallback={<p role="alert">Mobile Dev could not render. Reload the window to try again.</p>}>
+    <MacWorkspace panels={panels} devices={devices.panels} tool={tool} layout={layout} />
+  </ErrorBoundary>);
+}
+flushSync(render);
+
 panels.logs.setLayout(true);
 devices.changeLayout("none");
 

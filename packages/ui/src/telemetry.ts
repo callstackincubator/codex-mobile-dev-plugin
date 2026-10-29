@@ -10,6 +10,7 @@ import { validateTelemetryIdentity } from "@mobile-dev/shared/telemetry-identity
 import { getDeviceAppsDiagnostic } from "@mobile-dev/shared/device-apps-diagnostics.ts";
 import { diagnosticContexts, diagnosticReportTags, diagnosticTags } from "@mobile-dev/shared/error-diagnostics.ts";
 import { FailureEpisodes, expectedOutcome } from "@mobile-dev/shared/error-reporting.ts";
+import { streamOpenTools } from "./stream-transports.ts";
 
 export { ErrorBoundary } from "@sentry/react";
 
@@ -280,7 +281,6 @@ export function startUiTelemetry(app: HostBridge) {
 
   const call = app.callServerTool.bind(app);
   const retryFailures = new WeakMap<AbortSignal, FailureEpisodes>();
-  const streamOpenTools = new Set(["mobile_stream_session", "mobile_android_stream_session", "mobile_ios_mirror_session"]);
   app.callServerTool = (params, options) => {
     if (isFrequentTool(params.name)) return call(params, options);
     const operationAttributes = attributes;
