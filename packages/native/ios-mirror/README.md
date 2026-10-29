@@ -10,7 +10,7 @@ All video acknowledgments and receiver feedback use the sender port announced in
 
 Run `npm run test:ios-mirror -- <UDID> 30 --recovery` to force reader pauses and a reset, and verify that each produces a new decoder generation and keyframe through native capture and stdio MCP delivery. Keep the phone unlocked and its screen moving during the check; an idle display can stop emitting frames and will not overflow the queue.
 
-Build with `npm run rebuild:ios-mirror` on an Apple Silicon Mac with Rust and Xcode command line tools. The shared `packages/native/Cargo.lock` pins all native dependencies. End users receive the prebuilt addon and need no compiler. The plugin build verifies the source and binary hashes.
+Build with `npm run rebuild:ios-mirror` on an Apple Silicon Mac with Rust and Xcode command line tools. The shared `packages/native/Cargo.lock` pins all native dependencies. The build also regenerates `index.d.ts`, the addon's TypeScript declarations from its `#[napi]` items, which the server imports. End users receive the prebuilt addon and need no compiler. The plugin build verifies the source and binary hashes.
 
 Protocol transport uses [idevice](https://github.com/jkcoxson/idevice) at `a64b8867815b3da17b5c927531bdba877e8456ef` (MIT). The media parser and negotiation files are derived from idevice plus [device-hub-ios](https://github.com/JaviSoto/device-hub-ios) at `1fcdfb0a6799b62f05625d0cbb359bec57256b94`'s focused display-stream patches (MIT); see the included license files. The vendored media module is separate from our bridge/session code.
 

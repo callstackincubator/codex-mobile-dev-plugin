@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { buildNativeSentry, nativeSentryLicense } from "./native-telemetry.mjs";
 import { cargoBuild, cargoLicenses, cargoTarget, rustHelperSourceHash } from "./native-rust.mjs";
 import { saveDarwinSymbols } from "./native-symbols.mjs";
+import { writeNapiTypes } from "./napi-types.mjs";
 import { createRequire } from "node:module";
 
 export async function iosMirrorSourceHash() {
@@ -17,6 +18,8 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve("tooling/build-ios-m
   if (process.platform !== "darwin" || process.arch !== "arm64") throw new Error("Build the physical iOS capture addon on an Apple Silicon Mac.");
   const sdk = await buildNativeSentry();
   cargoBuild("mobile-dev-ios-mirror", sdk.environment);
+  // TypeScript imports the addon's declarations from this checked-in file.
+  await writeNapiTypes({ name: "mobile-dev-ios-mirror", crate: "ios-mirror", output: "packages/native/ios-mirror/index.d.ts", environment: sdk.environment });
   await mkdir("packages/native/vendor/ios-mirror", { recursive: true });
   const licenses = await cargoLicenses("mobile-dev-ios-mirror");
   const sentryLicense = await nativeSentryLicense();

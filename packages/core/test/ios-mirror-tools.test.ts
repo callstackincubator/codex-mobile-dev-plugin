@@ -55,8 +55,8 @@ test("physical mirroring tools stream compressed frames over an app-only MCP ses
   } });
   assert.equal(touch.isError, undefined);
   assert.deepEqual(touches, [{ samples: [
-    { phase: 0, x: 200, y: 400, width: 400, height: 800 },
-    { phase: 2, x: 200, y: 400, width: 400, height: 800 },
+    { phase: "down", x: 200, y: 400, width: 400, height: 800 },
+    { phase: "up", x: 200, y: 400, width: 400, height: 800 },
   ], generation: 1 }]);
   const invalid = await client.callTool({ name: "mobile_ios_mirror_input", arguments: {
     sessionId: id, generation: 1, messages: [{ type: "button", button: "home" }],

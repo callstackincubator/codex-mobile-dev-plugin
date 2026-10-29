@@ -28,7 +28,7 @@ test("physical touches require the delivered video generation and serialize nati
   await assert.rejects(premature, /fresh physical iOS screen/);
   await f.sessions.batch(id);
   await f.sessions.input(id, touch, 1);
-  assert.deepEqual(f.touches, [{ samples: [{ phase: 0, x: 200, y: 400, width: 400, height: 800 }], generation: 1 }]);
+  assert.deepEqual(f.touches, [{ samples: [{ phase: "down", x: 200, y: 400, width: 400, height: 800 }], generation: 1 }]);
   let release!: () => void;
   f.capture.touch = () => new Promise<void>(resolve => { release = resolve; });
   const pending = f.sessions.input(id, touch, 1);

@@ -9,10 +9,15 @@ fn invalid(message: &str) -> MirrorError {
     MirrorError::new(ErrorCode::InputInvalid, message)
 }
 
+/// Reaches JavaScript as `"down" | "move" | "up"`.
+#[cfg_attr(not(test), napi_derive::napi(string_enum = "lowercase"))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TouchPhase { Down, Move, Up }
+
 #[cfg_attr(not(test), napi_derive::napi(object))]
 #[derive(Clone, Copy, Debug)]
 pub struct TouchSample {
-    pub phase: u32,
+    pub phase: TouchPhase,
     pub x: f64,
     pub y: f64,
     pub width: f64,
@@ -40,11 +45,10 @@ impl TouchState {
         let y = normalized(sample.y, sample.height)?;
         let point = Point { x, y };
         match (self.active, sample.phase) {
-            (None, 0) | (Some(_), 1) => Ok((point, TOUCHSCREEN_STATE_CONTACT)),
-            (Some(_), 2) => Ok((point, TOUCHSCREEN_STATE_RELEASE)),
-            (Some(_), 0) => Err(invalid("The physical iOS touch is already down.")),
-            (None, 1 | 2) => Err(invalid("The physical iOS touch must be down first.")),
-            _ => Err(invalid("Invalid physical iOS touch phase.")),
+            (None, TouchPhase::Down) | (Some(_), TouchPhase::Move) => Ok((point, TOUCHSCREEN_STATE_CONTACT)),
+            (Some(_), TouchPhase::Up) => Ok((point, TOUCHSCREEN_STATE_RELEASE)),
+            (Some(_), TouchPhase::Down) => Err(invalid("The physical iOS touch is already down.")),
+            (None, TouchPhase::Move | TouchPhase::Up) => Err(invalid("The physical iOS touch must be down first.")),
         }
     }
 }
@@ -111,19 +115,19 @@ impl<R: ReadWrite> TouchClient<R> {
 mod tests {
     use super::*;
 
-    fn sample(phase: u32, x: f64, y: f64) -> TouchSample {
+    fn sample(phase: TouchPhase, x: f64, y: f64) -> TouchSample {
         TouchSample { phase, x, y, width: 400.0, height: 800.0 }
     }
 
     #[test]
     fn converts_display_coordinates_to_full_range_hid_coordinates() {
         let state = TouchState::default();
-        let middle = sample(0, 200.0, 400.0);
+        let middle = sample(TouchPhase::Down, 200.0, 400.0);
         let result = state.prepare(middle);
         let (point, contact) = result.unwrap();
         assert_eq!(point, Point { x: 32768, y: 32768 });
         assert_eq!(contact, TOUCHSCREEN_STATE_CONTACT);
-        let corner = sample(0, 400.0, 800.0);
+        let corner = sample(TouchPhase::Down, 400.0, 800.0);
         let result = state.prepare(corner);
         let (point, _) = result.unwrap();
         assert_eq!(point, Point { x: 65535, y: 65535 });
@@ -132,25 +136,25 @@ mod tests {
     #[test]
     fn enforces_one_ordered_contact_and_rejects_invalid_coordinates() {
         let mut state = TouchState::default();
-        for phase in [1, 2] {
+        for phase in [TouchPhase::Move, TouchPhase::Up] {
             let sample = sample(phase, 0.0, 0.0);
             let result = state.prepare(sample);
             assert!(result.is_err());
         }
         state.active = Some(Point { x: 0, y: 0 });
-        let down = sample(0, 0.0, 0.0);
+        let down = sample(TouchPhase::Down, 0.0, 0.0);
         let result = state.prepare(down);
         assert!(result.is_err());
-        let up = sample(2, 200.0, 400.0);
+        let up = sample(TouchPhase::Up, 200.0, 400.0);
         let result = state.prepare(up);
         let (_, release) = result.unwrap();
         assert_eq!(release, TOUCHSCREEN_STATE_RELEASE);
         for x in [401.0, f64::NAN, -1.0] {
-            let sample = sample(1, x, 0.0);
+            let sample = sample(TouchPhase::Move, x, 0.0);
             let result = state.prepare(sample);
             assert!(result.is_err());
         }
-        let mut invalid = sample(1, 0.0, 0.0);
+        let mut invalid = sample(TouchPhase::Move, 0.0, 0.0);
         invalid.height = 0.0;
         let result = state.prepare(invalid);
         assert!(result.is_err());

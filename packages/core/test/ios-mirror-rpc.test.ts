@@ -10,6 +10,7 @@ import { randomUUID } from "node:crypto";
 import { IosMirrorHub } from "../src/ios-mirror-hub.ts";
 import { createIosMirrorServer } from "../src/ios-mirror-server.ts";
 import { connectIosCapture } from "../src/ios-mirror-client.ts";
+import { mirrorRequestSchema, wireTouchPhases } from "../src/ios-mirror-rpc.ts";
 import type { NativeCapture } from "../src/ios-native-capture.ts";
 
 async function message(child: ChildProcess) {
@@ -116,4 +117,13 @@ test("service shutdown rejects pending video reads and releases its capture", { 
   await service.close();
   await rejection;
   assert.equal(closes, 1);
+});
+
+test("touch phases keep their numeric wire form between plugin versions", () => {
+  const sample = { x: 1, y: 2, width: 400, height: 800 };
+  const request = mirrorRequestSchema.parse({ id: 1, method: "touch", generation: 3, samples: [0, 1, 2].map(phase => ({ ...sample, phase })) });
+  assert.equal(request.method, "touch");
+  if (request.method === "touch") assert.deepEqual(request.samples.map(touch => touch.phase), ["down", "move", "up"]);
+  assert.deepEqual(wireTouchPhases, ["down", "move", "up"]);
+  assert.throws(() => mirrorRequestSchema.parse({ id: 1, method: "touch", generation: 3, samples: [{ ...sample, phase: "up" }] }));
 });

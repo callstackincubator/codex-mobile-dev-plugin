@@ -108,7 +108,7 @@ export class IosMirrorHub {
       if (device.pointer?.owner !== subscriber) return;
       const pointer = device.pointer;
       device.pointer = undefined;
-      await device.capture.touch([{ ...pointer.sample, phase: 2 }], pointer.generation);
+      await device.capture.touch([{ ...pointer.sample, phase: "up" }], pointer.generation);
     });
     device.input = releasing.catch(() => {});
     return releasing;
@@ -196,7 +196,7 @@ export class IosMirrorHub {
       // Record the pointer even if this panel was invalidated meanwhile; its queued release lifts it.
       if (device.generation !== nativeGeneration) return;
       const last = samples.at(-1);
-      if (last === undefined || last.phase === 2) device.pointer = undefined;
+      if (last === undefined || last.phase === "up") device.pointer = undefined;
       else device.pointer = { owner: subscriber, sample: last, generation: device.generation };
     });
     device.input = result.catch(() => {});

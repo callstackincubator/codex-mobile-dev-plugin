@@ -29,7 +29,7 @@ export const nativeHelpers = [
     symbols: [".sentry/native/darwin-arm64/Baguette.dSYM"], binaries: ["Baguette", "Baguette_Baguette.bundle"] },
   { name: "ios-fps", command: "rebuild:ios-fps", scripts: ["build-fps.mjs", ...rustScripts], inputs: rustInputs, tools: ["darwin", "rust"],
     symbols: [".sentry/native/darwin-arm64/mobile-dev-ios-fps.dSYM"], binaries: ["mobile-dev-ios-fps"] },
-  { name: "ios-mirror", command: "rebuild:ios-mirror", scripts: ["build-ios-mirror.mjs", ...rustScripts], inputs: rustInputs, tools: ["darwin", "rust"],
+  { name: "ios-mirror", command: "rebuild:ios-mirror", scripts: ["build-ios-mirror.mjs", "napi-types.mjs", ...rustScripts], inputs: rustInputs, tools: ["darwin", "rust"],
     symbols: [".sentry/native/darwin-arm64/darwin-arm64.node.dSYM"], binaries: ["darwin-arm64.node"] },
   { name: "ios-logs", command: "rebuild:ios-logs", scripts: ["build-ios-logs.mjs", "native-symbols.mjs"], inputs: [], tools: ["darwin", "iosLogs"],
     symbols: [".sentry/native/darwin-arm64/mobile-dev-ios-logs.dSYM"], binaries: ["mobile-dev-ios-logs"] },
