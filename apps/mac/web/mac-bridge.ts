@@ -9,7 +9,6 @@ import { MAC_TELEMETRY_URI, type MacTelemetryMetadata } from "../shared/telemetr
 type ShellMessage =
   | { type: "ready" }
   | { type: "layout"; layout: string }
-  | { type: "tool"; tool: string }
   | { type: "error"; message: string };
 
 type WebKitHandlers = { mcp: { postMessage(message: string): void }; shell: { postMessage(message: ShellMessage): void } };
