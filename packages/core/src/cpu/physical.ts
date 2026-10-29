@@ -10,8 +10,9 @@ const number = z.number();
 const integer = number.int();
 const positive = integer.min(1);
 const port = positive.max(65535);
-const address = z.object({ port });
+const address = z.object({ type: z.literal("ready"), port });
 const readySchema = address.strict();
+const errorSchema = z.object({ type: z.literal("error"), cause: z.string(), message: z.string() }).strict();
 
 export async function openPhysicalDebugserver(deviceId: string, signal: AbortSignal,
   helper = new URL("./ios-fps/mobile-dev-ios-fps", import.meta.url)): Promise<DebugserverTransport> {
@@ -69,6 +70,8 @@ export async function openPhysicalDebugserver(deviceId: string, signal: AbortSig
       if (newline < 0) return;
       const line = pending.slice(0, newline);
       const decoded: unknown = JSON.parse(line);
+      const failure = errorSchema.safeParse(decoded);
+      if (failure.success) throw new Error(failure.data.message);
       const ready = readySchema.parse(decoded);
       accept(ready.port);
     } catch (error) {

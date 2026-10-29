@@ -20,6 +20,10 @@ const boundedFps = nonnegativeFps.max(1000);
 const fpsValue = boundedFps.nullable();
 const readingObject = z.object({ fps: fpsValue });
 const readingSchema = readingObject.strict();
+// The helper's first record marks its baseline sample; a handled failure ends with an error record.
+const readySchema = z.object({ type: z.literal("ready") }).strict();
+const errorSchema = z.object({ type: z.literal("error"), cause: z.string(), message: z.string() }).strict();
+const recordSchema = z.union([readingSchema, readySchema, errorSchema]);
 export type FpsMonitorOptions = { target: DisplayFpsTarget; signal: AbortSignal; onSample: (reading: FrameReading) => void };
 
 export async function startDisplayFpsMonitor(options: FpsMonitorOptions,
@@ -39,10 +43,12 @@ export async function startDisplayFpsMonitor(options: FpsMonitorOptions,
       const line = pending.slice(0, newline);
       pending = pending.slice(newline + 1);
       const decoded = JSON.parse(line);
-      const reading = readingSchema.parse(decoded);
+      const record = recordSchema.parse(decoded);
+      if ("type" in record && record.type === "error") throw new Error(record.message);
+      const reading = "fps" in record ? record.fps : null;
       const now = performance.now() / 1000;
       const interval = previous === undefined ? 0 : now - previous;
-      const fps = interval > 0 && interval < 2.5 ? reading.fps : null;
+      const fps = interval > 0 && interval < 2.5 ? reading : null;
       options.onSample({ fps, interval, recordedAt: now });
       previous = now;
       ready();

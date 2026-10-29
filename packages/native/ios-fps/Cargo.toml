@@ -10,4 +10,4 @@ mobile-dev-device-tunnel.workspace = true
 idevice = { workspace = true, features = ["ring", "usbmuxd", "core_device_proxy", "tunnel_tcp_stack", "dvt", "rsd", "debug_proxy"] }
 plist.workspace = true
 serde_json.workspace = true
-tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "signal", "io-std", "io-util", "net"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "signal", "io-util", "net", "sync"] }
