@@ -230,8 +230,11 @@ function documentTelemetryMetadata(): UiTelemetryMetadata {
   return { environment: content("environment"), telemetry: content("telemetry"), userId: content("user-id"), sessionId: content("session-id") };
 }
 
-/** Starts UI telemetry with the page's meta tags, or with `metadata` the page read from the server itself. */
-export function startUiTelemetry(app: HostBridge, { metadata = documentTelemetryMetadata() }: { metadata?: UiTelemetryMetadata } = {}) {
+/**
+ * Starts UI telemetry with the page's meta tags, or with `metadata` the page read from the server itself.
+ * A page that knows its host from the start passes `host`; MCP Apps panels set it once connected.
+ */
+export function startUiTelemetry(app: HostBridge, { metadata = documentTelemetryMetadata(), host }: { metadata?: UiTelemetryMetadata; host?: TelemetryHost } = {}) {
   const environment = validateTelemetryEnvironment(metadata.environment);
   const enabled = metadata.telemetry !== "off";
   const identity = enabled ? validateTelemetryIdentity(metadata.userId, metadata.sessionId) : undefined;
@@ -260,8 +263,6 @@ export function startUiTelemetry(app: HostBridge, { metadata = documentTelemetry
   const requestedView = document.documentElement.dataset.view;
   const view = requestedView === "recording" || requestedView === "workspace" || requestedView === "comparison" || requestedView === "tracesift" ? requestedView : "panel";
   if (view === "recording" || view === "comparison" || view === "tracesift") surface = view;
-  // A page that names its host carries it from the start; MCP Apps panels learn it on connect.
-  const host = document.documentElement.dataset.host === "mac" ? "mac" : undefined;
   attributes = { ...attributes, surface, view, ...(host ? { host } : {}) };
   Sentry.setTags({ component: "ui", surface, view, ...(host ? { host } : {}) });
   Sentry.setAttributes(attributes);

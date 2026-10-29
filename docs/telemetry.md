@@ -9,14 +9,14 @@ Since 0.1.165, UI and server telemetry carry a `host` tag and attribute with one
 Apps hosts load the same panel and server; the Mac app runs the same server and shared UI.
 Behavior never depends on this value; it only attributes measurements and errors.
 
-- The Mac page names itself (`data-host="mac"`); the Mac app also starts the server
-  with `MOBILE_DEV_HOST=mac`.
+- The Mac page passes `mac` when it starts UI telemetry, and the Mac server's entry
+  passes it to `runStdioServer`, which keeps it whatever the connecting client reports.
 - MCP Apps panels are labelled once connected: `codex` when the host advertises
   OpenAI extensions, otherwise the host's reported name mapped by `telemetryHost`
   (`claude` for Claude, `cursor` for Cursor, else `other`). Before the Cursor plugin,
   Cursor sessions were reported as `other`. Calls before connecting carry no host.
-- The server labels itself from the connecting MCP client's name on initialize and
-  reports `other` until then.
+- Other servers label themselves from the connecting MCP client's name on initialize.
+  Every server reports `other` until it has a label.
 - The server's metadata allowlist accepts only these values; the raw host or
   client name is never sent.
 

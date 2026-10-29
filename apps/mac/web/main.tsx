@@ -95,7 +95,7 @@ void (async () => {
     await bridge.connect();
     // The app loads this page from its bundle, so telemetry starts with the server's
     // environment, opt-out and anonymous identity once the page can read them.
-    startUiTelemetry(bridge, { metadata: await bridge.readTelemetryMetadata() });
+    startUiTelemetry(bridge, { metadata: await bridge.readTelemetryMetadata(), host: "mac" });
     panels.setAvailable(true);
     await devices.setAvailable(true);
     postToShell({ type: "ready" });
