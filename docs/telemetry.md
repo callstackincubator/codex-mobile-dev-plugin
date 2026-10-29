@@ -25,7 +25,10 @@ Behavior never depends on this value; it only attributes measurements and errors
   `browser_panel.request` and `browser_panel.close`. The `browser_panel.sessions`
   gauge measures active browser MCP sessions on creation, deletion, expiry and
   shutdown, with `component=server`. It contains no session IDs, URLs or tokens
-  and honors telemetry opt-out. Browser sessions expire after five idle minutes;
+  and honors telemetry opt-out. `browser_panel.context_update` counts the page's
+  model context updates by `outcome` (`stored`, `invalid` or `too_large`), and
+  `browser_panel.context_bytes` records the size of stored updates in bytes; the
+  context's text and images are never sent. Browser sessions expire after five idle minutes;
   active requests prevent expiry, and open tabs send a ping every 30 seconds.
 - The server's metadata allowlist accepts only these values; the raw host or
   client name is never sent.

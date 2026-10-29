@@ -40,6 +40,19 @@ test.describe("Browser panels", { tag: "@browser" }, () => {
     expect(scriptErrors).toEqual([]);
   });
 
+  test("the agent reads what the page would give a chat host's model context", async ({ page, browserPanel }) => {
+    const read = async () => {
+      const result = await browserPanel.host.callTool({ name: "mobile_read_panel_context", arguments: {} });
+      return JSON.stringify(result.content);
+    };
+    expect(await read()).toContain("No Mobile Dev browser panel");
+    await page.goto(browserPanel.url);
+    await expect(page.frameLocator("iframe").locator("#ios-panel")).toBeVisible();
+    await expect.poll(read).toContain("Mobile Dev browser panel.");
+    await page.close();
+    await expect.poll(read).toContain("No Mobile Dev browser panel");
+  });
+
   test("closing a tab preserves the other tab and the chat connection", async ({ page, context, browserPanel }) => {
     await page.goto(browserPanel.url);
     const other = await context.newPage();

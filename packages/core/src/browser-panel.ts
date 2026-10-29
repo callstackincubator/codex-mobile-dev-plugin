@@ -4,17 +4,32 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { AddressInfo } from "node:net";
 import { getUiCapability } from "@modelcontextprotocol/ext-apps/server";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import type { ImageContent, TextContent } from "@modelcontextprotocol/sdk/types.js";
+import { z } from "zod";
 import type { PanelTarget } from "@mobile-dev/shared/panel-target.ts";
 import { telemetryHost, type TelemetryHost } from "@mobile-dev/shared/telemetry.ts";
 import type { ServerFeature } from "./server-feature.ts";
 import type { SharedTransport } from "./shared-transport.ts";
-import { captureServerError, recordBrowserPanelSessions } from "./telemetry.ts";
+import { captureServerError, recordBrowserPanelContext, recordBrowserPanelSessions } from "./telemetry.ts";
 
 const PAGE = new URL("./browser-panel.html", import.meta.url);
 export const BROWSER_SESSION_IDLE_MS = 5 * 60_000;
+// Screenshots the user adds to chat travel as base64 images.
+export const BROWSER_CONTEXT_MAX_BYTES = 16 * 1024 * 1024;
+const NO_CONTEXT = "No Mobile Dev browser panel has shared context. Open Mobile Dev, or ask the user to select a device in the panel.";
 
-type BrowserSession = { transport: StreamableHTTPServerTransport; touched: number; requests: number };
-type PanelPage = { url(tool: string, target: PanelTarget): string; close(): Promise<void> };
+type PanelContent = TextContent | ImageContent;
+type BrowserSession = { transport: StreamableHTTPServerTransport; touched: number; requests: number; context?: { content: PanelContent[]; updated: number } };
+type PanelPage = { url(tool: string, target: PanelTarget): string; context(): PanelContent[]; close(): Promise<void> };
+
+// What a panel would otherwise give an MCP Apps host's model context. Hosts mark
+// audience and other annotations; the agent reads only text and images.
+const contextSchema = z.object({
+  content: z.array(z.union([
+    z.object({ type: z.literal("text"), text: z.string() }),
+    z.object({ type: z.literal("image"), data: z.string(), mimeType: z.string().regex(/^image\/[\w.+-]+$/) }),
+  ])).max(64).default([]),
+});
 
 /** Hosts without MCP Apps can show the shared panel on a session-owned loopback page. */
 export function browserPanel(template: URL = PAGE): ServerFeature {
@@ -28,7 +43,17 @@ export function browserPanel(template: URL = PAGE): ServerFeature {
       page ??= startPanelPage(connections, host, template);
       const opened = await page;
       const url = opened.url(tool, target);
-      return `This host shows no Mobile Dev panel. Show it beside the chat by opening ${url} in your in-app browser or side panel. If you cannot open pages, give the user the link.`;
+      return `This host shows no Mobile Dev panel. Show it to the user beside the chat now: open ${url} in your in-app browser or side panel, in the foreground, so the page is visible without another click. Reuse a tab that already shows Mobile Dev. If you cannot open pages, give the user the link. The page shares the user's devices and what they add to chat through mobile_read_panel_context; read it before device work.`;
+    });
+    // A browser has no model context of its own, so the agent asks the server for it.
+    server.registerTool("mobile_read_panel_context", {
+      title: "Read Mobile Dev panel context",
+      description: "Read what a Mobile Dev panel opened in a browser shares with the chat: the active and visible device IDs, and logs, screenshots and screen notes the user added to chat. Call it before device work and when the user refers to something in the panel. Hosts that render the panel in the chat share this directly.",
+      inputSchema: {}, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    }, async () => {
+      const opened = await page?.catch(() => undefined);
+      const content = opened?.context() ?? [];
+      return { content: content.length ? content : [{ type: "text", text: NO_CONTEXT }] };
     });
     return async () => {
       const opened = await page?.catch(() => undefined);
@@ -84,7 +109,33 @@ export async function startPanelPage(connections: SharedTransport, host: Telemet
       return;
     }
     if (path === `${base}mcp`) return mcp(request, response);
+    if (path === `${base}context`) return context(request, response);
     reply(response, 404);
+  }
+
+  // The page replaces its tab's context, as ui/update-model-context does in a chat host.
+  async function context(request: IncomingMessage, response: ServerResponse) {
+    if (request.method !== "PUT") return reply(response, 405, { allow: "PUT" });
+    const sessionId = request.headers["mcp-session-id"];
+    const session = typeof sessionId === "string" ? sessions.get(sessionId) : undefined;
+    if (session === undefined) return reply(response, 404);
+    if (request.headers["content-type"]?.startsWith("application/json") !== true) return reply(response, 415);
+    const body = await readBody(request, BROWSER_CONTEXT_MAX_BYTES);
+    if (body === undefined) {
+      recordBrowserPanelContext("too_large");
+      return reply(response, 413, { connection: "close" });
+    }
+    let parsed;
+    try { parsed = contextSchema.safeParse(JSON.parse(body.toString("utf8"))); }
+    catch { parsed = undefined; }
+    if (parsed?.success !== true) {
+      recordBrowserPanelContext("invalid");
+      return reply(response, 400);
+    }
+    session.context = { content: parsed.data.content, updated: Date.now() };
+    session.touched = Date.now();
+    recordBrowserPanelContext("stored", body.byteLength);
+    reply(response, 204);
   }
 
   async function mcp(request: IncomingMessage, response: ServerResponse) {
@@ -128,6 +179,16 @@ export async function startPanelPage(connections: SharedTransport, host: Telemet
       }
       return `${origins[0]}${base}?${query}`;
     },
+    context() {
+      // The most recently updated tab comes first; each open tab keeps its own.
+      const shared = Array.from(sessions.values()).flatMap(session => session.context ? [session.context] : []);
+      shared.sort((a, b) => b.updated - a.updated);
+      return shared.flatMap((context, index) => {
+        if (context.content.length === 0) return [];
+        const heading: PanelContent = { type: "text", text: shared.length > 1 ? `Mobile Dev browser tab ${index + 1} of ${shared.length}, most recent first.` : "Mobile Dev browser panel." };
+        return [heading, ...context.content];
+      });
+    },
     async close() {
       closing = true;
       clearInterval(expiry);
@@ -138,6 +199,17 @@ export async function startPanelPage(connections: SharedTransport, host: Telemet
       await stopped;
     },
   };
+}
+
+async function readBody(request: IncomingMessage, limit: number): Promise<Buffer | undefined> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of request as AsyncIterable<Buffer>) {
+    size += chunk.byteLength;
+    if (size > limit) return undefined;
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
 }
 
 function reply(response: ServerResponse, status: number, headers: Record<string, string> = {}) {

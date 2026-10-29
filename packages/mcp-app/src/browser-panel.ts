@@ -96,9 +96,22 @@ async function open() {
       platform: "desktop", locale: navigator.language, toolInfo: { tool },
     });
     const host = document.documentElement.dataset.telemetryHost ?? "other";
-    // Advertise only capabilities this browser can fulfill. Chat needs a host-owned bridge.
+    // Advertise only capabilities this browser can fulfill. Chat messages need a
+    // host-owned bridge; model context goes to the server, where the agent reads it.
     const hostContext = context();
-    bridge = new AppBridge(client, { name: host, version: PLUGIN_VERSION }, { serverTools: {}, serverResources: {}, openLinks: {} }, { hostContext });
+    const capabilities = { serverTools: {}, serverResources: {}, openLinks: {}, updateModelContext: { text: {}, image: {} } };
+    bridge = new AppBridge(client, { name: host, version: PLUGIN_VERSION }, capabilities, { hostContext });
+    bridge.onupdatemodelcontext = async ({ content }) => {
+      const sessionId = transport.sessionId;
+      if (sessionId === undefined) throw new Error("Mobile Dev's browser connection is not ready.");
+      const response = await fetch(new URL("context", location.href), {
+        method: "PUT", headers: { "content-type": "application/json", "mcp-session-id": sessionId },
+        body: JSON.stringify({ content: content ?? [] }),
+      });
+      if (response.status === 404) stopped(EXPIRED);
+      if (response.ok === false) throw new Error(`Mobile Dev could not share this with the chat (${response.status}).`);
+      return {};
+    };
     bridge.onopenlink = async ({ url }) => {
       const destination = new URL(url, location.href);
       if (destination.protocol !== "https:" && destination.protocol !== "http:") {

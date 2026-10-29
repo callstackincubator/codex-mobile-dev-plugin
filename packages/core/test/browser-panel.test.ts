@@ -12,7 +12,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ListRootsRequestSchema, ListRootsResultSchema, type ClientCapabilities } from "@modelcontextprotocol/sdk/types.js";
 import { EXTENSION_ID, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
 import { Baguette } from "../src/baguette.ts";
-import { BROWSER_SESSION_IDLE_MS, browserPanel, startPanelPage } from "../src/browser-panel.ts";
+import { BROWSER_CONTEXT_MAX_BYTES, BROWSER_SESSION_IDLE_MS, browserPanel, startPanelPage } from "../src/browser-panel.ts";
 import { SharedTransport } from "../src/shared-transport.ts";
 import { createTestPlugin, fakeBaguette, fakeSimulatorInput } from "../../test-support/fixtures.ts";
 
@@ -246,5 +246,88 @@ test("a browser tool call can answer an associated server request over HTTP", as
   assert.equal(result.isError, undefined);
   assert.deepEqual(result.content, [{ type: "text", text: '{"roots":[{"uri":"file:///browser-root"}]}' }]);
   assert.equal(hostRequests, 0);
+  await transport.terminateSession();
+});
+
+function putContext(endpoint: URL, sessionId: string | undefined, body: string, headers: Record<string, string> = {}) {
+  return fetch(endpoint, {
+    method: "PUT", body,
+    headers: { "content-type": "application/json", ...(sessionId ? { "mcp-session-id": sessionId } : {}), ...headers },
+  });
+}
+
+test("a browser tab's model context reaches the agent and leaves with the tab", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "browser-panel-"));
+  const page = join(directory, "browser-panel.html");
+  await writeFile(page, "<html></html>");
+  const fake = await fakeBaguette();
+  const [hostSide, serverSide] = InMemoryTransport.createLinkedPair();
+  const shared = new SharedTransport(serverSide);
+  const plugin = await createTestPlugin("<html></html>", { baguette: new Baguette(fake.url), simulatorInput: fakeSimulatorInput(), features: [browserPanel(pathToFileURL(page))], connections: shared });
+  const host = new Client({ name: "claude-code", version: "1" });
+  await plugin.server.connect(shared);
+  await host.connect(hostSide);
+  t.after(async () => { await host.close(); await plugin.close(); await fake.close(); await rm(directory, { recursive: true, force: true }); });
+
+  const read = async () => (await host.callTool({ name: "mobile_read_panel_context", arguments: {} })).content as Array<{ type: string; text?: string; data?: string }>;
+  assert.match((await read())[0].text!, /No Mobile Dev browser panel/);
+  const opened = await host.callTool({ name: "mobile_open_simulator", arguments: {} });
+  const texts = (opened.content as Array<{ text: string }>).map(item => item.text);
+  assert.match(texts[1], /in the foreground/);
+  assert.match(texts[1], /mobile_read_panel_context/);
+  const link = new URL(texts[1].match(/http:\/\/127\.0\.0\.1:\d+\/[\w-]+\/\?\S+/)![0]);
+  const endpoint = new URL("context", link);
+
+  const tabs = [new StreamableHTTPClientTransport(new URL("mcp", link)), new StreamableHTTPClientTransport(new URL("mcp", link))];
+  const clients = tabs.map((_, index) => new Client({ name: `tab-${index}`, version: "1" }));
+  for (const [index, client] of clients.entries()) await client.connect(tabs[index]);
+  const [first, second] = tabs.map(tab => tab.sessionId!);
+
+  assert.equal((await putContext(endpoint, undefined, "{}")).status, 404);
+  assert.equal((await putContext(endpoint, "missing", "{}")).status, 404);
+  assert.equal((await putContext(endpoint, first, "{}", { "content-type": "text/plain" })).status, 415);
+  assert.equal((await putContext(endpoint, first, "not json")).status, 400);
+  assert.equal((await putContext(endpoint, first, JSON.stringify({ content: [{ type: "image", data: "x", mimeType: "text/html" }] }))).status, 400);
+  assert.equal((await fetch(endpoint, { method: "PUT", body: "{}", headers: { "content-type": "application/json", "mcp-session-id": first, origin: "https://attacker.example" } })).status, 403);
+  assert.equal((await fetch(endpoint, { headers: { "mcp-session-id": first } })).status, 405);
+
+  const device = "Active iOS simulator: iPhone 17. Device ID: 11111111-1111-1111-1111-111111111111.";
+  const stored = await putContext(endpoint, first, JSON.stringify({ content: [{ type: "text", text: device, annotations: { audience: ["assistant"] } }] }));
+  assert.equal(stored.status, 204);
+  assert.deepEqual(await read(), [{ type: "text", text: "Mobile Dev browser panel." }, { type: "text", text: device }]);
+
+  await new Promise(resolve => setTimeout(resolve, 5));
+  const screenshot = { type: "image", data: "aGVsbG8=", mimeType: "image/png" };
+  assert.equal((await putContext(endpoint, second, JSON.stringify({ content: [screenshot] }))).status, 204);
+  const both = await read();
+  assert.equal(both.length, 4);
+  assert.match(both[0].text!, /tab 1 of 2/);
+  assert.equal(both[1].data, screenshot.data);
+  assert.equal(both[3].text, device);
+
+  // Closing a tab removes what it shared; an empty update clears without closing.
+  await tabs[1].terminateSession();
+  assert.deepEqual((await read()).map(item => item.text), ["Mobile Dev browser panel.", device]);
+  assert.equal((await putContext(endpoint, first, JSON.stringify({ content: [] }))).status, 204);
+  assert.match((await read())[0].text!, /No Mobile Dev browser panel/);
+  await tabs[0].terminateSession();
+  for (const client of clients) await client.close();
+});
+
+test("an oversized browser context update is refused without storing it", async t => {
+  const { server, shared } = await sharedServer();
+  const directory = await mkdtemp(join(tmpdir(), "browser-panel-"));
+  const file = join(directory, "browser-panel.html");
+  await writeFile(file, "<html></html>");
+  const page = await startPanelPage(shared, "claude", pathToFileURL(file));
+  const address = page.url("mobile_open_simulator", {});
+  const client = new Client({ name: "large", version: "1" });
+  const transport = new StreamableHTTPClientTransport(new URL("mcp", address));
+  t.after(async () => { await client.close(); await page.close(); await server.close(); await rm(directory, { recursive: true, force: true }); });
+  await client.connect(transport);
+  const text = "x".repeat(BROWSER_CONTEXT_MAX_BYTES);
+  const response = await putContext(new URL("context", address), transport.sessionId, JSON.stringify({ content: [{ type: "text", text }] }));
+  assert.equal(response.status, 413);
+  assert.deepEqual(page.context(), []);
   await transport.terminateSession();
 });

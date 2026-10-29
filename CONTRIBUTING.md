@@ -311,6 +311,24 @@ duplicate servers. Rebuild, repackage, and reinstall to update a bundled copy.
 Local builds retain the `development` telemetry environment. Public releases use
 `npm run build:release` and `npm run package:claude -- --release`.
 
+### Claude Code local development
+
+Claude Code advertises no MCP Apps support, so Mobile Dev opens in a browser beside
+the chat; in the Claude desktop app's Code tab that is its built-in browser pane.
+Build, then load the Claude plugin folder from this checkout:
+
+```sh
+npm run build
+npm run package:claude
+claude --plugin-dir ./release/claude-plugin/mobile-dev
+```
+
+Ask **“Open Mobile Dev.”** The agent opens the returned loopback link in its
+browser. The server cannot choose how the host shows that browser: the result asks
+the agent to open the page in the foreground, but the host may still show it as a
+card in the chat with an **Open** button. Rebuild, repackage and restart the
+session after code changes.
+
 ### Browser panels and Synara
 
 The shared `dist/server.mjs` can serve Mobile Dev in a browser beside the chat.
@@ -343,8 +361,13 @@ browser connection asks them to reload the page. URLs belong to that running
 server and are unusable after it exits. A failed browser request alone cannot
 prove that the chat server stopped, so the message says it disconnected.
 
-Browser panels currently advertise tools, resources and web links. Chat actions
-stay hidden until the host provides a supported bridge. MCP request/response
+Browser panels advertise tools, resources, web links and model context. The page
+sends each `ui/update-model-context` to its own session's `context` endpoint, which
+replaces that tab's text and images (up to 16 MiB) and drops them when the tab's
+session closes. The agent reads them with `mobile_read_panel_context`, most recent
+tab first, so it sees the user's devices and the logs, screenshots and notes they
+add to chat. The opening tool's result points the agent there. Chat messages stay
+hidden until the host provides a supported bridge. MCP request/response
 traffic is bidirectional, but sampling requests an LLM completion rather than
 appending a user message to the current conversation. Sampling is also
 [deprecated in MCP 2026-07-28](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2026-07-28/client/sampling.mdx).

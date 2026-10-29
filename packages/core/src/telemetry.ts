@@ -17,6 +17,14 @@ export function recordBrowserPanelSessions(active: number) {
   Sentry.metrics.gauge("browser_panel.sessions", active, { attributes: { component: "server" } });
 }
 
+/** Counts browser panel context updates by outcome; sizes only for stored updates, never their content. */
+export function recordBrowserPanelContext(outcome: "stored" | "invalid" | "too_large", bytes?: number) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = { component: "server", outcome };
+  Sentry.metrics.count("browser_panel.context_update", 1, { attributes });
+  if (bytes !== undefined) Sentry.metrics.distribution("browser_panel.context_bytes", bytes, { attributes: { component: "server" }, unit: "byte" });
+}
+
 export function recordIosMirrorSharing(captures: number, subscribers: number, dropped: number) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes = { component: "ios-mirror-service", surface: "simulator", device_platform: "ios", device_kind: "physical" };

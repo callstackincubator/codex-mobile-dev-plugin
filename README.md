@@ -31,6 +31,14 @@ from the plugin directory, then open a new chat.
 To install the prebuilt plugin from this repository instead, see
 [Install from the GitHub marketplace](CONTRIBUTING.md#install-from-the-github-marketplace).
 
+### Claude Code: browser panel
+
+Claude Code shows Mobile Dev in a browser beside the chat, such as the Claude
+desktop app's built-in browser pane. Load the Claude plugin folder
+(`claude --plugin-dir <folder>`, or [build one locally](CONTRIBUTING.md#claude-code-local-development)),
+then ask **"Open Mobile Dev."** The agent opens a private loopback page and reads
+the devices you select there, and anything you add to chat, from that page.
+
 ### Claude Desktop: manual installation
 
 On an Apple Silicon Mac, obtain a `mobile-dev-<version>-claude-desktop-darwin-arm64.mcpb`
