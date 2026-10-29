@@ -24,6 +24,12 @@ export function installIntegrity(): InstallIntegrity {
   return "replaced";
 }
 
+/** Whether a failed access or spawn found no file, rather than a file it could not use. */
+export function isMissingFile(error: unknown): boolean {
+  const code = error !== null && typeof error === "object" && "code" in error ? error.code : undefined;
+  return code === "ENOENT" || code === "ENOTDIR";
+}
+
 const labels: Record<BundledRuntime, string> = { "serve-emu": "Android streaming backend", baguette: "simulator backend" };
 
 /**

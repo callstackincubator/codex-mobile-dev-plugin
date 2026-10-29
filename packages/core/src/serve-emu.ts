@@ -14,7 +14,7 @@ import { errorMessage, parseBaseUrl } from "@mobile-dev/shared/protocol.ts";
 import type { SimulatorDevice, Status } from "@mobile-dev/shared/protocol.ts";
 import { annotateDeviceCommand, backendCommand } from "@mobile-dev/shared/device-command-diagnostics.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
-import { MissingRuntimeError } from "./install-integrity.ts";
+import { isMissingFile, MissingRuntimeError } from "./install-integrity.ts";
 import { recordAndroidEmulatorReconnect, recordAndroidBackendStartup, recordAndroidStartupStages, recordAndroidStartupContext, recordAndroidStartupDeviceState, recordAndroidBackendStop } from "./telemetry.ts";
 import { androidStartupMessageSchema, androidDeviceState, setAndroidStartupDiagnostic } from "@mobile-dev/shared/android-startup-diagnostics.ts";
 import type { AndroidStartupContext, AndroidStartupFailure, AndroidStartupSummary } from "@mobile-dev/shared/android-startup-diagnostics.ts";
@@ -254,7 +254,10 @@ export class ServeEmu {
     } catch (error) { if (this.external) throw error; }
     const cliUrl = new URL("./serve-emu/src/cli.mjs", import.meta.url);
     const cli = fileURLToPath(cliUrl);
-    await access(cli).catch(() => { throw new MissingRuntimeError("serve-emu"); });
+    await access(cli).catch(error => {
+      if (isMissingFile(error)) throw new MissingRuntimeError("serve-emu");
+      throw new Error("Mobile Dev cannot read its bundled Android streaming backend. Reinstall Mobile Dev, then restart the app running it.");
+    });
     const listener = createServer();
     await new Promise<void>((resolve, reject) => { listener.once("error", reject); listener.listen(0, "127.0.0.1", resolve); });
     const address = listener.address();
