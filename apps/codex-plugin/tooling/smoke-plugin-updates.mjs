@@ -7,7 +7,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { PLUGIN_STORE_ID } from "../shared/plugin-updates.ts";
-import { createCodexRunner, PluginUpdates, resolveCodexCli } from "../server/plugin-updates.ts";
+import { createCodexRunner, resolveCodexCli } from "../server/codex-cli.ts";
+import { PluginUpdates } from "../server/plugin-updates.ts";
 
 const execute = promisify(execFile);
 const parent = tmpdir();

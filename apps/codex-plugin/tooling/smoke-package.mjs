@@ -1,19 +1,17 @@
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { access, cp, mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { access, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { createLaunchHome } from "./mcp-launch-fixture.mjs";
-import { nativeRuntimeFiles } from "../../../tooling/native-helpers.mjs";
+import { pluginHost, pluginRelease } from "../../../tooling/plugin-hosts.mjs";
+import { tempPlugin, withServer } from "../../../tooling/lib/mcp-smoke.mjs";
+import { assertPluginFolder } from "../../../tooling/lib/package-payload.mjs";
 
-const source = resolve(process.argv[2] ?? "release/marketplace/plugins/mobile-dev");
-const temporary = await mkdtemp(join(tmpdir(), "mobile-dev-package-test-"));
-const plugin = join(temporary, "mobile-dev");
-let transport;
-let runtimeTransport;
+// Checks the Codex package from a copy, through its actual MCP launch configuration
+// with a system-only PATH:
+//   npm run test:package [-- <plugin folder>]
+const host = pluginHost("codex");
+const { temporary, plugin, remove } = await tempPlugin(process.argv[2] ?? pluginRelease(host).plugin, { prefix: "mobile-dev-package-test-" });
 
 function uiIdentity(text) {
   const user = text.match(/name="mobile-dev-user-id" content="(anon_[a-f0-9]{32})"/);
@@ -26,207 +24,137 @@ function uiIdentity(text) {
 function withoutSession(text) {
   return text.replace(/name="mobile-dev-session-id" content="run_[a-f0-9]{32}"/, 'name="mobile-dev-session-id" content="[session]"');
 }
-try {
-  await cp(source, plugin, { recursive: true, verbatimSymlinks: true });
-  const telemetryConfigText = await readFile(join(plugin, "dist/telemetry-environment.json"), "utf8");
-  const telemetryConfig = JSON.parse(telemetryConfigText);
-  assert.ok(telemetryConfig.environment === "development" || telemetryConfig.environment === "release");
-  const mcpPath = join(plugin, ".mcp.json");
-  const mcpText = await readFile(mcpPath, "utf8");
-  const mcp = JSON.parse(mcpText);
-  const serverNames = Object.keys(mcp.mcpServers);
-  assert.deepEqual(serverNames, ["mobile-dev"]);
-  const serverConfig = mcp.mcpServers["mobile-dev"];
-  assert.equal(serverConfig.command, "/bin/sh");
-  assert.deepEqual(serverConfig.args, ["./scripts/launch-mcp.sh", "./dist/server.mjs"]);
-  assert.equal(serverConfig.cwd, ".");
-  assert.ok(serverConfig.env_vars.includes("HOME"));
-  assert.ok(serverConfig.env_vars.includes("TRACE_SIFT_HOME"));
-  assert.ok(serverConfig.env_vars.includes("TRACE_SIFT_COMMAND"));
-  assert.ok(serverConfig.env_vars.includes("MOBILE_DEV_TELEMETRY"));
-  const serverCwd = resolve(plugin, serverConfig.cwd);
+
+/** Codex's launch configuration: its launcher runs Codex's bundled Node with the forwarded environment. */
+async function codexLaunch() {
+  const mcp = JSON.parse(await readFile(join(plugin, ".mcp.json"), "utf8"));
+  assert.deepEqual(Object.keys(mcp.mcpServers), ["mobile-dev"]);
+  const config = mcp.mcpServers["mobile-dev"];
+  assert.equal(config.command, "/bin/sh");
+  assert.deepEqual(config.args, ["./scripts/launch-mcp.sh", "./dist/server.mjs"]);
+  assert.equal(config.cwd, ".");
+  for (const name of ["HOME", "TRACE_SIFT_HOME", "TRACE_SIFT_COMMAND", "MOBILE_DEV_TELEMETRY"]) assert.ok(config.env_vars.includes(name), name);
   // Supply the Codex runtime cache layout with no Node on MCP PATH.
-  const fixtureHome = await createLaunchHome(temporary, process.execPath);
-  const serverEnv = { ...process.env, HOME: fixtureHome, PATH: "/usr/bin:/bin:/usr/sbin:/sbin" };
-  const launcher = serverConfig.args[0];
-  const nodeVersion = spawnSync(serverConfig.command, [launcher, "--version"], { cwd: serverCwd, env: serverEnv, encoding: "utf8" });
+  const home = await createLaunchHome(temporary, process.execPath);
+  return { command: config.command, args: config.args, cwd: resolve(plugin, config.cwd), env: { ...process.env, HOME: home, PATH: "/usr/bin:/bin:/usr/sbin:/sbin" } };
+}
+
+try {
+  // The payload every host's package ships, plus Codex's skill display metadata.
+  await assertPluginFolder(plugin, host);
+  await access(join(plugin, "skills/agent-device/agents/openai.yaml"));
+  console.log("The relocated runtime's native helpers load their bundled libraries, and its dependency sources ship beside them.");
+  const telemetryConfig = JSON.parse(await readFile(join(plugin, "dist/telemetry-environment.json"), "utf8"));
+  const launch = await codexLaunch();
+  const launcher = launch.args[0];
+  const nodeVersion = spawnSync(launch.command, [launcher, "--version"], { cwd: launch.cwd, env: launch.env, encoding: "utf8" });
   assert.equal(nodeVersion.error, undefined);
   assert.equal(nodeVersion.status, 0, nodeVersion.stderr);
   assert.equal(nodeVersion.stdout.trim(), process.version);
-  for (const path of ["SKILL.md", "agents/openai.yaml", "references/workflow.md"]) await access(join(plugin, "skills/agent-device", path));
-  await access(join(plugin, "dist/baguette/Baguette"));
-  await access(join(plugin, "dist/baguette/Baguette_Baguette.bundle/Web"));
-  const mirrorServicePath = join(plugin, "dist/ios-mirror-service.mjs");
-  await access(mirrorServicePath);
-  const mirrorPath = join(plugin, "dist/ios-mirror/darwin-arm64.node");
+  // The launcher's Node loads the physical iOS capture addon.
   const mirrorProbe = "const mirror = require(process.argv[1]); if (typeof mirror.openDevice !== 'function') process.exit(1);";
-  const mirror = spawnSync(serverConfig.command, [launcher, "-e", mirrorProbe, mirrorPath], { cwd: serverCwd, env: serverEnv, encoding: "utf8" });
+  const mirror = spawnSync(launch.command, [launcher, "-e", mirrorProbe, join(plugin, "dist/ios-mirror/darwin-arm64.node")], { cwd: launch.cwd, env: launch.env, encoding: "utf8" });
   assert.equal(mirror.error, undefined);
   assert.equal(mirror.status, 0, mirror.stderr);
-  await access(join(plugin, "dist/ios-mirror/third-party-licenses.txt"));
-  const iosLogsPath = join(plugin, "dist/ios-logs/mobile-dev-ios-logs");
-  const iosLogsReleasePath = join(plugin, "dist/ios-logs/release.json");
-  const iosLogsReleaseText = await readFile(iosLogsReleasePath, "utf8");
-  const iosLogsRelease = JSON.parse(iosLogsReleaseText);
-  const iosLogsLicensePath = join(plugin, "dist/ios-logs/third-party-licenses.txt");
-  await access(iosLogsLicensePath);
-  for (const dependency of iosLogsRelease.sources) {
-    const archivePath = join(plugin, `dist/ios-logs/sources/${dependency.name}-${dependency.version}.tar.bz2`);
-    await access(archivePath);
-  }
-  const unavailablePhone = spawnSync(iosLogsPath, ["--device", "00000000-0000000000000000", "usb"], { encoding: "utf8", timeout: 5000 });
-  assert.equal(unavailablePhone.error, undefined);
-  assert.equal(unavailablePhone.status, 1);
-  assert.match(unavailablePhone.stderr, /unavailable to libimobiledevice/);
-  console.log("The relocated physical iOS log reader loads its bundled libraries and dependency sources.");
-  const manifestPath = join(plugin, ".codex-plugin/plugin.json");
-  const manifestText = await readFile(manifestPath, "utf8");
-  const manifest = JSON.parse(manifestText);
+  const manifest = JSON.parse(await readFile(join(plugin, ".codex-plugin/plugin.json"), "utf8"));
   assert.equal(manifest.name, "mobile-dev");
-  transport = new StdioClientTransport({
-    command: serverConfig.command, args: serverConfig.args, cwd: serverCwd, stderr: "pipe", env: serverEnv,
+
+  const baseUrl = await withServer({ ...launch, name: "mobile-dev-package-smoke" }, async client => {
+    const tools = await client.listTools();
+    const tool = name => tools.tools.find(candidate => candidate.name === name);
+    // Codex's own server and panel: the updater tools and the banner that calls them.
+    assert.ok(tool("mobile_check_plugin_update"), "The Codex server must include its updater.");
+    const recordingCard = tool("mobile_render_performance_recording");
+    assert.ok(recordingCard);
+    assert.deepEqual(recordingCard._meta.ui.visibility, ["app", "model"]);
+    const recordingUri = recordingCard._meta.ui.resourceUri;
+    assert.equal(recordingUri, `ui://mobile-dev/${manifest.version}/recording.html`);
+    const recordingResource = await client.readResource({ uri: recordingUri });
+    const recordingHtml = recordingResource.contents[0].text;
+    assert.match(recordingHtml, /data-view="recording"/);
+    const comparisonCard = tool("mobile_compare_performance_recordings");
+    assert.ok(comparisonCard);
+    const comparisonUri = comparisonCard._meta.ui.resourceUri;
+    assert.equal(comparisonUri, `ui://mobile-dev/${manifest.version}/comparison.html`);
+    const comparisonResource = await client.readResource({ uri: comparisonUri });
+    assert.match(comparisonResource.contents[0].text, /data-view="comparison"/);
+    for (const name of ["mobile_display_fps_session", "mobile_read_display_fps", "mobile_display_fps_close", "mobile_read_performance_frames"]) assert.ok(tool(name), name);
+    for (const name of ["mobile_list_ios_devices", "mobile_list_android_devices", "mobile_boot_android_emulator", "mobile_android_stream_session", "mobile_ios_mirror_session", "mobile_ios_mirror_reset", "mobile_ios_mirror_close"]) assert.ok(tool(name), name);
+    for (const name of ["device_open", "device_snapshot", "device_press", "device_screenshot"]) assert.ok(tool(name), name);
+    assert.deepEqual(tool("mobile_ios_mirror_session")._meta.ui.visibility, ["app"]);
+    const workspace = tool("mobile_open_workspace");
+    assert.deepEqual(workspace._meta["openai/ui"].entrypoints, [{ type: "global" }]);
+    const workspaceResource = await client.readResource({ uri: workspace._meta.ui.resourceUri });
+    assert.ok(workspaceResource.contents[0].text.includes('data-view="workspace" data-layout="split"'));
+    for (const name of ["mobile_log_sources", "mobile_logs_session", "mobile_read_logs", "mobile_logs_keep_alive", "mobile_logs_close", "mobile_performance_sources", "mobile_cpu_session", "mobile_read_cpu", "mobile_cpu_close"]) {
+      assert.ok(tool(name), `Missing developer tool: ${name}`);
+    }
+    const panel = await client.callTool({ name: "mobile_open_simulator", arguments: {} }, undefined, { timeout: 30000 });
+    if (panel.isError || !panel.structuredContent?.connected) throw new Error(`Bundled backend failed: ${JSON.stringify(panel.content)}`);
+    assert.equal(panel.structuredContent.managed, true);
+    assert.notEqual(new URL(panel.structuredContent.baseUrl).port, "8421");
+    const baseUrl = panel.structuredContent.baseUrl;
+    const entrypoint = tool("mobile_open_simulator");
+    for (const opener of [entrypoint, workspace]) {
+      assert.deepEqual(Object.keys(opener._meta["openai/ui"]), ["entrypoints"]);
+      assert.equal(opener.icons?.[0].mimeType, "image/svg+xml");
+      assert.match(opener.icons[0].src, /^data:image\/svg\+xml;base64,/);
+    }
+    const resource = await client.readResource({ uri: entrypoint._meta.ui.resourceUri });
+    const html = resource.contents[0].text;
+    assert.equal(resource.contents[0].mimeType, "text/html;profile=mcp-app");
+    assert.ok(html.includes('id="root"'));
+    // React creates these controls from the bundled script after the app mounts.
+    for (const control of ["canvas", "logs-drawer", "log-chat", "tool-select", "tool-performance", "tool-tracesift", "performance-drawer", "performance-app", "platform-select", "simulator-panels"]) {
+      assert.ok(html.includes(control), `Missing bundled UI control: ${control}`);
+    }
+    assert.ok(!html.includes("<!-- APP_SCRIPT -->"));
+    assert.ok(!html.includes("<!-- APP_STYLE -->"));
+    assert.equal(entrypoint._meta.ui.resourceUri, `ui://mobile-dev/${manifest.version}/simulator.html`);
+    const telemetryEnvironment = process.env.MOBILE_DEV_ENVIRONMENT ?? telemetryConfig.environment;
+    assert.ok(html.includes(`name="mobile-dev-environment" content="${telemetryEnvironment}"`));
+    for (const part of ["workspace-toolbar", "workspace-panels", "tool-logs"]) assert.ok(html.includes(part), part);
+    assert.ok(html.includes("plugin store"), "The Codex panel must include its update banner.");
+    assert.ok(html.includes("Memory usage"), "The packaged Performance view must include the live memory track.");
+    assert.equal(workspace._meta.ui.resourceUri, `ui://mobile-dev/${manifest.version}/workspace.html`);
+    assert.deepEqual(resource.contents[0]._meta.ui.csp.connectDomains, ["https://o4512180958068736.ingest.de.sentry.io"]);
+    assert.deepEqual(resource.contents[0]._meta.ui.csp.resourceDomains, []);
+    // A second process keeps the installation identity and starts its own session.
+    await withServer({ ...launch, name: "mobile-dev-package-runtime" }, async runtime => {
+      const runtimeResource = await runtime.readResource({ uri: entrypoint._meta.ui.resourceUri });
+      if (process.env.MOBILE_DEV_TELEMETRY === "off") {
+        assert.deepEqual(runtimeResource.contents[0], resource.contents[0]);
+        assert.match(html, /mobile-dev-telemetry" content="off"/);
+        return;
+      }
+      const initialIdentity = uiIdentity(html);
+      const runtimeIdentity = uiIdentity(runtimeResource.contents[0].text);
+      assert.equal(runtimeIdentity.userId, initialIdentity.userId);
+      assert.notEqual(runtimeIdentity.sessionId, initialIdentity.sessionId);
+      assert.deepEqual(uiIdentity(recordingHtml), initialIdentity);
+      assert.deepEqual(uiIdentity(workspaceResource.contents[0].text), initialIdentity);
+      const runtimeHtml = withoutSession(runtimeResource.contents[0].text);
+      assert.deepEqual({ ...runtimeResource.contents[0], text: runtimeHtml }, { ...resource.contents[0], text: withoutSession(html) });
+    });
+    console.log("Manifest-launched discovery/runtime processes work without Node on PATH and preserve telemetry identity, environment, and UI addresses.");
+    const oldWorkspace = await client.readResource({ uri: "ui://mobile-dev/workspace.html" });
+    assert.equal(oldWorkspace.contents[0].text, workspaceResource.contents[0].text);
+    for (const release of ["v1", "v2", "v3", "v4", "v5", "v6", "0.1.100"]) {
+      const uri = `ui://mobile-dev/${release}/simulator.html`;
+      const legacy = await client.readResource({ uri });
+      assert.equal(legacy.contents[0].uri, uri);
+      assert.equal(legacy.contents[0].text, html);
+    }
+    console.log("Cached side-tab UI addresses from earlier releases return the current panel.");
+    const listed = await client.callTool({ name: "mobile_list_simulators", arguments: {} });
+    assert.equal(listed.structuredContent?.baseUrl, baseUrl);
+    console.log(`Copied package started its bundled Baguette and returned ${panel.structuredContent.devices.length} simulators.`);
+    // agent-device's runtime starts from the package's own copy on the first command.
+    const devices = await client.callTool({ name: "device_devices", arguments: { platform: "ios" } }, undefined, { timeout: 60000 });
+    assert.doesNotMatch(devices.content[0].text, /Agent Device could not/);
+    console.log("Copied package started its bundled agent-device runtime.");
+    return baseUrl;
   });
-  let diagnostics = "";
-  transport.stderr?.on("data", chunk => { diagnostics = (diagnostics + chunk).slice(-5000); });
-  const client = new Client({ name: "mobile-dev-package-smoke", version: "1" });
-  await client.connect(transport);
-  const tools = await client.listTools();
-  // Codex's own server and panel: the updater tools and the banner that calls them.
-  assert.ok(tools.tools.some(tool => tool.name === "mobile_check_plugin_update"), "The Codex server must include its updater.");
-  const recordingCard = tools.tools.find(tool => tool.name === "mobile_render_performance_recording");
-  assert.ok(recordingCard);
-  assert.deepEqual(recordingCard._meta.ui.visibility, ["app", "model"]);
-  const recordingUri = recordingCard._meta.ui.resourceUri;
-  assert.equal(recordingUri, `ui://mobile-dev/${manifest.version}/recording.html`);
-  const recordingResource = await client.readResource({ uri: recordingUri });
-  const recordingHtml = recordingResource.contents[0].text;
-  assert.match(recordingHtml, /data-view="recording"/);
-  const comparisonCard = tools.tools.find(tool => tool.name === "mobile_compare_performance_recordings");
-  assert.ok(comparisonCard);
-  const comparisonUri = comparisonCard._meta.ui.resourceUri;
-  assert.equal(comparisonUri, `ui://mobile-dev/${manifest.version}/comparison.html`);
-  const comparisonResource = await client.readResource({ uri: comparisonUri });
-  assert.match(comparisonResource.contents[0].text, /data-view="comparison"/);
-  for (const path of nativeRuntimeFiles(["ios-fps", "android-fps"])) await access(join(plugin, "dist", path));
-  for (const name of ["mobile_display_fps_session", "mobile_read_display_fps", "mobile_display_fps_close", "mobile_read_performance_frames"]) assert.ok(tools.tools.some(tool => tool.name === name));
-  for (const name of ["mobile_list_ios_devices", "mobile_list_android_devices", "mobile_boot_android_emulator", "mobile_android_stream_session", "mobile_ios_mirror_session", "mobile_ios_mirror_reset", "mobile_ios_mirror_close"]) assert.ok(tools.tools.some(tool => tool.name === name));
-  for (const name of ["device_open", "device_snapshot", "device_press", "device_screenshot"]) assert.ok(tools.tools.some(tool => tool.name === name), name);
-  await access(join(plugin, "dist/agent-device/tools.json"));
-  const physicalMirror = tools.tools.find(tool => tool.name === "mobile_ios_mirror_session");
-  assert.deepEqual(physicalMirror._meta.ui.visibility, ["app"]);
-  await access(join(plugin, "dist/serve-emu/src/cli.mjs"));
-  await access(join(plugin, "dist/serve-emu/vendor/scrcpy-server-v4.0"));
-  const scrcpyClientPath = join(plugin, "dist/serve-emu/src/scrcpy.ts");
-  const scrcpyClient = await readFile(scrcpyClientPath);
-  const scrcpyClientHash = createHash("sha256");
-  scrcpyClientHash.update(scrcpyClient);
-  const scrcpyClientSHA256 = scrcpyClientHash.digest("hex");
-  assert.match(scrcpyClient.toString(), /Modified for Mobile Dev/);
-  const androidReleasePath = join(plugin, "dist/serve-emu/release.json");
-  const androidReleaseText = await readFile(androidReleasePath, "utf8");
-  const androidRelease = JSON.parse(androidReleaseText);
-  assert.equal(androidRelease.scrcpyClientSHA256, scrcpyClientSHA256);
-  assert.equal(androidRelease.runtime, "node");
-  assert.equal(androidRelease.entryPoint, "src/cli.mjs");
-  const androidCliPath = join(plugin, "dist/serve-emu", androidRelease.entryPoint);
-  const androidCli = await readFile(androidCliPath);
-  const androidCliHash = createHash("sha256");
-  androidCliHash.update(androidCli);
-  assert.equal(androidRelease.cliSHA256, androidCliHash.digest("hex"));
-  const androidHelp = execFileSync(process.execPath, [androidCliPath, "--help"], {
-    encoding: "utf8", env: { ...serverEnv, PATH: "/usr/bin:/bin", BUN_PATH: "/missing/bun" },
-  });
-  assert.match(androidHelp, /host an Android device/);
-  const patchToolPath = join(plugin, "dist/serve-emu/node_modules/patch-package");
-  const patchToolAccess = access(patchToolPath);
-  await assert.rejects(patchToolAccess, { code: "ENOENT" });
-  for (const path of nativeRuntimeFiles(["android-cpu"])) await access(join(plugin, "dist", path));
-  const cpuLicense = await readFile(join(plugin, "dist/android-cpu/LICENSE"), "utf8");
-  assert.ok(cpuLicense.includes("Copyright (c) 2022 BAM"));
-  const workspace = tools.tools.find(tool => tool.name === "mobile_open_workspace");
-  assert.deepEqual(workspace._meta["openai/ui"].entrypoints, [{ type: "global" }]);
-  const workspaceResource = await client.readResource({ uri: workspace._meta.ui.resourceUri });
-  assert.ok(workspaceResource.contents[0].text.includes('data-view="workspace" data-layout="split"'));
-  for (const name of ["mobile_log_sources", "mobile_logs_session", "mobile_read_logs", "mobile_logs_keep_alive", "mobile_logs_close", "mobile_performance_sources", "mobile_cpu_session", "mobile_read_cpu", "mobile_cpu_close"]) {
-    assert.ok(tools.tools.some(tool => tool.name === name), `Missing developer tool: ${name}`);
-  }
-  const panel = await client.callTool({ name: "mobile_open_simulator", arguments: {} }, undefined, { timeout: 30000 });
-  if (panel.isError || !panel.structuredContent?.connected) {
-    throw new Error(`Bundled backend failed: ${JSON.stringify(panel.content)}\n${diagnostics}`);
-  }
-  assert.equal(panel.structuredContent.managed, true);
-  assert.notEqual(new URL(panel.structuredContent.baseUrl).port, "8421");
-  const baseUrl = panel.structuredContent.baseUrl;
-  const entrypoint = tools.tools.find(tool => tool.name === "mobile_open_simulator");
-  for (const tool of [entrypoint, workspace]) {
-    assert.deepEqual(Object.keys(tool._meta["openai/ui"]), ["entrypoints"]);
-    assert.equal(tool.icons?.[0].mimeType, "image/svg+xml");
-    assert.match(tool.icons[0].src, /^data:image\/svg\+xml;base64,/);
-  }
-  const resource = await client.readResource({ uri: entrypoint._meta.ui.resourceUri });
-  assert.equal(resource.contents[0].mimeType, "text/html;profile=mcp-app");
-  assert.ok(resource.contents[0].text.includes('id="root"'));
-  // React creates these controls from the bundled script after the app mounts.
-  for (const control of ["canvas", "logs-drawer", "log-chat", "tool-select", "tool-performance", "tool-tracesift", "performance-drawer", "performance-app", "platform-select", "simulator-panels"]) {
-    assert.ok(resource.contents[0].text.includes(control), `Missing bundled UI control: ${control}`);
-  }
-  assert.ok(!resource.contents[0].text.includes("<!-- APP_SCRIPT -->"));
-  assert.ok(!resource.contents[0].text.includes("<!-- APP_STYLE -->"));
-  assert.equal(entrypoint._meta.ui.resourceUri, `ui://mobile-dev/${manifest.version}/simulator.html`);
-  const telemetryEnvironment = process.env.MOBILE_DEV_ENVIRONMENT ?? telemetryConfig.environment;
-  const telemetryMarker = `name="mobile-dev-environment" content="${telemetryEnvironment}"`;
-  assert.ok(resource.contents[0].text.includes(telemetryMarker));
-  const rawHtml = await readFile(join(plugin, "dist/app.html"), "utf8");
-  const bakedIdentity = /<meta name="mobile-dev-(?:user|session)-id"/.test(rawHtml);
-  assert.equal(bakedIdentity, false, "Packages must contain no installation or session identity.");
-  assert.ok(resource.contents[0].text.includes('workspace-toolbar'));
-  assert.ok(resource.contents[0].text.includes('workspace-panels'));
-  assert.ok(resource.contents[0].text.includes('tool-logs'));
-  assert.ok(resource.contents[0].text.includes('plugin store'), "The Codex panel must include its update banner.");
-  assert.ok(resource.contents[0].text.includes('Memory usage'), 'The packaged Performance view must include the live memory track.');
-  assert.equal(workspace._meta.ui.resourceUri, `ui://mobile-dev/${manifest.version}/workspace.html`);
-  assert.deepEqual(resource.contents[0]._meta.ui.csp.connectDomains, ["https://o4512180958068736.ingest.de.sentry.io"]);
-  assert.deepEqual(resource.contents[0]._meta.ui.csp.resourceDomains, []);
-  runtimeTransport = new StdioClientTransport({ command: serverConfig.command, args: serverConfig.args, cwd: serverCwd, stderr: "pipe", env: serverEnv });
-  const runtime = new Client({ name: "mobile-dev-package-runtime", version: "1" });
-  await runtime.connect(runtimeTransport);
-  const runtimeResource = await runtime.readResource({ uri: entrypoint._meta.ui.resourceUri });
-  if (process.env.MOBILE_DEV_TELEMETRY === "off") {
-    assert.deepEqual(runtimeResource.contents[0], resource.contents[0]);
-    assert.match(resource.contents[0].text, /mobile-dev-telemetry" content="off"/);
-  } else {
-    const initialIdentity = uiIdentity(resource.contents[0].text);
-    const runtimeIdentity = uiIdentity(runtimeResource.contents[0].text);
-    const recordingIdentity = uiIdentity(recordingHtml);
-    const workspaceIdentity = uiIdentity(workspaceResource.contents[0].text);
-    assert.equal(runtimeIdentity.userId, initialIdentity.userId);
-    assert.notEqual(runtimeIdentity.sessionId, initialIdentity.sessionId);
-    assert.deepEqual(recordingIdentity, initialIdentity);
-    assert.deepEqual(workspaceIdentity, initialIdentity);
-    const initialHtml = withoutSession(resource.contents[0].text);
-    const runtimeHtml = withoutSession(runtimeResource.contents[0].text);
-    assert.deepEqual({ ...runtimeResource.contents[0], text: runtimeHtml }, { ...resource.contents[0], text: initialHtml });
-  }
-  await runtime.close();
-  console.log("Manifest-launched discovery/runtime processes work without Node on PATH and preserve telemetry identity, environment, and UI addresses.");
-  assert.ok(workspaceResource.contents[0].text.includes('data-view="workspace" data-layout="split"'));
-  const oldWorkspace = await client.readResource({ uri: "ui://mobile-dev/workspace.html" });
-  assert.equal(oldWorkspace.contents[0].text, workspaceResource.contents[0].text);
-  for (const release of ["v1", "v2", "v3", "v4", "v5", "v6", "0.1.100"]) {
-    const uri = `ui://mobile-dev/${release}/simulator.html`;
-    const legacy = await client.readResource({ uri });
-    assert.equal(legacy.contents[0].uri, uri);
-    assert.equal(legacy.contents[0].text, resource.contents[0].text);
-  }
-  console.log("Cached side-tab UI addresses from earlier releases return the current panel.");
-  const listed = await client.callTool({ name: "mobile_list_simulators", arguments: {} });
-  assert.equal(listed.structuredContent?.baseUrl, baseUrl);
-  console.log(`Copied package started its bundled Baguette and returned ${panel.structuredContent.devices.length} simulators.`);
-  // agent-device's runtime starts from the package's own copy on the first command.
-  const devices = await client.callTool({ name: "device_devices", arguments: { platform: "ios" } }, undefined, { timeout: 60000 });
-  assert.doesNotMatch(devices.content[0].text, /Agent Device could not/);
-  console.log("Copied package started its bundled agent-device runtime.");
-  await client.close();
   const deadline = Date.now() + 5000;
   let stopped = false;
   while (Date.now() < deadline) {
@@ -237,7 +165,5 @@ try {
   assert.equal(stopped, true, "The bundled backend should stop when MCP closes.");
   console.log("MCP shutdown stopped the bundled backend. No simulator was booted or changed.");
 } finally {
-  await runtimeTransport?.close();
-  await transport?.close();
-  await rm(temporary, { recursive: true, force: true });
+  await remove();
 }

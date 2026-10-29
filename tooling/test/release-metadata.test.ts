@@ -13,19 +13,32 @@ async function fixture(t: TestContext) {
   const sourceDirectory = join(directory, "packages/shared/src");
   await mkdir(sourceDirectory, { recursive: true });
   await mkdir(`${directory}/apps/codex-plugin/.codex-plugin`, { recursive: true });
+  await writeFile(`${directory}/apps/codex-plugin/plugin-host.json`, '{"name":"codex","manifest":".codex-plugin","archive":""}');
   await writeFile(`${directory}/apps/codex-plugin/.codex-plugin/plugin.json`, '{"name":"mobile-dev"}');
+  await mkdir(`${directory}/apps/claude/.claude-plugin`, { recursive: true });
+  await writeFile(`${directory}/apps/claude/plugin-host.json`, '{"manifest":".claude-plugin"}');
+  await writeFile(`${directory}/apps/claude/.claude-plugin/plugin.json`, '{"name":"mobile-dev"}');
+  await mkdir(`${directory}/apps/mac`, { recursive: true });
+  await writeFile(`${directory}/apps/mac/plugin-host.json`, '{"label":"Mac app"}');
   await writeFile(`${directory}/package.json`, '{"version":"1.2.3"}');
   await writeFile(`${directory}/package-lock.json`, '{"version":"1.2.3","packages":{"":{"version":"1.2.3"}}}');
   await writeFile(`${sourceDirectory}/version.ts`, 'export const PLUGIN_VERSION = "1.2.3";\n');
   return directory;
 }
 
-test("release metadata selects the versioned upload ZIP", async t => {
+test("release metadata names each plugin host's versioned ZIP", async t => {
   const directory = await fixture(t);
   const metadata = await releaseMetadata("v1.2.3", directory);
   assert.deepEqual(metadata, {
-    tag: "v1.2.3", version: "1.2.3", archive: "release/mobile-dev-1.2.3-darwin-arm64.zip",
+    tag: "v1.2.3", version: "1.2.3",
+    archives: { claude: "release/mobile-dev-1.2.3-claude-plugin-darwin-arm64.zip", codex: "release/mobile-dev-1.2.3-darwin-arm64.zip" },
   });
+});
+
+test("release metadata rejects a host manifest for another plugin", async t => {
+  const directory = await fixture(t);
+  await writeFile(`${directory}/apps/claude/.claude-plugin/plugin.json`, '{"name":"other"}');
+  await assert.rejects(releaseMetadata("v1.2.3", directory), /mobile-dev plugin manifest in apps\/claude/);
 });
 
 test("release metadata rejects a tag for a different release", async t => {
@@ -56,5 +69,12 @@ test("release metadata rejects versions that could escape artifact paths or outp
   const directory = await fixture(t);
   await writeFile(`${directory}/package.json`, '{"version":"../1.2.3"}');
   const result = releaseMetadata("v../1.2.3", directory);
+  await assert.rejects(result, /semantic release version/);
+});
+
+test("release metadata rejects prerelease versions, which installed updaters cannot compare", async t => {
+  const directory = await fixture(t);
+  await writeFile(`${directory}/package.json`, '{"version":"1.2.4-rc.1"}');
+  const result = releaseMetadata("v1.2.4-rc.1", directory);
   await assert.rejects(result, /semantic release version/);
 });

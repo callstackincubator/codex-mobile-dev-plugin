@@ -1,18 +1,15 @@
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
+import { startServer } from "./lib/mcp-smoke.mjs";
 
 const udid = process.argv[2];
 if (udid === undefined) throw new Error("Pass the UDID of a connected, paired physical iOS device.");
 const clients = [];
 async function panel() {
-  const transport = new StdioClientTransport({ command: process.execPath, args: [resolve("dist/server.mjs")], stderr: "pipe" });
-  transport.stderr?.on("data", chunk => process.stderr.write(chunk));
-  const client = new Client({ name: "mobile-dev-sharing-check", version: "1" });
-  const result = { client, id: undefined, uri: undefined };
+  const server = await startServer({ args: [resolve("dist/server.mjs")], name: "mobile-dev-sharing-check", stderr: "inherit" });
+  const { client } = server;
+  const result = { client, server, id: undefined, uri: undefined };
   clients.push(result);
-  await client.connect(transport);
   const opened = await client.callTool({ name: "mobile_ios_mirror_session", arguments: { udid } });
   const message = JSON.stringify(opened.content);
   assert.equal(opened.isError, undefined, message);
@@ -56,7 +53,7 @@ try {
   const resumed = await Promise.all([receive(a, 3), receive(b, 3)]);
   console.log(JSON.stringify({ phase: "paused panel resumed", uninterrupted, frames: resumed }));
   await close(a);
-  await a.client.close();
+  await a.server.close();
   const survivor = await receive(b, 4);
   console.log(JSON.stringify({ phase: "first panel closed", frames: survivor }));
   const c = await panel();
@@ -66,6 +63,6 @@ try {
 } finally {
   await Promise.allSettled(clients.map(async panel => {
     try { await close(panel); }
-    finally { await panel.client.close(); }
+    finally { await panel.server.close(); }
   }));
 }
