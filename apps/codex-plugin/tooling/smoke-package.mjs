@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createLaunchHome } from "./mcp-launch-fixture.mjs";
+import { nativeRuntimeFiles } from "../../../tooling/native-helpers.mjs";
 
 const source = resolve(process.argv[2] ?? "release/marketplace/plugins/mobile-dev");
 const temporary = await mkdtemp(join(tmpdir(), "mobile-dev-package-test-"));
@@ -106,9 +107,7 @@ try {
   assert.equal(comparisonUri, `ui://mobile-dev/${manifest.version}/comparison.html`);
   const comparisonResource = await client.readResource({ uri: comparisonUri });
   assert.match(comparisonResource.contents[0].text, /data-view="comparison"/);
-  await access(join(plugin, "dist/ios-fps/mobile-dev-ios-fps"));
-  await access(join(plugin, "dist/ios-fps/third-party-licenses.txt"));
-  for (const abi of ["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]) await access(join(plugin, `dist/android-fps/${abi}/mobile-dev-fps`));
+  for (const path of nativeRuntimeFiles(["ios-fps", "android-fps"])) await access(join(plugin, "dist", path));
   for (const name of ["mobile_display_fps_session", "mobile_read_display_fps", "mobile_display_fps_close", "mobile_read_performance_frames"]) assert.ok(tools.tools.some(tool => tool.name === name));
   for (const name of ["mobile_list_ios_devices", "mobile_list_android_devices", "mobile_boot_android_emulator", "mobile_android_stream_session", "mobile_ios_mirror_session", "mobile_ios_mirror_reset", "mobile_ios_mirror_close"]) assert.ok(tools.tools.some(tool => tool.name === name));
   for (const name of ["device_open", "device_snapshot", "device_press", "device_screenshot"]) assert.ok(tools.tools.some(tool => tool.name === name), name);
@@ -141,7 +140,7 @@ try {
   const patchToolPath = join(plugin, "dist/serve-emu/node_modules/patch-package");
   const patchToolAccess = access(patchToolPath);
   await assert.rejects(patchToolAccess, { code: "ENOENT" });
-  for (const abi of ["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]) await access(join(plugin, `dist/android-cpu/${abi}/mobile-dev-cpu`));
+  for (const path of nativeRuntimeFiles(["android-cpu"])) await access(join(plugin, "dist", path));
   const cpuLicense = await readFile(join(plugin, "dist/android-cpu/LICENSE"), "utf8");
   assert.ok(cpuLicense.includes("Copyright (c) 2022 BAM"));
   const workspace = tools.tools.find(tool => tool.name === "mobile_open_workspace");

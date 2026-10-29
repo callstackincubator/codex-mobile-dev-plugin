@@ -4,11 +4,12 @@ import { buildCodexHost } from "../../apps/codex-plugin/tooling/build.mjs";
 import { buildHost as buildClaudeHost } from "../../apps/claude/tooling/build.mjs";
 import { buildServerBundles } from "../server-bundle.mjs";
 import { buildUIPage } from "../ui-page.mjs";
+import { nativeHelpers } from "../native-helpers.mjs";
 
 /**
  * Builds every host target's server and page into `.host-tests/<target>`, plus the
  * browser host that loads them. Only the JavaScript is built, beside the helpers
- * committed to the repository that the server reads at startup; Baguette and the
+ * committed to the repository; Baguette and the
  * device runtimes stay out. This runs on Linux, and the tests exercise what needs
  * no device.
  */
@@ -19,7 +20,7 @@ async function runtime(target) {
   const directory = `${HOST_TESTS}/${target}`;
   await mkdir(directory, { recursive: true });
   await writeFile(`${directory}/telemetry-environment.json`, JSON.stringify({ environment }) + "\n");
-  for (const helper of ["android-cpu", "android-fps", "ios-fps", "ios-logs", "ios-mirror"]) {
+  for (const { name: helper } of nativeHelpers.filter(entry => entry.committed)) {
     await cp(`packages/native/vendor/${helper}`, `${directory}/${helper}`, { recursive: true });
   }
   // The agent-device commands Codex's, Cursor's and Claude's servers register.

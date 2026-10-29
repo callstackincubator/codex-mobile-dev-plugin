@@ -4,19 +4,19 @@
   "api": 21,
   "flashlightCommit": "5ef203ae184547a3b2984fa4f9b76d672895f861",
   "binaries": {
-    "arm64-v8a": {
+    "arm64-v8a/mobile-dev-cpu": {
       "sha256": "c46f602ca5b5a419bcaf2efc0d723042b340fd2639a59344d92024cf7ec06672",
       "bytes": 1558328
     },
-    "armeabi-v7a": {
+    "armeabi-v7a/mobile-dev-cpu": {
       "sha256": "24fd1b5aabec27a1b4965f5bfdc3a39e20669256e44b2af4680e42b1c0840f68",
       "bytes": 972564
     },
-    "x86": {
+    "x86/mobile-dev-cpu": {
       "sha256": "4441151743d30e308de5b89ba0bdb98b3a2c1a5da4d85a0f1d8e5e55f5b8b18e",
       "bytes": 1639060
     },
-    "x86_64": {
+    "x86_64/mobile-dev-cpu": {
       "sha256": "8094ccc0fc3eca6a65c3ec55dfd7da110385f5d2555e669fa6f70e95d1ea11d1",
       "bytes": 1507688
     }

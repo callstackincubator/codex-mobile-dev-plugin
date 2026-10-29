@@ -1,40 +1,15 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { createReadStream, createWriteStream } from "node:fs";
+import { createWriteStream } from "node:fs";
 import { appendFile, copyFile, cp, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { pathToFileURL } from "node:url";
-import { baguetteBuildScripts } from "./rebuild-baguette.mjs";
+import { fileSHA256, nativeHelpers } from "./native-helpers.mjs";
 
-const androidAbis = ["arm64-v8a", "armeabi-v7a", "x86", "x86_64"];
-
-function androidSymbols(name) {
-  return androidAbis.map(abi => `.sentry/native/${abi}/${name}`);
-}
-
-const androidFpsSymbols = androidSymbols("mobile-dev-fps");
-const androidCpuSymbols = androidSymbols("mobile-dev-cpu");
-const androidFpsBinaries = androidAbis.map(abi => `${abi}/mobile-dev-fps`);
-const androidCpuBinaries = androidAbis.map(abi => `${abi}/mobile-dev-cpu`);
-
-export const nativeHelpers = [
-  { name: "baguette", command: "vendor:baguette", scripts: ["vendor-baguette.mjs", ...baguetteBuildScripts],
-    inputs: ["packages/native/vendor/baguette-release.json"], tools: ["darwin", "swift"],
-    symbols: [".sentry/native/darwin-arm64/Baguette.dSYM"], binaries: ["Baguette", "Baguette_Baguette.bundle"] },
-  { name: "ios-fps", command: "rebuild:ios-fps", scripts: ["build-fps.mjs"], inputs: [], tools: ["darwin", "rust"],
-    symbols: [".sentry/native/darwin-arm64/mobile-dev-ios-fps.dSYM"], binaries: ["mobile-dev-ios-fps"] },
-  { name: "ios-mirror", command: "rebuild:ios-mirror", scripts: ["build-ios-mirror.mjs"], inputs: [], tools: ["darwin", "rust"],
-    symbols: [".sentry/native/darwin-arm64/darwin-arm64.node.dSYM"], binaries: ["darwin-arm64.node"] },
-  { name: "ios-logs", command: "rebuild:ios-logs", scripts: ["build-ios-logs.mjs"], inputs: [], tools: ["darwin", "iosLogs"],
-    symbols: [".sentry/native/darwin-arm64/mobile-dev-ios-logs.dSYM"], binaries: ["mobile-dev-ios-logs"] },
-  { name: "android-fps", command: "rebuild:android-fps", scripts: ["build-fps.mjs"], inputs: [], tools: ["android"],
-    symbols: androidFpsSymbols, binaries: androidFpsBinaries },
-  { name: "android-cpu", command: "rebuild:android-cpu", scripts: ["build-android-cpu.mjs"], inputs: [], tools: ["android"],
-    symbols: androidCpuSymbols, binaries: androidCpuBinaries },
-];
+export { nativeHelpers };
 
 function version(command, args) {
   const output = execFileSync(command, args, { encoding: "utf8" });
@@ -87,7 +62,7 @@ export async function nativeArtifactKey(helper, toolchain, directory = ".") {
     throw new Error(`No tracked native sources for ${helper.name}.`);
   }
   const scripts = helper.scripts.map(file => `tooling/${file}`);
-  const inputs = ["tooling/release-native.mjs", "tooling/native-telemetry.mjs", ...scripts, ...helper.inputs, ...nativeFiles];
+  const inputs = ["tooling/release-native.mjs", "tooling/native-helpers.mjs", "tooling/native-telemetry.mjs", ...scripts, ...helper.inputs, ...nativeFiles];
   const uniqueInputs = new Set(inputs);
   const sortedInputs = [...uniqueInputs].sort();
   const tools = { shared: toolchain.shared };
@@ -135,13 +110,6 @@ function artifactRoots(helper) {
   return [`packages/native/vendor/${helper.name}`, ...helper.symbols];
 }
 
-async function fileDigest(path) {
-  const hash = createHash("sha256");
-  const stream = createReadStream(path);
-  for await (const bytes of stream) hash.update(bytes);
-  return hash.digest("hex");
-}
-
 async function inventory(directory, paths) {
   const files = [];
   async function visit(path) {
@@ -155,7 +123,7 @@ async function inventory(directory, paths) {
         await visit(child);
       }
     } else if (stat.isFile()) {
-      const sha256 = await fileDigest(absolute);
+      const sha256 = await fileSHA256(absolute);
       files.push({ path, sha256, mode: stat.mode & 0o777 });
     } else {
       throw new Error(`Unsupported native artifact entry: ${path}.`);

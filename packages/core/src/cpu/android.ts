@@ -15,7 +15,7 @@ import { nativeCollectorCommand, NativeTelemetryRelay } from "../native-telemetr
 
 const execute = promisify(execFile);
 const abiSchema = z.enum(["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]);
-const releaseSchema = z.object({ binaries: z.record(abiSchema, z.object({ sha256: z.string().regex(/^[a-f0-9]{64}$/) })) });
+const releaseSchema = z.object({ binaries: z.record(z.string(), z.object({ sha256: z.string().regex(/^[a-f0-9]{64}$/) })) });
 export type AndroidCollector = ReadonlyMap<z.infer<typeof abiSchema>, { bytes: Buffer; sha256: string }>;
 type Options = { deviceId: string; pid: number; signal: AbortSignal; onSample: (sample: CpuReading) => void };
 type Command = (adb: string, args: string[], signal?: AbortSignal) => Promise<string>;
@@ -36,7 +36,7 @@ export async function loadAndroidCollector(root: URL): Promise<AndroidCollector>
     const hash = createHash("sha256");
     hash.update(bytes);
     const sha256 = hash.digest("hex");
-    if (sha256 !== release.binaries[abi].sha256) throw new Error(`The bundled Android CPU collector failed its integrity check for ${abi}.`);
+    if (sha256 !== release.binaries[`${abi}/mobile-dev-cpu`]?.sha256) throw new Error(`The bundled Android CPU collector failed its integrity check for ${abi}.`);
     collector.set(abi, { bytes, sha256 });
   }
   return collector;

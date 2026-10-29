@@ -11,7 +11,7 @@ const abiSchema = z.enum(["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]);
 const checksumString = z.string();
 const checksum = checksumString.regex(/^[a-f0-9]{64}$/);
 const binary = z.object({ sha256: checksum });
-const binaries = z.record(abiSchema, binary);
+const binaries = z.record(z.string(), binary);
 const releaseSchema = z.object({ binaries });
 
 export async function deployFpsHelper(adb: string, deviceId: string, signal: AbortSignal, root: URL) {
@@ -29,7 +29,7 @@ export async function deployFpsHelper(adb: string, deviceId: string, signal: Abo
   const hash = createHash("sha256");
   hash.update(bytes);
   const sha256 = hash.digest("hex");
-  if (sha256 !== release.binaries[abi].sha256) throw new Error("The bundled Android FPS helper failed its integrity check.");
+  if (sha256 !== release.binaries[`${abi}/mobile-dev-fps`]?.sha256) throw new Error("The bundled Android FPS helper failed its integrity check.");
   const remote = `/data/local/tmp/mobile-dev-fps-${sha256}`;
   const temporaryRoot = tmpdir();
   const temporaryPrefix = join(temporaryRoot, "mobile-dev-fps-");

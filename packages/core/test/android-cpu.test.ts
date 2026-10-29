@@ -123,8 +123,8 @@ test("Android deployment verifies ABI binaries and atomically replaces the execu
   const leftover = access(stagedFile);
   await assert.rejects(leftover, { code: "ENOENT" });
   const release = JSON.parse(await readFile(new URL("release.json", root), "utf8"));
-  for (const [abi, metadata] of Object.entries<{ sha256: string }>(release.binaries)) {
-    const bytes = await readFile(new URL(`${abi}/mobile-dev-cpu`, root));
+  for (const [binary, metadata] of Object.entries<{ sha256: string }>(release.binaries)) {
+    const bytes = await readFile(new URL(binary, root));
     const digest = createHash("sha256").update(bytes).digest("hex");
     assert.equal(digest, metadata.sha256);
   }

@@ -1,8 +1,9 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmod, copyFile, cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
-import { buildNativeSentry, nativeTelemetrySourceHash, nativeSentryLicense, saveNativeSymbols } from "./native-telemetry.mjs";
+import { resolve } from "node:path";
+import { buildNativeSentry, nativeTelemetrySourceHash, nativeSentryLicense } from "./native-telemetry.mjs";
+import { NDK_WARNINGS, ndkBuild } from "./ndk-build.mjs";
 
 export async function fpsSourceHash(platform) {
   const files = platform === "ios"
@@ -44,8 +45,8 @@ async function buildIos() {
   const hash = createHash("sha256");
   hash.update(bytes);
   const sourceSHA256 = await fpsSourceHash("ios");
-  const release = { target: "darwin-arm64", sourceSHA256, binarySHA256: hash.digest("hex"), bytes: bytes.length,
-    ideviceCommit: "a64b8867815b3da17b5c927531bdba877e8456ef" };
+  const binaries = { "mobile-dev-ios-fps": { sha256: hash.digest("hex"), bytes: bytes.length } };
+  const release = { target: "darwin-arm64", sourceSHA256, binaries, ideviceCommit: "a64b8867815b3da17b5c927531bdba877e8456ef" };
   const text = JSON.stringify(release, null, 2);
   await writeFile("packages/native/vendor/ios-fps/release.json", text + "\n");
   const metadataText = execFileSync("cargo", ["metadata", "--locked", "--format-version", "1", "--manifest-path", "packages/native/ios-fps/Cargo.toml"], { encoding: "utf8" });
@@ -73,33 +74,14 @@ async function buildIos() {
 }
 
 async function buildAndroid() {
-  const ndk = process.env.ANDROID_NDK_HOME;
-  if (ndk === undefined) throw new Error("Set ANDROID_NDK_HOME to an installed Android NDK.");
-  const host = process.platform === "darwin" ? "darwin-x86_64" : "linux-x86_64";
-  const root = join(ndk, "toolchains/llvm/prebuilt", host, "bin");
-  const targets = { "arm64-v8a": "aarch64-linux-android31", "armeabi-v7a": "armv7a-linux-androideabi31", "x86": "i686-linux-android31", "x86_64": "x86_64-linux-android31" };
-  const binaries = {};
-  for (const [abi, target] of Object.entries(targets)) {
-    const sdk = await buildNativeSentry(abi);
-    const directory = `packages/native/vendor/android-fps/${abi}`;
-    await mkdir(directory, { recursive: true });
-    const path = `${directory}/mobile-dev-fps`;
-    const compiler = join(root, `${target}-clang++`);
-    const telemetryObject = resolve(`.local-dev/sentry-native/${abi}/telemetry.o`);
-    const cCompiler = join(root, `${target}-clang`);
-    execFileSync(cCompiler, ["-std=c11", "-O2", "-g", "-DSENTRY_BUILD_STATIC=1", "-I", sdk.include,
-      "-c", "packages/native/telemetry/telemetry.c", "-o", telemetryObject], { stdio: "inherit" });
-    execFileSync(compiler, ["-std=c++17", "-Oz", "-g", "-DNDEBUG", "-fPIE", "-pie", "-static-libstdc++",
-      "packages/native/android-fps/collector.cpp", "packages/native/android-fps/perfetto/perfetto.cc", telemetryObject,
-      sdk.library, sdk.unwind, "-I", "packages/native/android-fps", "-llog", "-lz", "-o", path], { stdio: "inherit" });
-    await saveNativeSymbols(path, "mobile-dev-fps", abi);
-    const strip = join(root, "llvm-strip");
-    execFileSync(strip, [path]);
-    const bytes = await readFile(path);
-    const hash = createHash("sha256");
-    hash.update(bytes);
-    binaries[abi] = { sha256: hash.digest("hex"), bytes: bytes.length };
-  }
+  const flags = ["-std=c++17", "-Oz", "-DNDEBUG", "-fPIE", "-I", "packages/native/android-fps"];
+  const binaries = await ndkBuild({
+    name: "mobile-dev-fps", directory: "packages/native/vendor/android-fps", api: 31,
+    sources: [
+      { path: "packages/native/android-fps/collector.cpp", flags: [...flags, ...NDK_WARNINGS] },
+      { path: "packages/native/android-fps/perfetto/perfetto.cc", flags },
+    ],
+  });
   const sourceSHA256 = await fpsSourceHash("android");
   const release = { api: 31, perfettoVersion: "25.0", sourceSHA256, binaries };
   const text = JSON.stringify(release, null, 2);

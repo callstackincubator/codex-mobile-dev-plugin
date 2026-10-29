@@ -72,6 +72,6 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve("tooling/build-ios-m
   binaryHash.update(binary);
   const binarySHA256 = binaryHash.digest("hex");
   const sourceSHA256 = await iosMirrorSourceHash();
-  await writeFile("packages/native/vendor/ios-mirror/release.json", JSON.stringify({ name: "mobile-dev-ios-mirror", napi: 8, target: "darwin-arm64", sourceSHA256, binarySHA256 }, null, 2) + "\n");
+  await writeFile("packages/native/vendor/ios-mirror/release.json", JSON.stringify({ name: "mobile-dev-ios-mirror", napi: 8, target: "darwin-arm64", sourceSHA256, binaries: { "darwin-arm64.node": { sha256: binarySHA256 } } }, null, 2) + "\n");
   console.log(`Built the physical iOS capture addon (${binary.length} bytes).`);
 }

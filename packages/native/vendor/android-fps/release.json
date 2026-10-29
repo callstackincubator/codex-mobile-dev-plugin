@@ -3,19 +3,19 @@
   "perfettoVersion": "25.0",
   "sourceSHA256": "6fb3d90f9e0104c8affcd4d30470187cac3e7e290b78202472b74a61875dc576",
   "binaries": {
-    "arm64-v8a": {
+    "arm64-v8a/mobile-dev-fps": {
       "sha256": "28fb6d1bab2baf88199f16ca5beeb258adba80d776c32d9315d7d3aee3e1e7dd",
       "bytes": 3169072
     },
-    "armeabi-v7a": {
+    "armeabi-v7a/mobile-dev-fps": {
       "sha256": "7bd8f6b8dd9563499c7ef81041cd971137259318d526d98825969cb830065e53",
       "bytes": 2373016
     },
-    "x86": {
+    "x86/mobile-dev-fps": {
       "sha256": "5feeb72818d5726f640b117ba04b52994be1851002ef7fb728888fc1b6d0b294",
       "bytes": 3716520
     },
-    "x86_64": {
+    "x86_64/mobile-dev-fps": {
       "sha256": "d5b3f1930dfe84cbec7d3676a538224e0329d3948876d2f22de6758042109910",
       "bytes": 3192296
     }
