@@ -17,10 +17,7 @@ const analysis = {
 
 const PROJECT = "/private/project";
 
-/**
- * Investigate names the project it lands in, so a host that investigates answers
- * the project read too. Every other call falls through to the test's own stub.
- */
+/** Answers the project read for Investigate; every other call falls through to the test's stub. */
 function withProject<T extends { callServerTool: (input: never) => Promise<unknown> }>(app: T) {
   const answer = app.callServerTool.bind(app);
   return { ...app, async callServerTool(input: { name: string }) {
@@ -47,8 +44,7 @@ test("TraceSift Investigate fetches one authoritative handoff and sends it to th
   await Promise.all([controller.investigate("react-commit-1-2"), controller.investigate("react-commit-1-2")]);
   assert.equal(calls.length, 1); assert.equal(messages.length, 1);
   assert.deepEqual(calls[0], { name: "mobile_get_tracesift_handoff", arguments: { analysisId: "private-analysis", cardId: "react-commit-1-2" } });
-  // The hand-off is the service's; the project line is what tells the chat which
-  // code the frames it names belong to.
+  // The project line tells the chat which code the named frames belong to.
   assert.equal((messages[0] as { content: Array<{ text: string }> }).content[0].text, `Investigate this in the project at ${PROJECT}.\n\nPRIVATE_HANDOFF`);
   assert.equal((messages[0] as { _meta: unknown })._meta, undefined);
 });
@@ -79,8 +75,7 @@ test("TraceSift holds Investigate until a project is chosen, then sends with it"
   controller.hostChanged();
   await controller.loadProject();
   controller.accept({ content: [], structuredContent: analysis });
-  // A profile names frames, not files. Sending one with no project would ask the
-  // chat to guess which code it is looking at.
+  // A profile names frames, not files; without a project the chat would have to guess the code.
   assert.equal(controller.getSnapshot().project, undefined);
   await controller.investigate("react-commit-1-2");
   assert.deepEqual(messages, []);
@@ -252,7 +247,6 @@ const cpuAnalysis = {
   }],
 };
 
-/** The envelope `mobile_tracesift_explore_payload` answers with: metadata plus one JSON text item. */
 function payloadResult(kind: "task" | "react", payload: unknown) {
   const text = JSON.stringify(payload);
   return { content: [{ type: "text", text }], structuredContent: { apiVersion: 1, kind, encoding: "json", payloadBytes: text.length } };
@@ -270,8 +264,7 @@ test("TraceSift Explore opens the embedded explorer with the task's full tree", 
   };
   const controller = new TraceSiftController(app as never);
   controller.hostChanged(); controller.accept({ content: [], structuredContent: cpuAnalysis });
-  // The card's id and index differ: the tree is looked up by task index, and the
-  // focused node travels with the click that opened it, not with the request.
+  // The tree is looked up by task index, not card id; the focused node is not part of the request.
   await controller.openExplore("task-0", "n0");
   assert.deepEqual(calls[0], { name: "mobile_tracesift_explore_payload", arguments: { analysisId: "private-analysis", taskIndex: 4 } });
   assert.equal(controller.getSnapshot().error, "");
@@ -302,8 +295,7 @@ test("TraceSift Explore opens one React analysis and remembers which commit the 
       renderedCount: 1, summedSelfMs: 40, unattributedMs: 0, effectDurationMs: 0, passiveEffectDurationMs: 0,
       priority: null, updaters: [], culprits: [], culpritTailCount: 0, culpritTailMs: 0, causes: [], wasted: null, confidence: "ok" }],
   } });
-  // One fetch carries every commit, so the request names the analysis and the
-  // explorer starts on the commit the reader pressed.
+  // One fetch carries every commit; the explorer starts on the pressed one.
   await controller.openExplore("react-7-12");
   assert.deepEqual(calls[0], { name: "mobile_tracesift_explore_payload", arguments: { analysisId: "react-analysis" } });
   assert.equal(controller.getSnapshot().explorer?.commitKey, "7.12");
@@ -329,8 +321,7 @@ test("TraceSift Explore sends a finding too large for the panel to the browser w
   const controller = new TraceSiftController(app as never);
   controller.hostChanged(); controller.accept({ content: [], structuredContent: cpuAnalysis });
   await controller.openExplore("task-0", "n0");
-  // The refusal is answered by the path that needs no bridge, and the node the
-  // reader clicked travels with it so the browser opens on the same frame.
+  // The refusal falls back to the path that needs no bridge, carrying the clicked node.
   assert.deepEqual(calls.map(call => call.name), ["mobile_tracesift_explore_payload", "mobile_open_tracesift_explore"]);
   assert.deepEqual(calls[1]!.arguments, { analysisId: "private-analysis", taskIndex: 4, focus: "n0" });
   assert.equal(controller.getSnapshot().error, "");
@@ -401,8 +392,7 @@ test("TraceSift hands the width back to the cards when the explorer closes", asy
   controller.hostChanged(); controller.accept({ content: [], structuredContent: cpuAnalysis });
   await controller.openExplore("task-0");
   controller.closeExplore();
-  // Without the second request the card list would keep the fullscreen the
-  // explorer asked for, on a surface meant to stay inline.
+  // Without the second request the card list would stay fullscreen.
   await Promise.resolve();
   assert.deepEqual(modes, ["fullscreen", "inline"]);
   controller.dispose();
@@ -423,7 +413,7 @@ test("TraceSift drops an explorer payload whose analysis was replaced while it l
   const controller = new TraceSiftController(app as never);
   controller.hostChanged(); controller.accept({ content: [], structuredContent: cpuAnalysis });
   const opening = controller.openExplore("task-0");
-  // A second reading lands while the first one's megabytes are still crossing.
+  // A second reading lands while the first payload is still in flight.
   controller.accept({ content: [], structuredContent: { ...cpuAnalysis, analysisId: "second-analysis" } });
   release?.();
   await opening;
@@ -499,8 +489,7 @@ test("TraceSift hands a payload past the panel's limit to the browser before dec
   const controller = new TraceSiftController(app as never);
   controller.hostChanged(); controller.accept({ content: [], structuredContent: cpuAnalysis });
   await controller.openExplore("task-0");
-  // The envelope is read before the megabytes are inflated, so the size is known
-  // without decoding and the browser window takes the finding instead.
+  // The size is known from the envelope before inflating, so the browser window takes it instead.
   assert.deepEqual(names, ["mobile_tracesift_explore_payload", "mobile_open_tracesift_explore"]);
   assert.equal(controller.getSnapshot().error, "");
   assert.match(controller.getSnapshot().notice, /larger than the panel can open/);
@@ -528,7 +517,6 @@ test("TraceSift Copy handoff puts the authoritative text on the clipboard and ne
   controller.dispose();
 });
 
-/** A task payload the explorer can describe: the tree and figures a hand-off reads. */
 const taskHandoff = {
   apiVersion: 1, analysisId: "private-analysis", totalMs: 180,
   card: {
@@ -569,12 +557,10 @@ test("TraceSift picks frames across views and toggles a pick off on the second c
   controller.toggleSelectedFrame("0");
   controller.toggleSelectedFrame("0.1");
   assert.deepEqual(controller.getSnapshot().explorer?.selected, ["0", "0.1"]);
-  // The second click is a take-it-out, not a second finding.
   controller.toggleSelectedFrame("0");
   assert.deepEqual(controller.getSnapshot().explorer?.selected, ["0.1"]);
 
-  // Clearing empties the set and stays in picking mode, which is what the button
-  // beside the count says it does.
+  // Clearing stays in picking mode.
   controller.clearSelectedFrames();
   assert.deepEqual(controller.getSnapshot().explorer?.selected, []);
   assert.equal(controller.getSnapshot().explorer?.picking, true);
@@ -588,18 +574,15 @@ test("TraceSift empties the selection when the reader switches picking off", asy
   controller.toggleSelectedFrame("0.1");
   assert.deepEqual(controller.getSnapshot().explorer?.selected, ["0.1"]);
 
-  // The bar that explains picking goes with the mode, so the picks go with it:
-  // switching off and still seeing frames ringed reads as a mode that never
-  // turned off, and a send would then carry a set whose count is no longer shown.
+  // Picks go with the mode: leftover rings would look like picking never turned off, and a send would carry a set whose count is hidden.
   controller.setPicking(false);
   assert.deepEqual(controller.getSnapshot().explorer?.selected, []);
   assert.equal(controller.getSnapshot().explorer?.picking, false);
 
-  // Out of picking mode a frame click is navigation, not a pick, so nothing lands.
+  // Out of picking mode a click is navigation, not a pick.
   controller.toggleSelectedFrame("0.1");
   assert.deepEqual(controller.getSnapshot().explorer?.selected, []);
 
-  // And the switch works again on the way back in.
   controller.setPicking(true);
   controller.toggleSelectedFrame("0.1");
   assert.deepEqual(controller.getSnapshot().explorer?.selected, ["0.1"]);
@@ -620,8 +603,7 @@ test("TraceSift sends the selected frames' measured evidence to the active chat"
   assert.match(text, /Search_Search rendered the list/);
   assert.match(text, /← selection #1/);
   assert.equal((messages[0] as { _meta: unknown })._meta, undefined);
-  // The picks never leave the frame: no handoff round trip, so an older
-  // installed TraceSift answers this question just as well.
+  // No handoff round trip, so an older installed TraceSift works too.
   assert.equal(controller.getSnapshot().error, "");
   controller.dispose();
 });
@@ -653,8 +635,7 @@ test("TraceSift reports a selection it cannot describe rather than sending an em
   controller.toggleSelectedFrame("0.4.2");
   await controller.investigateSelected();
   assert.deepEqual(messages, []);
-  // Named apart from having selected nothing: the reader did click, and the
-  // thing that failed is the payload matching what they can see.
+  // Distinct from selecting nothing: the picks failed to match the payload.
   assert.match(controller.getSnapshot().error, /None of the selected frames are in this task's call tree/);
   controller.dispose();
 });
@@ -732,15 +713,12 @@ test("TraceSift keeps React picks while the reader walks the commits", async () 
   const controller = await exploringReact(messages);
   assert.equal(controller.getSnapshot().explorer?.kind, "react");
   assert.equal(controller.getSnapshot().explorer?.commitKey, "1.2");
-  // Which kind of recording is open, so the explorer's timings can be told
-  // apart. Two values, taken from the analysis rather than from the device or
-  // the profile's contents.
+  // Low-cardinality kind taken from the analysis, not device or profile contents.
   assert.equal(getUiTelemetryAttributes().tracesift_profile, "react");
 
   controller.setPicking(true);
   controller.toggleSelectedFrame("1.2.4");
-  // Stepping to the next commit is navigation, the way moving the task focus is.
-  // The pick made behind the reader is the whole reason it names its commit.
+  // Stepping commits is navigation; the earlier pick is why the message names its commit.
   controller.setExploreCommit("1.3");
   controller.toggleSelectedFrame("1.3.4");
   assert.deepEqual(controller.getSnapshot().explorer?.selected, ["1.2.4", "1.3.4"]);
@@ -763,7 +741,7 @@ test("TraceSift sends the selected components' measured evidence to the active c
   assert.match(text, /### Commit 3 — 18 ms rendering/);
   assert.match(text, /25 ms of its own render time \(83\.3% of this commit\)/);
   assert.match(text, /Why it rendered: props changed: data\./);
-  // The same component in two commits is the finding, not a duplicate to merge.
+  // The same component in two commits is not merged.
   assert.match(text, /`Chart` is selections 1, 2: the same component rendering in 2 separate commits/);
   assert.match(text, /Location: `Screen` › `Chart`\./);
   assert.match(text, /Treat each selection and render reason as a lead, not proof/);

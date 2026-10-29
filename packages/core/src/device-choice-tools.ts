@@ -107,11 +107,7 @@ export function deviceChoiceFormSupport(capabilities: ClientCapabilities | undef
   if (capabilities?.elicitation?.form !== undefined) return "mcp";
 }
 
-/**
- * Asks the user to choose task devices in the host's native form. The server lists it
- * only for hosts that render one; elsewhere the agent asks in chat. Showing devices
- * belongs to the panel's device menu.
- */
+/** Asks the user to choose task devices in the host's native form; listed only for hosts that render one. */
 export function registerDeviceChoiceTools(server: McpServer, extensions: Pick<OpenAIExtensions, "elicitInput">, sources: DeviceChoiceSources, form: DeviceChoiceForm) {
   server.registerTool("mobile_choose_devices", {
     title: "Choose devices",

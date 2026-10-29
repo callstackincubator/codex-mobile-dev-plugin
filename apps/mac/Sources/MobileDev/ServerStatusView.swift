@@ -1,6 +1,5 @@
 import SwiftUI
 
-/// The server's state at the bottom of the sidebar, with a restart action when it failed.
 struct ServerStatusView: View {
   let model: WorkspaceModel
 

@@ -1,12 +1,8 @@
 // Jackson Coxson
 //
-// HEVC RTP depacketization (RFC 7798) for the CoreDevice display stream.
-//
-// The device sends HEVC (H.265) over plaintext RTP, dynamic payload type 100.
-//
-// We reorder packets by RTP sequence number (the transport is UDP, so they can
-// arrive out of order) and reassemble complete access units. The strict product
-// path emits CoreMedia-compatible length-prefixed samples.
+// HEVC RTP depacketization (RFC 7798) for the CoreDevice display stream
+// (plaintext RTP, payload type 100). Packets are reordered by sequence number
+// (UDP) and reassembled into CoreMedia-compatible length-prefixed samples.
 
 const HEVC_NAL_HEADER_LEN: usize = 2;
 
@@ -21,7 +17,7 @@ const NAL_TYPE_PPS: u8 = 34;
 const NAL_TYPE_IRAP_LOW: u8 = 16;
 const NAL_TYPE_IRAP_HIGH: u8 = 23;
 
-/// Highest VCL NAL unit type (coded slice segments occupy 0..=31).
+/// Highest VCL NAL unit type (coded slices are 0..=31).
 const NAL_TYPE_VCL_HIGH: u8 = 31;
 
 const MAX_REORDER_BUFFER: usize = 128;
@@ -63,14 +59,12 @@ fn seq_less_than(a: u16, b: u16) -> bool {
     diff != 0 && diff < 0x8000
 }
 
-/// A complete HEVC decoder configuration observed on a marker-closed access
-/// unit.
+/// Decoder configuration from a marker-closed access unit.
 ///
-/// NAL bytes include the two-byte HEVC header and exclude Annex-B start codes
-/// and length prefixes. `revision` starts at one and advances only when a
-/// complete, non-dropped access unit commits changed parameter-set bytes.
-/// Pixel dimensions come from that same committed SPS after applying its
-/// conformance window.
+/// NAL bytes include the two-byte HEVC header but no start codes or length
+/// prefixes. `revision` starts at one and advances only when a complete,
+/// non-dropped access unit commits changed parameter sets. Dimensions come from
+/// the same SPS after its conformance window.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HevcParameterSets {
     pub revision: u64,
@@ -83,8 +77,7 @@ pub struct HevcParameterSets {
     pub picture_parameter_set: Vec<u8>,
 }
 
-/// One complete HEVC access unit in the four-byte length-prefixed format
-/// consumed by CoreMedia and VideoToolbox.
+/// One access unit in the four-byte length-prefixed format CoreMedia/VideoToolbox expect.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HevcAccessUnit {
     pub ssrc: u32,
@@ -104,8 +97,8 @@ pub enum HevcPacketRejection {
     UnexpectedSource,
 }
 
-/// A same-stream integrity failure that caused the current access unit to be
-/// discarded. Callers should request an intra refresh after these events.
+/// Same-stream integrity failure that discarded the current access unit; callers
+/// should request an intra refresh.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HevcDiscontinuity {
     SequenceGap,
@@ -372,7 +365,7 @@ fn validate_complete_nal(
     Ok(nal[..end].to_vec())
 }
 
-/// A bounded MSB-first bit reader for the SPS prefix.
+/// Bounded MSB-first bit reader.
 #[derive(Debug)]
 struct BitReader<'a> {
     bytes: &'a [u8],
@@ -528,13 +521,11 @@ fn skip_profile_tier_level(
     Ok(())
 }
 
-/// Parses the dimension-bearing SPS prefix and returns displayed luma-sample
-/// dimensions after conformance-window cropping.
+/// Returns displayed luma dimensions after conformance-window cropping.
 ///
-/// The parser intentionally stops after the conformance window; the remaining
-/// SPS syntax is consumed by the decoder. Every bit needed to derive geometry
-/// is range-checked, and malformed EBSP, Exp-Golomb overflow, invalid chroma
-/// formats, impossible sub-layer counts, or over-cropping are rejected.
+/// Stops after the conformance window; the decoder consumes the rest. Malformed
+/// EBSP, Exp-Golomb overflow, invalid chroma formats, impossible sub-layer
+/// counts, and over-cropping are rejected.
 fn parse_sps_dimensions(sps: &[u8]) -> Result<(u32, u32), HevcDiscontinuity> {
     if sps.len() > MAX_PARAMETER_SET_SIZE {
         return Err(HevcDiscontinuity::ParameterSetTooLarge);
@@ -699,16 +690,15 @@ fn is_decoder_ready_initial_access_unit(nals: &[Vec<u8>]) -> bool {
         && starts_with_irap_picture(nals)
 }
 
-/// Reorders negotiated DisplayService RTP, reconstructs RFC 7798 payloads, and
-/// emits only complete marker-closed HEVC access units.
+/// Reorders negotiated DisplayService RTP and emits only complete marker-closed
+/// access units.
 ///
-/// A new stream epoch and every integrity failure require an independently
-/// decodable IRAP picture before predicted frames may reach the decoder. The
-/// first observed access unit may start the epoch immediately when it carries
-/// VPS/SPS/PPS before the first slice of that IRAP picture. Modest reordering is
-/// buffered; a bounded gap, malformed payload, incomplete FU, timestamp
-/// discontinuity, or allocation-limit breach drops the complete access unit,
-/// emits a typed discontinuity, and rearms that sync-sample gate.
+/// A new stream epoch and every integrity failure require an IRAP picture before
+/// predicted frames reach the decoder; the first access unit may start the epoch
+/// if it carries VPS/SPS/PPS before the IRAP slice. Modest reordering is buffered;
+/// a bounded gap, malformed payload, incomplete FU, timestamp discontinuity, or
+/// allocation-limit breach drops the access unit, emits a discontinuity, and
+/// rearms the sync gate.
 #[derive(Debug)]
 pub struct HevcAccessUnitAssembler {
     expected_payload_type: u8,
@@ -728,8 +718,7 @@ pub struct HevcAccessUnitAssembler {
 }
 
 impl HevcAccessUnitAssembler {
-    /// Creates an assembler bound to the payload type and SSRC returned by the
-    /// authenticated media-negotiation answer.
+    /// Binds to the payload type and SSRC from the negotiation answer.
     pub fn new(expected_payload_type: u8, expected_ssrc: u32) -> Self {
         Self::with_limits(
             expected_payload_type,
@@ -764,7 +753,6 @@ impl HevcAccessUnitAssembler {
         }
     }
 
-    /// Returns a copy of the latest complete parameter-set configuration.
     pub fn parameter_sets(&self) -> Option<HevcParameterSets> {
         let (pixel_width, pixel_height) = self.pixel_dimensions?;
         Some(HevcParameterSets {
@@ -777,8 +765,7 @@ impl HevcAccessUnitAssembler {
         })
     }
 
-    /// Clears all buffered packets, partial NAL/AU bytes, sequence state, and
-    /// cached parameter sets. After return, no pre-reset bytes can be emitted.
+    /// Clears all buffered state and cached parameter sets; no pre-reset bytes can be emitted afterward.
     pub fn reset(&mut self) {
         self.reorder.clear();
         self.reorder_bytes = 0;
@@ -793,8 +780,7 @@ impl HevcAccessUnitAssembler {
         self.parameter_set_revision = 0;
     }
 
-    /// Drops incomplete transport state while preserving the last valid codec
-    /// configuration and requires a fresh IRAP picture before decoding resumes.
+    /// Drops incomplete transport state but keeps the last valid codec configuration; needs a fresh IRAP.
     pub fn mark_stream_discontinuity(&mut self) {
         self.reorder.clear();
         self.reorder_bytes = 0;
@@ -803,8 +789,7 @@ impl HevcAccessUnitAssembler {
         self.drop_current_access_unit();
     }
 
-    /// Adds one already-parsed RTP packet and returns every access unit or
-    /// integrity event made ready by it.
+    /// Adds a parsed RTP packet and returns the access units or events it completes.
     pub fn push_packet(
         &mut self,
         packet: &crate::media::rtp::RtpPacket<'_>,

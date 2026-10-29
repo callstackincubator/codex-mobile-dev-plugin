@@ -1,11 +1,5 @@
-/**
- * The drawings a card's contribution is read as, and the legend under them.
- *
- * A port of TraceSift's `src/app/contribution-chart.tsx`. Nothing in a bar or a
- * tile is about a stack frame: a slice is a name, a share of the level's whole,
- * a figure, and a palette slot — so this file knows only that, and the card
- * beside it keeps everything that is about a task.
- */
+// Port of TraceSift's `src/app/contribution-chart.tsx`. Knows only slices (name, share,
+// figure, palette slot); the card beside it keeps everything about a task.
 
 import type { ReactNode } from "react";
 import { squarify } from "@mobile-dev/shared/tracesift-contribution.ts";
@@ -14,41 +8,27 @@ export interface ChartSlice {
   key: string;
   kind: string;
   name: string;
-  /** Share of this level's whole, 0-1 — the width or area the slice is drawn at. */
+  /** Share of this level's whole, 0-1. */
   share: number;
   ms: number;
   /** Palette slot counting from 0, or -1 for a residual. */
   colorIndex: number;
 }
 
-/** Which drawing a card carries. Both are part-of-whole readings of the same slices. */
 export type ContributionChartKind = "bar" | "treemap";
 
-/**
- * The treemap's shape, fixed rather than measured. The layout needs the
- * container's aspect ratio before it can place a tile, and taking it from the
- * DOM means a first paint with no tiles, a resize observer, and a relayout on
- * every card.
- */
+// Fixed rather than measured, so the first paint has tiles without a resize observer.
 const TREEMAP_ASPECT_W = 16;
 const TREEMAP_ASPECT_H = 5;
 
-/**
- * A nominal pixel size for the treemap, used only to decide which tiles are
- * big enough to label. Narrower than the web app's 880, because a card in a
- * chat transcript is narrower than a page — a label that would collide is
- * worth losing more than a tile that could have held one.
- */
+// Nominal size, used only to decide which tiles get labels. Narrower than the web app's 880
+// because chat cards are narrower than a page.
 const TREEMAP_NOMINAL_WIDTH = 560;
 const TREEMAP_LABEL_MIN_PX = 66;
 const TREEMAP_FIGURE_MIN_PX = 30;
 
-/**
- * A named slice takes a palette slot; a residual takes neutral ink. The two
- * residuals that can sit side by side mean opposite things — work of yours that
- * is merely small, and work that was never yours — so they cannot share a fill
- * or they read as one band.
- */
+// Named slices take a palette slot, residuals neutral ink. The two residual kinds mean
+// opposite things (small work of yours vs work that was never yours), so they differ in fill.
 export const sliceColor = (slice: ChartSlice) => {
   if (slice.colorIndex >= 0) return `var(--series-${slice.colorIndex + 1})`;
   if (slice.kind === "tail") return "var(--series-tail)";
@@ -67,13 +47,9 @@ export interface ChartProps<S extends ChartSlice> {
 }
 
 /**
- * Keeps the card's footprint stable while the active slice changes.
- *
- * Rendering only the active detail lets differently-sized answers move the
- * legend below them. A stationary pointer can then leave the row it just
- * entered, reset the active slice, and move that row back under itself in a
- * loop. Keeping every answer in the same grid cell makes the tallest one set
- * the height while only the active answer is visible and interactive.
+ * Every answer shares one grid cell so the tallest sets the height. Rendering only the
+ * active one would move the legend under a stationary pointer, which then flips the
+ * active slice back and forth in a loop.
  */
 export function ContributionDetailStack<S extends ChartSlice>({
   slices,
@@ -101,13 +77,7 @@ export function ContributionDetailStack<S extends ChartSlice>({
 const sliceLabel = (slice: ChartSlice, format: MsFormat) =>
   `${slice.name}, ${format(slice.ms)}, ${Math.round(slice.share * 100)}%`;
 
-/**
- * One bar, the level's whole wide, divided into its slices.
- *
- * Percentages rather than flex growth: a slice's width is its share, and
- * `flex-grow` would quietly redistribute the 2px gaps between fills into the
- * widths and make the drawing wrong by a few milliseconds per slice.
- */
+// Percentage widths, not flex-grow, which would spread the 2px gaps into the slice widths.
 export function ContributionBar<S extends ChartSlice>({ slices, active, format, onHover, onOpen }: ChartProps<S>) {
   return <div className="contribution-bar">
     {slices.map(slice => <button
@@ -123,7 +93,6 @@ export function ContributionBar<S extends ChartSlice>({ slices, active, format, 
   </div>;
 }
 
-/** The same slices as area. Tiles carry their own labels, so the fills are never alone in naming them. */
 export function ContributionTreemap<S extends ChartSlice>({ slices, active, format, onHover, onOpen }: ChartProps<S>) {
   const rects = squarify(slices.map(slice => slice.share), TREEMAP_ASPECT_H / TREEMAP_ASPECT_W);
   const nominalHeight = (TREEMAP_NOMINAL_WIDTH * TREEMAP_ASPECT_H) / TREEMAP_ASPECT_W;
@@ -157,13 +126,7 @@ export function ContributionTreemap<S extends ChartSlice>({ slices, active, form
   </div>;
 }
 
-/**
- * Names and figures for every slice, in rank order.
- *
- * Present on both charts and not negotiable on either: it is what keeps
- * identity off colour alone, and it is the table view of the same numbers for a
- * reader who wants to compare them rather than look at them.
- */
+// Required on both charts: keeps slice identity off colour alone.
 export function SliceLegend<S extends ChartSlice>({ slices, active, format, onHover, onOpen }: ChartProps<S>) {
   return <ul className="contribution-legend">
     {slices.map(slice => <li key={slice.key}>
@@ -183,7 +146,6 @@ export function SliceLegend<S extends ChartSlice>({ slices, active, format, onHo
   </ul>;
 }
 
-/** The chart a `kind` names. */
 export function ContributionChart<S extends ChartSlice>({ kind, ...chart }: ChartProps<S> & { kind: ContributionChartKind }) {
   return kind === "bar" ? <ContributionBar {...chart} /> : <ContributionTreemap {...chart} />;
 }

@@ -60,7 +60,6 @@ try {
     elapsedSeconds: Number(elapsedUs) / 1000000, collectorCpuPercentOfOneCore: overhead,
     meanCollectorCpuUsPerSample: Number(collectorCpuUs) / (samples.length - 1), lastCpuPercent: samples.at(-1).reading.cpuPercent,
     lastMemoryBytes: samples.at(-1).reading.memoryBytes, memoryMetric: "rss" }, null, 2));
-  // Exercise the production monitor, then disconnect its transport unexpectedly.
   let transport;
   const readings = [];
   const monitor = await startAndroidCpuMonitor({ deviceId, pid, signal, onSample: reading => readings.push(reading) }, {

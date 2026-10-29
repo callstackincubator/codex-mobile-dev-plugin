@@ -24,8 +24,7 @@ function metricSeries(recording: PerformanceRecording, metric: ComparisonMetric)
   return points;
 }
 
-// Two rows at interval boundaries retain both sides of a step. Every run is
-// evaluated at the same time, so tooltips compare time rather than sample index.
+// Two rows at interval boundaries keep both sides of a step; runs share timestamps so tooltips compare time, not sample index.
 export function createComparisonSeries(recordings: PerformanceRecording[], metric: ComparisonMetric): ComparisonPoint[] {
   const series = recordings.map(recording => {
     const points = metricSeries(recording, metric);

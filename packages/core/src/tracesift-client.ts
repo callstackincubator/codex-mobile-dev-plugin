@@ -178,11 +178,7 @@ export class TraceSiftClient {
     await this.writePrivateJson(this.inputPath(path, profileType), { apiVersion: 1, analysisId });
   }
 
-  /**
-   * The source folder an investigation lands in. It is the plugin's own choice,
-   * not TraceSift's, but it belongs beside the analyses it qualifies and inherits
-   * their 0700 directory.
-   */
+  // The plugin's own choice, stored beside the analyses to inherit their 0700 directory.
   private projectPath() { return join(this.home, "integrations", "mobile-dev", "project.json"); }
 
   async readProject(): Promise<string | undefined> {
@@ -195,8 +191,7 @@ export class TraceSiftClient {
     const path = typeof stored === "object" && stored !== null && "path" in stored
       && typeof stored.path === "string" ? stored.path : undefined;
     if (!path) throw new TraceSiftError("The saved project is invalid. Choose it again.", "request");
-    // A folder that moved or was deleted is not a project any more, and saying so
-    // beats handing the chat a path that is no longer there.
+    // A moved or deleted folder is no longer a project; don't hand the chat a dead path.
     const directory = await stat(path).catch(() => undefined);
     return directory?.isDirectory() ? path : undefined;
   }
@@ -301,10 +296,7 @@ export class TraceSiftClient {
     return parsed.data;
   }
 
-  /**
-   * Let the TraceSift CLI open its own loopback URL. The tree and timeline stay
-   * in the running service; the persisted analysis carries only card ids.
-   */
+  /** The tree and timeline stay in the running service; the persisted analysis carries only card ids. */
   async openExplore(analysisId: string, taskIndex: number, focus?: string, signal?: AbortSignal) {
     await this.service(signal);
     const analysisPath = this.analysisPath(analysisId);
@@ -346,10 +338,7 @@ export class TraceSiftClient {
     });
   }
 
-  /**
-   * One task with its call tree and timeline, which `/analyze` never ships.
-   * Checked at its seams only; the explorer that draws it parses the rest.
-   */
+  /** One task with its call tree and timeline, which `/analyze` never ships. Checked at its seams only. */
   async exploreTask(analysisId: string, taskIndex: number, signal?: AbortSignal): Promise<TraceSiftTaskHandoff> {
     const body = await this.request(`/api/integration/v1/task?analysisId=${encodeURIComponent(analysisId)}&taskIndex=${taskIndex}`, { method: "GET" }, signal, EXPLORE_UNSUPPORTED);
     if (typeof body !== "object" || body === null) throw new Error("TraceSift returned an invalid task response.");
@@ -363,7 +352,7 @@ export class TraceSiftClient {
     return { analysisId: value.analysisId, profileTitle: value.title, totalMs: value.totalMs, card: value.card as Record<string, unknown> };
   }
 
-  /** Every commit timeline of one React analysis, which the explorer switches between itself. */
+  /** Every commit timeline of one React analysis. */
   async exploreReact(analysisId: string, signal?: AbortSignal): Promise<TraceSiftReactHandoff> {
     const body = await this.request(`/api/integration/v1/react-explore?analysisId=${encodeURIComponent(analysisId)}`, { method: "GET" }, signal, EXPLORE_UNSUPPORTED);
     if (typeof body !== "object" || body === null) throw new Error("TraceSift returned an invalid commit timeline response.");

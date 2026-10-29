@@ -32,8 +32,6 @@ html[data-view="recording"] .recording-header { border-top: 1px solid var(--bord
 .tracesift-card li span, .tracesift-card li code { color: var(--muted-foreground); font-size: 11px; overflow-wrap: anywhere; }
 .tracesift-card > footer { align-items: center; padding-top: 2px; }
 .tracesift-error { padding: 10px; border: 1px solid color-mix(in srgb, #e5484d 45%, var(--border)); border-radius: 8px; color: #e5484d; }
-/* Which code the findings belong to. It sits above the list because Investigate
-   below it does nothing until the folder is chosen. */
 .tracesift-project-bar { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--muted); font-size: 12px; }
 .tracesift-project-bar > svg { width: 14px; height: 14px; flex: none; color: var(--muted-foreground); }
 .tracesift-project-bar > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted-foreground); }
@@ -121,7 +119,6 @@ html[data-view="recording"] .recording-header { border-top: 1px solid var(--bord
 [data-element="screen"][data-selecting="true"] { cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Cpath d='M3 27V15a12 12 0 1 1 12 12H3Z' fill='%233b82f6' stroke='white' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E") 3 27, crosshair; }
 [data-element="device-frame"][data-bezel="true"] { isolation: isolate; position: relative; padding: 0; border-radius: 0; background: transparent; box-shadow: none; }
 [data-element="device-frame"][data-bezel="true"] [data-element="screen"] { z-index: 2; position: absolute; }
-/* Split sizes come from Resizable rather than fixed grid tracks. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0s !important; animation-duration: 0s !important; }
   .recording-track .recording-change-highlight { opacity: 1 !important; animation: none !important; }
@@ -162,25 +159,15 @@ html:not([data-theme="dark"]) :is(.log-row, .log-detail)[data-level="warn"] { --
 }
 
 
-/* ===========================================================================
-   TraceSift contribution chart + result card
-   Ported from perf-ai `src/app/globals.css`. Everything is scoped under
-   `.tracesift-results` so it cannot reach the recording or comparison views;
-   the TraceSift view is also `html[data-view="tracesift"]`, but the card can be
-   embedded inline, so the component root is the safer anchor.
-   Source `--font-mono` does not exist here, so each use carries an explicit
-   mono fallback. Source `--danger` does not exist here either; `--destructive`
-   is the nearest plugin token. Display sizes are stepped down for the 13px card.
-   =========================================================================== */
+/* TraceSift contribution chart and result card, ported from perf-ai `src/app/globals.css`.
+   Scoped under `.tracesift-results` (the card can be embedded inline, so not the view attribute)
+   so it cannot reach the recording or comparison views. Display sizes are stepped down for the 13px card. */
 
 /* Eight fixed series slots: a colour means one function, not one position.
-   `tail` is small code of yours, so it stays near the series; `outside` was
-   never your code, so it recedes and is hatched; `rest` is the remainder. */
+   `tail` is small code of yours; `outside` was never your code, so it recedes and is hatched; `rest` is the remainder. */
 .tracesift-results { --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100; --series-5: #e87ba4; --series-6: #008300; --series-7: #4a3aa7; --series-8: #e34948; --series-tail: color-mix(in srgb, var(--muted-foreground) 42%, var(--muted)); --series-outside: color-mix(in srgb, var(--muted-foreground) 16%, var(--muted)); --series-rest: color-mix(in srgb, var(--muted-foreground) 26%, var(--muted)); --series-mono: var(--font-mono, ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, monospace); }
-/* Source selected dark with `[data-slot="plugin-shell"].dark`; here it is `html[data-theme="dark"]`. */
 html[data-theme="dark"] .tracesift-results { --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500; --series-5: #d55181; --series-6: #008300; --series-7: #9085e9; --series-8: #e66767; --series-tail: color-mix(in srgb, var(--muted-foreground) 34%, var(--muted)); --series-outside: color-mix(in srgb, var(--muted-foreground) 12%, var(--muted)); --series-rest: color-mix(in srgb, var(--muted-foreground) 22%, var(--muted)); }
 
-/* --- Results header ------------------------------------------------------ */
 .tracesift-results .results-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
 .tracesift-results .results-header .intro { min-width: 0; text-align: left; }
 .tracesift-results .eyebrow { display: inline-block; color: var(--primary); font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
@@ -199,7 +186,6 @@ html[data-theme="dark"] .tracesift-results { --series-1: #3987e5; --series-2: #d
 .tracesift-results .timeline-zoom:disabled:hover { background: transparent; }
 .tracesift-results .timeline-zoom:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 
-/* --- Result card chrome (base + later override block, flattened) ---------- */
 .tracesift-results .hotspot-list { display: grid; gap: 12px; margin-top: 14px; }
 .tracesift-results .hotspot-card { display: grid; gap: 0; padding: 0; overflow: hidden; text-align: left; color: inherit; background: color-mix(in srgb, var(--card) 97%, var(--background)); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 6px 18px rgba(0,0,0,.08); transition: border-color 160ms ease, box-shadow 160ms ease; }
 .tracesift-results .hotspot-card:hover { border-color: color-mix(in srgb, var(--primary) 24%, var(--border)); box-shadow: 0 8px 22px rgba(0,0,0,.13); }
@@ -210,20 +196,16 @@ html[data-theme="dark"] .tracesift-results { --series-1: #3987e5; --series-2: #d
 .tracesift-results .hotspot-heading-copy { display: grid; min-width: 0; gap: 3px; }
 .tracesift-results .hotspot-head strong { min-width: 0; letter-spacing: -0.01em; line-height: 1.35; overflow-wrap: anywhere; }
 .tracesift-results .hotspot-head .hotspot-heading-copy strong { font-size: 14px; line-height: 1.4; }
-/* The measured shape of the cost: above the subtitle's weight, below the heading's. */
 .tracesift-results .hotspot-shape { color: var(--muted-foreground); font-family: var(--series-mono); font-variant-numeric: tabular-nums; font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
 .tracesift-results .hotspot-subtitle { color: var(--muted-foreground); font-size: 11px; line-height: 1.45; opacity: 0.75; overflow-wrap: anywhere; }
 .tracesift-results .hotspot-time { flex: 0 0 auto; padding: 5px 8px; color: var(--foreground); background: color-mix(in srgb, var(--background) 62%, transparent); border: 1px solid var(--border); border-radius: 8px; font-family: var(--series-mono); font-size: 11px; font-weight: 650; white-space: nowrap; }
-/* Two kinds of action: asking for a reading on the left, taking it away on the right. */
 .tracesift-results .hotspot-footer { display: grid; min-height: 48px; align-items: center; justify-items: stretch; gap: 8px; margin: 0; padding: 10px 14px; background: color-mix(in srgb, var(--muted) 34%, transparent); border-top: 1px solid color-mix(in srgb, var(--border) 72%, transparent); }
 .tracesift-results .hotspot-footer-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .tracesift-results .hotspot-footer-lead { display: flex; align-items: center; gap: 8px; }
 .tracesift-results .hotspot-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-left: auto; }
-/* Source used `--danger`, which this plugin's theme does not define. */
 .tracesift-results .hotspot-prompt-error { margin: 0; max-width: 100%; color: var(--destructive); font-size: 11px; line-height: 1.4; text-align: right; }
 
-/* React commits whose component slices are all too thin keep the web card's
-   measured row fallback instead of drawing a misleading all-residual chart. */
+/* Fallback for React commits whose component slices are all too thin to chart. */
 .tracesift-results .hot-path-rows { padding: 4px 14px 2px; }
 .tracesift-results .hot-path-row { padding: 14px 0; border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent); }
 .tracesift-results .hot-path-row:last-child { border-bottom: 0; }
@@ -237,11 +219,8 @@ html[data-theme="dark"] .tracesift-results { --series-1: #3987e5; --series-2: #d
 .tracesift-results .row-share { padding: 3px 7px; color: var(--muted-foreground); background: var(--muted); border-radius: 999px; font-family: var(--series-mono); font-size: 10px; }
 .tracesift-results .row-shape { margin-top: 8px; font-family: var(--series-mono); font-size: 10px; line-height: 1.5; }
 
-/* --- Contribution chart --------------------------------------------------- */
-/* The bottom padding is the chart's own breathing room: the legend is the last
-   thing read before the footer, and it needs separating from both. */
 .tracesift-results .contribution { display: grid; gap: 12px; padding: 14px; }
-/* Which whole the chart is dividing; only drawn one level down. */
+/* Only drawn one level down. */
 .tracesift-results .contribution-crumbs { display: flex; align-items: baseline; gap: 8px; font-family: var(--series-mono); font-size: 10px; }
 .tracesift-results .contribution-crumb { padding: 0; color: var(--primary); background: transparent; border: 0; font: inherit; cursor: pointer; }
 .tracesift-results .contribution-crumb:hover { text-decoration: underline; }
@@ -250,34 +229,28 @@ html[data-theme="dark"] .tracesift-results { --series-1: #3987e5; --series-2: #d
 .tracesift-results .contribution-crumb-current::before { content: "/"; margin-right: 8px; opacity: 0.5; }
 .tracesift-results .contribution-lede { margin: 0; color: var(--muted-foreground); font-size: 11px; line-height: 1.55; }
 
-/* One bar, the task wide. The 2px seams are the surface showing through between
-   fills, not borders: a border would eat into a slice's width. */
+/* The 2px seams are the surface showing through, not borders, which would eat into slice widths. */
 .tracesift-results .contribution-bar { display: flex; gap: 2px; height: 28px; border-radius: 5px; overflow: hidden; background: color-mix(in srgb, var(--muted) 70%, transparent); }
 .tracesift-results .contribution-band { min-width: 3px; padding: 0; border: 0; cursor: pointer; transition: opacity 120ms ease, filter 120ms ease; }
-/* Hatched because this is not one thing that ran, it is the absence of anything big enough to name. */
+/* Hatched: not one thing that ran, but the absence of anything big enough to name. */
 .tracesift-results .contribution-band.is-outside, .tracesift-results .contribution-tile.is-outside { background-image: repeating-linear-gradient(45deg, color-mix(in srgb, var(--background) 45%, transparent) 0 4px, transparent 4px 9px); }
 .tracesift-results .contribution-bar:hover .contribution-band:not(.is-active) { opacity: 0.4; }
 .tracesift-results .contribution-band.is-active { filter: brightness(1.08); }
 .tracesift-results .contribution-band:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
 
-/* The same slices as area; tiles are placed in percentages, so the box can be any width. */
 .tracesift-results .contribution-treemap { position: relative; width: 100%; border-radius: 8px; overflow: hidden; background: color-mix(in srgb, var(--muted) 70%, transparent); }
-/* The 2px seam again, as an inset ring: a tile is placed at an exact area, so
-   the spacer has to come out of its paint, not its box. */
+/* Inset ring as the seam: tile boxes carry exact areas, so the gap comes out of the paint. */
 .tracesift-results .contribution-tile { position: absolute; display: flex; align-items: flex-start; padding: 6px 8px; border: 0; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--card) 85%, transparent); text-align: left; overflow: hidden; cursor: pointer; transition: opacity 120ms ease, filter 120ms ease; }
 .tracesift-results .contribution-treemap:hover .contribution-tile:not(.is-active) { opacity: 0.45; }
 .tracesift-results .contribution-tile.is-active { filter: brightness(1.08); }
 .tracesift-results .contribution-tile:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; z-index: 1; }
 .tracesift-results .contribution-tile-copy { display: grid; gap: 2px; min-width: 0; }
-/* White ink on eight fills, two of them light yellow: the scrim keeps the label
-   legible on all of them. The name is also in the legend and detail strip. */
+/* White ink on eight fills, two light yellow: the text shadow keeps labels legible. */
 .tracesift-results .contribution-tile-name { color: #ffffff; font-size: 11px; font-weight: 650; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-shadow: 0 1px 3px rgba(0,0,0,.7); }
 .tracesift-results .contribution-tile-figure { color: color-mix(in srgb, #ffffff 82%, transparent); font-family: var(--series-mono); font-size: 10px; line-height: 1.2; text-shadow: 0 1px 3px rgba(0,0,0,.7); }
 .tracesift-results .contribution-tile.is-neutral .contribution-tile-name, .tracesift-results .contribution-tile.is-neutral .contribution-tile-figure { color: var(--muted-foreground); text-shadow: none; }
 
-/* Every slice's detail occupies the same grid cell. The tallest answer holds
-   the row open, so switching the visible layer cannot move the hovered bar or
-   legend row and create a mouseenter/mouseleave feedback loop. */
+/* Same grid cell for every detail, so switching layers cannot move the hovered row and loop mouseenter/mouseleave. */
 .tracesift-results .contribution-detail-stack { display: grid; }
 .tracesift-results .contribution-detail-layer { grid-area: 1 / 1; min-width: 0; visibility: hidden; pointer-events: none; }
 .tracesift-results .contribution-detail-layer.is-active { visibility: visible; pointer-events: auto; }
@@ -303,7 +276,7 @@ html[data-theme="dark"] .tracesift-results { --series-1: #3987e5; --series-2: #d
 .tracesift-results .contribution-detail-aside:hover { color: var(--foreground); }
 .tracesift-results .contribution-detail-open:focus-visible, .tracesift-results .contribution-detail-aside:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 3px; }
 
-/* What the open feature called, one band down: the half a self-time chart cannot draw. */
+/* Frames the open feature called, which a self-time chart cannot draw. */
 .tracesift-results .contribution-nested { display: grid; gap: 3px; }
 .tracesift-results .contribution-nested-label { color: var(--muted-foreground); font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; }
 .tracesift-results .contribution-nested-list { display: grid; gap: 1px; margin: 0; padding: 0; list-style: none; }
@@ -315,7 +288,6 @@ html[data-theme="dark"] .tracesift-results { --series-1: #3987e5; --series-2: #d
 .tracesift-results .contribution-nested-ms { margin-left: auto; flex: none; color: var(--muted-foreground); font-family: var(--series-mono); font-size: 10px; }
 .tracesift-results .contribution-nested-rest { color: var(--muted-foreground); font-size: 10px; }
 
-/* Names and figures for every slice: the table view of the chart above it. */
 .tracesift-results .contribution-legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 2px 14px; margin: 0; padding: 0; list-style: none; }
 .tracesift-results .contribution-legend-row { display: flex; align-items: baseline; gap: 8px; width: 100%; padding: 4px 6px; color: inherit; text-align: left; background: transparent; border: 0; border-radius: 6px; cursor: pointer; }
 .tracesift-results .contribution-legend-row:hover, .tracesift-results .contribution-legend-row.is-active { background: color-mix(in srgb, var(--muted) 60%, transparent); }
@@ -325,8 +297,7 @@ html[data-theme="dark"] .tracesift-results { --series-1: #3987e5; --series-2: #d
 .tracesift-results .contribution-legend-ms { flex: none; font-family: var(--series-mono); font-size: 10px; color: var(--muted-foreground); }
 .tracesift-results .contribution-legend-share { flex: none; min-width: 3.5ch; text-align: right; font-family: var(--series-mono); font-size: 10px; color: color-mix(in srgb, var(--foreground) 70%, var(--muted-foreground)); }
 
-/* The controls do not fit beside the heading here, and crowding them in breaks
-   the title to one word per line: give them their own row. */
+/* Controls beside the heading would break the title to one word per line, so they get their own row. */
 @media (max-width: 520px) {
   .tracesift-results .results-header { align-items: flex-start; flex-wrap: wrap; }
   .tracesift-results .hotspot-head { grid-template-columns: auto minmax(0, 1fr); }
@@ -339,52 +310,28 @@ html[data-theme="dark"] .tracesift-results { --series-1: #3987e5; --series-2: #d
   .tracesift-results .contribution-band, .tracesift-results .contribution-tile { transition: none; }
 }
 
-/* ===========================================================================
-   Embedded Explore
-   Only the plugin's own strip is styled here: the call tree, timeline and
-   commit chart are TraceSift's components and arrive with their own compiled
-   stylesheet. The strip is what the card frame adds — the way back and the
-   browser fallback — so it keeps the card's tokens rather than the web page's.
-   =========================================================================== */
+/* Embedded Explore: only the plugin's own strip; the call tree, timeline and commit chart bring their own stylesheet. */
 .tracesift-explorer { display: flex; flex-direction: column; gap: 10px; min-height: 0; text-align: left; }
-/* The inset matches the Explore page's own 16px below, so the strip reads as the
-   header of that page rather than a bar welded to the edge of the frame. */
+/* Inset matches the Explore page's own 16px. */
 .tracesift-explorer-bar { display: flex; align-items: center; gap: 8px; padding: 12px 16px 10px; border-bottom: 1px solid var(--border); }
 .tracesift-explorer-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 600; }
-/* Picking adds two controls to a bar sized for the fullscreen explorer. The bar
-   wraps rather than letting them run out of an inline panel, and the pair stays
-   in one group so they wrap together instead of one to each line. */
+/* Wraps in an inline panel; the pick controls stay grouped so they wrap together. */
 .tracesift-explorer-bar { flex-wrap: wrap; }
 .tracesift-explorer-pick { display: flex; align-items: center; gap: 8px; }
-/* The switch is on. The pick bar beneath it says so in words and the frames are
-   ringed, so an outline at full strength now only competes with the one button
-   that finishes the job. Dimmed rather than restyled, the same way the comparison
-   chips mark a toggle's state, and kept above the level a disabled control uses:
-   it is switched on, not spent, and still has to be found for the click that
-   switches it back off. */
+/* Dimmed while on, like the comparison chips, but above disabled opacity: it must stay findable to switch off. */
 .tracesift-pick-toggle[aria-pressed="true"] { opacity: 0.6; }
 
-/* `@rozenite/ui` reads its theme off a `.dark` ancestor rather than the
-   document, and its tokens define the surfaces the explorer paints with, so the
-   plugin's `html[data-theme="dark"]` has to hand both over. Its background is
-   the explorer's own, not the plugin page's, so a light-mode host never shows a
-   dark card with white text — and because the flame graph cuts each cell out of
-   its neighbours with `var(--background)`, the surface behind those hairlines
-   has to be the same colour that cuts them. */
+/* `@rozenite/ui` reads its theme from a `.dark` ancestor, so `html[data-theme="dark"]` hands it over.
+   The background must be the explorer's own: the flame graph cuts cells with `var(--background)`,
+   so the surface behind those hairlines has to match. */
 .tracesift-explorer { color-scheme: light; background: var(--background); }
 html[data-theme="dark"] .tracesift-explorer { color-scheme: dark; }
 
-/* The two figures the package deliberately leaves to its host: `--chart-1` and
-   `--chart-2` are read as `var(--chart-2, #4ade80)` and friends, because on the
-   web page nothing defines them and the fallback stands. This document does
-   define them — as the greys of its own monitoring charts — and a timeline
-   painted in those reads as an empty one, so inside the explorer the fallbacks
-   are written out instead and the recording keeps the web page's colours. */
+/* The package reads `var(--chart-2, #4ade80)` and relies on the fallback; this document defines
+   `--chart-*` as greys, which would paint an empty-looking timeline, so the fallbacks are set explicitly. */
 .tracesift-explorer { --chart-1: #f87171; --chart-2: #4ade80; }
 
-/* The line that explains picking, under the bar rather than inside it: the bar
-   carries the controls and this carries what to do with them, and folding the
-   two together would move the buttons around as the wording changes. */
+/* Separate from the bar so changing wording does not move the buttons. */
 .tracesift-pick-bar {
   display: flex;
   align-items: center;
@@ -399,8 +346,7 @@ html[data-theme="dark"] .tracesift-explorer { color-scheme: dark; }
 }
 .tracesift-pick-bar > span { flex: 1; min-width: 0; }
 
-/* The TraceSift tool's upload pane. Ported from perf-ai `src/app/globals.css`
-   and scoped to `.tracesift-upload`, the surface shown until a profile is read. */
+/* Upload pane shown until a profile is read; ported from perf-ai `src/app/globals.css`. */
 .tracesift-upload { display: grid; align-content: start; gap: 12px; padding: 12px; color: var(--foreground); font-size: 13px; }
 .tracesift-upload .results-header { padding-bottom: 14px; border-bottom: 1px solid var(--border); }
 .tracesift-upload .intro { min-width: 0; text-align: left; }
@@ -412,7 +358,6 @@ html[data-theme="dark"] .tracesift-explorer { color-scheme: dark; }
 .tracesift-upload .workflow-label > span { display: grid; place-items: center; width: 18px; height: 18px; flex: none; align-self: center; border-radius: 50%; background: var(--accent); color: var(--primary); font-size: 10px; font-weight: 700; }
 .tracesift-upload .workflow-label strong { font-size: 13px; }
 .tracesift-upload .workflow-label small { color: var(--muted-foreground); font-size: 11.5px; }
-/* The two profile types sit side by side: one short choice, not a page of rows. */
 .tracesift-upload .profile-options { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .tracesift-upload .profile-chip { display: inline-flex; align-items: baseline; gap: 6px; padding: 5px 11px; background: transparent; border: 1px solid var(--border); border-radius: 999px; color: inherit; font: inherit; font-size: 12px; font-weight: 600; white-space: nowrap; cursor: pointer; }
 .tracesift-upload .profile-chip:hover { background: var(--muted); }

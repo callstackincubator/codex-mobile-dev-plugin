@@ -51,10 +51,7 @@ export function errorCategory(error: unknown): ErrorCategory {
 const episodeReports = new WeakMap<object, () => boolean>();
 const capturedFailures = new WeakSet<object>();
 
-/**
- * Leaves a failure's episode decision to the first capture site that would send it, so callers
- * that only log it or were cancelled don't use up the episode's single report.
- */
+/** Defers the episode decision to the first capture site that would send it, so logging or cancelled callers don't use up the single report. */
 export function deferEpisodeReport(error: unknown, shouldReport: () => boolean) {
   if (error !== null && typeof error === "object") episodeReports.set(error, shouldReport);
 }

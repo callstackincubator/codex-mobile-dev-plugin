@@ -3,8 +3,7 @@ import { openSimulatorDebugserver } from "./simulator.ts";
 import { CpuCounterSampler, parseCpuCounters, type CpuReading } from "./counters.ts";
 export type { CpuReading } from "./counters.ts";
 
-// debugserver's profiling timer passes the fractional microseconds to a
-// nanosecond parameter. Whole-second intervals avoid excessive sampling.
+// debugserver passes the fractional microseconds to a nanosecond parameter, so use whole seconds.
 const PROFILE_INTERVAL_US = 1_000_000;
 
 function profilingCommand(enabled: boolean): string {
@@ -13,13 +12,11 @@ function profilingCommand(enabled: boolean): string {
 }
 
 function profilingSignalResume(packet: string): string | null {
-  // Darwin SIGPROF is 27 (0x1b). Hermes waits for its handler to finish each
-  // sample, so suppressing this signal during resume or detach deadlocks JS.
+  // Darwin SIGPROF is 27 (0x1b). Hermes waits for its handler each sample, so suppressing it deadlocks JS.
   if (!/^[TS]1b/i.test(packet)) return null;
   const thread = /(?:^T1b|;)thread:([0-9a-f]+)(?:;|$)/i.exec(packet);
   if (!thread) throw new Error("Debugserver reported SIGPROF without its target thread.");
-  // Deliver only to the interrupted thread; all other threads resume without
-  // an injected signal. Keep the 64-bit thread ID in its original hex form.
+  // Deliver only to the interrupted thread. Keep the 64-bit thread ID in hex.
   return `vCont;C1b:${thread[1]};c`;
 }
 

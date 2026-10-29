@@ -55,7 +55,6 @@ test.describe("MCP Apps hosts", () => {
   test("the workspace opens every tool without errors", async ({ openView, pageErrors, server }) => {
     test.skip(hasPanel(server) === false, "This target's server has no panel.");
     const { view } = await openView("mobile_open_workspace");
-    // Fullscreen opens with logs showing.
     await expect(view.locator("#tool-select")).toContainText("Logs");
     for (const label of ["Performance", "Storage", "TraceSift", "Logs"]) {
       await view.locator("#tool-select").click();

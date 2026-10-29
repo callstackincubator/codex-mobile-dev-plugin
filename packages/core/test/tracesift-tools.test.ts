@@ -6,10 +6,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { registerTraceSiftTools } from "../src/tracesift-tools.ts";
 import type { TraceSiftClient } from "../src/tracesift-client.ts";
 
-/**
- * The payload crosses the boundary the card's frame will: the SDK validates the
- * envelope on both sides. A deep tree rides along to catch either validator.
- */
+/** Crosses the boundary the card's frame will: the SDK validates the envelope on both sides. */
 function deepTree(depth: number) {
   let node: Record<string, unknown> = { id: `n${depth}`, name: "leaf", frameClass: "app", totalMs: 1, selfMs: 1, invocations: 1, children: [] };
   for (let level = depth - 1; level >= 0; level--) node = { id: `n${level}`, name: `frame-${level}`, frameClass: "app", totalMs: 100, selfMs: 0, invocations: 1, children: [node] };
@@ -17,9 +14,7 @@ function deepTree(depth: number) {
 }
 
 async function connect(client: Partial<TraceSiftClient>) {
-  // A throwaway McpServer rather than the plugin fixture: these tests pin the
-  // Explore payload contract itself, and the plugin's telemetry test owns a real
-  // MCP child process that one process per file cannot share.
+  // Not the plugin fixture: that owns a real MCP child process one process per file cannot share.
   const server = new McpServer({ name: "tracesift-tools-test", version: "1" });
   registerTraceSiftTools(server, client as TraceSiftClient);
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -41,8 +36,7 @@ test("the Explore payload tool carries a full task tree as one JSON text item", 
   const result = await mcp.callTool({ name: "mobile_tracesift_explore_payload", arguments: { analysisId: "analysis-1", taskIndex: 4 } });
   assert.deepEqual(requested, [{ analysisId: "analysis-1", taskIndex: 4 }]);
   assert.equal(result.isError, undefined);
-  // A tree this size is below the compression threshold, so it crosses as plain
-  // JSON and the envelope reports its own byte count.
+  // Below the compression threshold, so it crosses as plain JSON.
   assert.deepEqual(result.structuredContent, { apiVersion: 1, kind: "task", encoding: "json", payloadBytes: (result.content as Array<{ text: string }>)[0]!.text.length });
   const payload = JSON.parse((result.content as Array<{ text: string }>)[0]!.text) as { card: { tree: { id: string } } };
   assert.equal(payload.card.tree.id, "n0");
@@ -52,8 +46,7 @@ test("the Explore payload tool carries a full task tree as one JSON text item", 
 });
 
 test("the Explore payload tool survives a several-megabyte card", async t => {
-  // A real long task's tree plus timeline is megabytes, which is what makes this
-  // transport the one worth pinning down with a test rather than by eye.
+  // A real long task's tree plus timeline is megabytes.
   const wide = Array.from({ length: 3_000 }, (_, index) => ({
     id: `b${index}`, name: `component-${index}`, frameClass: "app", totalMs: 5, selfMs: 1, invocations: 2,
     children: Array.from({ length: 12 }, (_, child) => ({ id: `b${index}-${child}`, name: `leaf-${index}-${child}`, frameClass: "lib", totalMs: 1, selfMs: 1, invocations: 1, children: [] })),
@@ -72,8 +65,7 @@ test("the Explore payload tool survives a several-megabyte card", async t => {
   const text = (result.content as Array<{ text: string }>)[0]!.text;
   const envelope = result.structuredContent as { encoding: string; payloadBytes: number };
   assert.ok(envelope.payloadBytes > 2_000_000, `expected a multi-megabyte payload, got ${envelope.payloadBytes} bytes`);
-  // Past the threshold the bridge carries compressed bytes, which is what keeps
-  // the wire small and gives the host's decoder nothing to recurse into.
+  // Past the threshold the bridge carries compressed bytes, so the host's decoder has nothing to recurse into.
   assert.equal(envelope.encoding, "gzip+base64");
   assert.ok(text.length < envelope.payloadBytes / 2, `expected compression, got ${text.length} text bytes`);
   const inflated = await new Response(new Blob([Uint8Array.from(atob(text), c => c.charCodeAt(0))]).stream()
@@ -118,9 +110,7 @@ test("the Explore payload tool is app-only and keeps the browser tool beside it"
 });
 
 test("the Explore payload tool carries a real recording's call depth", async t => {
-  // A node and its `children` array are two object levels each, so a stack this
-  // deep measures twice over; real React Native recordings reach it, and the
-  // depth bound used to turn them all away.
+  // A node and its `children` array are two object levels each; real React Native recordings reach this depth.
   const { mcp, close } = await connect({
     async exploreTask(analysisId: string) {
       return { analysisId, profileTitle: "Profile", totalMs: 200, card: { id: "task-0", tree: deepTree(1000), timeline: { boxes: [] } } };
@@ -133,8 +123,7 @@ test("the Explore payload tool carries a real recording's call depth", async t =
 });
 
 test("the Explore payload tool refuses a tree too deep to serialize", async () => {
-  // `JSON.stringify` recurses, so this has to be caught before serialization;
-  // the browser window renders such a recording without crossing the bridge.
+  // `JSON.stringify` recurses, so this must be caught before serialization.
   const { mcp, close } = await connect({
     async exploreTask(analysisId: string) {
       return { analysisId, profileTitle: "Profile", totalMs: 200, card: { id: "task-0", tree: deepTree(5000), timeline: { boxes: [] } } };

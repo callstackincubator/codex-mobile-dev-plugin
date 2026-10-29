@@ -29,10 +29,8 @@ export const pluginHosts = Object.fromEntries(readdirSync("apps")
 // Codex-only files would load the Codex launcher or manifest.
 export const codexOnlyPaths = [".mcp.json", "mcp.json", ".codex-plugin", "scripts/launch-mcp.sh"];
 
-/** The skills a plugin ships unless its host names its own. */
 export const sharedSkills = ["packages/skills/mobile-dev", "packages/skills/mobile-dev-setup", "packages/skills/agent-device"];
 
-/** A host's settings with its app's paths resolved and defaults applied. */
 export function pluginHost(name) {
   const host = pluginHosts[name];
   if (host === undefined) throw new Error(`Pass a host: ${Object.keys(pluginHosts).join(" or ")}.`);

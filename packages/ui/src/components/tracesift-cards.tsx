@@ -1,8 +1,3 @@
-/**
- * TraceSift's findings inline in the chat: the same card the TraceSift tab draws.
- * Only the actions differ — Explore opens here, Investigate asks the model.
- */
-
 import { useSyncExternalStore } from "react";
 import { ChartNoAxesCombinedIcon, CheckIcon, CopyIcon, FolderIcon, MessageCircleIcon, UploadIcon } from "lucide-react";
 import type { TraceSiftController } from "../tracesift-controller.ts";
@@ -17,10 +12,6 @@ import { TraceSiftExplorer } from "./tracesift-explorer.tsx";
 
 const percent = (value: number) => `${value.toFixed(1)}%`;
 
-/**
- * The header's one line about the whole recording. Nothing but short work is a
- * real answer, so it says so; the uncarded profiler start-up is still counted.
- */
 function cpuSummaryLine(analysis: TraceSiftCpuAnalysis): string {
   const { summary } = analysis;
   const count = analysis.cards.length;
@@ -30,8 +21,7 @@ function cpuSummaryLine(analysis: TraceSiftCpuAnalysis): string {
   if (summary.noLongTasks) {
     return `No long tasks in this recording; the busiest work was ${count} ${tasks} of ${formatMs(analysis.cards[0]?.durationMs ?? 0)} and under · ${formatMs(summary.totalMs)} total${overhead}`;
   }
-  // `taskCount` is how many tasks the recording held in all. A TraceSift older
-  // than the field answers without it, and the clause simply drops out.
+  // `taskCount` is absent from older TraceSift versions; the clause then drops out.
   const of = summary.taskCount === undefined ? "" : ` of ${summary.taskCount}`;
   return `${count} long ${tasks}${of} · ${formatMs(summary.totalMs)} total${overhead}`;
 }
@@ -48,10 +38,6 @@ function ChartSwitch({ kind, onChange }: { kind: ContributionChartKind; onChange
   </div>;
 }
 
-/**
- * The actions under a card. Investigate leads: it uses the chat the reader is
- * already in. Explore and Copy follow, in the order the web card puts them.
- */
 function CardFooter({ cardId, controller, canExplore }: { cardId: string; controller: TraceSiftController; canExplore: boolean }) {
   const state = controller.getSnapshot();
   // Every action reads from the server; hosts that do not let cards call it get the findings only.
@@ -88,10 +74,7 @@ function CardFooter({ cardId, controller, canExplore }: { cardId: string; contro
   </div>;
 }
 
-/**
- * Which code these findings belong to. A profile names frames, not files, so the
- * chat needs the folder before Investigate can mean anything.
- */
+// A profile names frames, not files, so Investigate needs the source folder.
 function ProjectBar({ controller }: { controller: TraceSiftController }) {
   const { project, projectBusy } = controller.getSnapshot();
   const name = project?.replace(/\/+$/, "").split("/").pop() || project;
@@ -104,7 +87,6 @@ function ProjectBar({ controller }: { controller: TraceSiftController }) {
   </div>;
 }
 
-/** The measured figures a card falls back to when the task entered no frame of its own. */
 function TaskFigures({ card }: { card: TraceSiftTaskCard }) {
   return <dl className="tracesift-metrics">
     <div><dt>Recording</dt><dd>{percent(card.percentOfProfile)}</dd></div>
@@ -124,8 +106,7 @@ function CpuCard({ card, rank, controller }: { card: TraceSiftTaskCard; rank: nu
       </div>
       <span className="hotspot-time">{formatMs(card.durationMs)}</span>
     </div>
-    {/* No frame of their own means nothing to divide the task into, and the
-        figures row is then all the card can honestly say. */}
+    {/* Without boundary frames there is nothing to divide the task into. */}
     {card.boundaryFrames.length > 0
       ? <TaskContribution card={card} kind={chartKind} onFocus={nodeId => void controller.openExplore(card.id, nodeId)} />
       : <TaskFigures card={card} />}
@@ -133,10 +114,6 @@ function CpuCard({ card, rank, controller }: { card: TraceSiftTaskCard; rank: nu
   </article>;
 }
 
-/**
- * A React commit in the same chrome. It has no boundary frames to slice, so it
- * keeps its culprit rows and takes only the card's header, figures and footer.
- */
 function ReactCard({ card, rank, controller }: { card: TraceSiftReactCard; rank: number; controller: TraceSiftController }) {
   const { chartKind } = controller.getSnapshot();
   const drawable = reactCommitSlices(card).some(slice => slice.kind === "component");
@@ -156,13 +133,11 @@ function ReactCard({ card, rank, controller }: { card: TraceSiftReactCard; rank:
   </article>;
 }
 
-/** `onReset` is the panel's way back to its upload pane; the inline card has none. */
 export function TraceSiftCards({ controller, onReset }: { controller: TraceSiftController; onReset?: () => void }) {
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
   const analysis: TraceSiftAnalysis | undefined = state.analysis;
 
-  // One surface shows one thing: the full explorer takes the frame the cards had,
-  // which also unmounts every contribution chart while megabytes are on screen.
+  // The explorer replaces the cards, which also unmounts the contribution charts while the large payload is on screen.
   if (state.explorer) return <TraceSiftExplorer controller={controller} />;
 
   if (!analysis) return <main className="tracesift-results">
@@ -180,7 +155,6 @@ export function TraceSiftCards({ controller, onReset }: { controller: TraceSiftC
           ? cpuSummaryLine(analysis)
           : `${analysis.cards.length} of ${analysis.summary.commitCount} commits · ${formatMs(analysis.summary.totalCommitRenderDurationMs)} rendering`}</p>
       </div>
-      {/* Both card families divide a measured whole into interchangeable drawings. */}
       <div className="result-actions">
         <ChartSwitch kind={state.chartKind} onChange={controller.setChartKind} />
         {onReset && <Button size="sm" variant="outline" onClick={onReset}><UploadIcon />New profile</Button>}

@@ -1,13 +1,8 @@
 // Jackson Coxson
 //
-// RTP parsing for the CoreDevice display stream.
-//
-// The device sends a plaintext RTP stream (no SRTP, the negotiated
-// SRTPCipherSuite is 0) to the receiver address/port we hand it in the
-// `startvideooutput` request. Video is HEVC, dynamic payload type 100.
-//
-// This module only parses the RTP framing; HEVC access-unit reassembly and
-// decoding build on top of `RtpPacket`.
+// RTP framing parser for the CoreDevice display stream: plaintext (negotiated
+// SRTPCipherSuite is 0) HEVC, dynamic payload type 100, sent to the address/port
+// given in `startvideooutput`.
 
 /// A parsed RTP packet (RFC 3550), borrowing its payload from the input buffer.
 #[derive(Debug, Clone)]

@@ -460,8 +460,7 @@ test("UI trace context crosses the MCP bridge and handled server errors exclude 
   assert.equal(observedTags?.device_platform, "mixed");
   assert.equal(observedTags?.device_kind, "none");
   assert.equal(observedTags?.recordingIds, undefined);
-  // The TraceSift tool is a workspace surface of its own, so its calls must keep
-  // their attribution rather than being dropped by the metadata allowlist.
+  // TraceSift is its own workspace surface; its attribution must survive the metadata allowlist.
   await client.callTool({ name: "test_action", arguments: { secret: "PRIVATE_PROFILE_PATH" }, _meta: {
     [TELEMETRY_META_KEY]: { surface: "tracesift", view: "tracesift", profilePath: "PRIVATE_PROFILE_PATH" },
   } });

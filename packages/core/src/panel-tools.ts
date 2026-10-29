@@ -68,11 +68,8 @@ const INSTRUCTIONS = "For mobile app development, open mobile_open_simulator bef
 
 /** Mobile Dev's own device views, which a host adds to the server it runs (see createPanel). */
 export type Panel = {
-  /** The server's instructions, for a server with the panel. */
   instructions: string;
-  /** Finds a simulator's foreground app with the panel's Baguette. */
   simulatorForeground: SimulatorForeground;
-  /** Registers the panel's resources and tools; returns its cleanup. */
   register(server: McpServer, shared: PanelShared): () => Promise<void>;
 };
 

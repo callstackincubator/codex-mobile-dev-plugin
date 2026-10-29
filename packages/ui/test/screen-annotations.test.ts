@@ -678,15 +678,13 @@ test("native MCP Apps handshake publishes retrievable selection evidence before 
   await preparing;
   assert.equal(messages.length, 1);
   assert.match(JSON.stringify(messages[0].content), /Only change this instance/);
-  // Identically labelled targets stay distinct in the draft itself, because the
-  // host may never show widget context to the model.
+  // Identically labelled targets stay distinct in the draft; the host may never show widget context.
   const draft = messages[0].content.map(item => item.type === "text" ? item.text : "").join("\n");
   assert.match(draft, /#1 "Continue": Make this button larger\n  Locator: AXButton; identifier "continue-button"; bounds 10,20,100,40 points/);
   assert.match(draft, /#2 "Continue": Only change this instance\n  Locator: AXButton; identifier "second-continue-button"; bounds 200,300,60,30 points/);
   assert.doesNotMatch(draft, /reopen/);
   assert.equal(messages[0]._meta, undefined);
-  // Hosts can fetch this snapshot on the later user turn, even after the draft
-  // was acknowledged. Both identically labelled targets must remain distinct.
+  // Hosts can fetch this snapshot on a later user turn, after the draft was acknowledged.
   const fetched = shared!.content!.filter(item => item.type === "text").map(item => item.text).join("\n");
   assert.match(fetched, /Identifier: "continue-button"/);
   assert.match(fetched, /Bounds: 10,20,100,40 points/);
