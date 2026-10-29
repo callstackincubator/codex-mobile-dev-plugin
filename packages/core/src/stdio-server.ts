@@ -29,6 +29,11 @@ export async function runStdioServer({ panel, features, telemetryHost }: Pick<Pl
   }
   transport.onclose = () => { void close(); };
   process.stdin.on("end", () => { void close(); });
+  // Once the host is gone, closing answers requests still in flight into its closed pipes.
+  // Unhandled, each EPIPE is an uncaught exception whose console.error to the same closed
+  // stderr raises another, so the server spins and never finishes closing.
+  process.stdout.on("error", () => { void close(); });
+  process.stderr.on("error", () => {});
   process.on("SIGINT", () => { void close(); });
   process.on("SIGTERM", () => { void close(); });
   process.on("uncaughtException", error => { console.error(error); void close().finally(() => { process.exitCode = 1; }); });
