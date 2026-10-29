@@ -38,7 +38,7 @@ async function iosSnapshot(baguette: Baguette, udid: string, signal: AbortSignal
 
 async function androidSnapshot(android: ServeEmu, deviceId: string, deviceName: string, screenWidth: number): Promise<NativeSnapshot> {
   const [response, deviceAliases] = await Promise.all([android.accessibility(deviceId), androidAliases(deviceId)]);
-  const packages = new Set<string>((response.tree.nodes ?? []).map((item: { packageName?: string }) => item.packageName).filter((name: unknown): name is string => typeof name === "string" && !name.startsWith("com.android.") && name !== "android"));
+  const packages = new Set((response.tree.nodes ?? []).map(item => item.packageName).filter((name): name is string => typeof name === "string" && !name.startsWith("com.android.") && name !== "android"));
   return {
     native: screenComponents(response.tree, screenWidth / response.screen.width),
     app: { deviceName, deviceAliases, appId: packages.size === 1 ? [...packages][0] : undefined },

@@ -15,8 +15,11 @@ import { annotateDeviceCommand, backendCommand, inheritDeviceCommand } from "@mo
 import { errorReportSignature } from "@mobile-dev/shared/telemetry.ts";
 import { baguetteRuntime, forgetBaguetteRuntime } from "./baguette-runtime.ts";
 import { captureServerError, recordAccessibilityBridgeRestart } from "./telemetry.ts";
+import { readLimitedBody, responseBytes } from "./response-body.ts";
+import type { ByteRequest } from "./response-body.ts";
 
-type DescribedUi = { tree?: { label?: unknown } };
+const describedUiSchema = z.object({ tree: z.object({ label: z.unknown() }).partial().loose().optional() }).loose();
+type DescribedUi = z.infer<typeof describedUiSchema>;
 const NO_ACCESSIBILITY_DATA = "no accessibility data";
 const BRIDGE_RESTART_INTERVAL = 10000;
 const PORT_ATTEMPTS = 3;
@@ -63,6 +66,7 @@ export const definitionSchema = z.object({
     maskImage: z.string().nullish(),
   }),
 });
+export type SimulatorDefinition = z.infer<typeof definitionSchema>;
 
 export class Baguette {
   readonly baseUrl = parseBaseUrl("http://127.0.0.1:0");
@@ -81,13 +85,17 @@ export class Baguette {
     this.launchBackend = launchBackend;
   }
 
-  async json(path: string, options: RequestInit = {}, timeout = 10000): Promise<unknown> {
-    const command = backendCommand("baguette", path);
-    const response = await fetch(new URL(path, this.baseUrl), {
+  private async request(path: string, command: string, options: RequestInit, timeout: number): Promise<Response> {
+    return fetch(new URL(path, this.baseUrl), {
       ...options, redirect: "error", signal: AbortSignal.any([
         this.lifecycle.signal, AbortSignal.timeout(timeout), ...(options.signal ? [options.signal] : []),
       ]),
     }).catch(error => { throw annotateDeviceCommand(error, command); });
+  }
+
+  async json<T = unknown>(path: string, { schema, ...options }: RequestInit & { schema?: z.ZodType<T> } = {}, timeout = 10000): Promise<T> {
+    const command = backendCommand("baguette", path);
+    const response = await this.request(path, command, options, timeout);
     if (response.ok === false) {
       const error = annotateDeviceCommand(new Error(`Baguette returned HTTP ${response.status} for ${path}.`), command, { failure: "http_status", status: response.status });
       if (response.status === 404 && /^\/simulators\/[^/]+\/definition\.json$/.test(path)) {
@@ -101,17 +109,26 @@ export class Baguette {
     }
     const payload = await response.json().catch(error => { throw annotateDeviceCommand(error, command); });
     if (payload?.ok === false) throw annotateDeviceCommand(new Error(payload.error ?? "Baguette rejected the request."), command, { failure: "rejected" });
-    return payload;
+    if (schema === undefined) return payload;
+    try { return schema.parse(payload); }
+    catch (error) { throw annotateDeviceCommand(error, command); }
+  }
+
+  /** A binary response, such as a screenshot or bezel image. */
+  async fetchBytes(path: string, request: ByteRequest): Promise<Buffer> {
+    const command = backendCommand("baguette", path);
+    const response = await this.request(path, command, {}, request.timeout ?? 10000);
+    return responseBytes(response, command, "Baguette", path, request);
   }
 
   async describeUi(udid: string): Promise<DescribedUi> {
     const path = `/simulators/${udidSchema.parse(udid)}/describe-ui.json`;
-    try { return await this.json(path) as DescribedUi; }
+    try { return await this.json(path, { schema: describedUiSchema }); }
     catch (error) {
       if (!(error instanceof Error) || error.message !== NO_ACCESSIBILITY_DATA || !await this.restartAccessibilityBridge(udid)) throw error;
     }
     try {
-      const result = await this.json(path) as DescribedUi;
+      const result = await this.json(path, { schema: describedUiSchema });
       recordAccessibilityBridgeRestart("recovered");
       return result;
     } catch (error) {
@@ -231,8 +248,7 @@ export class Baguette {
   async definition(udid: string) {
     await this.device(udid, true);
     try {
-      const payload = await this.json(`/simulators/${udid}/definition.json`);
-      return definitionSchema.parse(payload);
+      return await this.json(`/simulators/${udid}/definition.json`, { schema: definitionSchema });
     } catch (error) {
       const diagnostic = getDefinitionDiagnostic(error);
       if (diagnostic !== undefined) {
@@ -300,27 +316,10 @@ export class Baguette {
   }
 }
 
+// A larger, unreadable or malformed body has no diagnostic.
 async function readDefinitionFailure(response: Response): Promise<unknown> {
-  const reader = response.body?.getReader();
-  if (reader === undefined) return;
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  try {
-    while (true) {
-      const chunk = await reader.read();
-      if (chunk.done) break;
-      size += chunk.value.byteLength;
-      if (size > 4096) return;
-      chunks.push(chunk.value);
-    }
-    const bytes = Buffer.concat(chunks);
-    const text = bytes.toString("utf8");
-    return JSON.parse(text);
-  } catch {
-    return;
-  } finally {
-    const cancellation = reader.cancel();
-    await cancellation.catch(() => {});
-    reader.releaseLock();
-  }
+  const bytes = await readLimitedBody(response, 4096).catch(() => undefined);
+  if (bytes === undefined) return;
+  try { return JSON.parse(bytes.toString("utf8")); }
+  catch { return; }
 }

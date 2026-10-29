@@ -19,6 +19,8 @@ import { recordAndroidEmulatorReconnect, recordAndroidBackendStop } from "./tele
 import type { AndroidStartupContext } from "@mobile-dev/shared/android-startup-diagnostics.ts";
 import { AndroidStartupTracker } from "./android-startup.ts";
 import { allocatePort, superviseBackend } from "./backend-process.ts";
+import { responseBytes } from "./response-body.ts";
+import type { ByteRequest } from "./response-body.ts";
 import { androidSdkRoots } from "./android-sdk.ts";
 import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 import { androidIdSchema, avdId, isEmulatorSerial, isStoppedAvd } from "@mobile-dev/shared/android-ids.ts";
@@ -27,7 +29,10 @@ const execute = promisify(execFile);
 // Route handlers send { ok: false, error: message }; the API boundary sends { ok: false, error: { code, message } }.
 const serveEmuErrorSchema = z.object({ ok: z.literal(false), error: z.union([z.string(), z.object({ message: z.string() }).loose()]).optional() }).loose();
 const healthSchema = z.object({ serial: androidIdSchema, codec: z.string(), size: z.object({ width: z.number().positive(), height: z.number().positive() }) });
-type Backend = { url: URL; child?: ChildProcess };
+// serve-emu's accessibility nodes, of which the plugin reads only the app each belongs to.
+const accessibilitySchema = z.object({ nodes: z.array(z.object({ packageName: z.unknown() }).partial().loose()).optional() }).loose();
+export type ServeEmuBackend = { url: URL; child?: ChildProcess };
+type Backend = ServeEmuBackend;
 type Started = { backend: Backend; device: SimulatorDevice };
 const ANDROID_DEVICE = { missing: "This Android device is no longer available. Refresh the device list.", stopped: "The Android device is stopped or offline. Press Start or reconnect it." };
 
@@ -204,16 +209,31 @@ export class ServeEmu {
     }
   }
 
-  async json(url: URL, path: string, options: RequestInit = {}) {
-    const command = backendCommand("serve_emu", path);
-    const response = await fetch(new URL(path, url), { ...options, redirect: "error", signal: AbortSignal.timeout(10000) })
+  private async request(backend: Backend, path: string, command: string, options: RequestInit = {}, timeout = 10000): Promise<Response> {
+    return fetch(new URL(path, backend.url), { ...options, redirect: "error", signal: AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(timeout)]) })
       .catch(error => { throw annotateDeviceCommand(error, command); });
+  }
+
+  async json<T = unknown>(backend: Backend, path: string, { schema, ...options }: RequestInit & { schema?: z.ZodType<T> } = {}): Promise<T> {
+    const command = backendCommand("serve_emu", path);
+    const response = await this.request(backend, path, command, options);
     const payload = response.ok ? await response.json().catch(error => { throw annotateDeviceCommand(error, command); }) : await response.json().catch(() => undefined);
     const rejection = serveEmuErrorSchema.safeParse(payload);
-    if (response.ok && !rejection.success) return payload;
+    if (response.ok && !rejection.success) {
+      if (schema === undefined) return payload;
+      try { return schema.parse(payload); }
+      catch (error) { throw annotateDeviceCommand(error, command); }
+    }
     const error = rejection.data?.error;
     const message = (typeof error === "string" ? error : error?.message) || (response.ok ? "serve-emu rejected the request." : `serve-emu returned HTTP ${response.status} for ${path}.`);
     throw annotateDeviceCommand(new Error(message), command, response.ok ? { failure: "rejected" } : { failure: "http_status", status: response.status });
+  }
+
+  /** A binary response, such as a screenshot. */
+  async fetchBytes(backend: Backend, path: string, request: ByteRequest): Promise<Buffer> {
+    const command = backendCommand("serve_emu", path);
+    const response = await this.request(backend, path, command, {}, request.timeout);
+    return responseBytes(response, command, "serve-emu", path, request);
   }
 
   private async health(backend: Backend, signal?: AbortSignal) {
@@ -333,7 +353,7 @@ export class ServeEmu {
     const backend = await this.start(id);
     const adb = await adbPath();
     const [tree, health, display] = await Promise.all([
-      this.json(backend.url, "/api/accessibility"),
+      this.json(backend, "/api/accessibility", { schema: accessibilitySchema }),
       this.health(backend),
       execute(adb, ["-s", id, "shell", "wm", "size"], { timeout: 3000, maxBuffer: 4096 }),
     ]);

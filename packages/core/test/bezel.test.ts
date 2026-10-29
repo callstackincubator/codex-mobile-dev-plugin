@@ -4,6 +4,8 @@ import { createServer } from "node:http";
 import { compositeBezelGeometry } from "../../shared/src/bezel.ts";
 import { definitionSchema } from "../src/baguette.ts";
 import { readBezel } from "../src/bezel.ts";
+import { screenshotRequest } from "../src/png.ts";
+import { deviceCommandTags } from "../../shared/src/device-command-diagnostics.ts";
 import { UDID, PNG, attachedBaguette } from "../../test-support/fixtures.ts";
 
 const geometry = { rect: { x: 18, y: 18, width: 400, height: 872 }, viewport: { width: 436, height: 908 }, clipRadius: 62 };
@@ -41,6 +43,26 @@ test("Apple bezel and mask pass through as PNG data with screen geometry", async
   const missingMask = await readBezel(backend, UDID, { ...screen, maskImage: `/simulators/${UDID}/bad.png` });
   assert.equal(missingMask?.image, bezel?.image);
   assert.equal(missingMask?.mask, undefined);
+});
+
+test("backend byte reads keep their command and fixed messages, and stop at their size limit", async t => {
+  const server = createServer((request, response) => {
+    if (request.url === "/simulators.json") response.end('{"running":[],"available":[]}');
+    else if (request.url?.includes("missing.png")) response.writeHead(500).end();
+    else response.end(Buffer.alloc(64));
+  });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise<void>(resolve => server.close(() => resolve())));
+  const backend = attachedBaguette(`http://127.0.0.1:${(server.address() as { port: number }).port}`);
+  t.after(() => backend.dispose());
+  await backend.start();
+  assert.equal((await backend.fetchBytes(`/simulators/${UDID}/screenshot.png`, screenshotRequest("Baguette"))).length, 64);
+  const failed = await backend.fetchBytes(`/simulators/${UDID}/missing.png`, screenshotRequest("Baguette")).catch((error: unknown) => error);
+  assert.match(String(failed), /^Error: Screenshot failed with HTTP 500\.$/);
+  assert.deepEqual(deviceCommandTags(failed), { device_command: "baguette_missing_png", device_command_failure: "http_status", device_command_status: "500" });
+  const large = await backend.fetchBytes(`/simulators/${UDID}/screenshot.png`, { ...screenshotRequest("Baguette"), maxBytes: 16 }).catch((error: unknown) => error);
+  assert.match(String(large), /^Error: Baguette returned an invalid or oversized PNG screenshot\.$/);
+  assert.equal(deviceCommandTags(large).device_command_failure, "output_limit");
 });
 
 test("bezel placement includes button margins on every side", () => {

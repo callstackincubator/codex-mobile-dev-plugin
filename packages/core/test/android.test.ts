@@ -297,10 +297,10 @@ test("serve-emu rejections surface their message, or a fixed one when they carry
   t.after(() => new Promise(resolve => server.close(resolve)));
   const url = new URL(`http://127.0.0.1:${(server.address() as { port: number }).port}`);
   const backend = new ServeEmu();
-  assert.deepEqual(await backend.json(url, "/api/x"), { ok: true, value: 1 });
-  await assert.rejects(backend.json(url, "/api/x"), /^Error: mode must be clean or live$/);
-  await assert.rejects(backend.json(url, "/api/x"), /^Error: bad body$/);
-  await assert.rejects(backend.json(url, "/api/x"), /^Error: serve-emu rejected the request\.$/);
-  await assert.rejects(backend.json(url, "/api/x"), /^Error: serve-emu rejected the request\.$/);
-  await assert.rejects(backend.json(url, "/api/x"), /^Error: serve-emu returned HTTP 500 for \/api\/x\.$/);
+  assert.deepEqual(await backend.json({ url }, "/api/x"), { ok: true, value: 1 });
+  await assert.rejects(backend.json({ url }, "/api/x"), /^Error: mode must be clean or live$/);
+  await assert.rejects(backend.json({ url }, "/api/x"), /^Error: bad body$/);
+  await assert.rejects(backend.json({ url }, "/api/x"), /^Error: serve-emu rejected the request\.$/);
+  await assert.rejects(backend.json({ url }, "/api/x"), /^Error: serve-emu rejected the request\.$/);
+  await assert.rejects(backend.json({ url }, "/api/x"), /^Error: serve-emu returned HTTP 500 for \/api\/x\.$/);
 });
