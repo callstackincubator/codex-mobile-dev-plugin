@@ -45,6 +45,11 @@ export async function releaseVersion() {
   return metadata.version;
 }
 
+/** The files every staged runtime has, relative to it; without the panel's parts for hosts without it. */
+export function runtimeFiles({ panel = true } = {}) {
+  return RUNTIME_FILES.filter(path => panel || PANEL_PARTS.includes(path.split("/")[0]) === false);
+}
+
 export async function assertRuntime(environment) {
   await assertBuildEnvironment("dist", environment);
   for (const path of RUNTIME_FILES) await access(`dist/${path}`);

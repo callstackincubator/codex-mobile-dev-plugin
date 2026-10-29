@@ -14,9 +14,6 @@ import { resolveTelemetryEnvironment } from "@mobile-dev/core/telemetry-environm
 import { codexCliResolver, createCodexRunner, PluginUpdateError, readPluginStore, STORE_MARKETPLACE, storeSummarySchema } from "./codex-cli.ts";
 import type { ReadStore, RunCodex, StorePlugin, UpdateFailure } from "./codex-cli.ts";
 
-export { createCodexRunner, readPluginStore, resolveCodexCli } from "./codex-cli.ts";
-export type { ReadStore, RunCodex, StorePlugin } from "./codex-cli.ts";
-
 export function recordPluginUpdate(operation: "check" | "migrate", outcome: "disabled" | "unavailable" | "current" | "available" | "migration" | "migrated" | "failed", duration: number) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes = { component: "server", operation, outcome };
