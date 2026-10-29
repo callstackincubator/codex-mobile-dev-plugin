@@ -3,8 +3,7 @@ import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { setImmediate } from "node:timers/promises";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { CpuSessions } from "../src/cpu/sessions.ts";
 import { registerCpuTools } from "../src/cpu/tools.ts";
 import { DeviceResolver } from "../src/devices.ts";
@@ -14,6 +13,7 @@ import { LogSessions } from "../src/log-sessions.ts";
 import { registerLogTools } from "../src/log-tools.ts";
 import { installTracePropagation, instrumentMcpServer } from "../src/telemetry.ts";
 import { fakeSimctl, UDID } from "@mobile-dev/test-support/fixtures.ts";
+import { connectClient } from "@mobile-dev/test-support/mcp.ts";
 
 /** Holds the first device validation until released; later validations pass straight through. */
 function validationGate() {
@@ -28,13 +28,7 @@ async function connect(t: TestContext, register: (server: McpServer) => void) {
   const server = new McpServer({ name: "collector-startup-test", version: "1" });
   instrumentMcpServer(server);
   register(server);
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  installTracePropagation(serverTransport);
-  const client = new Client({ name: "collector-startup-client", version: "1" });
-  t.after(async () => { await client.close(); await server.close(); });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
-  return client;
+  return connectClient(t, server, { name: "collector-startup-client", prepare: installTracePropagation });
 }
 
 /** Cancels a start request while its device validation is pending, then lets validation finish. */
