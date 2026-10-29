@@ -28,14 +28,14 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}, { fullscreen }
   const panels = WorkspaceTools.create(app, attachments);
   const recordingController = new RecordingController(app, { attachments, workspace: true });
   const extension = options.extension?.(app);
+  const devices = new DeviceWorkspace(app, panels, { connectionFailed });
   const reactRoot = createRoot(document.getElementById("root")!);
   flushSync(() => {
     reactRoot.render(<ErrorBoundary fallback={<p role="alert">Mobile Dev could not render. Reopen the panel to try again.</p>}>
-      <Workspace panels={panels} recordingController={recordingController} banner={extension?.banner} displayModeControl={options.displayModeControl === false ? undefined : <DisplayModeButton app={app} />} contextControl={<ContextAttachments context={panels.context} />} fullscreen={fullscreen} />
+      <Workspace panels={panels} devices={devices.panels} recordingController={recordingController} banner={extension?.banner} displayModeControl={options.displayModeControl === false ? undefined : <DisplayModeButton app={app} />} contextControl={<ContextAttachments context={panels.context} />} fullscreen={fullscreen} />
     </ErrorBoundary>);
   });
 
-  const devices = new DeviceWorkspace(app, panels, { connectionFailed });
   if (fullscreen) panels.logs.openForSplitLayout();
 
   let stopLiveReload = () => {};

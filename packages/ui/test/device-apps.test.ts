@@ -177,3 +177,32 @@ test("discovery failures invalidate foreground state and malformed responses can
   const snapshot17 = store.getSnapshot();
   assert.deepEqual(snapshot17.foregroundApp, second.foregroundApp);
 });
+
+test("panels on one device share an installed-apps listing in flight and keep their own picks", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let listings = 0;
+  const app = {
+    async callServerTool({ name, arguments: args }: { name: string; arguments: Record<string, unknown> }) {
+      assert.equal(name, "mobile_list_apps");
+      assert.deepEqual(args, { platform: "ios", deviceId: UDID });
+      listings++;
+      await gate;
+      return { content: [], structuredContent: { apps: [{ bundleId: "app.a", name: "A" }], foregroundBundleId: null, runningBundleIds: ["app.a"] } };
+    },
+  };
+  const store = new DeviceAppsStore(app as unknown as App, new AppVisibility());
+  const target = { platform: "ios", deviceId: UDID } as const;
+  const storage = store.installedApps(target);
+  const tools = store.installedApps(target);
+  assert.equal(listings, 1);
+  release();
+  assert.deepEqual(await storage, await tools);
+  await store.installedApps(target);
+  assert.equal(listings, 2, "A later request lists the device again, so newly installed apps appear.");
+  store.pickApp("storage", target, "app.a");
+  assert.equal(store.pickedApp("storage", target), "app.a");
+  assert.equal(store.pickedApp("performance", target), undefined, "Each panel keeps its own pick.");
+  assert.equal(store.pickedApp("storage", { platform: "ios", deviceId: OTHER_UDID }), undefined);
+  store.dispose();
+});

@@ -6,6 +6,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { PanelContext } from "../src/model-context.ts";
+import { ScreenAnnotationsStore } from "../src/screen-annotations.ts";
+import { panelView } from "./simulator-fixture.ts";
 import type { App } from "@modelcontextprotocol/ext-apps";
 
 test("the simulator toolbar opens notes, saves blue markers, and lets users edit and remove them", async t => {
@@ -28,17 +30,18 @@ test("the simulator toolbar opens notes, saves blue markers, and lets users edit
   let cleanup = async () => {};
   t.after(async () => { await cleanup(); dom.window.close(); for (const [key, descriptor] of previous) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else Reflect.deleteProperty(globalThis, key); } await rm(directory, { recursive: true, force: true }); });
   const output = resolve(directory, "annotations.mjs");
-  await build({ stdin: { contents: 'export { ContextAttachments } from "./packages/mcp-app/src/components/context-attachments.tsx"; export { SimulatorView } from "./packages/ui/src/components/simulator-view.tsx"; export { getScreenAnnotations } from "./packages/ui/src/screen-annotations.ts";', resolveDir: process.cwd(), loader: "ts" }, outfile: output, bundle: true, format: "esm", platform: "node", jsx: "automatic", external: ["react", "react/*", "react-dom", "react-dom/*", "radix-ui", "lucide-react", "@base-ui/react/*"] });
-  const { ContextAttachments, SimulatorView, getScreenAnnotations } = await import(pathToFileURL(output).href);
+  await build({ stdin: { contents: 'export { ContextAttachments } from "./packages/mcp-app/src/components/context-attachments.tsx"; export { SimulatorView } from "./packages/ui/src/components/simulator-view.tsx";', resolveDir: process.cwd(), loader: "ts" }, outfile: output, bundle: true, format: "esm", platform: "node", jsx: "automatic", external: ["react", "react/*", "react-dom", "react-dom/*", "radix-ui", "lucide-react", "@base-ui/react/*"] });
+  const { ContextAttachments, SimulatorView } = await import(pathToFileURL(output).href);
   const { act, createElement } = await import("react"); const { createRoot } = await import("react-dom/client");
   const root = createRoot(dom.window.document.getElementById("root")!);
   cleanup = async () => { await act(async () => { root.unmount(); }); };
-  await act(async () => { root.render(createElement(SimulatorView, { platform: "ios", visible: true })); });
+  const store = new ScreenAnnotationsStore({
+    capture: () => ({ screenshot: { id: "capture", data: "AA==", capturedAt: "2026-10-01T10:00:00Z" }, screen: { width: 390, height: 844, units: "points" } }),
+    readTree: async () => ({ tree: { label: "Continue", identifier: "continue", role: "AXButton", frame: { x: 10, y: 20, width: 100, height: 40 } } }),
+  });
+  await act(async () => { root.render(createElement(SimulatorView, { panel: panelView("ios", { annotations: store }), visible: true })); });
   const canvas = dom.window.document.querySelector("canvas");
-  const store = getScreenAnnotations(dom.window.document.querySelector('[data-element="stage"]'));
   const context = new PanelContext({ getHostCapabilities: () => ({ updateModelContext: { image: {} }, message: { text: {} } }), async sendMessage() { return { isError: true }; } } as unknown as App, () => ({ getCurrent: () => undefined, update: async () => ({ updateId: "annotation-update" }) }));
-  store.capture = () => ({ screenshot: { id: "capture", data: "AA==", capturedAt: "2026-10-01T10:00:00Z" }, screen: { width: 390, height: 844, units: "points" } });
-  store.readTree = async () => ({ tree: { label: "Continue", identifier: "continue", role: "AXButton", frame: { x: 10, y: 20, width: 100, height: 40 } } });
   await act(async () => {
     store.connect(context); store.configure({ udid: "iphone", name: "iPhone", state: "Booted", runtime: "iOS", platform: "ios", kind: "simulator" }, false);
     store.setViewport({ x: 16, y: 16, width: 150, height: 300, stageWidth: 640, stageHeight: 360 });

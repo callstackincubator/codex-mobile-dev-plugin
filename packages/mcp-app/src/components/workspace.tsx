@@ -16,6 +16,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@mobile-de
 import { useMediaQuery } from "@mobile-dev/ui/components/use-media-query.ts";
 import { setUiSurface, setUiTelemetryContext } from "@mobile-dev/ui/telemetry.ts";
 import type { RecordingController } from "@mobile-dev/ui/recording-controller.ts";
+import type { SimulatorPanel } from "@mobile-dev/ui/simulator-panel.ts";
 import { RecordingCard } from "@mobile-dev/ui/components/recording-card.tsx";
 
 import type { DeviceLayout } from "@mobile-dev/ui/device-layout.ts";
@@ -31,7 +32,7 @@ const tools: Record<ToolName, { id: string; label: string; icon: LucideIcon }> =
 const toolOptions: SelectOption<ToolName | "none">[] = [{ value: "none", label: "Hide tools", id: "tool-none" }, ...toolNames.map(name => ({ value: name, label: tools[name].label, id: tools[name].id }))];
 
 /** `fullscreen` is the workspace page that fills the host, rather than the panel beside the chat. */
-export function Workspace({ panels, recordingController, banner, displayModeControl, contextControl, fullscreen }: { panels: WorkspaceTools; recordingController: RecordingController; banner?: ReactNode; displayModeControl?: ReactNode; contextControl?: ReactNode; fullscreen: boolean }) {
+export function Workspace({ panels, devices: [ios, android], recordingController, banner, displayModeControl, contextControl, fullscreen }: { panels: WorkspaceTools; devices: readonly [SimulatorPanel, SimulatorPanel]; recordingController: RecordingController; banner?: ReactNode; displayModeControl?: ReactNode; contextControl?: ReactNode; fullscreen: boolean }) {
   const { logs, performance, storage, tracesift } = panels;
   const { layout, tool, open, savedRecordingVisible } = useSyncExternalStore(panels.subscribe, panels.getSnapshot);
   const [simulatorsCollapsed, setSimulatorsCollapsed] = useState(false);
@@ -89,9 +90,9 @@ export function Workspace({ panels, recordingController, banner, displayModeCont
   const simulatorPanel = <ResizablePanel key="simulators" id="simulators-resizable" minSize="0%" maxSize="100%" collapsible collapsedSize="0px" defaultSize={split ? "36%" : "60%"} onResize={size => setSimulatorsCollapsed(size.inPixels < 1)}>
     <div className="flex h-full min-h-0 flex-col">
       <ResizablePanelGroup id="simulator-panels" groupRef={simulatorGroupRef} orientation="horizontal" className="min-h-0 flex-1" aria-label="Simulators">
-        <ResizablePanel id="ios-resizable" defaultSize="100%" minSize="0px" maxSize="100%" collapsible collapsedSize="0px"><SimulatorView platform="ios" visible={layout === "ios" || layout === "both"} fullscreen={fullscreen} /></ResizablePanel>
+        <ResizablePanel id="ios-resizable" defaultSize="100%" minSize="0px" maxSize="100%" collapsible collapsedSize="0px"><SimulatorView panel={ios} visible={layout === "ios" || layout === "both"} fullscreen={fullscreen} /></ResizablePanel>
         <ResizableHandle hidden={layout !== "both"} disabled={layout !== "both"} aria-label="Resize iOS and Android simulators" />
-        <ResizablePanel id="android-resizable" defaultSize="0%" minSize="0px" maxSize="100%" collapsible collapsedSize="0px"><SimulatorView platform="android" visible={layout === "android" || layout === "both"} fullscreen={fullscreen} /></ResizablePanel>
+        <ResizablePanel id="android-resizable" defaultSize="0%" minSize="0px" maxSize="100%" collapsible collapsedSize="0px"><SimulatorView panel={android} visible={layout === "android" || layout === "both"} fullscreen={fullscreen} /></ResizablePanel>
       </ResizablePanelGroup>
       {bottomToolbar && toolbar}
     </div>

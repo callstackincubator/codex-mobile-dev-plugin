@@ -12,9 +12,9 @@ const showsPlatform = (layout: DeviceLayout, platform: Platform) => layout === "
 
 /**
  * The iOS and Android device panels of one workspace, shared by every host.
- * The host renders `SimulatorView` for both platforms before constructing this.
- * The layout lives in `WorkspaceTools`, whose snapshot the host's chrome renders;
- * this applies it to the device panels and chooses layouts for the user.
+ * The host renders `SimulatorView` for each of `panels`. The layout lives in
+ * `WorkspaceTools`, whose snapshot the host's chrome renders; this applies it to
+ * the device panels and chooses layouts for the user.
  */
 export class DeviceWorkspace {
   readonly panels: readonly [ReturnType<typeof createSimulatorPanel>, ReturnType<typeof createSimulatorPanel>];
@@ -31,13 +31,10 @@ export class DeviceWorkspace {
   }) {
     this.tools = tools;
     this.connectionFailed = options.connectionFailed;
-    const create = (platform: Platform) => {
-      const root = document.getElementById(`${platform}-panel`)!;
-      return createSimulatorPanel(app, root, platform, tools.context, (_device, active) => {
-        if (active) this.activePlatform = platform;
-        this.updateSelection();
-      });
-    };
+    const create = (platform: Platform) => createSimulatorPanel(app, platform, tools, (_device, active) => {
+      if (active) this.activePlatform = platform;
+      this.updateSelection();
+    });
     this.panels = [create("ios"), create("android")];
     this.devices = new WorkspaceDevices(this.panels, layout => tools.setLayout(layout));
     ({ layout: this.layout, manual: this.manual } = tools.getSnapshot());
@@ -64,7 +61,7 @@ export class DeviceWorkspace {
     setUiTelemetryContext({ device_platform: selected?.platform, device_kind: selected?.kind });
     this.tools.context.selectSimulators(visible.flatMap(panel => panel.selected ? [panel.selected] : []), selected);
     this.tools.deviceApps.selectDevice(selected);
-    for (const panel of this.panels) panel.root.dataset.active = String(panel === active);
+    for (const panel of this.panels) panel.setActive(panel === active);
   }
 
   // `SimulatorView` renders each panel's `hidden` from the same layout.
@@ -72,6 +69,8 @@ export class DeviceWorkspace {
     const layout = this.layout;
     setUiTelemetryContext({ layout });
     if (layout === "ios" || layout === "android") this.activePlatform = layout;
+    // Only a shown panel polls for devices.
+    for (const panel of this.panels) panel.setVisible(showsPlatform(layout, panel.platform));
     requestAnimationFrame(() => { for (const panel of this.visiblePanels()) panel.fitScreen(); });
     this.updateSelection();
     if (manual) {

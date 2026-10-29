@@ -5,15 +5,22 @@ import { countUiEvent, recordUiTiming, setUiGauge, captureUiError } from "./tele
 import { compileLogQuery } from "./log-query.ts";
 import type { DeviceApp, ForegroundApp } from "@mobile-dev/shared/device-apps.ts";
 import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
+import { Store } from "./store.ts";
 
-export class LogList {
+export type LogListSnapshot = {
+  filtered: StackedLog[]; selected?: StackedLog; buffered: number; dropped: number;
+  sources: ReadonlySet<string>; levels: ReadonlySet<string>; query: string; queryError: string; usesAge: boolean;
+  stacked: boolean; follow: boolean; attaching: boolean; attachmentStatus: string; attachedKey?: string; canAttach: boolean;
+  sending: boolean; chatError: string; canSendMessage: boolean; selectedAttached: boolean;
+};
+
+export class LogList extends Store<LogListSnapshot> {
   scrollOffset = 0;
   private entries: LogEntry[] = [];
   private appIds = new Map<number, string>();
   private selectedSequence?: number;
   private sequence = 0;
   private dropped = 0;
-  private readonly listeners = new Set<() => void>();
   private sources = new Set(["js", "native"]);
   private levels = new Set(["info", "warn", "error", "debug"]);
   private query = "";
@@ -24,20 +31,17 @@ export class LogList {
   private sending = false;
   private chatError = "";
   private attachmentStatus = "";
-  private snapshot: ReturnType<LogList["makeSnapshot"]>;
 
   private readonly context: PanelContext;
 
   constructor(context: PanelContext) {
+    super(undefined as unknown as LogListSnapshot);
     this.context = context;
-    this.snapshot = this.makeSnapshot();
-    this.context.onChange = () => this.publish();
+    this.state = this.makeSnapshot();
+    context.subscribe(() => this.publish());
   }
 
-  subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
-  getSnapshot = () => this.snapshot;
-
-  private makeSnapshot() {
+  private makeSnapshot(): LogListSnapshot {
     const now = Date.now();
     const matches = this.entries.filter(log => this.sources.has(log.source) && this.levels.has(log.level) && this.compiledQuery.match(log, now));
     const filtered: StackedLog[] = this.stacked ? stackLogs(matches) : matches.map(log => ({ ...log, count: 1, lastTimestamp: log.timestamp }));
@@ -59,12 +63,12 @@ export class LogList {
 
   private publish() {
     const startedAt = performance.now();
-    this.snapshot = this.makeSnapshot();
+    const snapshot = this.makeSnapshot();
     const elapsed = performance.now() - startedAt;
     recordUiTiming("ui.logs.filter", elapsed);
     setUiGauge("ui.logs.buffered_rows", this.entries.length);
-    setUiGauge("ui.logs.filtered_rows", this.snapshot.filtered.length);
-    for (const listener of this.listeners) listener();
+    setUiGauge("ui.logs.filtered_rows", snapshot.filtered.length);
+    this.set(snapshot);
   }
 
   append(entries: LogEntry[], dropped: number) {
@@ -172,7 +176,7 @@ export class LogList {
   }
 
   async attach(remove = false) {
-    const selected = this.snapshot.selected;
+    const selected = this.state.selected;
     if (this.attaching || (!remove && !selected) || !this.context.canAttach) return;
     this.attaching = true; this.publish();
     try {

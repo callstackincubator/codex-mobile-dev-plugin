@@ -22,10 +22,11 @@ const bridge = new MacHostBridge();
 const panels = WorkspaceTools.create(bridge);
 let tool: ToolName | undefined;
 let layout = panels.getSnapshot().layout;
+const devices = new DeviceWorkspace(bridge, panels, { connectionFailed });
 const reactRoot = createRoot(document.getElementById("root")!);
 function render() {
   reactRoot.render(<ErrorBoundary fallback={<p role="alert">Mobile Dev could not render. Reload the window to try again.</p>}>
-    <MacWorkspace panels={panels} tool={tool} layout={layout} fullscreen={fullscreen} />
+    <MacWorkspace panels={panels} devices={devices.panels} tool={tool} layout={layout} fullscreen={fullscreen} />
   </ErrorBoundary>);
 }
 flushSync(render);
@@ -38,7 +39,6 @@ panels.subscribe(() => {
   // The sidebar already shows the layouts it chose; tell it about the ones chosen for the user.
   if (!manual) postToShell({ type: "layout", layout: next });
 });
-const devices = new DeviceWorkspace(bridge, panels, { connectionFailed });
 panels.logs.openForSplitLayout();
 
 function connectionFailed(error: unknown) {

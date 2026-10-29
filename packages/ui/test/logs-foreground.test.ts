@@ -58,7 +58,7 @@ function fixture(t: TestContext) {
   };
   const client = app as unknown as App;
   const deviceApps = createDeviceApps(client);
-  const panel = new LogsPanel(client, { canAttach: true } as PanelContext, deviceApps);
+  const panel = new LogsPanel(client, { canAttach: true, subscribe: () => () => {} } as unknown as PanelContext, deviceApps);
   t.after(async () => { await panel.dispose(); deviceApps.dispose(); });
   const refresh = async (value: ForegroundApp | null) => {
     foregroundApp = value;

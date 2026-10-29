@@ -1,12 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { AppToolsStore } from "../src/app-tools.ts";
+import type { AppToolCall } from "../src/app-tools.ts";
 
 test("the app tools store follows the foreground app and keeps the last app after it exits", async () => {
-  const store = new AppToolsStore();
+  let call: AppToolCall = async () => ({});
+  const store = new AppToolsStore((name, args) => call(name, args));
   let foreground: string | null = "com.acme.shop";
   const calls: string[] = [];
-  store.call = async (name, args) => {
+  call = async (name, args) => {
     calls.push(name);
     if (name === "mobile_list_apps") return { apps: [{ bundleId: "com.acme.shop", name: "Shop" }, { bundleId: "dev.other", name: "Other" }], foregroundBundleId: foreground, runningBundleIds: foreground ? [foreground] : [] };
     if (name === "mobile_app_permissions") return { permissions: [{ permission: "camera", state: args.bundleId === "dev.other" ? "allow" : "ask" }] };
@@ -39,9 +41,10 @@ test("the app tools store follows the foreground app and keeps the last app afte
 });
 
 test("the app tools store merges icons and Android labels once per device", async () => {
-  const store = new AppToolsStore();
+  let call: AppToolCall = async () => ({});
+  const store = new AppToolsStore((name, args) => call(name, args));
   const requests: unknown[] = [];
-  store.call = async (name, args) => {
+  call = async (name, args) => {
     if (name === "mobile_list_apps") return { apps: [{ bundleId: "com.acme", name: "com.acme" }, { bundleId: "dev.other", name: "dev.other" }], foregroundBundleId: null, runningBundleIds: [] };
     if (name === "mobile_app_icons") { requests.push(args.bundleIds); return { apps: { "com.acme": { name: "Acme Shop", icon: "data:image/png;base64,AAAA" } } }; }
     return {};
@@ -64,8 +67,9 @@ test("without a foreground app the picker opens on the newest running app, keeps
   try {
     let running = ["dev.recent"];
     let finishPermissions!: () => void;
-    const store = new AppToolsStore();
-    store.call = async (name, args) => {
+    let call: AppToolCall = async () => ({});
+    const store = new AppToolsStore((name, args) => call(name, args));
+    call = async (name, args) => {
       if (name === "mobile_list_apps") return { apps: [{ bundleId: "a.first", name: "A" }, { bundleId: "dev.recent", name: "Recent" }, { bundleId: "z.last", name: "Z" }], foregroundBundleId: null, runningBundleIds: running };
       if (name === "mobile_app_permissions") {
         if (args.bundleId === "z.last") await new Promise<void>(resolve => { finishPermissions = resolve; });
@@ -87,8 +91,7 @@ test("without a foreground app the picker opens on the newest running app, keeps
     assert.deepEqual(store.getSnapshot().permissions, [{ permission: "location", state: "deny" }]);
     assert.deepEqual(store.getSnapshot().links, ["last://"]);
     running = [];
-    const reopened = new AppToolsStore();
-    reopened.call = store.call;
+    const reopened = new AppToolsStore((name, args) => call(name, args));
     reopened.configure("android", "emulator-5554", false);
     await reopened.load();
     assert.equal(reopened.getSnapshot().bundleId, "z.last", "a new panel returns to the last picked app");
@@ -99,9 +102,10 @@ test("without a foreground app the picker opens on the newest running app, keeps
 });
 
 test("a permission change that lands after a device switch leaves the new device's rows alone", async () => {
-  const store = new AppToolsStore();
+  let call: AppToolCall = async () => ({});
+  const store = new AppToolsStore((name, args) => call(name, args));
   let finish: (value: unknown) => void = () => undefined;
-  store.call = async (name, args) => {
+  call = async (name, args) => {
     if (name === "mobile_list_apps") return { apps: [{ bundleId: "com.acme", name: "Acme" }], foregroundBundleId: "com.acme", runningBundleIds: ["com.acme"] };
     if (name === "mobile_app_permissions") return { permissions: [{ permission: "photos", state: null }] };
     if (name === "mobile_set_app_permission") return new Promise(resolve => { finish = resolve; });
@@ -121,10 +125,11 @@ test("a permission change that lands after a device switch leaves the new device
 });
 
 test("icons for devices with many apps are requested in batches the server accepts", async () => {
-  const store = new AppToolsStore();
+  let call: AppToolCall = async () => ({});
+  const store = new AppToolsStore((name, args) => call(name, args));
   const batches: number[] = [];
   const apps = Array.from({ length: 450 }, (_, index) => ({ bundleId: `com.app${index}`, name: `App ${index}` }));
-  store.call = async (name, args) => {
+  call = async (name, args) => {
     if (name === "mobile_list_apps") return { apps, foregroundBundleId: null, runningBundleIds: [] };
     if (name === "mobile_app_icons") { batches.push((args.bundleIds as string[]).length); return { apps: {} }; }
     if (name === "mobile_app_permissions") return { permissions: [] };

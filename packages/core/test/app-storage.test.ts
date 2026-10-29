@@ -253,7 +253,7 @@ test("simulator resets empty the container but keep its layout, metadata, and cf
 
 test("the change feed hides SDK changes until the toggle shows them", async () => {
   const { StoragePanel, shownChanges } = await import("../../ui/src/storage-panel.ts");
-  const deviceApps = { subscribe: () => () => {}, getSnapshot: () => ({ device: undefined }) };
+  const deviceApps = { subscribe: () => () => {}, getSnapshot: () => ({ device: undefined }), pickedApp: () => undefined, pickApp() {} };
   const panel = new StoragePanel({} as never, deviceApps as never);
   const store = { id: "s", kind: "user-defaults" as const, name: "n", path: "p" };
   (panel as unknown as { update(patch: object): void }).update({ changes: [

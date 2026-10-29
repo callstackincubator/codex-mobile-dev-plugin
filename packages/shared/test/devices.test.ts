@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isDeviceActive, isPhysicalIos, sameDevice } from "../src/devices.ts";
+import { formatDeviceContext, isDeviceActive, isPhysicalIos, sameDevice } from "../src/devices.ts";
 import { avdId, isEmulatorSerial, isStoppedAvd, stoppedAvdName } from "../src/android-ids.ts";
 import { cpuTargetSchema } from "../src/cpu.ts";
 import { deviceChoiceReferenceSchema } from "../src/device-choice.ts";
@@ -73,4 +73,10 @@ test("iOS simulator targets require a simulator UUID and physical ones a hardwar
   assert.equal(deviceChoiceReferenceSchema.safeParse({ platform: "ios", kind: "simulator", deviceId: UDID }).success, true);
   assert.equal(deviceTargetSchema.safeParse({ platform: "ios", id: "emulator-5554" }).success, false);
   assert.equal(deviceTargetSchema.safeParse({ platform: "ios", id: UDID }).success, true);
+});
+
+test("device context names each device's ID, state and role for the model", () => {
+  assert.equal(formatDeviceContext(simulator, true), `Active iOS simulator: iPhone. Device ID: ${UDID}. State: Booted. Use this UDID with the Mobile Dev tools for platform ios.`);
+  assert.equal(formatDeviceContext(pixel, false), "Visible physical Android device: Pixel. Serial: R5CT1234567. State: Booted. Transport: wired. Use this serial with the Mobile Dev Android tools for platform android.");
+  assert.match(formatDeviceContext(phone, true), /^Active physical iOS device: iPhone\. UDID: 00008150-001068280AE8C01C\. State: connected\. Transport not reported\. /);
 });
