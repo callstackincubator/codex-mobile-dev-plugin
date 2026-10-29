@@ -33,10 +33,17 @@ fn profile_tier_level_bytes(profile: &GeneralProfile) -> [u8; 12] {
 /// HEVCDecoderConfigurationRecord (`hvcC`) with one VPS, SPS and PPS array.
 pub fn configuration(parameters: HevcParameterSets) -> Result<Configuration, String> {
     let sps = parameters.sps;
+    // hvcC stores each bit depth minus 8 in three bits.
+    let bit_depth = |depth: u8| depth.checked_sub(8).filter(|minus8| *minus8 <= 7);
+    let luma = bit_depth(sps.bit_depth_luma).ok_or("Unsupported HEVC luma bit depth.")?;
+    let chroma = bit_depth(sps.bit_depth_chroma).ok_or("Unsupported HEVC chroma bit depth.")?;
     let codec = codec_string(&sps.profile);
     let mut description = vec![1];
     description.extend_from_slice(&profile_tier_level_bytes(&sps.profile));
-    description.extend_from_slice(&[0xf0, 0, 0xfc, 0xfd, 0xf8, 0xf8, 0, 0, 0x0f, 3]);
+    // min_spatial_segmentation_idc 0, parallelismType 0, then the reserved-bit-prefixed
+    // chromaFormat and bit depths, avgFrameRate 0, one nested temporal layer,
+    // four-byte NAL lengths and three parameter-set arrays.
+    description.extend_from_slice(&[0xf0, 0, 0xfc, 0xfc | (sps.chroma_format_idc & 3), 0xf8 | luma, 0xf8 | chroma, 0, 0, 0x0f, 3]);
     for (nal_type, bytes) in [(32, parameters.video_parameter_set), (33, parameters.sequence_parameter_set), (34, parameters.picture_parameter_set)] {
         let length = u16::try_from(bytes.len()).map_err(|_| "HEVC parameter set exceeds the supported size.")?;
         description.push(0x80 | nal_type);
@@ -98,6 +105,28 @@ mod tests {
         };
         assert_eq!(codec_string(&profile), "hvc1.A1.6.H153.B0.0.10");
         assert_eq!(profile_tier_level_bytes(&profile), [0x61, 0x60, 0, 0, 0, 0xb0, 0, 0x10, 0, 0, 0, 153]);
+    }
+
+    #[test]
+    fn writes_the_sps_chroma_format_and_bit_depths_into_the_record() {
+        let main10 = GeneralProfile {
+            profile_space: 0, high_tier: false, profile_idc: 2, compatibility_flags: 0x2000_0000,
+            constraint_flags: [0x90, 0, 0, 0, 0, 0], level_idc: 150,
+        };
+        let sps = SpsInfo { profile: main10, chroma_format_idc: 1, bit_depth_luma: 10, bit_depth_chroma: 10, pixel_width: 64, pixel_height: 64 };
+        let ten_bit = configuration(parameters(sps, &SPS_64_X_64)).unwrap();
+        assert_eq!(ten_bit.codec, "hvc1.2.4.L150.90");
+        assert_eq!(&ten_bit.description[13..23], &[0xf0, 0x00, 0xfc, 0xfd, 0xfa, 0xfa, 0x00, 0x00, 0x0f, 0x03]);
+
+        let sps = SpsInfo { chroma_format_idc: 2, bit_depth_luma: 12, bit_depth_chroma: 8, ..sps };
+        let mixed = configuration(parameters(sps, &SPS_64_X_64)).unwrap();
+        assert_eq!(&mixed.description[16..19], &[0xfe, 0xfc, 0xf8]);
+    }
+
+    #[test]
+    fn rejects_bit_depths_the_record_cannot_store() {
+        let sps = SpsInfo { profile: PROFILE_64_X_64, chroma_format_idc: 1, bit_depth_luma: 16, bit_depth_chroma: 8, pixel_width: 64, pixel_height: 64 };
+        assert!(configuration(parameters(sps, &SPS_64_X_64)).is_err());
     }
 
     #[test]
