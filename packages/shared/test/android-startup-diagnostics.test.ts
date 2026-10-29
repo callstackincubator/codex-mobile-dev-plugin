@@ -72,9 +72,13 @@ function completion(messages: StartupMessage[]) {
   return message;
 }
 
-test("successful startup aggregates stage timings and emits no content or per-poll events", async () => {
+test("successful startup aggregates stage timings and emits no content or per-poll events", async t => {
+  // A valid duration can have the same digits as the fixture's forwarded port.
+  let now = 0;
+  t.mock.method(performance, "now", () => now += 28000);
   const f = fixture();
   const session = await startScrcpy({ serial: "private-device-id", onStartupDiagnostics: f.report }, f.dependencies);
+  t.after(() => session.close());
   const summary = completion(f.messages);
   assert.equal(summary.outcome, "ready");
   const poll = summary.stages.find(value => value.stage === "socket-poll");
@@ -82,13 +86,9 @@ test("successful startup aggregates stage timings and emits no content or per-po
   assert.equal(poll?.queueMs, 3);
   assert.equal(poll?.executionMs, 7);
   assert.equal(poll?.spawnedSamples, 1);
-  const parsed = androidStartupMessageSchema.safeParse(summary);
-  assert.equal(parsed.success, true);
-  const serialized = JSON.stringify(f.messages);
-  for (const content of ["private-device-id", "/private", "12345678", "Private device name", "@scrcpy", "28000"]) {
-    const included = serialized.includes(content);
-    assert.equal(included, false);
-  }
+  assert.equal(summary.stages[0].totalMs, 28000);
+  // The strict schema permits only known categories and numeric measurements, never raw content.
+  for (const message of f.messages) androidStartupMessageSchema.parse(message);
   const count = f.messages.length;
   await session.close();
   assert.equal(f.messages.length, count, "Later session cleanup is outside startup diagnostics.");
