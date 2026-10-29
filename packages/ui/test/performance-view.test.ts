@@ -67,7 +67,7 @@ test("performance tracks share immediate zoom, fill a fixed scale, and preserve 
     plugins: [{ name: "observe-chart-inputs", setup(builder) {
       builder.onLoad({ filter: /PerformanceAreaChart\.tsx$/ }, () => ({ loader: "tsx", contents: `
         import { useContext } from "react";
-        import { TimelineChartWidth } from "../../performance/TimelineChartWidth";
+        import { TimelineChartWidth } from "./TimelineChartWidth";
         export function PerformanceAreaChart({ zoomState, onZoomChange, onZoomOut }) {
           const width = useContext(TimelineChartWidth);
           return <div data-chart-width={width} data-domain={zoomState.left + ":" + zoomState.right + ":" + zoomState.viewDuration}>
@@ -77,7 +77,7 @@ test("performance tracks share immediate zoom, fill a fixed scale, and preserve 
         }` }));
       builder.onLoad({ filter: /TimelineRuler\.tsx$/ }, () => ({ loader: "tsx", contents: `
         import { useContext } from "react";
-        import { TimelineChartWidth } from "../../performance/TimelineChartWidth";
+        import { TimelineChartWidth } from "./TimelineChartWidth";
         export function TimelineRuler({ zoomState, cursorLabel }) {
           const width = useContext(TimelineChartWidth);
           return <div data-chart-width={width} data-domain={zoomState.left + ":" + zoomState.right + ":" + zoomState.viewDuration}><span ref={cursorLabel} /></div>;

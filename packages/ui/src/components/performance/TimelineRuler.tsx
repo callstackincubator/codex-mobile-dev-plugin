@@ -1,9 +1,9 @@
 import React, { memo, useContext, useMemo, type ComponentProps, type RefObject } from 'react';
 import { BarChart, Bar, CartesianGrid, XAxis, ReferenceArea } from 'recharts';
-import type { DataPoint, ZoomState } from '../../performance/types';
-import { COLORS, CHART_MARGIN, TIMELINE_HEIGHT } from '../../performance/constants';
-import { TimelineChartWidth } from '../../performance/TimelineChartWidth';
-import { generateTicks, formatTime } from '../../performance/utils';
+import type { DataPoint, ZoomState } from './types';
+import { COLORS, CHART_MARGIN, TIMELINE_HEIGHT } from './constants';
+import { TimelineChartWidth } from './TimelineChartWidth';
+import { generateTicks, formatTime } from './utils';
 import { renderSelectionReferenceArea } from './SelectionReferenceArea';
 import { TimelineCursorIndicator } from './TimelineCursorIndicator';
 

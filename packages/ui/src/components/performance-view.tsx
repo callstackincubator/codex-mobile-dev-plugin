@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ActivityIcon, RefreshCwIcon, SlidersHorizontalIcon, SquareIcon } from "lucide-react";
 import type { PerformancePanel } from "../performance-panel.ts";
-import { SIDEBAR_WIDTH, TIMELINE_HEIGHT } from "../performance/constants";
-import { useCursorTracking } from "../performance/useCursorTracking";
-import { useTimelineViewport } from "../performance/useTimelineViewport";
-import { TimelineChartWidth } from "../performance/TimelineChartWidth";
+import { SIDEBAR_WIDTH, TIMELINE_HEIGHT } from "./performance/constants";
+import { useCursorTracking } from "./performance/useCursorTracking";
+import { useTimelineViewport } from "./performance/useTimelineViewport";
+import { TimelineChartWidth } from "./performance/TimelineChartWidth";
 import { CpuTrack } from "./performance/CpuTrack";
 import { MemoryTrack } from "./performance/MemoryTrack";
 import { DisplayFpsTrack } from "./performance/DisplayFpsTrack";

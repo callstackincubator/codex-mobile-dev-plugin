@@ -1,8 +1,8 @@
 import { useMemo } from "react";
 import { DatabaseIcon } from "lucide-react";
 import type { CpuPhase, CpuSample } from "@mobile-dev/shared/cpu.ts";
-import type { ZoomState } from "../../performance/types";
-import { MEMORY_COLORS, TRACK_HEIGHT } from "../../performance/constants";
+import type { ZoomState } from "./types";
+import { MEMORY_COLORS, TRACK_HEIGHT } from "./constants";
 import { PerformanceAreaChart } from "./PerformanceAreaChart";
 import { TrackLabel } from "./TrackLabel";
 import { CursorIndicator } from "./CursorIndicator";

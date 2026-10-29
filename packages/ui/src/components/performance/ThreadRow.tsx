@@ -1,7 +1,7 @@
 import { memo } from 'react';
-import type { ZoomState } from '../../performance/types';
+import type { ZoomState } from './types';
 import { PerformanceAreaChart } from './PerformanceAreaChart';
-import { THREAD_COLORS } from '../../performance/constants';
+import { THREAD_COLORS } from './constants';
 import type { CpuPoint } from '@mobile-dev/shared/cpu.ts';
 import { CursorIndicator } from './CursorIndicator';
 import { TrackLabel } from './TrackLabel';

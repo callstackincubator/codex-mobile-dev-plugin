@@ -9,18 +9,18 @@ import {
   Tooltip,
   type MouseHandlerDataParam,
 } from "recharts";
-import type { ZoomState } from "../../performance/types";
-import { TimelineChartWidth } from "../../performance/TimelineChartWidth";
+import type { ZoomState } from "./types";
+import { TimelineChartWidth } from "./TimelineChartWidth";
 import type { CpuPoint } from "@mobile-dev/shared/cpu.ts";
 import {
   COLORS,
   CHART_MARGIN,
   TRACK_HEIGHT,
-} from "../../performance/constants";
+} from "./constants";
 import {
   generateTicks,
   getAxisYDomain,
-} from "../../performance/utils";
+} from "./utils";
 import { renderSelectionReferenceArea } from "./SelectionReferenceArea";
 import { ChartToolTip } from "./ChartToolTip";
 import { Button } from "../ui/button";

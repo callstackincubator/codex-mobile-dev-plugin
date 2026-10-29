@@ -1,6 +1,6 @@
 import React from 'react';
 import { ChevronDownIcon, ChevronUpIcon } from 'lucide-react';
-import { SIDEBAR_WIDTH } from '../../performance/constants';
+import { SIDEBAR_WIDTH } from './constants';
 import { Button } from '../ui/button';
 
 type Metric = {

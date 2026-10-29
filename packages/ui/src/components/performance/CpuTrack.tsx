@@ -1,11 +1,11 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { LegendList } from '@legendapp/list/react';
 import { CpuIcon } from 'lucide-react';
-import type { ThreadHistory, ThreadOrder, ZoomState } from '../../performance/types';
+import type { ThreadHistory, ThreadOrder, ZoomState } from './types';
 import { PerformanceAreaChart } from './PerformanceAreaChart';
 import { TrackLabel } from './TrackLabel';
 import { ThreadRow } from './ThreadRow';
-import { SIDEBAR_WIDTH, TRACK_HEIGHT } from '../../performance/constants';
+import { SIDEBAR_WIDTH, TRACK_HEIGHT } from './constants';
 import { CursorIndicator } from './CursorIndicator';
 import type { CpuPhase, CpuSample } from '@mobile-dev/shared/cpu.ts';
 import { createCpuSeries, formatCpu, orderCpuThreads, type CpuThreadSeries } from './cpuSeries';
