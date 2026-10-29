@@ -10,6 +10,7 @@ import { buildReactSelectionPrompt, reactSelectionEvidence, type ReactSelectionR
 import type { ContributionChartKind } from "./tracesift/contribution.ts";
 import { captureUiError, countUiEvent, markUiSurfaceReady, recordUiTiming, setUiGauge, setUiSurface, setUiTelemetryContext } from "./telemetry.ts";
 import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
+import { Store } from "./store.ts";
 
 /** The finding the explorer draws, as the payload tool delivered it. */
 type ExplorerPayload = { kind: "task"; payload: TaskHandoff } | { kind: "react"; payload: ReactExploreHandoff };
@@ -54,9 +55,7 @@ function composerUnavailable(error: unknown) {
   return /(?:no (?:active |available )?composer|composer.*(?:unavailable|not available|not active)|requires? an (?:active|available) composer|MCP app messages are disabled for this view)/i.test(message);
 }
 
-export class TraceSiftController {
-  private state: State = { canInvestigate: false, canCallTools: false, dark: false, error: "", notice: "", chartKind: "bar", projectBusy: false };
-  private listeners = new Set<() => void>();
+export class TraceSiftController extends Store<State> {
   private disposed = false;
   private readyAt = performance.now();
   /** When the current explorer's payload arrived, so its own readiness can be timed. */
@@ -69,7 +68,10 @@ export class TraceSiftController {
   private rememberChain: Promise<void> = Promise.resolve();
   /** Bumped by every restore attempt; a response only applies while it still matches the latest one requested. */
   private restoreToken = 0;
-  constructor(app: HostBridge) { this.app = app; }
+  constructor(app: HostBridge) {
+    super({ canInvestigate: false, canCallTools: false, dark: false, error: "", notice: "", chartKind: "bar", projectBusy: false });
+    this.app = app;
+  }
 
   /** The authoritative hand-off for one card. Investigate sends it; Copy copies it. */
   private async handoff(cardId: string) {
@@ -82,13 +84,6 @@ export class TraceSiftController {
     const parsed = traceSiftHandoffSchema.safeParse(result.structuredContent);
     if (!parsed.success) throw new Error("TraceSift returned an invalid handoff result.");
     return parsed.data.handoff;
-  }
-  subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
-  getSnapshot = () => this.state;
-  private update(next: Partial<State>) {
-    if (this.disposed) return;
-    this.state = { ...this.state, ...next };
-    for (const listener of this.listeners) listener();
   }
   hostChanged() {
     const capabilities = this.app.getHostCapabilities();
@@ -595,6 +590,6 @@ export class TraceSiftController {
   dispose() {
     this.disposed = true;
     if (this.copiedTimer !== undefined) clearTimeout(this.copiedTimer);
-    this.listeners.clear();
+    this.close();
   }
 }

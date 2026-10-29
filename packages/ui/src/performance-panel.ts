@@ -10,6 +10,7 @@ import type { DisplayFpsState } from "./display-fps-panel.ts";
 import type { DeviceAppsStore } from "./device-apps.ts";
 import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 import { isDeviceActive, isPhysicalIos, sameDevice } from "@mobile-dev/shared/devices.ts";
+import { Store } from "./store.ts";
 
 type Snapshot = DisplayFpsState & {
   open: boolean; available: boolean; discovering: boolean; monitoring: boolean;
@@ -21,7 +22,7 @@ type Snapshot = DisplayFpsState & {
 };
 type Session = { id: string; abort: AbortController; closing?: Promise<void> };
 
-export class PerformancePanel {
+export class PerformancePanel extends Store<Snapshot> {
   private app: HostBridge;
   private fps: DisplayFpsPanel;
   private timeOrigin?: number;
@@ -36,12 +37,11 @@ export class PerformancePanel {
   private cleanup: Promise<void> = Promise.resolve();
   private running?: Promise<void>;
   private selections = new Map<string, string>();
-  private listeners = new Set<() => void>();
-  private snapshot: Snapshot = { ...initialFpsState, physical: false, open: false, available: false, discovering: false, monitoring: false,
-    selectedLabel: "Selected device", platform: "ios", bundleId: "", apps: [], samples: [], threadHistory: new Map(), threadOrder: "activity",
-    phase: "idle", error: "", sourceError: "" };
 
   constructor(app: HostBridge, deviceApps: DeviceAppsStore) {
+    super({ ...initialFpsState, physical: false, open: false, available: false, discovering: false, monitoring: false,
+      selectedLabel: "Selected device", platform: "ios", bundleId: "", apps: [], samples: [], threadHistory: new Map(), threadOrder: "activity",
+      phase: "idle", error: "", sourceError: "" });
     this.app = app;
     this.deviceApps = deviceApps;
     this.fps = new DisplayFpsPanel(app, (fields, origin) => {
@@ -56,9 +56,6 @@ export class PerformancePanel {
     this.unsubscribeApps = deviceApps.subscribe(() => this.appsChanged());
     this.appsChanged();
   }
-  subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
-  getSnapshot = () => this.snapshot;
-  private update(fields: Partial<Snapshot>) { this.snapshot = { ...this.snapshot, ...fields }; for (const listener of this.listeners) listener(); }
   private resetHistory(fields: Partial<Snapshot>) {
     this.nextThreadNumber = 1;
     const threadHistory = new Map<string, ThreadHistory>();
@@ -97,7 +94,7 @@ export class PerformancePanel {
     this.fps.show();
     this.update({ open: true });
     this.appsChanged();
-    if (this.snapshot.bundleId && this.running === undefined) this.restart();
+    if (this.state.bundleId && this.running === undefined) this.restart();
   }
 
   hide() { this.update({ open: false }); }
@@ -119,7 +116,7 @@ export class PerformancePanel {
   }
 
   selectApp(bundleId: string) {
-    if (bundleId === this.snapshot.bundleId) return;
+    if (bundleId === this.state.bundleId) return;
     if (this.simulator) {
       const key = this.deviceKey(this.simulator);
       this.selections.set(key, bundleId);
@@ -145,14 +142,14 @@ export class PerformancePanel {
     if (this.disposed) return;
     const source = this.deviceApps.getSnapshot();
     this.selectSimulator(source.device);
-    if (this.enabled === false || this.snapshot.available === false) return;
+    if (this.enabled === false || this.state.available === false) return;
     this.update({ discovering: source.discovering, sourceError: source.error });
     if (source.ready === false || source.discovering) return;
     const device = source.device;
     if (device === undefined) return;
     const apps = source.apps;
-    const previous = this.snapshot.apps.find(app => app.bundleId === this.snapshot.bundleId);
-    let bundleId = this.snapshot.bundleId;
+    const previous = this.state.apps.find(app => app.bundleId === this.state.bundleId);
+    let bundleId = this.state.bundleId;
     if (bundleId === "") {
       const foreground = apps.find(app => app.foreground === true);
       if (foreground) bundleId = foreground.bundleId;
@@ -174,8 +171,8 @@ export class PerformancePanel {
     const stopping = this.stop();
     const epoch = this.epoch;
     const device = this.simulator;
-    const bundleId = this.snapshot.bundleId;
-    if (this.enabled === false || this.snapshot.available === false || device === undefined || !isDeviceActive(device) || bundleId === "") {
+    const bundleId = this.state.bundleId;
+    if (this.enabled === false || this.state.available === false || device === undefined || !isDeviceActive(device) || bundleId === "") {
       void stopping.catch(error => this.failed(error));
       this.update({ monitoring: false });
       return;
@@ -214,7 +211,7 @@ export class PerformancePanel {
         if (batch.timeOrigin !== undefined && this.timeOrigin === undefined) this.timeOrigin = batch.timeOrigin;
         const offset = batch.timeOrigin === undefined ? 0 : batch.timeOrigin - (this.timeOrigin ?? batch.timeOrigin);
         const incoming = batch.samples.map(sample => ({ ...sample, time: sample.time + offset }));
-        const combined = [...this.snapshot.samples, ...incoming];
+        const combined = [...this.state.samples, ...incoming];
         const latest = combined.at(-1)?.time ?? 0;
         const retained = combined.filter(sample => sample.time >= latest - CPU_HISTORY_SECONDS);
         const samples = retained.slice(-CPU_MAX_SAMPLES);
@@ -222,7 +219,7 @@ export class PerformancePanel {
         for (const sample of samples) {
           for (const thread of sample.threads) {
             if (threadHistory.has(thread.id)) continue;
-            let history = this.snapshot.threadHistory.get(thread.id);
+            let history = this.state.threadHistory.get(thread.id);
             if (history === undefined) history = { number: this.nextThreadNumber++, peakCpuPercent: 0 };
             threadHistory.set(thread.id, history);
           }
@@ -273,5 +270,6 @@ export class PerformancePanel {
     this.unsubscribeApps();
     this.hide();
     await this.disconnect();
+    this.close();
   }
 }

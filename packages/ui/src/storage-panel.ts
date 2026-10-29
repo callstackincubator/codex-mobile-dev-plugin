@@ -10,6 +10,7 @@ import { isSdkStore, storeTitle } from "./storage-labels.ts";
 import { measureUiOperation, recordUiTiming, setUiGauge } from "./telemetry.ts";
 import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 import { isDeviceActive, isPhysicalIos } from "@mobile-dev/shared/devices.ts";
+import { Store } from "./store.ts";
 
 export type StorageAction = "apps" | "read" | "clear" | "reset" | "launch";
 export type StorageTab = "browse" | "changes";
@@ -92,29 +93,24 @@ export function diffSnapshots(previous: StorageSnapshot, next: StorageSnapshot):
   return events;
 }
 
-export class StoragePanel {
+export class StoragePanel extends Store<StorageState> {
   private readonly app: HostBridge;
   private readonly deviceApps: DeviceAppsStore;
   private readonly unsubscribe: () => void;
-  private listeners = new Set<() => void>();
   private revision = 0;
   private nextChange = 1;
   private poll?: ReturnType<typeof setInterval>;
   // Whether the app listing in flight still applies; a listing for an older device or app is left to finish unused.
   private listing?: () => boolean;
   private selections = new Map<string, string>();
-  private state: StorageState = { open: false, available: false, platform: "ios", deviceId: "", deviceLabel: "", unsupported: "", apps: [], bundleId: "", tab: "browse", changes: [], showSdkChanges: false, busy: null, error: "", status: "" };
 
   constructor(app: HostBridge, deviceApps: DeviceAppsStore) {
+    super({ open: false, available: false, platform: "ios", deviceId: "", deviceLabel: "", unsupported: "", apps: [], bundleId: "", tab: "browse", changes: [], showSdkChanges: false, busy: null, error: "", status: "" });
     this.app = app;
     this.deviceApps = deviceApps;
     this.unsubscribe = deviceApps.subscribe(() => this.selectDevice(deviceApps.getSnapshot().device));
     this.selectDevice(deviceApps.getSnapshot().device);
   }
-
-  subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
-  getSnapshot = () => this.state;
-  private update(patch: Partial<StorageState>) { this.state = { ...this.state, ...patch }; for (const listener of this.listeners) listener(); }
 
   // Results apply only while the device and app that started the work are still selected.
   private current() {
@@ -313,6 +309,6 @@ export class StoragePanel {
     if (this.poll !== undefined) clearInterval(this.poll);
     this.poll = undefined;
     this.unsubscribe();
-    this.listeners.clear();
+    this.close();
   }
 }

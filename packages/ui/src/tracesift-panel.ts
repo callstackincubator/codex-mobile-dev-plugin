@@ -1,23 +1,15 @@
 import type { HostBridge } from "./host-bridge.ts";
 import { TraceSiftController } from "./tracesift-controller.ts";
+import { Store } from "./store.ts";
 
 export type TraceSiftState = { open: boolean; available: boolean };
 
-export class TraceSiftPanel {
+export class TraceSiftPanel extends Store<TraceSiftState> {
   readonly controller: TraceSiftController;
-  private state: TraceSiftState = { open: false, available: true };
-  private listeners = new Set<() => void>();
   /** The saved project is read once per frame. */
   private projectLoaded = false;
 
-  constructor(app: HostBridge) { this.controller = new TraceSiftController(app); }
-
-  subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
-  getSnapshot = () => this.state;
-  private update(next: Partial<TraceSiftState>) {
-    this.state = { ...this.state, ...next };
-    for (const listener of this.listeners) listener();
-  }
+  constructor(app: HostBridge) { super({ open: false, available: true }); this.controller = new TraceSiftController(app); }
 
   setAvailable(available: boolean) {
     // First point the host is connected, so the saved project can be requested.
@@ -28,5 +20,5 @@ export class TraceSiftPanel {
   show() { this.controller.restartReadiness(); this.update({ open: true }); }
   // Closing keeps the analysis, so reopening lands where it was left without another service round trip.
   hide() { this.update({ open: false }); }
-  dispose() { this.controller.dispose(); this.listeners.clear(); }
+  dispose() { this.controller.dispose(); this.close(); }
 }

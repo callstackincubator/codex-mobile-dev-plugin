@@ -8,6 +8,7 @@ import { recordingRangeSchema } from "@mobile-dev/shared/recordings.ts";
 import type { RecordingRange } from "@mobile-dev/shared/recordings.ts";
 import { captureUiError, countUiEvent, markUiSurfaceReady, recordUiTiming, setUiGauge, setUiSurface, setUiTelemetryContext } from "./telemetry.ts";
 import { readRecording, RecordingReadError, toolResultText } from "./recording-reader.ts";
+import { Store } from "./store.ts";
 
 type ComparisonState = {
   comparison?: PerformanceComparison;
@@ -22,28 +23,16 @@ type ComparisonState = {
   error: string;
 };
 
-export class ComparisonController {
+export class ComparisonController extends Store<ComparisonState> {
   private readonly app: HostBridge;
-  private state: ComparisonState;
-  private listeners = new Set<() => void>();
   private disposed = false;
   private readyAt = performance.now();
   /** The full recordings being read; a newer comparison replaces them. */
   private loading?: AbortController;
 
   constructor(app: HostBridge, { workspace = false }: { workspace?: boolean } = {}) {
+    super({ hiddenIds: new Set(), canMessage: false, workspace, busy: false, error: "" });
     this.app = app;
-    this.state = { hiddenIds: new Set(), canMessage: false, workspace, busy: false, error: "" };
-  }
-  subscribe = (listener: () => void) => {
-    this.listeners.add(listener);
-    return () => { this.listeners.delete(listener); };
-  };
-  getSnapshot = () => this.state;
-  private update(next: Partial<ComparisonState>) {
-    if (this.disposed) return;
-    this.state = { ...this.state, ...next };
-    for (const listener of this.listeners) listener();
   }
   hostChanged() {
     const capabilities = this.app.getHostCapabilities();
@@ -163,5 +152,5 @@ export class ComparisonController {
       this.update({ error: text });
     } finally { this.update({ busy: false }); }
   }
-  dispose() { this.disposed = true; this.loading?.abort(); this.listeners.clear(); }
+  dispose() { this.disposed = true; this.loading?.abort(); this.close(); }
 }

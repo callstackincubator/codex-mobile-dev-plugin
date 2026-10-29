@@ -6,6 +6,7 @@ import { recordingRangeSchema, recordingReferenceSchema, recordingSchema, summar
 import type { PerformanceRecording, RecordingRange } from "@mobile-dev/shared/recordings.ts";
 import { captureUiError, countUiEvent, markUiSurfaceReady, recordUiTiming, setUiGauge, setUiSurface, setUiTelemetryContext } from "./telemetry.ts";
 import { readRecording, RecordingReadError, RecordingTrimmedError, toolResultText } from "./recording-reader.ts";
+import { Store } from "./store.ts";
 
 type RecordingState = {
   recording?: PerformanceRecording;
@@ -26,11 +27,9 @@ export type RecordingOptions = {
   workspace?: boolean;
 };
 
-export class RecordingController {
+export class RecordingController extends Store<RecordingState> {
   private readonly app: HostBridge;
   private readonly attachments: HostAttachmentsSource;
-  private state: RecordingState;
-  private listeners = new Set<() => void>();
   private timer?: ReturnType<typeof setTimeout>;
   private disposed = false;
   private polling = false;
@@ -41,20 +40,10 @@ export class RecordingController {
   private loading?: AbortController;
 
   constructor(app: HostBridge, { attachments = () => undefined, workspace = false }: RecordingOptions = {}) {
+    super({ canMessage: false, canOpen: workspace, busy: false, error: "" });
     this.app = app;
     this.attachments = attachments;
-    this.state = { canMessage: false, canOpen: workspace, busy: false, error: "" };
     document.addEventListener("visibilitychange", this.visibilityChanged);
-  }
-  subscribe = (listener: () => void) => {
-    this.listeners.add(listener);
-    return () => { this.listeners.delete(listener); };
-  };
-  getSnapshot = () => this.state;
-  private update(next: Partial<RecordingState>) {
-    if (this.disposed) return;
-    this.state = { ...this.state, ...next };
-    for (const listener of this.listeners) listener();
   }
   hostChanged() {
     const capabilities = this.app.getHostCapabilities();
@@ -226,6 +215,6 @@ export class RecordingController {
     this.loading?.abort();
     clearTimeout(this.timer);
     document.removeEventListener("visibilitychange", this.visibilityChanged);
-    this.listeners.clear();
+    this.close();
   }
 }

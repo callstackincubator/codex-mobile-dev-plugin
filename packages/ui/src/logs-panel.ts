@@ -10,6 +10,7 @@ import { composeAppLogQuery, quoteLogQueryValue } from "./log-query.ts";
 import { countUiEvent } from "./telemetry.ts";
 import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 import { isDeviceActive, isPhysicalIos, sameDevice } from "@mobile-dev/shared/devices.ts";
+import { Store } from "./store.ts";
 
 type Call = HostBridge["callServerTool"];
 
@@ -17,7 +18,16 @@ function expiredSession(error: unknown) {
   return error instanceof Error && error.message.includes("This log session expired or closed.");
 }
 
-export class LogsPanel {
+const initialState = {
+  open: false, paused: false, available: false, settings: false, discovering: false,
+  status: "Closed", statusMessage: "", error: "", sourceNotice: "", selectedLabel: "Selected device", selectedPlatform: "ios",
+  native: "ios", metroUrl: "http://127.0.0.1:8081", target: "",
+  android: [] as { id: string; name: string }[], metro: [] as MetroTarget[],
+  followApp: true, hideSystemLogs: true, foregroundApp: null as ForegroundApp | null, appDiscoveryError: "",
+};
+export type LogsPanelState = typeof initialState;
+
+export class LogsPanel extends Store<LogsPanelState> {
   private simulator?: SimulatorDevice;
   private open = false;
   private visible = true;
@@ -31,7 +41,6 @@ export class LogsPanel {
   private session?: { id: string; epoch: number; closing?: Promise<void> };
   private metroUrl?: string;
   readonly list: LogList;
-  private readonly listeners = new Set<() => void>();
   private disposed = false;
   private discovery = 0;
   private pendingAppChange = false;
@@ -42,27 +51,15 @@ export class LogsPanel {
   private userQuery = "";
   private readonly deviceApps: DeviceAppsStore;
   private readonly unsubscribeApps: () => void;
-  private snapshot = {
-    open: false, paused: false, available: false, settings: false, discovering: false,
-    status: "Closed", statusMessage: "", error: "", sourceNotice: "", selectedLabel: "Selected device", selectedPlatform: "ios",
-    native: "ios", metroUrl: "http://127.0.0.1:8081", target: "",
-    android: [] as { id: string; name: string }[], metro: [] as MetroTarget[],
-    followApp: true, hideSystemLogs: true, foregroundApp: null as ForegroundApp | null, appDiscoveryError: "",
-  };
 
   private readonly app: HostBridge;
   constructor(app: HostBridge, context: PanelContext, deviceApps: DeviceAppsStore) {
+    super(initialState);
     this.app = app;
     this.list = new LogList(context);
     this.deviceApps = deviceApps;
     this.unsubscribeApps = deviceApps.subscribe(() => this.appsChanged());
     this.appsChanged();
-  }
-  subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
-  getSnapshot = () => this.snapshot;
-  private update(value: Partial<typeof this.snapshot>) {
-    this.snapshot = { ...this.snapshot, ...value };
-    for (const listener of this.listeners) listener();
   }
 
   toggle() {
@@ -81,13 +78,13 @@ export class LogsPanel {
     else if (this.paused === false && this.loop.active === false) this.restart();
   }
   hide() { this.visible = false; this.reading?.abort(); }
-  toggleSettings() { this.update({ settings: !this.snapshot.settings }); }
+  toggleSettings() { this.update({ settings: !this.state.settings }); }
   togglePause() { this.paused = !this.paused; this.controls(); if (this.paused) void this.stop(); else this.restart(); }
-  configure(value: Partial<Pick<typeof this.snapshot, "native" | "metroUrl" | "target" | "followApp" | "hideSystemLogs">>) {
-    const native = value.native ?? this.snapshot.native;
-    const followApp = native === "ios" ? value.followApp ?? this.snapshot.followApp : false;
-    const changedMode = followApp !== this.snapshot.followApp;
-    const changedSystemLogs = value.hideSystemLogs !== undefined && value.hideSystemLogs !== this.snapshot.hideSystemLogs;
+  configure(value: Partial<Pick<LogsPanelState, "native" | "metroUrl" | "target" | "followApp" | "hideSystemLogs">>) {
+    const native = value.native ?? this.state.native;
+    const followApp = native === "ios" ? value.followApp ?? this.state.followApp : false;
+    const changedMode = followApp !== this.state.followApp;
+    const changedSystemLogs = value.hideSystemLogs !== undefined && value.hideSystemLogs !== this.state.hideSystemLogs;
     this.update({ ...value, followApp });
     if (changedMode) {
       this.pendingAppChange = true;
@@ -97,10 +94,10 @@ export class LogsPanel {
   }
   search(query: string) {
     const prefix = `${this.appClause} & (`;
-    if (this.snapshot.followApp && this.appClause && query === this.appClause) this.userQuery = "";
-    else if (this.snapshot.followApp && this.appClause && query.startsWith(prefix) && query.endsWith(")")) {
+    if (this.state.followApp && this.appClause && query === this.appClause) this.userQuery = "";
+    else if (this.state.followApp && this.appClause && query.startsWith(prefix) && query.endsWith(")")) {
       this.userQuery = query.slice(prefix.length, -1);
-    } else if (this.snapshot.followApp && this.appClause && query.startsWith(`${this.appClause} `)) {
+    } else if (this.state.followApp && this.appClause && query.startsWith(`${this.appClause} `)) {
       const rest = query.slice(this.appClause.length);
       const suffix = rest.trimStart();
       if (suffix.startsWith("|")) {
@@ -130,15 +127,15 @@ export class LogsPanel {
     const simulator = source.device;
     const changed = !sameDevice(simulator, this.simulator);
     this.simulator = simulator;
-    let foregroundApp = this.snapshot.foregroundApp;
+    let foregroundApp = this.state.foregroundApp;
     if (source.ready) foregroundApp = source.foregroundApp;
     else if (changed || source.error) foregroundApp = null;
-    const previous = this.snapshot.foregroundApp;
+    const previous = this.state.foregroundApp;
     const appChanged = foregroundApp?.pid !== previous?.pid || foregroundApp?.bundleId !== previous?.bundleId;
     this.update({ foregroundApp, appDiscoveryError: source.error,
       selectedPlatform: simulator?.platform ?? "ios",
       selectedLabel: simulator ? `${simulator.platform === "android" ? "Android" : "iOS"} · ${simulator.name}` : "Selected device" });
-    if (this.snapshot.native !== "ios") return;
+    if (this.state.native !== "ios") return;
     if (changed) this.pendingSourceChange = true;
     if (changed || appChanged || source.apps !== this.appliedApps) {
       this.pendingAppChange = true;
@@ -150,13 +147,13 @@ export class LogsPanel {
   }
   private applyAppChange() {
     const source = this.deviceApps.getSnapshot();
-    const selected = this.snapshot.native === "ios";
+    const selected = this.state.native === "ios";
     const apps = selected ? source.apps : [];
-    const foreground = selected ? this.snapshot.foregroundApp : null;
+    const foreground = selected ? this.state.foregroundApp : null;
     this.list.setApps(apps, foreground);
     this.appliedApps = source.apps;
     let clause = "";
-    if (this.snapshot.followApp && selected && foreground) {
+    if (this.state.followApp && selected && foreground) {
       if (foreground.bundleId) {
         const bundleId = quoteLogQueryValue(foreground.bundleId);
         clause = `app:${bundleId}`;
@@ -178,7 +175,7 @@ export class LogsPanel {
 
   private options(): LogOptions | undefined {
     const options: LogOptions = {};
-    const { native, target, metroUrl } = this.snapshot;
+    const { native, target, metroUrl } = this.state;
     const selected = this.simulator;
     if (native === "ios" && selected && isDeviceActive(selected)) {
       if (selected.platform === "android") {
@@ -187,7 +184,7 @@ export class LogsPanel {
         const nativeTarget: NativeLogTarget = isPhysicalIos(selected)
           ? { platform: "ios", deviceId: selected.udid, kind: "physical" }
           : { platform: "ios", deviceId: selected.udid };
-        nativeTarget.hideSystemLogs = this.snapshot.hideSystemLogs;
+        nativeTarget.hideSystemLogs = this.state.hideSystemLogs;
         options.native = nativeTarget;
       }
     } else if (native.startsWith("android:")) {
@@ -311,18 +308,18 @@ export class LogsPanel {
   }
 
   async stop() { this.loop.stop(); this.epoch++; if (this.session) await this.closeSession(this.session); }
-  async dispose() { this.disposed = true; this.unsubscribeApps(); this.discovery++; this.open = false; this.available = false; this.controls(); await this.stop(); }
+  async dispose() { this.disposed = true; this.unsubscribeApps(); this.discovery++; this.open = false; this.available = false; this.controls(); this.close(); await this.stop(); }
 
   async discover() {
-    if (!this.available || this.snapshot.discovering || this.disposed) return;
+    if (!this.available || this.state.discovering || this.disposed) return;
     const discovery = ++this.discovery;
     this.update({ discovering: true });
-    const url = this.snapshot.metroUrl.trim();
+    const url = this.state.metroUrl.trim();
     try {
       const result = await this.call({ name: "mobile_log_sources", arguments: url ? { metroUrl: url } : {} }, { timeout: 15000 });
-      if (this.disposed || discovery !== this.discovery || url !== this.snapshot.metroUrl.trim()) return;
-      const previousNative = this.snapshot.native;
-      const previousTarget = this.snapshot.target;
+      if (this.disposed || discovery !== this.discovery || url !== this.state.metroUrl.trim()) return;
+      const previousNative = this.state.native;
+      const previousTarget = this.state.target;
       const data = result.structuredContent as { android: { id: string; name: string }[]; metro: MetroTarget[]; errors: string[] };
       const native = previousNative === "ios" || previousNative === "none" || data.android.some(device => `android:${device.id}` === previousNative) ? previousNative : "none";
       const target = this.metroUrl === url && data.metro.some(target => target.id === previousTarget) ? previousTarget : "";

@@ -9,6 +9,7 @@ import { captureUiError, countUiEvent, recordUiTiming, getUiTelemetryAttributes 
 import { FailureEpisodes, errorCategory, setErrorCategory, errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 import { errorReportSignature } from "@mobile-dev/shared/telemetry.ts";
 import { isDeviceActive, isPhysicalIos, sameDevice } from "@mobile-dev/shared/devices.ts";
+import { Store } from "./store.ts";
 
 export type DeviceAppsSnapshot = DeviceApps & {
   device?: SimulatorDevice;
@@ -23,7 +24,7 @@ export type DeviceAppsVisibility = {
 };
 type Discovery = { abort: AbortController; done?: Promise<void> };
 
-export class DeviceAppsStore {
+export class DeviceAppsStore extends Store<DeviceAppsSnapshot> {
   private readonly app: HostBridge;
   private readonly visibility: DeviceAppsVisibility;
   private available = false;
@@ -31,28 +32,16 @@ export class DeviceAppsStore {
   private discovery?: Discovery;
   private readonly failures = new FailureEpisodes();
   private timer?: ReturnType<typeof setInterval>;
-  private listeners = new Set<() => void>();
-  private snapshot: DeviceAppsSnapshot = { apps: [], foregroundApp: null, discovering: false, ready: false, error: "" };
 
   constructor(app: HostBridge, visibility: DeviceAppsVisibility) {
+    super({ apps: [], foregroundApp: null, discovering: false, ready: false, error: "" });
     this.app = app;
     this.visibility = visibility;
     visibility.addEventListener("visibilitychange", this.visibilityChanged);
   }
 
-  subscribe = (listener: () => void) => {
-    this.listeners.add(listener);
-    return () => { this.listeners.delete(listener); };
-  };
-  getSnapshot = () => this.snapshot;
-
-  private update(fields: Partial<DeviceAppsSnapshot>) {
-    this.snapshot = { ...this.snapshot, ...fields };
-    for (const listener of this.listeners) listener();
-  }
-
   selectDevice(device?: SimulatorDevice) {
-    const previous = this.snapshot.device;
+    const previous = this.state.device;
     const changed = !sameDevice(device, previous);
     if (changed === false) {
       if (device !== previous) this.update({ device });
@@ -70,7 +59,7 @@ export class DeviceAppsStore {
   }
 
   private canDiscover() {
-    const device = this.snapshot.device;
+    const device = this.state.device;
     return this.disposed === false && this.available && this.visibility.visibilityState !== "hidden"
       && isDeviceActive(device);
   }
@@ -107,7 +96,7 @@ export class DeviceAppsStore {
   }
 
   private async discover(discovery: Discovery) {
-    const device = this.snapshot.device!;
+    const device = this.state.device!;
     const parameters: { deviceId: string; platform: string; kind?: "physical" } = { deviceId: device.udid, platform: device.platform };
     if (isPhysicalIos(device)) parameters.kind = "physical";
     const startedAt = performance.now();
@@ -158,6 +147,6 @@ export class DeviceAppsStore {
     this.cancel();
     this.visibility.removeEventListener("visibilitychange", this.visibilityChanged);
     this.update({ apps: [], foregroundApp: null, ready: false, discovering: false, error: "" });
-    this.listeners.clear();
+    this.close();
   }
 }
