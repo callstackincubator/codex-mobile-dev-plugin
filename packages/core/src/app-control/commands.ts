@@ -75,7 +75,6 @@ export function commandError(error: unknown, action: string, command?: string): 
   return command === undefined ? failure : annotateDeviceCommand(failure, command, classifyCommandFailure(error));
 }
 
-// Runs adb against one device, turning failures into readable errors.
 export async function runAdb(commands: Commands, serial: string, action: string, args: string[], timeout = 15000): Promise<string> {
   try { return await commands.run(await commands.adb(), ["-s", serial, ...args], { timeout }); }
   catch (error) { throw commandError(error, action, commandLabel("adb", args[0])); }

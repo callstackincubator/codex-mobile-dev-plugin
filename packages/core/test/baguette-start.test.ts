@@ -21,7 +21,7 @@ async function listen(t: TestContext, port: number, handler: RequestListener): P
   return (server.address() as AddressInfo).port;
 }
 
-/** A process that stands in for Baguette's own; it runs until the test ends unless the script exits. */
+/** Stands in for Baguette's process; runs until the test ends unless the script exits. */
 function baguetteProcess(t: TestContext, script = "setInterval(() => {}, 60000)") {
   const spawned = spawn(process.execPath, ["-e", script], { stdio: ["ignore", "pipe", "pipe"] });
   t.after(() => { spawned.kill(); });

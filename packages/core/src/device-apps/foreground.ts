@@ -29,7 +29,6 @@ export type SimulatorForeground = (deviceId: string, signal?: AbortSignal) => Pr
 /** Servers without the panel ship no Baguette, so a simulator's foreground app is unknown. */
 export const unknownSimulatorForeground: SimulatorForeground = async () => null;
 
-/** Asks the panel's bundled Baguette. */
 export async function foregroundSimulatorPid(deviceId: string, signal?: AbortSignal,
   helper = new URL("./baguette/Baguette", import.meta.url), runtime = baguetteEnvironment): Promise<number | null> {
   const path = fileURLToPath(helper);

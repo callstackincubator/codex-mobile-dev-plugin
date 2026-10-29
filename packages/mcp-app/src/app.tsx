@@ -14,10 +14,7 @@ import { startRetiredCard } from "./retired-card.tsx";
 import { startWorkspaceApp } from "./workspace-app.tsx";
 import type { WorkspaceOptions } from "./workspace-extension.ts";
 
-/**
- * Starts the view the served page asks for. A host's page entry calls this, passing
- * any chrome it adds to the workspace.
- */
+/** Starts the view the served page asks for; a host's page entry passes the chrome it adds. */
 export function startMcpApp(options: { workspace?: WorkspaceOptions } = {}) {
   const view = document.documentElement.dataset.view;
   // Servers with Mobile Dev's workspace say so on their cards, which can then open recordings there.

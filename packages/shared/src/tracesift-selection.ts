@@ -29,10 +29,7 @@ export interface SelectionCard {
 }
 
 export interface SelectedFrame {
-  /**
-   * Which pick this is, matching the number the views draw. Carried, not derived:
-   * a dropped pick must not renumber the ones counted off the screen.
-   */
+  /** Pick number as drawn in the views. Carried, not derived, so a dropped pick doesn't renumber the rest. */
   pick: number;
   nodeId: string;
   name: string;
@@ -96,10 +93,7 @@ export function frameSelectionEvidence(card: SelectionCard, selectedNodeIds: rea
   const culprits = new Map((card.culprits ?? []).map(culprit => [culprit.nodeId, culprit]));
   const frames: SelectedFrame[] = [];
   const unresolved: string[] = [];
-  // A reader can click the same frame twice through two views before the state
-  // settles, and a duplicated line in a hand-off reads as two findings. The
-  // number carried is the first-occurrence position in the order chosen, which
-  // is exactly what the views numbered the frames on screen with.
+  // Dedupe: the same frame can be clicked twice before state settles. The pick number is the first-occurrence position, matching the views.
   for (const nodeId of new Set(selectedNodeIds)) {
     const hit = index.get(nodeId);
     if (!hit) {
@@ -129,18 +123,14 @@ export function frameSelectionEvidence(card: SelectionCard, selectedNodeIds: rea
     });
   }
 
-  // A frame's id is the path of sibling indices to it, so one id is inside
-  // another exactly when the other is a prefix of it. Judging that on the ids
-  // rather than by walking back up means it holds whatever the tree's own
-  // nesting looks like once a mode has collapsed frames away.
+  // A frame's id is its sibling-index path, so nesting is an id prefix; this holds even when a mode has collapsed frames.
   const overlaps: [string, string][] = [];
   for (const outer of frames) {
     for (const inner of frames) {
       if (inner.nodeId.startsWith(`${outer.nodeId}.`)) overlaps.push([outer.nodeId, inner.nodeId]);
     }
   }
-  // Self time charges only its own frame, so unlike totals it never double-counts
-  // a nested pair — which is why the remainder falls out by subtraction.
+  // Self time never double-counts a nested pair, so the remainder is a subtraction.
   const selfMsTogether = rounded(frames.reduce((sum, frame) => sum + frame.selfMs, 0));
   let treeSelfMs = 0;
   for (const located of index.values()) treeSelfMs += located.node.selfMs;
@@ -166,10 +156,7 @@ const FOLD_WORDS: Record<string, string> = {
   library: "dependency",
 };
 
-/**
- * Which frames the tree prints rather than folds. Ported from Explore's
- * `isShownFrame` — this file cannot carry the package's React peer.
- */
+/** Frame classes the tree prints rather than folds. Ported from Explore's `isShownFrame`; this file can't carry its React peer. */
 const KEPT_CLASSES = new Set(["app", "library", "anonymous"]);
 
 /** The engine's own housekeeping, which names nothing a reader can act on. */
@@ -179,8 +166,7 @@ const ENGINE_STATE = new Set(["(idle)", "(program)", "(garbage collector)", "(gc
 const NAMES_NOTHING = new Set(["", "(anonymous)", "anonymous", "<anonymous>", "(root)", "(function)", "Function call", "FunctionCall"]);
 
 function isPrintedFrame(name: string, frameClass: string): boolean {
-  // A name the recorder invented says nothing even on a frame of a kept class:
-  // an `(anonymous)` row is exactly the scaffolding a fold exists to hide.
+  // A recorder-invented name says nothing even in a kept class.
   if (NAMES_NOTHING.has(name.trim())) return false;
   if (KEPT_CLASSES.has(frameClass)) return true;
   if (frameClass !== "native") return false;
@@ -203,10 +189,7 @@ interface TreeRow {
   children: TreeRow[];
 }
 
-/**
- * The frames joining the task to every pick, as one tree rather than a stack
- * each: copies would bury the branch point. Shape matches the service's own.
- */
+/** The frames joining the task to every pick as one tree, so branch points stay visible. Shape matches the service's own. */
 function selectionsTree(card: SelectionCard, frames: readonly SelectedFrame[]): string[] {
   const byId = new Map<string, { node: SelectionTree; parent: SelectionTree | null }>();
   const pending: { node: SelectionTree; parent: SelectionTree | null }[] = [{ node: card.tree, parent: null }];
@@ -216,9 +199,7 @@ function selectionsTree(card: SelectionCard, frames: readonly SelectedFrame[]): 
     for (const child of here.node.children) pending.push({ node: child, parent: here.node });
   }
 
-  // Only ids the tree actually holds are drawn; the rest are told separately.
-  // The number is the pick's own, so a frame the tree dropped does not renumber
-  // the ones after it away from what the reader saw on screen.
+  // Only ids the tree holds are drawn (the rest are listed separately); keep each pick's own number.
   const marked = new Map<string, number>();
   for (const frame of frames) {
     if (byId.has(frame.nodeId)) marked.set(frame.nodeId, frame.pick);
@@ -227,21 +208,19 @@ function selectionsTree(card: SelectionCard, frames: readonly SelectedFrame[]): 
 
   const keep = new Set<string>();
   for (const id of marked.keys()) {
-    // Ancestors of a kept node are kept, so meeting one ends the walk. Parent
-    // links come from the walk above rather than from cutting the id up, so a
-    // tree whose ids are not plain dotted paths still resolves.
+    // Meeting an already-kept node ends the walk. Parents come from the walk above, not from splitting ids, so ids that aren't dotted paths still resolve.
     let here = byId.get(id);
     while (here && !keep.has(here.node.id)) {
       keep.add(here.node.id);
       here = here.parent ? byId.get(here.parent.id) : undefined;
     }
   }
-  // And the heaviest few frames inside each pick: where its own time went.
+  // Also keep the heaviest few frames inside each pick.
   for (const id of marked.keys()) {
     let node = byId.get(id)?.node;
     for (let depth = 0; depth < MAX_HOT_DESCENT && node; depth += 1) {
       const next = [...node.children].sort((a, b) => b.totalMs - a.totalMs)[0];
-      // A frame descending into itself is recursion, already said on its row.
+      // A child with its parent's name is recursion, already said on its row.
       if (!next || next.name === node.name) break;
       keep.add(next.id);
       node = next;
@@ -344,8 +323,7 @@ export function buildSelectionPrompt(input: {
     if (frame.frameClass !== "app") lines.push(`   - Classified as \`${frame.frameClass}\` code, not application code.`);
     lines.push(`   - Reached through: ${frame.path.slice(0, -1).map(part => `\`${part}\``).join(" › ") || "the top of the task"}`);
     if (frame.culprit) {
-      // Measured across every call site of this frame, not just the one above,
-      // so it is larger and has to be labelled or it reads as a contradiction.
+      // Counts every call site, so it is larger than the figures above and must be labelled.
       lines.push(
         `   - It is also one of the task's ranked culprits, counted across all of its call sites rather than this one: ${ms(frame.culprit.selfMs)} of self time over ${frame.culprit.invocations} call${frame.culprit.invocations === 1 ? "" : "s"}${frame.culprit.longestCallMs === undefined ? "" : `, longest single call ${ms(frame.culprit.longestCallMs)}`}.`,
       );
@@ -353,10 +331,7 @@ export function buildSelectionPrompt(input: {
   });
   lines.push("");
 
-  // Two picks can be the same function at two call sites, which the tree keeps
-  // apart and a reader reasonably does not expect. Said plainly, because a model
-  // reading two identically named entries either merges them into one finding and
-  // loses a call site's worth of time, or reports them as two separate problems.
+  // Say so plainly: a model reading two same-named entries would otherwise merge them (losing time) or report two problems.
   const callSites = new Map<string, SelectedFrame[]>();
   for (const frame of evidence.frames) {
     const key = `${frame.name}\u0000${frame.location ?? ""}`;
@@ -391,9 +366,7 @@ export function buildSelectionPrompt(input: {
     `- Their own time together is ${ms(evidence.selfMsTogether)} — ${percentText(evidence.selfShare)} of the task's ${ms(card.durationMs)}. Self time is counted once per frame, so it does not double up where one selection called another.`,
   );
   lines.push(`- Their inclusive times are not additive, so they have no sum worth quoting${evidence.overlaps.length > 0 ? ", and the overlap is spelled out above" : ""}.`);
-  // Both sides of the subtraction are figures this document states, so the
-  // remainder is arithmetically true here rather than true if the tree happens
-  // to sum to the card's own duration to the tenth.
+  // Both operands are figures this document states, so the remainder is consistent despite rounding in the card's duration.
   const residual = rounded(evidence.treeSelfMs - evidence.selfMsTogether);
   if (residual > 0.05) {
     lines.push(

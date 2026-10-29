@@ -31,10 +31,7 @@ export function parseSimulatorList(output: string): SimulatorDevice[] {
   return simulators.sort((a, b) => Number(b.state === "Booted") - Number(a.state === "Booted") || a.name.localeCompare(b.name));
 }
 
-/**
- * Lists iOS simulators with `xcrun simctl` for the tools that target one, such as logs,
- * CPU and device choices, without starting the panel's simulator backend.
- */
+/** Lists iOS simulators with `xcrun simctl`, without starting the panel's simulator backend. */
 export class Simctl {
   private readonly run: (args: string[]) => Promise<string>;
 

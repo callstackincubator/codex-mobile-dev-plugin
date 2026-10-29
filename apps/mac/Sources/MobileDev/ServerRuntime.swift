@@ -1,6 +1,5 @@
 import Foundation
 
-/// The Node executable and server script bundled in the app's resources.
 struct ServerRuntime {
   let node: URL
   let server: URL

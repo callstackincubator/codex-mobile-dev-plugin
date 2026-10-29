@@ -52,7 +52,7 @@ export class AppToolsStore {
   private state: AppToolsState = { platform: "ios", deviceId: "", disabled: true, ...deviceDefaults, recentUrls: recentUrls.read(), section: openSection.read() };
   private listeners = new Set<() => void>();
   private revision = 0;
-  // simctl cannot read privacy decisions, so iOS rows show what this panel last applied, keyed by app and permission.
+  // simctl cannot read privacy decisions, so iOS rows show what this panel last applied.
   private applied = new Map<string, PermissionState>();
   call?: (name: string, args: Record<string, unknown>) => Promise<unknown>;
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };

@@ -14,7 +14,6 @@ import { captureServerError } from "./telemetry.ts";
 
 const run = promisify(execFile);
 
-/** Runs one agent-device command. */
 export type AgentDeviceBackend = {
   callTool(params: CallToolRequest["params"], options: RequestOptions): Promise<CallToolResult>;
 };

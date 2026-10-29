@@ -1,15 +1,10 @@
-/**
- * The host's own dialogs: one for the profile `mobile_analyze_profile` reads, one
- * for the source folder an investigation lands in. A panel frame only ever sees a
- * `File`, which carries no path, and sending a profile's bytes across MCP would
- * put tens of megabytes on the bridge for a file the local service can open itself.
- */
+// Host-side dialogs for the profile and source folder. A panel frame only sees a `File` with no path, and
+// sending the profile's bytes over MCP would put tens of megabytes on the bridge.
 
 import { execFile } from "node:child_process";
 import { platform } from "node:os";
 
-// A dialog waits on a person. Past this they have walked away, and a child
-// process holding a window open is worse than a refusal the panel can retry.
+// Past this the user has walked away; a lingering dialog process is worse than a refusal the panel can retry.
 const PICKER_TIMEOUT_MS = 5 * 60 * 1000;
 
 export class ProfilePickerError extends Error {
@@ -66,10 +61,7 @@ function run(file: string, args: string[]) {
   });
 }
 
-/**
- * Open one of the host's dialogs and return what was chosen. Cancel comes back as
- * `{ picked: false }`; only a dialog that could not be opened throws.
- */
+/** Cancel returns `{ picked: false }`; only a dialog that could not be opened throws. */
 async function pick(chooser: () => { file: string; args: string[] }, fallback: string[]): Promise<Picked> {
   const { file, args } = chooser();
   let result;
@@ -87,8 +79,6 @@ async function pick(chooser: () => { file: string; args: string[] }, fallback: s
   return { picked: true, path };
 }
 
-/** The profile to analyze. */
 export const pickProfileFile = () => pick(command, ["--getopenfilename", ".", "*.json *.cpuprofile"]);
 
-/** The source folder an investigation of that profile should land in. */
 export const pickProjectFolder = () => pick(folderCommand, ["--getexistingdirectory", "."]);

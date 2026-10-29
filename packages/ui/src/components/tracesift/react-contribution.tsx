@@ -1,5 +1,3 @@
-/** The web TraceSift React commit drawing, adapted to the inline plugin card. */
-
 import { useState } from "react";
 import { reactCommitSlices, type ReactSlice } from "@mobile-dev/shared/tracesift-contribution.ts";
 import { formatReactMs, shortLocationLabel } from "@mobile-dev/shared/tracesift-labels.ts";
@@ -74,7 +72,6 @@ function ReactSliceDetail({ card, slice, onExplore }: {
   </div>;
 }
 
-/** The web card's fallback when no component is wide enough to draw honestly. */
 export function ReactFallbackRows({ card }: { card: TraceSiftReactCard }) {
   const worthARow = card.culprits.filter(culprit => culprit.percentOfCommit >= 5);
   const shown = (worthARow.length > 0 ? worthARow : card.culprits.slice(0, 1)).slice(0, 8);

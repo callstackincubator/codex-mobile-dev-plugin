@@ -19,9 +19,7 @@ await catalogClient.connect(runtimeTransport);
 export const upstreamCatalog = await catalogClient.listTools();
 await catalogClient.close();
 
-/** The catalog Mobile Dev ships. */
 export const agentDeviceCatalogFile = new URL("../runtimes/agent-device/tools.json", import.meta.url);
-/** The workflow guide the agent-device skill ships. */
 export const agentDeviceGuideFile = new URL("../skills/agent-device/references/workflow.md", import.meta.url);
 
 /**

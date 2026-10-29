@@ -95,11 +95,7 @@ export class RecordingController {
     if (canLoad) void this.load(recordingId, preview ? undefined : range);
     else if (preview === undefined) this.update({ error: "This app cannot load the recording." });
   }
-  /**
-   * Shows a recording at the requested range. Without one, the same recording keeps the
-   * range selected on it, so a full recording replacing its preview or a refresh keeps
-   * the user's selection.
-   */
+  /** Without a requested range, the same recording keeps its selected range across preview replacement and refresh. */
   private present(recording: PerformanceRecording, requestedRange?: unknown, preview?: RecordingState["preview"]) {
     const startedAt = performance.now();
     const changedRecording = this.state.recording?.id !== recording.id;

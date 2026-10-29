@@ -11,9 +11,7 @@ const built = await build({
   define: { "process.env.NODE_ENV": '"production"' },
 });
 
-// Every chat card shares one bootstrap: it renders, connects to the host, applies the
-// host's styles, labels telemetry, and tears down when the host asks. Devices cards that
-// chats saved from earlier releases say so the same way.
+// Devices cards saved by earlier releases go through the same bootstrap.
 for (const view of ["recording", "comparison", "tracesift", "devices"] as const) test(`the ${view} card connects, styles itself and tears down`, async t => {
   const dom = new JSDOM(`<html data-view="${view}"><head><meta name="mobile-dev-environment" content="development"><meta name="mobile-dev-telemetry" content="off"></head><body><div id="root"></div></body></html>`, {
     pretendToBeVisual: true, runScripts: "outside-only", url: "https://mobile-dev.test/",

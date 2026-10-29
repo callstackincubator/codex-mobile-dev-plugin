@@ -12,8 +12,7 @@ import type { TraceSiftClient } from "./tracesift-client.ts";
 import { TraceSiftError } from "./tracesift-client.ts";
 import { pickProfileFile, pickProjectFolder } from "./profile-picker.ts";
 
-// Async on purpose: compressing a megabyte tree on the main thread would stall
-// every other tool call sharing this process.
+// Async so compressing a large tree does not stall other tool calls.
 const gzip = promisify(gzipCallback);
 const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 // Analysis replaces the latest-input reference; remember replaces the host-view reference.
@@ -186,8 +185,7 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
     inputSchema: {
       analysisId: z.string().min(1).max(256), taskIndex: z.number().int().nonnegative().optional(),
     },
-    // Only the envelope is schema-checked: the tree inside is megabytes the host
-    // would walk node by node to prove a shape the explorer checks as it draws.
+    // Only the envelope is schema-checked; the tree inside is megabytes the explorer validates as it draws.
     outputSchema: traceSiftExploreEnvelopeSchema.shape,
     annotations: localService,
     _meta: { ui: { visibility: ["app"] } },
@@ -197,18 +195,15 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
       const handoff = taskIndex === undefined
         ? { kind: "react" as const, value: await client.exploreReact(analysisId, context.signal) as unknown }
         : { kind: "task" as const, value: await client.exploreTask(analysisId, taskIndex, context.signal) as unknown };
-      // Depth first, and iteratively: `JSON.stringify` recurses, so a runaway
-      // tree would overflow the stack before the byte guard below could see it.
+      // Checked iteratively: `JSON.stringify` recurses and a runaway tree would overflow the stack first.
       if (traceSiftPayloadTooDeep(handoff.value)) throw new TraceSiftError(TRACE_SIFT_PAYLOAD_TOO_LARGE, "response");
-      // Even under the depth bound V8 can run out of stack on a tree it cannot
-      // serialize; that is the same answer for the reader, not a crash.
+      // V8 can still overflow under the depth bound; treat it as too large.
       let json: string;
       try { json = JSON.stringify(handoff.value); }
       catch (error) { throw error instanceof RangeError ? new TraceSiftError(TRACE_SIFT_PAYLOAD_TOO_LARGE, "response") : error; }
       const raw = { kind: handoff.kind, json };
       if (raw.json.length > TRACE_SIFT_PAYLOAD_MAX_BYTES) throw new TraceSiftError(TRACE_SIFT_PAYLOAD_TOO_LARGE, "response");
-      // Small payloads cross as plain JSON; anything worth compressing does, so
-      // the bridge carries a string the host's structured decoder never walks.
+      // Compressed payloads cross as a string the host's structured decoder never walks.
       const compressed = raw.json.length > TRACE_SIFT_PAYLOAD_GZIP_MIN_BYTES;
       const text = compressed ? (await gzip(raw.json, { level: 6 })).toString("base64") : raw.json;
       const result: CallToolResult = {

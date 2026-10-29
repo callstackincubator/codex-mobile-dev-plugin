@@ -88,7 +88,6 @@ export async function publishPluginRelease({ manifestPath, requiredFiles, branch
   });
 }
 
-/** Publishes the package path given on the command line, as the release workflow runs `scriptUrl`. */
 export async function publishFromCommandLine(scriptUrl, publish) {
   if (process.argv[1] === undefined || resolve(process.argv[1]) !== fileURLToPath(scriptUrl)) return;
   const result = await publish({ pluginDirectory: resolve(process.argv[2]), tag: process.env.RELEASE_TAG, remote: process.env.RELEASE_REPOSITORY_URL, token: process.env.GH_TOKEN });

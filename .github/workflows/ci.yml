@@ -103,7 +103,6 @@ jobs:
             test-results
           retention-days: 7
 
-  # Posts main's screenshots, this pull request's and their diffs as a PR comment.
   visual-report:
     name: Visual diff comment
     needs: visual

@@ -51,11 +51,7 @@ export function configureUI(content: string): string {
   return content.replace(/<meta name="mobile-dev-environment" content="(?:development|release)">/, metadata);
 }
 
-/**
- * Services the server runs on; tests replace them with fakes. `panel` is Mobile Dev's own
- * device views (see createPanel), which hosts that show devices themselves leave out;
- * `features` are the host's additions.
- */
+/** Services the server runs on; tests replace them with fakes. Hosts that show devices themselves leave out `panel`. */
 export type PluginOptions = {
   panel?: Panel;
   simulators?: Simctl;

@@ -6,10 +6,7 @@ import type { ReadResourceResult } from "@modelcontextprotocol/sdk/types.js";
 
 const releaseSegment = /^(?:\d+\.\d+\.\d+|v[1-6])$/;
 
-/**
- * Codex keeps the address of side tabs and saved cards opened before a plugin update,
- * so earlier releases' addresses of a page serve the current UI.
- */
+/** Codex keeps the addresses of cards and side tabs opened before an update, so earlier releases' addresses serve the current UI. */
 export function registerEarlierReleases(server: McpServer, name: string, page: string, read: (uri: URL) => Promise<ReadResourceResult>) {
   const template = new ResourceTemplate(`ui://mobile-dev/{release}/${page}.html`, { list: undefined });
   server.registerResource(name, template, { mimeType: RESOURCE_MIME_TYPE }, (uri, { release }) => {

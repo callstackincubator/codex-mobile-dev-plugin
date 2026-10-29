@@ -5,9 +5,8 @@ import type { Event } from "@sentry/node";
 export type InstallIntegrity = "intact" | "removed" | "replaced";
 export type BundledRuntime = "serve-emu" | "baguette";
 
-// Bundled, this is the server file holding this module in dist/ (server.mjs, or a chunk
-// beside it in split builds), next to the runtimes. Hosts can update or uninstall the
-// plugin while its server runs, removing or replacing that file.
+// Bundled, the server file in dist/ (server.mjs or a chunk) beside the runtimes. Hosts can update or
+// uninstall the plugin while its server runs, removing or replacing it.
 const serverFile = fileURLToPath(import.meta.url);
 const loaded = serverFileStats();
 

@@ -17,8 +17,6 @@ const FILES = "files";
 type Expansion = { expanded?: string; toggle: (store: StorageStore, key: string) => void; copy: (text: string) => void };
 const entryId = (store: StorageStore, key: string) => `${store.id}\u0000${key}`;
 
-// The header above a store or the file list. Opening a table or file swaps the icon for a back button of the
-// same size and adds the item's name to the title.
 function DetailHeader({ icon, title, child, subtitle, path, back, loading, children }: { icon?: ReactNode; title: string; child?: string; subtitle: string; path?: string; back?: { label: string; onBack: () => void }; loading?: boolean; children?: ReactNode }) {
   return <div className="flex items-center gap-3 border-b px-4 py-3 font-sans">
     {back ? <Button variant="outline" size="icon-sm" className="shrink-0" aria-label={back.label} title={back.label} onClick={back.onBack}><ChevronLeftIcon className="size-4" /></Button> : icon}
@@ -162,8 +160,6 @@ function TablePager({ panel, store, table }: { panel: StoragePanel; store: Stora
   </>;
 }
 
-// A store's header and entries. A database lists its tables; opening one shows it in place, with a back button
-// where the store icon was.
 function StoreDetail({ panel, store, title, table, busy, expansion }: { panel: StoragePanel; store: StorageStore; title: string; table?: StorageTableView; busy: boolean; expansion: Expansion }) {
   const subtitle = table ? table.data ? `${plural(table.data.columns.length, "column")} · ${plural(table.data.total, "row")}` : "Loading…"
     : `${storeKindLabels[store.kind]} · ${plural(store.entryCount, store.kind === "sqlite" ? "table" : "key")} · ${formatBytes(store.bytes)}`;

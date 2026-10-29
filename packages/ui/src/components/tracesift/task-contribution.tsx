@@ -1,13 +1,5 @@
-/**
- * The task card's evidence: how the block divides between the features it
- * entered, and what burned the time inside whichever one the reader opens.
- *
- * A port of TraceSift's `src/app/task-contribution.tsx`. Two levels of one
- * chart rather than two charts stacked, because a reader following a slice
- * downward wants that slice's inside *in its place* — a second chart below the
- * first draws two different wholes at the same width and leaves the reader
- * working out which is which.
- */
+// Port of TraceSift's `src/app/task-contribution.tsx`. Two levels of one chart, not two
+// stacked charts: a second chart below would draw two different wholes at the same width.
 
 import { useState } from "react";
 import {
@@ -24,14 +16,13 @@ export function TaskContribution({ card, kind, onFocus }: {
   kind: ContributionChartKind;
   onFocus: (nodeId: string) => void;
 }) {
-  /** The feature being opened, by node id, or null for the task itself. */
+  /** Node id of the open feature, or null for the task itself. */
   const [openId, setOpenId] = useState<string | null>(null);
   const [activeKey, setActiveKey] = useState<string | null>(null);
 
   const open = card.boundaryFrames.find(frame => frame.nodeId === openId) ?? null;
   const slices = open ? boundaryDrillSlices(open) : taskBreakdownSlices(card);
-  // The heaviest slice, so the strip reads as a finding before anyone has
-  // touched the chart rather than as an empty box waiting for a hover.
+  // Defaults to the heaviest slice so the strip reads as a finding before any hover.
   const active = slices.find(slice => slice.key === activeKey) ?? slices[0];
 
   if (slices.length === 0) return null;
@@ -39,8 +30,7 @@ export function TaskContribution({ card, kind, onFocus }: {
   const openFrame = (frame: TraceSiftBoundaryFrame) => { setOpenId(frame.nodeId); setActiveKey(null); };
   const surface = () => { setOpenId(null); setActiveKey(null); };
 
-  // A slice with nothing to open is a residual, and what a reader wants from a
-  // residual is the one view that can still name what is in it.
+  // A residual has nothing to open, so it goes to the explorer, which can still name its contents.
   const activate = (slice: ContributionSlice) => {
     if (slice.boundary) return openFrame(slice.boundary);
     if (slice.culprit) return onFocus(slice.culprit.nodeId);
@@ -60,11 +50,7 @@ export function TaskContribution({ card, kind, onFocus }: {
       ? <>How {open.name}&apos;s {formatMs(open.totalMs)} divides. Each {part} is one function&apos;s own time — these add up, because a sample&apos;s cost belongs to exactly one frame.</>
       : <>How the {formatMs(card.durationMs)} divides between the features it entered. Each {part} is a frame of your own and everything it called — these add up, because no two of them overlap. Open one to see what burned its time.</>}</p>
 
-    {/* Once a feature is open the chart below divides it by self time, which
-        cannot name a frame that delegated its work — so the frames it called
-        belong beside the sentence that just promised to say how it divides,
-        not in the detail panel under it, which is describing one of the
-        functions inside it rather than the feature itself. */}
+    {/* Self time cannot name a frame that delegated its work, so the frames it called go here, not in the slice detail below. */}
     {open?.inside?.length ? <NestedRows boundary={open} onExplore={onFocus} /> : null}
 
     <ContributionChart kind={kind} {...chart} />
@@ -75,13 +61,7 @@ export function TaskContribution({ card, kind, onFocus }: {
   </div>;
 }
 
-/**
- * What a residual stands for, which is the whole reason a level has one.
- *
- * "Everything else, 2.27 s" is a dead end: a reader asks what is in there and
- * the card has no answer. Each of these is a different statement, and two of
- * them are reasons to stop looking rather than to look harder.
- */
+// What a residual stands for. "Everything else, 2.27 s" is a dead end; two of these kinds are reasons to stop looking.
 function residualText(open: TraceSiftBoundaryFrame | null, slice: ContributionSlice): string {
   if (slice.kind === "tail") {
     const count = slice.tailCount ?? 0;
@@ -94,33 +74,21 @@ function residualText(open: TraceSiftBoundaryFrame | null, slice: ContributionSl
   return `${formatMs(slice.ms)} inside ${open?.name ?? "this frame"} ran in functions each too small to draw a slice for — the cost here is spread rather than concentrated.`;
 }
 
-/** Rows past this are a list rather than an answer. */
+// Rows past this are a list rather than an answer.
 const MAX_DETAIL_NESTED = 3;
 
-/**
- * Below this the residual is rounding and a line about it is noise; at or above
- * it the rows are a minority of the frame and have to say so.
- */
+// Below this the residual is rounding noise; at or above it the rows are a minority of the frame and must say so.
 const MIN_NESTED_RESIDUAL = 0.1;
 
 /**
- * Where a feature's time went, one band down.
- *
- * The chart beside this divides the feature by self time, which is the right
- * ranking for "what do I change" and structurally cannot name a frame that
- * delegates — so on a React profile the component band was the last thing the
- * card could say about itself. These rows are the other half: the frames the
- * feature *called*, by inclusive time, with the wrappers between folded into
- * the path.
+ * The frames the feature called, by inclusive time, with wrappers folded into the path.
+ * The self-time chart cannot name a frame that delegates; these rows cover that half.
  */
 function NestedRows({ boundary, onExplore }: { boundary: TraceSiftBoundaryFrame; onExplore: (nodeId: string) => void }) {
   const frames = boundary.inside ?? [];
   const shown = frames.slice(0, MAX_DETAIL_NESTED);
   const rest = frames.length - shown.length;
-  // What these rows do not account for: the frame's own body, the branches too
-  // small to name, and the ones that never reached a frame worth naming at all.
-  // Rows that stop at 22% of a frame with no mark for the other 78% read as the
-  // whole answer, which is the one thing this list must not do.
+  // Time the rows leave out is shown, so a list covering 22% of a frame does not read as the whole answer.
   const claimed = frames.reduce((sum, frame) => sum + frame.totalMs, 0);
   const residualMs = Math.max(0, boundary.totalMs - claimed);
   const residual = boundary.totalMs > 0 && residualMs / boundary.totalMs >= MIN_NESTED_RESIDUAL ? residualMs : 0;
@@ -141,12 +109,7 @@ function NestedRows({ boundary, onExplore }: { boundary: TraceSiftBoundaryFrame;
   </div>;
 }
 
-/**
- * The active slice, in full: the figures, where the frame lives, what reached
- * it, and how its calls were shaped. It keeps a fixed footprint whichever slice
- * is showing, so hovering across a bar does not make the card jump under the
- * cursor.
- */
+// Fixed footprint whichever slice is showing, so hovering across a bar does not move the card.
 function SliceDetail({ card, open, slice, onOpen, onExplore }: {
   card: TraceSiftTaskCard;
   open: TraceSiftBoundaryFrame | null;
@@ -158,9 +121,7 @@ function SliceDetail({ card, open, slice, onOpen, onExplore }: {
   const frame = slice.boundary ?? slice.culprit;
   const location = frame ? locations.shown(slice.name, frame.location) : undefined;
 
-  // A boundary frame's own body is almost always empty — it is a component that
-  // delegates — so the second figure says which of the two readings this is
-  // instead of printing the same number twice.
+  // A boundary frame's own body is usually empty (it delegates), so the second figure differs from the first.
   const secondary = slice.boundary
     ? slice.boundary.selfMs >= 1 ? `${formatMs(slice.boundary.selfMs)} in its own body` : "none of it in its own body"
     : slice.culprit && slice.culprit.totalMs - slice.culprit.selfMs >= 1 ? `${formatMs(slice.culprit.totalMs)} with callees` : undefined;

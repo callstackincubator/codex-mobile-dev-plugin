@@ -1,10 +1,8 @@
 import type { App } from "@modelcontextprotocol/ext-apps";
 
 /**
- * The host operations shared views use. Codex passes its MCP Apps `App`; another
- * host implements the same subset over its own connection to the server. Hosts
- * without a chat leave `message` and `updateModelContext` out of their
- * capabilities, and the views hide the actions that need them.
+ * The host operations shared views use. Hosts without a chat leave `message` and
+ * `updateModelContext` out of their capabilities, and views hide actions that need them.
  */
 export type HostBridge = Pick<App,
   | "callServerTool"
@@ -15,11 +13,7 @@ export type HostBridge = Pick<App,
   | "updateModelContext"
   | "requestDisplayMode">;
 
-/**
- * Whether the host lets views call the server's tools. Hosts that render cards without
- * it, such as Claude Code, show only what the tool result carries; Mobile Dev's panel
- * needs it, so it never runs there.
- */
+/** Whether the host lets views call server tools. Hosts without it, such as Claude Code, show only what the tool result carries; Mobile Dev's panel needs it. */
 export function cardsCallTools(app: Pick<HostBridge, "getHostCapabilities">): boolean {
   return app.getHostCapabilities()?.serverTools !== undefined;
 }

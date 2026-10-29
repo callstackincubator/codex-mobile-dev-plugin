@@ -201,9 +201,7 @@ test("TraceSift startup loser waits for the winning service descriptor", async t
 });
 
 test("TraceSift client names a service too old for the Explore endpoints", async t => {
-  // Health only proves integration API v1, which predates `/task` and
-  // `/react-explore`, so the 404 has to read as an update prompt rather than as
-  // the generic request failure a reader cannot act on.
+  // Health only proves integration API v1, which predates `/task` and `/react-explore`; the 404 must read as an update prompt.
   const fake = await fixture(0o600, instance, false); t.after(fake.close);
   const profile = join(fake.home, "profile.json"); await writeFile(profile, "{}");
   const client = new TraceSiftClient("missing-tracesift", fake.home); t.after(() => client.close());
@@ -218,8 +216,7 @@ test("the saved project is a real folder, resolved once and dropped when it goes
   const fake = await fixture(); t.after(fake.close);
   const client = new TraceSiftClient("missing-tracesift", fake.home); t.after(() => client.close());
   assert.equal(await client.readProject(), undefined);
-  // A path that is a file, or nothing at all, is not a project: saying so beats
-  // handing the chat a folder it cannot open.
+  // A file or missing path is not a project.
   const file = join(fake.home, "not-a-folder.json"); await writeFile(file, "{}");
   for (const bad of [file, join(fake.home, "missing")]) {
     await assert.rejects(client.writeProject(bad), (error: unknown) =>
@@ -232,8 +229,7 @@ test("the saved project is a real folder, resolved once and dropped when it goes
   // Written beside the analyses it qualifies, with their private mode.
   const stored = await stat(join(fake.home, "integrations", "mobile-dev", "project.json"));
   assert.equal(stored.mode & 0o777, 0o600);
-  // A folder that moved reads as no project rather than as a stale path, and the
-  // next choice replaces it.
+  // A folder that moved reads as no project, and the next choice replaces it.
   await rm(project, { recursive: true, force: true });
   assert.equal(await client.readProject(), undefined);
   const second = await mkdtemp(join(tmpdir(), "mobile-dev-project-"));

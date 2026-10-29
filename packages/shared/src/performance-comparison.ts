@@ -26,11 +26,7 @@ const comparisonObject = z.object({
   recordings: recordingsSchema,
   range: optionalRange,
 });
-/**
- * What mobile_compare_performance_recordings returns: the recording IDs and, when they
- * fit, previews of the recordings (see recordingPreview). The card reads each full
- * recording where the host allows it.
- */
+/** What mobile_compare_performance_recordings returns: recording IDs and, when they fit, previews (see recordingPreview). */
 export const comparisonReferenceSchema = z.object({
   title: comparisonTitleSchema,
   recordingIds: comparisonIdsSchema,
