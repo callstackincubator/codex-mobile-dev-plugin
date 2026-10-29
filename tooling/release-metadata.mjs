@@ -1,13 +1,13 @@
 import { appendFile, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { isReleaseVersion } from "../packages/shared/src/release-version.ts";
 
 export async function releaseMetadata(tag, directory = ".") {
   // The workspace's package.json holds the one version every host ships; each
   // host's package step writes it into that host's manifest.
   const metadata = JSON.parse(await readFile(`${directory}/package.json`, "utf8"));
   const version = metadata.version;
-  const validVersion = typeof version === "string" && /^\d+\.\d+\.\d+(?:-[\da-zA-Z.-]+)?$/.test(version);
-  if (validVersion === false) throw new Error("package.json needs a semantic release version.");
+  if (isReleaseVersion(version) === false) throw new Error("package.json needs a semantic release version.");
   if (tag !== `v${version}`) throw new Error(`Release tag must be v${version}; received ${tag}.`);
   const manifest = JSON.parse(await readFile(`${directory}/apps/codex-plugin/.codex-plugin/plugin.json`, "utf8"));
   if (manifest.name !== "mobile-dev") throw new Error("Expected the mobile-dev plugin manifest.");

@@ -58,3 +58,10 @@ test("release metadata rejects versions that could escape artifact paths or outp
   const result = releaseMetadata("v../1.2.3", directory);
   await assert.rejects(result, /semantic release version/);
 });
+
+test("release metadata rejects prerelease versions, which installed updaters cannot compare", async t => {
+  const directory = await fixture(t);
+  await writeFile(`${directory}/package.json`, '{"version":"1.2.4-rc.1"}');
+  const result = releaseMetadata("v1.2.4-rc.1", directory);
+  await assert.rejects(result, /semantic release version/);
+});
