@@ -244,6 +244,11 @@ export class ServeEmu {
     return healthSchema.parse(await response.json());
   }
 
+  /** Whether `backend` still serves the device, which a restarted or stopped backend no longer does. */
+  current(id: string, backend: Backend): boolean {
+    return this.backends.get(id) === backend;
+  }
+
   async assertDevice(id: string, backend: Backend) {
     if ((await this.health(backend)).serial !== id) throw new SimulatorUnavailableError("The Android backend switched to another device. Refresh and reconnect the selected device.");
   }
