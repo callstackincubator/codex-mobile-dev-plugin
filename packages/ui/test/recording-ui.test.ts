@@ -33,7 +33,7 @@ for (const reducedMotion of [false, true]) {
     const dom = new JSDOM(html, { pretendToBeVisual: true, runScripts: "outside-only", url: "https://mobile-dev.test/" });
     const window = dom.window;
     window.Math.random = () => 0;
-    const styles = await readFile("packages/ui/src/style.css", "utf8");
+    const styles = (await Promise.all(["packages/ui/src/style.css", "packages/ui/src/components/recording.css"].map(file => readFile(file, "utf8")))).join("\n");
     const style = window.document.createElement("style");
     style.textContent = styles;
     window.document.head.append(style);
