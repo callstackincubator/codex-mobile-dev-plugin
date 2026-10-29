@@ -3,7 +3,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { McpServer, ResourceTemplate, ResourceMetadata, ReadResourceCallback, ReadResourceTemplateCallback, RegisteredResource, RegisteredResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { MeasurementWindow, TELEMETRY_HOSTS, TELEMETRY_INTERVAL_MS, TELEMETRY_META_KEY, telemetryHost } from "@mobile-dev/shared/telemetry.ts";
-import { ExpectedOperationError, expectedOutcome } from "@mobile-dev/shared/error-reporting.ts";
+import { ExpectedOperationError, expectedOutcome, isRepeatedFailure } from "@mobile-dev/shared/error-reporting.ts";
 import { closeNativeTelemetry } from "./native-telemetry.ts";
 import { closeHttpRuntime } from "./http-runtime.ts";
 import { definitionDiagnosticTags } from "@mobile-dev/shared/simulator-definition-diagnostics.ts";
@@ -162,7 +162,7 @@ export function captureServerError(error: unknown, operation: string, options?: 
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   Sentry.metrics.count("server.error.outcome", 1, { attributes: { operation, outcome: outcome ?? "unexpected", ...diagnosticTags } });
   if (outcome !== undefined) return;
-  if (options?.report === false) {
+  if (options?.report === false || isRepeatedFailure(error)) {
     Sentry.metrics.count("server.error.repeated", 1, { attributes: { operation, ...diagnosticTags } });
     return;
   }

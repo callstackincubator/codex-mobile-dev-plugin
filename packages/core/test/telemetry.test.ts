@@ -13,7 +13,7 @@ import { z } from "zod";
 import { MeasurementWindow, sampleTrace, scrubErrorEvent, scrubMetric, scrubSpan, sampleMetric, createErrorEventFilter, METRIC_SAMPLE_RATE, TELEMETRY_META_KEY } from "../../shared/src/telemetry.ts";
 import { captureServerError, installTracePropagation, instrumentMcpServer, IOSLogProcessingTelemetry, recordAndroidBackendStartup, recordIosMirrorSharing } from "../src/telemetry.ts";
 import { recordPluginUpdate } from "../../../apps/codex-plugin/server/plugin-updates.ts";
-import { ExpectedOperationError, FailureEpisodes } from "../../shared/src/error-reporting.ts";
+import { ExpectedOperationError, FailureEpisodes, markRepeatedFailure } from "../../shared/src/error-reporting.ts";
 import { parseResourceInput } from "../src/resource-input.ts";
 import { openRequestSession } from "../src/request-session.ts";
 import { registerDeviceAppsTool } from "../src/device-apps/tools.ts";
@@ -800,6 +800,25 @@ test("discovery reports the first failure per episode and counts repeated and ex
   contains(encoded, "PRIVATE_DEVICE", false);
   const capturedEvents = JSON.stringify(events);
   contains(capturedEvents, "Device offline", false);
+});
+
+test("a failure its owner marks as repeated is counted without another exception event", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, beforeSend: scrubErrorEvent, beforeSendMetric: scrubMetric,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  t.after(() => Sentry.close());
+  const first = new Error("Cannot reach Baguette at http://127.0.0.1:1. Baguette returned HTTP 500 for /simulators.json.");
+  const repeated = new Error(first.message);
+  markRepeatedFailure(repeated);
+  captureServerError(first, "simulator.tool");
+  captureServerError(repeated, "simulator.tool");
+  await Sentry.flush();
+  const items = envelopes.flatMap(envelope => envelope[1]);
+  const events = items.filter(item => item[0].type === "event");
+  assert.equal(events.length, 1);
+  contains(JSON.stringify(envelopes), "server.error.repeated");
 });
 
 test("failure episode memory is bounded and inactivity starts a new episode", () => {

@@ -68,6 +68,18 @@ the episode. Diagnostics identify schema fields without including device values.
 Discovery sampling exclusions, UI timings and surface attribution retain their
 existing boundaries. No new collector or native telemetry is added.
 
+Since 0.1.169, the server waits Baguette's standard 10 seconds for the simulator list
+instead of 2, because CoreSimulator can take seconds to answer while a device boots.
+`Cannot reach Baguette at [url]. The operation was aborted due to timeout` errors now
+mean an unresponsive backend rather than a slow one. A failed list from the server's
+own running Baguette reports that failure; earlier releases probed the port and
+reported it as `Port N already answers HTTP but has no valid Baguette device list`.
+Baguette start failures report once per continuous failure episode, whichever tool or
+operation triggered the start: later calls with the same scrubbed message count as
+`server.error.repeated` under the caller's operation, and a successful start resets
+the episode. Ports, PIDs and timestamps do not start a new episode. Episode keys and
+signatures stay local. No new metric, attribute or native telemetry is added.
+
 Since 0.1.158, opening device intent is applied before screen connections start.
 Existing MCP operation traces, `ui.video.first_frame`, rendering/input timings,
 and discovery/error measurements remain on the active path with their existing

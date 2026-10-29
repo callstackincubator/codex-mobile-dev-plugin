@@ -48,6 +48,17 @@ export function errorCategory(error: unknown): ErrorCategory {
   return "unexpected";
 }
 
+const repeatedFailures = new WeakSet<object>();
+
+/** Marks a failure whose episode its owner has already reported, so capture sites only count it. */
+export function markRepeatedFailure(error: unknown) {
+  if (error !== null && typeof error === "object") repeatedFailures.add(error);
+}
+
+export function isRepeatedFailure(error: unknown): boolean {
+  return error !== null && typeof error === "object" && repeatedFailures.has(error);
+}
+
 type Episode = { signature: string; lastSeen: number };
 
 // Keys stay local; one bounded table covers selected-device polling across panels.
