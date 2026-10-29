@@ -45,7 +45,7 @@ export async function resolveCodexCli(parentPid = process.ppid, cwd = homedir())
 }
 
 /** Reuses the launching Codex path while the parent process is unchanged; failed lookups are not kept. */
-export function codexCliResolver(cwd: string, resolve = resolveCodexCli): ResolveCodexCli {
+export function codexCliResolver(cwd: string, resolve: (parentPid: number, cwd: string) => Promise<string> = resolveCodexCli): ResolveCodexCli {
   let cached: { parentPid: number; path: Promise<string> } | undefined;
   return () => {
     const parentPid = process.ppid;
