@@ -8,6 +8,7 @@
 #include <limits.h>
 #include <poll.h>
 #include <signal.h>
+#include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,12 +23,6 @@ static Counter threads[MAX_THREADS];
 static volatile sig_atomic_t stopped;
 
 static void stop(int signal_number) { (void)signal_number; stopped = 1; }
-
-static uint64_t micros(clockid_t clock) {
-    struct timespec value;
-    if (clock_gettime(clock, &value) != 0) { perror("clock_gettime"); exit(1); }
-    return (uint64_t)value.tv_sec * 1000000 + (uint64_t)value.tv_nsec / 1000;
-}
 
 /* comm can contain spaces, newlines and parentheses. The final ')' ends it. */
 static int parse_stat(char *text, Counter *counter) {
@@ -115,23 +110,53 @@ static void json_string(const char *value) {
     putchar('"');
 }
 
-static int failure(const char *operation) {
-    int code = errno;
-    fprintf(stderr, "Android CPU: %s: %s. ADB shell must be allowed to read this app's /proc counters.\n", operation, strerror(code));
+#ifndef COLLECTOR_TEST
+/* Reports a failure on stderr and as the final error record; returns the exit code. */
+static int fail(const char *cause, const char *format, ...) {
+    char message[512];
+    va_list arguments;
+    va_start(arguments, format);
+    vsnprintf(message, sizeof(message), format, arguments);
+    va_end(arguments);
+    fprintf(stderr, "%s\n", message);
+    clearerr(stdout);
+    fputs("{\"type\":\"error\",\"cause\":", stdout);
+    json_string(cause);
+    fputs(",\"message\":", stdout);
+    json_string(message);
+    fputs("}\n", stdout);
+    fflush(stdout);
     return 1;
 }
 
-#ifndef COLLECTOR_TEST
+static int failure(const char *operation) {
+    int code = errno;
+    const char *cause = code == ENOENT || code == ESRCH ? "target_exited" : "proc_unreadable";
+    return fail(cause, "Android CPU: %s: %s. ADB shell must be allowed to read this app's /proc counters.", operation, strerror(code));
+}
+
+static uint64_t micros(clockid_t clock) {
+    struct timespec value;
+    if (clock_gettime(clock, &value) != 0) exit(fail("clock_failed", "clock_gettime: %s", strerror(errno)));
+    return (uint64_t)value.tv_sec * 1000000 + (uint64_t)value.tv_nsec / 1000;
+}
+
+/* The plugin closed the stream: EPIPE asks the collector to stop. */
+static int output_closed(void) {
+    if (errno == EPIPE) return 0;
+    return fail("output_failed", "Android CPU: the output stream failed: %s.", strerror(errno));
+}
+
 int main(int argc, char **argv) {
     mobile_dev_telemetry_init("android-cpu");
-    if (argc != 2) { fprintf(stderr, "Usage: mobile-dev-cpu PID\n"); return 1; }
+    if (argc != 2) return fail("usage", "Usage: mobile-dev-cpu PID");
     char *end;
     long pid = strtol(argv[1], &end, 10);
-    if (*end != '\0' || pid <= 0 || pid > INT_MAX) return 1;
+    if (*end != '\0' || pid <= 0 || pid > INT_MAX) return fail("usage", "Invalid process ID: %s.", argv[1]);
     signal(SIGTERM, stop);
     signal(SIGINT, stop);
-    /* A closed ADB pipe terminates the collector, without touching the app. */
-    signal(SIGPIPE, SIG_DFL);
+    /* A closed ADB pipe stops the collector through EPIPE, without touching the app. */
+    signal(SIGPIPE, SIG_IGN);
     char output_buffer[65536];
     setvbuf(stdout, output_buffer, _IOFBF, sizeof(output_buffer));
     char process_path[128], task_path[128], memory_path[128];
@@ -142,15 +167,15 @@ int main(int argc, char **argv) {
     if (read_counter(process_path, &process) != 0) return failure("read process");
     uint64_t birth = process.start;
     long ticks = sysconf(_SC_CLK_TCK);
-    if (ticks <= 0) { fprintf(stderr, "Invalid kernel clock rate\n"); return 1; }
+    if (ticks <= 0) return fail("invalid_kernel", "Invalid kernel clock rate.");
     long page_size = sysconf(_SC_PAGESIZE);
-    if (page_size <= 0) { fprintf(stderr, "Invalid kernel page size\n"); return 1; }
+    if (page_size <= 0) return fail("invalid_kernel", "Invalid kernel page size.");
     printf("{\"type\":\"ready\",\"pid\":%ld,\"collectorPid\":%d,\"clockTicks\":%ld,\"processStart\":\"%" PRIu64 "\"}\n", pid, getpid(), ticks, birth);
-    fflush(stdout);
+    if (fflush(stdout) != 0) return output_closed();
     while (stopped == 0) {
         uint64_t started = micros(CLOCK_MONOTONIC);
         if (read_counter(process_path, &process) != 0) return failure("read process");
-        if (process.start != birth) { fprintf(stderr, "The target process restarted.\n"); return 1; }
+        if (process.start != birth) return fail("target_restarted", "The target process restarted.");
         uint64_t memory_bytes;
         if (read_memory(memory_path, (uint64_t)page_size, &memory_bytes) != 0) return failure("read memory");
         DIR *directory = opendir(task_path);
@@ -169,7 +194,7 @@ int main(int argc, char **argv) {
             char *tid_end;
             long tid = strtol(entry->d_name, &tid_end, 10);
             if (*tid_end != '\0' || tid <= 0 || tid > INT_MAX) continue;
-            if (count == MAX_THREADS) { closedir(directory); fprintf(stderr, "Too many app threads to monitor.\n"); return 1; }
+            if (count == MAX_THREADS) { closedir(directory); return fail("too_many_threads", "Too many app threads to monitor."); }
             char path[160];
             snprintf(path, sizeof(path), "/proc/%ld/task/%ld/stat", pid, tid);
             if (read_counter(path, &threads[count]) != 0) {
@@ -193,7 +218,7 @@ int main(int argc, char **argv) {
             putchar('}');
         }
         puts("]}");
-        if (fflush(stdout) != 0) return 1;
+        if (fflush(stdout) != 0) return output_closed();
         uint64_t now = micros(CLOCK_MONOTONIC);
         uint64_t duration = now - started;
         double sampling_ms = (double)duration / 1000.0;
