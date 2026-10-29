@@ -101,7 +101,8 @@ export class StoragePanel {
   private revision = 0;
   private nextChange = 1;
   private poll?: ReturnType<typeof setInterval>;
-  private appsFor = "";
+  // Whether the app listing in flight still applies; a listing for an older device or app is left to finish unused.
+  private listing?: () => boolean;
   private selections = new Map<string, string>();
   private state: StorageState = { open: false, available: false, platform: "ios", deviceId: "", deviceLabel: "", unsupported: "", apps: [], bundleId: "", tab: "browse", changes: [], showSdkChanges: false, busy: null, error: "", status: "" };
 
@@ -134,17 +135,18 @@ export class StoragePanel {
     const unsupported = device === undefined ? "Choose a simulator or Android device."
       : platform === "ios" && device.kind === "physical" ? "Reading app data on a physical iPhone isn't supported yet. Use an iOS simulator."
       : running ? "" : `${device.name} isn't running.`;
-    const changed = deviceId !== this.state.deviceId || platform !== this.state.platform;
+    // A device that boots, reconnects, or stops starts over like a newly chosen one, keeping the app picked on it.
+    const changed = deviceId !== this.state.deviceId || platform !== this.state.platform || (unsupported === "") !== (this.state.unsupported === "");
     if (!changed) {
       if (unsupported !== this.state.unsupported || device?.name !== this.state.deviceLabel) this.update({ unsupported, deviceLabel: device?.name ?? "" });
       return;
     }
     this.revision++;
-    this.appsFor = "";
     this.update({ platform, deviceId, deviceLabel: device?.name ?? "", unsupported, apps: [], bundleId: this.selections.get(`${platform}:${deviceId}`) ?? "", snapshot: undefined, changes: [], detail: undefined, watchingSince: undefined, busy: null, error: "", status: "" });
     if (this.state.open) void this.loadApps();
   }
 
+  // Each open lists the apps again, so apps installed since the last open appear.
   show() {
     this.update({ open: true });
     void this.loadApps();
@@ -230,22 +232,33 @@ export class StoragePanel {
     catch (error) { if (current()) this.update({ busy: null, error: errorMessage(error) }); }
   }
 
-  async loadApps(force = false) {
-    if (!this.ready() || this.state.busy === "apps") return;
-    const key = `${this.state.platform}:${this.state.deviceId}`;
-    if (!force && this.appsFor === key) return;
-    await this.run("apps", {}, async current => {
+  // Lists the installed apps, keeping the current list until the new one arrives. The selected app stays while it is
+  // installed; otherwise the newest running app is picked. A listing already in flight is shared, and it runs beside a
+  // read or action without taking over its busy state.
+  async loadApps() {
+    if (!this.ready() || this.listing?.()) return;
+    const current = this.current();
+    this.listing = current;
+    const idle = () => this.state.busy === "apps" ? null : this.state.busy;
+    this.update({ busy: this.state.busy ?? "apps", error: "" });
+    try {
       const data = installedAppsSchema.parse(await measureUiOperation("ui.storage.list_apps", "ui.storage.failure", () => this.call("mobile_list_apps", {})));
       if (!current()) return;
-      this.appsFor = key;
       const installed = new Set(data.apps.map(app => app.bundleId));
       const bundleId = [this.state.bundleId, data.runningBundleIds[0]].find(id => id && installed.has(id)) ?? "";
-      this.update({ apps: data.apps, busy: null });
+      this.update({ apps: data.apps, busy: idle() });
       void appIcons.load((name, args) => this.call(name, args), this.state.platform, this.state.deviceId, data.apps.map(app => app.bundleId),
         { measure: work => measureUiOperation("ui.storage.icons", "ui.storage.failure", work) });
       if (bundleId !== this.state.bundleId || this.state.snapshot === undefined) this.selectApp(bundleId);
-    });
+    } catch (error) {
+      if (current()) this.update({ busy: idle(), error: errorMessage(error) });
+    } finally {
+      if (this.listing === current) this.listing = undefined;
+    }
   }
+
+  // Refresh lists the apps again, so newly installed ones appear, and reads the selected app again.
+  async reload() { await Promise.all([this.loadApps(), this.refresh()]); }
 
   selectApp(bundleId: string) {
     if (bundleId !== this.state.bundleId) {
