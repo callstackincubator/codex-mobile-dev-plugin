@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { z } from "zod";
 import { bezelGeometrySchema } from "@mobile-dev/shared/bezel.ts";
+import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 import type { Bezel } from "@mobile-dev/shared/bezel.ts";
 import type { PhysicalIosDevice } from "@mobile-dev/shared/ios-devices.ts";
 import { baguetteEnvironment } from "./baguette-runtime.ts";
@@ -52,7 +53,7 @@ async function readMask(identifier: string, run: BezelCommand): Promise<string> 
   }
 }
 
-async function renderBezel(device: PhysicalIosDevice, run: BezelCommand, runtime: typeof baguetteEnvironment): Promise<Bezel | undefined> {
+async function renderBezel(device: PhysicalIosDevice, run: BezelCommand, runtime: typeof baguetteEnvironment): Promise<Bezel> {
   const typesOutput = await run("/usr/bin/xcrun", ["simctl", "list", "devicetypes", "--json"], commandOptions);
   const typesJson = typesOutput.stdout.toString("utf8");
   const typesPayload = JSON.parse(typesJson);
@@ -78,7 +79,7 @@ async function renderBezel(device: PhysicalIosDevice, run: BezelCommand, runtime
     }
   }
   // Without an installed device type the screen mirrors without a frame.
-  if (selected === undefined) return undefined;
+  if (selected === undefined) throw new ExpectedOperationError("unsupported_platform", "Xcode has no Apple device frame for this model.");
   const { type, profile } = selected;
   // Bundles, and the chunks they split into, sit in dist/ beside the helpers.
   const root = import.meta.url.endsWith(".mjs") ? "./baguette/" : "../../native/vendor/baguette/";
@@ -105,10 +106,9 @@ export function createPhysicalIosBezelReader(run: BezelCommand = execute, runtim
   const cache = new Map<string, Promise<Bezel | undefined>>();
   async function read(device: PhysicalIosDevice): Promise<Bezel | undefined> {
     try {
-      const bezel = await renderBezel(device, run, runtime);
-      if (bezel !== undefined) return bezel;
+      return await renderBezel(device, run, runtime);
     } catch (error) {
-      // The frame is decoration, so a failed render mirrors without one.
+      // The frame is decoration, so a failed render mirrors without one. A missing device type only counts as expected.
       captureServerError(error, "ios-mirror.bezel");
     }
     // Reconnects reuse a missing frame until it is worth looking for again.

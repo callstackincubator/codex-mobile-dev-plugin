@@ -806,7 +806,7 @@ test("discovery reports the first failure per episode and counts repeated and ex
   contains(capturedEvents, "Device offline", false);
 });
 
-test("physical iOS frames accept profiles without represented models and report a failed render once across reconnects", async t => {
+test("physical iOS frames accept profiles without represented models, report a failed render once across reconnects, and count a missing model as expected", async t => {
   const envelopes: Envelope[] = [];
   Sentry.init({
     dsn: "https://public@example.com/1", defaultIntegrations: false, beforeSend: scrubErrorEvent, beforeSendMetric: scrubMetric,
@@ -816,6 +816,7 @@ test("physical iOS frames accept profiles without represented models and report 
     udid: "00008150-0000111122223333", coreDeviceId: "11111111-1111-4111-8111-111111111111", name: "PRIVATE_DEVICE_NAME", model: "iPhone 17 Pro",
     productType: "iPhone18,1", state: "connected", runtime: "iOS 27.0", platform: "ios", kind: "physical", transportType: "wired", pairingState: "paired",
   };
+  const unknownPhone: PhysicalIosDevice = { ...phone, udid: "00008150-0000444455556666", productType: "iPhone99,1" };
   const renders: string[] = [];
   const readBezel = createPhysicalIosBezelReader(async (file, args) => {
     const output = (value: unknown) => ({ stdout: Buffer.from(JSON.stringify(value)) });
@@ -830,7 +831,7 @@ test("physical iOS frames accept profiles without represented models and report 
   }));
   const server = new McpServer({ name: "bezel-reporting-test", version: "1" });
   instrumentMcpServer(server);
-  const close = registerIosMirrorTools(server, "ui://test/app", sessions, async () => [phone], readBezel);
+  const close = registerIosMirrorTools(server, "ui://test/app", sessions, async () => [phone, unknownPhone], readBezel);
   const client = new Client({ name: "test", version: "1" });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   installTracePropagation(serverTransport);
@@ -843,12 +844,17 @@ test("physical iOS frames accept profiles without represented models and report 
     assert.equal(opened._meta?.bezel, undefined);
   }
   assert.deepEqual(renders, ["layout"]);
+  const unframed = await client.callTool({ name: "mobile_ios_mirror_session", arguments: { udid: unknownPhone.udid } });
+  assert.equal(unframed.isError, undefined);
+  assert.equal(unframed._meta?.bezel, undefined);
   await Sentry.flush();
   const items = envelopes.flatMap(envelope => envelope[1]);
   const events = items.filter(item => item[0].type === "event");
   assert.equal(events.length, 1);
   const encoded = JSON.stringify(envelopes);
   contains(encoded, "ios-mirror.bezel");
+  contains(encoded, '"outcome":{"value":"unsupported_platform"');
+  contains(encoded, "Xcode has no Apple device frame", false);
   contains(encoded, "Device frame layout failed");
   contains(encoded, "representedModelIdentifiers", false);
   contains(encoded, "PRIVATE", false);
