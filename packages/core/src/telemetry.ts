@@ -10,6 +10,7 @@ import { definitionDiagnosticTags } from "@mobile-dev/shared/simulator-definitio
 import { deviceAppsDiagnosticTags } from "@mobile-dev/shared/device-apps-diagnostics.ts";
 import { getDiscoveryCommandDiagnostic } from "@mobile-dev/shared/device-apps-command-diagnostics.ts";
 import { androidStartupDiagnosticTags } from "@mobile-dev/shared/android-startup-diagnostics.ts";
+import { installIntegrityTags } from "./install-integrity.ts";
 import type { AndroidStartupSummary, AndroidStartupContext, AndroidStartupFailure, AndroidDeviceState } from "@mobile-dev/shared/android-startup-diagnostics.ts";
 
 export function recordIosMirrorSharing(captures: number, subscribers: number, dropped: number) {
@@ -172,10 +173,11 @@ export function captureServerError(error: unknown, operation: string, options?: 
     return;
   }
   const androidTags = androidStartupDiagnosticTags(error);
+  const installTags = installIntegrityTags(error);
   const command = getDiscoveryCommandDiagnostic(error);
   const contexts = command ? { device_apps_command: { elapsed_ms: command.elapsed_ms, deadline_ms: command.deadline_ms,
     exit_status: command.exit_status } } : undefined;
-  Sentry.captureException(options?.reportAs ?? error, { tags: { ...diagnosticTags, ...definitionTags, ...androidTags, operation }, contexts });
+  Sentry.captureException(options?.reportAs ?? error, { tags: { ...diagnosticTags, ...definitionTags, ...androidTags, ...installTags, operation }, contexts });
 }
 
 type RequestReporting = { accounted: boolean; sessionResponse?: { release: () => void; close: () => Promise<void> } };

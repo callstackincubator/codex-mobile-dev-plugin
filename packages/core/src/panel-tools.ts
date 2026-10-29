@@ -25,7 +25,7 @@ import type { CpuSessions } from "./cpu/sessions.ts";
 import type { DisplayFpsSessions } from "./fps/sessions.ts";
 import { SimulatorInputService } from "./simulator-input.ts";
 import type { InputStatus, SimulatorInput } from "./simulator-input.ts";
-import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
+import { retryableFailure } from "./simulator-unavailable.ts";
 import { copyPNGToClipboard } from "./clipboard.ts";
 import { registerPanelAppControlTools } from "./app-control/tools.ts";
 import type { DriverFactory } from "./app-control/tools.ts";
@@ -59,7 +59,7 @@ function guarded<T>(handler: (input: T, context: ServerRequestContext) => Promis
     try { return await handler(input, context); }
     catch (error) {
       captureServerError(error, "simulator.tool", { signal: context.signal });
-      return { isError: true, content: [{ type: "text", text: errorMessage(error) }], _meta: { retryable: !(error instanceof SimulatorUnavailableError) } };
+      return { isError: true, content: [{ type: "text", text: errorMessage(error) }], _meta: { retryable: retryableFailure(error) } };
     }
   };
 }
@@ -195,7 +195,7 @@ function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, sh
       const text = JSON.stringify({ state: "waiting", connectionState: streams.connectionState(sessionId), ...timings });
       return { contents: [{ uri: uri.href, mimeType: "application/json", text, _meta: timings }] };
     } catch (error) {
-      const text = JSON.stringify({ state: "failed", error: errorMessage(error), retryable: !(error instanceof SimulatorUnavailableError) });
+      const text = JSON.stringify({ state: "failed", error: errorMessage(error), retryable: retryableFailure(error) });
       return { contents: [{ uri: uri.href, mimeType: "application/json", text }] };
     }
   });

@@ -12,6 +12,7 @@ import type { Status } from "@mobile-dev/shared/protocol.ts";
 import { buttonMarginsSchema } from "@mobile-dev/shared/bezel.ts";
 import { definitionDeviceState, getDefinitionDiagnostic, parseDefinitionDiagnostic, setDefinitionDiagnostic } from "@mobile-dev/shared/simulator-definition-diagnostics.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
+import { isMissingFile, MissingRuntimeError } from "./install-integrity.ts";
 import { deferEpisodeReport, ExpectedOperationError, FailureEpisodes } from "@mobile-dev/shared/error-reporting.ts";
 import { annotateDeviceCommand, backendCommand, inheritDeviceCommand } from "@mobile-dev/shared/device-command-diagnostics.ts";
 import { errorReportSignature } from "@mobile-dev/shared/telemetry.ts";
@@ -34,8 +35,9 @@ async function bundledExecutable(): Promise<string> {
   const path = fileURLToPath(new URL("./baguette/Baguette", import.meta.url));
   try {
     await access(path, constants.X_OK);
-  } catch {
-    throw new Error("The plugin is missing its bundled Baguette runtime. Run npm run vendor:baguette and npm run build in the source project, then package it again.");
+  } catch (error) {
+    if (isMissingFile(error)) throw new MissingRuntimeError("baguette");
+    throw new Error("Mobile Dev cannot run its bundled simulator backend. Reinstall Mobile Dev, then restart the app running it.");
   }
   return path;
 }
@@ -252,9 +254,8 @@ export class Baguette {
       const polling = AbortSignal.any([deadline, exited.signal]);
       while (!deadline.aborted && !this.disposed) {
         if (launchError) {
-          if ((launchError as NodeJS.ErrnoException).code === "ENOENT") {
-            const error = new Error("The bundled Baguette executable could not start. Reinstall the plugin package.");
-            throw annotateDeviceCommand(error, "baguette_serve", { failure: "missing_executable" });
+          if (isMissingFile(launchError)) {
+            throw annotateDeviceCommand(new MissingRuntimeError("baguette"), "baguette_serve", { failure: "missing_executable" });
           }
           throw annotateDeviceCommand(launchError, "baguette_serve");
         }

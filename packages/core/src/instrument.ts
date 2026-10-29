@@ -6,6 +6,7 @@ import * as Sentry from "@sentry/node";
 import { SENTRY_RELEASE, SENTRY_SERVER_DSN, sampleTrace, createErrorEventFilter, sampleMetric, scrubSpan } from "@mobile-dev/shared/telemetry.ts";
 import { TELEMETRY_ENVIRONMENT } from "./telemetry-environment.ts";
 import { getTelemetryIdentity } from "./telemetry-identity.ts";
+import { tagInstallIntegrity } from "./install-integrity.ts";
 
 const identity = getTelemetryIdentity();
 if (identity) {
@@ -42,6 +43,7 @@ const client = Sentry.init({
   beforeSendMetric: sampleMetric,
   beforeBreadcrumb: breadcrumb => breadcrumb.category === "mobile-dev" ? breadcrumb : null,
 });
+client?.addEventProcessor(tagInstallIntegrity);
 const executable = process.argv[1] ?? "";
 const mirrorService = executable.endsWith("ios-mirror-service.mjs") || executable.endsWith("ios-mirror-service.ts");
 const component = mirrorService ? "ios-mirror-service" : "server";

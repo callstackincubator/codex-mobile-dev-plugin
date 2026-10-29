@@ -8,7 +8,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { ServeEmu, androidIdSchema } from "./serve-emu.ts";
 import { AndroidStreams } from "./android-streams.ts";
-import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
+import { retryableFailure } from "./simulator-unavailable.ts";
 import { errorMessage, inputSchema } from "@mobile-dev/shared/protocol.ts";
 import { captureServerError } from "./telemetry.ts";
 
@@ -22,7 +22,7 @@ function guarded<T>(handler: (input: T, context: ServerRequestContext) => Promis
     try { return await handler(input, context); }
     catch (error) {
       captureServerError(error, "android.tool", { signal: context.signal });
-      return { isError: true, content: [{ type: "text", text: errorMessage(error) }], _meta: { retryable: !(error instanceof SimulatorUnavailableError) } };
+      return { isError: true, content: [{ type: "text", text: errorMessage(error) }], _meta: { retryable: retryableFailure(error) } };
     }
   };
 }

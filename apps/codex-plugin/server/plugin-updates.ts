@@ -73,7 +73,25 @@ export type StorePlugin = z.infer<typeof storeSummarySchema>;
 type Catalog = z.infer<typeof pluginsSchema> & { store: StorePlugin };
 export type ReadStore = () => Promise<unknown>;
 export type RunCodex = (args: string[]) => Promise<unknown>;
-class PluginUpdateError extends Error {}
+// Why an update step failed, tagged on migration failures: Codex was not found, a Codex
+// command or the store catalog failed, Codex answered unexpectedly, or a step's result
+// did not hold.
+type UpdateFailure = "codex-not-found" | "command-failed" | "invalid-response" | "store-unavailable" | "foreign-marketplace" | "not-removed" | "not-verified" | "cache-write";
+type MigrationStep = "catalog" | "remove-plugin" | "remove-marketplace" | "verify" | "save";
+class PluginUpdateError extends Error {
+  readonly failure: UpdateFailure;
+
+  constructor(message: string, failure: UpdateFailure) {
+    super(message);
+    this.failure = failure;
+  }
+}
+
+function updateFailure(error: unknown): UpdateFailure | "unknown" {
+  if (error instanceof PluginUpdateError) return error.failure;
+  if (error instanceof z.ZodError) return "invalid-response";
+  return "unknown";
+}
 
 export async function resolveCodexCli(parentPid = process.ppid, cwd = homedir()): Promise<string> {
   const pid = String(parentPid);
@@ -81,7 +99,7 @@ export async function resolveCodexCli(parentPid = process.ppid, cwd = homedir())
   const path = result.stdout.trim();
   const absolute = isAbsolute(path);
   const name = basename(path);
-  if (absolute === false || name !== "codex") throw new PluginUpdateError("Could not locate the Codex executable that launched Mobile Dev.");
+  if (absolute === false || name !== "codex") throw new PluginUpdateError("Could not locate the Codex executable that launched Mobile Dev.", "codex-not-found");
   return path;
 }
 
@@ -95,10 +113,10 @@ export function createCodexRunner(cwd: string, options: { path?: string; env?: N
       const result = await execute(path, args, { cwd, timeout: 120000, maxBuffer: 1024 * 1024, env, signal: options.signal });
       stdout = result.stdout;
     } catch {
-      throw new PluginUpdateError("Codex could not complete the Mobile Dev update command. Try again.");
+      throw new PluginUpdateError("Codex could not complete the Mobile Dev update command. Try again.", "command-failed");
     }
     try { return JSON.parse(stdout); }
-    catch { throw new PluginUpdateError("Codex returned an invalid update response. Try again."); }
+    catch { throw new PluginUpdateError("Codex returned an invalid update response. Try again.", "invalid-response"); }
   };
 }
 
@@ -112,7 +130,7 @@ export async function readPluginStore(cwd: string, options: { path?: string; env
   const pending = new Map<number, { resolve: (result: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
   let nextId = 1;
   function fail() {
-    const error = new PluginUpdateError("Could not read the Codex plugin store catalog.");
+    const error = new PluginUpdateError("Could not read the Codex plugin store catalog.", "store-unavailable");
     for (const request of pending.values()) {
       clearTimeout(request.timer);
       request.reject(error);
@@ -148,7 +166,7 @@ export async function readPluginStore(cwd: string, options: { path?: string; env
     clearTimeout(request.timer);
     pending.delete(response.id);
     if (response.error) {
-      const error = new PluginUpdateError("Codex could not read the plugin store catalog.");
+      const error = new PluginUpdateError("Codex could not read the plugin store catalog.", "store-unavailable");
       request.reject(error);
     } else request.resolve(response.result);
   });
@@ -256,7 +274,7 @@ export class PluginUpdates {
       await writeFile(temporary, text, { mode: 0o600 });
       await rename(temporary, this.cachePath);
     } catch {
-      throw new PluginUpdateError("Could not save the update status. Check free disk space and try again.");
+      throw new PluginUpdateError("Could not save the update status. Check free disk space and try again.", "cache-write");
     } finally { await rm(temporary, { force: true }); }
   }
 
@@ -332,6 +350,7 @@ export class PluginUpdates {
 
   private async migrateToStore(): Promise<PluginUpdate> {
     const startedAt = performance.now();
+    let step: MigrationStep = "catalog";
     try {
       if (this.checking !== undefined) await this.checking;
       const catalog = await this.catalog();
@@ -341,29 +360,33 @@ export class PluginUpdates {
       if (installed === false) {
         throw new ExpectedOperationError("app_unavailable", "Install and enable the latest Mobile Dev version from the plugin store, then finish migration here.");
       }
+      step = "remove-plugin";
       if (githubInstalled(catalog)) {
         const result = await this.run(["plugin", "remove", githubPlugin, "--json"]);
         const removed = removedSchema.parse(result);
-        if (removed.pluginId !== githubPlugin) throw new PluginUpdateError("Codex did not remove the GitHub installation. Try again.");
+        if (removed.pluginId !== githubPlugin) throw new PluginUpdateError("Codex did not remove the GitHub installation. Try again.", "not-removed");
       }
+      step = "remove-marketplace";
       const marketplaces = await this.run(["plugin", "marketplace", "list", "--json"]);
       const marketplaceResult = marketplaceSchema.parse(marketplaces);
       const marketplace = marketplaceResult.marketplaces.find(item => item.name === "mobile-dev");
       if (marketplace !== undefined) {
         const source = marketplace.marketplaceSource;
         if (source?.sourceType !== "git" || isReleaseRepository(source.source) === false) {
-          throw new PluginUpdateError("The mobile-dev marketplace belongs to another source and cannot be removed here.");
+          throw new PluginUpdateError("The mobile-dev marketplace belongs to another source and cannot be removed here.", "foreign-marketplace");
         }
         const result = await this.run(["plugin", "marketplace", "remove", "mobile-dev", "--json"]);
         const removed = removedMarketplaceSchema.parse(result);
-        if (removed.marketplaceName !== "mobile-dev") throw new PluginUpdateError("Codex did not remove the GitHub marketplace. Try again.");
+        if (removed.marketplaceName !== "mobile-dev") throw new PluginUpdateError("Codex did not remove the GitHub marketplace. Try again.", "not-removed");
       }
+      step = "verify";
       const verified = await this.catalog();
       if (githubConfigured(verified) || await this.storeInstalled(verified) === false) {
-        throw new PluginUpdateError("Could not verify the store migration. Try again.");
+        throw new PluginUpdateError("Could not verify the store migration. Try again.", "not-verified");
       }
       const installedVersion = releaseVersionSchema.parse(verified.store.localVersion);
       const cache: Cache = { source: PLUGIN_STORE_ID, checkedAt: this.now(), latestVersion: version, githubConfigured: false, storeInstalled: true, migratedVersion: installedVersion };
+      step = "save";
       await this.saveCache(cache);
       const elapsed = performance.now() - startedAt;
       recordPluginUpdate("migrate", "migrated", elapsed);
@@ -373,9 +396,12 @@ export class PluginUpdates {
       recordPluginUpdate("migrate", "failed", elapsed);
       if (error instanceof ExpectedOperationError) throw error;
       const telemetryError = new Error("The plugin store migration failed.");
-      captureServerError(telemetryError, "plugin.update.migrate");
+      Sentry.withScope(scope => {
+        scope.setTags({ plugin_update_step: step, plugin_update_failure: updateFailure(error) });
+        captureServerError(telemetryError, "plugin.update.migrate");
+      });
       if (error instanceof PluginUpdateError) throw error;
-      throw new PluginUpdateError("Could not verify the Mobile Dev migration. Try again.");
+      throw new Error("Could not verify the Mobile Dev migration. Try again.");
     }
   }
 
