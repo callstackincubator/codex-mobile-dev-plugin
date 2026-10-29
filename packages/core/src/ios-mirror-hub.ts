@@ -142,6 +142,8 @@ export class IosMirrorHub {
               subscriber.dropped += dropped;
               this.dropped += dropped;
               this.invalidate(subscriber);
+              // The panel forgets its pointer on the new generation, so lift its held gesture here.
+              this.releasePointer(device, subscriber).catch(error => { if (error instanceof Error) this.failed(error); });
             }
             if (subscriber.waitingKey && frame.key === false) continue;
             if (frame.data.length > 4 * 1024 * 1024) continue;
@@ -191,7 +193,8 @@ export class IosMirrorHub {
       if (device.pointer && device.pointer.owner !== subscriber) throw new IosMirrorInputBusyError();
       const nativeGeneration = device.generation;
       await device.capture.touch(samples, nativeGeneration);
-      if (subscriber.delivered !== generation || device.generation !== nativeGeneration) return;
+      // Record the pointer even if this panel was invalidated meanwhile; its queued release lifts it.
+      if (device.generation !== nativeGeneration) return;
       const last = samples.at(-1);
       if (last === undefined || last.phase === 2) device.pointer = undefined;
       else device.pointer = { owner: subscriber, sample: last, generation: device.generation };
