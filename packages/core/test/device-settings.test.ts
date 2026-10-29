@@ -6,6 +6,8 @@ import type { Baguette } from "../src/baguette.ts";
 import type { ServeEmu } from "../src/serve-emu.ts";
 import type { AndroidNetworkThrottle, ThrottleReading } from "../src/network-throttle/android.ts";
 import { deviceSettingSchema } from "../../shared/src/device-settings.ts";
+import { expectedOutcome } from "../../shared/src/error-reporting.ts";
+import { SimulatorUnavailableError } from "../src/simulator-unavailable.ts";
 
 const ios = { platform: "ios", id: "B5C969F6-58A4-4C31-AB12-FB9E56D681DE" } as const;
 const android = { platform: "android", id: "emulator-5554" } as const;
@@ -17,11 +19,22 @@ function fixture() {
   let android_ = { enabled: true as boolean | null, statusBar: "live" };
   let throttle: ThrottleReading = { preset: null };
   let failFont = false;
+  let failIosRoute: string | undefined;
+  // What a backend's device list says when a failed request looks the device up again.
+  const states: Record<string, "running" | "stopped" | "gone" | "unreadable"> = {};
+  const listed = async (id: string) => {
+    const state = states[id] ?? "running";
+    if (state === "unreadable") throw new Error("Cannot list devices.");
+    if (state !== "running") throw new SimulatorUnavailableError(`The device is ${state}.`);
+    return { udid: id };
+  };
   const baguette = {
     async device(id: string, booted: boolean) { assert.equal(id, ios.id); assert.equal(booted, true); },
+    listedDevice: listed,
     async json(path: string, options: RequestInit = {}) {
       const body = options.body ? JSON.parse(String(options.body)) : undefined;
       requests.push({ platform: "ios", id: ios.id, path, method: options.method ?? "GET", body });
+      if (failIosRoute && path.endsWith(failIosRoute)) throw new Error("Baguette returned HTTP 500");
       if (path.endsWith("/location")) return { ok: true };
       if (path.endsWith("/status-bar")) { if (options.method === "DELETE") statusBar = {}; else if (body) statusBar = body; return options.method ? { ok: true } : statusBar; }
       if (path.endsWith("/network")) {
@@ -35,6 +48,7 @@ function fixture() {
   } as unknown as Baguette;
   const serveEmu = {
     async start(id: string) { return { url: new URL(`http://localhost/${id}/`) }; },
+    device: listed,
     async json(url: URL, path: string, options: RequestInit = {}) {
       const body = options.body ? JSON.parse(String(options.body)) : undefined;
       requests.push({ platform: "android", id: url.pathname.slice(1, -1), path, method: options.method ?? "GET", body });
@@ -60,7 +74,7 @@ function fixture() {
       return throttle;
     },
   } as unknown as AndroidNetworkThrottle;
-  return { service: new DeviceSettingsService(baguette, serveEmu, androidThrottle), requests, throttles, setThrottle(value: ThrottleReading) { throttle = value; }, failFont() { failFont = true; }, setIosNetwork(value: object) { iosNetwork = value; } };
+  return { service: new DeviceSettingsService(baguette, serveEmu, androidThrottle), requests, throttles, setThrottle(value: ThrottleReading) { throttle = value; }, failFont() { failFont = true; }, failIosRoute(route: string) { failIosRoute = route; }, setIosNetwork(value: object) { iosNetwork = value; }, setState(id: string, state: typeof states[string]) { states[id] = state; } };
 }
 
 test("settings preserve platform values and apply changes through the selected backend", async () => {
@@ -134,6 +148,26 @@ test("unsupported settings never reach a backend and partial reads keep working 
   assert.equal((await f.service.read({ platform: "android", id: "physical-device" })).locationSupported, false);
   assert.equal(deviceSettingSchema.safeParse({ setting: "location", value: { latitude: 91, longitude: 0 } }).success, false);
   assert.equal(deviceSettingSchema.safeParse({ setting: "fontScale", value: 3 }).success, false);
+});
+
+test("a failure on a device that stopped or went away is an expected outcome, and any other failure stands", async () => {
+  const f = fixture();
+  const clean = { setting: "statusBar", value: "clean" } as const;
+  f.failIosRoute("/status-bar");
+  await assert.rejects(f.service.update(ios, clean), /HTTP 500/, "a running simulator keeps the backend failure");
+  f.setState(ios.id, "unreadable");
+  await assert.rejects(f.service.update(ios, clean), /HTTP 500/, "a device list that cannot be read says nothing about the simulator");
+  for (const state of ["stopped", "gone"] as const) {
+    f.setState(ios.id, state);
+    const failure = await f.service.update(ios, clean).catch(error => error);
+    assert.equal(expectedOutcome(failure), "device_unavailable", state);
+  }
+  f.failFont();
+  f.setState(android.id, "stopped");
+  const font = await f.service.update(android, { setting: "fontScale", value: 1.5 }).catch(error => error);
+  assert.equal(expectedOutcome(font), "device_unavailable");
+  const unsupported = await f.service.update(android, { setting: "increaseContrast", value: true }).catch(error => error);
+  assert.equal(expectedOutcome(unsupported), "invalid_input", "an expected outcome is not looked up again");
 });
 
 test("switching devices ignores pending settings and frame changes stay local", async () => {

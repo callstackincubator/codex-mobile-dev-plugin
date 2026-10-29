@@ -68,6 +68,19 @@ the episode. Diagnostics identify schema fields without including device values.
 Discovery sampling exclusions, UI timings and surface attribution retain their
 existing boundaries. No new collector or native telemetry is added.
 
+Since 0.1.170, the server waits Baguette's standard 10 seconds for the simulator list
+instead of 2, because CoreSimulator can take seconds to answer while a device boots.
+`Cannot reach Baguette at [url]. The operation was aborted due to timeout` errors now
+mean an unresponsive backend rather than a slow one. A failed list from the server's
+own running Baguette reports that failure; earlier releases probed the port and
+reported it as `Port N already answers HTTP but has no valid Baguette device list`.
+Baguette start failures report once per continuous failure episode, from the first
+operation that captures one, whichever tool or operation triggered the start. Callers
+that only log the failure or were cancelled leave the report for a later capture. Later
+captures with the same scrubbed message count as `server.error.repeated` under the
+caller's operation, and a successful start resets the episode. Ports, PIDs and timestamps do not start a new episode. Episode keys and
+signatures stay local. No new metric, attribute or native telemetry is added.
+
 Since 0.1.158, opening device intent is applied before screen connections start.
 Existing MCP operation traces, `ui.video.first_frame`, rendering/input timings,
 and discovery/error measurements remain on the active path with their existing
@@ -110,6 +123,8 @@ Since 0.1.139, `ios.accessibility_bridge.restarts` counts restarts of the simula
 Since 0.1.134, physical iOS capture runs in the shared `ios-mirror-service` Node process. Existing native packet-processing, input acknowledgement, connection, resource, and crash instrumentation stays attached to the active capture. Native resource measurements now overlap that service's Node process rather than each chat's MCP process. The service uses centralized server initialization, its packaged development/release environment, and server-owned anonymous installation/process-session identity. UI decode/render timings and sampled MCP operations retain their existing boundaries. Subscriber keyframe requests no longer invalidate the shared native queue or release another panel’s touch. The native packet-processing and recovery measurements remain on this active path; the rebuilt addon retains matching debug symbols.
 
 `ios.mirror.shared.captures` and `ios.mirror.shared.subscribers` report active counts. `ios.mirror.shared.queue_dropped` counts frames discarded by subscriber queue overflow. Counts aggregate in 30-second windows and flush on service shutdown, using the simulator surface and physical iOS context. No per-frame events, device identifiers, subscription IDs, payloads, or paths are sent. The service clears its collection timer on shutdown and honors telemetry opt-out.
+
+Since 0.1.170, a physical iOS bezel that can't be rendered no longer fails `mobile_ios_mirror_session`. Mirroring opens without the frame, and an unexpected render failure reports a handled `ios-mirror.bezel` error. The server keeps a missing frame for five minutes, so each hardware model reports at most once in that window instead of on every panel reconnect. A device type that Xcode doesn't have is expected: it counts as an `unsupported_platform` outcome and sends no event. Earlier releases reported these failures as `mobile_ios_mirror_session` errors, so compare `ios-mirror.bezel` with those events when reading trends. No metrics are added. The existing `server.error.outcome` count carries the new operation value.
 
 Since 0.1.132, `plugin.update.operations` counts release checks and installations
 by fixed operation and outcome, and `plugin.update.duration` measures their
@@ -280,7 +295,9 @@ Since 0.1.147, app control tools (`mobile_list_apps`, `mobile_launch_app`,
 message, because command output can contain bundle IDs, URLs, device serials, and
 local paths. Expected outcomes such as a missing app, an unhandled URL, an
 unrequested permission, or a stopped device count only through
-`server.error.outcome`. Extracted app icons and Android labels stay in the server's
+`server.error.outcome`. Since 0.1.170 these reports and outcome counts also carry
+the device command tags described below, and a simulator that is shutting down
+counts as a stopped device. Extracted app icons and Android labels stay in the server's
 memory cache and are returned only to the panel.
 
 The device popover's App tab records `ui.app_tools.list`, `.icons`, `.launch`,
@@ -314,9 +331,14 @@ Since 0.1.152, `mobile_app_language` and `mobile_set_app_language` use the same
 app control coverage under `app_control.language` and `app_control.set_language`.
 Language tags are not sent. The device settings tools report unexpected Baguette or
 serve-emu failures under `device_settings.read` or `device_settings.<setting>` with a
-fixed message. Android throttling runs through a local proxy on the Mac, so its adb
-failures report under `device_settings.network`; throttling a device that already
-uses its own proxy counts only through `server.error.outcome`. When the plugin first
+fixed message. Since 0.1.170 they carry the device command tags described below,
+and a failure on a device that stopped or went away during the request counts as
+`device_unavailable` through `server.error.outcome` instead of a report. The check
+reads the device list without starting a backend, giving Baguette two seconds; when
+Baguette or adb cannot list devices, the failure is reported as before. Android throttling runs through a local
+proxy on the Mac, so its adb failures report under `device_settings.network`;
+throttling a device that already uses its own proxy counts only through
+`server.error.outcome`. When the plugin first
 starts an Android backend, it clears a throttle left by a plugin process that exited;
 unexpected adb failures there report under `device_settings.network_recovery`, and a
 device that went away counts only through `server.error.outcome`. Proxy
@@ -326,6 +348,32 @@ them. The Device tab
 records `ui.device_settings.change` round trips in milliseconds and counts
 `ui.device_settings.failure`, with the same surface and device-change exclusions as
 the App tab. Setting values, throttle presets, and device IDs are not sent.
+
+Device setting and app control reports keep their fixed messages, so their Sentry
+issues keep grouping as before. Since 0.1.170 they add these device command tags,
+which their `server.error.outcome` counts also carry:
+
+- `device_platform`: `ios` or `android`, from the tool's target.
+- `device_command`: the program and subcommand or backend route that failed, such
+  as `simctl_launch`, `simctl_privacy`, `adb_shell_am`, `adb_install`, `plutil`,
+  `baguette_interface`, `baguette_start`, `serve_emu_night_mode`, or
+  `serve_emu_start`. A Baguette start that fails on its device list or its own
+  process names `baguette_simulators` or `baguette_serve` instead of
+  `baguette_start`. It is absent when the failure did not come from a named
+  command, such as a reply that failed validation. Labels come from code; anything
+  else is sent as `other`.
+- `device_command_failure`: `exit`, `signal`, `deadline`, `cancelled`,
+  `output_limit`, `missing_executable`, `system_error`, `connection_failed`,
+  `http_status`, `rejected`, `invalid_response`, `unexpected_output`, or `unknown`.
+  The value comes from error codes, HTTP statuses, and error types. Messages and
+  output are never read.
+- `device_command_status`: the exit status (0 to 255) for `exit`, or the HTTP
+  status for `http_status`.
+- `device_command_signal`: the signal name for `signal`, or `other`.
+
+Arguments, output, replies, bundle IDs, URLs, serials, and paths are not sent.
+serve-emu startup failures under `device_settings.*` keep their `android_startup_*`
+tags.
 
 Saved chart cards use the `recording` surface and view. Existing readiness,
 interaction and frame-pacing coverage is preserved. `ui.recording.process` and
@@ -409,7 +457,8 @@ Baguette startup, input repair, simulator foreground detection and physical iOS
 bezel rendering discover required Swift compatibility libraries
 from the host's selected full Xcode installation before launching the native
 helper. Existing sampled MCP traces and UI app-discovery timings include discovery;
-handled failures retain their tool error paths. Setup failures use fixed messages without
+handled failures retain their tool error paths. Since 0.1.170, physical iOS bezel
+failures report under `ios-mirror.bezel` instead. Setup failures use fixed messages without
 developer directories or scanner output. Native telemetry initialization and
 matching dSYMs are preserved; rebuilds remove build-toolchain rpaths and re-sign
 the executable before retaining symbols. No additional telemetry fields or

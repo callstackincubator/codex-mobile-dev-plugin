@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import type { ExecFileOptionsWithStringEncoding } from "node:child_process";
 import { promisify } from "node:util";
 import { z } from "zod";
-import { foregroundCauses, setDiscoveryCommandDiagnostic } from "@mobile-dev/shared/device-apps-command-diagnostics.ts";
+import { commandSignals, foregroundCauses, setDiscoveryCommandDiagnostic } from "@mobile-dev/shared/device-apps-command-diagnostics.ts";
 import type { DiscoveryCommand, DiscoveryCause, DiscoveryCommandDiagnostic, CommandTermination } from "@mobile-dev/shared/device-apps-command-diagnostics.ts";
 
 const execute = promisify(execFile);
@@ -11,7 +11,7 @@ const cause = z.enum(foregroundCauses);
 const diagnosticObject = z.object({ version, cause });
 const helperDiagnostic = diagnosticObject.strict();
 const prefix = "mobile-dev-foreground-error:";
-const signalSchema = z.enum(["SIGABRT", "SIGBUS", "SIGFPE", "SIGILL", "SIGKILL", "SIGPIPE", "SIGSEGV", "SIGTERM", "SIGTRAP"]);
+const signalSchema = z.enum(commandSignals);
 
 type CommandOptions = ExecFileOptionsWithStringEncoding & { encoding: "utf8"; timeout: number; maxBuffer: number };
 type Runner = (file: string, args: string[], options: CommandOptions) => Promise<{ stdout: string; stderr?: string }>;

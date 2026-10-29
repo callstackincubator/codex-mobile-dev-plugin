@@ -63,6 +63,8 @@ and preserves its chosen recording target across foreground changes.
 
 Each MCP process owns one bundled Baguette child process. It selects a free loopback port, launches `dist/baguette/Baguette serve --host 127.0.0.1 --port <port> --no-plugins`, and shares that child across its tool calls and panel sessions. It does not use a separate Baguette server on port 8421. An opening failure returns an error the panel can show.
 
+The bundled Baguette runs each accessibility translator step on its main queue, where Apple's translator also handles simulator notifications. Concurrent UI reads take turns step by step, and gestures queued behind a read wait for one step rather than the whole read. When Baguette stops reading a helper command's output, it releases the pipe instead of closing a handle Foundation still monitors, which could close a descriptor another file had reused.
+
 The plugin servers serve agent-device's commands as `device_<command>` tools
 (`packages/core/src/agent-device-tools.ts`), registered from
 `packages/runtimes/agent-device/tools.json`, which `npm run catalog:agent-device` writes

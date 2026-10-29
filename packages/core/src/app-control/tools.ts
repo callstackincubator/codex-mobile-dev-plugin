@@ -4,7 +4,8 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { androidIdSchema } from "../serve-emu.ts";
 import { captureServerError } from "../telemetry.ts";
 import { errorMessage, udidSchema } from "@mobile-dev/shared/protocol.ts";
-import { ExpectedOperationError, expectedOutcome } from "@mobile-dev/shared/error-reporting.ts";
+import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
+import { deviceCommandTags } from "@mobile-dev/shared/device-command-diagnostics.ts";
 import { appDetailsBatch, appPermissions, appTargetShape, appUrlSchema, bundleIdSchema, languageTagSchema, permissionStates } from "@mobile-dev/shared/app-control.ts";
 import { systemCommands } from "./commands.ts";
 import type { Commands } from "./commands.ts";
@@ -53,9 +54,11 @@ function appTools(server: McpServer, driverFor: DriverFactory, visibility: ("app
         const result = await handler(driverFor(parsed), parsed);
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }], structuredContent: result };
       } catch (error) {
-        // Command output can contain app IDs, URLs, and device serials, so Sentry receives only the action.
-        // Expected outcomes carry fixed reasons and are counted without a report.
-        captureServerError(expectedOutcome(error) === undefined ? new Error(`App ${action} command failed.`) : error, `app_control.${action}`);
+        // Command output can contain app IDs, URLs, and device serials, so Sentry receives the action and how its
+        // command failed. Expected outcomes carry fixed reasons and are counted without a report.
+        captureServerError(error, `app_control.${action}`, {
+          reportAs: new Error(`App ${action} command failed.`), tags: { device_platform: parsed.platform, ...deviceCommandTags(error) },
+        });
         return { isError: true, content: [{ type: "text" as const, text: errorMessage(error) }] };
       }
     });
