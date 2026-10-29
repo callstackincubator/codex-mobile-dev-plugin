@@ -10,6 +10,7 @@ import { randomUUID } from "node:crypto";
 import { IosMirrorHub } from "../src/ios-mirror-hub.ts";
 import { createIosMirrorServer } from "../src/ios-mirror-server.ts";
 import { connectIosCapture } from "../src/ios-mirror-client.ts";
+import { mirrorRequestSchema, wireTouchPhases } from "../src/ios-mirror-rpc.ts";
 import type { NativeCapture } from "../src/ios-native-capture.ts";
 import { ExpectedOperationError } from "../../shared/src/error-reporting.ts";
 
@@ -134,8 +135,17 @@ test("the service's expected failures stay expected across the socket", async t 
   t.after(() => service.close());
   const client = await connectIosCapture(path, "phone");
   const expected = (outcome: string) => (error: unknown) => error instanceof ExpectedOperationError && error.outcome === outcome;
-  await assert.rejects(client.touch([{ phase: 0, x: 1, y: 1, width: 10, height: 10 }], 0), expected("device_unavailable"));
+  await assert.rejects(client.touch([{ phase: "down", x: 1, y: 1, width: 10, height: 10 }], 0), expected("device_unavailable"));
   void client.read().catch(() => {});
   await assert.rejects(client.read(), expected("resource_limit"));
   await client.close();
+});
+
+test("touch phases keep their numeric wire form between plugin versions", () => {
+  const sample = { x: 1, y: 2, width: 400, height: 800 };
+  const request = mirrorRequestSchema.parse({ id: 1, method: "touch", generation: 3, samples: [0, 1, 2].map(phase => ({ ...sample, phase })) });
+  assert.equal(request.method, "touch");
+  if (request.method === "touch") assert.deepEqual(request.samples.map(touch => touch.phase), ["down", "move", "up"]);
+  assert.deepEqual(wireTouchPhases, ["down", "move", "up"]);
+  assert.throws(() => mirrorRequestSchema.parse({ id: 1, method: "touch", generation: 3, samples: [{ ...sample, phase: "up" }] }));
 });

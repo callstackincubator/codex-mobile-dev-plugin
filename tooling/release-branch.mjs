@@ -4,46 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertBuildEnvironment } from "./telemetry-build.mjs";
-
-function compareVersions(incoming, previous) {
-  const incomingParts = incoming.split("-");
-  const previousParts = previous.split("-");
-  const incomingCore = incomingParts[0].split(".");
-  const previousCore = previousParts[0].split(".");
-  for (let index = 0; index < 3; index += 1) {
-    const left = BigInt(incomingCore[index]);
-    const right = BigInt(previousCore[index]);
-    if (left !== right) return left > right ? 1 : -1;
-  }
-  const incomingLabels = incomingParts.slice(1);
-  const previousLabels = previousParts.slice(1);
-  const incomingPrerelease = incomingLabels.join("-");
-  const previousPrerelease = previousLabels.join("-");
-  if (incomingPrerelease === previousPrerelease) return 0;
-  if (incomingPrerelease.length === 0) return 1;
-  if (previousPrerelease.length === 0) return -1;
-  const incomingIdentifiers = incomingPrerelease.split(".");
-  const previousIdentifiers = previousPrerelease.split(".");
-  const length = Math.max(incomingIdentifiers.length, previousIdentifiers.length);
-  for (let index = 0; index < length; index += 1) {
-    const left = incomingIdentifiers[index];
-    const right = previousIdentifiers[index];
-    if (left === right) continue;
-    if (left === undefined) return -1;
-    if (right === undefined) return 1;
-    const leftNumeric = /^\d+$/.test(left);
-    const rightNumeric = /^\d+$/.test(right);
-    if (leftNumeric && rightNumeric) {
-      const leftNumber = BigInt(left);
-      const rightNumber = BigInt(right);
-      if (leftNumber === rightNumber) continue;
-      return leftNumber > rightNumber ? 1 : -1;
-    }
-    if (leftNumeric !== rightNumeric) return leftNumeric ? -1 : 1;
-    return left > right ? 1 : -1;
-  }
-  return 0;
-}
+import { compareReleaseVersions, isReleaseVersion } from "../packages/shared/src/release-version.ts";
 
 function gitEnvironment(remote, token) {
   const env = { ...process.env };
@@ -71,8 +32,7 @@ function gitEnvironment(remote, token) {
 export async function publishPluginRelease({ manifestPath, requiredFiles, branch, pluginPath, catalogPath, catalog }, { pluginDirectory, tag, remote, token }) {
   const manifest = JSON.parse(await readFile(`${pluginDirectory}/${manifestPath}`, "utf8"));
   const version = manifest.version;
-  const validVersion = typeof version === "string" && /^\d+\.\d+\.\d+(?:-[\da-zA-Z.-]+)?$/.test(version);
-  if (manifest.name !== "mobile-dev" || validVersion === false || tag !== `v${version}`) {
+  if (manifest.name !== "mobile-dev" || isReleaseVersion(version) === false || tag !== `v${version}`) {
     throw new Error("The packaged mobile-dev version must match the release tag.");
   }
   await assertBuildEnvironment(`${pluginDirectory}/dist`, "release");
@@ -119,10 +79,9 @@ async function publishBranch({ branch, version, remote, token, catalogPath, name
       const previousCatalog = JSON.parse(await readFile(`${directory}/${catalogPath}`, "utf8"));
       if (previousCatalog.name !== name) throw new Error(`${branch} must contain the ${name} marketplace.`);
       const subject = git(["log", "-1", "--format=%s"]).trim();
-      const previousRelease = subject.match(/ (\d+\.\d+\.\d+(?:-[\da-zA-Z.-]+)?)$/);
-      if (previousRelease === null) throw new Error(`${branch} must point to a Mobile Dev release commit.`);
-      const previousVersion = previousRelease[1];
-      if (compareVersions(version, previousVersion) <= 0) return { published: false, version, latest: previousVersion };
+      const previousVersion = subject.match(/ (\S+)$/)?.[1];
+      if (isReleaseVersion(previousVersion) === false) throw new Error(`${branch} must point to a Mobile Dev release commit.`);
+      if (compareReleaseVersions(version, previousVersion) <= 0) return { published: false, version, latest: previousVersion };
     } else if (existing.status !== 2) {
       throw new Error(`Cannot inspect ${branch}: ${existing.stderr}`);
     }

@@ -59,43 +59,6 @@ fn rtcp_packet_length(buf: &[u8], offset: usize) -> Option<usize> {
     Some(packet_length)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SenderReport {
-    pub ssrc: u32,
-    pub ntp_middle: u32,
-}
-
-impl SenderReport {
-    /// Find and parse the first Sender Report in a (possibly compound) RTCP
-    /// datagram. Returns `None` if there is no SR.
-    pub fn parse_first(buf: &[u8]) -> Option<SenderReport> {
-        let mut off = 0;
-        // Walk the compound packet, each sub-packet's length is in 32-bit words
-        // minus one.
-        while off + 4 <= buf.len() {
-            let pt = buf[off + 1];
-            let pkt_len = rtcp_packet_length(buf, off)?;
-            // SR body: sender SSRC (4) | NTP MSW (4) | NTP LSW (4) | ...
-            if pt == PT_SENDER_REPORT {
-                let ssrc =
-                    u32::from_be_bytes([buf[off + 4], buf[off + 5], buf[off + 6], buf[off + 7]]);
-                let ntp_msw =
-                    u32::from_be_bytes([buf[off + 8], buf[off + 9], buf[off + 10], buf[off + 11]]);
-                let ntp_lsw = u32::from_be_bytes([
-                    buf[off + 12],
-                    buf[off + 13],
-                    buf[off + 14],
-                    buf[off + 15],
-                ]);
-                let ntp_middle = (ntp_msw << 16) | (ntp_lsw >> 16);
-                return Some(SenderReport { ssrc, ntp_middle });
-            }
-            off += pkt_len;
-        }
-        None
-    }
-}
-
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ReportBlock {
     pub source_ssrc: u32,
@@ -390,26 +353,6 @@ mod tests {
     }
 
     #[test]
-    fn parses_first_sender_report() {
-        // Build an SR by hand: header + ssrc + ntp(8) + rtp ts(4) + counts(8).
-        let mut sr = vec![0x80, PT_SENDER_REPORT, 0, 6];
-        sr.extend_from_slice(&0x0a0b_0c0du32.to_be_bytes()); // ssrc
-        sr.extend_from_slice(&0x1111_2222u32.to_be_bytes()); // ntp msw
-        sr.extend_from_slice(&0x3333_4444u32.to_be_bytes()); // ntp lsw
-        sr.extend_from_slice(&0u32.to_be_bytes()); // rtp ts
-        sr.extend_from_slice(&0u32.to_be_bytes()); // packet count
-        sr.extend_from_slice(&0u32.to_be_bytes()); // octet count
-        // Prepend an unrelated RR to prove we walk the compound packet.
-        let mut compound = build_receiver_report(0xfeed, &[]);
-        compound.extend_from_slice(&sr);
-
-        let parsed = SenderReport::parse_first(&compound).expect("should find the SR");
-        assert_eq!(parsed.ssrc, 0x0a0b_0c0d);
-        // Middle 32 bits = low16(msw) << 16 | high16(lsw).
-        assert_eq!(parsed.ntp_middle, 0x2222_3333);
-    }
-
-    #[test]
     fn framing_checks_reject_wrong_version_truncation_and_impossible_lengths() {
         assert!(!is_rtcp(&[0x00, PT_SENDER_REPORT, 0, 0]));
         assert!(!is_rtcp(&[0x80, PT_SENDER_REPORT, 0, 6]));
@@ -419,36 +362,6 @@ mod tests {
 
         assert!(is_rtcp(&build_receiver_report(1, &[])));
         assert!(is_rtcp(&build_pli(1, 2)));
-    }
-
-    #[test]
-    fn sender_report_parser_rejects_short_or_invalid_compound_members() {
-        let short_sr = [
-            0x80,
-            PT_SENDER_REPORT,
-            0,
-            3,
-            0,
-            0,
-            0,
-            1,
-            0,
-            0,
-            0,
-            2,
-            0,
-            0,
-            0,
-            3,
-        ];
-        assert!(SenderReport::parse_first(&short_sr).is_none());
-
-        let invalid_prefix = [0x00, PT_RECEIVER_REPORT, 0, 1, 0, 0, 0, 1];
-        let mut valid_sr = vec![0x80, PT_SENDER_REPORT, 0, 6];
-        valid_sr.extend_from_slice(&[0; 24]);
-        let mut compound = invalid_prefix.to_vec();
-        compound.extend_from_slice(&valid_sr);
-        assert!(SenderReport::parse_first(&compound).is_none());
     }
 
     #[test]
@@ -474,7 +387,6 @@ mod tests {
                 *byte = state as u8;
             }
             let _ = is_rtcp(&datagram);
-            let _ = SenderReport::parse_first(&datagram);
         }
     }
 }

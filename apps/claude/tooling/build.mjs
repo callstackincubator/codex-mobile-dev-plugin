@@ -6,7 +6,8 @@ import { buildServerBundles } from "../../../tooling/server-bundle.mjs";
  * staged runtime, replacing the shared server.mjs there. Its modules split into chunks
  * beside server.mjs, so each file stays under the Claude plugin directory's 5 MiB limit.
  */
-export async function buildHost(outdir, { sentryDirectory = ".sentry/server/claude" } = {}) {
+export async function buildHost({ outdir, sentryRoot }) {
+  const sentryDirectory = `${sentryRoot}/server/claude`;
   await rm(sentryDirectory, { recursive: true, force: true });
   await buildServerBundles({ entryPoints: { server: "apps/claude/server/index.ts" }, outdir, sentryDirectory, splitting: true });
 }

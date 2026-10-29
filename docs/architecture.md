@@ -24,13 +24,13 @@ A host adds to the shared pieces without changing them:
   server's instructions and the foreground simulator app. Codex, Cursor's shared entry
   and the Mac app pass it first.
   Codex and Cursor add agent-device's commands, and Codex the self-updater, which
-  installs through Codex's marketplace; the Mac app, which has no agent, adds its page
-  resource. Claude shows simulators itself, so its entry (`apps/claude/server`) passes
+  installs through Codex's marketplace; the Mac app, which has no agent, adds the
+  telemetry metadata its page reads. Claude shows simulators itself, so its entry (`apps/claude/server`) passes
   no panel and adds agent-device's commands; its chat cards stay. Every host lists simulators for logs, CPU and device choices with
   simctl, without starting Baguette.
 - **Runtime:** a host's `plugin-host.json` can leave out the panel's parts of `dist/`
   (`"panel": false`, see `PANEL_PARTS` in `tooling/host-runtime.mjs`) and name a
-  server build of its own. Claude ships neither Baguette, serve-emu nor the iOS
+  `buildHost` module for its own server or page. Claude ships neither Baguette, serve-emu nor the iOS
   mirror, and its server loads after telemetry as a separate module, so esbuild
   splits it into chunks beside `server.mjs`, keeping every file under the Claude
   plugin directory's 5 MiB limit.

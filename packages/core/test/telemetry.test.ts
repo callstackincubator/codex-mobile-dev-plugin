@@ -11,7 +11,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { z } from "zod";
 import { MeasurementWindow, sampleTrace, scrubErrorEvent, scrubMetric, scrubSpan, sampleMetric, createErrorEventFilter, METRIC_SAMPLE_RATE, TELEMETRY_META_KEY } from "../../shared/src/telemetry.ts";
-import { captureServerError, installTracePropagation, instrumentMcpServer, IOSLogProcessingTelemetry, recordAndroidBackendStartup, recordIosMirrorSharing } from "../src/telemetry.ts";
+import { captureServerError, installTracePropagation, instrumentMcpServer, IOSLogProcessingTelemetry, recordAndroidBackendStartup, recordIosMirrorSharing, setLaunchingTelemetryHost, setServerTelemetryHost } from "../src/telemetry.ts";
 import { recordPluginUpdate } from "../../../apps/codex-plugin/server/plugin-updates.ts";
 import { deferEpisodeReport, ExpectedOperationError, FailureEpisodes } from "../../shared/src/error-reporting.ts";
 import { parseResourceInput } from "../src/resource-input.ts";
@@ -30,12 +30,11 @@ import { IosMirrorSessions } from "../src/ios-mirror.ts";
 import type { PhysicalIosDevice } from "../../shared/src/ios-devices.ts";
 import { createDrivers, registerAppControlTools } from "../src/app-control/tools.ts";
 import { registerDeviceSettingsTools } from "../src/device-settings.ts";
-import { Baguette } from "../src/baguette.ts";
 import type { ServeEmu } from "../src/serve-emu.ts";
 import { setAndroidStartupDiagnostic } from "../../shared/src/android-startup-diagnostics.ts";
 import type { OpenAIFormResult } from "@openai/mcp-extensions/server";
 import { agentDeviceClient } from "../../test-support/agent-device-fixtures.ts";
-import { UDID } from "../../test-support/fixtures.ts";
+import { UDID, attachedBaguette } from "../../test-support/fixtures.ts";
 import { CpuSessions } from "../src/cpu/sessions.ts";
 import { DisplayFpsSessions } from "../src/fps/sessions.ts";
 import { setDiscoveryCommandDiagnostic } from "../../shared/src/device-apps-command-diagnostics.ts";
@@ -882,7 +881,7 @@ test("physical iOS frames accept profiles without represented models, report a f
     if (file === "/usr/bin/plutil") return output({});
     renders.push(args[1]);
     throw new Error("Device frame layout failed");
-  }, async () => ({}));
+  }, async () => ({ executable: "Baguette", env: {} }));
   const sessions = new IosMirrorSessions(async () => ({
     async read() { return { generation: 1, sequence: 1, dropped: 0, frames: [] }; }, async touch() {}, async reset() {}, async close() {},
   }));
@@ -1247,7 +1246,7 @@ test("device settings report the failed backend request without its reply and co
   await new Promise<void>(resolve => { http.once("listening", resolve); });
   const address = http.address();
   assert.ok(address && typeof address === "object");
-  const baguette = new Baguette(`http://127.0.0.1:${address.port}`);
+  const baguette = attachedBaguette(`http://127.0.0.1:${address.port}`);
   const startup = new Error("serve-emu exited before it became ready. PRIVATE_DIAGNOSTICS");
   setAndroidStartupDiagnostic(startup, { stage: "process-launch", outcome: "error" }, {
     deviceKind: "emulator", transport: "emulator", stateBefore: "online", activeBackends: 0, stoppingBackends: 0, startingBackends: 0,
@@ -1328,4 +1327,29 @@ test("storage measurements never start while telemetry is off", t => {
   process.env.MOBILE_DEV_TELEMETRY = "on";
   startStorageMetrics(directories)();
   assert.equal(walked, true, "the same directories are measured with telemetry on");
+});
+
+// Runs last: the launching host stays set for the rest of this process.
+test("a host label the server entry passes outranks the connecting client's name", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  t.after(async () => { await Sentry.close(); });
+  const scope = () => Sentry.getIsolationScope().getScopeData();
+  setServerTelemetryHost("Claude");
+  assert.equal(scope().tags.host, "claude");
+  setServerTelemetryHost("PRIVATE_HOST");
+  assert.equal(scope().tags.host, "other");
+  setLaunchingTelemetryHost("mac");
+  assert.equal(scope().tags.host, "mac");
+  assert.equal(scope().attributes?.host, "mac");
+  setServerTelemetryHost("mobile-dev-mac");
+  setServerTelemetryHost("Claude");
+  assert.equal(scope().tags.host, "mac");
+  assert.equal(scope().attributes?.host, "mac");
+  Sentry.captureException(new Error("Launching host"));
+  await Sentry.flush();
+  assert.equal(reportedEvents(envelopes)[0]?.tags?.host, "mac");
 });

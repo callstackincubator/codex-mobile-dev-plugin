@@ -7,8 +7,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { CpuSessions } from "../src/cpu/sessions.ts";
 import { registerCpuTools } from "../src/cpu/tools.ts";
 import { DeviceResolver } from "../src/devices.ts";
-import { Baguette } from "../src/baguette.ts";
-import { fakeBaguette, UDID } from "../../test-support/fixtures.ts";
+import { fakeBaguette, UDID, attachedBaguette } from "../../test-support/fixtures.ts";
 
 function textData(result: { content?: unknown }) {
   assert.ok(Array.isArray(result.content));
@@ -25,7 +24,7 @@ test("iOS text agents discover, start, read and stop CPU monitoring using only t
     options.onSample({ timestampUs: 1000000n, intervalUs: 1000000, cpuPercent: 37, memoryBytes: 104857600, threads: [] });
     return { closed: new Promise(() => {}), async stop() { detached = true; } };
   } });
-  const baguette = new Baguette(fake.url);
+  const baguette = attachedBaguette(fake.url);
   const server = new McpServer({ name: "cpu-test", version: "1" });
   registerCpuTools(server, cpu, new DeviceResolver({ simulators: baguette, android: async () => [], ios: async () => [] }), { apps: async () => {
     const running = await apps();
@@ -98,7 +97,7 @@ test("Android text agents discover, start, read and stop CPU monitoring without 
     options.onSample({ timestampUs: 1000000n, intervalUs: 1000000, cpuPercent: 80, memoryBytes: 104857600, threads: [{ id: "456-42", name: "main", cpuPercent: 75 }] });
     return { closed: new Promise(() => {}), async stop() {} };
   } });
-  const baguette = new Baguette(fake.url);
+  const baguette = attachedBaguette(fake.url);
   const server = new McpServer({ name: "android-cpu-test", version: "1" });
   const devices = new DeviceResolver({ simulators: baguette, android: async () => online ? [{ id: "emulator-5554", name: "Pixel" }] : [], ios: async () => [] });
   registerCpuTools(server, cpu, devices, { apps: async (deviceId, signal, platform) => {

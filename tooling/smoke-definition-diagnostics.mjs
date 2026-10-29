@@ -1,18 +1,13 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { withServer } from "./lib/mcp-smoke.mjs";
 
 const env = {};
 for (const [key, value] of Object.entries(process.env)) {
   if (value !== undefined) env[key] = value;
 }
 env.MOBILE_DEV_TELEMETRY = "off";
-const transport = new StdioClientTransport({ command: process.execPath, args: ["dist/server.mjs"], env, stderr: "pipe" });
-transport.stderr?.resume();
-const client = new Client({ name: "definition-diagnostics-smoke", version: "1" });
-try {
-  await client.connect(transport);
+await withServer({ args: ["dist/server.mjs"], env, name: "definition-diagnostics-smoke" }, async client => {
   const result = await client.callTool({ name: "mobile_list_simulators", arguments: {} });
   assert.equal(result.isError, undefined, "The packaged backend must start.");
   const status = result.structuredContent;
@@ -48,6 +43,4 @@ try {
   } else {
     console.log("Packaged Baguette: missing simulator reports a structured diagnostic; no booted iPhone 17 was available for the panel check.");
   }
-} finally {
-  await client.close();
-}
+});

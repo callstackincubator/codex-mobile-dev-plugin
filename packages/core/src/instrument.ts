@@ -49,10 +49,9 @@ const mirrorService = executable.endsWith("ios-mirror-service.mjs") || executabl
 const component = mirrorService ? "ios-mirror-service" : "server";
 Sentry.setTag("component", component);
 Sentry.setAttribute("component", component);
-// Until a client initializes, only the Mac app's launch identifies the host.
-const host = process.env.MOBILE_DEV_HOST === "mac" ? "mac" : "other";
-Sentry.setTag("host", host);
-Sentry.setAttribute("host", host);
+// The host is unknown until the server entry or the connecting client names it.
+Sentry.setTag("host", "other");
+Sentry.setAttribute("host", "other");
 client?.on("spanStart", span => {
   const scope = Sentry.getIsolationScope();
   const data = scope.getScopeData();

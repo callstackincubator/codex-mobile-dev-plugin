@@ -47,7 +47,7 @@ test("physical touches require the delivered video generation and serialize nati
   await f.frame();
   const batch = await f.sessions.batch(id);
   await f.sessions.input(id, [...touch], batch.generation);
-  assert.deepEqual(f.touches, [{ samples: [{ phase: 0, x: 200, y: 400, width: 400, height: 800 }], generation: 1 }]);
+  assert.deepEqual(f.touches, [{ samples: [{ phase: "down", x: 200, y: 400, width: 400, height: 800 }], generation: 1 }]);
   const send = f.capture.touch;
   let release!: () => void;
   f.capture.touch = () => new Promise<void>(resolve => { release = resolve; });

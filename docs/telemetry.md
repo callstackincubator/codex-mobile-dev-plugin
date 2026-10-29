@@ -9,23 +9,26 @@ Since 0.1.165, UI and server telemetry carry a `host` tag and attribute with one
 Apps hosts load the same panel and server; the Mac app runs the same server and shared UI.
 Behavior never depends on this value; it only attributes measurements and errors.
 
-- The Mac page names itself (`data-host="mac"`); the Mac app also starts the server
-  with `MOBILE_DEV_HOST=mac`.
+- The Mac page passes `mac` when it starts UI telemetry, and the Mac server's entry
+  passes it to `runStdioServer`, which keeps it whatever the connecting client reports.
 - MCP Apps panels are labelled once connected: `codex` when the host advertises
   OpenAI extensions, otherwise the host's reported name mapped by `telemetryHost`
   (`claude` for Claude, `cursor` for Cursor, else `other`). Before the Cursor plugin,
   Cursor sessions were reported as `other`. Calls before connecting carry no host.
-- The server labels itself from the connecting MCP client's name on initialize and
-  reports `other` until then.
+- Other servers label themselves from the connecting MCP client's name on initialize.
+  Every server reports `other` until it has a label.
 - The server's metadata allowlist accepts only these values; the raw host or
   client name is never sent.
 
 Earlier releases have no `host` value. Surfaces, measurement names, units and
 boundaries are unchanged in every host.
 
-The Mac app loads its page through the server's `ui://mobile-dev/mac.html` resource,
-so the page receives the same server-owned environment, opt-out and anonymous
-identity as the Codex panel. Mac builds are development-only for now; the SwiftUI
+The Mac page reads the server's `ui://mobile-dev/mac-telemetry.json` resource over
+its own MCP connection and starts its telemetry with it, so it receives the same
+server-owned environment, opt-out and anonymous identity as the Codex panel. Its
+telemetry starts once that connection is open, so a failure to connect is not
+reported. Earlier releases did not report one either: the app read the page from
+the server's `ui://mobile-dev/mac.html` resource before loading it. Mac builds are development-only for now; the SwiftUI
 shell has no native Sentry SDK.
 
 ## Volume policy
@@ -124,6 +127,8 @@ Since 0.1.134, physical iOS capture runs in the shared `ios-mirror-service` Node
 
 `ios.mirror.shared.captures` and `ios.mirror.shared.subscribers` report active counts. `ios.mirror.shared.queue_dropped` counts frames discarded by subscriber queue overflow. Counts aggregate in 30-second windows and flush on service shutdown, using the simulator surface and physical iOS context. No per-frame events, device identifiers, subscription IDs, payloads, or paths are sent. The service clears its collection timer on shutdown and honors telemetry opt-out.
 
+Since 0.1.170, the iPhone mirror's `native.frame.process` timing measures only RTP depacketization and HEVC access-unit assembly for each video datagram. Before, the timer ran until all of that datagram's access units were handed off, so it also included the RTCP frame-acknowledgement send, decoder-configuration formatting, the queue handoff and any touch-release request to the device. Expect lower values from this release; compare earlier windows only with that difference in mind. The metric name, unit, component and attribution are unchanged.
+
 Since 0.1.170, a physical iOS bezel that can't be rendered no longer fails `mobile_ios_mirror_session`. Mirroring opens without the frame, and an unexpected render failure reports a handled `ios-mirror.bezel` error. The server keeps a missing frame for five minutes, so each hardware model reports at most once in that window instead of on every panel reconnect. A device type that Xcode doesn't have is expected: it counts as an `unsupported_platform` outcome and sends no event. Earlier releases reported these failures as `mobile_ios_mirror_session` errors, so compare `ios-mirror.bezel` with those events when reading trends. No metrics are added. The existing `server.error.outcome` count carries the new operation value.
 
 Since 0.1.132, `plugin.update.operations` counts release checks and installations
@@ -173,6 +178,10 @@ Helper-owned timeouts count as timeouts even when the helper exits with status 1
 Parent deadlines, explicit cancellation, native signals, missing executables, and
 output limits retain separate classifications. Known simctl/ADB lifecycle text
 is classified locally into fixed causes; text never enters these diagnostics.
+Baguette's Xcode runtime discovery (`ios_simulator_runtime`) is cached per selected
+Xcode, so a failure's `elapsed_ms` can cover a discovery another caller started; a
+missing Baguette now fails that step as a missing runtime with `install_integrity`
+tags instead of as an unusable toolchain.
 
 The existing discovery stage/failure tags, exception-text and Node system-error
 scrubbing, anonymous error attribution, telemetry opt-out, UI discovery metrics,
@@ -546,6 +555,8 @@ readiness/render timing cannot measure that surface.
 
 Physical iOS display rejections, including an active phone or VoIP call, appear in the panel's Screen unavailable state while it retries. These expected device responses preserve native connection timing, sampled MCP traces and `ui.action.result` outcomes on the simulator surface. Their localized descriptions remain local and do not produce separate Sentry issues.
 
+Since 0.1.170, the iPhone mirror addon gives each failure a stable code and keeps CoreDevice's numeric error code (for example `core_device_9022` for a call in progress). The server maps a device that is no longer connected, a call in progress, a missing display or touch-input service, input for a stale screen, invalid input and a closed stream to expected outcomes, and the shared capture service forwards that outcome to the panel's server. These failures now count in `server.error.outcome` under `mobile_ios_mirror_session` or `ios-mirror.shared-capture` with that outcome instead of creating Sentry issues; earlier releases reported them as unexpected errors. Other codes, such as connection timeouts and stream failures, are still reported.
+
 The plugin servers for Codex, Claude and Cursor serve agent-device's commands as `device_<command>` tools, measured like its other tools by the server's MCP instrumentation (`tools/call device_<command>` spans). The runtime starts on the first command; `agent_device.runtime.ready` measures that start, from the first command to a connected runtime, in milliseconds. Handled failures use static messages under `agent_device.<command>`, `agent_device.start`, `agent_device.exit` and `agent_device.cleanup`, and its storage measurements come from the server process. Incoming trace metadata continues through to the native MCP request; discovery and session lookups (`device_devices`, `device_apps`, `device_appstate`, `device_capabilities`, `device_session`, `device_events`) are excluded from sampling. Handled native failures use static error messages so app content and tool payloads cannot enter telemetry. The standalone agent-device server, its `agent_device.catalog.ready` measurement and its `agent-device-wrapper` component were removed.
 
 Since 0.1.170, `collector.ready.samples` and `collector.ready.duration` measure each CPU and Display FPS collector from session open to its first `recording` phase, in milliseconds: app lookup, debugserver attach or Android collector deployment, and for FPS the first sample. `outcome` is `ready`, `failed` (startup failed before recording) or `cancelled` (closed first); each session records once, so a collector that fails while recording is not counted again. Recordings start the same collectors and are included. Attributes are `component=server`, `surface=performance`, `collector` (`cpu` or `fps`), `device_platform` and `device_kind` (`simulator` or `physical` on iOS; `emulator` for `emulator-<port>` serials, otherwise `physical`, on Android). Device and app identifiers, error messages and session IDs are never attributes. This is plugin startup work, not the monitored app's performance.
@@ -574,7 +585,7 @@ Error and crash events carry only a generated anonymous `user.id` and a `telemet
 
 Session Replay, minidumps, screenshots and profiling are disabled. Requests, account details, app log content, tool payloads, automatic console breadcrumbs and exception source context are excluded. JavaScript error text redacts common tokens, identifiers, URLs, email addresses and local home paths. Native reports retain source basenames and debug IDs, omit absolute module paths, and never send Rust panic payloads. Safe product attributes and source locations remain available for diagnosis. `MOBILE_DEV_TELEMETRY=off` disables reporting across JavaScript and native helpers.
 
-Builds generate debug IDs and source maps under the ignored `.sentry/` directory. Each page and server bundle keeps its maps in its own folder: `.sentry/ui/<page>` (`mcp-app`, `codex`, `mac`) and `.sentry/server` with host servers under `.sentry/server/<host>`. `npm run sentry:upload` uploads both trees, so every host's bundles share the release and its debug IDs. Host servers keep the shared server's component, metric names and boundaries; Codex's `plugin.update.*` metrics now come only from Codex's server. Native rebuilds retain macOS dSYMs and unstripped Android ELF files in `.sentry/native` before stripping the bundled binaries. Release runs can reuse each helper's exact build artifact, restoring the vendor files and matching symbols together after SHA-256 verification. Reused symbols are still uploaded by the current release's Sentry step. Native helpers receive the current release and environment at runtime, so reuse preserves release attribution, measurement boundaries and debug IDs. Symbols, source maps and the upload credential are excluded from the plugin package. Native builds require CMake and Ninja, with an Android NDK for Android collectors. The SDK source archive is pinned and checked by SHA-256. Store the organization build token in the ignored `.env.sentry-build-plugin` file at the repository root:
+Builds generate debug IDs and source maps under the ignored `.sentry/` directory. Each page and server bundle keeps its maps in its own folder: `.sentry/ui/<page>` (`mcp-app`, `codex`, `mac`) and `.sentry/server` with host servers under `.sentry/server/<host>`. `npm run sentry:upload` uploads both trees, so every host's bundles share the release and its debug IDs. `npm run build:hosts` keeps its test builds' maps under `.sentry/host-tests`, which is never uploaded, so it cannot replace a package's. Host servers keep the shared server's component, metric names and boundaries; Codex's `plugin.update.*` metrics now come only from Codex's server. Native rebuilds retain macOS dSYMs and unstripped Android ELF files in `.sentry/native` before stripping the bundled binaries. Release runs can reuse each helper's exact build artifact, restoring the vendor files and matching symbols together after SHA-256 verification. Reused symbols are still uploaded by the current release's Sentry step. Native helpers receive the current release and environment at runtime, so reuse preserves release attribution, measurement boundaries and debug IDs. Symbols, source maps and the upload credential are excluded from the plugin package. Native builds require CMake and Ninja, with an Android NDK for Android collectors. The SDK source archive is pinned and checked by SHA-256. Store the organization build token in the ignored `.env.sentry-build-plugin` file at the repository root:
 
 ```dotenv
 SENTRY_AUTH_TOKEN=your_org_token
@@ -604,7 +615,10 @@ existing developer-directory resolver, rather than the plugin build toolchain.
 snapshot. `definition_backend_version` accepts the pinned Baguette version;
 `definition_backend_source=pinned` verifies the diagnostic's source commit against
 the plugin's pin, and `definition_backend_mode` distinguishes embedded and external
-backends. These are error tags only, not performance attributes or identifiers.
+backends. Released servers only ever ran the embedded backend, and the external mode
+existed only for tests; it is removed, so the tag is always `embedded` and stays for
+comparison with earlier releases. These are error tags only, not performance
+attributes or identifiers.
 
 `definition_device_before` records the successful booted-device validation.
 After a definition 404, the server performs one bounded device-list read (up to

@@ -1,0 +1,17 @@
+{
+  "name": "codex",
+  "label": "Codex",
+  "manifest": ".codex-plugin",
+  "build": "tooling/build.mjs",
+  "marketplace": {
+    "module": "tooling/plugin-marketplace.mjs",
+    "manifest": ".agents/plugins/marketplace.json"
+  },
+  "releaseFolder": "marketplace",
+  "pluginPath": "plugins",
+  "archive": "",
+  "keepSkillAgents": true,
+  "files": [".mcp.json", "scripts/launch-mcp.sh"],
+  "symlinks": true,
+  "maxArchiveBytes": 100000000
+}

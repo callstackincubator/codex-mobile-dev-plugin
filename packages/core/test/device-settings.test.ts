@@ -49,7 +49,7 @@ function fixture() {
   const serveEmu = {
     async start(id: string) { return { url: new URL(`http://localhost/${id}/`) }; },
     device: listed,
-    async json(url: URL, path: string, options: RequestInit = {}) {
+    async json({ url }: { url: URL }, path: string, options: RequestInit = {}) {
       const body = options.body ? JSON.parse(String(options.body)) : undefined;
       requests.push({ platform: "android", id: url.pathname.slice(1, -1), path, method: options.method ?? "GET", body });
       if (path === "/api/night-mode") return { ok: true, nightMode: { mode: body?.mode ?? "light" } };

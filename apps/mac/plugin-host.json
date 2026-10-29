@@ -1,0 +1,4 @@
+{
+  "label": "Mac app",
+  "build": "tooling/build.mjs"
+}

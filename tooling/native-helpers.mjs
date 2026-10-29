@@ -8,6 +8,9 @@ import { iosMirrorSourceHash } from "./build-ios-mirror.mjs";
 import { ANDROID_ABIS } from "./ndk-build.mjs";
 import { baguetteBuildScripts, baguetteTelemetrySourceHash } from "./rebuild-baguette.mjs";
 
+// The Rust helpers build in one Cargo workspace with shared crates.
+const rustScripts = ["native-rust.mjs", "native-symbols.mjs"];
+const rustInputs = ["packages/native/Cargo.toml", "packages/native/Cargo.lock", "packages/native/device-tunnel/Cargo.toml", "packages/native/device-tunnel/src/lib.rs"];
 const darwinSymbols = name => [`.sentry/native/darwin-arm64/${name}.dSYM`];
 const android = name => ({
   binaries: ANDROID_ABIS.map(abi => `${abi}/${name}`),
@@ -42,27 +45,28 @@ export const nativeHelpers = [
     symbols: darwinSymbols("Baguette"),
   },
   {
-    name: "ios-fps", label: "the iPhone FPS helper", command: "rebuild:ios-fps", scripts: ["build-fps.mjs"], inputs: [],
+    name: "ios-fps", label: "the iPhone FPS helper", command: "rebuild:ios-fps", scripts: ["build-fps.mjs", ...rustScripts], inputs: rustInputs,
     tools: ["darwin", "rust"], committed: true, sourceHash: () => fpsSourceHash("ios"),
     binaries: ["mobile-dev-ios-fps"], executables: ["mobile-dev-ios-fps"], runtimeFiles: ["third-party-licenses.txt"],
     extraFiles: [["packages/native/ios-fps/README.md", "README.md"]],
     symbols: darwinSymbols("mobile-dev-ios-fps"),
   },
   {
-    name: "ios-mirror", label: "the physical iOS capture addon", command: "rebuild:ios-mirror", scripts: ["build-ios-mirror.mjs"], inputs: [],
+    name: "ios-mirror", label: "the physical iOS capture addon", command: "rebuild:ios-mirror", scripts: ["build-ios-mirror.mjs", "napi-types.mjs", ...rustScripts], inputs: rustInputs,
     tools: ["darwin", "rust"], committed: true, sourceHash: () => iosMirrorSourceHash(),
     binaries: ["darwin-arm64.node"], executables: [], runtimeFiles: ["third-party-licenses.txt"],
     extraFiles: ["README.md", "IDEVICE-LICENSE.txt", "DEVICE-HUB-LICENSE.txt"].map(file => [`packages/native/ios-mirror/${file}`, file]),
     symbols: darwinSymbols("darwin-arm64.node"),
   },
   {
-    name: "ios-logs", label: "the physical iOS log reader", command: "rebuild:ios-logs", scripts: ["build-ios-logs.mjs"], inputs: [],
+    name: "ios-logs", label: "the physical iOS log reader", command: "rebuild:ios-logs", scripts: ["build-ios-logs.mjs", "native-symbols.mjs"], inputs: [],
     tools: ["darwin", "iosLogs"], committed: true, sourceHash: () => iosLogsSourceHash(),
     binaries: ["mobile-dev-ios-logs"], executables: ["mobile-dev-ios-logs"], runtimeFiles: ["third-party-licenses.txt"],
     // The LGPL reader ships with its source and build script.
     extraFiles: [
       ...["README.md", "LICENSE", "collector.c", "dependencies.json"].map(file => [`packages/native/ios-logs/${file}`, file]),
       ["tooling/build-ios-logs.mjs", "build-ios-logs.mjs"], ["tooling/native-telemetry.mjs", "native-telemetry.mjs"],
+      ["tooling/native-symbols.mjs", "native-symbols.mjs"],
     ],
     symbols: darwinSymbols("mobile-dev-ios-logs"),
     async verify(metadata, root) {

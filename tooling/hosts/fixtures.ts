@@ -26,7 +26,7 @@ async function startServer(target: Target) {
   const transport = new StdioClientTransport({
     command: process.execPath, args: [join(build, target, "server.mjs")], cwd: join(build, target), stderr: "pipe",
     // No device tools on PATH or in the home directory: the tests see no devices on any machine.
-    env: { PATH: "/usr/bin:/bin", HOME: home, MOBILE_DEV_TELEMETRY: "off", ...(target === "mac" ? { MOBILE_DEV_HOST: "mac" } : {}) },
+    env: { PATH: "/usr/bin:/bin", HOME: home, MOBILE_DEV_TELEMETRY: "off" },
   });
   const stderr: string[] = [];
   transport.stderr?.on("data", chunk => { stderr.push(String(chunk)); });
@@ -99,31 +99,18 @@ export const test = base.extend<Fixtures>({
     });
   },
 
-  openMac: async ({ page, target }, use) => {
+  openMac: async ({ page, pageErrors }, use) => {
     const server = await startServer("mac");
-    // Like the app's PageLoader, read the page over the connection the page then reuses.
-    const loaded = Promise.withResolvers<string>();
-    server.transport.onmessage = message => {
-      if ("id" in message && message.id === "mac-initialize") {
-        void server.transport.send({ jsonrpc: "2.0", method: "notifications/initialized" });
-        void server.transport.send({ jsonrpc: "2.0", id: "mac-page", method: "resources/read", params: { uri: "ui://mobile-dev/mac.html" } });
-      } else if ("id" in message && message.id === "mac-page") {
-        const result = "result" in message ? message.result as { contents?: { text?: string }[] } : undefined;
-        const text = result?.contents?.[0]?.text;
-        if (text === undefined) loaded.reject(new Error("The server returned no Mac page."));
-        else loaded.resolve(text);
-      }
-    };
-    await server.transport.start();
-    await server.transport.send({ jsonrpc: "2.0", id: "mac-initialize", method: "initialize", params: {
-      protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "mobile-dev-mac-shell", version: "1" },
-    } });
-    const html = await loaded.promise;
-    await page.route(`${HOST_ORIGIN}/**`, route => route.fulfill({ contentType: "text/html", body: html }));
+    // Like the app, load the page built beside the server; the page is the server's only MCP client.
+    await page.route(`${HOST_ORIGIN}/**`, route => route.fulfill({ contentType: "text/html", path: join(build, "mac", "mac.html") }));
     // Swift writes the page's messages to the server's stdin and evaluates each line it prints.
     server.transport.onmessage = message => { void page.evaluate(line => window.__mobileDevReceive?.(line), message as JSONRPCMessage).catch(() => {}); };
+    await server.transport.start();
     await page.exposeFunction("macRelay", (text: string) => server.transport.send(JSON.parse(text)));
-    await page.exposeFunction("macShell", () => {});
+    // The page reports a failed connection, such as an unreadable telemetry resource, to the shell.
+    await page.exposeFunction("macShell", (message: { type: string; message?: string }) => {
+      if (message.type === "error") pageErrors.push(`Shell error: ${message.message}`);
+    });
     await page.addInitScript(() => {
       const relay = window as unknown as { macRelay(text: string): void; macShell(message: unknown): void };
       Object.defineProperty(window, "webkit", { value: { messageHandlers: {

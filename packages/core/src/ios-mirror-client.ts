@@ -5,10 +5,11 @@ import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 import { IosMirrorInputBusyError } from "@mobile-dev/shared/ios-mirror-errors.ts";
-import { mirrorReplySchema, mirrorSocketPath, maximumReplyBytes } from "./ios-mirror-rpc.ts";
 import { readJsonLines } from "./json-lines.ts";
+import { mirrorReplySchema, mirrorSocketPath, maximumReplyBytes, wireTouchPhases } from "./ios-mirror-rpc.ts";
 import type { MirrorCommand, MirrorReply } from "./ios-mirror-rpc.ts";
 import type { IosCapture } from "./ios-native-capture.ts";
+import { bundled } from "./bundled-runtime.ts";
 
 async function connect(path: string): Promise<Socket> {
   return new Promise((resolve, reject) => {
@@ -28,7 +29,6 @@ async function startService() {
   if (starting) return starting;
   starting = (async () => {
     // Bundles, and the chunks they split into, sit in dist/ beside the service.
-    const bundled = import.meta.url.endsWith(".mjs");
     const entry = bundled ? "./ios-mirror-service.mjs" : "./ios-mirror-service.ts";
     const url = new URL(entry, import.meta.url);
     const path = fileURLToPath(url);
@@ -99,7 +99,10 @@ export async function connectIosCapture(path: string, udid: string): Promise<Ios
       if (reply.result === undefined || reply.result === null) throw new Error("Shared iOS capture returned no video batch.");
       return reply.result;
     },
-    async touch(samples, generation) { await request({ method: "touch", samples, generation }); },
+    async touch(samples, generation) {
+      const wire = samples.map(sample => ({ ...sample, phase: wireTouchPhases.indexOf(sample.phase) }));
+      await request({ method: "touch", samples: wire, generation });
+    },
     async reset() { await request({ method: "reset" }); },
     async close() {
       if (closed) return;

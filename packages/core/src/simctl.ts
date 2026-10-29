@@ -4,6 +4,7 @@ import { z } from "zod";
 import { udidSchema } from "@mobile-dev/shared/protocol.ts";
 import type { IosSimulator, Status } from "@mobile-dev/shared/protocol.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
+import { requireDevice } from "./device-lookup.ts";
 import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 
 const execute = promisify(execFile);
@@ -40,22 +41,23 @@ export class Simctl {
     this.run = run;
   }
 
-  async list(): Promise<Status> {
+  async devices(): Promise<IosSimulator[]> {
     try {
-      const devices = parseSimulatorList(await this.run(["simctl", "list", "devices", "--json"]));
-      return { connected: true, managed: false, baseUrl: "", devices };
+      return parseSimulatorList(await this.run(["simctl", "list", "devices", "--json"]));
     } catch (error) {
-      return { connected: false, managed: false, baseUrl: "", devices: [], error: `Cannot list iOS simulators. Install Xcode with an iOS simulator runtime. ${errorMessage(error)}` };
+      throw new Error(`Cannot list iOS simulators. Install Xcode with an iOS simulator runtime. ${errorMessage(error)}`);
     }
+  }
+
+  async list(): Promise<Status> {
+    try { return { connected: true, managed: false, baseUrl: "", devices: await this.devices() }; }
+    catch (error) { return { connected: false, managed: false, baseUrl: "", devices: [], error: errorMessage(error) }; }
   }
 
   async device(udid: string, mustBeBooted = false) {
     udidSchema.parse(udid);
-    const status = await this.list();
-    if (!status.connected) throw new SimulatorUnavailableError(status.error ?? "Cannot list iOS simulators.");
-    const device = status.devices.find(item => item.udid === udid);
-    if (!device) throw new SimulatorUnavailableError("This simulator is no longer available. List the simulators again.");
-    if (mustBeBooted && device.state !== "Booted") throw new SimulatorUnavailableError("The simulator is stopped. Boot it first.");
-    return device;
+    // Without simulators to list, none can be used until Xcode is set up.
+    const devices = await this.devices().catch(error => { throw new SimulatorUnavailableError(errorMessage(error)); });
+    return requireDevice(devices, udid, { booted: mustBeBooted, missing: "This simulator is no longer available. List the simulators again.", stopped: "The simulator is stopped. Boot it first." });
   }
 }

@@ -15,7 +15,7 @@ import { registerDeviceAppsTool } from "../../core/src/device-apps/tools.ts";
 import { registerCpuTools } from "../../core/src/cpu/tools.ts";
 import { DeviceResolver } from "../../core/src/devices.ts";
 import { CpuSessions } from "../../core/src/cpu/sessions.ts";
-import { Baguette } from "../../core/src/baguette.ts";
+import { attachedBaguette } from "../../test-support/fixtures.ts";
 import { SimulatorUnavailableError } from "../../core/src/simulator-unavailable.ts";
 import { scrubErrorEvent } from "../src/telemetry.ts";
 
@@ -137,7 +137,7 @@ test("MCP discovery reports one classified error, returns only bounded metadata,
 test("CPU discovery validation failures carry their stage through the MCP response", async t => {
   const server = new McpServer({ name: "validation-diagnostic-test", version: "1" });
   const cpu = new CpuSessions();
-  const baguette = new Baguette("http://127.0.0.1:1");
+  const baguette = attachedBaguette("http://127.0.0.1:1");
   registerCpuTools(server, cpu, new DeviceResolver({ simulators: baguette, android: async () => [], ios: async () => [] }),
     { apps: async () => { throw new Error("should not discover"); } });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();

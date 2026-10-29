@@ -5,7 +5,7 @@ import { publishFromCommandLine, publishPluginRelease } from "../../../tooling/r
 const release = {
   manifestPath: ".codex-plugin/plugin.json", requiredFiles: ["dist/server.mjs", "scripts/launch-mcp.sh", ".mcp.json"],
   branch: "release/latest", pluginPath: "plugins/mobile-dev", catalogPath: ".agents/plugins/marketplace.json",
-  catalog: manifest => pluginMarketplace(manifest.name, true),
+  catalog: manifest => pluginMarketplace(manifest, { release: true }),
 };
 
 export function publishRelease(pluginDirectory, tag, remote, token) {
