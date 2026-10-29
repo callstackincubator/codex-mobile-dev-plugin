@@ -4,7 +4,7 @@ import { access } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import type { DisplayFpsTarget } from "@mobile-dev/shared/display-fps.ts";
-import { adbPath } from "../native-logs.ts";
+import { adbPath } from "../android-sdk.ts";
 import { androidHelper } from "../collectors/android-helper.ts";
 import { startCollector } from "../collectors/process.ts";
 import type { Collector, CollectorOptions } from "../collectors/process.ts";

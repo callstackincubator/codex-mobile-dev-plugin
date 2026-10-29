@@ -7,6 +7,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { CpuSessions } from "../src/cpu/sessions.ts";
 import { registerCpuTools } from "../src/cpu/tools.ts";
+import { DeviceResolver } from "../src/devices.ts";
 import { DisplayFpsSessions } from "../src/fps/sessions.ts";
 import { registerDisplayFpsTools } from "../src/fps/tools.ts";
 import { LogSessions } from "../src/log-sessions.ts";
@@ -69,7 +70,7 @@ test("a CPU start cancelled during validation leaves no monitor, and a delivered
   } });
   t.after(() => cpu.close());
   const client = await connect(t, server => {
-    registerCpuTools(server, cpu, { async device(udid, booted) { await gate.wait(); return simctl.device(udid, booted); } });
+    registerCpuTools(server, cpu, new DeviceResolver({ simulators: { async device(udid, booted) { await gate.wait(); return simctl.device(udid, booted); } } }));
   });
   const args = { target: { deviceId: UDID, bundleId: "dev.test" } };
   await cancelDuringValidation(client, gate, "mobile_cpu_session", args);
@@ -92,10 +93,10 @@ test("a Display FPS start cancelled during validation leaves no monitor, and a d
   });
   t.after(() => sessions.close());
   const client = await connect(t, server => {
-    registerDisplayFpsTools(server, sessions, { ios: async () => [], android: async () => {
+    registerDisplayFpsTools(server, sessions, new DeviceResolver({ ios: async () => [], android: async () => {
       await gate.wait();
       return [{ id: "emulator-5554", name: "Pixel" }];
-    } });
+    } }));
   });
   const args = { target: { platform: "android", deviceId: "emulator-5554" } };
   await cancelDuringValidation(client, gate, "mobile_display_fps_session", args);
@@ -116,7 +117,7 @@ test("a log start cancelled during validation leaves no reader, and a delivered 
   const logs = new LogSessions({ native: () => { opened++; return async () => { stopped++; }; }, metro: () => async () => {} });
   t.after(() => logs.close());
   const client = await connect(t, server => {
-    registerLogTools(server, logs, { async device(udid, booted) { await gate.wait(); return simctl.device(udid, booted); } });
+    registerLogTools(server, logs, new DeviceResolver({ simulators: { async device(udid, booted) { await gate.wait(); return simctl.device(udid, booted); } } }));
   });
   const args = { options: { native: { platform: "ios", deviceId: UDID } } };
   await cancelDuringValidation(client, gate, "mobile_logs_session", args);

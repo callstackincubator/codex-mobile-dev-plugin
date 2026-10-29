@@ -8,6 +8,7 @@ import type { CpuTarget } from "@mobile-dev/shared/cpu.ts";
 import { RECORDING_URI, recordingIdSchema, recordingPreview, recordingRangeSchema, recordingReferenceSchema, recordingSchema, summarizeRecording } from "@mobile-dev/shared/recordings.ts";
 import type { PerformanceRecording, RecordingRange } from "@mobile-dev/shared/recordings.ts";
 import type { PerformanceRecordings } from "./performance-recordings.ts";
+import type { DeviceResolver } from "./devices.ts";
 import { displayFrameSchema } from "@mobile-dev/shared/display-fps.ts";
 import { readRecordingFrames } from "./recording-frames.ts";
 import { nullableDisplayFrameStatsSchema } from "@mobile-dev/shared/frame-statistics.ts";
@@ -75,16 +76,15 @@ const safe = <T>(handler: (input: T) => Promise<CallToolResult>) => guarded("rec
 export type ShowRecording = (input: z.infer<z.ZodObject<typeof inputSchema>>, context: ServerRequestContext) => Promise<CallToolResult>;
 
 /** Registers the recording tools; returns the handler that shows a recording, for the workspace's own tool. */
-export function registerRecordingTools(server: McpServer, recordings: PerformanceRecordings,
-  validateDevice: (target: CpuTarget) => Promise<string>): ShowRecording {
+export function registerRecordingTools(server: McpServer, recordings: PerformanceRecordings, devices: Pick<DeviceResolver, "resolve">): ShowRecording {
   registerAppTool(server, "mobile_record_performance", {
     title: "Record CPU, memory, and FPS for a timed run",
     description: "Always record native process/thread CPU, memory, and device-wide Display FPS together, even when the user asks about only one metric. Returns immediately with recording.id and status connecting; wait for status recording before asking the user to perform the interaction. Recording stops automatically after durationSeconds of sampling, detaches both collectors, and saves original samples locally after a brief finishing phase for delayed FPS readings. Uses the same target and device/development prerequisites as mobile_cpu_session; stop any existing CPU monitor for this app and FPS monitor for this device first. FPS requires Android 12+ or physical iOS 17.4+; unsupported or failed FPS is omitted from the chart while CPU and memory still save. Device-wide FPS cannot attribute a slowdown to one app. Use mobile_read_performance_recording to check readiness and completion, then mobile_render_performance_recording to show the interactive chart in chat. 100% CPU is one core. Android memory is RSS; iOS memory is physical footprint.",
     inputSchema: { target: cpuTargetSchema, title: z.string().min(1).max(160), durationSeconds: z.number().int().min(1).max(300).default(30) },
     outputSchema, annotations: WRITES, _meta: { ui: { visibility } },
   }, safe(async ({ target, title, durationSeconds }: { target: CpuTarget; title: string; durationSeconds: number }) => {
-    const deviceName = await validateDevice(target);
-    const recording = recordings.start(target, title, durationSeconds, deviceName);
+    const device = await devices.resolve(target, "cpu");
+    const recording = recordings.start(target, title, durationSeconds, device.name);
     const summary = summarizeRecording(recording);
     return { content: [{ type: "text", text: "Connecting the CPU, memory, and FPS collectors. Check recording status before starting the interaction." }], structuredContent: { recording, summary } };
   }));

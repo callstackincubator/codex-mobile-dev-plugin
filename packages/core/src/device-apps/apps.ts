@@ -5,7 +5,7 @@ import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import type { DeviceApp } from "@mobile-dev/shared/device-apps.ts";
-import { adbPath } from "../native-logs.ts";
+import { adbPath } from "../android-sdk.ts";
 import { runDiscoveryCommand } from "./command.ts";
 
 const execute = promisify(execFile);

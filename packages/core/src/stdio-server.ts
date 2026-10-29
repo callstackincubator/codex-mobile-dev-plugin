@@ -8,15 +8,15 @@ import type { TelemetryHost } from "@mobile-dev/shared/telemetry.ts";
 import { declareSchemaDialect } from "./schema-dialect.ts";
 
 /**
- * Runs the server over stdio, as every host launches it, with Mobile Dev's panel where
- * the host shows it and the host's own features. A host whose MCP client does not name
- * it passes its `telemetryHost` label instead.
+ * Runs the server over stdio, as every host launches it, with the host's features:
+ * Mobile Dev's panel where the host shows it, and the host's own. A host whose MCP
+ * client does not name it passes its `telemetryHost` label instead.
  * Import `./instrument.ts` before this module so telemetry starts first.
  */
-export async function runStdioServer({ panel, features, telemetryHost }: Pick<PluginOptions, "panel" | "features"> & { telemetryHost?: TelemetryHost } = {}) {
+export async function runStdioServer({ features, telemetryHost }: Pick<PluginOptions, "features"> & { telemetryHost?: TelemetryHost } = {}) {
   if (telemetryHost) setLaunchingTelemetryHost(telemetryHost);
   const html = await readFile(new URL("./app.html", import.meta.url), "utf8");
-  const plugin = await createPlugin(() => loadUIResource(html, new URL("../ui-dev.json", import.meta.url)), { panel, features });
+  const plugin = await createPlugin(() => loadUIResource(html, new URL("../ui-dev.json", import.meta.url)), { features });
   const transport = new StdioServerTransport();
   installTracePropagation(transport);
   declareSchemaDialect(transport);

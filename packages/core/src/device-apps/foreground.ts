@@ -1,7 +1,7 @@
 import { runDiscoveryCommand, annotateDiscoveryCommand } from "./command.ts";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import { adbPath } from "../native-logs.ts";
+import { adbPath } from "../android-sdk.ts";
 import { baguetteRuntime, BAGUETTE_RUNTIME_TIMEOUT_MS, forgetBaguetteRuntime } from "../baguette-runtime.ts";
 import type { BaguetteRuntime, BaguetteRuntimeReader } from "../baguette-runtime.ts";
 import type { ForegroundApp } from "@mobile-dev/shared/device-apps.ts";

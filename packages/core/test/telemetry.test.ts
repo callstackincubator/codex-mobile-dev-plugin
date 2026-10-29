@@ -17,7 +17,9 @@ import { deferEpisodeReport, ExpectedOperationError, FailureEpisodes } from "../
 import { parseResourceInput } from "../src/resource-input.ts";
 import { openRequestSession } from "../src/request-session.ts";
 import { registerDeviceAppsTool } from "../src/device-apps/tools.ts";
-import { directoryBytes } from "../src/storage-metrics.ts";
+import { directoryBytes, startStorageMetrics } from "../src/storage-metrics.ts";
+import { PHONE_ICONS, toolIcons } from "../src/tool-icons.ts";
+import { ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { SimulatorUnavailableError } from "../src/simulator-unavailable.ts";
 import { MissingRuntimeError } from "../src/install-integrity.ts";
 import { registerDeviceChoiceTools } from "../src/device-choice-tools.ts";
@@ -1280,6 +1282,51 @@ test("device settings report the failed backend request without its reply and co
   contains(encoded, "PRIVATE", false);
   contains(encoded, udid, false);
   contains(encoded, "emulator-5554", false);
+});
+
+test("request handler wrappers run inside the MCP error accounting, which patches the server once", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, beforeSendMetric: scrubMetric,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  const previous = process.env.MOBILE_DEV_TELEMETRY;
+  delete process.env.MOBILE_DEV_TELEMETRY;
+  const server = new McpServer({ name: "wrapped-handlers", version: "1" });
+  const order: string[] = [];
+  instrumentMcpServer(server, (_schema, handler) => async (request, extra) => { order.push("outer"); return handler(request, extra); },
+    toolIcons({ listed: PHONE_ICONS }), (schema, handler) => schema === ListToolsRequestSchema ? async () => { order.push("inner"); throw new Error("Listing failed."); } : handler);
+  server.registerTool("listed", { description: "A listed tool." }, async () => ({ content: [] }));
+  const client = new Client({ name: "test", version: "1" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  installTracePropagation(serverTransport);
+  t.after(async () => {
+    await client.close(); await server.close(); await Sentry.close();
+    if (previous === undefined) delete process.env.MOBILE_DEV_TELEMETRY;
+    else process.env.MOBILE_DEV_TELEMETRY = previous;
+  });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  await assert.rejects(client.listTools(), /Listing failed/);
+  assert.deepEqual(order, ["outer", "inner"]);
+  await Sentry.flush();
+  contains(JSON.stringify(envelopes), "mcp.request");
+});
+
+test("storage measurements never start while telemetry is off", t => {
+  const previous = process.env.MOBILE_DEV_TELEMETRY;
+  process.env.MOBILE_DEV_TELEMETRY = "off";
+  t.after(() => {
+    if (previous === undefined) delete process.env.MOBILE_DEV_TELEMETRY;
+    else process.env.MOBILE_DEV_TELEMETRY = previous;
+  });
+  let walked = false;
+  const directories = new Proxy<Record<string, string>>({ recordings: join(tmpdir(), "mobile-dev-absent-storage") }, { ownKeys(target) { walked = true; return Reflect.ownKeys(target); } });
+  startStorageMetrics(directories)();
+  assert.equal(walked, false);
+  process.env.MOBILE_DEV_TELEMETRY = "on";
+  startStorageMetrics(directories)();
+  assert.equal(walked, true, "the same directories are measured with telemetry on");
 });
 
 // Runs last: the launching host stays set for the rest of this process.

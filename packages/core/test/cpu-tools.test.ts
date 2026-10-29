@@ -6,6 +6,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { CpuSessions } from "../src/cpu/sessions.ts";
 import { registerCpuTools } from "../src/cpu/tools.ts";
+import { DeviceResolver } from "../src/devices.ts";
 import { fakeBaguette, UDID, attachedBaguette } from "../../test-support/fixtures.ts";
 
 function textData(result: { content?: unknown }) {
@@ -25,10 +26,10 @@ test("iOS text agents discover, start, read and stop CPU monitoring using only t
   } });
   const baguette = attachedBaguette(fake.url);
   const server = new McpServer({ name: "cpu-test", version: "1" });
-  registerCpuTools(server, cpu, baguette, { apps: async () => {
+  registerCpuTools(server, cpu, new DeviceResolver({ simulators: baguette, android: async () => [], ios: async () => [] }), { apps: async () => {
     const running = await apps();
     return { apps: running, foregroundApp: null };
-  }, androidDevices: async () => [], iosDevices: async () => [] });
+  } });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "cpu-test-client", version: "1" });
   t.after(async () => { await client.close(); await cpu.close(); await server.close(); baguette.dispose(); await fake.close(); });
@@ -98,10 +99,11 @@ test("Android text agents discover, start, read and stop CPU monitoring without 
   } });
   const baguette = attachedBaguette(fake.url);
   const server = new McpServer({ name: "android-cpu-test", version: "1" });
-  registerCpuTools(server, cpu, baguette, { apps: async (deviceId, signal, platform) => {
+  const devices = new DeviceResolver({ simulators: baguette, android: async () => online ? [{ id: "emulator-5554", name: "Pixel" }] : [], ios: async () => [] });
+  registerCpuTools(server, cpu, devices, { apps: async (deviceId, signal, platform) => {
     const running = await apps(deviceId, signal, platform);
     return { apps: running, foregroundApp: null };
-  }, androidDevices: async () => online ? [{ id: "emulator-5554", name: "Pixel" }] : [], iosDevices: async () => [] });
+  } });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "android-cpu-test-client", version: "1" });
   t.after(async () => { await client.close(); await cpu.close(); await server.close(); baguette.dispose(); await fake.close(); });

@@ -15,14 +15,17 @@ whose page calls the server with an MCP client.
 
 A host adds to the shared pieces without changing them:
 
-- **Server:** each host's entry calls `runStdioServer` with Mobile Dev's panel, where
-  the host shows it, and its `ServerFeature`s. The panel (`createPanel` in
-  `packages/core/src/panel-tools.ts`) owns Baguette, the panel and workspace pages and
-  the tools only they use, opening recordings in the workspace, the App tab's reads
-  and the native device form. Codex, Cursor's shared entry and the Mac app pass it.
+- **Server:** each host's entry calls `runStdioServer` with its `ServerFeature`s, which
+  register after the shared tools, in order, with the services the server shares
+  (`packages/core/src/server-feature.ts`). Mobile Dev's panel is one of them, where the
+  host shows it: `createPanel` in `packages/core/src/panel-tools.ts` owns Baguette, the
+  panel and workspace pages and the tools only they use, opening recordings in the
+  workspace, the App tab's reads and the native device form, and it supplies the
+  server's instructions and the foreground simulator app. Codex, Cursor's shared entry
+  and the Mac app pass it first.
   Codex and Cursor add agent-device's commands, and Codex the self-updater, which
-  installs through Codex's marketplace; the Mac app, which has no agent, adds its page
-  resource. Claude shows simulators itself, so its entry (`apps/claude/server`) passes
+  installs through Codex's marketplace; the Mac app, which has no agent, adds the
+  telemetry metadata its page reads. Claude shows simulators itself, so its entry (`apps/claude/server`) passes
   no panel and adds agent-device's commands; its chat cards stay. Every host lists simulators for logs, CPU and device choices with
   simctl, without starting Baguette.
 - **Runtime:** a host's `plugin-host.json` can leave out the panel's parts of `dist/`

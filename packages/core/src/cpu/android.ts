@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { adbPath } from "../native-logs.ts";
+import { adbPath } from "../android-sdk.ts";
 import type { CpuReading } from "./counters.ts";
 import { AndroidCpuSampler, androidReadySchema, androidSampleSchema } from "./android-counters.ts";
 import { nativeCollectorCommand } from "../native-telemetry.ts";

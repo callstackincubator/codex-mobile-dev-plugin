@@ -1,42 +1,36 @@
-import { ExpectedOperationError, errorMessage } from "@mobile-dev/shared/error-reporting.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
-import type { Simctl } from "./simctl.ts";
 import type { LogSessions } from "./log-sessions.ts";
 import { logOptionsSchema } from "@mobile-dev/shared/logs.ts";
 import type { LogOptions } from "@mobile-dev/shared/logs.ts";
 import { parseBaseUrl } from "@mobile-dev/shared/protocol.ts";
-import { listAndroidLogDevices } from "./native-logs.ts";
 import { metroTargets } from "./metro-logs.ts";
-import { listIosDevices } from "./ios-devices.ts";
-import { physicalIosLogDevice } from "./physical-ios-logs.ts";
+import type { DeviceResolver } from "./devices.ts";
 import { sessionIdSchema } from "./session-registry.ts";
 import { registerSessionTools } from "./session-tools.ts";
 import { guarded, jsonResult, READ_ONLY } from "./tool-results.ts";
 
 const metadata = { ui: { visibility: ["app", "model"] as ("app" | "model")[] } };
 
-export function registerLogTools(server: McpServer, logs: LogSessions, simulators: Pick<Simctl, "device">, discoverIosDevices = listIosDevices) {
+export function registerLogTools(server: McpServer, logs: LogSessions, devices: Pick<DeviceResolver, "resolve" | "androidDevices">) {
   registerAppTool(server, "mobile_log_sources", {
     title: "Find log sources", description: "List connected Android devices and inspector targets at an existing local Metro URL. Does not start a dev server. Select a target explicitly before streaming Metro logs.",
     inputSchema: { metroUrl: z.string().max(2048).optional() }, annotations: READ_ONLY, _meta: metadata,
   }, guarded("logs.tool", async ({ metroUrl }: { metroUrl?: string }) => {
-    const errors: string[] = [];
-    const android = await listAndroidLogDevices().catch(error => { errors.push(`Android: ${errorMessage(error)}`); return []; });
-    const metro = metroUrl ? await metroTargets(metroUrl).then(targets => targets.map(({ webSocketDebuggerUrl, ...target }) => target))
-      .catch(error => { errors.push(`Metro: ${errorMessage(error)}`); return []; }) : [];
-    return jsonResult({ android, metro, errors });
+    // Each listing can wait five seconds, so both run at once; Android's error stays first.
+    const listing = <T>(source: string, items: Promise<T[]>) => items.then(
+      found => ({ found, errors: [] }), (error: unknown) => ({ found: [] as T[], errors: [`${source}: ${errorMessage(error)}`] }));
+    const [android, metro] = await Promise.all([
+      listing("Android", devices.androidDevices()),
+      metroUrl ? listing("Metro", metroTargets(metroUrl).then(targets => targets.map(({ webSocketDebuggerUrl, ...target }) => target))) : { found: [], errors: [] },
+    ]);
+    return jsonResult({ android: android.found, metro: metro.found, errors: [...android.errors, ...metro.errors] });
   }));
 
   async function validate(options: LogOptions) {
-    if (options.native?.platform === "ios") {
-      if (options.native.kind === "physical") await physicalIosLogDevice(options.native.deviceId, discoverIosDevices);
-      else await simulators.device(options.native.deviceId, true);
-    }
-    if (options.native?.platform === "android" && !(await listAndroidLogDevices()).some(device => device.id === options.native?.deviceId)) {
-      throw new ExpectedOperationError("device_unavailable", "The selected Android device is absent or unauthorized. Refresh log sources.");
-    }
+    if (options.native) await devices.resolve(options.native, "logs");
     if (options.metro) parseBaseUrl(options.metro.url, "Metro URL");
   }
   registerSessionTools(server, {

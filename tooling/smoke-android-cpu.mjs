@@ -3,7 +3,7 @@ import { spawn, execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { once } from "node:events";
 import { createInterface } from "node:readline";
-import { adbPath } from "../packages/core/src/native-logs.ts";
+import { adbPath } from "../packages/core/src/android-sdk.ts";
 import { androidCpuCollector, startAndroidCpuMonitor } from "../packages/core/src/cpu/android.ts";
 import { androidSampleSchema, androidReadySchema, AndroidCpuSampler } from "../packages/core/src/cpu/android-counters.ts";
 

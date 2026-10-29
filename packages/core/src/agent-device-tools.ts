@@ -23,7 +23,7 @@ export function readAgentDeviceCatalog(url = new URL("./agent-device/tools.json"
  * for hosts that load one server per plugin. The runtime starts on the first command.
  */
 export function agentDeviceTools(catalog: Tool[], runtime: Pick<AgentDeviceRuntime, "connect" | "close"> = new AgentDeviceRuntime()): ServerFeature {
-  return (server, services) => {
+  return { register: (server, services) => {
     const schemas: Schemas = new Map();
     for (const tool of catalog) {
       // The catalog's input schemas are JSON Schema objects, which zod reads as such.
@@ -46,7 +46,7 @@ export function agentDeviceTools(catalog: Tool[], runtime: Pick<AgentDeviceRunti
       });
     }
     return () => runtime.close();
-  };
+  } };
 }
 
 /** Closes the plugin's sessions on a device agent-device shuts down, when the command names it. */

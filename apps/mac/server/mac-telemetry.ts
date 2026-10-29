@@ -8,10 +8,12 @@ import { MAC_TELEMETRY_URI, type MacTelemetryMetadata } from "../shared/telemetr
  * server's environment, opt-out and anonymous identity. The app loads the page from its
  * bundle, and the page reads this over its own MCP connection.
  */
-export const macTelemetry: ServerFeature = server => {
-  server.registerResource("mobile-dev-mac-telemetry", MAC_TELEMETRY_URI, { mimeType: "application/json" }, uri => {
-    const identity = getTelemetryIdentity();
-    const metadata: MacTelemetryMetadata = { environment: resolveTelemetryEnvironment(), telemetry: identity ? "on" : "off", ...identity };
-    return { contents: [{ uri: uri.href, mimeType: "application/json", text: JSON.stringify(metadata) }] };
-  });
+export const macTelemetry: ServerFeature = {
+  register(server) {
+    server.registerResource("mobile-dev-mac-telemetry", MAC_TELEMETRY_URI, { mimeType: "application/json" }, uri => {
+      const identity = getTelemetryIdentity();
+      const metadata: MacTelemetryMetadata = { environment: resolveTelemetryEnvironment(), telemetry: identity ? "on" : "off", ...identity };
+      return { contents: [{ uri: uri.href, mimeType: "application/json", text: JSON.stringify(metadata) }] };
+    });
+  },
 };

@@ -13,6 +13,7 @@ import { annotateDeviceAppsError, deviceAppsDiagnostic, deviceAppsDiagnosticSche
 import { readDeviceApps } from "../../core/src/device-apps/sources.ts";
 import { registerDeviceAppsTool } from "../../core/src/device-apps/tools.ts";
 import { registerCpuTools } from "../../core/src/cpu/tools.ts";
+import { DeviceResolver } from "../../core/src/devices.ts";
 import { CpuSessions } from "../../core/src/cpu/sessions.ts";
 import { attachedBaguette } from "../../test-support/fixtures.ts";
 import { SimulatorUnavailableError } from "../../core/src/simulator-unavailable.ts";
@@ -137,8 +138,8 @@ test("CPU discovery validation failures carry their stage through the MCP respon
   const server = new McpServer({ name: "validation-diagnostic-test", version: "1" });
   const cpu = new CpuSessions();
   const baguette = attachedBaguette("http://127.0.0.1:1");
-  registerCpuTools(server, cpu, baguette, { apps: async () => { throw new Error("should not discover"); },
-    androidDevices: async () => [], iosDevices: async () => [] });
+  registerCpuTools(server, cpu, new DeviceResolver({ simulators: baguette, android: async () => [], ios: async () => [] }),
+    { apps: async () => { throw new Error("should not discover"); } });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "validation-diagnostic-client", version: "1" });
   t.after(async () => { await client.close(); await server.close(); await cpu.close(); baguette.dispose(); });

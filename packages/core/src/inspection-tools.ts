@@ -11,7 +11,7 @@ import { readDeviceApps } from "./device-apps/sources.ts";
 import { deviceRefSchema, deviceTargetSchema } from "@mobile-dev/shared/device-ref.ts";
 import { accessibilityScreen, screenComponents } from "@mobile-dev/shared/screen-annotations.ts";
 import type { ScreenSize } from "@mobile-dev/shared/screen-annotations.ts";
-import { adbPath } from "./native-logs.ts";
+import { adbPath } from "./android-sdk.ts";
 import { guarded, jsonResult, READ_ONLY } from "./tool-results.ts";
 
 const execute = promisify(execFile);

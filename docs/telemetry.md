@@ -413,7 +413,11 @@ returning the recording without its structured samples is a handled error with a
 message; a server's own refusal, such as a deleted recording, is shown without a report.
 Either way a preview on screen stays. Bounded event
 counts record range selections and Ask/Open actions. `storage.bytes` with
-`kind: recordings` measures local saved-file storage. Recording polling is excluded
+`kind: recordings` measures local saved-file storage at startup and every five minutes;
+with telemetry off the server no longer walks the recordings folder at all. A failed
+measurement reports through `captureServerError` as `storage.measure`, so it also counts
+under `server.error.outcome` and an expected outcome is counted without a report.
+Recording polling is excluded
 from trace sampling, and hidden cards stop polling. None of these measurements
 contains device CPU/memory values, recording IDs, titles or selected intervals.
 
@@ -557,7 +561,7 @@ The plugin servers for Codex, Claude and Cursor serve agent-device's commands as
 
 Since 0.1.170, `collector.ready.samples` and `collector.ready.duration` measure each CPU and Display FPS collector from session open to its first `recording` phase, in milliseconds: app lookup, debugserver attach or Android collector deployment, and for FPS the first sample. `outcome` is `ready`, `failed` (startup failed before recording) or `cancelled` (closed first); each session records once, so a collector that fails while recording is not counted again. Recordings start the same collectors and are included. Attributes are `component=server`, `surface=performance`, `collector` (`cpu` or `fps`), `device_platform` and `device_kind` (`simulator` or `physical` on iOS; `emulator` for `emulator-<port>` serials, otherwise `physical`, on Android). Device and app identifiers, error messages and session IDs are never attributes. This is plugin startup work, not the monitored app's performance.
 
-The same release moves every session table onto one registry and every tool wrapper onto one helper, without changing metric names or boundaries. Tool failures after request cancellation now count as `cancelled` for the recording, inspection, app storage, app control and physical iOS screenshot tools, which reported without the request's signal. `mobile_ios_mirror_reset` and `mobile_ios_mirror_close` failures, formerly protocol errors counted under `mcp.request`, are tool results counted under their tool names. The shared iOS capture service's read, input-generation, capacity and closed-subscription refusals keep their expected outcome across the socket. Simulator and Android screenshot clipboard failures are reported as `simulator.clipboard` and `android.clipboard`, matching `ios-mirror.clipboard`. Failed host feature cleanups report as `plugin.feature_cleanup`, and failures closing a device's sessions before `device_shutdown` report a fixed message as `agent_device.session_cleanup`; the shutdown still runs.
+The same release moves every session table onto one registry and every tool wrapper onto one helper, without changing metric names or boundaries. Tool failures after request cancellation now count as `cancelled` for the recording, inspection, app storage, app control and physical iOS screenshot tools, which reported without the request's signal. `mobile_ios_mirror_reset` and `mobile_ios_mirror_close` failures, formerly protocol errors counted under `mcp.request`, are tool results counted under their tool names. The shared iOS capture service's read, input-generation, capacity and closed-subscription refusals keep their expected outcome across the socket. Simulator and Android screenshot clipboard failures are reported as `simulator.clipboard` and `android.clipboard`, matching `ios-mirror.clipboard`. Failed host feature cleanups report as `plugin.feature_cleanup`; Mobile Dev's panel is one of those features, so a failure closing its streams, mirroring or Android throttles reports there too instead of failing the server's shutdown. Failures closing a device's sessions before `device_shutdown` report a fixed message as `agent_device.session_cleanup`; the shutdown still runs.
 
 | Measurement | Collection and interpretation |
 | --- | --- |
