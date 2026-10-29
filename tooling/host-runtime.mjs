@@ -22,10 +22,10 @@ const RUNTIME_FILES = [
   "agent-device/tools.json",
 ];
 
-export async function stageRuntime(directory, { panel = true } = {}) {
-  await cp("dist", directory, {
+export async function stageRuntime(directory, { panel = true, runtime = "dist" } = {}) {
+  await cp(runtime, directory, {
     recursive: true, verbatimSymlinks: true,
-    filter: source => panel || PANEL_PARTS.includes(relative("dist", source).split(sep)[0]) === false,
+    filter: source => panel || PANEL_PARTS.includes(relative(runtime, source).split(sep)[0]) === false,
   });
 }
 
@@ -48,4 +48,14 @@ export async function releaseVersion() {
 export async function assertRuntime(environment) {
   await assertBuildEnvironment("dist", environment);
   for (const path of RUNTIME_FILES) await access(`dist/${path}`);
+}
+
+/**
+ * The release asset a plugin host's package step writes, `mobile-dev-<version>-<qualifier>-darwin-arm64`:
+ * the plugin ZIP qualified by the host's `archive` (by default `<host>-plugin`), or with
+ * `desktop` its desktop bundle (`<host>-desktop`, an MCPB).
+ */
+export function releaseArchive(host, version, { desktop = false } = {}) {
+  const qualifier = desktop ? `${host.name}-desktop` : host.archive ?? `${host.name}-plugin`;
+  return `release/mobile-dev-${version}-${qualifier ? `${qualifier}-` : ""}darwin-arm64.${desktop ? "mcpb" : "zip"}`;
 }

@@ -9,13 +9,12 @@ import { exploreUILayerCSS } from "./explore-css.mjs";
 /**
  * Bundles one host's UI into a single self-contained HTML page: the script and
  * every stylesheet are inlined, and Sentry debug IDs are injected into the copy
- * kept under `.sentry/<name>` for source-map upload.
+ * kept under `sentryDirectory` for source-map upload.
  *
  * `sources` lists the directories Tailwind scans for class names: the shared UI
  * and the host's own shell.
  */
-export async function buildUIPage({ name, entry, template, sources, output, environment, sourceURL }) {
-  const sentryDirectory = `.sentry/${name}`;
+export async function buildUIPage({ sentryDirectory, entry, template, sources, output, environment, sourceURL }) {
   const result = await build({
     entryPoints: [entry], jsx: "automatic", define: { "process.env.NODE_ENV": '"production"' },
     loader: { ".woff2": "dataurl", ".woff": "dataurl" },
@@ -46,4 +45,12 @@ export async function buildUIPage({ name, entry, template, sources, output, envi
     .replace("<!-- APP_STYLE -->", () => `<style>${css}</style>`)
     .replace("<!-- APP_SCRIPT -->", () => `<script>${js.replace(/<\/script/gi, "<\\/script")}\n//# sourceURL=${sourceURL}\n</script>`));
   return result.metafile;
+}
+
+/** The MCP Apps panel as hosts without their own chrome load it, the runtime's `app.html`. */
+export function buildSharedPage({ output, environment, sentryRoot }) {
+  return buildUIPage({
+    sentryDirectory: `${sentryRoot}/ui/mcp-app`, entry: "packages/mcp-app/src/main.tsx", template: "packages/mcp-app/src/index.html",
+    sources: ["packages/ui/src", "packages/mcp-app/src"], output, environment, sourceURL: "app:///mobile-dev-ui.js",
+  });
 }

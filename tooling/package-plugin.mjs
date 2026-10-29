@@ -26,7 +26,7 @@ await stageRuntime(runtime, { panel: host.panel });
 await rm(`${runtime}/agent-device/node_modules/.bin`, { recursive: true, force: true });
 if (host.build) {
   const { buildHost } = await import(resolve(host.build));
-  await buildHost(runtime);
+  await buildHost({ outdir: runtime, environment, sentryRoot: ".sentry" });
 }
 
 // A host with its own README ships it instead of the repository's.

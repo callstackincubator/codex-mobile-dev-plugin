@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { basename, resolve } from "node:path";
 import { telemetryBuildEnvironment } from "../../../tooling/telemetry-build.mjs";
 import { pluginMarketplace } from "./plugin-marketplace.mjs";
-import { buildCodexHost } from "./build.mjs";
+import { buildHost } from "./build.mjs";
 import { assertRuntime, RELEASE_DOCUMENTS, releaseVersion, stageRuntime } from "../../../tooling/host-runtime.mjs";
 import { sharedSkills } from "../../../tooling/plugin-hosts.mjs";
 
@@ -20,7 +20,7 @@ await mkdir(plugin, { recursive: true });
 await copyFile(`${source}/.mcp.json`, `${plugin}/.mcp.json`);
 for (const path of RELEASE_DOCUMENTS) await copyFile(path, `${plugin}/${path}`);
 await stageRuntime(`${plugin}/dist`);
-await buildCodexHost(telemetryEnvironment, `${plugin}/dist`);
+await buildHost({ outdir: `${plugin}/dist`, environment: telemetryEnvironment, sentryRoot: ".sentry" });
 for (const path of [".codex-plugin", "assets"]) await cp(`${source}/${path}`, `${plugin}/${path}`, { recursive: true, verbatimSymlinks: true });
 for (const skill of sharedSkills) await cp(skill, `${plugin}/skills/${basename(skill)}`, { recursive: true, verbatimSymlinks: true });
 await writeFile(`${plugin}/.codex-plugin/plugin.json`, JSON.stringify(manifest, null, 2) + "\n");

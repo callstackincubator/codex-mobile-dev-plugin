@@ -7,11 +7,14 @@ and native helpers. To use the prebuilt plugin, see the [README](README.md#insta
 
 The repository is an npm workspace. Host-independent code lives in `packages/`; each
 product that ships it lives in `apps/`. Adding a host means adding an app; the shared
-packages know no host by name. Hosts that load a plugin folder with the shared server
-(Claude, Cursor) need only an app with a manifest, an icon and a `plugin-host.json`
-describing it: [`tooling/plugin-hosts.mjs`](tooling/plugin-hosts.mjs) finds those apps,
-and `tooling/package-plugin.mjs`, `smoke-plugin.mjs` and `plugin-config.mjs` take the
-host as an argument.
+packages know no host by name. Every app has a `plugin-host.json` describing it, which
+[`tooling/plugin-hosts.mjs`](tooling/plugin-hosts.mjs) finds. An app that builds its own
+server or page names a module exporting `buildHost({ outdir, environment, sentryRoot })`,
+which the package steps and `npm run build:hosts` call over a copy of the shared runtime.
+Hosts that load a plugin folder with the shared server (Cursor) need only an app with a
+manifest, an icon and a `plugin-host.json`; `tooling/package-plugin.mjs`,
+`smoke-plugin.mjs` and `plugin-config.mjs` take the host as an argument, and the
+`plugin-host.json` fields that differ between hosts are documented in `plugin-hosts.mjs`.
 
 | Path | Contents |
 | --- | --- |

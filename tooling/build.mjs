@@ -5,8 +5,8 @@ import { androidCpuSourceHash } from "./build-android-cpu.mjs";
 import { baguetteTelemetrySourceHash } from "./rebuild-baguette.mjs";
 import { telemetryBuildEnvironment } from "./telemetry-build.mjs";
 import { buildServeEmu } from "./build-serve-emu.mjs";
-import { buildUIPage } from "./ui-page.mjs";
-import { buildServerBundles } from "./server-bundle.mjs";
+import { buildSharedPage } from "./ui-page.mjs";
+import { buildSharedServer } from "./server-bundle.mjs";
 import { access, copyFile, cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { dirname, resolve } from "node:path";
@@ -105,19 +105,8 @@ await buildServeEmu("dist/serve-emu");
 // own server or page in its package step, over a copy of this runtime.
 await rm(".sentry/ui", { recursive: true, force: true });
 await rm(".sentry/server", { recursive: true, force: true });
-const pageMetafiles = [
-  await buildUIPage({
-    name: "ui/mcp-app", entry: "packages/mcp-app/src/main.tsx", template: "packages/mcp-app/src/index.html",
-    sources: ["packages/ui/src", "packages/mcp-app/src"], output: "dist/app.html",
-    environment: telemetryEnvironment, sourceURL: "app:///mobile-dev-ui.js",
-  }),
-];
-const serverMetafiles = [
-  await buildServerBundles({
-    entryPoints: { server: "packages/core/src/index.ts", "ios-mirror-service": "packages/core/src/ios-mirror-service.ts" },
-    outdir: "dist", sentryDirectory: ".sentry/server",
-  }),
-];
+const pageMetafiles = [await buildSharedPage({ output: "dist/app.html", environment: telemetryEnvironment, sentryRoot: ".sentry" })];
+const serverMetafiles = [await buildSharedServer({ outdir: "dist", sentryRoot: ".sentry" })];
 // Tailwind compiles these styles before esbuild records its input files.
 const packageRoots = new Set(["shadcn", "tailwindcss", "tw-animate-css"].map(name => resolve("node_modules", name)));
 for (const path of [...pageMetafiles, ...serverMetafiles].flatMap(metafile => Object.keys(metafile.inputs))) {

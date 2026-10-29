@@ -27,7 +27,7 @@ A host adds to the shared pieces without changing them:
   simctl, without starting Baguette.
 - **Runtime:** a host's `plugin-host.json` can leave out the panel's parts of `dist/`
   (`"panel": false`, see `PANEL_PARTS` in `tooling/host-runtime.mjs`) and name a
-  server build of its own. Claude ships neither Baguette, serve-emu nor the iOS
+  `buildHost` module for its own server or page. Claude ships neither Baguette, serve-emu nor the iOS
   mirror, and its server loads after telemetry as a separate module, so esbuild
   splits it into chunks beside `server.mjs`, keeping every file under the Claude
   plugin directory's 5 MiB limit.

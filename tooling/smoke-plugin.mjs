@@ -6,7 +6,7 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { PANEL_PARTS, releaseVersion } from "./host-runtime.mjs";
-import { codexOnlyPaths, pluginHost, pluginHosts } from "./plugin-hosts.mjs";
+import { foreignPaths, pluginHost } from "./plugin-hosts.mjs";
 
 // Checks a plugin host's packages from a copy in a path with spaces:
 //   node tooling/smoke-plugin.mjs <claude|cursor> [plugin folder]
@@ -114,8 +114,7 @@ try {
     assert.equal(entry.isSymbolicLink(), false, `${path} is a symlink`);
     assert.doesNotMatch(path, /^skills\/[^/]+\/agents$/);
   }
-  const otherManifests = Object.entries(pluginHosts).filter(([other]) => other !== name).map(([, other]) => other.manifest);
-  for (const path of [...codexOnlyPaths, ...otherManifests]) await assert.rejects(access(join(plugin, path)), path);
+  for (const path of foreignPaths(name)) await assert.rejects(access(join(plugin, path)), path);
   const args = server.args.map(arg => arg.replaceAll(`\${${host.root}}`, plugin));
   // The launcher finds Node on the user's PATH; put this Node there.
   const PATH = `${dirname(process.execPath)}:/usr/bin:/bin:/usr/sbin:/sbin`;

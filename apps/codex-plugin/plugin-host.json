@@ -1,0 +1,5 @@
+{
+  "name": "codex",
+  "label": "Codex",
+  "build": "tooling/build.mjs"
+}

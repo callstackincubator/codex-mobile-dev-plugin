@@ -20,7 +20,7 @@
   "scripts": {
     "build": "node tooling/build.mjs",
     "build:release": "node tooling/build.mjs --release",
-    "build:mac": "node apps/mac/tooling/build.mjs",
+    "build:mac": "node apps/mac/tooling/package.mjs",
     "public-release": "node tooling/public-release.mjs",
     "vendor:baguette": "node tooling/vendor-baguette.mjs",
     "vendor:agent-device": "npm ci --prefix packages/runtimes/agent-device --ignore-scripts --no-audit --no-fund",
