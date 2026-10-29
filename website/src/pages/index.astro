@@ -1,0 +1,79 @@
+---
+import HomeLayout from '../layouts/HomeLayout.astro';
+import HeroDemo from '../components/home/HeroDemo.astro';
+import HomeSections from '../components/home/HomeSections.astro';
+import InstallButton from '../components/site/InstallButton.astro';
+import { docs, site } from '../site/content';
+const tools = [
+  { name: 'Devices', href: docs.devices },
+  { name: 'Logs', href: docs.logs },
+  { name: 'Performance', href: docs.performance },
+  { name: 'Storage', href: docs.storage },
+];
+---
+
+<HomeLayout>
+  <section class="home-hero" aria-labelledby="hero-title">
+    <div class="hero-heading">
+      <div class="hero-promise">
+        <h1 class="h1" id="hero-title">{site.headline[0]}<em>{site.headline[1]}</em></h1>
+        <div class="home-heroctions">
+          <InstallButton class="btn" arrow />
+          <a class="label source-link" href={docs.start}>Get started <span aria-hidden="true">→</span></a>
+        </div>
+      </div>
+      <div class="hero-intro">
+        <p class="lede">{site.lede}</p>
+        <ul class="environments label" aria-label="Supported development environments">
+          <li>Codex</li><li>Claude</li><li>Cursor</li><li>And more</li>
+        </ul>
+      </div>
+    </div>
+    <div class="demo-heading">
+      <p class="label demo-label">Works with any framework</p>
+      <nav class="demo-guides" aria-label="Explore Mobile Dev tools">
+        {tools.map(tool => <a class="label" href={tool.href}>{tool.name} <span aria-hidden="true">↗</span></a>)}
+      </nav>
+    </div>
+    <HeroDemo />
+  </section>
+  <HomeSections />
+</HomeLayout>
+
+<style>
+  .hero-heading {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+    align-items: center;
+    gap: clamp(2rem, 5vw, 5rem);
+    padding: clamp(2.5rem, 5vw, 4rem) var(--pad) clamp(2rem, 4vw, 3rem);
+  }
+  .hero-promise { display: flex; flex-direction: column; align-items: flex-start; gap: 1.5rem; min-width: 0; }
+  .h1 { max-width: 18ch; }
+  .h1 em { display: block; }
+  .hero-intro { display: flex; flex-direction: column; align-items: flex-start; gap: 1.5rem; }
+  .hero-intro .lede { max-width: 41ch; font-size: 1rem; }
+  .home-heroctions { display: flex; align-items: center; flex-wrap: wrap; gap: 1.25rem; }
+  .source-link { display: inline-flex; align-items: center; gap: .5rem; min-height: 2.5rem; color: var(--muted); text-decoration: none; }
+  .source-link:hover { color: var(--accent-ink); }
+  .environments { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem 1.25rem; padding: 0; margin: 0; list-style: none; color: var(--muted); }
+  .environments li { display: flex; align-items: center; gap: .5rem; }
+  .environments li::before { content: ''; width: 4px; height: 4px; background: var(--accent-ink); }
+  .demo-heading { display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; min-height: 3.25rem; padding-inline: var(--pad); border-block: 1px solid var(--line); }
+  .demo-label { margin: 0; color: var(--muted); }
+  .demo-guides { display: flex; align-items: stretch; gap: 1.25rem; }
+  .demo-guides a { display: inline-flex; align-items: center; gap: .375rem; min-height: 3.25rem; color: var(--faint); text-decoration: none; }
+  .demo-guides a:hover { color: var(--accent-ink); }
+  @media(max-width:64rem) {
+    .hero-heading { gap: 2.5rem; }
+    .demo-heading { flex-direction: column; align-items: flex-start; gap: 0; padding-top: 1rem; }
+    .demo-guides { justify-content: space-between; width: 100%; }
+  }
+  @media(max-width:42rem) {
+    .hero-heading { grid-template-columns: minmax(0, 1fr); gap: 1.75rem; }
+    .home-heroctions { gap: 1rem; }
+    .environments { gap: .75rem 1rem; letter-spacing: .04em; }
+    .demo-guides { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin-top: .75rem; }
+    .demo-guides a { min-height: 2.5rem; }
+  }
+</style>

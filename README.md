@@ -1,3 +1,9 @@
+<p align="center">
+  <a href="https://mobile-dev-snowy.vercel.app/">
+    <img src="https://mobile-dev-snowy.vercel.app/banner.jpg" alt="Mobile Dev by Callstack. Mobile development in your ADE. Supports Codex, Claude, Cursor, and more." width="100%" />
+  </a>
+</p>
+
 # Mobile Dev
 
 Build, run, and debug iOS and Android apps without leaving your AI coding tool.

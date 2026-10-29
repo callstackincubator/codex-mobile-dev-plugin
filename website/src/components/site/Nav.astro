@@ -1,0 +1,61 @@
+---
+// Sticky, blurred, a hairline under it: the lockup left, mono links centred, INSTALL right.
+import { nav } from '../../site/content';
+import InstallButton from './InstallButton.astro';
+import Lockup from './Lockup.astro';
+---
+
+<header class="nav">
+  <div class="frame nav-inner">
+    <Lockup />
+    <nav class="links" aria-label="Main">
+      {nav.map(({ text, href }) => <a class="label" href={href}>{text}</a>)}
+    </nav>
+    <div class="end">
+      <InstallButton class="btn btn--dark" />
+    </div>
+  </div>
+</header>
+
+<style>
+  .nav {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: rgb(var(--bg-rgb) / 0.86);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line);
+  }
+  .nav-inner {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    min-height: 3.75rem;
+    padding-inline: var(--pad);
+  }
+  .links {
+    display: flex;
+    gap: 1.75rem;
+    margin-inline: auto;
+  }
+  .links a {
+    color: var(--muted);
+    text-decoration: none;
+    transition: color 120ms;
+  }
+  .links a:hover {
+    color: var(--text);
+  }
+  .end {
+    display: flex;
+    gap: 0.5rem;
+  }
+  @media (max-width: 52rem) {
+    .links {
+      display: none;
+    }
+    .end {
+      margin-inline-start: auto;
+    }
+  }
+</style>

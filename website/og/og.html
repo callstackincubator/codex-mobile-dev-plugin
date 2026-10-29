@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Mobile Dev social card</title>
+    <link rel="stylesheet" href="/og/brand.css" />
+    <style>
+      @font-face { font-family: Switzer; src: url('/src/fonts/Switzer-Medium.woff2') format('woff2'); font-weight: 500; }
+      @font-face { font-family: 'Geist Mono'; src: url('/src/fonts/GeistMono-Regular.woff2') format('woff2'); font-weight: 400; }
+      :root {
+        --bg: #0a0a0a; --surface: #111111; --field: #161616; --chip: #1a1a1a;
+        --text: #ffffff; --muted: rgb(255 255 255 / .68); --faint: rgb(255 255 255 / .56);
+        --line: rgb(255 255 255 / .12); --line-strong: rgb(255 255 255 / .28);
+        --device: #050505; --device-line: #858585; --on-accent: #0a0a0a;
+        --ink: var(--accent); --accent-tint: var(--accent-low);
+        --scene-bg: 10 10 10; --scene-ink: var(--accent-rgb);
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; width: 1200px; height: 630px; overflow: hidden; background: var(--bg); color: var(--text); font: 500 16px/1.4 Switzer, Arial, sans-serif; }
+      .card { position: absolute; inset: 0 48px; border-inline: 1px solid var(--line); }
+      .top { display: flex; gap: 12px; align-items: center; padding: 48px 40px 0; }
+      .wordmark { padding: 1px 8px; color: var(--on-accent); background: var(--accent); font-size: 32px; line-height: 1.2; letter-spacing: -.02em; text-transform: uppercase; white-space: nowrap; }
+      .mono { font: 400 12px/1.5 'Geist Mono', monospace; letter-spacing: .07em; text-transform: uppercase; }
+      .by { padding: 5px 9px; color: var(--muted); background: var(--chip); font-size: 13px; white-space: nowrap; }
+      h1 { margin: 25px 40px 0; font-size: 66px; line-height: 1.04; font-weight: 500; letter-spacing: -.035em; }
+      h1 em { display: block; color: var(--ink); font-style: normal; }
+      .hosts { margin: 18px 40px 0; color: var(--muted); font-size: 13px; }
+      .band { position: absolute; top: 294px; left: 0; right: 0; bottom: 70px; }
+      canvas { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; opacity: .65; }
+      .workspace { position: absolute; inset: 14px 40px 10px; border: 1px solid var(--line-strong); background: var(--bg); }
+      .bar { display: flex; align-items: center; gap: 9px; height: 27px; padding: 0 12px; border-bottom: 1px solid var(--line); }
+      .bar .mono { font-size: 10px; }
+      .tag { background: var(--accent); color: var(--on-accent); padding: 0 5px; font-size: 10px; }
+      .window-controls { margin-left: auto; color: var(--faint); letter-spacing: 5px; }
+      .workspace-body { display: grid; grid-template-columns: minmax(0, 1fr) 218px; height: calc(100% - 27px); }
+      .chat { min-width: 0; padding: 12px 20px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+      .message { margin: 0; font-size: 17px; line-height: 1.4; }
+      .user { align-self: flex-end; padding: 6px 10px; background: var(--field); border: 1px solid var(--line); }
+      .assistant { color: var(--muted); font-size: 15px; }
+      .edit { display: flex; align-items: center; gap: 20px; width: 100%; margin-top: 1px; padding: 8px 11px; border: 1px solid var(--line); background: var(--surface); }
+      .edit-file { color: var(--faint); font: 400 12px 'Geist Mono', monospace; }
+      .edit code { color: var(--muted); font: 400 15px/1.4 'Geist Mono', monospace; }
+      .before { text-decoration: line-through; }
+      .after { color: var(--ink); }
+      .device-panel { position: relative; background: var(--surface); border-left: 1px solid var(--line); }
+      .device-bar { display: flex; justify-content: space-between; padding: 7px 10px; color: var(--muted); border-bottom: 1px solid var(--line); font-size: 9px; }
+      .live { color: var(--ink); }
+      .phone { position: absolute; width: 94px; height: 178px; left: calc(50% - 47px); top: 33px; background: var(--device-line); clip-path: polygon(6px 0,calc(100% - 6px) 0,calc(100% - 6px) 3px,calc(100% - 3px) 3px,calc(100% - 3px) 6px,100% 6px,100% calc(100% - 6px),calc(100% - 3px) calc(100% - 6px),calc(100% - 3px) calc(100% - 3px),calc(100% - 6px) calc(100% - 3px),calc(100% - 6px) 100%,6px 100%,6px calc(100% - 3px),3px calc(100% - 3px),3px calc(100% - 6px),0 calc(100% - 6px),0 6px,3px 6px,3px 3px,6px 3px); }
+      .phone-screen { position: absolute; inset: 1px; background: var(--device); clip-path: inherit; }
+      .island { position: absolute; left: calc(50% - 12px); top: 6px; width: 24px; height: 4px; background: var(--text); }
+      .app { position: absolute; left: 9px; right: 9px; top: 20px; }
+      .app-title { font-size: 15px; line-height: 1.1; letter-spacing: -.025em; margin: 0; }
+      .app-subtitle { margin: 3px 0 8px; font-size: 7px; color: var(--faint); }
+      .trip-art { height: 30px; display: flex; align-items: center; justify-content: center; gap: 4px; margin-bottom: 7px; background: var(--accent-tint); }
+      .trip-art i { width: 5px; height: 5px; background: var(--ink); }
+      .trip-art i:nth-child(2), .trip-art i:nth-child(4) { align-self: flex-start; margin-top: 7px; }
+      .trip { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-top: 1px solid var(--line); font-size: 9px; }
+      .trip span { color: var(--faint); font: 400 7px 'Geist Mono', monospace; }
+      .home-indicator { position: absolute; width: 25px; height: 2px; left: calc(50% - 12.5px); bottom: 5px; background: var(--text); }
+      .platforms { position: absolute; right: 40px; bottom: 48px; color: var(--muted); font-size: 13px; }
+      body[data-format='banner'] { width: 1245px; height: 384px; }
+      [data-format='banner'] .card { inset: 0; border: 0; }
+      [data-format='banner'] .top { padding: 47px 56px 0; gap: 10px; }
+      [data-format='banner'] .wordmark { font-size: 29px; }
+      [data-format='banner'] .by { font-size: 11px; padding: 5px 7px; }
+      [data-format='banner'] h1 { margin: 27px 56px 0; max-width: 460px; font-size: 48px; }
+      [data-format='banner'] .hosts { margin: 20px 56px 0; max-width: 420px; font-size: 11px; }
+      [data-format='banner'] .band { inset: 28px 30px 28px 555px; }
+      [data-format='banner'] .workspace { display: none; }
+      [data-format='banner'] canvas { opacity: 1; }
+      [data-format='banner'] .platforms { left: 56px; right: auto; bottom: 46px; font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="top">
+        <span class="wordmark" data-wordmark></span>
+        <span class="by mono">by Callstack</span>
+      </div>
+      <h1><span data-beat="0"></span> <em data-beat="1"></em></h1>
+      <p class="hosts mono">Codex · Claude · Cursor · and more</p>
+      <div class="band">
+        <canvas id="dither" aria-hidden="true"></canvas>
+        <div class="workspace" aria-label="A coding conversation and a running app share one ADE workspace.">
+          <div class="bar">
+            <span class="mono">Your ADE</span><span class="tag mono" data-wordmark></span>
+            <span class="window-controls" aria-hidden="true">− □ ×</span>
+          </div>
+          <div class="workspace-body">
+            <div class="chat">
+              <p class="message user" data-prompt="0"></p>
+              <p class="message assistant" data-opening></p>
+              <p class="message user" data-prompt="1"></p>
+              <div class="edit"><span class="edit-file">App.tsx</span><code><span class="before">Trips</span> → <span class="after">My trips</span></code></div>
+            </div>
+            <div class="device-panel">
+              <div class="device-bar mono"><span>iOS simulator</span><span class="live">● Live</span></div>
+              <div class="phone">
+                <div class="phone-screen">
+                  <div class="island"></div>
+                  <div class="app">
+                    <p class="app-title">My trips</p><p class="app-subtitle">Where to next?</p>
+                    <div class="trip-art" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+                    <div class="trip">Kyoto<span>↗</span></div>
+                    <div class="trip">Lisbon<span>↗</span></div>
+                    <div class="trip">Copenhagen<span>↗</span></div>
+                  </div>
+                  <div class="home-indicator"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <span class="platforms mono" data-platforms></span>
+    </div>
+    <script type="module">
+      import { drawDither } from '/og/dither.js';
+      const response = await fetch('/og/site.json');
+      const site = await response.json();
+      const query = new URLSearchParams(location.search);
+      const banner = query.get('format') === 'banner';
+      if (banner) document.body.dataset.format = 'banner';
+      document.title = site.name + ' social card';
+      for (const element of document.querySelectorAll('[data-wordmark]')) element.textContent = site.wordmark;
+      for (const element of document.querySelectorAll('[data-beat]')) {
+        const index = Number(element.dataset.beat);
+        element.textContent = site.headline[index];
+      }
+      const platforms = document.querySelector('[data-platforms]');
+      platforms.textContent = site.platforms.join(' · ');
+      const prompts = [];
+      let opening = '';
+      for (const line of site.transcript) {
+        if (line.kind === 'cmd') prompts.push(line.text);
+        if (line.kind === 'out') opening = line.text;
+      }
+      for (const element of document.querySelectorAll('[data-prompt]')) {
+        const index = Number(element.dataset.prompt);
+        element.textContent = prompts[index];
+      }
+      document.querySelector('[data-opening]').textContent = opening;
+      await document.fonts.ready;
+      const canvas = document.getElementById('dither');
+      const cell = banner ? 3 : 2;
+      const cols = Math.round(canvas.clientWidth / cell);
+      const rows = Math.round(canvas.clientHeight / cell);
+      const css = getComputedStyle(document.documentElement);
+      function rgb(name) {
+        const value = css.getPropertyValue(name);
+        const trimmed = value.trim();
+        const channels = trimmed.split(/\s+/);
+        return channels.map(Number);
+      }
+      const ink = rgb('--scene-ink');
+      const background = rgb('--scene-bg');
+      drawDither(canvas, 'workspace', 9, ink, cols, rows, 0.78, site.mark, background);
+      window.ogReady = true;
+    </script>
+  </body>
+</html>

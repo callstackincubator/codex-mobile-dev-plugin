@@ -1,0 +1,11 @@
+---
+interface Props {
+  class: string;
+  arrow?: boolean;
+}
+const { class: className, arrow = false } = Astro.props;
+---
+
+<button type="button" class={className} data-install-open aria-haspopup="dialog" aria-controls="install-picker">
+  Install {arrow && <span aria-hidden="true">→</span>}
+</button>
