@@ -36,6 +36,8 @@ export type BackendSupervision<T> = {
   spawnError(error: Error): Error;
   /** Names the start command on exit and deadline errors. */
   command?: string;
+  /** A secret the backend prints, kept out of its echoed output and errors. */
+  redact?: string;
   stop?(child: ChildProcess): void;
 };
 
@@ -45,7 +47,7 @@ export type BackendSupervision<T> = {
  * process on failure.
  */
 export async function superviseBackend<T>(child: ChildProcess, supervision: BackendSupervision<T>): Promise<T> {
-  const { name, deadlineMs, probe, closed, spawnError, command, stop = process => process.kill("SIGTERM") } = supervision;
+  const { name, deadlineMs, probe, closed, spawnError, command, redact, stop = process => process.kill("SIGTERM") } = supervision;
   // Each process keeps its own output, so a failed attempt's late output can't explain the next one.
   let output = "";
   let launchError: Error | undefined;
@@ -53,9 +55,10 @@ export async function superviseBackend<T>(child: ChildProcess, supervision: Back
   child.on("error", error => { launchError = error; });
   child.on("exit", () => exited.abort());
   for (const stream of [child.stdout, child.stderr]) {
-    stream?.on("data", chunk => {
-      output = (output + chunk.toString()).slice(-4000);
-      process.stderr.write(chunk);
+    stream?.on("data", (chunk: Buffer) => {
+      const shown = redact ? chunk.toString().replaceAll(redact, "[token]") : chunk;
+      output = (output + shown.toString()).slice(-4000);
+      process.stderr.write(shown);
     });
   }
   const annotate = (error: Error, failure: Parameters<typeof annotateDeviceCommand>[2]) => command ? annotateDeviceCommand(error, command, failure) : error;

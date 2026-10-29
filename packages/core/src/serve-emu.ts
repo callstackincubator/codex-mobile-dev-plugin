@@ -1,6 +1,7 @@
 import { execFile, spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
+import { randomBytes } from "node:crypto";
 import { access } from "node:fs/promises";
 import { constants } from "node:fs";
 import { dirname, join } from "node:path";
@@ -31,8 +32,16 @@ const serveEmuErrorSchema = z.object({ ok: z.literal(false), error: z.union([z.s
 const healthSchema = z.object({ serial: androidIdSchema, codec: z.string(), size: z.object({ width: z.number().positive(), height: z.number().positive() }) });
 // serve-emu's accessibility nodes, of which the plugin reads only the app each belongs to.
 const accessibilitySchema = z.object({ nodes: z.array(z.object({ packageName: z.unknown() }).partial().loose()).optional() }).loose();
-export type ServeEmuBackend = { url: URL; child?: ChildProcess };
+/** A serve-emu backend. One this server starts is its `child` and requires `token`; one the user runs has neither. */
+export type ServeEmuBackend = { url: URL; child?: ChildProcess; token?: string };
 type Backend = ServeEmuBackend;
+
+/** Headers that authorize a request to the backend. */
+export function backendHeaders(backend: Backend, headers?: HeadersInit): Headers {
+  const authorized = new Headers(headers);
+  if (backend.token !== undefined) authorized.set("Authorization", `Bearer ${backend.token}`);
+  return authorized;
+}
 type Started = { backend: Backend; device: SimulatorDevice };
 const ANDROID_DEVICE = { missing: "This Android device is no longer available. Refresh the device list.", stopped: "The Android device is stopped or offline. Press Start or reconnect it." };
 
@@ -210,8 +219,9 @@ export class ServeEmu {
   }
 
   private async request(backend: Backend, path: string, command: string, options: RequestInit = {}, timeout = 10000): Promise<Response> {
-    return fetch(new URL(path, backend.url), { ...options, redirect: "error", signal: AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(timeout)]) })
-      .catch(error => { throw annotateDeviceCommand(error, command); });
+    return fetch(new URL(path, backend.url), {
+      ...options, headers: backendHeaders(backend, options.headers), redirect: "error", signal: AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(timeout)]),
+    }).catch(error => { throw annotateDeviceCommand(error, command); });
   }
 
   async json<T = unknown>(backend: Backend, path: string, { schema, ...options }: RequestInit & { schema?: z.ZodType<T> } = {}): Promise<T> {
@@ -238,7 +248,7 @@ export class ServeEmu {
 
   private async health(backend: Backend, signal?: AbortSignal) {
     const response = await fetch(new URL("/health", backend.url), {
-      redirect: "error", signal: AbortSignal.any([AbortSignal.timeout(1500), ...(signal ? [signal] : [])]),
+      headers: backendHeaders(backend), redirect: "error", signal: AbortSignal.any([AbortSignal.timeout(1500), ...(signal ? [signal] : [])]),
     });
     if (!response.ok) throw new Error(`serve-emu health returned HTTP ${response.status}.`);
     return healthSchema.parse(await response.json());
@@ -311,6 +321,9 @@ export class ServeEmu {
     const port = await allocatePort("Cannot allocate an Android stream port.");
     if (this.disposed) throw new Error("The plugin server has closed.");
     const url = new URL(`http://127.0.0.1:${port}`);
+    // serve-emu only compares a request's Origin with its Host, which a DNS-rebinding page passes, so
+    // backends this server starts require a token.
+    const token = randomBytes(32).toString("hex");
     let activeBackends = 0;
     for (const backend of this.backends.values()) if (backend.child) activeBackends++;
     const startup = new AndroidStartupTracker({
@@ -320,18 +333,18 @@ export class ServeEmu {
       startingBackends: this.starting.size,
     });
     const adb = await adbPath();
-    const child = spawn(process.execPath, [cli, "--host", "127.0.0.1", "--port", url.port, "--serial", id, "--max-fps", "30"], {
+    const child = spawn(process.execPath, [cli, "--host", "127.0.0.1", "--port", url.port, "--token", token, "--serial", id, "--max-fps", "30"], {
       stdio: ["ignore", "pipe", "pipe", "ipc"], shell: false,
       env: { ...process.env, PATH: `${dirname(adb)}:${process.env.PATH ?? ""}`, SERVE_EMU_UPDATE_CHECK: "0" },
     });
     this.backendContexts.set(child, startup.context);
     startup.observe(child);
-    const backend = { url, child };
+    const backend = { url, child, token };
     this.backends.set(id, backend);
     child.on("exit", () => { if (this.backends.get(id) === backend) this.backends.delete(id); });
     try {
       await superviseBackend(child, {
-        name: "serve-emu", deadlineMs: 30000,
+        name: "serve-emu", deadlineMs: 30000, redact: token,
         // Health fails until scrcpy streams the device.
         probe: async signal => (await this.health(backend, signal)).serial === id ? backend : undefined,
         closed: () => this.disposed,

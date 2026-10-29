@@ -2,6 +2,7 @@ import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 import { WebSocket } from "ws";
 import { videoPacket } from "@mobile-dev/shared/android-video.ts";
 import { inputSchema } from "@mobile-dev/shared/protocol.ts";
+import { backendHeaders } from "./serve-emu.ts";
 import type { ServeEmu, ServeEmuBackend } from "./serve-emu.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
 import { SessionRegistry } from "./session-registry.ts";
@@ -62,7 +63,10 @@ export class AndroidStreams {
     const id = await this.sessions.open(async () => {
       const backend = await this.backend.start(deviceId);
       const url = new URL("/ws?frame-meta=1", backend.url); url.protocol = "ws:";
-      const socket = new WebSocket(url, { handshakeTimeout: 5000, maxPayload: 4 * 1024 * 1024, perMessageDeflate: false });
+      const socket = new WebSocket(url, {
+        handshakeTimeout: 5000, maxPayload: 4 * 1024 * 1024, perMessageDeflate: false,
+        headers: Object.fromEntries(backendHeaders(backend)),
+      });
       session = { deviceId, backend, socket, packets: [], bytes: 0, sequence: 0, generation: 0, waitingForKey: false, waiters: new Waiters(), closed: false };
       this.listen(session);
       return session;
