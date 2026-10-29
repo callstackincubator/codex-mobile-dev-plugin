@@ -1,4 +1,4 @@
-import { chatMessage } from "./chat-message.ts";
+import { canMessage, ChatDeliveryError, sendChat } from "./chat-message.ts";
 import { cardsCallTools } from "./host-bridge.ts";
 import type { HostAttachmentsSource, HostBridge } from "./host-bridge.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -47,9 +47,7 @@ export class RecordingController extends Store<RecordingState> {
     document.addEventListener("visibilitychange", this.visibilityChanged);
   }
   hostChanged() {
-    const capabilities = this.app.getHostCapabilities();
-    const canMessage = Boolean(capabilities?.message?.text);
-    this.update({ canMessage });
+    this.update({ canMessage: canMessage(this.app) });
     this.schedule();
   }
   setVisible(visible: boolean) { this.visible = visible; this.schedule(); }
@@ -177,7 +175,6 @@ export class RecordingController extends Store<RecordingState> {
     const prompt = action === "ask"
       ? `Explain ${metricNames} during ${selected.start}–${selected.end}s of “${recording.title}”. Read the original samples with mobile_read_performance_recording using ${reference}. Distinguish measurements from hypotheses about their cause${displayContext}${frameContext}.`
       : `Open “${recording.title}” in Mobile Dev with ${selected.start}–${selected.end}s selected. Use mobile_open_performance_recording with ${reference}.`;
-    let sending = false;
     try {
       const modelContext = this.attachments();
       if (modelContext) {
@@ -195,18 +192,17 @@ export class RecordingController extends Store<RecordingState> {
       }
       if (this.disposed) return;
       const text = modelContext ? (action === "ask" ? (range ? "Explain this selected range." : "Explain this recording.") : "Open this recording in Mobile Dev.") : prompt;
-      const message = chatMessage(this.app, text);
       const startedAt = performance.now();
-      sending = true;
-      const result = await this.app.sendMessage(message, { timeout: 5000, maxTotalTimeout: 5000 });
-      if (result.isError) throw new Error("The host could not send this recording to chat.");
+      await sendChat(this.app, text);
       countUiEvent(`ui.recording.${action}`);
       const elapsed = performance.now() - startedAt;
       recordUiTiming("ui.recording.message_ack", elapsed);
     } catch (error) {
       captureUiError(new Error("Recording chat action failed."), `recording.${action}`);
-      const timedOut = sending && typeof error === "object" && error !== null && "code" in error && error.code === -32001;
-      const message = timedOut ? "The host did not confirm delivery. Check the chat before retrying to avoid sending the question twice." : error instanceof Error ? error.message : "Could not send this recording to chat.";
+      const failure = error instanceof ChatDeliveryError ? error.reason : undefined;
+      const message = failure === "unconfirmed" ? "The host did not confirm delivery. Check the chat before retrying to avoid sending the question twice."
+        : failure === "rejected" ? "The host could not send this recording to chat."
+        : error instanceof Error ? error.message : "Could not send this recording to chat.";
       this.update({ error: message });
     } finally { this.update({ busy: false }); }
   }

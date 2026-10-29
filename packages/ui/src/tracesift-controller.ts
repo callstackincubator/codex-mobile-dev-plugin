@@ -1,4 +1,4 @@
-import { chatMessage } from "./chat-message.ts";
+import { canMessage, ChatDeliveryError, sendChat } from "./chat-message.ts";
 import { cardsCallTools } from "./host-bridge.ts";
 import type { HostBridge } from "./host-bridge.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -9,7 +9,6 @@ import { buildSelectionPrompt, frameSelectionEvidence, type SelectionCard } from
 import { buildReactSelectionPrompt, reactSelectionEvidence, type ReactSelectionRecording } from "./tracesift/react-selection.ts";
 import type { ContributionChartKind } from "./tracesift/contribution.ts";
 import { captureUiError, countUiEvent, markUiSurfaceReady, recordUiTiming, setUiGauge, setUiSurface, setUiTelemetryContext } from "./telemetry.ts";
-import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 import { Store } from "./store.ts";
 import { callTool, ToolCallError, toolResultText } from "./tool-call.ts";
 import type { ToolCallParams } from "./tool-call.ts";
@@ -52,11 +51,6 @@ type State = {
   };
 };
 
-function composerUnavailable(error: unknown) {
-  const message = errorMessage(error);
-  return /(?:no (?:active |available )?composer|composer.*(?:unavailable|not available|not active)|requires? an (?:active|available) composer|MCP app messages are disabled for this view)/i.test(message);
-}
-
 export class TraceSiftController extends Store<State> {
   private disposed = false;
   private readyAt = performance.now();
@@ -88,10 +82,9 @@ export class TraceSiftController extends Store<State> {
     return parsed.data.handoff;
   }
   hostChanged() {
-    const capabilities = this.app.getHostCapabilities();
     // TraceSift's components read the theme from a `.dark` ancestor, not the document attribute.
     this.update({
-      canInvestigate: cardsCallTools(this.app) && Boolean(capabilities?.message?.text),
+      canInvestigate: cardsCallTools(this.app) && canMessage(this.app),
       canCallTools: cardsCallTools(this.app),
       dark: this.app.getHostContext()?.theme === "dark",
     });
@@ -182,25 +175,21 @@ export class TraceSiftController extends Store<State> {
 
   /** Sends one hand-off to the active chat. Never retry a timeout: the message may have landed. */
   private async sendHandoff(text: string, event: string) {
-    let sending = false;
     try {
-      const message = chatMessage(this.app, text);
       const sendStartedAt = performance.now();
-      sending = true;
-      const sent = await this.app.sendMessage(message, { timeout: 5000, maxTotalTimeout: 5000 });
-      if (sent.isError) throw new Error("The host could not start this investigation.");
+      await sendChat(this.app, text);
       recordUiTiming("ui.tracesift.message_ack", performance.now() - sendStartedAt);
       countUiEvent(event);
     } catch (error) {
-      const timedOut = sending && typeof error === "object" && error !== null && "code" in error && error.code === -32001;
-      const missingComposer = sending && composerUnavailable(error);
-      countUiEvent(timedOut ? "ui.tracesift.delivery_unconfirmed" : missingComposer ? "ui.tracesift.composer_unavailable" : "ui.tracesift.send_failed");
-      if (!timedOut && !missingComposer) captureUiError(new Error("TraceSift investigation action failed."), "tracesift.investigate");
-      throw new Error(timedOut
+      const failure = error instanceof ChatDeliveryError ? error.reason : undefined;
+      countUiEvent(failure === "unconfirmed" ? "ui.tracesift.delivery_unconfirmed" : failure === "no-composer" ? "ui.tracesift.composer_unavailable" : "ui.tracesift.send_failed");
+      if (failure !== "unconfirmed" && failure !== "no-composer") captureUiError(new Error("TraceSift investigation action failed."), "tracesift.investigate");
+      throw new Error(failure === "unconfirmed"
         ? "The host did not confirm delivery. Check the chat before retrying to avoid sending the investigation twice."
-        : missingComposer
+        : failure === "no-composer"
           ? "The host could not find this chat's input. Reopen the chat, then try Investigate again."
-          : error instanceof Error ? error.message : "Could not start this investigation.",
+          : failure === "rejected" ? "The host could not start this investigation."
+            : error instanceof Error ? error.message : "Could not start this investigation.",
         { cause: error });
     }
   }

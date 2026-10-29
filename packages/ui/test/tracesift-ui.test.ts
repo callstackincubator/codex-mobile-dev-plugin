@@ -220,7 +220,7 @@ test("TraceSift never retries an unconfirmed send", async () => {
   assert.match(controller.getSnapshot().error, /Check the chat before retrying/);
 });
 
-test("TraceSift reports an unavailable composer without retrying", async () => {
+test("TraceSift waits for the composer like other chat sends, then reports it unavailable", async () => {
   let sends = 0;
   const app = {
     getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
@@ -233,7 +233,7 @@ test("TraceSift reports an unavailable composer without retrying", async () => {
   await controller.loadProject();
   controller.accept({ content: [], structuredContent: analysis });
   await controller.investigate("react-commit-1-2");
-  assert.equal(sends, 1);
+  assert.equal(sends, 5, "The send is retried while the composer registers, as cached panels need.");
   assert.match(controller.getSnapshot().error, /Reopen the chat/);
 });
 
