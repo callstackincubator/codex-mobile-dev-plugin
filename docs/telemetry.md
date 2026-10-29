@@ -9,23 +9,26 @@ Since 0.1.165, UI and server telemetry carry a `host` tag and attribute with one
 Apps hosts load the same panel and server; the Mac app runs the same server and shared UI.
 Behavior never depends on this value; it only attributes measurements and errors.
 
-- The Mac page names itself (`data-host="mac"`); the Mac app also starts the server
-  with `MOBILE_DEV_HOST=mac`.
+- The Mac page passes `mac` when it starts UI telemetry, and the Mac server's entry
+  passes it to `runStdioServer`, which keeps it whatever the connecting client reports.
 - MCP Apps panels are labelled once connected: `codex` when the host advertises
   OpenAI extensions, otherwise the host's reported name mapped by `telemetryHost`
   (`claude` for Claude, `cursor` for Cursor, else `other`). Before the Cursor plugin,
   Cursor sessions were reported as `other`. Calls before connecting carry no host.
-- The server labels itself from the connecting MCP client's name on initialize and
-  reports `other` until then.
+- Other servers label themselves from the connecting MCP client's name on initialize.
+  Every server reports `other` until it has a label.
 - The server's metadata allowlist accepts only these values; the raw host or
   client name is never sent.
 
 Earlier releases have no `host` value. Surfaces, measurement names, units and
 boundaries are unchanged in every host.
 
-The Mac app loads its page through the server's `ui://mobile-dev/mac.html` resource,
-so the page receives the same server-owned environment, opt-out and anonymous
-identity as the Codex panel. Mac builds are development-only for now; the SwiftUI
+The Mac page reads the server's `ui://mobile-dev/mac-telemetry.json` resource over
+its own MCP connection and starts its telemetry with it, so it receives the same
+server-owned environment, opt-out and anonymous identity as the Codex panel. Its
+telemetry starts once that connection is open, so a failure to connect is not
+reported. Earlier releases did not report one either: the app read the page from
+the server's `ui://mobile-dev/mac.html` resource before loading it. Mac builds are development-only for now; the SwiftUI
 shell has no native Sentry SDK.
 
 ## Volume policy
@@ -574,7 +577,7 @@ Error and crash events carry only a generated anonymous `user.id` and a `telemet
 
 Session Replay, minidumps, screenshots and profiling are disabled. Requests, account details, app log content, tool payloads, automatic console breadcrumbs and exception source context are excluded. JavaScript error text redacts common tokens, identifiers, URLs, email addresses and local home paths. Native reports retain source basenames and debug IDs, omit absolute module paths, and never send Rust panic payloads. Safe product attributes and source locations remain available for diagnosis. `MOBILE_DEV_TELEMETRY=off` disables reporting across JavaScript and native helpers.
 
-Builds generate debug IDs and source maps under the ignored `.sentry/` directory. Each page and server bundle keeps its maps in its own folder: `.sentry/ui/<page>` (`mcp-app`, `codex`, `mac`) and `.sentry/server` with host servers under `.sentry/server/<host>`. `npm run sentry:upload` uploads both trees, so every host's bundles share the release and its debug IDs. Host servers keep the shared server's component, metric names and boundaries; Codex's `plugin.update.*` metrics now come only from Codex's server. Native rebuilds retain macOS dSYMs and unstripped Android ELF files in `.sentry/native` before stripping the bundled binaries. Release runs can reuse each helper's exact build artifact, restoring the vendor files and matching symbols together after SHA-256 verification. Reused symbols are still uploaded by the current release's Sentry step. Native helpers receive the current release and environment at runtime, so reuse preserves release attribution, measurement boundaries and debug IDs. Symbols, source maps and the upload credential are excluded from the plugin package. Native builds require CMake and Ninja, with an Android NDK for Android collectors. The SDK source archive is pinned and checked by SHA-256. Store the organization build token in the ignored `.env.sentry-build-plugin` file at the repository root:
+Builds generate debug IDs and source maps under the ignored `.sentry/` directory. Each page and server bundle keeps its maps in its own folder: `.sentry/ui/<page>` (`mcp-app`, `codex`, `mac`) and `.sentry/server` with host servers under `.sentry/server/<host>`. `npm run sentry:upload` uploads both trees, so every host's bundles share the release and its debug IDs. `npm run build:hosts` keeps its test builds' maps under `.sentry/host-tests`, which is never uploaded, so it cannot replace a package's. Host servers keep the shared server's component, metric names and boundaries; Codex's `plugin.update.*` metrics now come only from Codex's server. Native rebuilds retain macOS dSYMs and unstripped Android ELF files in `.sentry/native` before stripping the bundled binaries. Release runs can reuse each helper's exact build artifact, restoring the vendor files and matching symbols together after SHA-256 verification. Reused symbols are still uploaded by the current release's Sentry step. Native helpers receive the current release and environment at runtime, so reuse preserves release attribution, measurement boundaries and debug IDs. Symbols, source maps and the upload credential are excluded from the plugin package. Native builds require CMake and Ninja, with an Android NDK for Android collectors. The SDK source archive is pinned and checked by SHA-256. Store the organization build token in the ignored `.env.sentry-build-plugin` file at the repository root:
 
 ```dotenv
 SENTRY_AUTH_TOKEN=your_org_token

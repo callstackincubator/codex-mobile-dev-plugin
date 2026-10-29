@@ -1,11 +1,9 @@
 import { context } from "esbuild";
-import { compile } from "@tailwindcss/node";
-import { Scanner } from "@tailwindcss/oxide";
 import { readFile, writeFile, rm, mkdir, rename, stat, utimes } from "node:fs/promises";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
-import { exploreUILayerCSS } from "../../../tooling/explore-css.mjs";
+import { inlinePage, pageBuildOptions } from "../../../tooling/ui-page.mjs";
 
 const projectRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const { version } = JSON.parse(await readFile(new URL("../../../package.json", import.meta.url), "utf8"));
@@ -28,29 +26,18 @@ try {
   running = watcher.projectRoot === projectRoot && Date.now() - heartbeat.mtimeMs < 10000;
 } catch {}
 if (!running) {
+  const template = resolve(projectRoot, "packages/mcp-app/src/index.html");
+  const options = pageBuildOptions({ entry: "apps/codex-plugin/ui/main.tsx", sources: ["packages/ui/src", "packages/mcp-app/src", "apps/codex-plugin/ui"], outfile: "app.js", root: projectRoot });
   const builder = await context({
-    absWorkingDir: projectRoot,
-    entryPoints: ["apps/codex-plugin/ui/main.tsx"], jsx: "automatic",
-    define: { "process.env.NODE_ENV": '"production"' },
-    loader: { ".woff2": "dataurl", ".woff": "dataurl" },
-    bundle: true, write: false, format: "iife", platform: "browser",
-    outfile: "app.js", target: "chrome120", minify: true, legalComments: "eof",
-    plugins: [{ name: "live-ui", setup(build) {
-      build.onLoad({ filter: /theme\.css$/ }, async ({ path }) => {
-        const dependencies = [];
-        const compiler = await compile(await readFile(path, "utf8"), { base: dirname(path), onDependency(file) { dependencies.push(file); } });
-        const scanner = new Scanner({ sources: ["packages/ui/src", "packages/mcp-app/src", "apps/codex-plugin/ui"].map(base => ({ base: resolve(projectRoot, base), pattern: "**/*.{ts,tsx}", negated: false })) });
-        const contents = compiler.build(scanner.scan());
-        return { contents, loader: "css", resolveDir: dirname(path), watchFiles: [...dependencies, ...scanner.files] };
-      });
-      build.onLoad({ filter: /\/codex-plugin\/ui\/main\.tsx$/ }, async ({ path }) => ({ contents: await readFile(path, "utf8"), loader: "tsx", resolveDir: dirname(path), watchFiles: [resolve(projectRoot, "packages/mcp-app/src/index.html")] }));
+    ...options, absWorkingDir: projectRoot,
+    plugins: [...options.plugins, { name: "live-ui", setup(build) {
+      // The page template is read after bundling; a change to it rebuilds the page too.
+      build.onLoad({ filter: /\/codex-plugin\/ui\/main\.tsx$/ }, async ({ path }) => ({ contents: await readFile(path, "utf8"), loader: "tsx", resolveDir: dirname(path), watchFiles: [template] }));
       build.onEnd(async result => {
         if (result.errors.length) return;
         const js = result.outputFiles.find(file => file.path.endsWith(".js")).text;
-        const css = `${result.outputFiles.find(file => file.path.endsWith(".css"))?.text ?? ""}\n${await exploreUILayerCSS()}`;
-        const template = await readFile(resolve(projectRoot, "packages/mcp-app/src/index.html"), "utf8");
-        const html = template.replace("<!-- APP_STYLE -->", () => `<style>${css}</style>`)
-          .replace("<!-- APP_SCRIPT -->", () => `<script>${js.replace(/<\/script/gi, "<\\/script")}</script>`);
+        const css = result.outputFiles.find(file => file.path.endsWith(".css"))?.text ?? "";
+        const html = await inlinePage({ js, css, template, environment: "development", sourceURL: "app:///mobile-dev-ui.js" });
         await writeFile(resolve(output, "app.html.tmp"), html);
         await rename(resolve(output, "app.html.tmp"), resolve(output, "app.html"));
         console.log("Mobile Dev UI rebuilt. Open panels reload through MCP.");

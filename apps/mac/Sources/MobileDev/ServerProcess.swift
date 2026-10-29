@@ -19,9 +19,6 @@ final class ServerProcess: @unchecked Sendable {
     process.executableURL = runtime.node
     process.arguments = [runtime.server.path]
     process.currentDirectoryURL = runtime.server.deletingLastPathComponent()
-    var environment = ProcessInfo.processInfo.environment
-    environment["MOBILE_DEV_HOST"] = "mac"
-    process.environment = environment
     process.standardInput = input
     process.standardOutput = output
     process.standardError = errors

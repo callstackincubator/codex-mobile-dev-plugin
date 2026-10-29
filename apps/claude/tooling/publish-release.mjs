@@ -1,4 +1,4 @@
-import { pluginMarketplace } from "../../../tooling/plugin-marketplace.mjs";
+import { pluginMarketplace } from "./plugin-marketplace.mjs";
 import { publishFromCommandLine, publishPluginRelease } from "../../../tooling/release-branch.mjs";
 
 // Claude Code installs the release from this branch as a marketplace, laid out as the
@@ -8,7 +8,7 @@ import { publishFromCommandLine, publishPluginRelease } from "../../../tooling/r
 const release = {
   manifestPath: ".claude-plugin/plugin.json", requiredFiles: ["dist/server.mjs"],
   branch: "release/claude", pluginPath: "mobile-dev", catalogPath: ".claude-plugin/marketplace.json",
-  catalog: manifest => pluginMarketplace("mobile-dev", "Mobile Dev for Claude Code: iOS and Android device control, logs, and performance charts.", manifest),
+  catalog: manifest => pluginMarketplace(manifest, { release: true }),
 };
 
 export function publishRelease(pluginDirectory, tag, remote, token) {

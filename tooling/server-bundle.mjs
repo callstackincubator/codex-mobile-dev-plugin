@@ -37,3 +37,11 @@ export async function buildServerBundles({ entryPoints, outdir, sentryDirectory,
   }
   return result.metafile;
 }
+
+/** The shared server and the iOS mirror service it starts, the runtime's `server.mjs`. */
+export function buildSharedServer({ outdir, sentryRoot }) {
+  return buildServerBundles({
+    entryPoints: { server: "packages/core/src/index.ts", "ios-mirror-service": "packages/core/src/ios-mirror-service.ts" },
+    outdir, sentryDirectory: `${sentryRoot}/server`,
+  });
+}

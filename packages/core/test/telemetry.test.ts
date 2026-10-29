@@ -11,7 +11,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { z } from "zod";
 import { MeasurementWindow, sampleTrace, scrubErrorEvent, scrubMetric, scrubSpan, sampleMetric, createErrorEventFilter, METRIC_SAMPLE_RATE, TELEMETRY_META_KEY } from "../../shared/src/telemetry.ts";
-import { captureServerError, installTracePropagation, instrumentMcpServer, IOSLogProcessingTelemetry, recordAndroidBackendStartup, recordIosMirrorSharing } from "../src/telemetry.ts";
+import { captureServerError, installTracePropagation, instrumentMcpServer, IOSLogProcessingTelemetry, recordAndroidBackendStartup, recordIosMirrorSharing, setLaunchingTelemetryHost, setServerTelemetryHost } from "../src/telemetry.ts";
 import { recordPluginUpdate } from "../../../apps/codex-plugin/server/plugin-updates.ts";
 import { deferEpisodeReport, ExpectedOperationError, FailureEpisodes } from "../../shared/src/error-reporting.ts";
 import { parseResourceInput } from "../src/resource-input.ts";
@@ -1281,4 +1281,29 @@ test("device settings report the failed backend request without its reply and co
   contains(encoded, "PRIVATE", false);
   contains(encoded, udid, false);
   contains(encoded, "emulator-5554", false);
+});
+
+// Runs last: the launching host stays set for the rest of this process.
+test("a host label the server entry passes outranks the connecting client's name", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  t.after(async () => { await Sentry.close(); });
+  const scope = () => Sentry.getIsolationScope().getScopeData();
+  setServerTelemetryHost("Claude");
+  assert.equal(scope().tags.host, "claude");
+  setServerTelemetryHost("PRIVATE_HOST");
+  assert.equal(scope().tags.host, "other");
+  setLaunchingTelemetryHost("mac");
+  assert.equal(scope().tags.host, "mac");
+  assert.equal(scope().attributes?.host, "mac");
+  setServerTelemetryHost("mobile-dev-mac");
+  setServerTelemetryHost("Claude");
+  assert.equal(scope().tags.host, "mac");
+  assert.equal(scope().attributes?.host, "mac");
+  Sentry.captureException(new Error("Launching host"));
+  await Sentry.flush();
+  assert.equal(reportedEvents(envelopes)[0]?.tags?.host, "mac");
 });
