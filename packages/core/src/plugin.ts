@@ -1,6 +1,6 @@
 import type { UIResource } from "./ui-resource.ts";
 import type { PageDisplay, ReadPage, ServerFeature, ServerServices } from "./server-feature.ts";
-import { addToolIcons, PHONE_ICONS } from "./tool-icons.ts";
+import { PHONE_ICONS, toolIcons } from "./tool-icons.ts";
 import { LIVE_UI_URI } from "@mobile-dev/shared/live-ui.ts";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { PLUGIN_VERSION } from "@mobile-dev/shared/version.ts";
@@ -68,8 +68,7 @@ export function createPlugin(html: string | (() => Promise<UIResource>), options
   for (const sessions of [logs, cpu, fps]) devices.add(deviceId => sessions.closeDevice(deviceId));
   const instructions = features.find(feature => feature.instructions !== undefined)?.instructions ?? INSTRUCTIONS;
   const server = new McpServer({ name: "mobile-dev", version: PLUGIN_VERSION }, { instructions });
-  instrumentMcpServer(server);
-  addToolIcons(server, { mobile_open_workspace: PHONE_ICONS, mobile_open_simulator: PHONE_ICONS, mobile_choose_devices: PHONE_ICONS });
+  instrumentMcpServer(server, toolIcons({ mobile_open_workspace: PHONE_ICONS, mobile_open_simulator: PHONE_ICONS, mobile_choose_devices: PHONE_ICONS }));
   const initialized: (() => void)[] = [];
   server.server.oninitialized = () => {
     setServerTelemetryHost(server.server.getClientVersion()?.name);

@@ -404,7 +404,11 @@ returning the recording without its structured samples is a handled error with a
 message; a server's own refusal, such as a deleted recording, is shown without a report.
 Either way a preview on screen stays. Bounded event
 counts record range selections and Ask/Open actions. `storage.bytes` with
-`kind: recordings` measures local saved-file storage. Recording polling is excluded
+`kind: recordings` measures local saved-file storage at startup and every five minutes;
+with telemetry off the server no longer walks the recordings folder at all. A failed
+measurement reports through `captureServerError` as `storage.measure`, so it also counts
+under `server.error.outcome` and an expected outcome is counted without a report.
+Recording polling is excluded
 from trace sampling, and hidden cards stop polling. None of these measurements
 contains device CPU/memory values, recording IDs, titles or selected intervals.
 
