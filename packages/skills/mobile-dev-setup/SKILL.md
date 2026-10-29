@@ -22,7 +22,7 @@ without evidence or work around the failure with another device backend.
 2. If the backend fails, read the returned error. Check that this is an Apple Silicon Mac and that `xcode-select -p` points to Xcode 26 or later. Use `xcodebuild -version` when needed. Diagnose the server's actual startup error if the tools are unavailable.
 3. If no devices appear, have the user add an iOS runtime in Xcode's Settings, Components. A runtime download can be large, so do not start it without the user's request.
 4. Follow the user's device choice; otherwise reuse a compatible device shared by the panel, then a suitable booted simulator. For app development, choose and boot a suitable installed simulator if none runs. Pick among equivalent devices yourself; ask only when a device choice changes what the task needs and the project gives no answer. Setup alone does not require booting a device. Confirm tool connectivity with `mobile_list_simulators`.
-5. Agent Device is temporarily disabled while iterating on inline performance charts. Use the Mobile Dev tools for device discovery, screenshots, logs and performance; do not search for Agent Device tools or start its CLI separately.
+5. The `device_*` tools run the bundled agent-device runtime, which starts on the first command. Its first iOS interaction builds the XCTest runner with the local Xcode. When a command reports that Agent Device could not start or complete it, call `device_doctor` for the device and toolchain readiness it reports. Do not install agent-device or start its CLI separately.
 
 No account, token, tunnel, or hosted service is needed. Do not repeat setup after a successful connection.
 

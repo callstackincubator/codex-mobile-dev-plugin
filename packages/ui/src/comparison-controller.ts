@@ -1,29 +1,43 @@
 import { chatMessage } from "./chat-message.ts";
-import type { HostBridge } from "./host-bridge.ts";
+import { attachReference, cardsCallTools } from "./host-bridge.ts";
+import type { HostAttachmentsSource, HostBridge } from "./host-bridge.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { comparisonDuration, comparisonSchema } from "@mobile-dev/shared/performance-comparison.ts";
+import { comparisonDuration, comparisonReferenceSchema, comparisonSchema } from "@mobile-dev/shared/performance-comparison.ts";
 import type { PerformanceComparison } from "@mobile-dev/shared/performance-comparison.ts";
 import { recordingRangeSchema } from "@mobile-dev/shared/recordings.ts";
 import type { RecordingRange } from "@mobile-dev/shared/recordings.ts";
 import { captureUiError, countUiEvent, markUiSurfaceReady, recordUiTiming, setUiGauge, setUiSurface, setUiTelemetryContext } from "./telemetry.ts";
+import { readRecording, RecordingReadError, toolResultText } from "./recording-reader.ts";
 
 type ComparisonState = {
   comparison?: PerformanceComparison;
   hiddenIds: ReadonlySet<string>;
   range?: RecordingRange;
+  /** Showing previews without frame detail: the full recordings are loading, or this host cannot load them. */
+  preview?: "loading" | "only";
   canMessage: boolean;
+  /** The server has Mobile Dev's workspace, where recordings show in full. */
+  workspace: boolean;
   busy: boolean;
   error: string;
 };
 
 export class ComparisonController {
   private readonly app: HostBridge;
-  private state: ComparisonState = { hiddenIds: new Set(), canMessage: false, busy: false, error: "" };
+  private readonly attachments: HostAttachmentsSource;
+  private state: ComparisonState;
   private listeners = new Set<() => void>();
   private disposed = false;
   private readyAt = performance.now();
+  /** The full recordings being read; a newer comparison replaces them. */
+  private loading?: AbortController;
 
-  constructor(app: HostBridge) { this.app = app; }
+  /** `attachments` reads the host's composer pills, where it has them; `workspace` says the server has Mobile Dev's workspace. */
+  constructor(app: HostBridge, { attachments = () => undefined, workspace = false }: { attachments?: HostAttachmentsSource; workspace?: boolean } = {}) {
+    this.app = app;
+    this.attachments = attachments;
+    this.state = { hiddenIds: new Set(), canMessage: false, workspace, busy: false, error: "" };
+  }
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
     return () => { this.listeners.delete(listener); };
@@ -42,34 +56,72 @@ export class ComparisonController {
   accept(result: CallToolResult) {
     if (this.disposed) return;
     if (result.isError) {
-      const texts = result.content.filter(item => item.type === "text");
-      const error = texts.map(item => item.text).join("\n");
-      this.update({ error });
+      this.update({ error: toolResultText(result) });
       return;
     }
-    if (result.structuredContent?.recordings === undefined) return;
+    const data = result.structuredContent;
+    if (data === undefined) return;
+    this.loading?.abort();
+    // Results saved before recordings were sent by reference carry the full recordings.
+    if (data.recordings !== undefined) {
+      this.show(comparisonSchema.parse(data));
+      return;
+    }
+    const reference = comparisonReferenceSchema.safeParse(data);
+    if (reference.success === false) return;
+    const { title, recordingIds, range, previews } = reference.data;
+    // The previews draw at once; hosts that let cards call tools then read the full recordings.
+    const canLoad = cardsCallTools(this.app);
+    if (previews) {
+      countUiEvent("ui.comparison.preview");
+      this.show(comparisonSchema.parse({ title, recordings: previews, ...(range ? { range } : {}) }), canLoad ? "loading" : "only");
+    }
+    if (canLoad) void this.load(title, recordingIds, range, previews !== undefined);
+    else if (previews === undefined) this.update({ error: "This app cannot load long recordings into a comparison card." });
+  }
+  /** Reads the full recordings. Replacing previews keeps the runs hidden and the range selected meanwhile. */
+  private async load(title: string, recordingIds: string[], range: RecordingRange | undefined, replacesPreviews: boolean) {
+    const loading = this.loading = new AbortController();
     const startedAt = performance.now();
-    const comparison = comparisonSchema.parse(result.structuredContent);
+    try {
+      const recordings = await Promise.all(recordingIds.map(recordingId => readRecording(this.app, recordingId, loading.signal)));
+      if (loading.signal.aborted) return;
+      recordUiTiming("ui.comparison.load", performance.now() - startedAt);
+      this.show(comparisonSchema.parse({ title, recordings, ...(range ? { range } : {}) }), undefined, replacesPreviews);
+    } catch (error) {
+      if (loading.signal.aborted || this.disposed) return;
+      if (error instanceof RecordingReadError === false) captureUiError(error, "comparison.load");
+      // Previews already on screen stay; the card only lacks frame detail.
+      if (this.state.preview) this.update({ preview: "only" });
+      else this.update({ error: error instanceof RecordingReadError ? error.message : "Could not load these recordings. Reopen the comparison to try again." });
+    }
+  }
+  private show(comparison: PerformanceComparison, preview?: ComparisonState["preview"], keepSelection = false) {
+    const startedAt = performance.now();
     setUiSurface("comparison");
     const platform = comparison.recordings[0].target.platform;
     const samePlatform = comparison.recordings.every(recording => recording.target.platform === platform);
     setUiTelemetryContext({ device_platform: samePlatform ? platform : "mixed", device_kind: "none" });
-    let samples = 0;
-    let fpsSamples = 0;
-    let displayFrames = 0;
-    for (const recording of comparison.recordings) {
-      samples += recording.samples.length;
-      fpsSamples += recording.fps.samples.length;
-      for (const sample of recording.fps.samples) displayFrames += sample.frameTimeline?.frames.length ?? 0;
+    // Processing and size measure full recordings, comparable with releases that sent them; previews are counted.
+    if (preview === undefined) {
+      let samples = 0;
+      let fpsSamples = 0;
+      let displayFrames = 0;
+      for (const recording of comparison.recordings) {
+        samples += recording.samples.length;
+        fpsSamples += recording.fps.samples.length;
+        for (const sample of recording.fps.samples) displayFrames += sample.frameTimeline?.frames.length ?? 0;
+      }
+      setUiGauge("ui.comparison.runs", comparison.recordings.length);
+      setUiGauge("ui.comparison.samples", samples);
+      setUiGauge("ui.comparison.fps_samples", fpsSamples);
+      setUiGauge("ui.comparison.display_frames", displayFrames);
+      recordUiTiming("ui.comparison.process", performance.now() - startedAt);
     }
-    setUiGauge("ui.comparison.runs", comparison.recordings.length);
-    setUiGauge("ui.comparison.samples", samples);
-    setUiGauge("ui.comparison.fps_samples", fpsSamples);
-    setUiGauge("ui.comparison.display_frames", displayFrames);
-    const elapsed = performance.now() - startedAt;
-    recordUiTiming("ui.comparison.process", elapsed);
-    this.update({ comparison, range: comparison.range, hiddenIds: new Set(), error: "" });
-    markUiSurfaceReady(this.readyAt);
+    this.update(keepSelection
+      ? { comparison, preview, error: "" }
+      : { comparison, preview, range: comparison.range, hiddenIds: new Set(), error: "" });
+    if (keepSelection === false) markUiSurfaceReady(this.readyAt);
   }
   select = (range?: RecordingRange) => {
     const comparison = this.state.comparison;
@@ -100,19 +152,34 @@ export class ComparisonController {
     const reference = JSON.stringify({ recordingIds, title: comparison.title, ...(range ? { range } : {}) });
     const interval = range ? `${range.start}–${range.end}s` : "the entire runs";
     const prompt = `Compare CPU, memory, and device-wide Display FPS for ${interval}, aligned at recording start. Read the original runs and summaries with mobile_compare_performance_recordings using ${reference}. Account for different durations, devices, apps and memory definitions. Distinguish measurements from hypotheses about their cause; device-wide display data cannot attribute a slowdown to one app.`;
-    const message = chatMessage(this.app, prompt);
-    const startedAt = performance.now();
+    let sending = false;
     try {
-      const result = await this.app.sendMessage(message);
+      // Hosts with composer pills carry the reference there, and the message stays one line.
+      const modelContext = this.attachments();
+      if (modelContext) {
+        const contextStartedAt = performance.now();
+        try {
+          await attachReference(modelContext, {
+            marker: "mobile-dev/comparisonReference", title: range ? `${comparison.title} · ${interval}` : comparison.title, text: prompt,
+            structuredContent: { selectedComparison: { recordingIds, ...(range ? { range } : {}) } },
+          });
+        } finally { recordUiTiming("ui.comparison.context_attach", performance.now() - contextStartedAt); }
+      }
+      if (this.disposed) return;
+      const message = chatMessage(this.app, modelContext ? (range ? "Compare this selected range." : "Compare these runs.") : prompt);
+      const startedAt = performance.now();
+      sending = true;
+      const result = await this.app.sendMessage(message, { timeout: 5000, maxTotalTimeout: 5000 });
       if (result.isError) throw new Error("The host could not send this comparison to chat.");
       countUiEvent("ui.comparison.ask");
       const elapsed = performance.now() - startedAt;
       recordUiTiming("ui.comparison.message_ack", elapsed);
     } catch (error) {
       captureUiError(error, "comparison.ask");
-      const text = error instanceof Error ? error.message : "Could not send this comparison to chat.";
+      const timedOut = sending && typeof error === "object" && error !== null && "code" in error && error.code === -32001;
+      const text = timedOut ? "The host did not confirm delivery. Check the chat before retrying to avoid sending the question twice." : error instanceof Error ? error.message : "Could not send this comparison to chat.";
       this.update({ error: text });
     } finally { this.update({ busy: false }); }
   }
-  dispose() { this.disposed = true; this.listeners.clear(); }
+  dispose() { this.disposed = true; this.loading?.abort(); this.listeners.clear(); }
 }

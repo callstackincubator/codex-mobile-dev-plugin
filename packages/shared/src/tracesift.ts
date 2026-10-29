@@ -15,20 +15,14 @@ const taskCulpritSchema = z.object({
   shapeText: z.string(), nodeId: z.string(), callers: z.array(z.string()), reachedVia: z.array(z.string()), hotPath: z.array(z.string()),
 });
 const frameClass = z.string();
-/**
- * A function named one band below a boundary frame, or one that burned its
- * time. Both carry the same figures, so the card draws them with one shape.
- */
+/** A function one band below a boundary frame, or one that burned its time; the card draws both with one shape. */
 const measuredFrameSchema = z.object({
   name: z.string(), location: z.string().optional(), frameClass, nodeId: z.string(),
   totalMs: finite, selfMs: finite, invocations: z.number().int().nonnegative(),
   longestCallMs: finite, shapeText: z.string(),
 });
 const boundaryCulpritSchema = measuredFrameSchema.extend({ callers: z.array(z.string()) });
-/**
- * A feature of the user's own that the task entered. Carried whole, so the card
- * computes slices, legend and drill-down exactly as the web app does.
- */
+/** A feature of the user's own that the task entered. Carried whole so the card derives slices exactly as the web app does. */
 const boundaryFrameSchema = z.object({
   name: z.string(), location: z.string().optional(), nodeId: z.string(),
   totalMs: finite, selfMs: finite, invocations: z.number().int().nonnegative(),
@@ -67,9 +61,7 @@ export const traceSiftReactCardSchema = z.object({
 const base = { apiVersion: z.literal(1), analysisId: z.string().min(1), title: z.string() };
 const cpuSummarySchema = z.object({
   totalMs: finite, callCountIsExact: z.boolean(), omittedTaskCount: z.number().int().nonnegative().optional(),
-  // How many tasks the recording held in all, which the header's "3 long tasks
-  // of 870" needs and no card carries. Optional: a TraceSift older than the
-  // field answers without it, and the header drops that clause.
+  // Tasks in the whole recording, for the header's "3 long tasks of 870". Optional: older TraceSift omits it and the clause is dropped.
   taskCount: z.number().int().nonnegative().optional(),
   noLongTasks: z.boolean().optional(), profilerOverheadMs: finite.optional(),
 });

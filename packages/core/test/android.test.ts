@@ -4,12 +4,15 @@ import { createServer } from "node:http";
 import { WebSocketServer } from "ws";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ServeEmu, androidDisplaySize } from "../src/serve-emu.ts";
 import { AndroidStreams, androidInput } from "../src/android-streams.ts";
 import { videoPacket } from "../../ui/src/android-video.ts";
 import { Baguette } from "../src/baguette.ts";
 import { createTestPlugin, fakeBaguette, fakeSimulatorInput, PNG } from "../../test-support/fixtures.ts";
 import { fakeInspectionSdk } from "../../test-support/android-inspection-fixtures.ts";
+import { createPanel } from "../src/panel-tools.ts";
+import { registerAndroidTools } from "../src/android-tools.ts";
 
 const ID = "emulator-5554";
 const SCREEN = { width: 1080, height: 2400 };
@@ -152,7 +155,7 @@ test("Android streams relay video, validate batches, and refuse a device switch"
 
 test("Android MCP flow lists without booting, captures, streams, and closes", async t => {
   const fake = await fakeAndroid(); const ios = await fakeBaguette();
-  const plugin = await createTestPlugin("<canvas></canvas>", { baguette: new Baguette(ios.url), simulatorInput: fakeSimulatorInput(), android: fake.backend, copyScreenshot: async bytes => { assert.deepEqual(bytes, PNG); } });
+  const plugin = await createTestPlugin("<canvas></canvas>", { panel: createPanel({ baguette: new Baguette(ios.url), simulatorInput: fakeSimulatorInput(), copyScreenshot: async bytes => { assert.deepEqual(bytes, PNG); } }), android: fake.backend });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "android-test", version: "1" });
   t.after(async () => { await client.close(); await plugin.close(); await fake.close(); await ios.close(); });
@@ -160,14 +163,9 @@ test("Android MCP flow lists without booting, captures, streams, and closes", as
   const listed = await client.callTool({ name: "mobile_list_android_devices", arguments: {} });
   assert.equal((listed.structuredContent?.devices as { udid: string }[])[0].udid, ID);
   assert.deepEqual(fake.backend.boots, []); assert.equal(fake.sockets.clients.size, 0);
-  const screenshot = await client.callTool({ name: "mobile_android_screenshot", arguments: { deviceId: ID } });
-  assert.deepEqual(screenshot.content[0], { type: "image", mimeType: "image/png", data: PNG.toString("base64") });
   const captured = await client.callTool({ name: "mobile_android_capture_screenshot", arguments: { deviceId: ID } });
-  assert.deepEqual(captured.content[0], screenshot.content[0]);
+  assert.deepEqual(captured.content[0], { type: "image", mimeType: "image/png", data: PNG.toString("base64") });
   assert.equal(captured.structuredContent?.copied, true);
-  const input = await client.callTool({ name: "mobile_android_send_input", arguments: { deviceId: ID, input: { type: "button", button: "back" } } });
-  assert.equal(input.isError, undefined);
-  assert.deepEqual(fake.inputs.at(-1), { path: "/api/key", body: { key: "back", record: false } });
   const session = await client.callTool({ name: "mobile_android_stream_session", arguments: { deviceId: ID } });
   assert.equal(session.isError, undefined);
   const id = session._meta?.sessionId;
@@ -186,6 +184,24 @@ test("Android MCP flow lists without booting, captures, streams, and closes", as
   await client.callTool({ name: "mobile_android_stream_close", arguments: { sessionId: id } });
   await assert.rejects(client.readResource({ uri: session._meta?.frameUri as string }), /expired or closed/);
   assert.deepEqual(fake.backend.boots, []);
+});
+
+test("a missing serve-emu runtime tells the user to reinstall and stops the panel's retries", async t => {
+  // Running from source, serve-emu is never beside this module, so starting a stream finds it missing.
+  class Unbundled extends ServeEmu {
+    async list() { return { connected: true, managed: false, baseUrl: "", devices: [{ udid: ID, name: "Pixel", state: "Booted", runtime: "Android", platform: "android" as const }] }; }
+  }
+  const server = new McpServer({ name: "android-runtime-test", version: "1" });
+  const backend = new Unbundled();
+  registerAndroidTools(server, backend, "ui://mobile-dev/test.html", async () => {}, async () => {});
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "android-runtime-test", version: "1" });
+  t.after(async () => { await client.close(); await server.close(); backend.dispose(); });
+  await server.connect(serverTransport); await client.connect(clientTransport);
+  const session = await client.callTool({ name: "mobile_android_stream_session", arguments: { deviceId: ID } });
+  assert.equal(session.isError, true);
+  assert.equal(session._meta?.retryable, false);
+  assert.deepEqual(session.content, [{ type: "text", text: "This Mobile Dev installation is missing its Android streaming backend. Reinstall Mobile Dev, then restart the app running it." }]);
 });
 
 test("closing an Android stream releases a waiting read and rejects later input", async t => {

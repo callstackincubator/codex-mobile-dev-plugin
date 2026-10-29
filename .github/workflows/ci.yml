@@ -46,11 +46,15 @@ jobs:
       - run: npm test
       - run: npm run typecheck:telemetry
 
-  # Codex is the only target on main. Add claude and mac here once they ship.
+  # Codex and Claude ship from main. Add mac here once it ships.
   hosts:
-    name: Regression (codex)
+    name: Regression (${{ matrix.target }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [codex, claude]
     container:
       # Keep in step with @playwright/test in package.json.
       image: mcr.microsoft.com/playwright:v1.64.1-noble
@@ -61,13 +65,13 @@ jobs:
           persist-credentials: false
 
       - run: npm ci --no-audit --no-fund
-      - run: npm run build:hosts -- codex
-      - run: npx playwright test -c tooling/hosts --project codex --grep-invert @visual
+      - run: npm run build:hosts -- ${{ matrix.target }}
+      - run: npx playwright test -c tooling/hosts --project ${{ matrix.target }} --grep-invert @visual
 
       - if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: regression-codex
+          name: regression-${{ matrix.target }}
           path: |
             playwright-report
             test-results
@@ -99,7 +103,6 @@ jobs:
             test-results
           retention-days: 7
 
-  # Posts main's screenshots, this pull request's and their diffs as a PR comment.
   visual-report:
     name: Visual diff comment
     needs: visual

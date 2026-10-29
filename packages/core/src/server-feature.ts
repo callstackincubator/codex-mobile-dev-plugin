@@ -15,9 +15,5 @@ export type ServerFeatureContext = {
   onPanelOpen(opener: PanelOpener): void;
 };
 
-/**
- * A host's addition to the shared server, such as Codex's self-updater or the Mac
- * app's page. Each host's server entry passes its own; the shared server knows none.
- * Returns its cleanup, if it has any.
- */
+/** A host's addition to the shared server, such as Codex's self-updater. Returns its cleanup, if any. */
 export type ServerFeature = (server: McpServer, context: ServerFeatureContext) => void | (() => void | Promise<void>);

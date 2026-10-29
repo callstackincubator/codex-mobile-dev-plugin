@@ -1,6 +1,5 @@
 import SwiftUI
 
-/// The native sidebar: tools to show beside the devices, the visible device platforms, and the server's state.
 struct SidebarView: View {
   let model: WorkspaceModel
 

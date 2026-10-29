@@ -4,6 +4,7 @@ import { WebSocketServer } from "ws";
 import type { InputStatus } from "../core/src/simulator-input.ts";
 import { createPlugin, type PluginOptions } from "../core/src/plugin.ts";
 import { createCpuSessions } from "../core/src/cpu/sessions.ts";
+import { Simctl } from "../core/src/simctl.ts";
 
 export async function createTestPlugin(html: Parameters<typeof createPlugin>[0], options: PluginOptions = {}) {
   const root = new URL("../native/vendor/android-cpu/", import.meta.url);
@@ -12,6 +13,14 @@ export async function createTestPlugin(html: Parameters<typeof createPlugin>[0],
 
 export const UDID = "B5C969F6-58A4-4C31-AB12-FB9E56D681DE";
 export const OTHER_UDID = "A17F4F36-7E21-4CA0-8ACD-BBB530887763";
+
+/** simctl listing a booted iPhone (UDID) and a stopped iPad (OTHER_UDID), as the fake Baguette does. */
+export function fakeSimctl() {
+  return new Simctl(async () => JSON.stringify({ devices: { "com.apple.CoreSimulator.SimRuntime.iOS-26-0": [
+    { udid: UDID, name: "iPhone 17", state: "Booted", isAvailable: true },
+    { udid: OTHER_UDID, name: "iPad", state: "Shutdown", isAvailable: true },
+  ] } }));
+}
 export const SCREEN = { width: 393, height: 852 };
 export const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
 
@@ -28,7 +37,6 @@ export function fakeSimulatorInput() {
 
 export async function fakeBaguette() {
   let state = "Booted";
-  let inputFails = false;
   let sendFrames = true;
   let lifecycleState: string | undefined;
   let lifecycleFails = false;
@@ -56,11 +64,6 @@ export async function fakeBaguette() {
       state = lifecycleState ?? "Booted"; response.end('{"ok":true}');
     } else if (path.endsWith("/shutdown")) {
       state = "Shutdown"; response.end('{"ok":true}');
-    } else if (path.endsWith("/input")) {
-      let body = "";
-      for await (const chunk of request) body += chunk;
-      inputs.push(JSON.parse(body));
-      response.end(inputFails ? '{"ok":false,"error":"input rejected"}' : '{"ok":true}');
     } else if (path.endsWith("/describe-ui.json")) {
       response.end(JSON.stringify({ elements: [{ label: "Continue", frame: { x: 10, y: 20, width: 100, height: 40 } }] }));
     } else if (path.endsWith("/screenshot.png")) {
@@ -84,7 +87,6 @@ export async function fakeBaguette() {
   return {
     url: `http://127.0.0.1:${address.port}`, inputs, requests, websocket,
     setState(next: string) { state = next; },
-    setInputFailure() { inputFails = true; },
     setFrames(enabled: boolean) { sendFrames = enabled; },
     setLifecycleState(next?: string) { lifecycleState = next; },
     setLifecycleFailure(enabled: boolean) { lifecycleFails = enabled; },

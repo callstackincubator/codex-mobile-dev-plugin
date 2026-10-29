@@ -5,8 +5,9 @@ import { join } from "node:path";
 /**
  * The checks the weekly dependency update must pass on the Mac runner, with native
  * helpers in place: unit tests, the build and package, the packaged server starting
- * Baguette, a simulator stream with a Baguette restart, and the Codex host
- * regression tests. CI adds the Linux jobs and the visual comparison on the PR.
+ * Baguette, a simulator stream with a Baguette restart, Claude's packages with
+ * agent-device's commands and the 5 MiB file limit, and the Codex host regression
+ * tests. CI adds the Linux jobs and the visual comparison on the PR.
  *
  *   node tooling/dependency-checks.mjs <output directory>
  *
@@ -34,6 +35,7 @@ const checks = [
   { name: "Build", command: "npm run build" },
   { name: "Package", command: "npm run package", needs: "Build" },
   { name: "Packaged server starts Baguette", command: "npm run test:package", needs: "Package" },
+  { name: "Claude packages", command: "npm run package:claude && npm run test:claude", needs: "Build" },
   { name: "Simulator stream and Baguette restart", command: () => `npm run test:reconnect -- ${udid ??= simulator()}`, needs: "Package" },
   { name: "Codex host regression", command: "npm run build:hosts -- codex && npx playwright install chromium && npx playwright test -c tooling/hosts --project codex --grep-invert @visual" },
 ];

@@ -3,6 +3,7 @@ import { access, mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ExpectedOperationError, expectedOutcome } from "@mobile-dev/shared/error-reporting.ts";
+import { annotateDeviceCommand, classifyCommandFailure } from "@mobile-dev/shared/device-command-diagnostics.ts";
 import { adbPath } from "../native-logs.ts";
 import { androidSdkRoots } from "../android-sdk.ts";
 
@@ -55,23 +56,28 @@ export function commandOutput(error: unknown): string {
   return `${stderr}\n${stdout}`.trim();
 }
 
-const unavailable = /current state: Shutdown|not booted|Invalid device|device offline|device unauthorized|device '.*' not found|no devices\/emulators found/i;
+// A simulator that stopped or is stopping, or an Android device that went offline or away.
+const unavailable = /current state: (?:Shutdown|Shutting Down)|not booted|Invalid device|Unable to find device|No device found|device offline|device unauthorized|device (?:'.*' )?not found|no devices\/emulators found/i;
+
+// Names a command for reports by its program and subcommand, which code chooses; later arguments can name apps, URLs and paths.
+export const commandLabel = (program: string, command: string) => `${program}_${command.split(" ", 1)[0].replaceAll("-", "_")}`;
 
 // Keep only the readable simctl or adb lines; "Command failed: ..." repeats every argument.
-export function commandError(error: unknown, action: string): Error {
+export function commandError(error: unknown, action: string, command?: string): Error {
   if (expectedOutcome(error) !== undefined) return error as Error;
   const output = commandOutput(error);
   const message = output.split("\n").map(line => line.trim()).filter(line => line && !/^Underlying error|^An error was encountered/.test(line)).slice(0, 3).join(" ");
   const text = `${action} failed${message ? `: ${message}` : "."}`;
   if (unavailable.test(output)) return new ExpectedOperationError("device_unavailable", text);
   if (error !== null && typeof error === "object" && "code" in error && error.code === "ENOENT") return new ExpectedOperationError("unsupported_platform", `${action} needs ${process.platform === "darwin" ? "Xcode or the Android SDK" : "macOS and Xcode"}.`);
-  return new Error(text, { cause: error });
+  const failure = new Error(text, { cause: error });
+  // Reports name the command and how it ended instead of repeating its output.
+  return command === undefined ? failure : annotateDeviceCommand(failure, command, classifyCommandFailure(error));
 }
 
-// Runs adb against one device, turning failures into readable errors.
 export async function runAdb(commands: Commands, serial: string, action: string, args: string[], timeout = 15000): Promise<string> {
   try { return await commands.run(await commands.adb(), ["-s", serial, ...args], { timeout }); }
-  catch (error) { throw commandError(error, action); }
+  catch (error) { throw commandError(error, action, commandLabel("adb", args[0])); }
 }
 
 export async function withTemporaryDirectory<T>(work: (directory: string) => Promise<T>): Promise<T> {

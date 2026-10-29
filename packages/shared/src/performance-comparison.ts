@@ -26,6 +26,13 @@ const comparisonObject = z.object({
   recordings: recordingsSchema,
   range: optionalRange,
 });
+/** What mobile_compare_performance_recordings returns: recording IDs and, when they fit, previews (see recordingPreview). */
+export const comparisonReferenceSchema = z.object({
+  title: comparisonTitleSchema,
+  recordingIds: comparisonIdsSchema,
+  range: optionalRange,
+  previews: recordingsSchema.optional(),
+});
 export const comparisonSchema = comparisonObject.superRefine((comparison, context) => {
   const ids = comparison.recordings.map(recording => recording.id);
   const distinct = comparisonIdsSchema.safeParse(ids);

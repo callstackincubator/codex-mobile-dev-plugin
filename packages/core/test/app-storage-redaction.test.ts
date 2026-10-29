@@ -38,7 +38,6 @@ async function connect(container: AppContainer) {
   return { client, close: async () => { await client.close(); await server.close(); } };
 }
 
-// Assert against the entire wire response, including both text and structured content.
 function absent(result: unknown, secrets: string[]) {
   const serialized = JSON.stringify(result);
   for (const secret of secrets) assert.ok(!serialized.includes(secret), `Leaked synthetic fixture value: ${secret}`);

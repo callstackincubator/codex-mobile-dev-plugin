@@ -32,7 +32,6 @@ const tree = {
     { id: "2", name: "formatRow", location: "src/rows.ts:8", frameClass: "app", totalMs: 44, selfMs: 44, invocations: 12, children: [] }] }],
 };
 const timeline = { boxes: [{ startMs: 120, durationMs: 60, kind: "app", name: "render", nodeId: "1" }], durationMs: 75, coveredMs: 60, rows: 1, kept: ["app"], omittedBoxCount: 0, omittedBoxMs: 0 };
-/** The full task card `mobile_tracesift_explore_payload` answers with. */
 const taskHandoff = { apiVersion: 1, analysisId: "cpu", totalMs: 180, profileTitle: "CPU", card: { ...baseTask, tree, timeline } };
 
 test("compact TraceSift cards preserve CPU and React evidence", async t => {
@@ -46,8 +45,6 @@ test("compact TraceSift cards preserve CPU and React evidence", async t => {
       export async function mount(app, result) {
         startUiTelemetry(app);
         const controller = new TraceSiftController(app); controller.hostChanged();
-        // Investigate waits on the project, so the cards are drawn with one.
-        await controller.loadProject();
         controller.accept(result);
         const root = createRoot(document.getElementById("root")); flushSync(() => root.render(<TraceSiftCards controller={controller} />));
         return { controller, root, flushSync, async close() { controller.dispose(); root.unmount(); await stopUiTelemetry(); } };
@@ -74,97 +71,83 @@ test("compact TraceSift cards preserve CPU and React evidence", async t => {
         const text = JSON.stringify(taskHandoff);
         return { content: [{ type: "text", text }], structuredContent: { apiVersion: 1, kind: "task", encoding: "json", payloadBytes: text.length } };
       }
-      if (input.name === "mobile_get_tracesift_project") return { content: [], structuredContent: { path: "/private/project" } };
       return input.name === "mobile_open_tracesift_explore"
         ? { content: [], structuredContent: { opened: true } }
         : { content: [], structuredContent: { apiVersion: 1, handoff: "PRIVATE_HANDOFF_TEXT" } };
     },
     async sendMessage() { return {}; },
   };
-  /** A click React has finished re-rendering after. */
   const flush = (click: () => void) => mounted.flushSync(click);
-  /** The same, for a click whose work is a server round trip. */
+  // Like flush, but waits for a click whose work is a server round trip.
   const act = async (click: () => void) => { click(); await new Promise(resolve => window.setTimeout(resolve, 0)); };
   const mounted = await window.TraceSiftCardTest.mount(app, { content: [], structuredContent: { apiVersion: 1, analysisId: "cpu", profileType: "cpu", title: "CPU", summary: { totalMs: 180, callCountIsExact: true, taskCount: 870 }, cards: [baseTask, { ...baseTask, id: "task-1", taskIndex: 1 }] } });
   t.after(() => window.close());
-  // The card leads with the pathline, as the web card does: the headline
-  // spends its words on a duration and an offset the card already prints.
-  assert.match(window.document.body.textContent!, /App › Screen › render/);
-  assert.match(window.document.body.textContent!, /2 long tasks of 870 · 180 ms total/);
+  // The finding is named for its path's last frame; the line under it says where that frame sits.
+  const finding = () => window.document.querySelector(".tracesift-finding")!;
+  assert.match(finding().querySelector("h3")!.textContent!, /#1render/);
+  assert.match(window.document.querySelector(".tracesift-level")!.textContent!, /in App › Screen/);
+  assert.match(window.document.body.textContent!, /TraceSift · 2 long tasks of 870 · 180 ms total/);
+  // No folder is asked for: Investigate is ready as soon as the host can send.
+  assert.equal(calls.some(call => call.name.includes("project")), false);
 
-  // The contribution chart is the card: one band per boundary frame, plus the
-  // two residuals that make the task add up, and a legend row for each.
-  const contribution = window.document.querySelector(".contribution")!;
-  const bands = [...contribution.querySelectorAll(".contribution-band")];
-  assert.equal(bands.length, contribution.querySelectorAll(".contribution-legend-row").length);
+  // One band per boundary frame plus the residuals that make the task add up, each with a legend row.
+  const bands = [...finding().querySelectorAll(".contribution-band")];
+  assert.equal(bands.length, finding().querySelectorAll(".contribution-legend-row").length);
   assert.ok(bands.length >= 2, "the task's own frame and its residuals each take a band");
   assert.equal(bands[0].getAttribute("aria-label"), "render, 60 ms, 80%");
-  // The heaviest slice is detailed before anyone has touched the chart.
-  assert.match(window.document.querySelector(".contribution-detail")!.textContent!, /render/);
-  const detailLayers = [...contribution.querySelectorAll(".contribution-detail-layer")];
-  assert.equal(detailLayers.length, bands.length, "every slice reserves its detail height");
-  assert.equal(contribution.querySelectorAll(".contribution-detail-layer.is-active").length, 1);
-  assert.equal(detailLayers.filter(layer => layer.getAttribute("aria-hidden") === "true").length, bands.length - 1);
-  assert.match(window.document.body.textContent!, /what it called/);
-  assert.match(window.document.body.textContent!, /buildRows/);
+  // The heaviest part is summarised before any hover: figures, file and calls, and its action.
+  const summary = () => finding().querySelector(".contribution-summary")!.textContent!;
+  assert.match(summary(), /render60 ms · 80%Screen\.tsx:20 · 2 callsLook inside ›/);
+  // The legend keeps the longest list's room, so opening a part never moves what is below it.
+  assert.equal(finding().querySelector<HTMLElement>(".contribution-legend")!.style.getPropertyValue("--legend-rows"), String(bands.length));
 
-  // Hovering changes only which pre-rendered layer is visible. Keeping every
-  // layer mounted lets the tallest one hold the card open, so neither the
-  // legend nor another card can move under a stationary pointer.
+  // Hovering only rewrites the summary in place.
   const outside = bands.at(-1)!;
   flush(() => outside.dispatchEvent(new window.FocusEvent("focusin", { bubbles: true })));
-  assert.equal(contribution.querySelectorAll(".contribution-detail-layer").length, detailLayers.length);
-  const activeDetail = contribution.querySelector(".contribution-detail-layer.is-active")!;
-  assert.match(activeDetail.textContent!, /No frame of your own was on the stack/);
-  assert.equal(activeDetail.getAttribute("aria-hidden"), null);
-  assert.equal(detailLayers[0].getAttribute("aria-hidden"), "true");
+  assert.match(summary(), /Framework and engine only/);
+  assert.equal(finding().querySelectorAll(".contribution-summary").length, 1);
 
-  // Crossing from the chart to its detail or legend used to clear the hover
-  // first, briefly flashing the default detail before the next row activated.
-  // Keep the last slice selected across the gaps between those surfaces.
-  flush(() => contribution.querySelector(".contribution-bar")!.dispatchEvent(new window.MouseEvent("mouseout", {
-    bubbles: true,
-    relatedTarget: activeDetail,
-  })));
-  assert.match(contribution.querySelector(".contribution-detail-layer.is-active")!.textContent!, /No frame of your own was on the stack/);
-
-  // Opening a boundary frame redraws the chart as that frame's own time, by
-  // self time, and offers a way back to the whole task.
+  // Opening a boundary frame redraws the chart by that frame's self time, with a Back button.
   flush(() => (bands[0] as HTMLElement).click());
-  assert.match(window.document.body.textContent!, /inside render/);
-  assert.match(window.document.body.textContent!, /formatRow/);
-  flush(() => window.document.querySelector<HTMLElement>(".contribution-crumb")!.click());
-  assert.equal(window.document.querySelector(".contribution-crumb"), null);
+  assert.match(window.document.querySelector(".tracesift-level")!.textContent!, /BackInside render · 60 ms/);
+  assert.match(finding().textContent!, /formatRow/);
+  // Fewer parts inside, but the legend keeps the task's room.
+  assert.equal(finding().querySelector<HTMLElement>(".contribution-legend")!.style.getPropertyValue("--legend-rows"), String(bands.length));
+  flush(() => window.document.querySelector<HTMLElement>(".tracesift-back")!.click());
+  assert.equal(window.document.querySelector(".tracesift-back"), null);
+  assert.match(window.document.querySelector(".tracesift-level")!.textContent!, /in App › Screen/);
 
-  // The switch swaps the drawing for every card at once, as on the web.
-  const treemap = [...window.document.querySelectorAll<HTMLElement>(".chart-switch button")].find(button => button.textContent === "treemap")!;
+  // One switch swaps the drawing, and it stays for every finding.
+  const treemap = [...window.document.querySelectorAll<HTMLElement>(".segmented-control button")].find(button => button.textContent === "Treemap")!;
   flush(() => treemap.click());
   assert.equal(window.document.querySelectorAll(".contribution-band").length, 0);
   assert.ok(window.document.querySelectorAll(".contribution-tile").length > 0);
 
-  // Explore loads the task's full tree and renders TraceSift's explorer in this
-  // frame: the card list is replaced, and the way back is the explorer's own.
-  const exploreButton = [...window.document.querySelectorAll<HTMLElement>("button")].find(button => button.textContent?.includes("Explore"))!;
+  // The list beside it moves between findings, one at a time.
+  const rows = () => [...window.document.querySelectorAll<HTMLElement>(".tracesift-list-row")];
+  assert.equal(rows().length, 2);
+  assert.equal(rows()[0].getAttribute("aria-current"), "true");
+  flush(() => rows()[1].click());
+  assert.equal(rows()[1].getAttribute("aria-current"), "true");
+  assert.match(finding().querySelector("h3")!.textContent!, /#2render/);
+  assert.ok(window.document.querySelectorAll(".contribution-tile").length > 0, "the drawing stays the one the reader chose");
+  assert.match(window.document.body.textContent!, /Investigate task 2/);
+  flush(() => rows()[0].click());
+
+  // Explore loads the full tree and replaces the card with TraceSift's explorer.
+  const exploreButton = [...window.document.querySelectorAll<HTMLElement>(".recording-actions button")].find(button => button.textContent?.includes("Explore"))!;
   await act(() => exploreButton.click());
-  // Only the name and the arguments are ours; the bundle adds a telemetry
-  // `_meta` to every tool call, and asserting on it would test Sentry.
+  // The bundle adds telemetry `_meta` to every call; only name and arguments are ours to assert.
   assert.equal(calls.at(-1)!.name, "mobile_tracesift_explore_payload");
-  // The call is built inside the JSDOM realm, so its object does not share
-  // a prototype with this one and a strict structural compare cannot pass.
+  // Built in the JSDOM realm, so spread it; a strict compare fails on prototypes.
   assert.deepEqual({ ...calls.at(-1)!.arguments as object }, { analysisId: "cpu", taskIndex: 0 });
-  assert.equal(window.document.querySelector(".hotspot-list"), null);
+  assert.equal(window.document.querySelector(".tracesift-finding"), null);
   assert.match(window.document.querySelector(".tracesift-explorer")!.textContent!, /Render blocked the main thread/);
-  // The web app's own page wrapper is what insets the view, and its theme tokens
-  // are scoped to the class above it; a renderer that mounts the views bare, or
-  // renames that class, draws an unpadded grey Explore, so both are checked here.
+  // The web app's page wrapper insets the view and scopes its theme tokens; mounting the views bare or renaming the class draws an unpadded grey Explore.
   assert.ok(window.document.querySelector(".tracesift-explorer > .explore-page"), "the explorer renders the Explore page");
-  // The browser window stays one click away for readers who want the web app.
   assert.ok([...window.document.querySelectorAll<HTMLElement>("button")].some(button => button.textContent?.includes("Open in browser")));
 
-  // ── Picking frames, across the four views ─────────────────────────────────
-  // Selecting is the explorer's own affordance and the views are TraceSift's, so
-  // what matters is the seam: one click in one view has to be visible in the
-  // others, and a second click has to undo the first.
+  // Picking: a click in one view shows in the others, and a second click undoes it.
   const pickToggle = [...window.document.querySelectorAll<HTMLElement>("button")].find(button => button.textContent?.includes("Select frames"))!;
   flush(() => pickToggle.click());
   assert.match(window.document.body.textContent!, /Click a frame in the timeline, flame graph, call tree or culprits/);
@@ -173,82 +156,69 @@ test("compact TraceSift cards preserve CPU and React evidence", async t => {
   assert.ok(timelineBox, "the timeline draws the task's one call");
   flush(() => timelineBox.click());
   assert.ok(timelineBox.classList.contains("is-picked"), "the clicked box is ringed");
-  // The count, so four picks spread over two tabs can still be told apart.
   assert.match(timelineBox.textContent!, /1/);
-  // While picking, the click is the pick: the view the reader is working in does
-  // not re-root itself under their cursor. The selection array is built inside the
-  // JSDOM realm, so it is joined rather than compared as an object.
+  // While picking, a click picks rather than re-rooting the view. Joined because the array comes from the JSDOM realm.
   assert.equal(mounted.controller.getSnapshot().explorer?.selected.join(","), "1");
 
-  // The same frame among the culprits, in another tab, without being clicked twice.
   flush(() => [...window.document.querySelectorAll<HTMLElement>(".explore-tabs button")].find(tab => tab.textContent === "Culprits")!.click());
   const culpritRow = window.document.querySelector("tr.is-picked")!;
   assert.ok(culpritRow, "the picked frame is ringed in the culprit table too");
   assert.match(culpritRow.textContent!, /render/);
   assert.match(culpritRow.textContent!, /1/);
 
-  // And in the call tree — where the frame sits under the tree's synthetic root,
-  // so it is only visible at all if the row above it opened to show it.
+  // The frame sits under the tree's synthetic root, so the row above must be open.
   flush(() => [...window.document.querySelectorAll<HTMLElement>(".explore-tabs button")].find(tab => tab.textContent === "Call tree")!.click());
   const treeRow = window.document.querySelector(".explore-tree-row.is-picked")!;
   assert.ok(treeRow, "the picked frame is ringed in the call tree too");
   assert.match(treeRow.textContent!, /render/);
 
-  // The flame graph is the fourth view, and the one that needed the most from
-  // the package: its boxes take a node id from the same tree, and while picking
-  // a click must add the frame rather than zoom into it.
+  // Flame graph boxes take a node id from the same tree; while picking, a click adds the frame instead of zooming.
   flush(() => [...window.document.querySelectorAll<HTMLElement>(".explore-tabs button")].find(tab => tab.textContent === "Flame graph")!.click());
   const pickedFrame = window.document.querySelector('[data-slot="flame-graph-frame"].ring-2.ring-ring')!;
   assert.ok(pickedFrame, "the picked frame is ringed in the flame graph too");
   assert.match(pickedFrame.getAttribute("title")!, /render/);
-  // And numbered, because a box in a graph has no row order to be identified by.
+  // Numbered because a graph box has no row order.
   assert.equal(pickedFrame.querySelector("span[aria-hidden=\"true\"]")?.textContent, "1");
-  // And the note under it says what a click does now, because it no longer zooms.
   assert.match(window.document.querySelector(".chart-notes")!.textContent!, /add it to your selection/);
 
-  // A second click takes it back out, in every view at once. The tree is
-  // re-queried because the tab switch unmounted the row captured above.
+  // The tree row is re-queried because the tab switch unmounted the earlier one.
   flush(() => [...window.document.querySelectorAll<HTMLElement>(".explore-tabs button")].find(tab => tab.textContent === "Call tree")!.click());
   flush(() => window.document.querySelector<HTMLElement>(".explore-tree-row.is-picked .explore-tree-focus")!.click());
   assert.equal(mounted.controller.getSnapshot().explorer?.selected.length, 0);
   assert.equal(window.document.querySelector(".explore-tree-row.is-picked"), null);
-  // Deselecting in one view clears the ring in the others, including the graph.
   flush(() => [...window.document.querySelectorAll<HTMLElement>(".explore-tabs button")].find(tab => tab.textContent === "Flame graph")!.click());
   assert.equal(window.document.querySelector('[data-slot="flame-graph-frame"].ring-ring'), null);
   flush(() => [...window.document.querySelectorAll<HTMLElement>(".explore-tabs button")].find(tab => tab.textContent === "Culprits")!.click());
   assert.equal(window.document.querySelector("tr.is-picked"), null);
 
-  // Nothing selected is not a question worth sending.
   const investigateSelected = [...window.document.querySelectorAll<HTMLElement>("button")].find(button => button.textContent?.includes("Investigate"))!;
   assert.equal(investigateSelected.disabled, true);
   assert.match(investigateSelected.textContent!, /Investigate selected frames/);
   flush(() => [...window.document.querySelectorAll<HTMLElement>(".explore-tabs button")].find(tab => tab.textContent === "Timeline")!.click());
   flush(() => window.document.querySelector<HTMLElement>(".timeline-box")!.click());
-  // Once there is something to ask about, the button counts it, so the reader
-  // can see what is going before they send it.
   assert.equal(investigateSelected.disabled, false);
   assert.match(investigateSelected.textContent!, /Investigate 1 frame/);
 
-  // Back to the cards, and a half-built set goes with the reading that built it.
+  // Leaving the explorer drops the half-built selection.
   await act(() => [...window.document.querySelectorAll<HTMLElement>("button")].find(button => button.textContent === "Findings")!.click());
-  assert.ok(window.document.querySelector(".hotspot-list"));
+  assert.ok(window.document.querySelector(".tracesift-finding"));
   assert.equal(mounted.controller.getSnapshot().explorer, undefined);
 
   mounted.controller.accept({ content: [], structuredContent: { apiVersion: 1, analysisId: "react", profileType: "react", title: "React", summary: { rootCount: 1, commitCount: 3, totalCommitRenderDurationMs: 50, peakCommitDurationMs: 40, commitsOverBudget: 1, omittedEvidenceCommitCount: 0 }, cards: [baseReact] } });
   await new Promise(resolve => window.setTimeout(resolve, 0));
-  flush(() => [...window.document.querySelectorAll<HTMLElement>(".chart-switch button")].find(button => button.textContent === "bar")!.click());
-  // React commits use the web card's headline and divide the complete commit
-  // into component self time plus the reconciler residual.
-  assert.match(window.document.body.textContent!, /List spent 30 ms rendering/);
-  assert.match(window.document.querySelector(".contribution-lede")!.textContent!, /How the 40 ms divides between the components that rendered/);
+  flush(() => [...window.document.querySelectorAll<HTMLElement>(".segmented-control button")].find(button => button.textContent === "Bar")!.click());
+  // A React commit is named for its component, flagged by speed, and divided into component self time plus the reconciler's work.
+  assert.match(finding().querySelector("h3")!.textContent!, /#1List/);
+  assert.equal(finding().querySelector(".tracesift-severity")!.textContent, "Slow");
+  assert.match(window.document.body.textContent!, /TraceSift · 1 slowest of 3 commits · 50 ms rendering/);
   assert.equal(window.document.querySelectorAll(".contribution-band").length, 2);
-  assert.match(window.document.querySelector(".contribution-detail")!.textContent!, /List75% of commit30 msviaAppfilesrc\/List.tsxprops changed · props items/);
+  assert.match(summary(), /List30 ms · 75%List\.tsx · props changed: itemsExplore ›/);
   assert.match(window.document.body.textContent!, /React itself, no component/);
-  // The commit and every slice can open the same React Explore view.
-  assert.equal([...window.document.querySelectorAll("button")].some(button => button.textContent?.includes("Explore")), true);
+  assert.ok(window.document.querySelector(".tracesift-severity-dot[data-severity=\"high\"]"));
+  assert.match(window.document.body.textContent!, /Investigate commit 1/);
   await mounted.controller.investigate("react-1");
   await mounted.close();
   const encoded = telemetry.join("\n");
-  for (const fragment of ["ui.tracesift.process.mean", "ui.tracesift.handoff.mean", "ui.tracesift.message_ack.mean", "ui.tracesift.investigate", "ui.tracesift.cards", "ui.tracesift.payload.mean", "ui.tracesift.explore", "ui.tracesift.pick_on", "ui.tracesift.frame_add", "ui.tracesift.frame_remove", "ui.tracesift.selected_frames", '"tracesift_view":{"value":"explorer"', '"surface":{"value":"tracesift"', '"view":{"value":"tracesift"']) assert.ok(encoded.includes(fragment), `Missing telemetry: ${fragment}`);
+  for (const fragment of ["ui.tracesift.finding_selected", "ui.tracesift.process.mean", "ui.tracesift.handoff.mean", "ui.tracesift.message_ack.mean", "ui.tracesift.investigate", "ui.tracesift.cards", "ui.tracesift.payload.mean", "ui.tracesift.explore", "ui.tracesift.pick_on", "ui.tracesift.frame_add", "ui.tracesift.frame_remove", "ui.tracesift.selected_frames", '"tracesift_view":{"value":"explorer"', '"surface":{"value":"tracesift"', '"view":{"value":"tracesift"']) assert.ok(encoded.includes(fragment), `Missing telemetry: ${fragment}`);
   for (const fragment of ["src/Screen.tsx", "List used 30 ms", "private-analysis", "react-1", "PRIVATE_HANDOFF_TEXT"]) assert.equal(encoded.includes(fragment), false, `Private TraceSift data reached telemetry: ${fragment}`);
 });

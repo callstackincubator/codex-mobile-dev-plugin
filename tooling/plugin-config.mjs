@@ -1,16 +1,22 @@
-import { access, mkdir, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pluginHost } from "./plugin-hosts.mjs";
 
 // Generate a snippet only; never replace the user's existing host configuration.
-const { config: host } = pluginHost(process.argv[2]);
-await access("dist/server.mjs");
+//   node tooling/plugin-config.mjs <claude|cursor>
+const name = process.argv[2];
+const host = pluginHost(name);
+// A host with its own server runs it from its package; the others run the shared build.
+const { name: pluginName } = JSON.parse(await readFile(`${host.app}/${host.manifest}/plugin.json`, "utf8"));
+const server = resolve(host.build ? `release/${name}-plugin/${pluginName}/dist/server.mjs` : "dist/server.mjs");
+try { await access(server); }
+catch { throw new Error(host.build ? `Run npm run build and npm run package:${name} first.` : "Run npm run build first."); }
 const config = {
   mcpServers: {
-    "mobile-dev": { ...host.server, command: process.execPath, args: [resolve("dist/server.mjs")] },
+    "mobile-dev": { ...host.config.server, command: process.execPath, args: [server] },
   },
 };
 await mkdir(".local-dev", { recursive: true });
-const path = resolve(`.local-dev/${host.file}`);
+const path = resolve(`.local-dev/${host.config.file}`);
 await writeFile(path, JSON.stringify(config, null, 2) + "\n");
-console.log(`Merge the mcpServers entry from ${path} into ${host.target}.`);
+console.log(`Merge the mcpServers entry from ${path} into ${host.config.target}.`);

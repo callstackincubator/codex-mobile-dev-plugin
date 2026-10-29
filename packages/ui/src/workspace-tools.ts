@@ -13,11 +13,7 @@ export const isToolName = (value: unknown): value is ToolName => toolNames.inclu
 
 type Panels = { context: PanelContext; deviceApps: DeviceAppsStore; logs: LogsPanel; performance: PerformancePanel; storage: StoragePanel; tracesift: TraceSiftPanel };
 
-/**
- * The tool panels every host shows beside its devices, with one policy for showing,
- * closing, availability, host changes and disposal. Hosts only choose which tool is
- * selected and draw their own chrome around it.
- */
+/** The tool panels every host shows beside its devices; hosts only choose the selected tool and draw chrome. */
 export class WorkspaceTools {
   readonly context: PanelContext;
   readonly deviceApps: DeviceAppsStore;
@@ -35,7 +31,7 @@ export class WorkspaceTools {
       logs: new LogsPanel(host, context, deviceApps),
       performance: new PerformancePanel(host, deviceApps),
       storage: new StoragePanel(host, deviceApps),
-      tracesift: new TraceSiftPanel(host),
+      tracesift: new TraceSiftPanel(host, attachments),
     });
   }
 

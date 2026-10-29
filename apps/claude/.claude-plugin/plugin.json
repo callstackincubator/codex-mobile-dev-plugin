@@ -1,7 +1,7 @@
 {
   "name": "mobile-dev",
   "displayName": "Mobile Dev",
-  "description": "Stream iOS and Android devices into the chat while building, running, or debugging mobile apps. Read native and Metro logs, inspect and control apps, and record CPU, memory, and FPS. Apple Silicon development preview.",
+  "description": "Control iOS and Android devices while building, running, or debugging mobile apps. Read native and Metro logs, inspect app storage, and record CPU, memory, and FPS into interactive charts in chat. Apple Silicon development preview.",
   "author": {
     "name": "Callstack",
     "email": "hello@callstack.com"
@@ -26,8 +26,9 @@
   "termsOfServiceUrl": "https://github.com/callstackincubator/mobile-dev/blob/main/TERMS.md",
   "mcpServers": {
     "mobile-dev": {
-      "command": "node",
+      "command": "/bin/sh",
       "args": [
+        "${CLAUDE_PLUGIN_ROOT}/scripts/launch-node.sh",
         "${CLAUDE_PLUGIN_ROOT}/dist/server.mjs"
       ]
     }

@@ -8,11 +8,12 @@ import { buildServeEmu } from "./build-serve-emu.mjs";
 import { buildHostPage, buildUIPage } from "./ui-page.mjs";
 import { buildServerBundles } from "./server-bundle.mjs";
 import { access, copyFile, cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { dirname, resolve } from "node:path";
 
 const telemetryEnvironment = telemetryBuildEnvironment();
+// A fresh dist/, so packages never carry outputs an earlier build or branch left behind.
+await rm("dist", { recursive: true, force: true });
 await mkdir("dist", { recursive: true });
 await access("packages/native/vendor/baguette/Baguette");
 await access("packages/native/vendor/baguette/Baguette_Baguette.bundle");
@@ -40,7 +41,6 @@ for (const [file, metadata] of Object.entries(iosLogsRelease.binaries)) {
   const sha256 = hash.digest("hex");
   if (sha256 !== metadata.sha256) throw new Error(`Physical iOS log reader integrity check failed for ${file}.`);
 }
-await rm("dist/ios-logs", { recursive: true, force: true });
 await cp("packages/native/vendor/ios-logs", "dist/ios-logs", { recursive: true });
 for (const source of iosLogsRelease.sources) {
   const archive = `${source.name}-${source.version}.tar.bz2`;
@@ -70,7 +70,6 @@ for (const platform of ["ios", "android"]) {
     hash.update(bytes);
     if (hash.digest("hex") !== binary.sha256) throw new Error(`FPS helper integrity check failed for ${binary.path}.`);
   }
-  await rm(`dist/${platform}-fps`, { recursive: true, force: true });
   await cp(root, `dist/${platform}-fps`, { recursive: true });
   await copyFile(`packages/native/${platform}-fps/README.md`, `dist/${platform}-fps/README.md`);
   if (platform === "android") await copyFile("packages/native/android-fps/perfetto/LIBCXX-LICENSE.TXT", "dist/android-fps/LIBCXX-LICENSE.TXT");
@@ -83,7 +82,6 @@ for (const [abi, metadata] of Object.entries(cpuRelease.binaries)) {
   const hash = createHash("sha256").update(bytes).digest("hex");
   if (hash !== metadata.sha256) throw new Error(`Android CPU collector integrity check failed for ${abi}.`);
 }
-await rm("dist/android-cpu", { recursive: true, force: true });
 await cp("packages/native/vendor/android-cpu", "dist/android-cpu", { recursive: true });
 for (const file of ["LICENSE", "README.md", "collector.c"]) await copyFile(`packages/native/android-cpu/${file}`, `dist/android-cpu/${file}`);
 const runtime = "packages/runtimes/agent-device";
@@ -92,7 +90,6 @@ const pinned = JSON.parse(lock).packages["node_modules/agent-device"];
 const installed = JSON.parse(await readFile(`${runtime}/node_modules/agent-device/package.json`, "utf8"));
 const wanted = JSON.parse(await readFile(`${runtime}/package.json`, "utf8")).dependencies["agent-device"];
 if (installed.version !== wanted || pinned.version !== installed.version) throw new Error("Run npm run vendor:agent-device to install the pinned runtime.");
-await rm("dist/agent-device", { recursive: true, force: true });
 await cp(`${runtime}/node_modules`, "dist/agent-device/node_modules", { recursive: true, verbatimSymlinks: true });
 await copyFile(`${runtime}/config.json`, "dist/agent-device/config.json");
 await copyFile(`${runtime}/package-lock.json`, "dist/agent-device/package-lock.json");
@@ -100,11 +97,8 @@ await writeFile("dist/agent-device/release.json", JSON.stringify({
   name: installed.name, version: installed.version, url: pinned.resolved, integrity: pinned.integrity,
   lockfileSHA256: createHash("sha256").update(lock).digest("hex"),
 }, null, 2) + "\n");
-await mkdir("packages/skills/agent-device/references", { recursive: true });
-const workflow = execFileSync(process.execPath, [resolve(`${runtime}/node_modules/agent-device/bin/agent-device.mjs`), "help", "workflow"], {
-  encoding: "utf8", env: { ...process.env, AGENT_DEVICE_NO_UPDATE_NOTIFIER: "1" },
-});
-await writeFile("packages/skills/agent-device/references/workflow.md", workflow);
+// The commands the plugin servers register without starting the runtime (npm run catalog:agent-device).
+await copyFile(`${runtime}/tools.json`, "dist/agent-device/tools.json");
 await buildServeEmu("dist/serve-emu");
 // The host-neutral runtime: the shared server, its services and the MCP Apps panel
 // as hosts without their own chrome load it. A host that adds to them builds its
@@ -122,7 +116,7 @@ const pageMetafiles = [
 await buildHostPage({ entry: "packages/mcp-app/src/browser-panel.ts", template: "packages/mcp-app/src/browser-panel.html", output: "dist/browser-panel.html" });
 const serverMetafiles = [
   await buildServerBundles({
-    entryPoints: { server: "packages/core/src/index.ts", "agent-device-server": "packages/core/src/agent-device-server.mjs", "ios-mirror-service": "packages/core/src/ios-mirror-service.ts" },
+    entryPoints: { server: "packages/core/src/index.ts", "ios-mirror-service": "packages/core/src/ios-mirror-service.ts" },
     outdir: "dist", sentryDirectory: ".sentry/server",
   }),
 ];

@@ -1,7 +1,5 @@
-// Generated from the Android SDK "pixel_9" skin (back.webp), cropped to the
-// frame body (side buttons erased — drawn back as CSS shapes) and downscaled
-// to half size. Stretches to any Android screen aspect via CSS border-image.
-// Do not edit by hand; regenerate from the SDK asset if it changes.
+// Generated from the Android SDK "pixel_9" skin (back.webp): cropped to the frame body (side
+// buttons are CSS shapes) and halved. Stretches via CSS border-image. Do not edit by hand.
 export type NinePatchSkin = {
   platform: string; image: string; imageWidth: number; imageHeight: number; slice: number;
   bezel: { top: number; right: number; bottom: number; left: number };

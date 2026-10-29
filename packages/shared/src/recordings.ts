@@ -47,6 +47,38 @@ export const recordingSchema = z.object({
   error: z.string().optional(),
 });
 export type PerformanceRecording = z.infer<typeof recordingSchema>;
+
+/**
+ * A recording small enough for a tool result: every CPU, memory and FPS sample with times rounded to 10 ms,
+ * without per-thread CPU or Android frame timelines (nearly all of the size). A
+ * five-minute recording drops from hundreds of kilobytes to about 25 KB.
+ */
+export function recordingPreview(recording: PerformanceRecording): PerformanceRecording {
+  const round = (value: number, digits: number) => Number(value.toFixed(digits));
+  const reading = (value: number | null, digits: number) => value === null ? null : round(value, digits);
+  return {
+    ...recording,
+    samples: recording.samples.map(sample => ({
+      time: round(sample.time, 2), interval: round(sample.interval, 2),
+      cpuPercent: reading(sample.cpuPercent, 1), memoryBytes: reading(sample.memoryBytes, 0), threads: [],
+    })),
+    fps: { ...recording.fps, samples: recording.fps.samples.map(sample => ({ time: round(sample.time, 2), interval: round(sample.interval, 2), fps: reading(sample.fps, 1) })) },
+  };
+}
+
+/**
+ * What recording tools return: identity and, when it fits, a preview, never full samples.
+ * Hosts cap tool results (Codex truncates over about 50 KB) and not all let cards call tools.
+ * A card draws the preview, then reads the full recording via mobile_read_performance_recording where allowed.
+ */
+export const recordingReferenceSchema = z.object({
+  recordingId: recordingIdSchema,
+  title: recordingSchema.shape.title,
+  status: recordingSchema.shape.status,
+  durationSeconds: recordingSchema.shape.durationSeconds,
+  range: recordingRangeSchema.optional(),
+  preview: recordingSchema.optional(),
+});
 export type RecordingRange = z.infer<typeof recordingRangeSchema>;
 export type RecordingSummary = {
   peakCpuPercent: number | null;

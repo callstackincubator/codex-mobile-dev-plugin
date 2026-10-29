@@ -10,14 +10,10 @@ import { attributeHost } from "./host-telemetry.ts";
 
 type CardController = { hostChanged(): void; accept(result: CallToolResult): void; dispose(): void };
 
-/**
- * Runs one chat card: a single controller fed by the tool call that rendered it.
- * The card owns its telemetry surface, host styling and teardown; `hostChanged`,
- * `toolInput` and `connected` cover what a card needs beyond that.
- */
+/** Runs one chat card: a single controller fed by the tool call that rendered it. */
 export function startCardApp<C extends CardController>(card: {
   name: string;
-  surface: Surface & ("recording" | "comparison" | "tracesift" | "devices");
+  surface: Surface & ("recording" | "comparison" | "tracesift");
   fallback: string;
   create(app: App): C;
   render(controller: C): ReactNode;

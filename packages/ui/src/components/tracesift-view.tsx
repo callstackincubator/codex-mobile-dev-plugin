@@ -1,8 +1,3 @@
-/**
- * The TraceSift tool: perf-ai's upload pane until a profile is read, then the
- * same cards and explorer the inline card draws.
- */
-
 import { useState, useSyncExternalStore, type DragEvent } from "react";
 import { UploadIcon } from "lucide-react";
 import type { TraceSiftPanel } from "../tracesift-panel.ts";
@@ -15,11 +10,7 @@ const options: { value: Extract<TraceSiftProfileType, "cpu" | "react">; title: s
   { value: "react", title: "React components", detail: "Find expensive commits, wasted re-renders and cascades", accepts: "React DevTools JSON", drop: "Choose a React DevTools profiling .json" },
 ];
 
-/**
- * The drop zone. A dropped file reaches this frame without a path, and the local
- * TraceSift service reads profiles off disk, so the pane asks the host for its
- * own dialog instead and says so when a drop cannot be honored.
- */
+// A dropped file arrives without a path and the local service reads from disk, so the pane asks the host for its own dialog.
 function UploadPane({ controller, profileType, busy }: { controller: TraceSiftController; profileType: TraceSiftProfileType; busy: boolean }) {
   const [dragging, setDragging] = useState(false);
   const [dropNotice, setDropNotice] = useState("");
@@ -31,8 +22,7 @@ function UploadPane({ controller, profileType, busy }: { controller: TraceSiftCo
     if (busy) return;
     const file = event.dataTransfer.files?.[0];
     if (!file) return;
-    // Some hosts hand their frames a real path on the file; most do not, and
-    // there is nothing to analyze without one.
+    // Only some hosts expose a real path on the file; without one there is nothing to analyze.
     const path = (file as File & { path?: string }).path;
     if (typeof path === "string" && path !== "") { void controller.analyze(path, profileType); return; }
     setDropNotice(`${file.name} cannot be read from a drop here. Click to choose it from disk.`);
@@ -106,7 +96,6 @@ export function TraceSiftView({ panel }: { panel: TraceSiftPanel }) {
   const { controller } = panel;
   const { available } = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
-  // One surface shows one thing: a reading replaces the pane that started it.
   if (state.analysis || state.explorer) return <TraceSiftCards controller={controller} onReset={controller.reset} />;
   return <TraceSiftUpload controller={controller} available={available} />;
 }

@@ -3,7 +3,7 @@ import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
-import type { Baguette } from "./baguette.ts";
+import type { Simctl } from "./simctl.ts";
 import type { LogSessions } from "./log-sessions.ts";
 import { logOptionsSchema } from "@mobile-dev/shared/logs.ts";
 import type { LogOptions } from "@mobile-dev/shared/logs.ts";
@@ -14,23 +14,25 @@ import { listIosDevices } from "./ios-devices.ts";
 import { physicalIosLogDevice } from "./physical-ios-logs.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { captureServerError } from "./telemetry.ts";
+import { openRequestSession } from "./request-session.ts";
+import type { ServerRequestContext } from "./request-session.ts";
 import { parseResourceInput } from "./resource-input.ts";
 
 const sessionId = z.string().regex(/^[a-f0-9]{64}$/);
 const sequence = z.coerce.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 const annotations = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 const metadata = { ui: { visibility: ["app", "model"] as ("app" | "model")[] } };
-function safe<T>(handler: (input: T) => Promise<CallToolResult>) {
-  return async (input: T): Promise<CallToolResult> => {
-    try { return await handler(input); }
+function safe<T>(handler: (input: T, context: ServerRequestContext) => Promise<CallToolResult>) {
+  return async (input: T, context: ServerRequestContext): Promise<CallToolResult> => {
+    try { return await handler(input, context); }
     catch (error) {
-      captureServerError(error, "logs.tool");
+      captureServerError(error, "logs.tool", { signal: context.signal });
       return { isError: true, content: [{ type: "text", text: errorMessage(error) }] };
     }
   };
 }
 
-export function registerLogTools(server: McpServer, logs: LogSessions, baguette: Baguette, discoverIosDevices = listIosDevices) {
+export function registerLogTools(server: McpServer, logs: LogSessions, simulators: Pick<Simctl, "device">, discoverIosDevices = listIosDevices) {
   server.registerResource("log-batch", new ResourceTemplate("logs://mobile-dev/{sessionId}/batch?after={sequence}", { list: undefined }), {
     mimeType: "application/json", description: "Read a batch from an authorized Mobile Dev log session. Idle sessions expire after five minutes.",
   }, async (uri, variables) => {
@@ -56,16 +58,16 @@ export function registerLogTools(server: McpServer, logs: LogSessions, baguette:
   registerAppTool(server, "mobile_logs_session", {
     title: "Start app logs", description: "Stream iOS simulator or physical-device unified logs, Android logcat, and/or a selected Metro inspector's JS console and exceptions. For a physical iPhone, use kind physical and the hardware UDID from mobile_list_ios_devices, not its CoreDevice ID. The phone must be connected and paired. Use an iOS executable name for process, or pid for one process lifetime; choose only one. Use an Android packageName to follow the app across restarts. Leaving the app filter empty includes all device processes. iOS unified logs exclude ordinary print/printf output and may redact private values. Metro URL must be local HTTP and targetId must come from mobile_log_sources. Does not launch or rebuild the app.",
     inputSchema: { options: logOptionsSchema }, annotations, _meta: metadata,
-  }, safe(async ({ options }: { options: LogOptions }) => {
+  }, safe(async ({ options }: { options: LogOptions }, context) => {
     if (options.native?.platform === "ios") {
       if (options.native.kind === "physical") await physicalIosLogDevice(options.native.deviceId, discoverIosDevices);
-      else await baguette.device(options.native.deviceId, true);
+      else await simulators.device(options.native.deviceId, true);
     }
     if (options.native?.platform === "android" && !(await listAndroidLogDevices()).some(device => device.id === options.native?.deviceId)) {
       throw new ExpectedOperationError("device_unavailable", "The selected Android device is absent or unauthorized. Refresh log sources.");
     }
     if (options.metro) parseBaseUrl(options.metro.url, "Metro URL");
-    const id = logs.open(options);
+    const id = await openRequestSession(context.signal, async () => logs.open(options), id => logs.closeSession(id));
     const handles = { sessionId: id, logsUri: `logs://mobile-dev/${id}/batch?after=0` };
     // Models need the handle for subsequent reads; _meta is only for the app.
     return { content: [{ type: "text", text: JSON.stringify({ status: "started", ...handles }) }], structuredContent: { options, ...handles }, _meta: handles };

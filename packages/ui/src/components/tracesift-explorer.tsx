@@ -1,8 +1,3 @@
-/**
- * The full Explore view inside the card's frame, drawn from the same package the
- * web app uses. Its data arrives over MCP: this frame cannot reach the service.
- */
-
 import { ArrowLeftIcon, ExternalLinkIcon, MessageCircleIcon, MousePointerClickIcon, XIcon } from "lucide-react";
 import { useSyncExternalStore } from "react";
 import { ExploreView, type ExploreLoad, type ReactExploreHandoff, type TaskHandoff } from "@callstack/tracesift-explore";
@@ -17,10 +12,8 @@ export function TraceSiftExplorer({ controller }: { controller: TraceSiftControl
   const card = state.analysis?.cards.find(entry => entry.id === explorer.cardId);
   // A payload whose card is gone is a stale view, not a reader error.
   if (card === undefined) return <p className="tracesift-error" role="alert">This TraceSift finding is no longer available.</p>;
-  // The payload is in hand before this renders, so the load is always ready.
   const task: ExploreLoad<TaskHandoff> | null = explorer.kind === "task" ? { state: "ready", handoff: explorer.payload as TaskHandoff } : null;
   const react: ExploreLoad<ReactExploreHandoff> | null = explorer.kind === "react" ? { state: "ready", handoff: explorer.payload as ReactExploreHandoff } : null;
-  // What a pick is called: a CPU profile is read in frames, a React one in components.
   const picks = explorer.kind === "react"
     ? { one: "component", many: "components", where: "the render tree or the components table" }
     : { one: "frame", many: "frames", where: "the timeline, flame graph, call tree or culprits" };
@@ -40,11 +33,9 @@ export function TraceSiftExplorer({ controller }: { controller: TraceSiftControl
           onClick={() => controller.setPicking(!explorer.picking)}>
           <MousePointerClickIcon />Select {picks.many}
         </Button>
-        <Button size="sm" variant="outline" disabled={Boolean(state.busyCard) || count === 0 || !state.canInvestigate || !state.project}
+        <Button size="sm" variant="outline" disabled={Boolean(state.busyCard) || count === 0 || !state.canInvestigate}
           title={!state.canInvestigate
             ? "This chat cannot receive a message from the card"
-            : !state.project
-              ? "Choose a project on the findings list first, so the chat knows which code these belong to"
             : count
               ? `Send these ${count} ${noun} and what the profile measured about them to the chat`
               : `Select ${picks.many} first, then send them here`}
@@ -65,8 +56,7 @@ export function TraceSiftExplorer({ controller }: { controller: TraceSiftControl
     {explorer.picking && <div className="tracesift-pick-bar" role="status">
       <span>
         {count
-          // Not "everywhere": a view can still hide a picked frame (a box too
-          // narrow to draw, a row the "Your code only" cut drops).
+          // Not "everywhere": a view can hide a picked frame (box too narrow, "Your code only" cut).
           ? <>{count} {noun} selected — numbered in the order you picked, and ringed in every view showing {count === 1 ? "it" : "them"}{explorer.kind === "react" ? ", in every commit you picked in" : ""}.</>
           : `Click a ${picks.one} in ${picks.where} to add it. Click it again to take it out.`}
       </span>
@@ -75,8 +65,7 @@ export function TraceSiftExplorer({ controller }: { controller: TraceSiftControl
       </Button>}
     </div>}
     {state.error && <p className="tracesift-error" role="alert">{state.error}</p>}
-    {/* The page the web app's `/explore` route mounts, so the padding, width and
-        failure copy are its own. No `onClose`: the way back is the bar above. */}
+    {/* The web app's `/explore` page, so padding, width and failure copy are its own. No `onClose`: the bar above goes back. */}
     <ExploreView
       task={task}
       react={react}

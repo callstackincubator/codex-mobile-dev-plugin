@@ -1,43 +1,28 @@
 /**
  * How a task divides, computed from the card the analysis already shipped.
- *
- * A port of TraceSift's own `src/lib/contribution.ts`, kept deliberately
- * line-for-line rather than reinterpreted: the card in this plugin and the card
- * on the web have to agree about which bands exist, how wide they are and which
- * colour each one takes, and the only way to guarantee that is to run the same
- * arithmetic. The analysis payload carries no slices — it carries boundary
- * frames and their culprits, and both ends derive the drawing from those.
+ * Ported line-for-line from TraceSift's `src/lib/contribution.ts` so this card and
+ * the web card agree on bands, widths and colours. The payload carries boundary
+ * frames and culprits, not slices; both ends derive the drawing.
  */
 
 import type {
   TraceSiftBoundaryCulprit, TraceSiftBoundaryFrame, TraceSiftReactCard, TraceSiftTaskCard,
 } from "./tracesift.ts";
 
-/**
- * Slices a level carries before it folds its tail away. The eighth is where a
- * stacked bar runs out of room for a distinguishable fill and a treemap runs
- * out of room for a label; it is also the size of the palette.
- */
+/** Slices a level carries before folding its tail; also the palette size. */
 export const CHART_SLICES = 8;
 
-/**
- * A slice below this much of its level is narrower than its own 2px gap, so it
- * reads as a seam between its neighbours rather than as a part.
- */
+/** Below this share a slice is narrower than its 2px gap and reads as a seam. */
 export const MIN_SLICE_SHARE = 0.005;
 
 /** The server's own floor for a boundary frame, which the tail sentence quotes. */
 export const BOUNDARY_MIN_SHARE = 0.02;
 
-/**
- * What a slice stands for. Only `boundary` and `culprit` are frames that ran;
- * the other three are the residuals that make a level add up to its whole, and
- * each one is a different statement about where the unnamed time went.
- */
+/** Only `boundary` and `culprit` are frames that ran; the rest are residuals that make a level sum to its whole. */
 export type SliceKind = "boundary" | "culprit" | "tail" | "outside" | "rest";
 
 export interface ContributionSlice {
-  /** Stable across renders — a node id, or the residual's kind. */
+  /** Stable across renders: a node id, or the residual's kind. */
   key: string;
   kind: SliceKind;
   name: string;
@@ -45,12 +30,7 @@ export interface ContributionSlice {
   share: number;
   /** Inclusive time at the top level, self time inside a feature. */
   ms: number;
-  /**
-   * Which categorical slot paints this slice, counting from 0, or -1 for a
-   * residual. Fixed by the slice's own place in the ranking, never by how many
-   * slices survived the fold, so a colour means one frame rather than one
-   * position.
-   */
+  /** Categorical colour slot from 0, or -1 for a residual. Fixed by ranking position, not by how many slices survive the fold. */
   colorIndex: number;
   boundary?: TraceSiftBoundaryFrame;
   culprit?: TraceSiftBoundaryCulprit;
@@ -118,24 +98,14 @@ function residual(
   return { key: kind, kind, name, share: ms / whole, ms: round1(ms), colorIndex: -1, ...extra };
 }
 
-/**
- * The task divided by feature: one slice per boundary frame, then the two
- * residuals.
- *
- * The residuals are slices rather than footnotes because they are the same kind
- * of claim as the others — this much of the task went here — and because a bar
- * that stops at 63% with no mark for the rest invites the reader to read 63% as
- * the whole.
- */
+/** The task divided by feature: one slice per boundary frame, then the two residuals (so a bar that stops at 63% is not read as the whole). */
 export function taskBreakdownSlices(card: TraceSiftTaskCard): ContributionSlice[] {
   const duration = card.durationMs;
   if (duration <= 0) return [];
 
   const slices: ContributionSlice[] = [];
   let shownMs = 0;
-  // `colorIndex` counts the frames offered a slot, not the ones that took one:
-  // a frame folded into the tail must not shift the colour of the frame below
-  // it, or the palette would change with the fold.
+  // colorIndex counts frames offered a slot, so folding one into the tail doesn't shift later colours.
   for (const [index, boundary] of card.boundaryFrames.slice(0, CHART_SLICES).entries()) {
     const share = boundary.totalMs / duration;
     if (share < MIN_SLICE_SHARE) continue;
@@ -143,9 +113,7 @@ export function taskBreakdownSlices(card: TraceSiftTaskCard): ContributionSlice[
     slices.push({ key: boundary.nodeId, kind: "boundary", name: boundary.name, share, ms: boundary.totalMs, colorIndex: index, boundary });
   }
 
-  // Frames folded by the share floor above are already counted in the server's
-  // tail, so the two cannot be added — the difference between what the task was
-  // and what is drawn is the tail, whatever folded it.
+  // Frames folded by the share floor are already in the server's tail, so derive the tail from what is drawn.
   const drawnBoundaryMs = card.boundaryFrames.reduce((sum, frame) => sum + frame.totalMs, 0);
   const tailMs = card.boundaryTailMs + Math.max(0, drawnBoundaryMs - shownMs);
   const tailCount = card.boundaryTailCount + (card.boundaryFrames.length - slices.length);
@@ -157,15 +125,7 @@ export function taskBreakdownSlices(card: TraceSiftTaskCard): ContributionSlice[
   return slices;
 }
 
-/**
- * One feature divided by what burned its time: its culprits by self time, then
- * whatever is spread too thin to draw.
- *
- * The whole here is the feature's inclusive time, not the task's, because the
- * question at this level is how one frame spent its own milliseconds — a slice
- * measured against the task again would redraw the slice the reader just
- * opened, at a ninth of the width.
- */
+/** One feature divided by its culprits' self time. The whole is the feature's inclusive time, not the task's. */
 export function boundaryDrillSlices(boundary: TraceSiftBoundaryFrame): ContributionSlice[] {
   const whole = boundary.totalMs;
   if (whole <= 0) return [];
@@ -204,26 +164,16 @@ function worstRatio(areas: readonly number[], short: number, sum: number): numbe
 }
 
 /**
- * Squarified treemap layout: areas proportional to `values`, tiles as near
- * square as the values allow.
- *
- * Bruls, Huizing and van Wijk's algorithm — fill the free rectangle's shorter
- * side with a row, admitting values while doing so improves the row's worst
- * aspect ratio, then recurse on what is left. The naive slice-and-dice
- * alternative produces slivers a label cannot sit in as soon as the values are
- * skewed, and a task's frames are always skewed.
- *
- * `aspect` is the container's height over its width. Returned rects are
- * normalised back to 0-1 on both axes, so the caller can position them as
- * percentages without knowing the pixel size.
+ * Squarified treemap (Bruls, Huizing, van Wijk): areas proportional to `values`.
+ * `aspect` is the container's height over its width; returned rects are
+ * normalised to 0-1 on both axes.
  */
 export function squarify(values: readonly number[], aspect: number): TreemapRect[] {
   const empty = { x: 0, y: 0, w: 0, h: 0 };
   const total = values.reduce((sum, value) => sum + value, 0);
   if (total <= 0 || aspect <= 0) return values.map(() => empty);
 
-  // Laid out in a container one unit wide and `aspect` tall, so an area is
-  // comparable with a length and the aspect ratios below are the real ones.
+  // Container is one unit wide and `aspect` tall, so the ratios below are real.
   const areas = values.map(value => (value / total) * aspect);
   const out: TreemapRect[] = values.map(() => empty);
 
@@ -243,8 +193,7 @@ export function squarify(values: readonly number[], aspect: number): TreemapRect
       worst = ratio;
     }
 
-    // The row is laid along the shorter side; its thickness is whatever makes
-    // its area come out right, which is what keeps the areas exact.
+    // Laid along the shorter side; thickness keeps the areas exact.
     const thickness = rowArea / short;
     const alongWidth = free.w <= free.h;
     let offset = 0;

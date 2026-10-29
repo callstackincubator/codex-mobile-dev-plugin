@@ -46,10 +46,7 @@ export interface ReactSelectionRecording {
 }
 
 export interface SelectedComponent {
-  /**
-   * Which pick this is, matching the number the views draw. Carried, not derived:
-   * a dropped pick must not renumber the ones counted off the screen.
-   */
+  /** Pick number as drawn in the views. Carried, not derived, so a dropped pick doesn't renumber the rest. */
   pick: number;
   key: string;
   rootId: number;
@@ -93,10 +90,7 @@ export interface ReactSelectionEvidence {
   commits: SelectedCommit[];
   /** Picked keys the recording in hand holds no component for. */
   unresolved: string[];
-  /**
-   * Picks that rendered another pick, within one commit. Named because `actualMs`
-   * double-counts across such a pair (`selfMs` never does).
-   */
+  /** Picks that rendered another pick in one commit; `actualMs` double-counts across such a pair, `selfMs` never does. */
   overlaps: [string, string][];
   /** Own time across every pick, in every commit, counted once per component. */
   selfMsTogether: number;
@@ -142,10 +136,7 @@ export function reactSelectionEvidence(
   const components: SelectedComponent[] = [];
   const unresolved: string[] = [];
 
-  // A reader can click the same component through the tree and the table before
-  // the state settles, and a duplicated line in a hand-off reads as two
-  // findings. The number carried is the first-occurrence position in the order
-  // chosen, which is what the views numbered the picks on screen with.
+  // Dedupe: the same component can be clicked twice before state settles. The pick number is the first-occurrence position, matching the views.
   for (const key of new Set(selectedKeys)) {
     const parts = parseReactPick(key);
     const commit = parts ? byCommit.get(`${parts.rootId}.${parts.commitIndex}`) : undefined;
@@ -181,8 +172,7 @@ export function reactSelectionEvidence(
   }
   components.sort((a, b) => a.pick - b.pick);
 
-  // Nesting is read off the commit's tree, not the ids: a fiber id is just the
-  // number React handed out. Picks in different commits never overlap.
+  // Nesting comes from the commit's tree, not ids (fiber ids are arbitrary). Picks in different commits never overlap.
   const overlaps: [string, string][] = [];
   for (const inner of components) {
     const index = indexes.get(`${inner.rootId}.${inner.commitIndex}`);
@@ -197,8 +187,7 @@ export function reactSelectionEvidence(
   for (const commit of recording.commits) {
     const picks = components.filter(pick => pick.rootId === commit.rootId && pick.commitIndex === commit.commitIndex);
     if (picks.length === 0) continue;
-    // Own time is React's `selfDuration`, a true partition of the render phase,
-    // so it adds across picks whether or not one rendered another.
+    // selfDuration partitions the render phase, so it adds across picks even when one rendered another.
     const selfMsTogether = rounded(picks.reduce((sum, pick) => sum + pick.selfMs, 0));
     commits.push({
       rootId: commit.rootId,
@@ -222,8 +211,7 @@ export function reactSelectionEvidence(
     unresolved,
     overlaps,
     selfMsTogether: rounded(components.reduce((sum, pick) => sum + pick.selfMs, 0)),
-    // Commits do not overlap in time, so these do add — which is the whole
-    // reason a selection is allowed to cross them.
+    // Commits do not overlap in time, so these add.
     pickedCommitsMs: rounded(commits.reduce((sum, commit) => sum + commit.durationMs, 0)),
     recordedCommitsMs: rounded(recording.commits.reduce((sum, commit) => sum + commit.durationMs, 0)),
   };
@@ -312,10 +300,7 @@ export function buildReactSelectionPrompt(input: {
   }
   lines.push("");
 
-  // The same component picked twice is a different fact here than on the CPU
-  // side. Two call sites of one function are two places in the code; two renders
-  // of one component are usually one component rendering repeatedly, which is
-  // the finding rather than a coincidence to be explained away.
+  // Unlike CPU call sites, two picks of one component are usually one component rendering repeatedly, which is the finding.
   const byComponent = new Map<string, SelectedComponent[]>();
   for (const pick of evidence.components) {
     const key = `${pick.name}\u0000${pick.sourceHint ?? ""}`;
@@ -356,9 +341,7 @@ export function buildReactSelectionPrompt(input: {
     );
   }
   for (const commit of evidence.commits) {
-    // Every figure in this subtraction is one this document states, so the
-    // remainder is arithmetically true here rather than true only if React's
-    // own totals happen to agree to the hundredth.
+    // Both operands are figures this document states, so the remainder is consistent even if React's totals disagree by rounding.
     const otherComponents = rounded(commit.summedSelfMs - commit.selfMsTogether);
     const parts: string[] = [];
     if (otherComponents > 0.005) parts.push(`${ms(otherComponents)} in the other components it rendered`);

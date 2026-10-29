@@ -7,10 +7,7 @@ import {
   type ReactSelectionRecording,
 } from "../src/tracesift-react-selection.ts";
 
-/**
- * A small recording in the shape Explore is handed; two commits, since a pick
- * names its commit. Figures add up as React's do, or the prompt's claims would.
- */
+/** A small two-commit recording in the shape Explore is handed. Figures add up as React's do. */
 const node = (
   id: number,
   name: string,
@@ -62,8 +59,7 @@ const recording: ReactSelectionRecording = {
 
 test("a React pick names its commit, and a key that names nothing is read as nothing", () => {
   assert.deepEqual(parseReactPick("1.0.4"), { rootId: 1, commitIndex: 0, fiberId: 4 });
-  // A commit key is not a component pick, and neither is anything else that
-  // happens to have dots in it.
+  // A commit key, or anything else with dots, is not a component pick.
   assert.equal(parseReactPick("1.0"), undefined);
   assert.equal(parseReactPick("1.0.x"), undefined);
   assert.equal(parseReactPick(""), undefined);
@@ -76,8 +72,7 @@ test("selection evidence reads the components a reader picked, in the order they
   assert.equal(chart.selfMs, 30);
   assert.equal(chart.actualMs, 30);
   assert.equal(chart.cause, "nothing-changed");
-  // Nesting is by the nearest ancestor that also rendered, which is the path
-  // the prompt prints rather than anything about the source.
+  // Nesting follows the nearest ancestor that also rendered.
   assert.deepEqual(chart.path, ["Screen", "Provider", "Chart"]);
   assert.equal(evidence.overlaps.length, 0, "neither picked component rendered the other");
   assert.equal(evidence.selfMsTogether, 37);
@@ -88,8 +83,7 @@ test("selection evidence reads the components a reader picked, in the order they
 });
 
 test("picks in two commits are two renders, grouped by the commit that measured them", () => {
-  // The reason a pick names its commit at all: a reader walks a cascade with the
-  // commit picker, and a per-commit set would empty itself under exactly that.
+  // Picks name their commit because walking a cascade with the commit picker would empty a per-commit set.
   const evidence = reactSelectionEvidence(recording, ["1.1.4", "1.0.4"]);
   assert.deepEqual(evidence.components.map(pick => [pick.pick, pick.commitIndex]), [[1, 1], [2, 0]]);
   assert.deepEqual(evidence.commits.map(commit => commit.commitIndex), [0, 1], "grouped in commit order");
@@ -99,8 +93,7 @@ test("picks in two commits are two renders, grouped by the commit that measured 
   const text = buildReactSelectionPrompt({ recording, evidence });
   assert.match(text, /### Commit 0 — 40 ms rendering, over the 16 ms budget/);
   assert.match(text, /### Commit 1 — 20 ms rendering/);
-  // The same component twice is the finding here rather than a coincidence, and
-  // the numbering follows the reader's own order, not the commit order.
+  // The same component twice is the finding; numbering follows pick order, not commit order.
   assert.match(text, /`Chart` is selections 1, 2: the same component rendering in 2 separate commits, 45 ms/);
   assert.match(text, /Why it rendered: nothing changed\./);
   assert.match(text, /recorded without "Record why each component rendered"/);
@@ -109,8 +102,7 @@ test("picks in two commits are two renders, grouped by the commit that measured 
 test("a pick that rendered another pick is named, because only the inclusive figures overlap", () => {
   const evidence = reactSelectionEvidence(recording, ["1.0.2", "1.0.4"]);
   assert.deepEqual(evidence.overlaps, [["1.0.2", "1.0.4"]]);
-  // Own time never double-counts across a nested pair, which is why the sum is
-  // still quotable and the inclusive figures are not.
+  // Own time never double-counts a nested pair, so the sum is quotable; inclusive figures are not.
   assert.equal(evidence.selfMsTogether, 31);
 
   const text = buildReactSelectionPrompt({ recording, evidence });
@@ -126,16 +118,14 @@ test("the prompt accounts for work outside one selection without repeating its e
   assert.match(text, /investigate 1 component render I selected/);
   assert.match(text, /Recording: Search\.reactprofile/);
   assert.match(text, /2 commits across 300 ms, 60 ms of it spent rendering/);
-  // Both sides of the subtraction are figures this document states: 38 ms of
-  // component time less the 30 ms picked, plus the reconciler's own 2 ms.
+  // 38 ms of component time less the 30 ms picked, plus the reconciler's 2 ms.
   assert.match(text, /30 ms of its own render time \(75\.0% of this commit\)/);
   assert.match(text, /8 ms in the other components it rendered plus 2 ms in React's own walk of the tree/);
   assert.match(text, /Location: `Screen` › `Provider` › `Chart`\./);
   assert.equal(text.match(/30 ms/g)?.length, 2, "the selection and inclusive duration are equal; no aggregate repeats them");
   assert.doesNotMatch(text, /Heavy component|Rendered under|Where those components sit|What they add up to/);
 
-  // The caveats that decide how the figures read travel with them, and they are
-  // React's rather than the CPU side's: nothing here was sampled.
+  // The caveats are React's, not the CPU side's: nothing here was sampled.
   assert.match(text, /render phase only/);
   assert.match(text, /React's own measurements, not samples/);
   assert.match(text, /lead, not proof of causation or avoidable work/);
@@ -170,8 +160,7 @@ test("a pick the recording no longer holds is named rather than guessed at", () 
   const evidence = reactSelectionEvidence(recording, ["1.0.4", "9.9.9", "1.0.404"]);
   assert.deepEqual(evidence.unresolved.sort(), ["1.0.404", "9.9.9"]);
   assert.equal(evidence.components.length, 1);
-  // The pick's own number is carried, so dropping one does not renumber the
-  // ones the reader counted off the screen.
+  // Dropping a pick doesn't renumber the rest.
   assert.equal(evidence.components[0]!.pick, 1);
 
   const text = buildReactSelectionPrompt({ recording, evidence });

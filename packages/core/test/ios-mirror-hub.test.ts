@@ -131,6 +131,76 @@ test("joining and another subscriber's reset preserve a held gesture", async t =
   assert.equal(f.touches.at(-1)?.samples[0].phase, 2);
 });
 
+test("subscriber overflow releases its held gesture without interrupting other panels", async t => {
+  const f = fixture();
+  t.after(() => f.hub.close());
+  const a = await f.hub.open("phone");
+  const b = await f.hub.open("phone");
+  await f.frame();
+  const first = await a.read();
+  const second = await b.read();
+  const down = [{ phase: 0, x: 10, y: 20, width: 400, height: 800 }];
+  await a.touch(down, first.generation);
+  for (let index = 0; index < 10; index++) {
+    await f.frame(false);
+    const batch = await b.read();
+    assert.equal(batch.generation, second.generation);
+  }
+  await b.touch(down, second.generation);
+  assert.deepEqual(f.touches.map(touch => touch.samples[0].phase), [0, 2, 0]);
+  assert.deepEqual(f.touches[1], { samples: [{ ...down[0], phase: 2 }], generation: 1 });
+  const reading = a.read();
+  await f.frame();
+  const recovered = await reading;
+  assert.equal(recovered.generation, first.generation + 1);
+  await assert.rejects(a.touch(down, recovered.generation), /Another panel/);
+  await b.touch([{ ...down[0], phase: 2 }], second.generation);
+  await a.touch(down, recovered.generation);
+  assert.deepEqual(f.touches.map(touch => touch.samples[0].phase), [0, 2, 0, 2, 0]);
+});
+
+test("subscriber overflow during a touch releases the gesture after the touch lands", async t => {
+  const f = fixture();
+  t.after(() => f.hub.close());
+  const a = await f.hub.open("phone");
+  const b = await f.hub.open("phone");
+  await f.frame();
+  const first = await a.read();
+  const second = await b.read();
+  const send = f.capture.touch;
+  let land!: () => void;
+  const landed = new Promise<void>(resolve => { land = resolve; });
+  f.capture.touch = async (samples, generation) => { await landed; await send(samples, generation); };
+  const down = [{ phase: 0, x: 10, y: 20, width: 400, height: 800 }];
+  const pressing = a.touch(down, first.generation);
+  await tick();
+  for (let index = 0; index < 9; index++) {
+    await f.frame(false);
+    await b.read();
+  }
+  land();
+  await pressing;
+  await b.touch(down, second.generation);
+  assert.deepEqual(f.touches.map(touch => touch.samples[0].phase), [0, 2, 0]);
+});
+
+test("another subscriber's overflow preserves a healthy held gesture", async t => {
+  const f = fixture();
+  t.after(() => f.hub.close());
+  const a = await f.hub.open("phone");
+  const b = await f.hub.open("phone");
+  await f.frame();
+  await a.read();
+  const second = await b.read();
+  await b.touch([{ phase: 0, x: 10, y: 20, width: 400, height: 800 }], second.generation);
+  for (let index = 0; index < 10; index++) {
+    await f.frame(false);
+    await b.read();
+  }
+  await b.touch([{ phase: 1, x: 20, y: 30, width: 400, height: 800 }], second.generation);
+  assert.deepEqual(f.touches.map(touch => touch.samples[0].phase), [0, 1]);
+});
+
 test("empty native reads during recovery coalesce keyframe requests", async t => {
   const f = fixture();
   t.after(() => f.hub.close());

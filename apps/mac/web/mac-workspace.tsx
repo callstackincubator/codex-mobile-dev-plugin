@@ -24,7 +24,6 @@ export function MacWorkspace({ panels, tool, layout }: { panels: WorkspaceTools;
     workspaceGroup.current?.setLayout({ "mac-tools": 100 - devices, "mac-devices": devices });
     if (layout !== "none") deviceGroup.current?.setLayout({ "mac-ios": layout === "android" ? 0 : layout === "both" ? 50 : 100, "mac-android": layout === "ios" ? 0 : layout === "both" ? 50 : 100 });
   }, [tool, layout]);
-  // The leftmost visible panel sits under the window controls when the sidebar is collapsed.
   const leading = tool !== undefined ? "tool" : layout === "android" ? "android" : "ios";
   const leadingClass = (panel: string) => panel === leading ? "mac-leading h-full" : "h-full";
   const toolView = tool === "logs" ? <LogsView panel={panels.logs} />

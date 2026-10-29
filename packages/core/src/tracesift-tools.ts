@@ -12,8 +12,7 @@ import type { TraceSiftClient } from "./tracesift-client.ts";
 import { TraceSiftError } from "./tracesift-client.ts";
 import { pickProfileFile, pickProjectFolder } from "./profile-picker.ts";
 
-// Async on purpose: compressing a megabyte tree on the main thread would stall
-// every other tool call sharing this process.
+// Async so compressing a large tree does not stall other tool calls.
 const gzip = promisify(gzipCallback);
 const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 // Analysis replaces the latest-input reference; remember replaces the host-view reference.
@@ -45,7 +44,10 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
       const analysis = await client.analyze(path, profileType, context.signal,
         (outcome, duration) => recordTraceSiftOperation("ready", outcome, duration));
       recordTraceSiftOperation("analyze", "success", performance.now() - startedAt);
-      return { content: [{ type: "text", text: `TraceSift found ${analysis.cards.length} ${analysis.profileType === "cpu" ? "task" : "React commit"} cards. Show the inline cards and wait for the user to choose Investigate.` }], structuredContent: analysis };
+      // Name each card with its ID so the agent can fetch a card's handoff where the card cannot.
+      const kind = analysis.profileType === "cpu" ? "task" : "React commit";
+      const cards = analysis.cards.map((card, index) => `#${index + 1} (card ${card.id}, ${Math.round(card.durationMs)} ms): ${card.headline}`).join("; ");
+      return { content: [{ type: "text", text: `TraceSift found ${analysis.cards.length} ${kind} cards in analysis ${analysis.analysisId}: ${cards}. Show the inline cards and wait for the user to choose Investigate.` }], structuredContent: analysis };
     } catch (error) { return failure(error, "analyze", startedAt, context.signal); }
   });
 
@@ -183,8 +185,7 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
     inputSchema: {
       analysisId: z.string().min(1).max(256), taskIndex: z.number().int().nonnegative().optional(),
     },
-    // Only the envelope is schema-checked: the tree inside is megabytes the host
-    // would walk node by node to prove a shape the explorer checks as it draws.
+    // Only the envelope is schema-checked; the tree inside is megabytes the explorer validates as it draws.
     outputSchema: traceSiftExploreEnvelopeSchema.shape,
     annotations: localService,
     _meta: { ui: { visibility: ["app"] } },
@@ -194,18 +195,15 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
       const handoff = taskIndex === undefined
         ? { kind: "react" as const, value: await client.exploreReact(analysisId, context.signal) as unknown }
         : { kind: "task" as const, value: await client.exploreTask(analysisId, taskIndex, context.signal) as unknown };
-      // Depth first, and iteratively: `JSON.stringify` recurses, so a runaway
-      // tree would overflow the stack before the byte guard below could see it.
+      // Checked iteratively: `JSON.stringify` recurses and a runaway tree would overflow the stack first.
       if (traceSiftPayloadTooDeep(handoff.value)) throw new TraceSiftError(TRACE_SIFT_PAYLOAD_TOO_LARGE, "response");
-      // Even under the depth bound V8 can run out of stack on a tree it cannot
-      // serialize; that is the same answer for the reader, not a crash.
+      // V8 can still overflow under the depth bound; treat it as too large.
       let json: string;
       try { json = JSON.stringify(handoff.value); }
       catch (error) { throw error instanceof RangeError ? new TraceSiftError(TRACE_SIFT_PAYLOAD_TOO_LARGE, "response") : error; }
       const raw = { kind: handoff.kind, json };
       if (raw.json.length > TRACE_SIFT_PAYLOAD_MAX_BYTES) throw new TraceSiftError(TRACE_SIFT_PAYLOAD_TOO_LARGE, "response");
-      // Small payloads cross as plain JSON; anything worth compressing does, so
-      // the bridge carries a string the host's structured decoder never walks.
+      // Compressed payloads cross as a string the host's structured decoder never walks.
       const compressed = raw.json.length > TRACE_SIFT_PAYLOAD_GZIP_MIN_BYTES;
       const text = compressed ? (await gzip(raw.json, { level: 6 })).toString("base64") : raw.json;
       const result: CallToolResult = {
@@ -224,17 +222,18 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
 
   registerAppTool(server, "mobile_get_tracesift_handoff", {
     title: "Get a TraceSift card handoff",
-    description: "Return the authoritative TraceSift investigation handoff for a selected card. May start the local TraceSift service. This app-only action is called by the inline card after the user presses Investigate.",
+    description: "Return the authoritative TraceSift investigation handoff for one card of an analysis, by the analysisId and card ID mobile_analyze_profile reports. The inline card calls it when the user presses Investigate; call it yourself only when the user asks to investigate a card the card cannot hand off. May start the local TraceSift service.",
     inputSchema: { analysisId: z.string().min(1).max(256), cardId: z.string().min(1).max(256) },
     outputSchema: traceSiftHandoffSchema.shape, annotations: localService,
-    _meta: { ui: { visibility: ["app"] } },
+    _meta: { ui: { visibility } },
   }, async ({ analysisId, cardId }, context) => {
     const startedAt = performance.now();
     try {
       const handoff = await client.handoff(analysisId, cardId, context.signal);
       recordTraceSiftOperation("handoff", "success", performance.now() - startedAt);
       const structuredContent = { apiVersion: 1 as const, handoff };
-      return { content: [{ type: "text", text: "TraceSift handoff ready." }], structuredContent };
+      // The handoff is the evidence an investigation starts from; the agent reads it as text.
+      return { content: [{ type: "text", text: handoff }], structuredContent };
     } catch (error) { return failure(error, "handoff", startedAt, context.signal); }
   });
 }

@@ -12,7 +12,9 @@ import { bootAndroidEmulator, parseAvdName } from "./android-emulator.ts";
 import { adbPath } from "./native-logs.ts";
 import { errorMessage, parseBaseUrl } from "@mobile-dev/shared/protocol.ts";
 import type { SimulatorDevice, Status } from "@mobile-dev/shared/protocol.ts";
+import { annotateDeviceCommand, backendCommand } from "@mobile-dev/shared/device-command-diagnostics.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
+import { isMissingFile, MissingRuntimeError } from "./install-integrity.ts";
 import { recordAndroidEmulatorReconnect, recordAndroidBackendStartup, recordAndroidStartupStages, recordAndroidStartupContext, recordAndroidStartupDeviceState, recordAndroidBackendStop } from "./telemetry.ts";
 import { androidStartupMessageSchema, androidDeviceState, setAndroidStartupDiagnostic } from "@mobile-dev/shared/android-startup-diagnostics.ts";
 import type { AndroidStartupContext, AndroidStartupFailure, AndroidStartupSummary } from "@mobile-dev/shared/android-startup-diagnostics.ts";
@@ -197,13 +199,15 @@ export class ServeEmu {
   }
 
   async json(url: URL, path: string, options: RequestInit = {}) {
-    const response = await fetch(new URL(path, url), { ...options, redirect: "error", signal: AbortSignal.timeout(10000) });
-    const payload = response.ok ? await response.json() : await response.json().catch(() => undefined);
+    const command = backendCommand("serve_emu", path);
+    const response = await fetch(new URL(path, url), { ...options, redirect: "error", signal: AbortSignal.timeout(10000) })
+      .catch(error => { throw annotateDeviceCommand(error, command); });
+    const payload = response.ok ? await response.json().catch(error => { throw annotateDeviceCommand(error, command); }) : await response.json().catch(() => undefined);
     const rejection = serveEmuErrorSchema.safeParse(payload);
     if (response.ok && !rejection.success) return payload;
     const error = rejection.data?.error;
     const message = (typeof error === "string" ? error : error?.message) || (response.ok ? "serve-emu rejected the request." : `serve-emu returned HTTP ${response.status} for ${path}.`);
-    throw new Error(message);
+    throw annotateDeviceCommand(new Error(message), command, response.ok ? { failure: "rejected" } : { failure: "http_status", status: response.status });
   }
 
   private async health(url: URL) {
@@ -250,7 +254,10 @@ export class ServeEmu {
     } catch (error) { if (this.external) throw error; }
     const cliUrl = new URL("./serve-emu/src/cli.mjs", import.meta.url);
     const cli = fileURLToPath(cliUrl);
-    await access(cli).catch(() => { throw new Error("The plugin is missing its bundled serve-emu runtime. Run npm run vendor:serve-emu and npm run build, then package it again."); });
+    await access(cli).catch(error => {
+      if (isMissingFile(error)) throw new MissingRuntimeError("serve-emu");
+      throw new Error("Mobile Dev cannot read its bundled Android streaming backend. Reinstall Mobile Dev, then restart the app running it.");
+    });
     const listener = createServer();
     await new Promise<void>((resolve, reject) => { listener.once("error", reject); listener.listen(0, "127.0.0.1", resolve); });
     const address = listener.address();

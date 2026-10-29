@@ -25,11 +25,7 @@ export function postToShell(message: ShellMessage) {
   window.webkit?.messageHandlers.shell.postMessage(message);
 }
 
-/**
- * Carries MCP JSON-RPC between this page and the server process the app runs.
- * Swift writes outgoing messages to the server's stdin and evaluates each stdout
- * line as `__mobileDevReceive(message)`.
- */
+/** MCP JSON-RPC over the app's server process: Swift pipes outgoing messages to stdin and calls `__mobileDevReceive` per stdout line. */
 class WebKitRelayTransport implements Transport {
   onmessage?: (message: JSONRPCMessage) => void;
   onclose?: () => void;

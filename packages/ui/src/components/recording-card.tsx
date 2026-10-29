@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import type { PointerEvent, ReactNode } from "react";
+import type { PointerEvent } from "react";
 import { Area, AreaChart, CartesianGrid, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { ExternalLinkIcon, InfoIcon, MessageCircleIcon } from "lucide-react";
+import { ExternalLinkIcon, MessageCircleIcon } from "lucide-react";
 import type { RecordingController } from "../recording-controller.ts";
 import type { RecordingRange } from "@mobile-dev/shared/recordings.ts";
 import { summarizeRecording } from "@mobile-dev/shared/recordings.ts";
@@ -9,7 +9,7 @@ import { recordUiTiming } from "../telemetry.ts";
 import { createRecordingCpuSeries, createRecordingFpsSeries, findRecordingChangeRanges } from "../recording-series.ts";
 import type { RecordingPoint } from "../recording-series.ts";
 import { Button } from "./ui/button";
-import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
+import { InfoPopover as RecordingInfo } from "./card-parts";
 import { RecordingChartShape, recordingChartPoints } from "./recording-chart-shape";
 import { useMediaQuery } from "./use-media-query";
 
@@ -24,12 +24,6 @@ function memoryChange(value: number | null) {
 function seconds(value: number) { return `${value.toFixed(1)}s`; }
 function fpsReading(value: number | null) { return value === null ? "—" : value.toFixed(1); }
 function milliseconds(value: number | null) { return value === null ? "—" : `${value.toFixed(2)} ms`; }
-
-function RecordingInfo({ label, children }: { label: string; children: ReactNode }) {
-  return <Popover><PopoverTrigger asChild><Button variant="ghost" size="icon-xs" className="recording-info" aria-label={`About ${label}`} title={`About ${label}`}><InfoIcon /></Button></PopoverTrigger>
-    <PopoverContent className="recording-info-content" side="bottom" align="start" aria-label={`About ${label}`}>{children}</PopoverContent>
-  </Popover>;
-}
 
 function RecordingOverview({ duration, range, changes, onClear }: { duration: number; range?: RecordingRange; changes: RecordingRange[]; onClear: () => void }) {
   const position = (time: number) => Math.max(0, Math.min(100, time / duration * 100));
@@ -199,12 +193,13 @@ export function RecordingCard({ controller, detailed = false }: { controller: Re
         {hasFps && <RecordingChart key={`${recording.id}:fps`} label="Display FPS" info={displayScope} metricLabel="Average" metric={fpsReading(derived.total.averageFps)} data={derived.fps} duration={recording.durationSeconds} range={range} changes={changes.fps} color="#36a269" unit="fps" onDrag={setDrag} onSelect={controller.select} />}
         {hasDisplayData && <p className="recording-footnote">{displayScope}</p>}
         {recording.status === "finishing" && <p className="recording-footnote" role="status">Finishing the recording…</p>}
+        {state.preview === "only" && <p className="recording-footnote">This app shows CPU, memory and FPS without thread or frame detail.{state.canOpen && " Open the recording in Mobile Dev for all of it."}</p>}
       </div>
       <aside className="recording-sidebar" aria-label="Recording summary and actions">
         <RecordingOverview duration={recording.durationSeconds} range={range} changes={[...changes.cpu, ...changes.memory, ...changes.fps]} onClear={() => { setDrag(undefined); controller.select(undefined); }} />
         {hasCpu && <section className="recording-breakdown" aria-label="Thread CPU usage">
           <div className="recording-section-heading"><h3>Threads</h3><RecordingInfo label="threads">Busiest recorded threads, ordered by average CPU usage in the {range ? "selected range" : "entire recording"}. 100% CPU is one core.</RecordingInfo></div>
-          {shownThreads.length > 0 ? <dl>{shownThreads.map(thread => <div key={thread.id}><dt title={thread.id}>{thread.name || `Thread ${thread.id}`}</dt><dd>{percent(thread.averageCpuPercent)}</dd></div>)}</dl> : <p>No thread CPU measurements in this range.</p>}
+          {state.preview ? <p>{state.preview === "loading" ? "Loading thread detail…" : "Thread detail needs the full recording, which this app does not let cards read."}</p> : shownThreads.length > 0 ? <dl>{shownThreads.map(thread => <div key={thread.id}><dt title={thread.id}>{thread.name || `Thread ${thread.id}`}</dt><dd>{percent(thread.averageCpuPercent)}</dd></div>)}</dl> : <p>No thread CPU measurements in this range.</p>}
         </section>}
         {(hasFps || selectedFrameStats !== null) && <section className="recording-display-summary" aria-label="Display statistics">
           <div className="recording-section-heading"><h3>Display</h3><RecordingInfo label="display statistics">{displayScope} Statistics use the {range ? "selected range" : "entire recording"}.</RecordingInfo></div>
@@ -220,7 +215,7 @@ export function RecordingCard({ controller, detailed = false }: { controller: Re
         </section>}
         <div className="recording-actions">
           <Button disabled={state.canMessage === false || state.busy || hasReadings === false} onClick={() => { void controller.send("ask"); }}><MessageCircleIcon />{range ? "Ask about this range" : "Ask about recording"}</Button>
-          {detailed === false && <Button variant="outline" disabled={state.canMessage === false || state.busy} onClick={() => { void controller.send("open"); }}><ExternalLinkIcon />Open in Mobile Dev</Button>}
+          {detailed === false && state.canOpen && <Button variant="outline" disabled={state.canMessage === false || state.busy} onClick={() => { void controller.send("open"); }}><ExternalLinkIcon />Open in Mobile Dev</Button>}
           {state.canMessage === false && <p>This host does not support sending chart selections to chat.</p>}
         </div>
         {state.error && <p role="alert" className="recording-error">{state.error}</p>}

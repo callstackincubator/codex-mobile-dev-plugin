@@ -1,4 +1,3 @@
-/// The state of the Mobile Dev server and the page connected to it.
 enum ServerStatus: Equatable {
   case starting
   case ready

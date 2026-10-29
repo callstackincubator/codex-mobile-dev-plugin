@@ -3,9 +3,10 @@ import { join } from "node:path";
 import { foregroundAndroidPackage } from "../device-apps/foreground.ts";
 import { runningDeviceApps } from "../device-apps/apps.ts";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
+import { annotateDeviceCommand } from "@mobile-dev/shared/device-command-diagnostics.ts";
 import { platformPermissions } from "@mobile-dev/shared/app-control.ts";
 import type { AppDetails, AppPermission, AppPermissionEntry, InstalledApp, PermissionState } from "@mobile-dev/shared/app-control.ts";
-import { commandError, commandOutput, runAdb, withTemporaryDirectory } from "./commands.ts";
+import { commandError, commandLabel, commandOutput, runAdb, withTemporaryDirectory } from "./commands.ts";
 import type { Commands } from "./commands.ts";
 import { collectDetails, pngDataUrl, rankAppLinks, requireArtifact, requireSupportedPermission, urlSchemePattern } from "./driver.ts";
 import type { AppDetailsCache, AppDriver } from "./driver.ts";
@@ -130,7 +131,7 @@ export function parseAndroidAppLocales(output: string): string | null {
   if (/Unknown package/.test(output)) throw new ExpectedOperationError("invalid_input", "The app is not installed on this device.");
   if (localeUnavailable.test(output)) throw new ExpectedOperationError("unsupported_platform", "Per-app languages need Android 13 or later.");
   const list = /are \[([^\]]*)\]/.exec(output);
-  if (!list) throw new Error("Reading the app language failed: unexpected cmd locale output.");
+  if (!list) throw annotateDeviceCommand(new Error("Reading the app language failed: unexpected cmd locale output."), "adb_shell_cmd", { failure: "unexpected_output" });
   return list[1].split(",").map(entry => entry.trim()).find(Boolean) ?? null;
 }
 
@@ -159,7 +160,7 @@ export class AndroidDriver implements AppDriver {
     catch (error) {
       const failed = commandOutput(error);
       if (tolerate?.test(failed)) return failed;
-      throw rejected(failed) ?? commandError(error, action);
+      throw rejected(failed) ?? commandError(error, action, commandLabel("adb_shell", command));
     }
     const failure = rejected(output);
     if (failure) throw failure;
@@ -245,7 +246,7 @@ export class AndroidDriver implements AppDriver {
     // set-app-locales reports an unknown package or missing service on stdout with exit status 0.
     const output = await this.shell("Changing the app language", `cmd locale set-app-locales ${bundleId}${language === null ? "" : ` --locales ${language}`}; cmd locale get-app-locales ${bundleId}`, 15000, localeUnavailable);
     const applied = parseAndroidAppLocales(output);
-    if (applied?.toLowerCase() !== language?.toLowerCase()) throw new Error("Changing the app language failed: Android kept a different language.");
+    if (applied?.toLowerCase() !== language?.toLowerCase()) throw annotateDeviceCommand(new Error("Changing the app language failed: Android kept a different language."), "adb_shell_cmd", { failure: "unexpected_output" });
   }
 
   async push(): Promise<void> {

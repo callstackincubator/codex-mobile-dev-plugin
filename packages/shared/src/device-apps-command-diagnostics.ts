@@ -9,6 +9,9 @@ export type ForegroundCause = typeof foregroundCauses[number];
 export type DiscoveryCause = ForegroundCause | "device_not_booted" | "device_offline" | "device_unauthorized"
   | "missing_executable" | "deadline_exceeded" | "output_limit" | "process_signalled" | "command_failed" | "unknown";
 export type CommandTermination = "exit" | "signal" | "deadline" | "cancelled" | "spawn_error" | "output_limit" | "unknown";
+// Signals reported by name; any other is reported as other.
+export const commandSignals = ["SIGABRT", "SIGBUS", "SIGFPE", "SIGILL", "SIGKILL", "SIGPIPE", "SIGSEGV", "SIGTERM", "SIGTRAP"] as const;
+export type CommandSignal = typeof commandSignals[number] | "other";
 export type DiscoveryCommandDiagnostic = {
   command: DiscoveryCommand;
   cause: DiscoveryCause;
@@ -16,7 +19,7 @@ export type DiscoveryCommandDiagnostic = {
   elapsed_ms: number;
   deadline_ms: number;
   exit_status?: number;
-  signal?: "SIGABRT" | "SIGBUS" | "SIGFPE" | "SIGILL" | "SIGKILL" | "SIGPIPE" | "SIGSEGV" | "SIGTERM" | "SIGTRAP" | "other";
+  signal?: CommandSignal;
 };
 
 const diagnostics = new WeakMap<object, DiscoveryCommandDiagnostic>();

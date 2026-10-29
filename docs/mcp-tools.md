@@ -7,14 +7,12 @@
 | `mobile_open_simulator` | Open the native panel, optionally targeting a platform, device kind, or discovered device ID |
 | `mobile_open_workspace` | Open fullscreen with the same optional device targeting |
 | `mobile_list_simulators` | Start the bundled backend if needed and list devices |
-| `mobile_show_devices` | Show devices in an inline card with Boot/Stop, or ask the user to choose task targets through the native form or the card |
+| `mobile_choose_devices` | Ask the user to choose task targets in the host's native form; listed only for hosts with one (Codex, Claude Code) |
 | `mobile_list_ios_devices` | Discover physical iPhones and iPads with USB/Wi-Fi, pairing state, UDID, and CoreDevice ID |
 | `mobile_start_baguette` | Retry or reconnect the bundled backend |
 | `mobile_boot_simulator` | Boot one listed device |
 | `mobile_shutdown_simulator` | Shut down one listed device |
-| `mobile_describe_ui` | Read a booted device's accessibility tree |
-| `mobile_screenshot` | Return a booted device's PNG screenshot |
-| `mobile_send_input` | Send validated input in device points |
+| `mobile_describe_ui` | Read a booted device's accessibility tree for panel annotations, app-only |
 | `mobile_repair_input` | Reclaim input from Device Hub, closing running apps |
 | `mobile_stream_session` | Create a panel stream, app-only |
 | `mobile_ios_mirror_input` | Send physical iOS panel touches for the current video generation, app-only |
@@ -42,7 +40,7 @@
 | `mobile_read_performance_frames` | Read Android jank/pacing statistics and page through exact display frames |
 | `mobile_display_fps_close` | Stop FPS collection and release the tracing connection |
 
-When reactivated, the `agent-device` MCP server exposes the pinned runtime's official operations through compact, validated schemas, including `open`, `snapshot`, `press`, `fill`, `type`, `scroll`, `wait`, `find`, `get`, `is`, `close`, and debugging tools. Their input schemas describe each command. The source [control skill](../skills/agent-device/SKILL.md), currently excluded from the package, explains session ordering and links to the version-matched guide.
+The plugin servers for Codex, Claude and Cursor add the pinned agent-device runtime's commands as `device_*` tools with compact, validated schemas, including `device_open`, `device_snapshot`, `device_screenshot`, `device_press`, `device_fill`, `device_type`, `device_scroll`, `device_wait`, `device_find`, `device_get`, `device_is`, `device_close`, and debugging tools. The agent reads screens and sends input with them; `device_screenshot` also returns the saved image. Their annotations let hosts run reads, device input and app control without asking, as with the panel's tools, while installs, scripts, app-defined events, file outputs, the clipboard and development servers still ask (see [Architecture](architecture.md#runtime)). Their input schemas describe each command; `logs` and `perf` are left out for Mobile Dev's own tools. The agent-device skill explains the control loop and ships the runtime's own workflow guide.
 
 
 ## TraceSift annotations

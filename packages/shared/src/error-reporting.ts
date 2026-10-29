@@ -48,6 +48,25 @@ export function errorCategory(error: unknown): ErrorCategory {
   return "unexpected";
 }
 
+const episodeReports = new WeakMap<object, () => boolean>();
+const capturedFailures = new WeakSet<object>();
+
+/** Defers the episode decision to the first capture site that would send it, so logging or cancelled callers don't use up the single report. */
+export function deferEpisodeReport(error: unknown, shouldReport: () => boolean) {
+  if (error !== null && typeof error === "object") episodeReports.set(error, shouldReport);
+}
+
+/** Whether a capture site should only count this failure. The first capture of a deferred failure decides its episode. */
+export function isRepeatedFailure(error: unknown): boolean {
+  if (error === null || typeof error !== "object") return false;
+  const shouldReport = episodeReports.get(error);
+  if (shouldReport === undefined) return false;
+  // Callers that joined the same attempt share its error, so only the first capture can report it.
+  if (capturedFailures.has(error)) return true;
+  capturedFailures.add(error);
+  return shouldReport() === false;
+}
+
 type Episode = { signature: string; lastSeen: number };
 
 // Keys stay local; one bounded table covers selected-device polling across panels.

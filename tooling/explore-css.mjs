@@ -3,7 +3,6 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { TRACE_SIFT_EXPLORE_CLASS } from "../packages/shared/src/tracesift-explore.ts";
 
-/** The class the explorer renders, from the same constant the component uses. */
 const SCOPE = `.${TRACE_SIFT_EXPLORE_CLASS}`;
 
 /**

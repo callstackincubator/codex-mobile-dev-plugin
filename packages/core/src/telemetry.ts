@@ -3,13 +3,14 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { McpServer, ResourceTemplate, ResourceMetadata, ReadResourceCallback, ReadResourceTemplateCallback, RegisteredResource, RegisteredResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { MeasurementWindow, TELEMETRY_HOSTS, TELEMETRY_INTERVAL_MS, TELEMETRY_META_KEY, telemetryHost } from "@mobile-dev/shared/telemetry.ts";
-import { ExpectedOperationError, expectedOutcome } from "@mobile-dev/shared/error-reporting.ts";
+import { ExpectedOperationError, expectedOutcome, isRepeatedFailure } from "@mobile-dev/shared/error-reporting.ts";
 import { closeNativeTelemetry } from "./native-telemetry.ts";
 import { closeHttpRuntime } from "./http-runtime.ts";
 import { definitionDiagnosticTags } from "@mobile-dev/shared/simulator-definition-diagnostics.ts";
 import { deviceAppsDiagnosticTags } from "@mobile-dev/shared/device-apps-diagnostics.ts";
 import { getDiscoveryCommandDiagnostic } from "@mobile-dev/shared/device-apps-command-diagnostics.ts";
 import { androidStartupDiagnosticTags } from "@mobile-dev/shared/android-startup-diagnostics.ts";
+import { installIntegrityTags } from "./install-integrity.ts";
 import type { AndroidStartupSummary, AndroidStartupContext, AndroidStartupFailure, AndroidDeviceState } from "@mobile-dev/shared/android-startup-diagnostics.ts";
 
 export function recordBrowserPanelSessions(active: number) {
@@ -168,22 +169,28 @@ export class IOSLogProcessingTelemetry {
   }
 }
 
-export function captureServerError(error: unknown, operation: string, options?: { report?: boolean; signal?: AbortSignal }) {
+/**
+ * Counts a handled failure and reports it when it is unexpected. `reportAs` stands in for an error whose message
+ * can carry app IDs, URLs, serials or paths; create it where the failure is caught so Sentry keeps that location.
+ * The outcome and diagnostic tags still come from the original error.
+ */
+export function captureServerError(error: unknown, operation: string, options?: { report?: boolean; signal?: AbortSignal; reportAs?: Error; tags?: Record<string, string> }) {
   const outcome = options?.signal?.aborted ? "cancelled" : expectedOutcome(error);
-  const diagnosticTags = deviceAppsDiagnosticTags(error);
+  const diagnosticTags = { ...deviceAppsDiagnosticTags(error), ...options?.tags };
   const definitionTags = definitionDiagnosticTags(error);
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   Sentry.metrics.count("server.error.outcome", 1, { attributes: { operation, outcome: outcome ?? "unexpected", ...diagnosticTags } });
   if (outcome !== undefined) return;
-  if (options?.report === false) {
+  if (options?.report === false || isRepeatedFailure(error)) {
     Sentry.metrics.count("server.error.repeated", 1, { attributes: { operation, ...diagnosticTags } });
     return;
   }
   const androidTags = androidStartupDiagnosticTags(error);
+  const installTags = installIntegrityTags(error);
   const command = getDiscoveryCommandDiagnostic(error);
   const contexts = command ? { device_apps_command: { elapsed_ms: command.elapsed_ms, deadline_ms: command.deadline_ms,
     exit_status: command.exit_status } } : undefined;
-  Sentry.captureException(error, { tags: { ...diagnosticTags, ...definitionTags, ...androidTags, operation }, contexts });
+  Sentry.captureException(options?.reportAs ?? error, { tags: { ...diagnosticTags, ...definitionTags, ...androidTags, ...installTags, operation }, contexts });
 }
 
 type RequestReporting = { accounted: boolean; sessionResponse?: { release: () => void; close: () => Promise<void> } };
@@ -257,7 +264,7 @@ const resourceKinds: Record<string, string> = {
   "android-stream:": "android_video", "ios-video:": "ios_video", "ui:": "ui",
 };
 const allowedContext: Record<string, readonly string[]> = {
-  surface: ["logs", "performance", "storage", "simulator", "recording", "comparison", "tracesift", "devices"], view: ["panel", "workspace", "recording", "comparison", "tracesift", "devices"], layout: ["ios", "android", "both", "none"],
+  surface: ["logs", "performance", "storage", "simulator", "recording", "comparison", "tracesift"], view: ["panel", "workspace", "recording", "comparison", "tracesift"], layout: ["ios", "android", "both", "none"],
   device_platform: ["ios", "android", "mixed"], device_kind: ["physical", "simulator", "emulator", "none"], host: TELEMETRY_HOSTS,
 };
 

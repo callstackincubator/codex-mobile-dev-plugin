@@ -1,0 +1,17 @@
+{
+  "description": "Tells the user and Claude when Node.js 22.19 or later, which the Mobile Dev server needs, is missing.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh \"${CLAUDE_PLUGIN_ROOT}/scripts/launch-node.sh\" --check",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

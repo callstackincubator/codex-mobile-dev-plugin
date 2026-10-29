@@ -537,6 +537,9 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   await act(async () => { (storageDrawer.querySelector('[role="tab"]:nth-child(2)') as HTMLElement).click(); });
   assert.match(storageDrawer.textContent ?? "", /No changes yet/);
   await act(async () => { (storageDrawer.querySelector('[role="tab"]:nth-child(1)') as HTMLElement).click(); });
+  const beforeRefresh = storageCalls.length;
+  await act(async () => { (storageDrawer.querySelector('button[aria-label="Refresh"]') as HTMLButtonElement).click(); await new Promise(resolve => setTimeout(resolve, 0)); });
+  assert.deepEqual(storageCalls.slice(beforeRefresh).filter(name => name !== "mobile_app_icons"), ["mobile_list_apps", "mobile_app_storage"], "Refresh lists the apps again and rereads the selected app.");
   assert.equal(dom.window.document.querySelector("canvas"), canvas, "The storage tool preserves the device DOM.");
   await selectTool("logs");
   assert.equal(dom.window.document.getElementById("storage-drawer"), null);

@@ -24,8 +24,7 @@ function metricSeries(recording: PerformanceRecording, metric: ComparisonMetric)
   return points;
 }
 
-// Two rows at interval boundaries retain both sides of a step. Every run is
-// evaluated at the same time, so tooltips compare time rather than sample index.
+// Two rows at interval boundaries keep both sides of a step; runs share timestamps so tooltips compare time, not sample index.
 export function createComparisonSeries(recordings: PerformanceRecording[], metric: ComparisonMetric): ComparisonPoint[] {
   const series = recordings.map(recording => {
     const points = metricSeries(recording, metric);
@@ -74,4 +73,58 @@ export function createComparisonSeries(recordings: PerformanceRecording[], metri
     }
   }
   return rows;
+}
+
+export type SharpMetric = "cpu" | "memory" | "fps";
+/** One stretch of a run where a measure moved sharply, with the readings across it. */
+export type SharpChange = { run: number; metric: SharpMetric; start: number; end: number; values: number[] };
+
+// Fixed per-second steps that count as sharp. A share of the largest change would flag a
+// quiet run's noise as loudly as another run's spike.
+export const SHARP_CHANGE: Record<SharpMetric, number> = { cpu: 10, memory: 50, fps: 15 };
+
+type Reading = { time: number; interval: number; value: number | null };
+
+function readings(recording: PerformanceRecording, metric: SharpMetric): Reading[] {
+  if (metric === "fps") return recording.fps.samples.map(sample => ({ time: sample.time, interval: sample.interval, value: sample.fps }));
+  return recording.samples.map(sample => ({
+    time: sample.time,
+    interval: sample.interval,
+    value: metric === "cpu" ? sample.cpuPercent : sample.memoryBytes === null ? null : sample.memoryBytes / 1048576,
+  }));
+}
+
+export function findSharpChanges(recordings: PerformanceRecording[]): SharpChange[][] {
+  return recordings.map((recording, run) => {
+    const changes: SharpChange[] = [];
+    for (const metric of ["cpu", "memory", "fps"] as const) {
+      let previous: { time: number; value: number } | undefined;
+      let current: SharpChange | undefined;
+      for (const reading of readings(recording, metric)) {
+        if (reading.value === null || reading.time > recording.durationSeconds) {
+          previous = undefined;
+          current = undefined;
+          continue;
+        }
+        if (previous !== undefined) {
+          const elapsed = reading.time - previous.time;
+          // A gap is missing readings, not a change: the series use the same tolerance.
+          const continuous = elapsed > 0 && elapsed <= reading.interval * 1.5;
+          // Readings come about a second apart; a slower cadence needs a larger step.
+          const seconds = Math.max(1, Math.round(elapsed));
+          const sharp = continuous && Math.abs(reading.value - previous.value) >= SHARP_CHANGE[metric] * seconds;
+          if (sharp && current?.end === previous.time) {
+            current.end = reading.time;
+            current.values.push(reading.value);
+          } else if (sharp) {
+            current = { run, metric, start: previous.time, end: reading.time, values: [previous.value, reading.value] };
+            changes.push(current);
+          } else current = undefined;
+        }
+        previous = { time: reading.time, value: reading.value };
+      }
+    }
+    changes.sort((left, right) => left.start - right.start);
+    return changes;
+  });
 }

@@ -13,18 +13,37 @@ import { z } from "zod";
 import { MeasurementWindow, sampleTrace, scrubErrorEvent, scrubMetric, scrubSpan, sampleMetric, createErrorEventFilter, METRIC_SAMPLE_RATE, TELEMETRY_META_KEY } from "../../shared/src/telemetry.ts";
 import { captureServerError, installTracePropagation, instrumentMcpServer, IOSLogProcessingTelemetry, recordAndroidBackendStartup, recordIosMirrorSharing, recordBrowserPanelContext, recordBrowserPanelSessions } from "../src/telemetry.ts";
 import { recordPluginUpdate } from "../../../apps/codex-plugin/server/plugin-updates.ts";
-import { ExpectedOperationError, FailureEpisodes } from "../../shared/src/error-reporting.ts";
+import { deferEpisodeReport, ExpectedOperationError, FailureEpisodes } from "../../shared/src/error-reporting.ts";
 import { parseResourceInput } from "../src/resource-input.ts";
 import { openRequestSession } from "../src/request-session.ts";
 import { registerDeviceAppsTool } from "../src/device-apps/tools.ts";
 import { directoryBytes } from "../src/storage-metrics.ts";
 import { SimulatorUnavailableError } from "../src/simulator-unavailable.ts";
+import { MissingRuntimeError } from "../src/install-integrity.ts";
 import { registerDeviceChoiceTools } from "../src/device-choice-tools.ts";
 import { listIosDevices, registerIosDeviceTools } from "../src/ios-devices.ts";
+import { createPhysicalIosBezelReader } from "../src/physical-ios-bezel.ts";
+import { registerIosMirrorTools } from "../src/ios-mirror-tools.ts";
+import { IosMirrorSessions } from "../src/ios-mirror.ts";
+import type { PhysicalIosDevice } from "../../shared/src/ios-devices.ts";
 import { createDrivers, registerAppControlTools } from "../src/app-control/tools.ts";
+import { registerDeviceSettingsTools } from "../src/device-settings.ts";
+import { Baguette } from "../src/baguette.ts";
+import type { ServeEmu } from "../src/serve-emu.ts";
+import { setAndroidStartupDiagnostic } from "../../shared/src/android-startup-diagnostics.ts";
 import type { OpenAIFormResult } from "@openai/mcp-extensions/server";
-import { adapterClient } from "../../test-support/agent-device-fixtures.ts";
+import { agentDeviceClient } from "../../test-support/agent-device-fixtures.ts";
 import { setDiscoveryCommandDiagnostic } from "../../shared/src/device-apps-command-diagnostics.ts";
+
+type ReportedEvent = { exception?: { values?: { value?: string }[] }; tags?: Record<string, string> };
+function reportedEvents(envelopes: Envelope[]) {
+  return envelopes.flatMap(envelope => envelope[1]).filter(item => item[0].type === "event").map(item => item[1] as ReportedEvent);
+}
+
+// The cause tags a fixed-message report carries, without the scope and operation tags around them.
+function causeTags(event: ReportedEvent | undefined) {
+  return Object.fromEntries(Object.entries(event?.tags ?? {}).filter(([key]) => key === "device_platform" || key.startsWith("device_command")));
+}
 
 function contains(text: string, fragment: string, expected = true) {
   const included = text.includes(fragment);
@@ -181,13 +200,14 @@ test("UI timing windows retain exact totals, reset, and ignore invalid measureme
 test("high frequency reads and input avoid trace sampling even with a sampled parent", () => {
   let inherited = 0;
   const inherit = (rate: number) => { inherited++; return rate; };
-  for (const name of ["resources/read frame://private-session", "notifications/tools/list_changed", "tools/call mobile_stream_input", "tools/call mobile_ios_mirror_input", "tools/call mobile_read_cpu", "tools/call devices", "tools/call session", "tools/call events"]) {
+  for (const name of ["resources/read frame://private-session", "notifications/tools/list_changed", "tools/call mobile_stream_input", "tools/call mobile_ios_mirror_input", "tools/call mobile_read_cpu", "tools/call device_devices", "tools/call device_session", "tools/call device_events"]) {
     const rate = sampleTrace(name, inherit);
     assert.equal(rate, 0);
   }
   assert.equal(inherited, 0);
   const rate = sampleTrace("tools/call mobile_cpu_session", inherit);
   assert.equal(rate, 0.1);
+  assert.equal(sampleTrace("tools/call device_press", inherit), 0.1);
   const screenshotRate = sampleTrace("tools/call mobile_ios_mirror_capture_screenshot", inherit);
   assert.equal(screenshotRate, 0.1);
 });
@@ -303,7 +323,7 @@ test("shared iOS capture metrics retain surface attribution and honor opt-out", 
   assert.equal(JSON.stringify(envelopes), sent);
 });
 
-test("Agent Device adapter continues traces and reports failures without native tool payloads", async t => {
+test("agent-device tools continue traces and report failures without native tool payloads", async t => {
   const envelopes: Envelope[] = [];
   Sentry.init({
     dsn: "https://public@example.com/1", defaultIntegrations: false,
@@ -313,7 +333,7 @@ test("Agent Device adapter continues traces and reports failures without native 
   t.after(async () => { await Sentry.close(); });
   let observedTrace: string | undefined;
   let calls = 0;
-  const { client } = await adapterClient(t, async () => {
+  const { client } = await agentDeviceClient(t, async () => {
     calls++;
     const span = Sentry.getActiveSpan();
     observedTrace = span?.spanContext().traceId;
@@ -322,21 +342,20 @@ test("Agent Device adapter continues traces and reports failures without native 
     return { isError: true, content: [{ type: "text", text: "PRIVATE_NATIVE_RESULT" }] };
   });
   const traceId = "1234567890abcdef1234567890abcdef";
-  await client.callTool({ name: "type", arguments: { session: "PRIVATE_SESSION", text: "PRIVATE_NATIVE_ARGUMENT" }, _meta: {
+  await client.callTool({ name: "device_type", arguments: { session: "PRIVATE_SESSION", text: "PRIVATE_NATIVE_ARGUMENT" }, _meta: {
     "sentry-trace": `${traceId}-1234567890abcdef-1`,
   } });
   assert.equal(observedTrace, traceId);
-  await client.callTool({ name: "type", arguments: { session: "PRIVATE_SESSION", text: "PRIVATE_NATIVE_ARGUMENT" } });
+  await client.callTool({ name: "device_type", arguments: { session: "PRIVATE_SESSION", text: "PRIVATE_NATIVE_ARGUMENT" } });
   await Sentry.flush();
   const encoded = JSON.stringify(envelopes);
   contains(encoded, "PRIVATE_", false);
   contains(encoded, traceId);
   contains(encoded, "Agent Device command failed.");
   contains(encoded, "Agent Device tool transport failed.");
-  contains(encoded, "agent_device.catalog.ready");
   const items = envelopes.flatMap(envelope => envelope[1]);
   const errors = items.filter(item => item[0].type === "event");
-  await client.callTool({ name: "type", arguments: { session: "PRIVATE_SESSION", text: "PRIVATE_NATIVE_ARGUMENT" } });
+  await client.callTool({ name: "device_type", arguments: { session: "PRIVATE_SESSION", text: "PRIVATE_NATIVE_ARGUMENT" } });
   await Sentry.flush();
   const afterItems = envelopes.flatMap(envelope => envelope[1]);
   const afterErrors = afterItems.filter(item => item[0].type === "event");
@@ -441,8 +460,7 @@ test("UI trace context crosses the MCP bridge and handled server errors exclude 
   assert.equal(observedTags?.device_platform, "mixed");
   assert.equal(observedTags?.device_kind, "none");
   assert.equal(observedTags?.recordingIds, undefined);
-  // The TraceSift tool is a workspace surface of its own, so its calls must keep
-  // their attribution rather than being dropped by the metadata allowlist.
+  // TraceSift is its own workspace surface; its attribution must survive the metadata allowlist.
   await client.callTool({ name: "test_action", arguments: { secret: "PRIVATE_PROFILE_PATH" }, _meta: {
     [TELEMETRY_META_KEY]: { surface: "tracesift", view: "tracesift", profilePath: "PRIVATE_PROFILE_PATH" },
   } });
@@ -530,7 +548,7 @@ test("native device picker measures preparation and outcomes without private for
     async android() { return { connected: true, managed: false, baseUrl: "", devices: [
       { udid: "PRIVATE_SERIAL", name: "PRIVATE_DEVICE_NAME", runtime: "Android", state: "Booted", platform: "android", kind: "physical" },
     ] }; },
-  });
+  }, "openai");
   const client = new Client({ name: "picker-host", version: "1" }, { capabilities: { extensions: { "openai/elicitation": { form: {} } } } });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   t.after(async () => { await client.close(); await server.close(); await Sentry.close(); });
@@ -541,13 +559,11 @@ test("native device picker measures preparation and outcomes without private for
   ] };
   for (const action of ["accept", "cancel", "decline"] as const) {
     answer = action === "accept" ? { action, content: { device: "device-1" } } : { action };
-    const result = await client.callTool({ name: "mobile_show_devices", arguments: arguments_ });
+    const result = await client.callTool({ name: "mobile_choose_devices", arguments: arguments_ });
     assert.equal(result.isError, undefined);
   }
-  const browse = await client.callTool({ name: "mobile_show_devices", arguments: {} });
-  assert.equal(browse.isError, undefined);
   answer = { action: "accept", content: { device: "not-offered" } };
-  const invalid = await client.callTool({ name: "mobile_show_devices", arguments: arguments_ });
+  const invalid = await client.callTool({ name: "mobile_choose_devices", arguments: arguments_ });
   assert.equal(invalid.isError, true);
   await Sentry.close();
   const encoded = JSON.stringify(envelopes);
@@ -557,8 +573,7 @@ test("native device picker measures preparation and outcomes without private for
   contains(encoded, "PRIVATE", false);
   contains(encoded, "device-1", false);
   contains(encoded, "selection_mode");
-  contains(encoded, "rendered");
-  contains(encoded, "browse");
+  contains(encoded, "openai");
   contains(encoded, "millisecond");
   const items = envelopes.flatMap(envelope => envelope[1]);
   const errors = items.filter(item => item[0].type === "event");
@@ -805,6 +820,92 @@ test("discovery reports the first failure per episode and counts repeated and ex
   contains(capturedEvents, "Device offline", false);
 });
 
+test("physical iOS frames accept profiles without represented models, report a failed render once across reconnects, and count a missing model as expected", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, beforeSend: scrubErrorEvent, beforeSendMetric: scrubMetric,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  const phone: PhysicalIosDevice = {
+    udid: "00008150-0000111122223333", coreDeviceId: "11111111-1111-4111-8111-111111111111", name: "PRIVATE_DEVICE_NAME", model: "iPhone 17 Pro",
+    productType: "iPhone18,1", state: "connected", runtime: "iOS 27.0", platform: "ios", kind: "physical", transportType: "wired", pairingState: "paired",
+  };
+  const unknownPhone: PhysicalIosDevice = { ...phone, udid: "00008150-0000444455556666", productType: "iPhone99,1" };
+  const renders: string[] = [];
+  const readBezel = createPhysicalIosBezelReader(async (file, args) => {
+    const output = (value: unknown) => ({ stdout: Buffer.from(JSON.stringify(value)) });
+    if (file === "/usr/bin/xcrun") return output({ devicetypes: [{ name: "iPhone 17 Pro", modelIdentifier: "iPhone18,1", bundlePath: "/PRIVATE_XCODE/iPhone 17 Pro.simdevicetype" }] });
+    // Older profiles omit representedModelIdentifiers.
+    if (file === "/usr/bin/plutil") return output({});
+    renders.push(args[1]);
+    throw new Error("Device frame layout failed");
+  }, async () => ({}));
+  const sessions = new IosMirrorSessions(async () => ({
+    async read() { return { generation: 1, sequence: 1, dropped: 0, frames: [] }; }, async touch() {}, async reset() {}, async close() {},
+  }));
+  const server = new McpServer({ name: "bezel-reporting-test", version: "1" });
+  instrumentMcpServer(server);
+  const close = registerIosMirrorTools(server, "ui://test/app", sessions, async () => [phone, unknownPhone], readBezel);
+  const client = new Client({ name: "test", version: "1" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  installTracePropagation(serverTransport);
+  t.after(async () => { await close(); await client.close(); await server.close(); await Sentry.close(); });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  for (let reconnect = 0; reconnect < 3; reconnect++) {
+    const opened = await client.callTool({ name: "mobile_ios_mirror_session", arguments: { udid: phone.udid } });
+    assert.equal(opened.isError, undefined);
+    assert.equal(opened._meta?.bezel, undefined);
+  }
+  assert.deepEqual(renders, ["layout"]);
+  const unframed = await client.callTool({ name: "mobile_ios_mirror_session", arguments: { udid: unknownPhone.udid } });
+  assert.equal(unframed.isError, undefined);
+  assert.equal(unframed._meta?.bezel, undefined);
+  await Sentry.flush();
+  const items = envelopes.flatMap(envelope => envelope[1]);
+  const events = items.filter(item => item[0].type === "event");
+  assert.equal(events.length, 1);
+  const encoded = JSON.stringify(envelopes);
+  contains(encoded, "ios-mirror.bezel");
+  contains(encoded, '"outcome":{"value":"unsupported_platform"');
+  contains(encoded, "Xcode has no Apple device frame", false);
+  contains(encoded, "Device frame layout failed");
+  contains(encoded, "representedModelIdentifiers", false);
+  contains(encoded, "PRIVATE", false);
+});
+
+test("an episode's report goes to the first capture site that sends it, and repeats are only counted", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, beforeSend: scrubErrorEvent, beforeSendMetric: scrubMetric,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  t.after(() => Sentry.close());
+  const episodes = new FailureEpisodes();
+  const failure = () => {
+    const error = new Error("Cannot reach Baguette at http://127.0.0.1:1. Baguette returned HTTP 500 for /simulators.json.");
+    deferEpisodeReport(error, () => episodes.shouldReport("start", error.message));
+    return error;
+  };
+  // A cancelled caller and one that only logs the failure don't use up the episode's report.
+  const controller = new AbortController();
+  controller.abort();
+  captureServerError(failure(), "simulator.tool", { signal: controller.signal });
+  failure();
+  const first = failure();
+  captureServerError(first, "simulator.tool");
+  // A caller that joined the same start shares its error.
+  captureServerError(first, "simulator.tool");
+  captureServerError(failure(), "simulator.tool");
+  await Sentry.flush();
+  const items = envelopes.flatMap(envelope => envelope[1]);
+  const events = items.filter(item => item[0].type === "event");
+  assert.equal(events.length, 1);
+  const sent = JSON.stringify(envelopes);
+  contains(sent, "server.error.repeated");
+  contains(sent, '"outcome":{"value":"cancelled"');
+});
+
 test("failure episode memory is bounded and inactivity starts a new episode", () => {
   const episodes = new FailureEpisodes();
   const first = episodes.shouldReport("a", "first", 0);
@@ -877,6 +978,26 @@ test("Android startup diagnostics retain stage, device state and anonymous error
   await Sentry.flush();
   const afterOptOut = JSON.stringify(envelopes);
   assert.equal(afterOptOut, sent);
+});
+
+test("missing bundled runtimes report the runtime and install integrity with anonymous attribution", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, environment: "release", release: "mobile-dev@test", beforeSend: scrubErrorEvent,
+    initialScope: { user: { id: "anon_0123456789abcdef0123456789abcdef" } },
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  const previous = process.env.MOBILE_DEV_TELEMETRY;
+  delete process.env.MOBILE_DEV_TELEMETRY;
+  t.after(async () => {
+    if (previous === undefined) delete process.env.MOBILE_DEV_TELEMETRY;
+    else process.env.MOBILE_DEV_TELEMETRY = previous;
+    await Sentry.close();
+  });
+  captureServerError(new MissingRuntimeError("serve-emu"), "android.tool");
+  await Sentry.flush();
+  const sent = JSON.stringify(envelopes);
+  for (const fragment of ['"install_integrity":"incomplete"', '"bundled_runtime":"serve-emu"', '"operation":"android.tool"', "anon_0123456789abcdef0123456789abcdef", "mobile-dev@test"]) contains(sent, fragment);
 });
 
 test("resource teardown is classified before automatic SDK capture", async t => {
@@ -1014,15 +1135,18 @@ test("cancellation during stream response preparation closes the session and ret
   contains(encoded, "Unexpected stream cleanup failure");
 });
 
-test("app control reports unexpected command failures without command output and skips expected outcomes", async t => {
+test("app control reports how unexpected commands failed without command output and skips expected outcomes", async t => {
   const envelopes: Envelope[] = [];
   Sentry.init({
-    dsn: "https://public@example.com/1", defaultIntegrations: false, environment: "release", beforeSend: scrubErrorEvent,
+    dsn: "https://public@example.com/1", defaultIntegrations: false, environment: "release", beforeSend: scrubErrorEvent, beforeSendMetric: scrubMetric,
     transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
   });
   const run = async (_file: string, args: string[]) => {
     const command = args.join(" ");
     if (command.includes("openurl")) throw Object.assign(new Error(`Command failed: xcrun simctl ${command}`), { code: 1, stderr: "PRIVATE_FAILURE for myapp://PRIVATE_ROUTE", stdout: "" });
+    if (command.includes("privacy")) throw Object.assign(new Error(`Command failed: xcrun simctl ${command}`), { killed: true, signal: "SIGTERM", code: null, stderr: "", stdout: "" });
+    if (command.includes("terminate")) throw Object.assign(new Error("Command failed"), { code: 149, stderr: "Unable to lookup in current state: Shutting Down", stdout: "" });
+    if (command.includes("get-app-locales")) return "PRIVATE_LOCALE_OUTPUT";
     throw Object.assign(new Error("Command failed"), { code: 4, stderr: "FBSOpenApplicationServiceErrorDomain PRIVATE_BUNDLE", stdout: "" });
   };
   const server = new McpServer({ name: "app-control-telemetry", version: "1" });
@@ -1039,14 +1163,83 @@ test("app control reports unexpected command failures without command output and
   assert.match(JSON.stringify(failed.content), /PRIVATE_FAILURE/, "the agent still sees the command error");
   const missing = await client.callTool({ name: "mobile_launch_app", arguments: { ...target, bundleId: "com.private.app" } });
   assert.equal(missing.isError, true);
+  const stopping = await client.callTool({ name: "mobile_stop_app", arguments: { ...target, bundleId: "com.private.app" } });
+  assert.equal(stopping.isError, true);
+  await client.callTool({ name: "mobile_set_app_permission", arguments: { ...target, bundleId: "com.private.app", permission: "photos", state: "allow" } });
+  await client.callTool({ name: "mobile_set_app_language", arguments: { platform: "android", deviceId: "emulator-5554", bundleId: "com.private.app", language: "de" } });
   await Sentry.flush();
-  const events = envelopes.flatMap(envelope => envelope[1]).filter(item => item[0].type === "event").map(item => item[1]);
-  assert.equal(events.length, 1);
-  const encoded = JSON.stringify(events);
-  contains(encoded, "App open_url command failed.");
-  contains(encoded, '"operation":"app_control.open_url"');
+  const events = reportedEvents(envelopes);
+  assert.equal(events.length, 3, "a missing app and a simulator that is shutting down are expected outcomes");
+  const byOperation = new Map(events.map(event => [event.tags?.operation, event]));
+  assert.equal(byOperation.get("app_control.open_url")?.exception?.values?.[0]?.value, "App open_url command failed.");
+  assert.deepEqual(causeTags(byOperation.get("app_control.open_url")), { device_platform: "ios", device_command: "simctl_openurl", device_command_failure: "exit", device_command_status: "1" });
+  assert.deepEqual(causeTags(byOperation.get("app_control.permission")), { device_platform: "ios", device_command: "simctl_privacy", device_command_failure: "deadline" });
+  assert.deepEqual(causeTags(byOperation.get("app_control.set_language")), { device_platform: "android", device_command: "adb_shell_cmd", device_command_failure: "unexpected_output" });
+  const encoded = JSON.stringify(envelopes);
+  contains(encoded, "device_unavailable");
   contains(encoded, "PRIVATE", false);
   contains(encoded, "B5C969F6", false);
+  contains(encoded, "emulator-5554", false);
+});
+
+test("device settings report the failed backend request without its reply and count a device that stopped mid-request as expected", async t => {
+  const envelopes: Envelope[] = [];
+  // The server keeps only its own breadcrumbs; fetch instrumentation from earlier tests would record backend URLs.
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, environment: "release", beforeSend: scrubErrorEvent, beforeSendMetric: scrubMetric,
+    beforeBreadcrumb: () => null,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  const udid = "B5C969F6-58A4-4C31-AB12-FB9E56D681DE";
+  let state = "Booted";
+  let stopDuringRead = false;
+  const http = createServer((request, response) => {
+    response.setHeader("Content-Type", "application/json");
+    if (request.url === "/simulators.json") { response.end(JSON.stringify({ running: [{ udid, name: "PRIVATE_NAME", state }], available: [] })); return; }
+    // Baguette answers 404 for a simulator it no longer knows and 500 when simctl fails.
+    if (stopDuringRead) { state = "Shutdown"; response.writeHead(404).end(JSON.stringify({ ok: false, error: `unknown udid: ${udid}` })); return; }
+    response.writeHead(500).end(JSON.stringify({ ok: false, error: `PRIVATE_REPLY ${udid}` }));
+  });
+  http.listen(0, "127.0.0.1");
+  await new Promise<void>(resolve => { http.once("listening", resolve); });
+  const address = http.address();
+  assert.ok(address && typeof address === "object");
+  const baguette = new Baguette(`http://127.0.0.1:${address.port}`);
+  const startup = new Error("serve-emu exited before it became ready. PRIVATE_DIAGNOSTICS");
+  setAndroidStartupDiagnostic(startup, { stage: "process-launch", outcome: "error" }, {
+    deviceKind: "emulator", transport: "emulator", stateBefore: "online", activeBackends: 0, stoppingBackends: 0, startingBackends: 0,
+  });
+  const android = { onStart: () => () => {}, async start() { throw startup; }, async device() {} } as unknown as ServeEmu;
+  const server = new McpServer({ name: "device-settings-telemetry", version: "1" });
+  instrumentMcpServer(server);
+  const close = registerDeviceSettingsTools(server, baguette, android);
+  const client = new Client({ name: "test", version: "1" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  t.after(async () => { await client.close(); await server.close(); await close(); baguette.dispose(); http.closeAllConnections(); http.close(); await Sentry.close(); });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  const failed = await client.callTool({ name: "mobile_device_settings", arguments: { target: { platform: "ios", id: udid } } });
+  assert.equal(failed.isError, true);
+  assert.match(JSON.stringify(failed.content), /HTTP 500/, "the panel still sees the backend error");
+  const backend = await client.callTool({ name: "mobile_device_settings", arguments: { target: { platform: "android", id: "emulator-5554" } } });
+  assert.equal(backend.isError, true);
+  stopDuringRead = true;
+  const stopped = await client.callTool({ name: "mobile_device_settings", arguments: { target: { platform: "ios", id: udid } } });
+  assert.match(JSON.stringify(stopped.content), /simulator is stopped/);
+  await Sentry.flush();
+  const events = reportedEvents(envelopes);
+  assert.equal(events.length, 2, "a simulator that stopped mid-read is an expected outcome");
+  const [ios, serveEmu] = events;
+  assert.equal(ios.exception?.values?.[0]?.value, "Device setting command failed.");
+  assert.equal(ios.tags?.operation, "device_settings.read");
+  assert.deepEqual(causeTags(ios), { device_platform: "ios", device_command: "baguette_interface", device_command_failure: "http_status", device_command_status: "500" });
+  assert.deepEqual(causeTags(serveEmu), { device_platform: "android", device_command: "serve_emu_start", device_command_failure: "unknown" });
+  assert.equal(serveEmu.tags?.android_startup_stage, "process-launch", "serve-emu startup diagnostics stay attached");
+  const encoded = JSON.stringify(envelopes);
+  contains(encoded, "device_unavailable");
+  contains(encoded, "PRIVATE", false);
+  contains(encoded, udid, false);
+  contains(encoded, "emulator-5554", false);
 });
 
 test("browser session counts describe plugin resources and honor telemetry opt-out", async t => {

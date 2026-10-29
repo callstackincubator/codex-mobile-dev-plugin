@@ -12,8 +12,7 @@ const deviceButtons: { action: string; icon: LucideIcon; label: string }[] = [
   { action: "app-switcher", icon: CopyIcon, label: "App switcher" },
 ];
 
-// The stream controller owns canvas pixels and device control state after mount.
-// Keep this subtree stable so log batches never reset a live device.
+// The stream controller owns the canvas after mount; keep this subtree stable so log batches never reset a live device.
 export const SimulatorView = memo(function SimulatorView({ platform, visible }: { platform: "ios" | "android"; visible: boolean }) {
   const [annotations] = useState(() => new ScreenAnnotationsStore());
   const label = platform === "ios" ? "iOS" : "Android";
