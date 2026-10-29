@@ -15,7 +15,9 @@ import type { CpuPoint } from "@mobile-dev/shared/cpu.ts";
 import {
   COLORS,
   CHART_MARGIN,
+  TRACK_COLORS,
   TRACK_HEIGHT,
+  type ChartColors,
 } from "./constants";
 import {
   generateTicks,
@@ -30,21 +32,11 @@ type PerformanceAreaChartProps = {
   zoomState: ZoomState;
   onZoomChange: (state: ZoomState) => void;
   onZoomOut: () => void;
-  chartColors?: {
-    stroke: string;
-    fillStart: string;
-    fillEnd: string;
-  };
+  chartColors?: ChartColors;
   gradientId?: string;
   tooltipPostfix?: string;
   trackHeight?: number;
   curveType?: ComponentProps<typeof Area>["type"];
-};
-
-const defaultChartColors = {
-  stroke: COLORS.areaChartStroke,
-  fillStart: COLORS.areaChartFillStart,
-  fillEnd: COLORS.areaChartFillEnd,
 };
 
 export const PerformanceAreaChart = memo(function PerformanceAreaChart({
@@ -52,7 +44,7 @@ export const PerformanceAreaChart = memo(function PerformanceAreaChart({
   zoomState,
   onZoomChange,
   onZoomOut,
-  chartColors = defaultChartColors,
+  chartColors = TRACK_COLORS.cpu,
   gradientId = "colorValue",
   tooltipPostfix,
   trackHeight = TRACK_HEIGHT,

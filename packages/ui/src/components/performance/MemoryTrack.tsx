@@ -2,10 +2,9 @@ import { useMemo } from "react";
 import { DatabaseIcon } from "lucide-react";
 import type { CpuPhase, CpuSample } from "@mobile-dev/shared/cpu.ts";
 import type { ZoomState } from "./types";
-import { MEMORY_COLORS, TRACK_HEIGHT } from "./constants";
+import { TRACK_COLORS } from "./constants";
 import { PerformanceAreaChart } from "./PerformanceAreaChart";
-import { TrackLabel } from "./TrackLabel";
-import { CursorIndicator } from "./CursorIndicator";
+import { MetricTrack, summaryMetrics, trackMessage } from "./MetricTrack";
 import { createMemorySeries, formatMemory } from "./memorySeries";
 
 type MemoryTrackProps = {
@@ -18,34 +17,21 @@ type MemoryTrackProps = {
   onZoomOut: () => void;
 };
 
+const copy = { idle: "Open an app on the selected device to measure memory.", connecting: "Connecting to the app’s memory counters…", recording: "Measuring memory usage…" };
+
 export function MemoryTrack({ samples, platform, phase, error, zoomState, onZoomChange, onZoomOut }: MemoryTrackProps) {
   const series = useMemo(() => createMemorySeries(samples), [samples]);
-  const current = formatMemory(series.current);
   const average = series.average === null ? "—" : series.average.toFixed(1);
-  const maximum = formatMemory(series.maximum);
-  const minimum = formatMemory(series.minimum);
-  const metrics = [
-    { label: "Current", value: current },
-    { label: "Avg / Max", value: `${average} / ${maximum}` },
-    { label: "Min", value: minimum },
-  ];
+  const metrics = summaryMetrics({ current: formatMemory(series.current), average, maximum: formatMemory(series.maximum) }, { label: "Min", value: formatMemory(series.minimum) });
   const title = platform === "android"
     ? "Main process memory: RSS (resident set size). Shared resident pages are counted in full. 1 MiB = 1,048,576 bytes."
     : "Main process memory: physical footprint, including compressed memory. 1 MiB = 1,048,576 bytes.";
-  let message = "Open an app on the selected device to measure memory.";
-  if (phase === "connecting") message = "Connecting to the app’s memory counters…";
-  else if (phase === "recording") message = "Measuring memory usage…";
-  if (error) message = error;
   const showMessage = series.current === null || phase === "failed";
 
-  return <div role="region" aria-label="Memory usage" className="group flex flex-row" style={{ height: TRACK_HEIGHT }}>
-    <TrackLabel label="Memory" icon={<DatabaseIcon className="size-4 text-orange-500" />} metrics={metrics} title={title} />
-    <div className="min-w-0 flex-1 h-full relative border-b border-border">
-      <PerformanceAreaChart data={series.data} zoomState={zoomState}
-        onZoomChange={onZoomChange} onZoomOut={onZoomOut} chartColors={MEMORY_COLORS}
-        gradientId="memoryGradient" tooltipPostfix="MiB" />
-      {showMessage && <div role={error ? "alert" : "status"} className="absolute inset-0 flex items-center justify-center px-4 text-xs text-muted-foreground bg-background/90">{message}</div>}
-      <CursorIndicator />
-    </div>
-  </div>;
+  return <MetricTrack role="region" aria-label="Memory usage" label="Memory" icon={<DatabaseIcon className="size-4 text-orange-500" />} metrics={metrics} title={title}
+    message={showMessage ? trackMessage(phase, copy, error) : undefined} alert={Boolean(error)}>
+    <PerformanceAreaChart data={series.data} zoomState={zoomState}
+      onZoomChange={onZoomChange} onZoomOut={onZoomOut} chartColors={TRACK_COLORS.memory}
+      gradientId="memoryGradient" tooltipPostfix="MiB" />
+  </MetricTrack>;
 }

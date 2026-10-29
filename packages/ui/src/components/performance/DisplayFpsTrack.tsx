@@ -3,47 +3,32 @@ import { GaugeIcon } from "lucide-react";
 import type { CpuPhase } from "@mobile-dev/shared/cpu.ts";
 import type { DisplayFpsSample } from "@mobile-dev/shared/display-fps.ts";
 import type { ZoomState } from "./types";
-import { TRACK_HEIGHT } from "./constants";
+import { TRACK_COLORS } from "./constants";
 import { PerformanceAreaChart } from "./PerformanceAreaChart";
-import { TrackLabel } from "./TrackLabel";
-import { CursorIndicator } from "./CursorIndicator";
+import { MetricTrack, summaryMetrics, trackMessage } from "./MetricTrack";
 import { createFpsSeries } from "./fpsSeries";
 
-const colors = { stroke: "#22c55e", fillStart: "#22c55e", fillEnd: "#166534" };
 type Props = {
   samples: DisplayFpsSample[]; phase: CpuPhase; error: string; supported: boolean; platform: "ios" | "android";
   zoomState: ZoomState; onZoomChange: (state: ZoomState) => void; onZoomOut: () => void; onRetry: () => void;
 };
 function format(value: number | null) { return value === null ? "—" : value.toFixed(1); }
+const copy = { idle: "Start monitoring to measure display updates.", connecting: "Connecting to the display counters…", recording: "Waiting for a complete FPS interval…" };
+const unsupportedCopy = { ...copy, idle: "Display FPS requires a physical iOS paired device." };
 
 export function DisplayFpsTrack({ samples, phase, error, supported, platform, zoomState, onZoomChange, onZoomOut, onRetry }: Props) {
   const series = useMemo(() => createFpsSeries(samples), [samples]);
-  const current = format(phase === "failed" ? null : series.current);
-  const average = format(series.average);
-  const maximum = format(series.maximum);
-  const minimum = format(series.minimum);
-  const metrics = [
-    { label: "Current", value: current },
-    { label: "Avg / Max", value: `${average} / ${maximum}` },
-    { label: "Min", value: minimum },
-  ];
-  let message = "Start monitoring to measure display updates.";
-  if (supported === false) message = "Display FPS requires a physical iOS paired device.";
-  else if (phase === "connecting") message = "Connecting to the display counters…";
-  else if (phase === "recording") message = "Waiting for a complete FPS interval…";
-  if (error) message = error;
+  const metrics = summaryMetrics({ current: format(phase === "failed" ? null : series.current), average: format(series.average), maximum: format(series.maximum) },
+    { label: "Min", value: format(series.minimum) });
+  // Unsupported devices say so whatever the phase; only an error replaces it.
+  const message = supported ? trackMessage(phase, copy, error) : trackMessage("idle", unsupportedCopy, error);
   const showMessage = series.current === null || phase === "failed";
   const source = platform === "android" ? "FrameTimeline actual display frames; delayed frames update their original interval." : "Core Animation display counter. Physical iOS 17.4+ paired devices.";
   const title = `${source} Includes all apps and system UI. Quiet screens can report zero. FPS measures updates, not refresh rate; it cannot identify the cause of a drop.`;
-  return <div role="region" aria-label="Display FPS" className="group flex flex-row" style={{ height: TRACK_HEIGHT }}>
-    <TrackLabel label="Display FPS" icon={<GaugeIcon className="size-4 text-green-500" />} metrics={metrics} title={title} />
-    <div className="relative h-full min-w-0 flex-1 border-b border-border">
-      <PerformanceAreaChart data={series.data} zoomState={zoomState} onZoomChange={onZoomChange} onZoomOut={onZoomOut}
-        chartColors={colors} gradientId="displayFpsGradient" tooltipPostfix="FPS" curveType="linear" />
-      {showMessage && <div role={error ? "alert" : "status"} className="absolute inset-0 flex items-center justify-center gap-2 bg-background/90 px-4 text-xs text-muted-foreground">
-        <span>{message}</span>{phase === "failed" && <button className="shrink-0 text-green-500" onClick={onRetry}>Retry FPS</button>}
-      </div>}
-      <CursorIndicator />
-    </div>
-  </div>;
+  return <MetricTrack role="region" aria-label="Display FPS" label="Display FPS" icon={<GaugeIcon className="size-4 text-green-500" />} metrics={metrics} title={title}
+    message={showMessage ? message : undefined} alert={Boolean(error)}
+    action={phase === "failed" && <button className="shrink-0 text-green-500" onClick={onRetry}>Retry FPS</button>}>
+    <PerformanceAreaChart data={series.data} zoomState={zoomState} onZoomChange={onZoomChange} onZoomOut={onZoomOut}
+      chartColors={TRACK_COLORS.fps} gradientId="displayFpsGradient" tooltipPostfix="FPS" curveType="linear" />
+  </MetricTrack>;
 }
