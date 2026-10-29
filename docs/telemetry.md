@@ -178,6 +178,10 @@ Helper-owned timeouts count as timeouts even when the helper exits with status 1
 Parent deadlines, explicit cancellation, native signals, missing executables, and
 output limits retain separate classifications. Known simctl/ADB lifecycle text
 is classified locally into fixed causes; text never enters these diagnostics.
+Baguette's Xcode runtime discovery (`ios_simulator_runtime`) is cached per selected
+Xcode, so a failure's `elapsed_ms` can cover a discovery another caller started; a
+missing Baguette now fails that step as a missing runtime with `install_integrity`
+tags instead of as an unusable toolchain.
 
 The existing discovery stage/failure tags, exception-text and Node system-error
 scrubbing, anonymous error attribution, telemetry opt-out, UI discovery metrics,
