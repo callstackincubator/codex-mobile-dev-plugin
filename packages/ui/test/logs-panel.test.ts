@@ -13,7 +13,7 @@ import type { PhysicalIosDevice } from "../../shared/src/ios-devices.ts";
 
 function createPanel(app: App, t: TestContext) {
   const deviceApps = createDeviceApps(app);
-  const panel = new LogsPanel(app, { canAttach: true } as PanelContext, deviceApps);
+  const panel = new LogsPanel(app, { canAttach: true, subscribe: () => () => {} } as unknown as PanelContext, deviceApps);
   panel.configure({ followApp: false });
   t.after(() => deviceApps.dispose());
   return { panel, deviceApps };

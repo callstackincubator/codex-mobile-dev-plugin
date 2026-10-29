@@ -1,33 +1,15 @@
-import { chatMessage } from "./chat-message.ts";
+import { canMessage, ChatDeliveryError, composerUnavailable, deliveryFailure, sendChat, withComposer } from "./chat-message.ts";
 import type { HostAttachmentsSource, HostBridge } from "./host-bridge.ts";
 import type { SimulatorDevice } from "@mobile-dev/shared/protocol.ts";
-import { isPhysicalIos } from "@mobile-dev/shared/devices.ts";
+import { formatDeviceContext } from "@mobile-dev/shared/devices.ts";
 import type { StackedLog } from "@mobile-dev/shared/logs.ts";
 import { formatLogContext, logKey } from "@mobile-dev/shared/logs.ts";
 import { ANNOTATION_EDIT_GUIDANCE, ANNOTATION_EDIT_PROMPT, formatAnnotationContext, formatAnnotationDraft } from "@mobile-dev/shared/screen-annotations.ts";
 import type { ScreenAnnotation } from "@mobile-dev/shared/screen-annotations.ts";
 import { captureUiError, countUiEvent, recordUiTiming } from "./telemetry.ts";
 import type { EncodedScreenshotAttachment } from "./screenshot-attachment.ts";
-import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 
 export type ScreenshotAttachment = EncodedScreenshotAttachment & { id: string; simulator: SimulatorDevice };
-
-function composerUnavailable(error: unknown) {
-  const message = errorMessage(error);
-  return /(?:no (?:active |available )?composer|composer.*(?:unavailable|not available|not active)|requires? an (?:active|available) composer|MCP app messages are disabled for this view)/i.test(message);
-}
-
-// A cached panel can become visible before its chat's composer registers again.
-async function withComposer<T>(request: () => Promise<T>): Promise<T> {
-  const delays = [100, 250, 500, 1000];
-  for (let attempt = 0; ; attempt++) {
-    try { return await request(); }
-    catch (error) {
-      if (!composerUnavailable(error) || attempt >= delays.length) throw error;
-      await new Promise(resolve => setTimeout(resolve, delays[attempt]));
-    }
-  }
-}
 
 export class PanelContext {
   private simulator?: SimulatorDevice;
@@ -47,44 +29,46 @@ export class PanelContext {
   private readonly app: HostBridge;
   private readonly attachments: HostAttachmentsSource;
   private contextReady = false;
-  onChange = () => {};
 
   constructor(app: HostBridge, attachments: HostAttachmentsSource = () => undefined) { this.app = app; this.attachments = attachments; }
   get usesHostAttachments() { return !!this.attachments(); }
   get canAttach() { return this.usesHostAttachments || !!this.app.getHostCapabilities()?.updateModelContext?.text; }
   get attachmentCount() { return Number(!!this.attached) + this.screenshots.length + this.annotations.length; }
-  get canSendMessage() { return !!this.app.getHostCapabilities()?.message?.text; }
+  get canSendMessage() { return canMessage(this.app); }
   get canAttachScreenshots() { return this.canAttach && !!this.app.getHostCapabilities()?.updateModelContext?.image; }
   get attachedKey() { return this.attached ? logKey(this.attached) : undefined; }
   get screenAnnotations() { return this.annotations; }
   get annotationsPending() { return this.pendingAnnotations.size > 0; }
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
-  private changed() { this.onChange(); for (const listener of this.listeners) listener(); }
+  private changed() { for (const listener of this.listeners) listener(); }
+
+  /**
+   * Changes the attachments and publishes them. A failed publish restores what `mutate`
+   * replaced, unless a newer change replaced it again; with `deferred`, a chat whose
+   * composer has not registered yet keeps the change for `resume` instead.
+   */
+  private async commit(mutate: () => void, deferred?: () => void) {
+    const previous = { attached: this.attached, screenshots: this.screenshots, annotations: this.annotations };
+    mutate();
+    const revision = ++this.revision;
+    try { await this.publish(); }
+    catch (error) {
+      if (deferred && composerUnavailable(error)) deferred();
+      else { if (this.revision === revision) Object.assign(this, previous); throw error; }
+    }
+    finally { this.changed(); }
+  }
 
   async attachAnnotation(annotation: ScreenAnnotation) {
     if (!this.canAttach) throw new Error("This host does not support screen annotations.");
-    const previous = this.annotations;
-    this.annotations = [...previous.filter(item => item.id !== annotation.id), annotation];
-    const revision = ++this.revision;
-    try { await this.publish(); }
-    catch (error) {
-      if (composerUnavailable(error)) { if (this.annotations.some(item => item.id === annotation.id)) this.pendingAnnotations.add(annotation.id); }
-      else { if (this.revision === revision) this.annotations = previous; throw error; }
-    }
-    finally { this.changed(); }
-    return this.annotations.some(item => item.id === annotation.id);
+    const attached = () => this.annotations.some(item => item.id === annotation.id);
+    await this.commit(() => { this.annotations = [...this.annotations.filter(item => item.id !== annotation.id), annotation]; },
+      () => { if (attached()) this.pendingAnnotations.add(annotation.id); });
+    return attached();
   }
 
   async removeAnnotation(id: string) {
-    const previous = this.annotations;
-    this.annotations = previous.filter(item => item.id !== id);
-    const revision = ++this.revision;
-    try { await this.publish(); }
-    catch (error) {
-      if (composerUnavailable(error)) this.pendingAnnotations.delete(id);
-      else { if (this.revision === revision) this.annotations = previous; throw error; }
-    }
-    finally { this.changed(); }
+    await this.commit(() => { this.annotations = this.annotations.filter(item => item.id !== id); }, () => { this.pendingAnnotations.delete(id); });
   }
 
   async sendAnnotationsToChat(simulatorId?: string) {
@@ -96,17 +80,16 @@ export class PanelContext {
     const text = hostAttachments ? ANNOTATION_EDIT_PROMPT : formatAnnotationDraft(annotations);
     const revision = this.revision;
     recordUiTiming("ui.annotations.message_build", performance.now() - startedAt);
-    if (annotations.some(annotation => !this.annotations.some(item => item.id === annotation.id))) throw new Error("Annotations were removed from chat before sending.");
+    const removed = () => annotations.some(annotation => !this.annotations.some(item => item.id === annotation.id));
+    if (removed()) throw new Error("Annotations were removed from chat before sending.");
     const sendStartedAt = performance.now();
     try {
       // Publish first so widget context, where a host exposes it, matches the draft.
       if (!hostAttachments || annotations.some(annotation => this.pendingAnnotations.has(annotation.id))) await this.publish();
-      const result = await withComposer(() => {
+      await sendChat(this.app, text, { check: () => {
         if (!hostAttachments && revision !== this.revision) throw new Error("Notes changed while preparing the draft. Add them to chat again.");
-        if (annotations.some(annotation => !this.annotations.some(item => item.id === annotation.id))) throw new Error("Annotations were removed from chat before sending.");
-        return this.app.sendMessage(chatMessage(this.app, text), { timeout: 5000, maxTotalTimeout: 5000 });
-      });
-      if (result.isError) throw new Error("Could not send these annotations to chat.");
+        if (removed()) throw new Error("Annotations were removed from chat before sending.");
+      } });
       // Standard hosts can acknowledge a composer draft before the user sends
       // it. Keep its context and local notes until explicit removal/clearing.
       if (hostAttachments) {
@@ -117,18 +100,20 @@ export class PanelContext {
       }
       countUiEvent("ui.annotations.send_success");
     } catch (error) {
-      if (composerUnavailable(error)) {
+      // The context write before sending can fail the same ways the message can.
+      const failure = deliveryFailure(error);
+      if (failure === "no-composer") {
         countUiEvent("ui.annotations.send_composer_unavailable");
         throw new Error("The host could not find this chat's input. Try reopening the chat, or copy the notes and paste them into chat.");
       }
       // A timeout does not prove delivery failed. Never retry it automatically.
-      if (typeof error === "object" && error !== null && "code" in error && error.code === -32001) {
+      if (failure === "unconfirmed") {
         countUiEvent("ui.annotations.send_timeout");
         throw new Error("The host did not confirm delivery. Check the chat before retrying to avoid sending the notes twice.");
       }
       countUiEvent("ui.annotations.send_failure");
       captureUiError(new Error("Annotation chat send failed."), "annotations.send");
-      throw error;
+      throw failure === "rejected" ? new Error("Could not send these annotations to chat.") : error;
     } finally { recordUiTiming("ui.annotations.send", performance.now() - sendStartedAt); }
   }
 
@@ -146,11 +131,15 @@ export class PanelContext {
         do { publishing = this.queue; await publishing; } while (publishing !== this.queue);
       }
       const text = this.usesHostAttachments ? prompt : `${prompt}\n\n${formatLogContext(log)}`;
-      const result = await withComposer(() => {
-        if (this.canAttach && this.attached !== log) throw new Error("The selected log was removed or changed before sending.");
-        return this.app.sendMessage(chatMessage(this.app, text), { timeout: 5000, maxTotalTimeout: 5000 });
-      });
-      if (result.isError) throw new Error("Could not send this log to chat.");
+      try {
+        await sendChat(this.app, text, { check: () => {
+          if (this.canAttach && this.attached !== log) throw new Error("The selected log was removed or changed before sending.");
+        } });
+      } catch (error) {
+        // The log view shows the host's own error for a missing composer or an unconfirmed send.
+        if (!(error instanceof ChatDeliveryError)) throw error;
+        throw error.reason === "rejected" ? new Error("Could not send this log to chat.") : error.cause;
+      }
       if (this.attached === log) {
         this.attached = undefined;
         this.revision++; this.changed();
@@ -178,34 +167,17 @@ export class PanelContext {
 
   async attach(log?: StackedLog) {
     if (!this.canAttach) throw new Error("This host does not support log attachments.");
-    const previous = this.attached;
-    this.attached = log;
-    const revision = ++this.revision;
-    try { await this.publish(); }
-    catch (error) { if (this.revision === revision) this.attached = previous; throw error; }
-    finally { this.changed(); }
+    await this.commit(() => { this.attached = log; });
   }
 
   async attachScreenshot(screenshot: ScreenshotAttachment): Promise<boolean> {
     if (!this.canAttachScreenshots) throw new Error("This host does not support screenshot attachments.");
-    const previous = this.screenshots;
-    this.screenshots = [...previous, screenshot];
-    const revision = ++this.revision;
-    try { await this.publish(); }
-    catch (error) { if (this.revision === revision) this.screenshots = previous; throw error; }
-    finally { this.changed(); }
+    await this.commit(() => { this.screenshots = [...this.screenshots, screenshot]; });
     return this.screenshots.some(item => item.id === screenshot.id);
   }
 
   async clearAttachments() {
-    const previous = { attached: this.attached, screenshots: this.screenshots, annotations: this.annotations };
-    this.attached = undefined; this.screenshots = []; this.annotations = [];
-    const revision = ++this.revision;
-    try { await this.publish(); }
-    catch (error) {
-      if (revision === this.revision) Object.assign(this, previous);
-      throw error;
-    } finally { this.changed(); }
+    await this.commit(() => { this.attached = undefined; this.screenshots = []; this.annotations = []; });
   }
 
   private async clearSentContext() {
@@ -256,15 +228,7 @@ export class PanelContext {
       if (revision !== this.revision) return;
       const selected = this.simulator;
       const log = this.attached;
-      const devices = this.simulators.map(device => {
-        const role = device.udid === selected?.udid ? "Active" : "Visible";
-        if (isPhysicalIos(device)) {
-          const transport = device.transportType === undefined ? "Transport not reported." : `Transport: ${device.transportType}.`;
-          return `${role} physical iOS device: ${device.name}. UDID: ${device.udid}. State: ${device.state}. ${transport} The panel mirrors this device through an interactive HEVC stream with pointer taps and drags. Native unified logs use mobile_logs_session with platform ios, kind physical, and this hardware UDID. They do not require launching the app; ordinary print output is unavailable and private values may be redacted. Physical iOS keyboard input, hardware buttons, screenshots, and agent-device control are not implemented yet.`;
-        }
-        if (device.kind === "physical" && device.platform === "android") return `${role} physical Android device: ${device.name}. Serial: ${device.udid}. State: ${device.state}. Transport: ${device.transportType}. Use this serial with the Mobile Dev Android tools for platform android.`;
-        return `${role} ${device.platform === "android" ? "Android" : "iOS"} simulator: ${device.name}. Device ID: ${device.udid}. State: ${device.state}. Use this ${device.platform === "android" ? "serial" : "UDID"} with the Mobile Dev tools for platform ${device.platform}.`;
-      });
+      const devices = this.simulators.map(device => formatDeviceContext(device, device.udid === selected?.udid));
       const contextStartedAt = performance.now();
       const annotationContent = this.annotations.map(annotation => ({ type: "text" as const, text: `${this.usesHostAttachments ? "" : `Device: ${JSON.stringify(annotation.simulator.name)} (${annotation.simulator.udid})\n`}${formatAnnotationContext(annotation)}`, _meta: { "openai/title": `${annotation.component.name}: ${annotation.text.replace(/\s+/g, " ").trim()}`, "mobile-dev/annotationId": annotation.id } }));
       if (this.annotations.length) recordUiTiming("ui.annotations.context_build", performance.now() - contextStartedAt);

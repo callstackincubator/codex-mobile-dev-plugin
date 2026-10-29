@@ -306,7 +306,7 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
     async readServerResource() { throw new window.Error("MCP error -32603: This log session expired or closed. Reopen the log panel."); },
   };
   const expiredApps = new api.DeviceAppsStore(expiredClient, window.document);
-  const expiredLogs = new api.LogsPanel(expiredClient, { canAttach: true }, expiredApps);
+  const expiredLogs = new api.LogsPanel(expiredClient, { canAttach: true, subscribe: () => () => {} }, expiredApps);
   expiredLogs.configure({ followApp: false });
   t.after(() => { expiredApps.dispose(); return expiredLogs.dispose(); });
   expiredApps.selectDevice({ udid: "PRIVATE_DEVICE", name: "PRIVATE_NAME", state: "Booted", runtime: "iOS", platform: "ios", kind: "simulator" });

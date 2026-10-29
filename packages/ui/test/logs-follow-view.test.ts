@@ -89,7 +89,7 @@ test("the rendered log list follows batches, pauses for user scrolling, and resu
   const { LogsView } = await import(url.href);
   const { act, createElement } = await import("react");
   const { createRoot } = await import("react-dom/client");
-  const context = { onChange() {} };
+  const context = { subscribe: () => () => {} };
   const deviceApps = createDeviceApps({} as App);
   const panel = new LogsPanel({} as App, context as PanelContext, deviceApps);
   t.after(() => deviceApps.dispose());

@@ -38,7 +38,7 @@ export class LogList extends Store<LogListSnapshot> {
     super(undefined as unknown as LogListSnapshot);
     this.context = context;
     this.state = this.makeSnapshot();
-    this.context.onChange = () => this.publish();
+    context.subscribe(() => this.publish());
   }
 
   private makeSnapshot(): LogListSnapshot {

@@ -6,8 +6,11 @@ import type { LogEntry, StackedLog } from "../../shared/src/logs.ts";
 import type { PanelContext } from "../src/model-context.ts";
 
 function fixture() {
-  const context = { canAttach: true, attachedKey: undefined as string | undefined, onChange() {},
-    async attach(log?: StackedLog) { this.attachedKey = log ? logKey(log) : undefined; this.onChange(); } };
+  const listeners = new Set<() => void>();
+  const context = { canAttach: true, attachedKey: undefined as string | undefined,
+    subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
+    changed() { for (const listener of listeners) listener(); },
+    async attach(log?: StackedLog) { this.attachedKey = log ? logKey(log) : undefined; this.changed(); } };
   return { list: new LogList(context as PanelContext), context };
 }
 const entry = (sequence: number, values: Partial<LogEntry> = {}): LogEntry => ({ sequence, timestamp: "2026-09-30T12:00:00Z", level: "info", source: "js", origin: "metro", message: `Log ${sequence}`, ...values });
@@ -42,7 +45,7 @@ test("buffer eviction removes stale selection, and host removal clears the attac
   const { list, context } = fixture();
   list.append([entry(1)], 0); list.select(list.getSnapshot().filtered[0].sequence);
   await list.attach(); assert.equal(list.getSnapshot().selectedAttached, true);
-  context.attachedKey = undefined; context.onChange();
+  context.attachedKey = undefined; context.changed();
   assert.equal(list.getSnapshot().selectedAttached, false);
   list.append(Array.from({ length: 2000 }, (_, i) => entry(i + 2)), 0);
   assert.equal(list.getSnapshot().selected, undefined);

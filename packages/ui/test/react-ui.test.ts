@@ -64,7 +64,10 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   const { act, createElement, Profiler } = await import("react");
   const { createRoot } = await import("react-dom/client");
   let sentLog: StackedLog | undefined;
-  const context = { canAttach: true, canSendMessage: true, attachedKey: undefined as string | undefined, onChange() {}, async attach(log?: StackedLog) { this.attachedKey = log ? logKey(log) : undefined; this.onChange(); }, async sendLogToChat(log: StackedLog) { sentLog = log; } };
+  const contextListeners = new Set<() => void>();
+  const context = { canAttach: true, canSendMessage: true, attachedKey: undefined as string | undefined,
+    subscribe(listener: () => void) { contextListeners.add(listener); return () => { contextListeners.delete(listener); }; },
+    async attach(log?: StackedLog) { this.attachedKey = log ? logKey(log) : undefined; for (const listener of contextListeners) listener(); }, async sendLogToChat(log: StackedLog) { sentLog = log; } };
   let emitCpu: ((batch: CpuBatch) => void) | undefined;
   let cpuSessionsOpened = 0;
   const performanceApp = {
