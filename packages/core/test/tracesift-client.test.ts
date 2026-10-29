@@ -65,6 +65,28 @@ test("TraceSift client reuses an authenticated service and preserves measured ca
   assert.deepEqual(JSON.parse(fake.requests.at(-1)!.body!), { analysisId: "analysis-1", cardId: "task-0" });
 });
 
+test("TraceSift client uploads the profile as a multipart form the service can read", async t => {
+  const fake = await fixture(); t.after(fake.close);
+  const profile = join(fake.home, 'cpu "quoted"\nprofile.json'); await writeFile(profile, '{"nodes":[]}');
+  const original = fake.server.listeners("request")[0] as (...args: unknown[]) => void;
+  fake.server.removeAllListeners("request");
+  let upload: FormData | undefined;
+  fake.server.on("request", async (request, response) => {
+    if (request.url!.endsWith("/analyze")) {
+      const chunks: Buffer[] = [];
+      for await (const chunk of request) chunks.push(chunk);
+      upload = await new Request("http://localhost/", { method: "POST", headers: { "Content-Type": request.headers["content-type"]! }, body: Buffer.concat(chunks) }).formData();
+    }
+    original(request, response);
+  });
+  const client = new TraceSiftClient("missing-tracesift", fake.home); t.after(() => client.close());
+  await client.analyze(profile, "cpu");
+  const file = upload?.get("profile") as File;
+  assert.equal(file.name, 'cpu "quoted"\nprofile.json');
+  assert.equal(await file.text(), '{"nodes":[]}');
+  assert.equal(upload?.get("profileType"), "cpu");
+});
+
 test("TraceSift client persists compact findings and invokes the Explore CLI without fetching task data", async t => {
   const fake = await fixture(); t.after(fake.close);
   const profile = join(fake.home, "cpu profile.json"); await writeFile(profile, "{}");

@@ -76,6 +76,21 @@ async function health(descriptor: Descriptor, signal?: AbortSignal) {
   } catch { return false; }
 }
 
+/**
+ * The profile as one multipart Blob that streams from disk. fetch pumps a FormData body
+ * on its own, outside the request, and throws an unhandled rejection into the server
+ * when TraceSift answers before reading the whole upload.
+ */
+function profileUpload(profile: Blob, filename: string, profileType: TraceSiftProfileType) {
+  const boundary = `mobile-dev-${randomUUID()}`;
+  const name = filename.replace(/\n/g, "%0A").replace(/\r/g, "%0D").replace(/"/g, "%22");
+  return new Blob([
+    `--${boundary}\r\nContent-Disposition: form-data; name="profile"; filename="${name}"\r\nContent-Type: application/octet-stream\r\n\r\n`,
+    profile,
+    `\r\n--${boundary}\r\nContent-Disposition: form-data; name="profileType"\r\n\r\n${profileType}\r\n--${boundary}--\r\n`,
+  ], { type: `multipart/form-data; boundary=${boundary}` });
+}
+
 function responseError(status: number, body: unknown) {
   const message = typeof body === "object" && body !== null && "error" in body && typeof body.error === "string"
     ? body.error : `TraceSift request failed with HTTP ${status}.`;
@@ -280,13 +295,9 @@ export class TraceSiftClient {
     const resolved = await realpath(path).catch(() => { throw new TraceSiftError("The profile path does not exist or is not readable.", "setup"); });
     const metadata = await stat(resolved).catch(() => { throw new TraceSiftError("The profile path does not exist or is not readable.", "setup"); });
     if (!metadata.isFile()) throw new TraceSiftError("The profile path must point to a regular file.", "setup");
-    let form: FormData;
-    try {
-      const file = await openAsBlob(resolved);
-      form = new FormData();
-      form.set("profile", file, basename(resolved));
-      form.set("profileType", profileType);
-    } catch { throw new TraceSiftError("The profile could not be opened for upload. Check its permissions and retry.", "setup"); }
+    let form: Blob;
+    try { form = profileUpload(await openAsBlob(resolved), basename(resolved), profileType); }
+    catch { throw new TraceSiftError("The profile could not be opened for upload. Check its permissions and retry.", "setup"); }
     const readyAt = performance.now();
     try { await this.service(signal); ready?.("success", performance.now() - readyAt); }
     catch (error) { ready?.("failed", performance.now() - readyAt); throw error; }
