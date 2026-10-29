@@ -7,13 +7,13 @@ import { closeServerTelemetry, installTracePropagation } from "./telemetry.ts";
 import { declareSchemaDialect } from "./schema-dialect.ts";
 
 /**
- * Runs the server over stdio, as every host launches it, with Mobile Dev's panel where
- * the host shows it and the host's own features.
+ * Runs the server over stdio, as every host launches it, with the host's features:
+ * Mobile Dev's panel where the host shows it, and the host's own.
  * Import `./instrument.ts` before this module so telemetry starts first.
  */
-export async function runStdioServer({ panel, features }: Pick<PluginOptions, "panel" | "features"> = {}) {
+export async function runStdioServer({ features }: Pick<PluginOptions, "features"> = {}) {
   const html = await readFile(new URL("./app.html", import.meta.url), "utf8");
-  const plugin = await createPlugin(() => loadUIResource(html, new URL("../ui-dev.json", import.meta.url)), { panel, features });
+  const plugin = await createPlugin(() => loadUIResource(html, new URL("../ui-dev.json", import.meta.url)), { features });
   const transport = new StdioServerTransport();
   installTracePropagation(transport);
   declareSchemaDialect(transport);

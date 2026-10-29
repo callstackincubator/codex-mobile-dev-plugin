@@ -1,5 +1,5 @@
 import type { UIResource } from "./ui-resource.ts";
-import type { ServerFeature } from "./server-feature.ts";
+import type { PageDisplay, ReadPage, ServerFeature, ServerServices } from "./server-feature.ts";
 import { addToolIcons, PHONE_ICONS } from "./tool-icons.ts";
 import { LIVE_UI_URI } from "@mobile-dev/shared/live-ui.ts";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -9,13 +9,11 @@ import { captureServerError, instrumentMcpServer, setServerTelemetryHost } from 
 import { resolveTelemetryEnvironment } from "./telemetry-environment.ts";
 import { getTelemetryIdentity } from "./telemetry-identity.ts";
 import { registerAppResource, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
-import { OpenAIExtensions } from "@openai/mcp-extensions/server";
 import { createDrivers, registerAppControlTools } from "./app-control/tools.ts";
 import { systemCommands } from "./app-control/commands.ts";
 import { registerAppStorageTools } from "./app-storage/tools.ts";
 import { ServeEmu } from "./serve-emu.ts";
-import { listIosDevices, registerIosDeviceTools } from "./ios-devices.ts";
-import { deviceChoiceFormSupport, registerDeviceChoiceTools } from "./device-choice-tools.ts";
+import { registerIosDeviceTools } from "./ios-devices.ts";
 import { LogSessions } from "./log-sessions.ts";
 import { registerLogTools } from "./log-tools.ts";
 import { CpuSessions, createCpuSessions } from "./cpu/sessions.ts";
@@ -34,7 +32,6 @@ import { DisplayFpsSessions } from "./fps/sessions.ts";
 import { registerDisplayFpsTools } from "./fps/tools.ts";
 import { registerEarlierReleases } from "./earlier-releases.ts";
 import { Simctl } from "./simctl.ts";
-import type { Panel } from "./panel-tools.ts";
 import { DeviceSessions } from "./device-sessions.ts";
 import { DeviceResolver } from "./devices.ts";
 
@@ -53,35 +50,32 @@ export function configureUI(content: string): string {
   return content.replace(/<meta name="mobile-dev-environment" content="(?:development|release)">/, metadata);
 }
 
-/** Services the server runs on; tests replace them with fakes. Hosts that show devices themselves leave out `panel`. */
+/** Services the server runs on; tests replace them with fakes. */
 export type PluginOptions = {
-  panel?: Panel;
   simulators?: Simctl;
   logs?: LogSessions;
   android?: ServeEmu;
   cpu?: CpuSessions;
+  /** What the host adds after the shared tools, in order, such as Mobile Dev's panel (createPanel). Hosts that show devices themselves leave the panel out. */
   features?: ServerFeature[];
 };
 
 export function createPlugin(html: string | (() => Promise<UIResource>), options: PluginOptions = {}) {
-  const { panel, simulators = new Simctl(), logs = new LogSessions(), android = new ServeEmu(), features = [] } = options;
+  const { simulators = new Simctl(), logs = new LogSessions(), android = new ServeEmu(), features = [] } = options;
   const cpu = options.cpu ?? createCpuSessions();
   const fps = new DisplayFpsSessions();
   const devices = new DeviceSessions();
   for (const sessions of [logs, cpu, fps]) devices.add(deviceId => sessions.closeDevice(deviceId));
-  const server = new McpServer({ name: "mobile-dev", version: PLUGIN_VERSION }, { instructions: panel?.instructions ?? INSTRUCTIONS });
+  const instructions = features.find(feature => feature.instructions !== undefined)?.instructions ?? INSTRUCTIONS;
+  const server = new McpServer({ name: "mobile-dev", version: PLUGIN_VERSION }, { instructions });
   instrumentMcpServer(server);
   addToolIcons(server, { mobile_open_workspace: PHONE_ICONS, mobile_open_simulator: PHONE_ICONS, mobile_choose_devices: PHONE_ICONS });
-  const extensions = new OpenAIExtensions(server);
+  const initialized: (() => void)[] = [];
   server.server.oninitialized = () => {
     setServerTelemetryHost(server.server.getClientVersion()?.name);
-    // The device form goes with Mobile Dev's own device views, for hosts that render one.
-    const form = panel && deviceChoiceFormSupport(server.server.getClientCapabilities());
-    if (form) registerDeviceChoiceTools(server, extensions, {
-      simulators: () => simulators.list(), android: () => android.list(), physicalIos: listIosDevices,
-    }, form);
+    for (const listener of initialized) listener();
   };
-  const simulatorForeground = panel?.simulatorForeground ?? unknownSimulatorForeground;
+  const simulatorForeground = features.find(feature => feature.simulatorForeground !== undefined)?.simulatorForeground ?? unknownSimulatorForeground;
   const drivers = createDrivers(systemCommands, simulatorForeground);
   const resolver = new DeviceResolver({ simulators });
   registerIosDeviceTools(server);
@@ -96,10 +90,9 @@ export function createPlugin(html: string | (() => Promise<UIResource>), options
   const stopRecordingStorageMetrics = startStorageMetrics({ recordings: recordings.store.directory });
   registerDisplayFpsTools(server, fps, resolver);
   registerAppControlTools(server, drivers);
-  registerAppStorageTools(server);
+  registerAppStorageTools(server, systemCommands, drivers);
 
   const resource = async () => typeof html === "string" ? { html } : await html();
-  const page = async () => configureUI((await resource()).html);
   server.registerResource("mobile-dev-live", new ResourceTemplate(`${LIVE_UI_URI}?after={revision}`, { list: undefined }), {
     mimeType: "application/json",
     description: "Read a changed local development UI through MCP. Unchanged reads omit the HTML.",
@@ -110,12 +103,14 @@ export function createPlugin(html: string | (() => Promise<UIResource>), options
       html: revision && revision !== uri.searchParams.get("after") ? configureUI(content) : undefined,
     }) }] };
   });
-  const readCard = (view: string) => async (uri: URL) => {
-    // Cards from a server with the workspace can open recordings there.
-    const content = (await page()).replace('data-view="panel"', `data-view="${view}"${panel ? " data-workspace" : ""}`);
+  // Cards from a server with the workspace can open recordings there.
+  const workspace = features.some(feature => feature.workspace);
+  const servePage = (view: string, display: PageDisplay): ReadPage => async uri => {
+    let content = configureUI((await resource()).html).replace('data-view="panel"', `data-view="${view}"${display === "inline" && workspace ? " data-workspace" : ""}`);
+    if (view === "workspace") content = content.replace('data-layout="stacked"', 'data-layout="split"');
     return { contents: [{ uri: uri.href, mimeType: RESOURCE_MIME_TYPE, text: content, _meta: {
-      ui: { prefersBorder: true, permissions: { clipboardWrite: {} }, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } },
-      "openai/ui": { preferredDisplayMode: "inline", availableDisplayModes: ["inline", "fullscreen"] },
+      ui: { ...(display === "inline" ? { prefersBorder: true } : {}), permissions: { clipboardWrite: {} }, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } },
+      "openai/ui": { preferredDisplayMode: display, availableDisplayModes: ["inline", "fullscreen"] },
     } }] };
   };
   for (const [name, resourceUri, view] of [
@@ -123,13 +118,16 @@ export function createPlugin(html: string | (() => Promise<UIResource>), options
     ["mobile-dev-comparison", COMPARISON_URI, "comparison"],
     ["mobile-dev-tracesift", TRACESIFT_URI, "tracesift"],
   ]) {
-    registerAppResource(server, name, resourceUri, {}, readCard(view));
-    registerEarlierReleases(server, `${name}-earlier`, view, readCard(view));
+    registerAppResource(server, name, resourceUri, {}, servePage(view, "inline"));
+    registerEarlierReleases(server, `${name}-earlier`, view, servePage(view, "inline"));
   }
   // Devices cards that chats saved from earlier releases say they came from one.
-  registerEarlierReleases(server, "mobile-dev-devices-earlier", "devices", readCard("devices"));
-  const closePanel = panel?.register(server, { android, devices, drivers, page, showRecording });
-  const featureCleanups = features.flatMap(feature => feature(server, { closeDevice: deviceId => devices.closeDevice(deviceId) }) ?? []);
+  registerEarlierReleases(server, "mobile-dev-devices-earlier", "devices", servePage("devices", "inline"));
+  const services: ServerServices = {
+    closeDevice: deviceId => devices.closeDevice(deviceId), deviceSessions: devices, android, simulators, drivers, servePage, showRecording,
+    onInitialized: listener => { initialized.push(listener); },
+  };
+  const featureCleanups = features.flatMap(feature => feature.register(server, services) ?? []);
 
   return {
     server,
@@ -139,7 +137,7 @@ export function createPlugin(html: string | (() => Promise<UIResource>), options
       stopRecordingStorageMetrics();
       // Recordings finish while the collectors they read are still open.
       await recordings.close();
-      try { await Promise.all([logs.close(), cpu.close(), fps.close(), traceSift.close(), closePanel?.()]); }
+      try { await Promise.all([logs.close(), cpu.close(), fps.close(), traceSift.close()]); }
       finally { android.dispose(); await server.close(); }
     },
   };

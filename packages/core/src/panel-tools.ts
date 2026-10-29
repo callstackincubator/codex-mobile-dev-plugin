@@ -3,24 +3,25 @@ import { openRequestSession } from "./request-session.ts";
 import type { ServerRequestContext } from "./request-session.ts";
 import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
-import type { CallToolResult, ReadResourceResult } from "@modelcontextprotocol/sdk/types.js";
+import { registerAppResource, registerAppTool } from "@modelcontextprotocol/ext-apps/server";
+import { OpenAIExtensions } from "@openai/mcp-extensions/server";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { PLUGIN_VERSION } from "@mobile-dev/shared/version.ts";
-import { SENTRY_ORIGIN } from "@mobile-dev/shared/telemetry.ts";
 import { iosSimulatorSchema, statusSchema, streamMessageSchema, udidSchema } from "@mobile-dev/shared/protocol.ts";
 import { panelTargetSchema } from "@mobile-dev/shared/panel-target.ts";
 import type { PanelTarget } from "@mobile-dev/shared/panel-target.ts";
 import { registerEarlierReleases } from "./earlier-releases.ts";
 import { readBezel } from "./bezel.ts";
 import { Baguette } from "./baguette.ts";
-import type { ServeEmu } from "./serve-emu.ts";
 import { registerAndroidTools } from "./android-tools.ts";
 import { registerIosMirrorTools } from "./ios-mirror-tools.ts";
 import { registerInspectionTools } from "./inspection-tools.ts";
 import { registerDeviceSettingsTools } from "./device-settings.ts";
 import { StreamSessions } from "./stream-sessions.ts";
-import type { DeviceSessions } from "./device-sessions.ts";
+import type { ServerFeature, ServerServices } from "./server-feature.ts";
+import { deviceChoiceFormSupport, registerDeviceChoiceTools } from "./device-choice-tools.ts";
+import { listIosDevices } from "./ios-devices.ts";
 import { SimulatorInputService } from "./simulator-input.ts";
 import type { InputStatus, SimulatorInput } from "./simulator-input.ts";
 import { retryableFailure } from "./simulator-unavailable.ts";
@@ -29,11 +30,8 @@ import { sessionIdSchema } from "./session-registry.ts";
 import { guarded as guardedTool, jsonResult, READ_ONLY as read, WRITES as write } from "./tool-results.ts";
 import { assertPng, MAX_SCREENSHOT_BYTES, screenshotResult } from "./png.ts";
 import { registerPanelAppControlTools } from "./app-control/tools.ts";
-import type { DriverFactory } from "./app-control/tools.ts";
 import { registerOpenRecordingTool } from "./recording-tools.ts";
-import type { ShowRecording } from "./recording-tools.ts";
 import { foregroundSimulatorPid } from "./device-apps/foreground.ts";
-import type { SimulatorForeground } from "./device-apps/foreground.ts";
 import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 
 export const APP_URI = `ui://mobile-dev/${PLUGIN_VERSION}/simulator.html`;
@@ -50,24 +48,6 @@ const guarded = <T>(handler: (input: T, context: ServerRequestContext) => Promis
 
 const INSTRUCTIONS = "For mobile app development, open mobile_open_simulator before the first device launch, or reuse the open view. Use selected device IDs. Control apps with the device_* tools when the server has them. When the user asks to see their devices, open or reuse the view, whose device menu lists them. If a task has ambiguous device targets, ask the user with mobile_choose_devices when it is available, otherwise in chat; proceed only after they choose. For a local CPU or React profile path, use mobile_analyze_profile to show TraceSift findings, then wait for the user to choose Investigate. See the Mobile Dev skill, when installed, for device control, logs, profiles, and performance workflows.";
 
-/** Mobile Dev's own device views, which a host adds to the server it runs (see createPanel). */
-export type Panel = {
-  instructions: string;
-  simulatorForeground: SimulatorForeground;
-  register(server: McpServer, shared: PanelShared): () => Promise<void>;
-};
-
-/** What the server shares with its panel. */
-export type PanelShared = {
-  android: ServeEmu;
-  /** Closes a device's sessions before it shuts down; the panel adds its streams. */
-  devices: DeviceSessions;
-  drivers: DriverFactory;
-  /** The page every view loads, configured for this server. */
-  page(): Promise<string>;
-  showRecording: ShowRecording;
-};
-
 /** Services the panel runs on; tests replace them with fakes. */
 export type PanelOptions = {
   baguette?: Baguette;
@@ -82,18 +62,27 @@ export type PanelOptions = {
  * the workspace and asking for devices in a native form. Hosts that show devices
  * themselves, such as Claude, leave it out.
  */
-export function createPanel({ baguette = new Baguette(), simulatorInput, copyScreenshot = copyPNGToClipboard }: PanelOptions = {}): Panel {
+export function createPanel({ baguette = new Baguette(), simulatorInput, copyScreenshot = copyPNGToClipboard }: PanelOptions = {}): ServerFeature {
   return {
     instructions: INSTRUCTIONS,
     simulatorForeground: foregroundSimulatorPid,
-    register: (server, shared) => registerPanel(server, shared, {
+    workspace: true,
+    register: (server, services) => registerPanel(server, services, {
       baguette, copyScreenshot, simulatorInput: simulatorInput ?? new SimulatorInputService(udid => baguette.repairInput(udid)),
     }),
   };
 }
 
-function registerPanel(server: McpServer, { android, devices, drivers, page, showRecording }: PanelShared,
+function registerPanel(server: McpServer, { android, deviceSessions: devices, drivers, servePage, showRecording, simulators, onInitialized }: ServerServices,
   { baguette, simulatorInput, copyScreenshot }: Required<PanelOptions>) {
+  // The device form goes with Mobile Dev's own device views, for hosts that render one.
+  const extensions = new OpenAIExtensions(server);
+  onInitialized(() => {
+    const form = deviceChoiceFormSupport(server.server.getClientCapabilities());
+    if (form) registerDeviceChoiceTools(server, extensions, {
+      simulators: () => simulators.list(), android: () => android.list(), physicalIos: listIosDevices,
+    }, form);
+  });
   const streams = new StreamSessions(baguette);
   devices.add(udid => streams.closeDevice(udid));
   const closeIosMirror = registerIosMirrorTools(server, APP_URI);
@@ -102,19 +91,8 @@ function registerPanel(server: McpServer, { android, devices, drivers, page, sho
   const closeDeviceSettings = registerDeviceSettingsTools(server, baguette, android);
   registerPanelAppControlTools(server, drivers);
   registerOpenRecordingTool(server, showRecording, WORKSPACE_URI);
-
-  const readApp = async (uri: URL): Promise<ReadResourceResult> => {
-    const content = await page();
-    return { contents: [{
-      uri: uri.href, mimeType: RESOURCE_MIME_TYPE, text: uri.href.endsWith("/workspace.html")
-        ? content.replace('data-view="panel"', 'data-view="workspace"').replace('data-layout="stacked"', 'data-layout="split"')
-        : content,
-      _meta: {
-        ui: { permissions: { clipboardWrite: {} }, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } },
-        "openai/ui": { preferredDisplayMode: "fullscreen", availableDisplayModes: ["inline", "fullscreen"] },
-      },
-    }] };
-  };
+  const readPanel = servePage("panel", "fullscreen");
+  const readWorkspace = servePage("workspace", "fullscreen");
 
   type PanelInputStatus = { inputStatus: InputStatus; inputRepairMessage?: string };
   const automaticRepairs = new Map<string, { attemptedAt: number; pending: Promise<PanelInputStatus> }>();
@@ -149,13 +127,13 @@ function registerPanel(server: McpServer, { android, devices, drivers, page, sho
     };
   }
 
-  registerAppResource(server, "mobile-dev-simulator", APP_URI, {}, readApp);
-  registerAppResource(server, "mobile-dev-workspace", WORKSPACE_URI, {}, readApp);
+  registerAppResource(server, "mobile-dev-simulator", APP_URI, {}, readPanel);
+  registerAppResource(server, "mobile-dev-workspace", WORKSPACE_URI, {}, readWorkspace);
   for (const [index, uri] of [...unversionedAppUris, ...unversionedWorkspaceUris].entries()) {
-    registerAppResource(server, `mobile-dev-unversioned-${index}`, uri, {}, readApp);
+    registerAppResource(server, `mobile-dev-unversioned-${index}`, uri, {}, unversionedWorkspaceUris.includes(uri) ? readWorkspace : readPanel);
   }
-  registerEarlierReleases(server, "mobile-dev-simulator-earlier", "simulator", readApp);
-  registerEarlierReleases(server, "mobile-dev-workspace-earlier", "workspace", readApp);
+  registerEarlierReleases(server, "mobile-dev-simulator-earlier", "simulator", readPanel);
+  registerEarlierReleases(server, "mobile-dev-workspace-earlier", "workspace", readWorkspace);
 
   const frameTemplate = new ResourceTemplate("mobile-frame://{sessionId}/latest{?after}", { list: undefined });
   server.registerResource("simulator-latest-frame", frameTemplate, { mimeType: "image/jpeg" }, async (uri, variables, extra) => {

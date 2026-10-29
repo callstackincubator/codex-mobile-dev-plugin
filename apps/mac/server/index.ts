@@ -4,4 +4,4 @@ import { createPanel } from "@mobile-dev/core/panel-tools.ts";
 import { macPage } from "./mac-page.ts";
 
 // The Mac app's server: the shared server with Mobile Dev's panel, plus the page its window loads.
-await runStdioServer({ panel: createPanel(), features: [macPage] });
+await runStdioServer({ features: [createPanel(), macPage] });

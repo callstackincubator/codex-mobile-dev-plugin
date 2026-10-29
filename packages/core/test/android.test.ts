@@ -156,7 +156,7 @@ test("Android streams relay video, validate batches, and refuse a device switch"
 
 test("Android MCP flow lists without booting, captures, streams, and closes", async t => {
   const fake = await fakeAndroid(); const ios = await fakeBaguette();
-  const plugin = await createTestPlugin("<canvas></canvas>", { panel: createPanel({ baguette: new Baguette(ios.url), simulatorInput: fakeSimulatorInput(), copyScreenshot: async bytes => { assert.deepEqual(bytes, PNG); } }), android: fake.backend });
+  const plugin = await createTestPlugin("<canvas></canvas>", { features: [createPanel({ baguette: new Baguette(ios.url), simulatorInput: fakeSimulatorInput(), copyScreenshot: async bytes => { assert.deepEqual(bytes, PNG); } })], android: fake.backend });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "android-test", version: "1" });
   t.after(async () => { await client.close(); await plugin.close(); await fake.close(); await ios.close(); });
