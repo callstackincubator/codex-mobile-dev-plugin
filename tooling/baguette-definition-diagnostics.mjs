@@ -1,12 +1,8 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { sourcePatch } from "./baguette-source-patch.mjs";
 
-function replaceOnce(source, before, after) {
-  const index = source.indexOf(before);
-  const repeated = source.indexOf(before, index + before.length);
-  if (index < 0 || repeated >= 0) throw new Error("The pinned Baguette definition diagnostic integration point changed.");
-  return source.replace(before, after);
-}
+const replaceOnce = sourcePatch("definition diagnostic");
 
 export async function addDefinitionDiagnostics(source, release) {
   const template = await readFile("packages/native/baguette/DefinitionDiagnostics.swift", "utf8");

@@ -1,12 +1,8 @@
 import { copyFile, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { sourcePatch } from "./baguette-source-patch.mjs";
 
-function replaceOnce(source, before, after) {
-  const first = source.indexOf(before);
-  const repeated = source.indexOf(before, first + before.length);
-  if (first < 0 || repeated >= 0) throw new Error("The pinned Baguette screen lifecycle integration point changed.");
-  return source.replace(before, after);
-}
+const replaceOnce = sourcePatch("screen lifecycle");
 
 export function serializeScreenLifecycle(adapter) {
   adapter = replaceOnce(adapter,
