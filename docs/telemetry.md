@@ -607,7 +607,10 @@ existing developer-directory resolver, rather than the plugin build toolchain.
 snapshot. `definition_backend_version` accepts the pinned Baguette version;
 `definition_backend_source=pinned` verifies the diagnostic's source commit against
 the plugin's pin, and `definition_backend_mode` distinguishes embedded and external
-backends. These are error tags only, not performance attributes or identifiers.
+backends. Released servers only ever ran the embedded backend, and the external mode
+existed only for tests; it is removed, so the tag is always `embedded` and stays for
+comparison with earlier releases. These are error tags only, not performance
+attributes or identifiers.
 
 `definition_device_before` records the successful booted-device validation.
 After a definition 404, the server performs one bounded device-list read (up to

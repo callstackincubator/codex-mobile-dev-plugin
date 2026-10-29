@@ -31,15 +31,15 @@ function baguetteProcess(t: TestContext, script = "setInterval(() => {}, 60000)"
 /** A started bundled Baguette whose device list answers with `backend.status` after `backend.latency` ms. */
 async function startedBaguette(t: TestContext) {
   const backend = { status: 200, latency: 0, requests: 0, launches: [] as string[] };
-  const baguette = new Baguette(undefined, undefined, async (_host, port) => {
+  const baguette = new Baguette({ launchBackend: async (_host, port) => {
     backend.launches.push(port);
     await listen(t, Number(port), (_request, response) => {
       backend.requests++;
       response.statusCode = backend.status;
       setTimeout(() => response.end(DEVICES), backend.latency);
     });
-    return baguetteProcess(t);
-  });
+    return { child: baguetteProcess(t) };
+  } });
   t.after(() => baguette.dispose());
   assert.equal((await baguette.start()).managed, true);
   return { baguette, backend };
@@ -84,12 +84,12 @@ test("the bundled Baguette retries on a new port when another process binds it f
     if (launches.length <= taken) {
       // The other process accepts connections on the port but never answers.
       await listen(t, Number(port), () => {});
-      return baguetteProcess(t, PORT_TAKEN);
+      return { child: baguetteProcess(t, PORT_TAKEN) };
     }
     await listen(t, Number(port), (_request, response) => response.end(DEVICES));
-    return baguetteProcess(t);
+    return { child: baguetteProcess(t) };
   };
-  const baguette = new Baguette(undefined, undefined, launch);
+  const baguette = new Baguette({ launchBackend: launch });
   t.after(() => baguette.dispose());
   const started = performance.now();
   assert.equal((await baguette.start()).connected, true);
@@ -100,18 +100,10 @@ test("the bundled Baguette retries on a new port when another process binds it f
 
   taken = Infinity;
   launches.length = 0;
-  const crowded = new Baguette(undefined, undefined, launch);
+  const crowded = new Baguette({ launchBackend: launch });
   t.after(() => crowded.dispose());
   const failed = await crowded.start().then(() => assert.fail("The start should fail."), (error: unknown) => error);
   assert.match(String(failed), /^Error: Baguette exited before it became ready\. .*Address already in use/);
   assert.deepEqual(deviceCommandTags(failed), { device_command: "baguette_serve", device_command_failure: "exit", device_command_status: "1" });
   assert.equal(launches.length, 3);
-});
-
-test("an external Baguette address reports a port that another listener holds without moving", async t => {
-  const port = await listen(t, 0, (_request, response) => response.end("not baguette"));
-  const baguette = new Baguette(`http://127.0.0.1:${port}`, undefined, async () => { throw new Error("An occupied port must not launch Baguette."); });
-  t.after(() => baguette.dispose());
-  await assert.rejects(baguette.start(), new RegExp(`^Error: Port ${port} is in use, but its listener did not return a Baguette device list\\.$`));
-  assert.equal(baguette.baseUrl.port, String(port));
 });

@@ -1,11 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { Baguette } from "../src/baguette.ts";
-import { fakeBaguette, UDID } from "../../test-support/fixtures.ts";
+import { fakeBaguette, UDID, attachedBaguette } from "../../test-support/fixtures.ts";
 
 test("booting a running simulator skips the route that can repair input", async t => {
   const fake = await fakeBaguette();
-  const baguette = new Baguette(fake.url);
+  const baguette = attachedBaguette(fake.url);
   t.after(async () => { baguette.dispose(); await fake.close(); });
   const status = await baguette.changeDeviceState(UDID, "boot");
   assert.equal(status.devices.find(device => device.udid === UDID)?.state, "Booted");
@@ -15,7 +14,7 @@ test("booting a running simulator skips the route that can repair input", async 
 test("concurrent boot calls share one boot and wait for the reported device state", async t => {
   const fake = await fakeBaguette();
   fake.setState("Shutdown"); fake.setLifecycleState("Booting");
-  const baguette = new Baguette(fake.url);
+  const baguette = attachedBaguette(fake.url);
   t.after(async () => { baguette.dispose(); await fake.close(); });
   let finished = false;
   const first = baguette.changeDeviceState(UDID, "boot").then(status => { finished = true; return status; });
@@ -32,7 +31,7 @@ test("concurrent boot calls share one boot and wait for the reported device stat
 test("shutdown waits for a pending boot instead of racing its request", async t => {
   const fake = await fakeBaguette();
   fake.setState("Shutdown"); fake.setLifecycleState("Booting");
-  const baguette = new Baguette(fake.url);
+  const baguette = attachedBaguette(fake.url);
   t.after(async () => { baguette.dispose(); await fake.close(); });
   const boot = baguette.changeDeviceState(UDID, "boot");
   const shutdown = baguette.changeDeviceState(UDID, "shutdown");
@@ -47,7 +46,7 @@ test("shutdown waits for a pending boot instead of racing its request", async t 
 test("a simulator already booting finishes without a second boot request", async t => {
   const fake = await fakeBaguette();
   fake.setState("Booting");
-  const baguette = new Baguette(fake.url);
+  const baguette = attachedBaguette(fake.url);
   t.after(async () => { baguette.dispose(); await fake.close(); });
   const pending = baguette.changeDeviceState(UDID, "boot");
   await waitFor(() => fake.requests.filter(request => request.path === "/simulators.json").length >= 3);
@@ -60,7 +59,7 @@ test("a simulator already booting finishes without a second boot request", async
 test("a boot failure does not prevent a later boot", async t => {
   const fake = await fakeBaguette();
   fake.setState("Shutdown"); fake.setLifecycleFailure(true);
-  const baguette = new Baguette(fake.url);
+  const baguette = attachedBaguette(fake.url);
   t.after(async () => { baguette.dispose(); await fake.close(); });
   await assert.rejects(baguette.changeDeviceState(UDID, "boot"), /boot failed/);
   fake.setLifecycleFailure(false);
@@ -71,7 +70,7 @@ test("a boot failure does not prevent a later boot", async t => {
 test("a boot reply without a ready state times out instead of claiming success", async t => {
   const fake = await fakeBaguette();
   fake.setState("Shutdown"); fake.setLifecycleState("Booting");
-  const baguette = new Baguette(fake.url);
+  const baguette = attachedBaguette(fake.url);
   t.after(async () => { baguette.dispose(); await fake.close(); });
   await assert.rejects(baguette.changeDeviceState(UDID, "boot", 40), /did not finish booting/);
 });
@@ -79,7 +78,7 @@ test("a boot reply without a ready state times out instead of claiming success",
 test("disposing the adapter cancels a pending boot and its queued shutdown", async t => {
   const fake = await fakeBaguette();
   fake.setState("Shutdown"); fake.setLifecycleState("Booting");
-  const baguette = new Baguette(fake.url);
+  const baguette = attachedBaguette(fake.url);
   t.after(() => fake.close());
   const boot = assert.rejects(baguette.changeDeviceState(UDID, "boot"), /server has closed/);
   const shutdown = assert.rejects(baguette.changeDeviceState(UDID, "shutdown"), /server has closed/);

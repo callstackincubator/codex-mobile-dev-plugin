@@ -28,12 +28,11 @@ import { IosMirrorSessions } from "../src/ios-mirror.ts";
 import type { PhysicalIosDevice } from "../../shared/src/ios-devices.ts";
 import { createDrivers, registerAppControlTools } from "../src/app-control/tools.ts";
 import { registerDeviceSettingsTools } from "../src/device-settings.ts";
-import { Baguette } from "../src/baguette.ts";
 import type { ServeEmu } from "../src/serve-emu.ts";
 import { setAndroidStartupDiagnostic } from "../../shared/src/android-startup-diagnostics.ts";
 import type { OpenAIFormResult } from "@openai/mcp-extensions/server";
 import { agentDeviceClient } from "../../test-support/agent-device-fixtures.ts";
-import { UDID } from "../../test-support/fixtures.ts";
+import { UDID, attachedBaguette } from "../../test-support/fixtures.ts";
 import { CpuSessions } from "../src/cpu/sessions.ts";
 import { DisplayFpsSessions } from "../src/fps/sessions.ts";
 import { setDiscoveryCommandDiagnostic } from "../../shared/src/device-apps-command-diagnostics.ts";
@@ -1245,7 +1244,7 @@ test("device settings report the failed backend request without its reply and co
   await new Promise<void>(resolve => { http.once("listening", resolve); });
   const address = http.address();
   assert.ok(address && typeof address === "object");
-  const baguette = new Baguette(`http://127.0.0.1:${address.port}`);
+  const baguette = attachedBaguette(`http://127.0.0.1:${address.port}`);
   const startup = new Error("serve-emu exited before it became ready. PRIVATE_DIAGNOSTICS");
   setAndroidStartupDiagnostic(startup, { stage: "process-launch", outcome: "error" }, {
     deviceKind: "emulator", transport: "emulator", stateBefore: "online", activeBackends: 0, stoppingBackends: 0, startingBackends: 0,

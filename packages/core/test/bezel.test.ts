@@ -1,23 +1,25 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { Baguette } from "../src/baguette.ts";
 import { compositeBezelGeometry } from "../../shared/src/bezel.ts";
 import { definitionSchema } from "../src/baguette.ts";
 import { readBezel } from "../src/bezel.ts";
-import { UDID, PNG } from "../../test-support/fixtures.ts";
+import { UDID, PNG, attachedBaguette } from "../../test-support/fixtures.ts";
 
 const geometry = { rect: { x: 18, y: 18, width: 400, height: 872 }, viewport: { width: 436, height: 908 }, clipRadius: 62 };
 
 test("Apple bezel and mask pass through as PNG data with screen geometry", async t => {
   const server = createServer((request, response) => {
-    if (request.url?.includes("bad.png")) response.end("invalid");
+    if (request.url === "/simulators.json") response.end('{"running":[],"available":[]}');
+    else if (request.url?.includes("bad.png")) response.end("invalid");
     else response.end(PNG);
   });
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
   t.after(() => new Promise<void>(resolve => server.close(() => resolve())));
   const port = (server.address() as { port: number }).port;
-  const backend = new Baguette(`http://127.0.0.1:${port}`);
+  const backend = attachedBaguette(`http://127.0.0.1:${port}`);
+  t.after(() => backend.dispose());
+  await backend.start();
   const screen = { ...geometry, bezelImage: { rest: `/simulators/${UDID}/bezel.png` }, maskImage: `/simulators/${UDID}/screen-mask.png` };
   const bezel = await readBezel(backend, UDID, screen);
   assert.deepEqual(bezel, { ...geometry, image: `data:image/png;base64,${PNG.toString("base64")}`, mask: `data:image/png;base64,${PNG.toString("base64")}` });

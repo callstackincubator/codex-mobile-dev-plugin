@@ -28,7 +28,15 @@ function listError(status: Status): Error {
   return inheritDeviceCommand(error, listFailures.get(status));
 }
 
-async function launchBundledBaguette(host: string, port: string, signal: AbortSignal): Promise<ChildProcess> {
+/** A started Baguette process; tests attach to a fake backend at its own `url` instead of the given port. */
+export type LaunchedBaguette = { child: ChildProcess; url?: string };
+export type BaguetteLauncher = (host: string, port: string, signal: AbortSignal) => Promise<LaunchedBaguette>;
+export type BaguetteOptions = {
+  launchBackend?: BaguetteLauncher;
+  kickstartBridge?: (udid: string, signal: AbortSignal) => Promise<void>;
+};
+
+async function launchBundledBaguette(host: string, port: string, signal: AbortSignal): Promise<LaunchedBaguette> {
   if (process.platform !== "darwin" || process.arch !== "arm64") {
     throw new ExpectedOperationError("unsupported_platform", "Starting Baguette requires an Apple Silicon Mac with Xcode 26 or later.");
   }
@@ -39,7 +47,7 @@ async function launchBundledBaguette(host: string, port: string, signal: AbortSi
   // A launch that fails to spawn or crashes may have found a toolchain that has since changed.
   child.once("error", error => forgetBaguetteRuntime(error));
   child.once("exit", (_code, signal) => { if (signal !== null && signal !== "SIGTERM") forgetBaguetteRuntime(); });
-  return child;
+  return { child };
 }
 
 // CoreSimulatorBridge can lose its accessibility connection after backboardd and SpringBoard
@@ -63,21 +71,18 @@ export const definitionSchema = z.object({
 });
 
 export class Baguette {
-  readonly baseUrl: URL;
+  readonly baseUrl = parseBaseUrl("http://127.0.0.1:0");
   private child?: ChildProcess;
   private starting?: Promise<Status>;
   private readonly lifecycle = new AbortController();
   private readonly deviceChanges = new Map<string, Promise<Status>>();
   private disposed = false;
-  private readonly embedded: boolean;
   private readonly kickstartBridge: (udid: string, signal: AbortSignal) => Promise<void>;
   private readonly bridgeRestarts = new Map<string, number>();
-  private readonly launchBackend: (host: string, port: string, signal: AbortSignal) => Promise<ChildProcess>;
+  private readonly launchBackend: BaguetteLauncher;
   private readonly startFailures = new FailureEpisodes();
 
-  constructor(baseUrl?: string, kickstartBridge = kickstartAccessibilityBridge, launchBackend = launchBundledBaguette) {
-    this.embedded = baseUrl == null;
-    this.baseUrl = parseBaseUrl(baseUrl ?? "http://127.0.0.1:0");
+  constructor({ launchBackend = launchBundledBaguette, kickstartBridge = kickstartAccessibilityBridge }: BaguetteOptions = {}) {
     this.kickstartBridge = kickstartBridge;
     this.launchBackend = launchBackend;
   }
@@ -94,7 +99,8 @@ export class Baguette {
       if (response.status === 404 && /^\/simulators\/[^/]+\/definition\.json$/.test(path)) {
         const payload = await readDefinitionFailure(response);
         const diagnostic = parseDefinitionDiagnostic(payload);
-        diagnostic.backendMode = this.embedded ? "embedded" : "external";
+        // Kept for comparison with releases that could attach to an external Baguette.
+        diagnostic.backendMode = "embedded";
         setDefinitionDiagnostic(error, diagnostic);
       }
       throw error;
@@ -136,7 +142,7 @@ export class Baguette {
   }
 
   async status(signal?: AbortSignal): Promise<Status> {
-    if (this.embedded && !this.child) {
+    if (!this.child) {
       return { connected: false, managed: false, baseUrl: this.baseUrl.origin, devices: [], error: "The bundled simulator backend has not started." };
     }
     try {
@@ -186,11 +192,6 @@ export class Baguette {
     if (current.connected) return current;
     // The port is our running Baguette's own, so its failed device list is not a port conflict.
     if (this.child) throw listError(current);
-    if (this.embedded === false) {
-      // Refuse to start over a listener that is slow or is not Baguette.
-      if (await this.portInUse()) throw new Error(`Port ${this.baseUrl.port || "80"} is in use, but its listener did not return a Baguette device list.`);
-      return this.launch();
-    }
     // Another process can bind an allocated port before Baguette does. Baguette then exits, so try a new port.
     for (let attempt = 1; ; attempt++) {
       this.baseUrl.port = String(await this.allocatePort());
@@ -203,25 +204,15 @@ export class Baguette {
     }
   }
 
-  // Whether anything accepts connections at the address, whether or not it answers.
-  private async portInUse(): Promise<boolean> {
-    try {
-      await fetch(new URL("/simulators.json", this.baseUrl), { signal: AbortSignal.timeout(1500), redirect: "error" });
-      return true;
-    } catch (error) {
-      return (error as { cause?: { code?: string } }).cause?.code !== "ECONNREFUSED";
-    }
-  }
-
   private async launch(): Promise<Status> {
     // Each attempt keeps its own output, so a failed attempt's late output can't explain the next one.
     let diagnostics = "";
-    const host = this.baseUrl.hostname.replace(/^\[|\]$/g, "");
-    const child = await this.launchBackend(host, this.baseUrl.port || "80", this.lifecycle.signal);
+    const { child, url } = await this.launchBackend(this.baseUrl.hostname, this.baseUrl.port, this.lifecycle.signal);
     if (this.disposed) {
       child.kill("SIGTERM");
       throw new Error("The plugin server has closed.");
     }
+    if (url !== undefined) this.baseUrl.host = parseBaseUrl(url).host;
     this.child = child;
     let launchError: Error | undefined;
     const exited = new AbortController();
