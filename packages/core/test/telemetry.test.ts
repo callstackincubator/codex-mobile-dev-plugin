@@ -13,7 +13,7 @@ import { z } from "zod";
 import { MeasurementWindow, sampleTrace, scrubErrorEvent, scrubMetric, scrubSpan, sampleMetric, createErrorEventFilter, METRIC_SAMPLE_RATE, TELEMETRY_META_KEY } from "../../shared/src/telemetry.ts";
 import { captureServerError, installTracePropagation, instrumentMcpServer, IOSLogProcessingTelemetry, recordAndroidBackendStartup, recordIosMirrorSharing } from "../src/telemetry.ts";
 import { recordPluginUpdate } from "../../../apps/codex-plugin/server/plugin-updates.ts";
-import { ExpectedOperationError, FailureEpisodes } from "../../shared/src/error-reporting.ts";
+import { deferEpisodeReport, ExpectedOperationError, FailureEpisodes } from "../../shared/src/error-reporting.ts";
 import { parseResourceInput } from "../src/resource-input.ts";
 import { openRequestSession } from "../src/request-session.ts";
 import { registerDeviceAppsTool } from "../src/device-apps/tools.ts";
@@ -858,6 +858,38 @@ test("physical iOS frames accept profiles without represented models, report a f
   contains(encoded, "Device frame layout failed");
   contains(encoded, "representedModelIdentifiers", false);
   contains(encoded, "PRIVATE", false);
+});
+
+test("an episode's report goes to the first capture site that sends it, and repeats are only counted", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, beforeSend: scrubErrorEvent, beforeSendMetric: scrubMetric,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  t.after(() => Sentry.close());
+  const episodes = new FailureEpisodes();
+  const failure = () => {
+    const error = new Error("Cannot reach Baguette at http://127.0.0.1:1. Baguette returned HTTP 500 for /simulators.json.");
+    deferEpisodeReport(error, () => episodes.shouldReport("start", error.message));
+    return error;
+  };
+  // A cancelled caller and one that only logs the failure don't use up the episode's report.
+  const controller = new AbortController();
+  controller.abort();
+  captureServerError(failure(), "simulator.tool", { signal: controller.signal });
+  failure();
+  const first = failure();
+  captureServerError(first, "simulator.tool");
+  // A caller that joined the same start shares its error.
+  captureServerError(first, "simulator.tool");
+  captureServerError(failure(), "simulator.tool");
+  await Sentry.flush();
+  const items = envelopes.flatMap(envelope => envelope[1]);
+  const events = items.filter(item => item[0].type === "event");
+  assert.equal(events.length, 1);
+  const sent = JSON.stringify(envelopes);
+  contains(sent, "server.error.repeated");
+  contains(sent, '"outcome":{"value":"cancelled"');
 });
 
 test("failure episode memory is bounded and inactivity starts a new episode", () => {
