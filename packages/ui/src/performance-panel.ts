@@ -11,6 +11,7 @@ import type { DeviceAppsStore } from "./device-apps.ts";
 import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 import { isDeviceActive, isPhysicalIos, sameDevice } from "@mobile-dev/shared/devices.ts";
 import { Store } from "./store.ts";
+import { callTool } from "./tool-call.ts";
 
 type Snapshot = DisplayFpsState & {
   open: boolean; available: boolean; discovering: boolean; monitoring: boolean;
@@ -128,15 +129,7 @@ export class PerformancePanel extends Store<Snapshot> {
   retry() { this.restart(); }
   retryFps() { this.fps.retry(); }
 
-  private async call(name: string, arguments_: Record<string, unknown>) {
-    const result = await this.app.callServerTool({ name, arguments: arguments_ }, { timeout: 45000 });
-    if (result.isError) {
-      const messages = result.content.filter(item => item.type === "text");
-      const message = messages.map(item => item.text).join("\n");
-      throw new Error(message);
-    }
-    return result;
-  }
+  private call(name: string, arguments_: Record<string, unknown>) { return callTool(this.app, { name, arguments: arguments_ }, { timeout: 45000 }); }
 
   private appsChanged() {
     if (this.disposed) return;

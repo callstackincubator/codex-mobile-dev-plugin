@@ -10,6 +10,7 @@ import { FailureEpisodes, errorCategory, setErrorCategory, errorMessage } from "
 import { errorReportSignature } from "@mobile-dev/shared/telemetry.ts";
 import { isDeviceActive, isPhysicalIos, sameDevice } from "@mobile-dev/shared/devices.ts";
 import { Store } from "./store.ts";
+import { callTool, ToolCallError } from "./tool-call.ts";
 
 export type DeviceAppsSnapshot = DeviceApps & {
   device?: SimulatorDevice;
@@ -101,18 +102,16 @@ export class DeviceAppsStore extends Store<DeviceAppsSnapshot> {
     if (isPhysicalIos(device)) parameters.kind = "physical";
     const startedAt = performance.now();
     const telemetryContext = getUiTelemetryAttributes();
-    let stage: DeviceAppsStage = "transport";
+    let stage = "transport" as DeviceAppsStage;
     try {
-      const result = await this.app.callServerTool({ name: "mobile_performance_sources", arguments: parameters }, {
+      const result = await callTool(this.app, { name: "mobile_performance_sources", arguments: parameters }, {
         signal: discovery.abort.signal, timeout: 45000,
+      }).catch(error => {
+        // The server answered with its own explanation; anything else failed in transport.
+        if (error instanceof ToolCallError) stage = "discovery";
+        throw error;
       });
       if (this.discovery !== discovery) return;
-      if (result.isError) {
-        stage = "discovery";
-        const texts = result.content.filter(item => item.type === "text");
-        const message = texts.map(item => item.text).join("\n");
-        throw new Error(message);
-      }
       stage = "response";
       const data = deviceAppsSchema.parse(result.structuredContent);
       this.failures.recover("discovery");

@@ -5,7 +5,8 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { recordingRangeSchema, recordingReferenceSchema, recordingSchema, summarizeRecording } from "@mobile-dev/shared/recordings.ts";
 import type { PerformanceRecording, RecordingRange } from "@mobile-dev/shared/recordings.ts";
 import { captureUiError, countUiEvent, markUiSurfaceReady, recordUiTiming, setUiGauge, setUiSurface, setUiTelemetryContext } from "./telemetry.ts";
-import { readRecording, RecordingReadError, RecordingTrimmedError, toolResultText } from "./recording-reader.ts";
+import { readRecording, RecordingTrimmedError } from "./recording-reader.ts";
+import { toolResultText, ToolCallError } from "./tool-call.ts";
 import { Store } from "./store.ts";
 
 type RecordingState = {
@@ -117,10 +118,10 @@ export class RecordingController extends Store<RecordingState> {
       this.present(recording, range);
     } catch (error) {
       if (loading.signal.aborted || this.disposed) return;
-      if (error instanceof RecordingReadError === false) captureUiError(error, "recording.load");
+      if (error instanceof ToolCallError === false) captureUiError(error, "recording.load");
       // A preview already on screen stays; the card only lacks thread and frame detail.
       if (this.state.preview) this.update({ preview: "only" });
-      else this.update({ error: error instanceof RecordingReadError ? error.message : "Could not load this recording. Reopen it to try again." });
+      else this.update({ error: error instanceof ToolCallError ? error.message : "Could not load this recording. Reopen it to try again." });
     }
   }
   select = (range?: RecordingRange) => {

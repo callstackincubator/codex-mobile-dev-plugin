@@ -7,7 +7,8 @@ import type { PerformanceComparison } from "@mobile-dev/shared/performance-compa
 import { recordingRangeSchema } from "@mobile-dev/shared/recordings.ts";
 import type { RecordingRange } from "@mobile-dev/shared/recordings.ts";
 import { captureUiError, countUiEvent, markUiSurfaceReady, recordUiTiming, setUiGauge, setUiSurface, setUiTelemetryContext } from "./telemetry.ts";
-import { readRecording, RecordingReadError, toolResultText } from "./recording-reader.ts";
+import { readRecording } from "./recording-reader.ts";
+import { toolResultText, ToolCallError } from "./tool-call.ts";
 import { Store } from "./store.ts";
 
 type ComparisonState = {
@@ -76,10 +77,10 @@ export class ComparisonController extends Store<ComparisonState> {
       this.show(comparisonSchema.parse({ title, recordings, ...(range ? { range } : {}) }), undefined, replacesPreviews);
     } catch (error) {
       if (loading.signal.aborted || this.disposed) return;
-      if (error instanceof RecordingReadError === false) captureUiError(error, "comparison.load");
+      if (error instanceof ToolCallError === false) captureUiError(error, "comparison.load");
       // Previews already on screen stay; the card only lacks frame detail.
       if (this.state.preview) this.update({ preview: "only" });
-      else this.update({ error: error instanceof RecordingReadError ? error.message : "Could not load these recordings. Reopen the comparison to try again." });
+      else this.update({ error: error instanceof ToolCallError ? error.message : "Could not load these recordings. Reopen the comparison to try again." });
     }
   }
   private show(comparison: PerformanceComparison, preview?: ComparisonState["preview"], keepSelection = false) {

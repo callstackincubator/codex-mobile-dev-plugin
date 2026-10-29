@@ -11,6 +11,7 @@ import { measureUiOperation, recordUiTiming, setUiGauge } from "./telemetry.ts";
 import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 import { isDeviceActive, isPhysicalIos } from "@mobile-dev/shared/devices.ts";
 import { Store } from "./store.ts";
+import { callTool } from "./tool-call.ts";
 
 export type StorageAction = "apps" | "read" | "clear" | "reset" | "launch";
 export type StorageTab = "browse" | "changes";
@@ -210,8 +211,7 @@ export class StoragePanel extends Store<StorageState> {
   }
 
   private async call(name: string, args: Record<string, unknown>) {
-    const result = await this.app.callServerTool({ name, arguments: { platform: this.state.platform, deviceId: this.state.deviceId, ...args } }, { timeout: 60000 });
-    if (result.isError) throw new Error(result.content.filter(item => item.type === "text").map(item => item.text).join("\n") || "The plugin could not read app storage.");
+    const result = await callTool(this.app, { name, arguments: { platform: this.state.platform, deviceId: this.state.deviceId, ...args } }, { timeout: 60000, fallback: "The plugin could not read app storage." });
     return result.structuredContent;
   }
 

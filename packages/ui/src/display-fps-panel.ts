@@ -5,6 +5,7 @@ import type { DisplayFpsBatch, DisplayFpsSample, DisplayFpsTarget } from "@mobil
 import type { SimulatorDevice } from "@mobile-dev/shared/protocol.ts";
 import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 import { isDeviceActive } from "@mobile-dev/shared/devices.ts";
+import { callTool } from "./tool-call.ts";
 
 export type DisplayFpsState = { fpsSamples: DisplayFpsSample[]; fpsPhase: CpuPhase; fpsError: string; fpsMonitoring: boolean; fpsSupported: boolean };
 type Session = { id: string; abort: AbortController; closing?: Promise<void> };
@@ -65,16 +66,7 @@ export class DisplayFpsPanel {
       this.update({ fpsPhase: "failed", fpsError: message, fpsMonitoring: false });
     });
   }
-  private async call(name: string, args: Record<string, unknown>) {
-    const result = await this.app.callServerTool({ name, arguments: args }, { timeout: 45000 });
-    if (result.isError) {
-      const messages = result.content.filter(item => item.type === "text");
-      const texts = messages.map(item => item.text);
-      const message = texts.join("\n");
-      throw new Error(message);
-    }
-    return result;
-  }
+  private call(name: string, args: Record<string, unknown>) { return callTool(this.app, { name, arguments: args }, { timeout: 45000 }); }
   private async receive(target: DisplayFpsTarget, epoch: number, cleanup: Promise<void>) {
     await cleanup;
     if (epoch === this.epoch && this.session) await this.closeSession(this.session);

@@ -11,8 +11,8 @@ import { countUiEvent } from "./telemetry.ts";
 import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 import { isDeviceActive, isPhysicalIos, sameDevice } from "@mobile-dev/shared/devices.ts";
 import { Store } from "./store.ts";
-
-type Call = HostBridge["callServerTool"];
+import { callTool, ToolCallError } from "./tool-call.ts";
+import type { ToolCallOptions, ToolCallParams } from "./tool-call.ts";
 
 function expiredSession(error: unknown) {
   return error instanceof Error && error.message.includes("This log session expired or closed.");
@@ -229,14 +229,13 @@ export class LogsPanel extends Store<LogsPanelState> {
     }, error => { this.update({ status: "Stopped" }); this.error(String(error)); });
   }
 
-  private async call(...args: Parameters<Call>) {
-    const result = await this.app.callServerTool(...args);
-    if (result.isError) {
-      const error = new Error(result.content.filter(item => item.type === "text").map(item => item.text).join("\n"));
-      if (args[0].name === "mobile_logs_keep_alive" && expiredSession(error)) throw error;
+  // A failed log tool stops reconnecting, except a keep-alive for an expired session, which reopens it.
+  private async call(params: ToolCallParams, options: ToolCallOptions) {
+    try { return await callTool(this.app, params, options); }
+    catch (error) {
+      if (!(error instanceof ToolCallError) || (params.name === "mobile_logs_keep_alive" && expiredSession(error))) throw error;
       throw new StopReconnectError(error.message);
     }
-    return result;
   }
 
   private async waitUntilVisible(id: string, signal: AbortSignal) {
