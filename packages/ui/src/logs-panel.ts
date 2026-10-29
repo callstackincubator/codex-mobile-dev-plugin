@@ -1,6 +1,8 @@
 import type { HostBridge } from "./host-bridge.ts";
 import type { SimulatorDevice } from "@mobile-dev/shared/protocol.ts";
+import { logBatchSchema } from "@mobile-dev/shared/logs.ts";
 import type { LogBatch, LogOptions, MetroTarget, NativeLogTarget } from "@mobile-dev/shared/logs.ts";
+import { logSessionResultSchema } from "@mobile-dev/shared/tool-results.ts";
 import { LogList } from "./log-list.ts";
 import type { PanelContext } from "./model-context.ts";
 import { ReconnectLoop, StopReconnectError } from "./reconnect.ts";
@@ -13,6 +15,8 @@ import { isDeviceActive, isPhysicalIos, sameDevice } from "@mobile-dev/shared/de
 import { Store } from "./store.ts";
 import { callTool, ToolCallError } from "./tool-call.ts";
 import type { ToolCallOptions, ToolCallParams } from "./tool-call.ts";
+import { openCursorSession } from "./resource-session.ts";
+import type { ResourceSession } from "./resource-session.ts";
 
 function expiredSession(error: unknown) {
   return error instanceof Error && error.message.includes("This log session expired or closed.");
@@ -38,7 +42,7 @@ export class LogsPanel extends Store<LogsPanelState> {
   private available = false;
   private epoch = 0;
   private readonly loop = new ReconnectLoop();
-  private session?: { id: string; epoch: number; closing?: Promise<void> };
+  private session?: ResourceSession;
   private metroUrl?: string;
   readonly list: LogList;
   private disposed = false;
@@ -259,54 +263,55 @@ export class LogsPanel extends Store<LogsPanelState> {
   }
 
   private async receive(options: LogOptions, epoch: number, signal: AbortSignal) {
-    const result = await this.call({ name: "mobile_logs_session", arguments: { options } }, { timeout: 15000 });
-    const id = result._meta?.sessionId; const logsUri = result._meta?.logsUri;
-    if (typeof id !== "string" || typeof logsUri !== "string") throw new StopReconnectError("The plugin did not return a log session.");
-    const session = { id, epoch };
-    if (signal.aborted || epoch !== this.epoch) { await this.closeSession(session); return; }
-    this.session = session;
-    const uri = new URL(logsUri);
-    let after = 0;
-    try {
-      while (!signal.aborted && epoch === this.epoch) {
+    const active = () => epoch === this.epoch;
+    let id = "";
+    await openCursorSession({
+      app: this.app,
+      open: async () => {
+        const result = await this.call({ name: "mobile_logs_session", arguments: { options } }, { timeout: 15000 });
+        const session = logSessionResultSchema.safeParse(result._meta);
+        if (!session.success) throw new StopReconnectError("The plugin did not return a log session.");
+        return { id: session.data.sessionId, uri: session.data.logsUri };
+      },
+      close: sessionId => this.call({ name: "mobile_logs_close", arguments: { sessionId } }, { timeout: 5000 }),
+      closePolicy: "ignore",
+      signal,
+      opened: session => {
+        if (signal.aborted || !active()) return false;
+        this.session = session;
+        id = session.id;
+      },
+      active,
+      // A hidden panel keeps its session alive without reading; hiding drops the read in flight.
+      beforeRead: async () => {
         await this.waitUntilVisible(id, signal);
-        if (signal.aborted || epoch !== this.epoch) return;
-        uri.searchParams.set("after", String(after));
         const reading = new AbortController();
         this.reading = reading;
-        const readSignal = AbortSignal.any([signal, reading.signal]);
-        let resource: Awaited<ReturnType<HostBridge["readServerResource"]>>;
-        try {
-          resource = await this.app.readServerResource({ uri: uri.href }, { signal: readSignal, timeout: 10000 });
-        } catch (error) {
-          if (signal.aborted === false && reading.signal.aborted) continue;
-          throw error;
-        } finally {
-          if (this.reading === reading) this.reading = undefined;
-        }
-        if (signal.aborted || epoch !== this.epoch) return;
-        if (this.visible === false || reading.signal.aborted) continue;
-        const content = resource.contents.find(item => item.mimeType === "application/json" && "text" in item);
-        if (!content || !("text" in content)) throw new Error("The plugin returned an invalid log batch.");
-        const batch = JSON.parse(content.text) as LogBatch;
-        after = batch.cursor;
-        this.loop.connected(); this.error();
-        this.list.append(batch.entries, batch.dropped);
-        this.update({ status: batch.statuses.map(status => `${status.source === "native" ? "Native" : "Metro"}: ${status.state}`).join(" · ") || "Connecting..." });
-        const message = batch.statuses.map(status => status.message).filter(Boolean).join(" · ");
-        this.update({ statusMessage: message });
-        if (message) this.error(message);
-      }
-    } finally { await this.closeSession(session); }
+        return reading.signal;
+      },
+      schema: logBatchSchema,
+      invalid: () => new Error("The plugin returned an invalid log batch."),
+      cursor: batch => batch.cursor,
+      timeout: 10000,
+      onBatch: batch => this.accept(batch),
+    });
   }
 
-  private closeSession(session: NonNullable<LogsPanel["session"]>): Promise<void> {
-    session.closing ??= this.call({ name: "mobile_logs_close", arguments: { sessionId: session.id } }, { timeout: 5000 }).then(() => {}, () => {});
-    if (this.session === session) this.session = undefined;
-    return session.closing;
+  private accept(batch: LogBatch) {
+    this.loop.connected(); this.error();
+    this.list.append(batch.entries, batch.dropped);
+    this.update({ status: batch.statuses.map(status => `${status.source === "native" ? "Native" : "Metro"}: ${status.state}`).join(" · ") || "Connecting..." });
+    const message = batch.statuses.map(status => status.message).filter(Boolean).join(" · ");
+    this.update({ statusMessage: message });
+    if (message) this.error(message);
   }
 
-  async stop() { this.loop.stop(); this.epoch++; if (this.session) await this.closeSession(this.session); }
+  async stop() {
+    this.loop.stop(); this.epoch++;
+    const session = this.session;
+    this.session = undefined;
+    await session?.close();
+  }
   async dispose() { this.disposed = true; this.unsubscribeApps(); this.discovery++; this.open = false; this.available = false; this.controls(); this.close(); await this.stop(); }
 
   async discover() {

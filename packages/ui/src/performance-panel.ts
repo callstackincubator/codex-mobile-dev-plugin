@@ -1,6 +1,6 @@
 import type { HostBridge } from "./host-bridge.ts";
 import { recordUiTiming, setUiGauge } from "./telemetry.ts";
-import { CPU_HISTORY_SECONDS, CPU_MAX_SAMPLES } from "@mobile-dev/shared/cpu.ts";
+import { CPU_HISTORY_SECONDS, CPU_MAX_SAMPLES, cpuBatchSchema } from "@mobile-dev/shared/cpu.ts";
 import type { DeviceApp } from "@mobile-dev/shared/device-apps.ts";
 import type { CpuBatch, CpuPhase, CpuSample, CpuTarget } from "@mobile-dev/shared/cpu.ts";
 import type { SimulatorDevice } from "@mobile-dev/shared/protocol.ts";
@@ -12,6 +12,11 @@ import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 import { isDeviceActive, isPhysicalIos, sameDevice } from "@mobile-dev/shared/devices.ts";
 import { Store } from "./store.ts";
 import { callTool } from "./tool-call.ts";
+import { CollectorSessions, openCursorSession } from "./resource-session.ts";
+import { cpuSessionResultSchema } from "@mobile-dev/shared/tool-results.ts";
+
+// The session and the resource its batches come from; the target it echoes is not needed.
+const cpuSession = cpuSessionResultSchema.pick({ sessionId: true, cpuUri: true });
 
 type Snapshot = DisplayFpsState & {
   open: boolean; available: boolean; discovering: boolean; monitoring: boolean;
@@ -21,22 +26,18 @@ type Snapshot = DisplayFpsState & {
   phase: CpuPhase; error: string; sourceError: string;
   physical: boolean;
 };
-type Session = { id: string; abort: AbortController; closing?: Promise<void> };
 
 export class PerformancePanel extends Store<Snapshot> {
   private app: HostBridge;
   private fps: DisplayFpsPanel;
   private timeOrigin?: number;
   private simulator?: SimulatorDevice;
-  private session?: Session;
   private enabled = false;
   private disposed = false;
-  private epoch = 0;
+  private readonly sessions = new CollectorSessions();
   private readonly deviceApps: DeviceAppsStore;
   private readonly unsubscribeApps: () => void;
   private nextThreadNumber = 1;
-  private cleanup: Promise<void> = Promise.resolve();
-  private running?: Promise<void>;
   private selections = new Map<string, string>();
 
   constructor(app: HostBridge, deviceApps: DeviceAppsStore) {
@@ -95,7 +96,7 @@ export class PerformancePanel extends Store<Snapshot> {
     this.fps.show();
     this.update({ open: true });
     this.appsChanged();
-    if (this.state.bundleId && this.running === undefined) this.restart();
+    if (this.state.bundleId && this.sessions.running === undefined) this.restart();
   }
 
   hide() { this.update({ open: false }); }
@@ -153,16 +154,16 @@ export class PerformancePanel extends Store<Snapshot> {
     this.update({ apps, bundleId });
     if (selected && previous?.pid !== selected.pid) this.restart();
     if (bundleId && selected === undefined) {
-      const epoch = this.epoch + 1;
+      const epoch = this.sessions.epoch + 1;
       void this.stop().then(() => {
-        if (this.disposed === false && epoch === this.epoch) this.update({ phase: "idle", error: "", monitoring: false });
+        if (this.disposed === false && epoch === this.sessions.epoch) this.update({ phase: "idle", error: "", monitoring: false });
       }).catch(error => this.failed(error));
     }
   }
 
   private restart() {
     const stopping = this.stop();
-    const epoch = this.epoch;
+    const epoch = this.sessions.epoch;
     const device = this.simulator;
     const bundleId = this.state.bundleId;
     if (this.enabled === false || this.state.available === false || device === undefined || !isDeviceActive(device) || bundleId === "") {
@@ -173,90 +174,65 @@ export class PerformancePanel extends Store<Snapshot> {
     this.resetHistory({ phase: "connecting", error: "", monitoring: true });
     const target: CpuTarget = { deviceId: device.udid, platform: device.platform, bundleId };
     if (isPhysicalIos(device)) target.kind = "physical";
-    this.running = this.receive(target, epoch, stopping).catch(error => {
-      if (this.disposed === false && epoch === this.epoch) this.update({ phase: "failed", error: errorMessage(error), monitoring: false });
+    this.sessions.running = this.receive(target, epoch, stopping).catch(error => {
+      if (this.disposed === false && epoch === this.sessions.epoch) this.update({ phase: "failed", error: errorMessage(error), monitoring: false });
     });
   }
 
   private async receive(target: CpuTarget, epoch: number, stopping: Promise<void>) {
-    await stopping;
-    if (epoch === this.epoch && this.session) await this.closeSession(this.session);
-    if (epoch !== this.epoch || this.disposed) return;
-    const result = await this.call("mobile_cpu_session", { target });
-    const id = result.structuredContent?.sessionId;
-    const cpuUri = result.structuredContent?.cpuUri;
-    if (typeof id !== "string" || typeof cpuUri !== "string") throw new Error("The plugin did not return a CPU session.");
-    const session: Session = { id, abort: new AbortController() };
-    this.session = session;
-    if (epoch !== this.epoch || this.disposed) { await this.closeSession(session); return; }
-    const uri = new URL(cpuUri);
-    let after = 0;
-    try {
-      while (epoch === this.epoch && session.abort.signal.aborted === false) {
-        uri.searchParams.set("after", String(after));
-        const resource = await this.app.readServerResource({ uri: uri.href }, { signal: session.abort.signal, timeout: 10000 });
-        if (epoch !== this.epoch || session.abort.signal.aborted) return;
-        const content = resource.contents.find(item => item.mimeType === "application/json" && "text" in item);
-        if (content === undefined || !("text" in content)) throw new Error("The plugin returned an invalid CPU batch.");
-        const processingStartedAt = performance.now();
-        const batch: CpuBatch = JSON.parse(content.text);
-        after = batch.cursor;
-        if (batch.timeOrigin !== undefined && this.timeOrigin === undefined) this.timeOrigin = batch.timeOrigin;
-        const offset = batch.timeOrigin === undefined ? 0 : batch.timeOrigin - (this.timeOrigin ?? batch.timeOrigin);
-        const incoming = batch.samples.map(sample => ({ ...sample, time: sample.time + offset }));
-        const combined = [...this.state.samples, ...incoming];
-        const latest = combined.at(-1)?.time ?? 0;
-        const retained = combined.filter(sample => sample.time >= latest - CPU_HISTORY_SECONDS);
-        const samples = retained.slice(-CPU_MAX_SAMPLES);
-        const threadHistory = new Map<string, ThreadHistory>();
-        for (const sample of samples) {
-          for (const thread of sample.threads) {
-            if (threadHistory.has(thread.id)) continue;
-            let history = this.state.threadHistory.get(thread.id);
-            if (history === undefined) history = { number: this.nextThreadNumber++, peakCpuPercent: 0 };
-            threadHistory.set(thread.id, history);
-          }
-        }
-        for (const sample of batch.samples) {
-          for (const thread of sample.threads) {
-            const history = threadHistory.get(thread.id);
-            if (history && thread.cpuPercent !== null && thread.cpuPercent > history.peakCpuPercent) {
-              threadHistory.set(thread.id, { ...history, peakCpuPercent: thread.cpuPercent });
-            }
-          }
-        }
-        this.update({ samples, threadHistory, phase: batch.phase, error: batch.error ?? "", monitoring: batch.phase === "connecting" || batch.phase === "recording" });
-        const processingElapsed = performance.now() - processingStartedAt;
-        recordUiTiming("ui.performance.process_batch", processingElapsed);
-        setUiGauge("ui.performance.retained_samples", samples.length);
-        setUiGauge("ui.performance.threads", threadHistory.size);
-      }
-    } finally { await this.closeSession(session); }
-  }
-
-  // A session stays current until its close succeeds, so a failed close is retried before another session opens.
-  private closeSession(session: Session): Promise<void> {
-    session.abort.abort();
-    session.closing ??= this.call("mobile_cpu_close", { sessionId: session.id }).then(() => {
-      if (this.session === session) this.session = undefined;
-    }, error => {
-      session.closing = undefined;
-      throw error;
+    if (!await this.sessions.prepare(epoch, stopping) || this.disposed) return;
+    await openCursorSession({
+      app: this.app,
+      open: async () => {
+        const opened = cpuSession.safeParse((await this.call("mobile_cpu_session", { target })).structuredContent);
+        if (!opened.success) throw new Error("The plugin did not return a CPU session.");
+        return { id: opened.data.sessionId, uri: opened.data.cpuUri };
+      },
+      close: id => this.call("mobile_cpu_close", { sessionId: id }),
+      closePolicy: "retry",
+      opened: session => this.sessions.adopt(session, epoch) && !this.disposed,
+      active: () => epoch === this.sessions.epoch,
+      schema: cpuBatchSchema,
+      invalid: () => new Error("The plugin returned an invalid CPU batch."),
+      cursor: batch => batch.cursor,
+      timeout: 10000,
+      onBatch: (batch, arrivedAt) => this.accept(batch, arrivedAt),
     });
-    return session.closing;
   }
 
-  async stop() {
-    this.epoch++;
-    const session = this.session;
-    const running = this.running;
-    this.running = undefined;
-    const closing = session ? this.closeSession(session) : Promise.resolve();
-    const settled = Promise.allSettled([this.cleanup, closing, running]);
-    this.cleanup = settled.then(() => {});
-    await settled;
-    return closing;
+  private accept(batch: CpuBatch, arrivedAt: number) {
+    if (batch.timeOrigin !== undefined && this.timeOrigin === undefined) this.timeOrigin = batch.timeOrigin;
+    const offset = batch.timeOrigin === undefined ? 0 : batch.timeOrigin - (this.timeOrigin ?? batch.timeOrigin);
+    const incoming = batch.samples.map(sample => ({ ...sample, time: sample.time + offset }));
+    const combined = [...this.state.samples, ...incoming];
+    const latest = combined.at(-1)?.time ?? 0;
+    const retained = combined.filter(sample => sample.time >= latest - CPU_HISTORY_SECONDS);
+    const samples = retained.slice(-CPU_MAX_SAMPLES);
+    const threadHistory = new Map<string, ThreadHistory>();
+    for (const sample of samples) {
+      for (const thread of sample.threads) {
+        if (threadHistory.has(thread.id)) continue;
+        let history = this.state.threadHistory.get(thread.id);
+        if (history === undefined) history = { number: this.nextThreadNumber++, peakCpuPercent: 0 };
+        threadHistory.set(thread.id, history);
+      }
+    }
+    for (const sample of batch.samples) {
+      for (const thread of sample.threads) {
+        const history = threadHistory.get(thread.id);
+        if (history && thread.cpuPercent !== null && thread.cpuPercent > history.peakCpuPercent) {
+          threadHistory.set(thread.id, { ...history, peakCpuPercent: thread.cpuPercent });
+        }
+      }
+    }
+    this.update({ samples, threadHistory, phase: batch.phase, error: batch.error ?? "", monitoring: batch.phase === "connecting" || batch.phase === "recording" });
+    // Measured from the batch's arrival, so parsing and validating it count as processing.
+    recordUiTiming("ui.performance.process_batch", performance.now() - arrivedAt);
+    setUiGauge("ui.performance.retained_samples", samples.length);
+    setUiGauge("ui.performance.threads", threadHistory.size);
   }
+
+  stop() { return this.sessions.stop(); }
 
   async dispose() {
     this.disposed = true;
