@@ -120,7 +120,7 @@ export class AndroidStreams {
 
   async reset(id: string) {
     const session = this.session(id);
-    await this.backend.assertDevice(session.deviceId, session.url);
+    await this.backend.assertDevice(session.deviceId, { url: session.url });
     if (!this.sessions.current(id, session)) throw new ExpectedOperationError("session_closed", "The Android stream closed.");
     if (session.socket.readyState !== WebSocket.OPEN) throw new ExpectedOperationError("device_unavailable", "The Android stream disconnected.");
     if (session.error) throw new Error(session.error);
@@ -131,7 +131,7 @@ export class AndroidStreams {
 
   async batch(id: string, after: number, signal?: AbortSignal) {
     const session = this.session(id);
-    await this.backend.assertDevice(session.deviceId, session.url);
+    await this.backend.assertDevice(session.deviceId, { url: session.url });
     signal?.throwIfAborted();
     if (!session.error && !session.packets.some(packet => packet.sequence > after)) await session.waiters.wait(1000, signal);
     signal?.throwIfAborted();
@@ -145,7 +145,7 @@ export class AndroidStreams {
 
   async input(id: string, messages: unknown[]) {
     const session = this.session(id);
-    await this.backend.assertDevice(session.deviceId, session.url);
+    await this.backend.assertDevice(session.deviceId, { url: session.url });
     if (!this.sessions.current(id, session)) throw new ExpectedOperationError("session_closed", "The Android stream closed.");
     if (session.error || session.socket.readyState !== WebSocket.OPEN) throw new Error(session.error ?? "The Android stream disconnected.");
     // Validate the full batch before sending any input.

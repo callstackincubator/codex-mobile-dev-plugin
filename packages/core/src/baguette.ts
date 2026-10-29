@@ -1,7 +1,6 @@
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import type { ChildProcess } from "node:child_process";
-import { createServer } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import { normalizeDevices, parseBaseUrl, udidSchema } from "@mobile-dev/shared/protocol.ts";
@@ -9,6 +8,7 @@ import type { IosSimulator, Status } from "@mobile-dev/shared/protocol.ts";
 import { buttonMarginsSchema } from "@mobile-dev/shared/bezel.ts";
 import { definitionDeviceState, getDefinitionDiagnostic, parseDefinitionDiagnostic, setDefinitionDiagnostic } from "@mobile-dev/shared/simulator-definition-diagnostics.ts";
 import { requireDevice } from "./device-lookup.ts";
+import { allocatePort, superviseBackend } from "./backend-process.ts";
 import { isMissingFile, MissingRuntimeError } from "./install-integrity.ts";
 import { deferEpisodeReport, ExpectedOperationError, FailureEpisodes, errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 import { annotateDeviceCommand, backendCommand, inheritDeviceCommand } from "@mobile-dev/shared/device-command-diagnostics.ts";
@@ -175,20 +175,11 @@ export class Baguette {
     }
   }
 
-  private async allocatePort(): Promise<number> {
-    const socket = createServer();
-    await new Promise<void>((resolve, reject) => { socket.once("error", reject); socket.listen(0, "127.0.0.1", resolve); });
-    const address = socket.address();
-    if (!address || typeof address === "string") throw new Error("Could not allocate a port for the bundled simulator backend.");
-    await new Promise<void>(resolve => socket.close(() => resolve()));
-    return address.port;
-  }
-
   private async ensureStarted(): Promise<Status> {
     if (this.child) return this.connected(await this.devices());
     // Another process can bind an allocated port before Baguette does. Baguette then exits, so try a new port.
     for (let attempt = 1; ; attempt++) {
-      this.baseUrl.port = String(await this.allocatePort());
+      this.baseUrl.port = String(await allocatePort("Could not allocate a port for the bundled simulator backend."));
       try {
         return await this.launch();
       } catch (error) {
@@ -199,8 +190,6 @@ export class Baguette {
   }
 
   private async launch(): Promise<Status> {
-    // Each attempt keeps its own output, so a failed attempt's late output can't explain the next one.
-    let diagnostics = "";
     const { child, url } = await this.launchBackend(this.baseUrl.hostname, this.baseUrl.port, this.lifecycle.signal);
     if (this.disposed) {
       child.kill("SIGTERM");
@@ -208,44 +197,21 @@ export class Baguette {
     }
     if (url !== undefined) this.baseUrl.host = parseBaseUrl(url).host;
     this.child = child;
-    let launchError: Error | undefined;
-    const exited = new AbortController();
-    child.on("error", error => { launchError = error; });
     child.on("exit", (code, signal) => {
-      exited.abort();
       if (!this.disposed) process.stderr.write(`[mobile-dev] Baguette exited: code=${code} signal=${signal ?? "none"}.\n`);
       if (this.child === child) this.child = undefined;
     });
-    for (const output of [child.stdout, child.stderr]) {
-      output?.on("data", chunk => {
-        diagnostics = (diagnostics + chunk.toString()).slice(-4000);
-        process.stderr.write(chunk);
-      });
-    }
     try {
-      const deadline = AbortSignal.timeout(20000);
-      // A listener that holds the port but never answers must not delay noticing that Baguette exited.
-      const polling = AbortSignal.any([deadline, exited.signal]);
-      while (!deadline.aborted && !this.disposed) {
-        if (launchError) {
-          if (isMissingFile(launchError)) {
-            throw annotateDeviceCommand(new MissingRuntimeError("baguette"), "baguette_serve", { failure: "missing_executable" });
-          }
-          throw annotateDeviceCommand(launchError, "baguette_serve");
-        }
-        if (child.exitCode !== null || child.signalCode !== null) {
-          const error = new Error(`Baguette exited before it became ready. ${diagnostics.trim()}`);
-          const status = child.exitCode ?? undefined;
-          throw annotateDeviceCommand(error, "baguette_serve", child.signalCode === null ? { failure: "exit", status } : { failure: "signal" });
-        }
-        const devices = await this.devices(polling).catch(() => undefined);
-        if (devices) return this.connected(devices);
-        await delay(250);
-      }
-      const error = new Error(`Baguette did not become ready within 20 seconds. ${diagnostics.trim()}`);
-      throw annotateDeviceCommand(error, "baguette_serve", { failure: "deadline" });
+      const devices = await superviseBackend(child, {
+        name: "Baguette", deadlineMs: 20000, command: "baguette_serve",
+        probe: signal => this.devices(signal),
+        closed: () => this.disposed,
+        spawnError: error => isMissingFile(error)
+          ? annotateDeviceCommand(new MissingRuntimeError("baguette"), "baguette_serve", { failure: "missing_executable" })
+          : annotateDeviceCommand(error, "baguette_serve"),
+      });
+      return this.connected(devices);
     } catch (error) {
-      child.kill("SIGTERM");
       if (this.child === child) this.child = undefined;
       throw error;
     }

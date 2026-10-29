@@ -5,7 +5,10 @@ import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import type { RequestListener } from "node:http";
 import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Baguette } from "../src/baguette.ts";
+import { MissingRuntimeError } from "../src/install-integrity.ts";
 import { isRepeatedFailure } from "../../shared/src/error-reporting.ts";
 import { deviceCommandTags } from "../../shared/src/device-command-diagnostics.ts";
 import { UDID } from "../../test-support/fixtures.ts";
@@ -106,4 +109,14 @@ test("the bundled Baguette retries on a new port when another process binds it f
   assert.match(String(failed), /^Error: Baguette exited before it became ready\. .*Address already in use/);
   assert.deepEqual(deviceCommandTags(failed), { device_command: "baguette_serve", device_command_failure: "exit", device_command_status: "1" });
   assert.equal(launches.length, 3);
+});
+
+test("a Baguette executable that cannot spawn reports the missing runtime", async t => {
+  const missing = join(tmpdir(), "mobile-dev-missing-runtime", "Baguette");
+  const baguette = new Baguette({ launchBackend: async () => ({ child: spawn(missing, [], { stdio: ["ignore", "pipe", "pipe"] }) }) });
+  t.after(() => baguette.dispose());
+  const failed = await baguette.start().then(() => assert.fail("The start should fail."), (error: unknown) => error);
+  assert.ok(failed instanceof MissingRuntimeError);
+  assert.deepEqual(deviceCommandTags(failed), { device_command: "baguette_serve", device_command_failure: "missing_executable" });
+  assert.equal((await baguette.status()).connected, false);
 });
