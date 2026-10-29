@@ -4,11 +4,11 @@ import { CPU_HISTORY_SECONDS, CPU_MAX_SAMPLES } from "@mobile-dev/shared/cpu.ts"
 import type { DeviceApp } from "@mobile-dev/shared/device-apps.ts";
 import type { CpuBatch, CpuPhase, CpuSample, CpuTarget } from "@mobile-dev/shared/cpu.ts";
 import type { SimulatorDevice } from "@mobile-dev/shared/protocol.ts";
-import { errorMessage } from "@mobile-dev/shared/protocol.ts";
 import type { ThreadHistory, ThreadOrder } from "./performance/types.ts";
 import { DisplayFpsPanel, initialFpsState } from "./display-fps-panel.ts";
 import type { DisplayFpsState } from "./display-fps-panel.ts";
 import type { DeviceAppsStore } from "./device-apps.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 
 type Snapshot = DisplayFpsState & {
   open: boolean; available: boolean; discovering: boolean; monitoring: boolean;

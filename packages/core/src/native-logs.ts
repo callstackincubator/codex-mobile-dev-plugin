@@ -5,11 +5,11 @@ import { setTimeout as delay } from "node:timers/promises";
 import { access } from "node:fs/promises";
 import { join } from "node:path";
 import type { LogRecord, LogSourceStatus, NativeLogTarget } from "@mobile-dev/shared/logs.ts";
-import { errorMessage } from "@mobile-dev/shared/protocol.ts";
 import { androidSdkRoots } from "./android-sdk.ts";
 import { parseIOSLog, parseLogcat } from "./log-parsers.ts";
 import { physicalIosLogCommand } from "./physical-ios-logs.ts";
 import { IOSLogProcessingTelemetry } from "./telemetry.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 
 const execute = promisify(execFile);
 export type LogSink = { log: (log: LogRecord) => void; status: (status: LogSourceStatus) => void };

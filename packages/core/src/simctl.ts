@@ -1,9 +1,10 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { z } from "zod";
-import { errorMessage, udidSchema } from "@mobile-dev/shared/protocol.ts";
+import { udidSchema } from "@mobile-dev/shared/protocol.ts";
 import type { SimulatorDevice, Status } from "@mobile-dev/shared/protocol.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 
 const execute = promisify(execFile);
 const listing = z.object({

@@ -1,12 +1,12 @@
 import { parseResourceInput } from "./resource-input.ts";
 import { openRequestSession } from "./request-session.ts";
-import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
+import { ExpectedOperationError, errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 import { IosMirrorInputBusyError } from "@mobile-dev/shared/ios-mirror-errors.ts";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
 
-import { errorMessage, touchInputSchema } from "@mobile-dev/shared/protocol.ts";
+import { touchInputSchema } from "@mobile-dev/shared/protocol.ts";
 import { listIosDevices } from "./ios-devices.ts";
 import { IosMirrorSessions } from "./ios-mirror.ts";
 import { readPhysicalIosBezel } from "./physical-ios-bezel.ts";

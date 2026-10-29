@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { errorMessage } from "./protocol.ts";
 import { getDiscoveryCommandDiagnostic, discoveryCommandTags } from "./device-apps-command-diagnostics.ts";
+import { errorMessage } from "./error-reporting.ts";
 
 export const DEVICE_APPS_DIAGNOSTIC_META = "mobile-dev/device-apps-diagnostic";
 

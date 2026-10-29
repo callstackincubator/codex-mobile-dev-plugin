@@ -1,7 +1,7 @@
 import type { init } from "@sentry/react";
 import { PLUGIN_VERSION } from "./version.ts";
 import { isAnonymousUserId, isTelemetrySessionId } from "./telemetry-identity.ts";
-import { errorCategory, expectedOutcome } from "./error-reporting.ts";
+import { errorCategory, expectedOutcome, errorMessage } from "./error-reporting.ts";
 
 export const SENTRY_UI_DSN = "https://09bfb50068dbab86252bbb5489ce38ce@o4512180958068736.ingest.de.sentry.io/4512181027471440";
 export const SENTRY_SERVER_DSN = "https://2ee03a9449e1f1b48e3e7c7606b6f562@o4512180958068736.ingest.de.sentry.io/4512181033173072";
@@ -73,7 +73,7 @@ export function scrubText(text: string): string {
 }
 
 export function errorReportSignature(error: unknown, tags: Record<string, string>): string {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = errorMessage(error);
   const scrubbed = scrubText(message);
   const category = errorCategory(error);
   const name = error instanceof Error ? error.name : "unknown";

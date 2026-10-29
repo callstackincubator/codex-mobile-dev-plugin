@@ -9,8 +9,9 @@ import { z } from "zod";
 import { ServeEmu, androidIdSchema } from "./serve-emu.ts";
 import { AndroidStreams } from "./android-streams.ts";
 import { retryableFailure } from "./simulator-unavailable.ts";
-import { errorMessage, inputSchema } from "@mobile-dev/shared/protocol.ts";
+import { inputSchema } from "@mobile-dev/shared/protocol.ts";
 import { captureServerError } from "./telemetry.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 
 const sessionIdSchema = z.string().regex(/^[a-f0-9]{64}$/);
 const deviceInput = { deviceId: androidIdSchema.describe("An Android serial or avd: name returned by mobile_list_android_devices.") };

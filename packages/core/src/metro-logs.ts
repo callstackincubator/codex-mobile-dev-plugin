@@ -1,9 +1,10 @@
 import { WebSocket } from "ws";
 import { setTimeout as delay } from "node:timers/promises";
 import type { MetroLogTarget, MetroTarget } from "@mobile-dev/shared/logs.ts";
-import { parseBaseUrl, errorMessage } from "@mobile-dev/shared/protocol.ts";
+import { parseBaseUrl } from "@mobile-dev/shared/protocol.ts";
 import { parseMetroEvent } from "./log-parsers.ts";
 import type { LogSink, StopLogSource } from "./native-logs.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 
 export type InspectorTarget = MetroTarget & { webSocketDebuggerUrl: string; supportsMultipleDebuggers: boolean };
 

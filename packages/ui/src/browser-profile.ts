@@ -1,3 +1,4 @@
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 type Interval = { startTime: number; duration: number };
 type Script = {
   duration: number;
@@ -88,7 +89,7 @@ export class BrowserProfile {
         this.observer.observe({ entryTypes });
       }
       catch (error) {
-        this.observerError = error instanceof Error ? error.message : String(error);
+        this.observerError = errorMessage(error);
         this.observer?.disconnect();
         this.observer = undefined;
       }

@@ -8,6 +8,7 @@ import type { DeviceAppsStore } from "./device-apps.ts";
 import type { DeviceApp, ForegroundApp } from "@mobile-dev/shared/device-apps.ts";
 import { composeAppLogQuery, quoteLogQueryValue } from "./log-query.ts";
 import { countUiEvent } from "./telemetry.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 
 type Call = HostBridge["callServerTool"];
 
@@ -229,7 +230,7 @@ export class LogsPanel {
       if (expiredSession(error)) {
         countUiEvent("ui.logs.session_expired");
         this.error();
-      } else this.error(error instanceof Error ? error.message : String(error));
+      } else this.error(errorMessage(error));
     }, error => { this.update({ status: "Stopped" }); this.error(String(error)); });
   }
 

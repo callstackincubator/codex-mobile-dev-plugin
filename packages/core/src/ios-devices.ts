@@ -4,8 +4,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { physicalIosDeviceSchema } from "@mobile-dev/shared/ios-devices.ts";
 import type { PhysicalIosDevice } from "@mobile-dev/shared/ios-devices.ts";
-import { errorMessage } from "@mobile-dev/shared/protocol.ts";
-import { errorCategory, FailureEpisodes } from "@mobile-dev/shared/error-reporting.ts";
+import { errorCategory, FailureEpisodes, errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 import { captureServerError } from "./telemetry.ts";
 
 const execute = promisify(execFile);

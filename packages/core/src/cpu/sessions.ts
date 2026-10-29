@@ -1,9 +1,8 @@
-import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
+import { ExpectedOperationError, errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 import { randomBytes } from "node:crypto";
 import type { z } from "zod";
 import type { CpuBatch, CpuTarget, MemoryMetric } from "@mobile-dev/shared/cpu.ts";
 import { cpuTargetSchema } from "@mobile-dev/shared/cpu.ts";
-import { errorMessage } from "@mobile-dev/shared/protocol.ts";
 import { runningDeviceApps } from "../device-apps/apps.ts";
 import { CpuBuffer } from "./buffer.ts";
 import { startCpuMonitor } from "./source.ts";

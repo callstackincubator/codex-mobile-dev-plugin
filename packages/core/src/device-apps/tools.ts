@@ -3,9 +3,8 @@ import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import type { z } from "zod";
 import { cpuDeviceSchema } from "@mobile-dev/shared/cpu.ts";
 import type { DeviceApps } from "@mobile-dev/shared/device-apps.ts";
-import { errorMessage } from "@mobile-dev/shared/protocol.ts";
 import { captureServerError } from "../telemetry.ts";
-import { FailureEpisodes, expectedOutcome } from "@mobile-dev/shared/error-reporting.ts";
+import { FailureEpisodes, expectedOutcome, errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 import { errorReportSignature } from "@mobile-dev/shared/telemetry.ts";
 import { deviceAppsDiagnosticTags, annotateDeviceAppsError, getDeviceAppsDiagnostic, DEVICE_APPS_DIAGNOSTIC_META } from "@mobile-dev/shared/device-apps-diagnostics.ts";
 

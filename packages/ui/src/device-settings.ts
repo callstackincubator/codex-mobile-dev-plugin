@@ -1,6 +1,7 @@
 import type { DeviceSetting, DeviceSettings } from "@mobile-dev/shared/device-settings.ts";
 import { measureUiOperation } from "./telemetry.ts";
 import { elementStores } from "./element-store.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 
 type PendingChange = { change: DeviceSetting; resolve: () => void };
 
@@ -47,7 +48,7 @@ export class DeviceSettingsStore {
       this.confirmed = settings;
       this.publish({ error: settings.errors?.join("\n") ?? "" });
     }, error => {
-      if (this.revision === revision && this.mutation === mutation) this.update({ error: error instanceof Error ? error.message : String(error) });
+      if (this.revision === revision && this.mutation === mutation) this.update({ error: errorMessage(error) });
     }).finally(() => {
       if (this.revision === revision) { this.loading = undefined; this.update({ loading: false }); }
     });
@@ -80,7 +81,7 @@ export class DeviceSettingsStore {
           this.confirmed = { ...this.confirmed!, ...patch };
         } catch (error) {
           if (this.revision !== revision) return;
-          this.update({ error: error instanceof Error ? error.message : String(error) });
+          this.update({ error: errorMessage(error) });
         } finally { current.resolve(); }
         this.pending.shift();
         this.publish();

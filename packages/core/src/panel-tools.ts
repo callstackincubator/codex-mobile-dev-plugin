@@ -8,7 +8,7 @@ import type { CallToolResult, ReadResourceResult } from "@modelcontextprotocol/s
 import { z } from "zod";
 import { PLUGIN_VERSION } from "@mobile-dev/shared/version.ts";
 import { SENTRY_ORIGIN } from "@mobile-dev/shared/telemetry.ts";
-import { errorMessage, streamMessageSchema, udidSchema } from "@mobile-dev/shared/protocol.ts";
+import { streamMessageSchema, udidSchema } from "@mobile-dev/shared/protocol.ts";
 import { panelTargetSchema } from "@mobile-dev/shared/panel-target.ts";
 import type { PanelTarget } from "@mobile-dev/shared/panel-target.ts";
 import { captureServerError } from "./telemetry.ts";
@@ -33,6 +33,7 @@ import { registerOpenRecordingTool } from "./recording-tools.ts";
 import type { ShowRecording } from "./recording-tools.ts";
 import { foregroundSimulatorPid } from "./device-apps/foreground.ts";
 import type { SimulatorForeground } from "./device-apps/foreground.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 
 export const APP_URI = `ui://mobile-dev/${PLUGIN_VERSION}/simulator.html`;
 export const WORKSPACE_URI = `ui://mobile-dev/${PLUGIN_VERSION}/workspace.html`;

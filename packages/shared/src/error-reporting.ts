@@ -11,6 +11,10 @@ export class ExpectedOperationError extends Error {
   }
 }
 
+export function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export function expectedOutcome(error: unknown): ExpectedOutcome | undefined {
   if (error instanceof ExpectedOperationError) return error.outcome;
   const command = getDiscoveryCommandDiagnostic(error);

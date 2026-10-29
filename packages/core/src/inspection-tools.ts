@@ -9,10 +9,11 @@ import { inspectReactNative } from "./react-native-inspector.ts";
 import type { InspectorRequest } from "./react-native-inspector.ts";
 import { readDeviceApps } from "./device-apps/sources.ts";
 import { captureServerError } from "./telemetry.ts";
-import { errorMessage, udidSchema } from "@mobile-dev/shared/protocol.ts";
+import { udidSchema } from "@mobile-dev/shared/protocol.ts";
 import { accessibilityScreen, screenComponents } from "@mobile-dev/shared/screen-annotations.ts";
 import type { ScreenSize } from "@mobile-dev/shared/screen-annotations.ts";
 import { adbPath } from "./native-logs.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 
 const execute = promisify(execFile);
 

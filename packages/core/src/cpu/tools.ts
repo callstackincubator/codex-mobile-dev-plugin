@@ -1,5 +1,5 @@
 import { parseResourceInput } from "../resource-input.ts";
-import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
+import { ExpectedOperationError, errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
@@ -10,7 +10,6 @@ import type { ServerRequestContext } from "../request-session.ts";
 import { z } from "zod";
 import { cpuTargetSchema } from "@mobile-dev/shared/cpu.ts";
 import type { CpuTarget } from "@mobile-dev/shared/cpu.ts";
-import { errorMessage } from "@mobile-dev/shared/protocol.ts";
 import type { Simctl } from "../simctl.ts";
 import { readDeviceApps } from "../device-apps/sources.ts";
 import { withDeviceAppsDiagnostic } from "@mobile-dev/shared/device-apps-diagnostics.ts";

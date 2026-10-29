@@ -1,12 +1,11 @@
 import type { HostBridge } from "./host-bridge.ts";
 import type { SimulatorDevice } from "@mobile-dev/shared/protocol.ts";
-import { errorMessage } from "@mobile-dev/shared/protocol.ts";
 import { deviceAppsSchema } from "@mobile-dev/shared/device-apps.ts";
 import type { DeviceApps } from "@mobile-dev/shared/device-apps.ts";
 import { deviceAppsDiagnostic, setDeviceAppsDiagnostic, deviceAppsDiagnosticTags } from "@mobile-dev/shared/device-apps-diagnostics.ts";
 import type { DeviceAppsStage } from "@mobile-dev/shared/device-apps-diagnostics.ts";
 import { captureUiError, countUiEvent, recordUiTiming, getUiTelemetryAttributes } from "./telemetry.ts";
-import { FailureEpisodes, errorCategory, setErrorCategory } from "@mobile-dev/shared/error-reporting.ts";
+import { FailureEpisodes, errorCategory, setErrorCategory, errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 import { errorReportSignature } from "@mobile-dev/shared/telemetry.ts";
 
 export type DeviceAppsSnapshot = DeviceApps & {

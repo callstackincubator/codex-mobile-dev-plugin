@@ -8,6 +8,7 @@ import { buildSelectionPrompt, frameSelectionEvidence, type SelectionCard } from
 import { buildReactSelectionPrompt, reactSelectionEvidence, type ReactSelectionRecording } from "@mobile-dev/shared/tracesift-react-selection.ts";
 import type { ContributionChartKind } from "./components/tracesift/contribution-chart.tsx";
 import { captureUiError, countUiEvent, markUiSurfaceReady, recordUiTiming, setUiGauge, setUiSurface, setUiTelemetryContext } from "./telemetry.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 
 type State = {
   analysis?: TraceSiftAnalysis;
@@ -48,7 +49,7 @@ type State = {
 };
 
 function composerUnavailable(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = errorMessage(error);
   return /(?:no (?:active |available )?composer|composer.*(?:unavailable|not available|not active)|requires? an (?:active|available) composer|MCP app messages are disabled for this view)/i.test(message);
 }
 

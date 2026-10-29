@@ -10,7 +10,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import { bootAndroidEmulator, parseAvdName } from "./android-emulator.ts";
 import { adbPath } from "./native-logs.ts";
-import { errorMessage, parseBaseUrl } from "@mobile-dev/shared/protocol.ts";
+import { parseBaseUrl } from "@mobile-dev/shared/protocol.ts";
 import type { SimulatorDevice, Status } from "@mobile-dev/shared/protocol.ts";
 import { annotateDeviceCommand, backendCommand } from "@mobile-dev/shared/device-command-diagnostics.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
@@ -19,6 +19,7 @@ import { recordAndroidEmulatorReconnect, recordAndroidBackendStartup, recordAndr
 import { androidStartupMessageSchema, androidDeviceState, setAndroidStartupDiagnostic } from "@mobile-dev/shared/android-startup-diagnostics.ts";
 import type { AndroidStartupContext, AndroidStartupFailure, AndroidStartupSummary } from "@mobile-dev/shared/android-startup-diagnostics.ts";
 import { androidSdkRoots } from "./android-sdk.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 
 const execute = promisify(execFile);
 export const androidIdSchema = z.string().min(1).max(256).regex(/^[A-Za-z0-9_.:\[\]%-]+$/);

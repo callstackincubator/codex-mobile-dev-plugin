@@ -12,6 +12,7 @@ import { Textarea } from "./ui/textarea";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "./ui/base-select";
 import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "./ui/collapsible";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 
 type SectionProps = { store: AppToolsStore; state: AppToolsState; app: AppEntry; blocked: boolean };
 
@@ -173,7 +174,7 @@ function PushNotification({ store, state, app, blocked }: SectionProps) {
       if (!payload.success) throw new Error("Payload must be a JSON object.");
       setJsonError("");
       void store.push(payload.data);
-    } catch (error) { setJsonError(error instanceof Error ? error.message : String(error)); }
+    } catch (error) { setJsonError(errorMessage(error)); }
   };
   return <Disclosure section="push" state={state} store={store} icon={BellIcon} title="Test notification">
     <form className="space-y-2" onSubmit={event => { event.preventDefault(); send(); }}>

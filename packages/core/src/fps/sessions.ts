@@ -1,10 +1,9 @@
-import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
+import { ExpectedOperationError, errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 import { randomBytes } from "node:crypto";
 import { CPU_HISTORY_SECONDS, CPU_MAX_SAMPLES } from "@mobile-dev/shared/cpu.ts";
 import type { CpuPhase } from "@mobile-dev/shared/cpu.ts";
 import { displayFpsTargetSchema } from "@mobile-dev/shared/display-fps.ts";
 import type { DisplayFpsBatch, DisplayFpsSample, DisplayFpsTarget } from "@mobile-dev/shared/display-fps.ts";
-import { errorMessage } from "@mobile-dev/shared/protocol.ts";
 import { startDisplayFpsMonitor } from "./source.ts";
 import type { CpuMonitor } from "../cpu/monitor.ts";
 

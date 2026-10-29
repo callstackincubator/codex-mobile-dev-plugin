@@ -7,11 +7,12 @@ import { ANNOTATION_EDIT_GUIDANCE, ANNOTATION_EDIT_PROMPT, formatAnnotationConte
 import type { ScreenAnnotation } from "@mobile-dev/shared/screen-annotations.ts";
 import { captureUiError, countUiEvent, recordUiTiming } from "./telemetry.ts";
 import type { EncodedScreenshotAttachment } from "./screenshot-attachment.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 
 export type ScreenshotAttachment = EncodedScreenshotAttachment & { id: string; simulator: SimulatorDevice };
 
 function composerUnavailable(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = errorMessage(error);
   return /(?:no (?:active |available )?composer|composer.*(?:unavailable|not available|not active)|requires? an (?:active|available) composer|MCP app messages are disabled for this view)/i.test(message);
 }
 

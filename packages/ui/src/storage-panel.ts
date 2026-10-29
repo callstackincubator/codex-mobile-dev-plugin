@@ -4,11 +4,11 @@ import type { InstalledApp } from "@mobile-dev/shared/app-control.ts";
 import { storageClearSchema, storageFileSchema, storageLimits, storageSnapshotSchema, storageTableSchema } from "@mobile-dev/shared/app-storage.ts";
 import type { StorageEntry, StorageFilePreview, StorageSnapshot, StorageStore, StorageTable } from "@mobile-dev/shared/app-storage.ts";
 import type { SimulatorDevice } from "@mobile-dev/shared/protocol.ts";
-import { errorMessage } from "@mobile-dev/shared/protocol.ts";
 import type { DeviceAppsStore } from "./device-apps.ts";
 import { appIcons } from "./app-icons.ts";
 import { isSdkStore, storeTitle } from "./storage-labels.ts";
 import { measureUiOperation, recordUiTiming, setUiGauge } from "./telemetry.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 
 export type StorageAction = "apps" | "read" | "clear" | "reset" | "launch";
 export type StorageTab = "browse" | "changes";

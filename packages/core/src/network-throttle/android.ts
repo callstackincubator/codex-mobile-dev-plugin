@@ -1,5 +1,4 @@
-import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
-import { errorMessage } from "@mobile-dev/shared/protocol.ts";
+import { ExpectedOperationError, errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 import { networkPresets, type NetworkPreset } from "@mobile-dev/shared/device-settings.ts";
 import { runAdb, systemCommands, type Commands } from "../app-control/commands.ts";
 import { proxyToken, ThrottleProxy } from "./proxy.ts";

@@ -1,7 +1,7 @@
-import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
+import { ExpectedOperationError, errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 import { randomBytes } from "node:crypto";
 import { WebSocket } from "ws";
-import { errorMessage, streamMessageSchema } from "@mobile-dev/shared/protocol.ts";
+import { streamMessageSchema } from "@mobile-dev/shared/protocol.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
 import { epochNow } from "@mobile-dev/shared/stream.ts";
 import type { FrameRead } from "@mobile-dev/shared/stream.ts";

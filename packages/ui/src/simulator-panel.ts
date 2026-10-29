@@ -32,6 +32,7 @@ import type { AndroidVideoBatch } from "./android-video.ts";
 import type { HostBridge } from "./host-bridge.ts";
 import type { PanelTarget } from "@mobile-dev/shared/panel-target.ts";
 import { initialPanelDevice } from "./device-layout.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 
 export function createSimulatorPanel(
   app: HostBridge,
@@ -302,7 +303,7 @@ export function createSimulatorPanel(
     if (busy || disposed) return;
     screenshotAttachmentError = "";
     busy = true; controls(); notice();
-    try { await callback(); } catch (error) { notice(error instanceof Error ? error.message : String(error)); }
+    try { await callback(); } catch (error) { notice(errorMessage(error)); }
     finally {
       busy = false;
       controls();
@@ -510,7 +511,7 @@ export function createSimulatorPanel(
     const udid = selected.udid;
     const showStreamError = (error: unknown) => {
       ready = false;
-      const message = error instanceof Error ? error.message : String(error);
+      const message = errorMessage(error);
       if (selected?.kind === "physical" && selected.platform === "ios") empty("Screen unavailable", message);
       notice(message);
       controls();
@@ -753,7 +754,7 @@ export function createSimulatorPanel(
     let next: Status;
     if (simulators.status === "fulfilled") next = simulators.value.structuredContent as Status;
     else {
-      const error = simulators.reason instanceof Error ? simulators.reason.message : String(simulators.reason);
+      const error = errorMessage(simulators.reason);
       next = { connected: false, managed: false, baseUrl: "", devices: [], error };
     }
     if (next.error) errors.push(next.error);
@@ -762,7 +763,7 @@ export function createSimulatorPanel(
       physicalDevices = data.physicalDevices.filter(device => device.state === "connected");
     } else {
       physicalDevices = [];
-      const error = physical.reason instanceof Error ? physical.reason.message : String(physical.reason);
+      const error = errorMessage(physical.reason);
       errors.push(error);
     }
     discoveryError = errors.join(" · ");
@@ -778,7 +779,7 @@ export function createSimulatorPanel(
       try {
         if (document.visibilityState === "visible" && !root.hidden && !busy && toolsAvailable) await listDevices();
       } catch (error) {
-        notice(error instanceof Error ? error.message : String(error));
+        notice(errorMessage(error));
       } finally { scheduleDiscovery(); }
     }, 3000);
   }
@@ -828,7 +829,7 @@ export function createSimulatorPanel(
         fitScreen();
       }
     } catch (error) {
-      notice(error instanceof Error ? error.message : String(error));
+      notice(errorMessage(error));
       await listDevices().catch(() => {});
       if (wasSelected && selected?.udid === id && selected.state === "Booted") await connect().catch(() => {});
       throw error;

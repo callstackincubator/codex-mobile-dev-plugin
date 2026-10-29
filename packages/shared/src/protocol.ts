@@ -69,7 +69,3 @@ export function parseBaseUrl(value: string, label = "BAGUETTE_URL"): URL {
   }
   return url;
 }
-
-export function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}

@@ -5,8 +5,8 @@ import type { Baguette } from "./baguette.ts";
 import { androidIdSchema, type ServeEmu } from "./serve-emu.ts";
 import { AndroidNetworkThrottle, type ThrottleReading } from "./network-throttle/android.ts";
 import { captureServerError } from "./telemetry.ts";
-import { errorMessage, udidSchema, type SimulatorDevice } from "@mobile-dev/shared/protocol.ts";
-import { ExpectedOperationError, expectedOutcome } from "@mobile-dev/shared/error-reporting.ts";
+import { udidSchema, type SimulatorDevice } from "@mobile-dev/shared/protocol.ts";
+import { ExpectedOperationError, expectedOutcome, errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 import { annotateDeviceCommand, deviceCommandTags } from "@mobile-dev/shared/device-command-diagnostics.ts";
 import { contentSizes, deviceSettingSchema, locationSchema, networkPresets, type DeviceSetting, type DeviceSettings, type NetworkCondition, type NetworkPreset } from "@mobile-dev/shared/device-settings.ts";
 

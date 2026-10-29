@@ -3,7 +3,7 @@ import type { CpuPhase } from "@mobile-dev/shared/cpu.ts";
 import { CPU_HISTORY_SECONDS, CPU_MAX_SAMPLES } from "@mobile-dev/shared/cpu.ts";
 import type { DisplayFpsBatch, DisplayFpsSample, DisplayFpsTarget } from "@mobile-dev/shared/display-fps.ts";
 import type { SimulatorDevice } from "@mobile-dev/shared/protocol.ts";
-import { errorMessage } from "@mobile-dev/shared/protocol.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 
 export type DisplayFpsState = { fpsSamples: DisplayFpsSample[]; fpsPhase: CpuPhase; fpsError: string; fpsMonitoring: boolean; fpsSupported: boolean };
 type Session = { id: string; abort: AbortController; closing?: Promise<void> };

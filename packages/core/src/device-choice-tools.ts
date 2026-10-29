@@ -6,10 +6,10 @@ import { androidChoices, deviceChoiceInputSchema, isRunningDevice, isSelectableD
 import type { DeviceChoice, DeviceChoiceInput, DeviceChoiceReference } from "@mobile-dev/shared/device-choice.ts";
 import type { PhysicalIosDevice } from "@mobile-dev/shared/ios-devices.ts";
 import type { Status } from "@mobile-dev/shared/protocol.ts";
-import { errorMessage } from "@mobile-dev/shared/protocol.ts";
 import { captureServerError } from "./telemetry.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
 import { deviceChoiceThumbnails } from "./device-choice-thumbnails.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 
 export type DeviceChoiceSources = {
   simulators: () => Promise<Status>;

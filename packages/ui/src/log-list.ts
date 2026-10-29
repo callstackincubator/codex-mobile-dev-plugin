@@ -4,6 +4,7 @@ import type { PanelContext } from "./model-context.ts";
 import { countUiEvent, recordUiTiming, setUiGauge, captureUiError } from "./telemetry.ts";
 import { compileLogQuery } from "./log-query.ts";
 import type { DeviceApp, ForegroundApp } from "@mobile-dev/shared/device-apps.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 
 export class LogList {
   scrollOffset = 0;
@@ -179,7 +180,7 @@ export class LogList {
       const action = remove ? "ui.logs.attachment_removed" : "ui.logs.attached";
       countUiEvent(action);
       this.attachmentStatus = remove || !this.context.attachedKey ? "Attachment removed." : "Attached to your next chat message.";
-    } catch (error) { captureUiError(error, "logs.attach"); this.attachmentStatus = error instanceof Error ? error.message : String(error); }
+    } catch (error) { captureUiError(error, "logs.attach"); this.attachmentStatus = errorMessage(error); }
     finally { this.attaching = false; this.publish(); }
   }
 
@@ -187,7 +188,7 @@ export class LogList {
     if (this.sending || !this.context.canSendMessage) return;
     this.sending = true; this.chatError = ""; this.publish();
     try { await this.context.sendLogToChat(log); countUiEvent("ui.logs.sent_to_chat"); }
-    catch (error) { captureUiError(error, "logs.send_to_chat"); this.chatError = error instanceof Error ? error.message : String(error); }
+    catch (error) { captureUiError(error, "logs.send_to_chat"); this.chatError = errorMessage(error); }
     finally { this.sending = false; this.publish(); }
   }
 }
