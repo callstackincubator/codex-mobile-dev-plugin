@@ -29,12 +29,13 @@ const rowKey = (log: StackedLog) => String(log.sequence);
 const followScrollThreshold = Number.POSITIVE_INFINITY;
 const timeFormat = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
 
-export const LogsView = memo(function LogsView({ panel }: { panel: LogsPanel }) {
+/** `fullscreen` is a page that fills the host, where wide windows put log details below the list. */
+export const LogsView = memo(function LogsView({ panel, fullscreen }: { panel: LogsPanel; fullscreen: boolean }) {
   const state = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
   const logs = useSyncExternalStore(panel.list.subscribe, panel.list.getSnapshot);
   const wide = useMediaQuery("(min-width: 900px)");
   const narrow = useMediaQuery("(max-width: 600px)");
-  const detailVertical = narrow || (wide && document.documentElement.dataset.view === "workspace");
+  const detailVertical = narrow || (wide && fullscreen);
   const listRef = useRef<LegendListRef>(null);
   const userScrolling = useRef(false);
   const scrollbarDragging = useRef(false);

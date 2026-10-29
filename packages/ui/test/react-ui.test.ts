@@ -19,7 +19,6 @@ import { logKey } from "../../shared/src/logs.ts";
 import type { StackedLog } from "../../shared/src/logs.ts";
 import type { CpuBatch } from "../../shared/src/cpu.ts";
 import { UDID } from "../../test-support/fixtures.ts";
-import type { DeviceLayout } from "../src/device-layout.ts";
 
 test("React log controls filter virtual rows, attach full logs, and preserve simulator DOM", async t => {
   const dom = new JSDOM('<html><body><div id="root"></div></body></html>', { pretendToBeVisual: true, url: "http://localhost" });
@@ -124,9 +123,10 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   cleanupView = async () => { recordingController.dispose(); await act(async () => { root.unmount(); await panel.dispose(); deviceApps.dispose(); storage.dispose(); tracesift.dispose(); await performance.dispose(); }); };
   const layouts: string[] = [];
   let commits = 0;
-  const onLayout = (layout: string) => { layouts.push(layout); };
-  const renderWorkspace = (automaticLayout?: DeviceLayout) => {
-    const workspace = createElement(Workspace, { panels, recordingController, automaticLayout, onLayout });
+  let shownLayout = panels.getSnapshot().layout;
+  panels.subscribe(() => { const { layout } = panels.getSnapshot(); if (layout !== shownLayout) layouts.push(shownLayout = layout); });
+  const renderWorkspace = () => {
+    const workspace = createElement(Workspace, { panels, recordingController, fullscreen: false });
     const profiled = createElement(Profiler, { id: "workspace", onRender() { commits++; } }, workspace);
     root.render(profiled);
   };
@@ -135,7 +135,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   const iosPanel = dom.window.document.getElementById("ios-panel") as HTMLElement;
   const androidPanel = dom.window.document.getElementById("android-panel") as HTMLElement;
   for (const layout of ["android", "both", "none", "ios"] as const) {
-    await act(async () => { renderWorkspace(layout); });
+    await act(async () => { panels.setLayout(layout); });
     assert.equal(iosPanel.hidden, layout === "android" || layout === "none");
     assert.equal(androidPanel.hidden, layout === "ios" || layout === "none");
     assert.equal(dom.window.document.querySelector("canvas"), canvas, "Device discovery preserves the mounted stream canvas.");
@@ -509,7 +509,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   await togglePlatform("ios");
   await togglePlatform("android");
   assert.deepEqual(layouts, ["both", "android", "none"]);
-  await act(async () => { renderWorkspace("both"); });
+  await act(async () => { panels.setLayout("both"); });
   assert.equal(iosPanel.hidden, true);
   assert.equal(androidPanel.hidden, true);
   assert.deepEqual(layouts, ["both", "android", "none"], "Late discovery preserves a manual platform choice.");
@@ -556,7 +556,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   assert.equal(dom.window.document.querySelector(".recording-overview-bar")?.getAttribute("aria-label"), "Selected range: 12.0s–18.0s");
   assert.ok(dom.window.document.body.textContent?.includes("Checkout scroll · Run 1"));
   assert.equal(layouts.at(-1), "none", "Opening a saved run gives the detailed chart the workspace.");
-  await act(async () => { renderWorkspace("android"); });
+  await act(async () => { panels.setLayout("android"); });
   assert.equal(layouts.at(-1), "none", "Device discovery does not interrupt a saved recording.");
   assert.equal(cpuSessionsOpened, sessionsBeforeOpening, "Opening a saved recording does not start another collector.");
   assert.equal(dom.window.document.querySelector("canvas"), canvas, "Saved recordings preserve the existing device DOM.");

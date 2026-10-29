@@ -5,15 +5,15 @@ import { createRoot } from "react-dom/client";
 import type { Surface } from "@mobile-dev/shared/telemetry.ts";
 import { PLUGIN_VERSION } from "@mobile-dev/shared/version.ts";
 import { ErrorBoundary, captureUiError, setUiSurface, startUiTelemetry, stopUiTelemetry } from "@mobile-dev/ui/telemetry.ts";
-import { applyHostStyles } from "./host-styles.ts";
-import { attributeHost } from "./host-telemetry.ts";
+import { runMcpView } from "./mcp-view.ts";
 
 type CardController = { hostChanged(): void; accept(result: CallToolResult): void; dispose(): void };
 
 /** Runs one chat card: a single controller fed by the tool call that rendered it. */
 export function startCardApp<C extends CardController>(card: {
   name: string;
-  surface: Surface & ("recording" | "comparison" | "tracesift");
+  /** The surface the card's telemetry measures. Cards without one, such as retired cards, measure nothing. */
+  surface?: Surface & ("recording" | "comparison" | "tracesift");
   fallback: string;
   create(app: App): C;
   render(controller: C): ReactNode;
@@ -21,38 +21,41 @@ export function startCardApp<C extends CardController>(card: {
   toolInput?(controller: C, input: Record<string, unknown> | undefined): void;
   connected?(controller: C): void;
 }) {
+  const { surface } = card;
   const app = new App({ name: card.name, version: PLUGIN_VERSION });
-  startUiTelemetry(app);
-  setUiSurface(card.surface);
+  if (surface) {
+    startUiTelemetry(app);
+    setUiSurface(surface);
+  }
   const controller = card.create(app);
   const root = createRoot(document.getElementById("root")!);
   root.render(<ErrorBoundary fallback={<p role="alert">{card.fallback}</p>}>{card.render(controller)}</ErrorBoundary>);
-  function hostChanged() {
-    const host = applyHostStyles(app);
-    controller.hostChanged();
-    card.hostChanged?.(controller, host);
-  }
-  app.addEventListener("hostcontextchanged", hostChanged);
   if (card.toolInput) app.ontoolinput = ({ arguments: input }) => card.toolInput!(controller, input);
   app.ontoolresult = result => {
     try { controller.accept(result); }
-    catch (error) { captureUiError(error, `${card.surface}.result`); }
+    catch (error) { captureUiError(error, `${surface}.result`); }
   };
-  let closing: Promise<void> | undefined;
-  function close() {
-    if (closing) return closing;
-    controller.dispose();
-    root.unmount();
-    window.removeEventListener("pagehide", pageHide);
-    app.removeEventListener("hostcontextchanged", hostChanged);
-    return closing = stopUiTelemetry();
-  }
-  function pageHide(event: PageTransitionEvent) { if (!event.persisted) void close(); }
-  window.addEventListener("pagehide", pageHide);
-  app.onteardown = async () => { await close(); return {}; };
-  void app.connect().then(() => {
-    attributeHost(app);
-    hostChanged();
-    card.connected?.(controller);
-  }).catch(error => captureUiError(error, `${card.surface}.connect`));
+  runMcpView({
+    app,
+    onHost: host => {
+      controller.hostChanged();
+      card.hostChanged?.(controller, host);
+    },
+    onConnect: () => card.connected?.(controller),
+    connectFailed: error => captureUiError(error, `${surface}.connect`),
+    dispose: () => {
+      controller.dispose();
+      root.unmount();
+      if (surface) return stopUiTelemetry();
+    },
+  });
+}
+
+/** Card for a view saved by an earlier release that no longer exists; says so instead of failing, and measures nothing. */
+export function startRetiredCard(message: string) {
+  startCardApp({
+    name: "mobile-dev-retired", fallback: message,
+    create: () => ({ hostChanged() {}, accept() {}, dispose() {} }),
+    render: () => <p className="p-3 text-sm text-muted-foreground">{message}</p>,
+  });
 }
