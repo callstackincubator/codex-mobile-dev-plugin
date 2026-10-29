@@ -431,7 +431,7 @@ export class TraceSiftController {
     if (!card || !explorer) return;
 
     this.update({ busyCard: card.id, error: "" });
-    // `sendHandoff` already counts and captures delivery failures.
+    // Set once the text is on its way; from then `sendHandoff` counts and captures delivery failures.
     let sending = false;
     try {
       const selected = explorer.selected ?? [];

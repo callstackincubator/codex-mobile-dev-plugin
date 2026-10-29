@@ -1,12 +1,14 @@
 // Jackson Coxson
 //
-// VCMediaNegotiationBlobV2: the AVConference blob carried as the CoreDevice
-// displayservice `negotiatorOffer` and answer.
+// VCMediaNegotiationBlobV2 - the AVConference media-negotiation blob carried as
+// the `negotiatorOffer` (and returned as the device's answer) by the CoreDevice
+// displayservice.
 //
 //     negotiatorOffer = zlib( protobuf( VCMediaNegotiationBlobV2 ) )
 //
-// Field numbers are in `media_negotiation.proto` (reverse-engineered from
-// AVConference). Only the messages needed for a device->host screen stream are modeled.
+// Schema + field numbers are in `media_negotiation.proto` (reverse-engineered
+// from AVConference). We only model the messages needed for a device->host
+// video (screen) stream
 
 use std::io::{Read, Write};
 
@@ -17,6 +19,7 @@ use super::super::CoreDeviceError;
 use super::protobuf::{Decoder, Encoder, Field};
 use crate::IdeviceError;
 
+/// Top-level negotiation blob. Optional sub-messages are `None` when absent.
 #[derive(Debug, Default, Clone)]
 pub struct MediaNegotiationBlob {
     pub general_info: Option<GeneralInfo>,
@@ -106,7 +109,8 @@ pub struct EncodeDecodeFeatures {
 pub const STREAM_GROUP_SCREEN: u32 = 3;
 pub const SCREEN_FLS: &[u8] = b"FLS;VRAE:0;SW:1;";
 
-/// Differs from Device Hub's value; this one stops screen tearing.
+/// So we're using a different on than Device Hub, but this seems to stop screen tearing,
+/// so we'll use this one instead.
 pub const SCREEN_HEVC_FLS: &str =
     "FLS;MS:-1;LF:-1;LTR;CABAC;POS:0;EOD:1;HTS:2;RR:3;AR:16/9,5/8;XR:16/9,5/8;";
 
@@ -246,6 +250,7 @@ fn write_blob_tail(e: &mut Encoder, ntp_time: u64) {
     e.uint_field(18, 1);
 }
 
+/// zlib-compress a media blob into the form embedded in the offer plist.
 fn zlib_compress(raw: &[u8]) -> Result<Vec<u8>, IdeviceError> {
     let mut z = ZlibEncoder::new(Vec::new(), Compression::default());
     z.write_all(raw)
@@ -254,8 +259,15 @@ fn zlib_compress(raw: &[u8]) -> Result<Vec<u8>, IdeviceError> {
         .map_err(|e| CoreDeviceError::Negotiation(format!("zlib finish: {e}")).into())
 }
 
-/// Build the screen video `negotiatorOffer`: a binary plist matching Device Hub's,
-/// with call ID, zlib media blob, mode (5 screen; audio uses 6) and `VCCallInfoBlob`.
+/// Build the full `negotiatorOffer` for a device->host screen video stream:
+/// a binary plist matching what Device Hub sends.
+///
+/// Keys:
+/// - `avcMediaStreamOptionCallID`        - UUID string identifying the session
+/// - `avcMediaStreamNegotiatorMediaBlob` - zlib-compressed screen media blob
+/// - `avcMediaStreamNegotiatorMode`      - 5 (CoreDeviceScreenSharing; the audio
+///   offer uses 6 / CoreDeviceSystemAudio
+/// - `avcMediaStreamOptionRemoteEndpointInfo` - `VCCallInfoBlob` protobuf
 pub fn build_screen_video_offer(
     call_id: &str,
     call_info: &CallInfoBlob,
@@ -678,6 +690,7 @@ impl MediaNegotiationBlob {
 }
 
 impl MediaNegotiationBlob {
+    /// Serialize to protobuf bytes
     pub fn encode(&self) -> Vec<u8> {
         let mut e = Encoder::new();
         if let Some(g) = &self.general_info {

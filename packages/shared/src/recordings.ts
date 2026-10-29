@@ -49,7 +49,7 @@ export const recordingSchema = z.object({
 export type PerformanceRecording = z.infer<typeof recordingSchema>;
 
 /**
- * A recording small enough for a tool result: every CPU, memory and FPS sample, rounded,
+ * A recording small enough for a tool result: every CPU, memory and FPS sample with times rounded to 10 ms,
  * without per-thread CPU or Android frame timelines (nearly all of the size). A
  * five-minute recording drops from hundreds of kilobytes to about 25 KB.
  */

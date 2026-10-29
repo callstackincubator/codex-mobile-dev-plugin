@@ -66,9 +66,12 @@ pub struct SenderReport {
 }
 
 impl SenderReport {
-    /// First Sender Report in a (possibly compound) datagram, if any.
+    /// Find and parse the first Sender Report in a (possibly compound) RTCP
+    /// datagram. Returns `None` if there is no SR.
     pub fn parse_first(buf: &[u8]) -> Option<SenderReport> {
         let mut off = 0;
+        // Walk the compound packet, each sub-packet's length is in 32-bit words
+        // minus one.
         while off + 4 <= buf.len() {
             let pt = buf[off + 1];
             let pkt_len = rtcp_packet_length(buf, off)?;
@@ -154,7 +157,8 @@ pub fn build_sdes(our_ssrc: u32, cname: &str) -> Vec<u8> {
     out
 }
 
-/// Build a Picture Loss Indication asking `media_ssrc` for a keyframe.
+/// Build a Picture Loss Indication asking `media_ssrc` for a fresh
+/// keyframe
 pub fn build_pli(our_ssrc: u32, media_ssrc: u32) -> Vec<u8> {
     let mut out = Vec::with_capacity(12);
     out.push(0x80 | FMT_PLI); // V=2, FMT=PLI
@@ -166,7 +170,7 @@ pub fn build_pli(our_ssrc: u32, media_ssrc: u32) -> Vec<u8> {
     out
 }
 
-/// Build a Full Intra Request for `media_ssrc`.
+/// Build a Full Intra Request for `media_ssrc`
 pub fn build_fir(our_ssrc: u32, media_ssrc: u32, seq_nr: u8) -> Vec<u8> {
     let mut out = Vec::with_capacity(20);
     out.push(0x80 | FMT_FIR); // V=2, FMT=FIR
@@ -198,9 +202,10 @@ pub fn build_frame_ack(our_ssrc: u32, rtp_timestamp: u32) -> Vec<u8> {
 }
 
 /// Build an `RCTL` receiver-control report (RTCP APP, PT 204), the periodic
-/// feedback Device Hub sends roughly every 50ms (alongside the per-frame ACK).
-/// Without it the encoder drifts out of sync during heavy motion and the picture
-/// corrupts with no decode errors.
+/// feedback Apple's Device Hub sends roughly every 50ms (alongside the per-frame ACK).
+/// AVConference's encoder relies on this for reference/rate management; without
+/// it the encoder drifts out of sync with the receiver during heavy motion and
+/// the picture corrupts with no decode errors.
 ///
 /// 32-byte wire format, fields reverse-engineered from a capture:
 ///   `80 cc 00 07` | our SSRC (4) | `RCTL` (4) | 20-byte body:
@@ -212,7 +217,8 @@ pub fn build_frame_ack(our_ssrc: u32, rtp_timestamp: u32) -> Vec<u8> {
 ///     [14..16]= 0
 ///     [16..18]= highest RTP sequence number received, relative to the base seq
 ///     [18..20]= 0
-/// Loss/jitter fields are sent as 0, matching Apple's lossless session.
+/// The loss/jitter-ish fields are sent as 0, which is accurate for a lossless
+/// link (matching what Apple sent on its lossless session).
 pub fn build_rctl(our_ssrc: u32, clock_ms: u16, frames: u16, highest_seq: u16) -> Vec<u8> {
     let mut out = Vec::with_capacity(32);
     out.push(0x80); // V=2, P=0, subtype=0
@@ -232,15 +238,18 @@ pub fn build_rctl(our_ssrc: u32, clock_ms: u16, frames: u16, highest_seq: u16) -
     out
 }
 
-/// Compound liveness report (RR + SDES CNAME); send periodically.
+/// A compound RTCP report for liveness: Receiver Report + SDES(CNAME). Send this
+/// periodically so the device knows the receiver is still alive.
 pub fn build_liveness(our_ssrc: u32, cname: &str, blocks: &[ReportBlock]) -> Vec<u8> {
     let mut p = build_receiver_report(our_ssrc, blocks);
     p.extend_from_slice(&build_sdes(our_ssrc, cname));
     p
 }
 
-/// Compound keyframe request: RR + SDES + PLI + FIR. Both are sent because it is
-/// unknown which one the encoder honors. `fir_seq` must increment per request.
+/// A compound RTCP keyframe request: RR + SDES + PLI + FIR. We send both PLI and
+/// FIR because which one the AVConference encoder honors isn't guaranteed; both
+/// are cheap and an encoder ignores the form it doesn't implement. `fir_seq` must
+/// increment per request (see [`build_fir`]).
 pub fn build_keyframe_request(
     our_ssrc: u32,
     cname: &str,

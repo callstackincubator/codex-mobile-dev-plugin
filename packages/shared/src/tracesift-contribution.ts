@@ -98,7 +98,7 @@ function residual(
   return { key: kind, kind, name, share: ms / whole, ms: round1(ms), colorIndex: -1, ...extra };
 }
 
-/** The task divided by feature: one slice per boundary frame, then the two residuals (so a bar never reads as the whole at 63%). */
+/** The task divided by feature: one slice per boundary frame, then the two residuals (so a bar that stops at 63% is not read as the whole). */
 export function taskBreakdownSlices(card: TraceSiftTaskCard): ContributionSlice[] {
   const duration = card.durationMs;
   if (duration <= 0) return [];

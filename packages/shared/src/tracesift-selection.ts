@@ -208,7 +208,7 @@ function selectionsTree(card: SelectionCard, frames: readonly SelectedFrame[]): 
 
   const keep = new Set<string>();
   for (const id of marked.keys()) {
-    // Meeting an already-kept node ends the walk. Parents come from the walk above, not from splitting ids.
+    // Meeting an already-kept node ends the walk. Parents come from the walk above, not from splitting ids, so ids that aren't dotted paths still resolve.
     let here = byId.get(id);
     while (here && !keep.has(here.node.id)) {
       keep.add(here.node.id);
@@ -220,7 +220,7 @@ function selectionsTree(card: SelectionCard, frames: readonly SelectedFrame[]): 
     let node = byId.get(id)?.node;
     for (let depth = 0; depth < MAX_HOT_DESCENT && node; depth += 1) {
       const next = [...node.children].sort((a, b) => b.totalMs - a.totalMs)[0];
-      // Recursion is already said on its row.
+      // A child with its parent's name is recursion, already said on its row.
       if (!next || next.name === node.name) break;
       keep.add(next.id);
       node = next;

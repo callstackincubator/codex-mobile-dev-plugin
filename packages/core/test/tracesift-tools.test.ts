@@ -14,7 +14,8 @@ function deepTree(depth: number) {
 }
 
 async function connect(client: Partial<TraceSiftClient>) {
-  // Not the plugin fixture: that owns a real MCP child process one process per file cannot share.
+  // A throwaway server, not the plugin fixture: the telemetry test owns its real MCP child
+  // process, which one process per file cannot share.
   const server = new McpServer({ name: "tracesift-tools-test", version: "1" });
   registerTraceSiftTools(server, client as TraceSiftClient);
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();

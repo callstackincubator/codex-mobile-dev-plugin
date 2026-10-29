@@ -3,7 +3,8 @@ import { openSimulatorDebugserver } from "./simulator.ts";
 import { CpuCounterSampler, parseCpuCounters, type CpuReading } from "./counters.ts";
 export type { CpuReading } from "./counters.ts";
 
-// debugserver passes the fractional microseconds to a nanosecond parameter, so use whole seconds.
+// debugserver passes the fractional microseconds to a nanosecond parameter, so sub-second
+// intervals oversample; use whole seconds.
 const PROFILE_INTERVAL_US = 1_000_000;
 
 function profilingCommand(enabled: boolean): string {

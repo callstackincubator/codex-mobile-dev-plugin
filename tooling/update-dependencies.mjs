@@ -50,7 +50,6 @@ function choose(group, name, current, versions, link) {
 
 const releases = repository => gh(`repos/${repository}/releases?per_page=100`).filter(release => !release.draft && !release.prerelease).map(release => release.tag_name);
 
-
 const npmVersions = new Map();
 function versionsOf(name) {
   if (!npmVersions.has(name)) npmVersions.set(name, JSON.parse(run("npm", ["view", name, "versions", "--json"])));
@@ -115,7 +114,6 @@ for (const file of readdirSync(".github/workflows").map(name => `.github/workflo
   if (apply && !skipWorkflows) writeFileSync(file, text);
 }
 
-
 {
   const path = "packages/native/vendor/baguette-release.json";
   const release = readJson(path);
@@ -178,7 +176,6 @@ for (const file of readdirSync(".github/workflows").map(name => `.github/workflo
     if (ahead > 0) record("forked", name, rev.slice(0, 7), `${ahead} commits newer`, { applied: false, reason: "unreleased Git pin; update by hand", link: `https://github.com/${repository}/compare/${rev}...HEAD` });
   }
 }
-
 
 const cargoChanges = apply ? run("git", ["diff", "--unified=0", "--", "packages/native/ios-mirror/Cargo.lock"]).split("\n").filter(line => /^[-+]version = /.test(line)).length / 2 : 0;
 const row = update => `| ${update.link ? `[${update.name}](${update.link})` : update.name} | ${update.from} | ${update.to} |${update.applied ? "" : ` ${update.reason ?? ""} |`}`;

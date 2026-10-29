@@ -1,12 +1,19 @@
 // Jackson Coxson
 //
-// Minimal protobuf wire-format codec for the fixed `VCMediaNegotiationBlobV2`
-// schema (see `media_negotiation.proto`), hand-rolled instead of pulling in prost.
-// Handles wire types 0 (varint) and 2 (length-delimited) only.
+// Minimal protobuf wire-format encoder/decoder.
+//
+// The AVConference media-negotiation blob (`VCMediaNegotiationBlobV2`) is an
+// Apple protobuf message. The schema is tiny and fixed (see
+// `media_negotiation.proto`), so rather than pull in `prost`/`protoc` we
+// hand-roll just the bits of the wire format we need.
+//
+// Wire types we handle: 0 = varint, 2 = length-delimited (string/bytes/message).
 
+/// Protobuf wire types.
 pub const WIRE_VARINT: u32 = 0;
 pub const WIRE_LEN: u32 = 2;
 
+/// A growable protobuf encoder.
 #[derive(Debug, Default)]
 pub struct Encoder {
     buf: Vec<u8>,
@@ -39,11 +46,13 @@ impl Encoder {
         self.write_varint(((field << 3) | wire) as u64);
     }
 
+    /// Write a varint scalar field (uint32/uint64/bool/enum).
     pub fn uint_field(&mut self, field: u32, v: u64) {
         self.write_tag(field, WIRE_VARINT);
         self.write_varint(v);
     }
 
+    /// Write a length-delimited field (string/bytes).
     pub fn bytes_field(&mut self, field: u32, v: &[u8]) {
         self.write_tag(field, WIRE_LEN);
         self.write_varint(v.len() as u64);
@@ -54,6 +63,7 @@ impl Encoder {
         self.bytes_field(field, v.as_bytes());
     }
 
+    /// Write a nested message field by encoding `f` into a sub-encoder.
     pub fn message_field(&mut self, field: u32, f: impl FnOnce(&mut Encoder)) {
         let mut sub = Encoder::new();
         f(&mut sub);
@@ -62,6 +72,7 @@ impl Encoder {
     }
 }
 
+/// A protobuf decoder over a borrowed buffer.
 #[derive(Debug)]
 pub struct Decoder<'a> {
     buf: &'a [u8],
@@ -69,6 +80,7 @@ pub struct Decoder<'a> {
     pos: usize,
 }
 
+/// One decoded protobuf field.
 #[derive(Debug)]
 pub enum Field<'a> {
     Varint(u64),
@@ -88,7 +100,8 @@ impl<'a> Decoder<'a> {
         self.pos >= self.buf.len()
     }
 
-    /// True only if the whole buffer decoded without truncation or an unsupported wire type.
+    /// Returns true only after the complete buffer was decoded without a
+    /// truncated field or unsupported wire type.
     pub fn is_complete(&self) -> bool {
         !self.malformed && self.pos == self.buf.len()
     }
@@ -118,6 +131,8 @@ impl<'a> Decoder<'a> {
         }
     }
 
+    /// Read the next `(field_number, value)`. Returns `None` at end of buffer or
+    /// on malformed input.
     pub fn next_field(&mut self) -> Option<(u32, Field<'a>)> {
         if self.is_empty() {
             return None;

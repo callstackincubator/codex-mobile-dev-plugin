@@ -161,11 +161,13 @@ html:not([data-theme="dark"]) :is(.log-row, .log-detail)[data-level="warn"] { --
 
 /* TraceSift contribution chart and result card, ported from perf-ai `src/app/globals.css`.
    Scoped under `.tracesift-results` (the card can be embedded inline, so not the view attribute)
-   so it cannot reach the recording or comparison views. Display sizes are stepped down for the 13px card. */
+   so it cannot reach the recording or comparison views. Display sizes are stepped down for the 13px card.
+   Upstream `--font-mono` does not exist here, so each use carries a mono fallback. */
 
 /* Eight fixed series slots: a colour means one function, not one position.
    `tail` is small code of yours; `outside` was never your code, so it recedes and is hatched; `rest` is the remainder. */
 .tracesift-results { --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100; --series-5: #e87ba4; --series-6: #008300; --series-7: #4a3aa7; --series-8: #e34948; --series-tail: color-mix(in srgb, var(--muted-foreground) 42%, var(--muted)); --series-outside: color-mix(in srgb, var(--muted-foreground) 16%, var(--muted)); --series-rest: color-mix(in srgb, var(--muted-foreground) 26%, var(--muted)); --series-mono: var(--font-mono, ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, monospace); }
+/* Upstream selected dark with `[data-slot="plugin-shell"].dark`. */
 html[data-theme="dark"] .tracesift-results { --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500; --series-5: #d55181; --series-6: #008300; --series-7: #9085e9; --series-8: #e66767; --series-tail: color-mix(in srgb, var(--muted-foreground) 34%, var(--muted)); --series-outside: color-mix(in srgb, var(--muted-foreground) 12%, var(--muted)); --series-rest: color-mix(in srgb, var(--muted-foreground) 22%, var(--muted)); }
 
 .tracesift-results .results-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
@@ -203,6 +205,7 @@ html[data-theme="dark"] .tracesift-results { --series-1: #3987e5; --series-2: #d
 .tracesift-results .hotspot-footer-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .tracesift-results .hotspot-footer-lead { display: flex; align-items: center; gap: 8px; }
 .tracesift-results .hotspot-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+/* Upstream used `--danger`, which this theme does not define. */
 .tracesift-results .hotspot-prompt-error { margin: 0; max-width: 100%; color: var(--destructive); font-size: 11px; line-height: 1.4; text-align: right; }
 
 /* Fallback for React commits whose component slices are all too thin to chart. */

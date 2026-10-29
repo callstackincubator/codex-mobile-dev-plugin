@@ -13,7 +13,7 @@ export type HostBridge = Pick<App,
   | "updateModelContext"
   | "requestDisplayMode">;
 
-/** Hosts without it, such as Claude Code, show only what the tool result carries; Mobile Dev's panel needs it. */
+/** Whether the host lets views call server tools. Hosts without it, such as Claude Code, show only what the tool result carries; Mobile Dev's panel needs it. */
 export function cardsCallTools(app: Pick<HostBridge, "getHostCapabilities">): boolean {
   return app.getHostCapabilities()?.serverTools !== undefined;
 }

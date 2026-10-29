@@ -178,7 +178,7 @@ export class TraceSiftClient {
     await this.writePrivateJson(this.inputPath(path, profileType), { apiVersion: 1, analysisId });
   }
 
-  // The plugin's own choice, stored beside the analyses to inherit their 0700 directory.
+  // The investigation's source folder: the plugin's choice, not TraceSift's, stored beside the analyses to inherit their 0700 directory.
   private projectPath() { return join(this.home, "integrations", "mobile-dev", "project.json"); }
 
   async readProject(): Promise<string | undefined> {
@@ -296,7 +296,7 @@ export class TraceSiftClient {
     return parsed.data;
   }
 
-  /** The tree and timeline stay in the running service; the persisted analysis carries only card ids. */
+  /** Has the TraceSift CLI open its own loopback Explore URL. The tree and timeline stay in the running service; the persisted analysis carries only card ids. */
   async openExplore(analysisId: string, taskIndex: number, focus?: string, signal?: AbortSignal) {
     await this.service(signal);
     const analysisPath = this.analysisPath(analysisId);
