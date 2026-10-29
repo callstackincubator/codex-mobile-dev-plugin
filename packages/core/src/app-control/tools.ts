@@ -3,7 +3,8 @@ import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { androidIdSchema } from "../serve-emu.ts";
 import { captureServerError } from "../telemetry.ts";
-import { errorMessage, udidSchema } from "@mobile-dev/shared/protocol.ts";
+import { udidSchema } from "@mobile-dev/shared/protocol.ts";
+import { guarded, jsonResult } from "../tool-results.ts";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 import { deviceCommandTags } from "@mobile-dev/shared/device-command-diagnostics.ts";
 import { appDetailsBatch, appPermissions, appTargetShape, appUrlSchema, bundleIdSchema, languageTagSchema, permissionStates } from "@mobile-dev/shared/app-control.ts";
@@ -43,25 +44,21 @@ const payloadSchema = z.record(z.string(), z.unknown()).refine(value => typeof v
 function appTools(server: McpServer, driverFor: DriverFactory, visibility: ("app" | "model")[]) {
   return function tool<Shape extends z.ZodRawShape>(name: string, action: string, config: ToolConfig<Shape>, handler: (driver: AppDriver, input: ToolInput<Shape>) => Promise<Record<string, unknown>>) {
     const inputSchema: z.ZodRawShape = { ...appTargetShape, ...config.inputSchema };
+    const run = guarded<ToolInput<Shape>>({
+      operation: `app_control.${action}`,
+      // Command output can contain app IDs, URLs, and device serials, so Sentry receives the action and how its
+      // command failed. Expected outcomes carry fixed reasons and are counted without a report.
+      capture: (error, input, { signal }) => captureServerError(error, `app_control.${action}`, {
+        signal, reportAs: new Error(`App ${action} command failed.`), tags: { device_platform: input.platform, ...deviceCommandTags(error) },
+      }),
+    }, async input => jsonResult(await handler(driverFor(input), input)));
     registerAppTool(server, name, {
       title: config.title, description: config.description, inputSchema,
       annotations: { readOnlyHint: config.readOnly ?? false, destructiveHint: config.destructive ?? false, openWorldHint: false },
       _meta: { ui: { visibility } },
-    }, async input => {
-      // registerAppTool validated input against this exact shape; its generic callback type cannot express that.
-      const parsed = input as ToolInput<Shape>;
-      try {
-        const result = await handler(driverFor(parsed), parsed);
-        return { content: [{ type: "text" as const, text: JSON.stringify(result) }], structuredContent: result };
-      } catch (error) {
-        // Command output can contain app IDs, URLs, and device serials, so Sentry receives the action and how its
-        // command failed. Expected outcomes carry fixed reasons and are counted without a report.
-        captureServerError(error, `app_control.${action}`, {
-          reportAs: new Error(`App ${action} command failed.`), tags: { device_platform: parsed.platform, ...deviceCommandTags(error) },
-        });
-        return { isError: true, content: [{ type: "text" as const, text: errorMessage(error) }] };
-      }
-    });
+    },
+    // registerAppTool validated input against this exact shape; its generic callback type cannot express that.
+    (input, context) => run(input as ToolInput<Shape>, context));
   };
 }
 
