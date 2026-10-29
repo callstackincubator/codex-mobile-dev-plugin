@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { build } from "esbuild";
 import { JSDOM } from "jsdom";
 import { recordingFixture } from "@mobile-dev/test-support/recording-fixtures.ts";
+import { runBundle } from "@mobile-dev/test-support/bundle.ts";
 
 const userId = "anon_0123456789abcdef0123456789abcdef";
 const sessionId = "run_1234567890abcdef1234567890abcdef";
@@ -52,7 +53,7 @@ test("UI heap collection uses the existing timer, active context and byte units 
       bodies.push(body);
       return new Response("", { status: 200 });
     };
-    window.eval(built.outputFiles[0].text);
+    runBundle(window, built.outputFiles[0].text);
     const api = window.Telemetry;
     api.startUiTelemetry({ async callServerTool() { return { content: [] }; } });
     assert.equal(reads, 1);
@@ -155,7 +156,7 @@ test("UI heap collection handles unavailable APIs, invalid bytes, hidden startup
       bodies.push(body);
       return new Response("", { status: 200 });
     };
-    window.eval(built.outputFiles[0].text);
+    runBundle(window, built.outputFiles[0].text);
     const api = window.Telemetry;
     api.startUiTelemetry({ async callServerTool() { return { content: [] }; } });
     await api.stopUiTelemetry();
@@ -196,7 +197,7 @@ test("browser errors use the served environment regardless of live-reload marker
       bodies.push(body);
       return new Response("", { status: 200 });
     };
-    dom.window.eval(built.outputFiles[0].text);
+    runBundle(dom.window, built.outputFiles[0].text);
     const api = dom.window.Telemetry;
     api.startUiTelemetry({ async callServerTool() { return { content: [] }; } });
     const error = new dom.window.Error("Environment validation");
@@ -211,17 +212,17 @@ test("browser errors use the served environment regardless of live-reload marker
   }
   const invalid = new JSDOM("<html><head></head></html>", { runScripts: "outside-only" });
   t.after(() => invalid.window.close());
-  invalid.window.eval(built.outputFiles[0].text);
+  runBundle(invalid.window, built.outputFiles[0].text);
   assert.throws(() => invalid.window.Telemetry.startUiTelemetry({}), /Sentry environment must be/);
   const missingIdentity = new JSDOM('<head><meta name="mobile-dev-environment" content="development"></head>', { runScripts: "outside-only" });
   t.after(() => missingIdentity.window.close());
-  missingIdentity.window.eval(built.outputFiles[0].text);
+  runBundle(missingIdentity.window, built.outputFiles[0].text);
   assert.throws(() => missingIdentity.window.Telemetry.startUiTelemetry({}), /generated anonymous/);
   const disabled = new JSDOM('<head><meta name="mobile-dev-environment" content="development"><meta name="mobile-dev-telemetry" content="off"></head>', { runScripts: "outside-only" });
   t.after(() => disabled.window.close());
   let disabledRequests = 0;
   disabled.window.fetch = async () => { disabledRequests++; return new Response("", { status: 200 }); };
-  disabled.window.eval(built.outputFiles[0].text);
+  runBundle(disabled.window, built.outputFiles[0].text);
   disabled.window.Telemetry.startUiTelemetry({});
   const disabledError = new disabled.window.Error("Disabled telemetry");
   disabled.window.Telemetry.captureUiError(disabledError, "test");
@@ -247,7 +248,7 @@ test("a page that reads the server's telemetry metadata itself starts with it in
       bodies.push(String(options?.body ?? ""));
       return new Response("", { status: 200 });
     };
-    dom.window.eval(built.outputFiles[0].text);
+    runBundle(dom.window, built.outputFiles[0].text);
     const api = dom.window.Telemetry;
     const metadata = telemetry === "on" ? { environment: "release", telemetry, userId, sessionId } : { environment: "release", telemetry };
     api.startUiTelemetry({ async callServerTool() { return { content: [] }; } }, { metadata });
@@ -264,7 +265,7 @@ test("a page that reads the server's telemetry metadata itself starts with it in
   }
   const invalid = new JSDOM(`<html><head><meta name="mobile-dev-environment" content="development">${identityMeta}</head></html>`, { runScripts: "outside-only" });
   t.after(() => invalid.window.close());
-  invalid.window.eval(built.outputFiles[0].text);
+  runBundle(invalid.window, built.outputFiles[0].text);
   assert.throws(() => invalid.window.Telemetry.startUiTelemetry({}, { metadata: { environment: "development", telemetry: "on" } }), /generated anonymous/);
 });
 
@@ -303,7 +304,7 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
     frames.clear();
     for (const callback of callbacks) callback(timestamp);
   }
-  window.eval(built.outputFiles[0].text);
+  runBundle(window, built.outputFiles[0].text);
   const api = window.Telemetry;
   const calls: Record<string, unknown>[] = [];
   const callRestriction = "A phone or VoIP call is currently in progress on the device.";
@@ -583,7 +584,7 @@ test("shared app discovery measures the active context and excludes cancelled or
     bodies.push(String(options?.body ?? ""));
     return new Response("", { status: 200 });
   };
-  window.eval(built.outputFiles[0].text);
+  runBundle(window, built.outputFiles[0].text);
   const api = window.Telemetry;
   let resolve!: (result: unknown) => void;
   const app = { callServerTool() { return new Promise(done => { resolve = done; }); } };
@@ -658,7 +659,7 @@ test("stream retries exclude expected host lifecycle failures and retain unexpec
     bodies.push(body);
     return new Response("", { status: 200 });
   };
-  window.eval(built.outputFiles[0].text);
+  runBundle(window, built.outputFiles[0].text);
   const api = window.Telemetry;
   let outcome = "thread";
   const teardown = new window.AbortController();
@@ -747,7 +748,7 @@ test("UI telemetry attributes each call to the host that renders the page", asyn
       bodies.push(String(options?.body ?? ""));
       return new Response("", { status: 200 });
     };
-    window.eval(built.outputFiles[0].text);
+    runBundle(window, built.outputFiles[0].text);
     const api = window.Telemetry;
     const calls: { _meta?: Record<string, Record<string, unknown>> }[] = [];
     const app = { async callServerTool(params: { _meta?: Record<string, Record<string, unknown>> }) { calls.push(params); return { content: [] }; } };

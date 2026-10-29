@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { build } from "esbuild";
 import { JSDOM } from "jsdom";
 import { recordingFixture, recordingWithFramesFixture } from "@mobile-dev/test-support/recording-fixtures.ts";
+import { runBundle } from "@mobile-dev/test-support/bundle.ts";
 
 for (const reducedMotion of [false, true]) {
   const description = reducedMotion
@@ -75,7 +76,7 @@ for (const reducedMotion of [false, true]) {
       async sendMessage(message: typeof messages[number]) { messages.push(message); return {}; },
       async callServerTool() { throw new Error("Finished recordings must not poll"); },
     };
-    window.eval(built.outputFiles[0].text);
+    runBundle(window, built.outputFiles[0].text);
     const recording = recordingWithFramesFixture();
     const mounted = window.RecordingTest.mount(app, { content: [], structuredContent: { recording } }, attachments);
     t.after(async () => {

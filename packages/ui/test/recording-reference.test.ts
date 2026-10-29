@@ -5,6 +5,7 @@ import { build } from "esbuild";
 import { JSDOM } from "jsdom";
 import { recordingFixture } from "@mobile-dev/test-support/recording-fixtures.ts";
 import { recordingPreview } from "@mobile-dev/shared/recordings.ts";
+import { runBundle } from "@mobile-dev/test-support/bundle.ts";
 
 // Tools that show a recording send its ID and, when it fits, a preview without thread or
 // frame detail: hosts cap tool results (Codex keeps ~50 KB), and some let cards call
@@ -22,7 +23,7 @@ const built = await build({
 type Call = { name: string; arguments: Record<string, unknown> };
 function load(read: (call: Call) => unknown, { cardsCallTools = true } = {}) {
   const dom = new JSDOM("<html><body></body></html>", { runScripts: "outside-only", url: "https://mobile-dev.test/" });
-  dom.window.eval(built.outputFiles[0].text);
+  runBundle(dom.window, built.outputFiles[0].text);
   const calls: Call[] = [];
   const app = {
     getHostCapabilities() { return cardsCallTools ? { serverTools: {}, message: { text: {} } } : {}; },

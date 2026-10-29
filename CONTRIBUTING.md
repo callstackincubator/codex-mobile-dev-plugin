@@ -84,6 +84,8 @@ keep it. Restart the server from **View › Restart Server** (⇧⌘R).
 - An Apple Silicon Mac with Xcode 27 and Swift 6.4 or later selected as the active
   developer tools, plus an installed iOS simulator runtime.
 - Node.js 22.19 or later, npm, Git, and network access to fetch pinned dependencies.
+  CI uses Node.js 22. Avoid Node.js 24.14 to 24.17 for the tests: their V8 can crash
+  a test process in garbage collection, which `npm test` reports as a file that failed.
 - Rust and Cargo for the iOS native helpers. The release workflow uses Rust 1.98.1.
 - CMake, Ninja, pkg-config, OpenSSL 3, Autoconf, Automake, and Libtool for native
   builds. With Homebrew, install them using:

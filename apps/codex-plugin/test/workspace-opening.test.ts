@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { setTimeout } from "node:timers/promises";
 import { build } from "esbuild";
 import { JSDOM } from "jsdom";
+import { runBundle } from "@mobile-dev/test-support/bundle.ts";
 
 const built = await build({
   entryPoints: ["apps/codex-plugin/ui/main.tsx"],
@@ -83,7 +84,7 @@ for (const notification of ["input", "result"] as const) test(`workspace applies
       assert.equal(containsDeviceId, false);
     }
   });
-  window.eval(built.outputFiles[0].text);
+  runBundle(window, built.outputFiles[0].text);
   await until(() => initialized);
   await setTimeout(10);
   const earlyDiscovery = calls.filter(name => name.startsWith("mobile_list_"));

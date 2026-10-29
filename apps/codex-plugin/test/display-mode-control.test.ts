@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { setTimeout } from "node:timers/promises";
 import { build } from "esbuild";
 import { JSDOM } from "jsdom";
+import { runBundle } from "@mobile-dev/test-support/bundle.ts";
 
 // Both hosts advertise inline and fullscreen. Claude has no control of its own to
 // leave the expanded view, so the shared panel offers one; Codex has its own.
@@ -46,7 +47,7 @@ for (const [host, entry, shown] of [
     await until(() => tornDown);
     window.close();
   });
-  window.eval(built.outputFiles[0].text);
+  runBundle(window, built.outputFiles[0].text);
   await until(() => initialized);
   await until(() => window.document.querySelector(".workspace-toolbar") !== null);
   // Hosts follow the handshake with context changes; the control reacts to those.

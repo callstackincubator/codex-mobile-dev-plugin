@@ -18,6 +18,7 @@ import { CpuSessions } from "@mobile-dev/core/cpu/sessions.ts";
 import { attachedBaguette } from "@mobile-dev/test-support/fixtures.ts";
 import { SimulatorUnavailableError } from "@mobile-dev/core/simulator-unavailable.ts";
 import { scrubErrorEvent } from "../src/telemetry.ts";
+import { runBundle } from "@mobile-dev/test-support/bundle.ts";
 
 test("discovery classification preserves original errors and never derives telemetry from their text", async () => {
   const missing = new Error("PRIVATE_COMMAND PRIVATE_PATH PRIVATE_DEVICE");
@@ -174,7 +175,7 @@ test("UI discovery leaves server errors with the server and reports transport an
   dom.window.fetch = async (_url, options) => { const body = String(options?.body ?? ""); bodies.push(body); return new Response("", { status: 200 }); };
   Object.defineProperty(dom.window.performance, "getEntriesByType", { value: () => [] });
   Object.defineProperty(dom.window.performance, "getEntries", { value: () => [] });
-  dom.window.eval(built.outputFiles[0].text);
+  runBundle(dom.window, built.outputFiles[0].text);
   const api = dom.window.Telemetry;
   let resolve: (result: unknown) => void = () => {};
   let reject: (error: Error) => void = () => {};

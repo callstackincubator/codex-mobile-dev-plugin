@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { setTimeout } from "node:timers/promises";
 import { build } from "esbuild";
 import { JSDOM } from "jsdom";
+import { runBundle } from "@mobile-dev/test-support/bundle.ts";
 
 const built = await build({
   entryPoints: ["packages/mcp-app/src/main.tsx"],
@@ -43,7 +44,7 @@ for (const view of ["recording", "comparison", "tracesift", "devices"] as const)
     }
     assert.fail(`The ${view} card did not ${what}.`);
   }
-  window.eval(built.outputFiles[0].text);
+  runBundle(window, built.outputFiles[0].text);
   await until(() => initialized, "connect");
   await until(() => window.document.documentElement.dataset.theme === "dark" || window.document.documentElement.classList.contains("dark"), "apply the host theme");
   // React commits the first render on its own schedule, which can follow the theme.

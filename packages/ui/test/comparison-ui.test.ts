@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { build } from "esbuild";
 import { JSDOM } from "jsdom";
 import { recordingWithFramesFixture } from "@mobile-dev/test-support/recording-fixtures.ts";
+import { runBundle } from "@mobile-dev/test-support/bundle.ts";
 
 test("comparison overlays, toggles, shared selections and Ask retain original run references and private telemetry", async t => {
   const built = await build({
@@ -57,7 +58,7 @@ test("comparison overlays, toggles, shared selections and Ask retain original ru
     async sendMessage(message: typeof messages[number]) { messages.push(message); return {}; },
     async callServerTool() { throw new Error("Completed comparisons must not poll"); },
   };
-  window.eval(built.outputFiles[0].text);
+  runBundle(window, built.outputFiles[0].text);
   const first = recordingWithFramesFixture();
   first.title = "PRIVATE_BEFORE";
   const second = recordingWithFramesFixture();
