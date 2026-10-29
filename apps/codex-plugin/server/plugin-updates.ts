@@ -94,16 +94,13 @@ function fromStored(stored: StoredCache): SavedCache {
 
 function toStored(cache: SavedCache): StoredCache {
   const source = PLUGIN_STORE_ID;
-  switch (cache.state) {
-    case "failed":
-      if (cache.previous === undefined) return { source, checkedAt: cache.checkedAt, githubConfigured: false, storeInstalled: false };
-      return { ...toStored(cache.previous), failedAt: cache.checkedAt };
-    case "checked": return { source, checkedAt: cache.checkedAt, latestVersion: cache.latestVersion, githubConfigured: cache.githubConfigured, storeInstalled: cache.storeInstalled };
-    case "migrated": {
-      const { checkedAt, latestVersion, githubConfigured, storeInstalled, migratedVersion } = cache;
-      return { source, checkedAt, latestVersion, githubConfigured, storeInstalled, migratedVersion };
-    }
+  if (cache.state === "failed") {
+    if (cache.previous === undefined) return { source, checkedAt: cache.checkedAt, githubConfigured: false, storeInstalled: false };
+    return { ...toStored(cache.previous), failedAt: cache.checkedAt };
   }
+  const { checkedAt, latestVersion, githubConfigured, storeInstalled } = cache;
+  const migratedVersion = cache.state === "migrated" ? cache.migratedVersion : undefined;
+  return { source, checkedAt, latestVersion, githubConfigured, storeInstalled, migratedVersion };
 }
 
 export class PluginUpdates {
@@ -117,6 +114,8 @@ export class PluginUpdates {
   private readonly now: () => number;
   private checking?: Promise<PluginUpdate>;
   private migrating?: Promise<PluginUpdate>;
+  // This process's latest result, used while the cache file holds an older one, such as after a failed save.
+  private last?: SavedCache;
   private readonly abort = new AbortController();
 
   constructor(options: { enabled?: boolean; currentVersion?: string; profile?: string; pluginRoot?: string; run?: RunCodex; readStore?: ReadStore; now?: () => number } = {}) {
@@ -138,7 +137,7 @@ export class PluginUpdates {
     this.now = options.now ?? Date.now;
   }
 
-  /** Store releases from the migration release on that are not older than this build. */
+  /** Whether a store release can replace this build: the migration release or later, and not older. */
   private isMigrationTarget(version: string): boolean {
     return compareReleaseVersions(version, STORE_MIGRATION_VERSION) >= 0 && compareReleaseVersions(version, this.currentVersion) >= 0;
   }
@@ -178,6 +177,13 @@ export class PluginUpdates {
       const stored = cacheSchema.parse(data);
       return fromStored(stored);
     } catch { return { state: "unchecked" }; }
+  }
+
+  private async loadCache(): Promise<Cache> {
+    const stored = await this.readCache();
+    const last = this.last;
+    if (last === undefined || stored.state !== "unchecked" && stored.checkedAt >= last.checkedAt) return stored;
+    return last;
   }
 
   private async saveCache(cache: SavedCache) {
@@ -228,7 +234,7 @@ export class PluginUpdates {
   }
 
   private async checkLatest(): Promise<PluginUpdate> {
-    const cache = await this.readCache();
+    const cache = await this.loadCache();
     const status = this.status(cache);
     if (status.status === "migrated" || this.isFresh(cache)) return status;
     const startedAt = performance.now();
@@ -239,11 +245,11 @@ export class PluginUpdates {
       const storeInstalled = await this.storeInstalled(catalog);
       next = { state: "checked", checkedAt, latestVersion: catalog.store.version, githubConfigured: githubConfigured(catalog), storeInstalled };
     } catch { next = { state: "failed", checkedAt, previous: knownCache(cache) }; }
+    this.last = next;
     try { await this.saveCache(next); }
     catch {
       const error = new Error("Could not save the plugin update check.");
       captureServerError(error, "plugin.update.cache");
-      next = { state: "failed", checkedAt };
     }
     const update = this.status(next);
     const elapsed = performance.now() - startedAt;
@@ -302,6 +308,7 @@ export class PluginUpdates {
       const cache: SavedCache = { state: "migrated", checkedAt: this.now(), latestVersion: version, githubConfigured: false, storeInstalled: true, migratedVersion: installedVersion };
       step = "save";
       await this.saveCache(cache);
+      this.last = cache;
       const elapsed = performance.now() - startedAt;
       recordPluginUpdate("migrate", "migrated", elapsed);
       return { status: "migrated", currentVersion: this.currentVersion, latestVersion: installedVersion, storeInstalled: true };

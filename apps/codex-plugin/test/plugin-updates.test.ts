@@ -237,6 +237,38 @@ test("failed checks keep the last known status and retry after the failed interv
   assert.equal(recovered.checkedAt, now);
 });
 
+test("checks that cannot be saved still report and reuse their result", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, beforeSend: scrubErrorEvent,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  const previous = process.env.MOBILE_DEV_TELEMETRY;
+  delete process.env.MOBILE_DEV_TELEMETRY;
+  t.after(async () => {
+    if (previous === undefined) delete process.env.MOBILE_DEV_TELEMETRY;
+    else process.env.MOBILE_DEV_TELEMETRY = previous;
+    await Sentry.close();
+  });
+  const directory = await profile(t);
+  // A directory at the cache path makes every write fail.
+  await mkdir(join(directory, "mobile-dev/updates.json/blocked"), { recursive: true });
+  const calls: string[][] = [];
+  const { run, readStore } = cliFixture(directory, calls, { storeInstalled: true });
+  let now = 1000000;
+  const updates = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.167", run, readStore, now: () => now });
+  const notice = await updates.check();
+  assert.deepEqual(notice, { status: "migration", currentVersion: "0.1.167", latestVersion: "0.1.167", storeInstalled: true });
+  await Sentry.flush();
+  assert.ok(JSON.stringify(envelopes).includes("Could not save the plugin update check."));
+  now += 30 * 60 * 1000;
+  assert.equal((await updates.check()).status, "migration");
+  assert.equal(calls.length, 1);
+  now += 30 * 60 * 1000;
+  await updates.check();
+  assert.equal(calls.length, 2);
+});
+
 test("migration is offered for the same version and verifies the store before any deletion", async t => {
   for (const fixture of [{}, { storeInstalled: true, installedVersion: "0.1.163" }, { storeInstalled: true, storeEnabled: false }]) {
     const directory = await profile(t);
