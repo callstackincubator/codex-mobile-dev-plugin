@@ -62,12 +62,14 @@ test("a running Baguette whose device list is slow or fails is never treated as 
 test("a continuing Baguette start failure is reported once until a start succeeds", async t => {
   const { baguette, backend } = await startedBaguette(t);
   const outcomes: string[] = [];
-  for (const status of [500, 500, 200, 500]) {
+  for (const status of [500, 500, 500, 200, 500]) {
     backend.status = status;
-    const outcome = await baguette.start().then(() => "started", error => isRepeatedFailure(error) ? "repeated" : "reported");
+    // The first failure's caller only logs it, so the next caller that captures one still reports.
+    const capture = outcomes.length > 0;
+    const outcome = await baguette.start().then(() => "started", error => capture ? (isRepeatedFailure(error) ? "repeated" : "reported") : "logged");
     outcomes.push(outcome);
   }
-  assert.deepEqual(outcomes, ["reported", "repeated", "started", "reported"]);
+  assert.deepEqual(outcomes, ["logged", "reported", "repeated", "started", "reported"]);
 });
 
 test("the bundled Baguette retries on a new port when another process binds it first", async t => {

@@ -48,15 +48,26 @@ export function errorCategory(error: unknown): ErrorCategory {
   return "unexpected";
 }
 
-const repeatedFailures = new WeakSet<object>();
+const episodeReports = new WeakMap<object, () => boolean>();
+const capturedFailures = new WeakSet<object>();
 
-/** Marks a failure whose episode its owner has already reported, so capture sites only count it. */
-export function markRepeatedFailure(error: unknown) {
-  if (error !== null && typeof error === "object") repeatedFailures.add(error);
+/**
+ * Leaves a failure's episode decision to the first capture site that would send it, so callers
+ * that only log it or were cancelled don't use up the episode's single report.
+ */
+export function deferEpisodeReport(error: unknown, shouldReport: () => boolean) {
+  if (error !== null && typeof error === "object") episodeReports.set(error, shouldReport);
 }
 
+/** Whether a capture site should only count this failure. The first capture of a deferred failure decides its episode. */
 export function isRepeatedFailure(error: unknown): boolean {
-  return error !== null && typeof error === "object" && repeatedFailures.has(error);
+  if (error === null || typeof error !== "object") return false;
+  const shouldReport = episodeReports.get(error);
+  if (shouldReport === undefined) return false;
+  // Callers that joined the same attempt share its error, so only the first capture can report it.
+  if (capturedFailures.has(error)) return true;
+  capturedFailures.add(error);
+  return shouldReport() === false;
 }
 
 type Episode = { signature: string; lastSeen: number };

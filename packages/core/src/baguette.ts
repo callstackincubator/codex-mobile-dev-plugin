@@ -12,7 +12,7 @@ import type { Status } from "@mobile-dev/shared/protocol.ts";
 import { buttonMarginsSchema } from "@mobile-dev/shared/bezel.ts";
 import { definitionDeviceState, getDefinitionDiagnostic, parseDefinitionDiagnostic, setDefinitionDiagnostic } from "@mobile-dev/shared/simulator-definition-diagnostics.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
-import { ExpectedOperationError, FailureEpisodes, markRepeatedFailure } from "@mobile-dev/shared/error-reporting.ts";
+import { deferEpisodeReport, ExpectedOperationError, FailureEpisodes } from "@mobile-dev/shared/error-reporting.ts";
 import { errorReportSignature } from "@mobile-dev/shared/telemetry.ts";
 import { baguetteEnvironment } from "./baguette-runtime.ts";
 import { captureServerError, recordAccessibilityBridgeRestart } from "./telemetry.ts";
@@ -69,7 +69,6 @@ export class Baguette {
   private starting?: Promise<Status>;
   private readonly lifecycle = new AbortController();
   private readonly deviceChanges = new Map<string, Promise<Status>>();
-  private diagnostics = "";
   private disposed = false;
   private readonly embedded: boolean;
   private readonly kickstartBridge: (udid: string, signal: AbortSignal) => Promise<void>;
@@ -164,7 +163,7 @@ export class Baguette {
       // Every device tool starts the backend, so a continuing failure is reported once, not once per call.
       // Ports, PIDs and timestamps differ between repeats of the same failure.
       const signature = errorReportSignature(error, {}).replace(/\d+/g, "#");
-      if (this.startFailures.shouldReport("start", signature) === false) markRepeatedFailure(error);
+      deferEpisodeReport(error, () => this.startFailures.shouldReport("start", signature));
       throw error;
     } finally {
       this.starting = undefined;
@@ -213,7 +212,8 @@ export class Baguette {
   }
 
   private async launch(): Promise<Status> {
-    this.diagnostics = "";
+    // Each attempt keeps its own output, so a failed attempt's late output can't explain the next one.
+    let diagnostics = "";
     const host = this.baseUrl.hostname.replace(/^\[|\]$/g, "");
     const child = await this.launchBackend(host, this.baseUrl.port || "80", this.lifecycle.signal);
     if (this.disposed) {
@@ -231,7 +231,7 @@ export class Baguette {
     });
     for (const output of [child.stdout, child.stderr]) {
       output?.on("data", chunk => {
-        this.diagnostics = (this.diagnostics + chunk.toString()).slice(-4000);
+        diagnostics = (diagnostics + chunk.toString()).slice(-4000);
         process.stderr.write(chunk);
       });
     }
@@ -247,13 +247,13 @@ export class Baguette {
           throw launchError;
         }
         if (child.exitCode !== null || child.signalCode !== null) {
-          throw new Error(`Baguette exited before it became ready. ${this.diagnostics.trim()}`);
+          throw new Error(`Baguette exited before it became ready. ${diagnostics.trim()}`);
         }
         const status = await this.status(polling);
         if (status.connected) return status;
         await delay(250);
       }
-      throw new Error(`Baguette did not become ready within 20 seconds. ${this.diagnostics.trim()}`);
+      throw new Error(`Baguette did not become ready within 20 seconds. ${diagnostics.trim()}`);
     } catch (error) {
       child.kill("SIGTERM");
       if (this.child === child) this.child = undefined;

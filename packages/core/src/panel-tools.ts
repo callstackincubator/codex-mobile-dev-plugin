@@ -203,7 +203,11 @@ function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, sh
   const openPanel = guarded(async (panelTarget: PanelTarget) => {
     let status;
     try { status = await baguette.start(); }
-    catch (error) { status = { ...await baguette.status(), error: errorMessage(error) }; }
+    catch (error) {
+      // The start already waited on the device list, so don't wait its full timeout again.
+      const fallback = await baguette.status(AbortSignal.timeout(2000));
+      status = { ...fallback, error: errorMessage(error) };
+    }
     return result({ ...status, panelTarget }, status.connected ? `Found ${status.devices.length} simulators.` : status.error ?? "The bundled simulator backend could not start.");
   });
 
