@@ -46,6 +46,14 @@ export function recordTraceSiftPayload(kind: "task" | "react", bytes: number) {
   Sentry.metrics.gauge("tracesift.explore.payload_bytes", bytes, { unit: "byte", attributes });
 }
 
+export type CollectorReadiness = { collector: "cpu" | "fps"; platform: "ios" | "android"; kind: "simulator" | "physical" | "emulator" };
+export function recordCollectorReady({ collector, platform, kind }: CollectorReadiness, outcome: "ready" | "failed" | "cancelled", duration: number) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = { component: "server", surface: "performance", collector, device_platform: platform, device_kind: kind, outcome };
+  Sentry.metrics.count("collector.ready.samples", 1, { attributes });
+  Sentry.metrics.gauge("collector.ready.duration", duration, { unit: "millisecond", attributes });
+}
+
 export function recordAccessibilityBridgeRestart(outcome: "recovered" | "unavailable" | "failed") {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes = { component: "server", device_platform: "ios", device_kind: "simulator", outcome };
