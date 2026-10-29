@@ -5,6 +5,11 @@ import { AndroidVideo, videoPacket } from "../src/android-video.ts";
 
 const key = Buffer.from([0, 0, 0, 1, 0x67, 0x64, 0, 0x28, 0, 0, 0, 1, 0x65, 1]);
 const delta = Buffer.from([0, 0, 0, 1, 0x41, 1]);
+// A serve-emu video packet: the SEMU header with a key-frame flag and timestamp, then the frame.
+function packet() {
+  const header = Buffer.alloc(24); header.write("SEMU"); header[4] = 2; header[5] = 1;
+  header.writeBigUInt64BE(123456n, 8); return Buffer.concat([header, key]);
+}
 const batch = (data: Buffer, generation = 1) => ({ generation, sequence: 1, packets: [{ sequence: 1, data: data.toString("base64") }] });
 
 function fixture(t: TestContext) {
@@ -107,4 +112,13 @@ test("closing during a video batch stops the remaining packets", async t => {
   fake.video.close(); await feeding;
   assert.equal(fake.decoders[0].chunks.length, 5);
   assert.equal(fake.requests, 0);
+});
+
+test("H.264 packet parsing reads SEMU timestamps, IDR frames, and the SPS codec", () => {
+  const parsed = videoPacket(packet());
+  assert.equal(parsed.timestamp, 123456); assert.equal(parsed.key, true); assert.equal(parsed.codec, "avc1.640028");
+  assert.deepEqual(parsed.bytes, key);
+  assert.equal(videoPacket(key).key, true);
+  const v1 = Buffer.concat([packet().subarray(0, 16), key]); v1[4] = 1;
+  assert.equal(videoPacket(v1).timestamp, 123456);
 });

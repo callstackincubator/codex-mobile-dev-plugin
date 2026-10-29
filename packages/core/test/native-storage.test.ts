@@ -140,23 +140,3 @@ test("SQLite files with any name list every table's rows and columns in one read
     ]);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
-
-test("a slower earlier table page never replaces the page opened after it", async () => {
-  const { StoragePanel } = await import("@mobile-dev/ui/storage-panel.ts");
-  const pending: { offset: number; resolve: (result: unknown) => void }[] = [];
-  const app = { callServerTool: ({ arguments: args }: { arguments: { offset: number } }) => new Promise(resolve => pending.push({ offset: args.offset, resolve })) };
-  const device = { platform: "ios", udid, name: "iPhone", state: "Booted", kind: "simulator" };
-  const panel = new StoragePanel(app as never, { subscribe: () => () => {}, getSnapshot: () => ({ device }), pickedApp: () => undefined, pickApp() {} } as never);
-  panel.setAvailable(true);
-  (panel as unknown as { update(patch: object): void }).update({ bundleId: "dev.example" });
-  const page = (offset: number) => ({ structuredContent: { table: "items", columns: [{ name: "id", type: "INTEGER" }], rows: [[offset + 1]], total: 300, offset } });
-  const first = panel.openTable("sqlite:app.db", "items", 0);
-  const second = panel.openTable("sqlite:app.db", "items", 100);
-  pending.find(call => call.offset === 100)!.resolve(page(100));
-  await second;
-  pending.find(call => call.offset === 0)!.resolve(page(0));
-  await first;
-  const detail = panel.getSnapshot().detail;
-  assert.equal(detail?.kind === "table" ? detail.data?.offset : undefined, 100);
-  panel.dispose();
-});

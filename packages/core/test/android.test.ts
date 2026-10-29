@@ -8,7 +8,6 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ServeEmu, androidDisplaySize } from "../src/serve-emu.ts";
 import { AndroidStreams, androidInput } from "../src/android-streams.ts";
 import { DeviceSessions } from "../src/device-sessions.ts";
-import { videoPacket } from "@mobile-dev/ui/android-video.ts";
 import { createTestPlugin, fakeBaguette, fakeSimulatorInput, PNG, attachedBaguette } from "@mobile-dev/test-support/fixtures.ts";
 import { fakeInspectionSdk } from "@mobile-dev/test-support/android-inspection-fixtures.ts";
 import { createPanel } from "../src/panel-tools.ts";
@@ -139,15 +138,6 @@ test("physical Android panel streams route pointer, typing, and navigation input
   fake.backend.dispose();
   await assert.rejects(streams.input(sessionId, [{ type: "button", button: "home" }]), { message: "The Android stream disconnected." });
   assert.equal(fake.health.requests, checks);
-});
-
-test("H.264 packet parsing reads SEMU timestamps, IDR frames, and the SPS codec", () => {
-  const parsed = videoPacket(packet());
-  assert.equal(parsed.timestamp, 123456); assert.equal(parsed.key, true); assert.equal(parsed.codec, "avc1.640028");
-  assert.deepEqual(parsed.bytes, H264);
-  assert.equal(videoPacket(H264).key, true);
-  const v1 = Buffer.concat([packet().subarray(0, 16), H264]); v1[4] = 1;
-  assert.equal(videoPacket(v1).timestamp, 123456);
 });
 
 test("Android streams relay video, validate batches, and refuse a device switch", async t => {

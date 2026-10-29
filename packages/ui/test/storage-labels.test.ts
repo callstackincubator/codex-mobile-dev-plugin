@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { StorageSnapshot } from "@mobile-dev/shared/app-storage.ts";
-import { appleTimestamp, containerBreakdown, plural } from "../src/storage-labels.ts";
+import { appleTimestamp, containerBreakdown, isSdkStore, plural, storeTitle } from "../src/storage-labels.ts";
 
 test("counts read as words, with irregular plurals", () => {
   assert.equal(plural(1, "file"), "1 file");
@@ -30,4 +30,10 @@ test("the data directory splits by what owns each file, and the rest is other", 
   assert.deepEqual(containerBreakdown(snapshot), [
     { part: "Caches", bytes: 300 }, { part: "Databases", bytes: 400 }, { part: "Preferences", bytes: 100 }, { part: "Other", bytes: 200 },
   ]);
+});
+
+test("Expo's internal preferences count as SDK data and AsyncStorage's Android database is titled like iOS", () => {
+  assert.equal(isSdkStore({ name: "expo.modules.kotlin.PersistentDataManager", path: "shared_prefs/expo.modules.kotlin.PersistentDataManager.xml" }), true);
+  assert.equal(isSdkStore({ name: "dev.mobile.storagetest_preferences", path: "shared_prefs/dev.mobile.storagetest_preferences.xml" }), false);
+  assert.equal(storeTitle({ kind: "async-storage", name: "RKStorage" }, "dev.mobile.storagetest"), "default");
 });

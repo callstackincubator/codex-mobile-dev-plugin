@@ -210,27 +210,6 @@ test("storage tools stop the app before clearing and reset everything when no st
   await client.close();
 });
 
-test("the change feed records keys added, changed, and removed between reads, and labels SDK stores", async () => {
-  const { diffSnapshots } = await import("@mobile-dev/ui/storage-panel.ts");
-  const { changedFields, bytesAsText, isSdkStore, storeTitle } = await import("@mobile-dev/ui/storage-labels.ts");
-  const snapshot = (readAt: number, entries: [string, string][], entryCount = entries.length) => storageSnapshotSchema.parse({ platform: "ios", bundleId: "com.example", readAt, files: [], fileCount: 0, totalBytes: 0,
-    stores: [{ id: "mmkv:a", kind: "mmkv", name: "a", path: "a", status: "ok", bytes: 0, entryCount, entries: entries.map(([key, value]) => ({ key, type: "string", value, bytes: value.length })) }] });
-  const first = snapshot(1, [["kept", "1"], ["edited", "1"], ["dropped", "x"]]);
-  const events = diffSnapshots(first, snapshot(2, [["kept", "1"], ["edited", "2"], ["added", "x"]]));
-  assert.deepEqual(events.map(event => [event.key, event.change, event.before?.value, event.after?.value, event.at]), [
-    ["edited", "changed", "1", "2", 2], ["added", "added", undefined, "x", 2], ["dropped", "removed", "x", undefined, 2],
-  ]);
-  // A capped read is not evidence that keys past the cap were removed.
-  assert.deepEqual(diffSnapshots(first, snapshot(3, [["kept", "1"]], 3)).map(event => event.change), []);
-  assert.deepEqual(changedFields({ user: "ada", count: 1 }, { user: "ada", count: 2 }), [{ path: "count", before: "1", after: "2" }]);
-  assert.equal(changedFields("a", "b"), undefined);
-  assert.equal(bytesAsText({ key: "k", type: "data", value: Buffer.from("[1,2]").toString("hex"), bytes: 5 }), "[1,2]");
-  assert.equal(bytesAsText({ key: "k", type: "data", value: "ff00", bytes: 2 }), undefined);
-  assert.equal(isSdkStore({ name: "com.google.gmp.measurement.monitor", path: "Library/Preferences/com.google.gmp.measurement.monitor.plist" }), true);
-  assert.equal(isSdkStore({ name: "com.example", path: "Library/Preferences/com.example.plist" }), false);
-  assert.equal(storeTitle({ kind: "user-defaults", name: "com.example" }, "com.example"), "Standard defaults");
-});
-
 test("simulator resets empty the container but keep its layout, metadata, and cfprefsd in sync", async () => {
   const { mkdtemp, mkdir, writeFile, readdir, rm } = await import("node:fs/promises");
   const { tmpdir } = await import("node:os");
@@ -249,21 +228,6 @@ test("simulator resets empty the container but keep its layout, metadata, and cf
     assert.deepEqual((await container.list()).map(file => file.path).sort(), [".com.apple.mobile_container_manager.metadata.plist", "SystemData/keep"]);
     assert.deepEqual((await readdir(join(root, "Library"))).sort(), ["Caches", "Preferences"]);
   } finally { await rm(root, { recursive: true, force: true }); }
-});
-
-test("the change feed hides SDK changes until the toggle shows them", async () => {
-  const { StoragePanel, shownChanges } = await import("@mobile-dev/ui/storage-panel.ts");
-  const deviceApps = { subscribe: () => () => {}, getSnapshot: () => ({ device: undefined }), pickedApp: () => undefined, pickApp() {} };
-  const panel = new StoragePanel({} as never, deviceApps as never);
-  const store = { id: "s", kind: "user-defaults" as const, name: "n", path: "p" };
-  (panel as unknown as { update(patch: object): void }).update({ changes: [
-    { id: 2, at: 2, store, sdk: true, key: "firebase", change: "added" },
-    { id: 1, at: 1, store, sdk: false, key: "onboarded", change: "added" },
-  ] });
-  assert.deepEqual(shownChanges(panel.getSnapshot()).map(event => event.key), ["onboarded"]);
-  panel.setShowSdkChanges(true);
-  assert.deepEqual(shownChanges(panel.getSnapshot()).map(event => event.key), ["firebase", "onboarded"]);
-  panel.dispose();
 });
 
 test("database tables are read page by page with blobs redacted, and unknown tables are rejected", { skip: process.platform !== "darwin" && "needs sqlite3" }, async () => {
@@ -301,11 +265,4 @@ test("XML parsers skip comments, declarations, and doctypes, including ones that
   const prefs = `<?xml version='1.0' encoding='utf-8' standalone='yes' ?><map>
     <!-- <string name="hidden">no</string> --><string name="kept">yes</string><!<!---->--><boolean name="on" value="true" /></map>`;
   assert.deepEqual(parseSharedPreferences(prefs).map(entry => [entry.key, entry.value]), [["kept", "yes"], ["on", "true"]]);
-});
-
-test("Expo's internal preferences count as SDK data and AsyncStorage's Android database is titled like iOS", async () => {
-  const { isSdkStore, storeTitle } = await import("@mobile-dev/ui/storage-labels.ts");
-  assert.equal(isSdkStore({ name: "expo.modules.kotlin.PersistentDataManager", path: "shared_prefs/expo.modules.kotlin.PersistentDataManager.xml" }), true);
-  assert.equal(isSdkStore({ name: "dev.mobile.storagetest_preferences", path: "shared_prefs/dev.mobile.storagetest_preferences.xml" }), false);
-  assert.equal(storeTitle({ kind: "async-storage", name: "RKStorage" }, "dev.mobile.storagetest"), "default");
 });

@@ -7,14 +7,17 @@ import type { InstalledApp } from "@mobile-dev/shared/app-control.ts";
 import type { PhysicalAndroidDevice } from "@mobile-dev/shared/android-devices.ts";
 import { createDeviceApps } from "@mobile-dev/test-support/device-apps-fixtures.ts";
 import { UDID } from "@mobile-dev/test-support/fixtures.ts";
-import { StoragePanel } from "../src/storage-panel.ts";
+import { storageSnapshotSchema } from "@mobile-dev/shared/app-storage.ts";
+import type { StorageStore } from "@mobile-dev/shared/app-storage.ts";
+import { diffSnapshots, shownChanges, StoragePanel } from "../src/storage-panel.ts";
+import { bytesAsText, changedFields, isSdkStore, storeTitle } from "../src/storage-labels.ts";
 
 const simulator = { udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS", platform: "ios", kind: "simulator" } as const;
 const installed = (bundleId: string): InstalledApp => ({ bundleId, name: bundleId });
 
 // A device whose installed and running apps change between listings. Held listings wait until released.
 function fixture(t: TestContext) {
-  const device = { apps: [] as InstalledApp[], running: [] as string[], hold: false };
+  const device = { apps: [] as InstalledApp[], running: [] as string[], stores: [] as StorageStore[], hold: false };
   const held: (() => void)[] = [];
   const calls: { name: string; bundleId?: unknown }[] = [];
   const app = {
@@ -27,7 +30,7 @@ function fixture(t: TestContext) {
         return { isError: true, content: [{ type: "text", text: "Unable to lookup in current state: Shutdown" }] };
       }
       if (name === "mobile_app_icons") return { content: [], structuredContent: { apps: {} } };
-      return { content: [], structuredContent: { platform: "ios", bundleId: args.bundleId, readAt: Date.now(), stores: [], files: [], fileCount: 0, totalBytes: 0 } };
+      return { content: [], structuredContent: { platform: "ios", bundleId: args.bundleId, readAt: Date.now(), stores: device.stores, files: [], fileCount: 0, totalBytes: 0 } };
     },
   };
   const deviceApps = createDeviceApps(app as unknown as App);
@@ -143,4 +146,57 @@ test("Storage shares a listing in flight and drops one that finishes after its d
   assert.equal(listings(), 2);
   assert.deepEqual(apps(), ["com.example.a"]);
   assert.equal(panel.getSnapshot().busy, null);
+});
+
+test("the change feed records keys added, changed, and removed between reads, and labels SDK stores", () => {
+  const snapshot = (readAt: number, entries: [string, string][], entryCount = entries.length) => storageSnapshotSchema.parse({ platform: "ios", bundleId: "com.example", readAt, files: [], fileCount: 0, totalBytes: 0,
+    stores: [{ id: "mmkv:a", kind: "mmkv", name: "a", path: "a", status: "ok", bytes: 0, entryCount, entries: entries.map(([key, value]) => ({ key, type: "string", value, bytes: value.length })) }] });
+  const first = snapshot(1, [["kept", "1"], ["edited", "1"], ["dropped", "x"]]);
+  const events = diffSnapshots(first, snapshot(2, [["kept", "1"], ["edited", "2"], ["added", "x"]]));
+  assert.deepEqual(events.map(event => [event.key, event.change, event.before?.value, event.after?.value, event.at]), [
+    ["edited", "changed", "1", "2", 2], ["added", "added", undefined, "x", 2], ["dropped", "removed", "x", undefined, 2],
+  ]);
+  // A capped read is not evidence that keys past the cap were removed.
+  assert.deepEqual(diffSnapshots(first, snapshot(3, [["kept", "1"]], 3)).map(event => event.change), []);
+  assert.deepEqual(changedFields({ user: "ada", count: 1 }, { user: "ada", count: 2 }), [{ path: "count", before: "1", after: "2" }]);
+  assert.equal(changedFields("a", "b"), undefined);
+  assert.equal(bytesAsText({ key: "k", type: "data", value: Buffer.from("[1,2]").toString("hex"), bytes: 5 }), "[1,2]");
+  assert.equal(bytesAsText({ key: "k", type: "data", value: "ff00", bytes: 2 }), undefined);
+  assert.equal(isSdkStore({ name: "com.google.gmp.measurement.monitor", path: "Library/Preferences/com.google.gmp.measurement.monitor.plist" }), true);
+  assert.equal(isSdkStore({ name: "com.example", path: "Library/Preferences/com.example.plist" }), false);
+  assert.equal(storeTitle({ kind: "user-defaults", name: "com.example" }, "com.example"), "Standard defaults");
+});
+
+test("the change feed hides SDK changes until the toggle shows them", async t => {
+  const { device, deviceApps, panel } = fixture(t);
+  const store = (name: string, path: string, key: string): StorageStore => ({ id: `user-defaults:${path}`, kind: "user-defaults", name, path, status: "ok", bytes: 1, entryCount: 1, entries: [{ key, type: "string", value: "1", bytes: 1 }] });
+  device.apps = [installed("com.example")];
+  device.running = ["com.example"];
+  deviceApps.selectDevice(simulator);
+  panel.show();
+  await setImmediate();
+  assert.equal(panel.getSnapshot().snapshot?.bundleId, "com.example");
+  device.stores = [store("com.example", "Library/Preferences/com.example.plist", "onboarded"), store("com.google.gmp.measurement.monitor", "Library/Preferences/com.google.gmp.measurement.monitor.plist", "firebase")];
+  await panel.refresh();
+  assert.deepEqual(shownChanges(panel.getSnapshot()).map(event => event.key), ["onboarded"]);
+  panel.setShowSdkChanges(true);
+  assert.deepEqual(shownChanges(panel.getSnapshot()).map(event => event.key), ["firebase", "onboarded"]);
+});
+
+test("a slower earlier table page never replaces the page opened after it", async () => {
+  const pending: { offset: number; resolve: (result: unknown) => void }[] = [];
+  const app = { callServerTool: ({ arguments: args }: { arguments: { offset: number } }) => new Promise(resolve => pending.push({ offset: args.offset, resolve })) };
+  // The app picked on this simulator earlier is selected without reading its storage.
+  const panel = new StoragePanel(app as never, { subscribe: () => () => {}, getSnapshot: () => ({ device: simulator }), pickedApp: () => "dev.example", pickApp() {} } as never);
+  panel.setAvailable(true);
+  const page = (offset: number) => ({ structuredContent: { table: "items", columns: [{ name: "id", type: "INTEGER" }], rows: [[offset + 1]], total: 300, offset } });
+  const first = panel.openTable("sqlite:app.db", "items", 0);
+  const second = panel.openTable("sqlite:app.db", "items", 100);
+  pending.find(call => call.offset === 100)!.resolve(page(100));
+  await second;
+  pending.find(call => call.offset === 0)!.resolve(page(0));
+  await first;
+  const detail = panel.getSnapshot().detail;
+  assert.equal(detail?.kind === "table" ? detail.data?.offset : undefined, 100);
+  panel.dispose();
 });
