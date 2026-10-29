@@ -29,6 +29,7 @@ export class DisplayFpsPanel {
       const message = errorMessage(error);
       this.update({ fpsPhase: "failed", fpsError: message });
     });
+    return stopped;
   }
   setAvailable(available: boolean) {
     this.available = available;
@@ -43,12 +44,12 @@ export class DisplayFpsPanel {
     this.samples = [];
     const supported = device?.platform === "android" || device?.kind === "physical";
     this.update({ ...initialFpsState, fpsSupported: supported });
-    this.stopSafely();
-    if (this.enabled) this.start();
+    const stopped = this.stopSafely();
+    if (this.enabled) this.start(stopped);
   }
   show() { this.enabled = true; this.start(); }
-  retry() { this.stopSafely(); this.start(); }
-  private start() {
+  retry() { this.start(this.stopSafely()); }
+  private start(cleanup = this.cleanup) {
     const device = this.device;
     if (this.running || this.enabled === false || this.available === false || device === undefined) return;
     const platform = device.platform ?? "ios";
@@ -57,7 +58,7 @@ export class DisplayFpsPanel {
     const epoch = this.epoch;
     const target: DisplayFpsTarget = { platform, deviceId: device.udid };
     this.update({ fpsPhase: "connecting", fpsError: "", fpsMonitoring: true });
-    const receiving = this.receive(target, epoch, this.cleanup);
+    const receiving = this.receive(target, epoch, cleanup);
     this.running = receiving.catch(error => {
       if (epoch !== this.epoch) return;
       const message = errorMessage(error);
@@ -76,6 +77,7 @@ export class DisplayFpsPanel {
   }
   private async receive(target: DisplayFpsTarget, epoch: number, cleanup: Promise<void>) {
     await cleanup;
+    if (epoch === this.epoch && this.session) await this.closeSession(this.session);
     if (epoch !== this.epoch) return;
     const opened = await this.call("mobile_display_fps_session", { target });
     const id = opened.structuredContent?.sessionId;
@@ -118,13 +120,18 @@ export class DisplayFpsPanel {
       }
     } finally { await this.closeSession(session); }
   }
+  // A session stays current until its close succeeds, so a failed close is retried before another session opens.
   private closeSession(session: Session) {
     session.abort.abort();
     if (session.closing === undefined) {
       const closing = this.call("mobile_display_fps_close", { sessionId: session.id });
-      session.closing = closing.then(() => {});
+      session.closing = closing.then(() => {
+        if (this.session === session) this.session = undefined;
+      }, error => {
+        session.closing = undefined;
+        throw error;
+      });
     }
-    if (this.session === session) this.session = undefined;
     return session.closing;
   }
   stop() {
@@ -133,9 +140,9 @@ export class DisplayFpsPanel {
     const running = this.running;
     this.running = undefined;
     const closing = session ? this.closeSession(session) : Promise.resolve();
-    const finishing = Promise.all([this.cleanup, closing, running]);
+    const finishing = Promise.allSettled([this.cleanup, closing, running]);
     this.cleanup = finishing.then(() => {});
-    return this.cleanup;
+    return finishing.then(() => closing);
   }
   async disconnect() {
     this.enabled = false;

@@ -242,10 +242,15 @@ export class PerformancePanel {
     } finally { await this.closeSession(session); }
   }
 
+  // A session stays current until its close succeeds, so the next stop retries a failed close before another opens.
   private closeSession(session: Session): Promise<void> {
     session.abort.abort();
-    if (session.closing === undefined) session.closing = this.call("mobile_cpu_close", { sessionId: session.id }).then(() => {});
-    if (this.session === session) this.session = undefined;
+    session.closing ??= this.call("mobile_cpu_close", { sessionId: session.id }).then(() => {
+      if (this.session === session) this.session = undefined;
+    }, error => {
+      session.closing = undefined;
+      throw error;
+    });
     return session.closing;
   }
 
@@ -254,10 +259,11 @@ export class PerformancePanel {
     const session = this.session;
     const running = this.running;
     this.running = undefined;
-    const previous = this.cleanup;
     const closing = session ? this.closeSession(session) : Promise.resolve();
-    this.cleanup = Promise.all([previous, closing, running]).then(() => {});
-    return this.cleanup;
+    const settled = Promise.allSettled([this.cleanup, closing, running]);
+    this.cleanup = settled.then(() => {});
+    await settled;
+    return closing;
   }
 
   async dispose() {

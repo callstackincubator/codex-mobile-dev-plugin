@@ -18,6 +18,7 @@ function host() {
   const targets: CpuTarget[] = [];
   let apps: DeviceApp[] = [{ bundleId: "com.example.app", pid: 123, foreground: true }];
   let sequence = 0;
+  let closeFailure: string | undefined;
   let opening: Promise<void> | undefined;
   let emit: ((batch: CpuBatch) => void) | undefined;
   const app = {
@@ -29,7 +30,11 @@ function host() {
         return { content: [], structuredContent: { apps: marked, foregroundApp: foreground ?? null } };
       }
       if (input.name === "mobile_display_fps_session") return { isError: true, content: [{ type: "text", text: "FPS not provided by this CPU fixture" }] };
-      if (input.name === "mobile_cpu_close") { events.push(`close:${input.arguments.sessionId}`); return { content: [] }; }
+      if (input.name === "mobile_cpu_close") {
+        events.push(`close:${input.arguments.sessionId}`);
+        if (closeFailure) throw new Error(closeFailure);
+        return { content: [] };
+      }
       await opening;
       if (input.arguments.target) targets.push(input.arguments.target);
       const id = String(++sequence).padStart(64, "0");
@@ -49,7 +54,8 @@ function host() {
     },
   };
   return { app: app as unknown as App, events, sources, targets, emit(batch: CpuBatch) { emit?.(batch); },
-    setApps(next: DeviceApp[]) { apps = next; }, delayOpen(promise: Promise<void>) { opening = promise; } };
+    setApps(next: DeviceApp[]) { apps = next; }, delayOpen(promise: Promise<void>) { opening = promise; },
+    failClose(message?: string) { closeFailure = message; } };
 }
 
 test("CPU collection defaults to the foreground app, persists across tabs, and resets on PID changes", async t => {
@@ -167,6 +173,41 @@ test("closing during session creation closes the late session before disposal co
   const names = fake.events.map(event => event.split(":")[0]);
   assert.deepEqual(names, ["open", "close"]);
   assert.equal(panel.getSnapshot().open, false);
+});
+
+test("a failed CPU close is reported and retried before the next session opens", async t => {
+  const fake = host();
+  const deviceApps = createDeviceApps(fake.app);
+  const panel = new PerformancePanel(fake.app, deviceApps);
+  t.after(() => { deviceApps.dispose(); return panel.dispose(); });
+  deviceApps.selectDevice(device);
+  panel.setAvailable(true);
+  deviceApps.setAvailable(true);
+  panel.show();
+  await tick();
+  const first = String(1).padStart(64, "0");
+  assert.deepEqual(fake.events, [`open:${first}`]);
+
+  fake.failClose("transient close failure");
+  panel.retry();
+  await tick();
+  const failed = panel.getSnapshot();
+  assert.equal(failed.phase, "failed");
+  assert.equal(failed.error, "transient close failure");
+  assert.equal(failed.monitoring, false);
+  assert.deepEqual(fake.events, [`open:${first}`, `close:${first}`], "No session opens beside one that may still be collecting.");
+
+  fake.failClose();
+  panel.retry();
+  await tick();
+  const second = String(2).padStart(64, "0");
+  assert.deepEqual(fake.events, [`open:${first}`, `close:${first}`, `close:${first}`, `open:${second}`]);
+  fake.emit({ cursor: 1, phase: "recording", memoryMetric: "physical-footprint", samples: [{ time: 1, interval: 1, cpuPercent: 40, memoryBytes: 104857600, threads: [] }] });
+  await tick();
+  const recovered = panel.getSnapshot();
+  assert.equal(recovered.phase, "recording");
+  assert.equal(recovered.error, "");
+  assert.equal(recovered.samples[0].cpuPercent, 40);
 });
 
 test("switching between iOS and Android closes the previous monitor and selects the active device", async t => {
