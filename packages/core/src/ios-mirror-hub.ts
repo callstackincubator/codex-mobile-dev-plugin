@@ -1,5 +1,6 @@
 import type { IosVideoBatch } from "@mobile-dev/shared/ios-video.ts";
 import { IosMirrorInputBusyError } from "@mobile-dev/shared/ios-mirror-errors.ts";
+import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 import type { IosCapture, NativeCapture, NativeTouchSample } from "./ios-native-capture.ts";
 
 type Subscriber = {
@@ -18,15 +19,13 @@ export class IosMirrorHub {
   private readonly devices = new Map<string, Device>();
   private readonly operations = new Map<string, Promise<void>>();
   private readonly openNative: (udid: string) => Promise<NativeCapture>;
-  private readonly changed: (state: MirrorHubState) => void;
   private readonly failed: (error: Error) => void;
   private disposed = false;
   private opening = 0;
   private dropped = 0;
 
-  constructor(open: (udid: string) => Promise<NativeCapture>, changed = (_state: MirrorHubState) => {}, failed = (_error: Error) => {}) {
+  constructor(open: (udid: string) => Promise<NativeCapture>, failed = (_error: Error) => {}) {
     this.openNative = open;
-    this.changed = changed;
     this.failed = failed;
   }
 
@@ -39,35 +38,28 @@ export class IosMirrorHub {
     finally { if (this.operations.get(udid) === settled) this.operations.delete(udid); }
   }
 
-  private report() {
-    let subscribers = 0;
-    for (const device of this.devices.values()) subscribers += device.subscribers.size;
-    this.changed({ captures: this.devices.size, subscribers, dropped: this.dropped });
-  }
-
   async open(udid: string): Promise<IosCapture> {
     return this.exclusive(udid, async () => {
-      if (this.disposed) throw new Error("The shared iOS capture service has closed.");
+      if (this.disposed) throw new ExpectedOperationError("session_closed", "The shared iOS capture service has closed.");
       let device = this.devices.get(udid);
       if (device === undefined) {
-        if (this.devices.size + this.opening >= 4) throw new Error("Too many physical device streams. Close another panel first.");
+        if (this.devices.size + this.opening >= 4) throw new ExpectedOperationError("resource_limit", "Too many physical device streams. Close another panel first.");
         this.opening++;
         let capture: NativeCapture;
         try { capture = await this.openNative(udid); }
         finally { this.opening--; }
-        if (this.disposed) { await capture.close(); throw new Error("The shared iOS capture service has closed."); }
+        if (this.disposed) { await capture.close(); throw new ExpectedOperationError("session_closed", "The shared iOS capture service has closed."); }
         device = { capture, subscribers: new Set(), sequence: 0, dropped: 0, closed: false, keyRequested: false, input: Promise.resolve() };
         this.devices.set(udid, device);
       }
       if (device.failure) throw device.failure;
-      if (device.subscribers.size >= 32) throw new Error("Too many panels are mirroring this iPhone.");
+      if (device.subscribers.size >= 32) throw new ExpectedOperationError("resource_limit", "Too many panels are mirroring this iPhone.");
       const subscriber: Subscriber = { frames: [], bytes: 0, generation: 0, dropped: 0, waitingKey: true, closed: false, reading: false };
       const shared = device;
       shared.subscribers.add(subscriber);
       // Joining requires a decodable keyframe; the hardware stream remains open.
       if (shared.reader) this.requestKeyframe(shared);
       else shared.reader = this.pump(shared);
-      this.report();
       return {
         read: () => this.read(shared, subscriber),
         touch: (samples, generation) => this.touch(shared, subscriber, samples, generation),
@@ -78,7 +70,7 @@ export class IosMirrorHub {
   }
 
   private check(device: Device, subscriber: Subscriber) {
-    if (subscriber.closed || device.closed) throw new Error("The shared physical iOS stream closed.");
+    if (subscriber.closed || device.closed) throw new ExpectedOperationError("session_closed", "The shared physical iOS stream closed.");
     if (device.failure) throw device.failure;
   }
 
@@ -167,7 +159,7 @@ export class IosMirrorHub {
 
   private async read(device: Device, subscriber: Subscriber): Promise<IosVideoBatch> {
     this.check(device, subscriber);
-    if (subscriber.reading) throw new Error("A physical device video read is already pending.");
+    if (subscriber.reading) throw new ExpectedOperationError("resource_limit", "A physical device video read is already pending.");
     subscriber.reading = true;
     try {
       if (subscriber.waitingKey) this.requestKeyframe(device);
@@ -189,7 +181,7 @@ export class IosMirrorHub {
   private touch(device: Device, subscriber: Subscriber, samples: NativeTouchSample[], generation: number): Promise<void> {
     const result = device.input.then(async () => {
       this.check(device, subscriber);
-      if (subscriber.delivered !== generation || device.generation === undefined) throw new Error("Wait for a fresh physical iOS screen before sending input.");
+      if (subscriber.delivered !== generation || device.generation === undefined) throw new ExpectedOperationError("device_unavailable", "Wait for a fresh physical iOS screen before sending input.");
       if (device.pointer && device.pointer.owner !== subscriber) throw new IosMirrorInputBusyError();
       const nativeGeneration = device.generation;
       await device.capture.touch(samples, nativeGeneration);
@@ -215,7 +207,6 @@ export class IosMirrorHub {
       try { await device.capture.close(); await device.reader; }
       finally { this.devices.delete(udid); }
     }
-    this.report();
   }
 
   async close() {

@@ -5,6 +5,8 @@ import type { MirrorRequest } from "./ios-mirror-rpc.ts";
 import type { IosCapture } from "./ios-native-capture.ts";
 import type { IosMirrorHub } from "./ios-mirror-hub.ts";
 import { IosMirrorInputBusyError } from "@mobile-dev/shared/ios-mirror-errors.ts";
+import { expectedOutcome } from "@mobile-dev/shared/error-reporting.ts";
+import { readJsonLines } from "./json-lines.ts";
 
 export function createIosMirrorServer(hub: IosMirrorHub, idle: () => void, active: () => void) {
   const sockets = new Set<Socket>();
@@ -12,9 +14,7 @@ export function createIosMirrorServer(hub: IosMirrorHub, idle: () => void, activ
   const server = createServer(socket => {
     sockets.add(socket);
     active();
-    socket.setEncoding("utf8");
     socket.setTimeout(360000, () => socket.destroy());
-    let incoming = "";
     let capture: IosCapture | undefined;
     let opening: Promise<IosCapture> | undefined;
     let closing = false;
@@ -41,7 +41,7 @@ export function createIosMirrorServer(hub: IosMirrorHub, idle: () => void, activ
         try { const result = await handle(request); reply = { id: request.id, result }; }
         catch (error) {
           const message = error instanceof Error ? error.message : "Shared physical iOS capture failed.";
-          reply = { id: request.id, error: message.slice(0, 4096), inputBusy: error instanceof IosMirrorInputBusyError };
+          reply = { id: request.id, error: message.slice(0, 4096), inputBusy: error instanceof IosMirrorInputBusyError, outcome: expectedOutcome(error) };
         }
         if (socket.destroyed) return;
         const encoded = JSON.stringify(reply);
@@ -49,23 +49,11 @@ export function createIosMirrorServer(hub: IosMirrorHub, idle: () => void, activ
         socket.write(encoded + "\n");
       } finally { running.delete(request.id); }
     };
-    socket.on("data", (chunk: string) => {
-      incoming += chunk;
-      let end = incoming.indexOf("\n");
-      while (end >= 0) {
-        if (end > 32768) { socket.destroy(); return; }
-        const line = incoming.slice(0, end);
-        incoming = incoming.slice(end + 1);
-        try {
-          const value: unknown = JSON.parse(line);
-          const request = mirrorRequestSchema.parse(value);
-          if (running.size >= 8 || running.has(request.id)) { socket.destroy(); return; }
-          running.add(request.id);
-          void respond(request);
-        } catch { socket.destroy(); return; }
-        end = incoming.indexOf("\n");
-      }
-      if (incoming.length > 32768) socket.destroy();
+    readJsonLines(socket, 32768, value => {
+      const request = mirrorRequestSchema.parse(value);
+      if (running.size >= 8 || running.has(request.id)) { socket.destroy(); return; }
+      running.add(request.id);
+      void respond(request);
     });
     socket.on("error", () => {});
     socket.once("close", () => {
