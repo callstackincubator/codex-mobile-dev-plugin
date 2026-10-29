@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { cp, copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { telemetryBuildEnvironment } from "./telemetry-build.mjs";
 import { assertRuntime, oversizedFiles, RELEASE_DOCUMENTS as documents, releaseVersion, stageRuntime } from "./host-runtime.mjs";
 import { pluginHost } from "./plugin-hosts.mjs";
@@ -21,10 +21,16 @@ const version = await releaseVersion();
 const runtime = resolve(`release/${name}-runtime`);
 await rm(runtime, { recursive: true, force: true });
 await stageRuntime(runtime, { panel: host.panel });
+// The server runs agent-device's CLI by its path; npm's bin links are symlinks, which
+// plugin directories reject.
+await rm(`${runtime}/agent-device/node_modules/.bin`, { recursive: true, force: true });
 if (host.build) {
   const { buildHost } = await import(resolve(host.build));
   await buildHost(runtime);
 }
+
+// A host with its own README ships it instead of the repository's.
+const documentSource = path => path === "README.md" && host.readme ? host.readme : path;
 
 // A host whose store limits file sizes fails here rather than in review.
 async function assertFileSizes(directory) {
@@ -42,7 +48,7 @@ if (host.desktopBundle) {
   await rm(directory, { recursive: true, force: true });
   await mkdir(directory, { recursive: true });
   await cp(runtime, `${directory}/dist`, { recursive: true, verbatimSymlinks: true });
-  for (const path of documents) await copyFile(path, `${directory}/${path}`);
+  for (const path of documents) await copyFile(documentSource(path), `${directory}/${path}`);
   await writeFile(`${directory}/manifest.json`, JSON.stringify(manifest, null, 2) + "\n");
   await assertFileSizes(directory);
   const archive = resolve(`release/mobile-dev-${version}-${name}-desktop-darwin-arm64.mcpb`);
@@ -58,8 +64,11 @@ await rm(directory, { recursive: true, force: true });
 await mkdir(`${directory}/${host.manifest}`, { recursive: true });
 await cp(runtime, `${directory}/dist`, { recursive: true, verbatimSymlinks: true });
 await cp(`${host.app}/assets`, `${directory}/assets`, { recursive: true });
-for (const skill of host.skills) await cp(skill, `${directory}/skills/${basename(skill)}`, { recursive: true, verbatimSymlinks: true });
-for (const path of documents) await copyFile(path, `${directory}/${path}`);
+// A skill's agents/openai.yaml is Codex's display metadata.
+const skillFiles = skill => source => relative(skill, source) !== "agents";
+for (const skill of host.skills) await cp(skill, `${directory}/skills/${basename(skill)}`, { recursive: true, verbatimSymlinks: true, filter: skillFiles(skill) });
+for (const folder of host.folders) await cp(folder, `${directory}/${basename(folder)}`, { recursive: true });
+for (const path of documents) await copyFile(documentSource(path), `${directory}/${path}`);
 await writeFile(`${directory}/${host.manifest}/plugin.json`, JSON.stringify({ name: pluginName, version, ...fields }, null, 2) + "\n");
 await assertFileSizes(directory);
 await rm(runtime, { recursive: true, force: true });

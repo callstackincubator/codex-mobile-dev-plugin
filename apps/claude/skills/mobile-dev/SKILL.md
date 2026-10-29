@@ -10,8 +10,10 @@ panel in Claude: Claude Code shows simulators itself, and Mobile Dev adds device
 control, logs, app inspection, and performance recordings with their charts.
 
 If the Mobile Dev tools are missing, tell the user "Mobile Dev could not start." and
-check that Node.js 22.19 or later is on the PATH Claude starts plugins with, and that
-the plugin is enabled. Source edits or compilation can continue without device tools.
+follow [missing-tools recovery](references/missing-tools.md): check which Node.js the
+plugin's launcher finds and that the plugin is enabled, and offer to install Node.js
+22.19 or later when none is found. Source edits or compilation can continue without
+device tools.
 
 ## Showing a simulator or emulator
 

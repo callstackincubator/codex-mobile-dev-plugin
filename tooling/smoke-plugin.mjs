@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { access, cp, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, cp, mkdir, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { PANEL_PARTS, releaseVersion } from "./host-runtime.mjs";
@@ -24,10 +24,10 @@ const panelTools = ["mobile_open_workspace", "mobile_open_simulator", "mobile_li
 const expectedTools = [...panels ? panelTools : ["mobile_render_performance_recording", "mobile_logs_session"], "device_open", "device_snapshot"];
 const panelFiles = PANEL_PARTS.map(part => `dist/${part}`);
 
-async function withServer(label, args, env, capabilities, check) {
+async function withServer(label, command, args, env, capabilities, check) {
   const client = new Client({ name: `${name}-${label}-smoke`, version: "1" }, { capabilities });
   const transport = new StdioClientTransport({
-    command: process.execPath, args, cwd: temporary, stderr: "pipe",
+    command, args, cwd: temporary, stderr: "pipe",
     env: { PATH: "/usr/bin:/bin:/usr/sbin:/sbin", HOME: home, MOBILE_DEV_TELEMETRY: "off", ...env },
   });
   let diagnostics = "";
@@ -77,7 +77,7 @@ async function smokeDesktopBundle() {
   const args = manifest.server.mcp_config.args.map(arg => arg.replaceAll("${__dirname}", directory));
   for (const [environment, forms] of [["development", false], ["release", false], ["development", true]]) {
     const capabilities = forms ? { extensions: { "openai/elicitation": { form: {} } } } : {};
-    await withServer("desktop", args, { MOBILE_DEV_ENVIRONMENT: environment }, capabilities, async (client, resource) => {
+    await withServer("desktop", process.execPath, args, { MOBILE_DEV_ENVIRONMENT: environment }, capabilities, async (client, resource) => {
       assert.doesNotMatch(resource.contents[0].text, /data-host=/);
       assert.deepEqual(resource.contents[0]._meta.ui.permissions, { clipboardWrite: {} });
       assert.match(resource.contents[0].text, panels ? /data-view="workspace"/ : /data-view="recording"/);
@@ -98,17 +98,36 @@ try {
   assert.equal(manifest.license, "MIT");
   await access(join(plugin, manifest.logo ?? manifest.icon));
   const server = manifest.mcpServers["mobile-dev"];
-  assert.equal(server.command, "node");
-  assert.deepEqual(server.args, [`\${${host.root}}/dist/server.mjs`]);
+  // The server runs with Node from PATH, or through the host's launcher, which also
+  // finds Node where version managers install it.
+  const launcher = server.command !== "node";
+  if (launcher) assert.equal(server.command, "/bin/sh");
+  assert.deepEqual(server.args, [...launcher ? [`\${${host.root}}/scripts/launch-node.sh`] : [], `\${${host.root}}/dist/server.mjs`]);
   for (const path of ["LICENSE", "README.md", "PRIVACY.md", "dist/app.html", ...host.skills.map(skill => `skills/${basename(skill)}/SKILL.md`), "skills/agent-device/references/workflow.md", ...panels ? panelFiles : []]) {
     await access(join(plugin, path));
   }
   if (panels === false) for (const path of panelFiles) await assert.rejects(access(join(plugin, path)), path);
+  if (host.readme) assert.equal(await readFile(join(plugin, "README.md"), "utf8"), await readFile(host.readme, "utf8"));
+  // Plugin directories reject symlinks, and agents/openai.yaml is Codex's skill metadata.
+  for (const entry of await readdir(plugin, { recursive: true, withFileTypes: true })) {
+    const path = relative(plugin, join(entry.parentPath, entry.name));
+    assert.equal(entry.isSymbolicLink(), false, `${path} is a symlink`);
+    assert.doesNotMatch(path, /^skills\/[^/]+\/agents$/);
+  }
   const otherManifests = Object.entries(pluginHosts).filter(([other]) => other !== name).map(([, other]) => other.manifest);
   for (const path of [...codexOnlyPaths, ...otherManifests]) await assert.rejects(access(join(plugin, path)), path);
   const args = server.args.map(arg => arg.replaceAll(`\${${host.root}}`, plugin));
+  // The launcher finds Node on the user's PATH; put this Node there.
+  const PATH = `${dirname(process.execPath)}:/usr/bin:/bin:/usr/sbin:/sbin`;
+  if (launcher) {
+    // Its session check stays silent when Node is usable.
+    const hooks = JSON.parse(await readFile(join(plugin, "hooks/hooks.json"), "utf8"));
+    const [check] = hooks.hooks.SessionStart[0].hooks;
+    assert.equal(execFileSync("/bin/sh", ["-c", check.command], { env: { PATH, HOME: home, [host.root]: plugin }, encoding: "utf8" }), "");
+  }
   for (const environment of ["development", "release"]) {
-    await withServer("plugin", args, { MOBILE_DEV_ENVIRONMENT: environment, [host.root]: plugin }, { elicitation: {} }, async client => {
+    const env = { MOBILE_DEV_ENVIRONMENT: environment, [host.root]: plugin, ...launcher ? { PATH } : {} };
+    await withServer("plugin", launcher ? server.command : process.execPath, args, env, { elicitation: {} }, async client => {
       // agent-device's runtime starts from the plugin's own copy on the first command.
       const devices = await client.callTool({ name: "device_devices", arguments: { platform: "ios" } });
       assert.doesNotMatch(devices.content[0].text, /Agent Device could not/);

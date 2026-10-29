@@ -14,6 +14,10 @@ import { join } from "node:path";
  *   - `build`: an optional module in the app exporting `buildHost(outdir)`, which
  *     builds the host's own server into its staged runtime.
  *   - `skills`: the skill folders it ships, relative to the app, instead of the shared ones.
+ *   - `folders`: app folders its plugin ships as they are, such as a launcher's
+ *     `scripts` and the `hooks` that check it.
+ *   - `readme`: the app's README, which its packages ship instead of the repository's,
+ *     for a host whose directory lists the plugin with it.
  *   - `maxFileBytes`: the host's file size limit; packaging and the host regression
  *     tests fail past it.
  * Adding such a host is adding that app; these scripts find it.
@@ -37,6 +41,8 @@ export function pluginHost(name) {
     ...host, app, panel: host.panel !== false,
     desktopBundle: host.desktopBundle && `${app}/${host.desktopBundle}`,
     build: host.build && `${app}/${host.build}`,
+    folders: (host.folders ?? []).map(path => join(app, path)),
+    readme: host.readme && join(app, host.readme),
     skills: host.skills?.map(path => join(app, path)) ?? sharedSkills,
   };
 }
