@@ -163,6 +163,13 @@ tag (`catalog`, `remove-plugin`, `remove-marketplace`, `verify` or `save`) and a
 `cache-write` or `unknown`). The message, metrics and boundaries are unchanged, and
 no CLI output or store response is included.
 
+Since 0.1.171, the same update-check measurements cover the anonymous HTTP
+store lookup and local CLI installation checks. Failed checks add a bounded
+`failure` attribute using the existing update failure categories. Metric names,
+units, cache-hit exclusions, opt-out and migration-step error coverage are
+preserved. No endpoint response, authentication data or raw error is recorded.
+Closing the updater aborts its HTTP and CLI requests.
+
 Since 0.1.129, discovery command failures retain bounded `discovery_command`, `discovery_cause`,
 `discovery_termination`, and optional `discovery_signal` tags. Failed exception
 contexts contain only numeric `elapsed_ms`, `deadline_ms`, and an optional exit
