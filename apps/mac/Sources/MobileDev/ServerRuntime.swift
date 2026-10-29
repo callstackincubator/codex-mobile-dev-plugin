@@ -6,7 +6,7 @@ struct ServerRuntime {
   /// The page the window loads. It connects to the server itself and reads its telemetry metadata.
   let page: URL
 
-  /// Finds the runtime `apps/mac/tooling/build.mjs` places under `Contents/Resources`.
+  /// Finds the runtime `apps/mac/tooling/package.mjs` places under `Contents/Resources`.
   static func bundled(in bundle: Bundle = .main) throws -> ServerRuntime {
     guard let resources = bundle.resourceURL else { throw ServerRuntimeError.missing("the app's resources") }
     let runtime = ServerRuntime(
