@@ -1,4 +1,20 @@
+import { CircleAlertIcon, InfoIcon, TriangleAlertIcon } from "lucide-react";
 import type { LogRecord } from "@mobile-dev/shared/logs.ts";
+
+/** A log as one line of text: its tag or process, then `message` (the log's own by default). */
+export function logLine(log: Pick<LogRecord, "tag" | "process" | "message">, message = log.message) {
+  const prefix = log.tag || log.process;
+  return `${prefix ? `${prefix}: ` : ""}${message}`;
+}
+
+export function levelIcon(level: LogRecord["level"]) {
+  return level === "error" ? CircleAlertIcon : level === "warn" ? TriangleAlertIcon : InfoIcon;
+}
+
+/** Errors and warnings ask chat for a fix; other logs ask about them. */
+export function chatActionLabel(level: LogRecord["level"]) {
+  return level === "error" || level === "warn" ? "Fix in chat" : "Ask in chat";
+}
 
 const frame = /^[ \t]*at (?:.+? \()?(?:[^\d\s:]\S*:\d+(?::\d+)?|native|<anonymous>)\)?[ \t]*$/;
 const namedFrame = /^[ \t]*at [^\r\n]+$/;

@@ -13,10 +13,10 @@ const deviceButtons: { action: string; icon: LucideIcon; label: string }[] = [
 ];
 
 // The stream controller owns the canvas after mount; keep this subtree stable so log batches never reset a live device.
-export const SimulatorView = memo(function SimulatorView({ platform, visible }: { platform: "ios" | "android"; visible: boolean }) {
+export const SimulatorView = memo(function SimulatorView({ platform, visible, fullscreen }: { platform: "ios" | "android"; visible: boolean; fullscreen: boolean }) {
   const [annotations] = useState(() => new ScreenAnnotationsStore());
   const label = platform === "ios" ? "iOS" : "Android";
-  const sidebar = document.documentElement.dataset.view !== "workspace";
+  const sidebar = !fullscreen;
   const id = (name: string) => `${platform}-${name}`;
   return <section hidden={!visible} id={`${platform}-panel`} className="simulator-panel group/simulator @container relative flex h-full min-w-0 flex-1 flex-col" data-platform={platform} aria-label={`${label} simulator`}>
     <header className="panel-toolbar flex h-[49px] shrink-0 items-center border-b px-2">

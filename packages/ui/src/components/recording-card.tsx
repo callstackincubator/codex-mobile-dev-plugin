@@ -1,27 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import type { PointerEvent, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { Area, AreaChart, CartesianGrid, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { ExternalLinkIcon, InfoIcon, MessageCircleIcon } from "lucide-react";
 import type { RecordingController } from "../recording-controller.ts";
 import type { RecordingRange } from "@mobile-dev/shared/recordings.ts";
 import { summarizeRecording } from "@mobile-dev/shared/recordings.ts";
 import { recordUiTiming } from "../telemetry.ts";
-import { createRecordingCpuSeries, createRecordingFpsSeries, findRecordingChangeRanges } from "../recording-series.ts";
+import { mebibytes, percent, recordingStatusLabel, seconds } from "../recording-format.ts";
+import { createRecordingCpuSeries, createRecordingFpsSeries, createRecordingMemorySeries, findRecordingChangeRanges } from "../recording-series.ts";
 import type { RecordingPoint } from "../recording-series.ts";
 import { Button } from "./ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { RecordingChartShape, recordingChartPoints } from "./recording-chart-shape";
+import { CHART_RIGHT_MARGIN, CHART_Y_AXIS_WIDTH, CHAT_SELECTION_UNSUPPORTED, RangeHighlight, RecordingLoading, useRangeDrag } from "./recording-chart-parts";
 import { useMediaQuery } from "./use-media-query";
 
-const MIB = 1048576;
 const REVEAL_DELAY = 550;
-function percent(value: number | null) { return value === null ? "—" : `${value.toFixed(1)}%`; }
 function memoryChange(value: number | null) {
   if (value === null) return "—";
-  const mib = Math.round(value / MIB);
+  const mib = Math.round(mebibytes(value));
   return `${mib > 0 ? "+" : ""}${mib} MiB`;
 }
-function seconds(value: number) { return `${value.toFixed(1)}s`; }
 function fpsReading(value: number | null) { return value === null ? "—" : value.toFixed(1); }
 function milliseconds(value: number | null) { return value === null ? "—" : `${value.toFixed(2)} ms`; }
 
@@ -49,8 +48,6 @@ function RecordingChart({ label, info, metricLabel, metric, data, duration, rang
   label: string; info: string; metricLabel: string; metric: string; data: RecordingPoint[]; duration: number; range?: RecordingRange; changes: RecordingRange[]; color: string; unit: string;
   onDrag: (range?: RecordingRange) => void; onSelect: (range?: RecordingRange) => void;
 }) {
-  const root = useRef<HTMLDivElement>(null);
-  const anchor = useRef<number | undefined>(undefined);
   const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
   const [reveal, setReveal] = useState<"pending" | "finished" | "settled">(reducedMotion ? "settled" : "pending");
   const revealStartedAt = useRef<number | undefined>(undefined);
@@ -73,20 +70,10 @@ function RecordingChart({ label, info, metricLabel, metric, data, duration, rang
     const elapsed = performance.now() - startedAt - REVEAL_DELAY;
     recordUiTiming("ui.recording.reveal", elapsed);
   }, []);
-  function timeAt(event: PointerEvent<HTMLDivElement>) {
-    const bounds = root.current!.getBoundingClientRect();
-    const fraction = (event.clientX - bounds.left - 52) / Math.max(1, bounds.width - 64);
-    const clamped = Math.max(0, Math.min(1, fraction));
-    const time = clamped * duration;
-    return Math.round(time * 10) / 10;
-  }
-  function selection(event: PointerEvent<HTMLDivElement>) {
-    if (anchor.current === undefined) return;
-    const time = timeAt(event);
-    const start = Math.min(anchor.current, time);
-    const end = Math.max(anchor.current, time);
-    if (end > start) return { start, end };
-  }
+  const { ref, handlers } = useRangeDrag(duration, { onDrag, onSelect, onStart: () => {
+    setReveal("settled");
+    revealStartedAt.current = undefined;
+  } });
   const values = data.flatMap(point => point.value === null ? [] : [point.value]);
   const minimum = values.length > 0 ? Math.min(...values) : 0;
   const maximum = values.length > 0 ? Math.max(...values) : 1;
@@ -103,29 +90,16 @@ function RecordingChart({ label, info, metricLabel, metric, data, duration, rang
   }
   return <section className="recording-track" aria-label={label} data-reveal={reveal}>
     <div className="recording-track-heading"><h3>{label}</h3><RecordingInfo label={label}>{info}</RecordingInfo><span className="recording-track-metric"><span aria-hidden="true">·</span><span>{metricLabel} <strong>{metric}</strong></span></span></div>
-    <div ref={root} className="recording-chart" onPointerDown={event => {
-      if (event.button !== 0) return;
-      setReveal("settled");
-      revealStartedAt.current = undefined;
-      anchor.current = timeAt(event);
-      event.currentTarget.setPointerCapture(event.pointerId);
-    }} onPointerMove={event => { if (anchor.current !== undefined) onDrag(selection(event)); }} onPointerUp={event => {
-      if (anchor.current === undefined) return;
-      const next = selection(event);
-      anchor.current = undefined;
-      onDrag(undefined);
-      onSelect(next);
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }} onPointerCancel={() => { anchor.current = undefined; onDrag(undefined); }}>
+    <div ref={ref} className="recording-chart" {...handlers}>
       <ResponsiveContainer width="100%" height={170}>
-        <AreaChart data={data} margin={{ left: 0, right: 12, top: 12, bottom: 0 }}>
+        <AreaChart data={data} margin={{ left: 0, right: CHART_RIGHT_MARGIN, top: 12, bottom: 0 }}>
           <CartesianGrid stroke="var(--border)" />
           <XAxis dataKey="time" type="number" domain={[0, duration]} tickFormatter={seconds} tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} />
-          <YAxis width={52} domain={[low, high]} allowDecimals={unit === "%"} tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} tickFormatter={value => unit === "%" ? `${value.toFixed(0)}%` : value.toFixed(0)} />
+          <YAxis width={CHART_Y_AXIS_WIDTH} domain={[low, high]} allowDecimals={unit === "%"} tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} tickFormatter={value => unit === "%" ? `${value.toFixed(0)}%` : value.toFixed(0)} />
           <Tooltip formatter={formatReading} labelFormatter={value => `${value}s`} contentStyle={{ background: "var(--popover)", borderColor: "var(--border)", borderRadius: 8, color: "var(--foreground)" }} />
           {changes.map(change => <ReferenceArea key={change.start} className="recording-change-highlight" x1={change.start} x2={change.end} fill="#9873e6" fillOpacity={0.16} strokeOpacity={0} />)}
           <Area type="linear" dataKey="value" name={label} stroke={color} fill={color} fillOpacity={0.07} strokeWidth={2} dot={false} shape={RecordingChartShape} animationInterpolateFn={recordingChartPoints} isAnimationActive={reveal === "pending" ? "auto" : false} animationBegin={REVEAL_DELAY} animationDuration={700} animationEasing="ease-out" onAnimationStart={startReveal} onAnimationEnd={finishReveal} connectNulls={false} />
-          {range && <ReferenceArea className="recording-range-highlight" x1={range.start} x2={range.end} fill="#2583ff" fillOpacity={0.12} stroke="#2583ff" strokeOpacity={0.5} />}
+          <RangeHighlight range={range} />
         </AreaChart>
       </ResponsiveContainer>
     </div>
@@ -154,10 +128,7 @@ export function RecordingCard({ controller, detailed = false }: { controller: Re
     const total = summarizeRecording(recording);
     const cpu = createRecordingCpuSeries(recording);
     const fps = createRecordingFpsSeries(recording);
-    const memory: RecordingPoint[] = [];
-    for (const sample of recording.samples) {
-      memory.push({ time: sample.time, value: sample.memoryBytes === null ? null : sample.memoryBytes / MIB });
-    }
+    const memory = createRecordingMemorySeries(recording);
     const elapsed = performance.now() - startedAt;
     recordUiTiming("ui.recording.derive", elapsed);
     return { total, cpu, memory, fps };
@@ -171,8 +142,8 @@ export function RecordingCard({ controller, detailed = false }: { controller: Re
     recordUiTiming("ui.recording.derive", elapsed);
     return summary;
   }, [recording, derived, range]);
-  if (recording === undefined || derived === undefined || selected === undefined || changes === undefined) return <article className="recording-card"><p role="status">Loading performance recording…</p>{state.error && <p role="alert">{state.error}</p>}</article>;
-  const status = recording.status === "finished" ? "Finished" : recording.status === "failed" ? "Failed" : recording.status === "connecting" ? "Connecting" : recording.status === "finishing" ? "Finishing" : "Recording";
+  if (recording === undefined || derived === undefined || selected === undefined || changes === undefined) return <RecordingLoading label="Loading performance recording…" error={state.error} />;
+  const status = recordingStatusLabel(recording.status);
   const time = new Date(recording.completedAt ?? recording.startedAt);
   const savedAt = time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const memoryMetric = recording.memoryMetric === "rss" ? "RSS" : "Physical footprint";
@@ -222,7 +193,7 @@ export function RecordingCard({ controller, detailed = false }: { controller: Re
         <div className="recording-actions">
           <Button disabled={state.canMessage === false || state.busy || hasReadings === false} onClick={() => { void controller.send("ask"); }}><MessageCircleIcon />{range ? "Ask about this range" : "Ask about recording"}</Button>
           {detailed === false && state.canOpen && <Button variant="outline" disabled={state.canMessage === false || state.busy} onClick={() => { void controller.send("open"); }}><ExternalLinkIcon />Open in Mobile Dev</Button>}
-          {state.canMessage === false && <p>This host does not support sending chart selections to chat.</p>}
+          {state.canMessage === false && <p>{CHAT_SELECTION_UNSUPPORTED}</p>}
         </div>
         {state.error && <p role="alert" className="recording-error">{state.error}</p>}
         {detailed && <p className="recording-footnote">{recording.samples.length} CPU/memory samples · {hasFps && `${recording.fps.samples.length} FPS samples · `}Recording {recording.id} · {time.toLocaleDateString()}</p>}

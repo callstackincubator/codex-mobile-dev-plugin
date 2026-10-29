@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createRecordingCpuSeries, createRecordingFpsSeries, findRecordingChangeRanges } from "../src/recording-series.ts";
+import { createRecordingCpuSeries, createRecordingFpsSeries, createRecordingMemorySeries, findRecordingChangeRanges } from "../src/recording-series.ts";
 import { recordingFixture } from "../../test-support/recording-fixtures.ts";
 
 test("CPU readings cover their preceding measured intervals starting at zero", () => {
@@ -107,4 +107,13 @@ test("FPS interval charts clip boundary intervals while preserving zero and miss
     { time: 1.5, value: null }, { time: 2.5, value: null },
     { time: 2.5, value: 60 }, { time: 3, value: 60 },
   ]);
+});
+
+test("memory readings convert to MiB and keep missing readings", () => {
+  const recording = recordingFixture();
+  recording.samples = [
+    { time: 1, interval: 1, cpuPercent: 20, memoryBytes: 3145728, threads: [] },
+    { time: 2, interval: 1, cpuPercent: 20, memoryBytes: null, threads: [] },
+  ];
+  assert.deepEqual(createRecordingMemorySeries(recording), [{ time: 1, value: 3 }, { time: 2, value: null }]);
 });

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { logText } from "../src/log-text.ts";
+import { chatActionLabel, logLine, logText } from "../src/log-text.ts";
 
 test("embedded Hermes stacks leave the whole error message visible and retain Metro's call site", () => {
   const message = "[recordLike] Failed to record like: TypeError:\nCannot read property 'id' of undefined";
@@ -38,4 +38,13 @@ test("separate stacks remain separate and identical embedded stacks are not repe
   const stack = "    at loadProfile (App.tsx:9:3)";
   assert.deepEqual(logText({ message: "Failed", stack }), { message: "Failed", stack });
   assert.deepEqual(logText({ message: `Failed\n${stack}`, stack }), { message: "Failed", stack });
+});
+
+test("log lines lead with the tag or process, and errors and warnings ask chat for a fix", () => {
+  assert.equal(logLine({ tag: "ReactNativeJS", process: "Example", message: "Ready" }), "ReactNativeJS: Ready");
+  assert.equal(logLine({ process: "Example", message: "Ready" }, "Shown"), "Example: Shown");
+  assert.equal(logLine({ message: "Ready" }), "Ready");
+  assert.equal(chatActionLabel("error"), "Fix in chat");
+  assert.equal(chatActionLabel("warn"), "Fix in chat");
+  assert.equal(chatActionLabel("info"), "Ask in chat");
 });

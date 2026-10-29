@@ -7,7 +7,7 @@ import { AppTools } from "./app-tools";
 import { AnimatedHeight } from "./animated-height";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "./ui/base-select";
+import { OptionSelect, type SelectOption } from "./ui/option-select";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { Switch } from "./ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/base-tabs";
@@ -31,16 +31,10 @@ const locationPresets = [
 type Location = { latitude: number; longitude: number };
 const presetFor = (location: Location) => locationPresets.find(entry => entry.latitude === location.latitude && entry.longitude === location.longitude);
 const networkLabels: Record<NetworkCondition, string> = { normal: "Normal", lte: "LTE", "3g": "3G", edge: "Edge", offline: "Offline" };
-const rotationOptions = [{ value: "auto", label: "Auto" }, { value: "portrait", label: "Portrait" }, { value: "landscape", label: "Landscape" }];
+const rotationOptions: SelectOption<"auto" | "portrait" | "landscape">[] = [{ value: "auto", label: "Auto" }, { value: "portrait", label: "Portrait" }, { value: "landscape", label: "Landscape" }];
 // One right-hand column, so every control lines up.
 const control = "w-38";
-
-function SettingsSelect({ id, value, items, disabled, onChange }: { id: string; value: string; items: Option[]; disabled: boolean; onChange: (value: string) => void }) {
-  return <Select items={items} value={value} disabled={disabled} onValueChange={next => { if (next !== null) onChange(next); }}>
-    <SelectTrigger id={id} className={`${control} min-w-0`}><SelectValue /></SelectTrigger>
-    <SelectContent align="start" alignItemWithTrigger={false} className="w-max min-w-(--anchor-width) max-w-(--available-width)"><SelectGroup>{items.map(item => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup></SelectContent>
-  </Select>;
-}
+const menuWidth = "w-max min-w-(--anchor-width) max-w-(--available-width)";
 
 // Steps through ordered options; the middle opens the full list to jump straight to a size.
 function Stepper({ id, value, items, disabled, onChange }: { id: string; value: string; items: Option[]; disabled: boolean; onChange: (value: string) => void }) {
@@ -48,12 +42,10 @@ function Stepper({ id, value, items, disabled, onChange }: { id: string; value: 
   const step = "h-full w-8 rounded-none text-muted-foreground hover:text-foreground focus-visible:z-10";
   return <div className={`${control} flex h-8 items-stretch rounded-lg border`}>
     <Button type="button" variant="ghost" size="icon-sm" className={`${step} rounded-l-lg`} aria-label="Smaller text" disabled={disabled || index <= 0} onClick={() => onChange(items[index - 1].value)}><MinusIcon /></Button>
-    <Select items={items} value={value} disabled={disabled} onValueChange={next => { if (next !== null) onChange(next); }}>
-      <SelectTrigger id={id} title={items[index]?.label} className="min-w-0 flex-1 justify-center rounded-none border-0 border-x px-1 text-xs font-medium data-[size=default]:h-auto hover:bg-muted/50 focus-visible:z-10 [&>svg]:hidden">
-        <span className="truncate">{items[index]?.short ?? items[index]?.label}</span>
-      </SelectTrigger>
-      <SelectContent align="center" alignItemWithTrigger={false} className="w-max min-w-(--anchor-width) max-w-(--available-width)"><SelectGroup>{items.map(item => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup></SelectContent>
-    </Select>
+    <OptionSelect id={id} title={items[index]?.label} className="min-w-0 flex-1 justify-center rounded-none border-0 border-x px-1 text-xs font-medium data-[size=default]:h-auto hover:bg-muted/50 focus-visible:z-10 [&>svg]:hidden"
+      align="center" contentClassName={menuWidth} items={items} value={value} disabled={disabled} onChange={onChange}>
+      <span className="truncate">{items[index]?.short ?? items[index]?.label}</span>
+    </OptionSelect>
     <Button type="button" variant="ghost" size="icon-sm" className={`${step} rounded-r-lg`} aria-label="Larger text" disabled={disabled || index < 0 || index >= items.length - 1} onClick={() => onChange(items[index + 1].value)}><PlusIcon /></Button>
   </div>;
 }
@@ -179,7 +171,7 @@ export function DeviceSettings({ platform }: { platform: "ios" | "android" }) {
       else void store.load().then(() => { if (store.getSnapshot().deviceId === deviceId && !store.getSnapshot().disabled) setOpen(true); });
     }}>
       <PopoverTrigger asChild><Button variant="ghost" size="icon" disabled={state.disabled} aria-label={`${platform === "ios" ? "iOS" : "Android"} device settings`} title="Device settings"><Settings2Icon /></Button></PopoverTrigger>
-      <PopoverContent side="top" align="end" className="max-h-(--radix-popover-content-available-height) w-[360px] max-w-[calc(100vw-16px)] space-y-4 overflow-y-auto p-4 text-sm" aria-label="Device settings" onInteractOutside={event => { if (event.target instanceof Element && event.target.closest('[data-slot="select-content"]')) event.preventDefault(); }}>
+      <PopoverContent side="top" align="end" className="max-h-(--radix-popover-content-available-height) w-[360px] max-w-[calc(100vw-16px)] space-y-4 overflow-y-auto p-4 text-sm" aria-label="Device settings">
         <Tabs value={activeTab} onValueChange={value => { setTab(value as "app" | "device"); if (value === "app") void appTools.load(); }} className="gap-4">
           <TabsList className="grid w-full grid-cols-2"><TabsTrigger value="app" disabled={appState.disabled}><AppWindowIcon />App</TabsTrigger><TabsTrigger value="device"><SmartphoneIcon />Device</TabsTrigger></TabsList>
           <AnimatedHeight>
@@ -198,7 +190,7 @@ export function DeviceSettings({ platform }: { platform: "ios" | "android" }) {
             {settings.contentSize !== undefined && <Row label="Text size" htmlFor={`${id}-text-size`}><Stepper id={`${id}-text-size`} value={settings.contentSize} items={contentSizeOptions} disabled={disabled} onChange={value => void store.change({ setting: "contentSize", value: value as typeof contentSizes[number] })} /></Row>}
             {settings.fontScale !== undefined && <Row label="Text size" htmlFor={`${id}-text-size`}><Stepper id={`${id}-text-size`} value={String(settings.fontScale)} items={fontScaleOptions(settings.fontScale)} disabled={disabled} onChange={value => void store.change({ setting: "fontScale", value: Number(value) })} /></Row>}
             {settings.increaseContrast !== undefined && <Row label="Increase contrast" htmlFor={`${id}-contrast`}><Switch id={`${id}-contrast`} checked={settings.increaseContrast} onCheckedChange={value => void store.change({ setting: "increaseContrast", value })} /></Row>}
-            {settings.orientation !== undefined && <Row label="Rotation" htmlFor={`${id}-rotation`}><SettingsSelect id={`${id}-rotation`} value={settings.orientation} items={rotationOptions} disabled={disabled} onChange={value => void store.change({ setting: "orientation", value: value as "auto" | "portrait" | "landscape" })} /></Row>}
+            {settings.orientation !== undefined && <Row label="Rotation" htmlFor={`${id}-rotation`}><OptionSelect id={`${id}-rotation`} className={`${control} min-w-0`} contentClassName={menuWidth} value={settings.orientation} items={rotationOptions} disabled={disabled} onChange={value => void store.change({ setting: "orientation", value })} /></Row>}
             {settings.statusBar !== undefined && <Row label="Clean status bar" htmlFor={`${id}-status-bar`}><Switch id={`${id}-status-bar`} checked={settings.statusBar === "clean"} onCheckedChange={value => void store.change({ setting: "statusBar", value: value ? "clean" : "live" })} /></Row>}
           </Group>
           {settings.network !== undefined && <NetworkGroup platform={platform} network={settings.network} store={store} appTools={appTools} />}

@@ -1,19 +1,19 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ActivityIcon, RefreshCwIcon, SlidersHorizontalIcon, SquareIcon } from "lucide-react";
 import type { PerformancePanel } from "../performance-panel.ts";
-import { SIDEBAR_WIDTH, TIMELINE_HEIGHT } from "../performance/constants";
-import { useCursorTracking } from "../performance/useCursorTracking";
-import { useTimelineViewport } from "../performance/useTimelineViewport";
-import { TimelineChartWidth } from "../performance/TimelineChartWidth";
+import { SIDEBAR_WIDTH, TIMELINE_HEIGHT } from "./performance/constants";
+import { useCursorTracking } from "./performance/useCursorTracking";
+import { useTimelineViewport } from "./performance/useTimelineViewport";
+import { TimelineChartWidth } from "./performance/TimelineChartWidth";
 import { CpuTrack } from "./performance/CpuTrack";
 import { MemoryTrack } from "./performance/MemoryTrack";
 import { DisplayFpsTrack } from "./performance/DisplayFpsTrack";
 import { TimelineRuler } from "./performance/TimelineRuler";
 import { Button } from "./ui/button";
-import { NativeSelect, NativeSelectOption } from "./ui/native-select";
+import { OptionSelect } from "./ui/option-select";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { Field, FieldLabel, FieldDescription } from "./ui/field";
-import { Alert, AlertDescription } from "./ui/alert";
+import { BannerAlert } from "./banner-alert";
 
 export function PerformanceView({ panel }: { panel: PerformancePanel }) {
   const state = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
@@ -23,11 +23,6 @@ export function PerformanceView({ panel }: { panel: PerformancePanel }) {
   const { cursorLabel, handleMouseMove, handleMouseLeave } = useCursorTracking(container, scrollElement, SIDEBAR_WIDTH, zoom);
   useEffect(() => { if (state.fpsMonitoring === false && (state.phase === "connecting" || state.phase === "idle")) reset(); }, [state.phase, state.fpsMonitoring, reset]);
   const selectedRunning = state.apps.some(app => app.bundleId === state.bundleId);
-  const monitoring = state.monitoring || state.fpsMonitoring;
-  let phase = state.phase;
-  if (state.fpsPhase === "recording") phase = "recording";
-  else if (state.fpsPhase === "connecting" && state.monitoring === false) phase = "connecting";
-  else if (state.fpsPhase === "failed" && state.monitoring === false) phase = "failed";
 
   return <section id="performance-drawer" className="flex h-full min-h-0 min-w-0 flex-col" role="tabpanel" aria-label="Performance">
     <header className="panel-toolbar flex h-[49px] shrink-0 items-center gap-2 border-b px-2">
@@ -36,32 +31,31 @@ export function PerformanceView({ panel }: { panel: PerformancePanel }) {
         <div className="truncate" title={state.bundleId}>{state.bundleId || "Performance"}</div>
         <div className="truncate text-[10px] text-muted-foreground">{state.selectedLabel}</div>
       </div>
-      <span id="performance-status" role="status" className="shrink-0 text-[11px] text-muted-foreground capitalize">{phase === "recording" ? "Live" : phase}</span>
-      {monitoring ? <Button variant="ghost" size="icon-sm" title="Stop performance monitoring" aria-label="Stop performance monitoring" onClick={() => void panel.disconnect()}><SquareIcon /></Button>
+      <span id="performance-status" role="status" className="shrink-0 text-[11px] text-muted-foreground capitalize">{state.displayPhase === "recording" ? "Live" : state.displayPhase}</span>
+      {state.running ?<Button variant="ghost" size="icon-sm" title="Stop performance monitoring" aria-label="Stop performance monitoring" onClick={() => void panel.disconnect()}><SquareIcon /></Button>
         : <Button variant="ghost" size="icon-sm" title="Start performance monitoring" aria-label="Start performance monitoring" disabled={state.available === false || (state.fpsSupported === false && selectedRunning === false)} onClick={() => panel.show()}><ActivityIcon /></Button>}
       <Popover>
         <PopoverTrigger asChild><Button variant="ghost" size="icon-sm" aria-label="Performance settings" title="Performance settings"><SlidersHorizontalIcon /></Button></PopoverTrigger>
         <PopoverContent align="end" className="w-[min(340px,calc(100vw-24px))] p-3">
           <Field className="gap-2">
             <div className="flex items-center justify-between gap-2"><FieldLabel htmlFor="performance-app" className="text-xs">{state.selectedLabel}</FieldLabel><Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs" aria-label="Refresh running apps" disabled={state.available === false || state.discovering} onClick={() => void panel.refreshApps()}><RefreshCwIcon />Refresh</Button></div>
-            <NativeSelect id="performance-app" className="w-full" value={state.bundleId} onChange={event => panel.selectApp(event.target.value)}>
-              <NativeSelectOption value="">Choose an app</NativeSelectOption>
-              {state.bundleId && selectedRunning === false && <NativeSelectOption value={state.bundleId}>{state.bundleId} · Waiting for app</NativeSelectOption>}
-              {state.apps.map(app => <NativeSelectOption key={app.bundleId} value={app.bundleId}>{app.bundleId} · {app.pid}</NativeSelectOption>)}
-            </NativeSelect>
+            <OptionSelect id="performance-app" className="w-full" value={state.bundleId} onChange={bundleId => panel.selectApp(bundleId)} items={[
+              { value: "", label: "Choose an app" },
+              ...state.bundleId && selectedRunning === false ? [{ value: state.bundleId, label: `${state.bundleId} · Waiting for app` }] : [],
+              ...state.apps.map(app => ({ value: app.bundleId, label: `${app.bundleId} · ${app.pid}` })),
+            ]} />
             <FieldDescription className="text-[11px]">{state.platform === "android"
               ? "Open an app on this Android device. CPU and memory monitoring work with release builds too."
               : state.physical ? "Open a development build on this paired iPhone with Developer Mode enabled. Detach Xcode or LLDB before connecting."
               : "Open a development build in the iOS simulator. Detach Xcode or LLDB before connecting."}</FieldDescription>
           </Field>
-          {state.sourceError && <p role="alert" className="mt-2 text-xs text-destructive">{state.sourceError}</p>}
         </PopoverContent>
       </Popover>
     </header>
     {/* The timeline's sticky column and fades layer within the chart, below the host's menus. */}
     <div className="relative isolate flex min-h-0 flex-col">
       <div ref={setScrollElement} onScroll={handleScroll} className="min-h-0 overflow-auto" data-performance-scroll>
-        {state.sourceError && <Alert variant="destructive" className="rounded-none border-x-0 border-t-0"><AlertDescription>{state.sourceError}</AlertDescription></Alert>}
+        {state.sourceError && <BannerAlert>{state.sourceError}</BannerAlert>}
         <div ref={container} style={{ width: contentWidth, minWidth: "100%" }} onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave} aria-label="Live CPU, memory and display FPS">
           <TimelineChartWidth.Provider value={chartWidth}>
             <div className="flex border-b" style={{ height: TIMELINE_HEIGHT }}>

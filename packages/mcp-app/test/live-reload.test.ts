@@ -6,7 +6,7 @@ import { startLiveReload } from "../src/live-reload.ts";
 
 test("live reload waits for stream cleanup and keeps the workspace view", async t => {
   const revision = "a".repeat(64);
-  const dom = new JSDOM(`<html data-view="workspace"><head><meta name="mobile-dev-live-revision" content="${revision}"></head><body>old</body></html>`, { runScripts: "dangerously" });
+  const dom = new JSDOM(`<html data-view="workspace" data-layout="split"><head><meta name="mobile-dev-live-revision" content="${revision}"></head><body>old</body></html>`, { runScripts: "dangerously" });
   t.after(() => dom.window.close());
   const events: string[] = [];
   let finishCleanup!: () => void;
@@ -18,7 +18,7 @@ test("live reload waits for stream cleanup and keeps the workspace view", async 
   const app = {
     async readServerResource({ uri }: { uri: string }) {
       assert.equal(uri, `ui://mobile-dev/live?after=${revision}`);
-      return { contents: [{ text: JSON.stringify({ revision: "b".repeat(64), html: '<html data-view="panel" data-layout="stacked"><head></head><body><div id="root">jonas</div><script>window.dispatchEvent(new Event("mobile-dev-host-probe"))</script></body></html>' }) }] };
+      return { contents: [{ text: JSON.stringify({ revision: "b".repeat(64), html: '<html lang="en" data-view="panel" data-layout="stacked"><head></head><body><div id="root">jonas</div><script>window.dispatchEvent(new Event("mobile-dev-host-probe"))</script></body></html>' }) }] };
     },
     async close() { events.push("closed"); },
   } as unknown as App;
@@ -34,6 +34,7 @@ test("live reload waits for stream cleanup and keeps the workspace view", async 
   assert.deepEqual(events, ["disposing", "disposed", "closed", "written"]);
   assert.equal(dom.window.document.documentElement.dataset.view, "workspace");
   assert.equal(dom.window.document.documentElement.dataset.layout, "split");
+  assert.equal(dom.window.document.documentElement.lang, "en", "The page takes the update's other attributes");
   assert.equal(dom.window.document.getElementById("root")?.textContent, "jonas");
   assert.equal(hostEvents, 1, "The new script runs and the host's window listener survives");
 });

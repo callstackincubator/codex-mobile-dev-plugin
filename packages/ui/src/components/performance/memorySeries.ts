@@ -1,6 +1,5 @@
 import type { CpuPoint, CpuSample } from "@mobile-dev/shared/cpu.ts";
-
-const BYTES_PER_MIB = 1024 * 1024;
+import { mebibytes } from "../../recording-format.ts";
 
 export function createMemorySeries(samples: CpuSample[]) {
   const data: CpuPoint[] = [];
@@ -9,7 +8,7 @@ export function createMemorySeries(samples: CpuSample[]) {
   let minimum: number | null = null;
   let maximum: number | null = null;
   for (const sample of samples) {
-    const value = sample.memoryBytes === null ? null : sample.memoryBytes / BYTES_PER_MIB;
+    const value = sample.memoryBytes === null ? null : mebibytes(sample.memoryBytes);
     data.push({ time: sample.time, value });
     if (value === null) continue;
     sum += value;

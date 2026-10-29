@@ -1,4 +1,26 @@
-import type { StorageEntry, StorageStore } from "@mobile-dev/shared/app-storage.ts";
+import { appleDate } from "@mobile-dev/shared/app-storage.ts";
+import type { StorageEntry, StorageSnapshot, StorageStore } from "@mobile-dev/shared/app-storage.ts";
+
+export const plural = (count: number, noun: string, nouns = `${noun}s`) => `${count} ${count === 1 ? noun : nouns}`;
+
+// Core Data and SwiftData keep dates in TIMESTAMP columns as seconds since 2001-01-01.
+export const appleTimestamp = (type: string, cell: string | number) => typeof cell === "number" && /^timestamp$/i.test(type) ? appleDate(cell) : undefined;
+
+export type ContainerPart = "Caches" | "Databases" | "Preferences" | "Other";
+
+// Approximate split of the data directory by what owns each listed file.
+export function containerBreakdown(snapshot: StorageSnapshot): { part: ContainerPart; bytes: number }[] {
+  const owners = new Map(snapshot.stores.map(store => [store.id, store.kind]));
+  const parts = { Databases: 0, Preferences: 0, Caches: 0 };
+  for (const file of snapshot.files) {
+    const kind = file.store ? owners.get(file.store) : undefined;
+    if (kind === "sqlite" || kind === "realm" || kind === "async-storage") parts.Databases += file.bytes;
+    else if (kind) parts.Preferences += file.bytes;
+    else if (/^(?:Library\/Caches|tmp|cache|code_cache)\//.test(file.path)) parts.Caches += file.bytes;
+  }
+  const other = Math.max(0, snapshot.totalBytes - parts.Databases - parts.Preferences - parts.Caches);
+  return [{ part: "Caches", bytes: parts.Caches }, { part: "Databases", bytes: parts.Databases }, { part: "Preferences", bytes: parts.Preferences }, { part: "Other", bytes: other }];
+}
 
 // Stores written by analytics, crash, and attribution SDKs rather than the app's own code.
 const sdkStore = /^(?:APM|FIR|GUL|GDT|com\.(?:google|firebase|crashlytics|facebook|appsflyer|braze|segment|amplitude|mixpanel|onesignal|sentry|datadog|branch)|google[-_]|io\.branch|WebViewChromium|AppsFlyer|Branch|io\.sentry|com\.apple\.|expo\.modules\.)/i;
