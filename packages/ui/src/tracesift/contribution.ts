@@ -9,6 +9,9 @@ import type {
   TraceSiftBoundaryCulprit, TraceSiftBoundaryFrame, TraceSiftReactCard, TraceSiftTaskCard,
 } from "@mobile-dev/shared/tracesift.ts";
 
+/** How a card draws its contribution: one bar of bands, or a treemap of tiles. */
+export type ContributionChartKind = "bar" | "treemap";
+
 /** Slices a level carries before folding its tail; also the palette size. */
 export const CHART_SLICES = 8;
 

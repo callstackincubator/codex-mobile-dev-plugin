@@ -6,7 +6,8 @@ import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { createServer } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
-import { traceSiftAnalysisSchema, traceSiftHandoffSchema, type TraceSiftAnalysis, type TraceSiftProfileType, type TraceSiftReactHandoff, type TraceSiftTaskHandoff } from "@mobile-dev/shared/tracesift.ts";
+import type { ReactCard, ReactExplore, ReactExploreHandoff, TaskCard, TaskHandoff } from "@callstack/tracesift-explore";
+import { traceSiftAnalysisSchema, traceSiftHandoffSchema, type TraceSiftAnalysis, type TraceSiftProfileType } from "@mobile-dev/shared/tracesift.ts";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 
 const STARTUP_TIMEOUT_MS = 60_000;
@@ -339,7 +340,7 @@ export class TraceSiftClient {
   }
 
   /** One task with its call tree and timeline, which `/analyze` never ships. Checked at its seams only. */
-  async exploreTask(analysisId: string, taskIndex: number, signal?: AbortSignal): Promise<TraceSiftTaskHandoff> {
+  async exploreTask(analysisId: string, taskIndex: number, signal?: AbortSignal): Promise<TaskHandoff> {
     const body = await this.request(`/api/integration/v1/task?analysisId=${encodeURIComponent(analysisId)}&taskIndex=${taskIndex}`, { method: "GET" }, signal, EXPLORE_UNSUPPORTED);
     if (typeof body !== "object" || body === null) throw new Error("TraceSift returned an invalid task response.");
     const value = body as Record<string, unknown>;
@@ -349,11 +350,11 @@ export class TraceSiftClient {
       || (value.card as Record<string, unknown>).tree === null || typeof (value.card as Record<string, unknown>).timeline !== "object"
       || (value.card as Record<string, unknown>).timeline === null) throw new Error("TraceSift returned an invalid task response.");
     // The service names the profile `title`, the explorer's hand-off `profileTitle`.
-    return { analysisId: value.analysisId, profileTitle: value.title, totalMs: value.totalMs, card: value.card as Record<string, unknown> };
+    return { analysisId: value.analysisId, profileTitle: value.title, totalMs: value.totalMs, card: value.card as TaskCard };
   }
 
   /** Every commit timeline of one React analysis. */
-  async exploreReact(analysisId: string, signal?: AbortSignal): Promise<TraceSiftReactHandoff> {
+  async exploreReact(analysisId: string, signal?: AbortSignal): Promise<ReactExploreHandoff> {
     const body = await this.request(`/api/integration/v1/react-explore?analysisId=${encodeURIComponent(analysisId)}`, { method: "GET" }, signal, EXPLORE_UNSUPPORTED);
     if (typeof body !== "object" || body === null) throw new Error("TraceSift returned an invalid commit timeline response.");
     const value = body as Record<string, unknown>;
@@ -361,7 +362,7 @@ export class TraceSiftClient {
       || typeof value.explore !== "object" || value.explore === null || !Array.isArray(value.cards)) {
       throw new Error("TraceSift returned an invalid commit timeline response.");
     }
-    return { analysisId: value.analysisId, profileTitle: value.title, explore: value.explore, cards: value.cards };
+    return { analysisId: value.analysisId, profileTitle: value.title, explore: value.explore as ReactExplore, cards: value.cards as ReactCard[] };
   }
 
   async handoff(analysisId: string, cardId: string, signal?: AbortSignal) {
