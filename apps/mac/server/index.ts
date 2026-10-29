@@ -4,4 +4,4 @@ import { createPanel } from "@mobile-dev/core/panel-tools.ts";
 import { macTelemetry } from "./mac-telemetry.ts";
 
 // The Mac app's server: the shared server with Mobile Dev's panel, plus the telemetry metadata its page reads.
-await runStdioServer({ panel: createPanel(), features: [macTelemetry] });
+await runStdioServer({ panel: createPanel(), features: [macTelemetry], telemetryHost: "mac" });
