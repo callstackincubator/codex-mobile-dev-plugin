@@ -1,8 +1,9 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFile, mkdir, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import { buildNativeSentry, nativeTelemetrySourceHash, nativeSentryLicense } from "./native-telemetry.mjs";
+import { saveDarwinSymbols } from "./native-symbols.mjs";
 
 export async function iosLogsSourceHash() {
   const hash = createHash("sha256");
@@ -74,10 +75,7 @@ if (executedScriptPath === buildScriptPath) {
   execFileSync("clang", ["-std=c11", "-O2", "-g", "-Wall", "-Wextra", "-Werror", "-arch", "arm64", "-mmacosx-version-min=14.0",
     "-DSENTRY_BUILD_STATIC=1", "-I", sdk.include, "packages/native/ios-logs/collector.c", "packages/native/telemetry/telemetry.c",
     sdk.library, "-lcurl", ...flags, "-o", executable], { stdio: "inherit" });
-  const symbols = resolve(".sentry/native/darwin-arm64/mobile-dev-ios-logs.dSYM");
-  await mkdir(".sentry/native/darwin-arm64", { recursive: true });
-  await rm(symbols, { recursive: true, force: true });
-  await rename(`${executable}.dSYM`, symbols);
+  await saveDarwinSymbols(`${executable}.dSYM`, "mobile-dev-ios-logs", { move: true });
   execFileSync("strip", ["-x", executable]);
   const libraryFiles = await readdir(`${prefix}/lib`);
   const libraries = new Map();

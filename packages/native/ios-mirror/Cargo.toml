@@ -1,19 +1,19 @@
 [package]
 name = "mobile-dev-ios-mirror"
-version = "0.1.0"
-edition = "2024"
-license = "MIT"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
 
 [lib]
 crate-type = ["cdylib"]
 
 [dependencies]
-mobile-dev-telemetry = { path = "../telemetry" }
-idevice = { git = "https://github.com/jkcoxson/idevice", rev = "a64b8867815b3da17b5c927531bdba877e8456ef", default-features = false, features = ["ring", "usbmuxd", "core_device_proxy", "tunnel_tcp_stack", "display_stream"] }
+mobile-dev-telemetry.workspace = true
+idevice = { workspace = true, features = ["ring", "usbmuxd", "core_device_proxy", "tunnel_tcp_stack", "display_stream"] }
 napi = { version = "3", default-features = false, features = ["napi8", "tokio_rt"] }
 napi-derive = "3"
-plist = "1.8"
-tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time"] }
+plist.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "sync", "macros", "time"] }
 uuid = { version = "1", features = ["v4"] }
 flate2 = "1"
 thiserror = "2"
@@ -21,10 +21,3 @@ web-time = "1"
 
 [build-dependencies]
 napi-build = "2"
-
-[profile.release]
-lto = true
-strip = false
-debug = 2
-split-debuginfo = "packed"
-codegen-units = 1

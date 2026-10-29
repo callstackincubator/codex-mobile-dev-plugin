@@ -53,6 +53,7 @@ for (const source of iosLogsRelease.sources) {
 for (const file of ["README.md", "LICENSE", "collector.c", "dependencies.json"]) await copyFile(`packages/native/ios-logs/${file}`, `dist/ios-logs/${file}`);
 await copyFile("tooling/build-ios-logs.mjs", "dist/ios-logs/build-ios-logs.mjs");
 await copyFile("tooling/native-telemetry.mjs", "dist/ios-logs/native-telemetry.mjs");
+await copyFile("tooling/native-symbols.mjs", "dist/ios-logs/native-symbols.mjs");
 await mkdir("dist/telemetry", { recursive: true });
 for (const file of ["telemetry.c", "telemetry.h"]) await copyFile(`packages/native/telemetry/${file}`, `dist/telemetry/${file}`);
 for (const platform of ["ios", "android"]) {

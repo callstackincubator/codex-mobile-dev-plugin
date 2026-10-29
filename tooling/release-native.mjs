@@ -19,16 +19,19 @@ const androidFpsSymbols = androidSymbols("mobile-dev-fps");
 const androidCpuSymbols = androidSymbols("mobile-dev-cpu");
 const androidFpsBinaries = androidAbis.map(abi => `${abi}/mobile-dev-fps`);
 const androidCpuBinaries = androidAbis.map(abi => `${abi}/mobile-dev-cpu`);
+// The Rust helpers build in one Cargo workspace with shared crates.
+const rustScripts = ["native-rust.mjs", "native-symbols.mjs"];
+const rustInputs = ["packages/native/Cargo.toml", "packages/native/Cargo.lock"];
 
 export const nativeHelpers = [
   { name: "baguette", command: "vendor:baguette", scripts: ["vendor-baguette.mjs", ...baguetteBuildScripts],
     inputs: ["packages/native/vendor/baguette-release.json"], tools: ["darwin", "swift"],
     symbols: [".sentry/native/darwin-arm64/Baguette.dSYM"], binaries: ["Baguette", "Baguette_Baguette.bundle"] },
-  { name: "ios-fps", command: "rebuild:ios-fps", scripts: ["build-fps.mjs"], inputs: [], tools: ["darwin", "rust"],
+  { name: "ios-fps", command: "rebuild:ios-fps", scripts: ["build-fps.mjs", ...rustScripts], inputs: rustInputs, tools: ["darwin", "rust"],
     symbols: [".sentry/native/darwin-arm64/mobile-dev-ios-fps.dSYM"], binaries: ["mobile-dev-ios-fps"] },
-  { name: "ios-mirror", command: "rebuild:ios-mirror", scripts: ["build-ios-mirror.mjs"], inputs: [], tools: ["darwin", "rust"],
+  { name: "ios-mirror", command: "rebuild:ios-mirror", scripts: ["build-ios-mirror.mjs", ...rustScripts], inputs: rustInputs, tools: ["darwin", "rust"],
     symbols: [".sentry/native/darwin-arm64/darwin-arm64.node.dSYM"], binaries: ["darwin-arm64.node"] },
-  { name: "ios-logs", command: "rebuild:ios-logs", scripts: ["build-ios-logs.mjs"], inputs: [], tools: ["darwin", "iosLogs"],
+  { name: "ios-logs", command: "rebuild:ios-logs", scripts: ["build-ios-logs.mjs", "native-symbols.mjs"], inputs: [], tools: ["darwin", "iosLogs"],
     symbols: [".sentry/native/darwin-arm64/mobile-dev-ios-logs.dSYM"], binaries: ["mobile-dev-ios-logs"] },
   { name: "android-fps", command: "rebuild:android-fps", scripts: ["build-fps.mjs"], inputs: [], tools: ["android"],
     symbols: androidFpsSymbols, binaries: androidFpsBinaries },

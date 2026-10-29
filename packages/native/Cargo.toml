@@ -1,0 +1,24 @@
+# The Rust native helpers share one lockfile and target directory. Build each
+# binary with `-p` so idevice features stay those of that helper alone.
+[workspace]
+resolver = "3"
+members = ["telemetry", "ios-fps", "ios-mirror"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[workspace.dependencies]
+mobile-dev-telemetry = { path = "telemetry" }
+idevice = { git = "https://github.com/jkcoxson/idevice", rev = "a64b8867815b3da17b5c927531bdba877e8456ef", default-features = false }
+plist = "1.8"
+serde_json = "1"
+tokio = "1"
+
+[profile.release]
+lto = true
+strip = false
+debug = 2
+split-debuginfo = "packed"
+codegen-units = 1

@@ -8,4 +8,4 @@ A standalone macOS arm64 helper using idevice's paired-device CoreDeviceProxy us
 
 `mobile-dev-ios-fps foreground <UDID>` queries the paired accessibility audit service for the current screen element and emits one JSON line containing its owning `pid`, or `null` when no element is available. The 20-byte physical-device token starts with a little-endian process ID. The server matches it only against eligible development apps' main processes. The query leaves inspector visuals hidden and event monitoring neutral, without moving focus or interacting with the screen. Inspector and app monitoring state are cleaned up after success, failure, timeout or SIGTERM. Connection failures and unsupported token formats report an error; they never select a guessed app.
 
-Build using `npm run rebuild:ios-fps`. Cargo.lock and the idevice Git revision pin dependencies; the build records source and binary SHA-256 hashes and dependency licenses in vendor/ios-fps.
+Build using `npm run rebuild:ios-fps`. The shared `packages/native/Cargo.lock` and the idevice Git revision pin dependencies; the build records source and binary SHA-256 hashes and dependency licenses in vendor/ios-fps.
