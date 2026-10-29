@@ -130,13 +130,53 @@ fn decode_rbsp(ebsp: &[u8]) -> Result<Vec<u8>, HevcDiscontinuity> {
     Ok(rbsp)
 }
 
-/// Skips HEVC `profile_tier_level(1, max_sub_layers_minus1)`.
-fn skip_profile_tier_level(
+/// The general profile, tier and level fields of `profile_tier_level`, in
+/// their bitstream order. These are the 12 bytes the hvcC record copies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GeneralProfile {
+    /// `general_profile_space` (0..=3).
+    pub profile_space: u8,
+    /// `general_tier_flag`; true for the High tier.
+    pub high_tier: bool,
+    /// `general_profile_idc` (0..=31).
+    pub profile_idc: u8,
+    /// `general_profile_compatibility_flag[0..32]`, flag 0 in the most significant bit.
+    pub compatibility_flags: u32,
+    /// The 48 bits from `general_progressive_source_flag` through
+    /// `general_inbld_flag`/reserved, in bitstream order.
+    pub constraint_flags: [u8; 6],
+    /// `general_level_idc` (30 times the level number).
+    pub level_idc: u8,
+}
+
+/// The SPS fields the decoder configuration needs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SpsInfo {
+    pub profile: GeneralProfile,
+    /// `chroma_format_idc`: 0 monochrome, 1 4:2:0, 2 4:2:2, 3 4:4:4.
+    pub chroma_format_idc: u8,
+    pub bit_depth_luma: u8,
+    pub bit_depth_chroma: u8,
+    /// Displayed luma-sample width after applying the conformance window.
+    pub pixel_width: u32,
+    /// Displayed luma-sample height after applying the conformance window.
+    pub pixel_height: u32,
+}
+
+/// Reads HEVC `profile_tier_level(1, max_sub_layers_minus1)`, keeping the
+/// general fields and skipping the sub-layer ones.
+fn read_profile_tier_level(
     bits: &mut BitReader<'_>,
     max_sub_layers_minus1: usize,
-) -> Result<(), HevcDiscontinuity> {
-    // General profile fields are 88 bits, followed by general_level_idc.
-    bits.skip_bits(96)?;
+) -> Result<GeneralProfile, HevcDiscontinuity> {
+    let profile_space = bits.read_bits(2)? as u8;
+    let high_tier = bits.read_bit()?;
+    let profile_idc = bits.read_bits(5)? as u8;
+    let compatibility_flags = bits.read_bits(32)? as u32;
+    let constraint_bits = bits.read_bits(48)?.to_be_bytes();
+    let mut constraint_flags = [0; 6];
+    constraint_flags.copy_from_slice(&constraint_bits[2..]);
+    let level_idc = bits.read_bits(8)? as u8;
 
     let mut profile_present = [false; 6];
     let mut level_present = [false; 6];
@@ -159,17 +199,26 @@ fn skip_profile_tier_level(
             bits.read_bits(8)?;
         }
     }
-    Ok(())
+    Ok(GeneralProfile {
+        profile_space,
+        high_tier,
+        profile_idc,
+        compatibility_flags,
+        constraint_flags,
+        level_idc,
+    })
 }
 
-/// Parses the dimension-bearing SPS prefix and returns displayed luma-sample
-/// dimensions after conformance-window cropping.
+/// Parses the SPS through its bit depths: the general profile, chroma format,
+/// displayed luma-sample dimensions after conformance-window cropping, and the
+/// luma/chroma bit depths.
 ///
-/// The parser intentionally stops after the conformance window; the remaining
-/// SPS syntax is consumed by the decoder. Every bit needed to derive geometry
-/// is range-checked, and malformed EBSP, Exp-Golomb overflow, invalid chroma
-/// formats, impossible sub-layer counts, or over-cropping are rejected.
-pub(super) fn parse_sps_dimensions(sps: &[u8]) -> Result<(u32, u32), HevcDiscontinuity> {
+/// The parser intentionally stops after `bit_depth_chroma_minus8`; the
+/// remaining SPS syntax is consumed by the decoder. Every bit it reads is
+/// range-checked, and malformed EBSP, Exp-Golomb overflow, invalid chroma
+/// formats or bit depths, impossible sub-layer counts, or over-cropping are
+/// rejected.
+pub(super) fn parse_sps(sps: &[u8]) -> Result<SpsInfo, HevcDiscontinuity> {
     if sps.len() > MAX_PARAMETER_SET_SIZE {
         return Err(HevcDiscontinuity::ParameterSetTooLarge);
     }
@@ -197,7 +246,7 @@ pub(super) fn parse_sps_dimensions(sps: &[u8]) -> Result<(u32, u32), HevcDiscont
     if max_sub_layers_minus1 == 0 && !temporal_id_nesting {
         return Err(HevcDiscontinuity::MalformedPayload);
     }
-    skip_profile_tier_level(&mut bits, max_sub_layers_minus1)?;
+    let profile = read_profile_tier_level(&mut bits, max_sub_layers_minus1)?;
 
     let sequence_parameter_set_id = bits.read_ue()?;
     if sequence_parameter_set_id > 15 {
@@ -255,7 +304,25 @@ pub(super) fn parse_sps_dimensions(sps: &[u8]) -> Result<(u32, u32), HevcDiscont
         .checked_sub(vertical_crop)
         .filter(|height| *height > 0)
         .ok_or(HevcDiscontinuity::MalformedPayload)?;
-    Ok((pixel_width, pixel_height))
+    let bit_depth_luma = read_bit_depth(&mut bits)?;
+    let bit_depth_chroma = read_bit_depth(&mut bits)?;
+    Ok(SpsInfo {
+        profile,
+        chroma_format_idc: chroma_format_idc as u8,
+        bit_depth_luma,
+        bit_depth_chroma,
+        pixel_width,
+        pixel_height,
+    })
+}
+
+/// Reads `bit_depth_*_minus8`, which HEVC limits to 0..=8.
+fn read_bit_depth(bits: &mut BitReader<'_>) -> Result<u8, HevcDiscontinuity> {
+    let minus8 = bits.read_ue()?;
+    if minus8 > 8 {
+        return Err(HevcDiscontinuity::MalformedPayload);
+    }
+    Ok(minus8 as u8 + 8)
 }
 
 #[cfg(test)]

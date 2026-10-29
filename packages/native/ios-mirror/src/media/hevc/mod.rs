@@ -23,6 +23,7 @@ mod sps;
 mod test_support;
 
 pub use assembler::HevcAccessUnitAssembler;
+pub use sps::{GeneralProfile, SpsInfo};
 
 const HEVC_NAL_HEADER_LEN: usize = 2;
 
@@ -76,15 +77,12 @@ fn validate_payload_header(payload: &[u8]) -> Result<(), HevcDiscontinuity> {
 /// NAL bytes include the two-byte HEVC header and exclude Annex-B start codes
 /// and length prefixes. `revision` starts at one and advances only when a
 /// complete, non-dropped access unit commits changed parameter-set bytes.
-/// Pixel dimensions come from that same committed SPS after applying its
-/// conformance window.
+/// `sps` is parsed from that same committed SPS; its pixel dimensions already
+/// apply the conformance window.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HevcParameterSets {
     pub revision: u64,
-    /// Displayed luma-sample width after applying the SPS conformance window.
-    pub pixel_width: u32,
-    /// Displayed luma-sample height after applying the SPS conformance window.
-    pub pixel_height: u32,
+    pub sps: SpsInfo,
     pub video_parameter_set: Vec<u8>,
     pub sequence_parameter_set: Vec<u8>,
     pub picture_parameter_set: Vec<u8>,

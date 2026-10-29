@@ -77,6 +77,7 @@ impl TestBitWriter {
     }
 }
 
+/// An 8-bit SPS prefix through `bit_depth_chroma_minus8` with the Main profile.
 pub(super) fn synthetic_sps_prefix(
     width: u32,
     height: u32,
@@ -84,12 +85,26 @@ pub(super) fn synthetic_sps_prefix(
     separate_colour_plane: bool,
     crop: Option<(u32, u32, u32, u32)>,
 ) -> Vec<u8> {
+    synthetic_sps_with_format(1, width, height, chroma_format_idc, separate_colour_plane, crop, (0, 0))
+}
+
+/// An SPS prefix through `bit_depth_chroma_minus8` for `profile_idc` with its
+/// matching compatibility flag and the given `bit_depth_*_minus8` values.
+pub(super) fn synthetic_sps_with_format(
+    profile_idc: u8,
+    width: u32,
+    height: u32,
+    chroma_format_idc: u32,
+    separate_colour_plane: bool,
+    crop: Option<(u32, u32, u32, u32)>,
+    bit_depth_minus8: (u32, u32),
+) -> Vec<u8> {
     let mut bits = TestBitWriter::default();
     bits.bits(0, 4); // sps_video_parameter_set_id
     bits.bits(0, 3); // sps_max_sub_layers_minus1
     bits.bit(true); // sps_temporal_id_nesting_flag
-    bits.bits(1, 8); // Main profile
-    bits.bits(1 << 30, 32); // Main compatibility flag
+    bits.bits(u64::from(profile_idc), 8); // Main tier, profile_idc
+    bits.bits(1 << (31 - profile_idc), 32); // matching compatibility flag
     bits.bits(0, 48); // general constraint flags
     bits.bits(120, 8); // general_level_idc
     bits.ue(0); // sps_seq_parameter_set_id
@@ -106,6 +121,8 @@ pub(super) fn synthetic_sps_prefix(
         bits.ue(top);
         bits.ue(bottom);
     }
+    bits.ue(bit_depth_minus8.0);
+    bits.ue(bit_depth_minus8.1);
 
     let mut nal = vec![NAL_TYPE_SPS << 1, 1];
     nal.extend_from_slice(&encode_test_ebsp(&bits.finish()));
@@ -152,6 +169,8 @@ pub(super) fn synthetic_sps_with_sub_layers(
     bits.ue(320);
     bits.ue(180);
     bits.bit(false);
+    bits.ue(0); // bit_depth_luma_minus8
+    bits.ue(0); // bit_depth_chroma_minus8
     let mut nal = vec![NAL_TYPE_SPS << 1, 1];
     nal.extend_from_slice(&encode_test_ebsp(&bits.finish()));
     nal

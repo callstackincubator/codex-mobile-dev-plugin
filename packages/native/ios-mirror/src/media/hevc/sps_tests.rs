@@ -2,22 +2,84 @@ use super::*;
 use crate::media::hevc::test_support::*;
 use crate::media::hevc::{NAL_TYPE_SPS, NAL_TYPE_VPS};
 
+fn dimensions(sps: &[u8]) -> Result<(u32, u32), HevcDiscontinuity> {
+    parse_sps(sps).map(|info| (info.pixel_width, info.pixel_height))
+}
+
 #[test]
 fn parses_dimensions_from_generated_and_official_conformance_sps_fixtures() {
-    assert_eq!(parse_sps_dimensions(SYNTHETIC_64_X_64_SPS), Ok((64, 64)));
-    assert_eq!(parse_sps_dimensions(SYNTHETIC_96_X_64_SPS), Ok((96, 64)));
+    assert_eq!(dimensions(SYNTHETIC_64_X_64_SPS), Ok((64, 64)));
+    assert_eq!(dimensions(SYNTHETIC_96_X_64_SPS), Ok((96, 64)));
     assert_eq!(
-        parse_sps_dimensions(SYNTHETIC_96_X_66_CROPPED_SPS),
+        dimensions(SYNTHETIC_96_X_66_CROPPED_SPS),
         Ok((96, 66))
     );
     assert_eq!(
-        parse_sps_dimensions(OFFICIAL_CONFWIN_412_X_236_SPS),
+        dimensions(OFFICIAL_CONFWIN_412_X_236_SPS),
         Ok((412, 236))
     );
     assert_eq!(
-        parse_sps_dimensions(OFFICIAL_FOUR_LAYER_416_X_240_SPS),
+        dimensions(OFFICIAL_FOUR_LAYER_416_X_240_SPS),
         Ok((416, 240))
     );
+}
+
+#[test]
+fn parses_the_general_profile_chroma_format_and_bit_depths() {
+    assert_eq!(
+        parse_sps(SYNTHETIC_64_X_64_SPS),
+        Ok(SpsInfo {
+            profile: GeneralProfile {
+                profile_space: 0,
+                high_tier: false,
+                profile_idc: 4,
+                compatibility_flags: 0x0800_0000,
+                constraint_flags: [0x9f, 0xa8, 0, 0, 0, 0],
+                level_idc: 255,
+            },
+            chroma_format_idc: 1,
+            bit_depth_luma: 8,
+            bit_depth_chroma: 8,
+            pixel_width: 64,
+            pixel_height: 64,
+        })
+    );
+    let official = parse_sps(OFFICIAL_CONFWIN_412_X_236_SPS).expect("valid conformance SPS");
+    assert_eq!(
+        official.profile,
+        GeneralProfile {
+            profile_space: 0,
+            high_tier: true,
+            profile_idc: 1,
+            compatibility_flags: 0x4000_0000,
+            constraint_flags: [0x10, 0, 0, 0, 0, 0],
+            level_idc: 120,
+        }
+    );
+    assert_eq!(
+        (official.chroma_format_idc, official.bit_depth_luma, official.bit_depth_chroma),
+        (1, 8, 8)
+    );
+
+    let main10 = synthetic_sps_with_format(2, 64, 64, 1, false, None, (2, 2));
+    let main10 = parse_sps(&main10).expect("valid Main 10 SPS");
+    assert_eq!(main10.profile.profile_idc, 2);
+    assert_eq!(main10.profile.compatibility_flags, 1 << 29);
+    assert_eq!((main10.bit_depth_luma, main10.bit_depth_chroma), (10, 10));
+
+    let mixed = synthetic_sps_with_format(4, 64, 64, 2, false, None, (4, 0));
+    let mixed = parse_sps(&mixed).expect("valid 4:2:2 SPS");
+    assert_eq!((mixed.chroma_format_idc, mixed.bit_depth_luma, mixed.bit_depth_chroma), (2, 12, 8));
+}
+
+#[test]
+fn rejects_bit_depths_beyond_sixteen_bits() {
+    for depths in [(9, 0), (0, 9)] {
+        let sps = synthetic_sps_with_format(4, 64, 64, 1, false, None, depths);
+        assert_eq!(parse_sps(&sps), Err(HevcDiscontinuity::MalformedPayload));
+    }
+    let sixteen_bit = synthetic_sps_with_format(4, 64, 64, 1, false, None, (8, 8));
+    assert!(parse_sps(&sixteen_bit).is_ok());
 }
 
 #[test]
@@ -28,7 +90,7 @@ fn parses_the_dimension_prefix_fields_at_the_normative_bit_offsets() {
     assert_eq!(bits.read_bits(4), Ok(0));
     assert_eq!(bits.read_bits(3), Ok(0));
     assert_eq!(bits.read_bit(), Ok(true));
-    assert_eq!(skip_profile_tier_level(&mut bits, 0), Ok(()));
+    assert!(read_profile_tier_level(&mut bits, 0).is_ok());
     assert_eq!(bits.read_ue(), Ok(0));
     assert_eq!(bits.read_ue(), Ok(1));
     assert_eq!(bits.read_ue(), Ok(64));
@@ -39,11 +101,11 @@ fn parses_the_dimension_prefix_fields_at_the_normative_bit_offsets() {
 #[test]
 fn skips_mixed_profile_tier_level_data_through_six_sub_layers() {
     let mixed = synthetic_sps_with_sub_layers(6, 0b01_0101, 0b10_1010, false);
-    assert_eq!(parse_sps_dimensions(&mixed), Ok((320, 180)));
+    assert_eq!(dimensions(&mixed), Ok((320, 180)));
 
     let invalid_reserved = synthetic_sps_with_sub_layers(3, 0, 0, true);
     assert_eq!(
-        parse_sps_dimensions(&invalid_reserved),
+        dimensions(&invalid_reserved),
         Err(HevcDiscontinuity::MalformedPayload)
     );
 }
@@ -67,7 +129,7 @@ fn applies_conformance_window_crop_units_for_every_chroma_format() {
             Some((1, 2, 3, 4)),
         );
         assert_eq!(
-            parse_sps_dimensions(&sps),
+            dimensions(&sps),
             Ok(expected),
             "wrong crop units for chroma_format_idc={chroma_format_idc}, \
              separate_colour_plane={separate_colour_plane}"
@@ -150,7 +212,7 @@ fn rejects_malformed_or_impossible_sps_dimension_prefixes() {
         pixel_count_too_large,
     ] {
         assert_eq!(
-            parse_sps_dimensions(&malformed),
+            dimensions(&malformed),
             Err(HevcDiscontinuity::MalformedPayload)
         );
     }
@@ -177,7 +239,7 @@ fn exp_golomb_reader_accepts_u32_max_and_rejects_longer_codes() {
 fn sps_dimension_parser_is_bounded_and_panic_free_for_arbitrary_bytes() {
     let oversized = vec![0; MAX_PARAMETER_SET_SIZE + 1];
     assert_eq!(
-        parse_sps_dimensions(&oversized),
+        dimensions(&oversized),
         Err(HevcDiscontinuity::ParameterSetTooLarge)
     );
 
@@ -194,7 +256,7 @@ fn sps_dimension_parser_is_bounded_and_panic_free_for_arbitrary_bytes() {
             sps[0] = NAL_TYPE_SPS << 1;
             sps[1] = 1;
         }
-        if let Ok((width, height)) = parse_sps_dimensions(&sps) {
+        if let Ok((width, height)) = dimensions(&sps) {
             assert!(width > 0);
             assert!(height > 0);
         }

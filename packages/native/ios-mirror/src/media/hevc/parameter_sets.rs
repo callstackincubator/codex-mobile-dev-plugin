@@ -1,26 +1,25 @@
 use super::{
     HevcDiscontinuity, HevcParameterSets, NAL_TYPE_PPS, NAL_TYPE_SPS, NAL_TYPE_VPS, nal_type,
-    sps::parse_sps_dimensions,
+    sps::{SpsInfo, parse_sps},
 };
 
-/// The last committed VPS/SPS/PPS bytes and the SPS-derived geometry.
+/// The last committed VPS/SPS/PPS bytes and the format parsed from that SPS.
 #[derive(Debug, Default)]
 pub(super) struct ParameterSetStore {
     video_parameter_set: Option<Vec<u8>>,
     sequence_parameter_set: Option<Vec<u8>>,
     picture_parameter_set: Option<Vec<u8>>,
-    pixel_dimensions: Option<(u32, u32)>,
+    sequence_info: Option<SpsInfo>,
     revision: u64,
 }
 
 impl ParameterSetStore {
     /// Returns a copy of the latest complete parameter-set configuration.
     pub(super) fn snapshot(&self) -> Option<HevcParameterSets> {
-        let (pixel_width, pixel_height) = self.pixel_dimensions?;
+        let sps = self.sequence_info?;
         Some(HevcParameterSets {
             revision: self.revision,
-            pixel_width,
-            pixel_height,
+            sps,
             video_parameter_set: self.video_parameter_set.clone()?,
             sequence_parameter_set: self.sequence_parameter_set.clone()?,
             picture_parameter_set: self.picture_parameter_set.clone()?,
@@ -31,7 +30,7 @@ impl ParameterSetStore {
         self.video_parameter_set.is_some()
             && self.sequence_parameter_set.is_some()
             && self.picture_parameter_set.is_some()
-            && self.pixel_dimensions.is_some()
+            && self.sequence_info.is_some()
     }
 
     /// Commits the parameter sets carried by a complete access unit. The
@@ -54,12 +53,12 @@ impl ParameterSetStore {
         let mut candidate_video_parameter_set = None;
         let mut candidate_sequence_parameter_set = None;
         let mut candidate_picture_parameter_set = None;
-        let mut candidate_pixel_dimensions = None;
+        let mut candidate_sequence_info = None;
         for nal in nals {
             match nal_type(nal[0]) {
                 NAL_TYPE_VPS => candidate_video_parameter_set = Some(nal.as_slice()),
                 NAL_TYPE_SPS => {
-                    candidate_pixel_dimensions = Some(parse_sps_dimensions(nal)?);
+                    candidate_sequence_info = Some(parse_sps(nal)?);
                     candidate_sequence_parameter_set = Some(nal.as_slice());
                 }
                 NAL_TYPE_PPS => candidate_picture_parameter_set = Some(nal.as_slice()),
@@ -79,7 +78,7 @@ impl ParameterSetStore {
                 self.sequence_parameter_set = Some(candidate.to_vec());
                 changed = true;
             }
-            self.pixel_dimensions = candidate_pixel_dimensions;
+            self.sequence_info = candidate_sequence_info;
         }
         if let Some(candidate) = candidate_picture_parameter_set
             && self.picture_parameter_set.as_deref() != Some(candidate)

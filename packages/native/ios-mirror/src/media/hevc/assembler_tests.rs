@@ -24,7 +24,7 @@ fn accepts_the_complete_initial_access_unit_from_a_new_stream_epoch() {
         .parameter_sets()
         .expect("the initial access unit carries decoder configuration");
     assert_eq!(
-        (configuration.pixel_width, configuration.pixel_height),
+        (configuration.sps.pixel_width, configuration.sps.pixel_height),
         (64, 64)
     );
 }
@@ -53,7 +53,7 @@ fn accepts_a_fragmented_decoder_ready_initial_access_unit() {
         .parameter_sets()
         .expect("the fragmented initial access unit carries decoder configuration");
     assert_eq!(
-        (configuration.pixel_width, configuration.pixel_height),
+        (configuration.sps.pixel_width, configuration.sps.pixel_height),
         (64, 64)
     );
 }
@@ -98,7 +98,7 @@ fn commits_sps_dimensions_atomically_with_parameter_set_revision() {
     ]);
     assert!(push(&mut assembler, 6, 2, true, &initial).is_empty());
     let first = assembler.parameter_sets().expect("complete configuration");
-    assert_eq!((first.pixel_width, first.pixel_height), (64, 64));
+    assert_eq!((first.sps.pixel_width, first.sps.pixel_height), (64, 64));
     assert_eq!(first.revision, 1);
 
     let changed = ap(&[
@@ -108,7 +108,7 @@ fn commits_sps_dimensions_atomically_with_parameter_set_revision() {
     ]);
     assert!(push(&mut assembler, 7, 3, true, &changed).is_empty());
     let second = assembler.parameter_sets().expect("changed configuration");
-    assert_eq!((second.pixel_width, second.pixel_height), (96, 64));
+    assert_eq!((second.sps.pixel_width, second.sps.pixel_height), (96, 64));
     assert_eq!(second.revision, 2);
 
     let malformed_sps = synthetic_sps_prefix(4, 4, 1, false, Some((2, 1, 0, 0)));
