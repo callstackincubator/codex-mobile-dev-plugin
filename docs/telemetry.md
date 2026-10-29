@@ -124,6 +124,8 @@ Since 0.1.134, physical iOS capture runs in the shared `ios-mirror-service` Node
 
 `ios.mirror.shared.captures` and `ios.mirror.shared.subscribers` report active counts. `ios.mirror.shared.queue_dropped` counts frames discarded by subscriber queue overflow. Counts aggregate in 30-second windows and flush on service shutdown, using the simulator surface and physical iOS context. No per-frame events, device identifiers, subscription IDs, payloads, or paths are sent. The service clears its collection timer on shutdown and honors telemetry opt-out.
 
+Since 0.1.170, a physical iOS bezel that can't be rendered no longer fails `mobile_ios_mirror_session`. Mirroring opens without the frame, and an unexpected render failure reports a handled `ios-mirror.bezel` error. The server keeps a missing frame for five minutes, so each hardware model reports at most once in that window instead of on every panel reconnect. A device type that Xcode doesn't have is expected: it counts as an `unsupported_platform` outcome and sends no event. Earlier releases reported these failures as `mobile_ios_mirror_session` errors, so compare `ios-mirror.bezel` with those events when reading trends. No metrics are added. The existing `server.error.outcome` count carries the new operation value.
+
 Since 0.1.132, `plugin.update.operations` counts release checks and installations
 by fixed operation and outcome, and `plugin.update.duration` measures their
 duration in milliseconds. Cache hits emit no extra measurement. These measure
@@ -415,7 +417,8 @@ Baguette startup, input repair, simulator foreground detection and physical iOS
 bezel rendering discover required Swift compatibility libraries
 from the host's selected full Xcode installation before launching the native
 helper. Existing sampled MCP traces and UI app-discovery timings include discovery;
-handled failures retain their tool error paths. Setup failures use fixed messages without
+handled failures retain their tool error paths. Since 0.1.170, physical iOS bezel
+failures report under `ios-mirror.bezel` instead. Setup failures use fixed messages without
 developer directories or scanner output. Native telemetry initialization and
 matching dSYMs are preserved; rebuilds remove build-toolchain rpaths and re-sign
 the executable before retaining symbols. No additional telemetry fields or

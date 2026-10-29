@@ -21,6 +21,10 @@ import { directoryBytes } from "../src/storage-metrics.ts";
 import { SimulatorUnavailableError } from "../src/simulator-unavailable.ts";
 import { registerDeviceChoiceTools } from "../src/device-choice-tools.ts";
 import { listIosDevices, registerIosDeviceTools } from "../src/ios-devices.ts";
+import { createPhysicalIosBezelReader } from "../src/physical-ios-bezel.ts";
+import { registerIosMirrorTools } from "../src/ios-mirror-tools.ts";
+import { IosMirrorSessions } from "../src/ios-mirror.ts";
+import type { PhysicalIosDevice } from "../../shared/src/ios-devices.ts";
 import { createDrivers, registerAppControlTools } from "../src/app-control/tools.ts";
 import type { OpenAIFormResult } from "@openai/mcp-extensions/server";
 import { agentDeviceClient } from "../../test-support/agent-device-fixtures.ts";
@@ -800,6 +804,60 @@ test("discovery reports the first failure per episode and counts repeated and ex
   contains(encoded, "PRIVATE_DEVICE", false);
   const capturedEvents = JSON.stringify(events);
   contains(capturedEvents, "Device offline", false);
+});
+
+test("physical iOS frames accept profiles without represented models, report a failed render once across reconnects, and count a missing model as expected", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, beforeSend: scrubErrorEvent, beforeSendMetric: scrubMetric,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  const phone: PhysicalIosDevice = {
+    udid: "00008150-0000111122223333", coreDeviceId: "11111111-1111-4111-8111-111111111111", name: "PRIVATE_DEVICE_NAME", model: "iPhone 17 Pro",
+    productType: "iPhone18,1", state: "connected", runtime: "iOS 27.0", platform: "ios", kind: "physical", transportType: "wired", pairingState: "paired",
+  };
+  const unknownPhone: PhysicalIosDevice = { ...phone, udid: "00008150-0000444455556666", productType: "iPhone99,1" };
+  const renders: string[] = [];
+  const readBezel = createPhysicalIosBezelReader(async (file, args) => {
+    const output = (value: unknown) => ({ stdout: Buffer.from(JSON.stringify(value)) });
+    if (file === "/usr/bin/xcrun") return output({ devicetypes: [{ name: "iPhone 17 Pro", modelIdentifier: "iPhone18,1", bundlePath: "/PRIVATE_XCODE/iPhone 17 Pro.simdevicetype" }] });
+    // Older profiles omit representedModelIdentifiers.
+    if (file === "/usr/bin/plutil") return output({});
+    renders.push(args[1]);
+    throw new Error("Device frame layout failed");
+  }, async () => ({}));
+  const sessions = new IosMirrorSessions(async () => ({
+    async read() { return { generation: 1, sequence: 1, dropped: 0, frames: [] }; }, async touch() {}, async reset() {}, async close() {},
+  }));
+  const server = new McpServer({ name: "bezel-reporting-test", version: "1" });
+  instrumentMcpServer(server);
+  const close = registerIosMirrorTools(server, "ui://test/app", sessions, async () => [phone, unknownPhone], readBezel);
+  const client = new Client({ name: "test", version: "1" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  installTracePropagation(serverTransport);
+  t.after(async () => { await close(); await client.close(); await server.close(); await Sentry.close(); });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  for (let reconnect = 0; reconnect < 3; reconnect++) {
+    const opened = await client.callTool({ name: "mobile_ios_mirror_session", arguments: { udid: phone.udid } });
+    assert.equal(opened.isError, undefined);
+    assert.equal(opened._meta?.bezel, undefined);
+  }
+  assert.deepEqual(renders, ["layout"]);
+  const unframed = await client.callTool({ name: "mobile_ios_mirror_session", arguments: { udid: unknownPhone.udid } });
+  assert.equal(unframed.isError, undefined);
+  assert.equal(unframed._meta?.bezel, undefined);
+  await Sentry.flush();
+  const items = envelopes.flatMap(envelope => envelope[1]);
+  const events = items.filter(item => item[0].type === "event");
+  assert.equal(events.length, 1);
+  const encoded = JSON.stringify(envelopes);
+  contains(encoded, "ios-mirror.bezel");
+  contains(encoded, '"outcome":{"value":"unsupported_platform"');
+  contains(encoded, "Xcode has no Apple device frame", false);
+  contains(encoded, "Device frame layout failed");
+  contains(encoded, "representedModelIdentifiers", false);
+  contains(encoded, "PRIVATE", false);
 });
 
 test("an episode's report goes to the first capture site that sends it, and repeats are only counted", async t => {
