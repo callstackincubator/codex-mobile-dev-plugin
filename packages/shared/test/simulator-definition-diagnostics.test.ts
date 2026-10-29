@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { once } from "node:events";
-import { Baguette } from "../../core/src/baguette.ts";
+import { attachedBaguette } from "../../test-support/fixtures.ts";
 import { getDefinitionDiagnostic, parseDefinitionDiagnostic } from "../src/simulator-definition-diagnostics.ts";
 import { definitionDiagnosticTags } from "../src/error-diagnostics.ts";
 import baguetteRelease from "../../native/vendor/baguette-release.json" with { type: "json" };
@@ -56,7 +56,7 @@ for (const after of ["Booted", "Shutdown", "missing", "unreachable"]) {
     await once(server, "listening");
     const address = server.address();
     assert.ok(address && typeof address === "object");
-    const backend = new Baguette(`http://127.0.0.1:${address.port}`);
+    const backend = attachedBaguette(`http://127.0.0.1:${address.port}`);
     t.after(() => { backend.dispose(); server.closeAllConnections(); server.close(); });
     let failure: unknown;
     try { await backend.definition(UDID); }
@@ -70,7 +70,7 @@ for (const after of ["Booted", "Shutdown", "missing", "unreachable"]) {
     assert.equal(tags.definition_device_before, "Booted");
     assert.equal(tags.definition_device_after, after);
     assert.equal(tags.definition_backend_source, "pinned");
-    assert.equal(tags.definition_backend_mode, "external");
+    assert.equal(tags.definition_backend_mode, "embedded");
     const encoded = JSON.stringify(tags);
     const hasPrivateContent = encoded.includes("PRIVATE_");
     assert.equal(hasPrivateContent, false);
@@ -83,6 +83,7 @@ for (const after of ["Booted", "Shutdown", "missing", "unreachable"]) {
 
 test("oversized, malformed and stalled 404 bodies preserve the HTTP error without leaking payloads", async t => {
   const server = createServer((request, response) => {
+    if (request.url === "/simulators.json") { response.end('{"running":[],"available":[]}'); return; }
     response.writeHead(404, { "Content-Type": "application/json" });
     if (request.url?.includes("oversized")) {
       const body = "PRIVATE_BODY".repeat(1000);
@@ -95,8 +96,9 @@ test("oversized, malformed and stalled 404 bodies preserve the HTTP error withou
   await once(server, "listening");
   const address = server.address();
   assert.ok(address && typeof address === "object");
-  const backend = new Baguette(`http://127.0.0.1:${address.port}`);
+  const backend = attachedBaguette(`http://127.0.0.1:${address.port}`);
   t.after(() => { backend.dispose(); server.closeAllConnections(); server.close(); });
+  await backend.start();
   for (const model of ["oversized", "malformed", "stalled"]) {
     let failure: unknown;
     try { await backend.json(`/simulators/${model}/definition.json`, {}, 50); }

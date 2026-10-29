@@ -16,8 +16,7 @@ import { parsePhysicalApps, runningPhysicalApps } from "../src/device-apps/apps.
 import { openPhysicalDebugserver } from "../src/cpu/physical.ts";
 import { CpuSessions } from "../src/cpu/sessions.ts";
 import { registerCpuTools } from "../src/cpu/tools.ts";
-import { Baguette } from "../src/baguette.ts";
-import { fakeBaguette } from "../../test-support/fixtures.ts";
+import { fakeBaguette, attachedBaguette } from "../../test-support/fixtures.ts";
 import type { PhysicalIosDevice } from "../../shared/src/ios-devices.ts";
 
 const udid = "00008150-001068280AE8C01C";
@@ -150,7 +149,7 @@ test("device bridge startup exposes device errors and cancels a helper waiting f
 
 test("physical CPU MCP sessions use device discovery, stream samples and leave the simulator backend untouched", async t => {
   const fake = await fakeBaguette();
-  const baguette = new Baguette(fake.url);
+  const baguette = attachedBaguette(fake.url);
   let online = true;
   let paired = true;
   let stops = 0;

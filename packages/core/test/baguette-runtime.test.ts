@@ -5,7 +5,7 @@ import { chmod, copyFile, mkdir, mkdtemp, realpath, rm, symlink, writeFile } fro
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { baguetteEnvironment } from "../src/baguette-runtime.ts";
+import { baguetteEnvironment, baguetteRuntime, forgetBaguetteRuntime } from "../src/baguette-runtime.ts";
 import { removeBaguetteToolchainRpaths } from "../../../tooling/baguette-rpaths.mjs";
 
 const execute = promisify(execFile);
@@ -151,6 +151,48 @@ test("Baguette discovery stops when the plugin closes", async () => {
   });
   await assert.rejects(cancelled, { name: "AbortError" });
   assert.equal(calls, 0);
+});
+
+test("Baguette's runtime is discovered once per Xcode selection and again after a failed spawn", async t => {
+  const f = await fixture(t);
+  const executable = join(f.root, "Baguette");
+  await writeFile(executable, "");
+  await chmod(executable, 0o755);
+  const other = join(f.root, "Other Xcode");
+  await symlink(f.developer, other);
+  let selected = f.developer;
+  const commands: string[] = [];
+  const run = async (command: string) => {
+    commands.push(command);
+    if (command === "/usr/bin/xcode-select") return { stdout: `${selected}\n` };
+    if (command === "/usr/bin/otool") return { stdout: spanLoadCommands };
+    return { stdout: f.library };
+  };
+  const discoveries = () => commands.filter(command => command === "/usr/bin/otool").length;
+  forgetBaguetteRuntime();
+  const controller = new AbortController();
+  const [first, second] = await Promise.all([baguetteRuntime(controller.signal, executable, run), baguetteRuntime(controller.signal, executable, run)]);
+  assert.equal(first.executable, executable);
+  assert.equal(first.env.DEVELOPER_DIR, f.developer);
+  assert.equal(first.env.DYLD_LIBRARY_PATH, f.libraries);
+  assert.deepEqual(second.env, first.env);
+  await baguetteRuntime(controller.signal, executable, run);
+  assert.equal(discoveries(), 1);
+
+  selected = other;
+  await baguetteRuntime(controller.signal, executable, run);
+  assert.equal(discoveries(), 2);
+  // A command's own failure keeps the runtime; a failure to spawn discovers it again.
+  forgetBaguetteRuntime(Object.assign(new Error("exit"), { code: 1 }));
+  await baguetteRuntime(controller.signal, executable, run);
+  assert.equal(discoveries(), 2);
+  forgetBaguetteRuntime(Object.assign(new Error("spawn"), { code: "ENOENT" }));
+  await baguetteRuntime(controller.signal, executable, run);
+  assert.equal(discoveries(), 3);
+  forgetBaguetteRuntime();
+
+  await rm(executable);
+  await assert.rejects(baguetteRuntime(controller.signal, executable, run), /missing its simulator backend/);
 });
 
 test("a relocated Baguette loads the selected Xcode library after its build-toolchain rpath is removed", {

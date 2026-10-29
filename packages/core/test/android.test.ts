@@ -9,8 +9,7 @@ import { ServeEmu, androidDisplaySize } from "../src/serve-emu.ts";
 import { AndroidStreams, androidInput } from "../src/android-streams.ts";
 import { DeviceSessions } from "../src/device-sessions.ts";
 import { videoPacket } from "../../ui/src/android-video.ts";
-import { Baguette } from "../src/baguette.ts";
-import { createTestPlugin, fakeBaguette, fakeSimulatorInput, PNG } from "../../test-support/fixtures.ts";
+import { createTestPlugin, fakeBaguette, fakeSimulatorInput, PNG, attachedBaguette } from "../../test-support/fixtures.ts";
 import { fakeInspectionSdk } from "../../test-support/android-inspection-fixtures.ts";
 import { createPanel } from "../src/panel-tools.ts";
 import { registerAndroidTools } from "../src/android-tools.ts";
@@ -34,10 +33,11 @@ function packet() {
 async function fakeAndroid(deviceId = ID, videoSize = SCREEN) {
   const inputs: unknown[] = [];
   let currentSerial = deviceId;
+  const health = { requests: 0 };
   const server = createServer(async (request, response) => {
     if (request.url === "/api/screenshot") { response.setHeader("Content-Type", "image/png"); response.end(PNG); return; }
     response.setHeader("Content-Type", "application/json");
-    if (request.url === "/health") { response.end(JSON.stringify({ serial: currentSerial, codec: "h264", size: videoSize })); return; }
+    if (request.url === "/health") { health.requests++; response.end(JSON.stringify({ serial: currentSerial, codec: "h264", size: videoSize })); return; }
     if (request.url === "/api/accessibility") { response.end(JSON.stringify({ ok: true, nodes: [{ text: "Hello" }] })); return; }
     const chunks: Buffer[] = []; for await (const chunk of request) chunks.push(chunk);
     inputs.push({ path: request.url, body: JSON.parse(Buffer.concat(chunks).toString()) });
@@ -54,15 +54,25 @@ async function fakeAndroid(deviceId = ID, videoSize = SCREEN) {
   const url = `http://127.0.0.1:${address.port}`;
   class FakeAndroid extends ServeEmu {
     boots: string[] = [];
-    async list() { return { connected: true, managed: false, baseUrl: url, devices: [{ udid: deviceId, name: "Pixel", state: "Booted", runtime: "Android", platform: "android" as const }] }; }
+    async devices() { return [{ udid: deviceId, name: "Pixel", state: "Booted", runtime: "Android", platform: "android" as const, kind: "emulator" as const }]; }
     async boot(id: string) { this.boots.push(id); return this.list(); }
   }
   const backend = new FakeAndroid(url);
-  return { backend, inputs, sockets, url, switchDevice: () => { currentSerial = "emulator-5556"; }, async close() {
+  return { backend, inputs, sockets, url, health, switchDevice: () => { currentSerial = "emulator-5556"; }, async close() {
     for (const socket of sockets.clients) socket.terminate();
     await new Promise<void>(resolve => sockets.close(() => resolve()));
     server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve()));
   } };
+}
+
+// The stream's next video; the video session that starts a stream can end a read before its first packet.
+async function video(streams: AndroidStreams, id: string, after = 0) {
+  const deadline = Date.now() + 2000;
+  while (true) {
+    const batch = await streams.batch(id, after);
+    if (batch.packets.length > 0 || Date.now() > deadline) return batch;
+    after = batch.sequence;
+  }
 }
 
 async function waitFor(check: () => boolean) {
@@ -124,6 +134,11 @@ test("physical Android panel streams route pointer, typing, and navigation input
     assert.deepEqual(delivered[index], { ...expected[index], ack: false, record: false });
   }
   assert.deepEqual(fake.backend.boots, []);
+  // A stream whose backend no longer serves the device fails without asking the backend.
+  const checks = fake.health.requests;
+  fake.backend.dispose();
+  await assert.rejects(streams.input(sessionId, [{ type: "button", button: "home" }]), { message: "The Android stream disconnected." });
+  assert.equal(fake.health.requests, checks);
 });
 
 test("H.264 packet parsing reads SEMU timestamps, IDR frames, and the SPS codec", () => {
@@ -139,15 +154,28 @@ test("Android streams relay video, validate batches, and refuse a device switch"
   const fake = await fakeAndroid(); const streams = new AndroidStreams(fake.backend);
   t.after(async () => { streams.close(); fake.backend.dispose(); await fake.close(); });
   const id = await streams.open(ID);
-  const batch = await streams.batch(id, 0);
+  const batch = await video(streams, id);
   assert.equal(batch.generation, 1); assert.deepEqual(Buffer.from(batch.packets[0].data, "base64"), packet());
   assert.equal(await streams.input(id, [{ type: "button", button: "home" }]), 1);
   await waitFor(() => fake.inputs.some(input => (input as { type?: string }).type === "home"));
   const before = fake.inputs.length;
   await assert.rejects(streams.input(id, [{ type: "button", button: "back" }, { type: "run_shell" }]));
   assert.equal(fake.inputs.length, before);
+  // Reading video and sending input never check the backend's device.
+  const checks = fake.health.requests;
+  await streams.batch(id, batch.sequence);
+  await streams.input(id, [{ type: "button", button: "home" }]);
+  assert.equal(fake.health.requests, checks);
+  // A new video session on the user's backend is checked for the device it streams.
   fake.switchDevice();
-  await assert.rejects(streams.input(id, [{ type: "button", button: "home" }]), /switched to another device/);
+  for (const socket of fake.sockets.clients) socket.send(JSON.stringify({ type: "video-session", size: SCREEN }));
+  let refused: unknown;
+  const deadline = Date.now() + 2000;
+  while (refused === undefined && Date.now() < deadline) {
+    refused = await streams.input(id, [{ type: "button", button: "home" }]).then(() => undefined, (error: unknown) => error);
+    if (refused === undefined) await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  assert.match(String(refused), /switched to another device/);
   await assert.rejects(streams.batch(id, batch.sequence), /switched to another device/);
   streams.closeSession(id);
   await assert.rejects(streams.batch(id, 0), /expired or closed/);
@@ -156,7 +184,7 @@ test("Android streams relay video, validate batches, and refuse a device switch"
 
 test("Android MCP flow lists without booting, captures, streams, and closes", async t => {
   const fake = await fakeAndroid(); const ios = await fakeBaguette();
-  const plugin = await createTestPlugin("<canvas></canvas>", { panel: createPanel({ baguette: new Baguette(ios.url), simulatorInput: fakeSimulatorInput(), copyScreenshot: async bytes => { assert.deepEqual(bytes, PNG); } }), android: fake.backend });
+  const plugin = await createTestPlugin("<canvas></canvas>", { panel: createPanel({ baguette: attachedBaguette(ios.url), simulatorInput: fakeSimulatorInput(), copyScreenshot: async bytes => { assert.deepEqual(bytes, PNG); } }), android: fake.backend });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "android-test", version: "1" });
   t.after(async () => { await client.close(); await plugin.close(); await fake.close(); await ios.close(); });
@@ -190,7 +218,7 @@ test("Android MCP flow lists without booting, captures, streams, and closes", as
 test("a missing serve-emu runtime tells the user to reinstall and stops the panel's retries", async t => {
   // Running from source, serve-emu is never beside this module, so starting a stream finds it missing.
   class Unbundled extends ServeEmu {
-    async list() { return { connected: true, managed: false, baseUrl: "", devices: [{ udid: ID, name: "Pixel", state: "Booted", runtime: "Android", platform: "android" as const }] }; }
+    async devices() { return [{ udid: ID, name: "Pixel", state: "Booted", runtime: "Android", platform: "android" as const, kind: "emulator" as const }]; }
   }
   const server = new McpServer({ name: "android-runtime-test", version: "1" });
   const backend = new Unbundled();
@@ -208,7 +236,7 @@ test("a missing serve-emu runtime tells the user to reinstall and stops the pane
 test("closing an Android stream releases a waiting read and rejects later input", async t => {
   const fake = await fakeAndroid(); const streams = new AndroidStreams(fake.backend);
   t.after(async () => { streams.close(); await fake.close(); });
-  const id = await streams.open(ID); const first = await streams.batch(id, 0);
+  const id = await streams.open(ID); const first = await video(streams, id);
   const pending = streams.batch(id, first.sequence);
   await new Promise(resolve => setTimeout(resolve, 25));
   streams.closeSession(id);
@@ -220,7 +248,7 @@ test("closing an Android stream releases a waiting read and rejects later input"
 test("a cancelled Android video read ends at once and keeps its stream session", async t => {
   const fake = await fakeAndroid(); const streams = new AndroidStreams(fake.backend);
   t.after(async () => { streams.close(); await fake.close(); });
-  const id = await streams.open(ID); const first = await streams.batch(id, 0);
+  const id = await streams.open(ID); const first = await video(streams, id);
   const abort = new AbortController();
   const started = performance.now();
   const pending = streams.batch(id, first.sequence, abort.signal);
@@ -234,7 +262,7 @@ test("a cancelled Android video read ends at once and keeps its stream session",
 test("a dropped Android stream can reopen without booting or replaying input", async t => {
   const fake = await fakeAndroid(); const streams = new AndroidStreams(fake.backend);
   t.after(async () => { streams.close(); await fake.close(); });
-  const first = await streams.open(ID); await streams.batch(first, 0);
+  const first = await streams.open(ID); await video(streams, first);
   await streams.input(first, [{ type: "button", button: "home" }]);
   await waitFor(() => fake.inputs.some(input => (input as { type?: string }).type === "home"));
   for (const socket of fake.sockets.clients) socket.terminate();
@@ -242,7 +270,7 @@ test("a dropped Android stream can reopen without booting or replaying input", a
   await assert.rejects(streams.batch(first, 1), /disconnected/);
   streams.closeSession(first);
   const second = await streams.open(ID); assert.notEqual(first, second);
-  assert.equal((await streams.batch(second, 0)).packets.length, 1);
+  assert.equal((await video(streams, second)).packets.length, 1);
   assert.equal(fake.inputs.filter(input => (input as { type?: string }).type === "home").length, 1);
   assert.deepEqual(fake.backend.boots, []);
 });
@@ -250,7 +278,7 @@ test("a dropped Android stream can reopen without booting or replaying input", a
 test("stalled Android readers request a keyframe and keep their stream session", async t => {
   const fake = await fakeAndroid(); const streams = new AndroidStreams(fake.backend);
   t.after(async () => { streams.close(); await fake.close(); });
-  const id = await streams.open(ID); const first = await streams.batch(id, 0);
+  const id = await streams.open(ID); const first = await video(streams, id);
   for (const socket of fake.sockets.clients) for (let index = 0; index < 121; index++) socket.send(packet());
   await new Promise(resolve => setTimeout(resolve, 25));
   const waiting = await streams.batch(id, first.sequence);
@@ -268,7 +296,7 @@ test("explicit video reset is scoped to its session and drops delta frames until
   const fake = await fakeAndroid(); const streams = new AndroidStreams(fake.backend);
   t.after(async () => { streams.close(); await fake.close(); });
   const first = await streams.open(ID); const second = await streams.open(ID);
-  const before = await streams.batch(first, 0); const other = await streams.batch(second, 0);
+  const before = await video(streams, first); const other = await video(streams, second);
   await assert.rejects(streams.reset("0".repeat(64)), /expired or closed/);
   await streams.reset(first);
   const delta = Buffer.from([0, 0, 0, 1, 0x41, 1]);
@@ -298,10 +326,10 @@ test("serve-emu rejections surface their message, or a fixed one when they carry
   t.after(() => new Promise(resolve => server.close(resolve)));
   const url = new URL(`http://127.0.0.1:${(server.address() as { port: number }).port}`);
   const backend = new ServeEmu();
-  assert.deepEqual(await backend.json(url, "/api/x"), { ok: true, value: 1 });
-  await assert.rejects(backend.json(url, "/api/x"), /^Error: mode must be clean or live$/);
-  await assert.rejects(backend.json(url, "/api/x"), /^Error: bad body$/);
-  await assert.rejects(backend.json(url, "/api/x"), /^Error: serve-emu rejected the request\.$/);
-  await assert.rejects(backend.json(url, "/api/x"), /^Error: serve-emu rejected the request\.$/);
-  await assert.rejects(backend.json(url, "/api/x"), /^Error: serve-emu returned HTTP 500 for \/api\/x\.$/);
+  assert.deepEqual(await backend.json({ url }, "/api/x"), { ok: true, value: 1 });
+  await assert.rejects(backend.json({ url }, "/api/x"), /^Error: mode must be clean or live$/);
+  await assert.rejects(backend.json({ url }, "/api/x"), /^Error: bad body$/);
+  await assert.rejects(backend.json({ url }, "/api/x"), /^Error: serve-emu rejected the request\.$/);
+  await assert.rejects(backend.json({ url }, "/api/x"), /^Error: serve-emu rejected the request\.$/);
+  await assert.rejects(backend.json({ url }, "/api/x"), /^Error: serve-emu returned HTTP 500 for \/api\/x\.$/);
 });

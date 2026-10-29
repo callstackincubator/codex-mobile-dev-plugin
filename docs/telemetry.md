@@ -178,6 +178,10 @@ Helper-owned timeouts count as timeouts even when the helper exits with status 1
 Parent deadlines, explicit cancellation, native signals, missing executables, and
 output limits retain separate classifications. Known simctl/ADB lifecycle text
 is classified locally into fixed causes; text never enters these diagnostics.
+Baguette's Xcode runtime discovery (`ios_simulator_runtime`) is cached per selected
+Xcode, so a failure's `elapsed_ms` can cover a discovery another caller started; a
+missing Baguette now fails that step as a missing runtime with `install_integrity`
+tags instead of as an unusable toolchain.
 
 The existing discovery stage/failure tags, exception-text and Node system-error
 scrubbing, anonymous error attribution, telemetry opt-out, UI discovery metrics,
@@ -607,7 +611,10 @@ existing developer-directory resolver, rather than the plugin build toolchain.
 snapshot. `definition_backend_version` accepts the pinned Baguette version;
 `definition_backend_source=pinned` verifies the diagnostic's source commit against
 the plugin's pin, and `definition_backend_mode` distinguishes embedded and external
-backends. These are error tags only, not performance attributes or identifiers.
+backends. Released servers only ever ran the embedded backend, and the external mode
+existed only for tests; it is removed, so the tag is always `embedded` and stays for
+comparison with earlier releases. These are error tags only, not performance
+attributes or identifiers.
 
 `definition_device_before` records the successful booted-device validation.
 After a definition 404, the server performs one bounded device-list read (up to

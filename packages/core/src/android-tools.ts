@@ -13,7 +13,7 @@ import { inputSchema } from "@mobile-dev/shared/protocol.ts";
 import { sessionIdSchema } from "./session-registry.ts";
 import { guarded as guardedTool, jsonResult, READ_ONLY as read, WRITES as write } from "./tool-results.ts";
 import type { ServerRequestContext } from "./request-session.ts";
-import { assertPng, MAX_SCREENSHOT_BYTES, screenshotResult } from "./png.ts";
+import { assertPng, MAX_SCREENSHOT_BYTES, screenshotRequest, screenshotResult } from "./png.ts";
 
 const deviceInput = { deviceId: androidIdSchema.describe("An Android serial or avd: name returned by mobile_list_android_devices.") };
 function result(data: object, text: string): CallToolResult { return jsonResult({ ...data }, text); }
@@ -46,9 +46,8 @@ export function registerAndroidTools(server: McpServer, android: ServeEmu, appUr
   }));
   async function captureScreenshot(deviceId: string) {
     const backend = await android.start(deviceId);
-    const response = await fetch(new URL("/api/screenshot", backend.url), { redirect: "error", signal: AbortSignal.timeout(10000) });
-    if (!response.ok) throw new Error(`Screenshot failed with HTTP ${response.status}.`);
-    return assertPng(Buffer.from(await response.arrayBuffer()), MAX_SCREENSHOT_BYTES, "serve-emu");
+    const bytes = await android.fetchBytes(backend, "/api/screenshot", screenshotRequest("serve-emu"));
+    return assertPng(bytes, MAX_SCREENSHOT_BYTES, "serve-emu");
   }
   registerAppTool(server, "mobile_android_capture_screenshot", {
     title: "Android screenshot to chat and clipboard",

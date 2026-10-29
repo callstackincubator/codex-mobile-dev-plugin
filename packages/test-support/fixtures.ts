@@ -1,9 +1,12 @@
 import { createServer } from "node:http";
-import { once } from "node:events";
+import { EventEmitter, once } from "node:events";
+import type { ChildProcess } from "node:child_process";
 import { WebSocketServer } from "ws";
 import type { InputStatus } from "../core/src/simulator-input.ts";
 import { createPlugin } from "../core/src/plugin.ts";
 import { Simctl } from "../core/src/simctl.ts";
+import { Baguette } from "../core/src/baguette.ts";
+import type { BaguetteLauncher, BaguetteOptions } from "../core/src/baguette.ts";
 
 export const createTestPlugin = createPlugin;
 
@@ -29,6 +32,29 @@ export function fakeSimulatorInput() {
     async status(): Promise<InputStatus> { return { state }; },
     async repair(udid: string): Promise<InputStatus> { repairs.push(udid); state = "ready"; return { state }; },
   };
+}
+
+/** A process that runs until it is killed, standing in for the bundled Baguette. */
+export function fakeProcess(): ChildProcess {
+  const child = Object.assign(new EventEmitter(), {
+    exitCode: null, signalCode: null as NodeJS.Signals | null, stdout: null, stderr: null,
+    kill(signal: NodeJS.Signals = "SIGTERM") {
+      if (child.signalCode !== null) return false;
+      child.signalCode = signal;
+      queueMicrotask(() => { child.emit("exit", null, signal); child.emit("close", null, signal); });
+      return true;
+    },
+  });
+  return child as unknown as ChildProcess;
+}
+
+/** Starts Baguette by attaching to a fake backend at `url`, since tests cannot run the bundled one. */
+export function attachBaguette(url: string): BaguetteLauncher {
+  return async () => ({ child: fakeProcess(), url });
+}
+
+export function attachedBaguette(url: string, options: Omit<BaguetteOptions, "launchBackend"> = {}) {
+  return new Baguette({ ...options, launchBackend: attachBaguette(url) });
 }
 
 export async function fakeBaguette() {

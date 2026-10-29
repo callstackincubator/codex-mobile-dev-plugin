@@ -27,7 +27,7 @@ import { retryableFailure } from "./simulator-unavailable.ts";
 import { copyPNGToClipboard } from "./clipboard.ts";
 import { sessionIdSchema } from "./session-registry.ts";
 import { guarded as guardedTool, jsonResult, READ_ONLY as read, WRITES as write } from "./tool-results.ts";
-import { assertPng, MAX_SCREENSHOT_BYTES, screenshotResult } from "./png.ts";
+import { assertPng, MAX_SCREENSHOT_BYTES, screenshotRequest, screenshotResult } from "./png.ts";
 import { registerPanelAppControlTools } from "./app-control/tools.ts";
 import type { DriverFactory } from "./app-control/tools.ts";
 import { registerOpenRecordingTool } from "./recording-tools.ts";
@@ -264,11 +264,8 @@ function registerPanel(server: McpServer, { android, devices, drivers, page, sho
 
   async function captureScreenshot(udid: string) {
     await baguette.device(udid, true);
-    const response = await fetch(new URL(`/simulators/${udid}/screenshot.png`, baguette.baseUrl), {
-      redirect: "error", signal: AbortSignal.timeout(10000),
-    });
-    if (!response.ok) throw new Error(`Screenshot failed with HTTP ${response.status}.`);
-    return assertPng(Buffer.from(await response.arrayBuffer()), MAX_SCREENSHOT_BYTES, "Baguette");
+    const bytes = await baguette.fetchBytes(`/simulators/${udid}/screenshot.png`, screenshotRequest("Baguette"));
+    return assertPng(bytes, MAX_SCREENSHOT_BYTES, "Baguette");
   }
 
   registerAppTool(server, "mobile_capture_screenshot", {
@@ -289,8 +286,8 @@ function registerPanel(server: McpServer, { android, devices, drivers, page, sho
   }, guarded(async ({ udid, fps }: { udid: string; fps: number }, context) => {
     context.signal.throwIfAborted();
     const definition = await baguette.definition(udid);
-    const bezel = await readBezel(baguette, udid, definition.screen);
-    const { inputStatus, inputRepairMessage } = await panelInputStatus(udid);
+    // The frame and the input check do not depend on each other.
+    const [bezel, { inputStatus, inputRepairMessage }] = await Promise.all([readBezel(baguette, udid, definition.screen), panelInputStatus(udid)]);
     const sessionId = await openRequestSession(context.signal, () => streams.open(udid, fps), id => streams.closeSession(id));
     return {
       ...result({ udid, definition, fps, inputStatus, ...(inputRepairMessage ? { inputRepairMessage } : {}) }, `Stream ready for ${definition.identity.name}.`),

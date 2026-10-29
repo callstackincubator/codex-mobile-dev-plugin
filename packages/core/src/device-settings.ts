@@ -156,18 +156,17 @@ class AndroidSettings implements PlatformSettings {
   constructor(android: ServeEmu, throttle: AndroidNetworkThrottle) { this.android = android; this.throttle = throttle; }
 
   private async backend(id: string) {
-    const backend = await this.android.start(id).catch(error => { throw annotateDeviceCommand(error, "serve_emu_start"); });
-    return backend.url;
+    return this.android.start(id).catch(error => { throw annotateDeviceCommand(error, "serve_emu_start"); });
   }
 
   listed(id: string) { return this.android.device(id, true); }
 
   async read(id: string) {
-    const url = await this.backend(id);
+    const backend = await this.backend(id);
     const reads: Record<string, () => Promise<Patch>> = {};
-    for (const { label, path, patch } of Object.values(androidEndpoints)) reads[label] = async () => patch(await this.android.json(url, path));
+    for (const { label, path, patch } of Object.values(androidEndpoints)) reads[label] = async () => patch(await this.android.json(backend, path));
     reads.Network = async () => {
-      const [radios, throttle] = await Promise.all([this.android.json(url, "/api/network"), this.throttle.read(id)]);
+      const [radios, throttle] = await Promise.all([this.android.json(backend, "/api/network"), this.throttle.read(id)]);
       return { network: androidNetwork(radiosOff(radios), throttle) };
     };
     return collect({ locationSupported: isEmulatorSerial(id) }, reads);
@@ -178,17 +177,17 @@ class AndroidSettings implements PlatformSettings {
     const endpoint = androidEndpoints[change.setting];
     // Only emulators take a simulated location, and serve-emu cannot clear it.
     if (!endpoint || change.setting === "location" && (change.value === null || !isEmulatorSerial(id))) throw unsupported("serve-emu");
-    const url = await this.backend(id);
-    return endpoint.patch(await this.android.json(url, endpoint.path, post(endpoint.field ? { [endpoint.field]: change.value } : change.value)));
+    const backend = await this.backend(id);
+    return endpoint.patch(await this.android.json(backend, endpoint.path, post(endpoint.field ? { [endpoint.field]: change.value } : change.value)));
   }
 
   // Offline turns the radios off; the presets slow traffic through a proxy on the Mac.
   private async setNetwork(id: string, condition: NetworkCondition) {
-    const url = await this.backend(id);
+    const backend = await this.backend(id);
     const offline = condition === "offline";
     const throttle = await this.throttle.set(id, condition === "normal" || offline ? null : condition);
     // Toggling the radios restarts Wi-Fi, so they change only when going offline or coming back.
-    if (radiosOff(await this.android.json(url, "/api/network")) !== offline) await this.android.json(url, "/api/network", post({ enabled: !offline }));
+    if (radiosOff(await this.android.json(backend, "/api/network")) !== offline) await this.android.json(backend, "/api/network", post({ enabled: !offline }));
     return androidNetwork(offline, throttle);
   }
 }

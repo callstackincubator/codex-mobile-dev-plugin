@@ -1,56 +1,50 @@
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import type { ChildProcess } from "node:child_process";
-import { access } from "node:fs/promises";
-import { constants } from "node:fs";
-import { createServer } from "node:net";
-import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import { normalizeDevices, parseBaseUrl, udidSchema } from "@mobile-dev/shared/protocol.ts";
-import type { Status } from "@mobile-dev/shared/protocol.ts";
+import type { IosSimulator, Status } from "@mobile-dev/shared/protocol.ts";
 import { buttonMarginsSchema } from "@mobile-dev/shared/bezel.ts";
 import { definitionDeviceState, getDefinitionDiagnostic, parseDefinitionDiagnostic, setDefinitionDiagnostic } from "@mobile-dev/shared/simulator-definition-diagnostics.ts";
-import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
+import { requireDevice } from "./device-lookup.ts";
+import { allocatePort, superviseBackend } from "./backend-process.ts";
 import { isMissingFile, MissingRuntimeError } from "./install-integrity.ts";
 import { deferEpisodeReport, ExpectedOperationError, FailureEpisodes, errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 import { annotateDeviceCommand, backendCommand, inheritDeviceCommand } from "@mobile-dev/shared/device-command-diagnostics.ts";
 import { errorReportSignature } from "@mobile-dev/shared/telemetry.ts";
-import { baguetteEnvironment } from "./baguette-runtime.ts";
+import { baguetteRuntime, forgetBaguetteRuntime } from "./baguette-runtime.ts";
 import { captureServerError, recordAccessibilityBridgeRestart } from "./telemetry.ts";
+import { readLimitedBody, responseBytes } from "./response-body.ts";
+import type { ByteRequest } from "./response-body.ts";
 
-type DescribedUi = { tree?: { label?: unknown } };
+const describedUiSchema = z.object({ tree: z.object({ label: z.unknown() }).partial().loose().optional() }).loose();
+type DescribedUi = z.infer<typeof describedUiSchema>;
 const NO_ACCESSIBILITY_DATA = "no accessibility data";
 const BRIDGE_RESTART_INTERVAL = 10000;
 const PORT_ATTEMPTS = 3;
-// A failed device list keeps its request's error, so errors built from the status say how the request failed.
-const listFailures = new WeakMap<Status, unknown>();
+const SIMULATOR = { missing: "This simulator is no longer available. Refresh the device list.", stopped: "The simulator is stopped. Press Start to boot it." };
 
-function listError(status: Status): Error {
-  const error = new Error(status.error);
-  return inheritDeviceCommand(error, listFailures.get(status));
-}
+/** A started Baguette process; tests attach to a fake backend at its own `url` instead of the given port. */
+export type LaunchedBaguette = { child: ChildProcess; url?: string };
+export type BaguetteLauncher = (host: string, port: string, signal: AbortSignal) => Promise<LaunchedBaguette>;
+export type BaguetteOptions = {
+  launchBackend?: BaguetteLauncher;
+  kickstartBridge?: (udid: string, signal: AbortSignal) => Promise<void>;
+};
 
-async function bundledExecutable(): Promise<string> {
-  const path = fileURLToPath(new URL("./baguette/Baguette", import.meta.url));
-  try {
-    await access(path, constants.X_OK);
-  } catch (error) {
-    if (isMissingFile(error)) throw new MissingRuntimeError("baguette");
-    throw new Error("Mobile Dev cannot run its bundled simulator backend. Reinstall Mobile Dev, then restart the app running it.");
-  }
-  return path;
-}
-
-async function launchBundledBaguette(host: string, port: string, signal: AbortSignal): Promise<ChildProcess> {
+async function launchBundledBaguette(host: string, port: string, signal: AbortSignal): Promise<LaunchedBaguette> {
   if (process.platform !== "darwin" || process.arch !== "arm64") {
     throw new ExpectedOperationError("unsupported_platform", "Starting Baguette requires an Apple Silicon Mac with Xcode 26 or later.");
   }
-  const executable = await bundledExecutable();
-  const environment = await baguetteEnvironment(executable, signal);
-  return spawn(executable, ["serve", "--host", host, "--port", port, "--no-plugins"], {
-    stdio: ["ignore", "pipe", "pipe"], shell: false, env: environment,
+  const { executable, env } = await baguetteRuntime(signal);
+  const child = spawn(executable, ["serve", "--host", host, "--port", port, "--no-plugins"], {
+    stdio: ["ignore", "pipe", "pipe"], shell: false, env,
   });
+  // A launch that fails to spawn or crashes may have found a toolchain that has since changed.
+  child.once("error", error => forgetBaguetteRuntime(error));
+  child.once("exit", (_code, signal) => { if (signal !== null && signal !== "SIGTERM") forgetBaguetteRuntime(); });
+  return { child };
 }
 
 // CoreSimulatorBridge can lose its accessibility connection after backboardd and SpringBoard
@@ -72,57 +66,69 @@ export const definitionSchema = z.object({
     maskImage: z.string().nullish(),
   }),
 });
+export type SimulatorDefinition = z.infer<typeof definitionSchema>;
 
 export class Baguette {
-  readonly baseUrl: URL;
+  readonly baseUrl = parseBaseUrl("http://127.0.0.1:0");
   private child?: ChildProcess;
   private starting?: Promise<Status>;
   private readonly lifecycle = new AbortController();
   private readonly deviceChanges = new Map<string, Promise<Status>>();
   private disposed = false;
-  private readonly embedded: boolean;
   private readonly kickstartBridge: (udid: string, signal: AbortSignal) => Promise<void>;
   private readonly bridgeRestarts = new Map<string, number>();
-  private readonly launchBackend: (host: string, port: string, signal: AbortSignal) => Promise<ChildProcess>;
+  private readonly launchBackend: BaguetteLauncher;
   private readonly startFailures = new FailureEpisodes();
 
-  constructor(baseUrl?: string, kickstartBridge = kickstartAccessibilityBridge, launchBackend = launchBundledBaguette) {
-    this.embedded = baseUrl == null;
-    this.baseUrl = parseBaseUrl(baseUrl ?? "http://127.0.0.1:0");
+  constructor({ launchBackend = launchBundledBaguette, kickstartBridge = kickstartAccessibilityBridge }: BaguetteOptions = {}) {
     this.kickstartBridge = kickstartBridge;
     this.launchBackend = launchBackend;
   }
 
-  async json(path: string, options: RequestInit = {}, timeout = 10000): Promise<unknown> {
-    const command = backendCommand("baguette", path);
-    const response = await fetch(new URL(path, this.baseUrl), {
+  private async request(path: string, command: string, options: RequestInit, timeout: number): Promise<Response> {
+    return fetch(new URL(path, this.baseUrl), {
       ...options, redirect: "error", signal: AbortSignal.any([
         this.lifecycle.signal, AbortSignal.timeout(timeout), ...(options.signal ? [options.signal] : []),
       ]),
     }).catch(error => { throw annotateDeviceCommand(error, command); });
+  }
+
+  async json<T = unknown>(path: string, { schema, ...options }: RequestInit & { schema?: z.ZodType<T> } = {}, timeout = 10000): Promise<T> {
+    const command = backendCommand("baguette", path);
+    const response = await this.request(path, command, options, timeout);
     if (response.ok === false) {
       const error = annotateDeviceCommand(new Error(`Baguette returned HTTP ${response.status} for ${path}.`), command, { failure: "http_status", status: response.status });
       if (response.status === 404 && /^\/simulators\/[^/]+\/definition\.json$/.test(path)) {
         const payload = await readDefinitionFailure(response);
         const diagnostic = parseDefinitionDiagnostic(payload);
-        diagnostic.backendMode = this.embedded ? "embedded" : "external";
+        // Kept for comparison with releases that could attach to an external Baguette.
+        diagnostic.backendMode = "embedded";
         setDefinitionDiagnostic(error, diagnostic);
       }
       throw error;
     }
     const payload = await response.json().catch(error => { throw annotateDeviceCommand(error, command); });
     if (payload?.ok === false) throw annotateDeviceCommand(new Error(payload.error ?? "Baguette rejected the request."), command, { failure: "rejected" });
-    return payload;
+    if (schema === undefined) return payload;
+    try { return schema.parse(payload); }
+    catch (error) { throw annotateDeviceCommand(error, command); }
+  }
+
+  /** A binary response, such as a screenshot or bezel image. */
+  async fetchBytes(path: string, request: ByteRequest): Promise<Buffer> {
+    const command = backendCommand("baguette", path);
+    const response = await this.request(path, command, {}, request.timeout ?? 10000);
+    return responseBytes(response, command, "Baguette", path, request);
   }
 
   async describeUi(udid: string): Promise<DescribedUi> {
     const path = `/simulators/${udidSchema.parse(udid)}/describe-ui.json`;
-    try { return await this.json(path) as DescribedUi; }
+    try { return await this.json(path, { schema: describedUiSchema }); }
     catch (error) {
       if (!(error instanceof Error) || error.message !== NO_ACCESSIBILITY_DATA || !await this.restartAccessibilityBridge(udid)) throw error;
     }
     try {
-      const result = await this.json(path) as DescribedUi;
+      const result = await this.json(path, { schema: describedUiSchema });
       recordAccessibilityBridgeRestart("recovered");
       return result;
     } catch (error) {
@@ -146,22 +152,25 @@ export class Baguette {
     }
   }
 
-  async status(signal?: AbortSignal): Promise<Status> {
-    if (this.embedded && !this.child) {
-      return { connected: false, managed: false, baseUrl: this.baseUrl.origin, devices: [], error: "The bundled simulator backend has not started." };
-    }
+  /** The simulators the running Baguette lists; this never starts Baguette. */
+  async devices(signal?: AbortSignal): Promise<IosSimulator[]> {
+    if (!this.child) throw new Error("The bundled simulator backend has not started.");
     try {
       // Listing waits on CoreSimulator, which can take seconds while a device boots.
-      const devices = normalizeDevices(await this.json("/simulators.json", { signal }));
-      return { connected: true, managed: this.child != null, baseUrl: this.baseUrl.origin, devices };
+      return normalizeDevices(await this.json("/simulators.json", { signal }));
     } catch (error) {
-      const status = {
-        connected: false, managed: this.child != null, baseUrl: this.baseUrl.origin, devices: [],
-        error: `Cannot reach Baguette at ${this.baseUrl.origin}. ${errorMessage(error)}`,
-      };
-      listFailures.set(status, error);
-      return status;
+      // The failure keeps how its request failed.
+      throw inheritDeviceCommand(new Error(`Cannot reach Baguette at ${this.baseUrl.origin}. ${errorMessage(error)}`), error);
     }
+  }
+
+  async status(signal?: AbortSignal): Promise<Status> {
+    try { return this.connected(await this.devices(signal)); }
+    catch (error) { return { connected: false, managed: this.child != null, baseUrl: this.baseUrl.origin, devices: [], error: errorMessage(error) }; }
+  }
+
+  private connected(devices: IosSimulator[]): Status {
+    return { connected: true, managed: this.child != null, baseUrl: this.baseUrl.origin, devices };
   }
 
   async start(): Promise<Status> {
@@ -183,28 +192,11 @@ export class Baguette {
     }
   }
 
-  private async allocatePort(): Promise<number> {
-    const socket = createServer();
-    await new Promise<void>((resolve, reject) => { socket.once("error", reject); socket.listen(0, "127.0.0.1", resolve); });
-    const address = socket.address();
-    if (!address || typeof address === "string") throw new Error("Could not allocate a port for the bundled simulator backend.");
-    await new Promise<void>(resolve => socket.close(() => resolve()));
-    return address.port;
-  }
-
   private async ensureStarted(): Promise<Status> {
-    const current = await this.status();
-    if (current.connected) return current;
-    // The port is our running Baguette's own, so its failed device list is not a port conflict.
-    if (this.child) throw listError(current);
-    if (this.embedded === false) {
-      // Refuse to start over a listener that is slow or is not Baguette.
-      if (await this.portInUse()) throw new Error(`Port ${this.baseUrl.port || "80"} is in use, but its listener did not return a Baguette device list.`);
-      return this.launch();
-    }
+    if (this.child) return this.connected(await this.devices());
     // Another process can bind an allocated port before Baguette does. Baguette then exits, so try a new port.
     for (let attempt = 1; ; attempt++) {
-      this.baseUrl.port = String(await this.allocatePort());
+      this.baseUrl.port = String(await allocatePort("Could not allocate a port for the bundled simulator backend."));
       try {
         return await this.launch();
       } catch (error) {
@@ -214,64 +206,29 @@ export class Baguette {
     }
   }
 
-  // Whether anything accepts connections at the address, whether or not it answers.
-  private async portInUse(): Promise<boolean> {
-    try {
-      await fetch(new URL("/simulators.json", this.baseUrl), { signal: AbortSignal.timeout(1500), redirect: "error" });
-      return true;
-    } catch (error) {
-      return (error as { cause?: { code?: string } }).cause?.code !== "ECONNREFUSED";
-    }
-  }
-
   private async launch(): Promise<Status> {
-    // Each attempt keeps its own output, so a failed attempt's late output can't explain the next one.
-    let diagnostics = "";
-    const host = this.baseUrl.hostname.replace(/^\[|\]$/g, "");
-    const child = await this.launchBackend(host, this.baseUrl.port || "80", this.lifecycle.signal);
+    const { child, url } = await this.launchBackend(this.baseUrl.hostname, this.baseUrl.port, this.lifecycle.signal);
     if (this.disposed) {
       child.kill("SIGTERM");
       throw new Error("The plugin server has closed.");
     }
+    if (url !== undefined) this.baseUrl.host = parseBaseUrl(url).host;
     this.child = child;
-    let launchError: Error | undefined;
-    const exited = new AbortController();
-    child.on("error", error => { launchError = error; });
     child.on("exit", (code, signal) => {
-      exited.abort();
       if (!this.disposed) process.stderr.write(`[mobile-dev] Baguette exited: code=${code} signal=${signal ?? "none"}.\n`);
       if (this.child === child) this.child = undefined;
     });
-    for (const output of [child.stdout, child.stderr]) {
-      output?.on("data", chunk => {
-        diagnostics = (diagnostics + chunk.toString()).slice(-4000);
-        process.stderr.write(chunk);
-      });
-    }
     try {
-      const deadline = AbortSignal.timeout(20000);
-      // A listener that holds the port but never answers must not delay noticing that Baguette exited.
-      const polling = AbortSignal.any([deadline, exited.signal]);
-      while (!deadline.aborted && !this.disposed) {
-        if (launchError) {
-          if (isMissingFile(launchError)) {
-            throw annotateDeviceCommand(new MissingRuntimeError("baguette"), "baguette_serve", { failure: "missing_executable" });
-          }
-          throw annotateDeviceCommand(launchError, "baguette_serve");
-        }
-        if (child.exitCode !== null || child.signalCode !== null) {
-          const error = new Error(`Baguette exited before it became ready. ${diagnostics.trim()}`);
-          const status = child.exitCode ?? undefined;
-          throw annotateDeviceCommand(error, "baguette_serve", child.signalCode === null ? { failure: "exit", status } : { failure: "signal" });
-        }
-        const status = await this.status(polling);
-        if (status.connected) return status;
-        await delay(250);
-      }
-      const error = new Error(`Baguette did not become ready within 20 seconds. ${diagnostics.trim()}`);
-      throw annotateDeviceCommand(error, "baguette_serve", { failure: "deadline" });
+      const devices = await superviseBackend(child, {
+        name: "Baguette", deadlineMs: 20000, command: "baguette_serve",
+        probe: signal => this.devices(signal),
+        closed: () => this.disposed,
+        spawnError: error => isMissingFile(error)
+          ? annotateDeviceCommand(new MissingRuntimeError("baguette"), "baguette_serve", { failure: "missing_executable" })
+          : annotateDeviceCommand(error, "baguette_serve"),
+      });
+      return this.connected(devices);
     } catch (error) {
-      child.kill("SIGTERM");
       if (this.child === child) this.child = undefined;
       throw error;
     }
@@ -279,25 +236,19 @@ export class Baguette {
 
   async device(udid: string, mustBeBooted = false) {
     udidSchema.parse(udid);
-    await this.start();
-    return this.listedDevice(udid, mustBeBooted);
+    const { devices } = await this.start();
+    return requireDevice(devices, udid, { ...SIMULATOR, booted: mustBeBooted });
   }
 
   // The simulator as a running Baguette lists it; this never starts Baguette.
   async listedDevice(udid: string, mustBeBooted = false, signal?: AbortSignal) {
-    const status = await this.status(signal);
-    if (!status.connected) throw listError(status);
-    const device = status.devices.find(item => item.udid === udid);
-    if (!device) throw new SimulatorUnavailableError("This simulator is no longer available. Refresh the device list.");
-    if (mustBeBooted && device.state !== "Booted") throw new SimulatorUnavailableError("The simulator is stopped. Press Start to boot it.");
-    return device;
+    return requireDevice(await this.devices(signal), udid, { ...SIMULATOR, booted: mustBeBooted });
   }
 
   async definition(udid: string) {
     await this.device(udid, true);
     try {
-      const payload = await this.json(`/simulators/${udid}/definition.json`);
-      return definitionSchema.parse(payload);
+      return await this.json(`/simulators/${udid}/definition.json`, { schema: definitionSchema });
     } catch (error) {
       const diagnostic = getDefinitionDiagnostic(error);
       if (diagnostic !== undefined) {
@@ -317,22 +268,20 @@ export class Baguette {
     const previous = this.deviceChanges.get(udid);
     const change = (async () => {
       await previous?.catch(() => {});
-      const device = await this.device(udid);
+      const started = await this.start();
+      const device = requireDevice(started.devices, udid, SIMULATOR);
       const expected = action === "boot" ? "Booted" : "Shutdown";
       // Baguette's boot route also repairs input. Never call it on a running device.
-      if (device.state === expected) return this.status();
+      if (device.state === expected) return started;
       const signal = AbortSignal.any([this.lifecycle.signal, AbortSignal.timeout(timeout)]);
       try {
         const inProgress = device.state === (action === "boot" ? "Booting" : "ShuttingDown");
         if (!inProgress) await this.json(`/simulators/${udid}/${action}`, { method: "POST", signal }, timeout);
         while (true) {
           signal.throwIfAborted();
-          const status = await this.status(signal);
+          const devices = await this.devices(signal);
           signal.throwIfAborted();
-          if (!status.connected) throw listError(status);
-          const current = status.devices.find(item => item.udid === udid);
-          if (!current) throw new SimulatorUnavailableError("This simulator is no longer available. Refresh the device list.");
-          if (current.state === expected) return status;
+          if (requireDevice(devices, udid, SIMULATOR).state === expected) return this.connected(devices);
           await delay(250, undefined, { signal });
         }
       } catch (error) {
@@ -348,11 +297,13 @@ export class Baguette {
 
   async repairInput(udid: string): Promise<void> {
     await this.device(udid, true);
-    const executable = await bundledExecutable();
-    const environment = await baguetteEnvironment(executable, this.lifecycle.signal);
+    const { executable, env } = await baguetteRuntime(this.lifecycle.signal);
     const execute = promisify(execFile);
     const { stdout, stderr } = await execute(executable, ["heal", "--udid", udid], {
-      timeout: 45000, maxBuffer: 1024 * 1024, encoding: "utf8", env: environment, signal: this.lifecycle.signal,
+      timeout: 45000, maxBuffer: 1024 * 1024, encoding: "utf8", env, signal: this.lifecycle.signal,
+    }).catch(error => {
+      forgetBaguetteRuntime(error);
+      throw error;
     });
     if (stdout || stderr) process.stderr.write(stdout + stderr);
   }
@@ -365,27 +316,10 @@ export class Baguette {
   }
 }
 
+// A larger, unreadable or malformed body has no diagnostic.
 async function readDefinitionFailure(response: Response): Promise<unknown> {
-  const reader = response.body?.getReader();
-  if (reader === undefined) return;
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  try {
-    while (true) {
-      const chunk = await reader.read();
-      if (chunk.done) break;
-      size += chunk.value.byteLength;
-      if (size > 4096) return;
-      chunks.push(chunk.value);
-    }
-    const bytes = Buffer.concat(chunks);
-    const text = bytes.toString("utf8");
-    return JSON.parse(text);
-  } catch {
-    return;
-  } finally {
-    const cancellation = reader.cancel();
-    await cancellation.catch(() => {});
-    reader.releaseLock();
-  }
+  const bytes = await readLimitedBody(response, 4096).catch(() => undefined);
+  if (bytes === undefined) return;
+  try { return JSON.parse(bytes.toString("utf8")); }
+  catch { return; }
 }

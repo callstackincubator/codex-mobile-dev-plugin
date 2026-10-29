@@ -130,7 +130,7 @@ for (const action of ["accept", "cancel", "decline", "invalid", "duplicate", "em
 test("discovery rejects duplicate, missing, wrong-kind and unauthorized candidates", async () => {
   const parsed = deviceChoiceInputSchema.parse(input);
   const android = parsed.devices[0];
-  await assert.rejects(resolveDeviceChoices([android, android], sources()), /only once/);
+  await assert.rejects(resolveDeviceChoices([android, android], sources()), { message: "Each candidate device must appear only once.", outcome: "invalid_input" });
   await assert.rejects(resolveDeviceChoices([{ ...android, deviceId: "missing" }], sources()), /no longer available/);
   await assert.rejects(resolveDeviceChoices([{ platform: "android", kind: "physical", deviceId: android.deviceId }], sources()), /no longer available/);
   const discovery = sources();
