@@ -9,7 +9,7 @@ import { inspectReactNative } from "./react-native-inspector.ts";
 import type { InspectorRequest } from "./react-native-inspector.ts";
 import { readDeviceApps } from "./device-apps/sources.ts";
 import { captureServerError } from "./telemetry.ts";
-import { udidSchema } from "@mobile-dev/shared/protocol.ts";
+import { deviceRefSchema, deviceTargetSchema } from "@mobile-dev/shared/device-ref.ts";
 import { accessibilityScreen, screenComponents } from "@mobile-dev/shared/screen-annotations.ts";
 import type { ScreenSize } from "@mobile-dev/shared/screen-annotations.ts";
 import { adbPath } from "./native-logs.ts";
@@ -23,8 +23,7 @@ type NativeSnapshot = {
   screen?: ScreenSize;
 };
 
-async function iosSnapshot(baguette: Baguette, deviceId: string, signal: AbortSignal): Promise<NativeSnapshot> {
-  const udid = udidSchema.parse(deviceId);
+async function iosSnapshot(baguette: Baguette, udid: string, signal: AbortSignal): Promise<NativeSnapshot> {
   const device = await baguette.device(udid, true);
   const response = await baguette.describeUi(udid);
   return {
@@ -66,16 +65,17 @@ export function registerInspectionTools(server: McpServer, baguette: Baguette, a
     title: "Inspect app elements",
     description: "Read native accessibility elements and, for a matching React Native development app, measured runtime component bounds through an existing local Metro debugger. Does not start Metro, modify app props or take over an exclusive debugger. iOS bounds use device points; Android bounds use screen pixels. Optional targetId selects a known Metro target explicitly.",
     inputSchema: {
-      platform: z.enum(["ios", "android"]), deviceId: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/), deviceName: z.string().min(1).max(256),
+      ...deviceRefSchema.shape, deviceName: z.string().min(1).max(256),
       screenWidth: z.number().positive().max(16384), metroUrl: z.string().max(2048).optional(), targetId: z.string().max(512).optional(),
     },
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     _meta: { ui: { visibility: ["app", "model"] } },
   }, async ({ platform, deviceId, deviceName, screenWidth, metroUrl, targetId }) => {
     try {
-      const { native, app, screen } = platform === "ios"
-        ? await iosSnapshot(baguette, deviceId, controller.signal)
-        : await androidSnapshot(android, deviceId, deviceName, screenWidth);
+      const target = deviceTargetSchema.parse({ platform, id: deviceId });
+      const { native, app, screen } = target.platform === "ios"
+        ? await iosSnapshot(baguette, target.id, controller.signal)
+        : await androidSnapshot(android, target.id, deviceName, screenWidth);
       let runtime: Awaited<ReturnType<typeof inspectReactNative>>;
       try {
         runtime = await inspectReactNative({ ...app, url: metroUrl, targetId, platform, screenWidth }, controller.signal);

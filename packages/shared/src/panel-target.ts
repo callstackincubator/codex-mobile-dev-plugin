@@ -1,10 +1,11 @@
 import { z } from "zod";
+import { deviceIdSchema, deviceRefSchema, platformSchema } from "./device-ref.ts";
 
-const platform = z.enum(["ios", "android"]).optional().describe("The task's established platform. Omit when undecided.");
+const platform = platformSchema.optional().describe("The task's established platform. Omit when undecided.");
 const kind = z.enum(["simulator", "emulator", "physical"]).optional().describe("The requested device kind. Omit when undecided.");
-const deviceId = z.string().min(1).max(256).regex(/^[A-Za-z0-9_.:\[\]%-]+$/).optional().describe("An exact device ID from device discovery. Omit to select a matching device automatically.");
+const deviceId = deviceIdSchema.optional().describe("An exact device ID from device discovery. Omit to select a matching device automatically.");
 
-export const panelTargetSchema = z.object({ platform, kind, deviceId }).strict().superRefine((target, context) => {
+export const panelTargetSchema = deviceRefSchema.extend({ platform, kind, deviceId }).strict().superRefine((target, context) => {
   if (target.platform === "ios" && target.kind === "emulator" || target.platform === "android" && target.kind === "simulator") {
     context.addIssue({ code: "custom", path: ["kind"], message: "Use simulator for iOS or emulator for Android." });
   }

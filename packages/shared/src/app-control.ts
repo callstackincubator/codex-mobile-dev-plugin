@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { deviceRefSchema } from "./device-ref.ts";
 
 export const appPermissions = ["location", "photos", "camera", "microphone", "notifications", "contacts", "calendar", "reminders", "motion"] as const;
 export type AppPermission = typeof appPermissions[number];
@@ -12,10 +13,7 @@ export type PermissionState = typeof permissionStates[number];
 
 export const bundleIdSchema = z.string().min(1).max(255).regex(/^[A-Za-z0-9_][A-Za-z0-9._-]*$/);
 export const appUrlSchema = z.string().min(3).max(2048).regex(/^[A-Za-z][A-Za-z0-9+.-]*:\S+$/, "Expected a URL with a scheme, such as myapp://checkout.");
-export const appTargetShape = {
-  platform: z.enum(["ios", "android"]),
-  deviceId: z.string().min(1).max(256),
-};
+export const appTargetShape = deviceRefSchema.shape;
 
 const installedApp = z.object({ bundleId: bundleIdSchema, name: z.string() });
 // runningBundleIds starts with the foreground app when it is known, then the most recently launched.

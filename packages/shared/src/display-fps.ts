@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { CpuPhase } from "./cpu.ts";
+import { deviceRefSchema } from "./device-ref.ts";
 
 export const MAX_DISPLAY_FRAMES_PER_INTERVAL = 4096;
 const integerString = z.string();
@@ -43,11 +44,5 @@ export function displayFrameTime(frame: DisplayFrame, intervalEndNs: string, int
   const elapsed = Number(elapsedNs) / 1e9;
   return intervalEndTime + elapsed;
 }
-const platform = z.enum(["ios", "android"]);
-const deviceString = z.string();
-const nonemptyDevice = deviceString.min(1);
-const boundedDevice = nonemptyDevice.max(256);
-const deviceId = boundedDevice.regex(/^[a-zA-Z0-9_.:-]+$/);
-const target = z.object({ platform, deviceId });
-export const displayFpsTargetSchema = target.strict();
+export const displayFpsTargetSchema = deviceRefSchema.strict();
 export type DisplayFpsTarget = z.infer<typeof displayFpsTargetSchema>;

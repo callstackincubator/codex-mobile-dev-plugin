@@ -34,6 +34,7 @@ import type { PanelTarget } from "@mobile-dev/shared/panel-target.ts";
 import { initialPanelDevice } from "./device-layout.ts";
 import { isDeviceActive, isPhysicalIos } from "@mobile-dev/shared/devices.ts";
 import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
+import { avdId, isEmulatorSerial, stoppedAvdName } from "@mobile-dev/shared/android-ids.ts";
 
 export function createSimulatorPanel(
   app: HostBridge,
@@ -442,12 +443,12 @@ export function createSimulatorPanel(
     statusRevision++;
     status = next;
     const available = [...physicalDevices, ...next.devices];
-    if (platform === "android" && openingTarget?.deviceId?.startsWith("avd:")) {
-      const avdName = openingTarget.deviceId.slice(4);
-      const booted = next.devices.find(device => device.kind !== "physical" && device.name === avdName && device.state === "Booted");
+    const openingAvd = platform === "android" ? stoppedAvdName(openingTarget?.deviceId) : undefined;
+    if (openingTarget && openingAvd !== undefined) {
+      const booted = next.devices.find(device => device.kind !== "physical" && device.name === openingAvd && device.state === "Booted");
       if (booted !== undefined) openingTarget = { ...openingTarget, deviceId: booted.udid };
     } else if (platform === "android" && selected && openingTarget?.deviceId === selected.udid && selected.kind !== "physical") {
-      const stoppedId = `avd:${selected.name}`;
+      const stoppedId = avdId(selected.name);
       const stopped = next.devices.find(device => device.udid === stoppedId && device.state === "Shutdown");
       if (stopped !== undefined) openingTarget = { ...openingTarget, deviceId: stopped.udid };
     }
@@ -478,7 +479,7 @@ export function createSimulatorPanel(
         value: device.udid, label: `${device.name}${runtime ? ` · ${runtime}` : ""}`,
         group: platform === "ios" ? "Simulators" : "Emulators",
         kind: /ipad|tablet|pixel.*tab/i.test(device.name) ? "tablet" : "phone", running: device.state === "Booted",
-        canStop: device.state === "Booted" && (platform === "ios" || /^emulator-\d+$/.test(device.udid)),
+        canStop: device.state === "Booted" && (platform === "ios" || isEmulatorSerial(device.udid)),
       };
     });
     devices.update({

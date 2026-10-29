@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { androidIdSchema } from "../serve-emu.ts";
+import { androidIdSchema, isStoppedAvd } from "@mobile-dev/shared/android-ids.ts";
 import { captureServerError } from "../telemetry.ts";
 import { udidSchema } from "@mobile-dev/shared/protocol.ts";
 import { ExpectedOperationError, errorMessage } from "@mobile-dev/shared/error-reporting.ts";
@@ -24,7 +24,7 @@ export function createDrivers(commands: Commands = systemCommands, simulatorFore
   const cache = new AppDetailsCache();
   return ({ platform, deviceId }) => {
     if (platform === "android") {
-      if (!androidIdSchema.safeParse(deviceId).success || deviceId.startsWith("avd:")) throw new ExpectedOperationError("invalid_input", "Choose a running Android device serial.");
+      if (!androidIdSchema.safeParse(deviceId).success || isStoppedAvd(deviceId)) throw new ExpectedOperationError("invalid_input", "Choose a running Android device serial.");
       return new AndroidDriver(deviceId, commands, cache);
     }
     if (!udidSchema.safeParse(deviceId).success) throw new ExpectedOperationError("invalid_input", "App tools support iOS simulators and Android devices. Pass an iOS simulator UDID.");
