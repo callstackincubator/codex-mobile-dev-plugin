@@ -1,4 +1,8 @@
     func foregroundPid() throws -> Int32? {
+        try Self.onTranslatorQueue { try foregroundPidOnTranslatorQueue() }
+    }
+
+    private func foregroundPidOnTranslatorQueue() throws -> Int32? {
         guard Self.isAvailable, let translator = Self.sharedTranslator else {
             throw ForegroundFailure(cause: .bridgeUnavailable, message: "Simulator accessibility bridge is unavailable")
         }

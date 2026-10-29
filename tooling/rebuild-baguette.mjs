@@ -2,6 +2,8 @@ import { addForegroundTimeoutDiagnostics } from "./baguette-foreground-diagnosti
 import { addDefinitionDiagnostics } from "./baguette-definition-diagnostics.mjs";
 import { removeBaguetteToolchainRpaths } from "./baguette-rpaths.mjs";
 import { addScreenLifecycle } from "./baguette-screen-lifecycle.mjs";
+import { addAccessibilityQueue } from "./baguette-accessibility-queue.mjs";
+import { addSubprocessPipes } from "./baguette-subprocess-pipes.mjs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createHash } from "node:crypto";
@@ -13,23 +15,19 @@ import { buildNativeSentry, nativeTelemetrySourceHash, nativeSentryLicense, save
 
 const execute = promisify(execFile);
 
+// The scripts that shape the rebuilt binary; native release artifacts are keyed on them too.
+export const baguetteBuildScripts = [
+  "rebuild-baguette.mjs", "baguette-source-patch.mjs", "baguette-definition-diagnostics.mjs",
+  "baguette-foreground-diagnostics.mjs", "baguette-rpaths.mjs", "baguette-screen-lifecycle.mjs",
+  "baguette-accessibility-queue.mjs", "baguette-subprocess-pipes.mjs",
+];
+
 export async function baguetteTelemetrySourceHash() {
   const hash = createHash("sha256");
   await nativeTelemetrySourceHash(hash);
-  const script = await readFile("tooling/rebuild-baguette.mjs");
-  hash.update(script);
-  const definitionScript = await readFile("tooling/baguette-definition-diagnostics.mjs");
-  hash.update(definitionScript);
-  const foregroundScript = await readFile("tooling/baguette-foreground-diagnostics.mjs");
-  hash.update(foregroundScript);
-  const rpathScript = await readFile("tooling/baguette-rpaths.mjs");
-  hash.update(rpathScript);
-  const screenScript = await readFile("tooling/baguette-screen-lifecycle.mjs");
-  hash.update(screenScript);
-  for (const file of ["ForegroundCommand.swift", "ForegroundFailure.swift", "foreground-method.swift", "DefinitionDiagnostics.swift", "DefinitionDiagnosticsTests.swift", "ScreenLifecycleTests.swift"]) {
-    const contents = await readFile(`packages/native/baguette/${file}`);
-    hash.update(contents);
-  }
+  for (const script of baguetteBuildScripts) hash.update(await readFile(`tooling/${script}`));
+  const swiftSources = (await readdir("packages/native/baguette")).filter(file => file.endsWith(".swift")).sort();
+  for (const file of swiftSources) hash.update(await readFile(`packages/native/baguette/${file}`));
   return hash.digest("hex");
 }
 
@@ -117,6 +115,8 @@ export async function rebuildBaguette(sourceDirectory) {
     await addForegroundDetection(source);
     await addDefinitionDiagnostics(source, release);
     await addScreenLifecycle(source);
+    await addAccessibilityQueue(source);
+    await addSubprocessPipes(source);
     console.log(`Rebuilding Baguette ${release.version} with ${swift.trim().split("\n")[0]}…`);
     try {
       await execute("xcrun", ["swift", "build", "-c", "release", "--product", "Baguette"], {

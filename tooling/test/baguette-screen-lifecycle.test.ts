@@ -1,13 +1,11 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
 import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { test } from "node:test";
-import { promisify } from "node:util";
 import { serializeScreenLifecycle } from "../baguette-screen-lifecycle.mjs";
+import { runSwiftTests } from "./swift-tests.ts";
 
-const execute = promisify(execFile);
 const fixtureDirectory = new URL("../../packages/test-support/fixtures/baguette-screen/", import.meta.url);
 
 test("screen lifecycle integration rejects changed and already integrated sources", async () => {
@@ -40,32 +38,9 @@ test("screen cleanup waits for active reads, supports callback shutdown and clea
   const testsUrl = new URL("../../packages/native/baguette/ScreenLifecycleTests.swift", import.meta.url);
   const testsPath = join(directory, "ScreenLifecycleTests.swift");
   await copyFile(testsUrl, testsPath);
-  const runnerPath = join(directory, "TestMain.swift");
-  await writeFile(runnerPath, `import Darwin
-import Testing
-@main enum TestMain {
-    static func main() async {
-        let status: CInt = await Testing.__swiftPMEntryPoint()
-        exit(status)
-    }
-}
-`);
-  const platformResult = await execute("xcrun", ["--sdk", "macosx", "--show-sdk-platform-path"]);
-  const platform = platformResult.stdout.trim();
-  const frameworks = join(platform, "Developer/Library/Frameworks");
-  const compilerResult = await execute("xcrun", ["--find", "swiftc"]);
-  const compiler = compilerResult.stdout.trim();
-  const compilerDirectory = dirname(compiler);
-  const testingMacros = join(compilerDirectory, "../lib/swift/host/plugins/testing/libTestingMacros.dylib");
-  const binary = join(directory, "screen-tests");
   const sources = files.map(file => join(directory, file));
-  sources.push(adapterPath, testsPath, runnerPath);
-  await execute("xcrun", ["swiftc", "-swift-version", "6", "-g", "-parse-as-library",
-    "-D", "MOBILE_DEV_SCREEN_STANDALONE", "-sanitize=thread", "-load-plugin-library", testingMacros,
-    "-F", frameworks, "-Xlinker", "-rpath", "-Xlinker", frameworks, ...sources, "-o", binary], { timeout: 45000 });
-  const env = { ...process.env, TSAN_OPTIONS: "halt_on_error=1" };
-  const result = await execute(binary, [], { timeout: 10000, env });
-  const output = result.stdout + result.stderr;
+  sources.push(adapterPath, testsPath);
+  const output = await runSwiftTests(directory, sources, { define: "MOBILE_DEV_SCREEN_STANDALONE", sanitizeThread: true, timeout: 10000 });
   assert.match(output, /Test run with 4 tests in 1 suite passed/);
   assert.doesNotMatch(output, /ThreadSanitizer:/);
 });
