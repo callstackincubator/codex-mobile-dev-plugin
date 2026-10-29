@@ -19,11 +19,14 @@ export function registerLogTools(server: McpServer, logs: LogSessions, devices: 
     title: "Find log sources", description: "List connected Android devices and inspector targets at an existing local Metro URL. Does not start a dev server. Select a target explicitly before streaming Metro logs.",
     inputSchema: { metroUrl: z.string().max(2048).optional() }, annotations: READ_ONLY, _meta: metadata,
   }, guarded("logs.tool", async ({ metroUrl }: { metroUrl?: string }) => {
-    const errors: string[] = [];
-    const android = await devices.androidDevices().catch(error => { errors.push(`Android: ${errorMessage(error)}`); return []; });
-    const metro = metroUrl ? await metroTargets(metroUrl).then(targets => targets.map(({ webSocketDebuggerUrl, ...target }) => target))
-      .catch(error => { errors.push(`Metro: ${errorMessage(error)}`); return []; }) : [];
-    return jsonResult({ android, metro, errors });
+    // Each listing can wait five seconds, so both run at once; Android's error stays first.
+    const listing = <T>(source: string, items: Promise<T[]>) => items.then(
+      found => ({ found, errors: [] }), (error: unknown) => ({ found: [] as T[], errors: [`${source}: ${errorMessage(error)}`] }));
+    const [android, metro] = await Promise.all([
+      listing("Android", devices.androidDevices()),
+      metroUrl ? listing("Metro", metroTargets(metroUrl).then(targets => targets.map(({ webSocketDebuggerUrl, ...target }) => target))) : { found: [], errors: [] },
+    ]);
+    return jsonResult({ android: android.found, metro: metro.found, errors: [...android.errors, ...metro.errors] });
   }));
 
   async function validate(options: LogOptions) {
