@@ -18,6 +18,10 @@ type Snapshot = DisplayFpsState & {
   threadOrder: ThreadOrder;
   phase: CpuPhase; error: string; sourceError: string;
   physical: boolean;
+  /** CPU or FPS monitoring is running. */
+  running: boolean;
+  /** The phase the tool shows: FPS's while it records or when CPU monitoring is off, otherwise CPU's. */
+  displayPhase: CpuPhase;
 };
 type Session = { id: string; abort: AbortController; closing?: Promise<void> };
 
@@ -39,7 +43,7 @@ export class PerformancePanel {
   private listeners = new Set<() => void>();
   private snapshot: Snapshot = { ...initialFpsState, physical: false, open: false, available: false, discovering: false, monitoring: false,
     selectedLabel: "Selected device", platform: "ios", bundleId: "", apps: [], samples: [], threadHistory: new Map(), threadOrder: "activity",
-    phase: "idle", error: "", sourceError: "" };
+    phase: "idle", error: "", sourceError: "", running: false, displayPhase: "idle" };
 
   constructor(app: HostBridge, deviceApps: DeviceAppsStore) {
     this.app = app;
@@ -58,7 +62,14 @@ export class PerformancePanel {
   }
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   getSnapshot = () => this.snapshot;
-  private update(fields: Partial<Snapshot>) { this.snapshot = { ...this.snapshot, ...fields }; for (const listener of this.listeners) listener(); }
+  private update(fields: Partial<Snapshot>) {
+    const next = { ...this.snapshot, ...fields };
+    let displayPhase = next.phase;
+    if (next.fpsPhase === "recording") displayPhase = "recording";
+    else if ((next.fpsPhase === "connecting" || next.fpsPhase === "failed") && next.monitoring === false) displayPhase = next.fpsPhase;
+    this.snapshot = { ...next, running: next.monitoring || next.fpsMonitoring, displayPhase };
+    for (const listener of this.listeners) listener();
+  }
   private resetHistory(fields: Partial<Snapshot>) {
     this.nextThreadNumber = 1;
     const threadHistory = new Map<string, ThreadHistory>();
