@@ -203,6 +203,40 @@ test("unavailable catalogs, wrong identities and invalid versions stay quiet; de
   await assert.rejects(migration, /Development builds/);
 });
 
+test("failed checks keep the last known status and retry after the failed interval", async t => {
+  const directory = await profile(t);
+  const calls: string[][] = [];
+  const cli = cliFixture(directory, calls, { storeInstalled: true });
+  let offline = false;
+  const run: RunCodex = async args => { if (offline) throw new Error("Offline"); return cli.run(args); };
+  let now = 1000000;
+  const options = { enabled: true, profile: directory, currentVersion: "0.1.167", run, readStore: cli.readStore, now: () => now };
+  const updates = new PluginUpdates(options);
+  assert.equal((await updates.check()).status, "migration");
+  offline = true;
+  now += 60 * 60 * 1000;
+  const failed = await updates.check();
+  assert.deepEqual(failed, { status: "migration", currentVersion: "0.1.167", latestVersion: "0.1.167", storeInstalled: true });
+  const path = join(directory, "mobile-dev/updates.json");
+  const saved = JSON.parse(await readFile(path, "utf8"));
+  assert.equal(saved.checkedAt, 1000000);
+  assert.equal(saved.failedAt, now);
+  assert.equal(saved.latestVersion, "0.1.167");
+  const anotherChat = new PluginUpdates(options);
+  assert.equal((await anotherChat.check()).status, "migration");
+  assert.equal(calls.length, 1);
+  now += 15 * 60 * 1000;
+  assert.equal((await anotherChat.check()).status, "migration");
+  assert.equal(JSON.parse(await readFile(path, "utf8")).checkedAt, 1000000);
+  offline = false;
+  now += 15 * 60 * 1000;
+  assert.equal((await anotherChat.check()).status, "migration");
+  assert.equal(calls.length, 2);
+  const recovered = JSON.parse(await readFile(path, "utf8"));
+  assert.equal(recovered.failedAt, undefined);
+  assert.equal(recovered.checkedAt, now);
+});
+
 test("migration is offered for the same version and verifies the store before any deletion", async t => {
   for (const fixture of [{}, { storeInstalled: true, installedVersion: "0.1.163" }, { storeInstalled: true, storeEnabled: false }]) {
     const directory = await profile(t);

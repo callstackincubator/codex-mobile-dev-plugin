@@ -28,10 +28,12 @@ const repositories = ["callstackincubator/codex-mobile-dev-plugin", "callstackin
 const githubPlugin = "mobile-dev@mobile-dev";
 const checkIntervalMs = 60 * 60 * 1000;
 const failedCheckIntervalMs = 15 * 60 * 1000;
-// The cache file keeps the flat format older releases read, so downgrades keep working.
+// The cache file keeps the flat format older releases read, so downgrades keep working. A failed
+// check after a good one keeps that result and adds failedAt, which older releases ignore.
 const cacheSchema = z.object({
   source: z.literal(PLUGIN_STORE_ID), checkedAt: z.number().nonnegative(), latestVersion: releaseVersionSchema.optional(),
   githubConfigured: z.boolean(), storeInstalled: z.boolean(), migratedVersion: releaseVersionSchema.optional(),
+  failedAt: z.number().nonnegative().optional(),
 });
 const manifestSchema = z.object({ name: z.literal("mobile-dev"), version: releaseVersionSchema });
 const marketplaceSourceSchema = z.object({ sourceType: z.string(), source: z.string() }).optional();
@@ -45,11 +47,9 @@ const removedSchema = z.object({ pluginId: z.string() });
 const removedMarketplaceSchema = z.object({ marketplaceName: z.string() });
 type StoredCache = z.infer<typeof cacheSchema>;
 type Check = { checkedAt: number; latestVersion: string; githubConfigured: boolean; storeInstalled: boolean };
-type Cache =
-  | { state: "unchecked" }
-  | { state: "failed"; checkedAt: number }
-  | { state: "checked" } & Check
-  | { state: "migrated"; migratedVersion: string } & Check;
+type KnownCache = { state: "checked" } & Check | { state: "migrated"; migratedVersion: string } & Check;
+// A failed check keeps the previous result to show until a later check succeeds.
+type Cache = { state: "unchecked" } | { state: "failed"; checkedAt: number; previous?: KnownCache } | KnownCache;
 type SavedCache = Exclude<Cache, { state: "unchecked" }>;
 type Catalog = z.infer<typeof pluginsSchema> & { store: StorePlugin };
 type MigrationStep = "catalog" | "remove-plugin" | "remove-marketplace" | "verify" | "save";
@@ -76,8 +76,17 @@ function githubConfigured(catalog: Catalog): boolean {
   return hasGithubRelease([...catalog.installed, ...catalog.available]);
 }
 
+function knownCache(cache: Cache): KnownCache | undefined {
+  if (cache.state === "unchecked") return undefined;
+  return cache.state === "failed" ? cache.previous : cache;
+}
+
 function fromStored(stored: StoredCache): SavedCache {
-  const { checkedAt, latestVersion, githubConfigured, storeInstalled, migratedVersion } = stored;
+  const { checkedAt, latestVersion, githubConfigured, storeInstalled, migratedVersion, failedAt } = stored;
+  if (failedAt !== undefined) {
+    const previous = fromStored({ ...stored, failedAt: undefined });
+    return { state: "failed", checkedAt: failedAt, previous: knownCache(previous) };
+  }
   if (migratedVersion !== undefined) return { state: "migrated", migratedVersion, checkedAt, latestVersion: latestVersion ?? migratedVersion, githubConfigured, storeInstalled };
   if (latestVersion === undefined) return { state: "failed", checkedAt };
   return { state: "checked", checkedAt, latestVersion, githubConfigured, storeInstalled };
@@ -86,7 +95,9 @@ function fromStored(stored: StoredCache): SavedCache {
 function toStored(cache: SavedCache): StoredCache {
   const source = PLUGIN_STORE_ID;
   switch (cache.state) {
-    case "failed": return { source, checkedAt: cache.checkedAt, githubConfigured: false, storeInstalled: false };
+    case "failed":
+      if (cache.previous === undefined) return { source, checkedAt: cache.checkedAt, githubConfigured: false, storeInstalled: false };
+      return { ...toStored(cache.previous), failedAt: cache.checkedAt };
     case "checked": return { source, checkedAt: cache.checkedAt, latestVersion: cache.latestVersion, githubConfigured: cache.githubConfigured, storeInstalled: cache.storeInstalled };
     case "migrated": {
       const { checkedAt, latestVersion, githubConfigured, storeInstalled, migratedVersion } = cache;
@@ -135,8 +146,8 @@ export class PluginUpdates {
   private status(cache: Cache): PluginUpdate {
     const currentVersion = this.currentVersion;
     switch (cache.state) {
-      case "unchecked":
-      case "failed": return { status: "unavailable", currentVersion };
+      case "unchecked": return { status: "unavailable", currentVersion };
+      case "failed": return cache.previous === undefined ? { status: "unavailable", currentVersion } : this.status(cache.previous);
       case "migrated":
         if (this.runningGithub) return { status: "migrated", currentVersion, latestVersion: cache.migratedVersion, storeInstalled: true };
         return this.checkedStatus(cache);
@@ -227,7 +238,7 @@ export class PluginUpdates {
       const catalog = await this.catalog();
       const storeInstalled = await this.storeInstalled(catalog);
       next = { state: "checked", checkedAt, latestVersion: catalog.store.version, githubConfigured: githubConfigured(catalog), storeInstalled };
-    } catch { next = { state: "failed", checkedAt }; }
+    } catch { next = { state: "failed", checkedAt, previous: knownCache(cache) }; }
     try { await this.saveCache(next); }
     catch {
       const error = new Error("Could not save the plugin update check.");
