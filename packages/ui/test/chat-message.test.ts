@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { canMessage, chatMessage, ChatDeliveryError, sendChat } from "../src/chat-message.ts";
-import { errorCategory } from "../../shared/src/error-reporting.ts";
+import { errorCategory } from "@mobile-dev/shared/error-reporting.ts";
 
 test("standard hosts receive a complete message without OpenAI routing", () => {
   const message = chatMessage({ getHostCapabilities: () => ({ message: { text: {} } }) }, "Explain this log: failed request");

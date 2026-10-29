@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { z } from "zod";
 import { annotateDeviceCommand, backendCommand, classifyCommandFailure, deviceCommandTags } from "../src/device-command-diagnostics.ts";
-import { commandError, commandLabel } from "../../core/src/app-control/commands.ts";
+import { commandError, commandLabel } from "@mobile-dev/core/app-control/commands.ts";
 import { expectedOutcome } from "../src/error-reporting.ts";
 
 test("command failures are classified from codes, statuses and types, never from their text", () => {

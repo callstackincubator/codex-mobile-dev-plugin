@@ -1,4 +1,4 @@
-import { connectIosCapture } from "../../core/src/ios-mirror-client.ts";
+import { connectIosCapture } from "@mobile-dev/core/ios-mirror-client.ts";
 
 const capture = await connectIosCapture(process.argv[2], "phone");
 process.send?.({ ready: true });

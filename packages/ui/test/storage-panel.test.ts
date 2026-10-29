@@ -3,10 +3,10 @@ import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { setImmediate } from "node:timers/promises";
 import type { App } from "@modelcontextprotocol/ext-apps";
-import type { InstalledApp } from "../../shared/src/app-control.ts";
-import type { PhysicalAndroidDevice } from "../../shared/src/android-devices.ts";
-import { createDeviceApps } from "../../test-support/device-apps-fixtures.ts";
-import { UDID } from "../../test-support/fixtures.ts";
+import type { InstalledApp } from "@mobile-dev/shared/app-control.ts";
+import type { PhysicalAndroidDevice } from "@mobile-dev/shared/android-devices.ts";
+import { createDeviceApps } from "@mobile-dev/test-support/device-apps-fixtures.ts";
+import { UDID } from "@mobile-dev/test-support/fixtures.ts";
 import { StoragePanel } from "../src/storage-panel.ts";
 
 const simulator = { udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS", platform: "ios", kind: "simulator" } as const;

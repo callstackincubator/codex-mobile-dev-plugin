@@ -4,9 +4,9 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolRequest, CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { agentDeviceTools, readAgentDeviceCatalog } from "../core/src/agent-device-tools.ts";
-import type { AgentDeviceBackend } from "../core/src/agent-device-runtime.ts";
-import { installTracePropagation, instrumentMcpServer } from "../core/src/telemetry.ts";
+import { agentDeviceTools, readAgentDeviceCatalog } from "@mobile-dev/core/agent-device-tools.ts";
+import type { AgentDeviceBackend } from "@mobile-dev/core/agent-device-runtime.ts";
+import { installTracePropagation, instrumentMcpServer } from "@mobile-dev/core/telemetry.ts";
 
 // The pinned runtime's own tool list, as its MCP server reports it.
 const catalogClient = new Client({ name: "agent-device-schema-test", version: "1" });

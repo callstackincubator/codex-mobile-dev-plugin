@@ -1,15 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { accessibilityScreen, componentAt, componentsAt, screenComponents, screenSize, formatAnnotationContext, screenSelectionContext, ANNOTATION_EDIT_GUIDANCE } from "../../shared/src/screen-annotations.ts";
+import { accessibilityScreen, componentAt, componentsAt, screenComponents, screenSize, formatAnnotationContext, screenSelectionContext, ANNOTATION_EDIT_GUIDANCE } from "@mobile-dev/shared/screen-annotations.ts";
 import { ScreenAnnotationsStore } from "../src/screen-annotations.ts";
 import type { InspectedTree, ScreenSource } from "../src/screen-annotations.ts";
-import type { ScreenAnnotation } from "../../shared/src/screen-annotations.ts";
+import type { ScreenAnnotation } from "@mobile-dev/shared/screen-annotations.ts";
 import { PanelContext } from "../src/model-context.ts";
 import { App } from "@modelcontextprotocol/ext-apps";
 import { AppBridge } from "@modelcontextprotocol/ext-apps/app-bridge";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { OpenAIModelContextHostState } from "@openai/mcp-extensions/app";
-import { PNG, UDID } from "../../test-support/fixtures.ts";
+import { PNG, UDID } from "@mobile-dev/test-support/fixtures.ts";
 import type { HostAttachments } from "../src/host-bridge.ts";
 
 const simulator = { udid: UDID, name: "iPhone", runtime: "iOS 26", state: "Booted", platform: "ios" as const, kind: "simulator" as const };

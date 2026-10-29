@@ -3,10 +3,10 @@ import assert from "node:assert/strict";
 import type { App } from "@modelcontextprotocol/ext-apps";
 import type { OpenAIModelContextHostState } from "@openai/mcp-extensions/app";
 import { PanelContext, type ScreenshotAttachment } from "../src/model-context.ts";
-import { stackLogs } from "../../shared/src/logs.ts";
-import { UDID } from "../../test-support/fixtures.ts";
-import type { PhysicalIosDevice } from "../../shared/src/ios-devices.ts";
-import type { PhysicalAndroidDevice } from "../../shared/src/android-devices.ts";
+import { stackLogs } from "@mobile-dev/shared/logs.ts";
+import { UDID } from "@mobile-dev/test-support/fixtures.ts";
+import type { PhysicalIosDevice } from "@mobile-dev/shared/ios-devices.ts";
+import type { PhysicalAndroidDevice } from "@mobile-dev/shared/android-devices.ts";
 import type { HostAttachments } from "../src/host-bridge.ts";
 
 const simulator = { udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS 26", platform: "ios" as const, kind: "simulator" as const };

@@ -12,7 +12,7 @@ import { createIosMirrorServer } from "../src/ios-mirror-server.ts";
 import { connectIosCapture } from "../src/ios-mirror-client.ts";
 import { mirrorRequestSchema, wireTouchPhases } from "../src/ios-mirror-rpc.ts";
 import type { NativeCapture } from "../src/ios-native-capture.ts";
-import { ExpectedOperationError } from "../../shared/src/error-reporting.ts";
+import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 
 async function message(child: ChildProcess) {
   const result = await once(child, "message", { signal: AbortSignal.timeout(5000) });

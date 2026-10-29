@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { build } from "esbuild";
 import { JSDOM } from "jsdom";
-import { recordingFixture, recordingWithFramesFixture } from "../../test-support/recording-fixtures.ts";
+import { recordingFixture, recordingWithFramesFixture } from "@mobile-dev/test-support/recording-fixtures.ts";
 
 for (const reducedMotion of [false, true]) {
   const description = reducedMotion

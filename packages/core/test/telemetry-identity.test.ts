@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { build } from "esbuild";
 import { loadTelemetryIdentity } from "../src/telemetry-identity.ts";
-import { isAnonymousUserId, isTelemetrySessionId, validateTelemetryIdentity } from "../../shared/src/telemetry-identity.ts";
+import { isAnonymousUserId, isTelemetrySessionId, validateTelemetryIdentity } from "@mobile-dev/shared/telemetry-identity.ts";
 
 const execute = promisify(execFile);
 

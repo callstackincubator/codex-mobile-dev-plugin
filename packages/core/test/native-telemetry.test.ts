@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { NativeTelemetryRelay, nativeCollectorCommand, parseNativeEnvelope } from "../src/native-telemetry.ts";
-import { SENTRY_NATIVE_DSN, SENTRY_RELEASE } from "../../shared/src/telemetry.ts";
+import { SENTRY_NATIVE_DSN, SENTRY_RELEASE } from "@mobile-dev/shared/telemetry.ts";
 import { getTelemetryIdentity } from "../src/telemetry-identity.ts";
 
 function encode(type: string, payload: unknown, dsn = SENTRY_NATIVE_DSN) {

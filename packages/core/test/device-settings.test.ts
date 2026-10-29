@@ -1,13 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { DeviceSettingsService } from "../src/device-settings.ts";
-import { DeviceSettingsStore } from "../../ui/src/device-settings.ts";
-import type { DeviceSettingsSource } from "../../ui/src/device-settings.ts";
+import { DeviceSettingsStore } from "@mobile-dev/ui/device-settings.ts";
+import type { DeviceSettingsSource } from "@mobile-dev/ui/device-settings.ts";
 import type { Baguette } from "../src/baguette.ts";
 import type { ServeEmu } from "../src/serve-emu.ts";
 import type { AndroidNetworkThrottle, ThrottleReading } from "../src/network-throttle/android.ts";
-import { deviceSettingSchema } from "../../shared/src/device-settings.ts";
-import { expectedOutcome } from "../../shared/src/error-reporting.ts";
+import { deviceSettingSchema } from "@mobile-dev/shared/device-settings.ts";
+import { expectedOutcome } from "@mobile-dev/shared/error-reporting.ts";
 import { SimulatorUnavailableError } from "../src/simulator-unavailable.ts";
 
 const ios = { platform: "ios", id: "B5C969F6-58A4-4C31-AB12-FB9E56D681DE" } as const;

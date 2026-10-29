@@ -10,13 +10,13 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { z } from "zod";
 import { annotateDeviceAppsError, deviceAppsDiagnostic, deviceAppsDiagnosticSchema, getDeviceAppsDiagnostic,
   withDeviceAppsDiagnostic, DEVICE_APPS_DIAGNOSTIC_META } from "../src/device-apps-diagnostics.ts";
-import { readDeviceApps } from "../../core/src/device-apps/sources.ts";
-import { registerDeviceAppsTool } from "../../core/src/device-apps/tools.ts";
-import { registerCpuTools } from "../../core/src/cpu/tools.ts";
-import { DeviceResolver } from "../../core/src/devices.ts";
-import { CpuSessions } from "../../core/src/cpu/sessions.ts";
-import { attachedBaguette } from "../../test-support/fixtures.ts";
-import { SimulatorUnavailableError } from "../../core/src/simulator-unavailable.ts";
+import { readDeviceApps } from "@mobile-dev/core/device-apps/sources.ts";
+import { registerDeviceAppsTool } from "@mobile-dev/core/device-apps/tools.ts";
+import { registerCpuTools } from "@mobile-dev/core/cpu/tools.ts";
+import { DeviceResolver } from "@mobile-dev/core/devices.ts";
+import { CpuSessions } from "@mobile-dev/core/cpu/sessions.ts";
+import { attachedBaguette } from "@mobile-dev/test-support/fixtures.ts";
+import { SimulatorUnavailableError } from "@mobile-dev/core/simulator-unavailable.ts";
 import { scrubErrorEvent } from "../src/telemetry.ts";
 
 test("discovery classification preserves original errors and never derives telemetry from their text", async () => {

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { parseSimulatorList, Simctl, simulatorRuntimeName } from "../src/simctl.ts";
 import { SimulatorUnavailableError } from "../src/simulator-unavailable.ts";
-import { OTHER_UDID, UDID } from "../../test-support/fixtures.ts";
+import { OTHER_UDID, UDID } from "@mobile-dev/test-support/fixtures.ts";
 
 const listing = JSON.stringify({ devices: {
   "com.apple.CoreSimulator.SimRuntime.iOS-26-0": [

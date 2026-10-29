@@ -13,7 +13,7 @@ import { registerDisplayFpsTools } from "../src/fps/tools.ts";
 import { LogSessions } from "../src/log-sessions.ts";
 import { registerLogTools } from "../src/log-tools.ts";
 import { installTracePropagation, instrumentMcpServer } from "../src/telemetry.ts";
-import { fakeSimctl, UDID } from "../../test-support/fixtures.ts";
+import { fakeSimctl, UDID } from "@mobile-dev/test-support/fixtures.ts";
 
 /** Holds the first device validation until released; later validations pass straight through. */
 function validationGate() {

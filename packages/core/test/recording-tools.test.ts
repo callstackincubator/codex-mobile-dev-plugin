@@ -10,9 +10,9 @@ import { RecordingStore, PerformanceRecordings } from "../src/performance-record
 import { registerOpenRecordingTool, registerRecordingTools, RESULT_BYTES } from "../src/recording-tools.ts";
 import { deviceCapabilities } from "../src/devices.ts";
 import type { DeviceResolver } from "../src/devices.ts";
-import { RECORDING_URI } from "../../shared/src/recordings.ts";
-import { COMPARISON_URI } from "../../shared/src/performance-comparison.ts";
-import { longestRecordingFixture, recordingFixture, unavailableFps } from "../../test-support/recording-fixtures.ts";
+import { RECORDING_URI } from "@mobile-dev/shared/recordings.ts";
+import { COMPARISON_URI } from "@mobile-dev/shared/performance-comparison.ts";
+import { longestRecordingFixture, recordingFixture, unavailableFps } from "@mobile-dev/test-support/recording-fixtures.ts";
 
 const pixel: Pick<DeviceResolver, "resolve"> = {
   resolve: async target => ({ platform: "android", deviceId: target.deviceId, name: "Pixel", capabilities: deviceCapabilities(target) }),

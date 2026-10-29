@@ -14,8 +14,8 @@ import { runAsError } from "../src/app-storage/container.ts";
 import { registerAppStorageTools } from "../src/app-storage/tools.ts";
 import type { AppDriver } from "../src/app-control/driver.ts";
 import type { Commands } from "../src/app-control/commands.ts";
-import { storageSnapshotSchema } from "../../shared/src/app-storage.ts";
-import { expectedOutcome } from "../../shared/src/error-reporting.ts";
+import { storageSnapshotSchema } from "@mobile-dev/shared/app-storage.ts";
+import { expectedOutcome } from "@mobile-dev/shared/error-reporting.ts";
 
 const fixtures = join(import.meta.dirname, "../../test-support/fixtures/app-storage/mmkv");
 const mmkv = async (id: string) => [await readFile(join(fixtures, id)), await readFile(join(fixtures, `${id}.crc`))] as const;
@@ -211,8 +211,8 @@ test("storage tools stop the app before clearing and reset everything when no st
 });
 
 test("the change feed records keys added, changed, and removed between reads, and labels SDK stores", async () => {
-  const { diffSnapshots } = await import("../../ui/src/storage-panel.ts");
-  const { changedFields, bytesAsText, isSdkStore, storeTitle } = await import("../../ui/src/storage-labels.ts");
+  const { diffSnapshots } = await import("@mobile-dev/ui/storage-panel.ts");
+  const { changedFields, bytesAsText, isSdkStore, storeTitle } = await import("@mobile-dev/ui/storage-labels.ts");
   const snapshot = (readAt: number, entries: [string, string][], entryCount = entries.length) => storageSnapshotSchema.parse({ platform: "ios", bundleId: "com.example", readAt, files: [], fileCount: 0, totalBytes: 0,
     stores: [{ id: "mmkv:a", kind: "mmkv", name: "a", path: "a", status: "ok", bytes: 0, entryCount, entries: entries.map(([key, value]) => ({ key, type: "string", value, bytes: value.length })) }] });
   const first = snapshot(1, [["kept", "1"], ["edited", "1"], ["dropped", "x"]]);
@@ -252,7 +252,7 @@ test("simulator resets empty the container but keep its layout, metadata, and cf
 });
 
 test("the change feed hides SDK changes until the toggle shows them", async () => {
-  const { StoragePanel, shownChanges } = await import("../../ui/src/storage-panel.ts");
+  const { StoragePanel, shownChanges } = await import("@mobile-dev/ui/storage-panel.ts");
   const deviceApps = { subscribe: () => () => {}, getSnapshot: () => ({ device: undefined }), pickedApp: () => undefined, pickApp() {} };
   const panel = new StoragePanel({} as never, deviceApps as never);
   const store = { id: "s", kind: "user-defaults" as const, name: "n", path: "p" };
@@ -304,7 +304,7 @@ test("XML parsers skip comments, declarations, and doctypes, including ones that
 });
 
 test("Expo's internal preferences count as SDK data and AsyncStorage's Android database is titled like iOS", async () => {
-  const { isSdkStore, storeTitle } = await import("../../ui/src/storage-labels.ts");
+  const { isSdkStore, storeTitle } = await import("@mobile-dev/ui/storage-labels.ts");
   assert.equal(isSdkStore({ name: "expo.modules.kotlin.PersistentDataManager", path: "shared_prefs/expo.modules.kotlin.PersistentDataManager.xml" }), true);
   assert.equal(isSdkStore({ name: "dev.mobile.storagetest_preferences", path: "shared_prefs/dev.mobile.storagetest_preferences.xml" }), false);
   assert.equal(storeTitle({ kind: "async-storage", name: "RKStorage" }, "dev.mobile.storagetest"), "default");

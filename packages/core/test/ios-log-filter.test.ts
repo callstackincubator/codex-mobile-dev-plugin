@@ -5,9 +5,9 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { parseIOSLog, parseLogcat, parseMetroEvent } from "../src/log-parsers.ts";
 import { startNativeLogs } from "../src/native-logs.ts";
-import { nativeLogTargetSchema } from "../../shared/src/logs.ts";
-import type { LogRecord, NativeLogTarget } from "../../shared/src/logs.ts";
-import { UDID } from "../../test-support/fixtures.ts";
+import { nativeLogTargetSchema } from "@mobile-dev/shared/logs.ts";
+import type { LogRecord, NativeLogTarget } from "@mobile-dev/shared/logs.ts";
+import { UDID } from "@mobile-dev/test-support/fixtures.ts";
 
 function parse(fields: Record<string, unknown>, hideSystemLogs = true) {
   const line = JSON.stringify({ eventMessage: "fixture", ...fields });

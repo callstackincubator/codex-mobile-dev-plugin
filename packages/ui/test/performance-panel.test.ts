@@ -2,12 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { setImmediate } from "node:timers/promises";
 import type { App } from "@modelcontextprotocol/ext-apps";
-import type { DeviceApp } from "../../shared/src/device-apps.ts";
-import type { CpuBatch, CpuSample, CpuTarget } from "../../shared/src/cpu.ts";
-import type { SimulatorDevice } from "../../shared/src/protocol.ts";
-import { createDeviceApps } from "../../test-support/device-apps-fixtures.ts";
+import type { DeviceApp } from "@mobile-dev/shared/device-apps.ts";
+import type { CpuBatch, CpuSample, CpuTarget } from "@mobile-dev/shared/cpu.ts";
+import type { SimulatorDevice } from "@mobile-dev/shared/protocol.ts";
+import { createDeviceApps } from "@mobile-dev/test-support/device-apps-fixtures.ts";
 import { PerformancePanel } from "../src/performance-panel.ts";
-import { UDID, OTHER_UDID } from "../../test-support/fixtures.ts";
+import { UDID, OTHER_UDID } from "@mobile-dev/test-support/fixtures.ts";
 
 const device = { udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS", platform: "ios", kind: "simulator" } as const;
 async function tick() { for (let i = 0; i < 8; i++) await setImmediate(); }

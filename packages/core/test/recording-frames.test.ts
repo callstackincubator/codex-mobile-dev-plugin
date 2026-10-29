@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readRecordingFrames } from "../src/recording-frames.ts";
-import { recordingFixture } from "../../test-support/recording-fixtures.ts";
+import { recordingFixture } from "@mobile-dev/test-support/recording-fixtures.ts";
 
 test("frame pages distinguish unsupported or historical data from a measured idle interval", () => {
   const recording = recordingFixture();

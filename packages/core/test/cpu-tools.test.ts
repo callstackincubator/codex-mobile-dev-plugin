@@ -7,7 +7,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { CpuSessions } from "../src/cpu/sessions.ts";
 import { registerCpuTools } from "../src/cpu/tools.ts";
 import { DeviceResolver } from "../src/devices.ts";
-import { fakeBaguette, UDID, attachedBaguette } from "../../test-support/fixtures.ts";
+import { fakeBaguette, UDID, attachedBaguette } from "@mobile-dev/test-support/fixtures.ts";
 
 function textData(result: { content?: unknown }) {
   assert.ok(Array.isArray(result.content));

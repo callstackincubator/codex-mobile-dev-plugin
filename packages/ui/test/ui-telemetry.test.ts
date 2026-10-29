@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { build } from "esbuild";
 import { JSDOM } from "jsdom";
-import { recordingFixture } from "../../test-support/recording-fixtures.ts";
+import { recordingFixture } from "@mobile-dev/test-support/recording-fixtures.ts";
 
 const userId = "anon_0123456789abcdef0123456789abcdef";
 const sessionId = "run_1234567890abcdef1234567890abcdef";

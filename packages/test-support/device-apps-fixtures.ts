@@ -1,5 +1,5 @@
 import type { App } from "@modelcontextprotocol/ext-apps";
-import { DeviceAppsStore } from "../ui/src/device-apps.ts";
+import { DeviceAppsStore } from "@mobile-dev/ui/device-apps.ts";
 
 export class AppVisibility extends EventTarget {
   visibilityState = "visible";

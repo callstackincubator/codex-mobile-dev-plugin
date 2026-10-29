@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import type { App } from "@modelcontextprotocol/ext-apps";
 import type { OpenAIModelContextHostState } from "@openai/mcp-extensions/app";
 import { RecordingController } from "../src/recording-controller.ts";
-import { recordingWithFramesFixture } from "../../test-support/recording-fixtures.ts";
+import { recordingWithFramesFixture } from "@mobile-dev/test-support/recording-fixtures.ts";
 
 function fixture(t: TestContext, pills = true) {
   const previous = Object.getOwnPropertyDescriptor(globalThis, "document");

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { assertPng, isPng, screenshotResult } from "../src/png.ts";
-import { PNG } from "../../test-support/fixtures.ts";
+import { PNG } from "@mobile-dev/test-support/fixtures.ts";
 
 test("screenshots must be whole PNGs within the size limit", () => {
   assert.equal(isPng(PNG), true);

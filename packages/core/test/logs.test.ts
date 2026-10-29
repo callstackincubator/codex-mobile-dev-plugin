@@ -13,10 +13,10 @@ import { runLogProcess, superviseLogSource } from "../src/native-logs.ts";
 import { registerLogTools } from "../src/log-tools.ts";
 import { DeviceResolver } from "../src/devices.ts";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { stackLogs, formatLogContext, logOptionsSchema } from "../../shared/src/logs.ts";
-import type { LogEntry, LogRecord, LogSourceStatus } from "../../shared/src/logs.ts";
+import { stackLogs, formatLogContext, logOptionsSchema } from "@mobile-dev/shared/logs.ts";
+import type { LogEntry, LogRecord, LogSourceStatus } from "@mobile-dev/shared/logs.ts";
 import type { LogSink } from "../src/native-logs.ts";
-import { createTestPlugin, fakeSimctl, UDID, OTHER_UDID } from "../../test-support/fixtures.ts";
+import { createTestPlugin, fakeSimctl, UDID, OTHER_UDID } from "@mobile-dev/test-support/fixtures.ts";
 
 const record: LogRecord = { timestamp: "2026-09-30T12:00:00.000Z", level: "warn", source: "js", origin: "ios", process: "Example", message: "Request failed" };
 

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import type { CpuSample } from "../../shared/src/cpu.ts";
+import type { CpuSample } from "@mobile-dev/shared/cpu.ts";
 import { createMemorySeries, formatMemory } from "../src/components/performance/memorySeries.ts";
 
 test("memory series shows the first reading before a CPU interval exists and converts bytes to MiB", () => {

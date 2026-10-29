@@ -6,10 +6,10 @@ import { inspectReactNative, readSnapshot, type InspectorNode } from "../src/rea
 import { collectReactNativeTree } from "../src/react-native-snapshot.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { createTestPlugin, fakeBaguette, fakeSimulatorInput, UDID, attachedBaguette } from "../../test-support/fixtures.ts";
-import { screenComponents, componentAt, componentsAt } from "../../shared/src/screen-annotations.ts";
+import { createTestPlugin, fakeBaguette, fakeSimulatorInput, UDID, attachedBaguette } from "@mobile-dev/test-support/fixtures.ts";
+import { screenComponents, componentAt, componentsAt } from "@mobile-dev/shared/screen-annotations.ts";
 import { ServeEmu } from "../src/serve-emu.ts";
-import { fakeInspectionSdk } from "../../test-support/android-inspection-fixtures.ts";
+import { fakeInspectionSdk } from "@mobile-dev/test-support/android-inspection-fixtures.ts";
 import { createPanel } from "../src/panel-tools.ts";
 
 const card = { source: "react-native", role: "Pressable", label: "Row", frame: { x: 10, y: 100, width: 350, height: 70 }, children: [

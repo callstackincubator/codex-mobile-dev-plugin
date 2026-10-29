@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { expectedOutcome } from "../../shared/src/error-reporting.ts";
-import type { PhysicalIosDevice } from "../../shared/src/ios-devices.ts";
+import { expectedOutcome } from "@mobile-dev/shared/error-reporting.ts";
+import type { PhysicalIosDevice } from "@mobile-dev/shared/ios-devices.ts";
 import { parseAdbDevices } from "../src/android-sdk.ts";
 import { deviceCapabilities, DeviceResolver } from "../src/devices.ts";
-import { fakeSimctl, UDID } from "../../test-support/fixtures.ts";
+import { fakeSimctl, UDID } from "@mobile-dev/test-support/fixtures.ts";
 
 const IPHONE = "00008110-001A2B3C4D5E6F70";
 const iphone: PhysicalIosDevice = {

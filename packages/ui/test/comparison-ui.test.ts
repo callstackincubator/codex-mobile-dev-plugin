@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { build } from "esbuild";
 import { JSDOM } from "jsdom";
-import { recordingWithFramesFixture } from "../../test-support/recording-fixtures.ts";
+import { recordingWithFramesFixture } from "@mobile-dev/test-support/recording-fixtures.ts";
 
 test("comparison overlays, toggles, shared selections and Ask retain original run references and private telemetry", async t => {
   const built = await build({

@@ -2,11 +2,11 @@ import { createServer } from "node:http";
 import { EventEmitter, once } from "node:events";
 import type { ChildProcess } from "node:child_process";
 import { WebSocketServer } from "ws";
-import type { InputStatus } from "../core/src/simulator-input.ts";
-import { createPlugin } from "../core/src/plugin.ts";
-import { Simctl } from "../core/src/simctl.ts";
-import { Baguette } from "../core/src/baguette.ts";
-import type { BaguetteLauncher, BaguetteOptions } from "../core/src/baguette.ts";
+import type { InputStatus } from "@mobile-dev/core/simulator-input.ts";
+import { createPlugin } from "@mobile-dev/core/plugin.ts";
+import { Simctl } from "@mobile-dev/core/simctl.ts";
+import { Baguette } from "@mobile-dev/core/baguette.ts";
+import type { BaguetteLauncher, BaguetteOptions } from "@mobile-dev/core/baguette.ts";
 
 export const createTestPlugin = createPlugin;
 

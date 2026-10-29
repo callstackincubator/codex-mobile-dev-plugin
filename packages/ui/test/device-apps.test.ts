@@ -1,10 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { App } from "@modelcontextprotocol/ext-apps";
-import type { DeviceApps } from "../../shared/src/device-apps.ts";
+import type { DeviceApps } from "@mobile-dev/shared/device-apps.ts";
 import { DeviceAppsStore } from "../src/device-apps.ts";
-import { AppVisibility } from "../../test-support/device-apps-fixtures.ts";
-import { UDID, OTHER_UDID } from "../../test-support/fixtures.ts";
+import { AppVisibility } from "@mobile-dev/test-support/device-apps-fixtures.ts";
+import { UDID, OTHER_UDID } from "@mobile-dev/test-support/fixtures.ts";
 
 const device = { udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS", platform: "ios", kind: "simulator" } as const;
 const first: DeviceApps = { apps: [{ bundleId: "app.a", pid: 1, foreground: true }], foregroundApp: { bundleId: "app.a", pid: 1 } };

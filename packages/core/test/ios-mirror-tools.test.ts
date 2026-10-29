@@ -5,8 +5,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { registerIosMirrorTools } from "../src/ios-mirror-tools.ts";
 import { IosMirrorSessions } from "../src/ios-mirror.ts";
-import type { PhysicalIosDevice } from "../../shared/src/ios-devices.ts";
-import type { Bezel } from "../../shared/src/bezel.ts";
+import type { PhysicalIosDevice } from "@mobile-dev/shared/ios-devices.ts";
+import type { Bezel } from "@mobile-dev/shared/bezel.ts";
 
 const screenshotBytes = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
 

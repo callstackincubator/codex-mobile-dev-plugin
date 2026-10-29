@@ -10,10 +10,10 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { z } from "zod";
-import { MeasurementWindow, sampleTrace, scrubErrorEvent, scrubMetric, scrubSpan, sampleMetric, createErrorEventFilter, METRIC_SAMPLE_RATE, TELEMETRY_META_KEY } from "../../shared/src/telemetry.ts";
+import { MeasurementWindow, sampleTrace, scrubErrorEvent, scrubMetric, scrubSpan, sampleMetric, createErrorEventFilter, METRIC_SAMPLE_RATE, TELEMETRY_META_KEY } from "@mobile-dev/shared/telemetry.ts";
 import { captureServerError, installTracePropagation, instrumentMcpServer, IOSLogProcessingTelemetry, recordAndroidBackendStartup, recordIosMirrorSharing, setLaunchingTelemetryHost, setServerTelemetryHost } from "../src/telemetry.ts";
 import { recordPluginUpdate } from "../../../apps/codex-plugin/server/plugin-updates.ts";
-import { deferEpisodeReport, ExpectedOperationError, FailureEpisodes } from "../../shared/src/error-reporting.ts";
+import { deferEpisodeReport, ExpectedOperationError, FailureEpisodes } from "@mobile-dev/shared/error-reporting.ts";
 import { parseResourceInput } from "../src/resource-input.ts";
 import { openRequestSession } from "../src/request-session.ts";
 import { registerDeviceAppsTool } from "../src/device-apps/tools.ts";
@@ -27,17 +27,17 @@ import { listIosDevices, registerIosDeviceTools } from "../src/ios-devices.ts";
 import { createPhysicalIosBezelReader } from "../src/physical-ios-bezel.ts";
 import { registerIosMirrorTools } from "../src/ios-mirror-tools.ts";
 import { IosMirrorSessions } from "../src/ios-mirror.ts";
-import type { PhysicalIosDevice } from "../../shared/src/ios-devices.ts";
+import type { PhysicalIosDevice } from "@mobile-dev/shared/ios-devices.ts";
 import { createDrivers, registerAppControlTools } from "../src/app-control/tools.ts";
 import { registerDeviceSettingsTools } from "../src/device-settings.ts";
 import type { ServeEmu } from "../src/serve-emu.ts";
-import { setAndroidStartupDiagnostic } from "../../shared/src/android-startup-diagnostics.ts";
+import { setAndroidStartupDiagnostic } from "@mobile-dev/shared/android-startup-diagnostics.ts";
 import type { OpenAIFormResult } from "@openai/mcp-extensions/server";
-import { agentDeviceClient } from "../../test-support/agent-device-fixtures.ts";
-import { UDID, attachedBaguette } from "../../test-support/fixtures.ts";
+import { agentDeviceClient } from "@mobile-dev/test-support/agent-device-fixtures.ts";
+import { UDID, attachedBaguette } from "@mobile-dev/test-support/fixtures.ts";
 import { CpuSessions } from "../src/cpu/sessions.ts";
 import { DisplayFpsSessions } from "../src/fps/sessions.ts";
-import { setDiscoveryCommandDiagnostic } from "../../shared/src/device-apps-command-diagnostics.ts";
+import { setDiscoveryCommandDiagnostic } from "@mobile-dev/shared/device-apps-command-diagnostics.ts";
 
 type ReportedEvent = { exception?: { values?: { value?: string }[] }; tags?: Record<string, string> };
 function reportedEvents(envelopes: Envelope[]) {
@@ -726,7 +726,7 @@ test("Node runtime metrics report CPU, memory and event-loop measurements with c
 });
 
 test("definition failure tags survive Sentry scrubbing with surface, release and anonymous attribution", async t => {
-  const { parseDefinitionDiagnostic, setDefinitionDiagnostic } = await import("../../shared/src/simulator-definition-diagnostics.ts");
+  const { parseDefinitionDiagnostic, setDefinitionDiagnostic } = await import("@mobile-dev/shared/simulator-definition-diagnostics.ts");
   const envelopes: Envelope[] = [];
   Sentry.init({
     dsn: "https://public@example.com/1", defaultIntegrations: false, beforeSend: scrubErrorEvent,
@@ -974,7 +974,7 @@ test("failure episode memory is bounded and inactivity starts a new episode", ()
 
 test("Android startup diagnostics retain stage, device state and anonymous error attribution without private content", async t => {
   const { recordAndroidStartupStages, recordAndroidStartupContext, recordAndroidStartupDeviceState, recordAndroidBackendStop } = await import("../src/telemetry.ts");
-  const { setAndroidStartupDiagnostic } = await import("../../shared/src/android-startup-diagnostics.ts");
+  const { setAndroidStartupDiagnostic } = await import("@mobile-dev/shared/android-startup-diagnostics.ts");
   const envelopes: Envelope[] = [];
   Sentry.init({
     dsn: "https://public@example.com/1", defaultIntegrations: false, environment: "release", release: "mobile-dev@test",

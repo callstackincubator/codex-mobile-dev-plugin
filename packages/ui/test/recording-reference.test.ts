@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { setTimeout } from "node:timers/promises";
 import { build } from "esbuild";
 import { JSDOM } from "jsdom";
-import { recordingFixture } from "../../test-support/recording-fixtures.ts";
-import { recordingPreview } from "../../shared/src/recordings.ts";
+import { recordingFixture } from "@mobile-dev/test-support/recording-fixtures.ts";
+import { recordingPreview } from "@mobile-dev/shared/recordings.ts";
 
 // Tools that show a recording send its ID and, when it fits, a preview without thread or
 // frame detail: hosts cap tool results (Codex keeps ~50 KB), and some let cards call

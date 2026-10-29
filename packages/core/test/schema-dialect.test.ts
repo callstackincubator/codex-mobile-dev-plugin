@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { declareSchemaDialect, JSON_SCHEMA_2020_12 } from "../src/schema-dialect.ts";
-import { createTestPlugin } from "../../test-support/fixtures.ts";
+import { createTestPlugin } from "@mobile-dev/test-support/fixtures.ts";
 import { createPanel } from "../src/panel-tools.ts";
 
 // Keywords whose meaning differs between draft-07 and 2020-12. Relabelling the

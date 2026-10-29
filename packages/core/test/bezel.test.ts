@@ -1,12 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { compositeBezelGeometry } from "../../shared/src/bezel.ts";
+import { compositeBezelGeometry } from "@mobile-dev/shared/bezel.ts";
 import { definitionSchema } from "../src/baguette.ts";
 import { readBezel } from "../src/bezel.ts";
 import { screenshotRequest } from "../src/png.ts";
-import { deviceCommandTags } from "../../shared/src/device-command-diagnostics.ts";
-import { UDID, PNG, attachedBaguette } from "../../test-support/fixtures.ts";
+import { deviceCommandTags } from "@mobile-dev/shared/device-command-diagnostics.ts";
+import { UDID, PNG, attachedBaguette } from "@mobile-dev/test-support/fixtures.ts";
 
 const geometry = { rect: { x: 18, y: 18, width: 400, height: 872 }, viewport: { width: 436, height: 908 }, clipRadius: 62 };
 

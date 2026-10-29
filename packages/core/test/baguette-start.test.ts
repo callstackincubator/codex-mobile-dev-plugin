@@ -9,9 +9,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Baguette } from "../src/baguette.ts";
 import { MissingRuntimeError } from "../src/install-integrity.ts";
-import { isRepeatedFailure } from "../../shared/src/error-reporting.ts";
-import { deviceCommandTags } from "../../shared/src/device-command-diagnostics.ts";
-import { UDID } from "../../test-support/fixtures.ts";
+import { isRepeatedFailure } from "@mobile-dev/shared/error-reporting.ts";
+import { deviceCommandTags } from "@mobile-dev/shared/device-command-diagnostics.ts";
+import { UDID } from "@mobile-dev/test-support/fixtures.ts";
 
 const DEVICES = JSON.stringify({ running: [], available: [{ udid: UDID, name: "iPhone 17", state: "Shutdown", runtime: "iOS 26.0" }] });
 // What Baguette prints before it exits when another process holds its port.

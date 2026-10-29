@@ -1,23 +1,23 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { setImmediate } from "node:timers/promises";
-import { FrameTimeline } from "../../core/src/fps/frame-timeline.ts";
-import type { FpsMonitorOptions } from "../../core/src/fps/source.ts";
-import type { FrameReading } from "../../core/src/fps/frame-timeline.ts";
-import { DisplayFpsSessions } from "../../core/src/fps/sessions.ts";
-import { createFpsSeries } from "../../ui/src/components/performance/fpsSeries.ts";
-import { DisplayFpsPanel } from "../../ui/src/display-fps-panel.ts";
-import type { DisplayFpsState } from "../../ui/src/display-fps-panel.ts";
+import { FrameTimeline } from "@mobile-dev/core/fps/frame-timeline.ts";
+import type { FpsMonitorOptions } from "@mobile-dev/core/fps/source.ts";
+import type { FrameReading } from "@mobile-dev/core/fps/frame-timeline.ts";
+import { DisplayFpsSessions } from "@mobile-dev/core/fps/sessions.ts";
+import { createFpsSeries } from "@mobile-dev/ui/components/performance/fpsSeries.ts";
+import { DisplayFpsPanel } from "@mobile-dev/ui/display-fps-panel.ts";
+import type { DisplayFpsState } from "@mobile-dev/ui/display-fps-panel.ts";
 import type { App } from "@modelcontextprotocol/ext-apps";
 import type { DisplayFpsBatch } from "../src/display-fps.ts";
 import type { SimulatorDevice } from "../src/protocol.ts";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { registerDisplayFpsTools } from "../../core/src/fps/tools.ts";
-import { DeviceResolver } from "../../core/src/devices.ts";
-import { createDeviceApps } from "../../test-support/device-apps-fixtures.ts";
-import { PerformancePanel } from "../../ui/src/performance-panel.ts";
+import { registerDisplayFpsTools } from "@mobile-dev/core/fps/tools.ts";
+import { DeviceResolver } from "@mobile-dev/core/devices.ts";
+import { createDeviceApps } from "@mobile-dev/test-support/device-apps-fixtures.ts";
+import { PerformancePanel } from "@mobile-dev/ui/performance-panel.ts";
 import type { CpuBatch } from "../src/cpu.ts";
 
 function encode(value: bigint | number) {

@@ -8,9 +8,9 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ServeEmu, androidDisplaySize } from "../src/serve-emu.ts";
 import { AndroidStreams, androidInput } from "../src/android-streams.ts";
 import { DeviceSessions } from "../src/device-sessions.ts";
-import { videoPacket } from "../../ui/src/android-video.ts";
-import { createTestPlugin, fakeBaguette, fakeSimulatorInput, PNG, attachedBaguette } from "../../test-support/fixtures.ts";
-import { fakeInspectionSdk } from "../../test-support/android-inspection-fixtures.ts";
+import { videoPacket } from "@mobile-dev/ui/android-video.ts";
+import { createTestPlugin, fakeBaguette, fakeSimulatorInput, PNG, attachedBaguette } from "@mobile-dev/test-support/fixtures.ts";
+import { fakeInspectionSdk } from "@mobile-dev/test-support/android-inspection-fixtures.ts";
 import { createPanel } from "../src/panel-tools.ts";
 import { registerAndroidTools } from "../src/android-tools.ts";
 

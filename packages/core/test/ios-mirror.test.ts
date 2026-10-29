@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { setImmediate as tick } from "node:timers/promises";
-import { ExpectedOperationError } from "../../shared/src/error-reporting.ts";
+import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 import { IosMirrorSessions } from "../src/ios-mirror.ts";
 import { IosMirrorHub } from "../src/ios-mirror-hub.ts";
 import type { IosCapture, NativeBatch, NativeCapture, NativeTouchSample } from "../src/ios-native-capture.ts";

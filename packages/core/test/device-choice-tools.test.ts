@@ -9,8 +9,8 @@ import { OpenAIExtensions, OpenAIFormSchema } from "@openai/mcp-extensions/serve
 import type { OpenAIFormResult } from "@openai/mcp-extensions/server";
 import { deviceChoiceForm, deviceChoiceFormSupport, registerDeviceChoiceTools, resolveDeviceChoices } from "../src/device-choice-tools.ts";
 import type { DeviceChoiceSources } from "../src/device-choice-tools.ts";
-import { deviceChoiceInputSchema } from "../../shared/src/device-choice.ts";
-import type { Status } from "../../shared/src/protocol.ts";
+import { deviceChoiceInputSchema } from "@mobile-dev/shared/device-choice.ts";
+import type { Status } from "@mobile-dev/shared/protocol.ts";
 
 const simulatorId = "11111111-1111-4111-8111-111111111111";
 const input = {

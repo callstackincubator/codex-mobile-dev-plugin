@@ -5,7 +5,7 @@ import { deviceOptions, selectionMessage } from "../src/device-discovery.ts";
 import { initialState, panelControls, panelNotice } from "../src/simulator-state.ts";
 import type { PanelState } from "../src/simulator-state.ts";
 import { streamOpenTools, streamTransports, transportFor } from "../src/stream-transports.ts";
-import type { Status } from "../../shared/src/protocol.ts";
+import type { Status } from "@mobile-dev/shared/protocol.ts";
 import { androidPhone, iphone, physicalBezel, physicalPhone, pixel } from "./simulator-fixture.ts";
 
 const stage = { width: 300, height: 600 };

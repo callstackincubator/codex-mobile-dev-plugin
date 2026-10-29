@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { ComparisonController } from "../src/comparison-controller.ts";
-import { recordingFixture } from "../../test-support/recording-fixtures.ts";
+import { recordingFixture } from "@mobile-dev/test-support/recording-fixtures.ts";
 import type { HostBridge } from "../src/host-bridge.ts";
 
 function controller(send: () => Promise<{ isError?: boolean }>) {

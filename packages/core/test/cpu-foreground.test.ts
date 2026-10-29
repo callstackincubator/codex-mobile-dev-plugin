@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { foregroundPhysicalPid, foregroundSimulatorPid, foregroundAndroidApp, parseAndroidForegroundPackage, unknownSimulatorForeground } from "../src/device-apps/foreground.ts";
 import { deviceAppSources, readDeviceApps } from "../src/device-apps/sources.ts";
-import type { DeviceApp } from "../../shared/src/device-apps.ts";
+import type { DeviceApp } from "@mobile-dev/shared/device-apps.ts";
 
 const udid = "00008150-001068280AE8C01C";
 

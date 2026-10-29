@@ -12,8 +12,8 @@ import { AndroidHelper } from "../src/collectors/android-helper.ts";
 import { createCpuSessions } from "../src/cpu/sessions.ts";
 import type { CpuSessions } from "../src/cpu/sessions.ts";
 import { parseAndroidApps } from "../src/device-apps/apps.ts";
-import { cpuTargetSchema } from "../../shared/src/cpu.ts";
-import type { CpuTarget } from "../../shared/src/cpu.ts";
+import { cpuTargetSchema } from "@mobile-dev/shared/cpu.ts";
+import type { CpuTarget } from "@mobile-dev/shared/cpu.ts";
 
 const sample = (timestampUs = "1000000", processTicks = "100", threads = [
   { tid: 123, start: "50", ticks: "60", name: "main" }, { tid: 124, start: "51", ticks: "40", name: "worker" },

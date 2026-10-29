@@ -5,11 +5,11 @@ import { JSDOM } from "jsdom";
 import { mkdtemp, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { createDeviceApps } from "../../test-support/device-apps-fixtures.ts";
+import { createDeviceApps } from "@mobile-dev/test-support/device-apps-fixtures.ts";
 import { LogsPanel } from "../src/logs-panel.ts";
 import type { App } from "@modelcontextprotocol/ext-apps";
 import type { PanelContext } from "../src/model-context.ts";
-import type { LogEntry } from "../../shared/src/logs.ts";
+import type { LogEntry } from "@mobile-dev/shared/logs.ts";
 
 test("the rendered log list follows batches, pauses for user scrolling, and resumes at the bottom", async t => {
   const dom = new JSDOM('<div id="root"></div>', { pretendToBeVisual: true });

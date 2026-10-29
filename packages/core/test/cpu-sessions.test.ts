@@ -6,7 +6,7 @@ import { CpuBuffer } from "../src/cpu/buffer.ts";
 import { parseRunningApps } from "../src/device-apps/apps.ts";
 import type { CpuMonitor } from "../src/cpu/monitor.ts";
 import type { CpuReading } from "../src/cpu/counters.ts";
-import { UDID } from "../../test-support/fixtures.ts";
+import { UDID } from "@mobile-dev/test-support/fixtures.ts";
 
 const target = { deviceId: UDID, bundleId: "com.example.app" };
 const pending = () => new Promise<Error>(() => {});

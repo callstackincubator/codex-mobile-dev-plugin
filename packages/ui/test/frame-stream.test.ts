@@ -4,7 +4,7 @@ import { setImmediate } from "node:timers/promises";
 import { FrameStream, decodeJpeg } from "../src/frame-stream.ts";
 import type { Bitmap } from "../src/frame-stream.ts";
 import type { ObservedRead } from "../src/frame-stream.ts";
-import { epochNow } from "../../shared/src/stream.ts";
+import { epochNow } from "@mobile-dev/shared/stream.ts";
 import { readFrame } from "../src/read-frame.ts";
 import { StopReconnectError } from "../src/reconnect.ts";
 

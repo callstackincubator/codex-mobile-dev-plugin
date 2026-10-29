@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { LogBuffer } from "../../core/src/log-buffer.ts";
-import { CpuBuffer } from "../../core/src/cpu/buffer.ts";
-import { parseSimulatorList } from "../../core/src/simctl.ts";
+import { LogBuffer } from "@mobile-dev/core/log-buffer.ts";
+import { CpuBuffer } from "@mobile-dev/core/cpu/buffer.ts";
+import { parseSimulatorList } from "@mobile-dev/core/simctl.ts";
 import { logBatchSchema } from "../src/logs.ts";
 import { cpuBatchSchema } from "../src/cpu.ts";
 import { displayFpsBatchSchema } from "../src/display-fps.ts";
@@ -12,7 +12,7 @@ import {
   cpuSessionResultSchema, deviceSettingsResultSchema, displayFpsSessionResultSchema, logSessionResultSchema, logSourcesResultSchema,
   physicalIosDevicesResultSchema, simulatorStatusResultSchema, streamSessionMetaSchema, streamSessionResultSchema,
 } from "../src/tool-results.ts";
-import { OTHER_UDID, UDID } from "../../test-support/fixtures.ts";
+import { OTHER_UDID, UDID } from "@mobile-dev/test-support/fixtures.ts";
 
 const phone = { udid: "00008150-001068280AE8C01C", coreDeviceId: OTHER_UDID, name: "iPhone", model: "iPhone 17 Pro", productType: "iPhone18,1",
   state: "connected", runtime: "iOS 27.0", platform: "ios", kind: "physical", transportType: "wired", pairingState: "paired" };

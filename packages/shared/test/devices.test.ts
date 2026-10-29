@@ -9,7 +9,7 @@ import { displayFpsTargetSchema } from "../src/display-fps.ts";
 import { nativeLogTargetSchema } from "../src/logs.ts";
 import { panelTargetSchema } from "../src/panel-target.ts";
 import type { SimulatorDevice } from "../src/protocol.ts";
-import { UDID } from "../../test-support/fixtures.ts";
+import { UDID } from "@mobile-dev/test-support/fixtures.ts";
 
 const simulator: SimulatorDevice = { udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS 27", platform: "ios", kind: "simulator" };
 const phone: SimulatorDevice = { udid: "00008150-001068280AE8C01C", coreDeviceId: UDID, name: "iPhone", model: "iPhone", productType: "iPhone18,1",

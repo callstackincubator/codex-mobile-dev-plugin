@@ -6,12 +6,12 @@ import { join } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { iosLocale, parseDefaultsArray, parseIosUrlSchemes, parseSimulatorApps } from "../../core/src/app-control/simulator.ts";
-import { androidPermissionStates, parseAndroidAppLinks, parseAndroidAppLocales, parseAndroidBadging, parseAndroidRuntimePermissions, parseLauncherActivity, pickAndroidIconFile } from "../../core/src/app-control/android.ts";
-import { listApps } from "../../core/src/app-control/driver.ts";
-import type { AppDriver } from "../../core/src/app-control/driver.ts";
-import { createDrivers, registerAppControlTools } from "../../core/src/app-control/tools.ts";
-import type { CommandRunner } from "../../core/src/app-control/commands.ts";
+import { iosLocale, parseDefaultsArray, parseIosUrlSchemes, parseSimulatorApps } from "@mobile-dev/core/app-control/simulator.ts";
+import { androidPermissionStates, parseAndroidAppLinks, parseAndroidAppLocales, parseAndroidBadging, parseAndroidRuntimePermissions, parseLauncherActivity, pickAndroidIconFile } from "@mobile-dev/core/app-control/android.ts";
+import { listApps } from "@mobile-dev/core/app-control/driver.ts";
+import type { AppDriver } from "@mobile-dev/core/app-control/driver.ts";
+import { createDrivers, registerAppControlTools } from "@mobile-dev/core/app-control/tools.ts";
+import type { CommandRunner } from "@mobile-dev/core/app-control/commands.ts";
 import { ExpectedOperationError, expectedOutcome } from "../src/error-reporting.ts";
 import { languageTagSchema } from "../src/app-control.ts";
 

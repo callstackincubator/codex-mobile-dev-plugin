@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createComparisonSeries, hasComparisonReadings } from "../src/comparison-series.ts";
-import { comparisonSchema, summarizeComparison } from "../../shared/src/performance-comparison.ts";
-import { recordingFixture } from "../../test-support/recording-fixtures.ts";
+import { comparisonSchema, summarizeComparison } from "@mobile-dev/shared/performance-comparison.ts";
+import { recordingFixture } from "@mobile-dev/test-support/recording-fixtures.ts";
 
 test("overlays align elapsed times across different sampling intervals without stretching or extending runs", () => {
   const first = recordingFixture();

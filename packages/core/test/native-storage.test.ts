@@ -10,7 +10,7 @@ import { previewFile, unarchive } from "../src/app-storage/preview.ts";
 import { SimulatorContainer } from "../src/app-storage/container.ts";
 import type { AppContainer } from "../src/app-storage/container.ts";
 import { systemCommands } from "../src/app-control/commands.ts";
-import { expectedOutcome } from "../../shared/src/error-reporting.ts";
+import { expectedOutcome } from "@mobile-dev/shared/error-reporting.ts";
 
 const fixture = (name: string) => readFile(new URL(`../../test-support/fixtures/app-storage/native/${name}`, import.meta.url));
 const udid = "B5C969F6-58A4-4C31-AB12-FB9E56D681DE";
@@ -142,7 +142,7 @@ test("SQLite files with any name list every table's rows and columns in one read
 });
 
 test("a slower earlier table page never replaces the page opened after it", async () => {
-  const { StoragePanel } = await import("../../ui/src/storage-panel.ts");
+  const { StoragePanel } = await import("@mobile-dev/ui/storage-panel.ts");
   const pending: { offset: number; resolve: (result: unknown) => void }[] = [];
   const app = { callServerTool: ({ arguments: args }: { arguments: { offset: number } }) => new Promise(resolve => pending.push({ offset: args.offset, resolve })) };
   const device = { platform: "ios", udid, name: "iPhone", state: "Booted", kind: "simulator" };

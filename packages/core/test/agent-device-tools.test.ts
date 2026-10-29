@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { agentDeviceClient } from "../../test-support/agent-device-fixtures.ts";
-import { PNG } from "../../test-support/fixtures.ts";
+import { agentDeviceClient } from "@mobile-dev/test-support/agent-device-fixtures.ts";
+import { PNG } from "@mobile-dev/test-support/fixtures.ts";
 
 function text(result: { content: unknown }) {
   return (result.content as { text: string }[])[0].text;

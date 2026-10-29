@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { LogList } from "../src/log-list.ts";
-import { logKey } from "../../shared/src/logs.ts";
-import type { LogEntry, StackedLog } from "../../shared/src/logs.ts";
+import { logKey } from "@mobile-dev/shared/logs.ts";
+import type { LogEntry, StackedLog } from "@mobile-dev/shared/logs.ts";
 import type { PanelContext } from "../src/model-context.ts";
 
 function fixture() {

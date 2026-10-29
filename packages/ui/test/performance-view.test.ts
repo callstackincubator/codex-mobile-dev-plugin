@@ -6,7 +6,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { PerformancePanel } from "../src/performance-panel.ts";
-import type { CpuSample } from "../../shared/src/cpu.ts";
+import type { CpuSample } from "@mobile-dev/shared/cpu.ts";
 
 test("performance tracks share immediate zoom, fill a fixed scale, and preserve scrolled history", async t => {
   const dom = new JSDOM('<div id="root"></div>', { pretendToBeVisual: true });

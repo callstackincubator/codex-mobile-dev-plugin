@@ -3,12 +3,12 @@ import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { setImmediate } from "node:timers/promises";
 import type { App } from "@modelcontextprotocol/ext-apps";
-import type { ForegroundApp } from "../../shared/src/device-apps.ts";
-import type { LogOptions, LogEntry, MetroTarget } from "../../shared/src/logs.ts";
+import type { ForegroundApp } from "@mobile-dev/shared/device-apps.ts";
+import type { LogOptions, LogEntry, MetroTarget } from "@mobile-dev/shared/logs.ts";
 import type { PanelContext } from "../src/model-context.ts";
 import { LogsPanel } from "../src/logs-panel.ts";
-import { createDeviceApps } from "../../test-support/device-apps-fixtures.ts";
-import { UDID, OTHER_UDID } from "../../test-support/fixtures.ts";
+import { createDeviceApps } from "@mobile-dev/test-support/device-apps-fixtures.ts";
+import { UDID, OTHER_UDID } from "@mobile-dev/test-support/fixtures.ts";
 
 const ios = { udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS", platform: "ios" as const, kind: "simulator" as const };
 const android = { udid: "emulator-5554", name: "Pixel", state: "Booted", runtime: "Android", platform: "android" as const, kind: "emulator" as const };

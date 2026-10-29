@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { once } from "node:events";
-import { attachedBaguette } from "../../test-support/fixtures.ts";
+import { attachedBaguette } from "@mobile-dev/test-support/fixtures.ts";
 import { getDefinitionDiagnostic, parseDefinitionDiagnostic } from "../src/simulator-definition-diagnostics.ts";
 import { definitionDiagnosticTags } from "../src/error-diagnostics.ts";
 import baguetteRelease from "../../native/vendor/baguette-release.json" with { type: "json" };

@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { agentDeviceCatalog, compactAgentDeviceTool } from "../src/agent-device-catalog.ts";
-import { agentDeviceCatalogFile, agentDeviceGuideFile, runtimeUrl, upstreamCatalog } from "../../test-support/agent-device-fixtures.ts";
+import { agentDeviceCatalogFile, agentDeviceGuideFile, runtimeUrl, upstreamCatalog } from "@mobile-dev/test-support/agent-device-fixtures.ts";
 
 const tools = upstreamCatalog.tools.map(compactAgentDeviceTool);
 function tool(name: string) {

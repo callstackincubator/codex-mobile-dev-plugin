@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import type { StorageSnapshot } from "../../shared/src/app-storage.ts";
+import type { StorageSnapshot } from "@mobile-dev/shared/app-storage.ts";
 import { appleTimestamp, containerBreakdown, plural } from "../src/storage-labels.ts";
 
 test("counts read as words, with irregular plurals", () => {
