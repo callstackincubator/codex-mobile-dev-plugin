@@ -1,9 +1,9 @@
 /**
- * Evidence behind components picked in a React Explore (`tracesift-selection.ts`
+ * Evidence behind components picked in a React Explore (`selection.ts`
  * is the CPU side). Unsampled, so exact for renders and silent about the rest.
  */
 
-import { formatReactMs, shortLocationLabel } from "./tracesift-labels.ts";
+import { formatReactMs, shortLocationLabel } from "./labels.ts";
 
 /** One rendered fiber. `ReactExploreNode` from @callstack/tracesift-explore, structurally. */
 export interface ReactSelectionNode {

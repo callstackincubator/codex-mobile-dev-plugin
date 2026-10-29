@@ -3,7 +3,7 @@
  * view can answer it. Measured not concluded, every figure labelled.
  */
 
-import { formatMs } from "./tracesift-labels.ts";
+import { formatMs } from "./labels.ts";
 
 /** The part of a task hand-off this reads. `TaskHandoff` from @callstack/tracesift-explore, structurally. */
 export interface SelectionTree {

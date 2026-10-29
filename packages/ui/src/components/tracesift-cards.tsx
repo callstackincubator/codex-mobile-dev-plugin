@@ -1,10 +1,10 @@
 import { useSyncExternalStore } from "react";
 import { ChartNoAxesCombinedIcon, CheckIcon, CopyIcon, FolderIcon, MessageCircleIcon, UploadIcon } from "lucide-react";
 import type { TraceSiftController } from "../tracesift-controller.ts";
-import { formatMs, formatReactMs } from "@mobile-dev/shared/tracesift-labels.ts";
+import { formatMs, formatReactMs } from "../tracesift/labels.ts";
 import type { TraceSiftAnalysis, TraceSiftCpuAnalysis, TraceSiftReactCard, TraceSiftTaskCard } from "@mobile-dev/shared/tracesift.ts";
 import { Button } from "./ui/button.tsx";
-import { reactCommitSlices } from "@mobile-dev/shared/tracesift-contribution.ts";
+import { reactCommitSlices } from "../tracesift/contribution.ts";
 import type { ContributionChartKind } from "./tracesift/contribution-chart.tsx";
 import { ReactContribution, ReactFallbackRows } from "./tracesift/react-contribution.tsx";
 import { TaskContribution } from "./tracesift/task-contribution.tsx";

@@ -7,7 +7,7 @@
 
 import type {
   TraceSiftBoundaryCulprit, TraceSiftBoundaryFrame, TraceSiftReactCard, TraceSiftTaskCard,
-} from "./tracesift.ts";
+} from "@mobile-dev/shared/tracesift.ts";
 
 /** Slices a level carries before folding its tail; also the palette size. */
 export const CHART_SLICES = 8;

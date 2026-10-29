@@ -240,7 +240,7 @@ frames** back off empties the set — the bar that explains picking goes with th
 mode, so the picks go with it, and a send never carries a set whose count the
 reader can no longer see.
 
-**Investigate selected** writes its own hand-off, in `packages/shared/src/tracesift-selection.ts`
+**Investigate selected** writes its own hand-off, in `packages/ui/src/tracesift/selection.ts`
 rather than through `mobile_get_tracesift_handoff`. The picks exist only in this
 frame and the whole call tree is already in it, so a round trip could not have
 answered the question anyway — and an older installed service is never asked
@@ -257,7 +257,7 @@ looking at.
 The same switch, over a recording. **Select components** turns the render tree
 and the component table from navigating to collecting, and **Investigate
 selected components** writes its own hand-off from
-`packages/shared/src/tracesift-react-selection.ts`. The state is the one field the task
+`packages/ui/src/tracesift/react-selection.ts`. The state is the one field the task
 side uses, because it is the same shape; what differs is the id, the arithmetic
 and the words.
 

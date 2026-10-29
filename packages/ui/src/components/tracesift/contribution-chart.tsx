@@ -2,7 +2,7 @@
 // figure, palette slot); the card beside it keeps everything about a task.
 
 import type { ReactNode } from "react";
-import { squarify } from "@mobile-dev/shared/tracesift-contribution.ts";
+import { squarify } from "../../tracesift/contribution.ts";
 
 export interface ChartSlice {
   key: string;
