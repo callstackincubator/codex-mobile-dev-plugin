@@ -13,6 +13,7 @@ import { adbPath } from "./native-logs.ts";
 import { errorMessage, parseBaseUrl } from "@mobile-dev/shared/protocol.ts";
 import type { SimulatorDevice, Status } from "@mobile-dev/shared/protocol.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
+import { MissingRuntimeError } from "./install-integrity.ts";
 import { recordAndroidEmulatorReconnect, recordAndroidBackendStartup, recordAndroidStartupStages, recordAndroidStartupContext, recordAndroidStartupDeviceState, recordAndroidBackendStop } from "./telemetry.ts";
 import { androidStartupMessageSchema, androidDeviceState, setAndroidStartupDiagnostic } from "@mobile-dev/shared/android-startup-diagnostics.ts";
 import type { AndroidStartupContext, AndroidStartupFailure, AndroidStartupSummary } from "@mobile-dev/shared/android-startup-diagnostics.ts";
@@ -250,7 +251,7 @@ export class ServeEmu {
     } catch (error) { if (this.external) throw error; }
     const cliUrl = new URL("./serve-emu/src/cli.mjs", import.meta.url);
     const cli = fileURLToPath(cliUrl);
-    await access(cli).catch(() => { throw new Error("The plugin is missing its bundled serve-emu runtime. Run npm run vendor:serve-emu and npm run build, then package it again."); });
+    await access(cli).catch(() => { throw new MissingRuntimeError("serve-emu"); });
     const listener = createServer();
     await new Promise<void>((resolve, reject) => { listener.once("error", reject); listener.listen(0, "127.0.0.1", resolve); });
     const address = listener.address();

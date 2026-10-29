@@ -6,8 +6,11 @@ import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { PluginUpdates, registerPluginUpdateTools, resolveCodexCli, readPluginStore } from "../server/plugin-updates.ts";
+import * as Sentry from "@sentry/node";
+import type { Envelope } from "@sentry/core";
+import { createCodexRunner, PluginUpdates, registerPluginUpdateTools, resolveCodexCli, readPluginStore } from "../server/plugin-updates.ts";
 import type { ReadStore, RunCodex } from "../server/plugin-updates.ts";
+import { scrubErrorEvent } from "@mobile-dev/shared/telemetry.ts";
 import { compareReleaseVersions, PLUGIN_STORE_ID, pluginUpdateSchema } from "../shared/plugin-updates.ts";
 
 async function profile(t: test.TestContext) {
@@ -241,6 +244,45 @@ test("wrong marketplaces, failed deletion and unremoved GitHub installations nev
     const migration = updates.migrate();
     await assert.rejects(migration);
     if (fixture.source !== undefined) assert.equal(calls.some(call => call[1] === "remove"), false);
+  }
+});
+
+test("migration failures report the failed step and cause without CLI output", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, beforeSend: scrubErrorEvent,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  const previous = process.env.MOBILE_DEV_TELEMETRY;
+  delete process.env.MOBILE_DEV_TELEMETRY;
+  t.after(async () => {
+    if (previous === undefined) delete process.env.MOBILE_DEV_TELEMETRY;
+    else process.env.MOBILE_DEV_TELEMETRY = previous;
+    await Sentry.close();
+  });
+  const cases = [
+    { fixture: { source: "https://github.com/other/repo" }, step: "remove-marketplace", failure: "foreign-marketplace" },
+    { fixture: { keepGithub: true }, step: "verify", failure: "not-verified" },
+    { fixture: {}, failRemoval: true, step: "remove-plugin", failure: "command-failed" },
+    { fixture: {}, invalidStore: true, step: "catalog", failure: "invalid-response" },
+  ];
+  for (const { fixture, failRemoval, invalidStore, step, failure } of cases) {
+    envelopes.length = 0;
+    const directory = await profile(t);
+    const calls: string[][] = [];
+    const cli = cliFixture(directory, calls, { ...fixture, storeInstalled: true });
+    // A real runner around a command that exits non-zero, so the failure is classified where Codex fails.
+    const failing = createCodexRunner(directory, { path: "/usr/bin/false" });
+    const run: RunCodex = args => failRemoval && args[1] === "remove" ? failing(args) : cli.run(args);
+    const readStore: ReadStore = invalidStore ? async () => ({ name: "mobile-dev" }) : cli.readStore;
+    const updates = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.167", run, readStore });
+    await assert.rejects(updates.migrate());
+    await Sentry.flush();
+    const sent = JSON.stringify(envelopes);
+    assert.ok(sent.includes("The plugin store migration failed."), step);
+    assert.ok(sent.includes(`"plugin_update_step":"${step}"`), sent);
+    assert.ok(sent.includes(`"plugin_update_failure":"${failure}"`), sent);
+    assert.equal(sent.includes(directory), false);
   }
 });
 

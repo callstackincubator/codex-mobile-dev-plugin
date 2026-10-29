@@ -19,6 +19,7 @@ import { openRequestSession } from "../src/request-session.ts";
 import { registerDeviceAppsTool } from "../src/device-apps/tools.ts";
 import { directoryBytes } from "../src/storage-metrics.ts";
 import { SimulatorUnavailableError } from "../src/simulator-unavailable.ts";
+import { MissingRuntimeError } from "../src/install-integrity.ts";
 import { registerDeviceChoiceTools } from "../src/device-choice-tools.ts";
 import { listIosDevices, registerIosDeviceTools } from "../src/ios-devices.ts";
 import { createDrivers, registerAppControlTools } from "../src/app-control/tools.ts";
@@ -874,6 +875,26 @@ test("Android startup diagnostics retain stage, device state and anonymous error
   await Sentry.flush();
   const afterOptOut = JSON.stringify(envelopes);
   assert.equal(afterOptOut, sent);
+});
+
+test("missing bundled runtimes report the runtime and install integrity with anonymous attribution", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, environment: "release", release: "mobile-dev@test", beforeSend: scrubErrorEvent,
+    initialScope: { user: { id: "anon_0123456789abcdef0123456789abcdef" } },
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  const previous = process.env.MOBILE_DEV_TELEMETRY;
+  delete process.env.MOBILE_DEV_TELEMETRY;
+  t.after(async () => {
+    if (previous === undefined) delete process.env.MOBILE_DEV_TELEMETRY;
+    else process.env.MOBILE_DEV_TELEMETRY = previous;
+    await Sentry.close();
+  });
+  captureServerError(new MissingRuntimeError("serve-emu"), "android.tool");
+  await Sentry.flush();
+  const sent = JSON.stringify(envelopes);
+  for (const fragment of ['"install_integrity":"incomplete"', '"bundled_runtime":"serve-emu"', '"operation":"android.tool"', "anon_0123456789abcdef0123456789abcdef", "mobile-dev@test"]) contains(sent, fragment);
 });
 
 test("resource teardown is classified before automatic SDK capture", async t => {

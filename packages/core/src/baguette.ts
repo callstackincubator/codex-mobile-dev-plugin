@@ -12,6 +12,7 @@ import type { Status } from "@mobile-dev/shared/protocol.ts";
 import { buttonMarginsSchema } from "@mobile-dev/shared/bezel.ts";
 import { definitionDeviceState, getDefinitionDiagnostic, parseDefinitionDiagnostic, setDefinitionDiagnostic } from "@mobile-dev/shared/simulator-definition-diagnostics.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
+import { MissingRuntimeError } from "./install-integrity.ts";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 import { baguetteEnvironment } from "./baguette-runtime.ts";
 import { captureServerError, recordAccessibilityBridgeRestart } from "./telemetry.ts";
@@ -138,7 +139,7 @@ export class Baguette {
     try {
       await access(path, constants.X_OK);
     } catch {
-      throw new Error("The plugin is missing its bundled Baguette runtime. Run npm run vendor:baguette and npm run build in the source project, then package it again.");
+      throw new MissingRuntimeError("baguette");
     }
     return path;
   }
@@ -194,9 +195,7 @@ export class Baguette {
       const deadline = Date.now() + 20000;
       while (Date.now() < deadline && !this.disposed) {
         if (launchError) {
-          if ((launchError as NodeJS.ErrnoException).code === "ENOENT") {
-            throw new Error("The bundled Baguette executable could not start. Reinstall the plugin package.");
-          }
+          if ((launchError as NodeJS.ErrnoException).code === "ENOENT") throw new MissingRuntimeError("baguette");
           throw launchError;
         }
         if (child.exitCode !== null || child.signalCode !== null) {

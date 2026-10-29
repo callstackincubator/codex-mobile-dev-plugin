@@ -141,6 +141,13 @@ No CLI output, store metadata,
 versions, paths, or user data are included. Disposal aborts CLI requests and clears
 the UI timer and visibility listener.
 
+Since 0.1.169, the fixed `plugin.update.migrate` error carries a `plugin_update_step`
+tag (`catalog`, `remove-plugin`, `remove-marketplace`, `verify` or `save`) and a
+`plugin_update_failure` tag (`codex-not-found`, `command-failed`, `invalid-response`,
+`store-unavailable`, `foreign-marketplace`, `not-removed`, `not-verified`,
+`cache-write` or `unknown`). The message, metrics and boundaries are unchanged, and
+no CLI output or store response is included.
+
 Since 0.1.129, discovery command failures retain bounded `discovery_command`, `discovery_cause`,
 `discovery_termination`, and optional `discovery_signal` tags. Failed exception
 contexts contain only numeric `elapsed_ms`, `deadline_ms`, and an optional exit
@@ -448,6 +455,17 @@ Errors retain their original message and stack plus fixed `android_startup_stage
 release, scrubbing and opt-out remain in the parent. Installation and process-session
 IDs never enter performance measurements. These diagnostics distinguish failure
 mechanisms; they do not by themselves identify the cause of an ADB stall.
+
+Since 0.1.169, the server records the inode and modification time of its bundle file
+(`server.mjs`, or the chunk beside it in split builds) when it loads. Every error event
+from a server whose file is gone carries `install_integrity: removed`, as when an update
+or uninstall deletes the running version's folder; another file in its place gives
+`replaced`. Split builds name chunks by content, so an in-place update there reads as
+`removed`. A missing bundled serve-emu or Baguette runtime also carries `bundled_runtime`
+(`serve-emu` or `baguette`), with `install_integrity: incomplete` when the server's file
+is unchanged, so the installation it started from lacks the runtime. Only these fixed
+values are sent, never paths. The panel no longer retries a missing runtime on every
+reconnect.
 
 Unhandled JavaScript errors and rejected promises, React render errors, and handled MCP tool failures produce issues. Expected stopped-device errors and cancelled operations are excluded. Sentry traces 10% of ordinary tool actions, continuing the UI trace through the MCP bridge. Frame reads, polling, discovery and pointer input are excluded from trace sampling. The SDK does not record MCP arguments or results.
 
