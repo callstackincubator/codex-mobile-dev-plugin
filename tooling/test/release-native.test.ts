@@ -5,7 +5,7 @@ import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
-import { downloadNativeArtifact, findNativeArtifact, nativeArtifactKey, nativeHelpers, prepareNativeHelper, restoreNativeArtifact, saveNativeArtifact } from "../release-native.mjs";
+import { buildNativeHelper, downloadNativeArtifact, findNativeArtifact, nativeArtifactKey, nativeHelpers, prepareNativeHelper, restoreNativeArtifact, restoreNativeHelper, saveNativeArtifact } from "../release-native.mjs";
 
 const toolchain = { shared: { node: "22", cmake: "4" }, darwin: "Xcode 27", swift: "6.4", rust: "1.98.1", android: "NDK 27", iosLogs: "OpenSSL 3" };
 
@@ -268,6 +268,22 @@ test("cold builds produce artifacts and warm releases restore them without invok
   assert.equal(downloads, 1);
   const binary = await readFile(`${directory}/packages/native/vendor/baguette/Baguette`, "utf8");
   assert.equal(binary, "native binary\n");
+});
+
+test("the restore phase leaves helpers without an artifact for the sequential build phase", async t => {
+  const directory = await fixture(t);
+  const outputDirectory = join(directory, "artifacts");
+  let builds = 0;
+  async function miss() { return { artifacts: [] }; }
+  async function build(helper: typeof nativeHelpers[number]) { builds++; await payload(directory, helper); }
+  const options = { directory, toolchain, outputDirectory, request: miss, build };
+  const restored = await Promise.all(nativeHelpers.map(helper => restoreNativeHelper(helper, options)));
+  assert.equal(builds, 0);
+  assert.ok(restored.every(result => result.action === undefined));
+  const built = await buildNativeHelper(nativeHelpers[0], restored[0], options);
+  assert.equal(built.action, "built");
+  assert.equal(built.key, restored[0].key);
+  assert.equal(builds, 1);
 });
 
 test("artifact service errors stop a release instead of silently rebuilding", async t => {

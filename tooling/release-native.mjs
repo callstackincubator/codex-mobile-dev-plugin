@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import { appendFile, copyFile, cp, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
@@ -7,9 +7,11 @@ import { dirname, join, resolve } from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { pathToFileURL } from "node:url";
+import { promisify } from "node:util";
 import { fileSHA256, nativeHelpers } from "./native-helpers.mjs";
 
 export { nativeHelpers };
+const execute = promisify(execFile);
 
 function version(command, args) {
   const output = execFileSync(command, args, { encoding: "utf8" });
@@ -256,23 +258,30 @@ export async function downloadNativeArtifact(artifact, archive, helper, environm
   }
 }
 
-export async function prepareNativeHelper(helper, options) {
-  const { directory, toolchain, request, runs, download, build, outputDirectory } = options;
+/** Restores the helper from a matching release artifact; without one, `action` stays undefined. */
+export async function restoreNativeHelper(helper, options) {
+  const { directory, toolchain, request, runs, download, outputDirectory } = options;
   const key = await nativeArtifactKey(helper, toolchain, directory);
   const archive = join(outputDirectory, `${helper.name}.tar.gz`);
   await mkdir(outputDirectory, { recursive: true });
   const artifact = await findNativeArtifact(key, request, runs);
-  if (artifact) {
-    console.log(`Restoring ${helper.name} from release run ${artifact.workflow_run.id}.`);
-    await download(artifact, archive, helper);
-    await restoreNativeArtifact(helper, key, archive, directory);
-  } else {
-    console.log(`Building ${helper.name}: no successful release artifact matches ${key}.`);
-    await build(helper);
-    await saveNativeArtifact(helper, key, archive, directory);
-  }
-  const action = artifact ? "restored" : "built";
-  return { helper: helper.name, key, archive, action };
+  if (artifact === undefined) return { helper: helper.name, key, archive };
+  console.log(`Restoring ${helper.name} from release run ${artifact.workflow_run.id}.`);
+  await download(artifact, archive, helper);
+  await restoreNativeArtifact(helper, key, archive, directory);
+  return { helper: helper.name, key, archive, action: "restored" };
+}
+
+export async function buildNativeHelper(helper, restored, options) {
+  console.log(`Building ${helper.name}: no successful release artifact matches ${restored.key}.`);
+  await options.build(helper);
+  await saveNativeArtifact(helper, restored.key, restored.archive, options.directory);
+  return { ...restored, action: "built" };
+}
+
+export async function prepareNativeHelper(helper, options) {
+  const restored = await restoreNativeHelper(helper, options);
+  return restored.action ? restored : buildNativeHelper(helper, restored, options);
 }
 
 async function releaseNative(environment = process.env) {
@@ -287,8 +296,8 @@ async function releaseNative(environment = process.env) {
   const runs = new Map();
   async function request(path) {
     const endpoint = `repos/${environment.GITHUB_REPOSITORY}/${path}`;
-    const response = execFileSync("gh", ["api", endpoint], { encoding: "utf8", env: environment, maxBuffer: 10 * 1024 * 1024 });
-    return JSON.parse(response);
+    const response = await execute("gh", ["api", endpoint], { encoding: "utf8", env: environment, maxBuffer: 10 * 1024 * 1024 });
+    return JSON.parse(response.stdout);
   }
   async function download(artifact, archive, helper) {
     await downloadNativeArtifact(artifact, archive, helper, environment);
@@ -297,10 +306,20 @@ async function releaseNative(environment = process.env) {
     execFileSync("npm", ["run", helper.command], { cwd: directory, env: environment, stdio: "inherit" });
   }
   await appendFile(environment.GITHUB_STEP_SUMMARY, "### Native release artifacts\n\n| Helper | Result | Duration |\n| --- | --- | --- |\n");
-  for (const helper of nativeHelpers) {
+  const options = { directory, toolchain, request, runs, download, build, outputDirectory };
+  // Restores are independent downloads. Builds share .local-dev/sentry-native, so they run one at a time.
+  const restores = await Promise.all(nativeHelpers.map(async helper => {
     const start = performance.now();
-    const result = await prepareNativeHelper(helper, { directory, toolchain, request, runs, download, build, outputDirectory });
-    const elapsed = performance.now() - start;
+    const result = await restoreNativeHelper(helper, options);
+    return { result, elapsed: performance.now() - start };
+  }));
+  for (const [index, helper] of nativeHelpers.entries()) {
+    let { result, elapsed } = restores[index];
+    if (result.action === undefined) {
+      const start = performance.now();
+      result = await buildNativeHelper(helper, result, options);
+      elapsed = performance.now() - start;
+    }
     const seconds = (elapsed / 1000).toFixed(1);
     await appendFile(environment.GITHUB_OUTPUT, `${helper.name}=${result.key}\n`);
     await appendFile(environment.GITHUB_STEP_SUMMARY, `| ${helper.name} | ${result.action} | ${seconds}s |\n`);
