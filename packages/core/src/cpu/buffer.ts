@@ -32,8 +32,8 @@ export class SampleBuffer<T extends { time: number }> {
   close() { this.samples.close(); }
 
   /** Waits up to `waitMs` for a change after `after`, then returns what changed. */
-  async collect(after: number, waitMs = 1000) {
-    await this.samples.wait(after, waitMs);
+  async collect(after: number, waitMs = 1000, signal?: AbortSignal) {
+    await this.samples.wait(after, waitMs, signal);
     return { cursor: this.samples.revision, samples: this.samples.since(after).map(entry => entry.value) };
   }
 }
@@ -44,8 +44,8 @@ export class CpuBuffer extends SampleBuffer<CpuSample> {
 
   constructor(memoryMetric: MemoryMetric) { super(); this.memoryMetric = memoryMetric; }
 
-  async read(after: number, waitMs = 1000): Promise<CpuBatch> {
-    const { cursor, samples } = await this.collect(after, waitMs);
+  async read(after: number, waitMs = 1000, signal?: AbortSignal): Promise<CpuBatch> {
+    const { cursor, samples } = await this.collect(after, waitMs, signal);
     return { cursor, timeOrigin: this.timeOrigin, phase: this.phase, samples, memoryMetric: this.memoryMetric, error: this.error };
   }
 }

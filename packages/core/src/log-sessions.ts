@@ -38,8 +38,8 @@ export class LogSessions {
 
   keepAlive(id: string) { this.sessions.get(id); }
 
-  async read(id: string, after: number, waitMs = 1000): Promise<LogBatch> {
-    return this.sessions.get(id).buffer.read(after, waitMs);
+  async read(id: string, after: number, waitMs = 1000, signal?: AbortSignal): Promise<LogBatch> {
+    return this.sessions.get(id).buffer.read(after, waitMs, signal);
   }
 
   closeSession(id: string) { return this.sessions.closeSession(id); }

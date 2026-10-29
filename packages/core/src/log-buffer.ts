@@ -28,10 +28,10 @@ export class LogBuffer {
   status(status: LogSourceStatus) { if (!this.entries.closed) { this.statuses.set(status.source, status); this.entries.wake(); } }
   close() { this.entries.close(); this.batches.wake(); }
 
-  async read(after: number, waitMs = 1000): Promise<LogBatch> {
-    await this.entries.wait(after, waitMs);
+  async read(after: number, waitMs = 1000, signal?: AbortSignal): Promise<LogBatch> {
+    await this.entries.wait(after, waitMs, signal);
     // Batch bursts into one MCP read rather than one call for each line.
-    if (!this.entries.closed && waitMs > 0 && after < this.entries.revision) await this.batches.wait(75);
+    if (!this.entries.closed && waitMs > 0 && after < this.entries.revision) await this.batches.wait(75, signal);
     const sequence = this.entries.revision;
     const entries = this.entries.since(after).slice(0, 100).map(entry => entry.value);
     const first = this.entries.first ?? sequence + 1;

@@ -39,9 +39,9 @@ export class DisplayFpsSessions {
     return id;
   }
 
-  async read(id: string, after: number, waitMs = 1000): Promise<DisplayFpsBatch> {
+  async read(id: string, after: number, waitMs = 1000, signal?: AbortSignal): Promise<DisplayFpsBatch> {
     const { buffer } = this.sessions.get(id, { stopping: true }).collector;
-    const { cursor, samples } = await buffer.collect(after, waitMs);
+    const { cursor, samples } = await buffer.collect(after, waitMs, signal);
     return { cursor, phase: buffer.phase, error: buffer.error, samples };
   }
 

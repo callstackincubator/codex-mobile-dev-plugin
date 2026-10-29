@@ -64,8 +64,8 @@ export class CpuSessions {
     } });
   }
 
-  async read(id: string, after: number, waitMs = 1000): Promise<CpuBatch> {
-    return this.sessions.get(id, { stopping: true }).buffer.read(after, waitMs);
+  async read(id: string, after: number, waitMs = 1000, signal?: AbortSignal): Promise<CpuBatch> {
+    return this.sessions.get(id, { stopping: true }).buffer.read(after, waitMs, signal);
   }
 
   closeSession(id: string) { return this.sessions.closeSession(id); }
