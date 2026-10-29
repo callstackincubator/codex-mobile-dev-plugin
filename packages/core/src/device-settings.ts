@@ -75,7 +75,8 @@ class IosSettings implements PlatformSettings {
     return `/simulators/${id}`;
   }
 
-  listed(id: string) { return this.baguette.listedDevice(id, true); }
+  // The request already waited on Baguette, so the lookup gets a short deadline of its own.
+  listed(id: string) { return this.baguette.listedDevice(id, true, AbortSignal.timeout(2000)); }
 
   async read(id: string) {
     const path = await this.simulator(id);

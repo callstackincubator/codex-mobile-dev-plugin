@@ -38,6 +38,13 @@ export function annotateDeviceCommand<T>(error: T, command: string, failure: Com
   return error;
 }
 
+/** Gives an error built from a failure's message the command and failure that failure was annotated with. */
+export function inheritDeviceCommand<T>(error: T, from: unknown): T {
+  const named = from !== null && typeof from === "object" ? commands.get(from) : undefined;
+  if (named && error !== null && typeof error === "object" && !commands.has(error)) commands.set(error, named);
+  return error;
+}
+
 // Backend routes name a device by ID; the label keeps only the route's fixed words, such as baguette_interface.
 export function backendCommand(backend: "baguette" | "serve_emu", path: string): string {
   const route = path.replace(/^\/(?:simulators\/[^/]+\/|api\/)?/, "").replace(/\.json$/, "").replace(/[-/.]/g, "_");

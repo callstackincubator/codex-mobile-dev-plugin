@@ -7,6 +7,7 @@ import type { RequestListener } from "node:http";
 import type { AddressInfo } from "node:net";
 import { Baguette } from "../src/baguette.ts";
 import { isRepeatedFailure } from "../../shared/src/error-reporting.ts";
+import { deviceCommandTags } from "../../shared/src/device-command-diagnostics.ts";
 import { UDID } from "../../test-support/fixtures.ts";
 
 const DEVICES = JSON.stringify({ running: [], available: [{ udid: UDID, name: "iPhone 17", state: "Shutdown", runtime: "iOS 26.0" }] });
@@ -53,7 +54,10 @@ test("a running Baguette whose device list is slow or fails is never treated as 
   backend.latency = 0;
   backend.status = 500;
   const requests = backend.requests;
-  await assert.rejects(baguette.start(), /^Error: Cannot reach Baguette at .*HTTP 500/);
+  const failed = await baguette.start().then(() => assert.fail("The start should fail."), (error: unknown) => error);
+  assert.match(String(failed), /^Error: Cannot reach Baguette at .*HTTP 500/);
+  // The failure keeps how the device list request failed.
+  assert.deepEqual(deviceCommandTags(failed), { device_command: "baguette_simulators", device_command_failure: "http_status", device_command_status: "500" });
   // Only the device list was read: the backend's own port is never probed as a foreign listener.
   assert.equal(backend.requests - requests, 1);
   assert.deepEqual(backend.launches, [baguette.baseUrl.port]);
@@ -98,7 +102,9 @@ test("the bundled Baguette retries on a new port when another process binds it f
   launches.length = 0;
   const crowded = new Baguette(undefined, undefined, launch);
   t.after(() => crowded.dispose());
-  await assert.rejects(crowded.start(), /^Error: Baguette exited before it became ready\. .*Address already in use/);
+  const failed = await crowded.start().then(() => assert.fail("The start should fail."), (error: unknown) => error);
+  assert.match(String(failed), /^Error: Baguette exited before it became ready\. .*Address already in use/);
+  assert.deepEqual(deviceCommandTags(failed), { device_command: "baguette_serve", device_command_failure: "exit", device_command_status: "1" });
   assert.equal(launches.length, 3);
 });
 

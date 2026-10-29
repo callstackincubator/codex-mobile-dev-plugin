@@ -327,8 +327,8 @@ serve-emu failures under `device_settings.read` or `device_settings.<setting>` w
 fixed message. Since 0.1.170 they carry the device command tags described below,
 and a failure on a device that stopped or went away during the request counts as
 `device_unavailable` through `server.error.outcome` instead of a report. The check
-reads the device list without starting a backend; when Baguette or adb cannot list
-devices, the failure is reported as before. Android throttling runs through a local
+reads the device list without starting a backend, giving Baguette two seconds; when
+Baguette or adb cannot list devices, the failure is reported as before. Android throttling runs through a local
 proxy on the Mac, so its adb failures report under `device_settings.network`;
 throttling a device that already uses its own proxy counts only through
 `server.error.outcome`. When the plugin first
@@ -350,7 +350,9 @@ which their `server.error.outcome` counts also carry:
 - `device_command`: the program and subcommand or backend route that failed, such
   as `simctl_launch`, `simctl_privacy`, `adb_shell_am`, `adb_install`, `plutil`,
   `baguette_interface`, `baguette_start`, `serve_emu_night_mode`, or
-  `serve_emu_start`. It is absent when the failure did not come from a named
+  `serve_emu_start`. A Baguette start that fails on its device list or its own
+  process names `baguette_simulators` or `baguette_serve` instead of
+  `baguette_start`. It is absent when the failure did not come from a named
   command, such as a reply that failed validation. Labels come from code; anything
   else is sent as `other`.
 - `device_command_failure`: `exit`, `signal`, `deadline`, `cancelled`,
