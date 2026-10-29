@@ -3,6 +3,7 @@ import type { ErrorEvent } from "@sentry/node";
 import { SENTRY_NATIVE_DSN, SENTRY_RELEASE } from "@mobile-dev/shared/telemetry.ts";
 import { TELEMETRY_ENVIRONMENT } from "./telemetry-environment.ts";
 import { getTelemetryIdentity } from "./telemetry-identity.ts";
+import { LineSplitter } from "./collectors/lines.ts";
 
 type Transport = ReturnType<typeof makeNodeTransport>;
 type Envelope = Parameters<Transport["send"]>[0];
@@ -84,34 +85,21 @@ function sendEnvelope(encoded: string) {
   }
 }
 
+/** Forwards a helper's stderr: Sentry envelope lines to Sentry, other lines to `diagnostic`. */
 export class NativeTelemetryRelay {
-  private pending = "";
-  private discarding = false;
+  private readonly lines: LineSplitter;
   private readonly diagnostic: (text: string) => void;
   private readonly send: (encoded: string) => void;
 
   constructor(diagnostic: (text: string) => void, send: (encoded: string) => void = sendEnvelope) {
     this.diagnostic = diagnostic;
     this.send = send;
+    this.lines = new LineSplitter((line, terminated) => this.consume(terminated ? `${line}\n` : line), { maxLength: maximumLine + prefix.length });
   }
 
-  write(chunk: Buffer) {
-    const text = chunk.toString("utf8");
-    const parts = text.split("\n");
-    for (let index = 0; index < parts.length; index++) {
-      if (this.discarding === false) this.pending += parts[index];
-      if (this.pending.length > maximumLine + prefix.length) { this.pending = ""; this.discarding = true; }
-      if (index === parts.length - 1) continue;
-      if (this.discarding === false) this.consume(this.pending + "\n");
-      this.pending = "";
-      this.discarding = false;
-    }
-  }
+  write(chunk: Buffer) { this.lines.write(chunk); }
 
-  end() {
-    if (this.discarding === false && this.pending.length > 0) this.consume(this.pending);
-    this.pending = "";
-  }
+  end() { this.lines.end(); }
 
   private consume(line: string) {
     if (line.startsWith(prefix)) {

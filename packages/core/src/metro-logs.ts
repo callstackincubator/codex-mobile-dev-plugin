@@ -1,10 +1,9 @@
 import { WebSocket } from "ws";
-import { setTimeout as delay } from "node:timers/promises";
 import type { MetroLogTarget, MetroTarget } from "@mobile-dev/shared/logs.ts";
 import { parseBaseUrl } from "@mobile-dev/shared/protocol.ts";
 import { parseMetroEvent } from "./log-parsers.ts";
+import { superviseLogSource } from "./native-logs.ts";
 import type { LogSink, StopLogSource } from "./native-logs.ts";
-import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 
 export type InspectorTarget = MetroTarget & { webSocketDebuggerUrl: string; supportsMultipleDebuggers: boolean };
 
@@ -30,26 +29,12 @@ export async function metroTargets(origin: string, signal?: AbortSignal): Promis
 }
 
 export function startMetroLogs(target: MetroLogTarget, sink: LogSink): StopLogSource {
-  const controller = new AbortController();
-  const signal = controller.signal;
-  const running = (async () => {
-    let failures = 0;
-    while (!signal.aborted) {
-      sink.status({ source: "metro", state: failures ? "reconnecting" : "connecting" });
-      try {
-        const targets = await metroTargets(target.url, signal);
-        const selected = targets.find(item => item.id === target.targetId);
-        if (!selected) throw new Error("The selected app is absent from Metro. Refresh targets after restarting the app.");
-        await receiveMetro(selected, sink, signal);
-      } catch (error) {
-        if (signal.aborted) break;
-        sink.status({ source: "metro", state: "reconnecting", message: errorMessage(error) });
-        failures++;
-      }
-      await delay(Math.min(500 * 2 ** Math.min(failures, 4), 10000), undefined, { signal }).catch(() => {});
-    }
-  })();
-  return async () => { controller.abort(); await running; };
+  return superviseLogSource("metro", sink, async signal => {
+    const targets = await metroTargets(target.url, signal);
+    const selected = targets.find(item => item.id === target.targetId);
+    if (!selected) throw new Error("The selected app is absent from Metro. Refresh targets after restarting the app.");
+    await receiveMetro(selected, sink, signal);
+  });
 }
 
 function receiveMetro(target: InspectorTarget, sink: LogSink, signal: AbortSignal): Promise<void> {

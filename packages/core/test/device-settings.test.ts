@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { DeviceSettingsService } from "../src/device-settings.ts";
 import { DeviceSettingsStore } from "../../ui/src/device-settings.ts";
+import type { DeviceSettingsSource } from "../../ui/src/device-settings.ts";
 import type { Baguette } from "../src/baguette.ts";
 import type { ServeEmu } from "../src/serve-emu.ts";
 import type { AndroidNetworkThrottle, ThrottleReading } from "../src/network-throttle/android.ts";
@@ -49,7 +50,7 @@ function fixture() {
   const serveEmu = {
     async start(id: string) { return { url: new URL(`http://localhost/${id}/`) }; },
     device: listed,
-    async json(url: URL, path: string, options: RequestInit = {}) {
+    async json({ url }: { url: URL }, path: string, options: RequestInit = {}) {
       const body = options.body ? JSON.parse(String(options.body)) : undefined;
       requests.push({ platform: "android", id: url.pathname.slice(1, -1), path, method: options.method ?? "GET", body });
       if (path === "/api/night-mode") return { ok: true, nightMode: { mode: body?.mode ?? "light" } };
@@ -171,10 +172,12 @@ test("a failure on a device that stopped or went away is an expected outcome, an
 });
 
 test("switching devices ignores pending settings and frame changes stay local", async () => {
-  const store = new DeviceSettingsStore();
+  let request: DeviceSettingsSource["request"] = async () => ({});
+  let setFrame: DeviceSettingsSource["setFrame"] = () => {};
+  const store = new DeviceSettingsStore({ request: change => request(change), setFrame: visible => setFrame(visible) });
   let resolve!: (value: object) => void;
   let requests = 0;
-  store.request = () => { requests++; return new Promise(done => { resolve = done; }); };
+  request = () => { requests++; return new Promise(done => { resolve = done; }); };
   store.configure(ios.id, false);
   const load = store.load();
   store.configure(android.id, false);
@@ -183,7 +186,7 @@ test("switching devices ignores pending settings and frame changes stay local", 
   assert.equal(store.getSnapshot().settings, undefined);
   assert.equal(store.getSnapshot().loading, false);
   let visible = true;
-  store.setFrame = value => { visible = value; };
+  setFrame = value => { visible = value; };
   store.toggleFrame(false);
   assert.equal(visible, false);
   assert.equal(requests, 1);
@@ -192,10 +195,12 @@ test("switching devices ignores pending settings and frame changes stay local", 
 });
 
 test("rapid edits stay interactive and save in order without overwriting queued choices", async () => {
-  const store = new DeviceSettingsStore();
+  let request: DeviceSettingsSource["request"] = async () => ({});
+  let setFrame: DeviceSettingsSource["setFrame"] = () => {};
+  const store = new DeviceSettingsStore({ request: change => request(change), setFrame: visible => setFrame(visible) });
   const writes: { change: unknown; resolve: (value: object) => void; reject: (error: Error) => void }[] = [];
   store.configure(ios.id, false);
-  store.request = async change => {
+  request = async change => {
     if (!change) return { appearance: "light", contentSize: "large", locationSupported: true };
     return new Promise((resolve, reject) => writes.push({ change, resolve, reject }));
   };
@@ -223,11 +228,13 @@ test("rapid edits stay interactive and save in order without overwriting queued 
 });
 
 test("a background refresh never replaces a newer edit", async () => {
-  const store = new DeviceSettingsStore();
+  let request: DeviceSettingsSource["request"] = async () => ({});
+  let setFrame: DeviceSettingsSource["setFrame"] = () => {};
+  const store = new DeviceSettingsStore({ request: change => request(change), setFrame: visible => setFrame(visible) });
   store.configure(ios.id, false);
   let refresh!: (value: object) => void;
   let reads = 0;
-  store.request = async change => {
+  request = async change => {
     if (change) return { appearance: "dark" };
     if (++reads === 1) return { appearance: "light", locationSupported: true };
     return new Promise(resolve => { refresh = resolve; });

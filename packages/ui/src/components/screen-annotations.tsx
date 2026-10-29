@@ -1,19 +1,16 @@
-import { useState, useSyncExternalStore } from "react";
+import { useSyncExternalStore } from "react";
 import { ArrowUpIcon, CircleAlertIcon, MessageCircleIcon, MousePointer2Icon, SendIcon, Trash2Icon } from "lucide-react";
 import type { ScreenAnnotationsStore } from "../screen-annotations";
 import type { ScreenBounds } from "@mobile-dev/shared/screen-annotations.ts";
 import { Button } from "./ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
+import { useCopy } from "./use-copy";
 
 function AnnotationSendError({ store, error }: { store: ScreenAnnotationsStore; error: string }) {
-  const [copyStatus, setCopyStatus] = useState("");
-  async function copy() {
-    try { await navigator.clipboard.writeText(store.messageText); setCopyStatus("Copied"); }
-    catch { setCopyStatus("Select and copy the text below."); }
-  }
+  const [copy, copyStatus] = useCopy({ failed: "Select and copy the text below." });
   return <Popover><PopoverTrigger asChild><Button variant="ghost" size="icon-sm" className="rounded-full text-destructive" aria-label={`Send failed: ${error}`} title={error}><CircleAlertIcon /></Button></PopoverTrigger><PopoverContent className="w-80 space-y-3" side="top">
     <p className="text-sm" role="alert">{error}</p>
-    <Button size="sm" variant="outline" onClick={() => void copy()}>Copy notes</Button>
+    <Button size="sm" variant="outline" onClick={() => void copy(store.messageText)}>Copy notes</Button>
     {copyStatus && <p className="text-xs text-muted-foreground" role="status">{copyStatus}</p>}
     <textarea readOnly aria-label="Annotation message to copy" className="h-36 w-full resize-none rounded-md border border-border bg-transparent p-2 text-xs" value={store.messageText} onFocus={event => event.currentTarget.select()} />
   </PopoverContent></Popover>;

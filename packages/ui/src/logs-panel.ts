@@ -121,9 +121,9 @@ export class LogsPanel extends Store<LogsPanelState> {
   }
   connect() { this.restart(); }
   setAvailable(available: boolean) { this.available = available; this.controls(); if (this.open) this.restart(); }
-  setLayout(split: boolean) {
-    document.documentElement.dataset.layout = split ? "split" : "stacked";
-    if (split && !this.openedForSplitLayout) { this.openedForSplitLayout = true; this.show(); }
+  /** Opens the logs once, for pages that show tools beside the devices from the start. */
+  openForSplitLayout() {
+    if (!this.openedForSplitLayout) { this.openedForSplitLayout = true; this.show(); }
   }
   private appsChanged() {
     if (this.disposed) return;

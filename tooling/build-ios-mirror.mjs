@@ -1,67 +1,35 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFile, cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { buildNativeSentry, nativeTelemetrySourceHash, nativeSentryLicense } from "./native-telemetry.mjs";
+import { buildNativeSentry, nativeSentryLicense } from "./native-telemetry.mjs";
+import { cargoBuild, cargoLicenses, cargoTarget, rustHelperSourceHash } from "./native-rust.mjs";
+import { saveDarwinSymbols } from "./native-symbols.mjs";
+import { writeNapiTypes } from "./napi-types.mjs";
 import { createRequire } from "node:module";
 
 export async function iosMirrorSourceHash() {
   const hash = createHash("sha256");
-  async function add(path) {
-    const files = await readdir(path, { withFileTypes: true });
-    for (const entry of files.sort((a, b) => a.name.localeCompare(b.name))) {
-      const child = `${path}/${entry.name}`;
-      if (entry.isDirectory()) await add(child);
-      else { hash.update(child); hash.update(await readFile(child)); }
-    }
-  }
-  for (const file of ["Cargo.toml", "Cargo.lock", "build.rs"]) {
-    hash.update(file);
-    hash.update(await readFile(`packages/native/ios-mirror/${file}`));
-  }
-  await add("packages/native/ios-mirror/src");
-  await nativeTelemetrySourceHash(hash);
-  for (const file of ["Cargo.toml", "build.rs", "src/lib.rs"]) {
-    const bytes = await readFile(`packages/native/telemetry/${file}`);
-    hash.update(file);
-    hash.update(bytes);
-  }
+  await rustHelperSourceHash(hash, "ios-mirror");
   return hash.digest("hex");
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === resolve("tooling/build-ios-mirror.mjs")) {
   if (process.platform !== "darwin" || process.arch !== "arm64") throw new Error("Build the physical iOS capture addon on an Apple Silicon Mac.");
   const sdk = await buildNativeSentry();
-  execFileSync("cargo", ["build", "--release", "--locked", "--manifest-path", "packages/native/ios-mirror/Cargo.toml"], {
-    stdio: "inherit", env: sdk.environment,
-  });
+  cargoBuild("mobile-dev-ios-mirror", sdk.environment);
+  // TypeScript imports the addon's declarations from this checked-in file.
+  await writeNapiTypes({ name: "mobile-dev-ios-mirror", crate: "ios-mirror", output: "packages/native/ios-mirror/index.d.ts", environment: sdk.environment });
   await mkdir("packages/native/vendor/ios-mirror", { recursive: true });
-  const metadataText = execFileSync("cargo", ["metadata", "--locked", "--format-version", "1", "--manifest-path", "packages/native/ios-mirror/Cargo.toml"], { encoding: "utf8" });
-  const metadata = JSON.parse(metadataText);
-  const licenses = [];
-  for (const dependency of metadata.packages) {
-    if (dependency.name === "mobile-dev-ios-mirror") continue;
-    const directory = resolve(dependency.manifest_path, "..");
-    const entries = await readdir(directory);
-    const files = entries.filter(name => /^(LICENSE|LICENCE|COPYING|NOTICE)([-._]|$)/i.test(name));
-    if (dependency.name === "idevice") files.push("../LICENSE.txt");
-    const texts = [];
-    for (const file of files) {
-      try { texts.push(await readFile(`${directory}/${file}`, "utf8")); }
-      catch { /* License directories are represented by separate files when present. */ }
-    }
-    licenses.push(`${dependency.name} ${dependency.version} (${dependency.license ?? "see source"})\n${dependency.repository ?? ""}\n\n${texts.join("\n\n")}`);
-  }
+  const licenses = await cargoLicenses("mobile-dev-ios-mirror");
   const sentryLicense = await nativeSentryLicense();
   licenses.push(sentryLicense);
   const licenseText = licenses.join("\n\n====================\n\n");
   await writeFile("packages/native/vendor/ios-mirror/third-party-licenses.txt", licenseText);
   const binaryPath = "packages/native/vendor/ios-mirror/darwin-arm64.node";
-  await copyFile("packages/native/ios-mirror/target/release/libmobile_dev_ios_mirror.dylib", binaryPath);
-  const symbols = ".sentry/native/darwin-arm64/darwin-arm64.node.dSYM";
-  await mkdir(".sentry/native/darwin-arm64", { recursive: true });
-  await rm(symbols, { recursive: true, force: true });
-  await cp("packages/native/ios-mirror/target/release/libmobile_dev_ios_mirror.dylib.dSYM", symbols, { recursive: true, dereference: true });
+  const built = `${cargoTarget}/release/libmobile_dev_ios_mirror.dylib`;
+  await copyFile(built, binaryPath);
+  await saveDarwinSymbols(`${built}.dSYM`, "darwin-arm64.node");
   execFileSync("strip", ["-x", binaryPath]);
   const require = createRequire(import.meta.url);
   const addonPath = resolve(binaryPath);
@@ -72,6 +40,6 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve("tooling/build-ios-m
   binaryHash.update(binary);
   const binarySHA256 = binaryHash.digest("hex");
   const sourceSHA256 = await iosMirrorSourceHash();
-  await writeFile("packages/native/vendor/ios-mirror/release.json", JSON.stringify({ name: "mobile-dev-ios-mirror", napi: 8, target: "darwin-arm64", sourceSHA256, binarySHA256 }, null, 2) + "\n");
+  await writeFile("packages/native/vendor/ios-mirror/release.json", JSON.stringify({ name: "mobile-dev-ios-mirror", napi: 8, target: "darwin-arm64", sourceSHA256, binaries: { "darwin-arm64.node": { sha256: binarySHA256 } } }, null, 2) + "\n");
   console.log(`Built the physical iOS capture addon (${binary.length} bytes).`);
 }

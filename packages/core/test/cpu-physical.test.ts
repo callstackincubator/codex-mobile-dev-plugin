@@ -16,8 +16,8 @@ import { parsePhysicalApps, runningPhysicalApps } from "../src/device-apps/apps.
 import { openPhysicalDebugserver } from "../src/cpu/physical.ts";
 import { CpuSessions } from "../src/cpu/sessions.ts";
 import { registerCpuTools } from "../src/cpu/tools.ts";
-import { Baguette } from "../src/baguette.ts";
-import { fakeBaguette } from "../../test-support/fixtures.ts";
+import { DeviceResolver } from "../src/devices.ts";
+import { fakeBaguette, attachedBaguette } from "../../test-support/fixtures.ts";
 import type { PhysicalIosDevice } from "../../shared/src/ios-devices.ts";
 
 const udid = "00008150-001068280AE8C01C";
@@ -98,7 +98,7 @@ const server = net.createServer(socket => {
 server.on('close', () => process.exit(0));
 server.listen(0, '127.0.0.1', () => {
   const address = server.address();
-  const line = JSON.stringify({port: address.port}) + '\\n';
+  const line = JSON.stringify({type: 'ready', port: address.port}) + '\\n';
   process.stdout.write(line.slice(0, 4));
   setImmediate(() => process.stdout.write(line.slice(4)));
 });
@@ -137,6 +137,9 @@ test("device bridge startup exposes device errors and cancels a helper waiting f
   const signal = new AbortController();
   const opening = openPhysicalDebugserver(udid, signal.signal, failed);
   await assert.rejects(opening, /Developer disk image is not mounted/);
+  const record = JSON.stringify({ type: "error", cause: "device_not_found", message: "Connect the paired iPhone." });
+  const reported = await helper(t, `process.stdout.write(${JSON.stringify(record + "\n")}); process.stderr.write('stderr detail'); process.exitCode = 1;`);
+  await assert.rejects(openPhysicalDebugserver(udid, signal.signal, reported), (error: unknown) => error instanceof Error && error.message === "Connect the paired iPhone." && (error as { code?: string }).code === "device_not_found");
   const waiting = await helper(t, "process.stdin.resume(); process.stdin.once('end', () => process.exit(0));");
   const abort = new AbortController();
   const pending = openPhysicalDebugserver(udid, abort.signal, waiting);
@@ -147,7 +150,7 @@ test("device bridge startup exposes device errors and cancels a helper waiting f
 
 test("physical CPU MCP sessions use device discovery, stream samples and leave the simulator backend untouched", async t => {
   const fake = await fakeBaguette();
-  const baguette = new Baguette(fake.url);
+  const baguette = attachedBaguette(fake.url);
   let online = true;
   let paired = true;
   let stops = 0;
@@ -164,11 +167,12 @@ test("physical CPU MCP sessions use device discovery, stream samples and leave t
     return { closed: new Promise(() => {}), async stop() { stops++; } };
   } });
   const server = new McpServer({ name: "physical-cpu-test", version: "1" });
-  registerCpuTools(server, cpu, baguette, { apps: async (deviceId, signal, platform, kind) => {
+  const devices = new DeviceResolver({ simulators: baguette, android: async () => [],
+    ios: async () => [{ ...device, state: online ? "connected" : "disconnected", pairingState: paired ? "paired" : "unpaired" }] });
+  registerCpuTools(server, cpu, devices, { apps: async (deviceId, signal, platform, kind) => {
     const running = await apps(deviceId, signal, platform, kind);
     return { apps: running, foregroundApp: null };
-  }, androidDevices: async () => [],
-    iosDevices: async () => [{ ...device, state: online ? "connected" : "disconnected", pairingState: paired ? "paired" : "unpaired" }] });
+  } });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "physical-cpu-client", version: "1" });
   t.after(async () => { await client.close(); await cpu.close(); await server.close(); baguette.dispose(); await fake.close(); });

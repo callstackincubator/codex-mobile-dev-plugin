@@ -1,40 +1,17 @@
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { createReadStream, createWriteStream } from "node:fs";
+import { createWriteStream } from "node:fs";
 import { appendFile, copyFile, cp, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { pathToFileURL } from "node:url";
-import { baguetteBuildScripts } from "./rebuild-baguette.mjs";
+import { promisify } from "node:util";
+import { fileSHA256, nativeHelpers } from "./native-helpers.mjs";
 
-const androidAbis = ["arm64-v8a", "armeabi-v7a", "x86", "x86_64"];
-
-function androidSymbols(name) {
-  return androidAbis.map(abi => `.sentry/native/${abi}/${name}`);
-}
-
-const androidFpsSymbols = androidSymbols("mobile-dev-fps");
-const androidCpuSymbols = androidSymbols("mobile-dev-cpu");
-const androidFpsBinaries = androidAbis.map(abi => `${abi}/mobile-dev-fps`);
-const androidCpuBinaries = androidAbis.map(abi => `${abi}/mobile-dev-cpu`);
-
-export const nativeHelpers = [
-  { name: "baguette", command: "vendor:baguette", scripts: ["vendor-baguette.mjs", ...baguetteBuildScripts],
-    inputs: ["packages/native/vendor/baguette-release.json"], tools: ["darwin", "swift"],
-    symbols: [".sentry/native/darwin-arm64/Baguette.dSYM"], binaries: ["Baguette", "Baguette_Baguette.bundle"] },
-  { name: "ios-fps", command: "rebuild:ios-fps", scripts: ["build-fps.mjs"], inputs: [], tools: ["darwin", "rust"],
-    symbols: [".sentry/native/darwin-arm64/mobile-dev-ios-fps.dSYM"], binaries: ["mobile-dev-ios-fps"] },
-  { name: "ios-mirror", command: "rebuild:ios-mirror", scripts: ["build-ios-mirror.mjs"], inputs: [], tools: ["darwin", "rust"],
-    symbols: [".sentry/native/darwin-arm64/darwin-arm64.node.dSYM"], binaries: ["darwin-arm64.node"] },
-  { name: "ios-logs", command: "rebuild:ios-logs", scripts: ["build-ios-logs.mjs"], inputs: [], tools: ["darwin", "iosLogs"],
-    symbols: [".sentry/native/darwin-arm64/mobile-dev-ios-logs.dSYM"], binaries: ["mobile-dev-ios-logs"] },
-  { name: "android-fps", command: "rebuild:android-fps", scripts: ["build-fps.mjs"], inputs: [], tools: ["android"],
-    symbols: androidFpsSymbols, binaries: androidFpsBinaries },
-  { name: "android-cpu", command: "rebuild:android-cpu", scripts: ["build-android-cpu.mjs"], inputs: [], tools: ["android"],
-    symbols: androidCpuSymbols, binaries: androidCpuBinaries },
-];
+export { nativeHelpers };
+const execute = promisify(execFile);
 
 function version(command, args) {
   const output = execFileSync(command, args, { encoding: "utf8" });
@@ -87,7 +64,7 @@ export async function nativeArtifactKey(helper, toolchain, directory = ".") {
     throw new Error(`No tracked native sources for ${helper.name}.`);
   }
   const scripts = helper.scripts.map(file => `tooling/${file}`);
-  const inputs = ["tooling/release-native.mjs", "tooling/native-telemetry.mjs", ...scripts, ...helper.inputs, ...nativeFiles];
+  const inputs = ["tooling/release-native.mjs", "tooling/native-helpers.mjs", "tooling/native-telemetry.mjs", ...scripts, ...helper.inputs, ...nativeFiles];
   const uniqueInputs = new Set(inputs);
   const sortedInputs = [...uniqueInputs].sort();
   const tools = { shared: toolchain.shared };
@@ -135,13 +112,6 @@ function artifactRoots(helper) {
   return [`packages/native/vendor/${helper.name}`, ...helper.symbols];
 }
 
-async function fileDigest(path) {
-  const hash = createHash("sha256");
-  const stream = createReadStream(path);
-  for await (const bytes of stream) hash.update(bytes);
-  return hash.digest("hex");
-}
-
 async function inventory(directory, paths) {
   const files = [];
   async function visit(path) {
@@ -155,7 +125,7 @@ async function inventory(directory, paths) {
         await visit(child);
       }
     } else if (stat.isFile()) {
-      const sha256 = await fileDigest(absolute);
+      const sha256 = await fileSHA256(absolute);
       files.push({ path, sha256, mode: stat.mode & 0o777 });
     } else {
       throw new Error(`Unsupported native artifact entry: ${path}.`);
@@ -288,23 +258,30 @@ export async function downloadNativeArtifact(artifact, archive, helper, environm
   }
 }
 
-export async function prepareNativeHelper(helper, options) {
-  const { directory, toolchain, request, runs, download, build, outputDirectory } = options;
+/** Restores the helper from a matching release artifact; without one, `action` stays undefined. */
+export async function restoreNativeHelper(helper, options) {
+  const { directory, toolchain, request, runs, download, outputDirectory } = options;
   const key = await nativeArtifactKey(helper, toolchain, directory);
   const archive = join(outputDirectory, `${helper.name}.tar.gz`);
   await mkdir(outputDirectory, { recursive: true });
   const artifact = await findNativeArtifact(key, request, runs);
-  if (artifact) {
-    console.log(`Restoring ${helper.name} from release run ${artifact.workflow_run.id}.`);
-    await download(artifact, archive, helper);
-    await restoreNativeArtifact(helper, key, archive, directory);
-  } else {
-    console.log(`Building ${helper.name}: no successful release artifact matches ${key}.`);
-    await build(helper);
-    await saveNativeArtifact(helper, key, archive, directory);
-  }
-  const action = artifact ? "restored" : "built";
-  return { helper: helper.name, key, archive, action };
+  if (artifact === undefined) return { helper: helper.name, key, archive };
+  console.log(`Restoring ${helper.name} from release run ${artifact.workflow_run.id}.`);
+  await download(artifact, archive, helper);
+  await restoreNativeArtifact(helper, key, archive, directory);
+  return { helper: helper.name, key, archive, action: "restored" };
+}
+
+export async function buildNativeHelper(helper, restored, options) {
+  console.log(`Building ${helper.name}: no successful release artifact matches ${restored.key}.`);
+  await options.build(helper);
+  await saveNativeArtifact(helper, restored.key, restored.archive, options.directory);
+  return { ...restored, action: "built" };
+}
+
+export async function prepareNativeHelper(helper, options) {
+  const restored = await restoreNativeHelper(helper, options);
+  return restored.action ? restored : buildNativeHelper(helper, restored, options);
 }
 
 async function releaseNative(environment = process.env) {
@@ -319,8 +296,8 @@ async function releaseNative(environment = process.env) {
   const runs = new Map();
   async function request(path) {
     const endpoint = `repos/${environment.GITHUB_REPOSITORY}/${path}`;
-    const response = execFileSync("gh", ["api", endpoint], { encoding: "utf8", env: environment, maxBuffer: 10 * 1024 * 1024 });
-    return JSON.parse(response);
+    const response = await execute("gh", ["api", endpoint], { encoding: "utf8", env: environment, maxBuffer: 10 * 1024 * 1024 });
+    return JSON.parse(response.stdout);
   }
   async function download(artifact, archive, helper) {
     await downloadNativeArtifact(artifact, archive, helper, environment);
@@ -329,10 +306,20 @@ async function releaseNative(environment = process.env) {
     execFileSync("npm", ["run", helper.command], { cwd: directory, env: environment, stdio: "inherit" });
   }
   await appendFile(environment.GITHUB_STEP_SUMMARY, "### Native release artifacts\n\n| Helper | Result | Duration |\n| --- | --- | --- |\n");
-  for (const helper of nativeHelpers) {
+  const options = { directory, toolchain, request, runs, download, build, outputDirectory };
+  // Restores are independent downloads. Builds share .local-dev/sentry-native, so they run one at a time.
+  const restores = await Promise.all(nativeHelpers.map(async helper => {
     const start = performance.now();
-    const result = await prepareNativeHelper(helper, { directory, toolchain, request, runs, download, build, outputDirectory });
-    const elapsed = performance.now() - start;
+    const result = await restoreNativeHelper(helper, options);
+    return { result, elapsed: performance.now() - start };
+  }));
+  for (const [index, helper] of nativeHelpers.entries()) {
+    let { result, elapsed } = restores[index];
+    if (result.action === undefined) {
+      const start = performance.now();
+      result = await buildNativeHelper(helper, result, options);
+      elapsed = performance.now() - start;
+    }
     const seconds = (elapsed / 1000).toFixed(1);
     await appendFile(environment.GITHUB_OUTPUT, `${helper.name}=${result.key}\n`);
     await appendFile(environment.GITHUB_STEP_SUMMARY, `| ${helper.name} | ${result.action} | ${seconds}s |\n`);

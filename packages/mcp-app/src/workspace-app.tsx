@@ -1,15 +1,10 @@
 import { App } from "@modelcontextprotocol/ext-apps";
-import { attributeHost } from "./host-telemetry.ts";
 import { OpenAIExtensions } from "@openai/mcp-extensions/app";
-import "@fontsource-variable/inter";
-import "@mobile-dev/ui/theme.css";
-import "@mobile-dev/ui/style.css";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 import { Workspace } from "./components/workspace";
 import { DisplayModeButton } from "./components/display-mode-button";
 import { ContextAttachments } from "./components/context-attachments";
-import type { DeviceLayout } from "@mobile-dev/ui/device-layout.ts";
 import { panelTargetSchema } from "@mobile-dev/shared/panel-target.ts";
 import { DeviceWorkspace } from "@mobile-dev/ui/device-workspace.ts";
 import { WorkspaceTools } from "@mobile-dev/ui/workspace-tools.ts";
@@ -18,10 +13,13 @@ import { ErrorBoundary, captureUiError, startUiTelemetry, stopUiTelemetry } from
 import { PLUGIN_VERSION } from "@mobile-dev/shared/version.ts";
 import { RecordingController } from "@mobile-dev/ui/recording-controller.ts";
 import type { WorkspaceOptions } from "./workspace-extension.ts";
-import { applyHostStyles } from "./host-styles.ts";
+import { runMcpView } from "./mcp-view.ts";
 
-/** Starts the device workspace: the panel MCP Apps hosts open beside the chat. */
-export function startWorkspaceApp(options: WorkspaceOptions = {}) {
+/**
+ * Starts the device workspace: the panel MCP Apps hosts open beside the chat, or over
+ * it when `fullscreen`.
+ */
+export function startWorkspaceApp(options: WorkspaceOptions = {}, { fullscreen }: { fullscreen: boolean }) {
   const app = new App({ name: "mobile-dev-ui", version: PLUGIN_VERSION }, { availableDisplayModes: ["inline", "fullscreen"] }, { autoResize: false });
   startUiTelemetry(app);
   const extensions = new OpenAIExtensions(app);
@@ -30,27 +28,21 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
   const panels = WorkspaceTools.create(app, attachments);
   const recordingController = new RecordingController(app, { attachments, workspace: true });
   const extension = options.extension?.(app);
-  const devices = new DeviceWorkspace(app, panels, { onAutomaticLayout: renderWorkspace, connectionFailed });
+  const devices = new DeviceWorkspace(app, panels, { connectionFailed });
   const reactRoot = createRoot(document.getElementById("root")!);
-  function renderWorkspace(automaticLayout?: DeviceLayout) {
-    const workspace = <ErrorBoundary fallback={<p role="alert">Mobile Dev could not render. Reopen the panel to try again.</p>}>
-      <Workspace panels={panels} devices={devices.panels} recordingController={recordingController} banner={extension?.banner} displayModeControl={options.displayModeControl === false ? undefined : <DisplayModeButton app={app} />} contextControl={<ContextAttachments context={panels.context} />} automaticLayout={automaticLayout} onLayout={changeLayout} />
-    </ErrorBoundary>;
-    reactRoot.render(workspace);
-  }
-  flushSync(() => { renderWorkspace(); });
+  flushSync(() => {
+    reactRoot.render(<ErrorBoundary fallback={<p role="alert">Mobile Dev could not render. Reopen the panel to try again.</p>}>
+      <Workspace panels={panels} devices={devices.panels} recordingController={recordingController} banner={extension?.banner} displayModeControl={options.displayModeControl === false ? undefined : <DisplayModeButton app={app} />} contextControl={<ContextAttachments context={panels.context} />} fullscreen={fullscreen} />
+    </ErrorBoundary>);
+  });
 
-  panels.logs.setLayout(document.documentElement.dataset.view === "workspace");
-  devices.changeLayout("none");
-
-  function changeLayout(layout: DeviceLayout, manual = false) { devices.changeLayout(layout, manual); }
+  if (fullscreen) panels.logs.openForSplitLayout();
 
   let stopLiveReload = () => {};
   let disposingUI: Promise<void> | undefined;
+  // Live reload disposes without closing the view, then replaces the document.
   function disposeUI() {
     return disposingUI ??= (async () => {
-      window.removeEventListener("pagehide", onPageHide);
-      app.removeEventListener("hostcontextchanged", hostContext);
       window.removeEventListener("focus", resumeContext);
       window.removeEventListener("pageshow", resumeContext);
       document.removeEventListener("visibilitychange", resumeContext);
@@ -61,9 +53,6 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
       await stopUiTelemetry();
     })();
   }
-  function onPageHide(event: PageTransitionEvent) { if (!event.persisted) { stopLiveReload(); void disposeUI(); } }
-  window.addEventListener("pagehide", onPageHide);
-  app.onteardown = async () => { stopLiveReload(); await disposeUI(); return {}; };
 
   // MCP Apps sizing: fill fullscreen, a fixed container height, or a host that sends
   // no dimensions. A container without a fixed height sizes to the app, so choose an
@@ -81,13 +70,11 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
     reportedInlineHeight = height;
     if (height) void app.sendSizeChanged({ height }).catch(error => captureUiError(error, "workspace.resize"));
   }
-  function hostContext() {
+  function hostContext(host: ReturnType<App["getHostContext"]>) {
     if (disposingUI) return;
-    const host = applyHostStyles(app);
     panels.hostChanged();
     recordingController.hostChanged();
     devices.refit();
-    // Initial context arrives with connect(), without a hostcontextchanged event.
     fitContainer(host);
   }
   function resumeContext() {
@@ -131,12 +118,10 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
     }
     if (result.structuredContent && "panelTarget" in result.structuredContent) openDevices(result.structuredContent.panelTarget);
   };
-  app.addEventListener("hostcontextchanged", hostContext);
-  void (async () => {
-    try {
-      await app.connect();
-      attributeHost(app);
-      hostContext();
+  runMcpView({
+    app,
+    onHost: hostContext,
+    onConnect: async () => {
       const capabilities = app.getHostCapabilities();
       const available = !!capabilities?.serverTools && !!capabilities?.serverResources;
       panels.setAvailable(available);
@@ -146,8 +131,8 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
         stopLiveReload = startLiveReload(app, disposeUI);
       }
       await devices.setAvailable(available);
-    } catch (error) {
-      connectionFailed(error);
-    }
-  })();
+    },
+    connectFailed: connectionFailed,
+    dispose: () => { stopLiveReload(); return disposeUI(); },
+  });
 }

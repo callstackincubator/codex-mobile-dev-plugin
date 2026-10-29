@@ -11,7 +11,7 @@ import { ScreenAnnotationOverlay, ScreenSelectButton } from "./screen-annotation
 const buttonIcons: Record<DeviceButton, LucideIcon> = { home: HouseIcon, "app-switcher": CopyIcon };
 
 // The panel draws on the canvas after mount; keep this subtree stable so log batches never reset a live device.
-export const SimulatorView = memo(function SimulatorView({ panel, visible }: { panel: SimulatorPanelView; visible: boolean }) {
+export const SimulatorView = memo(function SimulatorView({ panel, visible, fullscreen }: { panel: SimulatorPanelView; visible: boolean; fullscreen: boolean }) {
   const state = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
   const canvas = useRef<HTMLCanvasElement>(null);
   const stage = useRef<HTMLElement>(null);
@@ -19,7 +19,7 @@ export const SimulatorView = memo(function SimulatorView({ panel, visible }: { p
   const { platform, annotations } = panel;
   const { display, layout, notice } = state;
   const label = platform === "ios" ? "iOS" : "Android";
-  const sidebar = document.documentElement.dataset.view !== "workspace";
+  const sidebar = !fullscreen;
   const id = (name: string) => `${platform}-${name}`;
   const description = display.kind === "message" ? display.description : "";
   return <section hidden={!visible} id={`${platform}-panel`} className="simulator-panel group/simulator @container relative flex h-full min-w-0 flex-1 flex-col" data-platform={platform} data-active={String(state.active)} aria-label={`${label} simulator`} onPointerDownCapture={panel.activate} onFocus={panel.activate}>

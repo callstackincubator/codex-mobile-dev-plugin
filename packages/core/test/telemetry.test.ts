@@ -11,13 +11,15 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { z } from "zod";
 import { MeasurementWindow, sampleTrace, scrubErrorEvent, scrubMetric, scrubSpan, sampleMetric, createErrorEventFilter, METRIC_SAMPLE_RATE, TELEMETRY_META_KEY } from "../../shared/src/telemetry.ts";
-import { captureServerError, installTracePropagation, instrumentMcpServer, IOSLogProcessingTelemetry, recordAndroidBackendStartup, recordIosMirrorSharing } from "../src/telemetry.ts";
+import { captureServerError, installTracePropagation, instrumentMcpServer, IOSLogProcessingTelemetry, recordAndroidBackendStartup, recordIosMirrorSharing, setLaunchingTelemetryHost, setServerTelemetryHost } from "../src/telemetry.ts";
 import { recordPluginUpdate } from "../../../apps/codex-plugin/server/plugin-updates.ts";
 import { deferEpisodeReport, ExpectedOperationError, FailureEpisodes } from "../../shared/src/error-reporting.ts";
 import { parseResourceInput } from "../src/resource-input.ts";
 import { openRequestSession } from "../src/request-session.ts";
 import { registerDeviceAppsTool } from "../src/device-apps/tools.ts";
-import { directoryBytes } from "../src/storage-metrics.ts";
+import { directoryBytes, startStorageMetrics } from "../src/storage-metrics.ts";
+import { PHONE_ICONS, toolIcons } from "../src/tool-icons.ts";
+import { ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { SimulatorUnavailableError } from "../src/simulator-unavailable.ts";
 import { MissingRuntimeError } from "../src/install-integrity.ts";
 import { registerDeviceChoiceTools } from "../src/device-choice-tools.ts";
@@ -28,11 +30,13 @@ import { IosMirrorSessions } from "../src/ios-mirror.ts";
 import type { PhysicalIosDevice } from "../../shared/src/ios-devices.ts";
 import { createDrivers, registerAppControlTools } from "../src/app-control/tools.ts";
 import { registerDeviceSettingsTools } from "../src/device-settings.ts";
-import { Baguette } from "../src/baguette.ts";
 import type { ServeEmu } from "../src/serve-emu.ts";
 import { setAndroidStartupDiagnostic } from "../../shared/src/android-startup-diagnostics.ts";
 import type { OpenAIFormResult } from "@openai/mcp-extensions/server";
 import { agentDeviceClient } from "../../test-support/agent-device-fixtures.ts";
+import { UDID, attachedBaguette } from "../../test-support/fixtures.ts";
+import { CpuSessions } from "../src/cpu/sessions.ts";
+import { DisplayFpsSessions } from "../src/fps/sessions.ts";
 import { setDiscoveryCommandDiagnostic } from "../../shared/src/device-apps-command-diagnostics.ts";
 
 type ReportedEvent = { exception?: { values?: { value?: string }[] }; tags?: Record<string, string> };
@@ -270,6 +274,44 @@ test("Android backend startup metrics retain product attribution and honor opt-o
   await Sentry.flush();
   const afterOptOut = JSON.stringify(envelopes);
   assert.equal(afterOptOut, sent);
+});
+
+test("collector readiness measures each CPU and FPS start once, without device or app identifiers", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, beforeSendMetric: scrubMetric,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  const previous = process.env.MOBILE_DEV_TELEMETRY;
+  delete process.env.MOBILE_DEV_TELEMETRY;
+  t.after(async () => {
+    if (previous === undefined) delete process.env.MOBILE_DEV_TELEMETRY;
+    else process.env.MOBILE_DEV_TELEMETRY = previous;
+    await Sentry.close();
+  });
+  const monitor = { closed: new Promise<Error>(() => {}), async stop() {} };
+  const cpu = new CpuSessions({ apps: async () => [{ bundleId: "dev.private.app", pid: 123 }], monitor: async () => monitor });
+  const attaching = new CpuSessions({ apps: (_deviceId, signal) => new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(signal.reason))), monitor: async () => monitor });
+  const fps = new DisplayFpsSessions(async () => { throw new Error("FrameTimeline unavailable"); });
+  t.after(async () => { await Promise.all([cpu.close(), attaching.close(), fps.close()]); });
+  const ready = cpu.open({ deviceId: UDID, bundleId: "dev.private.app" });
+  fps.open({ platform: "android", deviceId: "emulator-5554" });
+  await new Promise<void>(resolve => setImmediate(resolve));
+  assert.equal((await cpu.read(ready, 0, 0)).phase, "recording");
+  await cpu.closeSession(ready);
+  await attaching.closeSession(attaching.open({ platform: "android", deviceId: "R5CT1234", bundleId: "dev.private.app" }));
+  await Sentry.flush();
+  const sent = JSON.stringify(envelopes);
+  for (const fragment of ["collector.ready.samples", "collector.ready.duration", "millisecond", '"surface":{"value":"performance"',
+    '"collector":{"value":"cpu"', '"collector":{"value":"fps"', '"outcome":{"value":"ready"', '"outcome":{"value":"failed"', '"outcome":{"value":"cancelled"',
+    '"device_kind":{"value":"simulator"', '"device_kind":{"value":"emulator"', '"device_kind":{"value":"physical"']) contains(sent, fragment);
+  for (const fragment of [UDID, "dev.private.app", "emulator-5554", "R5CT1234", "FrameTimeline"]) contains(sent, fragment, false);
+  // Readiness is recorded once: stopping a ready session adds nothing.
+  assert.equal(sent.match(/collector\.ready\.samples/g)?.length, 3);
+  process.env.MOBILE_DEV_TELEMETRY = "off";
+  await cpu.closeSession(cpu.open({ deviceId: UDID, bundleId: "dev.private.app" }));
+  await Sentry.flush();
+  assert.equal(JSON.stringify(envelopes), sent);
 });
 
 test("plugin update metrics measure plugin work without device context and honor opt-out", async t => {
@@ -839,7 +881,7 @@ test("physical iOS frames accept profiles without represented models, report a f
     if (file === "/usr/bin/plutil") return output({});
     renders.push(args[1]);
     throw new Error("Device frame layout failed");
-  }, async () => ({}));
+  }, async () => ({ executable: "Baguette", env: {} }));
   const sessions = new IosMirrorSessions(async () => ({
     async read() { return { generation: 1, sequence: 1, dropped: 0, frames: [] }; }, async touch() {}, async reset() {}, async close() {},
   }));
@@ -1204,7 +1246,7 @@ test("device settings report the failed backend request without its reply and co
   await new Promise<void>(resolve => { http.once("listening", resolve); });
   const address = http.address();
   assert.ok(address && typeof address === "object");
-  const baguette = new Baguette(`http://127.0.0.1:${address.port}`);
+  const baguette = attachedBaguette(`http://127.0.0.1:${address.port}`);
   const startup = new Error("serve-emu exited before it became ready. PRIVATE_DIAGNOSTICS");
   setAndroidStartupDiagnostic(startup, { stage: "process-launch", outcome: "error" }, {
     deviceKind: "emulator", transport: "emulator", stateBefore: "online", activeBackends: 0, stoppingBackends: 0, startingBackends: 0,
@@ -1240,4 +1282,74 @@ test("device settings report the failed backend request without its reply and co
   contains(encoded, "PRIVATE", false);
   contains(encoded, udid, false);
   contains(encoded, "emulator-5554", false);
+});
+
+test("request handler wrappers run inside the MCP error accounting, which patches the server once", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, beforeSendMetric: scrubMetric,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  const previous = process.env.MOBILE_DEV_TELEMETRY;
+  delete process.env.MOBILE_DEV_TELEMETRY;
+  const server = new McpServer({ name: "wrapped-handlers", version: "1" });
+  const order: string[] = [];
+  instrumentMcpServer(server, (_schema, handler) => async (request, extra) => { order.push("outer"); return handler(request, extra); },
+    toolIcons({ listed: PHONE_ICONS }), (schema, handler) => schema === ListToolsRequestSchema ? async () => { order.push("inner"); throw new Error("Listing failed."); } : handler);
+  server.registerTool("listed", { description: "A listed tool." }, async () => ({ content: [] }));
+  const client = new Client({ name: "test", version: "1" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  installTracePropagation(serverTransport);
+  t.after(async () => {
+    await client.close(); await server.close(); await Sentry.close();
+    if (previous === undefined) delete process.env.MOBILE_DEV_TELEMETRY;
+    else process.env.MOBILE_DEV_TELEMETRY = previous;
+  });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  await assert.rejects(client.listTools(), /Listing failed/);
+  assert.deepEqual(order, ["outer", "inner"]);
+  await Sentry.flush();
+  contains(JSON.stringify(envelopes), "mcp.request");
+});
+
+test("storage measurements never start while telemetry is off", t => {
+  const previous = process.env.MOBILE_DEV_TELEMETRY;
+  process.env.MOBILE_DEV_TELEMETRY = "off";
+  t.after(() => {
+    if (previous === undefined) delete process.env.MOBILE_DEV_TELEMETRY;
+    else process.env.MOBILE_DEV_TELEMETRY = previous;
+  });
+  let walked = false;
+  const directories = new Proxy<Record<string, string>>({ recordings: join(tmpdir(), "mobile-dev-absent-storage") }, { ownKeys(target) { walked = true; return Reflect.ownKeys(target); } });
+  startStorageMetrics(directories)();
+  assert.equal(walked, false);
+  process.env.MOBILE_DEV_TELEMETRY = "on";
+  startStorageMetrics(directories)();
+  assert.equal(walked, true, "the same directories are measured with telemetry on");
+});
+
+// Runs last: the launching host stays set for the rest of this process.
+test("a host label the server entry passes outranks the connecting client's name", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  t.after(async () => { await Sentry.close(); });
+  const scope = () => Sentry.getIsolationScope().getScopeData();
+  setServerTelemetryHost("Claude");
+  assert.equal(scope().tags.host, "claude");
+  setServerTelemetryHost("PRIVATE_HOST");
+  assert.equal(scope().tags.host, "other");
+  setLaunchingTelemetryHost("mac");
+  assert.equal(scope().tags.host, "mac");
+  assert.equal(scope().attributes?.host, "mac");
+  setServerTelemetryHost("mobile-dev-mac");
+  setServerTelemetryHost("Claude");
+  assert.equal(scope().tags.host, "mac");
+  assert.equal(scope().attributes?.host, "mac");
+  Sentry.captureException(new Error("Launching host"));
+  await Sentry.flush();
+  assert.equal(reportedEvents(envelopes)[0]?.tags?.host, "mac");
 });

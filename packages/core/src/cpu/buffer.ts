@@ -1,49 +1,51 @@
 import { CPU_HISTORY_SECONDS, CPU_MAX_SAMPLES } from "@mobile-dev/shared/cpu.ts";
 import type { CpuBatch, CpuPhase, CpuSample, MemoryMetric } from "@mobile-dev/shared/cpu.ts";
+import { RevisionBuffer } from "../revision-buffer.ts";
 
-export class CpuBuffer {
-  private samples: Array<{ revision: number; sample: CpuSample }> = [];
-  private revision = 0;
-  private phase: CpuPhase = "connecting";
-  private error?: string;
-  private closed = false;
-  private waiters = new Set<() => void>();
-  private readonly memoryMetric: MemoryMetric;
-  timeOrigin?: number;
+/** A collector's recent samples, one per time, with its phase. */
+export class SampleBuffer<T extends { time: number }> {
+  private readonly samples = new RevisionBuffer<T>({ limit: CPU_MAX_SAMPLES, window: { seconds: CPU_HISTORY_SECONDS, time: sample => sample.time } });
+  private current: CpuPhase = "connecting";
+  private failure?: string;
+  /** Sees every phase the buffer records. */
+  onPhase?: (phase: CpuPhase) => void;
 
-  constructor(memoryMetric: MemoryMetric) { this.memoryMetric = memoryMetric; }
+  get phase() { return this.current; }
+  get error() { return this.failure; }
 
-  push(sample: CpuSample) {
-    if (this.closed) return;
-    const earliest = sample.time - CPU_HISTORY_SECONDS;
-    this.samples = this.samples.filter(entry => entry.sample.time >= earliest);
-    this.samples.push({ revision: ++this.revision, sample });
-    this.samples = this.samples.slice(-CPU_MAX_SAMPLES);
-    this.phase = "recording";
-    this.error = undefined;
-    this.notify();
+  push(sample: T) {
+    if (this.samples.closed) return;
+    this.current = "recording";
+    this.failure = undefined;
+    this.samples.append(sample);
+    this.onPhase?.("recording");
   }
 
   status(phase: CpuPhase, error?: string) {
-    if (this.closed) return;
-    this.phase = phase;
-    this.error = error;
-    this.revision++;
-    this.notify();
+    if (this.samples.closed) return;
+    this.current = phase;
+    this.failure = error;
+    this.samples.bump();
+    this.onPhase?.(phase);
   }
 
-  private notify() { for (const done of this.waiters) done(); }
-  close() { this.closed = true; this.notify(); }
+  close() { this.samples.close(); }
 
-  async read(after: number, waitMs = 1000): Promise<CpuBatch> {
-    if (this.closed === false && after >= this.revision && waitMs > 0) {
-      await new Promise<void>(resolve => {
-        const done = () => { clearTimeout(timer); this.waiters.delete(done); resolve(); };
-        const timer = setTimeout(done, waitMs);
-        this.waiters.add(done);
-      });
-    }
-    const samples = this.samples.filter(entry => entry.revision > after);
-    return { cursor: this.revision, timeOrigin: this.timeOrigin, phase: this.phase, samples: samples.map(entry => entry.sample), memoryMetric: this.memoryMetric, error: this.error };
+  /** Waits up to `waitMs` for a change after `after`, then returns what changed. */
+  async collect(after: number, waitMs = 1000, signal?: AbortSignal) {
+    await this.samples.wait(after, waitMs, signal);
+    return { cursor: this.samples.revision, samples: this.samples.since(after).map(entry => entry.value) };
+  }
+}
+
+export class CpuBuffer extends SampleBuffer<CpuSample> {
+  private readonly memoryMetric: MemoryMetric;
+  timeOrigin?: number;
+
+  constructor(memoryMetric: MemoryMetric) { super(); this.memoryMetric = memoryMetric; }
+
+  async read(after: number, waitMs = 1000, signal?: AbortSignal): Promise<CpuBatch> {
+    const { cursor, samples } = await this.collect(after, waitMs, signal);
+    return { cursor, timeOrigin: this.timeOrigin, phase: this.phase, samples, memoryMetric: this.memoryMetric, error: this.error };
   }
 }

@@ -55,8 +55,8 @@ test("physical mirroring tools stream compressed frames over an app-only MCP ses
   } });
   assert.equal(touch.isError, undefined);
   assert.deepEqual(touches, [{ samples: [
-    { phase: 0, x: 200, y: 400, width: 400, height: 800 },
-    { phase: 2, x: 200, y: 400, width: 400, height: 800 },
+    { phase: "down", x: 200, y: 400, width: 400, height: 800 },
+    { phase: "up", x: 200, y: 400, width: 400, height: 800 },
   ], generation: 1 }]);
   const invalid = await client.callTool({ name: "mobile_ios_mirror_input", arguments: {
     sessionId: id, generation: 1, messages: [{ type: "button", button: "home" }],
@@ -65,6 +65,11 @@ test("physical mirroring tools stream compressed frames over an app-only MCP ses
   assert.equal(touches.length, 1);
   await client.callTool({ name: "mobile_ios_mirror_close", arguments: { sessionId: id } });
   assert.equal(closed, 1);
+  // A closed session's reset fails as a tool result the panel can act on, not a protocol error.
+  const reset = await client.callTool({ name: "mobile_ios_mirror_reset", arguments: { sessionId: id } });
+  assert.equal(reset.isError, true);
+  assert.deepEqual(reset._meta, { retryable: true });
+  assert.match((reset.content as { text: string }[])[0].text, /expired or closed/);
 });
 
 test("physical iOS screenshots copy and return the same displayed PNG, including clipboard failures", async t => {

@@ -2,13 +2,17 @@
  * OS trace framing follows libimobiledevice's src/ostrace.c.
  * Copyright (c) 2020-2025 Nikias Bassen (upstream framing).
  */
+#include <errno.h>
 #include <libkern/OSByteOrder.h>
+#include <poll.h>
 #include <signal.h>
+#include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 #include <libimobiledevice/libimobiledevice.h>
 #include <libimobiledevice/lockdown.h>
 #include <libimobiledevice/ostrace.h>
@@ -20,10 +24,32 @@
 #define MAX_MESSAGE 16384
 
 static volatile sig_atomic_t stopping = 0;
+static char failure_cause[32];
+static char failure_message[512];
 
 static void stop(int signal_number) {
     (void)signal_number;
     stopping = 1;
+}
+
+/* Input or EOF on stdin asks the reader to stop. */
+static int stop_requested(void) {
+    struct pollfd input = { .fd = STDIN_FILENO, .events = POLLIN };
+    if (poll(&input, 1, 0) > 0) stopping = 1;
+    return stopping;
+}
+
+/* Reports a failure on stderr; the first one becomes the final error record. */
+static void fail(const char *cause, const char *format, ...) {
+    char message[sizeof(failure_message)];
+    va_list arguments;
+    va_start(arguments, format);
+    vsnprintf(message, sizeof(message), format, arguments);
+    va_end(arguments);
+    fprintf(stderr, "%s\n", message);
+    if (failure_cause[0] != '\0') return;
+    snprintf(failure_cause, sizeof(failure_cause), "%s", cause);
+    snprintf(failure_message, sizeof(failure_message), "%s", message);
 }
 
 static int receive_exact(service_client_t client, void *buffer, uint32_t length) {
@@ -32,9 +58,12 @@ static int receive_exact(service_client_t client, void *buffer, uint32_t length)
         uint32_t received = 0;
         service_error_t result = service_receive_with_timeout(client, (char *)buffer + offset, length - offset, &received, 200);
         offset += received;
-        if (result == SERVICE_E_TIMEOUT) continue;
+        if (result == SERVICE_E_TIMEOUT) {
+            stop_requested();
+            continue;
+        }
         if (result != SERVICE_E_SUCCESS || received == 0) {
-            if (stopping == 0) fprintf(stderr, "The iOS log connection closed (%d).\n", result);
+            if (stopping == 0) fail("connection_closed", "The iOS log connection closed (%d).", result);
             return -1;
         }
     }
@@ -50,11 +79,11 @@ static int receive_packet(service_client_t client, char **buffer, uint32_t *leng
     if (*type == 1) size = OSSwapBigToHostInt32(size);
     else if (*type == 2) size = OSSwapLittleToHostInt32(size);
     else {
-        fprintf(stderr, "Unsupported iOS log packet type: %u.\n", *type);
+        fail("invalid_packet", "Unsupported iOS log packet type: %u.", *type);
         return -1;
     }
     if (size == 0 || size > MAX_PACKET) {
-        fprintf(stderr, "Invalid iOS log packet length: %u.\n", size);
+        fail("invalid_packet", "Invalid iOS log packet length: %u.", size);
         return -1;
     }
     char *bytes = malloc(size);
@@ -116,7 +145,7 @@ static int start_activity(service_client_t client) {
     plist_t status_node = plist_dict_get_item(reply, "Status");
     const char *status = status_node == NULL ? NULL : plist_get_string_ptr(status_node, NULL);
     int accepted = status == NULL ? 0 : strcmp(status, "RequestSuccessful") == 0;
-    if (accepted == 0) fprintf(stderr, "The device rejected unified-log streaming. Unlock the paired iPhone and retry.\n");
+    if (accepted == 0) fail("streaming_rejected", "The device rejected unified-log streaming. Unlock the paired iPhone and retry.");
     plist_free(reply);
     return accepted ? 0 : -1;
 }
@@ -147,18 +176,18 @@ static void json_field(const char *key, const char *value, size_t limit) {
 
 static int emit_record(const char *bytes, uint32_t length, const char *process_filter) {
     if (length < sizeof(struct ostrace_packet_header_t)) {
-        fprintf(stderr, "Short trace header: %u bytes.\n", length);
+        fail("invalid_record", "Short trace header: %u bytes.", length);
         return -1;
     }
     struct ostrace_packet_header_t header;
     memcpy(&header, bytes, sizeof(header));
     if (header.marker != 2 || (header.type != 8 && header.type != 2)) {
-        fprintf(stderr, "Unsupported trace record: marker=%u type=%u bytes=%u.\n", header.marker, header.type, length);
+        fail("invalid_record", "Unsupported trace record: marker=%u type=%u bytes=%u.", header.marker, header.type, length);
         return -1;
     }
     size_t offset = header.header_size;
     if (offset < sizeof(header) || offset > length) {
-        fprintf(stderr, "Invalid trace header size: %zu/%u.\n", offset, length);
+        fail("invalid_record", "Invalid trace header size: %zu/%u.", offset, length);
         return -1;
     }
     // The relay appends labels only when both lengths are nonzero.
@@ -168,7 +197,7 @@ static int emit_record(const char *bytes, uint32_t length, const char *process_f
     const char *fields[5];
     for (size_t index = 0; index < 5; index++) {
         if (lengths[index] > length - offset) {
-            fprintf(stderr, "Truncated trace field %zu: %zu/%zu; type=%u header=%u fields=%u,%u,%u,%u,%u bytes=%u.\n",
+            fail("invalid_record", "Truncated trace field %zu: %zu/%zu; type=%u header=%u fields=%u,%u,%u,%u,%u bytes=%u.",
                 index, lengths[index], length - offset, header.type, header.header_size, header.procpath_len,
                 header.imagepath_len, header.message_len, header.subsystem_len, header.category_len, length);
             return -1;
@@ -177,7 +206,7 @@ static int emit_record(const char *bytes, uint32_t length, const char *process_f
         if (lengths[index] > 0) {
             const char *end = memchr(fields[index], '\0', lengths[index]);
             if (end == NULL) {
-                fprintf(stderr, "Non-terminated trace field %zu: %zu bytes.\n", index, lengths[index]);
+                fail("invalid_record", "Non-terminated trace field %zu: %zu bytes.", index, lengths[index]);
                 return -1;
             }
         }
@@ -189,10 +218,16 @@ static int emit_record(const char *bytes, uint32_t length, const char *process_f
     if (process_filter != NULL && strcmp(name, process_filter) != 0) return 0;
     time_t seconds = (time_t)header.time_sec;
     struct tm date;
-    if (gmtime_r(&seconds, &date) == NULL || header.time_usec >= 1000000) return -1;
+    if (gmtime_r(&seconds, &date) == NULL || header.time_usec >= 1000000) {
+        fail("invalid_record", "Invalid trace timestamp.");
+        return -1;
+    }
     char timestamp[40];
     size_t formatted = strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%S", &date);
-    if (formatted == 0) return -1;
+    if (formatted == 0) {
+        fail("invalid_record", "Invalid trace timestamp.");
+        return -1;
+    }
     snprintf(timestamp + formatted, sizeof(timestamp) - formatted, ".%06uZ", header.time_usec);
     const char *level = "Notice";
     switch (header.level) {
@@ -210,8 +245,22 @@ static int emit_record(const char *bytes, uint32_t length, const char *process_f
         json_field("category", fields[4], 1024);
     }
     fputs("}\n", stdout);
-    int failed = ferror(stdout);
-    return failed ? -1 : 0;
+    if (ferror(stdout) == 0) return 0;
+    /* The plugin closed its end of the stream: a stop, not a failure. */
+    if (errno == EPIPE) stopping = 1;
+    return -1;
+}
+
+static void write_error(void) {
+    const char *cause = failure_cause[0] == '\0' ? "failed" : failure_cause;
+    const char *message = failure_message[0] == '\0' ? "The iOS log reader failed." : failure_message;
+    clearerr(stdout);
+    fputs("{\"type\":\"error\",\"cause\":", stdout);
+    json_string(cause, strlen(cause), sizeof(failure_cause));
+    fputs(",\"message\":", stdout);
+    json_string(message, strlen(message), sizeof(failure_message));
+    fputs("}\n", stdout);
+    fflush(stdout);
 }
 
 int main(int argc, char **argv) {
@@ -219,12 +268,14 @@ int main(int argc, char **argv) {
     double connected_at = mobile_dev_telemetry_now();
     if (argc < 4 || argc > 5 || strcmp(argv[1], "--device") != 0
         || (strcmp(argv[3], "usb") != 0 && strcmp(argv[3], "network") != 0)) {
-        fprintf(stderr, "Usage: mobile-dev-ios-logs --device <hardware-udid> <usb|network> [executable-name]\n");
+        fail("usage", "Usage: mobile-dev-ios-logs --device <hardware-udid> <usb|network> [executable-name]");
+        write_error();
         return 2;
     }
     signal(SIGTERM, stop);
     signal(SIGINT, stop);
-    signal(SIGPIPE, stop);
+    /* A closed stdout surfaces as EPIPE, which stops the reader. */
+    signal(SIGPIPE, SIG_IGN);
     setvbuf(stdout, NULL, _IOLBF, 0);
     idevice_t device = NULL;
     lockdownd_client_t lockdown = NULL;
@@ -234,24 +285,24 @@ int main(int argc, char **argv) {
     enum idevice_options lookup = strcmp(argv[3], "network") == 0 ? IDEVICE_LOOKUP_NETWORK : IDEVICE_LOOKUP_USBMUX;
     idevice_error_t found = idevice_new_with_options(&device, argv[2], lookup);
     if (found != IDEVICE_E_SUCCESS) {
-        fprintf(stderr, "The selected iPhone is unavailable to libimobiledevice over %s (%d).\n", argv[3], found);
+        fail("device_unavailable", "The selected iPhone is unavailable to libimobiledevice over %s (%d).", argv[3], found);
         goto cleanup;
     }
     lockdownd_error_t paired = lockdownd_client_new_with_handshake(device, &lockdown, "mobile-dev-ios-logs");
     if (paired != LOCKDOWN_E_SUCCESS) {
         const char *description = lockdownd_strerror(paired);
-        fprintf(stderr, "Cannot connect to the iPhone: %s. Unlock it and trust this Mac.\n", description);
+        fail("pairing_failed", "Cannot connect to the iPhone: %s. Unlock it and trust this Mac.", description);
         goto cleanup;
     }
     lockdownd_error_t started = lockdownd_start_service(lockdown, OSTRACE_SERVICE_NAME, &descriptor);
     if (started != LOCKDOWN_E_SUCCESS) {
         const char *description = lockdownd_strerror(started);
-        fprintf(stderr, "Cannot start unified logs: %s. Unlock the iPhone and retry.\n", description);
+        fail("service_unavailable", "Cannot start unified logs: %s. Unlock the iPhone and retry.", description);
         goto cleanup;
     }
     service_error_t connected = service_client_new(device, descriptor, &client);
     if (connected != SERVICE_E_SUCCESS) {
-        fprintf(stderr, "Cannot open the iOS unified-log relay (%d).\n", connected);
+        fail("service_unavailable", "Cannot open the iOS unified-log relay (%d).", connected);
         goto cleanup;
     }
     lockdownd_service_descriptor_free(descriptor);
@@ -259,13 +310,16 @@ int main(int argc, char **argv) {
     lockdownd_client_free(lockdown);
     lockdown = NULL;
     int result = start_activity(client);
-    if (result != 0) goto cleanup;
-    puts("{\"ready\":true}");
+    if (result != 0) {
+        if (stopping == 0 && failure_cause[0] == '\0') fail("streaming_rejected", "The iPhone did not start unified-log streaming.");
+        goto cleanup;
+    }
+    puts("{\"type\":\"ready\"}");
     double ready_at = mobile_dev_telemetry_now();
     double connect_ms = ready_at - connected_at;
     mobile_dev_telemetry_timing(MOBILE_DEV_CONNECT, connect_ms);
     const char *filter = argc == 5 ? argv[4] : NULL;
-    while (stopping == 0) {
+    while (stop_requested() == 0) {
         char *bytes = NULL;
         uint32_t length = 0;
         uint8_t type = 0;
@@ -278,7 +332,7 @@ int main(int argc, char **argv) {
         mobile_dev_telemetry_timing(MOBILE_DEV_LOG_PROCESS, process_ms);
         free(bytes);
         if (result != 0) {
-            fprintf(stderr, "Invalid unified-log record or closed output stream.\n");
+            if (stopping == 0 && failure_cause[0] == '\0') fail("output_failed", "The unified-log output stream failed.");
             break;
         }
     }
@@ -288,5 +342,6 @@ cleanup:
     if (lockdown != NULL) lockdownd_client_free(lockdown);
     if (device != NULL) idevice_free(device);
     if (stopping) exit_code = 0;
+    else write_error();
     return exit_code;
 }

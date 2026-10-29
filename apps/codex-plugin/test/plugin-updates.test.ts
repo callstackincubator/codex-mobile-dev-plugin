@@ -8,8 +8,10 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as Sentry from "@sentry/node";
 import type { Envelope } from "@sentry/core";
-import { createCodexRunner, PluginUpdates, registerPluginUpdateTools, resolveCodexCli, readPluginStore } from "../server/plugin-updates.ts";
-import type { ReadStore, RunCodex } from "../server/plugin-updates.ts";
+import { codexCliResolver, createCodexRunner, resolveCodexCli, readPluginStore } from "../server/codex-cli.ts";
+import type { ReadStore, RunCodex } from "../server/codex-cli.ts";
+import { registerPluginUpdateTools } from "../server/plugin-update-tools.ts";
+import { PluginUpdates } from "../server/plugin-updates.ts";
 import { scrubErrorEvent } from "@mobile-dev/shared/telemetry.ts";
 import { compareReleaseVersions, PLUGIN_STORE_ID, pluginUpdateSchema } from "../shared/plugin-updates.ts";
 
@@ -152,6 +154,26 @@ test("legacy GitHub update caches cannot advertise unpublished store versions", 
   assert.equal(calls.length, 1);
 });
 
+test("update caches keep the flat format earlier releases read and write", async t => {
+  const directory = await profile(t);
+  const path = join(directory, "mobile-dev/updates.json");
+  await mkdir(join(directory, "mobile-dev"));
+  const migrated = { source: PLUGIN_STORE_ID, checkedAt: 1000000, latestVersion: "0.1.168", githubConfigured: false, storeInstalled: true, migratedVersion: "0.1.167" };
+  await writeFile(path, JSON.stringify(migrated));
+  const calls: string[][] = [];
+  const { run, readStore } = cliFixture(directory, calls, { github: false, storeVersion: "0.1.169" });
+  const options = { enabled: true, profile: directory, currentVersion: "0.1.167", run, readStore, now: () => 1000000 };
+  const github = new PluginUpdates({ ...options, pluginRoot: githubRoot(directory) });
+  assert.deepEqual(await github.check(), { status: "migrated", currentVersion: "0.1.167", latestVersion: "0.1.167", storeInstalled: true });
+  const store = new PluginUpdates(options);
+  assert.equal((await store.check()).status, "available");
+  assert.equal(calls.length, 0);
+  const later = new PluginUpdates({ ...options, now: () => 1000000 + 60 * 60 * 1000 });
+  assert.equal((await later.check()).latestVersion, "0.1.169");
+  const saved = JSON.parse(await readFile(path, "utf8"));
+  assert.deepEqual(saved, { source: PLUGIN_STORE_ID, checkedAt: 1000000 + 60 * 60 * 1000, latestVersion: "0.1.169", githubConfigured: false, storeInstalled: false });
+});
+
 test("unavailable catalogs, wrong identities and invalid versions stay quiet; development does no CLI work", async t => {
   for (const fixture of [{ storeId: "another-plugin" }, { storeVersion: "../bad" }]) {
     const directory = await profile(t);
@@ -179,6 +201,72 @@ test("unavailable catalogs, wrong identities and invalid versions stay quiet; de
   assert.equal(disabled.status, "disabled");
   const migration = dev.migrate();
   await assert.rejects(migration, /Development builds/);
+});
+
+test("failed checks keep the last known status and retry after the failed interval", async t => {
+  const directory = await profile(t);
+  const calls: string[][] = [];
+  const cli = cliFixture(directory, calls, { storeInstalled: true });
+  let offline = false;
+  const run: RunCodex = async args => { if (offline) throw new Error("Offline"); return cli.run(args); };
+  let now = 1000000;
+  const options = { enabled: true, profile: directory, currentVersion: "0.1.167", run, readStore: cli.readStore, now: () => now };
+  const updates = new PluginUpdates(options);
+  assert.equal((await updates.check()).status, "migration");
+  offline = true;
+  now += 60 * 60 * 1000;
+  const failed = await updates.check();
+  assert.deepEqual(failed, { status: "migration", currentVersion: "0.1.167", latestVersion: "0.1.167", storeInstalled: true });
+  const path = join(directory, "mobile-dev/updates.json");
+  const saved = JSON.parse(await readFile(path, "utf8"));
+  assert.equal(saved.checkedAt, 1000000);
+  assert.equal(saved.failedAt, now);
+  assert.equal(saved.latestVersion, "0.1.167");
+  const anotherChat = new PluginUpdates(options);
+  assert.equal((await anotherChat.check()).status, "migration");
+  assert.equal(calls.length, 1);
+  now += 15 * 60 * 1000;
+  assert.equal((await anotherChat.check()).status, "migration");
+  assert.equal(JSON.parse(await readFile(path, "utf8")).checkedAt, 1000000);
+  offline = false;
+  now += 15 * 60 * 1000;
+  assert.equal((await anotherChat.check()).status, "migration");
+  assert.equal(calls.length, 2);
+  const recovered = JSON.parse(await readFile(path, "utf8"));
+  assert.equal(recovered.failedAt, undefined);
+  assert.equal(recovered.checkedAt, now);
+});
+
+test("checks that cannot be saved still report and reuse their result", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, beforeSend: scrubErrorEvent,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  const previous = process.env.MOBILE_DEV_TELEMETRY;
+  delete process.env.MOBILE_DEV_TELEMETRY;
+  t.after(async () => {
+    if (previous === undefined) delete process.env.MOBILE_DEV_TELEMETRY;
+    else process.env.MOBILE_DEV_TELEMETRY = previous;
+    await Sentry.close();
+  });
+  const directory = await profile(t);
+  // A directory at the cache path makes every write fail.
+  await mkdir(join(directory, "mobile-dev/updates.json/blocked"), { recursive: true });
+  const calls: string[][] = [];
+  const { run, readStore } = cliFixture(directory, calls, { storeInstalled: true });
+  let now = 1000000;
+  const updates = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.167", run, readStore, now: () => now });
+  const notice = await updates.check();
+  assert.deepEqual(notice, { status: "migration", currentVersion: "0.1.167", latestVersion: "0.1.167", storeInstalled: true });
+  await Sentry.flush();
+  assert.ok(JSON.stringify(envelopes).includes("Could not save the plugin update check."));
+  now += 30 * 60 * 1000;
+  assert.equal((await updates.check()).status, "migration");
+  assert.equal(calls.length, 1);
+  now += 30 * 60 * 1000;
+  await updates.check();
+  assert.equal(calls.length, 2);
 });
 
 test("migration is offered for the same version and verifies the store before any deletion", async t => {
@@ -329,6 +417,24 @@ test("update tools remain app-only and the GitHub upgrade tool is removed", asyn
 test("CLI resolution rejects processes other than the launching Codex executable", async () => {
   const resolution = resolveCodexCli(process.pid);
   await assert.rejects(resolution, /Could not locate the Codex executable/);
+});
+
+test("CLI resolution runs once per launching process and retries failed lookups", async t => {
+  const directory = await profile(t);
+  const executable = join(directory, "codex-fixture");
+  await writeFile(executable, "#!/bin/sh\necho '{}'\n", { mode: 0o755 });
+  const lookups: number[] = [];
+  const resolveCli = codexCliResolver(directory, async parentPid => {
+    lookups.push(parentPid);
+    if (lookups.length === 1) throw new Error("ps failed");
+    return executable;
+  });
+  const run = createCodexRunner(directory, { resolveCli });
+  await assert.rejects(run(["plugin", "list"]), /ps failed/);
+  await Promise.all([run(["plugin", "list"]), run(["plugin", "marketplace", "list"])]);
+  const result = await run(["plugin", "list"]);
+  assert.deepEqual(result, {});
+  assert.deepEqual(lookups, [process.ppid, process.ppid]);
 });
 
 async function catalogServer(t: test.TestContext, reject = false) {

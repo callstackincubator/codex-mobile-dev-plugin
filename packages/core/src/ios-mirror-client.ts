@@ -5,9 +5,11 @@ import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 import { IosMirrorInputBusyError } from "@mobile-dev/shared/ios-mirror-errors.ts";
-import { mirrorReplySchema, mirrorSocketPath, maximumReplyBytes } from "./ios-mirror-rpc.ts";
+import { readJsonLines } from "./json-lines.ts";
+import { mirrorReplySchema, mirrorSocketPath, maximumReplyBytes, wireTouchPhases } from "./ios-mirror-rpc.ts";
 import type { MirrorCommand, MirrorReply } from "./ios-mirror-rpc.ts";
 import type { IosCapture } from "./ios-native-capture.ts";
+import { bundled } from "./bundled-runtime.ts";
 
 async function connect(path: string): Promise<Socket> {
   return new Promise((resolve, reject) => {
@@ -27,7 +29,6 @@ async function startService() {
   if (starting) return starting;
   starting = (async () => {
     // Bundles, and the chunks they split into, sit in dist/ beside the service.
-    const bundled = import.meta.url.endsWith(".mjs");
     const entry = bundled ? "./ios-mirror-service.mjs" : "./ios-mirror-service.ts";
     const url = new URL(entry, import.meta.url);
     const path = fileURLToPath(url);
@@ -49,8 +50,6 @@ async function startService() {
 
 export async function connectIosCapture(path: string, udid: string): Promise<IosCapture> {
   const socket = await connect(path);
-  socket.setEncoding("utf8");
-  let incoming = "";
   let sequence = 0;
   let closed = false;
   const pending = new Map<number, { resolve: (reply: MirrorReply) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>();
@@ -68,31 +67,17 @@ export async function connectIosCapture(path: string, udid: string): Promise<Ios
     const error = new Error(message);
     socket.destroy(error);
   };
-  socket.on("data", (chunk: string) => {
-    incoming += chunk;
-    let end = incoming.indexOf("\n");
-    while (end >= 0) {
-      if (end > maximumReplyBytes) { disconnect("Shared iOS video exceeded its size limit."); return; }
-      const line = incoming.slice(0, end);
-      incoming = incoming.slice(end + 1);
-      try {
-        const value: unknown = JSON.parse(line);
-        const reply = mirrorReplySchema.parse(value);
-        const request = pending.get(reply.id);
-        if (request) {
-          clearTimeout(request.timer);
-          pending.delete(reply.id);
-          if (reply.error) {
-            const error = reply.inputBusy ? new IosMirrorInputBusyError() : new Error(reply.error);
-            request.reject(error);
-          }
-          else request.resolve(reply);
-        }
-      } catch { disconnect("Invalid shared iOS capture response."); return; }
-      end = incoming.indexOf("\n");
-    }
-    if (incoming.length > maximumReplyBytes) disconnect("Shared iOS video exceeded its size limit.");
-  });
+  readJsonLines(socket, maximumReplyBytes, value => {
+    const reply = mirrorReplySchema.parse(value);
+    const request = pending.get(reply.id);
+    if (request === undefined) return;
+    clearTimeout(request.timer);
+    pending.delete(reply.id);
+    if (!reply.error) { request.resolve(reply); return; }
+    // The service's expected outcomes, such as a closed subscription, stay expected here.
+    if (reply.inputBusy) request.reject(new IosMirrorInputBusyError());
+    else request.reject(reply.outcome ? new ExpectedOperationError(reply.outcome, reply.error) : new Error(reply.error));
+  }, { oversized: "Shared iOS video exceeded its size limit.", invalid: "Invalid shared iOS capture response." });
   const request = (command: MirrorCommand): Promise<MirrorReply> => {
     if (closed) {
       const error = new Error("The shared physical iOS stream closed.");
@@ -114,7 +99,10 @@ export async function connectIosCapture(path: string, udid: string): Promise<Ios
       if (reply.result === undefined || reply.result === null) throw new Error("Shared iOS capture returned no video batch.");
       return reply.result;
     },
-    async touch(samples, generation) { await request({ method: "touch", samples, generation }); },
+    async touch(samples, generation) {
+      const wire = samples.map(sample => ({ ...sample, phase: wireTouchPhases.indexOf(sample.phase) }));
+      await request({ method: "touch", samples: wire, generation });
+    },
     async reset() { await request({ method: "reset" }); },
     async close() {
       if (closed) return;

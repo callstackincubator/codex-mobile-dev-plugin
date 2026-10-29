@@ -22,7 +22,7 @@ function draft07Keywords(schema: unknown, path = ""): string[] {
 }
 
 test("every tool declares JSON Schema 2020-12 and uses no draft-07-only keyword", async t => {
-  const plugin = await createTestPlugin("<html></html>", { panel: createPanel() });
+  const plugin = await createTestPlugin("<html></html>", { features: [createPanel()] });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   declareSchemaDialect(serverTransport);
   const client = new Client({ name: "schema-dialect", version: "1" });

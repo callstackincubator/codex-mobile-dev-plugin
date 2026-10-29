@@ -19,7 +19,8 @@ import type { PhysicalIosLogTarget } from "../src/physical-ios-logs.ts";
 import { startNativeLogs } from "../src/native-logs.ts";
 import { LogSessions } from "../src/log-sessions.ts";
 import { registerLogTools } from "../src/log-tools.ts";
-import { Baguette } from "../src/baguette.ts";
+import { DeviceResolver } from "../src/devices.ts";
+import { attachedBaguette } from "../../test-support/fixtures.ts";
 import { parseIOSLog } from "../src/log-parsers.ts";
 import { listIosDevices } from "../src/ios-devices.ts";
 
@@ -117,10 +118,10 @@ test("physical iOS PID filters exclude other processes and records without an id
   let accepted!: () => void;
   const ready = new Promise<void>(resolve => { accepted = resolve; });
   const pidTarget: PhysicalIosLogTarget = { platform: "ios", kind: "physical", deviceId: phone.udid, pid: 123 };
-  const code = `console.log('{"ready":true}');
+  const code = `console.log('{"type":"ready"}');
     for (const processID of [456, undefined, 123]) console.log(JSON.stringify({ timestamp: '2026-10-02T12:00:00Z', processID,
       process: 'Example', eventMessage: 'fixture' }));
-    setInterval(() => {}, 1000);`;
+    process.stdin.on('end', () => process.exit(0)); process.stdin.resume();`;
   const stop = startNativeLogs(pidTarget, { log: log => { entries.push(log); accepted(); }, status() {} }, async selected => {
     assert.deepEqual(selected, pidTarget);
     return { command: process.execPath, args: ["-e", code] };
@@ -137,10 +138,10 @@ test("physical streams wait for acceptance, preserve process metadata across PID
   const entries: LogRecord[] = [];
   const statuses: LogSourceStatus[] = [];
   const code = `setTimeout(() => {
-    console.log('{"ready":true}');
+    console.log('{"type":"ready"}');
     for (const processID of [123, 456]) console.log(JSON.stringify({ timestamp: '1970-01-01T00:00:42.123456Z', messageType: 'Error',
       process: 'Example', processID, eventMessage: 'fixture', subsystem: 'com.example', category: 'javascript' }));
-    setInterval(() => {}, 1000);
+    process.stdin.on('end', () => process.exit(0)); process.stdin.resume();
   }, 100);`;
   const stop = startNativeLogs(target, { log: log => entries.push(log), status: status => statuses.push(status) }, async selected => {
     assert.deepEqual(selected, target);
@@ -172,7 +173,7 @@ test("a failed physical reader reports diagnostics and rediscovers before reconn
   const stop = startNativeLogs(target, { log: log => entries.push(log), status: status => statuses.push(status) }, async () => {
     attempts++;
     const code = attempts === 1 ? "console.error('fixture disconnect'); process.exit(1)" :
-      "console.log('{\"ready\":true}'); console.log('{\"eventMessage\":\"reconnected\",\"process\":\"Example\"}'); setInterval(() => {}, 1000)";
+      "console.log('{\"type\":\"ready\"}'); console.log('{\"eventMessage\":\"reconnected\",\"process\":\"Example\"}'); process.stdin.on('end', () => process.exit(0)); process.stdin.resume()";
     return { command: process.execPath, args: ["-e", code] };
   });
   t.after(stop);
@@ -193,8 +194,8 @@ test("MCP validates physical devices independently of Baguette and closes the au
     return async () => { closed++; };
   }, metro: () => async () => {} });
   const server = new McpServer({ name: "physical-log-test", version: "1" });
-  const baguette = new Baguette("http://127.0.0.1:1");
-  registerLogTools(server, logs, baguette, async () => [current]);
+  const baguette = attachedBaguette("http://127.0.0.1:1");
+  registerLogTools(server, logs, new DeviceResolver({ simulators: baguette, ios: async () => [current] }));
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "physical-log-client", version: "1" });
   t.after(async () => { await client.close(); await logs.close(); await server.close(); baguette.dispose(); });

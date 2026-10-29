@@ -4,7 +4,7 @@ import { CPU_HISTORY_SECONDS, CPU_MAX_SAMPLES, cpuBatchSchema } from "@mobile-de
 import type { DeviceApp } from "@mobile-dev/shared/device-apps.ts";
 import type { CpuBatch, CpuPhase, CpuSample, CpuTarget } from "@mobile-dev/shared/cpu.ts";
 import type { SimulatorDevice } from "@mobile-dev/shared/protocol.ts";
-import type { ThreadHistory, ThreadOrder } from "./performance/types.ts";
+import type { ThreadHistory, ThreadOrder } from "./components/performance/types.ts";
 import { DisplayFpsPanel, initialFpsState } from "./display-fps-panel.ts";
 import type { DisplayFpsState } from "./display-fps-panel.ts";
 import type { AppDevice, DeviceAppsStore } from "./device-apps.ts";
@@ -26,6 +26,10 @@ type Snapshot = DisplayFpsState & {
   threadOrder: ThreadOrder;
   phase: CpuPhase; error: string; sourceError: string;
   physical: boolean;
+  /** CPU or FPS monitoring is running. */
+  running: boolean;
+  /** The phase the tool shows: FPS's while it records or when CPU monitoring is off, otherwise CPU's. */
+  displayPhase: CpuPhase;
 };
 
 export class PerformancePanel extends Store<Snapshot> {
@@ -43,7 +47,7 @@ export class PerformancePanel extends Store<Snapshot> {
   constructor(app: HostBridge, deviceApps: DeviceAppsStore) {
     super({ ...initialFpsState, physical: false, open: false, available: false, discovering: false, monitoring: false,
       selectedLabel: "Selected device", platform: "ios", bundleId: "", apps: [], samples: [], threadHistory: new Map(), threadOrder: "activity",
-      phase: "idle", error: "", sourceError: "" });
+      phase: "idle", error: "", sourceError: "", running: false, displayPhase: "idle" });
     this.app = app;
     this.deviceApps = deviceApps;
     this.fps = new DisplayFpsPanel(app, (fields, origin) => {
@@ -57,6 +61,13 @@ export class PerformancePanel extends Store<Snapshot> {
     });
     this.unsubscribeApps = deviceApps.subscribe(() => this.appsChanged());
     this.appsChanged();
+  }
+  protected update(fields: Partial<Snapshot>) {
+    const next = { ...this.state, ...fields };
+    let displayPhase = next.phase;
+    if (next.fpsPhase === "recording") displayPhase = "recording";
+    else if ((next.fpsPhase === "connecting" || next.fpsPhase === "failed") && next.monitoring === false) displayPhase = next.fpsPhase;
+    this.set({ ...next, running: next.monitoring || next.fpsMonitoring, displayPhase });
   }
   private resetHistory(fields: Partial<Snapshot>) {
     this.nextThreadNumber = 1;

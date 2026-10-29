@@ -146,7 +146,7 @@ test("a slower earlier table page never replaces the page opened after it", asyn
   const pending: { offset: number; resolve: (result: unknown) => void }[] = [];
   const app = { callServerTool: ({ arguments: args }: { arguments: { offset: number } }) => new Promise(resolve => pending.push({ offset: args.offset, resolve })) };
   const device = { platform: "ios", udid, name: "iPhone", state: "Booted", kind: "simulator" };
-  const panel = new StoragePanel(app as never, { subscribe: () => () => {}, getSnapshot: () => ({ device }) } as never);
+  const panel = new StoragePanel(app as never, { subscribe: () => () => {}, getSnapshot: () => ({ device }), pickedApp: () => undefined, pickApp() {} } as never);
   panel.setAvailable(true);
   (panel as unknown as { update(patch: object): void }).update({ bundleId: "dev.example" });
   const page = (offset: number) => ({ structuredContent: { table: "items", columns: [{ name: "id", type: "INTEGER" }], rows: [[offset + 1]], total: 300, offset } });

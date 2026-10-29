@@ -43,12 +43,13 @@ export async function agentDeviceClient(t: TestContext, handler?: AgentDeviceBac
   };
   const server = new McpServer({ name: "agent-device-tools-test", version: "1" });
   instrumentMcpServer(server);
-  const cleanup = agentDeviceTools(readAgentDeviceCatalog(agentDeviceCatalogFile), runtime)(server);
+  const closedDevices: string[] = [];
+  const cleanup = agentDeviceTools(readAgentDeviceCatalog(agentDeviceCatalogFile), runtime).register(server, { async closeDevice(deviceId) { closedDevices.push(deviceId); } });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   installTracePropagation(serverTransport);
   const client = new Client({ name: "agent-device-tools-client", version: "1" });
   t.after(async () => { await client.close(); await server.close(); });
   await server.connect(serverTransport);
   await client.connect(clientTransport);
-  return { client, calls, result, cleanup, counts: () => ({ connections, closed }) };
+  return { client, calls, result, cleanup, closedDevices, counts: () => ({ connections, closed }) };
 }

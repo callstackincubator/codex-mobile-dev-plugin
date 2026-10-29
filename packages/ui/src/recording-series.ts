@@ -1,5 +1,6 @@
 import type { PerformanceRecording, RecordingRange } from "@mobile-dev/shared/recordings.ts";
 import type { DisplayFpsSample } from "@mobile-dev/shared/display-fps.ts";
+import { mebibytes } from "./recording-format.ts";
 
 export type RecordingPoint = { time: number; value: number | null };
 
@@ -9,6 +10,11 @@ export function createRecordingCpuSeries(recording: PerformanceRecording): Recor
 
 export function createRecordingFpsSeries(recording: PerformanceRecording): RecordingPoint[] {
   return createIntervalSeries(recording.fps.samples, recording.durationSeconds);
+}
+
+/** Memory in MiB at each sample. */
+export function createRecordingMemorySeries(recording: PerformanceRecording): RecordingPoint[] {
+  return recording.samples.map(sample => ({ time: sample.time, value: sample.memoryBytes === null ? null : mebibytes(sample.memoryBytes) }));
 }
 
 function createIntervalSeries(samples: Array<{ time: number; interval: number; cpuPercent: number | null }> | DisplayFpsSample[], duration: number): RecordingPoint[] {

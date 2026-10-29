@@ -8,10 +8,14 @@
 // hand-roll just the bits of the wire format we need.
 //
 // Wire types we handle: 0 = varint, 2 = length-delimited (string/bytes/message).
+// Fixed 64-bit (1) and 32-bit (5) fields are skipped; group and reserved wire
+// types are malformed.
 
-/// Protobuf wire types.
-pub const WIRE_VARINT: u32 = 0;
-pub const WIRE_LEN: u32 = 2;
+const WIRE_VARINT: u64 = 0;
+const WIRE_FIXED64: u64 = 1;
+const WIRE_LEN: u64 = 2;
+const WIRE_FIXED32: u64 = 5;
+const MAX_FIELD_NUMBER: u64 = (1 << 29) - 1;
 
 /// A growable protobuf encoder.
 #[derive(Debug, Default)]
@@ -21,7 +25,7 @@ pub struct Encoder {
 
 impl Encoder {
     pub fn new() -> Self {
-        Self { buf: Vec::new() }
+        Self::default()
     }
 
     pub fn into_bytes(self) -> Vec<u8> {
@@ -42,8 +46,8 @@ impl Encoder {
         }
     }
 
-    fn write_tag(&mut self, field: u32, wire: u32) {
-        self.write_varint(((field << 3) | wire) as u64);
+    fn write_tag(&mut self, field: u32, wire: u64) {
+        self.write_varint((u64::from(field) << 3) | wire);
     }
 
     /// Write a varint scalar field (uint32/uint64/bool/enum).
@@ -72,123 +76,111 @@ impl Encoder {
     }
 }
 
-/// A protobuf decoder over a borrowed buffer.
-#[derive(Debug)]
-pub struct Decoder<'a> {
-    buf: &'a [u8],
-    malformed: bool,
-    pos: usize,
-}
+/// The buffer is not a complete, well-formed protobuf message.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Malformed;
 
 /// One decoded protobuf field.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Field<'a> {
     Varint(u64),
     Len(&'a [u8]),
 }
 
+/// Narrows a varint to a `uint32` field value, rejecting values that would
+/// otherwise be silently truncated.
+pub fn uint32(value: u64) -> Result<u32, Malformed> {
+    u32::try_from(value).map_err(|_| Malformed)
+}
+
+/// Checks that `message` is a complete sequence of well-formed fields without
+/// interpreting them.
+pub fn check_framing(message: &[u8]) -> Result<(), Malformed> {
+    Decoder::new(message).try_for_each(|field| field.map(|_| ()))
+}
+
+/// A strict protobuf decoder over a borrowed buffer.
+///
+/// Iteration yields every field in order and ends after the last byte. A
+/// truncated field, an overlong varint, an invalid field number or an
+/// unsupported wire type yields one `Err(Malformed)` and ends the iteration,
+/// so a message only decodes successfully when every byte was consumed.
+#[derive(Debug)]
+pub struct Decoder<'a> {
+    buf: &'a [u8],
+    pos: usize,
+    failed: bool,
+}
+
 impl<'a> Decoder<'a> {
     pub fn new(buf: &'a [u8]) -> Self {
-        Self {
-            buf,
-            malformed: false,
-            pos: 0,
-        }
+        Self { buf, pos: 0, failed: false }
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.pos >= self.buf.len()
-    }
-
-    /// Returns true only after the complete buffer was decoded without a
-    /// truncated field or unsupported wire type.
-    pub fn is_complete(&self) -> bool {
-        !self.malformed && self.pos == self.buf.len()
-    }
-
-    fn read_varint(&mut self) -> Option<u64> {
+    fn read_varint(&mut self) -> Result<u64, Malformed> {
         let mut result: u64 = 0;
         let mut shift = 0;
         loop {
-            let Some(byte) = self.buf.get(self.pos).copied() else {
-                self.malformed = true;
-                return None;
-            };
+            let byte = *self.buf.get(self.pos).ok_or(Malformed)?;
             self.pos += 1;
             if shift == 63 && byte > 1 {
-                self.malformed = true;
-                return None;
+                return Err(Malformed);
             }
-            result |= ((byte & 0x7f) as u64) << shift;
+            result |= u64::from(byte & 0x7f) << shift;
             if byte & 0x80 == 0 {
-                return Some(result);
+                return Ok(result);
             }
             shift += 7;
             if shift >= 64 {
-                self.malformed = true;
-                return None;
+                return Err(Malformed);
             }
         }
     }
 
-    /// Read the next `(field_number, value)`. Returns `None` at end of buffer or
-    /// on malformed input.
-    pub fn next_field(&mut self) -> Option<(u32, Field<'a>)> {
-        if self.is_empty() {
-            return None;
-        }
+    fn take(&mut self, len: usize) -> Result<&'a [u8], Malformed> {
+        let end = self.pos.checked_add(len).ok_or(Malformed)?;
+        let slice = self.buf.get(self.pos..end).ok_or(Malformed)?;
+        self.pos = end;
+        Ok(slice)
+    }
+
+    /// Reads one field; fixed-width fields are consumed and reported as `None`.
+    fn read_field(&mut self) -> Result<Option<(u32, Field<'a>)>, Malformed> {
         let tag = self.read_varint()?;
-        let field = (tag >> 3) as u32;
-        let wire = (tag & 7) as u32;
-        match wire {
-            WIRE_VARINT => Some((field, Field::Varint(self.read_varint()?))),
+        let number = tag >> 3;
+        if number == 0 || number > MAX_FIELD_NUMBER {
+            return Err(Malformed);
+        }
+        let number = number as u32;
+        match tag & 7 {
+            WIRE_VARINT => Ok(Some((number, Field::Varint(self.read_varint()?)))),
             WIRE_LEN => {
                 let len = self.read_varint()?;
-                let Ok(len) = usize::try_from(len) else {
-                    self.malformed = true;
-                    return None;
-                };
-                let Some(end) = self.pos.checked_add(len) else {
-                    self.malformed = true;
-                    return None;
-                };
-                let Some(slice) = self.buf.get(self.pos..end) else {
-                    self.malformed = true;
-                    return None;
-                };
-                self.pos = end;
-                Some((field, Field::Len(slice)))
+                let len = usize::try_from(len).map_err(|_| Malformed)?;
+                Ok(Some((number, Field::Len(self.take(len)?))))
             }
-            // 64-bit (1) and 32-bit (5): skip fixed widths so we stay aligned.
-            1 => {
-                let Some(end) = self.pos.checked_add(8) else {
-                    self.malformed = true;
-                    return None;
-                };
-                if end > self.buf.len() {
-                    self.malformed = true;
-                    return None;
+            WIRE_FIXED64 => self.take(8).map(|_| None),
+            WIRE_FIXED32 => self.take(4).map(|_| None),
+            _ => Err(Malformed),
+        }
+    }
+}
+
+impl<'a> Iterator for Decoder<'a> {
+    type Item = Result<(u32, Field<'a>), Malformed>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while !self.failed && self.pos < self.buf.len() {
+            match self.read_field() {
+                Ok(Some(field)) => return Some(Ok(field)),
+                Ok(None) => continue,
+                Err(error) => {
+                    self.failed = true;
+                    return Some(Err(error));
                 }
-                self.pos = end;
-                self.next_field()
-            }
-            5 => {
-                let Some(end) = self.pos.checked_add(4) else {
-                    self.malformed = true;
-                    return None;
-                };
-                if end > self.buf.len() {
-                    self.malformed = true;
-                    return None;
-                }
-                self.pos = end;
-                self.next_field()
-            }
-            _ => {
-                self.malformed = true;
-                None
             }
         }
+        None
     }
 }
 
@@ -196,20 +188,8 @@ impl<'a> Decoder<'a> {
 mod tests {
     use super::*;
 
-    impl Field<'_> {
-        pub fn as_varint(&self) -> Option<u64> {
-            match self {
-                Field::Varint(v) => Some(*v),
-                _ => None,
-            }
-        }
-
-        pub fn as_bytes(&self) -> Option<&[u8]> {
-            match self {
-                Field::Len(b) => Some(b),
-                _ => None,
-            }
-        }
+    fn decode(bytes: &[u8]) -> Result<Vec<(u32, Field<'_>)>, Malformed> {
+        Decoder::new(bytes).collect()
     }
 
     #[test]
@@ -223,22 +203,18 @@ mod tests {
         });
         let bytes = e.into_bytes();
 
-        let mut d = Decoder::new(&bytes);
-        let (f1, v1) = d.next_field().unwrap();
-        assert_eq!(f1, 1);
-        assert_eq!(v1.as_varint(), Some(100));
-        let (f2, v2) = d.next_field().unwrap();
-        assert_eq!(f2, 2);
-        assert_eq!(v2.as_bytes(), Some(&b"abc"[..]));
-        let (f7, v7) = d.next_field().unwrap();
-        assert_eq!(f7, 7);
-        let mut sub = Decoder::new(v7.as_bytes().unwrap());
-        assert_eq!(sub.next_field().unwrap().1.as_varint(), Some(4));
-        assert_eq!(
-            sub.next_field().unwrap().1.as_bytes(),
-            Some(&[0xde, 0xad][..])
-        );
-        assert!(d.next_field().is_none());
+        let fields = decode(&bytes).unwrap();
+        assert_eq!(fields[0], (1, Field::Varint(100)));
+        assert_eq!(fields[1], (2, Field::Len(b"abc")));
+        let (7, Field::Len(nested)) = fields[2] else { panic!("expected a nested message") };
+        assert_eq!(decode(nested), Ok(vec![(1, Field::Varint(4)), (2, Field::Len(&[0xde, 0xad]))]));
+        assert_eq!(fields.len(), 3);
+    }
+
+    #[test]
+    fn skips_fixed_width_fields() {
+        let bytes = [0x09, 1, 2, 3, 4, 5, 6, 7, 8, 0x15, 1, 2, 3, 4, 0x18, 0x05];
+        assert_eq!(decode(&bytes), Ok(vec![(3, Field::Varint(5))]));
     }
 
     #[test]
@@ -246,9 +222,37 @@ mod tests {
         let mut wire = vec![0x08];
         wire.extend_from_slice(&[0x80; 9]);
         wire.push(0x02);
-        let mut decoder = Decoder::new(&wire);
+        assert_eq!(decode(&wire), Err(Malformed));
+    }
 
-        assert!(decoder.next_field().is_none());
-        assert!(!decoder.is_complete());
+    #[test]
+    fn rejects_truncation_unsupported_wire_types_and_invalid_field_numbers() {
+        let malformed: [&[u8]; 7] = [
+            &[0x08],
+            &[0x08, 0x80],
+            &[0x12, 0x02, 0x01],
+            &[0x09, 1, 2, 3],
+            &[0x0b],
+            &[0x00, 0x01],
+            &[0x80, 0x80, 0x80, 0x80, 0x10, 0x00],
+        ];
+        for bytes in malformed {
+            assert_eq!(decode(bytes), Err(Malformed), "{bytes:02x?}");
+            assert_eq!(check_framing(bytes), Err(Malformed));
+        }
+    }
+
+    #[test]
+    fn stops_after_the_first_malformed_field() {
+        let mut decoder = Decoder::new(&[0x08, 0x01, 0x0b, 0x08, 0x02]);
+        assert_eq!(decoder.next(), Some(Ok((1, Field::Varint(1)))));
+        assert_eq!(decoder.next(), Some(Err(Malformed)));
+        assert_eq!(decoder.next(), None);
+    }
+
+    #[test]
+    fn uint32_rejects_truncating_values() {
+        assert_eq!(uint32(u64::from(u32::MAX)), Ok(u32::MAX));
+        assert_eq!(uint32(1 << 32), Err(Malformed));
     }
 }

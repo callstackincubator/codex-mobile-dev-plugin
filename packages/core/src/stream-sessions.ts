@@ -1,11 +1,13 @@
 import { ExpectedOperationError, errorMessage } from "@mobile-dev/shared/error-reporting.ts";
-import { randomBytes } from "node:crypto";
 import { WebSocket } from "ws";
 import { streamMessageSchema } from "@mobile-dev/shared/protocol.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
 import { epochNow } from "@mobile-dev/shared/stream.ts";
 import type { FrameRead } from "@mobile-dev/shared/stream.ts";
 import type { Baguette } from "./baguette.ts";
+import { SessionRegistry } from "./session-registry.ts";
+import { Waiters } from "./revision-buffer.ts";
+import { awaitOpen, closeGracefully } from "./ws-session.ts";
 
 type Frame = { sequence: number; bytes: Buffer; receivedAt: number; data?: string };
 type Session = {
@@ -13,7 +15,6 @@ type Session = {
   fps: number;
   socket?: WebSocket;
   connecting?: Promise<void>;
-  expires: number;
   sequence: number;
   frame?: Frame;
   error?: string;
@@ -23,56 +24,49 @@ type Session = {
   pingAt?: number;
   openedAt?: number;
   resetAt?: number;
-  waiters: Set<() => void>;
+  waiters: Waiters;
   input: Promise<number>;
 };
 
 export class StreamSessions {
-  private readonly sessions = new Map<string, Session>();
+  private readonly sessions = new SessionRegistry<Session>({
+    limit: 8, name: "Simulator stream",
+    limitMessage: "Too many open simulator streams. Close a panel and retry.",
+    expiredMessage: "The simulator stream expired or closed.",
+    deviceId: session => session.udid,
+    stop: session => this.stop(session),
+    sweep: session => {
+      this.checkFirstFrame(session);
+      if (session.socket?.readyState !== WebSocket.OPEN) return;
+      if (session.pingAt && Date.now() - session.pingAt >= 20000) session.socket.terminate();
+      else if (!session.pingAt) { session.pingAt = Date.now(); session.socket.ping(); }
+    },
+  });
   private readonly baguette: Baguette;
-  private readonly expiry: NodeJS.Timeout;
   private readonly retryDelays: readonly number[];
-  private disposed = false;
-  private readonly idleTimeout = 5 * 60 * 1000;
   private readonly firstFrameTimeout: number;
 
   constructor(baguette: Baguette, retryDelays: readonly number[] = [500, 1000, 2000, 5000, 10000], firstFrameTimeout = 10000) {
     this.baguette = baguette;
     this.retryDelays = retryDelays;
     this.firstFrameTimeout = firstFrameTimeout;
-    this.expiry = setInterval(() => {
-      for (const [id, session] of this.sessions) {
-        if (session.expires < Date.now()) { this.closeSession(id); continue; }
-        this.checkFirstFrame(session);
-        if (session.socket?.readyState !== WebSocket.OPEN) continue;
-        if (session.pingAt && Date.now() - session.pingAt >= 20000) session.socket.terminate();
-        else if (!session.pingAt) { session.pingAt = Date.now(); session.socket.ping(); }
-      }
-    }, 10000);
-    this.expiry.unref();
   }
 
-  private notify(session: Session) {
-    for (const resolve of session.waiters) resolve();
-    session.waiters.clear();
-  }
+  private notify(session: Session) { session.waiters.wake(); }
 
   async open(udid: string, fps: number): Promise<string> {
-    if (this.disposed) throw new ExpectedOperationError("session_closed", "The plugin server has closed.");
-    if (this.sessions.size >= 8) throw new ExpectedOperationError("resource_limit", "Too many open simulator streams. Close a panel and retry.");
-    const id = randomBytes(32).toString("hex");
     const session: Session = {
-      udid, fps, expires: Date.now() + this.idleTimeout, sequence: 0, closed: false,
-      failures: 0, retryAt: 0, waiters: new Set(), input: Promise.resolve(0),
+      udid, fps, sequence: 0, closed: false,
+      failures: 0, retryAt: 0, waiters: new Waiters(), input: Promise.resolve(0),
     };
-    this.sessions.set(id, session);
+    const id = this.sessions.add(session);
     try { await this.connect(session); return id; }
     catch (error) { this.closeSession(id); throw error; }
   }
 
   private async connect(session: Session) {
     await this.baguette.device(session.udid, true);
-    if (session.closed || this.disposed) return;
+    if (session.closed || this.sessions.closed) return;
     const target = new URL(`/simulators/${session.udid}/stream?format=mjpeg`, this.baguette.baseUrl);
     target.protocol = "ws:";
     const socket = new WebSocket(target, { handshakeTimeout: 5000, maxPayload: 16 * 1024 * 1024, perMessageDeflate: false });
@@ -111,14 +105,8 @@ export class StreamSessions {
       this.notify(session);
     });
     try {
-      await new Promise<void>((resolve, reject) => {
-        const opened = () => { cleanup(); resolve(); };
-        const failed = (error: Error) => { cleanup(); reject(error); };
-        const closed = () => failed(new Error("The simulator stream closed before connecting."));
-        const cleanup = () => { socket.off("open", opened); socket.off("error", failed); socket.off("close", closed); };
-        socket.once("open", opened); socket.once("error", failed); socket.once("close", closed);
-      });
-      if (session.closed || this.disposed) { socket.close(); return; }
+      await awaitOpen(socket, "The simulator stream closed before connecting.");
+      if (session.closed || this.sessions.closed) { socket.close(); return; }
       session.openedAt = Date.now();
       socket.send(JSON.stringify({ type: "set_fps", fps: session.fps }));
       socket.send(JSON.stringify({ type: "set_scale", scale: 2 }));
@@ -172,11 +160,6 @@ export class StreamSessions {
 
   private session(id: string): Session {
     const session = this.sessions.get(id);
-    if (!session || session.expires < Date.now()) {
-      if (session) this.closeSession(id);
-      throw new ExpectedOperationError("session_expired", "The simulator stream expired or closed.");
-    }
-    session.expires = Date.now() + this.idleTimeout;
     this.checkFirstFrame(session);
     return session;
   }
@@ -193,22 +176,11 @@ export class StreamSessions {
     if (session.error) throw new Error(session.error);
     this.reconnect(session);
     if (!session.error && (!session.frame || session.frame.sequence <= after)) {
-      await new Promise<void>(resolve => {
-        const done = () => {
-          clearTimeout(timer);
-          signal?.removeEventListener("abort", done);
-          session.waiters.delete(done);
-          resolve();
-        };
-        const timer = setTimeout(done, 1000);
-        session.waiters.add(done);
-        signal?.addEventListener("abort", done, { once: true });
-        if (signal?.aborted) done();
-      });
+      await session.waiters.wait(1000, signal);
     }
     signal?.throwIfAborted();
     if (session.error) throw new Error(session.error);
-    if (this.sessions.get(id) !== session) throw new ExpectedOperationError("session_closed", "The simulator stream closed.");
+    if (!this.sessions.current(id, session)) throw new ExpectedOperationError("session_closed", "The simulator stream closed.");
     const serverWaitMs = performance.now() - started;
     const latest = session.frame;
     if (session.socket?.readyState !== WebSocket.OPEN || latest == null || latest.sequence <= after) {
@@ -243,28 +215,13 @@ export class StreamSessions {
 
   deviceId(id: string): string { return this.session(id).udid; }
 
-  closeDevice(udid: string) {
-    for (const [id, session] of this.sessions) if (session.udid === udid) this.closeSession(id);
-  }
+  closeDevice(udid: string) { return this.sessions.closeDevice(udid); }
+  closeSession(id: string) { return this.sessions.closeSession(id); }
+  close() { return this.sessions.close(); }
 
-  closeSession(id: string) {
-    const session = this.sessions.get(id);
-    if (!session) return;
-    this.sessions.delete(id);
+  private stop(session: Session) {
     session.closed = true;
     this.notify(session);
-    const socket = session.socket;
-    if (!socket) return;
-    if (socket.readyState === WebSocket.CONNECTING) socket.terminate();
-    else socket.close();
-    const deadline = setTimeout(() => socket.terminate(), 1000);
-    deadline.unref();
-    socket.once("close", () => clearTimeout(deadline));
-  }
-
-  close() {
-    this.disposed = true;
-    clearInterval(this.expiry);
-    for (const id of this.sessions.keys()) this.closeSession(id);
+    if (session.socket) closeGracefully(session.socket);
   }
 }

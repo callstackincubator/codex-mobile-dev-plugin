@@ -6,7 +6,10 @@ connection closure reaches the plugin's reconnect loop. Each packet is bounded
 to 1 MiB and released after processing; stdout is a stream of NDJSON records,
 with no native queue. Diagnostics go to stderr.
 
-The first line is `{"ready":true}`, emitted after the phone accepts StartActivity.
+The first line is `{"type":"ready"}`, emitted after the phone accepts StartActivity.
+EOF or input on stdin, SIGINT or SIGTERM stops the reader with exit status 0; so
+does a closed stdout (EPIPE). A handled failure ends the stream with
+`{"type":"error","cause":"<snake_case>","message":"<text>"}` and a non-zero exit.
 Records use the same field names as simulator unified logs, including
 `senderImagePath` for the plugin's optional default framework exclusions. Messages
 are capped at 16 KiB, sender paths at 4 KiB, and subsystem/category values at 1 KiB. Timestamps include the device's

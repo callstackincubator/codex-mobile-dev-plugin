@@ -1,8 +1,9 @@
 import { runDiscoveryCommand, annotateDiscoveryCommand } from "./command.ts";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import { adbPath } from "../native-logs.ts";
-import { baguetteEnvironment, BAGUETTE_RUNTIME_TIMEOUT_MS } from "../baguette-runtime.ts";
+import { adbPath } from "../android-sdk.ts";
+import { baguetteRuntime, BAGUETTE_RUNTIME_TIMEOUT_MS, forgetBaguetteRuntime } from "../baguette-runtime.ts";
+import type { BaguetteRuntime, BaguetteRuntimeReader } from "../baguette-runtime.ts";
 import type { ForegroundApp } from "@mobile-dev/shared/device-apps.ts";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 
@@ -30,19 +31,21 @@ export type SimulatorForeground = (deviceId: string, signal?: AbortSignal) => Pr
 export const unknownSimulatorForeground: SimulatorForeground = async () => null;
 
 export async function foregroundSimulatorPid(deviceId: string, signal?: AbortSignal,
-  helper = new URL("./baguette/Baguette", import.meta.url), runtime = baguetteEnvironment): Promise<number | null> {
-  const path = fileURLToPath(helper);
+  helper?: URL, runtime: BaguetteRuntimeReader = baguetteRuntime): Promise<number | null> {
   const cancellation = signal ?? AbortSignal.timeout(10000);
   const startedAt = performance.now();
-  let environment: NodeJS.ProcessEnv;
-  try { environment = await runtime(path, cancellation); }
+  let baguette: BaguetteRuntime;
+  try { baguette = await runtime(cancellation, helper && fileURLToPath(helper)); }
   catch (error) {
     const elapsed = performance.now() - startedAt;
     const annotated = annotateDiscoveryCommand(error, "ios_simulator_runtime", elapsed, { encoding: "utf8", timeout: BAGUETTE_RUNTIME_TIMEOUT_MS, maxBuffer: 4096, signal: cancellation });
     throw annotated;
   }
-  const result = await runDiscoveryCommand("ios_simulator_foreground", path, ["foreground", "--udid", deviceId], {
-    encoding: "utf8", timeout: 10000, maxBuffer: 4096, signal: cancellation, env: environment,
+  const result = await runDiscoveryCommand("ios_simulator_foreground", baguette.executable, ["foreground", "--udid", deviceId], {
+    encoding: "utf8", timeout: 10000, maxBuffer: 4096, signal: cancellation, env: baguette.env,
+  }).catch(error => {
+    forgetBaguetteRuntime(error);
+    throw error;
   });
   const decoded: unknown = JSON.parse(result.stdout);
   const foreground = schema.parse(decoded);

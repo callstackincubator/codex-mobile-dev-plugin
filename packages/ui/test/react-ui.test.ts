@@ -19,7 +19,6 @@ import { logKey } from "../../shared/src/logs.ts";
 import type { StackedLog } from "../../shared/src/logs.ts";
 import type { CpuBatch } from "../../shared/src/cpu.ts";
 import { UDID } from "../../test-support/fixtures.ts";
-import type { DeviceLayout } from "../src/device-layout.ts";
 import { DevicePickerStore } from "../src/device-picker.ts";
 import { DeviceSettingsStore } from "../src/device-settings.ts";
 import { AppToolsStore } from "../src/app-tools.ts";
@@ -145,9 +144,10 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   cleanupView = async () => { recordingController.dispose(); await act(async () => { root.unmount(); await panel.dispose(); deviceApps.dispose(); storage.dispose(); tracesift.dispose(); await performance.dispose(); }); };
   const layouts: string[] = [];
   let commits = 0;
-  const onLayout = (layout: string) => { layouts.push(layout); };
-  const renderWorkspace = (automaticLayout?: DeviceLayout) => {
-    const workspace = createElement(Workspace, { panels, devices, recordingController, automaticLayout, onLayout });
+  let shownLayout = panels.getSnapshot().layout;
+  panels.subscribe(() => { const { layout } = panels.getSnapshot(); if (layout !== shownLayout) layouts.push(shownLayout = layout); });
+  const renderWorkspace = () => {
+    const workspace = createElement(Workspace, { panels, devices, recordingController, fullscreen: false });
     const profiled = createElement(Profiler, { id: "workspace", onRender() { commits++; } }, workspace);
     root.render(profiled);
   };
@@ -156,7 +156,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   const iosPanel = dom.window.document.getElementById("ios-panel") as HTMLElement;
   const androidPanel = dom.window.document.getElementById("android-panel") as HTMLElement;
   for (const layout of ["android", "both", "none", "ios"] as const) {
-    await act(async () => { renderWorkspace(layout); });
+    await act(async () => { panels.setLayout(layout); });
     assert.equal(iosPanel.hidden, layout === "android" || layout === "none");
     assert.equal(androidPanel.hidden, layout === "ios" || layout === "none");
     assert.equal(dom.window.document.querySelector("canvas"), canvas, "Device discovery preserves the mounted stream canvas.");
@@ -438,9 +438,14 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   assert.match(networkTitle, /Native name: com\.apple\.NSURLConnectionLoader/);
   const cpuState = performance.getSnapshot();
   assert.equal(cpuState.samples[0].threads[1].name, "hades");
-  const threadOrder = dom.window.document.querySelector<HTMLSelectElement>('[aria-label="Thread order"]');
-  assert.ok(threadOrder);
-  assert.equal(threadOrder.value, "activity");
+  const threadOrder = () => dom.window.document.querySelector<HTMLButtonElement>('[aria-label="Thread order"]');
+  assert.ok(threadOrder()?.textContent?.startsWith("Activity"));
+  async function chooseThreadOrder(label: string) {
+    await act(async () => { threadOrder()!.click(); });
+    const option = [...dom.window.document.querySelectorAll<HTMLElement>('[role="option"]')].find(item => item.textContent === label);
+    assert.ok(option, `The thread order menu offers ${label}.`);
+    await act(async () => { option.click(); });
+  }
   const threadIds = () => {
     const labels = dom.window.document.querySelectorAll('[title*="Native name:"]');
     const positions = Array.from(labels, label => {
@@ -458,10 +463,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   const activityIds = threadIds();
   assert.deepEqual(activityIds, ["0xc963bb", "0xc963a4", "0xc963dd"], "Previously active threads rank above never-active threads even after exit.");
   const gcRow = gcThread?.parentElement;
-  await act(async () => {
-    threadOrder.value = "first-seen";
-    threadOrder.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
-  });
+  await chooseThreadOrder("First seen");
   const firstSeenIds = threadIds();
   assert.deepEqual(firstSeenIds, ["0xc963a4", "0xc963bb", "0xc963dd"]);
   const reorderedGc = dom.window.document.querySelector('[title*="ID: 0xc963bb"]');
@@ -474,16 +476,10 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   });
   const stableIds = threadIds();
   assert.deepEqual(stableIds, firstSeenIds, "First seen does not shift when usage and native enumeration change.");
-  await act(async () => {
-    threadOrder.value = "activity";
-    threadOrder.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
-  });
+  await chooseThreadOrder("Activity");
   const changedActivityIds = threadIds();
   assert.deepEqual(changedActivityIds, ["0xc963dd", "0xc963bb", "0xc963a4"]);
-  await act(async () => {
-    threadOrder.value = "first-seen";
-    threadOrder.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
-  });
+  await chooseThreadOrder("First seen");
   assert.equal(dom.window.document.querySelector("canvas"), canvas);
   assert.equal(dom.window.document.querySelector('[data-element="devices"] [data-slot="select-trigger"]'), picker);
   await selectTool("logs");
@@ -495,8 +491,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   const reopenCpu = dom.window.document.querySelector<HTMLButtonElement>('[aria-label="Expand CPU"]');
   assert.ok(reopenCpu);
   await act(async () => { reopenCpu.click(); });
-  const restoredOrder = dom.window.document.querySelector<HTMLSelectElement>('[aria-label="Thread order"]');
-  assert.equal(restoredOrder?.value, "first-seen", "The selected order survives switching away from Performance.");
+  assert.ok(threadOrder()?.textContent?.startsWith("First seen"), "The selected order survives switching away from Performance.");
   const manyThreads = Array.from({ length: 100 }, (_, index) => ({ id: `worker-${index}`, name: `Worker ${index}`, cpuPercent: index }));
   await act(async () => {
     emitCpu!({ cursor: 4, phase: "recording", memoryMetric: "physical-footprint", samples: [
@@ -525,7 +520,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   await togglePlatform("ios");
   await togglePlatform("android");
   assert.deepEqual(layouts, ["both", "android", "none"]);
-  await act(async () => { renderWorkspace("both"); });
+  await act(async () => { panels.setLayout("both"); });
   assert.equal(iosPanel.hidden, true);
   assert.equal(androidPanel.hidden, true);
   assert.deepEqual(layouts, ["both", "android", "none"], "Late discovery preserves a manual platform choice.");
@@ -572,7 +567,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   assert.equal(dom.window.document.querySelector(".recording-overview-bar")?.getAttribute("aria-label"), "Selected range: 12.0s–18.0s");
   assert.ok(dom.window.document.body.textContent?.includes("Checkout scroll · Run 1"));
   assert.equal(layouts.at(-1), "none", "Opening a saved run gives the detailed chart the workspace.");
-  await act(async () => { renderWorkspace("android"); });
+  await act(async () => { panels.setLayout("android"); });
   assert.equal(layouts.at(-1), "none", "Device discovery does not interrupt a saved recording.");
   assert.equal(cpuSessionsOpened, sessionsBeforeOpening, "Opening a saved recording does not start another collector.");
   assert.equal(dom.window.document.querySelector("canvas"), canvas, "Saved recordings preserve the existing device DOM.");

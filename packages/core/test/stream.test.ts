@@ -2,11 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { StreamSessions } from "../src/stream-sessions.ts";
 import { Baguette } from "../src/baguette.ts";
-import { fakeBaguette, UDID, SCREEN, PNG } from "../../test-support/fixtures.ts";
+import { attachBaguette, fakeBaguette, UDID, SCREEN, PNG, attachedBaguette } from "../../test-support/fixtures.ts";
 
 test("panel sessions carry frames and validated input without a browser socket", async t => {
   const fake = await fakeBaguette();
-  const streams = new StreamSessions(new Baguette(fake.url));
+  const streams = new StreamSessions(attachedBaguette(fake.url));
   t.after(async () => { streams.close(); await fake.close(); });
   const id = await streams.open(UDID, 30);
   const first = await frame(streams, id, 0);
@@ -30,7 +30,7 @@ test("panel sessions carry frames and validated input without a browser socket",
 
 test("unknown panel sessions cannot read frames or send input", async t => {
   const fake = await fakeBaguette();
-  const streams = new StreamSessions(new Baguette(fake.url));
+  const streams = new StreamSessions(attachedBaguette(fake.url));
   t.after(async () => { streams.close(); await fake.close(); });
   const unknown = "0".repeat(64);
   await assert.rejects(frame(streams, unknown, 0), /expired or closed/);
@@ -40,7 +40,7 @@ test("unknown panel sessions cannot read frames or send input", async t => {
 
 test("closing a panel releases a pending frame read and stops upstream capture", async t => {
   const fake = await fakeBaguette();
-  const streams = new StreamSessions(new Baguette(fake.url));
+  const streams = new StreamSessions(attachedBaguette(fake.url));
   t.after(async () => { streams.close(); await fake.close(); });
   const id = await streams.open(UDID, 30);
   const first = await frame(streams, id, 0);
@@ -52,7 +52,7 @@ test("closing a panel releases a pending frame read and stops upstream capture",
 
 test("a dropped socket recovers the same session without replaying input or resetting frame sequence", async t => {
   const fake = await fakeBaguette();
-  const streams = new StreamSessions(new Baguette(fake.url), [0]);
+  const streams = new StreamSessions(attachedBaguette(fake.url), [0]);
   t.after(async () => { streams.close(); await fake.close(); });
   const id = await streams.open(UDID, 30);
   const first = await frame(streams, id, 0);
@@ -82,7 +82,7 @@ test("pausing during reconnect prevents a late device check from reopening captu
       return device;
     }
   }
-  const baguette = new GatedBaguette(fake.url);
+  const baguette = new GatedBaguette({ launchBackend: attachBaguette(fake.url) });
   const streams = new StreamSessions(baguette, [0]);
   t.after(async () => { streams.close(); await fake.close(); });
   const id = await streams.open(UDID, 30);
@@ -103,7 +103,7 @@ test("pausing during reconnect prevents a late device check from reopening captu
 
 test("reconnect reports a stopped device without booting it", async t => {
   const fake = await fakeBaguette();
-  const streams = new StreamSessions(new Baguette(fake.url), [0]);
+  const streams = new StreamSessions(attachedBaguette(fake.url), [0]);
   t.after(async () => { streams.close(); await fake.close(); });
   const id = await streams.open(UDID, 30);
   const first = await frame(streams, id, 0);
@@ -116,7 +116,7 @@ test("reconnect reports a stopped device without booting it", async t => {
 
 test("a panel can resume after more than thirty seconds without losing its session", async t => {
   const fake = await fakeBaguette();
-  const streams = new StreamSessions(new Baguette(fake.url));
+  const streams = new StreamSessions(attachedBaguette(fake.url));
   t.after(async () => { streams.close(); await fake.close(); });
   const id = await streams.open(UDID, 30);
   const first = await frame(streams, id, 0);
@@ -133,7 +133,7 @@ test("a panel can resume after more than thirty seconds without losing its sessi
 
 test("capture reset keeps its session and sequence and leaves other panels alone", async t => {
   const fake = await fakeBaguette();
-  const streams = new StreamSessions(new Baguette(fake.url), [0]);
+  const streams = new StreamSessions(attachedBaguette(fake.url), [0]);
   t.after(async () => { streams.close(); await fake.close(); });
   const id = await streams.open(UDID, 30);
   const other = await streams.open(UDID, 30);
@@ -154,7 +154,7 @@ test("capture reset keeps its session and sequence and leaves other panels alone
 
 test("a reconnected socket cannot serve an old frame or enable input before fresh capture", async t => {
   const fake = await fakeBaguette();
-  const streams = new StreamSessions(new Baguette(fake.url), [0]);
+  const streams = new StreamSessions(attachedBaguette(fake.url), [0]);
   t.after(async () => { streams.close(); await fake.close(); });
   const id = await streams.open(UDID, 30);
   const first = await frame(streams, id, 0);
@@ -173,7 +173,7 @@ test("a reconnected socket cannot serve an old frame or enable input before fres
 test("an open socket with no initial frame retries capture even when it answers pings", async t => {
   const fake = await fakeBaguette();
   fake.setFrames(false);
-  const streams = new StreamSessions(new Baguette(fake.url), [0], 30);
+  const streams = new StreamSessions(attachedBaguette(fake.url), [0], 30);
   t.after(async () => { streams.close(); await fake.close(); });
   const id = await streams.open(UDID, 30);
   assert.equal(streams.connectionState(id), "reconnecting");

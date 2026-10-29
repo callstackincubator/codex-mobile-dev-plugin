@@ -3,17 +3,20 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { loadUIResource } from "./ui-resource.ts";
 import { createPlugin } from "./plugin.ts";
 import type { PluginOptions } from "./plugin.ts";
-import { closeServerTelemetry, installTracePropagation } from "./telemetry.ts";
+import { closeServerTelemetry, installTracePropagation, setLaunchingTelemetryHost } from "./telemetry.ts";
+import type { TelemetryHost } from "@mobile-dev/shared/telemetry.ts";
 import { declareSchemaDialect } from "./schema-dialect.ts";
 
 /**
- * Runs the server over stdio, as every host launches it, with Mobile Dev's panel where
- * the host shows it and the host's own features.
+ * Runs the server over stdio, as every host launches it, with the host's features:
+ * Mobile Dev's panel where the host shows it, and the host's own. A host whose MCP
+ * client does not name it passes its `telemetryHost` label instead.
  * Import `./instrument.ts` before this module so telemetry starts first.
  */
-export async function runStdioServer({ panel, features }: Pick<PluginOptions, "panel" | "features"> = {}) {
+export async function runStdioServer({ features, telemetryHost }: Pick<PluginOptions, "features"> & { telemetryHost?: TelemetryHost } = {}) {
+  if (telemetryHost) setLaunchingTelemetryHost(telemetryHost);
   const html = await readFile(new URL("./app.html", import.meta.url), "utf8");
-  const plugin = await createPlugin(() => loadUIResource(html, new URL("../ui-dev.json", import.meta.url)), { panel, features });
+  const plugin = await createPlugin(() => loadUIResource(html, new URL("../ui-dev.json", import.meta.url)), { features });
   const transport = new StdioServerTransport();
   installTracePropagation(transport);
   declareSchemaDialect(transport);
@@ -26,6 +29,11 @@ export async function runStdioServer({ panel, features }: Pick<PluginOptions, "p
   }
   transport.onclose = () => { void close(); };
   process.stdin.on("end", () => { void close(); });
+  // Once the host is gone, closing answers requests still in flight into its closed pipes.
+  // Unhandled, each EPIPE is an uncaught exception whose console.error to the same closed
+  // stderr raises another, so the server spins and never finishes closing.
+  process.stdout.on("error", () => { void close(); });
+  process.stderr.on("error", () => {});
   process.on("SIGINT", () => { void close(); });
   process.on("SIGTERM", () => { void close(); });
   process.on("uncaughtException", error => { console.error(error); void close().finally(() => { process.exitCode = 1; }); });
