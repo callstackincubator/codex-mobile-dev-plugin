@@ -2,12 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { setImmediate } from "node:timers/promises";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { CpuSessions } from "../src/cpu/sessions.ts";
 import { registerCpuTools } from "../src/cpu/tools.ts";
 import { DeviceResolver } from "../src/devices.ts";
 import { fakeBaguette, UDID, attachedBaguette } from "@mobile-dev/test-support/fixtures.ts";
+import { connectClient } from "@mobile-dev/test-support/mcp.ts";
 
 function textData(result: { content?: unknown }) {
   assert.ok(Array.isArray(result.content));
@@ -30,11 +29,8 @@ test("iOS text agents discover, start, read and stop CPU monitoring using only t
     const running = await apps();
     return { apps: running, foregroundApp: null };
   } });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: "cpu-test-client", version: "1" });
-  t.after(async () => { await client.close(); await cpu.close(); await server.close(); baguette.dispose(); await fake.close(); });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
+  t.after(async () => { await cpu.close(); baguette.dispose(); await fake.close(); });
+  const client = await connectClient(t, server);
   const tools = await client.listTools();
   for (const name of ["mobile_performance_sources", "mobile_cpu_session", "mobile_read_cpu", "mobile_cpu_close"]) {
     const tool = tools.tools.find(candidate => candidate.name === name);
@@ -104,11 +100,8 @@ test("Android text agents discover, start, read and stop CPU monitoring without 
     const running = await apps(deviceId, signal, platform);
     return { apps: running, foregroundApp: null };
   } });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: "android-cpu-test-client", version: "1" });
-  t.after(async () => { await client.close(); await cpu.close(); await server.close(); baguette.dispose(); await fake.close(); });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
+  t.after(async () => { await cpu.close(); baguette.dispose(); await fake.close(); });
+  const client = await connectClient(t, server);
   const target = { platform: "android", deviceId: "emulator-5554", bundleId: "com.example.release" };
   const sources = await client.callTool({ name: "mobile_performance_sources", arguments: { platform: target.platform, deviceId: target.deviceId } });
   assert.equal(sources.isError, undefined);

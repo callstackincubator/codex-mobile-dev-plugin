@@ -8,9 +8,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { nativeLogTargetSchema } from "@mobile-dev/shared/logs.ts";
 import type { LogRecord, LogSourceStatus } from "@mobile-dev/shared/logs.ts";
 import type { PhysicalIosDevice } from "@mobile-dev/shared/ios-devices.ts";
@@ -23,6 +21,7 @@ import { DeviceResolver } from "../src/devices.ts";
 import { attachedBaguette } from "@mobile-dev/test-support/fixtures.ts";
 import { parseIOSLog } from "../src/log-parsers.ts";
 import { listIosDevices } from "../src/ios-devices.ts";
+import { connectClient } from "@mobile-dev/test-support/mcp.ts";
 
 const execute = promisify(execFile);
 const phone: PhysicalIosDevice = {
@@ -196,11 +195,8 @@ test("MCP validates physical devices independently of Baguette and closes the au
   const server = new McpServer({ name: "physical-log-test", version: "1" });
   const baguette = attachedBaguette("http://127.0.0.1:1");
   registerLogTools(server, logs, new DeviceResolver({ simulators: baguette, ios: async () => [current] }));
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: "physical-log-client", version: "1" });
-  t.after(async () => { await client.close(); await logs.close(); await server.close(); baguette.dispose(); });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
+  t.after(async () => { await logs.close(); baguette.dispose(); });
+  const client = await connectClient(t, server);
   for (const invalid of [{ ...phone, state: "disconnected" }, { ...phone, pairingState: "unpaired" }]) {
     current = invalid;
     const result = await client.callTool({ name: "mobile_logs_session", arguments: { options: { native: target } } });

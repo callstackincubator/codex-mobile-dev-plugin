@@ -4,8 +4,6 @@ import { mkdtemp, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { iosLocale, parseDefaultsArray, parseIosUrlSchemes, parseSimulatorApps } from "../src/app-control/simulator.ts";
 import { androidPermissionStates, parseAndroidAppLinks, parseAndroidAppLocales, parseAndroidBadging, parseAndroidRuntimePermissions, parseLauncherActivity, pickAndroidIconFile } from "../src/app-control/android.ts";
 import { listApps } from "../src/app-control/driver.ts";
@@ -16,6 +14,7 @@ import { ExpectedOperationError, expectedOutcome } from "@mobile-dev/shared/erro
 import { languageTagSchema } from "@mobile-dev/shared/app-control.ts";
 import { deviceCommandTags } from "@mobile-dev/shared/device-command-diagnostics.ts";
 import { commandError, commandLabel } from "../src/app-control/commands.ts";
+import { connectClient } from "@mobile-dev/test-support/mcp.ts";
 
 const ios = { platform: "ios", deviceId: "B5C969F6-58A4-4C31-AB12-FB9E56D681DE" } as const;
 const android = { platform: "android", deviceId: "emulator-5554" } as const;
@@ -302,11 +301,7 @@ test("setting an app language relaunches it so the new language is visible", asy
     setLanguage: async (bundleId: string, language: string | null) => { steps.push(`language ${bundleId} ${language}`); },
     launch: async (bundleId: string) => { steps.push(`launch ${bundleId}`); if (bundleId === "com.helper") throw new ExpectedOperationError("invalid_input", "com.helper has no launcher activity."); },
   }) as unknown as AppDriver);
-  const client = new Client({ name: "test", version: "1" });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  t.after(async () => { await client.close(); await server.close(); });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
+  const client = await connectClient(t, server);
   const result = await client.callTool({ name: "mobile_set_app_language", arguments: { ...android, bundleId: "com.acme", language: "ar" } });
   assert.deepEqual(result.structuredContent, { language: "ar", launched: "com.acme" });
   assert.deepEqual(steps, ["language com.acme ar", "launch com.acme"]);

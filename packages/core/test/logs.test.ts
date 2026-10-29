@@ -3,8 +3,6 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { once } from "node:events";
 import { WebSocketServer } from "ws";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { parseIOSLog, parseLogcat, parseMetroEvent } from "../src/log-parsers.ts";
 import { LogBuffer } from "../src/log-buffer.ts";
 import { LogSessions } from "../src/log-sessions.ts";
@@ -17,6 +15,7 @@ import { stackLogs, formatLogContext, logOptionsSchema } from "@mobile-dev/share
 import type { LogEntry, LogRecord, LogSourceStatus } from "@mobile-dev/shared/logs.ts";
 import type { LogSink } from "../src/native-logs.ts";
 import { createTestPlugin, fakeSimctl, UDID, OTHER_UDID } from "@mobile-dev/test-support/fixtures.ts";
+import { connectClient } from "@mobile-dev/test-support/mcp.ts";
 
 const record: LogRecord = { timestamp: "2026-09-30T12:00:00.000Z", level: "warn", source: "js", origin: "ios", process: "Example", message: "Request failed" };
 
@@ -136,9 +135,8 @@ test("MCP log sessions validate devices and expose batches without browser netwo
   let sink: LogSink | undefined; let stopped = false;
   const logs = new LogSessions({ native: (_target, next) => { sink = next; return async () => { stopped = true; }; }, metro: () => async () => {} });
   const plugin = await createTestPlugin("<head></head><title>Logs</title>", { simulators: fakeSimctl(), logs });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair(); const client = new Client({ name: "logs-test", version: "1" });
-  t.after(async () => { await client.close(); await plugin.close(); });
-  await plugin.server.connect(serverTransport); await client.connect(clientTransport);
+  t.after(() => plugin.close());
+  const client = await connectClient(t, plugin.server);
   const invalid = await client.callTool({ name: "mobile_logs_session", arguments: { options: { native: { platform: "ios", deviceId: OTHER_UDID } } } });
   assert.equal(invalid.isError, true); assert.equal(sink, undefined);
   const opened = await client.callTool({ name: "mobile_logs_session", arguments: { options: { native: { platform: "ios", deviceId: UDID, process: "Example" } } } });
@@ -188,10 +186,7 @@ test("log sources list Android and Metro at once and keep Android's error first"
   const metroUrl = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
   const server = new McpServer({ name: "log-sources-test", version: "1" });
   registerLogTools(server, new LogSessions(), new DeviceResolver({ android: async () => { await delay(600); throw new Error("adb is missing"); } }));
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: "log-sources-client", version: "1" });
-  t.after(async () => { await client.close(); await server.close(); });
-  await server.connect(serverTransport); await client.connect(clientTransport);
+  const client = await connectClient(t, server);
   const started = performance.now();
   const result = await client.callTool({ name: "mobile_log_sources", arguments: { metroUrl } });
   assert.ok(performance.now() - started < 1000, "Android and Metro are listed concurrently");

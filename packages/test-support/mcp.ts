@@ -10,13 +10,16 @@ export type ConnectOptions = {
   capabilities?: ClientOptions["capabilities"];
   /** Runs on the server's end before it connects, for example to install trace propagation or fail sends. */
   prepare?: (serverTransport: InMemoryTransport) => void;
+  /** Runs on the client before it connects, for example to answer the server's requests. */
+  setup?: (client: Client) => void;
 };
 
 /** Connects an in-memory client to `server`. The client and server close after the test. */
-export async function connectClient(t: TestContext, server: McpServer, { name = "test", capabilities, prepare }: ConnectOptions = {}) {
+export async function connectClient(t: TestContext, server: McpServer, { name = "test", capabilities, prepare, setup }: ConnectOptions = {}) {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   prepare?.(serverTransport);
   const client = new Client({ name, version: "1" }, capabilities ? { capabilities } : undefined);
+  setup?.(client);
   t.after(async () => { await client.close(); await server.close(); });
   await server.connect(serverTransport);
   await client.connect(clientTransport);

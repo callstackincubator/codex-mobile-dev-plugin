@@ -1,16 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { z } from "zod";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { ElicitRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { OpenAIExtensions, OpenAIFormSchema } from "@openai/mcp-extensions/server";
 import type { OpenAIFormResult } from "@openai/mcp-extensions/server";
 import { deviceChoiceForm, deviceChoiceFormSupport, registerDeviceChoiceTools, resolveDeviceChoices } from "../src/device-choice-tools.ts";
 import type { DeviceChoiceSources } from "../src/device-choice-tools.ts";
 import { deviceChoiceInputSchema } from "@mobile-dev/shared/device-choice.ts";
 import type { Status } from "@mobile-dev/shared/protocol.ts";
+import { connectClient } from "@mobile-dev/test-support/mcp.ts";
 
 const simulatorId = "11111111-1111-4111-8111-111111111111";
 const input = {
@@ -39,13 +39,10 @@ test("the native request waits for a single answer and returns verified device I
   const readAndroid = discovery.android;
   discovery.android = async () => { androidReads++; return readAndroid(); };
   registerDeviceChoiceTools(server, extensions, discovery, "openai");
-  const client = new Client({ name: "native-host", version: "1" }, { capabilities: { extensions: { "openai/elicitation": { form: {} } } } });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  t.after(async () => { await client.close(); await server.close(); });
   let answer!: (result: OpenAIFormResult) => void;
   let shown!: () => void;
   const displayed = new Promise<void>(resolve => { shown = resolve; });
-  client.setRequestHandler(requestSchema, async request => {
+  const client = await connectClient(t, server, { capabilities: { extensions: { "openai/elicitation": { form: {} } } }, setup: client => client.setRequestHandler(requestSchema, async request => {
     assert.equal(request.params.message, input.message);
     const field = request.params.requestedSchema.properties.device;
     assert.equal(field.title, undefined);
@@ -72,9 +69,7 @@ test("the native request waits for a single answer and returns verified device I
     const pending = new Promise<OpenAIFormResult>(resolve => { answer = resolve; });
     shown();
     return pending;
-  });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
+  }) });
   let completed = false;
   const pending = client.callTool({ name: "mobile_choose_devices", arguments: { ...input, selectionMode: "single" } }).then(result => { completed = true; return result; });
   await displayed;
@@ -92,10 +87,7 @@ for (const action of ["accept", "cancel", "decline", "invalid", "duplicate", "em
     const extensions = new OpenAIExtensions(server);
     const discovery = sources();
     registerDeviceChoiceTools(server, extensions, discovery, "openai");
-    const client = new Client({ name: "native-host", version: "1" }, { capabilities: { extensions: { "openai/elicitation": { form: {} } } } });
-    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-    t.after(async () => { await client.close(); await server.close(); });
-    client.setRequestHandler(requestSchema, async request => {
+    const client = await connectClient(t, server, { capabilities: { extensions: { "openai/elicitation": { form: {} } } }, setup: client => client.setRequestHandler(requestSchema, async request => {
       const field = request.params.requestedSchema.properties.devices;
       assert.equal(field.type, "array");
       assert.equal(request.params.message, input.message);
@@ -108,9 +100,7 @@ for (const action of ["accept", "cancel", "decline", "invalid", "duplicate", "em
       if (action === "duplicate") devices = ["device-1", "device-1"];
       if (action === "empty") devices = [];
       return { action: "accept", content: { devices } };
-    });
-    await server.connect(serverTransport);
-    await client.connect(clientTransport);
+    }) });
     const result = await client.callTool({ name: "mobile_choose_devices", arguments: { ...input, selectionMode: "multiple" } });
     if (action === "accept") {
       assert.equal(result.isError, undefined);
@@ -175,13 +165,7 @@ async function mcpFormClient(t: test.TestContext, discovery: DeviceChoiceSources
   const server = new McpServer({ name: "device-choices", version: "1" });
   registerDeviceChoiceTools(server, new OpenAIExtensions(server), discovery, "mcp");
   // An empty elicitation capability means forms.
-  const client = new Client({ name: "mcp-form-host", version: "1" }, { capabilities: { elicitation: {} } });
-  client.setRequestHandler(ElicitRequestSchema, async request => answer(request) as never);
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  t.after(async () => { await client.close(); await server.close(); });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
-  return client;
+  return connectClient(t, server, { capabilities: { elicitation: {} }, setup: client => client.setRequestHandler(ElicitRequestSchema, async request => answer(request) as never) });
 }
 function text(result: Awaited<ReturnType<Client["callTool"]>>) {
   const content = result.content;

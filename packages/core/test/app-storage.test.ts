@@ -4,8 +4,6 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { decodeMmkv, guessMmkvValue } from "../src/app-storage/mmkv.ts";
 import { classifyFiles, parseDataStorePreferences, parsePlistXml, parseSharedPreferences, plistEntries } from "../src/app-storage/formats.ts";
 import { clearStore, readStorage } from "../src/app-storage/reader.ts";
@@ -16,6 +14,7 @@ import type { AppDriver } from "../src/app-control/driver.ts";
 import type { Commands } from "../src/app-control/commands.ts";
 import { storageSnapshotSchema } from "@mobile-dev/shared/app-storage.ts";
 import { expectedOutcome } from "@mobile-dev/shared/error-reporting.ts";
+import { connectClient } from "@mobile-dev/test-support/mcp.ts";
 
 const fixtures = join(import.meta.dirname, "../../test-support/fixtures/app-storage/mmkv");
 const mmkv = async (id: string) => [await readFile(join(fixtures, id)), await readFile(join(fixtures, `${id}.crc`))] as const;
@@ -187,16 +186,14 @@ test("Android run-as failures explain release builds and missing apps", () => {
   assert.equal(expectedOutcome(runAsError({ stderr: "run-as: unknown package: com.example" }, "Listing app data", "com.example")), "invalid_input");
 });
 
-test("storage tools stop the app before clearing and reset everything when no store is named", async () => {
+test("storage tools stop the app before clearing and reset everything when no store is named", async t => {
   const container = new MemoryContainer({ "Library/Preferences/com.example.plist": "<plist version=\"1.0\"><dict/></plist>", "Documents/a.txt": "a" });
   const calls: string[] = [];
   const driver = { stop: async (bundleId: string) => { calls.push(`stop ${bundleId}`); } } as unknown as AppDriver;
   const commands = { run: async () => "" } as unknown as Commands;
   const server = new McpServer({ name: "test", version: "1" });
   registerAppStorageTools(server, commands, () => driver, async () => container);
-  const client = new Client({ name: "client", version: "1" });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+  const client = await connectClient(t, server);
   const target = { platform: "ios", deviceId: "B5C969F6-58A4-4C31-AB12-FB9E56D681DE", bundleId: "com.example" };
 
   const read = await client.callTool({ name: "mobile_app_storage", arguments: { ...target, store: "user-defaults:Library/Preferences/com.example.plist" } });
@@ -207,7 +204,6 @@ test("storage tools stop the app before clearing and reset everything when no st
   assert.deepEqual(reset.structuredContent, { cleared: "all", stopped: true });
   assert.deepEqual(calls, ["stop com.example", "stop com.example"]);
   assert.equal(container.files.size, 0);
-  await client.close();
 });
 
 test("simulator resets empty the container but keep its layout, metadata, and cfprefsd in sync", async () => {

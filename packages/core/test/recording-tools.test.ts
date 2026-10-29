@@ -3,9 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { RecordingStore, PerformanceRecordings } from "../src/performance-recordings.ts";
 import { registerOpenRecordingTool, registerRecordingTools, RESULT_BYTES } from "../src/recording-tools.ts";
 import { deviceCapabilities } from "../src/devices.ts";
@@ -13,6 +11,7 @@ import type { DeviceResolver } from "../src/devices.ts";
 import { RECORDING_URI } from "@mobile-dev/shared/recordings.ts";
 import { COMPARISON_URI } from "@mobile-dev/shared/performance-comparison.ts";
 import { longestRecordingFixture, recordingFixture, unavailableFps } from "@mobile-dev/test-support/recording-fixtures.ts";
+import { connectClient } from "@mobile-dev/test-support/mcp.ts";
 
 const pixel: Pick<DeviceResolver, "resolve"> = {
   resolve: async target => ({ platform: "android", deviceId: target.deviceId, name: "Pixel", capabilities: deviceCapabilities(target) }),
@@ -38,11 +37,8 @@ test("recording tools distinguish data, inline rendering, workspace opening and 
   const server = new McpServer({ name: "recordings-test", version: "1" });
   const showRecording = registerRecordingTools(server, recordings, pixel);
   registerOpenRecordingTool(server, showRecording, "ui://test/workspace.html");
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: "recordings-client", version: "1" });
-  t.after(async () => { await client.close(); await server.close(); await recordings.close(); await rm(directory, { recursive: true, force: true }); });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
+  t.after(async () => { await recordings.close(); await rm(directory, { recursive: true, force: true }); });
+  const client = await connectClient(t, server);
   const { tools } = await client.listTools();
   const comparing = tools.find(tool => tool.name === "mobile_compare_performance_recordings");
   assert.deepEqual(comparing?._meta?.ui, { resourceUri: COMPARISON_URI, visibility: ["app", "model"] });
@@ -174,11 +170,8 @@ test("recordings show in chat cards; opening them in the workspace is the panel'
   const recordings = new PerformanceRecordings({ open() { throw new Error("Not used"); }, async read() { throw new Error("Not running"); }, async closeSession() {} }, unavailableFps, store);
   const server = new McpServer({ name: "recordings-test", version: "1" });
   registerRecordingTools(server, recordings, pixel);
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: "recordings-client", version: "1" });
-  t.after(async () => { await client.close(); await server.close(); await recordings.close(); await rm(directory, { recursive: true, force: true }); });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
+  t.after(async () => { await recordings.close(); await rm(directory, { recursive: true, force: true }); });
+  const client = await connectClient(t, server);
   const { tools } = await client.listTools();
   assert.equal(tools.some(tool => tool.name === "mobile_open_performance_recording"), false);
   const rendering = tools.find(tool => tool.name === "mobile_render_performance_recording");
@@ -198,11 +191,8 @@ test("results that show recordings fit a host's result limit, leaving out previe
   const recordings = new PerformanceRecordings({ open() { throw new Error("Not used"); }, async read() { throw new Error("Not running"); }, async closeSession() {} }, unavailableFps, store);
   const server = new McpServer({ name: "recordings-test", version: "1" });
   registerRecordingTools(server, recordings, pixel);
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: "recordings-client", version: "1" });
-  t.after(async () => { await client.close(); await server.close(); await recordings.close(); await rm(directory, { recursive: true, force: true }); });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
+  t.after(async () => { await recordings.close(); await rm(directory, { recursive: true, force: true }); });
+  const client = await connectClient(t, server);
   const bytes = (result: unknown) => Buffer.byteLength(JSON.stringify(result));
   // The longest recording still carries its preview, for cards that cannot read it.
   const shown = await client.callTool({ name: "mobile_render_performance_recording", arguments: { recordingId: longest.id } });

@@ -6,10 +6,9 @@ import type { FpsMonitorOptions } from "../src/fps/source.ts";
 import type { FrameReading } from "../src/fps/frame-timeline.ts";
 import { DisplayFpsSessions } from "../src/fps/sessions.ts";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { registerDisplayFpsTools } from "../src/fps/tools.ts";
 import { DeviceResolver } from "../src/devices.ts";
+import { connectClient } from "@mobile-dev/test-support/mcp.ts";
 
 function encode(value: bigint | number) {
   let remaining = BigInt(value);
@@ -290,11 +289,8 @@ test("text clients record device-wide FPS without an app or simulator backend, a
   });
   const server = new McpServer({ name: "fps", version: "1" });
   registerDisplayFpsTools(server, sessions, new DeviceResolver({ android: async () => [{ id: "phone", name: "Phone" }], ios: async () => [] }));
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: "fps", version: "1" });
-  t.after(async () => { await client.close(); await sessions.close(); await server.close(); });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
+  t.after(() => sessions.close());
+  const client = await connectClient(t, server);
   const listed = await client.listTools();
   const names = listed.tools.map(tool => tool.name);
   assert.deepEqual(names, ["mobile_display_fps_session", "mobile_read_display_fps", "mobile_display_fps_close"]);

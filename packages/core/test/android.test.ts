@@ -2,8 +2,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { WebSocketServer } from "ws";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ServeEmu, androidDisplaySize } from "../src/serve-emu.ts";
 import { AndroidStreams, androidInput } from "../src/android-streams.ts";
@@ -12,6 +10,7 @@ import { createTestPlugin, fakeBaguette, fakeSimulatorInput, PNG, attachedBaguet
 import { fakeInspectionSdk } from "@mobile-dev/test-support/android-inspection-fixtures.ts";
 import { createPanel } from "../src/panel-tools.ts";
 import { registerAndroidTools } from "../src/android-tools.ts";
+import { connectClient } from "@mobile-dev/test-support/mcp.ts";
 
 const ID = "emulator-5554";
 const SCREEN = { width: 1080, height: 2400 };
@@ -175,10 +174,8 @@ test("Android streams relay video, validate batches, and refuse a device switch"
 test("Android MCP flow lists without booting, captures, streams, and closes", async t => {
   const fake = await fakeAndroid(); const ios = await fakeBaguette();
   const plugin = await createTestPlugin("<canvas></canvas>", { features: [createPanel({ baguette: attachedBaguette(ios.url), simulatorInput: fakeSimulatorInput(), copyScreenshot: async bytes => { assert.deepEqual(bytes, PNG); } })], android: fake.backend });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: "android-test", version: "1" });
-  t.after(async () => { await client.close(); await plugin.close(); await fake.close(); await ios.close(); });
-  await plugin.server.connect(serverTransport); await client.connect(clientTransport);
+  t.after(async () => { await plugin.close(); await fake.close(); await ios.close(); });
+  const client = await connectClient(t, plugin.server);
   const listed = await client.callTool({ name: "mobile_list_android_devices", arguments: {} });
   assert.equal((listed.structuredContent?.devices as { udid: string }[])[0].udid, ID);
   assert.deepEqual(fake.backend.boots, []); assert.equal(fake.sockets.clients.size, 0);
@@ -213,10 +210,8 @@ test("a missing serve-emu runtime tells the user to reinstall and stops the pane
   const server = new McpServer({ name: "android-runtime-test", version: "1" });
   const backend = new Unbundled();
   registerAndroidTools(server, backend, "ui://mobile-dev/test.html", async () => {}, new DeviceSessions());
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: "android-runtime-test", version: "1" });
-  t.after(async () => { await client.close(); await server.close(); backend.dispose(); });
-  await server.connect(serverTransport); await client.connect(clientTransport);
+  t.after(() => backend.dispose());
+  const client = await connectClient(t, server);
   const session = await client.callTool({ name: "mobile_android_stream_session", arguments: { deviceId: ID } });
   assert.equal(session.isError, true);
   assert.equal(session._meta?.retryable, false);

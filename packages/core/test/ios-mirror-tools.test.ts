@@ -1,12 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { registerIosMirrorTools } from "../src/ios-mirror-tools.ts";
 import { IosMirrorSessions } from "../src/ios-mirror.ts";
 import type { PhysicalIosDevice } from "@mobile-dev/shared/ios-devices.ts";
 import type { Bezel } from "@mobile-dev/shared/bezel.ts";
+import { connectClient } from "@mobile-dev/test-support/mcp.ts";
 
 const screenshotBytes = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
 
@@ -26,11 +25,8 @@ test("physical mirroring tools stream compressed frames over an app-only MCP ses
     assert.equal(device.productType, phone.productType);
     return bezel;
   });
-  const client = new Client({ name: "test", version: "1" });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  t.after(async () => { await close(); await client.close(); await server.close(); });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
+  t.after(() => close());
+  const client = await connectClient(t, server);
   const tools = await client.listTools();
   const openTool = tools.tools.find(tool => tool.name === "mobile_ios_mirror_session");
   assert.deepEqual(openTool?._meta?.ui, { resourceUri: "ui://test/app", visibility: ["app"] });
@@ -84,11 +80,8 @@ test("physical iOS screenshots copy and return the same displayed PNG, including
     copied.push(bytes);
     if (clipboardFails) throw new Error("Clipboard unavailable");
   });
-  const client = new Client({ name: "test", version: "1" });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  t.after(async () => { await close(); await client.close(); await server.close(); });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
+  t.after(() => close());
+  const client = await connectClient(t, server);
   const tools = await client.listTools();
   const tool = tools.tools.find(tool => tool.name === "mobile_ios_mirror_capture_screenshot");
   assert.deepEqual(tool?._meta?.ui, { resourceUri: "ui://test/app", visibility: ["app"] });
@@ -119,11 +112,8 @@ test("physical iOS screenshots reject invalid and oversized PNGs before copying"
   }));
   const server = new McpServer({ name: "screenshot-test", version: "1" });
   const close = registerIosMirrorTools(server, "ui://test/app", sessions, async () => [phone], async () => bezel, async () => { copies++; });
-  const client = new Client({ name: "test", version: "1" });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  t.after(async () => { await close(); await client.close(); await server.close(); });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
+  t.after(() => close());
+  const client = await connectClient(t, server);
   const id = await sessions.open(phone.udid);
   const oversized = Buffer.alloc(16 * 1024 * 1024 + 1);
   screenshotBytes.copy(oversized);
@@ -144,11 +134,8 @@ test("a device's display rejection reaches the panel and leaves capture availabl
   });
   const server = new McpServer({ name: "mirror-test", version: "1" });
   const close = registerIosMirrorTools(server, "ui://test/app", sessions, async () => [phone], async () => bezel);
-  const client = new Client({ name: "test", version: "1" });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  t.after(async () => { await close(); await client.close(); await server.close(); });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
+  t.after(() => close());
+  const client = await connectClient(t, server);
   const request = { name: "mobile_ios_mirror_session", arguments: { udid: phone.udid } };
   const rejected = await client.callTool(request);
   assert.equal(rejected.isError, true);
@@ -168,11 +155,8 @@ test("an iPhone without an Apple frame still mirrors its screen", async t => {
   });
   const server = new McpServer({ name: "mirror-test", version: "1" });
   const close = registerIosMirrorTools(server, "ui://test/app", sessions, async () => [phone], async () => undefined);
-  const client = new Client({ name: "test", version: "1" });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  t.after(async () => { await close(); await client.close(); await server.close(); });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
+  t.after(() => close());
+  const client = await connectClient(t, server);
   const result = await client.callTool({ name: "mobile_ios_mirror_session", arguments: { udid: phone.udid } });
   assert.equal(result.isError, undefined);
   assert.equal(result._meta?.bezel, undefined);
@@ -185,11 +169,8 @@ test("a disconnected iPhone cannot open a native capture", async t => {
   const sessions = new IosMirrorSessions(async () => { opens++; throw new Error("Unexpected native open"); });
   const server = new McpServer({ name: "mirror-test", version: "1" });
   const close = registerIosMirrorTools(server, "ui://test/app", sessions, async () => [{ ...phone, state: "disconnected" }]);
-  const client = new Client({ name: "test", version: "1" });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  t.after(async () => { await close(); await client.close(); await server.close(); });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
+  t.after(() => close());
+  const client = await connectClient(t, server);
   const result = await client.callTool({ name: "mobile_ios_mirror_session", arguments: { udid: phone.udid } });
   assert.equal(result.isError, true);
   assert.equal(opens, 0);
