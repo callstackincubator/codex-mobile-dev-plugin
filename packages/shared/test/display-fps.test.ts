@@ -15,6 +15,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { registerDisplayFpsTools } from "../../core/src/fps/tools.ts";
+import { DeviceResolver } from "../../core/src/devices.ts";
 import { createDeviceApps } from "../../test-support/device-apps-fixtures.ts";
 import { PerformancePanel } from "../../ui/src/performance-panel.ts";
 import type { CpuBatch } from "../src/cpu.ts";
@@ -297,7 +298,7 @@ test("text clients record device-wide FPS without an app or simulator backend, a
     return { stop: async () => { stops++; }, closed: new Promise<Error>(() => {}) };
   });
   const server = new McpServer({ name: "fps", version: "1" });
-  registerDisplayFpsTools(server, sessions, { android: async () => [{ id: "phone", name: "Phone" }], ios: async () => [] });
+  registerDisplayFpsTools(server, sessions, new DeviceResolver({ android: async () => [{ id: "phone", name: "Phone" }], ios: async () => [] }));
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "fps", version: "1" });
   t.after(async () => { await client.close(); await sessions.close(); await server.close(); });

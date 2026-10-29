@@ -1,10 +1,8 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { setTimeout as delay } from "node:timers/promises";
-import { access } from "node:fs/promises";
-import { join } from "node:path";
 import type { LogRecord, LogSourceStatus, NativeLogTarget } from "@mobile-dev/shared/logs.ts";
-import { androidSdkRoots } from "./android-sdk.ts";
+import { adbPath } from "./android-sdk.ts";
 import { parseIOSLog, parseLogcat } from "./log-parsers.ts";
 import { physicalIosLogCommand } from "./physical-ios-logs.ts";
 import { IOSLogProcessingTelemetry } from "./telemetry.ts";
@@ -15,22 +13,6 @@ import type { CollectorProcess } from "./collectors/process.ts";
 const execute = promisify(execFile);
 export type LogSink = { log: (log: LogRecord) => void; status: (status: LogSourceStatus) => void };
 export type StopLogSource = () => Promise<void>;
-
-export async function adbPath(): Promise<string> {
-  for (const root of androidSdkRoots()) {
-    const path = join(root, "platform-tools/adb");
-    try { await access(path); return path; } catch { /* Try the next SDK, then PATH. */ }
-  }
-  return "adb";
-}
-
-export async function listAndroidLogDevices(): Promise<{ id: string; name: string }[]> {
-  const { stdout } = await execute(await adbPath(), ["devices", "-l"], { timeout: 5000, maxBuffer: 1024 * 1024 });
-  return stdout.split("\n").flatMap(line => {
-    const match = line.match(/^(\S+)\s+device(?:\s|$)(.*)/);
-    return match ? [{ id: match[1], name: match[2].match(/model:(\S+)/)?.[1].replace(/_/g, " ") ?? match[1] }] : [];
-  });
-}
 
 /**
  * Streams a log reader until it exits; resolves only when `signal` stopped it. `helper`

@@ -19,6 +19,7 @@ import type { PhysicalIosLogTarget } from "../src/physical-ios-logs.ts";
 import { startNativeLogs } from "../src/native-logs.ts";
 import { LogSessions } from "../src/log-sessions.ts";
 import { registerLogTools } from "../src/log-tools.ts";
+import { DeviceResolver } from "../src/devices.ts";
 import { Baguette } from "../src/baguette.ts";
 import { parseIOSLog } from "../src/log-parsers.ts";
 import { listIosDevices } from "../src/ios-devices.ts";
@@ -194,7 +195,7 @@ test("MCP validates physical devices independently of Baguette and closes the au
   }, metro: () => async () => {} });
   const server = new McpServer({ name: "physical-log-test", version: "1" });
   const baguette = new Baguette("http://127.0.0.1:1");
-  registerLogTools(server, logs, baguette, async () => [current]);
+  registerLogTools(server, logs, new DeviceResolver({ simulators: baguette, ios: async () => [current] }));
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "physical-log-client", version: "1" });
   t.after(async () => { await client.close(); await logs.close(); await server.close(); baguette.dispose(); });

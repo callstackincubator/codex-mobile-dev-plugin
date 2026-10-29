@@ -4,7 +4,7 @@ import { startIosCpuMonitor } from "./monitor.ts";
 import { openPhysicalDebugserver } from "./physical.ts";
 import { startAndroidCpuMonitor } from "./android.ts";
 import type { AndroidHelper } from "../collectors/android-helper.ts";
-import { adbPath } from "../native-logs.ts";
+import { adbPath } from "../android-sdk.ts";
 
 export type CpuMonitorOptions = {
   target: CpuTarget; pid: number; signal: AbortSignal; onSample: (sample: CpuReading) => void;

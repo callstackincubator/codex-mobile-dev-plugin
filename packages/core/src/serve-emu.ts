@@ -9,7 +9,7 @@ import { createServer } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import { bootAndroidEmulator, parseAvdName } from "./android-emulator.ts";
-import { adbPath } from "./native-logs.ts";
+import { adbDevices, adbPath, androidSdkRoots } from "./android-sdk.ts";
 import { parseBaseUrl } from "@mobile-dev/shared/protocol.ts";
 import type { SimulatorDevice, Status } from "@mobile-dev/shared/protocol.ts";
 import { annotateDeviceCommand, backendCommand } from "@mobile-dev/shared/device-command-diagnostics.ts";
@@ -18,7 +18,6 @@ import { isMissingFile, MissingRuntimeError } from "./install-integrity.ts";
 import { recordAndroidEmulatorReconnect, recordAndroidBackendStartup, recordAndroidStartupStages, recordAndroidStartupContext, recordAndroidStartupDeviceState, recordAndroidBackendStop } from "./telemetry.ts";
 import { androidStartupMessageSchema, androidDeviceState, setAndroidStartupDiagnostic } from "@mobile-dev/shared/android-startup-diagnostics.ts";
 import type { AndroidStartupContext, AndroidStartupFailure, AndroidStartupSummary } from "@mobile-dev/shared/android-startup-diagnostics.ts";
-import { androidSdkRoots } from "./android-sdk.ts";
 import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 import { androidIdSchema, avdId, isEmulatorSerial, isStoppedAvd } from "@mobile-dev/shared/android-ids.ts";
 
@@ -68,36 +67,27 @@ export class ServeEmu {
       const adb = await adbPath();
       const emulator = await this.emulatorPath();
       const [devices, avds] = await Promise.all([
-        execute(adb, ["devices", "-l"], { timeout: 5000, maxBuffer: 1024 * 1024 }),
+        adbDevices(adb),
         execute(emulator, ["-list-avds"], { timeout: 5000, maxBuffer: 1024 * 1024 }).catch(error => {
           if (error.code === "ENOENT") return { stdout: "" };
           throw error;
         }),
       ]);
-      const deviceLines = devices.stdout.split(/\r?\n/);
-      const runningReads = deviceLines.flatMap(line => {
-        const match = line.match(/^(\S+)\s+(device|offline|unauthorized)(?:\s|$)(.*)/);
-        if (!match) return [];
-        const parsedId = androidIdSchema.safeParse(match[1]);
-        if (parsedId.success === false) return [];
-        return [(async (): Promise<SimulatorDevice> => {
-          const rawModel = match[3].match(/(?:^|\s)model:(\S+)/)?.[1];
-          const model = rawModel?.replace(/_/g, " ");
-          let name = model ?? match[1];
-          const emulatorDevice = isEmulatorSerial(match[1]);
-          // The emulator console names the AVD before adb authorizes the device.
-          if (emulatorDevice) {
-            const response = await execute(adb, ["-s", match[1], "emu", "avd", "name"], { timeout: 3000 }).catch(() => undefined);
-            const avdName = parseAvdName(response?.stdout);
-            if (avdName) this.avdNames.set(match[1], avdName);
-            name = avdName ?? this.avdNames.get(match[1]) ?? name;
-          }
-          const identity = { udid: match[1], name, state: match[2] === "device" ? "Booted" : match[2], runtime: "Android", platform: "android" as const };
-          if (emulatorDevice) return { ...identity, kind: "emulator" };
-          const network = /:\d+$|\._adb(?:-tls-connect)?\._tcp\.?$/.test(match[1]);
-          const transportType = network ? "localNetwork" : "wired";
-          return { ...identity, kind: "physical", transportType, ...(model ? { model } : {}) };
-        })()];
+      const runningReads = devices.map(async ({ serial, state, model }): Promise<SimulatorDevice> => {
+        let name = model ?? serial;
+        const emulatorDevice = isEmulatorSerial(serial);
+        // The emulator console names the AVD before adb authorizes the device.
+        if (emulatorDevice) {
+          const response = await execute(adb, ["-s", serial, "emu", "avd", "name"], { timeout: 3000 }).catch(() => undefined);
+          const avdName = parseAvdName(response?.stdout);
+          if (avdName) this.avdNames.set(serial, avdName);
+          name = avdName ?? this.avdNames.get(serial) ?? name;
+        }
+        const identity = { udid: serial, name, state: state === "device" ? "Booted" : state, runtime: "Android", platform: "android" as const };
+        if (emulatorDevice) return { ...identity, kind: "emulator" };
+        const network = /:\d+$|\._adb(?:-tls-connect)?\._tcp\.?$/.test(serial);
+        const transportType = network ? "localNetwork" : "wired";
+        return { ...identity, kind: "physical", transportType, ...(model ? { model } : {}) };
       });
       const running = await Promise.all(runningReads);
       for (const serials of [this.avdNames, this.reconnects]) for (const serial of serials.keys()) if (!running.some(device => device.udid === serial)) serials.delete(serial);

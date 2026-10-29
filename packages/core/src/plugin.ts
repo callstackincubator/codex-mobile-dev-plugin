@@ -36,6 +36,7 @@ import { registerEarlierReleases } from "./earlier-releases.ts";
 import { Simctl } from "./simctl.ts";
 import type { Panel } from "./panel-tools.ts";
 import { DeviceSessions } from "./device-sessions.ts";
+import { DeviceResolver } from "./devices.ts";
 
 // Servers without the panel serve hosts that show devices themselves, when they can.
 const INSTRUCTIONS = "For mobile app development, read logs, record CPU, memory and FPS, and inspect app storage with these tools; control devices with the device_* tools when the server has them. Mobile Dev shows no device view here: when the user asks to open or see a simulator or emulator, use the host's own simulator view if it has one, such as Claude Code's iOS Simulator or Android Emulator. Use device IDs from tool results; never invent them. If a task has ambiguous device targets, ask the user with your own question tool when you have one, otherwise in chat; proceed only after they choose. Show recordings with mobile_render_performance_recording and comparisons with mobile_compare_performance_recordings. For a local CPU or React profile path, use mobile_analyze_profile to show TraceSift findings. See the Mobile Dev skill, when installed, for logs, profiles, and performance workflows.";
@@ -82,17 +83,18 @@ export function createPlugin(html: string | (() => Promise<UIResource>), options
   };
   const simulatorForeground = panel?.simulatorForeground ?? unknownSimulatorForeground;
   const drivers = createDrivers(systemCommands, simulatorForeground);
+  const resolver = new DeviceResolver({ simulators });
   registerIosDeviceTools(server);
-  registerLogTools(server, logs, simulators);
-  const validateCpuDevice = registerCpuTools(server, cpu, simulators, {
+  registerLogTools(server, logs, resolver);
+  registerCpuTools(server, cpu, resolver, {
     apps: (deviceId, signal, platform, kind) => readDeviceApps(deviceId, signal, platform, kind, { ...deviceAppSources, simulator: simulatorForeground }),
   });
   const recordings = new PerformanceRecordings(cpu, fps);
-  const showRecording = registerRecordingTools(server, recordings, validateCpuDevice);
+  const showRecording = registerRecordingTools(server, recordings, resolver);
   const traceSift = new TraceSiftClient();
   registerTraceSiftTools(server, traceSift);
   const stopRecordingStorageMetrics = startStorageMetrics({ recordings: recordings.store.directory });
-  registerDisplayFpsTools(server, fps);
+  registerDisplayFpsTools(server, fps, resolver);
   registerAppControlTools(server, drivers);
   registerAppStorageTools(server);
 

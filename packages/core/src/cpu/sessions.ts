@@ -1,6 +1,6 @@
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 import type { z } from "zod";
-import type { CpuBatch, CpuSample, CpuTarget, MemoryMetric } from "@mobile-dev/shared/cpu.ts";
+import type { CpuBatch, CpuSample, CpuTarget } from "@mobile-dev/shared/cpu.ts";
 import { cpuTargetSchema } from "@mobile-dev/shared/cpu.ts";
 import { runningDeviceApps } from "../device-apps/apps.ts";
 import { CpuBuffer } from "./buffer.ts";
@@ -9,6 +9,7 @@ import type { CpuMonitorOptions } from "./source.ts";
 import { androidCpuCollector } from "./android.ts";
 import { CollectorSession, androidKind } from "../collector-session.ts";
 import { SessionRegistry } from "../session-registry.ts";
+import { deviceCapabilities } from "../devices.ts";
 import type { CpuMonitor } from "./monitor.ts";
 
 type Session = { target: CpuTarget; buffer: CpuBuffer; collector: CollectorSession<CpuSample> };
@@ -37,8 +38,7 @@ export class CpuSessions {
 
   open(input: z.input<typeof cpuTargetSchema>): string {
     const target = cpuTargetSchema.parse(input);
-    const memoryMetric: MemoryMetric = target.platform === "android" ? "rss" : "physical-footprint";
-    const buffer = new CpuBuffer(memoryMetric);
+    const buffer = new CpuBuffer(deviceCapabilities(target).memoryMetric);
     const kind = target.platform === "android" ? androidKind(target.deviceId) : target.kind ?? "simulator";
     const collector: CollectorSession<CpuSample> = new CollectorSession(buffer, {
       attach: signal => this.attach(target, buffer, collector, signal), readyOnAttach: true, abortOnStop: "before-attach",
