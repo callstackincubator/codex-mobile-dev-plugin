@@ -61,9 +61,9 @@ export type PluginOptions = {
   features?: ServerFeature[];
 };
 
-export async function createPlugin(html: string | (() => Promise<UIResource>), options: PluginOptions = {}) {
+export function createPlugin(html: string | (() => Promise<UIResource>), options: PluginOptions = {}) {
   const { panel, simulators = new Simctl(), logs = new LogSessions(), android = new ServeEmu(), features = [] } = options;
-  const cpu = options.cpu ?? await createCpuSessions();
+  const cpu = options.cpu ?? createCpuSessions();
   const fps = new DisplayFpsSessions();
   const server = new McpServer({ name: "mobile-dev", version: PLUGIN_VERSION }, { instructions: panel?.instructions ?? INSTRUCTIONS });
   instrumentMcpServer(server);

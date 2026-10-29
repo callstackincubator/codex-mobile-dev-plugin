@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import type { DisplayFpsTarget } from "@mobile-dev/shared/display-fps.ts";
 import { adbPath } from "../native-logs.ts";
-import { deployFpsHelper } from "./android-helper.ts";
+import { androidHelper } from "../collectors/android-helper.ts";
 import { startCollector } from "../collectors/process.ts";
 import type { Collector, CollectorOptions } from "../collectors/process.ts";
 import { FrameTimeline } from "./frame-timeline.ts";
@@ -66,7 +66,8 @@ async function startAndroid(options: FpsMonitorOptions, root: URL): Promise<Coll
   if (sources.stdout.includes("android.surfaceflinger.frametimeline") === false) {
     throw new Error("This Android device does not expose the Perfetto FrameTimeline source.");
   }
-  const remote = await deployFpsHelper(adb, options.target.deviceId, options.signal, root);
+  const helper = androidHelper("mobile-dev-fps", root, "Android FPS helper");
+  const remote = await helper.deploy(adb, options.target.deviceId, options.signal);
   const command = nativeCollectorCommand(remote);
   return startCollector({
     command: adb, args: [...prefix, "shell", "-T", command], signal: options.signal, ...timing, labels,

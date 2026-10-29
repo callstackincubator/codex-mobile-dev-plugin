@@ -1,74 +1,18 @@
-import { execFile, spawn } from "node:child_process";
-import { promisify } from "node:util";
-import { createHash, randomBytes } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { z } from "zod";
+import { spawn } from "node:child_process";
 import { adbPath } from "../native-logs.ts";
 import type { CpuReading } from "./counters.ts";
 import { AndroidCpuSampler, androidReadySchema, androidSampleSchema } from "./android-counters.ts";
 import { nativeCollectorCommand } from "../native-telemetry.ts";
+import { androidHelper } from "../collectors/android-helper.ts";
+import type { AndroidHelper } from "../collectors/android-helper.ts";
 import { startCollector } from "../collectors/process.ts";
 import type { Collector, CollectorOptions } from "../collectors/process.ts";
 
-const execute = promisify(execFile);
-const abiSchema = z.enum(["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]);
-const releaseSchema = z.object({ binaries: z.record(z.string(), z.object({ sha256: z.string().regex(/^[a-f0-9]{64}$/) })) });
-export type AndroidCollector = ReadonlyMap<z.infer<typeof abiSchema>, { bytes: Buffer; sha256: string }>;
 type Options = { deviceId: string; pid: number; signal: AbortSignal; onSample: (sample: CpuReading) => void };
 const stalled = "The Android CPU collector stopped responding. Reconnect the device.";
-type Command = (adb: string, args: string[], signal?: AbortSignal) => Promise<string>;
-const command: Command = async (adb, args, signal) => {
-  const result = await execute(adb, args, { signal, timeout: 10000, maxBuffer: 1024 * 1024 });
-  return result.stdout;
-};
 
-export async function loadAndroidCollector(root: URL): Promise<AndroidCollector> {
-  const manifest = new URL("release.json", root);
-  const releaseText = await readFile(manifest, "utf8");
-  const releaseJson: unknown = JSON.parse(releaseText);
-  const release = releaseSchema.parse(releaseJson);
-  const collector = new Map<z.infer<typeof abiSchema>, { bytes: Buffer; sha256: string }>();
-  for (const abi of abiSchema.options) {
-    const local = new URL(`${abi}/mobile-dev-cpu`, root);
-    const bytes = await readFile(local);
-    const hash = createHash("sha256");
-    hash.update(bytes);
-    const sha256 = hash.digest("hex");
-    if (sha256 !== release.binaries[`${abi}/mobile-dev-cpu`]?.sha256) throw new Error(`The bundled Android CPU collector failed its integrity check for ${abi}.`);
-    collector.set(abi, { bytes, sha256 });
-  }
-  return collector;
-}
-
-export async function deployAndroidCollector(adb: string, deviceId: string, signal: AbortSignal,
-  collector: AndroidCollector, run: Command = command): Promise<string> {
-  signal.throwIfAborted();
-  const rawAbi = await run(adb, ["-s", deviceId, "shell", "getprop", "ro.product.cpu.abi"], signal);
-  const abiText = rawAbi.trim();
-  const abi = abiSchema.parse(abiText);
-  const binary = collector.get(abi);
-  if (binary === undefined) throw new Error(`The bundled Android CPU collector is missing ${abi}.`);
-  const remote = `/data/local/tmp/mobile-dev-cpu-${binary.sha256}`;
-  const token = randomBytes(8);
-  const tokenText = token.toString("hex");
-  const temporary = `${remote}-${tokenText}`;
-  const hostTemporary = tmpdir();
-  const prefix = join(hostTemporary, "mobile-dev-cpu-");
-  const directory = await mkdtemp(prefix);
-  const localPath = join(directory, "mobile-dev-cpu");
-  try {
-    await writeFile(localPath, binary.bytes, { mode: 0o600 });
-    signal.throwIfAborted();
-    await run(adb, ["-s", deviceId, "push", localPath, temporary], signal);
-    // Atomic replacement also permits another session to execute the same binary.
-    await run(adb, ["-s", deviceId, "shell", `chmod 700 ${temporary} && mv ${temporary} ${remote}`], signal);
-  } catch (error) {
-    await run(adb, ["-s", deviceId, "shell", "rm", "-f", temporary]).catch(() => {});
-    throw error;
-  } finally { await rm(directory, { recursive: true, force: true }); }
-  return remote;
+export function androidCpuCollector(root: URL): AndroidHelper {
+  return androidHelper("mobile-dev-cpu", root, "Android CPU collector");
 }
 
 export async function startAndroidCpuMonitor(options: Options, dependencies: {
