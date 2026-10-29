@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createComparisonSeries } from "../src/comparison-series.ts";
+import { createComparisonSeries, hasComparisonReadings } from "../src/comparison-series.ts";
 import { comparisonSchema, summarizeComparison } from "../../shared/src/performance-comparison.ts";
 import { recordingFixture } from "../../test-support/recording-fixtures.ts";
 
@@ -73,4 +73,10 @@ test("shared selections clip summaries to each run and reject active or duplicat
   second.status = "recording";
   const active = comparisonSchema.safeParse({ title: "Before / after", recordings: [first, second] });
   assert.equal(active.success, false);
+});
+
+test("a comparison track is available when any run has a reading", () => {
+  assert.equal(hasComparisonReadings([{ time: 0, run0: null, run1: null }, { time: 1, run0: null, run1: 4 }], 2), true);
+  assert.equal(hasComparisonReadings([{ time: 0, run0: null, run1: null }], 2), false);
+  assert.equal(hasComparisonReadings([], 2), false);
 });
