@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import type { PointerEvent, ReactNode } from "react";
+import type { PointerEvent } from "react";
 import { Area, AreaChart, CartesianGrid, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { ExternalLinkIcon, InfoIcon, MessageCircleIcon } from "lucide-react";
+import { ExternalLinkIcon, MessageCircleIcon } from "lucide-react";
 import type { RecordingController } from "../recording-controller.ts";
 import type { RecordingRange } from "@mobile-dev/shared/recordings.ts";
 import { summarizeRecording } from "@mobile-dev/shared/recordings.ts";
@@ -9,7 +9,7 @@ import { recordUiTiming } from "../telemetry.ts";
 import { createRecordingCpuSeries, createRecordingFpsSeries, findRecordingChangeRanges } from "../recording-series.ts";
 import type { RecordingPoint } from "../recording-series.ts";
 import { Button } from "./ui/button";
-import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
+import { InfoPopover as RecordingInfo } from "./card-parts";
 import { RecordingChartShape, recordingChartPoints } from "./recording-chart-shape";
 import { useMediaQuery } from "./use-media-query";
 
@@ -24,12 +24,6 @@ function memoryChange(value: number | null) {
 function seconds(value: number) { return `${value.toFixed(1)}s`; }
 function fpsReading(value: number | null) { return value === null ? "—" : value.toFixed(1); }
 function milliseconds(value: number | null) { return value === null ? "—" : `${value.toFixed(2)} ms`; }
-
-function RecordingInfo({ label, children }: { label: string; children: ReactNode }) {
-  return <Popover><PopoverTrigger asChild><Button variant="ghost" size="icon-xs" className="recording-info" aria-label={`About ${label}`} title={`About ${label}`}><InfoIcon /></Button></PopoverTrigger>
-    <PopoverContent className="recording-info-content" side="bottom" align="start" aria-label={`About ${label}`}>{children}</PopoverContent>
-  </Popover>;
-}
 
 function RecordingOverview({ duration, range, changes, onClear }: { duration: number; range?: RecordingRange; changes: RecordingRange[]; onClear: () => void }) {
   const position = (time: number) => Math.max(0, Math.min(100, time / duration * 100));

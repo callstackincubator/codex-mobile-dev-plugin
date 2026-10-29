@@ -71,7 +71,7 @@ test("comparison overlays, toggles, shared selections and Ask retain original ru
     await mounted.close();
     window.close();
     const encoded = telemetry.join("\n");
-    for (const fragment of ["ui.comparison.process.mean", "ui.comparison.derive.mean", "ui.comparison.summary.mean", "ui.comparison.commit.mean", "ui.comparison.runs", "ui.comparison.run_toggled", "ui.comparison.message_ack.mean", "ui.surface.ready.mean", '"surface":{"value":"comparison"', '"view":{"value":"comparison"']) {
+    for (const fragment of ["ui.comparison.process.mean", "ui.comparison.derive.mean", "ui.comparison.summary.mean", "ui.comparison.commit.mean", "ui.comparison.runs", "ui.comparison.run_toggled", "ui.comparison.change_selected", "ui.comparison.memory_scale_changed", "ui.comparison.message_ack.mean", "ui.surface.ready.mean", '"surface":{"value":"comparison"', '"view":{"value":"comparison"']) {
       assert.ok(encoded.includes(fragment), `Missing telemetry: ${fragment}`);
     }
     for (const fragment of [first.id, second.id, "PRIVATE_", "com.example.shop", "jankRatePercent", "p95FrameIntervalMs", "averageCpuPercent"]) {
@@ -104,9 +104,11 @@ test("comparison overlays, toggles, shared selections and Ask retain original ru
   await settle();
   const range = JSON.parse(JSON.stringify(mounted.controller.getSnapshot().range));
   assert.deepEqual(range, { start: 12, end: 18 });
-  const rows = window.document.querySelectorAll(".comparison-table tbody tr");
-  assert.ok(rows[0].textContent?.includes("12.0s–18.0s"));
-  assert.ok(rows[1].textContent?.includes("12.0s–15.0s"));
+  // The summary names the selection and where a shorter run only covers part of it.
+  const summary = () => window.document.querySelector(".comparison-summary")!.textContent!;
+  assert.ok(summary().includes("12.0s–18.0s"));
+  assert.ok(summary().includes("Run 2 covers 12.0s–15.0s."));
+  assert.equal(window.document.querySelectorAll(".comparison-measure").length, 6);
   const ask = window.document.querySelector<HTMLButtonElement>(".comparison-actions button");
   assert.ok(ask);
   ask.click();
@@ -125,16 +127,29 @@ test("comparison overlays, toggles, shared selections and Ask retain original ru
   assert.equal(mounted.controller.getSnapshot().comparison, before.comparison);
   mounted.controller.select({ start: 20, end: 25 });
   await settle();
-  assert.ok(rows[1].textContent?.includes("Outside run"));
+  assert.ok(summary().includes("Run 2 is outside the selection."));
+  // Sharp changes are listed in words, and choosing one selects it in every run.
+  const changes = [...window.document.querySelectorAll<HTMLButtonElement>(".comparison-change")];
+  assert.ok(changes.some(change => change.textContent?.includes("CPU 20%\u00a0→\u00a072%")));
+  assert.ok(changes.some(change => change.textContent?.includes("FPS dip to 30") || change.textContent?.includes("FPS 60\u00a0→\u00a030")));
+  changes.find(change => change.textContent?.includes("CPU 20%"))!.click();
+  await settle();
+  assert.deepEqual(JSON.parse(JSON.stringify(mounted.controller.getSnapshot().range)), { start: 11, end: 12 });
+  assert.equal(window.document.querySelector(".comparison-change[aria-pressed=\"true\"]")?.textContent?.includes("CPU 20%"), true);
+  // Change plots each run against its own first reading.
+  const scale = [...window.document.querySelectorAll<HTMLButtonElement>(".segmented-control button")].find(button => button.textContent === "Change")!;
+  scale.click();
+  await settle();
+  assert.equal(scale.getAttribute("aria-pressed"), "true");
   second.memoryMetric = "physical-footprint";
   second.target = { platform: "ios", kind: "simulator", deviceId: "B5C969F6-58A4-4C31-AB12-FB9E56D681DE", bundleId: "com.example.shop" };
   second.fps = { status: "unavailable", samples: [] };
   mounted.controller.accept({ content: [], structuredContent: { title: "Mixed memory definitions", recordings: [first, second] } });
   await settle();
   assert.equal(window.document.querySelectorAll(".recording-track").length, 4);
-  assert.ok(window.document.body.textContent?.includes("Memory · RSS · MiB"));
-  assert.ok(window.document.body.textContent?.includes("Memory · Physical footprint · MiB"));
-  const fpsChart = window.document.querySelector('[aria-label="Display FPS · device-wide"]');
+  assert.ok(window.document.body.textContent?.includes("Memory · RSS (MiB)"));
+  assert.ok(window.document.body.textContent?.includes("Memory · Physical footprint (MiB)"));
+  const fpsChart = window.document.querySelector('[aria-label="Display FPS"]');
   const fpsCurves = fpsChart?.querySelectorAll(".recharts-line-curve") ?? [];
   const renderedFpsCurves = Array.from(fpsCurves).filter(curve => {
     const path = curve.getAttribute("d");
