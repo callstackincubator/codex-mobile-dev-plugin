@@ -9,12 +9,12 @@ import { parseIOSLog, parseLogcat, parseMetroEvent } from "../src/log-parsers.ts
 import { LogBuffer } from "../src/log-buffer.ts";
 import { LogSessions } from "../src/log-sessions.ts";
 import { metroTargets, startMetroLogs } from "../src/metro-logs.ts";
-import { runLogProcess } from "../src/native-logs.ts";
+import { runLogProcess, superviseLogSource } from "../src/native-logs.ts";
 import { registerLogTools } from "../src/log-tools.ts";
 import { DeviceResolver } from "../src/devices.ts";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { stackLogs, formatLogContext, logOptionsSchema } from "../../shared/src/logs.ts";
-import type { LogEntry, LogRecord } from "../../shared/src/logs.ts";
+import type { LogEntry, LogRecord, LogSourceStatus } from "../../shared/src/logs.ts";
 import type { LogSink } from "../src/native-logs.ts";
 import { createTestPlugin, fakeSimctl, UDID, OTHER_UDID } from "../../test-support/fixtures.ts";
 
@@ -157,6 +157,27 @@ test("MCP log sessions validate devices and expose batches without browser netwo
   assert.equal(unauthorized.isError, true);
   await client.callTool({ name: "mobile_logs_close", arguments: { sessionId: opened._meta?.sessionId } });
   assert.equal(stopped, true); await assert.rejects(client.readResource({ uri: opened._meta?.logsUri as string }), /expired or closed/);
+});
+
+test("a supervised log source reconnects after a failure and reports each phase", async () => {
+  const statuses: LogSourceStatus[] = [];
+  let attempts = 0;
+  let second!: () => void;
+  const reconnected = new Promise<void>(resolve => { second = resolve; });
+  let stopped = false;
+  const stop = superviseLogSource("native", { log() {}, status: status => statuses.push(status) }, async signal => {
+    if (++attempts === 1) throw new Error("Reader exited.");
+    second();
+    await new Promise(resolve => signal.addEventListener("abort", resolve, { once: true }));
+  }, () => { stopped = true; });
+  await reconnected;
+  await stop();
+  assert.deepEqual(statuses, [
+    { source: "native", state: "connecting" },
+    { source: "native", state: "reconnecting", message: "Reader exited." },
+    { source: "native", state: "reconnecting" },
+  ]);
+  assert.equal(stopped, true);
 });
 
 test("log sources list Android and Metro at once and keep Android's error first", async t => {
