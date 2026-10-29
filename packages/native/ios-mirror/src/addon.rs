@@ -1,10 +1,18 @@
-use crate::{input::TouchSample, queue::Queue, session::{self, Command, Shared}};
+use crate::{error::{ErrorCode, MirrorError}, input::TouchSample, queue::Queue, session::{self, Command, Shared}};
 
 use std::{sync::{Arc, Mutex}, time::Duration};
 
 use napi::{bindgen_prelude::Buffer, Error, Result};
 use napi_derive::napi;
 use tokio::sync::{Notify, mpsc};
+
+fn js_error(error: MirrorError) -> Error {
+    Error::from_reason(error.reason())
+}
+
+fn failure(code: ErrorCode, message: &str) -> Error {
+    js_error(MirrorError::new(code, message))
+}
 
 #[napi_derive::module_init]
 pub fn initialize_telemetry() {
@@ -52,8 +60,8 @@ impl Capture {
         };
         if waiting { let _ = tokio::time::timeout(Duration::from_secs(1), wait).await; }
         let mut queue = self.shared.queue.lock().unwrap();
-        if let Some(error) = &queue.error { return Err(Error::from_reason(error.clone())); }
-        if queue.closed { return Err(Error::from_reason("The physical device stream closed.")); }
+        if let Some(error) = &queue.error { return Err(js_error(error.clone())); }
+        if queue.closed { return Err(failure(ErrorCode::StreamClosed, "The physical device stream closed.")); }
         let configuration = if queue.configuration_pending {
             queue.configuration_pending = false;
             queue.configuration.as_ref().map(|value| VideoConfiguration {
@@ -74,14 +82,15 @@ impl Capture {
     #[napi]
     pub async fn touch(&self, samples: Vec<TouchSample>, generation: u32) -> Result<()> {
         let _timing = mobile_dev_telemetry::Timer::start(mobile_dev_telemetry::Timing::Input);
-        if samples.is_empty() || samples.len() > 64 { return Err(Error::from_reason("Send between one and 64 physical iOS touch samples.")); }
+        if samples.is_empty() || samples.len() > 64 { return Err(failure(ErrorCode::InputInvalid, "Send between one and 64 physical iOS touch samples.")); }
         let (reply, received) = tokio::sync::oneshot::channel();
         let command = Command::Touch { samples, generation, reply };
-        self.commands.send(command).map_err(|_| Error::from_reason("The physical iOS input session closed."))?;
+        let closed = || failure(ErrorCode::InputUnavailable, "The physical iOS input session closed.");
+        self.commands.send(command).map_err(|_| closed())?;
         let result = tokio::time::timeout(Duration::from_secs(4), received).await;
-        let response = result.map_err(|_| Error::from_reason("The physical iOS input timed out."))?;
-        let delivered = response.map_err(|_| Error::from_reason("The physical iOS input session closed."))?;
-        delivered.map_err(Error::from_reason)
+        let response = result.map_err(|_| failure(ErrorCode::InputTimeout, "The physical iOS input timed out."))?;
+        let delivered = response.map_err(|_| closed())?;
+        delivered.map_err(js_error)
     }
 
     #[napi]
@@ -114,7 +123,7 @@ pub async fn open_device(udid: String) -> Result<Capture> {
                 let response = Err(message);
                 let _ = started.send(response);
             }
-            eprintln!("[mobile-dev:ios-mirror] capture_failed error={error}");
+            eprintln!("[mobile-dev:ios-mirror] capture_failed code={} error={error}", error.code);
         }
         let mut queue = worker_shared.queue.lock().unwrap();
         queue.error = result.err();
@@ -128,11 +137,8 @@ pub async fn open_device(udid: String) -> Result<Capture> {
     let startup = tokio::time::timeout(Duration::from_secs(30), ready).await;
     match startup {
         Ok(Ok(Ok(()))) => Ok(Capture { shared, commands: sender }),
-        Ok(Ok(Err(message))) => Err(Error::from_reason(message)),
-        Ok(Err(_)) => {
-            let error = Error::from_reason("The physical device capture worker stopped during setup.");
-            Err(error)
-        },
-        _ => { let _ = sender.send(Command::Close); Err(Error::from_reason("Timed out opening the physical device display.")) }
+        Ok(Ok(Err(error))) => Err(js_error(error)),
+        Ok(Err(_)) => Err(failure(ErrorCode::Internal, "The physical device capture worker stopped during setup.")),
+        _ => { let _ = sender.send(Command::Close); Err(failure(ErrorCode::StartTimeout, "Timed out opening the physical device display.")) }
     }
 }

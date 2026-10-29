@@ -5,6 +5,7 @@ import type { MirrorRequest } from "./ios-mirror-rpc.ts";
 import type { IosCapture } from "./ios-native-capture.ts";
 import type { IosMirrorHub } from "./ios-mirror-hub.ts";
 import { IosMirrorInputBusyError } from "@mobile-dev/shared/ios-mirror-errors.ts";
+import { expectedOutcome } from "@mobile-dev/shared/error-reporting.ts";
 
 export function createIosMirrorServer(hub: IosMirrorHub, idle: () => void, active: () => void) {
   const sockets = new Set<Socket>();
@@ -41,7 +42,7 @@ export function createIosMirrorServer(hub: IosMirrorHub, idle: () => void, activ
         try { const result = await handle(request); reply = { id: request.id, result }; }
         catch (error) {
           const message = error instanceof Error ? error.message : "Shared physical iOS capture failed.";
-          reply = { id: request.id, error: message.slice(0, 4096), inputBusy: error instanceof IosMirrorInputBusyError };
+          reply = { id: request.id, error: message.slice(0, 4096), inputBusy: error instanceof IosMirrorInputBusyError, outcome: expectedOutcome(error) };
         }
         if (socket.destroyed) return;
         const encoded = JSON.stringify(reply);

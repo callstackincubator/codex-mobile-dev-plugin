@@ -83,7 +83,8 @@ export async function connectIosCapture(path: string, udid: string): Promise<Ios
           clearTimeout(request.timer);
           pending.delete(reply.id);
           if (reply.error) {
-            const error = reply.inputBusy ? new IosMirrorInputBusyError() : new Error(reply.error);
+            const error = reply.inputBusy ? new IosMirrorInputBusyError()
+              : reply.outcome ? new ExpectedOperationError(reply.outcome, reply.error) : new Error(reply.error);
             request.reject(error);
           }
           else request.resolve(reply);

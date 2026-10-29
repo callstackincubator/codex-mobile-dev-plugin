@@ -10,6 +10,7 @@ use tokio::sync::{Notify, mpsc, oneshot};
 use uuid::Uuid;
 
 use crate::{codec, control::{self, Control}, input::{TouchClient, TouchSample}, queue::{Frame, Queue}, recovery::KeyframeRecovery};
+use crate::error::{ErrorCode, MirrorError, Result};
 use crate::media::{hevc::{HevcAccessUnit, HevcAccessUnitAssembler, HevcDepacketizerEvent, HevcDiscontinuity},
     negotiation::{CallInfoBlob, ScreenVideoStream, build_screen_audio_offer, build_screen_video_offer, parse_screen_video_answer}, rtcp, rtp::RtpPacket};
 
@@ -26,33 +27,47 @@ pub struct Shared {
 pub enum Command {
     RequestKeyframe,
     Close,
-    Touch { samples: Vec<TouchSample>, generation: u32, reply: oneshot::Sender<Result<(), String>> },
+    Touch { samples: Vec<TouchSample>, generation: u32, reply: oneshot::Sender<Result<()>> },
 }
 
-pub type Started = Option<oneshot::Sender<Result<(), String>>>;
+pub type Started = Option<oneshot::Sender<Result<()>>>;
 
-async fn setup<T, E: std::fmt::Display>(deadline: tokio::time::Instant, operation: impl Future<Output = Result<T, E>>) -> Result<T, String> {
+/// Bounds a setup step by the capture's setup deadline.
+async fn setup<T>(deadline: tokio::time::Instant, operation: impl Future<Output = Result<T>>) -> Result<T> {
     let result = tokio::time::timeout_at(deadline, operation).await;
-    result.map_err(|_| SETUP_TIMEOUT.to_string())?.map_err(|error| error.to_string())
+    result.map_err(|_| MirrorError::new(ErrorCode::ConnectTimeout, SETUP_TIMEOUT))?
 }
 
-fn connection_id(response: &plist::Value) -> Result<u64, String> {
+/// Like `setup`, for an idevice transport step whose failure means the connection failed.
+async fn connect<T, E: std::fmt::Display>(deadline: tokio::time::Instant, operation: impl Future<Output = std::result::Result<T, E>>) -> Result<T> {
+    setup(deadline, async { operation.await.map_err(MirrorError::from_display(ErrorCode::ConnectFailed)) }).await
+}
+
+fn negotiation(message: &str) -> MirrorError {
+    MirrorError::new(ErrorCode::NegotiationFailed, message)
+}
+
+fn stream_failed<E: std::fmt::Display>(error: E) -> MirrorError {
+    MirrorError::new(ErrorCode::StreamFailed, error.to_string())
+}
+
+fn connection_id(response: &plist::Value) -> Result<u64> {
     response.as_dictionary().and_then(|d| d.get("connection")).and_then(plist::Value::as_dictionary)
         .and_then(|d| d.get("streamConfig")).and_then(plist::Value::as_dictionary)
         .and_then(|d| d.get("RemoteSSRC")).and_then(plist::Value::as_unsigned_integer)
         .filter(|id| *id > 0 && *id <= u64::from(u32::MAX))
-        .ok_or_else(|| "The device returned no stream identity.".into())
+        .ok_or_else(|| negotiation("The device returned no stream identity."))
 }
 
 /// Runs a capture until a close command or failure, signalling `started` once
 /// frames can flow.
-pub async fn run(udid: &str, shared: &Shared, mut commands: mpsc::UnboundedReceiver<Command>, started: &mut Started) -> Result<(), String> {
+pub async fn run(udid: &str, shared: &Shared, mut commands: mpsc::UnboundedReceiver<Command>, started: &mut Started) -> Result<()> {
     let deadline = tokio::time::Instant::now() + SETUP_DEADLINE;
     let tunnel = mobile_dev_device_tunnel::open(udid, "mobile-dev", Some(deadline)).await.map_err(|error| match error {
-        TunnelError::DeviceNotFound => "The iPhone is no longer connected. Check USB or Wi-Fi pairing in Xcode.".to_string(),
-        TunnelError::Timeout => SETUP_TIMEOUT.to_string(),
-        TunnelError::SoftwareTunnel(error) => format!("Could not create the developer tunnel: {error}"),
-        error => error.to_string(),
+        TunnelError::DeviceNotFound => MirrorError::new(ErrorCode::DeviceNotFound, "The iPhone is no longer connected. Check USB or Wi-Fi pairing in Xcode."),
+        TunnelError::Timeout => MirrorError::new(ErrorCode::ConnectTimeout, SETUP_TIMEOUT),
+        TunnelError::SoftwareTunnel(error) => MirrorError::new(ErrorCode::ConnectFailed, format!("Could not create the developer tunnel: {error}")),
+        error => MirrorError::new(ErrorCode::ConnectFailed, error.to_string()),
     })?;
     let Tunnel { handshake, mut adapter } = tunnel;
     let result = async {
@@ -74,13 +89,13 @@ struct Display {
 }
 
 impl Display {
-    async fn release_touch(&mut self) -> Result<(), String> {
+    async fn release_touch(&mut self) -> Result<()> {
         if let Some(touch) = self.touch.as_mut() { touch.release().await?; }
         Ok(())
     }
 
     /// Releases a held touch and stops the media streams, each within two seconds.
-    async fn stop(&mut self) -> Result<(), String> {
+    async fn stop(&mut self) -> Result<()> {
         if let Some(touch) = self.touch.as_mut() {
             let released = tokio::time::timeout(Duration::from_secs(2), touch.release()).await;
             if !matches!(released, Ok(Ok(()))) {
@@ -88,16 +103,18 @@ impl Display {
             }
         }
         let stop = tokio::time::timeout(Duration::from_secs(2), self.control.stop(&self.ids)).await;
-        stop.map_err(|_| "Timed out stopping the physical display stream.".to_string())?
+        stop.map_err(|_| MirrorError::new(ErrorCode::StopTimeout, "Timed out stopping the physical display stream."))?
     }
 }
 
-async fn open_session<'a>(shared: &'a Shared, handshake: &RsdHandshake, adapter: &mut AdapterHandle, deadline: tokio::time::Instant) -> Result<Session<'a>, String> {
-    let port = handshake.services.get("com.apple.coredevice.displayservice").ok_or("The iPhone does not expose its display service. Enable Developer Mode.")?.port;
-    let stream = setup(deadline, adapter.connect(port)).await?;
+async fn open_session<'a>(shared: &'a Shared, handshake: &RsdHandshake, adapter: &mut AdapterHandle, deadline: tokio::time::Instant) -> Result<Session<'a>> {
+    let service = handshake.services.get("com.apple.coredevice.displayservice");
+    let unavailable = || MirrorError::new(ErrorCode::DisplayServiceUnavailable, "The iPhone does not expose its display service. Enable Developer Mode.");
+    let port = service.ok_or_else(unavailable)?.port;
+    let stream = connect(deadline, adapter.connect(port)).await?;
     let control = setup(deadline, Control::new(stream)).await?;
-    let audio = setup(deadline, adapter.bind_udp(0)).await?;
-    let video = setup(deadline, adapter.bind_udp(0)).await?;
+    let audio = connect(deadline, adapter.bind_udp(0)).await?;
+    let video = connect(deadline, adapter.bind_udp(0)).await?;
     let mut display = Display { control, ids: Vec::with_capacity(2), touch: None };
     let our_ssrc = Uuid::new_v4().as_u128() as u32;
     let negotiated = negotiate(&mut display, handshake, adapter, &audio, &video, our_ssrc, deadline).await;
@@ -113,29 +130,30 @@ async fn open_session<'a>(shared: &'a Shared, handshake: &RsdHandshake, adapter:
 
 /// Starts the audio and video media streams and connects touch input.
 async fn negotiate(display: &mut Display, handshake: &RsdHandshake, adapter: &mut AdapterHandle, audio: &UdpSocketHandle, video: &UdpSocketHandle,
-    our_ssrc: u32, deadline: tokio::time::Instant) -> Result<(ScreenVideoStream, u16), String> {
+    our_ssrc: u32, deadline: tokio::time::Instant) -> Result<(ScreenVideoStream, u16)> {
     let receiver_ip = adapter.host_ip().to_string();
     let sender_ip = adapter.peer_ip().to_string();
     let session = Uuid::new_v4();
     let call_info = CallInfoBlob { call_id: 0, client_version: 1, device_type: "Mac17,7".into(), framework_version: "2205.3.1".into(), os_version: "25F71".into(), device_name: None, audio_device_uid: None };
     let call_id = Uuid::new_v4().to_string().to_uppercase();
-    let offer = build_screen_audio_offer(&call_id, &call_info).map_err(|e| e.to_string())?;
+    let offer = build_screen_audio_offer(&call_id, &call_info).map_err(MirrorError::from_display(ErrorCode::NegotiationFailed))?;
     let params = build_start_audio_parameters(&receiver_ip, audio.local_port(), &sender_ip, 50000, offer, 140, session);
     let start = display.control.invoke("com.apple.coredevice.feature.startmediastream", params, None);
     let answer = setup(deadline, start).await?;
     display.ids.push(connection_id(&answer)?);
     let call_id = Uuid::new_v4().to_string().to_uppercase();
-    let offer = build_screen_video_offer(&call_id, &call_info, our_ssrc).map_err(|e| e.to_string())?;
+    let offer = build_screen_video_offer(&call_id, &call_info, our_ssrc).map_err(MirrorError::from_display(ErrorCode::NegotiationFailed))?;
     let params = build_start_video_parameters(&receiver_ip, video.local_port(), &sender_ip, 50001, offer, 140, 1, session);
     let start = display.control.invoke("com.apple.coredevice.feature.startmediastream", params, None);
     let answer = setup(deadline, start).await?;
     display.ids.push(connection_id(&answer)?);
     let feedback_port = control::sender_port(&answer)?;
-    let answer = answer.as_dictionary().and_then(|d| d.get("negotiatorAnswer")).and_then(plist::Value::as_data).ok_or("No HEVC negotiation answer.")?;
-    let media = parse_screen_video_answer(answer).map_err(|e| e.to_string())?;
-    let hid_port = handshake.services.get("com.apple.coredevice.hid.universalhidservice")
-        .ok_or("The iPhone does not expose its touch-input service. Prepare it with Xcode 27 and enable Developer Mode.")?.port;
-    let stream = setup(deadline, adapter.connect(hid_port)).await?;
+    let answer = answer.as_dictionary().and_then(|d| d.get("negotiatorAnswer")).and_then(plist::Value::as_data).ok_or_else(|| negotiation("No HEVC negotiation answer."))?;
+    let media = parse_screen_video_answer(answer).map_err(MirrorError::from_display(ErrorCode::NegotiationFailed))?;
+    let service = handshake.services.get("com.apple.coredevice.hid.universalhidservice");
+    let unavailable = || MirrorError::new(ErrorCode::TouchServiceUnavailable, "The iPhone does not expose its touch-input service. Prepare it with Xcode 27 and enable Developer Mode.");
+    let hid_port = service.ok_or_else(unavailable)?.port;
+    let stream = connect(deadline, adapter.connect(hid_port)).await?;
     display.touch = Some(setup(deadline, TouchClient::connect(stream)).await?);
     eprintln!("[mobile-dev:ios-mirror] capture_started receiver_ssrc={our_ssrc} media_ssrc={} feedback_port={feedback_port}", media.ssrc);
     Ok((media, feedback_port))
@@ -178,7 +196,7 @@ impl<'a> Session<'a> {
             frame_count: 0, highest_sequence: 0, video_packets: 0, last_video_packet: origin, first_timestamp: None, configuration_revision: 0 }
     }
 
-    async fn stream(&mut self, commands: &mut mpsc::UnboundedReceiver<Command>) -> Result<(), String> {
+    async fn stream(&mut self, commands: &mut mpsc::UnboundedReceiver<Command>) -> Result<()> {
         let mut interval = tokio::time::interval(FEEDBACK_INTERVAL);
         loop {
             tokio::select! {
@@ -187,16 +205,16 @@ impl<'a> Session<'a> {
                     Some(command) => self.on_command(command).await?,
                 },
                 _ = interval.tick() => self.on_tick().await?,
-                datagram = self.audio.recv() => { datagram.map_err(|e| e.to_string())?; },
+                datagram = self.audio.recv() => { datagram.map_err(stream_failed)?; },
                 datagram = self.video.recv() => {
-                    let datagram = datagram.map_err(|e| e.to_string())?;
+                    let datagram = datagram.map_err(stream_failed)?;
                     self.on_video(datagram).await?;
                 },
             }
         }
     }
 
-    async fn on_command(&mut self, command: Command) -> Result<(), String> {
+    async fn on_command(&mut self, command: Command) -> Result<()> {
         match command {
             Command::Close => Ok(()),
             Command::RequestKeyframe => { self.recovery.request(Instant::now()); Ok(()) },
@@ -206,12 +224,12 @@ impl<'a> Session<'a> {
                     queue.generation == generation && queue.configuration.is_some() && !queue.closed
                 };
                 let operation = async {
-                    if !available { return Err("Wait for a fresh physical iOS screen before sending input.".to_string()); }
-                    let touch = self.display.touch.as_mut().ok_or("Physical iOS touch input is unavailable.")?;
+                    if !available { return Err(MirrorError::new(ErrorCode::InputStale, "Wait for a fresh physical iOS screen before sending input.")); }
+                    let touch = self.display.touch.as_mut().ok_or_else(|| MirrorError::new(ErrorCode::InputUnavailable, "Physical iOS touch input is unavailable."))?;
                     touch.send(samples).await
                 };
                 let result = tokio::time::timeout(Duration::from_secs(2), operation).await;
-                let result = result.unwrap_or_else(|_| Err("The physical iOS touch service timed out.".into()));
+                let result = result.unwrap_or_else(|_| Err(MirrorError::new(ErrorCode::InputTimeout, "The physical iOS touch service timed out.")));
                 let failure = result.as_ref().err().cloned();
                 let _ = reply.send(result);
                 failure.map_or(Ok(()), Err)
@@ -220,15 +238,15 @@ impl<'a> Session<'a> {
     }
 
     /// Sends receiver feedback and, while recovering, a paced keyframe request.
-    async fn on_tick(&mut self) -> Result<(), String> {
+    async fn on_tick(&mut self) -> Result<()> {
         let our_ssrc = self.our_ssrc;
         let clock = self.origin.elapsed().as_millis() as u16;
         let report = rtcp::build_rctl(our_ssrc, clock, self.frame_count, self.highest_sequence);
-        self.video.send_to(self.feedback_port, report).await.map_err(|e| e.to_string())?;
+        self.video.send_to(self.feedback_port, report).await.map_err(stream_failed)?;
         let now = Instant::now();
         let Some(fir_sequence) = self.recovery.due(now) else { return Ok(()); };
         let feedback = rtcp::build_keyframe_request(our_ssrc, "mobile-dev", self.media.ssrc, &[], fir_sequence);
-        self.video.send_to(self.feedback_port, feedback).await.map_err(|e| e.to_string())?;
+        self.video.send_to(self.feedback_port, feedback).await.map_err(stream_failed)?;
         let waiting_ms = self.recovery.waiting(now).as_millis();
         let packet_idle_ms = self.last_video_packet.elapsed().as_millis();
         eprintln!("[mobile-dev:ios-mirror] keyframe_requested receiver_ssrc={our_ssrc} feedback_port={} fir_sequence={fir_sequence} waiting_ms={waiting_ms} video_packets={} packet_idle_ms={packet_idle_ms}",
@@ -236,7 +254,7 @@ impl<'a> Session<'a> {
         Ok(())
     }
 
-    async fn on_video(&mut self, datagram: UdpDatagram) -> Result<(), String> {
+    async fn on_video(&mut self, datagram: UdpDatagram) -> Result<()> {
         if rtcp::is_rtcp(&datagram.data) { return Ok(()); }
         let Some(packet) = RtpPacket::parse(&datagram.data) else {
             return self.invalidate(Invalidation::MalformedRtp { bytes: datagram.data.len() }).await;
@@ -264,14 +282,14 @@ impl<'a> Session<'a> {
         Ok(())
     }
 
-    async fn on_access_unit(&mut self, unit: HevcAccessUnit) -> Result<(), String> {
+    async fn on_access_unit(&mut self, unit: HevcAccessUnit) -> Result<()> {
         let our_ssrc = self.our_ssrc;
         self.frame_count = self.frame_count.wrapping_add(1);
         let acknowledgment = rtcp::build_frame_ack(our_ssrc, unit.rtp_timestamp);
-        self.video.send_to(self.feedback_port, acknowledgment).await.map_err(|e| e.to_string())?;
+        self.video.send_to(self.feedback_port, acknowledgment).await.map_err(stream_failed)?;
         let configuration = if unit.parameter_set_revision != self.configuration_revision {
-            let parameters = self.assembler.parameter_sets().ok_or("Missing HEVC configuration.")?;
-            Some(codec::configuration(parameters)?)
+            let parameters = self.assembler.parameter_sets().ok_or_else(|| stream_failed("Missing HEVC configuration."))?;
+            Some(codec::configuration(parameters).map_err(stream_failed)?)
         } else { None };
         if let Some(configuration) = &configuration { self.configuration_revision = configuration.revision; }
         let first = *self.first_timestamp.get_or_insert(unit.rtp_timestamp);
@@ -303,7 +321,7 @@ impl<'a> Session<'a> {
 
     /// Restarts decoding from the next keyframe. A new queue generation also
     /// invalidates the panel's touch, so a held touch is released first.
-    async fn invalidate(&mut self, invalidation: Invalidation) -> Result<(), String> {
+    async fn invalidate(&mut self, invalidation: Invalidation) -> Result<()> {
         if !matches!(invalidation, Invalidation::MalformedRtp { .. }) { self.display.release_touch().await?; }
         if !matches!(invalidation, Invalidation::Discontinuity { .. }) { self.assembler.mark_stream_discontinuity(); }
         let started = self.recovery.request(Instant::now());

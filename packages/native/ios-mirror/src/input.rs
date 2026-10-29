@@ -3,6 +3,11 @@ use idevice::{ReadWrite, RemoteXpcClient, core_device::hid::{
     TOUCHSCREEN_STATE_CONTACT, TOUCHSCREEN_STATE_RELEASE,
 }};
 use std::time::{Duration, Instant};
+use crate::error::{ErrorCode, MirrorError, Result};
+
+fn invalid(message: &str) -> MirrorError {
+    MirrorError::new(ErrorCode::InputInvalid, message)
+}
 
 #[cfg_attr(not(test), napi_derive::napi(object))]
 #[derive(Clone, Copy, Debug)]
@@ -17,9 +22,9 @@ pub struct TouchSample {
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Point { x: u16, y: u16 }
 
-fn normalized(value: f64, size: f64) -> Result<u16, String> {
+fn normalized(value: f64, size: f64) -> Result<u16> {
     if !value.is_finite() || !size.is_finite() || size <= 0.0 || size > 10000.0 || value < 0.0 || value > size {
-        return Err("Invalid physical iOS touch coordinates.".into());
+        return Err(invalid("Invalid physical iOS touch coordinates."));
     }
     let scaled = value / size * f64::from(u16::MAX);
     let rounded = scaled.round();
@@ -30,16 +35,16 @@ fn normalized(value: f64, size: f64) -> Result<u16, String> {
 struct TouchState { active: Option<Point> }
 
 impl TouchState {
-    fn prepare(&self, sample: TouchSample) -> Result<(Point, u8), String> {
+    fn prepare(&self, sample: TouchSample) -> Result<(Point, u8)> {
         let x = normalized(sample.x, sample.width)?;
         let y = normalized(sample.y, sample.height)?;
         let point = Point { x, y };
         match (self.active, sample.phase) {
             (None, 0) | (Some(_), 1) => Ok((point, TOUCHSCREEN_STATE_CONTACT)),
             (Some(_), 2) => Ok((point, TOUCHSCREEN_STATE_RELEASE)),
-            (Some(_), 0) => Err("The physical iOS touch is already down.".into()),
-            (None, 1 | 2) => Err("The physical iOS touch must be down first.".into()),
-            _ => Err("Invalid physical iOS touch phase.".into()),
+            (Some(_), 0) => Err(invalid("The physical iOS touch is already down.")),
+            (None, 1 | 2) => Err(invalid("The physical iOS touch must be down first.")),
+            _ => Err(invalid("Invalid physical iOS touch phase.")),
         }
     }
 }
@@ -53,26 +58,26 @@ pub struct TouchClient<R: ReadWrite> {
 }
 
 impl<R: ReadWrite> TouchClient<R> {
-    pub async fn connect(stream: R) -> Result<Self, String> {
+    pub async fn connect(stream: R) -> Result<Self> {
         let result = RemoteXpcClient::new(stream).await;
-        let mut remote = result.map_err(|error| error.to_string())?;
+        let mut remote = result.map_err(MirrorError::from_display(ErrorCode::ConnectFailed))?;
         let handshake = remote.do_handshake().await;
-        handshake.map_err(|error| error.to_string())?;
+        handshake.map_err(MirrorError::from_display(ErrorCode::ConnectFailed))?;
         let mut hid = UniversalHidServiceClient::new(remote);
         let result = hid.list_connected_services().await;
-        let surfaces = result.map_err(|error| error.to_string())?;
+        let surfaces = result.map_err(MirrorError::from_display(ErrorCode::ConnectFailed))?;
         let mut touchscreens = surfaces.iter().filter(|surface| {
             surface.primary_usage_page == Some(0x0d) && surface.primary_usage == Some(4) && surface.service_id > 0
         });
         let surface = touchscreens.next();
-        let touchscreen = surface.ok_or("The iPhone did not register a touchscreen input surface.")?;
+        let touchscreen = surface.ok_or_else(|| MirrorError::new(ErrorCode::TouchServiceUnavailable, "The iPhone did not register a touchscreen input surface."))?;
         let service_id = touchscreen.service_id;
-        if touchscreens.next().is_some() { return Err("The iPhone registered more than one touchscreen input surface.".into()); }
+        if touchscreens.next().is_some() { return Err(MirrorError::new(ErrorCode::TouchServiceUnavailable, "The iPhone registered more than one touchscreen input surface.")); }
         eprintln!("[mobile-dev:ios-mirror] touch_ready service_id={service_id}");
         Ok(Self { hid, service_id, state: TouchState::default(), origin: Instant::now(), timestamp: 0 })
     }
 
-    async fn write(&mut self, point: Point, state: u8) -> Result<(), String> {
+    async fn write(&mut self, point: Point, state: u8) -> Result<()> {
         let elapsed = self.origin.elapsed();
         let nanos = elapsed.as_nanos() as u64;
         self.timestamp = nanos.max(self.timestamp + 1);
@@ -80,13 +85,13 @@ impl<R: ReadWrite> TouchClient<R> {
         if state == TOUCHSCREEN_STATE_CONTACT { self.state.active = Some(point); }
         let send = self.hid.send_report(self.service_id, report);
         let result = tokio::time::timeout(Duration::from_secs(1), send).await;
-        let sent = result.map_err(|_| "The physical iOS touch service timed out.".to_string())?;
-        sent.map_err(|error| error.to_string())?;
+        let sent = result.map_err(|_| MirrorError::new(ErrorCode::InputTimeout, "The physical iOS touch service timed out."))?;
+        sent.map_err(MirrorError::from_display(ErrorCode::InputFailed))?;
         if state == TOUCHSCREEN_STATE_RELEASE { self.state.active = None; }
         Ok(())
     }
 
-    pub async fn send(&mut self, samples: Vec<TouchSample>) -> Result<(), String> {
+    pub async fn send(&mut self, samples: Vec<TouchSample>) -> Result<()> {
         for sample in samples {
             let (point, state) = self.state.prepare(sample)?;
             self.write(point, state).await?;
@@ -94,7 +99,7 @@ impl<R: ReadWrite> TouchClient<R> {
         Ok(())
     }
 
-    pub async fn release(&mut self) -> Result<(), String> {
+    pub async fn release(&mut self) -> Result<()> {
         if let Some(point) = self.state.active {
             self.write(point, TOUCHSCREEN_STATE_RELEASE).await?;
         }
