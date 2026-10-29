@@ -2,7 +2,7 @@ import { canMessage, ChatDeliveryError, sendChat } from "./chat-message.ts";
 import { cardsCallTools } from "./host-bridge.ts";
 import type { HostBridge } from "./host-bridge.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { traceSiftAnalysisSchema, traceSiftHandoffSchema, traceSiftRestoreSchema, type TraceSiftAnalysis, type TraceSiftProfileType } from "@mobile-dev/shared/tracesift.ts";
+import { traceSiftAnalysisSchema, traceSiftHandoffSchema, traceSiftRestoreSchema, type TraceSiftAnalysis, type TraceSiftProfileType, type TraceSiftReactCard, type TraceSiftTaskCard } from "@mobile-dev/shared/tracesift.ts";
 import { decodeTraceSiftExplorePayload, TRACE_SIFT_PAYLOAD_MAX_BYTES, traceSiftExploreEnvelopeSchema, TRACE_SIFT_PAYLOAD_TOO_LARGE, traceSiftPayloadRefused, type TraceSiftExploreKind } from "@mobile-dev/shared/tracesift-explore.ts";
 import type { ReactExploreHandoff, TaskHandoff } from "@callstack/tracesift-explore";
 import { buildSelectionPrompt, frameSelectionEvidence, type SelectionCard } from "./tracesift/selection.ts";
@@ -15,6 +15,17 @@ import type { ToolCallParams } from "./tool-call.ts";
 
 /** The finding the explorer draws, as the payload tool delivered it. */
 type ExplorerPayload = { kind: "task"; payload: TaskHandoff } | { kind: "react"; payload: ReactExploreHandoff };
+type ProfileCard = { profileType: "cpu"; card: TraceSiftTaskCard } | { profileType: "react"; card: TraceSiftReactCard };
+
+/** The analysis's card `cardId`, tagged with the profile type so the card's fields narrow with it. */
+function findCard(analysis: TraceSiftAnalysis, cardId: string): ProfileCard | undefined {
+  if (analysis.profileType === "cpu") {
+    const card = analysis.cards.find(entry => entry.id === cardId);
+    return card && { profileType: "cpu", card };
+  }
+  const card = analysis.cards.find(entry => entry.id === cardId);
+  return card && { profileType: "react", card };
+}
 
 type State = {
   analysis?: TraceSiftAnalysis;
@@ -160,7 +171,7 @@ export class TraceSiftController extends Store<State> {
       const parsed = traceSiftRestoreSchema.safeParse(result.structuredContent);
       if (!parsed.success) throw new Error("TraceSift returned an invalid restore result.");
       countUiEvent(parsed.data.restored ? "ui.tracesift.restore_hit" : "ui.tracesift.restore_miss");
-      if (parsed.data.analysis) this.accept({ content: [], structuredContent: parsed.data.analysis }, false);
+      if (parsed.data.restored) this.accept({ content: [], structuredContent: parsed.data.analysis }, false);
     } catch (error) {
       if (token !== this.restoreToken || (error instanceof ToolCallError && stale())) return;
       countUiEvent("ui.tracesift.restore_failed");
@@ -233,8 +244,8 @@ export class TraceSiftController extends Store<State> {
   openExplore = async (cardId: string, focus = "") => {
     const { analysis } = this.state;
     if (!analysis || this.disposed || this.state.openingExploreCard || this.state.explorer) return;
-    const card = analysis.cards.find(entry => entry.id === cardId);
-    if (!card) return;
+    const found = findCard(analysis, cardId);
+    if (!found) return;
     if (!cardsCallTools(this.app)) {
       this.update({ notice: "This app does not let the card open Explore. Ask the agent about this card." });
       return;
@@ -244,8 +255,8 @@ export class TraceSiftController extends Store<State> {
     try {
       const result = await callTool(this.app, {
         name: "mobile_tracesift_explore_payload",
-        arguments: analysis.profileType === "cpu"
-          ? { analysisId: analysis.analysisId, taskIndex: card.taskIndex }
+        arguments: found.profileType === "cpu"
+          ? { analysisId: analysis.analysisId, taskIndex: found.card.taskIndex }
           : { analysisId: analysis.analysisId },
       }, { fallback: "TraceSift could not open this task." });
       const envelope = traceSiftExploreEnvelopeSchema.safeParse(result.structuredContent);
@@ -272,7 +283,7 @@ export class TraceSiftController extends Store<State> {
         explorer: {
           ...loaded, cardId,
           ...(focus ? { focus } : {}),
-          ...(kind === "react" ? { commitKey: `${card.rootId}.${card.commitIndex}` } : {}),
+          ...(kind === "react" && found.profileType === "react" ? { commitKey: `${found.card.rootId}.${found.card.commitIndex}` } : {}),
         },
       });
       countUiEvent("ui.tracesift.explore");
@@ -431,16 +442,16 @@ export class TraceSiftController extends Store<State> {
   openExploreInBrowser = async (cardId: string, focus = "") => {
     const { analysis } = this.state;
     if (!analysis || this.disposed || this.state.openingExploreCard) return;
-    const card = analysis.cards.find(entry => entry.id === cardId);
-    if (!card) return;
+    const found = findCard(analysis, cardId);
+    if (!found) return;
     this.update({ openingExploreCard: cardId, error: "", notice: "" });
     const startedAt = performance.now();
     try {
       const result = await callTool(this.app, {
         name: "mobile_open_tracesift_explore",
-        arguments: analysis.profileType === "cpu"
-          ? { analysisId: analysis.analysisId, taskIndex: card.taskIndex, ...(focus ? { focus } : {}) }
-          : { analysisId: analysis.analysisId, rootId: card.rootId, commitIndex: card.commitIndex },
+        arguments: found.profileType === "cpu"
+          ? { analysisId: analysis.analysisId, taskIndex: found.card.taskIndex, ...(focus ? { focus } : {}) }
+          : { analysisId: analysis.analysisId, rootId: found.card.rootId, commitIndex: found.card.commitIndex },
       }, { fallback: "TraceSift could not open this task." });
       if (result.structuredContent?.opened !== true) throw new Error("TraceSift did not confirm that Explore opened.");
       recordUiTiming("ui.tracesift.explore_browser", performance.now() - startedAt);
