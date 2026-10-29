@@ -10,6 +10,7 @@ import { DisplayFpsPanel } from "../../ui/src/display-fps-panel.ts";
 import type { DisplayFpsState } from "../../ui/src/display-fps-panel.ts";
 import type { App } from "@modelcontextprotocol/ext-apps";
 import type { DisplayFpsBatch } from "../src/display-fps.ts";
+import type { SimulatorDevice } from "../src/protocol.ts";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -402,6 +403,110 @@ test("the device FPS panel records on physical iOS without an app, backfills his
   await panel.disconnect();
   assert.deepEqual(calls, ["mobile_display_fps_session", "mobile_display_fps_close"]);
   assert.equal(state.fpsPhase, "stopped");
+});
+
+function closeFailureHost() {
+  const calls: string[] = [];
+  let closeFailure: string | undefined;
+  let opening: Promise<void> | undefined;
+  let sequence = 0;
+  let emit: ((batch: DisplayFpsBatch) => void) | undefined;
+  const app = {
+    async callServerTool(input: { name: string; arguments: { sessionId?: string; target?: { deviceId: string } } }) {
+      if (input.name === "mobile_display_fps_close") {
+        calls.push(`close:${input.arguments.sessionId}`);
+        if (closeFailure) throw new Error(closeFailure);
+        return { content: [] };
+      }
+      await opening;
+      const id = `fps${++sequence}`;
+      calls.push(`open:${id}:${input.arguments.target?.deviceId}`);
+      return { content: [], structuredContent: { sessionId: id, fpsUri: `display-fps://mobile-dev/${id}/batch?after=0`, timeOrigin: 99 } };
+    },
+    readServerResource(input: { uri: string }, options: { signal: AbortSignal }) {
+      return new Promise((resolve, reject) => {
+        const cancelled = () => reject(new Error("cancelled"));
+        options.signal.addEventListener("abort", cancelled, { once: true });
+        emit = batch => {
+          options.signal.removeEventListener("abort", cancelled);
+          const text = JSON.stringify(batch);
+          resolve({ contents: [{ uri: input.uri, mimeType: "application/json", text }] });
+        };
+      });
+    },
+  };
+  let state: Partial<DisplayFpsState> = {};
+  const panel = new DisplayFpsPanel(app as unknown as App, fields => { state = { ...state, ...fields }; });
+  return { panel, calls, state: () => state, emit(batch: DisplayFpsBatch) { emit?.(batch); },
+    failClose(message?: string) { closeFailure = message; }, delayOpen(promise: Promise<void>) { opening = promise; } };
+}
+const pixel: SimulatorDevice = { platform: "android", udid: "emulator-5554", name: "Pixel", state: "Booted", runtime: "Android" };
+async function settle() { for (let i = 0; i < 8; i++) await setImmediate(); }
+
+test("a transient Display FPS close failure stays visible and is retried before the next session opens", async () => {
+  const fake = closeFailureHost();
+  const { panel, calls } = fake;
+  panel.select(pixel);
+  panel.setAvailable(true);
+  panel.show();
+  await settle();
+  assert.deepEqual(calls, ["open:fps1:emulator-5554"]);
+
+  fake.failClose("transient close failure");
+  await assert.rejects(panel.stop(), /transient close failure/);
+  panel.retry();
+  await settle();
+  assert.equal(fake.state().fpsPhase, "failed");
+  assert.equal(fake.state().fpsError, "transient close failure");
+  assert.equal(fake.state().fpsMonitoring, false);
+  assert.deepEqual(calls.slice(1), ["close:fps1", "close:fps1"], "No session opens beside one that may still be collecting.");
+
+  fake.failClose();
+  panel.retry();
+  await settle();
+  assert.deepEqual(calls.slice(3), ["close:fps1", "open:fps2:emulator-5554"]);
+  fake.emit({ cursor: 1, phase: "recording", samples: [{ time: 100, interval: 1, fps: 60 }] });
+  await settle();
+  assert.equal(fake.state().fpsPhase, "recording");
+  assert.equal(fake.state().fpsError, "");
+  assert.deepEqual(fake.state().fpsSamples, [{ time: 100, interval: 1, fps: 60 }]);
+
+  fake.failClose("transient close failure");
+  await assert.rejects(panel.stop(), /transient close failure/);
+  fake.failClose();
+  panel.show();
+  await settle();
+  assert.deepEqual(calls.slice(5), ["close:fps2", "close:fps2", "open:fps3:emulator-5554"], "Showing the panel again after recovery closes the stale session first.");
+  await panel.disconnect();
+  assert.deepEqual(calls.slice(8), ["close:fps3"]);
+});
+
+test("a Display FPS session that opens after a device switch keeps its failed close for retry", async () => {
+  const fake = closeFailureHost();
+  const { panel, calls } = fake;
+  let resolveOpen!: () => void;
+  fake.delayOpen(new Promise(resolve => { resolveOpen = resolve; }));
+  panel.select(pixel);
+  panel.setAvailable(true);
+  panel.show();
+  await settle();
+  panel.select({ ...pixel, udid: "emulator-5556", name: "Tablet" });
+  fake.failClose("transient close failure");
+  resolveOpen();
+  await settle();
+  assert.equal(fake.state().fpsPhase, "failed");
+  assert.equal(fake.state().fpsError, "transient close failure");
+  assert.deepEqual(calls, ["open:fps1:emulator-5554", "close:fps1", "close:fps1"], "The new device waits for the late session to close.");
+
+  fake.failClose();
+  panel.retry();
+  await settle();
+  assert.deepEqual(calls.slice(3), ["close:fps1", "open:fps2:emulator-5556"]);
+  fake.emit({ cursor: 1, phase: "recording", samples: [{ time: 100, interval: 1, fps: 60 }] });
+  await settle();
+  assert.equal(fake.state().fpsPhase, "recording");
+  await panel.disconnect();
+  assert.deepEqual(calls.slice(5), ["close:fps2"]);
 });
 
 test("CPU and display samples share a clock and selecting another app preserves the device recording", async t => {
