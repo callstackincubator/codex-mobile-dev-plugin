@@ -6,7 +6,7 @@ import type { CallToolRequest, CallToolResult, ServerNotification, ServerRequest
 import { isObject } from "./agent-device-catalog.ts";
 import { AgentDeviceRuntime } from "./agent-device-runtime.ts";
 import type { AgentDeviceBackend } from "./agent-device-runtime.ts";
-import type { ServerFeature } from "./server-feature.ts";
+import type { ServerFeature, ServerServices } from "./server-feature.ts";
 import { captureServerError } from "./telemetry.ts";
 import { isPng, MAX_SCREENSHOT_BYTES } from "./png.ts";
 
@@ -23,7 +23,7 @@ export function readAgentDeviceCatalog(url = new URL("./agent-device/tools.json"
  * for hosts that load one server per plugin. The runtime starts on the first command.
  */
 export function agentDeviceTools(catalog: Tool[], runtime: Pick<AgentDeviceRuntime, "connect" | "close"> = new AgentDeviceRuntime()): ServerFeature {
-  return server => {
+  return (server, services) => {
     const schemas: Schemas = new Map();
     for (const tool of catalog) {
       // The catalog's input schemas are JSON Schema objects, which zod reads as such.
@@ -34,6 +34,7 @@ export function agentDeviceTools(catalog: Tool[], runtime: Pick<AgentDeviceRunti
         const args = input as Record<string, unknown>;
         const issue = stepIssue(tool.name, args, schemas);
         if (issue !== undefined) return invalid(issue);
+        if (tool.name === "shutdown") await closeDeviceSessions(args, services);
         let backend: AgentDeviceBackend;
         try { backend = await runtime.connect(); }
         catch (error) {
@@ -46,6 +47,17 @@ export function agentDeviceTools(catalog: Tool[], runtime: Pick<AgentDeviceRunti
     }
     return () => runtime.close();
   };
+}
+
+/** Closes the plugin's sessions on a device agent-device shuts down, when the command names it. */
+async function closeDeviceSessions(args: Record<string, unknown>, services: ServerServices) {
+  const deviceId = args.udid ?? args.serial;
+  if (typeof deviceId !== "string") return;
+  try { await services.closeDevice(deviceId); }
+  catch (error) {
+    // The shutdown goes ahead; a collector that failed to stop ends with its device.
+    captureServerError(error, "agent_device.session_cleanup", { reportAs: new Error("Device sessions failed to close before shutdown.") });
+  }
 }
 
 function invalid(message: string): CallToolResult {

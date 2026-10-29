@@ -20,8 +20,7 @@ import { registerIosMirrorTools } from "./ios-mirror-tools.ts";
 import { registerInspectionTools } from "./inspection-tools.ts";
 import { registerDeviceSettingsTools } from "./device-settings.ts";
 import { StreamSessions } from "./stream-sessions.ts";
-import type { CpuSessions } from "./cpu/sessions.ts";
-import type { DisplayFpsSessions } from "./fps/sessions.ts";
+import type { DeviceSessions } from "./device-sessions.ts";
 import { SimulatorInputService } from "./simulator-input.ts";
 import type { InputStatus, SimulatorInput } from "./simulator-input.ts";
 import { retryableFailure } from "./simulator-unavailable.ts";
@@ -64,8 +63,8 @@ export type Panel = {
 /** What the server shares with its panel. */
 export type PanelShared = {
   android: ServeEmu;
-  cpu: CpuSessions;
-  fps: DisplayFpsSessions;
+  /** Closes a device's sessions before it shuts down; the panel adds its streams. */
+  devices: DeviceSessions;
   drivers: DriverFactory;
   /** The page every view loads, configured for this server. */
   page(): Promise<string>;
@@ -96,16 +95,13 @@ export function createPanel({ baguette = new Baguette(), simulatorInput, copyScr
   };
 }
 
-function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, showRecording }: PanelShared,
+function registerPanel(server: McpServer, { android, devices, drivers, page, showRecording }: PanelShared,
   { baguette, simulatorInput, copyScreenshot }: Required<PanelOptions>) {
   const streams = new StreamSessions(baguette);
+  devices.add(udid => streams.closeDevice(udid));
   const closeIosMirror = registerIosMirrorTools(server, APP_URI);
   const closeInspection = registerInspectionTools(server, baguette, android);
-  const closeAndroid = registerAndroidTools(server, android, APP_URI, copyScreenshot, async deviceId => {
-    const closeCpu = cpu.closeDevice(deviceId);
-    const closeFps = fps.closeDevice(deviceId);
-    await Promise.all([closeCpu, closeFps]);
-  });
+  const closeAndroid = registerAndroidTools(server, android, APP_URI, copyScreenshot, devices);
   const closeDeviceSettings = registerDeviceSettingsTools(server, baguette, android);
   registerPanelAppControlTools(server, drivers);
   registerOpenRecordingTool(server, showRecording, WORKSPACE_URI);
@@ -241,9 +237,8 @@ function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, sh
       inputSchema: deviceInput, outputSchema: statusOutput,
       annotations: { ...write, destructiveHint: action === "shutdown" },
     }, guarded(async ({ udid }: { udid: string }) => {
-      if (action === "shutdown") await cpu.closeDevice(udid);
+      if (action === "shutdown") await devices.closeDevice(udid);
       const status = await baguette.changeDeviceState(udid, action);
-      if (action === "shutdown") streams.closeDevice(udid);
       return result(status, `${action === "boot" ? "Booted" : "Shut down"} ${udid}.`);
     }));
   }

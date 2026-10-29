@@ -7,6 +7,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { ServeEmu, androidIdSchema } from "./serve-emu.ts";
 import { AndroidStreams } from "./android-streams.ts";
+import type { DeviceSessions } from "./device-sessions.ts";
 import { inputSchema } from "@mobile-dev/shared/protocol.ts";
 import { sessionIdSchema } from "./session-registry.ts";
 import { guarded as guardedTool, jsonResult, READ_ONLY as read, WRITES as write } from "./tool-results.ts";
@@ -17,8 +18,9 @@ const deviceInput = { deviceId: androidIdSchema.describe("An Android serial or a
 function result(data: object, text: string): CallToolResult { return jsonResult({ ...data }, text); }
 const guarded = <T>(handler: (input: T, context: ServerRequestContext) => Promise<CallToolResult>) => guardedTool({ operation: "android.tool", retryable: true }, handler);
 
-export function registerAndroidTools(server: McpServer, android: ServeEmu, appUri: string, copyScreenshot: (bytes: Buffer) => Promise<void>, closeCpu: (deviceId: string) => Promise<void>) {
+export function registerAndroidTools(server: McpServer, android: ServeEmu, appUri: string, copyScreenshot: (bytes: Buffer) => Promise<void>, devices: DeviceSessions) {
   const streams = new AndroidStreams(android);
+  devices.add(deviceId => streams.closeDevice(deviceId));
   server.registerTool("mobile_list_android_devices", {
     title: "List Android devices", description: "Discover physical Android devices over USB or Wi-Fi and list running emulators and installed AVDs through ADB. Returns device kind, serial, model when available, transport for physical devices, and device/offline/unauthorized state (authorized devices use Booted). Listing does not boot, pair, authorize, or stream a device.", inputSchema: {}, annotations: read,
   }, guarded(async () => { const status = await android.list(); return result(status, status.connected ? JSON.stringify(status.devices) : status.error!); }));
@@ -29,7 +31,7 @@ export function registerAndroidTools(server: McpServer, android: ServeEmu, appUr
       : "Shut down the selected Android emulator from the device list.",
     inputSchema: deviceInput, annotations: { ...write, destructiveHint: action === "shutdown" },
   }, guarded(async ({ deviceId }: { deviceId: string }) => {
-    if (action === "shutdown") { await closeCpu(deviceId); streams.closeDevice(deviceId); }
+    if (action === "shutdown") await devices.closeDevice(deviceId);
     const status = await android[action](deviceId);
     return result(status, `${action === "boot" ? "Booted" : "Shut down"} ${deviceId}.`);
   }));

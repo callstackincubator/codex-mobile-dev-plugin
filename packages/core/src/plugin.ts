@@ -5,7 +5,7 @@ import { LIVE_UI_URI } from "@mobile-dev/shared/live-ui.ts";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { PLUGIN_VERSION } from "@mobile-dev/shared/version.ts";
 import { SENTRY_ORIGIN } from "@mobile-dev/shared/telemetry.ts";
-import { instrumentMcpServer, setServerTelemetryHost } from "./telemetry.ts";
+import { captureServerError, instrumentMcpServer, setServerTelemetryHost } from "./telemetry.ts";
 import { resolveTelemetryEnvironment } from "./telemetry-environment.ts";
 import { getTelemetryIdentity } from "./telemetry-identity.ts";
 import { registerAppResource, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
@@ -35,6 +35,7 @@ import { registerDisplayFpsTools } from "./fps/tools.ts";
 import { registerEarlierReleases } from "./earlier-releases.ts";
 import { Simctl } from "./simctl.ts";
 import type { Panel } from "./panel-tools.ts";
+import { DeviceSessions } from "./device-sessions.ts";
 
 // Servers without the panel serve hosts that show devices themselves, when they can.
 const INSTRUCTIONS = "For mobile app development, read logs, record CPU, memory and FPS, and inspect app storage with these tools; control devices with the device_* tools when the server has them. Mobile Dev shows no device view here: when the user asks to open or see a simulator or emulator, use the host's own simulator view if it has one, such as Claude Code's iOS Simulator or Android Emulator. Use device IDs from tool results; never invent them. If a task has ambiguous device targets, ask the user with your own question tool when you have one, otherwise in chat; proceed only after they choose. Show recordings with mobile_render_performance_recording and comparisons with mobile_compare_performance_recordings. For a local CPU or React profile path, use mobile_analyze_profile to show TraceSift findings. See the Mobile Dev skill, when installed, for logs, profiles, and performance workflows.";
@@ -65,6 +66,8 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
   const { panel, simulators = new Simctl(), logs = new LogSessions(), android = new ServeEmu(), features = [] } = options;
   const cpu = options.cpu ?? await createCpuSessions();
   const fps = new DisplayFpsSessions();
+  const devices = new DeviceSessions();
+  for (const sessions of [logs, cpu, fps]) devices.add(deviceId => sessions.closeDevice(deviceId));
   const server = new McpServer({ name: "mobile-dev", version: PLUGIN_VERSION }, { instructions: panel?.instructions ?? INSTRUCTIONS });
   instrumentMcpServer(server);
   addToolIcons(server, { mobile_open_workspace: PHONE_ICONS, mobile_open_simulator: PHONE_ICONS, mobile_choose_devices: PHONE_ICONS });
@@ -123,13 +126,14 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
   }
   // Devices cards that chats saved from earlier releases say they came from one.
   registerEarlierReleases(server, "mobile-dev-devices-earlier", "devices", readCard("devices"));
-  const closePanel = panel?.register(server, { android, cpu, fps, drivers, page, showRecording });
-  const featureCleanups = features.flatMap(feature => feature(server) ?? []);
+  const closePanel = panel?.register(server, { android, devices, drivers, page, showRecording });
+  const featureCleanups = features.flatMap(feature => feature(server, { closeDevice: deviceId => devices.closeDevice(deviceId) }) ?? []);
 
   return {
     server,
     async close() {
-      await Promise.allSettled(featureCleanups.map(cleanup => cleanup()));
+      const cleanups = await Promise.allSettled(featureCleanups.map(cleanup => Promise.resolve().then(cleanup)));
+      for (const cleanup of cleanups) if (cleanup.status === "rejected") captureServerError(cleanup.reason, "plugin.feature_cleanup");
       stopRecordingStorageMetrics();
       // Recordings finish while the collectors they read are still open.
       await recordings.close();
