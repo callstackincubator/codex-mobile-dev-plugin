@@ -6,7 +6,7 @@ import { runningSimulatorApps } from "../device-apps/apps.ts";
 import { ExpectedOperationError, expectedOutcome } from "@mobile-dev/shared/error-reporting.ts";
 import { bundleIdSchema, platformPermissions } from "@mobile-dev/shared/app-control.ts";
 import type { AppDetails, AppPermission, AppPermissionEntry, InstalledApp, PermissionState } from "@mobile-dev/shared/app-control.ts";
-import { commandError, commandOutput, withTemporaryDirectory } from "./commands.ts";
+import { commandError, commandLabel, commandOutput, withTemporaryDirectory } from "./commands.ts";
 import type { Commands } from "./commands.ts";
 import { collectDetails, pngDataUrl, rankAppLinks, requireArtifact, requireSupportedPermission, urlSchemePattern } from "./driver.ts";
 import type { AppDetailsCache, AppDriver } from "./driver.ts";
@@ -63,7 +63,7 @@ export class SimulatorDriver implements AppDriver {
     catch (error) {
       const output = commandOutput(error);
       if (tolerate?.test(output)) return "";
-      const failure = commandError(error, action);
+      const failure = commandError(error, action, commandLabel("simctl", args[0]));
       const match = expectedOutcome(failure) === undefined ? known.find(([pattern]) => pattern.test(output)) : undefined;
       throw match ? new ExpectedOperationError("invalid_input", match[1]) : failure;
     }
@@ -74,7 +74,7 @@ export class SimulatorDriver implements AppDriver {
   private async listing(): Promise<SimulatorApp[]> {
     const listing = await this.simctl("Listing apps", ["listapps", this.deviceId]);
     try { return parseSimulatorApps(await this.plutil(["-convert", "json", "-o", "-", "-"], listing)); }
-    catch (error) { throw commandError(error, "Reading the app list"); }
+    catch (error) { throw commandError(error, "Reading the app list", "plutil"); }
   }
 
   async installed() { return (await this.listing()).map(({ bundleId, name }) => ({ bundleId, name })); }

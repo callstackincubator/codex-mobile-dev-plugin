@@ -12,6 +12,7 @@ import { bootAndroidEmulator, parseAvdName } from "./android-emulator.ts";
 import { adbPath } from "./native-logs.ts";
 import { errorMessage, parseBaseUrl } from "@mobile-dev/shared/protocol.ts";
 import type { SimulatorDevice, Status } from "@mobile-dev/shared/protocol.ts";
+import { annotateDeviceCommand, backendCommand } from "@mobile-dev/shared/device-command-diagnostics.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
 import { recordAndroidEmulatorReconnect, recordAndroidBackendStartup, recordAndroidStartupStages, recordAndroidStartupContext, recordAndroidStartupDeviceState, recordAndroidBackendStop } from "./telemetry.ts";
 import { androidStartupMessageSchema, androidDeviceState, setAndroidStartupDiagnostic } from "@mobile-dev/shared/android-startup-diagnostics.ts";
@@ -197,13 +198,15 @@ export class ServeEmu {
   }
 
   async json(url: URL, path: string, options: RequestInit = {}) {
-    const response = await fetch(new URL(path, url), { ...options, redirect: "error", signal: AbortSignal.timeout(10000) });
-    const payload = response.ok ? await response.json() : await response.json().catch(() => undefined);
+    const command = backendCommand("serve_emu", path);
+    const response = await fetch(new URL(path, url), { ...options, redirect: "error", signal: AbortSignal.timeout(10000) })
+      .catch(error => { throw annotateDeviceCommand(error, command); });
+    const payload = response.ok ? await response.json().catch(error => { throw annotateDeviceCommand(error, command); }) : await response.json().catch(() => undefined);
     const rejection = serveEmuErrorSchema.safeParse(payload);
     if (response.ok && !rejection.success) return payload;
     const error = rejection.data?.error;
     const message = (typeof error === "string" ? error : error?.message) || (response.ok ? "serve-emu rejected the request." : `serve-emu returned HTTP ${response.status} for ${path}.`);
-    throw new Error(message);
+    throw annotateDeviceCommand(new Error(message), command, response.ok ? { failure: "rejected" } : { failure: "http_status", status: response.status });
   }
 
   private async health(url: URL) {

@@ -155,9 +155,14 @@ export class IOSLogProcessingTelemetry {
   }
 }
 
-export function captureServerError(error: unknown, operation: string, options?: { report?: boolean; signal?: AbortSignal }) {
+/**
+ * Counts a handled failure and reports it when it is unexpected. `reportAs` stands in for an error whose message
+ * can carry app IDs, URLs, serials or paths; create it where the failure is caught so Sentry keeps that location.
+ * The outcome and diagnostic tags still come from the original error.
+ */
+export function captureServerError(error: unknown, operation: string, options?: { report?: boolean; signal?: AbortSignal; reportAs?: Error; tags?: Record<string, string> }) {
   const outcome = options?.signal?.aborted ? "cancelled" : expectedOutcome(error);
-  const diagnosticTags = deviceAppsDiagnosticTags(error);
+  const diagnosticTags = { ...deviceAppsDiagnosticTags(error), ...options?.tags };
   const definitionTags = definitionDiagnosticTags(error);
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   Sentry.metrics.count("server.error.outcome", 1, { attributes: { operation, outcome: outcome ?? "unexpected", ...diagnosticTags } });
@@ -170,7 +175,7 @@ export function captureServerError(error: unknown, operation: string, options?: 
   const command = getDiscoveryCommandDiagnostic(error);
   const contexts = command ? { device_apps_command: { elapsed_ms: command.elapsed_ms, deadline_ms: command.deadline_ms,
     exit_status: command.exit_status } } : undefined;
-  Sentry.captureException(error, { tags: { ...diagnosticTags, ...definitionTags, ...androidTags, operation }, contexts });
+  Sentry.captureException(options?.reportAs ?? error, { tags: { ...diagnosticTags, ...definitionTags, ...androidTags, operation }, contexts });
 }
 
 type RequestReporting = { accounted: boolean; sessionResponse?: { release: () => void; close: () => Promise<void> } };

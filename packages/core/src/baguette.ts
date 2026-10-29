@@ -13,6 +13,7 @@ import { buttonMarginsSchema } from "@mobile-dev/shared/bezel.ts";
 import { definitionDeviceState, getDefinitionDiagnostic, parseDefinitionDiagnostic, setDefinitionDiagnostic } from "@mobile-dev/shared/simulator-definition-diagnostics.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
 import { deferEpisodeReport, ExpectedOperationError, FailureEpisodes } from "@mobile-dev/shared/error-reporting.ts";
+import { annotateDeviceCommand, backendCommand, inheritDeviceCommand } from "@mobile-dev/shared/device-command-diagnostics.ts";
 import { errorReportSignature } from "@mobile-dev/shared/telemetry.ts";
 import { baguetteEnvironment } from "./baguette-runtime.ts";
 import { captureServerError, recordAccessibilityBridgeRestart } from "./telemetry.ts";
@@ -21,6 +22,13 @@ type DescribedUi = { tree?: { label?: unknown } };
 const NO_ACCESSIBILITY_DATA = "no accessibility data";
 const BRIDGE_RESTART_INTERVAL = 10000;
 const PORT_ATTEMPTS = 3;
+// A failed device list keeps its request's error, so errors built from the status say how the request failed.
+const listFailures = new WeakMap<Status, unknown>();
+
+function listError(status: Status): Error {
+  const error = new Error(status.error);
+  return inheritDeviceCommand(error, listFailures.get(status));
+}
 
 async function bundledExecutable(): Promise<string> {
   const path = fileURLToPath(new URL("./baguette/Baguette", import.meta.url));
@@ -84,13 +92,14 @@ export class Baguette {
   }
 
   async json(path: string, options: RequestInit = {}, timeout = 10000): Promise<unknown> {
+    const command = backendCommand("baguette", path);
     const response = await fetch(new URL(path, this.baseUrl), {
       ...options, redirect: "error", signal: AbortSignal.any([
         this.lifecycle.signal, AbortSignal.timeout(timeout), ...(options.signal ? [options.signal] : []),
       ]),
-    });
+    }).catch(error => { throw annotateDeviceCommand(error, command); });
     if (response.ok === false) {
-      const error = new Error(`Baguette returned HTTP ${response.status} for ${path}.`);
+      const error = annotateDeviceCommand(new Error(`Baguette returned HTTP ${response.status} for ${path}.`), command, { failure: "http_status", status: response.status });
       if (response.status === 404 && /^\/simulators\/[^/]+\/definition\.json$/.test(path)) {
         const payload = await readDefinitionFailure(response);
         const diagnostic = parseDefinitionDiagnostic(payload);
@@ -99,8 +108,8 @@ export class Baguette {
       }
       throw error;
     }
-    const payload = await response.json();
-    if (payload?.ok === false) throw new Error(payload.error ?? "Baguette rejected the request.");
+    const payload = await response.json().catch(error => { throw annotateDeviceCommand(error, command); });
+    if (payload?.ok === false) throw annotateDeviceCommand(new Error(payload.error ?? "Baguette rejected the request."), command, { failure: "rejected" });
     return payload;
   }
 
@@ -144,10 +153,12 @@ export class Baguette {
       const devices = normalizeDevices(await this.json("/simulators.json", { signal }));
       return { connected: true, managed: this.child != null, baseUrl: this.baseUrl.origin, devices };
     } catch (error) {
-      return {
+      const status = {
         connected: false, managed: this.child != null, baseUrl: this.baseUrl.origin, devices: [],
         error: `Cannot reach Baguette at ${this.baseUrl.origin}. ${errorMessage(error)}`,
       };
+      listFailures.set(status, error);
+      return status;
     }
   }
 
@@ -183,7 +194,7 @@ export class Baguette {
     const current = await this.status();
     if (current.connected) return current;
     // The port is our running Baguette's own, so its failed device list is not a port conflict.
-    if (this.child) throw new Error(current.error);
+    if (this.child) throw listError(current);
     if (this.embedded === false) {
       // Refuse to start over a listener that is slow or is not Baguette.
       if (await this.portInUse()) throw new Error(`Port ${this.baseUrl.port || "80"} is in use, but its listener did not return a Baguette device list.`);
@@ -242,18 +253,22 @@ export class Baguette {
       while (!deadline.aborted && !this.disposed) {
         if (launchError) {
           if ((launchError as NodeJS.ErrnoException).code === "ENOENT") {
-            throw new Error("The bundled Baguette executable could not start. Reinstall the plugin package.");
+            const error = new Error("The bundled Baguette executable could not start. Reinstall the plugin package.");
+            throw annotateDeviceCommand(error, "baguette_serve", { failure: "missing_executable" });
           }
-          throw launchError;
+          throw annotateDeviceCommand(launchError, "baguette_serve");
         }
         if (child.exitCode !== null || child.signalCode !== null) {
-          throw new Error(`Baguette exited before it became ready. ${diagnostics.trim()}`);
+          const error = new Error(`Baguette exited before it became ready. ${diagnostics.trim()}`);
+          const status = child.exitCode ?? undefined;
+          throw annotateDeviceCommand(error, "baguette_serve", child.signalCode === null ? { failure: "exit", status } : { failure: "signal" });
         }
         const status = await this.status(polling);
         if (status.connected) return status;
         await delay(250);
       }
-      throw new Error(`Baguette did not become ready within 20 seconds. ${diagnostics.trim()}`);
+      const error = new Error(`Baguette did not become ready within 20 seconds. ${diagnostics.trim()}`);
+      throw annotateDeviceCommand(error, "baguette_serve", { failure: "deadline" });
     } catch (error) {
       child.kill("SIGTERM");
       if (this.child === child) this.child = undefined;
@@ -264,8 +279,13 @@ export class Baguette {
   async device(udid: string, mustBeBooted = false) {
     udidSchema.parse(udid);
     await this.start();
-    const status = await this.status();
-    if (!status.connected) throw new Error(status.error);
+    return this.listedDevice(udid, mustBeBooted);
+  }
+
+  // The simulator as a running Baguette lists it; this never starts Baguette.
+  async listedDevice(udid: string, mustBeBooted = false, signal?: AbortSignal) {
+    const status = await this.status(signal);
+    if (!status.connected) throw listError(status);
     const device = status.devices.find(item => item.udid === udid);
     if (!device) throw new SimulatorUnavailableError("This simulator is no longer available. Refresh the device list.");
     if (mustBeBooted && device.state !== "Booted") throw new SimulatorUnavailableError("The simulator is stopped. Press Start to boot it.");
@@ -308,7 +328,7 @@ export class Baguette {
           signal.throwIfAborted();
           const status = await this.status(signal);
           signal.throwIfAborted();
-          if (!status.connected) throw new Error(status.error);
+          if (!status.connected) throw listError(status);
           const current = status.devices.find(item => item.udid === udid);
           if (!current) throw new SimulatorUnavailableError("This simulator is no longer available. Refresh the device list.");
           if (current.state === expected) return status;

@@ -288,7 +288,9 @@ Since 0.1.147, app control tools (`mobile_list_apps`, `mobile_launch_app`,
 message, because command output can contain bundle IDs, URLs, device serials, and
 local paths. Expected outcomes such as a missing app, an unhandled URL, an
 unrequested permission, or a stopped device count only through
-`server.error.outcome`. Extracted app icons and Android labels stay in the server's
+`server.error.outcome`. Since 0.1.170 these reports and outcome counts also carry
+the device command tags described below, and a simulator that is shutting down
+counts as a stopped device. Extracted app icons and Android labels stay in the server's
 memory cache and are returned only to the panel.
 
 The device popover's App tab records `ui.app_tools.list`, `.icons`, `.launch`,
@@ -322,9 +324,14 @@ Since 0.1.152, `mobile_app_language` and `mobile_set_app_language` use the same
 app control coverage under `app_control.language` and `app_control.set_language`.
 Language tags are not sent. The device settings tools report unexpected Baguette or
 serve-emu failures under `device_settings.read` or `device_settings.<setting>` with a
-fixed message. Android throttling runs through a local proxy on the Mac, so its adb
-failures report under `device_settings.network`; throttling a device that already
-uses its own proxy counts only through `server.error.outcome`. When the plugin first
+fixed message. Since 0.1.170 they carry the device command tags described below,
+and a failure on a device that stopped or went away during the request counts as
+`device_unavailable` through `server.error.outcome` instead of a report. The check
+reads the device list without starting a backend, giving Baguette two seconds; when
+Baguette or adb cannot list devices, the failure is reported as before. Android throttling runs through a local
+proxy on the Mac, so its adb failures report under `device_settings.network`;
+throttling a device that already uses its own proxy counts only through
+`server.error.outcome`. When the plugin first
 starts an Android backend, it clears a throttle left by a plugin process that exited;
 unexpected adb failures there report under `device_settings.network_recovery`, and a
 device that went away counts only through `server.error.outcome`. Proxy
@@ -334,6 +341,32 @@ them. The Device tab
 records `ui.device_settings.change` round trips in milliseconds and counts
 `ui.device_settings.failure`, with the same surface and device-change exclusions as
 the App tab. Setting values, throttle presets, and device IDs are not sent.
+
+Device setting and app control reports keep their fixed messages, so their Sentry
+issues keep grouping as before. Since 0.1.170 they add these device command tags,
+which their `server.error.outcome` counts also carry:
+
+- `device_platform`: `ios` or `android`, from the tool's target.
+- `device_command`: the program and subcommand or backend route that failed, such
+  as `simctl_launch`, `simctl_privacy`, `adb_shell_am`, `adb_install`, `plutil`,
+  `baguette_interface`, `baguette_start`, `serve_emu_night_mode`, or
+  `serve_emu_start`. A Baguette start that fails on its device list or its own
+  process names `baguette_simulators` or `baguette_serve` instead of
+  `baguette_start`. It is absent when the failure did not come from a named
+  command, such as a reply that failed validation. Labels come from code; anything
+  else is sent as `other`.
+- `device_command_failure`: `exit`, `signal`, `deadline`, `cancelled`,
+  `output_limit`, `missing_executable`, `system_error`, `connection_failed`,
+  `http_status`, `rejected`, `invalid_response`, `unexpected_output`, or `unknown`.
+  The value comes from error codes, HTTP statuses, and error types. Messages and
+  output are never read.
+- `device_command_status`: the exit status (0 to 255) for `exit`, or the HTTP
+  status for `http_status`.
+- `device_command_signal`: the signal name for `signal`, or `other`.
+
+Arguments, output, replies, bundle IDs, URLs, serials, and paths are not sent.
+serve-emu startup failures under `device_settings.*` keep their `android_startup_*`
+tags.
 
 Saved chart cards use the `recording` surface and view. Existing readiness,
 interaction and frame-pacing coverage is preserved. `ui.recording.process` and

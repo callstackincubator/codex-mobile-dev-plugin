@@ -5,8 +5,9 @@ import type { Baguette } from "./baguette.ts";
 import { androidIdSchema, type ServeEmu } from "./serve-emu.ts";
 import { AndroidNetworkThrottle, type ThrottleReading } from "./network-throttle/android.ts";
 import { captureServerError } from "./telemetry.ts";
-import { errorMessage, udidSchema } from "@mobile-dev/shared/protocol.ts";
+import { errorMessage, udidSchema, type SimulatorDevice } from "@mobile-dev/shared/protocol.ts";
 import { ExpectedOperationError, expectedOutcome } from "@mobile-dev/shared/error-reporting.ts";
+import { annotateDeviceCommand, deviceCommandTags } from "@mobile-dev/shared/device-command-diagnostics.ts";
 import { contentSizes, deviceSettingSchema, locationSchema, networkPresets, type DeviceSetting, type DeviceSettings, type NetworkCondition, type NetworkPreset } from "@mobile-dev/shared/device-settings.ts";
 
 const targetSchema = z.discriminatedUnion("platform", [
@@ -36,6 +37,8 @@ async function collect(settings: DeviceSettings, reads: Record<string, () => Pro
 interface PlatformSettings {
   read(id: string): Promise<DeviceSettings>;
   update(id: string, change: DeviceSetting): Promise<Patch>;
+  // Looks the device up without starting its backend; throws an expected outcome when it stopped or went away.
+  listed(id: string): Promise<SimulatorDevice>;
 }
 
 // Baguette names its presets; the numbers in networkPresets match them.
@@ -68,9 +71,12 @@ class IosSettings implements PlatformSettings {
   constructor(baguette: Baguette) { this.baguette = baguette; }
 
   private async simulator(id: string) {
-    await this.baguette.device(id, true);
+    await this.baguette.device(id, true).catch(error => { throw annotateDeviceCommand(error, "baguette_start"); });
     return `/simulators/${id}`;
   }
+
+  // The request already waited on Baguette, so the lookup gets a short deadline of its own.
+  listed(id: string) { return this.baguette.listedDevice(id, true, AbortSignal.timeout(2000)); }
 
   async read(id: string) {
     const path = await this.simulator(id);
@@ -153,7 +159,12 @@ class AndroidSettings implements PlatformSettings {
   private readonly throttle: AndroidNetworkThrottle;
   constructor(android: ServeEmu, throttle: AndroidNetworkThrottle) { this.android = android; this.throttle = throttle; }
 
-  private async backend(id: string) { return (await this.android.start(id)).url; }
+  private async backend(id: string) {
+    const backend = await this.android.start(id).catch(error => { throw annotateDeviceCommand(error, "serve_emu_start"); });
+    return backend.url;
+  }
+
+  listed(id: string) { return this.android.device(id, true); }
 
   async read(id: string) {
     const url = await this.backend(id);
@@ -195,19 +206,33 @@ export class DeviceSettingsService {
     this.platforms = { ios: new IosSettings(baguette), android: new AndroidSettings(android, throttle) };
   }
 
-  read(target: Target) { return this.platforms[target.platform].read(target.id); }
-  update(target: Target, change: DeviceSetting) { return this.platforms[target.platform].update(target.id, change); }
+  read(target: Target) { return this.checked(target, platform => platform.read(target.id)); }
+  update(target: Target, change: DeviceSetting) { return this.checked(target, platform => platform.update(target.id, change)); }
+
+  // A request that failed because the device stopped or went away is an expected outcome, not a backend
+  // failure. A device list that cannot be read says nothing about the device, so the original failure stands.
+  private async checked<T>(target: Target, work: (platform: PlatformSettings) => Promise<T>): Promise<T> {
+    const platform = this.platforms[target.platform];
+    try { return await work(platform); }
+    catch (error) {
+      if (expectedOutcome(error) !== undefined) throw error;
+      const gone = await platform.listed(target.id).then(() => undefined, (lookup: unknown) => lookup);
+      throw expectedOutcome(gone) === undefined ? error : gone;
+    }
+  }
 }
 
 export function registerDeviceSettingsTools(server: McpServer, baguette: Baguette, android: ServeEmu) {
   const service = new DeviceSettingsService(baguette, android);
   const annotations = { destructiveHint: false, openWorldHint: false };
-  // Backend messages can contain device IDs, so Sentry receives only the setting name.
-  const guarded = <T>(action: (input: T) => string, handler: (input: T) => Promise<object>) => async (input: T) => {
+  // Backend messages can contain device IDs, so Sentry receives the setting name and how its request failed.
+  const guarded = <T extends { target: Target }>(action: (input: T) => string, handler: (input: T) => Promise<object>) => async (input: T) => {
     try { const settings = await handler(input); return { content: [{ type: "text" as const, text: JSON.stringify(settings) }], structuredContent: { settings } }; }
     catch (error) {
       // Expected outcomes carry fixed reasons and are counted without a report.
-      captureServerError(expectedOutcome(error) === undefined ? new Error("Device setting command failed.") : error, `device_settings.${action(input)}`);
+      captureServerError(error, `device_settings.${action(input)}`, {
+        reportAs: new Error("Device setting command failed."), tags: { device_platform: input.target.platform, ...deviceCommandTags(error) },
+      });
       return { isError: true, content: [{ type: "text" as const, text: errorMessage(error) }] };
     }
   };
@@ -221,7 +246,9 @@ export function registerDeviceSettingsTools(server: McpServer, baguette: Baguett
   }, guarded<{ target: Target; change: DeviceSetting }>(({ change }) => change.setting, ({ target, change }) => service.update(target, change)));
   const stopRecovery = android.onStart(serial => {
     // A device that went away is an expected outcome; the next backend start checks it again.
-    service.throttle.recover(serial).catch(error => captureServerError(expectedOutcome(error) === undefined ? new Error("Network throttle recovery failed.") : error, "device_settings.network_recovery"));
+    service.throttle.recover(serial).catch(error => captureServerError(error, "device_settings.network_recovery", {
+      reportAs: new Error("Network throttle recovery failed."), tags: { device_platform: "android", ...deviceCommandTags(error) },
+    }));
   });
   // Android throttling must be undone before the plugin exits, or the device keeps a dead proxy.
   return () => { stopRecovery(); return service.throttle.close(); };
