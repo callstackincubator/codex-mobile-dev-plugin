@@ -1,4 +1,6 @@
 import type { McpUiHostCapabilities, McpUiHostContext, McpUiStyles } from "@modelcontextprotocol/ext-apps/app-bridge";
+import { EXTENSION_ID, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
+import type { ClientCapabilities } from "@modelcontextprotocol/sdk/types.js";
 
 export type Theme = "light" | "dark";
 export type Target = "codex" | "claude" | "mac";
@@ -12,6 +14,8 @@ export type Target = "codex" | "claude" | "mac";
 export type HostProfile = {
   /** The name the host's MCP client reports to the server. */
   clientName: string;
+  /** What the host's MCP client advertises to the server. */
+  clientCapabilities: ClientCapabilities;
   hostInfo: { name: string; version: string };
   capabilities: McpUiHostCapabilities;
   context(theme: Theme, displayMode: "inline" | "fullscreen"): McpUiHostContext;
@@ -42,6 +46,8 @@ function tokens(theme: Theme, radius: string, font: string): McpUiStyles {
 export const HOSTS: Record<Exclude<Target, "mac">, HostProfile> = {
   codex: {
     clientName: "codex-mcp-client",
+    // Codex shows its panel from tool metadata and advertises no MCP Apps extension.
+    clientCapabilities: {},
     hostInfo: { name: "codex", version: "1" },
     // Codex routes messages and model context through OpenAI's extensions.
     capabilities: { ...chat, experimental: { "openai/message": {}, "openai/modelContext": {}, "openai/files": {} } },
@@ -53,6 +59,7 @@ export const HOSTS: Record<Exclude<Target, "mac">, HostProfile> = {
   },
   claude: {
     clientName: "claude-ai",
+    clientCapabilities: { extensions: { [EXTENSION_ID]: { mimeTypes: [RESOURCE_MIME_TYPE] } } } as ClientCapabilities,
     hostInfo: { name: "Claude Desktop", version: "1" },
     capabilities: chat,
     context: (theme, displayMode) => ({

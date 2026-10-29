@@ -21,6 +21,7 @@ export async function assertRuntime(environment) {
   await access("dist/server.mjs");
   await access("dist/ios-mirror-service.mjs");
   await access("dist/app.html");
+  await access("dist/browser-panel.html");
   await access("dist/baguette/Baguette");
   await access("dist/baguette/Baguette_Baguette.bundle");
   await access("dist/agent-device-server.mjs");

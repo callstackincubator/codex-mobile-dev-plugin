@@ -47,3 +47,18 @@ export async function buildUIPage({ name, entry, template, sources, output, envi
     .replace("<!-- APP_SCRIPT -->", () => `<script>${js.replace(/<\/script/gi, "<\\/script")}\n//# sourceURL=${sourceURL}\n</script>`));
   return result.metafile;
 }
+
+/**
+ * Bundles a page that hosts the UI rather than being it, such as the browser panel
+ * page, into one HTML file. It has no styles to compile and no telemetry of its own.
+ */
+export async function buildHostPage({ entry, template, output }) {
+  const result = await build({
+    entryPoints: [entry], bundle: true, write: false, format: "iife", platform: "browser",
+    target: "chrome120", minify: true, legalComments: "eof",
+  });
+  const js = result.outputFiles[0].text;
+  await mkdir(dirname(output), { recursive: true });
+  await writeFile(output, (await readFile(template, "utf8"))
+    .replace("<!-- APP_SCRIPT -->", () => `<script>${js.replace(/<\/script/gi, "<\\/script")}</script>`));
+}

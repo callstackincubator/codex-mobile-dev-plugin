@@ -3,7 +3,8 @@ import { openRequestSession } from "./request-session.ts";
 import type { ServerRequestContext } from "./request-session.ts";
 import { addToolIcons, PHONE_ICONS } from "./tool-icons.ts";
 import type { UIResource } from "./ui-resource.ts";
-import type { ServerFeature } from "./server-feature.ts";
+import type { PanelOpener, ServerFeature } from "./server-feature.ts";
+import type { SharedTransport } from "./shared-transport.ts";
 import { LIVE_UI_URI } from "@mobile-dev/shared/live-ui.ts";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { PLUGIN_VERSION } from "@mobile-dev/shared/version.ts";
@@ -111,6 +112,8 @@ export type PluginOptions = {
   copyScreenshot?: typeof copyPNGToClipboard;
   cpu?: CpuSessions;
   features?: ServerFeature[];
+  /** The transport the server will connect to, which features can let other connections join. */
+  connections?: SharedTransport;
 };
 
 export async function createPlugin(html: string | (() => Promise<UIResource>), options: PluginOptions = {}) {
@@ -255,11 +258,16 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
     }
   });
 
-  const openPanel = guarded(async (panelTarget: PanelTarget) => {
+  const panelOpeners: PanelOpener[] = [];
+  const openPanel = (tool: string) => guarded(async (panelTarget: PanelTarget) => {
     let status;
     try { status = await baguette.start(); }
     catch (error) { status = { ...await baguette.status(), error: errorMessage(error) }; }
-    return result({ ...status, panelTarget }, status.connected ? `Found ${status.devices.length} simulators.` : status.error ?? "The bundled simulator backend could not start.");
+    const opened = result({ ...status, panelTarget }, status.connected ? `Found ${status.devices.length} simulators.` : status.error ?? "The bundled simulator backend could not start.");
+    for (const text of await Promise.all(panelOpeners.map(opener => opener({ tool, target: panelTarget })))) {
+      if (text) opened.content.push({ type: "text", text });
+    }
+    return opened;
   });
 
   registerAppTool(server, "mobile_open_workspace", {
@@ -270,7 +278,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
       ui: { resourceUri: WORKSPACE_URI, visibility: ["app", "model"] },
       "openai/ui": { entrypoints: [{ type: "global" }] },
     },
-  }, openPanel);
+  }, openPanel("mobile_open_workspace"));
 
   registerAppTool(server, "mobile_open_simulator", {
     title: "Mobile Dev",
@@ -280,7 +288,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
       ui: { resourceUri: APP_URI, visibility: ["app", "model"] },
       "openai/ui": { entrypoints: [{ type: "thread" }] },
     },
-  }, openPanel);
+  }, openPanel("mobile_open_simulator"));
 
   server.registerTool("mobile_list_simulators", {
     title: "List iOS simulators", description: "Start the plugin's bundled backend if needed and list available and booted simulators.",
@@ -438,7 +446,8 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
     streams.reset(sessionId);
     return result({}, "Restarting simulator capture.");
   }));
-  const featureCleanups = features.flatMap(feature => feature(server) ?? []);
+  const featureContext = { connections: options.connections, onPanelOpen: (opener: PanelOpener) => { panelOpeners.push(opener); } };
+  const featureCleanups = features.flatMap(feature => feature(server, featureContext) ?? []);
 
   return {
     server,

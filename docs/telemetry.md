@@ -17,6 +17,12 @@ Behavior never depends on this value; it only attributes measurements and errors
   Cursor sessions were reported as `other`. Calls before connecting carry no host.
 - The server labels itself from the connecting MCP client's name on initialize and
   reports `other` until then.
+- In hosts that render no MCP Apps panel, such as Claude Code, the panel can open in
+  a browser beside the chat. Its page names itself with the server's label for the
+  chat host, so the panel is attributed to that host. Its requests join the host's
+  server session with the same trace propagation; the browser page adds no
+  telemetry of its own, and page server failures are captured as
+  `browser_panel.request`.
 - The server's metadata allowlist accepts only these values; the raw host or
   client name is never sent.
 

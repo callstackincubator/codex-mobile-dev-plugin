@@ -59,7 +59,8 @@ export const test = base.extend<Fixtures>({
 
   server: async ({ target }, use) => {
     const server = await startServer(target);
-    const client = new Client({ name: HOSTS[target as keyof typeof HOSTS].clientName, version: "1" });
+    const host = HOSTS[target as keyof typeof HOSTS];
+    const client = new Client({ name: host.clientName, version: "1" }, { capabilities: host.clientCapabilities });
     try {
       await client.connect(server.transport);
       const { tools } = await client.listTools();

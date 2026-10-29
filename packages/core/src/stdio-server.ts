@@ -5,6 +5,7 @@ import { createPlugin } from "./plugin.ts";
 import type { ServerFeature } from "./server-feature.ts";
 import { closeServerTelemetry, installTracePropagation } from "./telemetry.ts";
 import { declareSchemaDialect } from "./schema-dialect.ts";
+import { SharedTransport } from "./shared-transport.ts";
 
 /**
  * Runs the server over stdio, as every host launches it, with the host's own features.
@@ -12,8 +13,9 @@ import { declareSchemaDialect } from "./schema-dialect.ts";
  */
 export async function runStdioServer(features: ServerFeature[] = []) {
   const html = await readFile(new URL("./app.html", import.meta.url), "utf8");
-  const plugin = await createPlugin(() => loadUIResource(html, new URL("../ui-dev.json", import.meta.url)), { features });
-  const transport = new StdioServerTransport();
+  // Features can let other connections, such as a browser panel, share the host's session.
+  const transport = new SharedTransport(new StdioServerTransport());
+  const plugin = await createPlugin(() => loadUIResource(html, new URL("../ui-dev.json", import.meta.url)), { features, connections: transport });
   installTracePropagation(transport);
   declareSchemaDialect(transport);
   let closing = false;
