@@ -1,13 +1,9 @@
-import { fpsSourceHash } from "./build-fps.mjs";
-import { iosMirrorSourceHash } from "./build-ios-mirror.mjs";
-import { iosLogsSourceHash } from "./build-ios-logs.mjs";
-import { androidCpuSourceHash } from "./build-android-cpu.mjs";
-import { baguetteTelemetrySourceHash } from "./rebuild-baguette.mjs";
+import { nativeHelpers, verifyNativeHelper } from "./native-helpers.mjs";
 import { telemetryBuildEnvironment } from "./telemetry-build.mjs";
 import { buildServeEmu } from "./build-serve-emu.mjs";
 import { buildUIPage } from "./ui-page.mjs";
 import { buildServerBundles } from "./server-bundle.mjs";
-import { access, copyFile, cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { copyFile, cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { dirname, resolve } from "node:path";
 
@@ -15,75 +11,14 @@ const telemetryEnvironment = telemetryBuildEnvironment();
 // A fresh dist/, so packages never carry outputs an earlier build or branch left behind.
 await rm("dist", { recursive: true, force: true });
 await mkdir("dist", { recursive: true });
-await access("packages/native/vendor/baguette/Baguette");
-await access("packages/native/vendor/baguette/Baguette_Baguette.bundle");
-const baguetteReleaseText = await readFile("packages/native/vendor/baguette/release.json", "utf8");
-const baguetteRelease = JSON.parse(baguetteReleaseText);
-const baguetteTelemetryHash = await baguetteTelemetrySourceHash();
-if (baguetteRelease.build.telemetrySourceSHA256 !== baguetteTelemetryHash) throw new Error("Run npm run rebuild:baguette after changing native telemetry.");
-await cp("packages/native/vendor/baguette", "dist/baguette", { recursive: true });
-const iosMirrorRelease = JSON.parse(await readFile("packages/native/vendor/ios-mirror/release.json", "utf8"));
-const iosMirrorHash = await iosMirrorSourceHash();
-if (iosMirrorHash !== iosMirrorRelease.sourceSHA256) throw new Error("Run npm run rebuild:ios-mirror after editing the physical iOS capture addon.");
-const iosMirrorBinary = await readFile("packages/native/vendor/ios-mirror/darwin-arm64.node");
-const iosMirrorBinaryHash = createHash("sha256").update(iosMirrorBinary).digest("hex");
-if (iosMirrorBinaryHash !== iosMirrorRelease.binarySHA256) throw new Error("Physical iOS capture addon integrity check failed.");
-await cp("packages/native/vendor/ios-mirror", "dist/ios-mirror", { recursive: true });
-for (const file of ["README.md", "IDEVICE-LICENSE.txt", "DEVICE-HUB-LICENSE.txt"]) await copyFile(`packages/native/ios-mirror/${file}`, `dist/ios-mirror/${file}`);
-const iosLogsReleaseText = await readFile("packages/native/vendor/ios-logs/release.json", "utf8");
-const iosLogsRelease = JSON.parse(iosLogsReleaseText);
-const iosLogsHash = await iosLogsSourceHash();
-if (iosLogsHash !== iosLogsRelease.sourceSHA256) throw new Error("Run npm run rebuild:ios-logs after editing the physical iOS log reader.");
-for (const [file, metadata] of Object.entries(iosLogsRelease.binaries)) {
-  const bytes = await readFile(`packages/native/vendor/ios-logs/${file}`);
-  const hash = createHash("sha256");
-  hash.update(bytes);
-  const sha256 = hash.digest("hex");
-  if (sha256 !== metadata.sha256) throw new Error(`Physical iOS log reader integrity check failed for ${file}.`);
+for (const helper of nativeHelpers) {
+  await verifyNativeHelper(helper);
+  await cp(`packages/native/vendor/${helper.name}`, `dist/${helper.name}`, { recursive: true });
+  for (const [source, name] of helper.extraFiles) await copyFile(source, `dist/${helper.name}/${name}`);
 }
-await cp("packages/native/vendor/ios-logs", "dist/ios-logs", { recursive: true });
-for (const source of iosLogsRelease.sources) {
-  const archive = `${source.name}-${source.version}.tar.bz2`;
-  const bytes = await readFile(`packages/native/vendor/ios-logs/sources/${archive}`);
-  const hash = createHash("sha256");
-  hash.update(bytes);
-  const sha256 = hash.digest("hex");
-  if (sha256 !== source.sha256) throw new Error(`Physical iOS log dependency source integrity check failed for ${archive}.`);
-}
-for (const file of ["README.md", "LICENSE", "collector.c", "dependencies.json"]) await copyFile(`packages/native/ios-logs/${file}`, `dist/ios-logs/${file}`);
-await copyFile("tooling/build-ios-logs.mjs", "dist/ios-logs/build-ios-logs.mjs");
-await copyFile("tooling/native-telemetry.mjs", "dist/ios-logs/native-telemetry.mjs");
+// The physical iOS log reader's shipped source includes the shared telemetry.
 await mkdir("dist/telemetry", { recursive: true });
 for (const file of ["telemetry.c", "telemetry.h"]) await copyFile(`packages/native/telemetry/${file}`, `dist/telemetry/${file}`);
-for (const platform of ["ios", "android"]) {
-  const root = `packages/native/vendor/${platform}-fps`;
-  const text = await readFile(`${root}/release.json`, "utf8");
-  const release = JSON.parse(text);
-  const sourceHash = await fpsSourceHash(platform);
-  if (sourceHash !== release.sourceSHA256) throw new Error(`Run npm run rebuild:${platform}-fps after editing the FPS collector.`);
-  const binaries = platform === "ios"
-    ? [{ path: "mobile-dev-ios-fps", sha256: release.binarySHA256 }]
-    : Object.entries(release.binaries).map(([abi, binary]) => ({ path: `${abi}/mobile-dev-fps`, sha256: binary.sha256 }));
-  for (const binary of binaries) {
-    const bytes = await readFile(`${root}/${binary.path}`);
-    const hash = createHash("sha256");
-    hash.update(bytes);
-    if (hash.digest("hex") !== binary.sha256) throw new Error(`FPS helper integrity check failed for ${binary.path}.`);
-  }
-  await cp(root, `dist/${platform}-fps`, { recursive: true });
-  await copyFile(`packages/native/${platform}-fps/README.md`, `dist/${platform}-fps/README.md`);
-  if (platform === "android") await copyFile("packages/native/android-fps/perfetto/LIBCXX-LICENSE.TXT", "dist/android-fps/LIBCXX-LICENSE.TXT");
-}
-const cpuRelease = JSON.parse(await readFile("packages/native/vendor/android-cpu/release.json", "utf8"));
-const cpuSourceHash = await androidCpuSourceHash();
-if (cpuSourceHash !== cpuRelease.sourceSHA256) throw new Error("Rebuild the Android CPU collector after editing its source.");
-for (const [abi, metadata] of Object.entries(cpuRelease.binaries)) {
-  const bytes = await readFile(`packages/native/vendor/android-cpu/${abi}/mobile-dev-cpu`);
-  const hash = createHash("sha256").update(bytes).digest("hex");
-  if (hash !== metadata.sha256) throw new Error(`Android CPU collector integrity check failed for ${abi}.`);
-}
-await cp("packages/native/vendor/android-cpu", "dist/android-cpu", { recursive: true });
-for (const file of ["LICENSE", "README.md", "collector.c"]) await copyFile(`packages/native/android-cpu/${file}`, `dist/android-cpu/${file}`);
 const runtime = "packages/runtimes/agent-device";
 const lock = await readFile(`${runtime}/package-lock.json`, "utf8");
 const pinned = JSON.parse(lock).packages["node_modules/agent-device"];

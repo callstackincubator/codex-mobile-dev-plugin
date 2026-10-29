@@ -1,6 +1,5 @@
-import { execFile, spawn } from "node:child_process";
+import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { StringDecoder } from "node:string_decoder";
 import { setTimeout as delay } from "node:timers/promises";
 import { access } from "node:fs/promises";
 import { join } from "node:path";
@@ -10,6 +9,8 @@ import { parseIOSLog, parseLogcat } from "./log-parsers.ts";
 import { physicalIosLogCommand } from "./physical-ios-logs.ts";
 import { IOSLogProcessingTelemetry } from "./telemetry.ts";
 import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
+import { startCollector } from "./collectors/process.ts";
+import type { CollectorProcess } from "./collectors/process.ts";
 
 const execute = promisify(execFile);
 export type LogSink = { log: (log: LogRecord) => void; status: (status: LogSourceStatus) => void };
@@ -31,55 +32,35 @@ export async function listAndroidLogDevices(): Promise<{ id: string; name: strin
   });
 }
 
-export function runLogProcess(command: string, args: string[], parse: (line: string) => LogRecord | undefined, sink: LogSink, signal: AbortSignal, readyLine?: string): Promise<void> {
-  if (signal.aborted) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], shell: false });
-    const decoder = new StringDecoder("utf8");
-    let pending = "";
-    let discarding = false;
-    let diagnostics = "";
-    let stopping = false;
-    let ready = readyLine === undefined;
-    let killTimer: NodeJS.Timeout | undefined;
-    const stop = () => { if (stopping) return; stopping = true; child.kill("SIGTERM"); killTimer = setTimeout(() => child.kill("SIGKILL"), 1000); killTimer.unref(); };
-    const startupTimer = readyLine === undefined ? undefined : setTimeout(() => {
-      diagnostics = "The iPhone did not accept log streaming within 15 seconds. Unlock it and check the connection.";
-      stop();
-    }, 15000);
-    signal.addEventListener("abort", stop, { once: true });
-    child.once("spawn", () => { if (ready) sink.status({ source: "native", state: "live" }); if (signal.aborted) stop(); });
-    child.stdout.on("data", (chunk: Buffer) => {
-      const text = decoder.write(chunk);
-      for (const part of text.match(/[^\n]*\n|[^\n]+$/g) ?? []) {
-        const complete = part.endsWith("\n");
-        if (!discarding) pending += part;
-        if (pending.length > 256 * 1024) { pending = ""; discarding = true; }
-        if (complete) {
-          if (discarding === false && signal.aborted === false) {
-            const line = pending.trimEnd();
-            if (ready === false && line === readyLine) {
-              ready = true;
-              clearTimeout(startupTimer);
-              sink.status({ source: "native", state: "live" });
-            } else {
-              const record = parse(line);
-              if (record) sink.log(record);
-            }
-          }
-          pending = ""; discarding = false;
-        }
-      }
+/**
+ * Streams a log reader until it exits; resolves only when `signal` stopped it. `helper`
+ * readers speak the native helper protocol and are live once they report ready.
+ */
+export async function runLogProcess(command: string, args: string[], parse: (line: string) => LogRecord | undefined, sink: LogSink, signal: AbortSignal, helper = false): Promise<void> {
+  if (signal.aborted) return;
+  let reader: CollectorProcess;
+  try {
+    reader = await startCollector({
+      command, args, signal, protocol: helper, readyTimeoutMs: helper ? 15000 : undefined, killMs: 1000,
+      labels: {
+        exited: status => `Log reader exited: ${status}.`,
+        timeout: "The iPhone did not accept log streaming within 15 seconds. Unlock it and check the connection.",
+      },
+      output: { kind: "lines", maxLineLength: 256 * 1024, line(text) {
+        if (signal.aborted) return;
+        const record = parse(text.trimEnd());
+        if (record) sink.log(record);
+      } },
     });
-    child.stderr.on("data", chunk => { diagnostics = (diagnostics + chunk.toString()).slice(-2048); });
-    const cleanup = () => { signal.removeEventListener("abort", stop); clearTimeout(killTimer); clearTimeout(startupTimer); };
-    child.once("error", error => { cleanup(); signal.aborted ? resolve() : reject(error); });
-    child.once("close", (code, exitSignal) => {
-      cleanup();
-      if (signal.aborted) resolve();
-      else reject(new Error(diagnostics.trim() || `Log reader exited: ${code ?? exitSignal}.`));
-    });
-  });
+  } catch (error) {
+    if (signal.aborted) return;
+    throw error;
+  }
+  sink.status({ source: "native", state: "live" });
+  const error = await reader.closed;
+  await reader.stop();
+  if (signal.aborted) return;
+  throw error;
 }
 
 export function startNativeLogs(target: NativeLogTarget, sink: LogSink, physicalCommand = physicalIosLogCommand): StopLogSource {
@@ -110,7 +91,7 @@ export function startNativeLogs(target: NativeLogTarget, sink: LogSink, physical
           if (process.platform !== "darwin") throw new Error("iOS logs require macOS and Xcode.");
           if (target.kind === "physical") {
             const reader = await physicalCommand(target, signal);
-            await runLogProcess(reader.command, reader.args, parseIOS, scopedSink, signal, '{"ready":true}');
+            await runLogProcess(reader.command, reader.args, parseIOS, scopedSink, signal, true);
           } else {
             const processFilter = target.pid === undefined ? target.process : String(target.pid);
             await runLogProcess("xcrun", ["simctl", "spawn", target.deviceId, "log", "stream", "--style", "ndjson", "--level", "debug",

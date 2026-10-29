@@ -6,6 +6,7 @@ import { pluginMarketplace } from "./plugin-marketplace.mjs";
 import { buildCodexHost } from "./build.mjs";
 import { assertRuntime, RELEASE_DOCUMENTS, releaseVersion, stageRuntime } from "../../../tooling/host-runtime.mjs";
 import { sharedSkills } from "../../../tooling/plugin-hosts.mjs";
+import { nativeExecutables } from "../../../tooling/native-helpers.mjs";
 
 const telemetryEnvironment = telemetryBuildEnvironment();
 await assertRuntime(telemetryEnvironment);
@@ -27,8 +28,7 @@ await writeFile(`${plugin}/.codex-plugin/plugin.json`, JSON.stringify(manifest, 
 await mkdir(`${plugin}/scripts`, { recursive: true });
 await copyFile(`${source}/scripts/launch-mcp.sh`, `${plugin}/scripts/launch-mcp.sh`);
 await chmod(`${plugin}/scripts/launch-mcp.sh`, 0o755);
-await chmod(`${plugin}/dist/baguette/Baguette`, 0o755);
-await chmod(`${plugin}/dist/ios-logs/mobile-dev-ios-logs`, 0o755);
+for (const path of nativeExecutables()) await chmod(`${plugin}/dist/${path}`, 0o755);
 await mkdir(`${marketplace}/.agents/plugins`, { recursive: true });
 const catalog = pluginMarketplace(manifest.name);
 const catalogText = JSON.stringify(catalog, null, 2);

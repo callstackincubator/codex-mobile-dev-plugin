@@ -5,12 +5,12 @@ import type { CpuPhase } from "@mobile-dev/shared/cpu.ts";
 import { displayFpsTargetSchema } from "@mobile-dev/shared/display-fps.ts";
 import type { DisplayFpsBatch, DisplayFpsSample, DisplayFpsTarget } from "@mobile-dev/shared/display-fps.ts";
 import { startDisplayFpsMonitor } from "./source.ts";
-import type { CpuMonitor } from "../cpu/monitor.ts";
+import type { Collector } from "../collectors/process.ts";
 
 type Session = {
   target: DisplayFpsTarget; phase: CpuPhase; error?: string; abort: AbortController; expires: number;
   samples: Array<{ revision: number; sample: DisplayFpsSample }>; revision: number; waiters: Set<() => void>;
-  start?: Promise<void>; monitor?: CpuMonitor; stopping?: Promise<void>;
+  start?: Promise<void>; monitor?: Collector; stopping?: Promise<void>;
 };
 
 export class DisplayFpsSessions {

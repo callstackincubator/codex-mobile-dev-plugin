@@ -1,6 +1,7 @@
 import { access, cp, readFile, readdir, stat } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { assertBuildEnvironment } from "./telemetry-build.mjs";
+import { nativeRuntimeFiles } from "./native-helpers.mjs";
 
 export const RELEASE_DOCUMENTS = ["README.md", "LICENSE", "THIRD_PARTY_NOTICES.md", "PRIVACY.md", "TERMS.md", "SUPPORT.md"];
 
@@ -12,12 +13,7 @@ export const RELEASE_DOCUMENTS = ["README.md", "LICENSE", "THIRD_PARTY_NOTICES.m
 export const PANEL_PARTS = ["baguette", "serve-emu", "ios-mirror", "ios-mirror-service.mjs"];
 
 const RUNTIME_FILES = [
-  "server.mjs", "ios-mirror-service.mjs", "app.html", "baguette/Baguette", "baguette/Baguette_Baguette.bundle",
-  "ios-fps/mobile-dev-ios-fps",
-  ...["arm64-v8a", "armeabi-v7a", "x86", "x86_64"].map(abi => `android-fps/${abi}/mobile-dev-fps`),
-  "ios-mirror/darwin-arm64.node", "ios-mirror/third-party-licenses.txt", "ios-logs/mobile-dev-ios-logs", "ios-logs/third-party-licenses.txt",
-  ...["arm64-v8a", "armeabi-v7a", "x86", "x86_64"].map(abi => `android-cpu/${abi}/mobile-dev-cpu`),
-  "android-cpu/LICENSE", "serve-emu/src/cli.mjs", "serve-emu/vendor/scrcpy-server-v4.0",
+  "server.mjs", "ios-mirror-service.mjs", "app.html", ...nativeRuntimeFiles(), "serve-emu/src/cli.mjs", "serve-emu/vendor/scrcpy-server-v4.0",
   "agent-device/node_modules/agent-device/dist/apple/runner/AgentDeviceRunner/AgentDeviceRunner.xcodeproj/project.pbxproj",
   "agent-device/tools.json",
 ];

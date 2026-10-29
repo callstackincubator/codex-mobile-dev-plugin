@@ -24,10 +24,10 @@ export class FrameTimeline {
   private sample: (reading: FrameReading) => void;
   private now: () => number;
 
-  constructor(sample: (reading: FrameReading) => void, now = () => performance.now() / 1000) {
+  constructor(sample: (reading: FrameReading) => void, now = () => performance.now() / 1000, control?: (line: string) => void) {
     this.sample = sample;
     this.now = now;
-    this.stream = new TraceStream(packet => this.packet(packet));
+    this.stream = new TraceStream(packet => this.packet(packet), control);
   }
   push(chunk: Buffer) { this.stream.push(chunk); }
 

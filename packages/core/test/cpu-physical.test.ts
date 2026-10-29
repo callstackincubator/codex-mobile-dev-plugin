@@ -98,7 +98,7 @@ const server = net.createServer(socket => {
 server.on('close', () => process.exit(0));
 server.listen(0, '127.0.0.1', () => {
   const address = server.address();
-  const line = JSON.stringify({port: address.port}) + '\\n';
+  const line = JSON.stringify({type: 'ready', port: address.port}) + '\\n';
   process.stdout.write(line.slice(0, 4));
   setImmediate(() => process.stdout.write(line.slice(4)));
 });

@@ -2,14 +2,10 @@ import { createServer } from "node:http";
 import { once } from "node:events";
 import { WebSocketServer } from "ws";
 import type { InputStatus } from "../core/src/simulator-input.ts";
-import { createPlugin, type PluginOptions } from "../core/src/plugin.ts";
-import { createCpuSessions } from "../core/src/cpu/sessions.ts";
+import { createPlugin } from "../core/src/plugin.ts";
 import { Simctl } from "../core/src/simctl.ts";
 
-export async function createTestPlugin(html: Parameters<typeof createPlugin>[0], options: PluginOptions = {}) {
-  const root = new URL("../native/vendor/android-cpu/", import.meta.url);
-  return createPlugin(html, { ...options, cpu: await createCpuSessions(root) });
-}
+export const createTestPlugin = createPlugin;
 
 export const UDID = "B5C969F6-58A4-4C31-AB12-FB9E56D681DE";
 export const OTHER_UDID = "A17F4F36-7E21-4CA0-8ACD-BBB530887763";

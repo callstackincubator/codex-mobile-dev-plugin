@@ -7,7 +7,8 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createHash } from "node:crypto";
 import { AndroidCpuSampler, androidSampleSchema } from "../src/cpu/android-counters.ts";
-import { startAndroidCpuMonitor, deployAndroidCollector, loadAndroidCollector } from "../src/cpu/android.ts";
+import { androidCpuCollector, startAndroidCpuMonitor } from "../src/cpu/android.ts";
+import { AndroidHelper } from "../src/collectors/android-helper.ts";
 import { createCpuSessions } from "../src/cpu/sessions.ts";
 import type { CpuSessions } from "../src/cpu/sessions.ts";
 import { parseAndroidApps } from "../src/device-apps/apps.ts";
@@ -102,9 +103,8 @@ test("closing during Android collector startup cancels and waits for the helper"
 test("Android deployment verifies ABI binaries and atomically replaces the executable", async () => {
   const commands: string[][] = [];
   const root = new URL("../../native/vendor/android-cpu/", import.meta.url);
-  const collector = await loadAndroidCollector(root);
-  const arm64 = collector.get("arm64-v8a");
-  assert.ok(arm64);
+  const collector = androidCpuCollector(root);
+  const arm64 = await collector.binary("arm64-v8a");
   const run = async (_adb: string, args: string[]) => {
     commands.push(args);
     if (args[2] === "push") {
@@ -114,7 +114,7 @@ test("Android deployment verifies ABI binaries and atomically replaces the execu
     return commands.length === 1 ? "arm64-v8a\n" : "";
   };
   const signal = new AbortController().signal;
-  const remote = await deployAndroidCollector("adb", "emulator-5554", signal, collector, run);
+  const remote = await collector.deploy("adb", "emulator-5554", signal, run);
   assert.match(remote, /^\/data\/local\/tmp\/mobile-dev-cpu-[a-f0-9]{64}$/);
   assert.equal(commands[1][2], "push");
   assert.notEqual(commands[1].at(-1), remote, "Do not overwrite a running executable.");
@@ -123,8 +123,8 @@ test("Android deployment verifies ABI binaries and atomically replaces the execu
   const leftover = access(stagedFile);
   await assert.rejects(leftover, { code: "ENOENT" });
   const release = JSON.parse(await readFile(new URL("release.json", root), "utf8"));
-  for (const [abi, metadata] of Object.entries<{ sha256: string }>(release.binaries)) {
-    const bytes = await readFile(new URL(`${abi}/mobile-dev-cpu`, root));
+  for (const [binary, metadata] of Object.entries<{ sha256: string }>(release.binaries)) {
+    const bytes = await readFile(new URL(binary, root));
     const digest = createHash("sha256").update(bytes).digest("hex");
     assert.equal(digest, metadata.sha256);
   }
@@ -147,7 +147,7 @@ test("Android CPU sessions reconnect after the original plugin cache is removed"
   const original = join(temporary, "plugin-cache", "old-version", "dist", "android-cpu");
   await cp("packages/native/vendor/android-cpu", original, { recursive: true });
   const root = pathToFileURL(`${original}/`);
-  const sessions = await createCpuSessions(root);
+  const sessions = createCpuSessions(root);
   cpu = sessions;
   const sdk = join(temporary, "sdk");
   const platformTools = join(sdk, "platform-tools");
@@ -212,22 +212,32 @@ else if (args[3] === '-T') {
   }
 });
 
-test("collector startup verifies every ABI before retaining its bytes", async t => {
+test("CPU sessions load the collector on first use", async () => {
+  const sessions = createCpuSessions(new URL("file:///nonexistent/android-cpu/"));
+  await sessions.close();
+});
+
+test("Android helpers verify each ABI before retaining its bytes and retry after a repair", async t => {
   const temporaryBase = tmpdir();
   const prefix = join(temporaryBase, "mobile-dev-cpu-integrity-test-");
   const temporary = await mkdtemp(prefix);
   t.after(() => rm(temporary, { recursive: true, force: true }));
   await cp("packages/native/vendor/android-cpu", temporary, { recursive: true });
   const binary = join(temporary, "x86", "mobile-dev-cpu");
+  const original = await readFile(binary);
   await writeFile(binary, "corrupted");
   const root = pathToFileURL(`${temporary}/`);
-  const loading = loadAndroidCollector(root);
-  await assert.rejects(loading, /integrity check for x86/);
+  const helper = new AndroidHelper("mobile-dev-cpu", root, "Android CPU collector");
+  await assert.rejects(helper.binary("x86"), /integrity check for x86/);
+  await writeFile(binary, original);
+  const repaired = await helper.binary("x86");
+  assert.deepEqual(repaired.bytes, original);
+  assert.equal(await helper.binary("x86"), repaired);
 });
 
 test("failed Android deployment removes host staging and the partial device upload", async () => {
   const root = new URL("../../native/vendor/android-cpu/", import.meta.url);
-  const collector = await loadAndroidCollector(root);
+  const collector = androidCpuCollector(root);
   const commands: string[][] = [];
   let stagedFile = "";
   const run = async (_adb: string, args: string[]) => {
@@ -237,7 +247,7 @@ test("failed Android deployment removes host staging and the partial device uplo
     return "";
   };
   const signal = new AbortController().signal;
-  const deploying = deployAndroidCollector("adb", "emulator-5554", signal, collector, run);
+  const deploying = collector.deploy("adb", "emulator-5554", signal, run);
   await assert.rejects(deploying, /Upload failed/);
   const cleanup = commands.at(-1);
   assert.deepEqual(cleanup?.slice(2, 5), ["shell", "rm", "-f"]);

@@ -7,7 +7,7 @@ import { runningDeviceApps } from "../device-apps/apps.ts";
 import { CpuBuffer } from "./buffer.ts";
 import { startCpuMonitor } from "./source.ts";
 import type { CpuMonitorOptions } from "./source.ts";
-import { loadAndroidCollector } from "./android.ts";
+import { androidCpuCollector } from "./android.ts";
 import type { CpuMonitor } from "./monitor.ts";
 
 type Session = {
@@ -21,8 +21,8 @@ type Session = {
 };
 type CpuSources = { apps: typeof runningDeviceApps; monitor: (options: CpuMonitorOptions) => Promise<CpuMonitor> };
 
-export async function createCpuSessions(root = new URL("./android-cpu/", import.meta.url)): Promise<CpuSessions> {
-  const collector = await loadAndroidCollector(root);
+export function createCpuSessions(root = new URL("./android-cpu/", import.meta.url)): CpuSessions {
+  const collector = androidCpuCollector(root);
   const monitor = (options: CpuMonitorOptions) => startCpuMonitor(options, collector);
   const sessions = new CpuSessions({ apps: runningDeviceApps, monitor });
   return sessions;
