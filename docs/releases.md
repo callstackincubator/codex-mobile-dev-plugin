@@ -118,23 +118,26 @@ plugin directory, point the submission at the plugin folder on that branch.
 
 ## Store updates and the GitHub migration
 
-Release builds read the published store version through the app-server
-`plugin/read` RPC, matching Mobile Dev's exact remote store ID. The experimental
-API is enabled explicitly; it preserves the catalog `version` separately from
-`localVersion`. The CLI listing prefers the installed version and cannot serve as
-the update source once a store plugin is installed. The CLI listing is used only
-to identify the legacy Git marketplace for cleanup. GitHub tags and releases do
-not advertise store updates. Successful checks
-are cached for one hour across chats in the active Codex profile; unavailable
-checks retry after fifteen minutes. Old GitHub update caches are discarded.
-Development builds do not check or migrate public installations. The Claude and
-Cursor packages run the shared server, which has no updater.
+Release builds read Mobile Dev's public store endpoint at
+`https://chatgpt.com/backend-api/ps/plugins/plugins_6ac4c117f76881918d3676e851fa4005`.
+The response must match the exact plugin ID and name, have status `ENABLED`, and
+contain a semantic `release.version`. Requests omit credentials and cookies; they
+do not use Codex CLI authentication or start a temporary app-server. API-key CLI
+profiles can check the published version without changing their login.
 
-The app-server plugin API is under development. This integration deliberately
-accepts its compatibility risk. If discovery fails or its response no longer
-matches, the check stays unavailable and retries; it never uses a GitHub version
-as an alternative. The temporary app-server process closes after each lookup,
-and disposal aborts pending requests.
+The published version is separate from the locally installed version. Git
+marketplace discovery is scoped to `mobile-dev`; store installation metadata
+comes from the CLI's installed-only listing and its package manifest. The full
+available catalog is never included in CLI output. GitHub tags and releases do
+not advertise store updates. Successful checks are cached for one hour across
+chats in the active Codex profile; unavailable checks retry after fifteen minutes.
+Old GitHub update caches are discarded. Development builds do not check or migrate
+public installations. The Claude and Cursor packages run the shared server, which
+has no updater.
+
+The public catalog endpoint is internal and may change. If discovery fails or its
+response no longer matches, the check stays unavailable and retries. Requests have
+a twenty-second deadline, reject redirects, and abort when the updater closes.
 
 The update banner opens the store listing through the host's link API. Store
 updates are installed there. The old Git marketplace upgrade tool is removed.
@@ -142,7 +145,7 @@ updates are installed there. The old Git marketplace upgrade tool is removed.
 For GitHub installations, migration requires a published store version of at
 least **0.1.167**, and at least the running plugin version. The user installs and
 enables the store version, then clicks **Finish migration**. An app-only MCP tool
-checks the exact remote identity, enabled installation, installed `localVersion`,
+checks the exact remote identity, enabled installation, locally installed version,
 and package manifest before removing `mobile-dev@mobile-dev` and the verified
 official Git marketplace. It verifies
 the store installation again afterward. Local development marketplaces and user

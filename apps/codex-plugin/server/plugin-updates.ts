@@ -1,11 +1,10 @@
-import { execFile, spawn } from "node:child_process";
+import { execFile } from "node:child_process";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { createInterface } from "node:readline";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
@@ -17,9 +16,10 @@ import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 import { captureServerError } from "@mobile-dev/core/telemetry.ts";
 import { resolveTelemetryEnvironment } from "@mobile-dev/core/telemetry-environment.ts";
 
-export function recordPluginUpdate(operation: "check" | "migrate", outcome: "disabled" | "unavailable" | "current" | "available" | "migration" | "migrated" | "failed", duration: number) {
+export function recordPluginUpdate(operation: "check" | "migrate", outcome: "disabled" | "unavailable" | "current" | "available" | "migration" | "migrated" | "failed", duration: number, failure?: UpdateFailure | "unknown") {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
-  const attributes = { component: "server", operation, outcome };
+  const attributes: Record<string, string> = { component: "server", operation, outcome };
+  if (failure !== undefined) attributes.failure = failure;
   Sentry.metrics.count("plugin.update.operations", 1, { attributes });
   Sentry.metrics.gauge("plugin.update.duration", duration, { unit: "millisecond", attributes });
 }
@@ -28,6 +28,7 @@ const execute = promisify(execFile);
 const repositories = ["callstackincubator/codex-mobile-dev-plugin", "callstackincubator/mobile-dev"];
 const storeMarketplace = "openai-curated-remote";
 const githubPlugin = "mobile-dev@mobile-dev";
+const storePlugin = "mobile-dev@openai-curated-remote";
 const checkIntervalMs = 60 * 60 * 1000;
 const failedCheckIntervalMs = 15 * 60 * 1000;
 const numberSchema = z.number();
@@ -59,23 +60,16 @@ const marketplaceSchema = z.object({ marketplaces: marketplacesArraySchema });
 const removedSchema = z.object({ pluginId: textSchema });
 const removedMarketplaceSchema = z.object({ marketplaceName: textSchema });
 type Cache = z.infer<typeof cacheSchema>;
-const nullableReleaseSchema = releaseVersionSchema.nullable();
 const storeSummarySchema = z.object({
   remotePluginId: storeIdSchema, name: pluginNameSchema, version: releaseVersionSchema,
-  localVersion: nullableReleaseSchema, installed: booleanSchema, enabled: booleanSchema,
 });
-const storeDetailsSchema = z.object({ summary: storeSummarySchema });
-const storeResponseSchema = z.object({ plugin: storeDetailsSchema });
-const unknownSchema = z.unknown();
-const optionalUnknownSchema = unknownSchema.optional();
-const rpcResponseSchema = z.object({ id: numberSchema, result: optionalUnknownSchema, error: optionalUnknownSchema });
+const publishedReleaseSchema = z.object({ version: releaseVersionSchema });
+const enabledStatusSchema = z.literal("ENABLED");
+const storeResponseSchema = z.object({ id: storeIdSchema, name: pluginNameSchema, status: enabledStatusSchema, release: publishedReleaseSchema });
 export type StorePlugin = z.infer<typeof storeSummarySchema>;
-type Catalog = z.infer<typeof pluginsSchema> & { store: StorePlugin };
+type Catalog = z.infer<typeof pluginsSchema> & { store: StorePlugin & { localVersion: string | null; installed: boolean; enabled: boolean } };
 export type ReadStore = () => Promise<unknown>;
 export type RunCodex = (args: string[]) => Promise<unknown>;
-// Why an update step failed, tagged on migration failures: Codex was not found, a Codex
-// command or the store catalog failed, Codex answered unexpectedly, or a step's result
-// did not hold.
 type UpdateFailure = "codex-not-found" | "command-failed" | "invalid-response" | "store-unavailable" | "foreign-marketplace" | "not-removed" | "not-verified" | "cache-write";
 type MigrationStep = "catalog" | "remove-plugin" | "remove-marketplace" | "verify" | "save";
 class PluginUpdateError extends Error {
@@ -120,70 +114,32 @@ export function createCodexRunner(cwd: string, options: { path?: string; env?: N
   };
 }
 
-export async function readPluginStore(cwd: string, options: { path?: string; env?: NodeJS.ProcessEnv; signal?: AbortSignal } = {}): Promise<StorePlugin> {
-  const path = options.path ?? await resolveCodexCli(process.ppid, cwd);
-  options.signal?.throwIfAborted();
-  const host = spawn(path, ["--no-daemon", "app-server", "--stdio"], {
-    cwd, env: options.env ?? process.env, stdio: ["pipe", "pipe", "pipe"], windowsHide: true,
-  });
-  const lines = createInterface({ input: host.stdout });
-  const pending = new Map<number, { resolve: (result: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
-  let nextId = 1;
-  function fail() {
-    const error = new PluginUpdateError("Could not read the Codex plugin store catalog.", "store-unavailable");
-    for (const request of pending.values()) {
-      clearTimeout(request.timer);
-      request.reject(error);
-    }
-    pending.clear();
-  }
-  function send(message: unknown) {
-    const text = JSON.stringify(message);
-    host.stdin.write(`${text}\n`);
-  }
-  function request(method: string, params: unknown): Promise<unknown> {
-    const id = nextId++;
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { fail(); host.kill(); }, 20000);
-      pending.set(id, { resolve, reject, timer });
-      send({ id, method, params });
-    });
-  }
-  function abort() { fail(); host.kill(); }
-  host.stderr.resume();
-  host.on("error", fail);
-  host.on("exit", fail);
-  host.stdin.on("error", fail);
-  options.signal?.addEventListener("abort", abort, { once: true });
-  lines.on("line", line => {
-    let data: unknown;
-    try { data = JSON.parse(line); } catch { return; }
-    const parsed = rpcResponseSchema.safeParse(data);
-    if (parsed.success === false) return;
-    const response = parsed.data;
-    const request = pending.get(response.id);
-    if (request === undefined) return;
-    clearTimeout(request.timer);
-    pending.delete(response.id);
-    if (response.error) {
-      const error = new PluginUpdateError("Codex could not read the plugin store catalog.", "store-unavailable");
-      request.reject(error);
-    } else request.resolve(response.result);
-  });
+export async function readPluginStore(options: { fetch?: typeof globalThis.fetch; signal?: AbortSignal } = {}): Promise<StorePlugin> {
+  const request = options.fetch ?? globalThis.fetch;
+  const timeout = AbortSignal.timeout(20000);
+  const signals = [timeout];
+  if (options.signal !== undefined) signals.push(options.signal);
+  const signal = AbortSignal.any(signals);
+  const url = `https://chatgpt.com/backend-api/ps/plugins/${PLUGIN_STORE_ID}`;
+  let response: Response;
   try {
-    await request("initialize", {
-      clientInfo: { name: "mobile-dev-updates", version: PLUGIN_VERSION },
-      capabilities: { experimentalApi: true, requestAttestation: false },
+    response = await request(url, {
+      headers: { Accept: "application/json", "OAI-Product-Sku": "codex" },
+      credentials: "omit", redirect: "error", signal,
     });
-    send({ method: "initialized" });
-    const result = await request("plugin/read", { remoteMarketplaceName: storeMarketplace, pluginName: "mobile-dev" });
-    const parsed = storeResponseSchema.parse(result);
-    return parsed.plugin.summary;
-  } finally {
-    options.signal?.removeEventListener("abort", abort);
-    for (const request of pending.values()) clearTimeout(request.timer);
-    lines.close();
-    host.kill();
+  } catch {
+    throw new PluginUpdateError("Could not read the Codex plugin store catalog.", "store-unavailable");
+  }
+  if (response.ok === false) {
+    await response.body?.cancel();
+    throw new PluginUpdateError("Could not read the Codex plugin store catalog.", "store-unavailable");
+  }
+  try {
+    const data: unknown = await response.json();
+    const plugin = storeResponseSchema.parse(data);
+    return { remotePluginId: plugin.id, name: plugin.name, version: plugin.release.version };
+  } catch {
+    throw new PluginUpdateError("The plugin store returned an invalid update response.", "invalid-response");
   }
 }
 
@@ -234,7 +190,7 @@ export class PluginUpdates {
     this.runningGithub = pluginParent.endsWith(githubCache);
     this.cachePath = join(this.profile, "mobile-dev", "updates.json");
     this.run = options.run ?? createCodexRunner(this.profile, { signal: this.abort.signal });
-    this.readStore = options.readStore ?? (() => readPluginStore(this.profile, { signal: this.abort.signal }));
+    this.readStore = options.readStore ?? (() => readPluginStore({ signal: this.abort.signal }));
     this.now = options.now ?? Date.now;
   }
 
@@ -279,12 +235,21 @@ export class PluginUpdates {
   }
 
   private async catalog(): Promise<Catalog> {
-    const plugins = this.run(["plugin", "list", "--available", "--json"]);
+    const plugins = this.run(["plugin", "list", "--marketplace", "mobile-dev", "--available", "--json"]);
+    const installed = this.run(["plugin", "list", "--json"]);
     const store = this.readStore();
-    const results = await Promise.all([plugins, store]);
+    const results = await Promise.all([plugins, installed, store]);
     const catalog = pluginsSchema.parse(results[0]);
-    const summary = storeSummarySchema.parse(results[1]);
-    return { ...catalog, store: summary };
+    const local = pluginsSchema.parse(results[1]);
+    const summary = storeSummarySchema.parse(results[2]);
+    const entry = local.installed.find(plugin => plugin.pluginId === storePlugin && plugin.name === "mobile-dev"
+      && plugin.marketplaceName === storeMarketplace && plugin.source.source === "remote" && plugin.source.id === PLUGIN_STORE_ID);
+    const localVersion = entry?.version ?? null;
+    if (localVersion !== null) releaseVersionSchema.parse(localVersion);
+    return {
+      ...catalog,
+      store: { ...summary, localVersion, installed: entry?.installed ?? false, enabled: entry?.enabled ?? false },
+    };
   }
 
   private async storeInstalled(catalog: Catalog): Promise<boolean> {
@@ -317,6 +282,7 @@ export class PluginUpdates {
     const interval = cache.latestVersion === undefined ? failedCheckIntervalMs : checkIntervalMs;
     if (status.status === "migrated" || cache.checkedAt > 0 && age >= 0 && age < interval) return status;
     const startedAt = performance.now();
+    let failure: UpdateFailure | "unknown" | undefined;
     const next = this.emptyCache();
     next.checkedAt = this.now();
     try {
@@ -324,16 +290,17 @@ export class PluginUpdates {
       next.latestVersion = catalog.store.version;
       next.githubConfigured = githubConfigured(catalog);
       next.storeInstalled = await this.storeInstalled(catalog);
-    } catch { /* Unavailable catalog checks retry after the cache expires. */ }
+    } catch (error) { failure = updateFailure(error); }
     try { await this.saveCache(next); }
     catch {
       const error = new Error("Could not save the plugin update check.");
       captureServerError(error, "plugin.update.cache");
       delete next.latestVersion;
+      failure = "cache-write";
     }
     const update = this.status(next);
     const elapsed = performance.now() - startedAt;
-    recordPluginUpdate("check", update.status, elapsed);
+    recordPluginUpdate("check", update.status, elapsed, failure);
     return update;
   }
 
