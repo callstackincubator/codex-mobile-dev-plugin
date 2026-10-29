@@ -25,7 +25,7 @@ await rm(app, { recursive: true, force: true });
 await mkdir(`${contents}/MacOS`, { recursive: true });
 await mkdir(`${contents}/Resources/node`, { recursive: true });
 
-// The shared runtime with the Mac app's own server, which serves the page its window loads.
+// The shared runtime with the Mac app's own server and the page its window loads.
 const host = appHost("mac");
 const runtime = `${contents}/Resources/runtime`;
 await stageRuntime(runtime, { panel: host.panel });

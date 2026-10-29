@@ -3,9 +3,8 @@ import { buildServerBundles } from "../../../tooling/server-bundle.mjs";
 import { buildUIPage } from "../../../tooling/ui-page.mjs";
 
 /**
- * Builds the Mac app's own server and the page its window loads into a staged
- * runtime. The page sits beside the server, which registers and serves it with its
- * telemetry metadata.
+ * Builds the Mac app's own server, which serves its page's telemetry metadata, and
+ * the page its window loads from the runtime's `mac.html`, into a staged runtime.
  */
 export async function buildHost({ outdir, environment, sentryRoot }) {
   const ui = `${sentryRoot}/ui/mac`;
