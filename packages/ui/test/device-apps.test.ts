@@ -6,7 +6,7 @@ import { DeviceAppsStore } from "../src/device-apps.ts";
 import { AppVisibility } from "../../test-support/device-apps-fixtures.ts";
 import { UDID, OTHER_UDID } from "../../test-support/fixtures.ts";
 
-const device = { udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS" };
+const device = { udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS", platform: "ios", kind: "simulator" } as const;
 const first: DeviceApps = { apps: [{ bundleId: "app.a", pid: 1, foreground: true }], foregroundApp: { bundleId: "app.a", pid: 1 } };
 const second: DeviceApps = { apps: [{ bundleId: "app.a", pid: 1, foreground: false }, { bundleId: "app.b", pid: 2, foreground: true }], foregroundApp: { bundleId: "app.b", pid: 2 } };
 

@@ -40,7 +40,7 @@ test("the simulator toolbar opens notes, saves blue markers, and lets users edit
   store.capture = () => ({ screenshot: { id: "capture", data: "AA==", capturedAt: "2026-10-01T10:00:00Z" }, screen: { width: 390, height: 844, units: "points" } });
   store.readTree = async () => ({ tree: { label: "Continue", identifier: "continue", role: "AXButton", frame: { x: 10, y: 20, width: 100, height: 40 } } });
   await act(async () => {
-    store.connect(context); store.configure({ udid: "iphone", name: "iPhone", state: "Booted", runtime: "iOS", platform: "ios" }, false);
+    store.connect(context); store.configure({ udid: "iphone", name: "iPhone", state: "Booted", runtime: "iOS", platform: "ios", kind: "simulator" }, false);
     store.setViewport({ x: 16, y: 16, width: 150, height: 300, stageWidth: 640, stageHeight: 360 });
   });
   const selectButton = dom.window.document.querySelector('[data-element="select-mode"]') as HTMLButtonElement;
@@ -68,7 +68,7 @@ test("the simulator toolbar opens notes, saves blue markers, and lets users edit
   await act(async () => { editInput.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true })); });
   assert.equal(context.screenAnnotations[0].text, "Make this button blue");
   assert.equal(dom.window.document.querySelector('[aria-label="Annotation note"]'), null);
-  await act(async () => { store.configure({ udid: "iphone", name: "iPhone", state: "Booted", runtime: "iOS", platform: "ios" }, true); });
+  await act(async () => { store.configure({ udid: "iphone", name: "iPhone", state: "Booted", runtime: "iOS", platform: "ios", kind: "simulator" }, true); });
   const sendButton = Array.from(dom.window.document.querySelectorAll("button")).find(button => button.textContent === "Send to chat")!;
   assert.equal(sendButton.disabled, false, "Saved notes can send while the simulator reconnects.");
   await act(async () => { sendButton.click(); });
@@ -94,7 +94,7 @@ test("the simulator toolbar opens notes, saves blue markers, and lets users edit
   await act(async () => { copyButton.click(); });
   assert.equal(copied, message.value);
   assert.equal(errorPopover.querySelector('[role="status"]')!.textContent!, "Copied");
-  await act(async () => { errorButton.click(); store.configure({ udid: "iphone", name: "iPhone", state: "Booted", runtime: "iOS", platform: "ios" }, false); });
+  await act(async () => { errorButton.click(); store.configure({ udid: "iphone", name: "iPhone", state: "Booted", runtime: "iOS", platform: "ios", kind: "simulator" }, false); });
   // Let the closing popover restore focus before opening the notes menu.
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
   await act(async () => { (Array.from(dom.window.document.querySelectorAll("button")).find(button => button.textContent === "1 note") as HTMLButtonElement).click(); });

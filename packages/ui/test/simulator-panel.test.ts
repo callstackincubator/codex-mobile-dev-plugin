@@ -183,7 +183,7 @@ function fixture(t: TestContext) {
       if (call.name.startsWith("mobile_shutdown")) stoppedPlatforms.add(callPlatform);
       if (call.name.startsWith("mobile_list") || call.name.startsWith("mobile_boot") || call.name.startsWith("mobile_shutdown")) {
         const android = call.name.includes("android");
-        return { content: [], structuredContent: { connected: true, devices: [{ udid: android ? (stoppedPlatforms.has("android") ? "avd:Pixel" : "emulator-5554") : "iphone-1", name: android ? "Pixel" : "iPhone", state: stopped || stoppedPlatforms.has(callPlatform) ? "Shutdown" : "Booted", runtime: "", platform: android ? "android" : "ios" }] } };
+        return { content: [], structuredContent: { connected: true, devices: [{ udid: android ? (stoppedPlatforms.has("android") ? "avd:Pixel" : "emulator-5554") : "iphone-1", name: android ? "Pixel" : "iPhone", state: stopped || stoppedPlatforms.has(callPlatform) ? "Shutdown" : "Booted", runtime: "", platform: android ? "android" : "ios", kind: android ? "emulator" : "simulator" }] } };
       }
       if (call.name === "mobile_device_settings" || call.name === "mobile_update_device_setting") return { content: [], structuredContent: { settings: { appearance: "dark", locationSupported: true } } };
       if (call.name === "mobile_inspect_ui") {
@@ -285,7 +285,7 @@ for (const inputFirst of [false, true]) test(`Android opening intent is applied 
 for (const platform of ["ios", "android"] as const) test(`${platform} physical opening intent selects the phone before any simulator`, async t => {
   const f = fixture(t);
   f.setPhysicalDevices([physicalPhone]);
-  f.setAndroidDevices([{ udid: "emulator-5554", name: "Pixel AVD", state: "Booted", runtime: "Android", kind: "emulator" }, androidPhone]);
+  f.setAndroidDevices([{ udid: "emulator-5554", name: "Pixel AVD", state: "Booted", runtime: "Android", platform: "android", kind: "emulator" }, androidPhone]);
   const layouts: DeviceLayout[] = [];
   const workspace = new WorkspaceDevices([f.ios.panel, f.android.panel], layout => { layouts.push(layout); });
   t.after(() => workspace.dispose());
@@ -946,12 +946,12 @@ test("a stopped receive loop retries when its chat becomes visible again", async
 test("status arriving during startup still connects the selected device", async t => {
   const f = fixture(t);
   const starting = f.ios.panel.resume();
-  f.ios.panel.acceptStatus({ connected: true, managed: true, baseUrl: "http://localhost/", devices: [{ udid: "iphone-1", name: "iPhone", state: "Booted", runtime: "" }] });
+  f.ios.panel.acceptStatus({ connected: true, managed: true, baseUrl: "http://localhost/", devices: [{ udid: "iphone-1", name: "iPhone", state: "Booted", runtime: "", platform: "ios", kind: "simulator" }] });
   await starting;
   await waitFor(() => f.ios.element("screen").draws > 0);
   assert.equal(f.ios.element("empty").hidden, true);
   assert.equal(f.calls.filter(call => call.name === "mobile_stream_session").length, 1);
-  f.ios.panel.acceptStatus({ connected: true, managed: true, baseUrl: "http://localhost/", devices: [{ udid: "iphone-1", name: "iPhone", state: "Booted", runtime: "" }] });
+  f.ios.panel.acceptStatus({ connected: true, managed: true, baseUrl: "http://localhost/", devices: [{ udid: "iphone-1", name: "iPhone", state: "Booted", runtime: "", platform: "ios", kind: "simulator" }] });
   await new Promise(resolve => setTimeout(resolve, 10));
   assert.equal(f.calls.filter(call => call.name === "mobile_stream_session").length, 1);
   assert.equal(f.closed.length, 0);

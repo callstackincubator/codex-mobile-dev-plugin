@@ -45,7 +45,7 @@ const sessionIdSchema = z.string().regex(/^[a-f0-9]{64}$/);
 const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 const write = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
 const deviceInput = { udid: udidSchema.describe("A simulator UDID returned by mobile_list_simulators.") };
-const deviceSchema = z.object({ udid: udidSchema, name: z.string(), state: z.string(), runtime: z.string() });
+const deviceSchema = z.object({ udid: udidSchema, name: z.string(), state: z.string(), runtime: z.string(), platform: z.literal("ios"), kind: z.literal("simulator") });
 const statusOutput = {
   connected: z.boolean(), managed: z.boolean(), baseUrl: z.string(),
   devices: z.array(deviceSchema), error: z.string().optional(),

@@ -37,8 +37,10 @@ export const streamMessageSchema = z.union([
   z.object({ type: z.literal("set_scale"), scale: z.number().int().min(1).max(4) }).strict(),
 ]);
 
-export type SimulatorDevice = { udid: string; name: string; state: string; runtime: string; platform?: "ios" | "android"; kind?: "simulator" | "emulator" } | PhysicalIosDevice | PhysicalAndroidDevice;
-export type DeviceList = { running: unknown[]; available: unknown[] };
+type VirtualDeviceFields = { udid: string; name: string; state: string; runtime: string };
+export type IosSimulator = VirtualDeviceFields & { platform: "ios"; kind: "simulator" };
+export type AndroidEmulator = VirtualDeviceFields & { platform: "android"; kind: "emulator" };
+export type SimulatorDevice = IosSimulator | AndroidEmulator | PhysicalIosDevice | PhysicalAndroidDevice;
 export type Status = {
   connected: boolean;
   managed: boolean;
@@ -47,13 +49,13 @@ export type Status = {
   error?: string;
 };
 
-export function normalizeDevices(payload: unknown): SimulatorDevice[] {
+export function normalizeDevices(payload: unknown): IosSimulator[] {
   const parsed = z.object({ running: z.array(z.unknown()), available: z.array(z.unknown()) }).parse(payload);
-  const devices = new Map<string, SimulatorDevice>();
+  const devices = new Map<string, IosSimulator>();
   for (const [list, fallback] of [[parsed.available, "Shutdown"], [parsed.running, "Booted"]] as const) {
     for (const item of list) {
       const device = z.object({ udid: udidSchema, name: z.string(), state: z.string().optional(), runtime: z.string().optional() }).parse(item);
-      devices.set(device.udid, { ...device, state: device.state ?? fallback, runtime: device.runtime ?? "" });
+      devices.set(device.udid, { ...device, state: device.state ?? fallback, runtime: device.runtime ?? "", platform: "ios", kind: "simulator" });
     }
   }
   return [...devices.values()].sort((a, b) => Number(b.state === "Booted") - Number(a.state === "Booted") || a.name.localeCompare(b.name));

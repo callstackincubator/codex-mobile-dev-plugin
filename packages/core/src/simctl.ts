@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { z } from "zod";
 import { udidSchema } from "@mobile-dev/shared/protocol.ts";
-import type { SimulatorDevice, Status } from "@mobile-dev/shared/protocol.ts";
+import type { IosSimulator, Status } from "@mobile-dev/shared/protocol.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
 import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 
@@ -20,13 +20,13 @@ export function simulatorRuntimeName(identifier: string): string {
   return `${match[1]} ${match[2].replaceAll("-", ".")}`;
 }
 
-export function parseSimulatorList(output: string): SimulatorDevice[] {
+export function parseSimulatorList(output: string): IosSimulator[] {
   const { devices } = listing.parse(JSON.parse(output));
-  const simulators: SimulatorDevice[] = [];
+  const simulators: IosSimulator[] = [];
   for (const [runtime, entries] of Object.entries(devices)) {
     for (const entry of entries) {
       if (entry.isAvailable === false || udidSchema.safeParse(entry.udid).success === false) continue;
-      simulators.push({ udid: entry.udid, name: entry.name, state: entry.state, runtime: simulatorRuntimeName(runtime) });
+      simulators.push({ udid: entry.udid, name: entry.name, state: entry.state, runtime: simulatorRuntimeName(runtime), platform: "ios", kind: "simulator" });
     }
   }
   return simulators.sort((a, b) => Number(b.state === "Booted") - Number(a.state === "Booted") || a.name.localeCompare(b.name));

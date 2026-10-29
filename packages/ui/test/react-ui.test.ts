@@ -117,7 +117,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   const tracesift = new TraceSiftPanel(storageApp as unknown as App);
   const recordingController = new RecordingController(performanceApp as unknown as App);
   const panels = new WorkspaceTools({ context: context as PanelContext, deviceApps, logs: panel, performance, storage, tracesift });
-  deviceApps.selectDevice({ udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS" });
+  deviceApps.selectDevice({ udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS", platform: "ios", kind: "simulator" });
   performance.setAvailable(true);
   deviceApps.setAvailable(true);
   const root = createRoot(dom.window.document.getElementById("root")!);

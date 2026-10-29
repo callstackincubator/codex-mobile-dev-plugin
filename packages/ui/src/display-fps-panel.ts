@@ -4,6 +4,7 @@ import { CPU_HISTORY_SECONDS, CPU_MAX_SAMPLES } from "@mobile-dev/shared/cpu.ts"
 import type { DisplayFpsBatch, DisplayFpsSample, DisplayFpsTarget } from "@mobile-dev/shared/display-fps.ts";
 import type { SimulatorDevice } from "@mobile-dev/shared/protocol.ts";
 import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
+import { isDeviceActive } from "@mobile-dev/shared/devices.ts";
 
 export type DisplayFpsState = { fpsSamples: DisplayFpsSample[]; fpsPhase: CpuPhase; fpsError: string; fpsMonitoring: boolean; fpsSupported: boolean };
 type Session = { id: string; abort: AbortController; closing?: Promise<void> };
@@ -52,11 +53,10 @@ export class DisplayFpsPanel {
   private start(cleanup = this.cleanup) {
     const device = this.device;
     if (this.running || this.enabled === false || this.available === false || device === undefined) return;
-    const platform = device.platform ?? "ios";
-    if (platform === "ios" && device.kind !== "physical") return;
-    if (device.state !== "Booted" && device.state !== "connected") return;
+    if (device.kind === "simulator") return;
+    if (!isDeviceActive(device)) return;
     const epoch = this.epoch;
-    const target: DisplayFpsTarget = { platform, deviceId: device.udid };
+    const target: DisplayFpsTarget = { platform: device.platform, deviceId: device.udid };
     this.update({ fpsPhase: "connecting", fpsError: "", fpsMonitoring: true });
     const receiving = this.receive(target, epoch, cleanup);
     this.running = receiving.catch(error => {

@@ -9,7 +9,7 @@ import { createDeviceApps } from "../../test-support/device-apps-fixtures.ts";
 import { PerformancePanel } from "../src/performance-panel.ts";
 import { UDID, OTHER_UDID } from "../../test-support/fixtures.ts";
 
-const device = { udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS" };
+const device = { udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS", platform: "ios", kind: "simulator" } as const;
 async function tick() { for (let i = 0; i < 8; i++) await setImmediate(); }
 
 function host() {
@@ -255,7 +255,7 @@ test("switching between iOS and Android closes the previous monitor and selects 
   fake.emit({ cursor: 1, phase: "recording", memoryMetric: "physical-footprint", samples: [{ time: 1, interval: 1, cpuPercent: 60, memoryBytes: 104857600, threads: [] }] });
   await tick();
   panel.setThreadOrder("first-seen");
-  deviceApps.selectDevice({ ...device, udid: "emulator-5554", name: "Pixel", platform: "android" });
+  deviceApps.selectDevice({ ...device, udid: "emulator-5554", name: "Pixel", platform: "android", kind: "emulator" });
   await tick();
   const android = panel.getSnapshot();
   assert.equal(android.threadOrder, "first-seen");

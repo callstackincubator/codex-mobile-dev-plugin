@@ -9,7 +9,7 @@ import { createDeviceApps } from "../../test-support/device-apps-fixtures.ts";
 import { UDID } from "../../test-support/fixtures.ts";
 import { StoragePanel } from "../src/storage-panel.ts";
 
-const simulator = { udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS" };
+const simulator = { udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS", platform: "ios", kind: "simulator" } as const;
 const installed = (bundleId: string): InstalledApp => ({ bundleId, name: bundleId });
 
 // A device whose installed and running apps change between listings. Held listings wait until released.
@@ -73,12 +73,12 @@ test("Storage lists apps when the open panel's simulator boots, and again after 
 
 test("Storage lists apps again when the open panel's Android device reconnects", async t => {
   const { device, deviceApps, panel, listings, apps } = fixture(t);
-  const phone: PhysicalAndroidDevice = { udid: "R5CT1234567", name: "Pixel", state: "connected", runtime: "Android 16", platform: "android", kind: "physical", transportType: "wired" };
+  const phone: PhysicalAndroidDevice = { udid: "R5CT1234567", name: "Pixel", state: "Booted", runtime: "Android 16", platform: "android", kind: "physical", transportType: "wired" };
   deviceApps.selectDevice(phone);
   panel.show();
   await setImmediate();
   assert.equal(listings(), 1);
-  deviceApps.selectDevice({ ...phone, state: "disconnected" });
+  deviceApps.selectDevice({ ...phone, state: "offline" });
   device.apps = [installed("com.example.new")];
   deviceApps.selectDevice(phone);
   await setImmediate();
