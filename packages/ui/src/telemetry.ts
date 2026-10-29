@@ -218,14 +218,23 @@ function visibilityChanged() {
   previousFrame = undefined;
 }
 
-export function startUiTelemetry(app: HostBridge) {
-  const environmentMeta = document.querySelector<HTMLMetaElement>('meta[name="mobile-dev-environment"]');
-  const environment = validateTelemetryEnvironment(environmentMeta?.content);
-  const telemetryMeta = document.querySelector<HTMLMetaElement>('meta[name="mobile-dev-telemetry"]');
-  const enabled = telemetryMeta?.content !== "off";
-  const userMeta = document.querySelector<HTMLMetaElement>('meta[name="mobile-dev-user-id"]');
-  const sessionMeta = document.querySelector<HTMLMetaElement>('meta[name="mobile-dev-session-id"]');
-  const identity = enabled ? validateTelemetryIdentity(userMeta?.content, sessionMeta?.content) : undefined;
+/**
+ * The server-owned settings UI telemetry starts with: the environment, the opt-out
+ * (`telemetry: "off"`) and the anonymous identity. Pages a host reads from the server
+ * carry them in `mobile-dev-*` meta tags.
+ */
+export type UiTelemetryMetadata = { environment?: string; telemetry?: string; userId?: string; sessionId?: string };
+
+function documentTelemetryMetadata(): UiTelemetryMetadata {
+  const content = (name: string) => document.querySelector<HTMLMetaElement>(`meta[name="mobile-dev-${name}"]`)?.content;
+  return { environment: content("environment"), telemetry: content("telemetry"), userId: content("user-id"), sessionId: content("session-id") };
+}
+
+/** Starts UI telemetry with the page's meta tags, or with `metadata` the page read from the server itself. */
+export function startUiTelemetry(app: HostBridge, { metadata = documentTelemetryMetadata() }: { metadata?: UiTelemetryMetadata } = {}) {
+  const environment = validateTelemetryEnvironment(metadata.environment);
+  const enabled = metadata.telemetry !== "off";
+  const identity = enabled ? validateTelemetryIdentity(metadata.userId, metadata.sessionId) : undefined;
   const browserTracing = Sentry.browserTracingIntegration({ instrumentNavigation: false });
   Sentry.init({
     dsn: SENTRY_UI_DSN,

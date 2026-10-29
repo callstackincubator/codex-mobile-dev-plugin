@@ -23,9 +23,12 @@ Behavior never depends on this value; it only attributes measurements and errors
 Earlier releases have no `host` value. Surfaces, measurement names, units and
 boundaries are unchanged in every host.
 
-The Mac app loads its page through the server's `ui://mobile-dev/mac.html` resource,
-so the page receives the same server-owned environment, opt-out and anonymous
-identity as the Codex panel. Mac builds are development-only for now; the SwiftUI
+The Mac page reads the server's `ui://mobile-dev/mac-telemetry.json` resource over
+its own MCP connection and starts its telemetry with it, so it receives the same
+server-owned environment, opt-out and anonymous identity as the Codex panel. Its
+telemetry starts once that connection is open, so a failure to connect is not
+reported. Earlier releases did not report one either: the app read the page from
+the server's `ui://mobile-dev/mac.html` resource before loading it. Mac builds are development-only for now; the SwiftUI
 shell has no native Sentry SDK.
 
 ## Volume policy

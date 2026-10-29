@@ -59,9 +59,9 @@ window provides the native sidebar (tools and visible device platforms); a web
 view renders `apps/mac/web`, the shared views without the Codex toolbar.
 
 The app starts the bundled server over stdio exactly as Codex does and relays
-JSON-RPC lines between it and the page. Before the page connects, the app reads
-`ui://mobile-dev/mac.html` from the server, so the page gets the server's telemetry
-metadata. The page implements `HostBridge` (`packages/ui/src/host-bridge.ts`) with
+JSON-RPC lines between it and the page, the server's only MCP client. The app loads
+the page from its bundle; once connected, the page reads the server's telemetry
+metadata from `ui://mobile-dev/mac-telemetry.json` before its telemetry starts. The page implements `HostBridge` (`packages/ui/src/host-bridge.ts`) with
 an MCP client and offers no chat capabilities, so chat-only actions stay hidden.
 
 ```sh
@@ -169,8 +169,8 @@ them in [`tooling/hosts`](tooling/hosts):
   each host's capabilities and style tokens from [`profiles.ts`](tooling/hosts/profiles.ts)
   and answers the panel through the real server over stdio. Update a profile when a
   host changes what it advertises.
-- The Mac app's page loads the way its `PageLoader` does, with a stand-in for the
-  WebKit relay.
+- The Mac app's page loads from the build the way the app loads it from its bundle,
+  with a stand-in for the WebKit relay.
 - Each target's package limits: Codex's server against [Codex's tool limits](docs/architecture.md#runtime),
   the same measurement `npm run check:mcp-budget` makes for a packaged plugin, and every
   runtime file of a host with `maxFileBytes` in its `plugin-host.json`, such as Claude's

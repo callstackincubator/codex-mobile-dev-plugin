@@ -4,6 +4,7 @@ import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { HostBridge } from "@mobile-dev/ui/host-bridge.ts";
 import { PLUGIN_VERSION } from "@mobile-dev/shared/version.ts";
+import { MAC_TELEMETRY_URI, type MacTelemetryMetadata } from "../shared/telemetry.ts";
 
 type ShellMessage =
   | { type: "ready" }
@@ -53,6 +54,14 @@ export class MacHostBridge implements HostBridge {
 
   connect() { return this.client.connect(new WebKitRelayTransport()); }
   close() { return this.client.close(); }
+
+  /** Reads the server's telemetry environment, opt-out and anonymous identity once connected. */
+  async readTelemetryMetadata(): Promise<MacTelemetryMetadata> {
+    const { contents } = await this.client.readResource({ uri: MAC_TELEMETRY_URI });
+    const content = contents[0];
+    if (content === undefined || !("text" in content)) throw new Error("The server returned no telemetry metadata. Rebuild the app with npm run build:mac.");
+    return JSON.parse(content.text) as MacTelemetryMetadata;
+  }
 
   callServerTool: HostBridge["callServerTool"] = async (params, options) =>
     await this.client.callTool(params, undefined, options) as CallToolResult;

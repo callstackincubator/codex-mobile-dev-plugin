@@ -229,6 +229,45 @@ test("browser errors use the served environment regardless of live-reload marker
   assert.equal(disabledRequests, 0);
 });
 
+test("a page that reads the server's telemetry metadata itself starts with it instead of meta tags", async t => {
+  const built = await build({
+    stdin: { contents: 'export * from "./packages/ui/src/telemetry.ts";', resolveDir: process.cwd(), loader: "ts" },
+    bundle: true, write: false, format: "iife", globalName: "Telemetry", platform: "browser", target: "chrome120",
+    define: { "process.env.NODE_ENV": '"production"' },
+  });
+  // The Mac page carries no metadata of its own; the server's opt-out wins as it does in meta tags.
+  for (const telemetry of ["on", "off"]) {
+    const dom = new JSDOM('<html data-view="workspace"><head></head></html>', { pretendToBeVisual: true, runScripts: "outside-only", url: "https://mobile-dev.test/" });
+    t.after(() => dom.window.close());
+    dom.window.Math.random = () => 0;
+    Object.defineProperty(dom.window.performance, "getEntriesByType", { value: () => [] });
+    Object.defineProperty(dom.window.performance, "getEntries", { value: () => [] });
+    const bodies: string[] = [];
+    dom.window.fetch = async (_url, options) => {
+      bodies.push(String(options?.body ?? ""));
+      return new Response("", { status: 200 });
+    };
+    dom.window.eval(built.outputFiles[0].text);
+    const api = dom.window.Telemetry;
+    const metadata = telemetry === "on" ? { environment: "release", telemetry, userId, sessionId } : { environment: "release", telemetry };
+    api.startUiTelemetry({ async callServerTool() { return { content: [] }; } }, { metadata });
+    api.captureUiError(new dom.window.Error("Server metadata"), "test");
+    await api.stopUiTelemetry();
+    const captured = bodies.join("\n");
+    if (telemetry === "off") {
+      assert.equal(bodies.length, 0);
+      continue;
+    }
+    contains(captured, '"environment":"release"');
+    contains(captured, `"user":{"id":"${userId}"}`);
+    contains(captured, `"telemetry_session":"${sessionId}"`);
+  }
+  const invalid = new JSDOM(`<html><head><meta name="mobile-dev-environment" content="development">${identityMeta}</head></html>`, { runScripts: "outside-only" });
+  t.after(() => invalid.window.close());
+  invalid.window.eval(built.outputFiles[0].text);
+  assert.throws(() => invalid.window.Telemetry.startUiTelemetry({}, { metadata: { environment: "development", telemetry: "on" } }), /generated anonymous/);
+});
+
 test("browser telemetry labels surface measurements, propagates traces, and flushes on teardown", async t => {
   const root = process.cwd();
   const built = await build({
