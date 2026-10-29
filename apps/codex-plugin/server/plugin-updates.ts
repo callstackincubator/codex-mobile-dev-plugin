@@ -1,21 +1,21 @@
-import { execFile, spawn } from "node:child_process";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
-import { createInterface } from "node:readline";
-import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import * as Sentry from "@sentry/node";
-import { compareReleaseVersions, PLUGIN_STORE_ID, pluginUpdateSchema, releaseVersionSchema, STORE_MIGRATION_VERSION } from "../shared/plugin-updates.ts";
+import { compareReleaseVersions, PLUGIN_STORE_ID, releaseVersionSchema, STORE_MIGRATION_VERSION } from "../shared/plugin-updates.ts";
 import type { PluginUpdate } from "../shared/plugin-updates.ts";
 import { PLUGIN_VERSION } from "@mobile-dev/shared/version.ts";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 import { captureServerError } from "@mobile-dev/core/telemetry.ts";
 import { resolveTelemetryEnvironment } from "@mobile-dev/core/telemetry-environment.ts";
+import { createCodexRunner, PluginUpdateError, readPluginStore, STORE_MARKETPLACE, storeSummarySchema } from "./codex-cli.ts";
+import type { ReadStore, RunCodex, StorePlugin, UpdateFailure } from "./codex-cli.ts";
+
+export { createCodexRunner, readPluginStore, resolveCodexCli } from "./codex-cli.ts";
+export type { ReadStore, RunCodex, StorePlugin } from "./codex-cli.ts";
 
 export function recordPluginUpdate(operation: "check" | "migrate", outcome: "disabled" | "unavailable" | "current" | "available" | "migration" | "migrated" | "failed", duration: number) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
@@ -24,167 +24,32 @@ export function recordPluginUpdate(operation: "check" | "migrate", outcome: "dis
   Sentry.metrics.gauge("plugin.update.duration", duration, { unit: "millisecond", attributes });
 }
 
-const execute = promisify(execFile);
 const repositories = ["callstackincubator/codex-mobile-dev-plugin", "callstackincubator/mobile-dev"];
-const storeMarketplace = "openai-curated-remote";
 const githubPlugin = "mobile-dev@mobile-dev";
 const checkIntervalMs = 60 * 60 * 1000;
 const failedCheckIntervalMs = 15 * 60 * 1000;
-const numberSchema = z.number();
-const timestampSchema = numberSchema.nonnegative();
-const optionalVersionSchema = releaseVersionSchema.optional();
-const booleanSchema = z.boolean();
-const storeIdSchema = z.literal(PLUGIN_STORE_ID);
 const cacheSchema = z.object({
-  source: storeIdSchema, checkedAt: timestampSchema, latestVersion: optionalVersionSchema,
-  githubConfigured: booleanSchema, storeInstalled: booleanSchema, migratedVersion: optionalVersionSchema,
+  source: z.literal(PLUGIN_STORE_ID), checkedAt: z.number().nonnegative(), latestVersion: releaseVersionSchema.optional(),
+  githubConfigured: z.boolean(), storeInstalled: z.boolean(), migratedVersion: releaseVersionSchema.optional(),
 });
-const pluginNameSchema = z.literal("mobile-dev");
-const manifestSchema = z.object({ name: pluginNameSchema, version: releaseVersionSchema });
-const textSchema = z.string();
-const optionalTextSchema = textSchema.nullish();
-const nullableVersionSchema = textSchema.nullable();
-const sourceSchema = z.object({ source: textSchema, id: optionalTextSchema });
-const marketplaceSourceSchema = z.object({ sourceType: textSchema, source: textSchema });
-const optionalSourceSchema = marketplaceSourceSchema.optional();
+const manifestSchema = z.object({ name: z.literal("mobile-dev"), version: releaseVersionSchema });
+const marketplaceSourceSchema = z.object({ sourceType: z.string(), source: z.string() }).optional();
 const pluginSchema = z.object({
-  pluginId: textSchema, name: textSchema, marketplaceName: textSchema, version: nullableVersionSchema,
-  installed: booleanSchema, enabled: booleanSchema, source: sourceSchema, marketplaceSource: optionalSourceSchema,
+  pluginId: z.string(), name: z.string(), marketplaceName: z.string(), version: z.string().nullable(),
+  installed: z.boolean(), enabled: z.boolean(), source: z.object({ source: z.string(), id: z.string().nullish() }), marketplaceSource: marketplaceSourceSchema,
 });
-const pluginsArraySchema = z.array(pluginSchema);
-const pluginsSchema = z.object({ installed: pluginsArraySchema, available: pluginsArraySchema });
-const marketplaceItemSchema = z.object({ name: textSchema, marketplaceSource: optionalSourceSchema });
-const marketplacesArraySchema = z.array(marketplaceItemSchema);
-const marketplaceSchema = z.object({ marketplaces: marketplacesArraySchema });
-const removedSchema = z.object({ pluginId: textSchema });
-const removedMarketplaceSchema = z.object({ marketplaceName: textSchema });
+const pluginsSchema = z.object({ installed: z.array(pluginSchema), available: z.array(pluginSchema) });
+const marketplaceSchema = z.object({ marketplaces: z.array(z.object({ name: z.string(), marketplaceSource: marketplaceSourceSchema })) });
+const removedSchema = z.object({ pluginId: z.string() });
+const removedMarketplaceSchema = z.object({ marketplaceName: z.string() });
 type Cache = z.infer<typeof cacheSchema>;
-const nullableReleaseSchema = releaseVersionSchema.nullable();
-const storeSummarySchema = z.object({
-  remotePluginId: storeIdSchema, name: pluginNameSchema, version: releaseVersionSchema,
-  localVersion: nullableReleaseSchema, installed: booleanSchema, enabled: booleanSchema,
-});
-const storeDetailsSchema = z.object({ summary: storeSummarySchema });
-const storeResponseSchema = z.object({ plugin: storeDetailsSchema });
-const unknownSchema = z.unknown();
-const optionalUnknownSchema = unknownSchema.optional();
-const rpcResponseSchema = z.object({ id: numberSchema, result: optionalUnknownSchema, error: optionalUnknownSchema });
-export type StorePlugin = z.infer<typeof storeSummarySchema>;
 type Catalog = z.infer<typeof pluginsSchema> & { store: StorePlugin };
-export type ReadStore = () => Promise<unknown>;
-export type RunCodex = (args: string[]) => Promise<unknown>;
-// Why an update step failed, tagged on migration failures: Codex was not found, a Codex
-// command or the store catalog failed, Codex answered unexpectedly, or a step's result
-// did not hold.
-type UpdateFailure = "codex-not-found" | "command-failed" | "invalid-response" | "store-unavailable" | "foreign-marketplace" | "not-removed" | "not-verified" | "cache-write";
 type MigrationStep = "catalog" | "remove-plugin" | "remove-marketplace" | "verify" | "save";
-class PluginUpdateError extends Error {
-  readonly failure: UpdateFailure;
-
-  constructor(message: string, failure: UpdateFailure) {
-    super(message);
-    this.failure = failure;
-  }
-}
 
 function updateFailure(error: unknown): UpdateFailure | "unknown" {
   if (error instanceof PluginUpdateError) return error.failure;
   if (error instanceof z.ZodError) return "invalid-response";
   return "unknown";
-}
-
-export async function resolveCodexCli(parentPid = process.ppid, cwd = homedir()): Promise<string> {
-  const pid = String(parentPid);
-  const result = await execute("/bin/ps", ["-p", pid, "-o", "comm="], { cwd, timeout: 5000, maxBuffer: 4096 });
-  const path = result.stdout.trim();
-  const absolute = isAbsolute(path);
-  const name = basename(path);
-  if (absolute === false || name !== "codex") throw new PluginUpdateError("Could not locate the Codex executable that launched Mobile Dev.", "codex-not-found");
-  return path;
-}
-
-export function createCodexRunner(cwd: string, options: { path?: string; env?: NodeJS.ProcessEnv; signal?: AbortSignal } = {}): RunCodex {
-  const environment = options.env ?? process.env;
-  const env = { ...environment, GIT_TERMINAL_PROMPT: "0" };
-  return async args => {
-    const path = options.path ?? await resolveCodexCli(process.ppid, cwd);
-    let stdout: string;
-    try {
-      const result = await execute(path, args, { cwd, timeout: 120000, maxBuffer: 1024 * 1024, env, signal: options.signal });
-      stdout = result.stdout;
-    } catch {
-      throw new PluginUpdateError("Codex could not complete the Mobile Dev update command. Try again.", "command-failed");
-    }
-    try { return JSON.parse(stdout); }
-    catch { throw new PluginUpdateError("Codex returned an invalid update response. Try again.", "invalid-response"); }
-  };
-}
-
-export async function readPluginStore(cwd: string, options: { path?: string; env?: NodeJS.ProcessEnv; signal?: AbortSignal } = {}): Promise<StorePlugin> {
-  const path = options.path ?? await resolveCodexCli(process.ppid, cwd);
-  options.signal?.throwIfAborted();
-  const host = spawn(path, ["--no-daemon", "app-server", "--stdio"], {
-    cwd, env: options.env ?? process.env, stdio: ["pipe", "pipe", "pipe"], windowsHide: true,
-  });
-  const lines = createInterface({ input: host.stdout });
-  const pending = new Map<number, { resolve: (result: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
-  let nextId = 1;
-  function fail() {
-    const error = new PluginUpdateError("Could not read the Codex plugin store catalog.", "store-unavailable");
-    for (const request of pending.values()) {
-      clearTimeout(request.timer);
-      request.reject(error);
-    }
-    pending.clear();
-  }
-  function send(message: unknown) {
-    const text = JSON.stringify(message);
-    host.stdin.write(`${text}\n`);
-  }
-  function request(method: string, params: unknown): Promise<unknown> {
-    const id = nextId++;
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { fail(); host.kill(); }, 20000);
-      pending.set(id, { resolve, reject, timer });
-      send({ id, method, params });
-    });
-  }
-  function abort() { fail(); host.kill(); }
-  host.stderr.resume();
-  host.on("error", fail);
-  host.on("exit", fail);
-  host.stdin.on("error", fail);
-  options.signal?.addEventListener("abort", abort, { once: true });
-  lines.on("line", line => {
-    let data: unknown;
-    try { data = JSON.parse(line); } catch { return; }
-    const parsed = rpcResponseSchema.safeParse(data);
-    if (parsed.success === false) return;
-    const response = parsed.data;
-    const request = pending.get(response.id);
-    if (request === undefined) return;
-    clearTimeout(request.timer);
-    pending.delete(response.id);
-    if (response.error) {
-      const error = new PluginUpdateError("Codex could not read the plugin store catalog.", "store-unavailable");
-      request.reject(error);
-    } else request.resolve(response.result);
-  });
-  try {
-    await request("initialize", {
-      clientInfo: { name: "mobile-dev-updates", version: PLUGIN_VERSION },
-      capabilities: { experimentalApi: true, requestAttestation: false },
-    });
-    send({ method: "initialized" });
-    const result = await request("plugin/read", { remoteMarketplaceName: storeMarketplace, pluginName: "mobile-dev" });
-    const parsed = storeResponseSchema.parse(result);
-    return parsed.plugin.summary;
-  } finally {
-    options.signal?.removeEventListener("abort", abort);
-    for (const request of pending.values()) clearTimeout(request.timer);
-    lines.close();
-    host.kill();
-  }
 }
 
 function isReleaseRepository(source: string): boolean {
@@ -292,7 +157,7 @@ export class PluginUpdates {
     const version = entry.localVersion;
     if (entry.installed === false || entry.enabled === false || version === null) return false;
     if (compareReleaseVersions(version, STORE_MIGRATION_VERSION) < 0 || compareReleaseVersions(version, this.currentVersion) < 0) return false;
-    const path = join(this.profile, "plugins/cache", storeMarketplace, "mobile-dev", version, ".codex-plugin/plugin.json");
+    const path = join(this.profile, "plugins/cache", STORE_MARKETPLACE, "mobile-dev", version, ".codex-plugin/plugin.json");
     try {
       const text = await readFile(path, "utf8");
       const data: unknown = JSON.parse(text);
@@ -406,31 +271,4 @@ export class PluginUpdates {
   }
 
   close() { this.abort.abort(); }
-}
-
-export function registerPluginUpdateTools(server: McpServer, updates: PluginUpdates) {
-  const visibility: ("app" | "model")[] = ["app"];
-  const metadata = { ui: { visibility } };
-  const outputSchema = { update: pluginUpdateSchema };
-  registerAppTool(server, "mobile_check_plugin_update", {
-    title: "Check Mobile Dev updates", description: "Read the published Mobile Dev version from the Codex plugin store.", inputSchema: {},
-    outputSchema,
-    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true }, _meta: metadata,
-  }, async () => {
-    const update = await updates.check();
-    return { content: [], structuredContent: { update } };
-  });
-  registerAppTool(server, "mobile_migrate_plugin_to_store", {
-    title: "Finish Mobile Dev store migration", description: "After the user installs Mobile Dev from the plugin store and clicks Finish migration, verify that installation and remove the GitHub plugin and marketplace. Restart Codex afterward.", inputSchema: {},
-    outputSchema,
-    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true }, _meta: metadata,
-  }, async () => {
-    try {
-      const update = await updates.migrate();
-      return { content: [], structuredContent: { update } };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Could not migrate Mobile Dev. Try again.";
-      return { isError: true, content: [{ type: "text", text: message }] };
-    }
-  });
 }

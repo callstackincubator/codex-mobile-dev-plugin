@@ -8,8 +8,10 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as Sentry from "@sentry/node";
 import type { Envelope } from "@sentry/core";
-import { createCodexRunner, PluginUpdates, registerPluginUpdateTools, resolveCodexCli, readPluginStore } from "../server/plugin-updates.ts";
-import type { ReadStore, RunCodex } from "../server/plugin-updates.ts";
+import { createCodexRunner, resolveCodexCli, readPluginStore } from "../server/codex-cli.ts";
+import type { ReadStore, RunCodex } from "../server/codex-cli.ts";
+import { registerPluginUpdateTools } from "../server/plugin-update-tools.ts";
+import { PluginUpdates } from "../server/plugin-updates.ts";
 import { scrubErrorEvent } from "@mobile-dev/shared/telemetry.ts";
 import { compareReleaseVersions, PLUGIN_STORE_ID, pluginUpdateSchema } from "../shared/plugin-updates.ts";
 
