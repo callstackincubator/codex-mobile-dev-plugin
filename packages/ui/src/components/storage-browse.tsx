@@ -1,14 +1,14 @@
 import { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, CopyIcon, DatabaseIcon, LockIcon, PuzzleIcon, RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
 import { useMemo, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
-import { appleDate, storageLimits, storeKindLabels, storeKinds } from "@mobile-dev/shared/app-storage.ts";
+import { storageLimits, storeKindLabels, storeKinds } from "@mobile-dev/shared/app-storage.ts";
 import type { StorageEntry, StorageFilePreview, StorageSnapshot, StorageStore } from "@mobile-dev/shared/app-storage.ts";
 import { isWorking } from "../storage-panel.ts";
 import type { StorageFileView, StoragePanel, StorageTableView } from "../storage-panel.ts";
-import { formatBytes, isSdkStore, storeJson, storeTitle } from "../storage-labels.ts";
+import { appleTimestamp, containerBreakdown, formatBytes, isSdkStore, plural, storeJson, storeTitle, type ContainerPart } from "../storage-labels.ts";
 import { EntryRow, JsonTree, entryMatches } from "./storage-entries";
 import { ConfirmButton, FilesIcon, KindIcon, SidebarRow } from "./storage-parts";
-import { Alert, AlertDescription } from "./ui/alert";
+import { BannerAlert } from "./banner-alert";
 import { Button } from "./ui/button";
 import { ButtonGroup } from "./ui/button-group";
 import { OptionSelect } from "./ui/option-select";
@@ -31,7 +31,6 @@ function DetailHeader({ icon, title, child, subtitle, path, back, loading, child
   </div>;
 }
 
-const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 const formatLabels: Record<StorageFilePreview["format"], string> = { json: "JSON", plist: "Property list", archive: "NSKeyedArchiver archive", text: "Text", binary: "Binary", "too-large": "Too large to preview" };
 const parseJsonText = (text: string): unknown => { try { return JSON.parse(text); } catch { return undefined; } };
 
@@ -49,25 +48,13 @@ function FilePreview({ file }: { file: StorageFileView }) {
     if (data.truncated) note = "Cut short; the file is longer.";
   }
   return <div className="flex min-h-0 flex-1 flex-col">
-    {file.error && <Alert variant="destructive" className="shrink-0 rounded-none border-x-0 border-t-0"><AlertDescription className="text-xs">{file.error}</AlertDescription></Alert>}
+    {file.error && <BannerAlert textClassName="text-xs">{file.error}</BannerAlert>}
     {note && <p className="border-b px-4 py-1.5 font-sans text-[11px] text-muted-foreground">{note}</p>}
     <div className="min-h-0 flex-1 overflow-auto px-4 py-3 font-mono text-xs" role="region" aria-label={`${file.path} contents`}>{body}</div>
   </div>;
 }
 
-// Approximate split of the data directory by what owns each listed file.
-function containerBreakdown(snapshot: StorageSnapshot) {
-  const owners = new Map(snapshot.stores.map(store => [store.id, store.kind]));
-  const parts = { Databases: 0, Preferences: 0, Caches: 0 };
-  for (const file of snapshot.files) {
-    const kind = file.store ? owners.get(file.store) : undefined;
-    if (kind === "sqlite" || kind === "realm" || kind === "async-storage") parts.Databases += file.bytes;
-    else if (kind) parts.Preferences += file.bytes;
-    else if (/^(?:Library\/Caches|tmp|cache|code_cache)\//.test(file.path)) parts.Caches += file.bytes;
-  }
-  const other = Math.max(0, snapshot.totalBytes - parts.Databases - parts.Preferences - parts.Caches);
-  return [["Caches", parts.Caches, "bg-neutral-400"], ["Databases", parts.Databases, "bg-emerald-500"], ["Preferences", parts.Preferences, "bg-sky-500"], ["Other", other, "bg-muted-foreground/30"]] as const;
-}
+const partTones: Record<ContainerPart, string> = { Caches: "bg-neutral-400", Databases: "bg-emerald-500", Preferences: "bg-sky-500", Other: "bg-muted-foreground/30" };
 
 function FilesView({ panel, snapshot, file }: { panel: StoragePanel; snapshot: StorageSnapshot; file?: StorageFileView }) {
   if (file) {
@@ -82,9 +69,9 @@ function FilesView({ panel, snapshot, file }: { panel: StoragePanel; snapshot: S
   return <div className="min-h-0 flex-1 overflow-auto font-mono text-xs" role="table" aria-label="Largest files">
     <DetailHeader icon={<FilesIcon size="lg" />} title="Files" subtitle={`${plural(snapshot.fileCount, "file")} · ${formatBytes(snapshot.totalBytes)} in the app's data directory`} />
     <div className="border-b px-4 py-3 font-sans" aria-label="Size by kind">
-      <div className="flex h-1.5 overflow-hidden rounded-full bg-muted">{breakdown.map(([label, bytes, tone]) => <span key={label} className={tone} style={{ width: `${snapshot.totalBytes ? bytes / snapshot.totalBytes * 100 : 0}%` }} />)}</div>
+      <div className="flex h-1.5 overflow-hidden rounded-full bg-muted">{breakdown.map(({ part, bytes }) => <span key={part} className={partTones[part]} style={{ width: `${snapshot.totalBytes ? bytes / snapshot.totalBytes * 100 : 0}%` }} />)}</div>
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-        {breakdown.filter(([, bytes]) => bytes > 0).map(([label, bytes, tone]) => <span key={label} className="flex items-center gap-1.5"><span className={`size-2 rounded-full ${tone}`} />{label}<span className="text-foreground tabular-nums">{formatBytes(bytes)}</span></span>)}
+        {breakdown.filter(({ bytes }) => bytes > 0).map(({ part, bytes }) => <span key={part} className="flex items-center gap-1.5"><span className={`size-2 rounded-full ${partTones[part]}`} />{part}<span className="text-foreground tabular-nums">{formatBytes(bytes)}</span></span>)}
       </div>
     </div>
     {snapshot.files.map(item => {
@@ -104,7 +91,7 @@ function FilesView({ panel, snapshot, file }: { panel: StoragePanel; snapshot: S
 function SearchResults({ groups, query, title, expansion }: { groups: { store: StorageStore; entries: StorageEntry[] }[]; query: string; title: (store: StorageStore) => string; expansion: Expansion }) {
   const total = groups.reduce((sum, group) => sum + group.entries.length, 0);
   return <div className="min-h-0 flex-1 overflow-auto font-mono text-xs" role="table" aria-label="Search results">
-    <p className="border-b px-3 py-1.5 font-sans text-[11px] text-muted-foreground" role="status">{total} match{total === 1 ? "" : "es"} in {groups.length} store{groups.length === 1 ? "" : "s"}</p>
+    <p className="border-b px-3 py-1.5 font-sans text-[11px] text-muted-foreground" role="status">{plural(total, "match", "matches")} in {plural(groups.length, "store")}</p>
     {groups.map(({ store, entries }) => <section key={store.id}>
       <div className="sticky top-0 z-10 flex items-center gap-2 border-b bg-background/95 px-3 py-1.5 font-sans backdrop-blur">
         <KindIcon kind={store.kind} /><span className="font-medium">{title(store)}</span><span className="text-muted-foreground">{storeKindLabels[store.kind]}</span>
@@ -116,14 +103,12 @@ function SearchResults({ groups, query, title, expansion }: { groups: { store: S
   </div>;
 }
 
-// Core Data and SwiftData keep dates in TIMESTAMP columns as seconds since 2001-01-01.
-const timestamp = (type: string, cell: string | number) => typeof cell === "number" && /^timestamp$/i.test(type) ? appleDate(cell) : undefined;
 
 // One page of a SQLite table as a grid. Long cells are cut short and show in full on hover.
 function TableGrid({ table }: { table: StorageTableView }) {
   const data = table.data;
   return <div className="flex min-h-0 flex-1 flex-col">
-    {table.error && <Alert variant="destructive" className="shrink-0 rounded-none border-x-0 border-t-0"><AlertDescription className="text-xs">{table.error}</AlertDescription></Alert>}
+    {table.error && <BannerAlert textClassName="text-xs">{table.error}</BannerAlert>}
     <div className="min-h-0 flex-1 overflow-auto" role="region" aria-label={`${table.name} rows`}>
       {data && <table className="w-max min-w-full border-separate border-spacing-0 font-mono text-xs">
         <thead className="sticky top-0 z-10 bg-background">
@@ -133,7 +118,7 @@ function TableGrid({ table }: { table: StorageTableView }) {
         </thead>
         <tbody>{data.rows.map((row, index) => <tr key={data.offset + index} className="hover:bg-muted/50">
           {row.map((cell, column) => {
-            const date = cell === null ? undefined : timestamp(data.columns[column].type, cell);
+            const date = cell === null ? undefined : appleTimestamp(data.columns[column].type, cell);
             const tone = date ? "" : typeof cell === "number" ? "text-blue-600 tabular-nums dark:text-blue-400" : cell === null || /^x'/.test(cell) ? "text-muted-foreground" : "";
             return <td key={column} title={cell === null ? "NULL" : date ? `${date} (${cell} seconds since 2001)` : String(cell)} className={`max-w-80 truncate border-b px-3 py-1.5 whitespace-nowrap ${tone}`}>
               {cell === null ? <span className="italic">NULL</span> : date ?? String(cell)}

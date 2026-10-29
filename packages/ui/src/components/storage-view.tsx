@@ -9,7 +9,8 @@ import { AppAvatar } from "./app-avatar";
 import { BrowseView } from "./storage-browse";
 import { ChangesView } from "./storage-changes";
 import { ConfirmButton, StorageEmpty } from "./storage-parts";
-import { Alert, AlertDescription } from "./ui/alert";
+import { BannerAlert } from "./banner-alert";
+import { useCopy } from "./use-copy";
 import { Button } from "./ui/button";
 import { ButtonGroup } from "./ui/button-group";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "./ui/input-group";
@@ -41,12 +42,11 @@ function AppPicker({ panel, state }: { panel: StoragePanel; state: StorageState 
 export const StorageView = memo(function StorageView({ panel }: { panel: StoragePanel }) {
   const state = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
   const [query, setQuery] = useState("");
-  const [copied, setCopied] = useState("");
   const snapshot = state.snapshot;
   const busy = isWorking(state);
   const search = query.trim().toLowerCase();
   const changeCount = shownChanges(state).length;
-  const copy = (text: string) => { void navigator.clipboard.writeText(text).then(() => setCopied("Copied"), () => setCopied("Could not copy")); };
+  const [copy, copied] = useCopy();
 
   let body: ReactNode;
   if (state.unsupported || !state.available) body = <StorageEmpty title="App storage unavailable" description={state.available ? state.unsupported : "This host cannot call the plugin's tools."} />;
@@ -75,7 +75,7 @@ export const StorageView = memo(function StorageView({ panel }: { panel: Storage
       </ButtonGroup>
     </header>
     <span className="sr-only" role="status">{copied}</span>
-    {state.error && <Alert variant="destructive" className="shrink-0 rounded-none border-x-0 border-t-0"><AlertDescription className="text-xs">{state.error}</AlertDescription></Alert>}
+    {state.error && <BannerAlert textClassName="text-xs">{state.error}</BannerAlert>}
     {state.status && <div className="flex shrink-0 items-center gap-2 border-b px-3 py-1.5 text-xs" role="status">
       <span className="min-w-0 flex-1 truncate">{state.status}</span>
       <Button variant="outline" size="xs" disabled={busy} onClick={() => void panel.launch()}><PlayIcon />Launch app</Button>

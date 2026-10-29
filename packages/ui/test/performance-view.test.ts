@@ -97,7 +97,7 @@ test("performance tracks share immediate zoom, fill a fixed scale, and preserve 
   let snapshot: ReturnType<PerformancePanel["getSnapshot"]> = { open: true, available: true, discovering: false, monitoring: true, physical: false,
     fpsSamples: [], fpsPhase: "idle", fpsError: "", fpsMonitoring: false, fpsSupported: false,
     selectedLabel: "Test device", platform: "ios", bundleId: "test.app", apps: [{ bundleId: "test.app", pid: 1 }], samples: initialSamples,
-    threadHistory: new Map([["worker", { number: 1, peakCpuPercent: 20 }]]), threadOrder: "first-seen", phase: "recording", error: "", sourceError: "" };
+    threadHistory: new Map([["worker", { number: 1, peakCpuPercent: 20 }]]), threadOrder: "first-seen", phase: "recording", error: "", sourceError: "", running: true, displayPhase: "recording" };
   const listeners = new Set<() => void>();
   let refreshes = 0;
   const panel = { refreshApps() { refreshes++; return Promise.resolve(); },

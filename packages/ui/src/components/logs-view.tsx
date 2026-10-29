@@ -1,12 +1,12 @@
-import { CopyIcon, MessageCircleIcon, ArrowDownToLineIcon, CircleAlertIcon, InfoIcon, TriangleAlertIcon, CheckIcon, LayersIcon, ListXIcon, PauseIcon, PlayIcon, RefreshCwIcon, SearchIcon, SlidersHorizontalIcon, TerminalIcon, UnlinkIcon, XIcon, CircleHelpIcon } from "lucide-react";
+import { CopyIcon, MessageCircleIcon, ArrowDownToLineIcon, CheckIcon, LayersIcon, ListXIcon, PauseIcon, PlayIcon, RefreshCwIcon, SearchIcon, SlidersHorizontalIcon, TerminalIcon, UnlinkIcon, XIcon, CircleHelpIcon } from "lucide-react";
 import { memo, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { LegendList, type LegendListRef, type LegendListRenderItemProps } from "@legendapp/list/react";
 import type { StackedLog } from "@mobile-dev/shared/logs.ts";
 import type { LogsPanel } from "../logs-panel.ts";
-import { logText } from "../log-text.ts";
+import { chatActionLabel, levelIcon, logLine, logText } from "../log-text.ts";
 import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem } from "./ui/context-menu";
 import { LogDetails } from "./log-details";
-import { Alert, AlertDescription } from "./ui/alert";
+import { BannerAlert } from "./banner-alert";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Collapsible, CollapsibleContent } from "./ui/collapsible";
@@ -21,12 +21,14 @@ import { Popover, PopoverTrigger, PopoverContent } from "./ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "./ui/base-select";
 
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "./ui/resizable";
+import { useCopy } from "./use-copy";
 import { useMediaQuery } from "./use-media-query";
 import { Switch } from "./ui/switch";
 
 const rowKey = (log: StackedLog) => String(log.sequence);
 // User input controls following; estimated row heights must not gate it.
 const followScrollThreshold = Number.POSITIVE_INFINITY;
+const copyFailed = "Could not copy log";
 const timeFormat = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
 
 /** `fullscreen` is a page that fills the host, where wide windows put log details below the list. */
@@ -54,16 +56,9 @@ export const LogsView = memo(function LogsView({ panel, fullscreen }: { panel: L
     scrollbarDragging.current = false;
   }, [updateScroll]);
   const selectedSequence = logs.selected?.sequence;
-  const [copyStatus, setCopyStatus] = useState("");
-  const copyLog = useCallback(async (log: StackedLog) => {
-    const prefix = log.tag || log.process;
-    const text = `${prefix ? `${prefix}: ` : ""}${log.message}${log.stack ? `\n${log.stack}` : ""}`;
-    try { await navigator.clipboard.writeText(text); setCopyStatus("Log copied"); }
-    catch { setCopyStatus("Could not copy log"); }
-  }, []);
+  const [copy, copyStatus] = useCopy({ copied: "Log copied", failed: copyFailed });
   const renderItem = useCallback(({ item }: LegendListRenderItemProps<StackedLog>) => {
-    const Icon = item.level === "error" ? CircleAlertIcon : item.level === "warn" ? TriangleAlertIcon : InfoIcon;
-    const prefix = item.tag || item.process;
+    const Icon = levelIcon(item.level);
     const { message } = logText(item);
     return <ContextMenu><ContextMenuTrigger asChild><Toggle type="button" data-log-row data-level={item.level} pressed={item.sequence === selectedSequence}
       className="log-row relative grid h-auto min-h-7 w-full grid-cols-[14px_8ch_1px_minmax(0,1fr)] items-start gap-x-2 rounded-none border-b px-2 py-1 text-left font-mono text-xs leading-[18px] font-normal whitespace-normal"
@@ -72,17 +67,17 @@ export const LogsView = memo(function LogsView({ panel, fullscreen }: { panel: L
       <Icon className="log-severity mt-0.5 size-3.5" aria-label={item.level} />
       <span className="text-muted-foreground tabular-nums">{timeFormat.format(new Date(item.lastTimestamp))}</span>
       <span className="mt-0.5 h-3.5 w-px bg-muted-foreground/70" aria-hidden="true" />
-      <span className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">{prefix && <span>{prefix}: </span>}{message}</span>
+      <span className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">{logLine(item, message)}</span>
       {item.count > 1 && <Badge variant="outline" className="absolute top-1 right-2 h-5 min-w-5 rounded-full bg-secondary px-1 py-0 font-sans text-[10px] leading-none text-secondary-foreground tabular-nums" aria-label={`${item.count} occurrences`}>{item.count}</Badge>}
     </Toggle></ContextMenuTrigger>
       <ContextMenuContent>
-        <ContextMenuItem onSelect={() => { setCopyStatus(""); void copyLog(item); }}><CopyIcon />Copy</ContextMenuItem>
+        <ContextMenuItem onSelect={() => void copy(`${logLine(item)}${item.stack ? `\n${item.stack}` : ""}`)}><CopyIcon />Copy</ContextMenuItem>
         <ContextMenuItem disabled={logs.sending || !logs.canSendMessage} onSelect={() => void panel.list.sendToChat(item)}>
-          <MessageCircleIcon />{item.level === "error" || item.level === "warn" ? "Fix in chat" : "Ask in chat"}
+          <MessageCircleIcon />{chatActionLabel(item.level)}
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>;
-  }, [panel, selectedSequence, logs.sending, logs.canSendMessage, copyLog]);
+  }, [panel, selectedSequence, logs.sending, logs.canSendMessage, copy]);
 
   useEffect(() => {
     if (logs.follow) userScrolling.current = scrollbarDragging.current;
@@ -115,7 +110,7 @@ export const LogsView = memo(function LogsView({ panel, fullscreen }: { panel: L
   return <Collapsible open={state.open} onOpenChange={() => panel.toggle()} asChild>
     <section id="logs-drawer" data-open={state.open} className="@container flex h-full min-h-0 min-w-0 flex-col" role="tabpanel" aria-label="Logs">
       <span className="sr-only" role="status">{copyStatus}</span>
-      {copyStatus === "Could not copy log" && <Alert variant="destructive" className="shrink-0 rounded-none border-x-0 border-t-0"><AlertDescription>{copyStatus}</AlertDescription></Alert>}
+      {copyStatus === copyFailed && <BannerAlert>{copyStatus}</BannerAlert>}
       {state.open && <header className="logs-toolbar panel-toolbar flex h-[49px] shrink-0 items-center gap-1 overflow-x-auto border-b px-2">
         <span id="logs-status" className="sr-only" role="status">{state.status} · {logs.filtered.length} shown · {logs.buffered} buffered{logs.dropped > 0 ? ` · ${logs.dropped} older logs dropped` : ""}</span>
           <InputGroup className="h-7 min-w-16 flex-1"><InputGroupInput className="text-xs" aria-label="Search logs" type="search" placeholder="Filter logs..." maxLength={512} autoComplete="off" spellCheck={false} aria-invalid={Boolean(logs.queryError)} aria-describedby={logs.queryError ? "logs-query-error" : undefined} value={logs.query} onChange={event => panel.search(event.target.value)} /><InputGroupAddon className="pl-2"><SearchIcon className="size-3.5" /></InputGroupAddon></InputGroup>
@@ -169,9 +164,9 @@ export const LogsView = memo(function LogsView({ panel, fullscreen }: { panel: L
           {logs.attachedKey && <Button variant="ghost" size="icon-sm" className="shrink-0" title="Remove attached log" aria-label="Remove attached log" disabled={logs.attaching} onClick={() => void panel.list.attach(true)}><UnlinkIcon /></Button>}
       </header>}
       <CollapsibleContent id="logs-body" className="flex min-h-0 flex-1 flex-col">
-        {logs.queryError && <Alert id="logs-query-error" variant="destructive" className="shrink-0 rounded-none border-x-0 border-t-0"><AlertDescription>{logs.queryError}</AlertDescription></Alert>}
-        {logs.chatError && <Alert variant="destructive" className="shrink-0 rounded-none border-x-0 border-t-0"><AlertDescription>{logs.chatError}</AlertDescription></Alert>}
-        {state.error && <Alert id="logs-error" variant="destructive" className="shrink-0 rounded-none border-x-0 border-t-0"><AlertDescription className="wrap-anywhere">{state.error}</AlertDescription></Alert>}
+        {logs.queryError && <BannerAlert id="logs-query-error">{logs.queryError}</BannerAlert>}
+        {logs.chatError && <BannerAlert>{logs.chatError}</BannerAlert>}
+        {state.error && <BannerAlert id="logs-error" textClassName="wrap-anywhere">{state.error}</BannerAlert>}
         <ResizablePanelGroup className="logs-content min-h-0 flex-1" orientation={detailVertical ? "vertical" : "horizontal"}>
           <ResizablePanel id="log-list-resizable" defaultSize="58%" minSize="30%">
           <div id="logs-list" className="h-full min-h-0 min-w-0 overflow-hidden" aria-label="Log entries"
@@ -213,7 +208,7 @@ export const LogsView = memo(function LogsView({ panel, fullscreen }: { panel: L
           </div>
           </ResizablePanel>
           {logs.selected && <><ResizableHandle aria-label="Resize log list and details" /><ResizablePanel id="log-detail-resizable" defaultSize="42%" minSize="25%" maxSize="70%"><LogDetails key={logs.selected.sequence} log={logs.selected} onClose={() => panel.list.select()}>
-            <Button id="log-chat" variant="outline" disabled={logs.sending || !logs.canSendMessage} onClick={() => { if (logs.selected) void panel.list.sendToChat(logs.selected); }} title={logs.canSendMessage ? "Send this log and stack trace to chat" : "This host does not support chat messages"}><MessageCircleIcon />{logs.selected.level === "error" || logs.selected.level === "warn" ? "Fix in chat" : "Ask in chat"}</Button>
+            <Button id="log-chat" variant="outline" disabled={logs.sending || !logs.canSendMessage} onClick={() => { if (logs.selected) void panel.list.sendToChat(logs.selected); }} title={logs.canSendMessage ? "Send this log and stack trace to chat" : "This host does not support chat messages"}><MessageCircleIcon />{chatActionLabel(logs.selected.level)}</Button>
           </LogDetails></ResizablePanel></>}
         </ResizablePanelGroup>
       </CollapsibleContent>
