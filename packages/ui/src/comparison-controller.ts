@@ -1,6 +1,6 @@
 import { chatMessage } from "./chat-message.ts";
-import { cardsCallTools } from "./host-bridge.ts";
-import type { HostBridge } from "./host-bridge.ts";
+import { attachReference, cardsCallTools } from "./host-bridge.ts";
+import type { HostAttachmentsSource, HostBridge } from "./host-bridge.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { comparisonDuration, comparisonReferenceSchema, comparisonSchema } from "@mobile-dev/shared/performance-comparison.ts";
 import type { PerformanceComparison } from "@mobile-dev/shared/performance-comparison.ts";
@@ -24,6 +24,7 @@ type ComparisonState = {
 
 export class ComparisonController {
   private readonly app: HostBridge;
+  private readonly attachments: HostAttachmentsSource;
   private state: ComparisonState;
   private listeners = new Set<() => void>();
   private disposed = false;
@@ -31,8 +32,10 @@ export class ComparisonController {
   /** The full recordings being read; a newer comparison replaces them. */
   private loading?: AbortController;
 
-  constructor(app: HostBridge, { workspace = false }: { workspace?: boolean } = {}) {
+  /** `attachments` reads the host's composer pills, where it has them; `workspace` says the server has Mobile Dev's workspace. */
+  constructor(app: HostBridge, { attachments = () => undefined, workspace = false }: { attachments?: HostAttachmentsSource; workspace?: boolean } = {}) {
     this.app = app;
+    this.attachments = attachments;
     this.state = { hiddenIds: new Set(), canMessage: false, workspace, busy: false, error: "" };
   }
   subscribe = (listener: () => void) => {
@@ -149,17 +152,32 @@ export class ComparisonController {
     const reference = JSON.stringify({ recordingIds, title: comparison.title, ...(range ? { range } : {}) });
     const interval = range ? `${range.start}–${range.end}s` : "the entire runs";
     const prompt = `Compare CPU, memory, and device-wide Display FPS for ${interval}, aligned at recording start. Read the original runs and summaries with mobile_compare_performance_recordings using ${reference}. Account for different durations, devices, apps and memory definitions. Distinguish measurements from hypotheses about their cause; device-wide display data cannot attribute a slowdown to one app.`;
-    const message = chatMessage(this.app, prompt);
-    const startedAt = performance.now();
+    let sending = false;
     try {
-      const result = await this.app.sendMessage(message);
+      // Hosts with composer pills carry the reference there, and the message stays one line.
+      const modelContext = this.attachments();
+      if (modelContext) {
+        const contextStartedAt = performance.now();
+        try {
+          await attachReference(modelContext, {
+            marker: "mobile-dev/comparisonReference", title: range ? `${comparison.title} · ${interval}` : comparison.title, text: prompt,
+            structuredContent: { selectedComparison: { recordingIds, ...(range ? { range } : {}) } },
+          });
+        } finally { recordUiTiming("ui.comparison.context_attach", performance.now() - contextStartedAt); }
+      }
+      if (this.disposed) return;
+      const message = chatMessage(this.app, modelContext ? (range ? "Compare this selected range." : "Compare these runs.") : prompt);
+      const startedAt = performance.now();
+      sending = true;
+      const result = await this.app.sendMessage(message, { timeout: 5000, maxTotalTimeout: 5000 });
       if (result.isError) throw new Error("The host could not send this comparison to chat.");
       countUiEvent("ui.comparison.ask");
       const elapsed = performance.now() - startedAt;
       recordUiTiming("ui.comparison.message_ack", elapsed);
     } catch (error) {
       captureUiError(error, "comparison.ask");
-      const text = error instanceof Error ? error.message : "Could not send this comparison to chat.";
+      const timedOut = sending && typeof error === "object" && error !== null && "code" in error && error.code === -32001;
+      const text = timedOut ? "The host did not confirm delivery. Check the chat before retrying to avoid sending the question twice." : error instanceof Error ? error.message : "Could not send this comparison to chat.";
       this.update({ error: text });
     } finally { this.update({ busy: false }); }
   }

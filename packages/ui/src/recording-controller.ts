@@ -1,5 +1,5 @@
 import { chatMessage } from "./chat-message.ts";
-import { cardsCallTools } from "./host-bridge.ts";
+import { attachReference, cardsCallTools } from "./host-bridge.ts";
 import type { HostAttachmentsSource, HostBridge } from "./host-bridge.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { recordingRangeSchema, recordingReferenceSchema, recordingSchema, summarizeRecording } from "@mobile-dev/shared/recordings.ts";
@@ -191,16 +191,12 @@ export class RecordingController {
     try {
       const modelContext = this.attachments();
       if (modelContext) {
-        const current = modelContext.getCurrent();
         const contextStartedAt = performance.now();
         try {
-          await modelContext.update({
-            content: [...(current?.content ?? []).filter(item => item._meta?.["mobile-dev/recordingReference"] !== true), {
-              type: "text", text: prompt,
-              _meta: { "openai/title": `${recording.title.replace(/\s+/g, " ").trim()} · ${selected.start}–${selected.end}s`, "mobile-dev/recordingReference": true },
-            }],
-            structuredContent: { ...current?.structuredContent, selectedRecording: { recordingId: recording.id, range: selected } },
-          }, { timeout: 5000 });
+          await attachReference(modelContext, {
+            marker: "mobile-dev/recordingReference", title: `${recording.title} · ${selected.start}–${selected.end}s`, text: prompt,
+            structuredContent: { selectedRecording: { recordingId: recording.id, range: selected } },
+          });
         } finally { recordUiTiming("ui.recording.context_attach", performance.now() - contextStartedAt); }
       }
       if (this.disposed) return;

@@ -49,7 +49,8 @@ for (const view of ["recording", "comparison", "tracesift", "devices"] as const)
   // React commits the first render on its own schedule, which can follow the theme.
   await until(() => Boolean(window.document.getElementById("root")?.childElementCount), "render into the page");
   if (view === "devices") assert.match(window.document.getElementById("root")!.textContent ?? "", /earlier version of Mobile Dev/);
-  if (view === "tracesift") await until(() => calls.includes("mobile_get_tracesift_project"), "load the saved TraceSift project");
+  // The card asks for no project folder; Investigate hands the finding to the chat as is.
+  if (view === "tracesift") assert.equal(calls.includes("mobile_get_tracesift_project"), false);
   send({ id: "teardown", method: "ui/resource-teardown", params: {} });
   await until(() => tornDown, "acknowledge teardown");
 });

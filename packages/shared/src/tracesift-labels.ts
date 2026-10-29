@@ -3,6 +3,11 @@
  * `format.ts`, `source-location.ts` and `frame-location.ts` so both cards print the same.
  */
 
+/** A finding's name: the last frame of its path, which is the code it is about. */
+export function findingName(card: { pathline?: string; headline: string }) {
+  return card.pathline?.split(" › ").at(-1) || card.headline;
+}
+
 /** Durations as a reader scans them: whole milliseconds until seconds are clearer. */
 export function formatMs(ms: number): string {
   if (!Number.isFinite(ms) || ms <= 0) return "0 ms";

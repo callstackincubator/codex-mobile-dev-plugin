@@ -33,11 +33,9 @@ export function TraceSiftExplorer({ controller }: { controller: TraceSiftControl
           onClick={() => controller.setPicking(!explorer.picking)}>
           <MousePointerClickIcon />Select {picks.many}
         </Button>
-        <Button size="sm" variant="outline" disabled={Boolean(state.busyCard) || count === 0 || !state.canInvestigate || !state.project}
+        <Button size="sm" variant="outline" disabled={Boolean(state.busyCard) || count === 0 || !state.canInvestigate}
           title={!state.canInvestigate
             ? "This chat cannot receive a message from the card"
-            : !state.project
-              ? "Choose a project on the findings list first, so the chat knows which code these belong to"
             : count
               ? `Send these ${count} ${noun} and what the profile measured about them to the chat`
               : `Select ${picks.many} first, then send them here`}
