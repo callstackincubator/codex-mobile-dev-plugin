@@ -28,6 +28,7 @@ const repositories = ["callstackincubator/codex-mobile-dev-plugin", "callstackin
 const githubPlugin = "mobile-dev@mobile-dev";
 const checkIntervalMs = 60 * 60 * 1000;
 const failedCheckIntervalMs = 15 * 60 * 1000;
+// The cache file keeps the flat format older releases read, so downgrades keep working.
 const cacheSchema = z.object({
   source: z.literal(PLUGIN_STORE_ID), checkedAt: z.number().nonnegative(), latestVersion: releaseVersionSchema.optional(),
   githubConfigured: z.boolean(), storeInstalled: z.boolean(), migratedVersion: releaseVersionSchema.optional(),
@@ -42,7 +43,14 @@ const pluginsSchema = z.object({ installed: z.array(pluginSchema), available: z.
 const marketplaceSchema = z.object({ marketplaces: z.array(z.object({ name: z.string(), marketplaceSource: marketplaceSourceSchema })) });
 const removedSchema = z.object({ pluginId: z.string() });
 const removedMarketplaceSchema = z.object({ marketplaceName: z.string() });
-type Cache = z.infer<typeof cacheSchema>;
+type StoredCache = z.infer<typeof cacheSchema>;
+type Check = { checkedAt: number; latestVersion: string; githubConfigured: boolean; storeInstalled: boolean };
+type Cache =
+  | { state: "unchecked" }
+  | { state: "failed"; checkedAt: number }
+  | { state: "checked" } & Check
+  | { state: "migrated"; migratedVersion: string } & Check;
+type SavedCache = Exclude<Cache, { state: "unchecked" }>;
 type Catalog = z.infer<typeof pluginsSchema> & { store: StorePlugin };
 type MigrationStep = "catalog" | "remove-plugin" | "remove-marketplace" | "verify" | "save";
 
@@ -57,19 +65,34 @@ function isReleaseRepository(source: string): boolean {
     || source === `git@github.com:${repository}.git` || source === `ssh://git@github.com/${repository}.git`);
 }
 
-function githubInstalled(catalog: Catalog): boolean {
-  return catalog.installed.some(plugin => {
-    const source = plugin.marketplaceSource;
-    return plugin.pluginId === githubPlugin && plugin.installed && source?.sourceType === "git" && isReleaseRepository(source.source);
-  });
-}
-
-function githubConfigured(catalog: Catalog): boolean {
-  const plugins = [...catalog.installed, ...catalog.available];
+function hasGithubRelease(plugins: Catalog["installed"]): boolean {
   return plugins.some(plugin => {
     const source = plugin.marketplaceSource;
     return plugin.pluginId === githubPlugin && source?.sourceType === "git" && isReleaseRepository(source.source);
   });
+}
+
+function githubConfigured(catalog: Catalog): boolean {
+  return hasGithubRelease([...catalog.installed, ...catalog.available]);
+}
+
+function fromStored(stored: StoredCache): SavedCache {
+  const { checkedAt, latestVersion, githubConfigured, storeInstalled, migratedVersion } = stored;
+  if (migratedVersion !== undefined) return { state: "migrated", migratedVersion, checkedAt, latestVersion: latestVersion ?? migratedVersion, githubConfigured, storeInstalled };
+  if (latestVersion === undefined) return { state: "failed", checkedAt };
+  return { state: "checked", checkedAt, latestVersion, githubConfigured, storeInstalled };
+}
+
+function toStored(cache: SavedCache): StoredCache {
+  const source = PLUGIN_STORE_ID;
+  switch (cache.state) {
+    case "failed": return { source, checkedAt: cache.checkedAt, githubConfigured: false, storeInstalled: false };
+    case "checked": return { source, checkedAt: cache.checkedAt, latestVersion: cache.latestVersion, githubConfigured: cache.githubConfigured, storeInstalled: cache.storeInstalled };
+    case "migrated": {
+      const { checkedAt, latestVersion, githubConfigured, storeInstalled, migratedVersion } = cache;
+      return { source, checkedAt, latestVersion, githubConfigured, storeInstalled, migratedVersion };
+    }
+  }
 }
 
 export class PluginUpdates {
@@ -104,39 +127,56 @@ export class PluginUpdates {
     this.now = options.now ?? Date.now;
   }
 
-  private emptyCache(): Cache {
-    return { source: PLUGIN_STORE_ID, checkedAt: 0, githubConfigured: false, storeInstalled: false };
+  /** Store releases from the migration release on that are not older than this build. */
+  private isMigrationTarget(version: string): boolean {
+    return compareReleaseVersions(version, STORE_MIGRATION_VERSION) >= 0 && compareReleaseVersions(version, this.currentVersion) >= 0;
   }
 
   private status(cache: Cache): PluginUpdate {
-    if (cache.migratedVersion !== undefined && this.runningGithub) {
-      return { status: "migrated", currentVersion: this.currentVersion, latestVersion: cache.migratedVersion, storeInstalled: true };
+    const currentVersion = this.currentVersion;
+    switch (cache.state) {
+      case "unchecked":
+      case "failed": return { status: "unavailable", currentVersion };
+      case "migrated":
+        if (this.runningGithub) return { status: "migrated", currentVersion, latestVersion: cache.migratedVersion, storeInstalled: true };
+        return this.checkedStatus(cache);
+      case "checked": return this.checkedStatus(cache);
     }
-    const latest = cache.latestVersion;
-    if (latest === undefined) return { status: "unavailable", currentVersion: this.currentVersion };
-    const migrationReady = compareReleaseVersions(latest, STORE_MIGRATION_VERSION) >= 0 && compareReleaseVersions(latest, this.currentVersion) >= 0;
-    if (cache.githubConfigured && migrationReady) {
-      return { status: "migration", currentVersion: this.currentVersion, latestVersion: latest, storeInstalled: cache.storeInstalled };
+  }
+
+  private checkedStatus(check: Check): PluginUpdate {
+    const latest = check.latestVersion;
+    if (check.githubConfigured && this.isMigrationTarget(latest)) {
+      return { status: "migration", currentVersion: this.currentVersion, latestVersion: latest, storeInstalled: check.storeInstalled };
     }
     const newer = compareReleaseVersions(latest, this.currentVersion) > 0;
     return { status: newer ? "available" : "current", currentVersion: this.currentVersion, latestVersion: latest };
+  }
+
+  private isFresh(cache: Cache): boolean {
+    if (cache.state === "unchecked" || cache.checkedAt <= 0) return false;
+    const age = this.now() - cache.checkedAt;
+    const interval = cache.state === "failed" ? failedCheckIntervalMs : checkIntervalMs;
+    return age >= 0 && age < interval;
   }
 
   private async readCache(): Promise<Cache> {
     try {
       const text = await readFile(this.cachePath, "utf8");
       const data: unknown = JSON.parse(text);
-      return cacheSchema.parse(data);
-    } catch { return this.emptyCache(); }
+      const stored = cacheSchema.parse(data);
+      return fromStored(stored);
+    } catch { return { state: "unchecked" }; }
   }
 
-  private async saveCache(cache: Cache) {
+  private async saveCache(cache: SavedCache) {
     const directory = dirname(this.cachePath);
     const id = randomUUID();
     const temporary = `${this.cachePath}.${id}.tmp`;
     try {
       await mkdir(directory, { recursive: true });
-      const text = JSON.stringify(cache);
+      const stored = toStored(cache);
+      const text = JSON.stringify(stored);
       await writeFile(temporary, text, { mode: 0o600 });
       await rename(temporary, this.cachePath);
     } catch {
@@ -157,7 +197,7 @@ export class PluginUpdates {
     const entry = catalog.store;
     const version = entry.localVersion;
     if (entry.installed === false || entry.enabled === false || version === null) return false;
-    if (compareReleaseVersions(version, STORE_MIGRATION_VERSION) < 0 || compareReleaseVersions(version, this.currentVersion) < 0) return false;
+    if (this.isMigrationTarget(version) === false) return false;
     const path = join(this.profile, "plugins/cache", STORE_MARKETPLACE, "mobile-dev", version, ".codex-plugin/plugin.json");
     try {
       const text = await readFile(path, "utf8");
@@ -179,23 +219,20 @@ export class PluginUpdates {
   private async checkLatest(): Promise<PluginUpdate> {
     const cache = await this.readCache();
     const status = this.status(cache);
-    const age = this.now() - cache.checkedAt;
-    const interval = cache.latestVersion === undefined ? failedCheckIntervalMs : checkIntervalMs;
-    if (status.status === "migrated" || cache.checkedAt > 0 && age >= 0 && age < interval) return status;
+    if (status.status === "migrated" || this.isFresh(cache)) return status;
     const startedAt = performance.now();
-    const next = this.emptyCache();
-    next.checkedAt = this.now();
+    const checkedAt = this.now();
+    let next: SavedCache;
     try {
       const catalog = await this.catalog();
-      next.latestVersion = catalog.store.version;
-      next.githubConfigured = githubConfigured(catalog);
-      next.storeInstalled = await this.storeInstalled(catalog);
-    } catch { /* Unavailable catalog checks retry after the cache expires. */ }
+      const storeInstalled = await this.storeInstalled(catalog);
+      next = { state: "checked", checkedAt, latestVersion: catalog.store.version, githubConfigured: githubConfigured(catalog), storeInstalled };
+    } catch { next = { state: "failed", checkedAt }; }
     try { await this.saveCache(next); }
     catch {
       const error = new Error("Could not save the plugin update check.");
       captureServerError(error, "plugin.update.cache");
-      delete next.latestVersion;
+      next = { state: "failed", checkedAt };
     }
     const update = this.status(next);
     const elapsed = performance.now() - startedAt;
@@ -221,13 +258,13 @@ export class PluginUpdates {
       if (this.checking !== undefined) await this.checking;
       const catalog = await this.catalog();
       const version = catalog.store.version;
-      const ready = compareReleaseVersions(version, STORE_MIGRATION_VERSION) >= 0 && compareReleaseVersions(version, this.currentVersion) >= 0;
-      const installed = ready && await this.storeInstalled(catalog);
+      const installed = this.isMigrationTarget(version) && await this.storeInstalled(catalog);
       if (installed === false) {
         throw new ExpectedOperationError("app_unavailable", "Install and enable the latest Mobile Dev version from the plugin store, then finish migration here.");
       }
       step = "remove-plugin";
-      if (githubInstalled(catalog)) {
+      const installedPlugins = catalog.installed.filter(plugin => plugin.installed);
+      if (hasGithubRelease(installedPlugins)) {
         const result = await this.run(["plugin", "remove", githubPlugin, "--json"]);
         const removed = removedSchema.parse(result);
         if (removed.pluginId !== githubPlugin) throw new PluginUpdateError("Codex did not remove the GitHub installation. Try again.", "not-removed");
@@ -251,7 +288,7 @@ export class PluginUpdates {
         throw new PluginUpdateError("Could not verify the store migration. Try again.", "not-verified");
       }
       const installedVersion = releaseVersionSchema.parse(verified.store.localVersion);
-      const cache: Cache = { source: PLUGIN_STORE_ID, checkedAt: this.now(), latestVersion: version, githubConfigured: false, storeInstalled: true, migratedVersion: installedVersion };
+      const cache: SavedCache = { state: "migrated", checkedAt: this.now(), latestVersion: version, githubConfigured: false, storeInstalled: true, migratedVersion: installedVersion };
       step = "save";
       await this.saveCache(cache);
       const elapsed = performance.now() - startedAt;

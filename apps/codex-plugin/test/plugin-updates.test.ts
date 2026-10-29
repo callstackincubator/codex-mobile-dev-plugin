@@ -154,6 +154,26 @@ test("legacy GitHub update caches cannot advertise unpublished store versions", 
   assert.equal(calls.length, 1);
 });
 
+test("update caches keep the flat format earlier releases read and write", async t => {
+  const directory = await profile(t);
+  const path = join(directory, "mobile-dev/updates.json");
+  await mkdir(join(directory, "mobile-dev"));
+  const migrated = { source: PLUGIN_STORE_ID, checkedAt: 1000000, latestVersion: "0.1.168", githubConfigured: false, storeInstalled: true, migratedVersion: "0.1.167" };
+  await writeFile(path, JSON.stringify(migrated));
+  const calls: string[][] = [];
+  const { run, readStore } = cliFixture(directory, calls, { github: false, storeVersion: "0.1.169" });
+  const options = { enabled: true, profile: directory, currentVersion: "0.1.167", run, readStore, now: () => 1000000 };
+  const github = new PluginUpdates({ ...options, pluginRoot: githubRoot(directory) });
+  assert.deepEqual(await github.check(), { status: "migrated", currentVersion: "0.1.167", latestVersion: "0.1.167", storeInstalled: true });
+  const store = new PluginUpdates(options);
+  assert.equal((await store.check()).status, "available");
+  assert.equal(calls.length, 0);
+  const later = new PluginUpdates({ ...options, now: () => 1000000 + 60 * 60 * 1000 });
+  assert.equal((await later.check()).latestVersion, "0.1.169");
+  const saved = JSON.parse(await readFile(path, "utf8"));
+  assert.deepEqual(saved, { source: PLUGIN_STORE_ID, checkedAt: 1000000 + 60 * 60 * 1000, latestVersion: "0.1.169", githubConfigured: false, storeInstalled: false });
+});
+
 test("unavailable catalogs, wrong identities and invalid versions stay quiet; development does no CLI work", async t => {
   for (const fixture of [{ storeId: "another-plugin" }, { storeVersion: "../bad" }]) {
     const directory = await profile(t);
