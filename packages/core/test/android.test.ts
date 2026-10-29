@@ -53,7 +53,7 @@ async function fakeAndroid(deviceId = ID, videoSize = SCREEN) {
   const url = `http://127.0.0.1:${address.port}`;
   class FakeAndroid extends ServeEmu {
     boots: string[] = [];
-    async list() { return { connected: true, managed: false, baseUrl: url, devices: [{ udid: deviceId, name: "Pixel", state: "Booted", runtime: "Android", platform: "android" as const }] }; }
+    async devices() { return [{ udid: deviceId, name: "Pixel", state: "Booted", runtime: "Android", platform: "android" as const, kind: "emulator" as const }]; }
     async boot(id: string) { this.boots.push(id); return this.list(); }
   }
   const backend = new FakeAndroid(url);
@@ -189,7 +189,7 @@ test("Android MCP flow lists without booting, captures, streams, and closes", as
 test("a missing serve-emu runtime tells the user to reinstall and stops the panel's retries", async t => {
   // Running from source, serve-emu is never beside this module, so starting a stream finds it missing.
   class Unbundled extends ServeEmu {
-    async list() { return { connected: true, managed: false, baseUrl: "", devices: [{ udid: ID, name: "Pixel", state: "Booted", runtime: "Android", platform: "android" as const }] }; }
+    async devices() { return [{ udid: ID, name: "Pixel", state: "Booted", runtime: "Android", platform: "android" as const, kind: "emulator" as const }]; }
   }
   const server = new McpServer({ name: "android-runtime-test", version: "1" });
   const backend = new Unbundled();

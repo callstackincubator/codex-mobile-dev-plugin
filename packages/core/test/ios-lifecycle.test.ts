@@ -95,3 +95,17 @@ async function waitFor(condition: () => boolean) {
     await new Promise(resolve => setTimeout(resolve, 10));
   }
 }
+
+test("a device lookup and a stream definition each list the simulators once", async t => {
+  const fake = await fakeBaguette();
+  const baguette = attachedBaguette(fake.url);
+  t.after(async () => { baguette.dispose(); await fake.close(); });
+  await baguette.start();
+  const listings = () => fake.requests.filter(request => request.path === "/simulators.json").length;
+  const before = listings();
+  assert.equal((await baguette.device(UDID, true)).name, "iPhone 17");
+  assert.equal(listings() - before, 1);
+  await baguette.definition(UDID);
+  assert.equal(listings() - before, 2);
+  await assert.rejects(baguette.device("A17F4F36-7E21-4CA0-8ACD-BBB530887763", true), /The simulator is stopped\. Press Start to boot it\./);
+});

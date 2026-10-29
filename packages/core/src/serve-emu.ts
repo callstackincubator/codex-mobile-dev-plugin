@@ -12,7 +12,8 @@ import { bootAndroidEmulator, parseAvdName } from "./android-emulator.ts";
 import { adbPath } from "./native-logs.ts";
 import { parseBaseUrl } from "@mobile-dev/shared/protocol.ts";
 import type { SimulatorDevice, Status } from "@mobile-dev/shared/protocol.ts";
-import { annotateDeviceCommand, backendCommand } from "@mobile-dev/shared/device-command-diagnostics.ts";
+import { annotateDeviceCommand, backendCommand, inheritDeviceCommand } from "@mobile-dev/shared/device-command-diagnostics.ts";
+import { requireDevice } from "./device-lookup.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
 import { isMissingFile, MissingRuntimeError } from "./install-integrity.ts";
 import { recordAndroidEmulatorReconnect, recordAndroidBackendStartup, recordAndroidStartupStages, recordAndroidStartupContext, recordAndroidStartupDeviceState, recordAndroidBackendStop } from "./telemetry.ts";
@@ -27,6 +28,7 @@ const execute = promisify(execFile);
 const serveEmuErrorSchema = z.object({ ok: z.literal(false), error: z.union([z.string(), z.object({ message: z.string() }).loose()]).optional() }).loose();
 const healthSchema = z.object({ serial: androidIdSchema, codec: z.string(), size: z.object({ width: z.number().positive(), height: z.number().positive() }) });
 type Backend = { url: URL; child?: ChildProcess };
+const ANDROID_DEVICE = { missing: "This Android device is no longer available. Refresh the device list.", stopped: "The Android device is stopped or offline. Press Start or reconnect it." };
 
 export function androidDisplaySize(output: string, video: { width: number; height: number }) {
   const matches = [...output.matchAll(/(?:Physical|Override) size:\s*(\d+)x(\d+)/g)];
@@ -63,7 +65,7 @@ export class ServeEmu {
     return "emulator";
   }
 
-  async list(): Promise<Status> {
+  async devices(): Promise<SimulatorDevice[]> {
     try {
       const adb = await adbPath();
       const emulator = await this.emulatorPath();
@@ -110,20 +112,24 @@ export class ServeEmu {
         return parsedId.success && !runningAvd;
       });
       const stopped = stoppedNames.map(name => ({ udid: avdId(name), name, state: "Shutdown", runtime: "Android", platform: "android" as const, kind: "emulator" as const }));
-      return { connected: true, managed: [...this.backends.values()].some(backend => !!backend.child), baseUrl: this.external?.origin ?? "", devices: [...running, ...stopped] };
+      return [...running, ...stopped];
     } catch (error) {
-      return { connected: false, managed: false, baseUrl: "", devices: [], error: `Cannot list Android devices. Install Android SDK platform-tools and emulator. ${errorMessage(error)}` };
+      throw inheritDeviceCommand(new Error(`Cannot list Android devices. Install Android SDK platform-tools and emulator. ${errorMessage(error)}`), error);
     }
+  }
+
+  async list(): Promise<Status> {
+    try { return this.connected(await this.devices()); }
+    catch (error) { return { connected: false, managed: false, baseUrl: "", devices: [], error: errorMessage(error) }; }
+  }
+
+  private connected(devices: SimulatorDevice[]): Status {
+    return { connected: true, managed: [...this.backends.values()].some(backend => !!backend.child), baseUrl: this.external?.origin ?? "", devices };
   }
 
   async device(id: string, booted = false) {
     androidIdSchema.parse(id);
-    const status = await this.list();
-    if (!status.connected) throw new Error(status.error);
-    const device = status.devices.find(device => device.udid === id);
-    if (!device) throw new SimulatorUnavailableError("This Android device is no longer available. Refresh the device list.");
-    if (booted && device.state !== "Booted") throw new SimulatorUnavailableError("The Android device is stopped or offline. Press Start or reconnect it.");
-    return device;
+    return requireDevice(await this.devices(), id, { ...ANDROID_DEVICE, booted });
   }
 
   async boot(id: string): Promise<Status> {
@@ -138,8 +144,9 @@ export class ServeEmu {
   }
 
   private async ensureBooted(id: string): Promise<Status> {
-    const device = await this.device(id);
-    if (device.state === "Booted") return this.list();
+    const devices = await this.devices();
+    const device = requireDevice(devices, id, ANDROID_DEVICE);
+    if (device.state === "Booted") return this.connected(devices);
     if (device.kind === "emulator" && device.state === "unauthorized") return this.awaitRunningEmulator(id);
     if (!isStoppedAvd(id)) throw new SimulatorUnavailableError("Reconnect and authorize this Android device through adb.");
     // Launch separately from serve-emu so closing the panel never stops the AVD.
@@ -151,13 +158,12 @@ export class ServeEmu {
 
   // Ready means adb authorized the emulator and Android finished booting.
   private async emulatorReady(matches: (device: SimulatorDevice) => boolean, trigger: "boot" | "selection"): Promise<Status | undefined> {
-    const status = await this.list();
-    if (!status.connected) throw new Error(status.error);
-    const running = status.devices.find(item => item.kind === "emulator" && matches(item));
+    const devices = await this.devices();
+    const running = devices.find(item => item.kind === "emulator" && matches(item));
     if (running?.state === "unauthorized") await this.reconnectEmulator(running.udid, trigger);
     if (running?.state !== "Booted") return;
     const response = await execute(await adbPath(), ["-s", running.udid, "shell", "getprop", "sys.boot_completed"], { timeout: 3000 }).catch(() => undefined);
-    if (response?.stdout.trim() === "1") return status;
+    if (response?.stdout.trim() === "1") return this.connected(devices);
   }
 
   // A quick-boot snapshot can restore an emulator after adb has marked it unauthorized, and adb
@@ -182,9 +188,8 @@ export class ServeEmu {
   async shutdown(id: string) {
     androidIdSchema.parse(id);
     if (!isEmulatorSerial(id)) throw new Error("Only Android emulators can be shut down from this panel.");
-    const before = await this.list();
-    if (!before.connected) throw new Error(before.error);
-    if (!before.devices.some(device => device.udid === id)) return before;
+    const before = await this.devices();
+    if (!before.some(device => device.udid === id)) return this.connected(before);
     await execute(await adbPath(), ["-s", id, "emu", "kill"], { timeout: 5000 });
     const backend = this.backends.get(id);
     if (backend) this.stopBackend(backend);
@@ -192,9 +197,8 @@ export class ServeEmu {
     const signal = AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(15000)]);
     while (true) {
       signal.throwIfAborted();
-      const status = await this.list();
-      if (!status.connected) throw new Error(status.error);
-      if (!status.devices.some(device => device.udid === id)) return status;
+      const devices = await this.devices();
+      if (!devices.some(device => device.udid === id)) return this.connected(devices);
       await delay(250, undefined, { signal });
     }
   }

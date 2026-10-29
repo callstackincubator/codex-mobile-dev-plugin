@@ -5,10 +5,10 @@ import { createServer } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import { normalizeDevices, parseBaseUrl, udidSchema } from "@mobile-dev/shared/protocol.ts";
-import type { Status } from "@mobile-dev/shared/protocol.ts";
+import type { IosSimulator, Status } from "@mobile-dev/shared/protocol.ts";
 import { buttonMarginsSchema } from "@mobile-dev/shared/bezel.ts";
 import { definitionDeviceState, getDefinitionDiagnostic, parseDefinitionDiagnostic, setDefinitionDiagnostic } from "@mobile-dev/shared/simulator-definition-diagnostics.ts";
-import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
+import { requireDevice } from "./device-lookup.ts";
 import { isMissingFile, MissingRuntimeError } from "./install-integrity.ts";
 import { deferEpisodeReport, ExpectedOperationError, FailureEpisodes, errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 import { annotateDeviceCommand, backendCommand, inheritDeviceCommand } from "@mobile-dev/shared/device-command-diagnostics.ts";
@@ -20,13 +20,7 @@ type DescribedUi = { tree?: { label?: unknown } };
 const NO_ACCESSIBILITY_DATA = "no accessibility data";
 const BRIDGE_RESTART_INTERVAL = 10000;
 const PORT_ATTEMPTS = 3;
-// A failed device list keeps its request's error, so errors built from the status say how the request failed.
-const listFailures = new WeakMap<Status, unknown>();
-
-function listError(status: Status): Error {
-  const error = new Error(status.error);
-  return inheritDeviceCommand(error, listFailures.get(status));
-}
+const SIMULATOR = { missing: "This simulator is no longer available. Refresh the device list.", stopped: "The simulator is stopped. Press Start to boot it." };
 
 /** A started Baguette process; tests attach to a fake backend at its own `url` instead of the given port. */
 export type LaunchedBaguette = { child: ChildProcess; url?: string };
@@ -141,22 +135,25 @@ export class Baguette {
     }
   }
 
-  async status(signal?: AbortSignal): Promise<Status> {
-    if (!this.child) {
-      return { connected: false, managed: false, baseUrl: this.baseUrl.origin, devices: [], error: "The bundled simulator backend has not started." };
-    }
+  /** The simulators the running Baguette lists; this never starts Baguette. */
+  async devices(signal?: AbortSignal): Promise<IosSimulator[]> {
+    if (!this.child) throw new Error("The bundled simulator backend has not started.");
     try {
       // Listing waits on CoreSimulator, which can take seconds while a device boots.
-      const devices = normalizeDevices(await this.json("/simulators.json", { signal }));
-      return { connected: true, managed: this.child != null, baseUrl: this.baseUrl.origin, devices };
+      return normalizeDevices(await this.json("/simulators.json", { signal }));
     } catch (error) {
-      const status = {
-        connected: false, managed: this.child != null, baseUrl: this.baseUrl.origin, devices: [],
-        error: `Cannot reach Baguette at ${this.baseUrl.origin}. ${errorMessage(error)}`,
-      };
-      listFailures.set(status, error);
-      return status;
+      // The failure keeps how its request failed.
+      throw inheritDeviceCommand(new Error(`Cannot reach Baguette at ${this.baseUrl.origin}. ${errorMessage(error)}`), error);
     }
+  }
+
+  async status(signal?: AbortSignal): Promise<Status> {
+    try { return this.connected(await this.devices(signal)); }
+    catch (error) { return { connected: false, managed: this.child != null, baseUrl: this.baseUrl.origin, devices: [], error: errorMessage(error) }; }
+  }
+
+  private connected(devices: IosSimulator[]): Status {
+    return { connected: true, managed: this.child != null, baseUrl: this.baseUrl.origin, devices };
   }
 
   async start(): Promise<Status> {
@@ -188,10 +185,7 @@ export class Baguette {
   }
 
   private async ensureStarted(): Promise<Status> {
-    const current = await this.status();
-    if (current.connected) return current;
-    // The port is our running Baguette's own, so its failed device list is not a port conflict.
-    if (this.child) throw listError(current);
+    if (this.child) return this.connected(await this.devices());
     // Another process can bind an allocated port before Baguette does. Baguette then exits, so try a new port.
     for (let attempt = 1; ; attempt++) {
       this.baseUrl.port = String(await this.allocatePort());
@@ -244,8 +238,8 @@ export class Baguette {
           const status = child.exitCode ?? undefined;
           throw annotateDeviceCommand(error, "baguette_serve", child.signalCode === null ? { failure: "exit", status } : { failure: "signal" });
         }
-        const status = await this.status(polling);
-        if (status.connected) return status;
+        const devices = await this.devices(polling).catch(() => undefined);
+        if (devices) return this.connected(devices);
         await delay(250);
       }
       const error = new Error(`Baguette did not become ready within 20 seconds. ${diagnostics.trim()}`);
@@ -259,18 +253,13 @@ export class Baguette {
 
   async device(udid: string, mustBeBooted = false) {
     udidSchema.parse(udid);
-    await this.start();
-    return this.listedDevice(udid, mustBeBooted);
+    const { devices } = await this.start();
+    return requireDevice(devices, udid, { ...SIMULATOR, booted: mustBeBooted });
   }
 
   // The simulator as a running Baguette lists it; this never starts Baguette.
   async listedDevice(udid: string, mustBeBooted = false, signal?: AbortSignal) {
-    const status = await this.status(signal);
-    if (!status.connected) throw listError(status);
-    const device = status.devices.find(item => item.udid === udid);
-    if (!device) throw new SimulatorUnavailableError("This simulator is no longer available. Refresh the device list.");
-    if (mustBeBooted && device.state !== "Booted") throw new SimulatorUnavailableError("The simulator is stopped. Press Start to boot it.");
-    return device;
+    return requireDevice(await this.devices(signal), udid, { ...SIMULATOR, booted: mustBeBooted });
   }
 
   async definition(udid: string) {
@@ -297,22 +286,20 @@ export class Baguette {
     const previous = this.deviceChanges.get(udid);
     const change = (async () => {
       await previous?.catch(() => {});
-      const device = await this.device(udid);
+      const started = await this.start();
+      const device = requireDevice(started.devices, udid, SIMULATOR);
       const expected = action === "boot" ? "Booted" : "Shutdown";
       // Baguette's boot route also repairs input. Never call it on a running device.
-      if (device.state === expected) return this.status();
+      if (device.state === expected) return started;
       const signal = AbortSignal.any([this.lifecycle.signal, AbortSignal.timeout(timeout)]);
       try {
         const inProgress = device.state === (action === "boot" ? "Booting" : "ShuttingDown");
         if (!inProgress) await this.json(`/simulators/${udid}/${action}`, { method: "POST", signal }, timeout);
         while (true) {
           signal.throwIfAborted();
-          const status = await this.status(signal);
+          const devices = await this.devices(signal);
           signal.throwIfAborted();
-          if (!status.connected) throw listError(status);
-          const current = status.devices.find(item => item.udid === udid);
-          if (!current) throw new SimulatorUnavailableError("This simulator is no longer available. Refresh the device list.");
-          if (current.state === expected) return status;
+          if (requireDevice(devices, udid, SIMULATOR).state === expected) return this.connected(devices);
           await delay(250, undefined, { signal });
         }
       } catch (error) {
