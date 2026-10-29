@@ -5,6 +5,8 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { captureServerError } from "../telemetry.ts";
+import { openRequestSession } from "../request-session.ts";
+import type { ServerRequestContext } from "../request-session.ts";
 import { z } from "zod";
 import { cpuTargetSchema } from "@mobile-dev/shared/cpu.ts";
 import type { CpuTarget } from "@mobile-dev/shared/cpu.ts";
@@ -23,11 +25,11 @@ const metadata = { ui: { visibility: ["app", "model"] as ("app" | "model")[] } }
 const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 const write = { ...read, readOnlyHint: false };
 
-function safe<T>(handler: (input: T) => Promise<CallToolResult>) {
-  return async (input: T): Promise<CallToolResult> => {
-    try { return await handler(input); }
+function safe<T>(handler: (input: T, context: ServerRequestContext) => Promise<CallToolResult>) {
+  return async (input: T, context: ServerRequestContext): Promise<CallToolResult> => {
+    try { return await handler(input, context); }
     catch (error) {
-      captureServerError(error, "cpu.tool");
+      captureServerError(error, "cpu.tool", { signal: context.signal });
       return { isError: true, content: [{ type: "text", text: errorMessage(error) }] };
     }
   };
@@ -72,9 +74,9 @@ export function registerCpuTools(server: McpServer, cpu: CpuSessions, simulators
   registerAppTool(server, "mobile_cpu_session", {
     title: "Monitor native app CPU and memory", description: "Monitor process and per-thread CPU plus main-process memory once per second without an app SDK, app launch or restart. Returns sessionId and cpuUri in the tool result. Poll mobile_read_cpu with sessionId and the previous cursor as after; close with mobile_cpu_close when finished. Android uses a small external native /proc collector over ADB, without root or debugger attachment; the device must permit ADB shell to read app counters. iOS uses debugserver and requires a development-signed build with get-task-allow and no existing Xcode/LLDB attachment. Physical iOS 17.4+ also requires pairing, Developer Mode and a mounted developer disk image; pass target.kind: physical and the hardware UDID from mobile_list_ios_devices. Attach and detach briefly pause the app. 100% is one occupied device CPU core. Memory is RSS on Android and physical footprint on iOS, reported in bytes. Idle sessions expire after five minutes.",
     inputSchema: { target: cpuTargetSchema }, annotations: write, _meta: metadata,
-  }, safe(async ({ target }: { target: CpuTarget }) => {
+  }, safe(async ({ target }: { target: CpuTarget }, context) => {
     await validateDevice(target);
-    const id = cpu.open(target);
+    const id = await openRequestSession(context.signal, async () => cpu.open(target), id => cpu.closeSession(id));
     const data = { target, sessionId: id, cpuUri: `cpu://mobile-dev/${id}/batch?after=0` };
     const text = JSON.stringify(data);
     return { content: [{ type: "text", text }], structuredContent: data };

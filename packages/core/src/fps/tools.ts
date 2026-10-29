@@ -12,6 +12,8 @@ import { listIosDevices } from "../ios-devices.ts";
 import { listAndroidLogDevices } from "../native-logs.ts";
 import type { DisplayFpsSessions } from "./sessions.ts";
 import { captureServerError } from "../telemetry.ts";
+import { openRequestSession } from "../request-session.ts";
+import type { ServerRequestContext } from "../request-session.ts";
 
 const sessionString = z.string();
 const sessionId = sessionString.regex(/^[a-f0-9]{64}$/);
@@ -28,11 +30,11 @@ const visibility: ("app" | "model")[] = ["app", "model"];
 const metadata = { ui: { visibility } };
 const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 const write = { ...read, readOnlyHint: false };
-function safe<T>(handler: (input: T) => Promise<CallToolResult>) {
-  return async (input: T): Promise<CallToolResult> => {
-    try { return await handler(input); }
+function safe<T>(handler: (input: T, context: ServerRequestContext) => Promise<CallToolResult>) {
+  return async (input: T, context: ServerRequestContext): Promise<CallToolResult> => {
+    try { return await handler(input, context); }
     catch (error) {
-      captureServerError(error, "display_fps.tool");
+      captureServerError(error, "display_fps.tool", { signal: context.signal });
       return { isError: true, content: [{ type: "text", text: errorMessage(error) }] };
     }
   };
@@ -61,9 +63,9 @@ export function registerDisplayFpsTools(server: McpServer, sessions: DisplayFpsS
     const text = JSON.stringify(batch);
     return { contents: [{ uri: uri.href, mimeType: "application/json", text }] };
   });
-  const startSession = safe(async ({ target }: { target: DisplayFpsTarget }) => {
+  const startSession = safe(async ({ target }: { target: DisplayFpsTarget }, context) => {
     await validate(target);
-    const id = sessions.open(target);
+    const id = await openRequestSession(context.signal, async () => sessions.open(target), id => sessions.closeSession(id));
     const timeOrigin = performance.now() / 1000;
     const data = { sessionId: id, timeOrigin, fpsUri: `display-fps://mobile-dev/${id}/batch?after=0` };
     const text = JSON.stringify(data);

@@ -202,7 +202,9 @@ reconnect abort signal; cancellation without an aborted operation and host
 Cancelled stream requests close sessions that finish opening after cancellation
 or before a discarded response. Unexpected cleanup failures retain their own
 `stream.cancel_cleanup` capture. Response delivery releases cancellation ownership;
-failed response delivery closes its undelivered session. Physical iOS mirror startup now also captures
+failed response delivery closes its undelivered session. CPU, Display FPS and log session
+starts follow the same ownership and report their cleanup failures as `stream.cancel_cleanup`;
+their tool failures after request cancellation count as `cancelled`. Physical iOS mirror startup now also captures
 unexpected server errors before returning the existing visible failure.
 
 Server discovery failures no longer create a second generic UI exception. The
