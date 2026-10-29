@@ -9,10 +9,11 @@ import { bezelGeometrySchema } from "@mobile-dev/shared/bezel.ts";
 import type { Bezel } from "@mobile-dev/shared/bezel.ts";
 import type { PhysicalIosDevice } from "@mobile-dev/shared/ios-devices.ts";
 import { baguetteEnvironment } from "./baguette-runtime.ts";
+import { captureServerError } from "./telemetry.ts";
 
 const execute = promisify(execFile);
 type BezelCommand = (file: string, args: string[], options: { encoding: "buffer"; timeout: number; maxBuffer: number; env?: NodeJS.ProcessEnv }) => Promise<{ stdout: Buffer }>;
-export type PhysicalIosBezelReader = (device: PhysicalIosDevice) => Promise<Bezel>;
+export type PhysicalIosBezelReader = (device: PhysicalIosDevice) => Promise<Bezel | undefined>;
 
 const text = z.string();
 const deviceTypeSchema = z.object({ name: text, modelIdentifier: text, bundlePath: text });
@@ -20,7 +21,7 @@ const deviceTypes = z.array(deviceTypeSchema);
 const deviceTypesSchema = z.object({ devicetypes: deviceTypes });
 const maskIdentifier = z.uuid();
 const framebufferMask = maskIdentifier.optional();
-const representedModelIdentifiers = z.array(text);
+const representedModelIdentifiers = z.array(text).default([]);
 const profileSchema = z.object({ framebufferMask, representedModelIdentifiers });
 const rectSchema = bezelGeometrySchema.shape.rect;
 const viewportSchema = bezelGeometrySchema.shape.viewport;
@@ -28,6 +29,7 @@ const radiusSchema = bezelGeometrySchema.shape.clipRadius;
 const layoutSchema = z.object({ screen: rectSchema, composite: viewportSchema, innerCornerRadius: radiusSchema });
 const pngSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const commandOptions = { encoding: "buffer", timeout: 15000, maxBuffer: 8 * 1024 * 1024 } satisfies Parameters<BezelCommand>[2];
+const missingFrameRetryDelay = 5 * 60 * 1000;
 
 function pngDataUri(bytes: Buffer): string {
   const signature = bytes.subarray(0, 8);
@@ -50,7 +52,7 @@ async function readMask(identifier: string, run: BezelCommand): Promise<string> 
   }
 }
 
-async function renderBezel(device: PhysicalIosDevice, run: BezelCommand, runtime: typeof baguetteEnvironment): Promise<Bezel> {
+async function renderBezel(device: PhysicalIosDevice, run: BezelCommand, runtime: typeof baguetteEnvironment): Promise<Bezel | undefined> {
   const typesOutput = await run("/usr/bin/xcrun", ["simctl", "list", "devicetypes", "--json"], commandOptions);
   const typesJson = typesOutput.stdout.toString("utf8");
   const typesPayload = JSON.parse(typesJson);
@@ -69,12 +71,14 @@ async function renderBezel(device: PhysicalIosDevice, run: BezelCommand, runtime
     const profileJson = profileOutput.stdout.toString("utf8");
     const profilePayload = JSON.parse(profileJson);
     const profile = profileSchema.parse(profilePayload);
-    if (profile.representedModelIdentifiers.includes(device.productType)) {
+    // A device type stands for its own model plus any variants it lists. Older Xcode profiles list none.
+    if (type.modelIdentifier === device.productType || profile.representedModelIdentifiers.includes(device.productType)) {
       selected = { type, profile };
       break;
     }
   }
-  if (selected === undefined) throw new Error(`Xcode has no Apple device frame for ${device.model} (${device.productType}). Install its device type in Xcode.`);
+  // Without an installed device type the screen mirrors without a frame.
+  if (selected === undefined) return undefined;
   const { type, profile } = selected;
   // Bundles, and the chunks they split into, sit in dist/ beside the helpers.
   const root = import.meta.url.endsWith(".mjs") ? "./baguette/" : "../../native/vendor/baguette/";
@@ -98,17 +102,25 @@ async function renderBezel(device: PhysicalIosDevice, run: BezelCommand, runtime
 }
 
 export function createPhysicalIosBezelReader(run: BezelCommand = execute, runtime = baguetteEnvironment): PhysicalIosBezelReader {
-  const cache = new Map<string, Promise<Bezel>>();
+  const cache = new Map<string, Promise<Bezel | undefined>>();
+  async function read(device: PhysicalIosDevice): Promise<Bezel | undefined> {
+    try {
+      const bezel = await renderBezel(device, run, runtime);
+      if (bezel !== undefined) return bezel;
+    } catch (error) {
+      // The frame is decoration, so a failed render mirrors without one.
+      captureServerError(error, "ios-mirror.bezel");
+    }
+    // Reconnects reuse a missing frame until it is worth looking for again.
+    setTimeout(() => cache.delete(device.productType), missingFrameRetryDelay).unref();
+    return undefined;
+  }
   return device => {
     const cached = cache.get(device.productType);
     if (cached !== undefined) return cached;
-    const rendered = renderBezel(device, run, runtime);
-    const pending = rendered.catch(error => {
-      cache.delete(device.productType);
-      throw error;
-    });
-    cache.set(device.productType, pending);
-    return pending;
+    const bezel = read(device);
+    cache.set(device.productType, bezel);
+    return bezel;
   };
 }
 

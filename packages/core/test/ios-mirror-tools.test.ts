@@ -155,20 +155,24 @@ test("a device's display rejection reaches the panel and leaves capture availabl
   assert.equal(typeof opened._meta?.sessionId, "string");
 });
 
-test("an unavailable Apple frame reports its error before starting native capture", async t => {
+test("an iPhone without an Apple frame still mirrors its screen", async t => {
   let opens = 0;
-  const sessions = new IosMirrorSessions(async () => { opens++; throw new Error("Unexpected native open"); });
+  const sessions = new IosMirrorSessions(async () => {
+    opens++;
+    return { async read() { return { generation: 1, sequence: 1, dropped: 0, frames: [] }; }, async touch() {}, async reset() {}, async close() {} };
+  });
   const server = new McpServer({ name: "mirror-test", version: "1" });
-  const close = registerIosMirrorTools(server, "ui://test/app", sessions, async () => [phone], async () => { throw new Error("Apple device frame unavailable"); });
+  const close = registerIosMirrorTools(server, "ui://test/app", sessions, async () => [phone], async () => undefined);
   const client = new Client({ name: "test", version: "1" });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   t.after(async () => { await close(); await client.close(); await server.close(); });
   await server.connect(serverTransport);
   await client.connect(clientTransport);
   const result = await client.callTool({ name: "mobile_ios_mirror_session", arguments: { udid: phone.udid } });
-  assert.equal(result.isError, true);
-  assert.deepEqual(result.content, [{ type: "text", text: "Apple device frame unavailable" }]);
-  assert.equal(opens, 0);
+  assert.equal(result.isError, undefined);
+  assert.equal(result._meta?.bezel, undefined);
+  assert.equal(typeof result._meta?.sessionId, "string");
+  assert.equal(opens, 1);
 });
 
 test("a disconnected iPhone cannot open a native capture", async t => {
