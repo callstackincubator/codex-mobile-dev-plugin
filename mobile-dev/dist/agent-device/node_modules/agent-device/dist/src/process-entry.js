@@ -1,0 +1,1 @@
+import{exitAfterFlush as e}from"./process-exit.js";async function t(t,n=async()=>await import(`./cli.js`)){let{runCli:r}=await n();return await r(t),await e(0)}export{t as runCliProcess};

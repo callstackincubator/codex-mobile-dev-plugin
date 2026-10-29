@@ -1,0 +1,1 @@
+function e(e){if(!e)return;let t=/\[(-?\d+),(-?\d+)\]\[(-?\d+),(-?\d+)\]/.exec(e);if(!t)return;let n=Number(t[1]),r=Number(t[2]),i=Number(t[3]),a=Number(t[4]);return{x:n,y:r,width:Math.max(0,i-n),height:Math.max(0,a-r)}}export{e as t};

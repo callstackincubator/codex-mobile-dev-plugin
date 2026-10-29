@@ -1,0 +1,1 @@
+function e(t,n){for(let r of t){if(r.name===`dict`)for(let e=0;e<r.children.length-1;e+=1){let t=r.children[e],i=r.children[e+1];t?.name===`key`&&t.text&&i&&n(t.text,i)}e(r.children,n)}}export{e as t};

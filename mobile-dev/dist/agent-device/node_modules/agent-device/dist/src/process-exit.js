@@ -1,0 +1,1 @@
+import{t as e}from"./timeouts.js";async function t(t){await Promise.race([n(),e(2e3)]),process.exit(t)}async function n(){await Promise.all([r(process.stdout),r(process.stderr)])}function r(e){return e.writableLength===0?Promise.resolve():new Promise(t=>{e.once(`drain`,t)})}export{t as exitAfterFlush};

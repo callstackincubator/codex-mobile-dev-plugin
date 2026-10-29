@@ -1,0 +1,1 @@
+import{AsyncLocalStorage as e}from"node:async_hooks";function t(t,n=e=>e){let r=new e;return{resolve(e){return e?n(e):r.getStore()??t},async run(e,t){return e?await r.run(n(e),t):await t()},hasScope(){return!!r.getStore()}}}export{t};

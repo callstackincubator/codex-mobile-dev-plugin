@@ -1,0 +1,1 @@
+function e(e,t){return new Proxy(e,{get(e,n,r){let i=Reflect.get(e,n,r);return typeof i==`function`?(...n)=>t(async()=>await i.apply(e,n)):i}})}export{e as t};

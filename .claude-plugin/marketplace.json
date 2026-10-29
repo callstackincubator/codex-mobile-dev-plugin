@@ -1,0 +1,16 @@
+{
+  "name": "mobile-dev",
+  "description": "Mobile Dev for Claude Code: iOS and Android device control, logs, and performance charts.",
+  "owner": {
+    "name": "Callstack",
+    "email": "hello@callstack.com"
+  },
+  "plugins": [
+    {
+      "name": "mobile-dev",
+      "source": "./mobile-dev",
+      "description": "Control iOS and Android devices while building, running, or debugging mobile apps. Read native and Metro logs, inspect app storage, and record CPU, memory, and FPS into interactive charts in chat. Apple Silicon development preview.",
+      "category": "development"
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "sourceSHA256": "92d8b951cceb8006836ae6152ed204e815d43ade06b820a2e992cd1db22f453d",
+  "compiler": "Android (12470979, +pgo, -bolt, +lto, -mlgo, based on r522817c) clang version 18.0.3 (https://android.googlesource.com/toolchain/llvm-project d8003a456d14a3deb8054cdaa529ffbf02d9b262)\nTarget: x86_64-apple-darwin27.0.0\nThread model: posix\nInstalledDir: /Users/runner/Library/Android/sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/darwin-x86_64/bin\n",
+  "api": 21,
+  "flashlightCommit": "5ef203ae184547a3b2984fa4f9b76d672895f861",
+  "binaries": {
+    "arm64-v8a": {
+      "sha256": "e18e9254577ede3977a4a049e6e66793bab02847eb61ef586281878c6d918af4",
+      "bytes": 1558344
+    },
+    "armeabi-v7a": {
+      "sha256": "768da94ca2c6d704508a4dd40001c1e0c29cff51ac1d817e704ac16474174b34",
+      "bytes": 972596
+    },
+    "x86": {
+      "sha256": "9a742c72095a927d98c4bd1d4d6449994edfccc58ab36a67dd9da4227e484007",
+      "bytes": 1639092
+    },
+    "x86_64": {
+      "sha256": "e4d82680db8161597f22909431a327d1c188b2dca4836e51defa71d4333aee54",
+      "bytes": 1507720
+    }
+  }
+}

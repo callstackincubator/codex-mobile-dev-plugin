@@ -1,0 +1,37 @@
+{
+  "name": "mobile-dev",
+  "version": "0.1.171",
+  "displayName": "Mobile Dev",
+  "description": "Control iOS and Android devices while building, running, or debugging mobile apps. Read native and Metro logs, inspect app storage, and record CPU, memory, and FPS into interactive charts in chat. Apple Silicon development preview.",
+  "author": {
+    "name": "Callstack",
+    "email": "hello@callstack.com"
+  },
+  "homepage": "https://github.com/callstackincubator/mobile-dev",
+  "repository": "https://github.com/callstackincubator/mobile-dev",
+  "license": "MIT",
+  "keywords": [
+    "ios",
+    "android",
+    "simulator",
+    "emulator",
+    "react-native",
+    "expo",
+    "logs",
+    "performance"
+  ],
+  "icon": "./assets/icon.svg",
+  "documentationUrl": "https://github.com/callstackincubator/mobile-dev#readme",
+  "supportUrl": "https://github.com/callstackincubator/mobile-dev/blob/main/SUPPORT.md",
+  "privacyPolicyUrl": "https://github.com/callstackincubator/mobile-dev/blob/main/PRIVACY.md",
+  "termsOfServiceUrl": "https://github.com/callstackincubator/mobile-dev/blob/main/TERMS.md",
+  "mcpServers": {
+    "mobile-dev": {
+      "command": "/bin/sh",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/scripts/launch-node.sh",
+        "${CLAUDE_PLUGIN_ROOT}/dist/server.mjs"
+      ]
+    }
+  }
+}

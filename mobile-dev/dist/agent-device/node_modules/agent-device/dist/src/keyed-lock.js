@@ -1,0 +1,1 @@
+import{AsyncLocalStorage as e}from"node:async_hooks";const t=new e;async function n(e,n,r){let i=t.getStore()??[];if(i.some(t=>t.locks===e&&t.key===n))return await r();let a=(e.get(n)??Promise.resolve()).catch(()=>{}).then(()=>t.run([...i,{locks:e,key:n}],r));return e.set(n,a),a.finally(()=>{e.get(n)===a&&e.delete(n)})}export{n as t};

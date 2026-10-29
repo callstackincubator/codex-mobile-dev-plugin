@@ -1,0 +1,23 @@
+{
+  "api": 31,
+  "perfettoVersion": "25.0",
+  "sourceSHA256": "6fb3d90f9e0104c8affcd4d30470187cac3e7e290b78202472b74a61875dc576",
+  "binaries": {
+    "arm64-v8a": {
+      "sha256": "cb527cc79cc1f26953e669264f7c20f2a991a361dabd691a162688f6be25e3a8",
+      "bytes": 3169072
+    },
+    "armeabi-v7a": {
+      "sha256": "788050f4f17d0dbf37688ca0f7b3e7a98a45c5d8a2c2af8bac346bbe9e982957",
+      "bytes": 2373048
+    },
+    "x86": {
+      "sha256": "a390dced2b720b68a5878b577901404758d5050fd1c26c2fae12b0b497468130",
+      "bytes": 3716568
+    },
+    "x86_64": {
+      "sha256": "6c3dcb1f009b2e9b2f1a14e3b34699bd48eeb0c9245a1e3d95fd340809d72f34",
+      "bytes": 3192344
+    }
+  }
+}
