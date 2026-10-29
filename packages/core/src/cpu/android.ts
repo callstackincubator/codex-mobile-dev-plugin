@@ -4,20 +4,20 @@ import { createHash, randomBytes } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { StringDecoder } from "node:string_decoder";
 import { z } from "zod";
 import { adbPath } from "../native-logs.ts";
 import type { CpuReading } from "./counters.ts";
-import type { CpuMonitor } from "./monitor.ts";
 import { AndroidCpuSampler, androidReadySchema, androidSampleSchema } from "./android-counters.ts";
-import { errorMessage } from "@mobile-dev/shared/protocol.ts";
-import { nativeCollectorCommand, NativeTelemetryRelay } from "../native-telemetry.ts";
+import { nativeCollectorCommand } from "../native-telemetry.ts";
+import { startCollector } from "../collectors/process.ts";
+import type { Collector, CollectorOptions } from "../collectors/process.ts";
 
 const execute = promisify(execFile);
 const abiSchema = z.enum(["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]);
 const releaseSchema = z.object({ binaries: z.record(z.string(), z.object({ sha256: z.string().regex(/^[a-f0-9]{64}$/) })) });
 export type AndroidCollector = ReadonlyMap<z.infer<typeof abiSchema>, { bytes: Buffer; sha256: string }>;
 type Options = { deviceId: string; pid: number; signal: AbortSignal; onSample: (sample: CpuReading) => void };
+const stalled = "The Android CPU collector stopped responding. Reconnect the device.";
 type Command = (adb: string, args: string[], signal?: AbortSignal) => Promise<string>;
 const command: Command = async (adb, args, signal) => {
   const result = await execute(adb, args, { signal, timeout: 10000, maxBuffer: 1024 * 1024 });
@@ -71,87 +71,35 @@ export async function deployAndroidCollector(adb: string, deviceId: string, sign
   return remote;
 }
 
-export async function startAndroidCpuMonitor(options: Options,
-  dependencies: { adbPath: typeof adbPath; deploy: (adb: string, deviceId: string, signal: AbortSignal) => Promise<string>; spawn: typeof spawn }): Promise<CpuMonitor> {
+export async function startAndroidCpuMonitor(options: Options, dependencies: {
+  adbPath: typeof adbPath;
+  deploy: (adb: string, deviceId: string, signal: AbortSignal) => Promise<string>;
+  spawn?: CollectorOptions["spawn"];
+}): Promise<Collector> {
   options.signal.throwIfAborted();
   const adb = await dependencies.adbPath();
   const remote = await dependencies.deploy(adb, options.deviceId, options.signal);
-  options.signal.throwIfAborted();
   const pid = String(options.pid);
   const command = nativeCollectorCommand(remote, [pid]);
-  const child = dependencies.spawn(adb, ["-s", options.deviceId, "shell", "-T", command], {
-    stdio: ["pipe", "pipe", "pipe"], shell: false,
-  });
-  let finish!: (error: Error) => void;
-  const closed = new Promise<Error>(resolve => { finish = resolve; });
-  let accept!: () => void;
-  const ready = new Promise<void>(resolve => { accept = resolve; });
-  let exited!: () => void;
-  const exit = new Promise<void>(resolve => { exited = resolve; });
   let sampler: AndroidCpuSampler | undefined;
-  let stopping: Promise<void> | undefined;
-  let diagnostics = "";
-  let pending = "";
-  const decoder = new StringDecoder("utf8");
-  const telemetry = new NativeTelemetryRelay(text => { diagnostics = (diagnostics + text).slice(-4096); });
-  let watchdog: NodeJS.Timeout;
-  const deadline = () => {
-    clearTimeout(watchdog);
-    watchdog = setTimeout(() => fail(new Error("The Android CPU collector stopped responding. Reconnect the device.")), 10000);
-    watchdog.unref();
-  };
-  const stop = (): Promise<void> => {
-    if (stopping) return stopping;
-    stopping = (async () => {
-      clearTimeout(watchdog);
-      options.signal.removeEventListener("abort", abort);
-      child.stdin?.end("stop\n");
-      const kill = setTimeout(() => child.kill("SIGKILL"), 1500);
-      kill.unref();
-      try { await exit; } finally { clearTimeout(kill); }
-    })();
-    return stopping;
-  };
-  const fail = (error: Error) => { finish(error); void stop(); };
-  const abort = () => fail(new Error("Android CPU monitoring was cancelled."));
-  child.stdin?.on("error", error => { if (stopping === undefined) fail(error); });
-  child.once("error", error => { exited(); fail(error); });
-  child.once("close", (code, signal) => {
-    telemetry.end();
-    exited();
-    clearTimeout(watchdog);
-    options.signal.removeEventListener("abort", abort);
-    finish(new Error(diagnostics.trim() || `Android CPU collector exited (${code ?? signal}). The app may have stopped.`));
+  return startCollector({
+    command: adb, args: ["-s", options.deviceId, "shell", "-T", command], signal: options.signal,
+    spawn: dependencies.spawn ?? spawn, readyTimeoutMs: 10000, stallMs: 10000, killMs: 1500,
+    labels: {
+      exited: status => `Android CPU collector exited (${status}). The app may have stopped.`,
+      timeout: stalled, stalled, cancelled: "Android CPU monitoring was cancelled.",
+      invalid: message => `Invalid Android CPU stream: ${message}`,
+    },
+    ready(record) {
+      const header = androidReadySchema.parse(record);
+      if (header.pid !== options.pid) throw new Error("The Android collector selected the wrong process.");
+      sampler = new AndroidCpuSampler(header.clockTicks, header.processStart);
+    },
+    output: { kind: "json", maxLineLength: 1024 * 1024, oversized: "Oversized Android CPU sample.", record(value) {
+      if (sampler === undefined) throw new Error("The Android collector sent a sample before its header.");
+      const profile = androidSampleSchema.parse(value);
+      const reading = sampler.sample(profile);
+      options.onSample(reading);
+    } },
   });
-  child.stderr?.on("data", (chunk: Buffer) => { telemetry.write(chunk); });
-  child.stdout?.on("data", (chunk: Buffer) => {
-    if (stopping) return;
-    pending += decoder.write(chunk);
-    if (pending.length > 1024 * 1024) { fail(new Error("Oversized Android CPU sample.")); return; }
-    let newline: number;
-    while ((newline = pending.indexOf("\n")) >= 0) {
-      const line = pending.slice(0, newline);
-      pending = pending.slice(newline + 1);
-      try {
-        const json: unknown = JSON.parse(line);
-        if (sampler === undefined) {
-          const header = androidReadySchema.parse(json);
-          if (header.pid !== options.pid) throw new Error("The Android collector selected the wrong process.");
-          sampler = new AndroidCpuSampler(header.clockTicks, header.processStart);
-          accept();
-        } else {
-          const profile = androidSampleSchema.parse(json);
-          const reading = sampler.sample(profile);
-          options.onSample(reading);
-        }
-        deadline();
-      } catch (error) { fail(new Error(`Invalid Android CPU stream: ${errorMessage(error)}`)); return; }
-    }
-  });
-  options.signal.addEventListener("abort", abort, { once: true });
-  deadline();
-  if (options.signal.aborted) abort();
-  const result = await Promise.race([ready, closed]);
-  if (result instanceof Error) { await stop(); throw result; }
-  return { closed, stop };
 }

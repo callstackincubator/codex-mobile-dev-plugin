@@ -1,6 +1,7 @@
 import { GdbConnection } from "./gdb.ts";
 import { openSimulatorDebugserver } from "./simulator.ts";
 import { CpuCounterSampler, parseCpuCounters, type CpuReading } from "./counters.ts";
+import type { Collector } from "../collectors/process.ts";
 export type { CpuReading } from "./counters.ts";
 
 // debugserver passes the fractional microseconds to a nanosecond parameter, so sub-second
@@ -21,10 +22,8 @@ function profilingSignalResume(packet: string): string | null {
   return `vCont;C1b:${thread[1]};c`;
 }
 
-export type CpuMonitor = {
-  stop(): Promise<void>;
-  closed: Promise<Error>;
-};
+/** CPU monitors are collectors; the type lives with the shared collector harness. */
+export type CpuMonitor = Collector;
 
 export async function startIosCpuMonitor(options: {
   pid: number;

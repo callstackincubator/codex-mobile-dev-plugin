@@ -43,14 +43,33 @@ export function* fields(bytes: Buffer): Generator<ProtoField> {
   }
 }
 
+/**
+ * Splits a Perfetto trace stream into TracePackets. A helper's JSON control line
+ * may sit between packets: a packet starts with its field tag (10), a line with "{".
+ */
 export class TraceStream {
   private pending = Buffer.alloc(0);
   private packet: (packet: Buffer) => void;
-  constructor(packet: (packet: Buffer) => void) { this.packet = packet; }
+  private control?: (line: string) => void;
+  constructor(packet: (packet: Buffer) => void, control?: (line: string) => void) {
+    this.packet = packet;
+    this.control = control;
+  }
   push(chunk: Buffer) {
     const bytes = this.pending.length ? Buffer.concat([this.pending, chunk]) : chunk;
     let offset = 0;
     while (offset < bytes.length) {
+      if (bytes[offset] === 123 && this.control) {
+        const newline = bytes.indexOf(10, offset);
+        if (newline < 0) {
+          if (bytes.length - offset > 65536) throw new Error("Oversized Perfetto helper record.");
+          break;
+        }
+        const line = bytes.toString("utf8", offset, newline);
+        offset = newline + 1;
+        this.control(line);
+        continue;
+      }
       if (bytes[offset] !== 10) throw new Error("Invalid Perfetto trace stream.");
       const length = varint(bytes, offset + 1);
       if (length === undefined) break;
