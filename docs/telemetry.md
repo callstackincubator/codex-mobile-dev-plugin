@@ -327,7 +327,10 @@ file names are never sent to Sentry. Filtered table names and cell values from
 are returned to the host application; this is separate from telemetry. See
 [storage result filtering](storage-privacy.md). Since 0.1.161 the Changes tab reads storage again every
 5 seconds while it is open and the page is visible; each read is one `ui.storage.read`
-sample, and the interval stops when the tab, panel, or page is hidden.
+sample, and the interval stops when the tab, panel, or page is hidden. The panel
+lists installed apps each time it opens, when the selected device boots or reconnects,
+and on Refresh; each listing is one `ui.storage.list_apps` sample, and a listing
+already in flight is reused rather than repeated.
 
 Since 0.1.152, `mobile_app_language` and `mobile_set_app_language` use the same
 app control coverage under `app_control.language` and `app_control.set_language`.

@@ -69,7 +69,7 @@ export const StorageView = memo(function StorageView({ panel }: { panel: Storage
       </Tabs>
       <InputGroup size="sm" className="min-w-16 flex-1"><InputGroupInput aria-label={state.tab === "browse" ? "Filter keys and values" : "Filter changes"} type="search" placeholder={state.tab === "browse" ? "Filter keys and values…" : "Filter changes…"} maxLength={256} autoComplete="off" spellCheck={false} value={query} onChange={event => setQuery(event.target.value)} /><InputGroupAddon><SearchIcon /></InputGroupAddon></InputGroup>
       <ButtonGroup className="shrink-0">
-        <Button variant="outline" size="icon-sm" aria-label="Refresh" title={snapshot ? `Read again · last read ${clockTime.format(snapshot.readAt)}` : "Read again"} disabled={!state.bundleId || busy} onClick={() => void panel.refresh()}>
+        <Button variant="outline" size="icon-sm" aria-label="Refresh" title={snapshot ? `Read again · last read ${clockTime.format(snapshot.readAt)}` : "Read again"} disabled={busy || !state.available || state.unsupported !== ""} onClick={() => void panel.reload()}>
           <RefreshCwIcon className={state.busy === "read" ? "animate-spin" : undefined} />
         </Button>
         <ConfirmButton variant="outline" size="sm" title="Reset app data" action="Reset app data" disabled={!state.bundleId || busy || state.unsupported !== ""}
