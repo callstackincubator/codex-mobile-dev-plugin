@@ -22,6 +22,7 @@ import { attachedBaguette } from "@mobile-dev/test-support/fixtures.ts";
 import { parseIOSLog } from "../src/log-parsers.ts";
 import { listIosDevices } from "../src/ios-devices.ts";
 import { connectClient } from "@mobile-dev/test-support/mcp.ts";
+import { waitFor } from "@mobile-dev/test-support/wait.ts";
 
 const execute = promisify(execFile);
 const phone: PhysicalIosDevice = {
@@ -31,13 +32,7 @@ const phone: PhysicalIosDevice = {
 };
 const target: PhysicalIosLogTarget = { platform: "ios", kind: "physical", deviceId: phone.udid, process: "Example" };
 
-async function waitFor(predicate: () => boolean) {
-  const deadline = Date.now() + 4000;
-  while (predicate() === false) {
-    assert.ok(Date.now() < deadline, "Timed out waiting for the log reader.");
-    await new Promise(resolve => setTimeout(resolve, 5));
-  }
-}
+const logReader = { timeout: 4000, message: "The log reader did not reach the expected state" };
 
 test("physical log targets require a hardware UDID and cannot enter the simulator route", () => {
   const valid = nativeLogTargetSchema.safeParse(target);
@@ -147,9 +142,9 @@ test("physical streams wait for acceptance, preserve process metadata across PID
     return { command: process.execPath, args: ["-e", code] };
   });
   t.after(stop);
-  await waitFor(() => statuses.length > 0);
+  await waitFor(() => statuses.length > 0, logReader);
   assert.equal(statuses.some(status => status.state === "live"), false);
-  await waitFor(() => entries.length === 2);
+  await waitFor(() => entries.length === 2, logReader);
   assert.equal(statuses.at(-1)?.state, "live");
   assert.deepEqual(entries.map(entry => entry.pid), [123, 456]);
   for (const entry of entries) {
@@ -176,7 +171,7 @@ test("a failed physical reader reports diagnostics and rediscovers before reconn
     return { command: process.execPath, args: ["-e", code] };
   });
   t.after(stop);
-  await waitFor(() => entries.length > 0);
+  await waitFor(() => entries.length > 0, logReader);
   assert.equal(attempts, 2);
   assert.ok(statuses.some(status => status.state === "reconnecting" && status.message === "fixture disconnect"));
   assert.equal(entries[0].deviceId, phone.udid);

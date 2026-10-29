@@ -11,6 +11,7 @@ import { fakeInspectionSdk } from "@mobile-dev/test-support/android-inspection-f
 import { createPanel } from "../src/panel-tools.ts";
 import { registerAndroidTools } from "../src/android-tools.ts";
 import { connectClient } from "@mobile-dev/test-support/mcp.ts";
+import { waitFor } from "@mobile-dev/test-support/wait.ts";
 
 const ID = "emulator-5554";
 const SCREEN = { width: 1080, height: 2400 };
@@ -73,10 +74,7 @@ async function video(streams: AndroidStreams, id: string, after = 0) {
   }
 }
 
-async function waitFor(check: () => boolean) {
-  const deadline = Date.now() + 2000;
-  while (!check()) { if (Date.now() > deadline) throw new Error("Timed out waiting for Android input."); await new Promise(resolve => setTimeout(resolve, 10)); }
-}
+const androidStream = { message: "The Android stream did not reach the expected state" };
 
 test("Android accessibility reports full device pixels even when scrcpy downscales video", async t => {
   await fakeInspectionSdk(t);
@@ -115,7 +113,7 @@ test("physical Android panel streams route pointer, typing, and navigation input
     { type: "button", button: "app-switcher" },
   ]);
   assert.equal(accepted, 9);
-  await waitFor(() => fake.inputs.length === accepted + 1);
+  await waitFor(() => fake.inputs.length === accepted + 1, androidStream);
   const delivered = fake.inputs.filter(input => typeof input === "object" && input !== null && "type" in input && input.type !== "reset-video");
   const expected = [
     { type: "tap", x: .5, y: .5 },
@@ -146,7 +144,7 @@ test("Android streams relay video, validate batches, and refuse a device switch"
   const batch = await video(streams, id);
   assert.equal(batch.generation, 1); assert.deepEqual(Buffer.from(batch.packets[0].data, "base64"), packet());
   assert.equal(await streams.input(id, [{ type: "button", button: "home" }]), 1);
-  await waitFor(() => fake.inputs.some(input => (input as { type?: string }).type === "home"));
+  await waitFor(() => fake.inputs.some(input => (input as { type?: string }).type === "home"), androidStream);
   const before = fake.inputs.length;
   await assert.rejects(streams.input(id, [{ type: "button", button: "back" }, { type: "run_shell" }]));
   assert.equal(fake.inputs.length, before);
@@ -227,7 +225,7 @@ test("closing an Android stream releases a waiting read and rejects later input"
   streams.closeSession(id);
   await assert.rejects(pending, /stream closed/);
   await assert.rejects(streams.input(id, [{ type: "button", button: "home" }]), /expired or closed/);
-  await waitFor(() => fake.sockets.clients.size === 0);
+  await waitFor(() => fake.sockets.clients.size === 0, androidStream);
 });
 
 test("a cancelled Android video read ends at once and keeps its stream session", async t => {
@@ -249,9 +247,9 @@ test("a dropped Android stream can reopen without booting or replaying input", a
   t.after(async () => { streams.close(); await fake.close(); });
   const first = await streams.open(ID); await video(streams, first);
   await streams.input(first, [{ type: "button", button: "home" }]);
-  await waitFor(() => fake.inputs.some(input => (input as { type?: string }).type === "home"));
+  await waitFor(() => fake.inputs.some(input => (input as { type?: string }).type === "home"), androidStream);
   for (const socket of fake.sockets.clients) socket.terminate();
-  await waitFor(() => fake.sockets.clients.size === 0);
+  await waitFor(() => fake.sockets.clients.size === 0, androidStream);
   await assert.rejects(streams.batch(first, 1), /disconnected/);
   streams.closeSession(first);
   const second = await streams.open(ID); assert.notEqual(first, second);
