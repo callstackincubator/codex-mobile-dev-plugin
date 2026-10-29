@@ -16,7 +16,9 @@ export { ErrorBoundary } from "@sentry/react";
 
 let running = false;
 let surface: Surface = "simulator";
-let attributes: TelemetryAttributes = { component: "ui", surface, view: "panel", layout: "ios" };
+// An `undefined` value clears that attribute on the Sentry scope, which drops undefined attributes when it serializes.
+type UiTelemetryContext = Record<string, TelemetryAttributes[string] | undefined>;
+let attributes: UiTelemetryContext = { component: "ui", surface, view: "panel", layout: "ios" };
 let visibleSince = 0;
 let previousFrame: number | undefined;
 let frameId: number | undefined;
@@ -146,7 +148,7 @@ export function setUiSurface(next: Surface) {
   }
 }
 
-export function setUiTelemetryContext(next: TelemetryAttributes) {
+export function setUiTelemetryContext(next: UiTelemetryContext) {
   const changed = Object.entries(next).some(([key, value]) => attributes[key] !== value);
   if (changed === false) return;
   flushUiMeasurements();
@@ -160,7 +162,7 @@ export function setUiTelemetryHost(host: TelemetryHost) {
   if (running) Sentry.setTag("host", host);
 }
 
-export function getUiTelemetryAttributes(): TelemetryAttributes {
+export function getUiTelemetryAttributes(): UiTelemetryContext {
   return attributes;
 }
 
