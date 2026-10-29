@@ -422,9 +422,14 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   assert.match(networkTitle, /Native name: com\.apple\.NSURLConnectionLoader/);
   const cpuState = performance.getSnapshot();
   assert.equal(cpuState.samples[0].threads[1].name, "hades");
-  const threadOrder = dom.window.document.querySelector<HTMLSelectElement>('[aria-label="Thread order"]');
-  assert.ok(threadOrder);
-  assert.equal(threadOrder.value, "activity");
+  const threadOrder = () => dom.window.document.querySelector<HTMLButtonElement>('[aria-label="Thread order"]');
+  assert.ok(threadOrder()?.textContent?.startsWith("Activity"));
+  async function chooseThreadOrder(label: string) {
+    await act(async () => { threadOrder()!.click(); });
+    const option = [...dom.window.document.querySelectorAll<HTMLElement>('[role="option"]')].find(item => item.textContent === label);
+    assert.ok(option, `The thread order menu offers ${label}.`);
+    await act(async () => { option.click(); });
+  }
   const threadIds = () => {
     const labels = dom.window.document.querySelectorAll('[title*="Native name:"]');
     const positions = Array.from(labels, label => {
@@ -442,10 +447,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   const activityIds = threadIds();
   assert.deepEqual(activityIds, ["0xc963bb", "0xc963a4", "0xc963dd"], "Previously active threads rank above never-active threads even after exit.");
   const gcRow = gcThread?.parentElement;
-  await act(async () => {
-    threadOrder.value = "first-seen";
-    threadOrder.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
-  });
+  await chooseThreadOrder("First seen");
   const firstSeenIds = threadIds();
   assert.deepEqual(firstSeenIds, ["0xc963a4", "0xc963bb", "0xc963dd"]);
   const reorderedGc = dom.window.document.querySelector('[title*="ID: 0xc963bb"]');
@@ -458,16 +460,10 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   });
   const stableIds = threadIds();
   assert.deepEqual(stableIds, firstSeenIds, "First seen does not shift when usage and native enumeration change.");
-  await act(async () => {
-    threadOrder.value = "activity";
-    threadOrder.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
-  });
+  await chooseThreadOrder("Activity");
   const changedActivityIds = threadIds();
   assert.deepEqual(changedActivityIds, ["0xc963dd", "0xc963bb", "0xc963a4"]);
-  await act(async () => {
-    threadOrder.value = "first-seen";
-    threadOrder.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
-  });
+  await chooseThreadOrder("First seen");
   assert.equal(dom.window.document.querySelector("canvas"), canvas);
   assert.equal(dom.window.document.querySelector('[data-element="devices"] [data-slot="select-trigger"]'), picker);
   await selectTool("logs");
@@ -479,8 +475,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   const reopenCpu = dom.window.document.querySelector<HTMLButtonElement>('[aria-label="Expand CPU"]');
   assert.ok(reopenCpu);
   await act(async () => { reopenCpu.click(); });
-  const restoredOrder = dom.window.document.querySelector<HTMLSelectElement>('[aria-label="Thread order"]');
-  assert.equal(restoredOrder?.value, "first-seen", "The selected order survives switching away from Performance.");
+  assert.ok(threadOrder()?.textContent?.startsWith("First seen"), "The selected order survives switching away from Performance.");
   const manyThreads = Array.from({ length: 100 }, (_, index) => ({ id: `worker-${index}`, name: `Worker ${index}`, cpuPercent: index }));
   await act(async () => {
     emitCpu!({ cursor: 4, phase: "recording", memoryMetric: "physical-footprint", samples: [

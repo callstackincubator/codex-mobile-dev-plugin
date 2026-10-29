@@ -1,13 +1,14 @@
 import { ActivityIcon, DatabaseIcon, TerminalIcon, PanelsTopLeftIcon, ChartNoAxesCombinedIcon, type LucideIcon } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
-import { isToolName, type ToolName, type WorkspaceTools } from "@mobile-dev/ui/workspace-tools.ts";
+import { toolNames, type ToolName, type WorkspaceTools } from "@mobile-dev/ui/workspace-tools.ts";
 import { PerformanceView } from "@mobile-dev/ui/components/performance-view.tsx";
 import { SimulatorView } from "@mobile-dev/ui/components/simulator-view.tsx";
 import { LogsView } from "@mobile-dev/ui/components/logs-view.tsx";
 import { StorageView } from "@mobile-dev/ui/components/storage-view.tsx";
 import { TraceSiftView } from "@mobile-dev/ui/components/tracesift-view.tsx";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@mobile-dev/ui/components/ui/base-select.tsx";
+import { OptionSelect, type SelectOption } from "@mobile-dev/ui/components/ui/option-select.tsx";
 import { Button } from "@mobile-dev/ui/components/ui/button.tsx";
 
 import { usePanelRef, useGroupRef } from "react-resizable-panels";
@@ -27,6 +28,7 @@ const tools: Record<ToolName, { id: string; label: string; icon: LucideIcon }> =
   storage: { id: "tool-storage", label: "Storage", icon: DatabaseIcon },
   tracesift: { id: "tool-tracesift", label: "TraceSift", icon: ChartNoAxesCombinedIcon },
 };
+const toolOptions: SelectOption<ToolName | "none">[] = [{ value: "none", label: "Hide tools", id: "tool-none" }, ...toolNames.map(name => ({ value: name, label: tools[name].label, id: tools[name].id }))];
 
 /** `fullscreen` is the workspace page that fills the host, rather than the panel beside the chat. */
 export function Workspace({ panels, recordingController, banner, displayModeControl, contextControl, fullscreen }: { panels: WorkspaceTools; recordingController: RecordingController; banner?: ReactNode; displayModeControl?: ReactNode; contextControl?: ReactNode; fullscreen: boolean }) {
@@ -67,16 +69,12 @@ export function Workspace({ panels, recordingController, banner, displayModeCont
   const ToolIcon = tools[tool].icon;
   const toolbar = <nav className={`workspace-toolbar @container flex h-12 shrink-0 items-center justify-between gap-2 px-2 ${bottomToolbar ? "border-t" : "border-y"}`} aria-label="Developer tools">
     {displayModeControl}
-    <Select items={[{ value: "none", label: "Tools" }, ...Object.entries(tools).map(([value, { label }]) => ({ value, label }))]} value={open ? tool : "none"} onValueChange={value => {
+    <OptionSelect id="tool-select" size="sm" className="shrink-0" aria-label="Developer tools" side={menuSide} items={toolOptions} value={open ? tool : "none"} onChange={value => {
       if (value === "none") panels.close();
-      else if (isToolName(value)) panels.toggle(value);
-    }}>
-      <SelectTrigger id="tool-select" size="sm" className="shrink-0" aria-label="Developer tools"><SelectValue>{open ? <ToolIcon /> : <PanelsTopLeftIcon />}<span className="@max-[600px]:sr-only">{open ? tools[tool].label : "Tools"}</span></SelectValue></SelectTrigger>
-      <SelectContent side={menuSide} align="start" alignItemWithTrigger={false}><SelectGroup>
-        <SelectItem id="tool-none" value="none">Hide tools</SelectItem>
-        {Object.entries(tools).map(([value, { id, label, icon: Icon }]) => <SelectItem key={value} id={id} value={value}><Icon />{label}</SelectItem>)}
-      </SelectGroup></SelectContent>
-    </Select>
+      else panels.toggle(value);
+    }} renderItem={item => { const Icon = item.value === "none" ? undefined : tools[item.value].icon; return <>{Icon && <Icon />}{item.label}</>; }}>
+      <SelectValue>{open ? <ToolIcon /> : <PanelsTopLeftIcon />}<span className="@max-[600px]:sr-only">{open ? tools[tool].label : "Tools"}</span></SelectValue>
+    </OptionSelect>
     <Select multiple items={[{ value: "ios", label: "iOS" }, { value: "android", label: "Android" }]} value={layout === "both" ? ["ios", "android"] : layout === "none" ? [] : [layout]} onValueChange={values => {
       const next: DeviceLayout = values.length === 0 ? "none" : values.length === 2 ? "both" : values[0] === "ios" ? "ios" : "android";
       panels.setLayout(next, { manual: true });

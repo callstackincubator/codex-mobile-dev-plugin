@@ -8,7 +8,7 @@ import { MetricTrack, summaryMetrics, trackMessage } from "./MetricTrack";
 import { ThreadRow } from "./ThreadRow";
 import { SIDEBAR_WIDTH, TRACK_HEIGHT } from "./constants";
 import { createCpuSeries, formatCpu, orderCpuThreads, type CpuThreadSeries } from "./cpuSeries";
-import { NativeSelect, NativeSelectOption } from "../ui/native-select";
+import { OptionSelect, type SelectOption } from "../ui/option-select";
 
 type CpuTrackProps = {
   samples: CpuSample[];
@@ -27,6 +27,7 @@ type CpuTrackProps = {
 const THREAD_HEIGHT = TRACK_HEIGHT * 0.7;
 const threadKey = (thread: CpuThreadSeries) => thread.id;
 const threadHeight = () => THREAD_HEIGHT;
+const threadOrders: SelectOption<ThreadOrder>[] = [{ value: "activity", label: "Activity" }, { value: "first-seen", label: "First seen" }];
 
 export function CpuTrack({ samples, threadHistory, threadOrder, onThreadOrderChange, platform, phase, error, scrollElement, zoomState, onZoomChange, onZoomOut }: CpuTrackProps) {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -58,15 +59,9 @@ export function CpuTrack({ samples, threadHistory, threadOrder, onThreadOrderCha
     {isExpanded && <div className="flex border-b border-border bg-muted/30">
       <div className="sticky left-0 z-[60] flex shrink-0 items-center gap-2 border-r border-border bg-background p-2" style={{ width: SIDEBAR_WIDTH }}>
         <label htmlFor="cpu-thread-order" className="text-[10px] text-muted-foreground">Sort</label>
-        <NativeSelect id="cpu-thread-order" aria-label="Thread order" size="sm" value={threadOrder}
+        <OptionSelect id="cpu-thread-order" aria-label="Thread order" size="sm" items={threadOrders} value={threadOrder} onChange={onThreadOrderChange}
           title="Activity: highest current CPU first; previously active threads stay above those with no recorded activity. First seen: stable recording order."
-          className="min-w-0 flex-1 [&_select]:text-[11px]" onChange={event => {
-            const order = event.target.value;
-            if (order === "activity" || order === "first-seen") onThreadOrderChange(order);
-          }}>
-          <NativeSelectOption value="activity">Activity</NativeSelectOption>
-          <NativeSelectOption value="first-seen">First seen</NativeSelectOption>
-        </NativeSelect>
+          className="min-w-0 flex-1 text-[11px]" />
       </div>
     </div>}
     {isExpanded && <LegendList data={threads} scrollElement={scrollElement} renderItem={renderThread} extraData={zoomState}

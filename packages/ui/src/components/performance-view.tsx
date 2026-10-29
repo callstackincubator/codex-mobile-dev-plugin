@@ -10,7 +10,7 @@ import { MemoryTrack } from "./performance/MemoryTrack";
 import { DisplayFpsTrack } from "./performance/DisplayFpsTrack";
 import { TimelineRuler } from "./performance/TimelineRuler";
 import { Button } from "./ui/button";
-import { NativeSelect, NativeSelectOption } from "./ui/native-select";
+import { OptionSelect } from "./ui/option-select";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { Field, FieldLabel, FieldDescription } from "./ui/field";
 import { Alert, AlertDescription } from "./ui/alert";
@@ -44,11 +44,11 @@ export function PerformanceView({ panel }: { panel: PerformancePanel }) {
         <PopoverContent align="end" className="w-[min(340px,calc(100vw-24px))] p-3">
           <Field className="gap-2">
             <div className="flex items-center justify-between gap-2"><FieldLabel htmlFor="performance-app" className="text-xs">{state.selectedLabel}</FieldLabel><Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs" aria-label="Refresh running apps" disabled={state.available === false || state.discovering} onClick={() => void panel.refreshApps()}><RefreshCwIcon />Refresh</Button></div>
-            <NativeSelect id="performance-app" className="w-full" value={state.bundleId} onChange={event => panel.selectApp(event.target.value)}>
-              <NativeSelectOption value="">Choose an app</NativeSelectOption>
-              {state.bundleId && selectedRunning === false && <NativeSelectOption value={state.bundleId}>{state.bundleId} · Waiting for app</NativeSelectOption>}
-              {state.apps.map(app => <NativeSelectOption key={app.bundleId} value={app.bundleId}>{app.bundleId} · {app.pid}</NativeSelectOption>)}
-            </NativeSelect>
+            <OptionSelect id="performance-app" className="w-full" value={state.bundleId} onChange={bundleId => panel.selectApp(bundleId)} items={[
+              { value: "", label: "Choose an app" },
+              ...state.bundleId && selectedRunning === false ? [{ value: state.bundleId, label: `${state.bundleId} · Waiting for app` }] : [],
+              ...state.apps.map(app => ({ value: app.bundleId, label: `${app.bundleId} · ${app.pid}` })),
+            ]} />
             <FieldDescription className="text-[11px]">{state.platform === "android"
               ? "Open an app on this Android device. CPU and memory monitoring work with release builds too."
               : state.physical ? "Open a development build on this paired iPhone with Developer Mode enabled. Detach Xcode or LLDB before connecting."

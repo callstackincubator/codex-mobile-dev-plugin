@@ -11,7 +11,7 @@ import { ConfirmButton, FilesIcon, KindIcon, SidebarRow } from "./storage-parts"
 import { Alert, AlertDescription } from "./ui/alert";
 import { Button } from "./ui/button";
 import { ButtonGroup } from "./ui/button-group";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "./ui/base-select";
+import { OptionSelect } from "./ui/option-select";
 
 const FILES = "files";
 type Expansion = { expanded?: string; toggle: (store: StorageStore, key: string) => void; copy: (text: string) => void };
@@ -222,10 +222,7 @@ export function BrowseView({ panel, snapshot, query, copy }: { panel: StoragePan
   const choices = [...own, ...sdks].map(item => ({ value: item.id, label: `${title(item)} · ${storeKindLabels[item.kind]}${isSdkStore(item) ? " (SDK)" : ""}` }))
     .concat({ value: FILES, label: `Files · ${formatBytes(snapshot.totalBytes)}` });
   const picker = !query && <div className="hidden shrink-0 border-b p-2 @max-[640px]:block">
-    <Select items={choices} value={store?.id ?? FILES} onValueChange={value => { if (value) select(value); }}>
-      <SelectTrigger size="sm" aria-label="Store" className="w-full"><SelectValue /></SelectTrigger>
-      <SelectContent align="start" alignItemWithTrigger={false}><SelectGroup>{choices.map(choice => <SelectItem key={choice.value} value={choice.value}>{choice.label}</SelectItem>)}</SelectGroup></SelectContent>
-    </Select>
+    <OptionSelect size="sm" aria-label="Store" className="w-full" items={choices} value={store?.id ?? FILES} onChange={select} />
   </div>;
 
   const main = query ? <SearchResults groups={[...own, ...sdks].map(item => ({ store: item, entries: matches.get(item.id) ?? [] })).filter(group => group.entries.length > 0)} query={query} title={title} expansion={expansion} />

@@ -14,7 +14,7 @@ import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "./
 import { Field, FieldLabel, FieldDescription } from "./ui/field";
 import { Input } from "./ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "./ui/input-group";
-import { NativeSelect, NativeSelectOption } from "./ui/native-select";
+import { OptionSelect } from "./ui/option-select";
 import { Toggle } from "./ui/toggle";
 import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
 import { Popover, PopoverTrigger, PopoverContent } from "./ui/popover";
@@ -152,18 +152,15 @@ export const LogsView = memo(function LogsView({ panel, fullscreen }: { panel: L
                   </ToggleGroup>
                 </div>
                 <div className="flex min-w-0 flex-col gap-2">
-                  <Field className="gap-1"><FieldLabel htmlFor="logs-native" className="text-xs">Device</FieldLabel><NativeSelect id="logs-native" className="w-full" value={state.native} onChange={event => panel.configure({ native: event.target.value })}>
-                    <NativeSelectOption value="ios">{state.selectedLabel}</NativeSelectOption><NativeSelectOption value="none">None</NativeSelectOption>
-                    {state.android.map(device => <NativeSelectOption key={device.id} value={`android:${device.id}`}>Android · {device.name}</NativeSelectOption>)}
-                  </NativeSelect></Field>
+                  <Field className="gap-1"><FieldLabel htmlFor="logs-native" className="text-xs">Device</FieldLabel><OptionSelect id="logs-native" className="w-full" value={state.native} onChange={native => panel.configure({ native })}
+                    items={[{ value: "ios", label: state.selectedLabel }, { value: "none", label: "None" }, ...state.android.map(device => ({ value: `android:${device.id}`, label: `Android · ${device.name}` }))]} /></Field>
                   <Field className="gap-1"><div className="flex items-center justify-between gap-2"><FieldLabel htmlFor="logs-follow-app" className="text-xs">Follow foreground app</FieldLabel><Switch id="logs-follow-app" aria-label="Follow foreground app" checked={state.followApp} disabled={state.native !== "ios"} onCheckedChange={followApp => panel.configure({ followApp })} /></div><FieldDescription className="text-[11px]">{state.appDiscoveryError || "Updates the app clause in the search bar. Edit or clear that clause to stop following."}</FieldDescription></Field>
                   <Field className="gap-1"><div className="flex items-center justify-between gap-2"><FieldLabel htmlFor="logs-hide-system" className="text-xs">Hide iOS system noise</FieldLabel><Switch id="logs-hide-system" aria-label="Hide iOS system noise" checked={state.hideSystemLogs} disabled={state.native !== "ios" || state.selectedPlatform === "android"} onCheckedChange={hideSystemLogs => panel.configure({ hideSystemLogs })} /></div><FieldDescription className="text-[11px]">Hides routine Apple framework logs. Errors and faults stay visible. Changing this starts a fresh log stream.</FieldDescription></Field>
                 </div>
                 <div className="flex min-w-0 flex-col gap-2">
                   <Field className="gap-1"><FieldLabel htmlFor="logs-metro-url" className="text-xs">Server URL</FieldLabel><Input id="logs-metro-url" className="h-8 text-xs" type="url" value={state.metroUrl} maxLength={2048} spellCheck={false} onChange={event => panel.configure({ metroUrl: event.target.value })} /></Field>
-                  <Field className="gap-1"><div className="flex items-center justify-between"><FieldLabel htmlFor="logs-metro-target" className="text-xs">App</FieldLabel><Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs" type="button" disabled={!state.available || state.discovering} onClick={() => void panel.discover()}><RefreshCwIcon />{state.discovering ? "Finding..." : "Refresh"}</Button></div><NativeSelect id="logs-metro-target" className="w-full" value={state.target} onChange={event => panel.configure({ target: event.target.value })}><NativeSelectOption value="">None</NativeSelectOption>
-                    {state.metro.map(target => <NativeSelectOption key={target.id} value={target.id}>{target.appId ?? target.title}{target.deviceName ? ` · ${target.deviceName}` : ""} · {target.id}</NativeSelectOption>)}
-                  </NativeSelect></Field>
+                  <Field className="gap-1"><div className="flex items-center justify-between"><FieldLabel htmlFor="logs-metro-target" className="text-xs">App</FieldLabel><Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs" type="button" disabled={!state.available || state.discovering} onClick={() => void panel.discover()}><RefreshCwIcon />{state.discovering ? "Finding..." : "Refresh"}</Button></div><OptionSelect id="logs-metro-target" className="w-full" value={state.target} onChange={target => panel.configure({ target })}
+                    items={[{ value: "", label: "None" }, ...state.metro.map(target => ({ value: target.id, label: `${target.appId ?? target.title}${target.deviceName ? ` · ${target.deviceName}` : ""} · ${target.id}` }))]} /></Field>
                 </div>
                 <Button type="submit" size="sm" className="w-full" disabled={!state.available}>Connect sources</Button>
               </form>
