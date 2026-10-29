@@ -137,6 +137,9 @@ test("device bridge startup exposes device errors and cancels a helper waiting f
   const signal = new AbortController();
   const opening = openPhysicalDebugserver(udid, signal.signal, failed);
   await assert.rejects(opening, /Developer disk image is not mounted/);
+  const record = JSON.stringify({ type: "error", cause: "device_not_found", message: "Connect the paired iPhone." });
+  const reported = await helper(t, `process.stdout.write(${JSON.stringify(record + "\n")}); process.stderr.write('stderr detail'); process.exitCode = 1;`);
+  await assert.rejects(openPhysicalDebugserver(udid, signal.signal, reported), (error: unknown) => error instanceof Error && error.message === "Connect the paired iPhone." && (error as { code?: string }).code === "device_not_found");
   const waiting = await helper(t, "process.stdin.resume(); process.stdin.once('end', () => process.exit(0));");
   const abort = new AbortController();
   const pending = openPhysicalDebugserver(udid, abort.signal, waiting);

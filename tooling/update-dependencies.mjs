@@ -153,9 +153,9 @@ for (const file of readdirSync(".github/workflows").map(name => `.github/workflo
   if (apply) writeFileSync(path, `[\n${dependencies.map(line).join(",\n")}\n]\n`);
 }
 
-// Rust crates of the iPhone mirror, within their Cargo.toml ranges.
+// Rust crates of the iOS helpers' shared workspace, within their Cargo.toml ranges.
 {
-  if (apply) run("cargo", ["update", "--manifest-path", "packages/native/ios-mirror/Cargo.toml"], { stdio: "inherit" });
+  if (apply) run("cargo", ["update", "--manifest-path", "packages/native/Cargo.toml"], { stdio: "inherit" });
 }
 
 // Report-only: forks and Git pins a person merges by hand.
@@ -169,7 +169,7 @@ for (const file of readdirSync(".github/workflows").map(name => `.github/workflo
   const perfetto = readJson("packages/native/vendor/android-fps/release.json").perfettoVersion;
   const newest = targets(perfetto, releases("google/perfetto")).latest;
   if (newest) record("forked", "Perfetto SDK", `v${perfetto}`, newest, { applied: false, reason: "vendored source; update by hand", link: "https://github.com/google/perfetto/releases" });
-  for (const [name, repository, readme] of [["idevice", "jkcoxson/idevice", "packages/native/ios-mirror/Cargo.toml"], ["device-hub-ios", "JaviSoto/device-hub-ios", "packages/native/ios-mirror/README.md"]]) {
+  for (const [name, repository, readme] of [["idevice", "jkcoxson/idevice", "packages/native/Cargo.toml"], ["device-hub-ios", "JaviSoto/device-hub-ios", "packages/native/ios-mirror/README.md"]]) {
     const rev = new RegExp(`${repository.replace("/", "\\/")}[^\\n]*?([0-9a-f]{40})`).exec(readFileSync(readme, "utf8"))?.[1];
     if (!rev) continue;
     const ahead = gh(`repos/${repository}/compare/${rev}...HEAD`).ahead_by;
@@ -177,7 +177,7 @@ for (const file of readdirSync(".github/workflows").map(name => `.github/workflo
   }
 }
 
-const cargoChanges = apply ? run("git", ["diff", "--unified=0", "--", "packages/native/ios-mirror/Cargo.lock"]).split("\n").filter(line => /^[-+]version = /.test(line)).length / 2 : 0;
+const cargoChanges = apply ? run("git", ["diff", "--unified=0", "--", "packages/native/Cargo.lock"]).split("\n").filter(line => /^[-+]version = /.test(line)).length / 2 : 0;
 const row = update => `| ${update.link ? `[${update.name}](${update.link})` : update.name} | ${update.from} | ${update.to} |${update.applied ? "" : ` ${update.reason ?? ""} |`}`;
 const applied = updates.filter(update => update.applied);
 const held = updates.filter(update => !update.applied && update.reason !== undefined);
@@ -188,7 +188,7 @@ const section = (title, rows, heldColumn) => rows.length === 0 ? [] : [
 ];
 const report = [
   ...section(apply ? "Applied" : "Safe updates available", apply ? applied : updates.filter(update => update.reason === undefined), false),
-  ...(cargoChanges > 0 ? [`Also updated ${cargoChanges} Rust crate${cargoChanges === 1 ? "" : "s"} of the iPhone mirror within their ranges (see \`Cargo.lock\`).`, ""] : []),
+  ...(cargoChanges > 0 ? [`Also updated ${cargoChanges} Rust crate${cargoChanges === 1 ? "" : "s"} of the iOS helpers within their ranges (see \`Cargo.lock\`).`, ""] : []),
   ...section("Held back", held, true),
 ].join("\n");
 if (reportPath) writeFileSync(reportPath, report || "No dependency updates.\n");

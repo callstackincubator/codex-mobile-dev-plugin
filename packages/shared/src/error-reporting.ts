@@ -1,7 +1,8 @@
 import { getDiscoveryCommandDiagnostic } from "./device-apps-command-diagnostics.ts";
 import { errorDiagnostics, setErrorDiagnostic } from "./error-diagnostics.ts";
 
-export type ExpectedOutcome = "session_expired" | "session_closed" | "cancelled" | "device_unavailable" | "app_unavailable" | "resource_limit" | "unsupported_platform" | "invalid_input";
+export const expectedOutcomes = ["session_expired", "session_closed", "cancelled", "device_unavailable", "app_unavailable", "resource_limit", "unsupported_platform", "invalid_input"] as const;
+export type ExpectedOutcome = typeof expectedOutcomes[number];
 
 export class ExpectedOperationError extends Error {
   readonly outcome: ExpectedOutcome;

@@ -33,7 +33,7 @@ export class IosMirrorSessions {
     session.inputting = true;
     try {
       const samples: NativeTouchSample[] = messages.map(message => {
-        const phase = message.type === "touch1-down" ? 0 : message.type === "touch1-move" ? 1 : 2;
+        const phase = message.type === "touch1-down" ? "down" : message.type === "touch1-move" ? "move" : "up";
         return { phase, x: message.x, y: message.y, width: message.width, height: message.height };
       });
       await session.capture.touch(samples, generation);
