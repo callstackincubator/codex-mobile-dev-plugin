@@ -21,8 +21,12 @@ Behavior never depends on this value; it only attributes measurements and errors
   a browser beside the chat. Its page names itself with the server's label for the
   chat host, so the panel is attributed to that host. Its requests join the host's
   server session with the same trace propagation; the browser page adds no
-  telemetry of its own, and page server failures are captured as
-  `browser_panel.request`.
+  telemetry of its own. Page server and cleanup failures are captured as
+  `browser_panel.request` and `browser_panel.close`. The `browser_panel.sessions`
+  gauge measures active browser MCP sessions on creation, deletion, expiry and
+  shutdown, with `component=server`. It contains no session IDs, URLs or tokens
+  and honors telemetry opt-out. Browser sessions expire after five idle minutes;
+  active requests prevent expiry, and open tabs send a ping every 30 seconds.
 - The server's metadata allowlist accepts only these values; the raw host or
   client name is never sent.
 

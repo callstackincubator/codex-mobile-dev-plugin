@@ -1,23 +1,12 @@
 import { AppBridge, getToolUiResourceUri, PostMessageTransport, type McpUiHostContext } from "@modelcontextprotocol/ext-apps/app-bridge";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { StreamableHTTPClientTransport, StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { PLUGIN_VERSION } from "@mobile-dev/shared/version.ts";
 
-/**
- * The page a browser beside the chat opens when its host renders no MCP Apps
- * panel. It is a minimal MCP Apps host: it shows the panel of the tool that opened
- * it in a sandboxed frame, as chat hosts do, and answers the panel's requests
- * through the server that served this page, which shares the chat host's session.
- */
-const query = new URLSearchParams(location.search);
-const toolName = query.get("tool") ?? "mobile_open_simulator";
-const target = Object.fromEntries(["platform", "kind", "deviceId"].flatMap(key => {
-  const value = query.get(key);
-  return value === null ? [] : [[key, value]];
-}));
 const dark = matchMedia("(prefers-color-scheme: dark)");
-const STOPPED = "Mobile Dev stopped with its chat session. Ask the agent to open Mobile Dev again.";
+const DISCONNECTED = "Mobile Dev disconnected from its chat session. Ask the agent to open Mobile Dev again.";
+const EXPIRED = "Mobile Dev's browser connection expired. Reload this page to reconnect.";
 
 function notice(text: string) {
   const alert = document.createElement("p");
@@ -26,57 +15,128 @@ function notice(text: string) {
   document.body.replaceChildren(alert);
 }
 
+/** A small MCP Apps host for the same shared panel the chat would otherwise render. */
 async function open() {
+  const query = new URLSearchParams(location.search);
+  const toolName = query.get("tool") ?? "mobile_open_simulator";
+  if (toolName !== "mobile_open_simulator" && toolName !== "mobile_open_workspace") {
+    throw new Error("This link does not open a Mobile Dev panel.");
+  }
+  const target: Record<string, string> = {};
+  for (const key of ["platform", "kind", "deviceId"]) {
+    const value = query.get(key);
+    if (value !== null) target[key] = value;
+  }
   const client = new Client({ name: "mobile-dev-browser-panel", version: PLUGIN_VERSION });
-  const transport = new StreamableHTTPClientTransport(new URL("mcp", location.href));
-  // The server listens only while its chat host runs it, so a request that cannot
-  // reach it means the session ended; the panel cannot recover on this page.
-  client.onerror = error => { if (error instanceof TypeError) notice(STOPPED); };
-  await client.connect(transport);
-  const { tools } = await client.listTools();
-  const tool = tools.find(candidate => candidate.name === toolName);
-  const uri = tool && getToolUiResourceUri(tool);
-  if (!tool || !uri) throw new Error(`Mobile Dev has no panel for ${toolName}.`);
-  const [content] = (await client.readResource({ uri })).contents;
-  if (!content || !("text" in content)) throw new Error("Mobile Dev's panel could not load.");
-
-  const frame = document.createElement("iframe");
-  frame.title = "Mobile Dev";
-  frame.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-downloads");
-  frame.allow = "clipboard-write";
-  document.body.replaceChildren(frame);
-  // The frame fills the page, so the panel gets no container dimensions and fills it too.
-  const context = (): McpUiHostContext => ({
-    theme: dark.matches ? "dark" : "light", displayMode: "inline", availableDisplayModes: ["inline"],
-    platform: "desktop", locale: navigator.language, toolInfo: { tool },
+  const endpoint = new URL("mcp", location.href);
+  const transport = new StreamableHTTPClientTransport(endpoint, {
+    fetch: (url, options) => fetch(url, { ...options, keepalive: options?.method === "DELETE" }),
   });
-  // The server names the chat host, so the panel's telemetry is attributed to it.
-  const host = document.documentElement.dataset.telemetryHost ?? "other";
-  // The panel can call the server's tools and read its resources. There is no chat
-  // for messages or model context, so the panel hides the actions that need one.
-  const bridge = new AppBridge(client, { name: host, version: PLUGIN_VERSION }, { serverTools: {}, serverResources: {}, openLinks: {} }, { hostContext: context() });
-  bridge.onopenlink = async ({ url }) => {
-    window.open(url, "_blank", "noopener");
-    return {};
+  let bridge: AppBridge | undefined;
+  let heartbeat: ReturnType<typeof setInterval> | undefined;
+  let startup: ReturnType<typeof setTimeout> | undefined;
+  let disposed = false;
+  let checking = false;
+  let contextChanged = () => {};
+
+  function dispose() {
+    if (disposed) return;
+    disposed = true;
+    clearInterval(heartbeat);
+    clearTimeout(startup);
+    dark.removeEventListener("change", contextChanged);
+    removeEventListener("pagehide", hide);
+    const teardown = bridge?.teardownResource({}, { timeout: 1000, maxTotalTimeout: 1000 });
+    void teardown?.catch(() => {}).finally(() => bridge?.close());
+    void transport.terminateSession().catch(() => {}).finally(() => client.close());
+  }
+  function stopped(message: string) {
+    if (disposed) return;
+    notice(message);
+    dispose();
+  }
+  function hide(event: PageTransitionEvent) {
+    if (event.persisted === false) dispose();
+  }
+  // A ping keeps hidden tabs alive and notices a stopped server even when the UI
+  // has no device to poll. Abandoned sessions expire on the server after five minutes.
+  async function check() {
+    if (disposed || checking) return;
+    checking = true;
+    try { await client.ping({ timeout: 5000 }); }
+    catch (error) {
+      const expired = error instanceof StreamableHTTPError && error.code === 404;
+      stopped(expired ? EXPIRED : DISCONNECTED);
+    } finally { checking = false; }
+  }
+  client.onerror = error => {
+    if (error instanceof TypeError) stopped(DISCONNECTED);
+    if (error instanceof StreamableHTTPError && error.code === 404) stopped(EXPIRED);
   };
-  bridge.onrequestdisplaymode = async () => ({ mode: "inline" });
-  dark.addEventListener("change", () => bridge.setHostContext(context()));
-  const initialized = new Promise<void>(resolve => { bridge.oninitialized = () => resolve(); });
-  await bridge.connect(new PostMessageTransport(frame.contentWindow!, frame.contentWindow!));
-  frame.srcdoc = content.text;
-  await initialized;
-  // Open the panel the way a chat host does, with the opening tool's input and result.
-  await bridge.sendToolInput({ arguments: target });
-  await bridge.sendToolResult(await client.callTool({ name: toolName, arguments: target }) as CallToolResult);
+  addEventListener("pagehide", hide);
 
-  addEventListener("pagehide", event => {
-    if (event.persisted) return;
-    void bridge.teardownResource({}).catch(() => {});
-    void transport.terminateSession().catch(() => {});
-  });
+  try {
+    await client.connect(transport);
+    heartbeat = setInterval(() => { void check(); }, 30_000);
+    const { tools } = await client.listTools();
+    const tool = tools.find(candidate => candidate.name === toolName);
+    const uri = tool && getToolUiResourceUri(tool);
+    if (tool === undefined || uri === undefined) throw new Error(`Mobile Dev has no panel for ${toolName}.`);
+    const resource = await client.readResource({ uri });
+    const [content] = resource.contents;
+    if (content === undefined || ("text" in content) === false) throw new Error("Mobile Dev's panel could not load.");
+
+    const frame = document.createElement("iframe");
+    frame.title = "Mobile Dev";
+    frame.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-downloads");
+    frame.allow = "clipboard-write";
+    document.body.replaceChildren(frame);
+    const context = (): McpUiHostContext => ({
+      theme: dark.matches ? "dark" : "light", displayMode: "inline", availableDisplayModes: ["inline"],
+      platform: "desktop", locale: navigator.language, toolInfo: { tool },
+    });
+    const host = document.documentElement.dataset.telemetryHost ?? "other";
+    // Advertise only capabilities this browser can fulfill. Chat needs a host-owned bridge.
+    const hostContext = context();
+    bridge = new AppBridge(client, { name: host, version: PLUGIN_VERSION }, { serverTools: {}, serverResources: {}, openLinks: {} }, { hostContext });
+    bridge.onopenlink = async ({ url }) => {
+      const destination = new URL(url, location.href);
+      if (destination.protocol !== "https:" && destination.protocol !== "http:") {
+        throw new Error("Only web links can open from Mobile Dev.");
+      }
+      window.open(destination.href, "_blank", "noopener");
+      return {};
+    };
+    bridge.onrequestdisplaymode = async () => ({ mode: "inline" });
+    contextChanged = () => {
+      const updated = context();
+      bridge?.setHostContext(updated);
+    };
+    dark.addEventListener("change", contextChanged);
+    const initialized = new Promise<void>((resolve, reject) => {
+      startup = setTimeout(() => {
+        const error = new Error("Mobile Dev's panel did not finish opening. Reload this page to try again.");
+        reject(error);
+      }, 15_000);
+      bridge!.oninitialized = () => { clearTimeout(startup); resolve(); };
+    });
+    const frameWindow = frame.contentWindow!;
+    const frameTransport = new PostMessageTransport(frameWindow, frameWindow);
+    await bridge.connect(frameTransport);
+    frame.srcdoc = content.text;
+    await initialized;
+    await bridge.sendToolInput({ arguments: target });
+    const result = await client.callTool({ name: toolName, arguments: target });
+    await bridge.sendToolResult(result as CallToolResult);
+  } catch (error) {
+    if (disposed === false) {
+      dispose();
+      throw error;
+    }
+  }
 }
 
 open().catch(error => {
-  console.error(error);
-  notice(error instanceof TypeError ? STOPPED : `Mobile Dev could not open: ${error instanceof Error ? error.message : String(error)}`);
+  const message = error instanceof Error ? error.message : String(error);
+  notice(`Mobile Dev could not open: ${message}`);
 });

@@ -9,14 +9,15 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { ListRootsRequestSchema, ListRootsResultSchema, type ClientCapabilities } from "@modelcontextprotocol/sdk/types.js";
 import { EXTENSION_ID, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
 import { Baguette } from "../src/baguette.ts";
-import { browserPanel, startPanelPage } from "../src/browser-panel.ts";
+import { BROWSER_SESSION_IDLE_MS, browserPanel, startPanelPage } from "../src/browser-panel.ts";
 import { SharedTransport } from "../src/shared-transport.ts";
 import { createTestPlugin, fakeBaguette, fakeSimulatorInput } from "../../test-support/fixtures.ts";
 
 /** A server whose tools report which client the server believes it serves. */
-async function sharedServer() {
+async function sharedServer(capabilities: ClientCapabilities = {}) {
   const server = new McpServer({ name: "shared-test", version: "1" });
   let started!: () => void;
   const waiting = new Promise<void>(resolve => { started = resolve; });
@@ -27,10 +28,15 @@ async function sharedServer() {
     extra.signal.addEventListener("abort", () => { aborted(); resolve({ content: [] }); });
     started();
   }));
+  server.registerTool("roots", { inputSchema: {} }, async (_input, extra) => {
+    const roots = await extra.sendRequest({ method: "roots/list" }, ListRootsResultSchema, { timeout: 1000 });
+    const text = JSON.stringify(roots);
+    return { content: [{ type: "text", text }] };
+  });
   const [hostSide, serverSide] = InMemoryTransport.createLinkedPair();
   const shared = new SharedTransport(serverSide);
   await server.connect(shared);
-  const host = new Client({ name: "chat-host", version: "1" });
+  const host = new Client({ name: "chat-host", version: "1" }, { capabilities });
   await host.connect(hostSide);
   return { server, shared, host, waiting, cancelled };
 }
@@ -118,12 +124,18 @@ test("the panel page reaches the shared session only from its own origin and pat
 });
 
 test("opening the panel links the browser page only for hosts without MCP Apps", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "browser-panel-"));
+  const page = join(directory, "browser-panel.html");
+  await writeFile(page, "<html></html>");
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const template = pathToFileURL(page);
+  const panelFeature = browserPanel(template);
   const fake = await fakeBaguette();
   t.after(() => fake.close());
   for (const ui of [false, true]) {
     const [hostSide, serverSide] = InMemoryTransport.createLinkedPair();
     const shared = new SharedTransport(serverSide);
-    const plugin = await createTestPlugin("<html></html>", { baguette: new Baguette(fake.url), simulatorInput: fakeSimulatorInput(), features: [browserPanel], connections: shared });
+    const plugin = await createTestPlugin("<html></html>", { baguette: new Baguette(fake.url), simulatorInput: fakeSimulatorInput(), features: [panelFeature], connections: shared });
     const capabilities = ui ? { extensions: { [EXTENSION_ID]: { mimeTypes: [RESOURCE_MIME_TYPE] } } } : {};
     const host = new Client({ name: "claude-code", version: "1" }, { capabilities });
     await plugin.server.connect(shared);
@@ -140,4 +152,99 @@ test("opening the panel links the browser page only for hosts without MCP Apps",
     await host.close();
     await plugin.close();
   }
+});
+
+test("abandoned browser sessions expire while active tabs keep their own session", async t => {
+  const { server, shared, host } = await sharedServer();
+  const directory = await mkdtemp(join(tmpdir(), "browser-panel-"));
+  const file = join(directory, "browser-panel.html");
+  await writeFile(file, "<html></html>");
+  const template = pathToFileURL(file);
+  t.mock.timers.enable({ apis: ["Date", "setInterval"] });
+  const page = await startPanelPage(shared, "other", template);
+  const address = page.url("mobile_open_simulator", {});
+  const endpoint = new URL("mcp", address);
+  const abandoned = new Client({ name: "abandoned", version: "1" });
+  const active = new Client({ name: "active", version: "1" });
+  const abandonedTransport = new StreamableHTTPClientTransport(endpoint);
+  const activeTransport = new StreamableHTTPClientTransport(endpoint);
+  t.after(async () => {
+    await abandoned.close();
+    await active.close();
+    await page.close();
+    await server.close();
+    await rm(directory, { recursive: true, force: true });
+  });
+  await abandoned.connect(abandonedTransport);
+  await active.connect(activeTransport);
+  const abandonedId = abandonedTransport.sessionId!;
+  t.mock.timers.tick(BROWSER_SESSION_IDLE_MS - 60_000);
+  await active.ping();
+  t.mock.timers.tick(90_000);
+  const expired = await send(endpoint, { "mcp-session-id": abandonedId }, "POST");
+  assert.equal(expired, 404);
+  await active.ping();
+  await host.ping();
+  await activeTransport.terminateSession();
+});
+
+test("a long browser request keeps its session alive until completion or cancellation", async t => {
+  const { server, shared, waiting, cancelled } = await sharedServer();
+  const directory = await mkdtemp(join(tmpdir(), "browser-panel-"));
+  const file = join(directory, "browser-panel.html");
+  await writeFile(file, "<html></html>");
+  const template = pathToFileURL(file);
+  t.mock.timers.enable({ apis: ["Date", "setInterval"] });
+  const page = await startPanelPage(shared, "other", template);
+  const address = page.url("mobile_open_simulator", {});
+  const endpoint = new URL("mcp", address);
+  const client = new Client({ name: "active", version: "1" });
+  const transport = new StreamableHTTPClientTransport(endpoint);
+  const controller = new AbortController();
+  t.after(async () => {
+    controller.abort();
+    await client.close();
+    await page.close();
+    await server.close();
+    await rm(directory, { recursive: true, force: true });
+  });
+  await client.connect(transport);
+  const pending = client.callTool({ name: "wait", arguments: {} }, undefined, { signal: controller.signal });
+  const settled = pending.catch(() => undefined);
+  await waiting;
+  t.mock.timers.tick(BROWSER_SESSION_IDLE_MS + 60_000);
+  await client.ping();
+  controller.abort();
+  await cancelled;
+  await settled;
+  await client.ping();
+  await transport.terminateSession();
+});
+
+test("a browser tool call can answer an associated server request over HTTP", async t => {
+  const { server, shared, host } = await sharedServer({ roots: {} });
+  const directory = await mkdtemp(join(tmpdir(), "browser-panel-"));
+  const file = join(directory, "browser-panel.html");
+  await writeFile(file, "<html></html>");
+  const template = pathToFileURL(file);
+  const page = await startPanelPage(shared, "other", template);
+  const address = page.url("mobile_open_simulator", {});
+  const endpoint = new URL("mcp", address);
+  const client = new Client({ name: "browser-roots", version: "1" }, { capabilities: { roots: {} } });
+  const transport = new StreamableHTTPClientTransport(endpoint);
+  let hostRequests = 0;
+  host.setRequestHandler(ListRootsRequestSchema, async () => { hostRequests++; return { roots: [] }; });
+  client.setRequestHandler(ListRootsRequestSchema, async () => ({ roots: [{ uri: "file:///browser-root" }] }));
+  t.after(async () => {
+    await client.close();
+    await page.close();
+    await server.close();
+    await rm(directory, { recursive: true, force: true });
+  });
+  await client.connect(transport);
+  const result = await client.callTool({ name: "roots", arguments: {} });
+  assert.equal(result.isError, undefined);
+  assert.deepEqual(result.content, [{ type: "text", text: '{"roots":[{"uri":"file:///browser-root"}]}' }]);
+  assert.equal(hostRequests, 0);
+  await transport.terminateSession();
 });

@@ -12,6 +12,11 @@ import { getDiscoveryCommandDiagnostic } from "@mobile-dev/shared/device-apps-co
 import { androidStartupDiagnosticTags } from "@mobile-dev/shared/android-startup-diagnostics.ts";
 import type { AndroidStartupSummary, AndroidStartupContext, AndroidStartupFailure, AndroidDeviceState } from "@mobile-dev/shared/android-startup-diagnostics.ts";
 
+export function recordBrowserPanelSessions(active: number) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  Sentry.metrics.gauge("browser_panel.sessions", active, { attributes: { component: "server" } });
+}
+
 export function recordIosMirrorSharing(captures: number, subscribers: number, dropped: number) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes = { component: "ios-mirror-service", surface: "simulator", device_platform: "ios", device_kind: "physical" };

@@ -27,8 +27,9 @@ export default defineConfig<{ target: Target }>({
   // The Mac app's tests are tagged @mac; the other targets are MCP Apps hosts.
   // Visual baselines exist for Codex, the target on main, so only it runs @visual.
   projects: [
-    { name: "codex", use: { target: "codex" }, grepInvert: /@mac/ },
-    { name: "claude", use: { target: "claude" }, grepInvert: /@mac|@visual/ },
+    { name: "codex", use: { target: "codex" }, grepInvert: /@mac|@browser/ },
+    { name: "claude", use: { target: "claude" }, grepInvert: /@mac|@browser|@visual/ },
+    { name: "browser", use: { target: "claude" }, grep: /@browser/ },
     { name: "mac", use: { target: "mac" }, grep: /@mac/, grepInvert: /@visual/ },
   ],
 });

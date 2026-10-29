@@ -2,7 +2,7 @@ import { copyFile, cp, mkdir, rm, writeFile } from "node:fs/promises";
 import { build } from "esbuild";
 import { buildCodexHost } from "../../apps/codex-plugin/tooling/build.mjs";
 import { buildServerBundles } from "../server-bundle.mjs";
-import { buildUIPage } from "../ui-page.mjs";
+import { buildHostPage, buildUIPage } from "../ui-page.mjs";
 
 /**
  * Builds every host target's server and page into `.host-tests/<target>`, plus the
@@ -34,6 +34,7 @@ const targets = {
   // Claude Desktop and Claude Code load the host-neutral server and panel.
   async claude(directory) {
     await sharedPage(`${directory}/app.html`);
+    await buildHostPage({ entry: "packages/mcp-app/src/browser-panel.ts", template: "packages/mcp-app/src/browser-panel.html", output: `${directory}/browser-panel.html` });
     await buildServerBundles({ entryPoints: { server: "packages/core/src/index.ts" }, outdir: directory, sentryDirectory: ".sentry/host-tests/claude" });
   },
   codex: directory => buildCodexHost(environment, directory),

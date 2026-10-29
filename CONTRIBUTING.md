@@ -311,6 +311,67 @@ duplicate servers. Rebuild, repackage, and reinstall to update a bundled copy.
 Local builds retain the `development` telemetry environment. Public releases use
 `npm run build:release` and `npm run package:claude -- --release`.
 
+### Browser panels and Synara
+
+The shared `dist/server.mjs` can serve Mobile Dev in a browser beside the chat.
+Configure Synara's selected provider to launch this server over stdio, using
+Node.js 22.19 or later. For local development, `npm run build` and
+`npm run claude:config` generate a standard MCP JSON entry in
+`.local-dev/claude-desktop-config.json` with absolute command and argument paths.
+Use those paths in the selected provider's MCP configuration, then start a fresh
+Synara provider session. The Claude Code and Cursor packages include this same
+server and `dist/browser-panel.html`. The native Codex plugin runs its own entry;
+use the shared server entry for a Synara browser panel.
+
+Ask the agent to open Mobile Dev. When the MCP client advertises no MCP Apps
+support, the opening tool returns a loopback URL. The agent opens it with
+Synara's `browser_open`, in that task's shared browser. The browser MCP client
+joins the agent's server process, so both use the same devices and sessions.
+Keep only one Mobile Dev MCP registration in that provider to avoid duplicate
+tool catalogs. Rebuild and restart the provider session after code changes.
+
+Each tab gets its own HTTP MCP session and request routing. Tool and resource
+responses use standard per-request SSE, including associated server requests;
+there is no idle GET stream. The SDK's JSON response mode retains completed
+streams in the installed version and cannot deliver those server requests.
+Reloading or leaving the page sends a session DELETE that can finish during
+navigation. Abandoned sessions expire after five idle minutes; ongoing requests
+prevent expiry. The
+page pings every 30 seconds, including when there is no device to poll. A stopped
+chat server shows a message asking the user to reopen Mobile Dev. An expired
+browser connection asks them to reload the page. URLs belong to that running
+server and are unusable after it exits. A failed browser request alone cannot
+prove that the chat server stopped, so the message says it disconnected.
+
+Browser panels currently advertise tools, resources and web links. Chat actions
+stay hidden until the host provides a supported bridge. MCP request/response
+traffic is bidirectional, but sampling requests an LLM completion rather than
+appending a user message to the current conversation. Sampling is also
+[deprecated in MCP 2026-07-28](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2026-07-28/client/sampling.mdx).
+
+Synara's [Agent Gateway](https://www.trysynara.com/docs/workflows/agent-gateway)
+has `synara_send_message`, but its credentials and authority belong to provider
+sessions and turns. They are not a browser integration contract. Its
+[External MCP](https://www.trysynara.com/docs/workflows/external-mcp) integration
+exposes a restricted task interface rather than the internal gateway's current
+chat operations. The reviewed Synara source
+([`e5ae7d4`](https://github.com/galonge/codesynara/tree/e5ae7d4a0e3e0f8b26ee926f2f9535f8c1aa7d42))
+isolates ordinary browser pages and exposes no page-facing chat API.
+
+The host integration needed for chat actions is a thread-scoped MCP Apps bridge:
+handle `ui/message` by queuing a message on the owning conversation, and handle
+`ui/update-model-context` by replacing that panel's context for the next prompt.
+The host should bind access to the panel, page origin and owning thread, keep its
+credentials outside the page, acknowledge delivery and clean up on navigation.
+Once that host capability exists, the shared UI's existing message and model
+context actions can use it. A server-side action queue could feed an agent that
+is actively waiting in a tool call, but would not start a new idle chat turn.
+
+`npm run build:hosts` builds the browser page alongside the shared server. The
+`browser` Playwright project checks opening, reloading, sibling tabs, shutdown
+and invalid panel links against that real server. Run it in the Linux host-test
+environment described in [Host regression and visual tests](#host-regression-and-visual-tests).
+
 ### Cursor local development
 
 Complete the first-time runtime and native-helper setup under [Build and package](#build-and-package),

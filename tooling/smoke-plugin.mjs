@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { releaseVersion } from "./host-runtime.mjs";
 import { codexOnlyPaths, pluginHost, pluginHosts } from "./plugin-hosts.mjs";
 
@@ -61,7 +62,7 @@ async function smokeDesktopBundle() {
   assert.equal(manifest.server.mcp_config.command, "node");
   assert.equal(manifest.server.mcp_config.env, undefined);
   assert.equal(manifest.compatibility.runtimes.node, metadata.engines.node);
-  for (const path of [manifest.server.entry_point, "dist/app.html", "dist/baguette/Baguette", "dist/ios-mirror/darwin-arm64.node", "dist/agent-device-server.mjs", "dist/serve-emu/src/cli.mjs"]) {
+  for (const path of [manifest.server.entry_point, "dist/app.html", "dist/browser-panel.html", "dist/baguette/Baguette", "dist/ios-mirror/darwin-arm64.node", "dist/agent-device-server.mjs", "dist/serve-emu/src/cli.mjs"]) {
     await access(join(directory, path));
   }
   // No Codex installation, no PATH Node lookup, and no dependency on package cwd.
@@ -78,6 +79,29 @@ async function smokeDesktopBundle() {
   }
 }
 
+async function smokeBrowserPanel(client) {
+  const result = await client.callTool({ name: "mobile_open_simulator", arguments: { platform: "android" } });
+  const text = JSON.stringify(result.content);
+  const address = text.match(/http:\/\/127\.0\.0\.1:\d+\/[\w-]+\/\?[^"\s]+/)?.[0];
+  assert.ok(address, "A host without MCP Apps receives a browser panel link.");
+  const page = await fetch(address);
+  assert.equal(page.status, 200);
+  const html = await page.text();
+  assert.match(html, /mobile-dev-browser-panel/);
+  const endpoint = new URL("mcp", address);
+  const transport = new StreamableHTTPClientTransport(endpoint);
+  const panel = new Client({ name: "browser-package-smoke", version: "1" });
+  try {
+    await panel.connect(transport);
+    await panel.ping();
+    const { tools } = await panel.listTools();
+    const workspace = tools.find(tool => tool.name === "mobile_open_workspace");
+    const resource = await panel.readResource({ uri: workspace._meta.ui.resourceUri });
+    assert.match(resource.contents[0].text, /name="mobile-dev-telemetry" content="off"/);
+    await transport.terminateSession();
+  } finally { await panel.close(); }
+}
+
 try {
   if (host.desktopBundle) await smokeDesktopBundle();
   // Copy the plugin to a path with spaces, as a host's install cache would.
@@ -91,7 +115,7 @@ try {
   const server = manifest.mcpServers["mobile-dev"];
   assert.equal(server.command, "node");
   assert.deepEqual(server.args, [`\${${host.root}}/dist/server.mjs`]);
-  for (const path of ["LICENSE", "README.md", "PRIVACY.md", "skills/mobile-dev/SKILL.md", "skills/mobile-dev-setup/SKILL.md", "dist/app.html", "dist/baguette/Baguette", "dist/ios-mirror/darwin-arm64.node"]) {
+  for (const path of ["LICENSE", "README.md", "PRIVACY.md", "skills/mobile-dev/SKILL.md", "skills/mobile-dev-setup/SKILL.md", "dist/app.html", "dist/browser-panel.html", "dist/baguette/Baguette", "dist/ios-mirror/darwin-arm64.node"]) {
     await access(join(plugin, path));
   }
   const otherManifests = Object.entries(pluginHosts).filter(([other]) => other !== name).map(([, other]) => other.manifest);
@@ -103,6 +127,7 @@ try {
       const choice = await client.callTool({ name: "mobile_show_devices", arguments: { message: "Which device?", selectionMode: "single" } });
       assert.equal(choice.isError, true);
       assert.match(choice.content[0].text, /ask the user in chat/);
+      if (environment === "development") await smokeBrowserPanel(client);
     });
     console.log(`${environment}: ${host.label} plugin manifest, payload, startup from the plugin root, chat fallback and no Codex updater passed.`);
   }

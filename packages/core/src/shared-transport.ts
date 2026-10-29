@@ -4,28 +4,24 @@ import {
   type InitializeResult, type JSONRPCMessage, type MessageExtraInfo, type RequestId,
 } from "@modelcontextprotocol/sdk/types.js";
 
-// Requests from other connections reach the server under IDs the host never uses.
-const SHARED_ID = "mobile-dev-shared-";
+type PendingRequest = { connection: Transport; id: RequestId; initialize: boolean };
 
 /**
- * The server's transport: the host's connection, plus others that share the same
- * tools, resources and device state, such as a browser page showing the panel.
- *
- * Only the host initializes the server, so the client capabilities the tools see
- * stay the host's; another connection receives the host's negotiated result.
- * Its request IDs are renamed on the way in and restored on the way out. The
- * server's own requests and notifications go to the host unless they belong to a
- * request from another connection.
+ * Shares tools and device state across the chat connection and browser panels.
+ * Only the chat initializes the server; panels receive its negotiated result.
+ * Every incoming request gets a private ID, including requests from the chat.
  */
 export class SharedTransport implements Transport {
   onmessage?: Transport["onmessage"];
   onclose?: () => void;
   onerror?: (error: Error) => void;
-  private hostInitialize?: RequestId;
   private initialized?: InitializeResult;
   private readonly connections = new Set<Transport>();
-  private readonly pending = new Map<string, { connection: Transport; id: RequestId }>();
+  private readonly ready = new Set<Transport>();
+  private readonly pending = new Map<RequestId, PendingRequest>();
+  private readonly serverRequests = new Map<RequestId, Transport>();
   private nextId = 0;
+  private closed = false;
   private readonly host: Transport;
 
   constructor(host: Transport) { this.host = host; }
@@ -34,12 +30,11 @@ export class SharedTransport implements Transport {
   setProtocolVersion = (version: string) => this.host.setProtocolVersion?.(version);
 
   async start() {
-    this.host.onmessage = (message, extra) => {
-      if (isJSONRPCRequest(message) && isInitializeRequest(message)) this.hostInitialize = message.id;
-      this.onmessage?.(message, extra);
-    };
+    this.host.onmessage = (message, extra) => this.receive(this.host, message, extra);
     this.host.onerror = error => this.onerror?.(error);
     this.host.onclose = () => {
+      this.closed = true;
+      this.detach(this.host);
       void this.closeConnections();
       this.onclose?.();
     };
@@ -48,84 +43,126 @@ export class SharedTransport implements Transport {
 
   async send(message: JSONRPCMessage, options?: TransportSendOptions) {
     if (isJSONRPCResultResponse(message) || isJSONRPCErrorResponse(message)) {
-      const id = message.id === undefined ? undefined : String(message.id);
-      const request = id === undefined ? undefined : this.pending.get(id);
-      if (request) {
-        this.pending.delete(id!);
-        return request.connection.send({ ...message, id: request.id });
+      const request = message.id === undefined ? undefined : this.pending.get(message.id);
+      // A cancelled request or a closed connection no longer owns a response.
+      if (request === undefined) return;
+      this.pending.delete(message.id!);
+      if (request.initialize && isJSONRPCResultResponse(message)) {
+        this.initialized = message.result as InitializeResult;
       }
-      // The connection closed or cancelled the request.
-      if (id?.startsWith(SHARED_ID)) return;
-      if (message.id === this.hostInitialize && isJSONRPCResultResponse(message)) this.initialized = message.result as InitializeResult;
-    } else if (options?.relatedRequestId !== undefined) {
-      const request = this.pending.get(String(options.relatedRequestId));
-      if (request) return request.connection.send(message, { ...options, relatedRequestId: request.id });
+      return request.connection.send({ ...message, id: request.id });
     }
-    return this.host.send(message, options);
+
+    let connection = this.host;
+    let relatedRequestId = options?.relatedRequestId;
+    if (relatedRequestId !== undefined) {
+      const request = this.pending.get(relatedRequestId);
+      if (request === undefined) return;
+      connection = request.connection;
+      relatedRequestId = request.id;
+    }
+    if (isJSONRPCRequest(message)) this.serverRequests.set(message.id, connection);
+    if (isJSONRPCNotification(message) && message.method === "notifications/cancelled") {
+      const id = message.params?.requestId as RequestId;
+      const owner = this.serverRequests.get(id);
+      if (owner === undefined) return;
+      connection = owner;
+      this.serverRequests.delete(id);
+    }
+    try {
+      await connection.send(message, { ...options, relatedRequestId });
+    } catch (error) {
+      if (isJSONRPCRequest(message)) this.serverRequests.delete(message.id);
+      throw error;
+    }
   }
 
-  /**
-   * Starts a connection and routes its messages to the server until it closes.
-   * Closing it cancels the requests it left unanswered.
-   */
+  /** Closing a panel cancels only the requests that connection owns. */
   async attach(connection: Transport) {
+    if (this.closed) throw new Error("Mobile Dev's chat connection has closed.");
     const closed = connection.onclose;
     connection.onmessage = (message, extra) => this.receive(connection, message, extra);
     connection.onclose = () => {
       this.detach(connection);
       closed?.();
     };
+    connection.onerror = error => this.onerror?.(error);
     this.connections.add(connection);
-    await connection.start();
+    try { await connection.start(); }
+    catch (error) { this.detach(connection); throw error; }
   }
 
   async close() {
+    this.closed = true;
     await this.closeConnections();
     await this.host.close();
   }
 
   private receive(connection: Transport, message: JSONRPCMessage, extra?: MessageExtraInfo) {
+    if (this.closed) return;
+    if (connection !== this.host && this.connections.has(connection) === false) return;
     if (isJSONRPCRequest(message)) {
-      if (isInitializeRequest(message)) {
-        const reply: JSONRPCMessage = this.initialized
-          ? { jsonrpc: "2.0", id: message.id, result: this.initialized }
-          : { jsonrpc: "2.0", id: message.id, error: { code: ErrorCode.InvalidRequest, message: "The host has not connected to Mobile Dev yet." } };
-        void connection.send(reply).catch(error => this.onerror?.(error));
-        return;
+      const initialize = isInitializeRequest(message);
+      if (connection !== this.host) {
+        if (initialize) {
+          if (this.initialized) this.ready.add(connection);
+          const reply: JSONRPCMessage = this.initialized
+            ? { jsonrpc: "2.0", id: message.id, result: this.initialized }
+            : { jsonrpc: "2.0", id: message.id, error: { code: ErrorCode.InvalidRequest, message: "The host has not connected to Mobile Dev yet." } };
+          void connection.send(reply).catch(error => this.onerror?.(error));
+          return;
+        }
+        if (this.ready.has(connection) === false) return;
       }
-      const id = `${SHARED_ID}${++this.nextId}`;
-      this.pending.set(id, { connection, id: message.id });
+      const id = `mobile-dev-shared-${++this.nextId}`;
+      this.pending.set(id, { connection, id: message.id, initialize });
       this.onmessage?.({ ...message, id }, extra);
       return;
     }
+    if (isJSONRPCResultResponse(message) || isJSONRPCErrorResponse(message)) {
+      const id = message.id;
+      if (id === undefined || this.serverRequests.get(id) !== connection) return;
+      this.serverRequests.delete(id);
+      this.onmessage?.(message, extra);
+      return;
+    }
     if (isJSONRPCNotification(message)) {
-      if (isInitializedNotification(message)) return;
+      if (connection !== this.host && isInitializedNotification(message)) return;
       if (message.method === "notifications/cancelled") {
-        const id = this.find(connection, message.params?.requestId as RequestId | undefined);
+        const requestId = message.params?.requestId as RequestId | undefined;
+        const id = this.find(connection, requestId);
         if (id === undefined) return;
         this.pending.delete(id);
         this.onmessage?.({ ...message, params: { ...message.params, requestId: id } }, extra);
         return;
       }
     }
-    // Other notifications, and answers to the server's requests sent over this connection.
-    this.onmessage?.(message, extra);
+    if (connection === this.host || this.ready.has(connection)) this.onmessage?.(message, extra);
   }
 
   private find(connection: Transport, id: RequestId | undefined) {
-    for (const [shared, request] of this.pending) if (request.connection === connection && request.id === id) return shared;
+    for (const [shared, request] of this.pending) {
+      if (request.connection === connection && request.id === id) return shared;
+    }
   }
 
   private detach(connection: Transport) {
-    if (!this.connections.delete(connection)) return;
+    if (connection !== this.host && this.connections.delete(connection) === false) return;
+    this.ready.delete(connection);
     for (const [id, request] of this.pending) {
       if (request.connection !== connection) continue;
       this.pending.delete(id);
       this.onmessage?.({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: id, reason: "The connection closed." } });
     }
+    for (const [id, owner] of this.serverRequests) {
+      if (owner !== connection) continue;
+      this.serverRequests.delete(id);
+      this.onmessage?.({ jsonrpc: "2.0", id, error: { code: ErrorCode.InternalError, message: "The connection closed." } });
+    }
   }
 
   private async closeConnections() {
-    await Promise.allSettled([...this.connections].map(connection => connection.close()));
+    const closing = Array.from(this.connections, connection => connection.close());
+    await Promise.allSettled(closing);
   }
 }
