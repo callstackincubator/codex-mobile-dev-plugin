@@ -129,10 +129,12 @@ export class AndroidStreams {
 
   private session(id: string) { return this.sessions.get(id); }
 
-  async batch(id: string, after: number) {
+  async batch(id: string, after: number, signal?: AbortSignal) {
     const session = this.session(id);
     await this.backend.assertDevice(session.deviceId, session.url);
-    if (!session.error && !session.packets.some(packet => packet.sequence > after)) await session.waiters.wait(1000);
+    signal?.throwIfAborted();
+    if (!session.error && !session.packets.some(packet => packet.sequence > after)) await session.waiters.wait(1000, signal);
+    signal?.throwIfAborted();
     if (!this.sessions.current(id, session)) throw new ExpectedOperationError("session_closed", "The Android stream closed.");
     if (session.error) throw new Error(session.error);
     if (session.waitingForKey) this.requestKey(session);

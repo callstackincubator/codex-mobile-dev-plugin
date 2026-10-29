@@ -216,6 +216,20 @@ test("closing an Android stream releases a waiting read and rejects later input"
   await waitFor(() => fake.sockets.clients.size === 0);
 });
 
+test("a cancelled Android video read ends at once and keeps its stream session", async t => {
+  const fake = await fakeAndroid(); const streams = new AndroidStreams(fake.backend);
+  t.after(async () => { streams.close(); await fake.close(); });
+  const id = await streams.open(ID); const first = await streams.batch(id, 0);
+  const abort = new AbortController();
+  const started = performance.now();
+  const pending = streams.batch(id, first.sequence, abort.signal);
+  await new Promise(resolve => setTimeout(resolve, 25));
+  abort.abort();
+  await assert.rejects(pending, { name: "AbortError" });
+  assert.ok(performance.now() - started < 900);
+  assert.equal((await streams.batch(id, first.sequence)).generation, first.generation);
+});
+
 test("a dropped Android stream can reopen without booting or replaying input", async t => {
   const fake = await fakeAndroid(); const streams = new AndroidStreams(fake.backend);
   t.after(async () => { streams.close(); await fake.close(); });

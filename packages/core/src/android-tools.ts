@@ -73,11 +73,11 @@ export function registerAndroidTools(server: McpServer, android: ServeEmu, appUr
   }));
   server.registerResource("android-video", new ResourceTemplate("android-stream://mobile-dev/{sessionId}/video?after={sequence}", { list: undefined }), {
     mimeType: "application/json", description: "Read H.264 packets from an authorized Android panel stream.",
-  }, async (uri, variables) => {
+  }, async (uri, variables, extra) => {
     const id = parseResourceInput(sessionIdSchema, variables.sessionId);
     const cursorSchema = z.coerce.number().int().nonnegative();
     const after = parseResourceInput(cursorSchema, variables.sequence);
-    const batch = await streams.batch(id, after);
+    const batch = await streams.batch(id, after, extra.signal);
     return { contents: [{ uri: uri.href, mimeType: "application/json", text: JSON.stringify(batch) }] };
   });
   registerAppTool(server, "mobile_android_stream_session", {
