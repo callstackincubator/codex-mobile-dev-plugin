@@ -85,12 +85,12 @@ export class DisplayFpsPanel {
     const origin = opened.structuredContent?.timeOrigin;
     if (typeof id !== "string") throw new Error("The plugin did not return a Display FPS session.");
     const session: Session = { id, abort: new AbortController() };
+    this.session = session;
     if (typeof fpsUri !== "string" || typeof origin !== "number") {
       await this.closeSession(session);
       throw new Error("The plugin did not return a Display FPS resource and clock.");
     }
     if (epoch !== this.epoch) { await this.closeSession(session); return; }
-    this.session = session;
     this.update({}, origin);
     const uri = new URL(fpsUri);
     let after = 0;

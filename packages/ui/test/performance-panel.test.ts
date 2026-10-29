@@ -210,6 +210,38 @@ test("a failed CPU close is reported and retried before the next session opens",
   assert.equal(recovered.samples[0].cpuPercent, 40);
 });
 
+test("a CPU session that opens after a stop keeps its failed close for retry", async t => {
+  const fake = host();
+  let resolveOpen!: () => void;
+  fake.delayOpen(new Promise(resolve => { resolveOpen = resolve; }));
+  const deviceApps = createDeviceApps(fake.app);
+  const panel = new PerformancePanel(fake.app, deviceApps);
+  t.after(() => { deviceApps.dispose(); return panel.dispose(); });
+  deviceApps.selectDevice(device);
+  panel.setAvailable(true);
+  deviceApps.setAvailable(true);
+  panel.show();
+  await tick();
+  panel.retry();
+  fake.failClose("transient close failure");
+  resolveOpen();
+  await tick();
+  const first = String(1).padStart(64, "0");
+  const failed = panel.getSnapshot();
+  assert.equal(failed.phase, "failed");
+  assert.equal(failed.error, "transient close failure");
+  assert.deepEqual(fake.events, [`open:${first}`, `close:${first}`, `close:${first}`], "The restart waits for the late session to close.");
+
+  fake.failClose();
+  panel.retry();
+  await tick();
+  const second = String(2).padStart(64, "0");
+  assert.deepEqual(fake.events.slice(3), [`close:${first}`, `open:${second}`]);
+  fake.emit({ cursor: 1, phase: "recording", memoryMetric: "physical-footprint", samples: [{ time: 1, interval: 1, cpuPercent: 40, memoryBytes: 104857600, threads: [] }] });
+  await tick();
+  assert.equal(panel.getSnapshot().phase, "recording");
+});
+
 test("switching between iOS and Android closes the previous monitor and selects the active device", async t => {
   const fake = host();
   const deviceApps = createDeviceApps(fake.app);

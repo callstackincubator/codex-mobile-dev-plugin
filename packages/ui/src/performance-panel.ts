@@ -189,14 +189,15 @@ export class PerformancePanel {
 
   private async receive(target: CpuTarget, epoch: number, stopping: Promise<void>) {
     await stopping;
+    if (epoch === this.epoch && this.session) await this.closeSession(this.session);
     if (epoch !== this.epoch || this.disposed) return;
     const result = await this.call("mobile_cpu_session", { target });
     const id = result.structuredContent?.sessionId;
     const cpuUri = result.structuredContent?.cpuUri;
     if (typeof id !== "string" || typeof cpuUri !== "string") throw new Error("The plugin did not return a CPU session.");
     const session: Session = { id, abort: new AbortController() };
-    if (epoch !== this.epoch || this.disposed) { await this.closeSession(session); return; }
     this.session = session;
+    if (epoch !== this.epoch || this.disposed) { await this.closeSession(session); return; }
     const uri = new URL(cpuUri);
     let after = 0;
     try {
@@ -242,7 +243,7 @@ export class PerformancePanel {
     } finally { await this.closeSession(session); }
   }
 
-  // A session stays current until its close succeeds, so the next stop retries a failed close before another opens.
+  // A session stays current until its close succeeds, so a failed close is retried before another session opens.
   private closeSession(session: Session): Promise<void> {
     session.abort.abort();
     session.closing ??= this.call("mobile_cpu_close", { sessionId: session.id }).then(() => {
