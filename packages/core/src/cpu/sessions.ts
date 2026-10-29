@@ -1,24 +1,17 @@
-import { ExpectedOperationError, errorMessage } from "@mobile-dev/shared/error-reporting.ts";
-import { randomBytes } from "node:crypto";
+import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 import type { z } from "zod";
-import type { CpuBatch, CpuTarget, MemoryMetric } from "@mobile-dev/shared/cpu.ts";
+import type { CpuBatch, CpuSample, CpuTarget, MemoryMetric } from "@mobile-dev/shared/cpu.ts";
 import { cpuTargetSchema } from "@mobile-dev/shared/cpu.ts";
 import { runningDeviceApps } from "../device-apps/apps.ts";
 import { CpuBuffer } from "./buffer.ts";
 import { startCpuMonitor } from "./source.ts";
 import type { CpuMonitorOptions } from "./source.ts";
 import { androidCpuCollector } from "./android.ts";
+import { CollectorSession, androidKind } from "../collector-session.ts";
+import { SessionRegistry } from "../session-registry.ts";
 import type { CpuMonitor } from "./monitor.ts";
 
-type Session = {
-  target: CpuTarget;
-  buffer: CpuBuffer;
-  abort: AbortController;
-  expires: number;
-  start?: Promise<void>;
-  monitor?: CpuMonitor;
-  stopping?: Promise<void>;
-};
+type Session = { target: CpuTarget; buffer: CpuBuffer; collector: CollectorSession<CpuSample> };
 type CpuSources = { apps: typeof runningDeviceApps; monitor: (options: CpuMonitorOptions) => Promise<CpuMonitor> };
 
 export function createCpuSessions(root = new URL("./android-cpu/", import.meta.url)): CpuSessions {
@@ -29,109 +22,53 @@ export function createCpuSessions(root = new URL("./android-cpu/", import.meta.u
 }
 
 export class CpuSessions {
-  private sessions = new Map<string, Session>();
-  private targets = new Map<string, Session>();
-  private closing = new Set<Promise<void>>();
-  private disposed = false;
-  private expiry: NodeJS.Timeout;
-  private sources: CpuSources;
+  private readonly sessions = new SessionRegistry<Session>({
+    limit: 8, name: "CPU session",
+    limitMessage: "Too many CPU sessions. Close a performance panel and retry.",
+    expiredMessage: "This CPU session expired or closed. Reconnect the performance panel.",
+    key: ({ target }) => `${target.platform}:${target.deviceId}:${target.bundleId}`,
+    duplicateMessage: "This app already has an active CPU monitor. Stop it in the other performance panel first.",
+    deviceId: session => session.target.deviceId,
+    stop: session => session.collector.stop(),
+  });
+  private readonly sources: CpuSources;
 
-  constructor(sources: CpuSources) {
-    this.sources = sources;
-    this.expiry = setInterval(() => {
-      for (const [id, session] of this.sessions) {
-        if (session.expires < Date.now()) void this.closeSession(id).catch(error => console.error("CPU session cleanup:", error));
-      }
-    }, 10000);
-    this.expiry.unref();
-  }
-
-  private key(target: CpuTarget) { return `${target.platform}:${target.deviceId}:${target.bundleId}`; }
+  constructor(sources: CpuSources) { this.sources = sources; }
 
   open(input: z.input<typeof cpuTargetSchema>): string {
     const target = cpuTargetSchema.parse(input);
-    if (this.disposed) throw new ExpectedOperationError("session_closed", "The plugin server has closed.");
-    if (this.sessions.size >= 8) throw new ExpectedOperationError("resource_limit", "Too many CPU sessions. Close a performance panel and retry.");
-    const key = this.key(target);
-    if (this.targets.has(key)) throw new ExpectedOperationError("resource_limit", "This app already has an active CPU monitor. Stop it in the other performance panel first.");
     const memoryMetric: MemoryMetric = target.platform === "android" ? "rss" : "physical-footprint";
-    const session: Session = { target, buffer: new CpuBuffer(memoryMetric), abort: new AbortController(), expires: Date.now() + 300000 };
-    const bytes = randomBytes(32);
-    const id = bytes.toString("hex");
-    this.sessions.set(id, session);
-    this.targets.set(key, session);
-    session.start = this.initialize(session);
+    const buffer = new CpuBuffer(memoryMetric);
+    const kind = target.platform === "android" ? androidKind(target.deviceId) : target.kind ?? "simulator";
+    const collector: CollectorSession<CpuSample> = new CollectorSession(buffer, {
+      attach: signal => this.attach(target, buffer, collector, signal), readyOnAttach: true, abortOnStop: "before-attach",
+      telemetry: { collector: "cpu", platform: target.platform, kind },
+    });
+    const id = this.sessions.add({ target, buffer, collector });
+    collector.begin();
     return id;
   }
 
-  private async initialize(session: Session) {
-    const signal = session.abort.signal;
-    try {
-      const apps = await this.sources.apps(session.target.deviceId, signal, session.target.platform, session.target.kind);
-      signal.throwIfAborted();
-      const app = apps.find(candidate => candidate.bundleId === session.target.bundleId);
-      if (app === undefined) throw new ExpectedOperationError("app_unavailable", "The selected app is no longer running. Open it on the selected device.");
-      const startedAt = performance.now();
-      session.buffer.timeOrigin = startedAt / 1000;
-      session.monitor = await this.sources.monitor({ target: session.target, pid: app.pid, signal, onSample: reading => {
-        if (signal.aborted || session.stopping) return;
-        const now = performance.now();
-        session.buffer.push({ time: (now - startedAt) / 1000, interval: reading.intervalUs / 1000000,
-          cpuPercent: reading.cpuPercent, memoryBytes: reading.memoryBytes, threads: reading.threads });
-      } });
-      if (signal.aborted || session.stopping) return;
-      session.buffer.status("recording");
-      void session.monitor.closed.then(async error => {
-        if (session.stopping) return;
-        session.buffer.status("failed", error.message);
-        try { await session.monitor?.stop(); }
-        catch (cleanupError) { session.buffer.status("failed", errorMessage(cleanupError)); }
-      });
-    } catch (error) {
-      if (signal.aborted === false) session.buffer.status("failed", errorMessage(error));
-    }
+  private async attach(target: CpuTarget, buffer: CpuBuffer, collector: CollectorSession<CpuSample>, signal: AbortSignal) {
+    const apps = await this.sources.apps(target.deviceId, signal, target.platform, target.kind);
+    signal.throwIfAborted();
+    const app = apps.find(candidate => candidate.bundleId === target.bundleId);
+    if (app === undefined) throw new ExpectedOperationError("app_unavailable", "The selected app is no longer running. Open it on the selected device.");
+    const startedAt = performance.now();
+    buffer.timeOrigin = startedAt / 1000;
+    return this.sources.monitor({ target, pid: app.pid, signal, onSample: reading => {
+      if (collector.active === false) return;
+      const now = performance.now();
+      buffer.push({ time: (now - startedAt) / 1000, interval: reading.intervalUs / 1000000,
+        cpuPercent: reading.cpuPercent, memoryBytes: reading.memoryBytes, threads: reading.threads });
+    } });
   }
 
-  async read(id: string, after: number, waitMs = 1000): Promise<CpuBatch> {
-    const session = this.sessions.get(id);
-    if (session === undefined) throw new ExpectedOperationError("session_expired", "This CPU session expired or closed. Reconnect the performance panel.");
-    session.expires = Date.now() + 300000;
-    return session.buffer.read(after, waitMs);
+  async read(id: string, after: number, waitMs = 1000, signal?: AbortSignal): Promise<CpuBatch> {
+    return this.sessions.get(id, { stopping: true }).buffer.read(after, waitMs, signal);
   }
 
-  async closeSession(id: string) {
-    const session = this.sessions.get(id);
-    if (session === undefined) return;
-    if (session.stopping) return session.stopping;
-    session.buffer.status("stopping");
-    session.buffer.close();
-    if (session.monitor === undefined) session.abort.abort();
-    session.stopping = (async () => {
-      try { await session.start; await session.monitor?.stop(); }
-      finally {
-        session.abort.abort();
-        this.sessions.delete(id);
-        const key = this.key(session.target);
-        this.targets.delete(key);
-      }
-    })();
-    this.closing.add(session.stopping);
-    try { await session.stopping; }
-    finally { this.closing.delete(session.stopping); }
-  }
-
-  async closeDevice(deviceId: string) {
-    const ids = [...this.sessions].filter(([, session]) => session.target.deviceId === deviceId);
-    await Promise.all(ids.map(([id]) => this.closeSession(id)));
-  }
-
-  async close() {
-    this.disposed = true;
-    clearInterval(this.expiry);
-    const ids = [...this.sessions.keys()];
-    const results = await Promise.allSettled(ids.map(id => this.closeSession(id)));
-    await Promise.allSettled(this.closing);
-    const failed = results.find(result => result.status === "rejected");
-    if (failed?.status === "rejected") throw failed.reason;
-  }
+  closeSession(id: string) { return this.sessions.closeSession(id); }
+  closeDevice(deviceId: string) { return this.sessions.closeDevice(deviceId); }
+  close() { return this.sessions.close(); }
 }

@@ -33,6 +33,9 @@ import type { ServeEmu } from "../src/serve-emu.ts";
 import { setAndroidStartupDiagnostic } from "../../shared/src/android-startup-diagnostics.ts";
 import type { OpenAIFormResult } from "@openai/mcp-extensions/server";
 import { agentDeviceClient } from "../../test-support/agent-device-fixtures.ts";
+import { UDID } from "../../test-support/fixtures.ts";
+import { CpuSessions } from "../src/cpu/sessions.ts";
+import { DisplayFpsSessions } from "../src/fps/sessions.ts";
 import { setDiscoveryCommandDiagnostic } from "../../shared/src/device-apps-command-diagnostics.ts";
 
 type ReportedEvent = { exception?: { values?: { value?: string }[] }; tags?: Record<string, string> };
@@ -270,6 +273,44 @@ test("Android backend startup metrics retain product attribution and honor opt-o
   await Sentry.flush();
   const afterOptOut = JSON.stringify(envelopes);
   assert.equal(afterOptOut, sent);
+});
+
+test("collector readiness measures each CPU and FPS start once, without device or app identifiers", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, beforeSendMetric: scrubMetric,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  const previous = process.env.MOBILE_DEV_TELEMETRY;
+  delete process.env.MOBILE_DEV_TELEMETRY;
+  t.after(async () => {
+    if (previous === undefined) delete process.env.MOBILE_DEV_TELEMETRY;
+    else process.env.MOBILE_DEV_TELEMETRY = previous;
+    await Sentry.close();
+  });
+  const monitor = { closed: new Promise<Error>(() => {}), async stop() {} };
+  const cpu = new CpuSessions({ apps: async () => [{ bundleId: "dev.private.app", pid: 123 }], monitor: async () => monitor });
+  const attaching = new CpuSessions({ apps: (_deviceId, signal) => new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(signal.reason))), monitor: async () => monitor });
+  const fps = new DisplayFpsSessions(async () => { throw new Error("FrameTimeline unavailable"); });
+  t.after(async () => { await Promise.all([cpu.close(), attaching.close(), fps.close()]); });
+  const ready = cpu.open({ deviceId: UDID, bundleId: "dev.private.app" });
+  fps.open({ platform: "android", deviceId: "emulator-5554" });
+  await new Promise<void>(resolve => setImmediate(resolve));
+  assert.equal((await cpu.read(ready, 0, 0)).phase, "recording");
+  await cpu.closeSession(ready);
+  await attaching.closeSession(attaching.open({ platform: "android", deviceId: "R5CT1234", bundleId: "dev.private.app" }));
+  await Sentry.flush();
+  const sent = JSON.stringify(envelopes);
+  for (const fragment of ["collector.ready.samples", "collector.ready.duration", "millisecond", '"surface":{"value":"performance"',
+    '"collector":{"value":"cpu"', '"collector":{"value":"fps"', '"outcome":{"value":"ready"', '"outcome":{"value":"failed"', '"outcome":{"value":"cancelled"',
+    '"device_kind":{"value":"simulator"', '"device_kind":{"value":"emulator"', '"device_kind":{"value":"physical"']) contains(sent, fragment);
+  for (const fragment of [UDID, "dev.private.app", "emulator-5554", "R5CT1234", "FrameTimeline"]) contains(sent, fragment, false);
+  // Readiness is recorded once: stopping a ready session adds nothing.
+  assert.equal(sent.match(/collector\.ready\.samples/g)?.length, 3);
+  process.env.MOBILE_DEV_TELEMETRY = "off";
+  await cpu.closeSession(cpu.open({ deviceId: UDID, bundleId: "dev.private.app" }));
+  await Sentry.flush();
+  assert.equal(JSON.stringify(envelopes), sent);
 });
 
 test("plugin update metrics measure plugin work without device context and honor opt-out", async t => {

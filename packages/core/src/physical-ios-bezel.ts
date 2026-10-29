@@ -11,6 +11,7 @@ import type { Bezel } from "@mobile-dev/shared/bezel.ts";
 import type { PhysicalIosDevice } from "@mobile-dev/shared/ios-devices.ts";
 import { baguetteEnvironment } from "./baguette-runtime.ts";
 import { captureServerError } from "./telemetry.ts";
+import { isPng } from "./png.ts";
 
 const execute = promisify(execFile);
 type BezelCommand = (file: string, args: string[], options: { encoding: "buffer"; timeout: number; maxBuffer: number; env?: NodeJS.ProcessEnv }) => Promise<{ stdout: Buffer }>;
@@ -28,13 +29,11 @@ const rectSchema = bezelGeometrySchema.shape.rect;
 const viewportSchema = bezelGeometrySchema.shape.viewport;
 const radiusSchema = bezelGeometrySchema.shape.clipRadius;
 const layoutSchema = z.object({ screen: rectSchema, composite: viewportSchema, innerCornerRadius: radiusSchema });
-const pngSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const commandOptions = { encoding: "buffer", timeout: 15000, maxBuffer: 8 * 1024 * 1024 } satisfies Parameters<BezelCommand>[2];
 const missingFrameRetryDelay = 5 * 60 * 1000;
 
 function pngDataUri(bytes: Buffer): string {
-  const signature = bytes.subarray(0, 8);
-  if (bytes.length > commandOptions.maxBuffer || signature.equals(pngSignature) === false) throw new Error("Invalid Apple device frame PNG.");
+  if (bytes.length > commandOptions.maxBuffer || isPng(bytes) === false) throw new Error("Invalid Apple device frame PNG.");
   const encoded = bytes.toString("base64");
   return `data:image/png;base64,${encoded}`;
 }

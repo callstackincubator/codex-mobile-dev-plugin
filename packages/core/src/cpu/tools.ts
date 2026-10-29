@@ -1,39 +1,16 @@
-import { parseResourceInput } from "../resource-input.ts";
-import { ExpectedOperationError, errorMessage } from "@mobile-dev/shared/error-reporting.ts";
-import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { captureServerError } from "../telemetry.ts";
-import { openRequestSession } from "../request-session.ts";
-import type { ServerRequestContext } from "../request-session.ts";
-import { z } from "zod";
 import { cpuTargetSchema } from "@mobile-dev/shared/cpu.ts";
-import type { CpuTarget } from "@mobile-dev/shared/cpu.ts";
 import type { Simctl } from "../simctl.ts";
 import { readDeviceApps } from "../device-apps/sources.ts";
 import { withDeviceAppsDiagnostic } from "@mobile-dev/shared/device-apps-diagnostics.ts";
 import { registerDeviceAppsTool } from "../device-apps/tools.ts";
 import { listAndroidLogDevices } from "../native-logs.ts";
 import { listIosDevices } from "../ios-devices.ts";
+import { registerSessionTools } from "../session-tools.ts";
+import { jsonResult } from "../tool-results.ts";
 import type { CpuSessions } from "./sessions.ts";
 import { isPhysicalIos } from "@mobile-dev/shared/devices.ts";
-
-const sessionId = z.string().regex(/^[a-f0-9]{64}$/);
-const sequence = z.coerce.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
-const metadata = { ui: { visibility: ["app", "model"] as ("app" | "model")[] } };
-const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
-const write = { ...read, readOnlyHint: false };
-
-function safe<T>(handler: (input: T, context: ServerRequestContext) => Promise<CallToolResult>) {
-  return async (input: T, context: ServerRequestContext): Promise<CallToolResult> => {
-    try { return await handler(input, context); }
-    catch (error) {
-      captureServerError(error, "cpu.tool", { signal: context.signal });
-      return { isError: true, content: [{ type: "text", text: errorMessage(error) }] };
-    }
-  };
-}
 
 export function registerCpuTools(server: McpServer, cpu: CpuSessions, simulators: Pick<Simctl, "device">,
   { apps = readDeviceApps, androidDevices = listAndroidLogDevices, iosDevices = listIosDevices } = {}) {
@@ -56,47 +33,21 @@ export function registerCpuTools(server: McpServer, cpu: CpuSessions, simulators
     }
     return connected.name;
   }
-  server.registerResource("cpu-batch", new ResourceTemplate("cpu://mobile-dev/{sessionId}/batch?after={sequence}", { list: undefined }), {
-    mimeType: "application/json", description: "Read live process and thread CPU plus main-process memory samples from an authorized Mobile Dev performance session.",
-  }, async (uri, variables) => {
-    const id = parseResourceInput(sessionId, variables.sessionId);
-    const after = parseResourceInput(sequence, variables.sequence);
-    const batch = await cpu.read(id, after);
-    const text = JSON.stringify(batch);
-    return { contents: [{ uri: uri.href, mimeType: "application/json", text }] };
-  });
-
   registerDeviceAppsTool(server, async (device, signal) => {
     await withDeviceAppsDiagnostic(() => validateDevice(device), "device_validation", device.platform, device.kind);
     return sources.apps(device.deviceId, signal, device.platform, device.kind);
   });
 
-  registerAppTool(server, "mobile_cpu_session", {
-    title: "Monitor native app CPU and memory", description: "Monitor process and per-thread CPU plus main-process memory once per second without an app SDK, app launch or restart. Returns sessionId and cpuUri in the tool result. Poll mobile_read_cpu with sessionId and the previous cursor as after; close with mobile_cpu_close when finished. Android uses a small external native /proc collector over ADB, without root or debugger attachment; the device must permit ADB shell to read app counters. iOS uses debugserver and requires a development-signed build with get-task-allow and no existing Xcode/LLDB attachment. Physical iOS 17.4+ also requires pairing, Developer Mode and a mounted developer disk image; pass target.kind: physical and the hardware UDID from mobile_list_ios_devices. Attach and detach briefly pause the app. 100% is one occupied device CPU core. Memory is RSS on Android and physical footprint on iOS, reported in bytes. Idle sessions expire after five minutes.",
-    inputSchema: { target: cpuTargetSchema }, annotations: write, _meta: metadata,
-  }, safe(async ({ target }: { target: CpuTarget }, context) => {
-    await validateDevice(target);
-    const id = await openRequestSession(context.signal, async () => cpu.open(target), id => cpu.closeSession(id));
-    const data = { target, sessionId: id, cpuUri: `cpu://mobile-dev/${id}/batch?after=0` };
-    const text = JSON.stringify(data);
-    return { content: [{ type: "text", text }], structuredContent: data };
-  }));
-
-  registerAppTool(server, "mobile_read_cpu", {
-    title: "Read native CPU and memory usage", description: "Read buffered CPU and memory samples and connection status using sessionId returned by mobile_cpu_session. Pass the previous result's cursor as after to read only new samples. Each sample includes process CPU, per-thread CPU and memoryBytes for the main process. The batch memoryMetric is rss on Android or physical-footprint on iOS; 100% CPU is one core. Startup can return connecting or an initial null CPU baseline before a full sampling interval has elapsed. Memory is an absolute byte reading available from the first sample.",
-    inputSchema: { sessionId, after: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(0) }, annotations: read, _meta: metadata,
-  }, safe(async ({ sessionId: id, after }: { sessionId: string; after: number }) => {
-    const batch = await cpu.read(id, after, 0);
-    const text = JSON.stringify(batch);
-    return { content: [{ type: "text", text }], structuredContent: { ...batch } };
-  }));
-
-  registerAppTool(server, "mobile_cpu_close", {
-    title: "Stop native CPU and memory monitor", description: "Stop the external CPU collector or detach the iOS CPU debugger, leaving the app running.",
-    inputSchema: { sessionId }, annotations: write, _meta: metadata,
-  }, safe(async ({ sessionId: id }: { sessionId: string }) => {
-    await cpu.closeSession(id);
-    return { content: [{ type: "text", text: "CPU and memory monitor stopped." }], structuredContent: {} };
-  }));
+  registerSessionTools(server, {
+    scheme: "cpu", operation: "cpu.tool", writes: true, sessions: cpu,
+    resource: { name: "cpu-batch", description: "Read live process and thread CPU plus main-process memory samples from an authorized Mobile Dev performance session." },
+    start: {
+      name: "mobile_cpu_session", title: "Monitor native app CPU and memory", description: "Monitor process and per-thread CPU plus main-process memory once per second without an app SDK, app launch or restart. Returns sessionId and cpuUri in the tool result. Poll mobile_read_cpu with sessionId and the previous cursor as after; close with mobile_cpu_close when finished. Android uses a small external native /proc collector over ADB, without root or debugger attachment; the device must permit ADB shell to read app counters. iOS uses debugserver and requires a development-signed build with get-task-allow and no existing Xcode/LLDB attachment. Physical iOS 17.4+ also requires pairing, Developer Mode and a mounted developer disk image; pass target.kind: physical and the hardware UDID from mobile_list_ios_devices. Attach and detach briefly pause the app. 100% is one occupied device CPU core. Memory is RSS on Android and physical footprint on iOS, reported in bytes. Idle sessions expire after five minutes.",
+      inputSchema: { target: cpuTargetSchema }, validate: ({ target }) => validateDevice(target), open: ({ target }) => cpu.open(target),
+      describe: ({ target }, sessionId, cpuUri) => jsonResult({ target, sessionId, cpuUri }),
+    },
+    read: { name: "mobile_read_cpu", title: "Read native CPU and memory usage", description: "Read buffered CPU and memory samples and connection status using sessionId returned by mobile_cpu_session. Pass the previous result's cursor as after to read only new samples. Each sample includes process CPU, per-thread CPU and memoryBytes for the main process. The batch memoryMetric is rss on Android or physical-footprint on iOS; 100% CPU is one core. Startup can return connecting or an initial null CPU baseline before a full sampling interval has elapsed. Memory is an absolute byte reading available from the first sample." },
+    close: { name: "mobile_cpu_close", title: "Stop native CPU and memory monitor", description: "Stop the external CPU collector or detach the iOS CPU debugger, leaving the app running.", text: "CPU and memory monitor stopped." },
+  });
   return validateDevice;
 }

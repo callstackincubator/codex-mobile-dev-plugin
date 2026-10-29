@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { iosVideoBatchSchema } from "@mobile-dev/shared/ios-video.ts";
+import type { ExpectedOutcome } from "@mobile-dev/shared/error-reporting.ts";
 
 const id = z.number().int().positive();
 export const mirrorRequestSchema = z.discriminatedUnion("method", [
@@ -14,7 +15,12 @@ export const mirrorRequestSchema = z.discriminatedUnion("method", [
 ]);
 export type MirrorRequest = z.infer<typeof mirrorRequestSchema>;
 export type MirrorCommand = MirrorRequest extends infer Request ? Request extends MirrorRequest ? Omit<Request, "id"> : never : never;
-export const mirrorReplySchema = z.object({ id, result: z.union([z.null(), iosVideoBatchSchema]).optional(), error: z.string().max(4096).optional(), inputBusy: z.boolean().optional() });
+const outcomes = ["session_expired", "session_closed", "cancelled", "device_unavailable", "app_unavailable", "resource_limit", "unsupported_platform", "invalid_input"] as const satisfies readonly ExpectedOutcome[];
+export const mirrorReplySchema = z.object({
+  id, result: z.union([z.null(), iosVideoBatchSchema]).optional(), error: z.string().max(4096).optional(), inputBusy: z.boolean().optional(),
+  // Older services omit the outcome; their failures arrive unclassified.
+  outcome: z.enum(outcomes).optional(),
+});
 export type MirrorReply = z.infer<typeof mirrorReplySchema>;
 export const mirrorSocketPath = `/tmp/mobile-dev-ios-mirror-${process.getuid?.() ?? "local"}-v1.sock`;
 export const maximumReplyBytes = 16 * 1024 * 1024;

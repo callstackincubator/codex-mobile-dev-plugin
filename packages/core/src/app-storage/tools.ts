@@ -10,6 +10,8 @@ import { systemCommands } from "../app-control/commands.ts";
 import type { Commands } from "../app-control/commands.ts";
 import type { AppDriver } from "../app-control/driver.ts";
 import { createDrivers } from "../app-control/tools.ts";
+import type { ServerRequestContext } from "../request-session.ts";
+import { guarded, jsonResult, READ_ONLY as readOnly, WRITES } from "../tool-results.ts";
 import type { DriverFactory } from "../app-control/tools.ts";
 import { AndroidContainer, SimulatorContainer } from "./container.ts";
 import type { AppContainer } from "./container.ts";
@@ -38,24 +40,20 @@ function safeStorageError(error: unknown): string {
     default: return "App storage operation failed. Check the selected app and device, then retry.";
   }
 }
-const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 
 export function registerAppStorageTools(server: McpServer, commands: Commands = systemCommands, driverFor: DriverFactory = createDrivers(commands), containerFor: ContainerFactory = createContainers(commands)) {
   // Every operation opens the app's container on a validated device and reports one timing.
-  async function run(operation: AppStorageOperation, { platform, deviceId, bundleId }: Target & { bundleId: string }, work: (container: AppContainer, driver: AppDriver) => Promise<Record<string, unknown>>) {
-    const startedAt = performance.now();
-    try {
+  function run(operation: AppStorageOperation, { platform, deviceId, bundleId }: Target & { bundleId: string }, context: ServerRequestContext, work: (container: AppContainer, driver: AppDriver) => Promise<Record<string, unknown>>) {
+    return guarded({
+      operation: `app_storage.${operation}`, message: safeStorageError,
+      timed: (outcome, duration) => recordAppStorageOperation(operation, platform, outcome, duration),
+      // Paths, keys, and values can be personal, so Sentry receives only the operation.
+      capture: (error, _input, { signal }) => captureServerError(expectedOutcome(error) === undefined ? new Error(`App storage ${operation} failed.`) : error, `app_storage.${operation}`, { signal }),
+    }, async () => {
       // Resolving the driver validates the device ID before any command runs.
       const driver = driverFor({ platform, deviceId });
-      const result = await work(await containerFor({ platform, deviceId }, bundleId), driver);
-      recordAppStorageOperation(operation, platform, "success", performance.now() - startedAt);
-      return { content: [{ type: "text" as const, text: JSON.stringify(result) }], structuredContent: result };
-    } catch (error) {
-      recordAppStorageOperation(operation, platform, "failed", performance.now() - startedAt);
-      // Paths, keys, and values can be personal, so Sentry receives only the operation.
-      captureServerError(expectedOutcome(error) === undefined ? new Error(`App storage ${operation} failed.`) : error, `app_storage.${operation}`);
-      return { isError: true, content: [{ type: "text" as const, text: safeStorageError(error) }] };
-    }
+      return jsonResult(await work(await containerFor({ platform, deviceId }, bundleId), driver));
+    })(undefined, context);
   }
 
   registerAppTool(server, "mobile_app_storage", {
@@ -70,7 +68,7 @@ export function registerAppStorageTools(server: McpServer, commands: Commands = 
     },
     annotations: readOnly,
     _meta: { ui: { visibility: ["app", "model"] } },
-  }, input => run("read", input, async container => {
+  }, (input, context) => run("read", input, context, async container => {
     if (input.keys !== undefined && input.store === undefined) throw new ExpectedOperationError("invalid_input", "Key selection requires a store.");
     return readStorage(container, { bundleId: input.bundleId, entries: input.entries ?? storageLimits.entries, valueLength: input.valueLength ?? storageLimits.valueLength, run: commands.run, store: input.store, keys: input.keys });
   }));
@@ -88,7 +86,7 @@ export function registerAppStorageTools(server: McpServer, commands: Commands = 
     },
     annotations: readOnly,
     _meta: { ui: { visibility: ["app", "model"] } },
-  }, input => run("table", input, container => readTable(container, input.store, input.table, {
+  }, (input, context) => run("table", input, context, container => readTable(container, input.store, input.table, {
     offset: input.offset ?? 0, limit: input.limit ?? storageLimits.tableRows, valueLength: storageLimits.tableValueLength, run: commands.run, columns: input.columns,
   })));
 
@@ -98,7 +96,7 @@ export function registerAppStorageTools(server: McpServer, commands: Commands = 
     inputSchema: { ...appTargetShape, bundleId, path: z.string().min(1).max(4096).describe("A file path from mobile_app_storage's files list.") },
     annotations: readOnly,
     _meta: { ui: { visibility: ["app", "model"] } },
-  }, input => run("file", input, container => previewFile(container, input.path, {
+  }, (input, context) => run("file", input, context, container => previewFile(container, input.path, {
     maxBytes: storageLimits.previewBytes, maxLength: storageLimits.previewLength, run: commands.run,
   })));
 
@@ -106,9 +104,9 @@ export function registerAppStorageTools(server: McpServer, commands: Commands = 
     title: "Clear app storage",
     description: "Stop the app, then delete one store listed by mobile_app_storage, or all of the app's saved data when store is omitted. Deleted data cannot be recovered. The app stays installed and is not relaunched; launch it again to test a fresh state.",
     inputSchema: { ...appTargetShape, bundleId, store: storeIdSchema.optional().describe("Store ID to clear. Omit to reset all app data.") },
-    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    annotations: { ...WRITES, destructiveHint: true },
     _meta: { ui: { visibility: ["app", "model"] } },
-  }, input => run(input.store ? "clear" : "reset", input, async (container, driver) => {
+  }, (input, context) => run(input.store ? "clear" : "reset", input, context, async (container, driver) => {
     // A running app keeps values in memory and would write them back.
     await driver.stop(input.bundleId);
     if (input.store === undefined) {

@@ -1,14 +1,16 @@
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
-import { randomBytes } from "node:crypto";
 import { WebSocket } from "ws";
 import { videoPacket } from "@mobile-dev/shared/android-video.ts";
 import { inputSchema } from "@mobile-dev/shared/protocol.ts";
 import type { ServeEmu } from "./serve-emu.ts";
+import { SessionRegistry } from "./session-registry.ts";
+import { Waiters } from "./revision-buffer.ts";
+import { awaitOpen, closeGracefully } from "./ws-session.ts";
 
 type Packet = { sequence: number; data: string };
 type Session = {
   deviceId: string; url: URL; socket: WebSocket; packets: Packet[]; bytes: number; sequence: number;
-  generation: number; waitingForKey: boolean; lastReset?: number; expires: number; error?: string; waiters: Set<() => void>;
+  generation: number; waitingForKey: boolean; lastReset?: number; error?: string; waiters: Waiters; closed: boolean;
 };
 
 export function androidInput(value: unknown): Record<string, unknown> {
@@ -39,33 +41,40 @@ export function androidInput(value: unknown): Record<string, unknown> {
 }
 
 export class AndroidStreams {
-  private readonly sessions = new Map<string, Session>();
+  private readonly sessions = new SessionRegistry<Session>({
+    limit: 8, name: "Android stream",
+    limitMessage: "Too many Android streams. Close a panel and retry.",
+    expiredMessage: "The Android stream expired or closed.",
+    deviceId: session => session.deviceId,
+    stop: session => { session.closed = true; session.waiters.wake(); closeGracefully(session.socket); },
+  });
   private readonly backend: ServeEmu;
-  private readonly expiry: NodeJS.Timeout;
-  private disposed = false;
 
-  constructor(backend: ServeEmu) {
-    this.backend = backend;
-    this.expiry = setInterval(() => {
-      for (const [id, session] of this.sessions) if (session.expires < Date.now()) this.closeSession(id);
-    }, 10000);
-    this.expiry.unref();
-  }
+  constructor(backend: ServeEmu) { this.backend = backend; }
 
-  private notify(session: Session) { for (const done of session.waiters) done(); session.waiters.clear(); }
+  private notify(session: Session) { session.waiters.wake(); }
 
   async open(deviceId: string) {
-    if (this.disposed) throw new ExpectedOperationError("session_closed", "The plugin server has closed.");
-    if (this.sessions.size >= 8) throw new ExpectedOperationError("resource_limit", "Too many Android streams. Close a panel and retry.");
-    const backend = await this.backend.start(deviceId);
-    if (this.disposed) throw new ExpectedOperationError("session_closed", "The plugin server has closed.");
-    const url = new URL("/ws?frame-meta=1", backend.url); url.protocol = "ws:";
-    const socket = new WebSocket(url, { handshakeTimeout: 5000, maxPayload: 4 * 1024 * 1024, perMessageDeflate: false });
-    const id = randomBytes(32).toString("hex");
-    const session: Session = { deviceId, url: backend.url, socket, packets: [], bytes: 0, sequence: 0, generation: 0, waitingForKey: false, expires: Date.now() + 300000, waiters: new Set() };
-    this.sessions.set(id, session);
+    let session!: Session;
+    const id = await this.sessions.open(async () => {
+      const backend = await this.backend.start(deviceId);
+      const url = new URL("/ws?frame-meta=1", backend.url); url.protocol = "ws:";
+      const socket = new WebSocket(url, { handshakeTimeout: 5000, maxPayload: 4 * 1024 * 1024, perMessageDeflate: false });
+      session = { deviceId, url: backend.url, socket, packets: [], bytes: 0, sequence: 0, generation: 0, waitingForKey: false, waiters: new Waiters(), closed: false };
+      this.listen(session);
+      return session;
+    });
+    try {
+      await awaitOpen(session.socket, "The Android stream closed before connecting.");
+      this.requestKey(session);
+      return id;
+    } catch (error) { void this.closeSession(id); throw error; }
+  }
+
+  private listen(session: Session) {
+    const socket = session.socket;
     socket.on("message", (data, binary) => {
-      if (!this.sessions.has(id)) return;
+      if (session.closed) return;
       if (binary) {
         const packet = Buffer.from(data as Buffer);
         if (session.waitingForKey) {
@@ -90,17 +99,6 @@ export class AndroidStreams {
     });
     socket.on("error", error => { session.error = error.message; this.notify(session); });
     socket.on("close", () => { session.error ??= "The Android stream disconnected."; this.notify(session); });
-    try {
-      await new Promise<void>((resolve, reject) => {
-        const cleanup = () => { socket.off("open", opened); socket.off("error", failed); socket.off("close", closed); };
-        const opened = () => { cleanup(); resolve(); };
-        const failed = (error: Error) => { cleanup(); reject(error); };
-        const closed = () => failed(new Error("The Android stream closed before connecting."));
-        socket.once("open", opened); socket.once("error", failed); socket.once("close", closed);
-      });
-      this.requestKey(session);
-      return id;
-    } catch (error) { this.closeSession(id); throw error; }
   }
 
   private clearVideo(session: Session) {
@@ -123,29 +121,21 @@ export class AndroidStreams {
   async reset(id: string) {
     const session = this.session(id);
     await this.backend.assertDevice(session.deviceId, session.url);
-    if (this.sessions.has(id) === false) throw new ExpectedOperationError("session_closed", "The Android stream closed.");
+    if (!this.sessions.current(id, session)) throw new ExpectedOperationError("session_closed", "The Android stream closed.");
     if (session.socket.readyState !== WebSocket.OPEN) throw new ExpectedOperationError("device_unavailable", "The Android stream disconnected.");
     if (session.error) throw new Error(session.error);
     this.resetVideo(session);
   }
 
-  private session(id: string) {
-    const session = this.sessions.get(id);
-    if (!session || session.expires < Date.now()) { this.closeSession(id); throw new ExpectedOperationError("session_expired", "The Android stream expired or closed."); }
-    session.expires = Date.now() + 300000;
-    return session;
-  }
+  private session(id: string) { return this.sessions.get(id); }
 
-  async batch(id: string, after: number) {
+  async batch(id: string, after: number, signal?: AbortSignal) {
     const session = this.session(id);
     await this.backend.assertDevice(session.deviceId, session.url);
-    if (!session.error && !session.packets.some(packet => packet.sequence > after)) {
-      await new Promise<void>(resolve => {
-        const done = () => { clearTimeout(timer); session.waiters.delete(done); resolve(); };
-        const timer = setTimeout(done, 1000); session.waiters.add(done);
-      });
-    }
-    if (!this.sessions.has(id)) throw new ExpectedOperationError("session_closed", "The Android stream closed.");
+    signal?.throwIfAborted();
+    if (!session.error && !session.packets.some(packet => packet.sequence > after)) await session.waiters.wait(1000, signal);
+    signal?.throwIfAborted();
+    if (!this.sessions.current(id, session)) throw new ExpectedOperationError("session_closed", "The Android stream closed.");
     if (session.error) throw new Error(session.error);
     if (session.waitingForKey) this.requestKey(session);
     const packets = session.packets.filter(packet => packet.sequence > after);
@@ -156,7 +146,7 @@ export class AndroidStreams {
   async input(id: string, messages: unknown[]) {
     const session = this.session(id);
     await this.backend.assertDevice(session.deviceId, session.url);
-    if (!this.sessions.has(id)) throw new ExpectedOperationError("session_closed", "The Android stream closed.");
+    if (!this.sessions.current(id, session)) throw new ExpectedOperationError("session_closed", "The Android stream closed.");
     if (session.error || session.socket.readyState !== WebSocket.OPEN) throw new Error(session.error ?? "The Android stream disconnected.");
     // Validate the full batch before sending any input.
     const validated = messages.map(androidInput);
@@ -164,14 +154,7 @@ export class AndroidStreams {
     return validated.length;
   }
 
-  closeDevice(deviceId: string) { for (const [id, session] of this.sessions) if (session.deviceId === deviceId) this.closeSession(id); }
-  closeSession(id: string) {
-    const session = this.sessions.get(id); if (!session) return;
-    this.sessions.delete(id); this.notify(session);
-    if (session.socket.readyState === WebSocket.CONNECTING) session.socket.terminate();
-    else session.socket.close();
-    const timer = setTimeout(() => session.socket.terminate(), 1000); timer.unref();
-    session.socket.once("close", () => clearTimeout(timer));
-  }
-  close() { this.disposed = true; clearInterval(this.expiry); for (const id of this.sessions.keys()) this.closeSession(id); }
+  closeDevice(deviceId: string) { return this.sessions.closeDevice(deviceId); }
+  closeSession(id: string) { return this.sessions.closeSession(id); }
+  close() { return this.sessions.close(); }
 }

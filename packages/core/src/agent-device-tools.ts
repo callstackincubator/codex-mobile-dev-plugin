@@ -6,8 +6,9 @@ import type { CallToolRequest, CallToolResult, ServerNotification, ServerRequest
 import { isObject } from "./agent-device-catalog.ts";
 import { AgentDeviceRuntime } from "./agent-device-runtime.ts";
 import type { AgentDeviceBackend } from "./agent-device-runtime.ts";
-import type { ServerFeature } from "./server-feature.ts";
+import type { ServerFeature, ServerServices } from "./server-feature.ts";
 import { captureServerError } from "./telemetry.ts";
+import { isPng, MAX_SCREENSHOT_BYTES } from "./png.ts";
 
 type Schemas = Map<string, z.ZodType>;
 type CallExtra = Pick<RequestHandlerExtra<ServerRequest, ServerNotification>, "signal" | "sendNotification" | "_meta">;
@@ -22,7 +23,7 @@ export function readAgentDeviceCatalog(url = new URL("./agent-device/tools.json"
  * for hosts that load one server per plugin. The runtime starts on the first command.
  */
 export function agentDeviceTools(catalog: Tool[], runtime: Pick<AgentDeviceRuntime, "connect" | "close"> = new AgentDeviceRuntime()): ServerFeature {
-  return server => {
+  return (server, services) => {
     const schemas: Schemas = new Map();
     for (const tool of catalog) {
       // The catalog's input schemas are JSON Schema objects, which zod reads as such.
@@ -33,6 +34,7 @@ export function agentDeviceTools(catalog: Tool[], runtime: Pick<AgentDeviceRunti
         const args = input as Record<string, unknown>;
         const issue = stepIssue(tool.name, args, schemas);
         if (issue !== undefined) return invalid(issue);
+        if (tool.name === "shutdown") await closeDeviceSessions(args, services);
         let backend: AgentDeviceBackend;
         try { backend = await runtime.connect(); }
         catch (error) {
@@ -45,6 +47,17 @@ export function agentDeviceTools(catalog: Tool[], runtime: Pick<AgentDeviceRunti
     }
     return () => runtime.close();
   };
+}
+
+/** Closes the plugin's sessions on a device agent-device shuts down, when the command names it. */
+async function closeDeviceSessions(args: Record<string, unknown>, services: ServerServices) {
+  const deviceId = args.udid ?? args.serial;
+  if (typeof deviceId !== "string") return;
+  try { await services.closeDevice(deviceId); }
+  catch (error) {
+    // The shutdown goes ahead; a collector that failed to stop ends with its device.
+    captureServerError(error, "agent_device.session_cleanup", { reportAs: new Error("Device sessions failed to close before shutdown.") });
+  }
 }
 
 function invalid(message: string): CallToolResult {
@@ -82,8 +95,6 @@ async function forward(backend: AgentDeviceBackend, params: CallToolRequest["par
   }
 }
 
-const MAX_SCREENSHOT_BYTES = 16 * 1024 * 1024;
-const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const JPEG_SIGNATURE = Buffer.from([0xff, 0xd8, 0xff]);
 
 /**
@@ -100,7 +111,7 @@ async function withScreenshot(result: CallToolResult): Promise<CallToolResult> {
     captureServerError(new Error("Agent Device screenshot could not be read."), "agent_device.screenshot");
     return result;
   }
-  const mimeType = bytes.subarray(0, 8).equals(PNG_SIGNATURE) ? "image/png" : bytes.subarray(0, 3).equals(JPEG_SIGNATURE) ? "image/jpeg" : undefined;
+  const mimeType = isPng(bytes) ? "image/png" : bytes.subarray(0, 3).equals(JPEG_SIGNATURE) ? "image/jpeg" : undefined;
   if (mimeType === undefined || bytes.length > MAX_SCREENSHOT_BYTES) return result;
   return { ...result, content: [...result.content, { type: "image", mimeType, data: bytes.toString("base64") }] };
 }

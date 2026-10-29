@@ -7,6 +7,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ServeEmu, androidDisplaySize } from "../src/serve-emu.ts";
 import { AndroidStreams, androidInput } from "../src/android-streams.ts";
+import { DeviceSessions } from "../src/device-sessions.ts";
 import { videoPacket } from "../../ui/src/android-video.ts";
 import { Baguette } from "../src/baguette.ts";
 import { createTestPlugin, fakeBaguette, fakeSimulatorInput, PNG } from "../../test-support/fixtures.ts";
@@ -193,7 +194,7 @@ test("a missing serve-emu runtime tells the user to reinstall and stops the pane
   }
   const server = new McpServer({ name: "android-runtime-test", version: "1" });
   const backend = new Unbundled();
-  registerAndroidTools(server, backend, "ui://mobile-dev/test.html", async () => {}, async () => {});
+  registerAndroidTools(server, backend, "ui://mobile-dev/test.html", async () => {}, new DeviceSessions());
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "android-runtime-test", version: "1" });
   t.after(async () => { await client.close(); await server.close(); backend.dispose(); });
@@ -214,6 +215,20 @@ test("closing an Android stream releases a waiting read and rejects later input"
   await assert.rejects(pending, /stream closed/);
   await assert.rejects(streams.input(id, [{ type: "button", button: "home" }]), /expired or closed/);
   await waitFor(() => fake.sockets.clients.size === 0);
+});
+
+test("a cancelled Android video read ends at once and keeps its stream session", async t => {
+  const fake = await fakeAndroid(); const streams = new AndroidStreams(fake.backend);
+  t.after(async () => { streams.close(); await fake.close(); });
+  const id = await streams.open(ID); const first = await streams.batch(id, 0);
+  const abort = new AbortController();
+  const started = performance.now();
+  const pending = streams.batch(id, first.sequence, abort.signal);
+  await new Promise(resolve => setTimeout(resolve, 25));
+  abort.abort();
+  await assert.rejects(pending, { name: "AbortError" });
+  assert.ok(performance.now() - started < 900);
+  assert.equal((await streams.batch(id, first.sequence)).generation, first.generation);
 });
 
 test("a dropped Android stream can reopen without booting or replaying input", async t => {

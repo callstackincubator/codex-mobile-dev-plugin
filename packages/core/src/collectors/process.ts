@@ -1,6 +1,6 @@
 import { spawn as spawnProcess } from "node:child_process";
 import type { ChildProcess, SpawnOptions } from "node:child_process";
-import { errorMessage } from "@mobile-dev/shared/protocol.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 import { NativeTelemetryRelay } from "../native-telemetry.ts";
 import { LineSplitter } from "./lines.ts";
 

@@ -17,6 +17,8 @@ import { SimulatorUnavailableError } from "../src/simulator-unavailable.ts";
 import { parseBaseUrl } from "../../shared/src/protocol.ts";
 import { createTestPlugin, fakeBaguette, fakeSimulatorInput, UDID, PNG } from "../../test-support/fixtures.ts";
 import { getTelemetryIdentity } from "../src/telemetry-identity.ts";
+import { LogSessions } from "../src/log-sessions.ts";
+import type { ServerServices } from "../src/server-feature.ts";
 import manifest from "../../../package.json" with { type: "json" };
 
 test("both opening tools accept optional device intent and preserve it in their results", async t => {
@@ -553,4 +555,23 @@ test("without the panel, the server keeps its cards and finds simulators without
   assert.equal(logs.isError, true);
   assert.match((logs.content as { text: string }[])[0].text, /Boot it first/);
   assert.deepEqual(reads, [UDID]);
+});
+
+test("hosts without the panel close a device's sessions through their features, and failed feature cleanups do not stop shutdown", async t => {
+  let stops = 0;
+  const logs = new LogSessions({ native: () => async () => { stops++; }, metro: () => async () => {} });
+  let services!: ServerServices;
+  const plugin = await createTestPlugin("<html></html>", { logs, features: [
+    (_server, provided) => { services = provided; return () => { throw new Error("Cleanup failed"); }; },
+    () => async () => { throw new Error("Async cleanup failed"); },
+  ] });
+  t.after(() => plugin.close());
+  const kept = logs.open({ native: { platform: "android", deviceId: "emulator-5556" } });
+  const closed = logs.open({ native: { platform: "android", deviceId: "emulator-5554" } });
+  await services.closeDevice("emulator-5554");
+  assert.equal(stops, 1);
+  await assert.rejects(logs.read(closed, 0, 0), /expired or closed/);
+  assert.equal((await logs.read(kept, 0, 0)).entries.length, 0);
+  await plugin.close();
+  assert.equal(stops, 2);
 });

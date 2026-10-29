@@ -269,7 +269,7 @@ export class ServeEmu {
     const startedAt = performance.now();
     const context: AndroidStartupContext = {
       deviceKind: device.kind === "physical" ? "physical" : "emulator",
-      transport: device.kind === "physical" ? device.transportType ?? "unknown" : "emulator",
+      transport: device.kind !== "physical" ? "emulator" : device.transportType === "wired" || device.transportType === "localNetwork" ? device.transportType : "unknown",
       stateBefore: "online", activeBackends: 0, stoppingBackends: this.stopping.size,
       startingBackends: this.starting.size,
     };
