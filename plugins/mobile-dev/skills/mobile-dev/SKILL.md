@@ -22,11 +22,10 @@ device tools.
 
 1. Open the panel beside the chat with `mobile_open_simulator` by default. For an existing app, open it when starting device work; for a new app, open it before the first device launch. Reuse an open Mobile Dev panel. Use `mobile_open_workspace` when the user asks for fullscreen. Use device-list tools without opening the panel when the user requests a tool-only workflow or the host cannot show panels. A request limited to planning, docs, code review, or compilation does not need a panel or a device launch.
    Both opening tools accept optional `platform` (`ios` or `android`), `kind` (`simulator`, `emulator`, or `physical`), and `deviceId`. Pass only intent established by the user's request or app project: for example, `{ platform: "android", kind: "emulator" }` for Android emulator work, or `{ platform: "ios", kind: "physical" }` for an explicitly requested physical iPhone. Omit undecided fields for open-ended work. Pass `deviceId` only after discovering the exact device; discovery can precede opening when needed to identify a named target. A missing matching device stays unselected instead of connecting to another target. Opening selects a stopped simulator or AVD without booting it. Follow later manual selections.
-2. Use the task and app project to choose the platform. Follow the user's device choice; otherwise reuse a compatible device shared by the panel, then a suitable running simulator or emulator. If no suitable device runs, choose a compatible installed simulator or AVD. Pick among equivalent devices yourself for routine app development. When the intended target is ambiguous (for example, the app is open on several devices for a performance run), use `mobile_show_devices` with a `selectionMode` to ask the user. Read device IDs from tool results or panel context; never invent them.
+2. Use the task and app project to choose the platform. Follow the user's device choice; otherwise reuse a compatible device shared by the panel, then a suitable running simulator or emulator. If no suitable device runs, choose a compatible installed simulator or AVD. Pick among equivalent devices yourself for routine app development. When the intended target is ambiguous (for example, the app is open on several devices for a performance run), ask the user with `mobile_choose_devices`, or in chat when the host has no form. Read device IDs from tool results or panel context; never invent them.
 3. Boot a chosen stopped iOS simulator with `mobile_boot_simulator`, or an Android AVD with `mobile_boot_android_emulator`. A mobile app development request permits choosing and booting a suitable installed simulator without a separate device-choice question. Reuse running devices without rebooting them. Follow the Android section below for device discovery and serials. Opening the panel alone does not boot a device.
 4. Build the app with the app project's own tools and the chosen device ID; the project's run command may also install and launch it. To restart an already installed app, use `mobile_launch_app` instead of rebuilding. Follow the project's framework skills where available. Before starting an app dev server, check for an existing server from that project and reuse it. Keep the same device for the panel, build target, and agent control; read the panel's shared IDs before acting and follow later user selections. Leave the panel and app available while continuing app work. Do not launch the app when the user asks only for compilation.
-5. Agent Device is temporarily disabled in this plugin while iterating on inline performance charts. Use the available Mobile Dev tools; do not search for Agent Device tools or start its CLI separately.
-6. For direct Baguette input, read `mobile_describe_ui` or `mobile_screenshot` first. Gesture coordinates use device points. Match `width` and `height` to the selected device's screen, never to screenshot pixels or the panel's CSS size. Use `mobile_send_input`, then read the screen to confirm what changed. An accepted input does not prove the app handled it.
+5. Control the app with the `device_*` tools, the bundled agent-device runtime's commands, and follow [the agent-device skill](../agent-device/SKILL.md) to drive it. In short: open the panel's device with `device_open` and a named session, act on refs from the latest snapshot with `settle: true`, verify the requested result with a named expectation, and close the session without `shutdown` so the device keeps running in the panel. Boot, launch, and app settings stay with the `mobile_*` tools above and below.
 
 ### App control
 
@@ -45,34 +44,32 @@ The panel's settings button opens the same controls under its App tab. Its Devic
 
 ### Showing and choosing devices
 
-When the user asks to list or see their devices, call `mobile_show_devices` with no
-arguments. It shows an interactive card; reply with at most a one-line summary and
-do not repeat the list. Keep the list tools for your own lookups.
+When the user asks to see their devices, open or reuse the panel: its device menu
+lists simulators, emulators and physical devices, and the user picks there. Keep the
+list tools for your own lookups and answer a question about devices briefly.
 
-When the user's task leaves the target unclear, call `mobile_show_devices` with a
-task-specific `message` and `selectionMode`. Omit `devices` to offer every selectable
-device, or discover suitable candidates with `mobile_list_simulators`,
-`mobile_list_ios_devices`, or `mobile_list_android_devices` and pass them. Pass
-optional `context` for operation details, and `devices` containing each candidate's `platform`, `kind`
-(`simulator`, `emulator`, or `physical`) and `deviceId` from its discovered `udid`.
-Physical iOS uses the hardware UDID, never the CoreDevice ID. Set `appName` only
-after verifying that app on the candidate; for profiling, use
+When the user's task leaves the target unclear, call `mobile_choose_devices` with a
+task-specific `message` and `selectionMode`. It is listed only where the host shows a
+native request form; otherwise ask in chat. Omit `devices` to offer every selectable
+device, running ones first, or discover suitable candidates with
+`mobile_list_simulators`, `mobile_list_ios_devices`, or `mobile_list_android_devices`
+and pass each candidate's `platform`, `kind` (`simulator`, `emulator`, or `physical`)
+and `deviceId` from its discovered `udid`. Pass optional `context` for operation
+details. Physical iOS uses the hardware UDID, never the CoreDevice ID. Set `appName`
+only after verifying that app on the candidate; for profiling, use
 `mobile_performance_sources` and offer only suitable running targets.
 
 Use `selectionMode: "single"` for one device and `"multiple"` when the task supports
-several targets or the user wants a comparison. With a native request form the tool
-waits for the user's answer and returns `action` and verified `devices`. Otherwise
-it shows the choice in the card and returns immediately; wait for the user's chat
-reply naming the devices, and do not start the pending task before it. After
-`action: "accept"`, keep each returned device ID with its platform and kind while
-performing the task. Selection does not boot a device, open a panel, launch an app,
-or start a recording. For Android CPU targets omit `kind`; for physical iOS CPU
-targets keep `kind: "physical"`. A stopped AVD must be booted first and its returned
-running serial used afterward. On `cancel` or `decline`, stop the pending task.
-An unsupported host or unavailable device returns an error without selecting a
-target; do not guess a device or start the pending task.
+several targets or the user wants a comparison. The tool waits for the user's answer
+and returns `action` and verified `devices`. After `action: "accept"`, keep each
+returned device ID with its platform and kind while performing the task. Selection
+does not boot a device, open a panel, launch an app, or start a recording. For
+Android CPU targets omit `kind`; for physical iOS CPU targets keep `kind: "physical"`.
+A stopped AVD must be booted first and its returned running serial used afterward.
+On `cancel` or `decline`, stop the pending task. An unavailable device returns an
+error without selecting a target; do not guess a device or start the pending task.
 
-The panel shows iOS and Android side by side, each with its own controls. The iOS and Android toggles can show either, both, or neither simulator. The chat receives both visible device IDs. iOS requests a 60 fps capture target; actual delivered and painted rates depend on native capture and the host bridge. iOS reads overlap JPEG decoding and keep only the newest pending frame. Frames travel through MCP resource reads, and panel input uses app-only tools. Focus the simulator screen to type printable US-ASCII text or press Command-V to paste up to 4,096 printable US-ASCII characters. Paste rejects line breaks and unsupported characters without sending partial text. The toolbar has a device dropdown, Home, App Switcher, and Screenshot. Model tools also return screenshots and the accessibility tree. A dropped stream reconnects automatically and keeps the last frame while it waits. Reconnect can restart the bundled backend, but it never boots a stopped device, or replays old gestures. A confirmed Device Hub input block triggers automatic repair on reconnect, limited to once per device per minute. Repair closes running apps; reopen the app afterward. Closing the panel cancels retries and closes its stream. When the MCP process ends, the plugin stops its bundled Baguette process.
+The panel shows iOS and Android side by side, each with its own controls. The iOS and Android toggles can show either, both, or neither simulator. The chat receives both visible device IDs. iOS requests a 60 fps capture target; actual delivered and painted rates depend on native capture and the host bridge. iOS reads overlap JPEG decoding and keep only the newest pending frame. Frames travel through MCP resource reads, and panel input uses app-only tools. Focus the simulator screen to type printable US-ASCII text or press Command-V to paste up to 4,096 printable US-ASCII characters. Paste rejects line breaks and unsupported characters without sending partial text. The toolbar has a device dropdown, Home, App Switcher, and Screenshot. Read the screen yourself with `device_snapshot` or `device_screenshot`. A dropped stream reconnects automatically and keeps the last frame while it waits. Reconnect can restart the bundled backend, but it never boots a stopped device, or replays old gestures. A confirmed Device Hub input block triggers automatic repair on reconnect, limited to once per device per minute. Repair closes running apps; reopen the app afterward. Closing the panel cancels retries and closes its stream. When the MCP process ends, the plugin stops its bundled Baguette process.
 
 For physical iPhone or iPad discovery, call `mobile_list_ios_devices`. It uses Xcode 27 or later's `devicectl` and returns the hardware UDID, CoreDevice ID, name, model, iOS version, transport, connection state, and pairing state. USB transport is `wired`; Wi-Fi is `localNetwork`. Remembered disconnected devices retain their state. The iOS picker shows only connected physical devices under Connected devices, above Simulators, and refreshes every three seconds while visible. Selecting a physical device opens an interactive HEVC screen stream with pointer taps and drags through the bundled native Node-API addon. Mirroring uses the existing USB or Wi-Fi pairing and requires Developer Mode and host WebCodecs HEVC decoding. Screenshot captures the displayed mirrored frame for chat and the macOS clipboard through the app-only `mobile_ios_mirror_capture_screenshot` tool. Select annotates screen regions in frame pixels without native accessibility component names. Both require a connected device and a ready video frame. Physical iOS keyboard input, hardware buttons, and agent-device control are not implemented yet. Pointer gestures use the panel's app-only `mobile_ios_mirror_input` tool and require its current stream session and video generation. CPU/memory collection can attach to an already running development app. Do not send physical iOS UDIDs to Baguette simulator tools, including boot, shutdown, repair, and capture. Discovery does not start Baguette or change the phone's state.
 
@@ -110,7 +107,7 @@ Physical Android discovery uses `adb devices -l` and returns `kind: "physical"`,
 
 The panel starts the bundled Node.js fork of serve-emu 0.0.6 and streams H.264 through MCP. Bundled scrcpy 4.0 mirrors and controls physical Android devices without installing a companion app. An installed Android SDK is required. The backend uses the same Node executable as the plugin server. No separate serve-emu install or server command is needed. Closing the panel leaves the Android device running. Video errors and backlog recover from a fresh keyframe on the same stream. AVDs start without a separate window, and an early emulator exit ends the boot wait with its error. Input supports Home, Back, Recents, Lock, pointer gestures, and printable US-ASCII text. The host needs WebCodecs H.264 decoding.
 
-For app control, use the Mobile Dev Android tools with the panel's running serial. Do not pass Android serials as iOS UDIDs. Read `mobile_android_describe_ui` or `mobile_android_screenshot` before direct input through `mobile_android_send_input`. Android gesture coordinates use screen pixels with matching width and height. Native logs follow the selected Android serial and optional package filter.
+For app control, pass `platform: "android"` and the panel's running serial as `serial` to `device_open`, then continue with its session as above. Do not pass Android serials as iOS UDIDs. Native logs follow the selected Android serial and optional package filter.
 
 ### Saved CPU, memory, and FPS recordings
 

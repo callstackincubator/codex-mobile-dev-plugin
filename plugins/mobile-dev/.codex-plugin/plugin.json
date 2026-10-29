@@ -1,6 +1,6 @@
 {
   "name": "mobile-dev",
-  "version": "0.1.169",
+  "version": "0.1.171",
   "description": "Keep a simulator beside the chat while building, running, or debugging iOS and Android apps. Stream devices, read native and Metro logs, analyze CPU and React profiles with TraceSift, render interactive CPU, memory, and FPS recordings, and control apps with Mobile Dev tools.",
   "author": {
     "name": "Callstack",
@@ -22,8 +22,8 @@
             {
               "description": "Launch and interact with the review app",
               "prompt": "Open Mobile Dev beside the chat, launch dev.mobile.testapp on the chosen iOS simulator, increment its counter once, and show a screenshot.",
-              "tools_triggered": "mobile_open_simulator; mobile_list_simulators if needed; mobile_boot_simulator only if stopped; mobile_launch_app; mobile_describe_ui; mobile_send_input; mobile_screenshot",
-              "expected_behavior": "Uses the same discovered device throughout. The Interact screen counter increases by exactly one and the screenshot confirms it. Input coordinates come from a fresh UI read; unrelated devices are unchanged."
+              "tools_triggered": "mobile_open_simulator; mobile_list_simulators if needed; mobile_boot_simulator only if stopped; device_open; device_snapshot; device_press; device_screenshot; device_close",
+              "expected_behavior": "Uses the same discovered device throughout. The Interact screen counter increases by exactly one and the screenshot confirms it. The press targets a ref or selector from a fresh snapshot; unrelated devices are unchanged."
             },
             {
               "description": "Read a bounded batch of native logs",

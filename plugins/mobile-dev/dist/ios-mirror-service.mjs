@@ -1,5 +1,5 @@
 
-!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="0de028b3-b375-5dc1-a7de-109c2198cac6")}catch(e){}}();
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="259b360f-6a53-5bb9-82b9-d791351358fc")}catch(e){}}();
 ;(function(){var g=globalThis.__SENTRY_ORCHESTRION__=globalThis.__SENTRY_ORCHESTRION__||{};g.bundler=g.bundler||new Set();})();import { createRequire as mobileDevBundleRequire } from 'node:module'; const require = mobileDevBundleRequire(import.meta.url);
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -62157,7 +62157,7 @@ var nodeRuntimeMetricsIntegration = defineIntegration((options = {}) => {
 });
 
 // packages/shared/src/version.ts
-var PLUGIN_VERSION = "0.1.169";
+var PLUGIN_VERSION = "0.1.171";
 
 // packages/shared/src/telemetry-identity.ts
 function isAnonymousUserId(value) {
@@ -62221,6 +62221,16 @@ function errorCategory(error63) {
   }
   return "unexpected";
 }
+var episodeReports = /* @__PURE__ */ new WeakMap();
+var capturedFailures = /* @__PURE__ */ new WeakSet();
+function isRepeatedFailure(error63) {
+  if (error63 === null || typeof error63 !== "object") return false;
+  const shouldReport = episodeReports.get(error63);
+  if (shouldReport === void 0) return false;
+  if (capturedFailures.has(error63)) return true;
+  capturedFailures.add(error63);
+  return shouldReport() === false;
+}
 
 // packages/shared/src/telemetry.ts
 var SENTRY_SERVER_DSN = "https://2ee03a9449e1f1b48e3e7c7606b6f562@o4512180958068736.ingest.de.sentry.io/4512181033173072";
@@ -62235,7 +62245,6 @@ function validateTelemetryEnvironment(value) {
 var frequentTools = /* @__PURE__ */ new Set([
   "mobile_stream_input",
   "mobile_android_stream_input",
-  "mobile_android_send_input",
   "mobile_ios_mirror_input",
   "mobile_read_logs",
   "mobile_read_cpu",
@@ -62247,12 +62256,13 @@ var frequentTools = /* @__PURE__ */ new Set([
   "mobile_list_simulators",
   "mobile_list_ios_devices",
   "mobile_list_android_devices",
-  "devices",
-  "apps",
-  "appstate",
-  "capabilities",
-  "session",
-  "events"
+  // agent-device's discovery and state lookups, as the plugin servers serve them.
+  "device_devices",
+  "device_apps",
+  "device_appstate",
+  "device_capabilities",
+  "device_session",
+  "device_events"
 ]);
 function isFrequentTool(name) {
   return frequentTools.has(name);
@@ -62442,6 +62452,46 @@ function getTelemetryIdentity() {
   return identity;
 }
 
+// packages/core/src/install-integrity.ts
+import { statSync } from "node:fs";
+import { fileURLToPath as fileURLToPath4 } from "node:url";
+var serverFile = fileURLToPath4(import.meta.url);
+var loaded = serverFileStats();
+function serverFileStats() {
+  try {
+    return statSync(serverFile);
+  } catch {
+    return void 0;
+  }
+}
+function installIntegrity() {
+  const current = serverFileStats();
+  if (current === void 0) return "removed";
+  if (loaded === void 0 || current.ino === loaded.ino && current.mtimeMs === loaded.mtimeMs) return "intact";
+  return "replaced";
+}
+var labels = { "serve-emu": "Android streaming backend", baguette: "simulator backend" };
+var MissingRuntimeError = class extends Error {
+  runtime;
+  integrity;
+  constructor(runtime) {
+    const integrity = installIntegrity();
+    super(integrity === "intact" ? `This Mobile Dev installation is missing its ${labels[runtime]}. Reinstall Mobile Dev, then restart the app running it.` : `Mobile Dev was updated or removed while it was running and cannot find its ${labels[runtime]}. Restart the app running Mobile Dev to load the installed version.`);
+    this.runtime = runtime;
+    this.integrity = integrity === "intact" ? "incomplete" : integrity;
+  }
+};
+function installIntegrityTags(error63) {
+  if (error63 instanceof MissingRuntimeError === false) return {};
+  return { install_integrity: error63.integrity, bundled_runtime: error63.runtime };
+}
+function tagInstallIntegrity(event) {
+  if (event.type !== void 0) return event;
+  const integrity = installIntegrity();
+  if (integrity !== "intact") event.tags = { install_integrity: integrity, ...event.tags };
+  return event;
+}
+
 // packages/core/src/instrument.ts
 var identity2 = getTelemetryIdentity();
 if (identity2) {
@@ -62476,9 +62526,10 @@ var client = init({
   beforeSendMetric: sampleMetric,
   beforeBreadcrumb: (breadcrumb) => breadcrumb.category === "mobile-dev" ? breadcrumb : null
 });
+client?.addEventProcessor(tagInstallIntegrity);
 var executable = process.argv[1] ?? "";
 var mirrorService = executable.endsWith("ios-mirror-service.mjs") || executable.endsWith("ios-mirror-service.ts");
-var component = mirrorService ? "ios-mirror-service" : executable.endsWith("agent-device-server.mjs") ? "agent-device-wrapper" : "server";
+var component = mirrorService ? "ios-mirror-service" : "server";
 setTag("component", component);
 setAttribute("component", component);
 var host = process.env.MOBILE_DEV_HOST === "mac" ? "mac" : "other";
@@ -62636,6 +62687,9 @@ var IosMirrorHub = class {
               subscriber.dropped += dropped;
               this.dropped += dropped;
               this.invalidate(subscriber);
+              this.releasePointer(device, subscriber).catch((error63) => {
+                if (error63 instanceof Error) this.failed(error63);
+              });
             }
             if (subscriber.waitingKey && frame.key === false) continue;
             if (frame.data.length > 4 * 1024 * 1024) continue;
@@ -62688,7 +62742,7 @@ var IosMirrorHub = class {
       if (device.pointer && device.pointer.owner !== subscriber) throw new IosMirrorInputBusyError();
       const nativeGeneration = device.generation;
       await device.capture.touch(samples, nativeGeneration);
-      if (subscriber.delivered !== generation || device.generation !== nativeGeneration) return;
+      if (device.generation !== nativeGeneration) return;
       const last = samples.at(-1);
       if (last === void 0 || last.phase === 2) device.pointer = void 0;
       else device.pointer = { owner: subscriber, sample: last, generation: device.generation };
@@ -62736,19 +62790,19 @@ var IosMirrorHub = class {
 // packages/core/src/ios-native-capture.ts
 import { createRequire as createRequire3 } from "node:module";
 import { existsSync as existsSync2 } from "node:fs";
-import { fileURLToPath as fileURLToPath4 } from "node:url";
+import { fileURLToPath as fileURLToPath5 } from "node:url";
 var addon;
 async function openNativeIosCapture(udid) {
   if (process.platform !== "darwin" || process.arch !== "arm64") throw new ExpectedOperationError("unsupported_platform", "Physical iOS mirroring requires an Apple Silicon Mac.");
   if (addon === void 0) {
-    const bundled = import.meta.url.endsWith("/ios-mirror-service.mjs");
+    const bundled = import.meta.url.endsWith(".mjs");
     const root = bundled ? "./ios-mirror/" : "../../native/vendor/ios-mirror/";
     const url2 = new URL(`${root}darwin-arm64.node`, import.meta.url);
-    const path = fileURLToPath4(url2);
+    const path = fileURLToPath5(url2);
     if (existsSync2(path) === false) throw new Error("The physical iOS capture addon is missing. Run npm run rebuild:ios-mirror and rebuild the plugin.");
     const require2 = createRequire3(import.meta.url);
-    const loaded = require2(path);
-    addon = loaded;
+    const loaded2 = require2(path);
+    addon = loaded2;
   }
   return addon.openDevice(udid);
 }
@@ -82773,23 +82827,24 @@ function recordIosMirrorSharing(captures, subscribers, dropped) {
 }
 function captureServerError(error63, operation, options) {
   const outcome = options?.signal?.aborted ? "cancelled" : expectedOutcome(error63);
-  const diagnosticTags = deviceAppsDiagnosticTags(error63);
+  const diagnosticTags = { ...deviceAppsDiagnosticTags(error63), ...options?.tags };
   const definitionTags = definitionDiagnosticTags(error63);
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   public_api_exports.count("server.error.outcome", 1, { attributes: { operation, outcome: outcome ?? "unexpected", ...diagnosticTags } });
   if (outcome !== void 0) return;
-  if (options?.report === false) {
+  if (options?.report === false || isRepeatedFailure(error63)) {
     public_api_exports.count("server.error.repeated", 1, { attributes: { operation, ...diagnosticTags } });
     return;
   }
   const androidTags = androidStartupDiagnosticTags(error63);
+  const installTags = installIntegrityTags(error63);
   const command = getDiscoveryCommandDiagnostic(error63);
   const contexts = command ? { device_apps_command: {
     elapsed_ms: command.elapsed_ms,
     deadline_ms: command.deadline_ms,
     exit_status: command.exit_status
   } } : void 0;
-  captureException(error63, { tags: { ...diagnosticTags, ...definitionTags, ...androidTags, operation }, contexts });
+  captureException(options?.reportAs ?? error63, { tags: { ...diagnosticTags, ...definitionTags, ...androidTags, ...installTags, operation }, contexts });
 }
 var requestReporting = new AsyncLocalStorage3();
 async function closeServerTelemetry() {
@@ -82888,4 +82943,4 @@ undici/lib/web/websocket/frame.js:
   (*! ws. MIT License. Einar Otto Stangvik <einaros@gmail.com> *)
 */
 
-//# debugId=0de028b3-b375-5dc1-a7de-109c2198cac6
+//# debugId=259b360f-6a53-5bb9-82b9-d791351358fc
