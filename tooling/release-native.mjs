@@ -21,7 +21,7 @@ const androidFpsBinaries = androidAbis.map(abi => `${abi}/mobile-dev-fps`);
 const androidCpuBinaries = androidAbis.map(abi => `${abi}/mobile-dev-cpu`);
 // The Rust helpers build in one Cargo workspace with shared crates.
 const rustScripts = ["native-rust.mjs", "native-symbols.mjs"];
-const rustInputs = ["packages/native/Cargo.toml", "packages/native/Cargo.lock"];
+const rustInputs = ["packages/native/Cargo.toml", "packages/native/Cargo.lock", "packages/native/device-tunnel/Cargo.toml", "packages/native/device-tunnel/src/lib.rs"];
 
 export const nativeHelpers = [
   { name: "baguette", command: "vendor:baguette", scripts: ["vendor-baguette.mjs", ...baguetteBuildScripts],

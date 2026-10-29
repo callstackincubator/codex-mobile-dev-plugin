@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 mobile-dev-telemetry.workspace = true
+mobile-dev-device-tunnel.workspace = true
 idevice = { workspace = true, features = ["ring", "usbmuxd", "core_device_proxy", "tunnel_tcp_stack", "dvt", "rsd", "debug_proxy"] }
 plist.workspace = true
 serde_json.workspace = true

@@ -1,8 +1,6 @@
 use std::{io::{self, Write}, time::Duration};
-use idevice::{IdeviceService, RsdService, core_device_proxy::CoreDeviceProxy,
-    dvt::{message::AuxValue, remote_server::RemoteServerClient},
-    debug_proxy::DebugProxyClient,
-    rsd::RsdHandshake, usbmuxd::{Connection, UsbmuxdAddr}};
+use idevice::{RsdService, dvt::{message::AuxValue, remote_server::RemoteServerClient}, debug_proxy::DebugProxyClient};
+use mobile_dev_device_tunnel::{Tunnel, TunnelError};
 use plist::Value;
 use tokio::io::AsyncReadExt;
 
@@ -35,38 +33,25 @@ fn fps(value: &Value) -> Result<Option<f64>, String> {
     }
 }
 
-async fn connect(udid: &str) -> Result<(RsdHandshake, idevice::tcp::handle::AdapterHandle), String> {
+pub(crate) const DEVICE_NOT_FOUND: &str = "Connect the paired iPhone and enable Developer Mode. Physical iOS performance monitoring requires iOS 17.4 or newer.";
+
+async fn connect(udid: &str, timeout: Option<Duration>) -> Result<Tunnel, TunnelError> {
     let _timing = mobile_dev_telemetry::Timer::start(mobile_dev_telemetry::Timing::Connect);
-    let socket = "/var/run/usbmuxd".into();
-    let address = UsbmuxdAddr::UnixSocket(socket);
-    let connected = address.connect(1).await;
-    let mut mux = connected.map_err(|error| error.to_string())?;
-    let discovery = mux.get_devices().await;
-    let devices = discovery.map_err(|error| error.to_string())?;
-    let candidates = devices.iter();
-    let matches = candidates.filter(|device| device.udid == udid);
-    let preferred = matches.min_by_key(|device| if device.connection_type == Connection::Usb { 0 } else { 1 });
-    let device = preferred.ok_or("Connect the paired iPhone and enable Developer Mode. Physical iOS performance monitoring requires iOS 17.4 or newer.")?;
-    let provider = device.to_provider(address, "mobile-dev-performance");
-    let proxy_connection = CoreDeviceProxy::connect(&provider).await;
-    let proxy = proxy_connection.map_err(|error| error.to_string())?;
-    let info = proxy.tunnel_info();
-    let port = info.server_rsd_port;
-    let tunnel_creation = proxy.create_software_tunnel();
-    let tunnel = tunnel_creation.map_err(|error| error.to_string())?;
-    let mut adapter = tunnel.to_async_handle();
-    let stream_connection = adapter.connect(port).await;
-    let stream = stream_connection.map_err(|error| error.to_string())?;
-    let handshake_result = RsdHandshake::new(stream).await;
-    let handshake = handshake_result.map_err(|error| error.to_string())?;
-    Ok((handshake, adapter))
+    let deadline = timeout.map(|timeout| tokio::time::Instant::now() + timeout);
+    mobile_dev_device_tunnel::open(udid, "mobile-dev-performance", deadline).await
+}
+
+fn connection_message(error: TunnelError, timeout: &str) -> String {
+    match error {
+        TunnelError::DeviceNotFound => DEVICE_NOT_FOUND.into(),
+        TunnelError::Timeout => timeout.into(),
+        error => error.to_string(),
+    }
 }
 
 async fn run(udid: &str) -> Result<(), String> {
-    let connection_timeout = Duration::from_secs(20);
-    let connecting = connect(udid);
-    let connection = tokio::time::timeout(connection_timeout, connecting).await;
-    let (mut handshake, mut adapter) = connection.map_err(|_| "Timed out connecting to the iPhone")??;
+    let connection = connect(udid, Some(Duration::from_secs(20))).await;
+    let Tunnel { mut handshake, mut adapter } = connection.map_err(|error| connection_message(error, "Timed out connecting to the iPhone"))?;
     let client_connection = RemoteServerClient::connect_rsd(&mut adapter, &mut handshake).await;
     let mut client = client_connection.map_err(|error| error.to_string())?;
     let opening = client.make_channel(SERVICE);
@@ -118,7 +103,8 @@ async fn run(udid: &str) -> Result<(), String> {
 }
 
 async fn debugserver(udid: &str) -> Result<(), String> {
-    let (mut handshake, mut adapter) = connect(udid).await?;
+    let connection = connect(udid, None).await;
+    let Tunnel { mut handshake, mut adapter } = connection.map_err(|error| connection_message(error, "Timed out connecting to the iPhone"))?;
     let opening = DebugProxyClient::connect_rsd(&mut adapter, &mut handshake).await;
     let proxy = opening.map_err(|error| error.to_string())?;
     let mut remote = proxy.into_inner();

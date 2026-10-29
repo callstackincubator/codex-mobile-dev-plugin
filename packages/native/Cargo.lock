@@ -463,10 +463,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "mobile-dev-device-tunnel"
+version = "0.1.0"
+dependencies = [
+ "idevice",
+ "tokio",
+]
+
+[[package]]
 name = "mobile-dev-ios-fps"
 version = "0.1.0"
 dependencies = [
  "idevice",
+ "mobile-dev-device-tunnel",
  "mobile-dev-telemetry",
  "plist",
  "serde_json",
@@ -479,6 +488,7 @@ version = "0.1.0"
 dependencies = [
  "flate2",
  "idevice",
+ "mobile-dev-device-tunnel",
  "mobile-dev-telemetry",
  "napi",
  "napi-build",

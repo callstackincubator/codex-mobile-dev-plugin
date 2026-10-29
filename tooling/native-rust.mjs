@@ -8,7 +8,7 @@ const workspace = "packages/native";
 const manifest = `${workspace}/Cargo.toml`;
 export const cargoTarget = `${workspace}/target`;
 // Workspace crates every Rust helper links.
-const sharedCrates = ["telemetry"];
+const sharedCrates = ["telemetry", "device-tunnel"];
 
 async function addTree(hash, path) {
   const entries = await readdir(path, { withFileTypes: true });

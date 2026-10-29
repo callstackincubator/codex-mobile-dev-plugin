@@ -1,5 +1,6 @@
 use std::{future::Future, time::Duration};
 use idevice::{ReadWrite, dvt::{message::AuxValue, remote_server::RemoteServerClient}};
+use mobile_dev_device_tunnel::{Tunnel, TunnelError};
 use plist::Value;
 
 const SERVICE: &str = "com.apple.accessibility.axAuditDaemon.remoteserver.shim.remote";
@@ -150,14 +151,11 @@ pub async fn run(udid: &str) -> Result<(), ForegroundFailure> {
         let message = error.to_string();
         ForegroundFailure::new("query_failed", message)
     })?;
-    let connecting = crate::connect(udid);
-    let connection_timeout = Duration::from_secs(7);
-    let connection = tokio::time::timeout(connection_timeout, connecting).await;
-    let connected = connection.map_err(|_| ForegroundFailure::new("connection_timeout", "Timed out connecting to the iPhone for app detection"))?;
-    let (handshake, mut adapter) = connected.map_err(|message| {
-        let unavailable = message.starts_with("Connect the paired iPhone and enable Developer Mode.");
-        let cause = if unavailable { "device_not_found" } else { "connection_failed" };
-        ForegroundFailure::new(cause, message)
+    let connection = crate::connect(udid, Some(Duration::from_secs(7))).await;
+    let Tunnel { handshake, mut adapter } = connection.map_err(|error| match error {
+        TunnelError::DeviceNotFound => ForegroundFailure::new("device_not_found", crate::DEVICE_NOT_FOUND),
+        TunnelError::Timeout => ForegroundFailure::new("connection_timeout", "Timed out connecting to the iPhone for app detection"),
+        error => ForegroundFailure::new("connection_failed", error.to_string()),
     })?;
     let service = handshake.services.get(SERVICE);
     let service = service.ok_or_else(|| ForegroundFailure::new("unsupported_service", "The iPhone does not expose foreground app detection"))?;

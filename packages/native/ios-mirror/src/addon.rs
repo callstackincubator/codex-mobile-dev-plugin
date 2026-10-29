@@ -2,12 +2,15 @@ use crate::{codec, control, input::{TouchClient, TouchSample}, media, queue::{Qu
 
 use std::{future::Future, sync::{Arc, Mutex}, time::{Duration, Instant}};
 
+const SETUP_TIMEOUT: &str = "Timed out opening the iPhone developer connection.";
+
 async fn setup<T, E: std::fmt::Display>(deadline: tokio::time::Instant, operation: impl Future<Output = std::result::Result<T, E>>) -> std::result::Result<T, String> {
     let result = tokio::time::timeout_at(deadline, operation).await;
-    result.map_err(|_| "Timed out opening the iPhone developer connection.".to_string())?.map_err(|error| error.to_string())
+    result.map_err(|_| SETUP_TIMEOUT.to_string())?.map_err(|error| error.to_string())
 }
 
-use idevice::{IdeviceService, core_device::{build_start_audio_parameters, build_start_video_parameters}, core_device_proxy::CoreDeviceProxy, usbmuxd::{Connection, UsbmuxdAddr}, rsd::RsdHandshake};
+use idevice::core_device::{build_start_audio_parameters, build_start_video_parameters};
+use mobile_dev_device_tunnel::{Tunnel, TunnelError};
 use media::{hevc::{HevcAccessUnitAssembler, HevcDepacketizerEvent}, negotiation::{CallInfoBlob, build_screen_audio_offer, build_screen_video_offer, parse_screen_video_answer}, rtcp, rtp::RtpPacket};
 use napi::{bindgen_prelude::Buffer, Error, Result};
 use napi_derive::napi;
@@ -167,25 +170,15 @@ fn connection_id(response: &plist::Value) -> std::result::Result<u64, String> {
 
 async fn run(udid: &str, shared: &Shared, mut commands: mpsc::UnboundedReceiver<Command>, started: &mut Option<tokio::sync::oneshot::Sender<std::result::Result<(), String>>>) -> std::result::Result<(), String> {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(25);
-    let address = UsbmuxdAddr::UnixSocket("/var/run/usbmuxd".into());
-    let connect = address.connect(1);
-    let mut mux = setup(deadline, connect).await?;
-    let discovery = mux.get_devices();
-    let devices = setup(deadline, discovery).await?;
-    let device = devices.iter().filter(|device| device.udid == udid).min_by_key(|device| if device.connection_type == Connection::Usb { 0 } else { 1 })
-        .ok_or("The iPhone is no longer connected. Check USB or Wi-Fi pairing in Xcode.")?;
-    let provider = device.to_provider(address, "mobile-dev");
-    let connect = CoreDeviceProxy::connect(&provider);
-    let proxy = setup(deadline, connect).await?;
-    let rsd_port = proxy.tunnel_info().server_rsd_port;
-    let adapter = proxy.create_software_tunnel().map_err(|e| format!("Could not create the developer tunnel: {e}"))?;
-    let mut adapter = adapter.to_async_handle();
+    let tunnel = mobile_dev_device_tunnel::open(udid, "mobile-dev", Some(deadline)).await.map_err(|error| match error {
+        TunnelError::DeviceNotFound => "The iPhone is no longer connected. Check USB or Wi-Fi pairing in Xcode.".to_string(),
+        TunnelError::Timeout => SETUP_TIMEOUT.to_string(),
+        TunnelError::SoftwareTunnel(error) => format!("Could not create the developer tunnel: {error}"),
+        error => error.to_string(),
+    })?;
+    let Tunnel { handshake, mut adapter } = tunnel;
     let mut ids = Vec::with_capacity(2);
     let result = async {
-        let connect = adapter.connect(rsd_port);
-        let stream = setup(deadline, connect).await?;
-        let discover = RsdHandshake::new(stream);
-        let handshake = setup(deadline, discover).await?;
         let port = handshake.services.get("com.apple.coredevice.displayservice").ok_or("The iPhone does not expose its display service. Enable Developer Mode.")?.port;
         let connect = adapter.connect(port);
         let stream = setup(deadline, connect).await?;

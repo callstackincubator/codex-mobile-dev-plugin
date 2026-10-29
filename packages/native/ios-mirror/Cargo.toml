@@ -9,6 +9,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 mobile-dev-telemetry.workspace = true
+mobile-dev-device-tunnel.workspace = true
 idevice = { workspace = true, features = ["ring", "usbmuxd", "core_device_proxy", "tunnel_tcp_stack", "display_stream"] }
 napi = { version = "3", default-features = false, features = ["napi8", "tokio_rt"] }
 napi-derive = "3"

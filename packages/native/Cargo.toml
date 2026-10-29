@@ -2,7 +2,7 @@
 # binary with `-p` so idevice features stay those of that helper alone.
 [workspace]
 resolver = "3"
-members = ["telemetry", "ios-fps", "ios-mirror"]
+members = ["telemetry", "device-tunnel", "ios-fps", "ios-mirror"]
 
 [workspace.package]
 version = "0.1.0"
@@ -11,6 +11,7 @@ license = "MIT"
 
 [workspace.dependencies]
 mobile-dev-telemetry = { path = "telemetry" }
+mobile-dev-device-tunnel = { path = "device-tunnel" }
 idevice = { git = "https://github.com/jkcoxson/idevice", rev = "a64b8867815b3da17b5c927531bdba877e8456ef", default-features = false }
 plist = "1.8"
 serde_json = "1"

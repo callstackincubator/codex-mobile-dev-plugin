@@ -1,0 +1,12 @@
+[package]
+name = "mobile-dev-device-tunnel"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+idevice = { workspace = true, features = ["ring", "usbmuxd", "core_device_proxy", "tunnel_tcp_stack", "rsd"] }
+tokio = { workspace = true, features = ["time"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt", "time"] }
