@@ -68,6 +68,19 @@ the episode. Diagnostics identify schema fields without including device values.
 Discovery sampling exclusions, UI timings and surface attribution retain their
 existing boundaries. No new collector or native telemetry is added.
 
+Since 0.1.170, the server waits Baguette's standard 10 seconds for the simulator list
+instead of 2, because CoreSimulator can take seconds to answer while a device boots.
+`Cannot reach Baguette at [url]. The operation was aborted due to timeout` errors now
+mean an unresponsive backend rather than a slow one. A failed list from the server's
+own running Baguette reports that failure; earlier releases probed the port and
+reported it as `Port N already answers HTTP but has no valid Baguette device list`.
+Baguette start failures report once per continuous failure episode, from the first
+operation that captures one, whichever tool or operation triggered the start. Callers
+that only log the failure or were cancelled leave the report for a later capture. Later
+captures with the same scrubbed message count as `server.error.repeated` under the
+caller's operation, and a successful start resets the episode. Ports, PIDs and timestamps do not start a new episode. Episode keys and
+signatures stay local. No new metric, attribute or native telemetry is added.
+
 Since 0.1.158, opening device intent is applied before screen connections start.
 Existing MCP operation traces, `ui.video.first_frame`, rendering/input timings,
 and discovery/error measurements remain on the active path with their existing
@@ -110,6 +123,8 @@ Since 0.1.139, `ios.accessibility_bridge.restarts` counts restarts of the simula
 Since 0.1.134, physical iOS capture runs in the shared `ios-mirror-service` Node process. Existing native packet-processing, input acknowledgement, connection, resource, and crash instrumentation stays attached to the active capture. Native resource measurements now overlap that service's Node process rather than each chat's MCP process. The service uses centralized server initialization, its packaged development/release environment, and server-owned anonymous installation/process-session identity. UI decode/render timings and sampled MCP operations retain their existing boundaries. Subscriber keyframe requests no longer invalidate the shared native queue or release another panel’s touch. The native packet-processing and recovery measurements remain on this active path; the rebuilt addon retains matching debug symbols.
 
 `ios.mirror.shared.captures` and `ios.mirror.shared.subscribers` report active counts. `ios.mirror.shared.queue_dropped` counts frames discarded by subscriber queue overflow. Counts aggregate in 30-second windows and flush on service shutdown, using the simulator surface and physical iOS context. No per-frame events, device identifiers, subscription IDs, payloads, or paths are sent. The service clears its collection timer on shutdown and honors telemetry opt-out.
+
+Since 0.1.170, a physical iOS bezel that can't be rendered no longer fails `mobile_ios_mirror_session`. Mirroring opens without the frame, and an unexpected render failure reports a handled `ios-mirror.bezel` error. The server keeps a missing frame for five minutes, so each hardware model reports at most once in that window instead of on every panel reconnect. A device type that Xcode doesn't have is expected: it counts as an `unsupported_platform` outcome and sends no event. Earlier releases reported these failures as `mobile_ios_mirror_session` errors, so compare `ios-mirror.bezel` with those events when reading trends. No metrics are added. The existing `server.error.outcome` count carries the new operation value.
 
 Since 0.1.132, `plugin.update.operations` counts release checks and installations
 by fixed operation and outcome, and `plugin.update.duration` measures their
@@ -433,7 +448,8 @@ Baguette startup, input repair, simulator foreground detection and physical iOS
 bezel rendering discover required Swift compatibility libraries
 from the host's selected full Xcode installation before launching the native
 helper. Existing sampled MCP traces and UI app-discovery timings include discovery;
-handled failures retain their tool error paths. Setup failures use fixed messages without
+handled failures retain their tool error paths. Since 0.1.170, physical iOS bezel
+failures report under `ios-mirror.bezel` instead. Setup failures use fixed messages without
 developer directories or scanner output. Native telemetry initialization and
 matching dSYMs are preserved; rebuilds remove build-toolchain rpaths and re-sign
 the executable before retaining symbols. No additional telemetry fields or

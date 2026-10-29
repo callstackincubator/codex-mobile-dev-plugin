@@ -12,14 +12,37 @@ import type { Status } from "@mobile-dev/shared/protocol.ts";
 import { buttonMarginsSchema } from "@mobile-dev/shared/bezel.ts";
 import { definitionDeviceState, getDefinitionDiagnostic, parseDefinitionDiagnostic, setDefinitionDiagnostic } from "@mobile-dev/shared/simulator-definition-diagnostics.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
-import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
+import { deferEpisodeReport, ExpectedOperationError, FailureEpisodes } from "@mobile-dev/shared/error-reporting.ts";
 import { annotateDeviceCommand, backendCommand } from "@mobile-dev/shared/device-command-diagnostics.ts";
+import { errorReportSignature } from "@mobile-dev/shared/telemetry.ts";
 import { baguetteEnvironment } from "./baguette-runtime.ts";
 import { captureServerError, recordAccessibilityBridgeRestart } from "./telemetry.ts";
 
 type DescribedUi = { tree?: { label?: unknown } };
 const NO_ACCESSIBILITY_DATA = "no accessibility data";
 const BRIDGE_RESTART_INTERVAL = 10000;
+const PORT_ATTEMPTS = 3;
+
+async function bundledExecutable(): Promise<string> {
+  const path = fileURLToPath(new URL("./baguette/Baguette", import.meta.url));
+  try {
+    await access(path, constants.X_OK);
+  } catch {
+    throw new Error("The plugin is missing its bundled Baguette runtime. Run npm run vendor:baguette and npm run build in the source project, then package it again.");
+  }
+  return path;
+}
+
+async function launchBundledBaguette(host: string, port: string, signal: AbortSignal): Promise<ChildProcess> {
+  if (process.platform !== "darwin" || process.arch !== "arm64") {
+    throw new ExpectedOperationError("unsupported_platform", "Starting Baguette requires an Apple Silicon Mac with Xcode 26 or later.");
+  }
+  const executable = await bundledExecutable();
+  const environment = await baguetteEnvironment(executable, signal);
+  return spawn(executable, ["serve", "--host", host, "--port", port, "--no-plugins"], {
+    stdio: ["ignore", "pipe", "pipe"], shell: false, env: environment,
+  });
+}
 
 // CoreSimulatorBridge can lose its accessibility connection after backboardd and SpringBoard
 // restart, then report no data for every foreground app until it restarts.
@@ -47,16 +70,18 @@ export class Baguette {
   private starting?: Promise<Status>;
   private readonly lifecycle = new AbortController();
   private readonly deviceChanges = new Map<string, Promise<Status>>();
-  private diagnostics = "";
   private disposed = false;
   private readonly embedded: boolean;
   private readonly kickstartBridge: (udid: string, signal: AbortSignal) => Promise<void>;
   private readonly bridgeRestarts = new Map<string, number>();
+  private readonly launchBackend: (host: string, port: string, signal: AbortSignal) => Promise<ChildProcess>;
+  private readonly startFailures = new FailureEpisodes();
 
-  constructor(baseUrl?: string, kickstartBridge = kickstartAccessibilityBridge) {
+  constructor(baseUrl?: string, kickstartBridge = kickstartAccessibilityBridge, launchBackend = launchBundledBaguette) {
     this.embedded = baseUrl == null;
     this.baseUrl = parseBaseUrl(baseUrl ?? "http://127.0.0.1:0");
     this.kickstartBridge = kickstartBridge;
+    this.launchBackend = launchBackend;
   }
 
   async json(path: string, options: RequestInit = {}, timeout = 10000): Promise<unknown> {
@@ -117,7 +142,8 @@ export class Baguette {
       return { connected: false, managed: false, baseUrl: this.baseUrl.origin, devices: [], error: "The bundled simulator backend has not started." };
     }
     try {
-      const devices = normalizeDevices(await this.json("/simulators.json", { signal }, 2000));
+      // Listing waits on CoreSimulator, which can take seconds while a device boots.
+      const devices = normalizeDevices(await this.json("/simulators.json", { signal }));
       return { connected: true, managed: this.child != null, baseUrl: this.baseUrl.origin, devices };
     } catch (error) {
       return {
@@ -131,18 +157,19 @@ export class Baguette {
     if (this.disposed) throw new Error("The plugin server has closed.");
     if (this.starting) return this.starting;
     this.starting = this.ensureStarted();
-    try { return await this.starting; }
-    finally { this.starting = undefined; }
-  }
-
-  private async executable(): Promise<string> {
-    const path = fileURLToPath(new URL("./baguette/Baguette", import.meta.url));
     try {
-      await access(path, constants.X_OK);
-    } catch {
-      throw new Error("The plugin is missing its bundled Baguette runtime. Run npm run vendor:baguette and npm run build in the source project, then package it again.");
+      const status = await this.starting;
+      this.startFailures.recover("start");
+      return status;
+    } catch (error) {
+      // Every device tool starts the backend, so a continuing failure is reported once, not once per call.
+      // Ports, PIDs and timestamps differ between repeats of the same failure.
+      const signature = errorReportSignature(error, {}).replace(/\d+/g, "#");
+      deferEpisodeReport(error, () => this.startFailures.shouldReport("start", signature));
+      throw error;
+    } finally {
+      this.starting = undefined;
     }
-    return path;
   }
 
   private async allocatePort(): Promise<number> {
@@ -157,44 +184,64 @@ export class Baguette {
   private async ensureStarted(): Promise<Status> {
     const current = await this.status();
     if (current.connected) return current;
-    if (this.embedded && !this.child) this.baseUrl.port = String(await this.allocatePort());
-    // Refuse to start over a listener that is slow or is not Baguette.
+    // The port is our running Baguette's own, so its failed device list is not a port conflict.
+    if (this.child) throw new Error(current.error);
+    if (this.embedded === false) {
+      // Refuse to start over a listener that is slow or is not Baguette.
+      if (await this.portInUse()) throw new Error(`Port ${this.baseUrl.port || "80"} is in use, but its listener did not return a Baguette device list.`);
+      return this.launch();
+    }
+    // Another process can bind an allocated port before Baguette does. Baguette then exits, so try a new port.
+    for (let attempt = 1; ; attempt++) {
+      this.baseUrl.port = String(await this.allocatePort());
+      try {
+        return await this.launch();
+      } catch (error) {
+        const portTaken = errorMessage(error).includes("Address already in use");
+        if (portTaken === false || attempt === PORT_ATTEMPTS) throw error;
+      }
+    }
+  }
+
+  // Whether anything accepts connections at the address, whether or not it answers.
+  private async portInUse(): Promise<boolean> {
     try {
       await fetch(new URL("/simulators.json", this.baseUrl), { signal: AbortSignal.timeout(1500), redirect: "error" });
-      throw new Error(`Port ${this.baseUrl.port || "80"} already answers HTTP but has no valid Baguette device list.`);
+      return true;
     } catch (error) {
-      const code = (error as { cause?: { code?: string } }).cause?.code;
-      if (code !== "ECONNREFUSED") throw error;
+      return (error as { cause?: { code?: string } }).cause?.code !== "ECONNREFUSED";
     }
-    if (process.platform !== "darwin" || process.arch !== "arm64") {
-      throw new ExpectedOperationError("unsupported_platform", "Starting Baguette requires an Apple Silicon Mac with Xcode 26 or later.");
-    }
-    if (this.child) throw new Error("Baguette is already starting. Wait and refresh the device list.");
+  }
 
-    this.diagnostics = "";
-    const executable = await this.executable();
-    const environment = await baguetteEnvironment(executable, this.lifecycle.signal);
-    if (this.disposed) throw new Error("The plugin server has closed.");
-    const child = spawn(executable, [
-      "serve", "--host", this.baseUrl.hostname.replace(/^\[|\]$/g, ""),
-      "--port", this.baseUrl.port || "80", "--no-plugins",
-    ], { stdio: ["ignore", "pipe", "pipe"], shell: false, env: environment });
+  private async launch(): Promise<Status> {
+    // Each attempt keeps its own output, so a failed attempt's late output can't explain the next one.
+    let diagnostics = "";
+    const host = this.baseUrl.hostname.replace(/^\[|\]$/g, "");
+    const child = await this.launchBackend(host, this.baseUrl.port || "80", this.lifecycle.signal);
+    if (this.disposed) {
+      child.kill("SIGTERM");
+      throw new Error("The plugin server has closed.");
+    }
     this.child = child;
     let launchError: Error | undefined;
+    const exited = new AbortController();
     child.on("error", error => { launchError = error; });
     child.on("exit", (code, signal) => {
+      exited.abort();
       if (!this.disposed) process.stderr.write(`[mobile-dev] Baguette exited: code=${code} signal=${signal ?? "none"}.\n`);
       if (this.child === child) this.child = undefined;
     });
     for (const output of [child.stdout, child.stderr]) {
       output?.on("data", chunk => {
-        this.diagnostics = (this.diagnostics + chunk.toString()).slice(-4000);
+        diagnostics = (diagnostics + chunk.toString()).slice(-4000);
         process.stderr.write(chunk);
       });
     }
     try {
-      const deadline = Date.now() + 20000;
-      while (Date.now() < deadline && !this.disposed) {
+      const deadline = AbortSignal.timeout(20000);
+      // A listener that holds the port but never answers must not delay noticing that Baguette exited.
+      const polling = AbortSignal.any([deadline, exited.signal]);
+      while (!deadline.aborted && !this.disposed) {
         if (launchError) {
           if ((launchError as NodeJS.ErrnoException).code === "ENOENT") {
             throw new Error("The bundled Baguette executable could not start. Reinstall the plugin package.");
@@ -202,13 +249,13 @@ export class Baguette {
           throw launchError;
         }
         if (child.exitCode !== null || child.signalCode !== null) {
-          throw new Error(`Baguette exited before it became ready. ${this.diagnostics.trim()}`);
+          throw new Error(`Baguette exited before it became ready. ${diagnostics.trim()}`);
         }
-        const status = await this.status();
+        const status = await this.status(polling);
         if (status.connected) return status;
         await delay(250);
       }
-      throw new Error(`Baguette did not become ready within 20 seconds. ${this.diagnostics.trim()}`);
+      throw new Error(`Baguette did not become ready within 20 seconds. ${diagnostics.trim()}`);
     } catch (error) {
       child.kill("SIGTERM");
       if (this.child === child) this.child = undefined;
@@ -287,7 +334,7 @@ export class Baguette {
 
   async repairInput(udid: string): Promise<void> {
     await this.device(udid, true);
-    const executable = await this.executable();
+    const executable = await bundledExecutable();
     const environment = await baguetteEnvironment(executable, this.lifecycle.signal);
     const execute = promisify(execFile);
     const { stdout, stderr } = await execute(executable, ["heal", "--udid", udid], {
