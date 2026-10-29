@@ -1,4 +1,4 @@
-import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
+import { ExpectedOperationError, errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
@@ -7,7 +7,7 @@ import type { Simctl } from "./simctl.ts";
 import type { LogSessions } from "./log-sessions.ts";
 import { logOptionsSchema } from "@mobile-dev/shared/logs.ts";
 import type { LogOptions } from "@mobile-dev/shared/logs.ts";
-import { errorMessage, parseBaseUrl } from "@mobile-dev/shared/protocol.ts";
+import { parseBaseUrl } from "@mobile-dev/shared/protocol.ts";
 import { listAndroidLogDevices } from "./native-logs.ts";
 import { metroTargets } from "./metro-logs.ts";
 import { listIosDevices } from "./ios-devices.ts";

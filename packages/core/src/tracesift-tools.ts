@@ -2,7 +2,6 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import { errorMessage } from "@mobile-dev/shared/protocol.ts";
 import { TRACESIFT_URI, traceSiftAnalysisSchema, traceSiftHandoffSchema, traceSiftProfileInputSchema, traceSiftReactCardSchema, traceSiftTaskCardSchema } from "@mobile-dev/shared/tracesift.ts";
 import { gzip as gzipCallback } from "node:zlib";
 import { promisify } from "node:util";
@@ -11,6 +10,7 @@ import { captureServerError, recordTraceSiftOperation, recordTraceSiftPayload } 
 import type { TraceSiftClient } from "./tracesift-client.ts";
 import { TraceSiftError } from "./tracesift-client.ts";
 import { pickProfileFile, pickProjectFolder } from "./profile-picker.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 
 // Async so compressing a large tree does not stall other tool calls.
 const gzip = promisify(gzipCallback);

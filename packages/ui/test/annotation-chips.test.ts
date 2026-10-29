@@ -8,7 +8,7 @@ import type { HostAttachments } from "../src/host-bridge.ts";
 
 const annotation: ScreenAnnotation = {
   id: "header-note", number: 1, text: "Make this\n  smaller.",
-  simulator: { udid: "test-device", name: "iPhone", runtime: "iOS 26", state: "Booted", platform: "ios" },
+  simulator: { udid: "test-device", name: "iPhone", runtime: "iOS 26", state: "Booted", platform: "ios", kind: "simulator" },
   component: { name: "Header title", depth: 2, bounds: { x: 20, y: 80, width: 200, height: 30 },
     react: { component: "Text", owners: ["Header"], source: { file: "/app/src/Header.tsx", line: 12 } } },
   point: { x: 40, y: 90 }, screen: { width: 402, height: 874, units: "points" },

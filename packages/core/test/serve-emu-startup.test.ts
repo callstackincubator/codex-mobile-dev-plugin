@@ -25,7 +25,7 @@ test("owned startup receives child summaries, preserves the original failure and
   const output = join(directory, "server.mjs");
   const repository = resolve(".");
   await build({
-    stdin: { contents: 'export { ServeEmu } from "./packages/core/src/serve-emu.ts"; export { androidStartupDiagnosticTags } from "./packages/shared/src/android-startup-diagnostics.ts"; export * as Sentry from "@sentry/node";', resolveDir: repository, loader: "ts" },
+    stdin: { contents: 'export { ServeEmu } from "./packages/core/src/serve-emu.ts"; export { androidStartupDiagnosticTags } from "./packages/shared/src/error-diagnostics.ts"; export * as Sentry from "@sentry/node";', resolveDir: repository, loader: "ts" },
     outfile: output, bundle: true, format: "esm", platform: "node", target: "node22.18",
     banner: { js: 'import { createRequire as testCreateRequire } from "node:module"; const require = testCreateRequire(import.meta.url);' },
   });

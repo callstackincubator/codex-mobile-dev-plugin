@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { once } from "node:events";
 import { Baguette } from "../../core/src/baguette.ts";
-import { definitionDiagnosticTags, getDefinitionDiagnostic, parseDefinitionDiagnostic } from "../src/simulator-definition-diagnostics.ts";
+import { getDefinitionDiagnostic, parseDefinitionDiagnostic } from "../src/simulator-definition-diagnostics.ts";
+import { definitionDiagnosticTags } from "../src/error-diagnostics.ts";
 import baguetteRelease from "../../native/vendor/baguette-release.json" with { type: "json" };
 const UDID = "B5C969F6-58A4-4C31-AB12-FB9E56D681DE";
 

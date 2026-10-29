@@ -1,4 +1,5 @@
 import { elementStores } from "./element-store.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 export type DeviceOption = { value: string; label: string; group?: string; kind?: "phone" | "tablet"; running?: boolean; statusLabel?: string; canStop?: boolean };
 export class DevicePickerStore {
   private state = { items: [] as DeviceOption[], value: "", disabled: true, placeholder: "Loading devices...", stoppingId: "", stopError: "" };
@@ -18,7 +19,7 @@ export class DevicePickerStore {
     if (!this.stop || this.state.disabled || this.state.stoppingId || !this.state.items.some(item => item.value === id && item.canStop)) return;
     this.update({ stoppingId: id, stopError: "" });
     try { await this.stop(id); }
-    catch (error) { this.update({ stopError: error instanceof Error ? error.message : String(error) }); }
+    catch (error) { this.update({ stopError: errorMessage(error) }); }
     finally { this.update({ stoppingId: "" }); }
   }
 }

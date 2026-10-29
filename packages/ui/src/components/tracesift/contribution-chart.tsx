@@ -2,7 +2,7 @@
 // figure, palette slot); the card beside it keeps everything about a task.
 
 import type { ReactNode } from "react";
-import { squarify } from "@mobile-dev/shared/tracesift-contribution.ts";
+import { squarify, type ContributionChartKind } from "../../tracesift/contribution.ts";
 
 export interface ChartSlice {
   key: string;
@@ -14,8 +14,6 @@ export interface ChartSlice {
   /** Palette slot counting from 0, or -1 for a residual. */
   colorIndex: number;
 }
-
-export type ContributionChartKind = "bar" | "treemap";
 
 // Fixed rather than measured, so the first paint has tiles without a resize observer.
 const TREEMAP_ASPECT_W = 16;

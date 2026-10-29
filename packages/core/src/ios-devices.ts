@@ -2,10 +2,9 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { physicalIosDeviceSchema } from "@mobile-dev/shared/ios-devices.ts";
 import type { PhysicalIosDevice } from "@mobile-dev/shared/ios-devices.ts";
-import { errorMessage } from "@mobile-dev/shared/protocol.ts";
-import { errorCategory, FailureEpisodes } from "@mobile-dev/shared/error-reporting.ts";
+import { physicalIosDevicesResultSchema } from "@mobile-dev/shared/tool-results.ts";
+import { errorCategory, FailureEpisodes, errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 import { captureServerError } from "./telemetry.ts";
 
 const execute = promisify(execFile);
@@ -60,12 +59,11 @@ export async function listIosDevices(signal?: AbortSignal, run: DeviceCommand = 
 }
 
 export function registerIosDeviceTools(server: McpServer, discover: () => Promise<PhysicalIosDevice[]> = listIosDevices) {
-  const physicalDevices = z.array(physicalIosDeviceSchema);
   const failures = new FailureEpisodes();
   server.registerTool("mobile_list_ios_devices", {
     title: "List physical iOS devices",
     description: "Discover physical iPhones and iPads through Xcode 27 devicectl. Returns USB or Wi-Fi transport, connection and pairing state, UDID, and CoreDevice ID. Remembered disconnected or unavailable devices retain their state; transport is omitted when not reported. This does not open a screen stream or change device state.",
-    inputSchema: {}, outputSchema: { physicalDevices },
+    inputSchema: {}, outputSchema: physicalIosDevicesResultSchema.shape,
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
   }, async () => {
     try {

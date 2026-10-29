@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { startStorageMetrics } from "./storage-metrics.ts";
 import { captureServerError } from "./telemetry.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 
 const run = promisify(execFile);
 
@@ -113,7 +114,7 @@ export class AgentDeviceRuntime {
         cwd: directory, env: this.environment(directory), timeout: 10000, killSignal: "SIGKILL", maxBuffer: 1024 * 1024,
       });
     } catch (error) {
-      const detail = (error as { stderr?: string }).stderr?.trim() || (error instanceof Error ? error.message : String(error));
+      const detail = (error as { stderr?: string }).stderr?.trim() || errorMessage(error);
       console.error(`[mobile-dev] agent-device cleanup failed: ${detail}`);
       captureServerError(new Error("Agent Device cleanup failed."), "agent_device.cleanup");
     }

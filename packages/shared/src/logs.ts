@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { udidSchema } from "./protocol.ts";
+import { deviceRefSchema } from "./device-ref.ts";
 
 export const logLevels = ["info", "warn", "error", "debug"] as const;
 const iosProcess = z.string().trim().min(1).max(256).optional();
@@ -13,9 +14,9 @@ const hideSystemLogsDescription = hideSystemLogsBoolean.describe("Hide default i
 const hideSystemLogs = hideSystemLogsDescription.optional();
 const physicalUdid = z.string().regex(/^(?:[a-fA-F0-9]{8}-[a-fA-F0-9]{16}|[a-fA-F0-9]{40})$/);
 const nativeLogTargets = z.union([
-  z.object({ platform: z.literal("ios"), kind: z.literal("simulator").optional(), deviceId: udidSchema, process: iosProcess, pid: iosPid, hideSystemLogs }).strict(),
-  z.object({ platform: z.literal("ios"), kind: z.literal("physical"), deviceId: physicalUdid, process: iosProcess, pid: iosPid, hideSystemLogs }).strict(),
-  z.object({ platform: z.literal("android"), deviceId: z.string().regex(/^[a-zA-Z0-9._:-]{1,128}$/), packageName: z.string().regex(/^[a-zA-Z][a-zA-Z0-9_]*(?:\.[a-zA-Z0-9_]+)+$/).optional() }).strict(),
+  deviceRefSchema.extend({ platform: z.literal("ios"), kind: z.literal("simulator").optional(), deviceId: udidSchema, process: iosProcess, pid: iosPid, hideSystemLogs }).strict(),
+  deviceRefSchema.extend({ platform: z.literal("ios"), kind: z.literal("physical"), deviceId: physicalUdid, process: iosProcess, pid: iosPid, hideSystemLogs }).strict(),
+  deviceRefSchema.extend({ platform: z.literal("android"), packageName: z.string().regex(/^[a-zA-Z][a-zA-Z0-9_]*(?:\.[a-zA-Z0-9_]+)+$/).optional() }).strict(),
 ]);
 export const nativeLogTargetSchema = nativeLogTargets.refine(target => target.platform === "android" || target.process === undefined || target.pid === undefined, "Choose an iOS process name or PID.");
 export const metroLogTargetSchema = z.object({ url: z.string().max(2048), targetId: z.string().min(1).max(512) }).strict();
@@ -24,26 +25,33 @@ export const logOptionsSchema = z.object({ native: nativeLogTargetSchema.optiona
 export type NativeLogTarget = z.infer<typeof nativeLogTargetSchema>;
 export type MetroLogTarget = z.infer<typeof metroLogTargetSchema>;
 export type LogOptions = z.infer<typeof logOptionsSchema>;
-export type LogRecord = {
-  timestamp: string;
-  level: typeof logLevels[number];
-  source: "js" | "native";
-  origin: "ios" | "android" | "metro";
-  deviceId?: string;
-  message: string;
-  process?: string;
-  appId?: string;
-  pid?: number;
-  tag?: string;
-  subsystem?: string;
-  category?: string;
-  stack?: string;
-};
-export type LogEntry = LogRecord & { sequence: number };
-export type LogSourceStatus = { source: string; state: "connecting" | "live" | "reconnecting" | "error"; message?: string };
-export type LogBatch = { entries: LogEntry[]; cursor: number; dropped: number; statuses: LogSourceStatus[] };
+const optionalText = z.string().optional();
+export const logRecordSchema = z.object({
+  timestamp: z.string(),
+  level: z.enum(logLevels),
+  source: z.enum(["js", "native"]),
+  origin: z.enum(["ios", "android", "metro"]),
+  deviceId: optionalText,
+  message: z.string(),
+  process: optionalText,
+  appId: optionalText,
+  pid: z.number().optional(),
+  tag: optionalText,
+  subsystem: optionalText,
+  category: optionalText,
+  stack: optionalText,
+});
+export type LogRecord = z.infer<typeof logRecordSchema>;
+const cursor = z.number().int().nonnegative();
+export const logEntrySchema = logRecordSchema.extend({ sequence: cursor });
+export type LogEntry = z.infer<typeof logEntrySchema>;
+export const logSourceStatusSchema = z.object({ source: z.string(), state: z.enum(["connecting", "live", "reconnecting", "error"]), message: optionalText });
+export type LogSourceStatus = z.infer<typeof logSourceStatusSchema>;
+export const logBatchSchema = z.object({ entries: z.array(logEntrySchema), cursor, dropped: cursor, statuses: z.array(logSourceStatusSchema) });
+export type LogBatch = z.infer<typeof logBatchSchema>;
 export type StackedLog = LogEntry & { count: number; lastTimestamp: string };
-export type MetroTarget = { id: string; title: string; appId?: string; deviceName?: string; deviceId?: string };
+export const metroTargetSchema = z.object({ id: z.string(), title: z.string(), appId: optionalText, deviceName: optionalText, deviceId: optionalText });
+export type MetroTarget = z.infer<typeof metroTargetSchema>;
 
 export function logKey(log: LogRecord): string {
   return JSON.stringify([log.origin, log.deviceId, log.source, log.level, log.process, log.appId, log.pid, log.tag, log.subsystem, log.category, log.message, log.stack]);

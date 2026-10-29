@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { setErrorDiagnostic } from "./error-diagnostics.ts";
 // Copied from the serve-emu runtime so shared code stays free of vendored runtimes;
 // a test keeps the two lists equal.
 export const startupStages = [
@@ -44,23 +45,8 @@ export type AndroidStartupContext = {
 };
 export type AndroidStartupFailure = { stage: typeof startupStages[number] | "process-launch" | "health-readiness" | "unknown"; outcome: typeof startupOutcomes[number] | "unknown" };
 
-const startupErrors = new WeakMap<Error, { startup: AndroidStartupFailure; context: AndroidStartupContext }>();
-
 export function setAndroidStartupDiagnostic(error: unknown, startup: AndroidStartupFailure, context: AndroidStartupContext) {
-  if (error instanceof Error) startupErrors.set(error, { startup, context });
-}
-
-export function androidStartupDiagnosticTags(error: unknown): Record<string, string> {
-  if (error instanceof Error === false) return {};
-  const diagnostic = startupErrors.get(error);
-  if (diagnostic === undefined) return {};
-  const { startup, context } = diagnostic;
-  return {
-    android_startup_stage: startup.stage, android_startup_outcome: startup.outcome,
-    android_device_state_before: context.stateBefore, device_platform: "android",
-    device_kind: context.deviceKind, android_transport: context.transport,
-    android_cleanup_overlap: context.stoppingBackends > 0 ? "yes" : "no",
-  };
+  if (error instanceof Error) setErrorDiagnostic(error, "androidStartup", { startup, context });
 }
 
 export function androidDeviceState(output: string, serial: string): AndroidDeviceState {

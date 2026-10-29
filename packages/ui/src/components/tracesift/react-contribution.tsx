@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { reactCommitSlices, type ReactSlice } from "@mobile-dev/shared/tracesift-contribution.ts";
-import { formatReactMs, shortLocationLabel } from "@mobile-dev/shared/tracesift-labels.ts";
+import { reactCommitSlices, type ContributionChartKind, type ReactSlice } from "../../tracesift/contribution.ts";
+import { formatReactMs, shortLocationLabel } from "../../tracesift/labels.ts";
 import type { TraceSiftReactCard } from "@mobile-dev/shared/tracesift.ts";
 import {
-  ContributionChart, ContributionDetailStack, SliceLegend, sliceColor, type ContributionChartKind,
+  ContributionChart, ContributionDetailStack, SliceLegend, sliceColor,
 } from "./contribution-chart.tsx";
 
 const hookLabel = (hook: string) => /^\d+$/.test(hook) ? `#${hook}` : hook;

@@ -1,5 +1,5 @@
 import { parseResourceInput } from "../resource-input.ts";
-import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
+import { ExpectedOperationError, errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
@@ -10,7 +10,6 @@ import type { ServerRequestContext } from "../request-session.ts";
 import { z } from "zod";
 import { cpuTargetSchema } from "@mobile-dev/shared/cpu.ts";
 import type { CpuTarget } from "@mobile-dev/shared/cpu.ts";
-import { errorMessage } from "@mobile-dev/shared/protocol.ts";
 import type { Simctl } from "../simctl.ts";
 import { readDeviceApps } from "../device-apps/sources.ts";
 import { withDeviceAppsDiagnostic } from "@mobile-dev/shared/device-apps-diagnostics.ts";
@@ -18,6 +17,7 @@ import { registerDeviceAppsTool } from "../device-apps/tools.ts";
 import { listAndroidLogDevices } from "../native-logs.ts";
 import { listIosDevices } from "../ios-devices.ts";
 import type { CpuSessions } from "./sessions.ts";
+import { isPhysicalIos } from "@mobile-dev/shared/devices.ts";
 
 const sessionId = z.string().regex(/^[a-f0-9]{64}$/);
 const sequence = z.coerce.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
@@ -39,7 +39,7 @@ export function registerCpuTools(server: McpServer, cpu: CpuSessions, simulators
   { apps = readDeviceApps, androidDevices = listAndroidLogDevices, iosDevices = listIosDevices } = {}) {
   const sources = { apps, androidDevices, iosDevices };
   async function validateDevice(device: { platform: "ios" | "android"; deviceId: string; kind?: "simulator" | "physical" }) {
-    if (device.platform === "ios" && device.kind === "physical") {
+    if (isPhysicalIos(device)) {
       const devices = await sources.iosDevices();
       const connected = devices.find(candidate => candidate.udid === device.deviceId && candidate.state === "connected" && candidate.pairingState === "paired");
       if (connected === undefined) throw new ExpectedOperationError("device_unavailable", "Connect the paired iPhone and enable Developer Mode to monitor CPU and memory.");

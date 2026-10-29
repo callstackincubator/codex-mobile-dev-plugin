@@ -1,17 +1,19 @@
 import { chatMessage } from "./chat-message.ts";
 import type { HostAttachmentsSource, HostBridge } from "./host-bridge.ts";
 import type { SimulatorDevice } from "@mobile-dev/shared/protocol.ts";
+import { isPhysicalIos } from "@mobile-dev/shared/devices.ts";
 import type { StackedLog } from "@mobile-dev/shared/logs.ts";
 import { formatLogContext, logKey } from "@mobile-dev/shared/logs.ts";
 import { ANNOTATION_EDIT_GUIDANCE, ANNOTATION_EDIT_PROMPT, formatAnnotationContext, formatAnnotationDraft } from "@mobile-dev/shared/screen-annotations.ts";
 import type { ScreenAnnotation } from "@mobile-dev/shared/screen-annotations.ts";
 import { captureUiError, countUiEvent, recordUiTiming } from "./telemetry.ts";
 import type { EncodedScreenshotAttachment } from "./screenshot-attachment.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 
 export type ScreenshotAttachment = EncodedScreenshotAttachment & { id: string; simulator: SimulatorDevice };
 
 function composerUnavailable(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = errorMessage(error);
   return /(?:no (?:active |available )?composer|composer.*(?:unavailable|not available|not active)|requires? an (?:active|available) composer|MCP app messages are disabled for this view)/i.test(message);
 }
 
@@ -164,7 +166,7 @@ export class PanelContext {
   selectSimulators(simulators: SimulatorDevice[], active?: SimulatorDevice) {
     const devices = simulators.map(device => {
       const transport = device.kind === "physical" ? device.transportType : null;
-      return [device.udid, device.name, device.runtime, device.state, device.platform ?? "ios", device.kind, transport];
+      return [device.udid, device.name, device.runtime, device.state, device.platform, device.kind, transport];
     });
     const key = JSON.stringify([active?.udid, devices]);
     if (key === this.selectionKey) return;
@@ -256,12 +258,12 @@ export class PanelContext {
       const log = this.attached;
       const devices = this.simulators.map(device => {
         const role = device.udid === selected?.udid ? "Active" : "Visible";
-        if (device.kind === "physical" && device.platform === "ios") {
+        if (isPhysicalIos(device)) {
           const transport = device.transportType === undefined ? "Transport not reported." : `Transport: ${device.transportType}.`;
           return `${role} physical iOS device: ${device.name}. UDID: ${device.udid}. State: ${device.state}. ${transport} The panel mirrors this device through an interactive HEVC stream with pointer taps and drags. Native unified logs use mobile_logs_session with platform ios, kind physical, and this hardware UDID. They do not require launching the app; ordinary print output is unavailable and private values may be redacted. Physical iOS keyboard input, hardware buttons, screenshots, and agent-device control are not implemented yet.`;
         }
         if (device.kind === "physical" && device.platform === "android") return `${role} physical Android device: ${device.name}. Serial: ${device.udid}. State: ${device.state}. Transport: ${device.transportType}. Use this serial with the Mobile Dev Android tools for platform android.`;
-        return `${role} ${device.platform === "android" ? "Android" : "iOS"} simulator: ${device.name}. Device ID: ${device.udid}. State: ${device.state}. Use this ${device.platform === "android" ? "serial" : "UDID"} with the Mobile Dev tools for platform ${device.platform ?? "ios"}.`;
+        return `${role} ${device.platform === "android" ? "Android" : "iOS"} simulator: ${device.name}. Device ID: ${device.udid}. State: ${device.state}. Use this ${device.platform === "android" ? "serial" : "UDID"} with the Mobile Dev tools for platform ${device.platform}.`;
       });
       const contextStartedAt = performance.now();
       const annotationContent = this.annotations.map(annotation => ({ type: "text" as const, text: `${this.usesHostAttachments ? "" : `Device: ${JSON.stringify(annotation.simulator.name)} (${annotation.simulator.udid})\n`}${formatAnnotationContext(annotation)}`, _meta: { "openai/title": `${annotation.component.name}: ${annotation.text.replace(/\s+/g, " ").trim()}`, "mobile-dev/annotationId": annotation.id } }));

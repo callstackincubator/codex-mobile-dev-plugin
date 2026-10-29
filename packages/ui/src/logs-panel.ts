@@ -8,6 +8,8 @@ import type { DeviceAppsStore } from "./device-apps.ts";
 import type { DeviceApp, ForegroundApp } from "@mobile-dev/shared/device-apps.ts";
 import { composeAppLogQuery, quoteLogQueryValue } from "./log-query.ts";
 import { countUiEvent } from "./telemetry.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
+import { isDeviceActive, isPhysicalIos, sameDevice } from "@mobile-dev/shared/devices.ts";
 
 type Call = HostBridge["callServerTool"];
 
@@ -126,8 +128,7 @@ export class LogsPanel {
     if (this.disposed) return;
     const source = this.deviceApps.getSnapshot();
     const simulator = source.device;
-    const changed = simulator?.udid !== this.simulator?.udid || simulator?.state !== this.simulator?.state
-      || simulator?.kind !== this.simulator?.kind || simulator?.platform !== this.simulator?.platform;
+    const changed = !sameDevice(simulator, this.simulator);
     this.simulator = simulator;
     let foregroundApp = this.snapshot.foregroundApp;
     if (source.ready) foregroundApp = source.foregroundApp;
@@ -179,13 +180,11 @@ export class LogsPanel {
     const options: LogOptions = {};
     const { native, target, metroUrl } = this.snapshot;
     const selected = this.simulator;
-    const physicalIos = selected?.kind === "physical" && selected.platform === "ios";
-    const ready = physicalIos ? selected.state === "connected" : selected?.state === "Booted";
-    if (native === "ios" && selected && ready) {
+    if (native === "ios" && selected && isDeviceActive(selected)) {
       if (selected.platform === "android") {
         options.native = { platform: "android", deviceId: selected.udid };
       } else {
-        const nativeTarget: NativeLogTarget = physicalIos
+        const nativeTarget: NativeLogTarget = isPhysicalIos(selected)
           ? { platform: "ios", deviceId: selected.udid, kind: "physical" }
           : { platform: "ios", deviceId: selected.udid };
         nativeTarget.hideSystemLogs = this.snapshot.hideSystemLogs;
@@ -229,7 +228,7 @@ export class LogsPanel {
       if (expiredSession(error)) {
         countUiEvent("ui.logs.session_expired");
         this.error();
-      } else this.error(error instanceof Error ? error.message : String(error));
+      } else this.error(errorMessage(error));
     }, error => { this.update({ status: "Stopped" }); this.error(String(error)); });
   }
 

@@ -45,10 +45,7 @@ export class DeviceWorkspace {
     const visible = this.panels.filter(panel => !panel.root.hidden);
     const active = visible.find(panel => panel.platform === this.activePlatform) ?? visible[0];
     const selected = active?.selected;
-    const devicePlatform = selected ? active?.platform : undefined;
-    const virtualKind = devicePlatform === "android" ? "emulator" : "simulator";
-    const deviceKind = selected?.kind ?? (selected ? virtualKind : undefined);
-    setUiTelemetryContext({ device_platform: devicePlatform, device_kind: deviceKind });
+    setUiTelemetryContext({ device_platform: selected?.platform, device_kind: selected?.kind });
     this.tools.context.selectSimulators(visible.flatMap(panel => panel.selected ? [panel.selected] : []), selected);
     this.tools.deviceApps.selectDevice(selected);
     for (const panel of this.panels) panel.root.dataset.active = String(panel === active);

@@ -4,11 +4,12 @@ import { CPU_HISTORY_SECONDS, CPU_MAX_SAMPLES } from "@mobile-dev/shared/cpu.ts"
 import type { DeviceApp } from "@mobile-dev/shared/device-apps.ts";
 import type { CpuBatch, CpuPhase, CpuSample, CpuTarget } from "@mobile-dev/shared/cpu.ts";
 import type { SimulatorDevice } from "@mobile-dev/shared/protocol.ts";
-import { errorMessage } from "@mobile-dev/shared/protocol.ts";
 import type { ThreadHistory, ThreadOrder } from "./performance/types.ts";
 import { DisplayFpsPanel, initialFpsState } from "./display-fps-panel.ts";
 import type { DisplayFpsState } from "./display-fps-panel.ts";
 import type { DeviceAppsStore } from "./device-apps.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
+import { isDeviceActive, isPhysicalIos, sameDevice } from "@mobile-dev/shared/devices.ts";
 
 type Snapshot = DisplayFpsState & {
   open: boolean; available: boolean; discovering: boolean; monitoring: boolean;
@@ -64,7 +65,7 @@ export class PerformancePanel {
     this.update({ ...fields, samples: [], threadHistory });
   }
   private failed(error: unknown) { this.update({ phase: "failed", monitoring: false, error: errorMessage(error) }); }
-  private deviceKey(device: SimulatorDevice) { return `${device.platform ?? "ios"}:${device.udid}`; }
+  private deviceKey(device: SimulatorDevice) { return `${device.platform}:${device.udid}`; }
 
   setAvailable(available: boolean) {
     this.fps.setAvailable(available);
@@ -74,7 +75,7 @@ export class PerformancePanel {
   }
 
   private selectSimulator(simulator?: SimulatorDevice) {
-    const changed = simulator?.udid !== this.simulator?.udid || simulator?.state !== this.simulator?.state || simulator?.platform !== this.simulator?.platform || simulator?.kind !== this.simulator?.kind;
+    const changed = !sameDevice(simulator, this.simulator);
     this.simulator = simulator;
     this.update({ selectedLabel: simulator?.name ?? "Selected device", platform: simulator?.platform ?? "ios", physical: simulator?.kind === "physical" });
     if (changed === false) return;
@@ -174,14 +175,14 @@ export class PerformancePanel {
     const epoch = this.epoch;
     const device = this.simulator;
     const bundleId = this.snapshot.bundleId;
-    if (this.enabled === false || this.snapshot.available === false || device === undefined || (device.state !== "Booted" && device.state !== "connected") || bundleId === "") {
+    if (this.enabled === false || this.snapshot.available === false || device === undefined || !isDeviceActive(device) || bundleId === "") {
       void stopping.catch(error => this.failed(error));
       this.update({ monitoring: false });
       return;
     }
     this.resetHistory({ phase: "connecting", error: "", monitoring: true });
-    const target: CpuTarget = { deviceId: device.udid, platform: device.platform ?? "ios", bundleId };
-    if (target.platform === "ios" && device.kind === "physical") target.kind = "physical";
+    const target: CpuTarget = { deviceId: device.udid, platform: device.platform, bundleId };
+    if (isPhysicalIos(device)) target.kind = "physical";
     this.running = this.receive(target, epoch, stopping).catch(error => {
       if (this.disposed === false && epoch === this.epoch) this.update({ phase: "failed", error: errorMessage(error), monitoring: false });
     });

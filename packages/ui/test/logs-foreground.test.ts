@@ -10,8 +10,8 @@ import { LogsPanel } from "../src/logs-panel.ts";
 import { createDeviceApps } from "../../test-support/device-apps-fixtures.ts";
 import { UDID, OTHER_UDID } from "../../test-support/fixtures.ts";
 
-const ios = { udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS", platform: "ios" as const };
-const android = { udid: "emulator-5554", name: "Pixel", state: "Booted", runtime: "Android", platform: "android" as const };
+const ios = { udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS", platform: "ios" as const, kind: "simulator" as const };
+const android = { udid: "emulator-5554", name: "Pixel", state: "Booted", runtime: "Android", platform: "android" as const, kind: "emulator" as const };
 const first: ForegroundApp = { bundleId: "com.example.first", pid: 123 };
 const second: ForegroundApp = { bundleId: "com.example.second", pid: 456 };
 const record: LogEntry = { sequence: 1, timestamp: "2026-10-02T12:00:00Z", source: "native", origin: "ios", level: "info", message: "fixture", pid: 123 };

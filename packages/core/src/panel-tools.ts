@@ -8,7 +8,7 @@ import type { CallToolResult, ReadResourceResult } from "@modelcontextprotocol/s
 import { z } from "zod";
 import { PLUGIN_VERSION } from "@mobile-dev/shared/version.ts";
 import { SENTRY_ORIGIN } from "@mobile-dev/shared/telemetry.ts";
-import { errorMessage, streamMessageSchema, udidSchema } from "@mobile-dev/shared/protocol.ts";
+import { iosSimulatorSchema, statusSchema, streamMessageSchema, udidSchema } from "@mobile-dev/shared/protocol.ts";
 import { panelTargetSchema } from "@mobile-dev/shared/panel-target.ts";
 import type { PanelTarget } from "@mobile-dev/shared/panel-target.ts";
 import { captureServerError } from "./telemetry.ts";
@@ -33,6 +33,7 @@ import { registerOpenRecordingTool } from "./recording-tools.ts";
 import type { ShowRecording } from "./recording-tools.ts";
 import { foregroundSimulatorPid } from "./device-apps/foreground.ts";
 import type { SimulatorForeground } from "./device-apps/foreground.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 
 export const APP_URI = `ui://mobile-dev/${PLUGIN_VERSION}/simulator.html`;
 export const WORKSPACE_URI = `ui://mobile-dev/${PLUGIN_VERSION}/workspace.html`;
@@ -44,11 +45,7 @@ const sessionIdSchema = z.string().regex(/^[a-f0-9]{64}$/);
 const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 const write = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
 const deviceInput = { udid: udidSchema.describe("A simulator UDID returned by mobile_list_simulators.") };
-const deviceSchema = z.object({ udid: udidSchema, name: z.string(), state: z.string(), runtime: z.string() });
-const statusOutput = {
-  connected: z.boolean(), managed: z.boolean(), baseUrl: z.string(),
-  devices: z.array(deviceSchema), error: z.string().optional(),
-};
+const statusOutput = { ...statusSchema.shape, devices: z.array(iosSimulatorSchema.extend({ udid: udidSchema })) };
 
 function result(data: Record<string, unknown>, message: string): CallToolResult {
   return { content: [{ type: "text", text: message }], structuredContent: data };

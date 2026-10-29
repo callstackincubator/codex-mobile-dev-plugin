@@ -3,12 +3,12 @@
 
 import { useState } from "react";
 import {
-  BOUNDARY_MIN_SHARE, boundaryDrillSlices, taskBreakdownSlices, type ContributionSlice,
-} from "@mobile-dev/shared/tracesift-contribution.ts";
-import { formatMs, shortLocationLabel, taskCardLocations } from "@mobile-dev/shared/tracesift-labels.ts";
+  BOUNDARY_MIN_SHARE, boundaryDrillSlices, taskBreakdownSlices, type ContributionChartKind, type ContributionSlice,
+} from "../../tracesift/contribution.ts";
+import { formatMs, shortLocationLabel, taskCardLocations } from "../../tracesift/labels.ts";
 import type { TraceSiftBoundaryFrame, TraceSiftTaskCard } from "@mobile-dev/shared/tracesift.ts";
 import {
-  ContributionChart, ContributionDetailStack, SliceLegend, sliceColor, type ContributionChartKind,
+  ContributionChart, ContributionDetailStack, SliceLegend, sliceColor,
 } from "./contribution-chart.tsx";
 
 export function TaskContribution({ card, kind, onFocus }: {

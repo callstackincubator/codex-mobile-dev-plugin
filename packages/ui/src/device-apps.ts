@@ -1,13 +1,14 @@
 import type { HostBridge } from "./host-bridge.ts";
 import type { SimulatorDevice } from "@mobile-dev/shared/protocol.ts";
-import { errorMessage } from "@mobile-dev/shared/protocol.ts";
 import { deviceAppsSchema } from "@mobile-dev/shared/device-apps.ts";
 import type { DeviceApps } from "@mobile-dev/shared/device-apps.ts";
-import { deviceAppsDiagnostic, setDeviceAppsDiagnostic, deviceAppsDiagnosticTags } from "@mobile-dev/shared/device-apps-diagnostics.ts";
+import { deviceAppsDiagnostic, setDeviceAppsDiagnostic } from "@mobile-dev/shared/device-apps-diagnostics.ts";
+import { diagnosticTags } from "@mobile-dev/shared/error-diagnostics.ts";
 import type { DeviceAppsStage } from "@mobile-dev/shared/device-apps-diagnostics.ts";
 import { captureUiError, countUiEvent, recordUiTiming, getUiTelemetryAttributes } from "./telemetry.ts";
-import { FailureEpisodes, errorCategory, setErrorCategory } from "@mobile-dev/shared/error-reporting.ts";
+import { FailureEpisodes, errorCategory, setErrorCategory, errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 import { errorReportSignature } from "@mobile-dev/shared/telemetry.ts";
+import { isDeviceActive, isPhysicalIos, sameDevice } from "@mobile-dev/shared/devices.ts";
 
 export type DeviceAppsSnapshot = DeviceApps & {
   device?: SimulatorDevice;
@@ -52,8 +53,7 @@ export class DeviceAppsStore {
 
   selectDevice(device?: SimulatorDevice) {
     const previous = this.snapshot.device;
-    const changed = device?.udid !== previous?.udid || device?.platform !== previous?.platform
-      || device?.kind !== previous?.kind || device?.state !== previous?.state;
+    const changed = !sameDevice(device, previous);
     if (changed === false) {
       if (device !== previous) this.update({ device });
       return;
@@ -72,7 +72,7 @@ export class DeviceAppsStore {
   private canDiscover() {
     const device = this.snapshot.device;
     return this.disposed === false && this.available && this.visibility.visibilityState !== "hidden"
-      && device !== undefined && (device.state === "Booted" || device.state === "connected");
+      && isDeviceActive(device);
   }
 
   private cancel() {
@@ -108,9 +108,8 @@ export class DeviceAppsStore {
 
   private async discover(discovery: Discovery) {
     const device = this.snapshot.device!;
-    const platform = device.platform ?? "ios";
-    const parameters: { deviceId: string; platform: string; kind?: "physical" } = { deviceId: device.udid, platform };
-    if (platform === "ios" && device.kind === "physical") parameters.kind = "physical";
+    const parameters: { deviceId: string; platform: string; kind?: "physical" } = { deviceId: device.udid, platform: device.platform };
+    if (isPhysicalIos(device)) parameters.kind = "physical";
     const startedAt = performance.now();
     const telemetryContext = getUiTelemetryAttributes();
     let stage: DeviceAppsStage = "transport";
@@ -137,9 +136,9 @@ export class DeviceAppsStore {
         const failure = new Error("Selected-device app discovery failed.");
         const category = errorCategory(error);
         setErrorCategory(failure, category);
-        const diagnostic = deviceAppsDiagnostic(error, stage, platform, device.kind);
+        const diagnostic = deviceAppsDiagnostic(error, stage, device.platform, device.kind);
         setDeviceAppsDiagnostic(failure, diagnostic);
-        const tags = deviceAppsDiagnosticTags(failure);
+        const tags = diagnosticTags(failure);
         const signature = errorReportSignature(error, tags);
         if (this.failures.shouldReport("discovery", signature)) captureUiError(failure, "device_apps.discover", telemetryContext);
         else countUiEvent("ui.device_apps.discovery_repeated", 1, telemetryContext);

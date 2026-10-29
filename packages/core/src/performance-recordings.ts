@@ -5,12 +5,12 @@ import { join } from "node:path";
 import type { CpuSample, CpuTarget } from "@mobile-dev/shared/cpu.ts";
 import { recordingIdSchema, recordingSchema } from "@mobile-dev/shared/recordings.ts";
 import type { PerformanceRecording } from "@mobile-dev/shared/recordings.ts";
-import { errorMessage } from "@mobile-dev/shared/protocol.ts";
 import { captureServerError } from "./telemetry.ts";
 import type { CpuSessions } from "./cpu/sessions.ts";
 import type { DisplayFpsSessions } from "./fps/sessions.ts";
 import type { DisplayFpsSample } from "@mobile-dev/shared/display-fps.ts";
 import { displayFrameTime } from "@mobile-dev/shared/display-fps.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 
 export const RECORDINGS_DIRECTORY = join(homedir(), "Library/Application Support/mobile-dev/recordings");
 

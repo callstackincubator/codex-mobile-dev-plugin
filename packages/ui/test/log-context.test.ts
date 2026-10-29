@@ -9,7 +9,7 @@ import type { PhysicalIosDevice } from "../../shared/src/ios-devices.ts";
 import type { PhysicalAndroidDevice } from "../../shared/src/android-devices.ts";
 import type { HostAttachments } from "../src/host-bridge.ts";
 
-const simulator = { udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS 26" };
+const simulator = { udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS 26", platform: "ios" as const, kind: "simulator" as const };
 const log = stackLogs([{ timestamp: "2026-09-30T12:00:00Z", message: "Request failed", level: "error", source: "js", origin: "metro", stack: "at load (App.tsx:9:3)", sequence: 1 }])[0];
 
 test("hosts without context pills receive the clicked log in the message", async () => {
@@ -212,7 +212,7 @@ test("a host clear during an attachment write queues a removal without deadlock"
 
 test("Android selection shares its serial and platform for Mobile Dev control", async () => {
   const { context, updates } = fixture();
-  context.selectSimulator({ udid: "emulator-5554", name: "Pixel", state: "Booted", runtime: "Android", platform: "android" });
+  context.selectSimulator({ udid: "emulator-5554", name: "Pixel", state: "Booted", runtime: "Android", platform: "android", kind: "emulator" });
   await context.attach(undefined);
   assert.match(JSON.stringify(updates.at(-1)?.content), /emulator-5554/);
   assert.match(JSON.stringify(updates.at(-1)?.content), /serial.*platform android/);
@@ -325,7 +325,7 @@ test("a host without image attachment support rejects screenshots", async () => 
 
 test("side by side devices share both IDs while logs keep the active selection", async () => {
   const { context, updates } = fixture();
-  const android = { udid: "emulator-5554", name: "Pixel", state: "Booted", runtime: "Android", platform: "android" as const };
+  const android = { udid: "emulator-5554", name: "Pixel", state: "Booted", runtime: "Android", platform: "android" as const, kind: "emulator" as const };
   context.selectSimulators([simulator, android], android);
   await context.attach(log);
   const last = updates.at(-1)!;

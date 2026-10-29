@@ -6,10 +6,11 @@ import { androidChoices, deviceChoiceInputSchema, isRunningDevice, isSelectableD
 import type { DeviceChoice, DeviceChoiceInput, DeviceChoiceReference } from "@mobile-dev/shared/device-choice.ts";
 import type { PhysicalIosDevice } from "@mobile-dev/shared/ios-devices.ts";
 import type { Status } from "@mobile-dev/shared/protocol.ts";
-import { errorMessage } from "@mobile-dev/shared/protocol.ts";
 import { captureServerError } from "./telemetry.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
 import { deviceChoiceThumbnails } from "./device-choice-thumbnails.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
+import { isPhysicalIos } from "@mobile-dev/shared/devices.ts";
 
 export type DeviceChoiceSources = {
   simulators: () => Promise<Status>;
@@ -69,14 +70,14 @@ export async function resolveDeviceChoices(references: DeviceChoiceReference[], 
   const reads: Promise<DeviceChoice[]>[] = [];
   if (references.some(device => device.platform === "ios" && device.kind === "simulator")) reads.push(statusDevices(sources.simulators).then(simulatorChoices));
   if (references.some(device => device.platform === "android")) reads.push(statusDevices(sources.android).then(androidChoices));
-  if (references.some(device => device.platform === "ios" && device.kind === "physical")) reads.push(sources.physicalIos().then(physicalIosChoices));
+  if (references.some(device => isPhysicalIos(device))) reads.push(sources.physicalIos().then(physicalIosChoices));
   const lists = await Promise.all(reads);
   const discovered = lists.flat();
   return references.map(reference => {
     const device = discovered.find(candidate => candidate.platform === reference.platform && candidate.kind === reference.kind && candidate.deviceId === reference.deviceId);
     if (device === undefined) throw new SimulatorUnavailableError("A candidate device is no longer available. Refresh discovery before requesting a selection.");
     if (isSelectableDevice(device) === false) {
-      if (device.kind === "physical" && device.platform === "ios") throw new SimulatorUnavailableError("Connect and pair the candidate iPhone or iPad before requesting a selection.");
+      if (isPhysicalIos(device)) throw new SimulatorUnavailableError("Connect and pair the candidate iPhone or iPad before requesting a selection.");
       throw new SimulatorUnavailableError("A candidate device is offline or unauthorized. Reconnect it before requesting a selection.");
     }
     return { ...reference, name: device.name, runtime: device.runtime, state: device.state, ...(device.transportType ? { transportType: device.transportType } : {}), ...(device.pairingState ? { pairingState: device.pairingState } : {}) };

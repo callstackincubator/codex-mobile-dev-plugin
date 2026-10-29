@@ -10,8 +10,8 @@ import { adbPath } from "../native-logs.ts";
 import type { CpuReading } from "./counters.ts";
 import type { CpuMonitor } from "./monitor.ts";
 import { AndroidCpuSampler, androidReadySchema, androidSampleSchema } from "./android-counters.ts";
-import { errorMessage } from "@mobile-dev/shared/protocol.ts";
 import { nativeCollectorCommand, NativeTelemetryRelay } from "../native-telemetry.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 
 const execute = promisify(execFile);
 const abiSchema = z.enum(["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]);

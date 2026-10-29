@@ -3,11 +3,11 @@ import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import type { z } from "zod";
 import { cpuDeviceSchema } from "@mobile-dev/shared/cpu.ts";
 import type { DeviceApps } from "@mobile-dev/shared/device-apps.ts";
-import { errorMessage } from "@mobile-dev/shared/protocol.ts";
 import { captureServerError } from "../telemetry.ts";
-import { FailureEpisodes, expectedOutcome } from "@mobile-dev/shared/error-reporting.ts";
+import { FailureEpisodes, expectedOutcome, errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 import { errorReportSignature } from "@mobile-dev/shared/telemetry.ts";
-import { deviceAppsDiagnosticTags, annotateDeviceAppsError, getDeviceAppsDiagnostic, DEVICE_APPS_DIAGNOSTIC_META } from "@mobile-dev/shared/device-apps-diagnostics.ts";
+import { annotateDeviceAppsError, getDeviceAppsDiagnostic, DEVICE_APPS_DIAGNOSTIC_META } from "@mobile-dev/shared/device-apps-diagnostics.ts";
+import { diagnosticTags } from "@mobile-dev/shared/error-diagnostics.ts";
 
 type Device = z.infer<typeof cpuDeviceSchema>;
 
@@ -28,7 +28,7 @@ export function registerDeviceAppsTool(server: McpServer, discover: (device: Dev
       return { content: [{ type: "text", text }], structuredContent: data };
     } catch (error) {
       const annotated = annotateDeviceAppsError(error, "discovery", device.platform, device.kind);
-      const tags = deviceAppsDiagnosticTags(annotated);
+      const tags = diagnosticTags(annotated);
       const signature = errorReportSignature(annotated, tags);
       const expected = expectedOutcome(annotated);
       if (expected !== undefined) episodes.recover(key);

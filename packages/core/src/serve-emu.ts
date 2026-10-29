@@ -10,7 +10,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import { bootAndroidEmulator, parseAvdName } from "./android-emulator.ts";
 import { adbPath } from "./native-logs.ts";
-import { errorMessage, parseBaseUrl } from "@mobile-dev/shared/protocol.ts";
+import { parseBaseUrl } from "@mobile-dev/shared/protocol.ts";
 import type { SimulatorDevice, Status } from "@mobile-dev/shared/protocol.ts";
 import { annotateDeviceCommand, backendCommand } from "@mobile-dev/shared/device-command-diagnostics.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
@@ -19,9 +19,10 @@ import { recordAndroidEmulatorReconnect, recordAndroidBackendStartup, recordAndr
 import { androidStartupMessageSchema, androidDeviceState, setAndroidStartupDiagnostic } from "@mobile-dev/shared/android-startup-diagnostics.ts";
 import type { AndroidStartupContext, AndroidStartupFailure, AndroidStartupSummary } from "@mobile-dev/shared/android-startup-diagnostics.ts";
 import { androidSdkRoots } from "./android-sdk.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
+import { androidIdSchema, avdId, isEmulatorSerial, isStoppedAvd } from "@mobile-dev/shared/android-ids.ts";
 
 const execute = promisify(execFile);
-export const androidIdSchema = z.string().min(1).max(256).regex(/^[A-Za-z0-9_.:\[\]%-]+$/);
 // Route handlers send { ok: false, error: message }; the API boundary sends { ok: false, error: { code, message } }.
 const serveEmuErrorSchema = z.object({ ok: z.literal(false), error: z.union([z.string(), z.object({ message: z.string() }).loose()]).optional() }).loose();
 const healthSchema = z.object({ serial: androidIdSchema, codec: z.string(), size: z.object({ width: z.number().positive(), height: z.number().positive() }) });
@@ -83,7 +84,7 @@ export class ServeEmu {
           const rawModel = match[3].match(/(?:^|\s)model:(\S+)/)?.[1];
           const model = rawModel?.replace(/_/g, " ");
           let name = model ?? match[1];
-          const emulatorDevice = /^emulator-\d+$/.test(match[1]);
+          const emulatorDevice = isEmulatorSerial(match[1]);
           // The emulator console names the AVD before adb authorizes the device.
           if (emulatorDevice) {
             const response = await execute(adb, ["-s", match[1], "emu", "avd", "name"], { timeout: 3000 }).catch(() => undefined);
@@ -104,11 +105,11 @@ export class ServeEmu {
       const avdLines = avdOutput.split(/\r?\n/);
       const stoppedNames = avdLines.filter(name => {
         if (!name) return false;
-        const parsedId = androidIdSchema.safeParse(`avd:${name}`);
+        const parsedId = androidIdSchema.safeParse(avdId(name));
         const runningAvd = running.some(device => device.kind === "emulator" && device.name === name);
         return parsedId.success && !runningAvd;
       });
-      const stopped = stoppedNames.map(name => ({ udid: `avd:${name}`, name, state: "Shutdown", runtime: "Android", platform: "android" as const, kind: "emulator" as const }));
+      const stopped = stoppedNames.map(name => ({ udid: avdId(name), name, state: "Shutdown", runtime: "Android", platform: "android" as const, kind: "emulator" as const }));
       return { connected: true, managed: [...this.backends.values()].some(backend => !!backend.child), baseUrl: this.external?.origin ?? "", devices: [...running, ...stopped] };
     } catch (error) {
       return { connected: false, managed: false, baseUrl: "", devices: [], error: `Cannot list Android devices. Install Android SDK platform-tools and emulator. ${errorMessage(error)}` };
@@ -140,7 +141,7 @@ export class ServeEmu {
     const device = await this.device(id);
     if (device.state === "Booted") return this.list();
     if (device.kind === "emulator" && device.state === "unauthorized") return this.awaitRunningEmulator(id);
-    if (!id.startsWith("avd:")) throw new SimulatorUnavailableError("Reconnect and authorize this Android device through adb.");
+    if (!isStoppedAvd(id)) throw new SimulatorUnavailableError("Reconnect and authorize this Android device through adb.");
     // Launch separately from serve-emu so closing the panel never stops the AVD.
     return bootAndroidEmulator({
       name: device.name, executable: await this.emulatorPath(), signal: this.lifetime.signal,
@@ -180,7 +181,7 @@ export class ServeEmu {
 
   async shutdown(id: string) {
     androidIdSchema.parse(id);
-    if (!/^emulator-\d+$/.test(id)) throw new Error("Only Android emulators can be shut down from this panel.");
+    if (!isEmulatorSerial(id)) throw new Error("Only Android emulators can be shut down from this panel.");
     const before = await this.list();
     if (!before.connected) throw new Error(before.error);
     if (!before.devices.some(device => device.udid === id)) return before;

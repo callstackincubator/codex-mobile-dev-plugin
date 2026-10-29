@@ -19,7 +19,7 @@ function createPanel(app: App, t: TestContext) {
   return { panel, deviceApps };
 }
 
-const device = { udid: "emulator-5554", name: "Pixel", state: "Booted", runtime: "Android", platform: "android" as const };
+const device = { udid: "emulator-5554", name: "Pixel", state: "Booted", runtime: "Android", platform: "android" as const, kind: "emulator" as const };
 async function waitFor(predicate: () => boolean) {
   const end = Date.now() + 2000;
   while (!predicate()) { assert.ok(Date.now() < end); await new Promise(resolve => setTimeout(resolve, 5)); }

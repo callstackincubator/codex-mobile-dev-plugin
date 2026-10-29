@@ -4,11 +4,12 @@ import type { InstalledApp } from "@mobile-dev/shared/app-control.ts";
 import { storageClearSchema, storageFileSchema, storageLimits, storageSnapshotSchema, storageTableSchema } from "@mobile-dev/shared/app-storage.ts";
 import type { StorageEntry, StorageFilePreview, StorageSnapshot, StorageStore, StorageTable } from "@mobile-dev/shared/app-storage.ts";
 import type { SimulatorDevice } from "@mobile-dev/shared/protocol.ts";
-import { errorMessage } from "@mobile-dev/shared/protocol.ts";
 import type { DeviceAppsStore } from "./device-apps.ts";
 import { appIcons } from "./app-icons.ts";
 import { isSdkStore, storeTitle } from "./storage-labels.ts";
 import { measureUiOperation, recordUiTiming, setUiGauge } from "./telemetry.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
+import { isDeviceActive, isPhysicalIos } from "@mobile-dev/shared/devices.ts";
 
 export type StorageAction = "apps" | "read" | "clear" | "reset" | "launch";
 export type StorageTab = "browse" | "changes";
@@ -129,10 +130,9 @@ export class StoragePanel {
   private selectDevice(device?: SimulatorDevice) {
     const platform = device?.platform ?? "ios";
     const deviceId = device?.udid ?? "";
-    const running = device !== undefined && (device.state === "Booted" || device.state === "connected");
     const unsupported = device === undefined ? "Choose a simulator or Android device."
-      : platform === "ios" && device.kind === "physical" ? "Reading app data on a physical iPhone isn't supported yet. Use an iOS simulator."
-      : running ? "" : `${device.name} isn't running.`;
+      : isPhysicalIos(device) ? "Reading app data on a physical iPhone isn't supported yet. Use an iOS simulator."
+      : isDeviceActive(device) ? "" : `${device.name} isn't running.`;
     // A device that boots, reconnects, or stops starts over like a newly chosen one, keeping the app picked on it.
     const changed = deviceId !== this.state.deviceId || platform !== this.state.platform || (unsupported === "") !== (this.state.unsupported === "");
     if (!changed) {

@@ -289,7 +289,7 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   } }, () => ({ getCurrent: () => undefined, async update() { return { updateId: "PRIVATE_UPDATE" }; } }));
   const store = new api.ScreenAnnotationsStore();
   store.connect(context);
-  store.configure({ udid: "PRIVATE_DEVICE", name: "PRIVATE_DEVICE_NAME", runtime: "iOS 26", state: "Booted" }, false);
+  store.configure({ udid: "PRIVATE_DEVICE", name: "PRIVATE_DEVICE_NAME", runtime: "iOS 26", state: "Booted", platform: "ios", kind: "simulator" }, false);
   store.capture = () => ({ screenshot: { id: "PRIVATE_CAPTURE", data: "PRIVATE_IMAGE", capturedAt: "2026-10-01T10:00:00Z" }, screen: { width: 402, height: 874, units: "points" } });
   store.readTree = async () => ({ tree: [{ source: "react-native", role: "RCTText", label: "PRIVATE_LABEL", bounds: { x: 10, y: 20, width: 100, height: 40 }, react: {
     component: "PRIVATE_COMPONENT", owners: ["PRIVATE_OWNER"], key: "PRIVATE_REACT_KEY", source: { file: "/Users/alice/private.tsx", line: 49, column: 11 },
@@ -309,7 +309,7 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   const expiredLogs = new api.LogsPanel(expiredClient, { canAttach: true }, expiredApps);
   expiredLogs.configure({ followApp: false });
   t.after(() => { expiredApps.dispose(); return expiredLogs.dispose(); });
-  expiredApps.selectDevice({ udid: "PRIVATE_DEVICE", name: "PRIVATE_NAME", state: "Booted", runtime: "iOS" });
+  expiredApps.selectDevice({ udid: "PRIVATE_DEVICE", name: "PRIVATE_NAME", state: "Booted", runtime: "iOS", platform: "ios", kind: "simulator" });
   expiredLogs.setAvailable(true);
   expiredLogs.show();
   await new Promise(resolve => window.setTimeout(resolve, 0));
@@ -338,7 +338,7 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   };
   const logApps = new api.DeviceAppsStore(logsClient, window.document);
   const logPanel = new api.LogsPanel(logsClient, context, logApps);
-  logApps.selectDevice({ udid: "PRIVATE_DEVICE", name: "PRIVATE_DEVICE_NAME", state: "Booted", platform: "ios" });
+  logApps.selectDevice({ udid: "PRIVATE_DEVICE", name: "PRIVATE_DEVICE_NAME", state: "Booted", platform: "ios", kind: "simulator" });
   logPanel.setAvailable(true);
   logPanel.show();
   logApps.setAvailable(true);
@@ -552,7 +552,7 @@ test("shared app discovery measures the active context and excludes cancelled or
   api.setUiTelemetryContext({ device_platform: "ios", device_kind: "simulator" });
   const store = new api.DeviceAppsStore(app, window.document);
   t.after(() => store.dispose());
-  store.selectDevice({ udid: "PRIVATE_DEVICE", name: "PRIVATE_NAME", state: "Booted", runtime: "iOS" });
+  store.selectDevice({ udid: "PRIVATE_DEVICE", name: "PRIVATE_NAME", state: "Booted", runtime: "iOS", platform: "ios", kind: "simulator" });
   store.setAvailable(true);
   const initial = store.refresh();
   now = 130;

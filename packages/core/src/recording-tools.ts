@@ -6,13 +6,13 @@ import { cpuTargetSchema } from "@mobile-dev/shared/cpu.ts";
 import type { CpuTarget } from "@mobile-dev/shared/cpu.ts";
 import { RECORDING_URI, recordingIdSchema, recordingPreview, recordingRangeSchema, recordingReferenceSchema, recordingSchema, summarizeRecording } from "@mobile-dev/shared/recordings.ts";
 import type { PerformanceRecording, RecordingRange } from "@mobile-dev/shared/recordings.ts";
-import { errorMessage } from "@mobile-dev/shared/protocol.ts";
 import { captureServerError } from "./telemetry.ts";
 import type { PerformanceRecordings } from "./performance-recordings.ts";
 import { displayFrameSchema } from "@mobile-dev/shared/display-fps.ts";
 import { readRecordingFrames } from "./recording-frames.ts";
 import { nullableDisplayFrameStatsSchema } from "@mobile-dev/shared/frame-statistics.ts";
 import { COMPARISON_URI, comparisonIdsSchema, comparisonReferenceSchema, comparisonSchema, comparisonTitleSchema, summarizeComparison } from "@mobile-dev/shared/performance-comparison.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 
 const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 const visibility: ("app" | "model")[] = ["app", "model"];

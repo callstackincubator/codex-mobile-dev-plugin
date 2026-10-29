@@ -16,8 +16,8 @@ test("simctl's listing reads as Baguette's: available simulators, booted first, 
   assert.equal(simulatorRuntimeName("com.apple.CoreSimulator.SimRuntime.watchOS-11-2"), "watchOS 11.2");
   assert.equal(simulatorRuntimeName("custom"), "custom");
   assert.deepEqual(parseSimulatorList(listing), [
-    { udid: UDID, name: "iPhone 18 Pro", state: "Booted", runtime: "iOS 27.0.1" },
-    { udid: OTHER_UDID, name: "iPhone 17", state: "Shutdown", runtime: "iOS 26.0" },
+    { udid: UDID, name: "iPhone 18 Pro", state: "Booted", runtime: "iOS 27.0.1", platform: "ios", kind: "simulator" },
+    { udid: OTHER_UDID, name: "iPhone 17", state: "Shutdown", runtime: "iOS 26.0", platform: "ios", kind: "simulator" },
   ]);
 });
 

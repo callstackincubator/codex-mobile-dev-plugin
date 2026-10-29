@@ -1,5 +1,5 @@
 import { parseResourceInput } from "../resource-input.ts";
-import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
+import { ExpectedOperationError, errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
@@ -7,7 +7,6 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { displayFpsTargetSchema } from "@mobile-dev/shared/display-fps.ts";
 import type { DisplayFpsTarget } from "@mobile-dev/shared/display-fps.ts";
-import { errorMessage } from "@mobile-dev/shared/protocol.ts";
 import { listIosDevices } from "../ios-devices.ts";
 import { listAndroidLogDevices } from "../native-logs.ts";
 import type { DisplayFpsSessions } from "./sessions.ts";

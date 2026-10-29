@@ -32,6 +32,9 @@ import type { AndroidVideoBatch } from "./android-video.ts";
 import type { HostBridge } from "./host-bridge.ts";
 import type { PanelTarget } from "@mobile-dev/shared/panel-target.ts";
 import { initialPanelDevice } from "./device-layout.ts";
+import { isDeviceActive, isPhysicalIos } from "@mobile-dev/shared/devices.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
+import { avdId, isEmulatorSerial, stoppedAvdName } from "@mobile-dev/shared/android-ids.ts";
 
 export function createSimulatorPanel(
   app: HostBridge,
@@ -100,13 +103,12 @@ export function createSimulatorPanel(
     settings.configure(selected?.udid ?? "", deviceToolsUnavailable);
     settings.prefetch();
     // App tools use simctl and adb, which do not reach paired iPhones.
-    appTools.configure(platform, selected?.udid ?? "", deviceToolsUnavailable || selected?.kind === "physical" && platform === "ios");
+    appTools.configure(platform, selected?.udid ?? "", deviceToolsUnavailable || isPhysicalIos(selected));
     element<HTMLButtonElement>("start-device").disabled = busy || !toolsAvailable || !selected || selected.kind === "physical" || selected.state === "Booted" || disposed;
     const hasDevices = status?.devices.length || physicalDevices.length;
     devices.disabled = busy || !toolsAvailable || !hasDevices || disposed;
-    const connected = selectedDeviceConnected();
-    const physicalIos = selected?.kind === "physical" && selected.platform === "ios";
-    const screenshotReady = physicalIos ? ready && stream?.physicalIos === true : status?.connected;
+    const connected = isDeviceActive(selected);
+    const screenshotReady = isPhysicalIos(selected) ? ready && stream?.physicalIos === true : status?.connected;
     screenshotButton.disabled = busy || !toolsAvailable || !connected || !screenshotReady || !panelContext.canAttachScreenshots || disposed;
     screenshotButton.title = panelContext.canAttachScreenshots ? "Screenshot to chat and clipboard" : "This host does not support screenshot attachments";
     const annotationState = annotations.getSnapshot();
@@ -115,14 +117,9 @@ export function createSimulatorPanel(
     deviceButtons();
   }
 
-  function selectedDeviceConnected() {
-    const physicalIos = selected?.kind === "physical" && selected.platform === "ios";
-    return physicalIos ? selected?.state === "connected" : selected?.state === "Booted";
-  }
-
   function deviceButtons() {
     const state = annotations.getSnapshot();
-    const unsupported = selected?.kind === "physical" && selected.platform === "ios";
+    const unsupported = isPhysicalIos(selected);
     const active = ready && stream != null && !unsupported && !stream.physicalIos && !inputBlocked && !busy && toolsAvailable && !state.selecting && !state.draft;
     const buttons = root.querySelectorAll<HTMLButtonElement>("[data-button]");
     buttons.forEach(button => {
@@ -240,8 +237,7 @@ export function createSimulatorPanel(
       const elapsed = performance.now() - started;
       recordUiTiming("ui.screenshot.capture", elapsed);
     }
-    const physicalIos = selected?.kind === "physical" && selected.platform === "ios";
-    const screen: ScreenAnnotation["screen"] = { ...points, units: platform === "android" || physicalIos ? "pixels" : "points" };
+    const screen: ScreenAnnotation["screen"] = { ...points, units: platform === "android" || isPhysicalIos(selected) ? "pixels" : "points" };
     const now = new Date();
     const capturedAt = now.toISOString();
     return {
@@ -251,7 +247,7 @@ export function createSimulatorPanel(
   }
   annotations.capture = captureScreen;
   annotations.readTree = async simulator => {
-    if (simulator.kind === "physical" && simulator.platform === "ios") return { tree: [] };
+    if (isPhysicalIos(simulator)) return { tree: [] };
     const screenWidth = annotations.getSnapshot().capture?.screen.width ?? points.width;
     const startedAt = performance.now();
     try {
@@ -302,7 +298,7 @@ export function createSimulatorPanel(
     if (busy || disposed) return;
     screenshotAttachmentError = "";
     busy = true; controls(); notice();
-    try { await callback(); } catch (error) { notice(error instanceof Error ? error.message : String(error)); }
+    try { await callback(); } catch (error) { notice(errorMessage(error)); }
     finally {
       busy = false;
       controls();
@@ -429,7 +425,7 @@ export function createSimulatorPanel(
     selected = status?.devices.find(device => device.udid === devices.value);
     if (selected === undefined) selected = physicalDevices.find(device => device.udid === devices.value);
     selectionChanged(selected);
-    if (selected?.kind === "physical" && selected.platform === "ios") {
+    if (isPhysicalIos(selected)) {
       const connection = physicalConnectionLabel(selected.transportType);
       if (reconnect.active === false) empty(`${selected.name} · ${connection}`, "Opening the physical device screen…");
     } else if (selected?.kind === "physical" && selected.state !== "Booted") {
@@ -447,19 +443,18 @@ export function createSimulatorPanel(
     statusRevision++;
     status = next;
     const available = [...physicalDevices, ...next.devices];
-    if (platform === "android" && openingTarget?.deviceId?.startsWith("avd:")) {
-      const avdName = openingTarget.deviceId.slice(4);
-      const booted = next.devices.find(device => device.kind !== "physical" && device.name === avdName && device.state === "Booted");
+    const openingAvd = platform === "android" ? stoppedAvdName(openingTarget?.deviceId) : undefined;
+    if (openingTarget && openingAvd !== undefined) {
+      const booted = next.devices.find(device => device.kind !== "physical" && device.name === openingAvd && device.state === "Booted");
       if (booted !== undefined) openingTarget = { ...openingTarget, deviceId: booted.udid };
     } else if (platform === "android" && selected && openingTarget?.deviceId === selected.udid && selected.kind !== "physical") {
-      const stoppedId = `avd:${selected.name}`;
+      const stoppedId = avdId(selected.name);
       const stopped = next.devices.find(device => device.udid === stoppedId && device.state === "Shutdown");
       if (stopped !== undefined) openingTarget = { ...openingTarget, deviceId: stopped.udid };
     }
     const oldDevice = available.find(device => device.udid === previous);
     const nextDevice = initialPanelDevice(available, platform, previous, openingTarget);
-    const physicalIos = oldDevice?.kind === "physical" && oldDevice.platform === "ios";
-    const availableForMirroring = physicalIos ? oldDevice.state === "connected" : next.connected && oldDevice?.state === "Booted";
+    const availableForMirroring = isPhysicalIos(oldDevice) ? oldDevice.state === "connected" : next.connected && oldDevice?.state === "Booted";
     if (reconnect.active && availableForMirroring === false) void disconnect();
     const physicalOptions: DeviceOption[] = physicalDevices.map(device => {
       const connection = physicalConnectionLabel(device.transportType);
@@ -484,7 +479,7 @@ export function createSimulatorPanel(
         value: device.udid, label: `${device.name}${runtime ? ` · ${runtime}` : ""}`,
         group: platform === "ios" ? "Simulators" : "Emulators",
         kind: /ipad|tablet|pixel.*tab/i.test(device.name) ? "tablet" : "phone", running: device.state === "Booted",
-        canStop: device.state === "Booted" && (platform === "ios" || /^emulator-\d+$/.test(device.udid)),
+        canStop: device.state === "Booted" && (platform === "ios" || isEmulatorSerial(device.udid)),
       };
     });
     devices.update({
@@ -501,8 +496,7 @@ export function createSimulatorPanel(
 
   async function connect() {
     if (disposed || !toolsAvailable || !selected) return;
-    const connected = selected.kind === "physical" && selected.platform === "ios" ? selected.state === "connected" : selected.state === "Booted";
-    if (connected === false) return;
+    if (!isDeviceActive(selected)) return;
     await disconnect();
     if (document.visibilityState === "hidden" || disposed) return;
     if (frame.hidden) empty("Connecting…", "Opening the device screen.");
@@ -510,8 +504,8 @@ export function createSimulatorPanel(
     const udid = selected.udid;
     const showStreamError = (error: unknown) => {
       ready = false;
-      const message = error instanceof Error ? error.message : String(error);
-      if (selected?.kind === "physical" && selected.platform === "ios") empty("Screen unavailable", message);
+      const message = errorMessage(error);
+      if (isPhysicalIos(selected)) empty("Screen unavailable", message);
       notice(message);
       controls();
     };
@@ -522,7 +516,7 @@ export function createSimulatorPanel(
   async function openAndReceive(udid: string, sessionEpoch: number, signal: AbortSignal) {
     const connectionStartedAt = performance.now();
     const streamPlatform = platform;
-    const physicalIos = selected?.udid === udid && selected.kind === "physical" && selected.platform === "ios";
+    const physicalIos = selected?.udid === udid && isPhysicalIos(selected);
     const closeTool = physicalIos ? "mobile_ios_mirror_close" : streamPlatform === "android" ? "mobile_android_stream_close" : "mobile_stream_close";
     const openTool = physicalIos ? "mobile_ios_mirror_session" : streamPlatform === "android" ? "mobile_android_stream_session" : "mobile_stream_session";
     const arguments_ = physicalIos ? { udid } : streamPlatform === "android" ? { deviceId: udid } : { udid, fps: 60 };
@@ -753,7 +747,7 @@ export function createSimulatorPanel(
     let next: Status;
     if (simulators.status === "fulfilled") next = simulators.value.structuredContent as Status;
     else {
-      const error = simulators.reason instanceof Error ? simulators.reason.message : String(simulators.reason);
+      const error = errorMessage(simulators.reason);
       next = { connected: false, managed: false, baseUrl: "", devices: [], error };
     }
     if (next.error) errors.push(next.error);
@@ -762,7 +756,7 @@ export function createSimulatorPanel(
       physicalDevices = data.physicalDevices.filter(device => device.state === "connected");
     } else {
       physicalDevices = [];
-      const error = physical.reason instanceof Error ? physical.reason.message : String(physical.reason);
+      const error = errorMessage(physical.reason);
       errors.push(error);
     }
     discoveryError = errors.join(" · ");
@@ -778,7 +772,7 @@ export function createSimulatorPanel(
       try {
         if (document.visibilityState === "visible" && !root.hidden && !busy && toolsAvailable) await listDevices();
       } catch (error) {
-        notice(error instanceof Error ? error.message : String(error));
+        notice(errorMessage(error));
       } finally { scheduleDiscovery(); }
     }, 3000);
   }
@@ -787,8 +781,7 @@ export function createSimulatorPanel(
     await listDevices();
     if (!selected) return;
     if (selected.kind === "physical") {
-      const connected = selected.platform === "ios" ? selected.state === "connected" : selected.state === "Booted";
-      if (connected) await connect();
+      if (isDeviceActive(selected)) await connect();
       return;
     }
     if (selected.state !== "Booted") {
@@ -828,7 +821,7 @@ export function createSimulatorPanel(
         fitScreen();
       }
     } catch (error) {
-      notice(error instanceof Error ? error.message : String(error));
+      notice(errorMessage(error));
       await listDevices().catch(() => {});
       if (wasSelected && selected?.udid === id && selected.state === "Booted") await connect().catch(() => {});
       throw error;
@@ -927,10 +920,10 @@ export function createSimulatorPanel(
     button.addEventListener("click", () => { send({ type: "button", button: button.dataset.button === "home" ? "home" : "app-switcher" }); });
   });
   screenshotButton.addEventListener("click", () => { void action(async () => {
-    if (!selected || !selectedDeviceConnected() || !panelContext.canAttachScreenshots) return;
+    if (!selected || !isDeviceActive(selected) || !panelContext.canAttachScreenshots) return;
     const simulator = selected;
     try {
-      const physicalIos = simulator.kind === "physical" && simulator.platform === "ios";
+      const physicalIos = isPhysicalIos(simulator);
       let tool: string;
       let parameters: Record<string, unknown>;
       if (physicalIos) {
@@ -967,7 +960,7 @@ export function createSimulatorPanel(
     return action(connect);
   }
   function onVisibility() {
-    const connected = selectedDeviceConnected();
+    const connected = isDeviceActive(selected);
     if (document.visibilityState === "hidden") void disconnect();
     else if (toolsAvailable && connected && !ready && !disposed) void resume();
   }

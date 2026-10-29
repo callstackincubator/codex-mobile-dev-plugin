@@ -1,8 +1,9 @@
 import { z } from "zod";
+import { deviceRefSchema, requireSimulatorId } from "./device-ref.ts";
 import type { PhysicalIosDevice } from "./ios-devices.ts";
 import type { Status } from "./protocol.ts";
+import { isDeviceActive, isPhysicalIos } from "./devices.ts";
 
-const deviceId = z.string().min(1).max(256).regex(/^[a-zA-Z0-9_.:-]+$/);
 const appName = z.string().trim().min(1).max(128).optional();
 const ios = z.literal("ios");
 const android = z.literal("android");
@@ -10,17 +11,11 @@ const simulator = z.literal("simulator");
 const physical = z.literal("physical");
 const iosKind = z.union([simulator, physical]);
 const androidKind = z.enum(["emulator", "physical"]);
-const simulatorId = z.uuid();
 
 export const deviceChoiceReferenceSchema = z.discriminatedUnion("platform", [
-  z.object({ platform: ios, kind: iosKind, deviceId, appName }).strict(),
-  z.object({ platform: android, kind: androidKind, deviceId, appName }).strict(),
-]).superRefine((device, context) => {
-  if (device.platform === "ios" && device.kind === "simulator") {
-    const parsed = simulatorId.safeParse(device.deviceId);
-    if (parsed.success === false) context.addIssue({ code: "custom", path: ["deviceId"], message: "Use a simulator UUID from a device list." });
-  }
-});
+  deviceRefSchema.extend({ platform: ios, kind: iosKind, appName }).strict(),
+  deviceRefSchema.extend({ platform: android, kind: androidKind, appName }).strict(),
+]).superRefine((device, context) => requireSimulatorId(device, context, "Use a simulator UUID from a device list."));
 
 const message = z.string().trim().min(1).max(1024);
 const context = z.string().trim().min(1).max(512).optional();
@@ -55,11 +50,11 @@ export function physicalIosChoices(devices: PhysicalIosDevice[]): DeviceChoice[]
 }
 
 export function isRunningDevice(device: DeviceChoice): boolean {
-  return device.platform === "ios" && device.kind === "physical" ? device.state === "connected" : device.state === "Booted";
+  return isDeviceActive(device);
 }
 
 // The same rule the native form applies before offering a device.
 export function isSelectableDevice(device: DeviceChoice): boolean {
-  if (device.platform === "ios" && device.kind === "physical") return device.state === "connected" && device.pairingState === "paired";
+  if (isPhysicalIos(device)) return device.state === "connected" && device.pairingState === "paired";
   return device.state === "Booted" || device.state === "Shutdown";
 }

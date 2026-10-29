@@ -440,7 +440,7 @@ function closeFailureHost() {
   return { panel, calls, state: () => state, emit(batch: DisplayFpsBatch) { emit?.(batch); },
     failClose(message?: string) { closeFailure = message; }, delayOpen(promise: Promise<void>) { opening = promise; } };
 }
-const pixel: SimulatorDevice = { platform: "android", udid: "emulator-5554", name: "Pixel", state: "Booted", runtime: "Android" };
+const pixel: SimulatorDevice = { platform: "android", kind: "emulator", udid: "emulator-5554", name: "Pixel", state: "Booted", runtime: "Android" };
 async function settle() { for (let i = 0; i < 8; i++) await setImmediate(); }
 
 test("a transient Display FPS close failure stays visible and is retried before the next session opens", async () => {
@@ -547,7 +547,7 @@ test("CPU and display samples share a clock and selecting another app preserves 
   const deviceApps = createDeviceApps(app as unknown as App);
   const panel = new PerformancePanel(app as unknown as App, deviceApps);
   t.after(() => { deviceApps.dispose(); return panel.dispose(); });
-  deviceApps.selectDevice({ platform: "android", udid: "phone", name: "Android", state: "Booted", runtime: "Android" });
+  deviceApps.selectDevice({ platform: "android", kind: "physical", transportType: "wired", udid: "phone", name: "Android", state: "Booted", runtime: "Android" });
   panel.setAvailable(true);
   deviceApps.setAvailable(true);
   panel.show();

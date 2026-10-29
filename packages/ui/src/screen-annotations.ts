@@ -4,6 +4,7 @@ import { recordUiTiming, countUiEvent } from "./telemetry.ts";
 import type { SimulatorDevice } from "@mobile-dev/shared/protocol.ts";
 import type { PanelContext } from "./model-context.ts";
 import { elementStores } from "./element-store.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 
 type Capture = { screenshot: ScreenAnnotation["screenshot"]; screen: ScreenAnnotation["screen"] };
 export type InspectedTree = { tree: unknown; screen?: ScreenSize };
@@ -76,7 +77,7 @@ export class ScreenAnnotationsStore {
     const revision = ++this.revision;
     let capture: Capture;
     try { capture = this.capture(); }
-    catch (error) { this.update({ error: error instanceof Error ? error.message : String(error) }); return; }
+    catch (error) { this.update({ error: errorMessage(error) }); return; }
     try {
       this.components = [];
       this.hoverPoint = undefined;
@@ -96,7 +97,7 @@ export class ScreenAnnotationsStore {
         }
       }
     } catch (error) {
-      if (revision === this.revision) this.update({ error: `Could not read component names. You can still annotate a screen region. ${error instanceof Error ? error.message : String(error)}` });
+      if (revision === this.revision) this.update({ error: `Could not read component names. You can still annotate a screen region. ${errorMessage(error)}` });
     } finally { if (revision === this.revision) { this.update({ loading: false }); this.hover(this.hoverPoint); } }
   }
   // Bezel definitions can describe a smaller screen cutout than the accessibility screen that
@@ -209,7 +210,7 @@ export class ScreenAnnotationsStore {
       const attached = await this.context.attachAnnotation({ ...draft, text: draft.text.trim(), simulator: this.simulator });
       if (revision !== this.revision) return;
       this.update({ draft: undefined, status: attached ? this.savedStatus() : "Annotation removed from chat." });
-    } catch (error) { if (revision === this.revision) this.update({ error: error instanceof Error ? error.message : String(error) }); }
+    } catch (error) { if (revision === this.revision) this.update({ error: errorMessage(error) }); }
     finally { if (revision === this.revision) this.update({ busy: false }); }
   }
   async remove(id: string) {
@@ -217,7 +218,7 @@ export class ScreenAnnotationsStore {
     const revision = this.revision;
     this.update({ busy: true, error: "" });
     try { await this.context.removeAnnotation(id); if (revision === this.revision) this.update({ draft: undefined, status: "Annotation removed." }); }
-    catch (error) { if (revision === this.revision) this.update({ error: error instanceof Error ? error.message : String(error) }); }
+    catch (error) { if (revision === this.revision) this.update({ error: errorMessage(error) }); }
     finally { if (revision === this.revision) this.update({ busy: false }); }
   }
   async send() {
@@ -225,7 +226,7 @@ export class ScreenAnnotationsStore {
     const simulatorId = this.simulator.udid;
     this.update({ busy: true, sending: true, error: "", sendError: "" });
     try { await this.context.sendAnnotationsToChat(simulatorId); if (simulatorId === this.simulator?.udid) this.update({ status: this.context.usesHostAttachments ? "Annotations sent to chat." : "Added to chat input. Review and send there." }); }
-    catch (error) { if (simulatorId === this.simulator?.udid) { const message = error instanceof Error ? error.message : String(error); this.update({ error: message, sendError: message }); } }
+    catch (error) { if (simulatorId === this.simulator?.udid) { const message = errorMessage(error); this.update({ error: message, sendError: message }); } }
     // Stream readiness can change the selection revision while chat is sending.
     finally { this.update({ busy: false, sending: false }); }
   }

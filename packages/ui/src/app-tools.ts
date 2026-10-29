@@ -4,6 +4,7 @@ import type { AppPermission, AppPermissionEntry, InstalledApp, PermissionState }
 import { measureUiOperation } from "./telemetry.ts";
 import { elementStores } from "./element-store.ts";
 import { appIcons } from "./app-icons.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 
 export type AppToolAction = "list" | "icons" | "launch" | "stop" | "open_url" | "permission" | "push" | "language";
 export type AppEntry = InstalledApp & { icon?: string };
@@ -98,7 +99,7 @@ export class AppToolsStore {
       void this.loadSelected();
       void this.loadDetails();
     } catch (error) {
-      if (current()) this.update({ error: message(error) });
+      if (current()) this.update({ error: errorMessage(error) });
     } finally {
       if (current()) this.update({ loading: false });
     }
@@ -144,7 +145,7 @@ export class AppToolsStore {
       links: links.status === "fulfilled" ? links.value : [],
       // Older Android releases have no per-app language; the section then offers only the device language.
       language: language.status === "fulfilled" ? language.value : null,
-      ...(permissions.status === "fulfilled" ? { permissions: this.withApplied(permissions.value) } : { error: message(permissions.reason) }),
+      ...(permissions.status === "fulfilled" ? { permissions: this.withApplied(permissions.value) } : { error: errorMessage(permissions.reason) }),
     });
   }
 
@@ -166,7 +167,7 @@ export class AppToolsStore {
       await this.measure(action, () => work(app, current));
       if (current()) this.update({ status: describe(app) });
     } catch (error) {
-      if (current()) this.update({ error: message(error) });
+      if (current()) this.update({ error: errorMessage(error) });
     } finally {
       if (current()) this.update({ busy: null });
     }
@@ -235,8 +236,6 @@ export class AppToolsStore {
 
   dispose() { this.call = undefined; this.configure(this.state.platform, "", true); }
 }
-
-function message(error: unknown) { return error instanceof Error ? error.message : String(error); }
 
 const stores = elementStores(() => new AppToolsStore());
 export const bindAppTools = stores.bind;

@@ -3,30 +3,12 @@
  * view can answer it. Measured not concluded, every figure labelled.
  */
 
-import { formatMs } from "./tracesift-labels.ts";
+import type { FrameClass, TaskCard, TaskTreeNode } from "@callstack/tracesift-explore";
+import { formatMs } from "./labels.ts";
+import { numberedPicks, percentOf, percentText, sameSitePicks, unplacedSection } from "./selection-prompt.ts";
 
-/** The part of a task hand-off this reads. `TaskHandoff` from @callstack/tracesift-explore, structurally. */
-export interface SelectionTree {
-  id: string;
-  name: string;
-  location?: string;
-  frameClass: string;
-  totalMs: number;
-  selfMs: number;
-  invocations: number;
-  children: SelectionTree[];
-}
-
-export interface SelectionCard {
-  durationMs: number;
-  percentOfProfile?: number;
-  boundaries?: string;
-  headline?: string;
-  pathline?: string;
-  tree: SelectionTree;
-  /** The card's ranked culprits, which the views list and a reader can pick from. */
-  culprits?: readonly { nodeId: string; selfMs: number; invocations: number; longestCallMs?: number }[];
-}
+/** The part of a task hand-off's card this reads. Its culprits are the ranked rows the views list and a reader can pick from. */
+export type SelectionCard = Pick<TaskCard, "durationMs" | "percentOfProfile" | "boundaries" | "headline" | "pathline" | "tree" | "culprits">;
 
 export interface SelectedFrame {
   /** Pick number as drawn in the views. Carried, not derived, so a dropped pick doesn't renumber the rest. */
@@ -34,7 +16,7 @@ export interface SelectedFrame {
   nodeId: string;
   name: string;
   location?: string;
-  frameClass: string;
+  frameClass: FrameClass;
   totalMs: number;
   selfMs: number;
   invocations: number;
@@ -71,12 +53,12 @@ export interface FrameSelectionEvidence {
 /** The synthetic node every task's tree starts at, which is not a frame. */
 const SYNTHETIC_ROOT = "(root)";
 
-interface Located { node: SelectionTree; path: string[] }
+interface Located { node: TaskTreeNode; path: string[] }
 
 /** Every node in the tree, by id, with the names of the real frames above it. */
-function indexTree(root: SelectionTree): Map<string, Located> {
+function indexTree(root: TaskTreeNode): Map<string, Located> {
   const found = new Map<string, Located>();
-  const walk = (node: SelectionTree, path: string[]) => {
+  const walk = (node: TaskTreeNode, path: string[]) => {
     const here = node.name === SYNTHETIC_ROOT ? path : [...path, node.name];
     found.set(node.id, { node, path: here });
     for (const child of node.children) walk(child, here);
@@ -85,7 +67,6 @@ function indexTree(root: SelectionTree): Map<string, Located> {
   return found;
 }
 
-const percentOf = (value: number, total: number) => (total > 0 ? (value / total) * 100 : 0);
 const rounded = (value: number) => Math.round(value * 10) / 10;
 
 export function frameSelectionEvidence(card: SelectionCard, selectedNodeIds: readonly string[]): FrameSelectionEvidence {
@@ -93,8 +74,7 @@ export function frameSelectionEvidence(card: SelectionCard, selectedNodeIds: rea
   const culprits = new Map((card.culprits ?? []).map(culprit => [culprit.nodeId, culprit]));
   const frames: SelectedFrame[] = [];
   const unresolved: string[] = [];
-  // Dedupe: the same frame can be clicked twice before state settles. The pick number is the first-occurrence position, matching the views.
-  for (const nodeId of new Set(selectedNodeIds)) {
+  for (const { id: nodeId, pick } of numberedPicks(selectedNodeIds)) {
     const hit = index.get(nodeId);
     if (!hit) {
       unresolved.push(nodeId);
@@ -102,7 +82,7 @@ export function frameSelectionEvidence(card: SelectionCard, selectedNodeIds: rea
     }
     const culprit = culprits.get(nodeId);
     frames.push({
-      pick: selectedNodeIds.indexOf(nodeId) + 1,
+      pick,
       nodeId,
       name: hit.node.name,
       ...(hit.node.location ? { location: hit.node.location } : {}),
@@ -156,8 +136,11 @@ const FOLD_WORDS: Record<string, string> = {
   library: "dependency",
 };
 
-/** Frame classes the tree prints rather than folds. Ported from Explore's `isShownFrame`; this file can't carry its React peer. */
-const KEPT_CLASSES = new Set(["app", "library", "anonymous"]);
+/**
+ * Frame classes the tree prints rather than folds. Ported from Explore's `isShownFrame`, which the
+ * package exports only beside its React views; importing it would load them wherever this is used.
+ */
+const KEPT_CLASSES = new Set<FrameClass>(["app", "library", "anonymous"]);
 
 /** The engine's own housekeeping, which names nothing a reader can act on. */
 const ENGINE_STATE = new Set(["(idle)", "(program)", "(garbage collector)", "(gc)", "(bootstrap)"]);
@@ -165,7 +148,7 @@ const ENGINE_STATE = new Set(["(idle)", "(program)", "(garbage collector)", "(gc
 /** Names a frame carries because the profiler needed something to print. */
 const NAMES_NOTHING = new Set(["", "(anonymous)", "anonymous", "<anonymous>", "(root)", "(function)", "Function call", "FunctionCall"]);
 
-function isPrintedFrame(name: string, frameClass: string): boolean {
+function isPrintedFrame(name: string, frameClass: FrameClass): boolean {
   // A recorder-invented name says nothing even in a kept class.
   if (NAMES_NOTHING.has(name.trim())) return false;
   if (KEPT_CLASSES.has(frameClass)) return true;
@@ -185,14 +168,14 @@ interface TreeRow {
   note?: string;
   /** A frame worth printing on its own: application code, or a run-break. */
   named: boolean;
-  frameClass: string;
+  frameClass: FrameClass;
   children: TreeRow[];
 }
 
 /** The frames joining the task to every pick as one tree, so branch points stay visible. Shape matches the service's own. */
 function selectionsTree(card: SelectionCard, frames: readonly SelectedFrame[]): string[] {
-  const byId = new Map<string, { node: SelectionTree; parent: SelectionTree | null }>();
-  const pending: { node: SelectionTree; parent: SelectionTree | null }[] = [{ node: card.tree, parent: null }];
+  const byId = new Map<string, { node: TaskTreeNode; parent: TaskTreeNode | null }>();
+  const pending: { node: TaskTreeNode; parent: TaskTreeNode | null }[] = [{ node: card.tree, parent: null }];
   while (pending.length > 0) {
     const here = pending.pop()!;
     byId.set(here.node.id, here);
@@ -227,7 +210,7 @@ function selectionsTree(card: SelectionCard, frames: readonly SelectedFrame[]): 
     }
   }
 
-  const rowFor = (node: SelectionTree): TreeRow => ({
+  const rowFor = (node: TaskTreeNode): TreeRow => ({
     label: node.name,
     ...(marked.has(node.id) ? { note: `  ← selection #${marked.get(node.id)}` } : {}),
     named: isPrintedFrame(node.name, node.frameClass),
@@ -275,12 +258,6 @@ function drawRow(row: TreeRow, prefix: string, isLast: boolean, isRoot: boolean)
 }
 
 /**
- * A share, as the hand-off writes it. One decimal throughout: a whole percent
- * makes 99.6 read as "100% of the recording", and 70.4 and 69.5 read as equal.
- */
-const percentText = (value: number) => `${value.toFixed(1)}%`;
-
-/**
  * The hand-off for a set of picked frames, numbered in the order chosen so "the
  * third one" means the same thing here and on screen.
  */
@@ -289,7 +266,6 @@ export function buildSelectionPrompt(input: {
   evidence: FrameSelectionEvidence;
   /** The profile this came from, when the panel knows it. */
   profileTitle?: string;
-  /** The card's own headline, so the chat says which task the picks sit in. */
 }): string {
   const { card, evidence } = input;
   const lines: string[] = [];
@@ -332,12 +308,7 @@ export function buildSelectionPrompt(input: {
   lines.push("");
 
   // Say so plainly: a model reading two same-named entries would otherwise merge them (losing time) or report two problems.
-  const callSites = new Map<string, SelectedFrame[]>();
-  for (const frame of evidence.frames) {
-    const key = `${frame.name}\u0000${frame.location ?? ""}`;
-    callSites.set(key, [...(callSites.get(key) ?? []), frame]);
-  }
-  const shared = [...callSites.values()].filter(frames => frames.length > 1);
+  const shared = sameSitePicks(evidence.frames, frame => frame.location);
   if (shared.length > 0) {
     lines.push(`## Two selections are the same function`);
     for (const frames of shared) {
@@ -386,13 +357,7 @@ export function buildSelectionPrompt(input: {
     lines.push("");
   }
 
-  if (evidence.unresolved.length > 0) {
-    lines.push(`## I could not place ${evidence.unresolved.length === 1 ? "one selection" : `${evidence.unresolved.length} selections`}`);
-    lines.push(
-      `The view reported ${evidence.unresolved.length === 1 ? "it" : "them"} as selected but the task's call tree holds no frame with ${evidence.unresolved.length === 1 ? "that reference" : "those references"}, so ${evidence.unresolved.length === 1 ? "it carries" : "they carry"} no figures. Say which selections those are rather than guessing at what they were.`,
-    );
-    lines.push("");
-  }
+  lines.push(...unplacedSection(evidence.unresolved, "the task's call tree holds no frame"));
 
   lines.push(`## How to read these numbers`);
   lines.push(`- This has only frame names, source positions and timings. It has not read any source file. Confirm what each of these functions actually does before changing it.`);

@@ -12,7 +12,7 @@ import type { OpenAIModelContextHostState } from "@openai/mcp-extensions/app";
 import { PNG, UDID } from "../../test-support/fixtures.ts";
 import type { HostAttachments } from "../src/host-bridge.ts";
 
-const simulator = { udid: UDID, name: "iPhone", runtime: "iOS 26", state: "Booted", platform: "ios" as const };
+const simulator = { udid: UDID, name: "iPhone", runtime: "iOS 26", state: "Booted", platform: "ios" as const, kind: "simulator" as const };
 const capture = { screenshot: { id: "screen-1", data: PNG.toString("base64"), capturedAt: "2026-10-01T10:00:00Z" }, screen: { width: 393, height: 852, units: "points" as const } };
 const component = { name: "Continue", identifier: "continue-button", role: "AXButton", depth: 2, bounds: { x: 10, y: 20, width: 100, height: 40 } };
 const annotation: ScreenAnnotation = { ...capture, id: "note-1", number: 1, text: "Make this button larger", simulator, point: { x: 50, y: 40 }, component };
@@ -582,7 +582,7 @@ test("standard hosts receive readable, self-locating drafts and retain selection
   } as App, () => undefined);
   await context.attachAnnotation(annotation);
   assert.equal(context.screenAnnotations.length, 1);
-  await context.attachAnnotation({ ...annotation, id: "android-note", simulator: { ...simulator, udid: "android", name: "Pixel", platform: "android" } });
+  await context.attachAnnotation({ ...annotation, id: "android-note", simulator: { ...simulator, udid: "android", name: "Pixel", platform: "android", kind: "emulator" } });
   await context.sendAnnotationsToChat();
   assert.match(JSON.stringify(messages[0].content), /Make this button larger/);
   assert.match(JSON.stringify(messages[0].content), /iPhone/);

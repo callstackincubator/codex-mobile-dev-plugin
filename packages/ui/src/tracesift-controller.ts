@@ -4,10 +4,15 @@ import type { HostBridge } from "./host-bridge.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { traceSiftAnalysisSchema, traceSiftHandoffSchema, traceSiftRestoreSchema, type TraceSiftAnalysis, type TraceSiftProfileType } from "@mobile-dev/shared/tracesift.ts";
 import { decodeTraceSiftExplorePayload, TRACE_SIFT_PAYLOAD_MAX_BYTES, traceSiftExploreEnvelopeSchema, TRACE_SIFT_PAYLOAD_TOO_LARGE, traceSiftPayloadRefused, type TraceSiftExploreKind } from "@mobile-dev/shared/tracesift-explore.ts";
-import { buildSelectionPrompt, frameSelectionEvidence, type SelectionCard } from "@mobile-dev/shared/tracesift-selection.ts";
-import { buildReactSelectionPrompt, reactSelectionEvidence, type ReactSelectionRecording } from "@mobile-dev/shared/tracesift-react-selection.ts";
-import type { ContributionChartKind } from "./components/tracesift/contribution-chart.tsx";
+import type { ReactExploreHandoff, TaskHandoff } from "@callstack/tracesift-explore";
+import { buildSelectionPrompt, frameSelectionEvidence, type SelectionCard } from "./tracesift/selection.ts";
+import { buildReactSelectionPrompt, reactSelectionEvidence, type ReactSelectionRecording } from "./tracesift/react-selection.ts";
+import type { ContributionChartKind } from "./tracesift/contribution.ts";
 import { captureUiError, countUiEvent, markUiSurfaceReady, recordUiTiming, setUiGauge, setUiSurface, setUiTelemetryContext } from "./telemetry.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
+
+/** The finding the explorer draws, as the payload tool delivered it. */
+type ExplorerPayload = { kind: "task"; payload: TaskHandoff } | { kind: "react"; payload: ReactExploreHandoff };
 
 type State = {
   analysis?: TraceSiftAnalysis;
@@ -31,11 +36,8 @@ type State = {
   copiedCard?: string;
   openingExploreCard?: string;
   /** The finding whose full explorer is on screen, or nothing while in the cards list. */
-  explorer?: {
+  explorer?: ExplorerPayload & {
     cardId: string;
-    kind: "task" | "react";
-    /** `TaskHandoff` or `ReactExploreHandoff` from @callstack/tracesift-explore. */
-    payload: unknown;
     /** The call-tree node the card's chart band was clicked, if any. */
     focus?: string;
     /** Which commit of a React timeline is open, as `<rootId>.<commitIndex>`; the explorer reports switches. */
@@ -48,7 +50,7 @@ type State = {
 };
 
 function composerUnavailable(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = errorMessage(error);
   return /(?:no (?:active |available )?composer|composer.*(?:unavailable|not available|not active)|requires? an (?:active|available) composer|MCP app messages are disabled for this view)/i.test(message);
 }
 
@@ -278,13 +280,15 @@ export class TraceSiftController {
       const envelope = traceSiftExploreEnvelopeSchema.safeParse(result.structuredContent);
       if (!envelope.success) throw new Error("TraceSift did not return the data this explorer needs.");
       if (envelope.data.payloadBytes > TRACE_SIFT_PAYLOAD_MAX_BYTES) throw new Error(TRACE_SIFT_PAYLOAD_TOO_LARGE);
-      const payload = await decodeTraceSiftExplorePayload(result, envelope.data);
+      const decoded = await decodeTraceSiftExplorePayload(result, envelope.data);
       // `accept` may have replaced the analysis while the payload loaded; installing it would pair the new reading with an unknown card id.
       if (this.disposed || this.state.analysis?.analysisId !== analysis.analysisId) {
         this.update({ openingExploreCard: undefined });
         return;
       }
       const kind: TraceSiftExploreKind = envelope.data.kind;
+      // The explorer and the selection hand-offs check the fields they read.
+      const loaded: ExplorerPayload = kind === "task" ? { kind, payload: decoded as TaskHandoff } : { kind, payload: decoded as ReactExploreHandoff };
       // Switched before recording timings so the fetch is attributed to the explorer.
       setUiTelemetryContext({ tracesift_view: "explorer" });
       recordUiTiming("ui.tracesift.payload", performance.now() - startedAt);
@@ -295,7 +299,7 @@ export class TraceSiftController {
       this.update({
         openingExploreCard: undefined,
         explorer: {
-          cardId, kind, payload,
+          ...loaded, cardId,
           ...(focus ? { focus } : {}),
           ...(kind === "react" ? { commitKey: `${card.rootId}.${card.commitIndex}` } : {}),
         },
@@ -380,11 +384,8 @@ export class TraceSiftController {
    * The hand-off for picked task frames, or why there is none. Split per kind because
    * a CPU profile is sampled and a React one is not.
    */
-  private taskSelectionHandoff(payload: unknown, selected: readonly string[], profileTitle?: string) {
-    const handoff = payload as { card?: unknown } | null;
-    const card = handoff && typeof handoff.card === "object" && handoff.card !== null
-      ? handoff.card as SelectionCard
-      : undefined;
+  private taskSelectionHandoff(handoff: TaskHandoff | null, selected: readonly string[], profileTitle?: string) {
+    const card: SelectionCard | undefined = typeof handoff?.card === "object" && handoff.card !== null ? handoff.card : undefined;
     if (!card?.tree) return { error: "This task's call tree is not loaded, so its selection cannot be described." };
     const evidence = frameSelectionEvidence(card, selected);
     if (evidence.frames.length === 0) {
@@ -399,11 +400,8 @@ export class TraceSiftController {
   }
 
   /** Same, for components picked from a React recording's commits. */
-  private reactSelectionHandoff(payload: unknown, selected: readonly string[], profileTitle?: string) {
-    const handoff = payload as { explore?: unknown } | null;
-    const recording = handoff && typeof handoff.explore === "object" && handoff.explore !== null
-      ? handoff.explore as ReactSelectionRecording
-      : undefined;
+  private reactSelectionHandoff(handoff: ReactExploreHandoff | null, selected: readonly string[], profileTitle?: string) {
+    const recording: ReactSelectionRecording | undefined = typeof handoff?.explore === "object" && handoff.explore !== null ? handoff.explore : undefined;
     if (!recording?.commits) return { error: "This recording's commits are not loaded, so its selection cannot be described." };
     const evidence = reactSelectionEvidence(recording, selected);
     if (evidence.components.length === 0) {

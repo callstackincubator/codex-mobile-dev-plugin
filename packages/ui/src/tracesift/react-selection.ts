@@ -1,49 +1,14 @@
 /**
- * Evidence behind components picked in a React Explore (`tracesift-selection.ts`
+ * Evidence behind components picked in a React Explore (`selection.ts`
  * is the CPU side). Unsampled, so exact for renders and silent about the rest.
  */
 
-import { formatReactMs, shortLocationLabel } from "./tracesift-labels.ts";
+import type { ReactExplore, ReactExploreCommit, ReactExploreNode } from "@callstack/tracesift-explore";
+import { formatReactMs, shortLocationLabel } from "./labels.ts";
+import { numberedPicks, percentOf, percentText, sameSitePicks, unplacedSection } from "./selection-prompt.ts";
 
-/** One rendered fiber. `ReactExploreNode` from @callstack/tracesift-explore, structurally. */
-export interface ReactSelectionNode {
-  id: number;
-  name: string;
-  componentClass: string;
-  selfMs: number;
-  actualMs: number;
-  cause: string;
-  changedProps: string[];
-  changedHooks: string[];
-  compiledWithForget: boolean;
-  sourceHint: string | null;
-  children: ReactSelectionNode[];
-}
-
-/** One commit. `ReactExploreCommit`, structurally, minus the fields no prompt quotes. */
-export interface ReactSelectionCommit {
-  rootId: number;
-  commitIndex: number;
-  startMs: number;
-  durationMs: number;
-  renderedCount: number;
-  /** Every rendered component's own time, added up: the partition's measured total. */
-  summedSelfMs: number;
-  /** Render time that reached no component: the reconciler walking the tree. */
-  unattributedMs: number;
-  overBudget: boolean;
-  causesRecorded: boolean;
-  treeDropped: boolean;
-  tree: ReactSelectionNode[];
-}
-
-/** The recording the picks were made in. `ReactExplore`, structurally. */
-export interface ReactSelectionRecording {
-  budgetMs: number;
-  spanMs: number;
-  commitsOverBudget: number;
-  commits: ReactSelectionCommit[];
-}
+/** The part of a React hand-off's recording this reads. */
+export type ReactSelectionRecording = Pick<ReactExplore, "budgetMs" | "spanMs" | "commits">;
 
 export interface SelectedComponent {
   /** Pick number as drawn in the views. Carried, not derived, so a dropped pick doesn't renumber the rest. */
@@ -53,11 +18,11 @@ export interface SelectedComponent {
   commitIndex: number;
   fiberId: number;
   name: string;
-  componentClass: string;
+  componentClass: ReactExploreNode["componentClass"];
   sourceHint?: string;
   selfMs: number;
   actualMs: number;
-  cause: string;
+  cause: ReactExploreNode["cause"];
   changedProps: string[];
   changedHooks: string[];
   compiledWithForget: boolean;
@@ -100,7 +65,6 @@ export interface ReactSelectionEvidence {
   recordedCommitsMs: number;
 }
 
-const percentOf = (value: number, total: number) => (total > 0 ? (value / total) * 100 : 0);
 const rounded = (value: number) => Math.round(value * 100) / 100;
 
 /** The id a picked component is held by: `<rootId>.<commitIndex>.<fiberId>`. */
@@ -112,12 +76,12 @@ export function parseReactPick(key: string): { rootId: number; commitIndex: numb
   return { rootId: rootId!, commitIndex: commitIndex!, fiberId: fiberId! };
 }
 
-interface Located { node: ReactSelectionNode; path: string[]; ancestors: number[] }
+interface Located { node: ReactExploreNode; path: string[]; ancestors: number[] }
 
 /** Every rendered fiber of one commit, by id, with the components above it. */
-function indexCommit(commit: ReactSelectionCommit): Map<number, Located> {
+function indexCommit(commit: ReactExploreCommit): Map<number, Located> {
   const found = new Map<number, Located>();
-  const walk = (nodes: readonly ReactSelectionNode[], path: string[], ancestors: number[]) => {
+  const walk = (nodes: readonly ReactExploreNode[], path: string[], ancestors: number[]) => {
     for (const node of nodes) {
       found.set(node.id, { node, path: [...path, node.name], ancestors });
       walk(node.children, [...path, node.name], [...ancestors, node.id]);
@@ -136,8 +100,7 @@ export function reactSelectionEvidence(
   const components: SelectedComponent[] = [];
   const unresolved: string[] = [];
 
-  // Dedupe: the same component can be clicked twice before state settles. The pick number is the first-occurrence position, matching the views.
-  for (const key of new Set(selectedKeys)) {
+  for (const { id: key, pick } of numberedPicks(selectedKeys)) {
     const parts = parseReactPick(key);
     const commit = parts ? byCommit.get(`${parts.rootId}.${parts.commitIndex}`) : undefined;
     if (!parts || !commit) {
@@ -153,7 +116,7 @@ export function reactSelectionEvidence(
       continue;
     }
     components.push({
-      pick: selectedKeys.indexOf(key) + 1,
+      pick,
       key,
       rootId: parts.rootId,
       commitIndex: parts.commitIndex,
@@ -237,9 +200,6 @@ function compactPath(path: readonly string[]): string {
   return [`\`${path[0]}\``, "…", ...path.slice(-3).map(part => `\`${part}\``)].join(" › ");
 }
 
-/** A share, with the one decimal the CPU hand-off uses and for the same reason. */
-const percentText = (value: number) => `${value.toFixed(1)}%`;
-
 /** Why one component rendered, with whatever React named as having changed. */
 function causeText(pick: SelectedComponent): string {
   const base = CAUSE_TEXT[pick.cause] ?? pick.cause;
@@ -301,12 +261,7 @@ export function buildReactSelectionPrompt(input: {
   lines.push("");
 
   // Unlike CPU call sites, two picks of one component are usually one component rendering repeatedly, which is the finding.
-  const byComponent = new Map<string, SelectedComponent[]>();
-  for (const pick of evidence.components) {
-    const key = `${pick.name}\u0000${pick.sourceHint ?? ""}`;
-    byComponent.set(key, [...(byComponent.get(key) ?? []), pick]);
-  }
-  const repeated = [...byComponent.values()].filter(picks => picks.length > 1);
+  const repeated = sameSitePicks(evidence.components, pick => pick.sourceHint);
   if (repeated.length > 0) {
     lines.push(`## The same component, picked more than once`);
     for (const picks of repeated) {
@@ -354,13 +309,7 @@ export function buildReactSelectionPrompt(input: {
   }
   lines.push("");
 
-  if (evidence.unresolved.length > 0) {
-    lines.push(`## I could not place ${evidence.unresolved.length === 1 ? "one selection" : `${evidence.unresolved.length} selections`}`);
-    lines.push(
-      `The view reported ${evidence.unresolved.length === 1 ? "it" : "them"} as selected but this recording holds no rendered component with ${evidence.unresolved.length === 1 ? "that reference" : "those references"}, so ${evidence.unresolved.length === 1 ? "it carries" : "they carry"} no figures. Say which selections those are rather than guessing at what they were.`,
-    );
-    lines.push("");
-  }
+  lines.push(...unplacedSection(evidence.unresolved, "this recording holds no rendered component"));
 
   lines.push(`## Interpretation constraints`);
   lines.push(`- This has only component names, source hints and timings. It has not read any source file. Confirm what each of these components actually does before changing it.`);
