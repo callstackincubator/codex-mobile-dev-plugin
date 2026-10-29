@@ -8,7 +8,7 @@ import type { CallToolResult, ReadResourceResult } from "@modelcontextprotocol/s
 import { z } from "zod";
 import { PLUGIN_VERSION } from "@mobile-dev/shared/version.ts";
 import { SENTRY_ORIGIN } from "@mobile-dev/shared/telemetry.ts";
-import { streamMessageSchema, udidSchema } from "@mobile-dev/shared/protocol.ts";
+import { iosSimulatorSchema, statusSchema, streamMessageSchema, udidSchema } from "@mobile-dev/shared/protocol.ts";
 import { panelTargetSchema } from "@mobile-dev/shared/panel-target.ts";
 import type { PanelTarget } from "@mobile-dev/shared/panel-target.ts";
 import { captureServerError } from "./telemetry.ts";
@@ -45,11 +45,7 @@ const sessionIdSchema = z.string().regex(/^[a-f0-9]{64}$/);
 const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 const write = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
 const deviceInput = { udid: udidSchema.describe("A simulator UDID returned by mobile_list_simulators.") };
-const deviceSchema = z.object({ udid: udidSchema, name: z.string(), state: z.string(), runtime: z.string(), platform: z.literal("ios"), kind: z.literal("simulator") });
-const statusOutput = {
-  connected: z.boolean(), managed: z.boolean(), baseUrl: z.string(),
-  devices: z.array(deviceSchema), error: z.string().optional(),
-};
+const statusOutput = { ...statusSchema.shape, devices: z.array(iosSimulatorSchema.extend({ udid: udidSchema })) };
 
 function result(data: Record<string, unknown>, message: string): CallToolResult {
   return { content: [{ type: "text", text: message }], structuredContent: data };

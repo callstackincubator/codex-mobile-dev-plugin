@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { ExpectedOperationError } from "./error-reporting.ts";
-import type { PhysicalIosDevice } from "./ios-devices.ts";
-import type { PhysicalAndroidDevice } from "./android-devices.ts";
+import { physicalIosDeviceSchema } from "./ios-devices.ts";
+import { physicalAndroidDeviceSchema } from "./android-devices.ts";
 
 export const udidSchema = z.uuid();
 const point = z.number().finite().min(0).max(10000);
@@ -37,17 +37,22 @@ export const streamMessageSchema = z.union([
   z.object({ type: z.literal("set_scale"), scale: z.number().int().min(1).max(4) }).strict(),
 ]);
 
-type VirtualDeviceFields = { udid: string; name: string; state: string; runtime: string };
-export type IosSimulator = VirtualDeviceFields & { platform: "ios"; kind: "simulator" };
-export type AndroidEmulator = VirtualDeviceFields & { platform: "android"; kind: "emulator" };
-export type SimulatorDevice = IosSimulator | AndroidEmulator | PhysicalIosDevice | PhysicalAndroidDevice;
-export type Status = {
-  connected: boolean;
-  managed: boolean;
-  baseUrl: string;
-  devices: SimulatorDevice[];
-  error?: string;
-};
+const virtualDeviceFields = { udid: z.string(), name: z.string(), state: z.string(), runtime: z.string() };
+export const iosSimulatorSchema = z.object({ ...virtualDeviceFields, platform: z.literal("ios"), kind: z.literal("simulator") });
+export type IosSimulator = z.infer<typeof iosSimulatorSchema>;
+export const androidEmulatorSchema = z.object({ ...virtualDeviceFields, platform: z.literal("android"), kind: z.literal("emulator") });
+export type AndroidEmulator = z.infer<typeof androidEmulatorSchema>;
+export const simulatorDeviceSchema = z.union([iosSimulatorSchema, androidEmulatorSchema, physicalIosDeviceSchema, physicalAndroidDeviceSchema]);
+export type SimulatorDevice = z.infer<typeof simulatorDeviceSchema>;
+// A device backend's listing: Baguette or simctl for iOS simulators, adb and the emulator for Android.
+export const statusSchema = z.object({
+  connected: z.boolean(),
+  managed: z.boolean(),
+  baseUrl: z.string(),
+  devices: z.array(simulatorDeviceSchema),
+  error: z.string().optional(),
+});
+export type Status = z.infer<typeof statusSchema>;
 
 export function normalizeDevices(payload: unknown): IosSimulator[] {
   const parsed = z.object({ running: z.array(z.unknown()), available: z.array(z.unknown()) }).parse(payload);

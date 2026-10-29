@@ -3,23 +3,28 @@ import { deviceRefSchema, platformSchema, requireSimulatorId } from "./device-re
 import { isStoppedAvd } from "./android-ids.ts";
 
 export type CpuPoint = { time: number; value: number | null };
-export type CpuSample = {
-  time: number;
-  interval: number;
-  cpuPercent: number | null;
-  memoryBytes: number | null;
-  threads: Array<{ id: string; name: string; cpuPercent: number | null }>;
-};
-export type CpuPhase = "idle" | "connecting" | "recording" | "stopping" | "stopped" | "failed";
-export type MemoryMetric = "rss" | "physical-footprint";
-export type CpuBatch = {
-  cursor: number;
-  timeOrigin?: number;
-  phase: CpuPhase;
-  samples: CpuSample[];
-  memoryMetric: MemoryMetric;
-  error?: string;
-};
+const percent = z.number().nullable();
+export const cpuSampleSchema = z.object({
+  time: z.number(),
+  interval: z.number(),
+  cpuPercent: percent,
+  memoryBytes: z.number().nullable(),
+  threads: z.array(z.object({ id: z.string(), name: z.string(), cpuPercent: percent })),
+});
+export type CpuSample = z.infer<typeof cpuSampleSchema>;
+export const cpuPhaseSchema = z.enum(["idle", "connecting", "recording", "stopping", "stopped", "failed"]);
+export type CpuPhase = z.infer<typeof cpuPhaseSchema>;
+const memoryMetricSchema = z.enum(["rss", "physical-footprint"]);
+export type MemoryMetric = z.infer<typeof memoryMetricSchema>;
+export const cpuBatchSchema = z.object({
+  cursor: z.number().int().nonnegative(),
+  timeOrigin: z.number().optional(),
+  phase: cpuPhaseSchema,
+  samples: z.array(cpuSampleSchema),
+  memoryMetric: memoryMetricSchema,
+  error: z.string().optional(),
+});
+export type CpuBatch = z.infer<typeof cpuBatchSchema>;
 
 const deviceKinds = z.enum(["simulator", "physical"]);
 const device = deviceRefSchema.extend({ platform: platformSchema.default("ios"), kind: deviceKinds.optional() });

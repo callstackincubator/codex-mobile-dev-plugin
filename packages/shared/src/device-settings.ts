@@ -22,16 +22,17 @@ export const deviceSettingSchema = z.discriminatedUnion("setting", [
   z.object({ setting: z.literal("network"), value: z.enum(networkConditions) }).strict(),
 ]);
 export type DeviceSetting = z.infer<typeof deviceSettingSchema>;
-export type DeviceSettings = {
-  appearance?: "light" | "dark" | "auto";
-  contentSize?: typeof contentSizes[number];
-  fontScale?: number;
-  increaseContrast?: boolean;
-  orientation?: "auto" | "portrait" | "landscape";
-  location?: z.infer<typeof locationSchema> | null;
-  locationSupported: boolean;
-  statusBar?: "clean" | "live";
+export const deviceSettingsSchema = z.object({
+  appearance: z.enum(["light", "dark", "auto"]).optional(),
+  contentSize: z.enum(contentSizes).optional(),
+  fontScale: z.number().optional(),
+  increaseContrast: z.boolean().optional(),
+  orientation: z.enum(["auto", "portrait", "landscape"]).optional(),
+  location: z.object(locationSchema.shape).nullable().optional(),
+  locationSupported: z.boolean(),
+  statusBar: z.enum(["clean", "live"]).optional(),
   // "custom" is a throttle set outside this panel; it is shown but never sent.
-  network?: NetworkCondition | "custom";
-  errors?: string[];
-};
+  network: z.enum([...networkConditions, "custom"] as const).optional(),
+  errors: z.array(z.string()).optional(),
+});
+export type DeviceSettings = z.infer<typeof deviceSettingsSchema>;
