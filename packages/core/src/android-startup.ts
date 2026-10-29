@@ -4,7 +4,7 @@ import { promisify } from "node:util";
 import { androidDeviceState, androidStartupMessageSchema, setAndroidStartupDiagnostic } from "@mobile-dev/shared/android-startup-diagnostics.ts";
 import type { AndroidStartupContext, AndroidStartupFailure, AndroidStartupSummary } from "@mobile-dev/shared/android-startup-diagnostics.ts";
 import { BackendStartError } from "./backend-process.ts";
-import { recordAndroidBackendStartup, recordAndroidStartupContext, recordAndroidStartupDeviceState, recordAndroidStartupStages } from "./telemetry.ts";
+import { recordAndroidBackendStartup, recordAndroidStartupContext, recordAndroidStartupDeviceState, recordAndroidStartupStages, telemetryEnabled } from "./telemetry.ts";
 
 const execute = promisify(execFile);
 const parentOutcomes = { exit: "error", deadline: "timeout", cancelled: "aborted" } as const;
@@ -27,7 +27,7 @@ export class AndroidStartupTracker {
 
   observe(child: ChildProcess) {
     const onDiagnostic = (message: unknown) => {
-      if (process.env.MOBILE_DEV_TELEMETRY === "off" || this.summary) return;
+      if (!telemetryEnabled() || this.summary) return;
       const parsed = androidStartupMessageSchema.safeParse(message);
       if (parsed.success === false) return;
       if (parsed.data.type === "mobile-dev/android-startup") this.stage = parsed.data.stage;
@@ -64,7 +64,7 @@ export class AndroidStartupTracker {
 
   /** Records, in the background, whether adb still lists the device after a failed start. */
   checkDeviceAfter(adb: string, serial: string, failure: AndroidStartupFailure, signal: AbortSignal) {
-    if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+    if (!telemetryEnabled()) return;
     const checkedAt = performance.now();
     void execute(adb, ["devices"], { timeout: 2000, maxBuffer: 1024 * 1024, signal }).then(response => {
       const state = androidDeviceState(response.stdout, serial);
