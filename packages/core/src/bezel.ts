@@ -1,6 +1,7 @@
 import type { Baguette } from "./baguette.ts";
 import { compositeBezelGeometry } from "@mobile-dev/shared/bezel.ts";
 import type { Bezel } from "@mobile-dev/shared/bezel.ts";
+import { isPng } from "./png.ts";
 
 async function png(baguette: Baguette, udid: string, path: string): Promise<string> {
   const url = new URL(path, baguette.baseUrl);
@@ -20,7 +21,7 @@ async function png(baguette: Baguette, udid: string, path: string): Promise<stri
     }
   } finally { await reader.cancel(); }
   const bytes = Buffer.concat(chunks);
-  if (!bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) throw new Error("Invalid bezel PNG");
+  if (!isPng(bytes)) throw new Error("Invalid bezel PNG");
   return `data:image/png;base64,${bytes.toString("base64")}`;
 }
 

@@ -1,6 +1,5 @@
 import { parseResourceInput } from "./resource-input.ts";
 import { openRequestSession } from "./request-session.ts";
-import type { ServerRequestContext } from "./request-session.ts";
 import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
@@ -8,24 +7,15 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { ServeEmu, androidIdSchema } from "./serve-emu.ts";
 import { AndroidStreams } from "./android-streams.ts";
-import { retryableFailure } from "./simulator-unavailable.ts";
-import { errorMessage, inputSchema } from "@mobile-dev/shared/protocol.ts";
-import { captureServerError } from "./telemetry.ts";
+import { inputSchema } from "@mobile-dev/shared/protocol.ts";
+import { sessionIdSchema } from "./session-registry.ts";
+import { guarded as guardedTool, jsonResult, READ_ONLY as read, WRITES as write } from "./tool-results.ts";
+import type { ServerRequestContext } from "./request-session.ts";
+import { assertPng, MAX_SCREENSHOT_BYTES, screenshotResult } from "./png.ts";
 
-const sessionIdSchema = z.string().regex(/^[a-f0-9]{64}$/);
 const deviceInput = { deviceId: androidIdSchema.describe("An Android serial or avd: name returned by mobile_list_android_devices.") };
-const write = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
-const read = { ...write, readOnlyHint: true };
-function result(data: object, text: string): CallToolResult { return { content: [{ type: "text", text }], structuredContent: { ...data } }; }
-function guarded<T>(handler: (input: T, context: ServerRequestContext) => Promise<CallToolResult>) {
-  return async (input: T, context: ServerRequestContext): Promise<CallToolResult> => {
-    try { return await handler(input, context); }
-    catch (error) {
-      captureServerError(error, "android.tool", { signal: context.signal });
-      return { isError: true, content: [{ type: "text", text: errorMessage(error) }], _meta: { retryable: retryableFailure(error) } };
-    }
-  };
-}
+function result(data: object, text: string): CallToolResult { return jsonResult({ ...data }, text); }
+const guarded = <T>(handler: (input: T, context: ServerRequestContext) => Promise<CallToolResult>) => guardedTool({ operation: "android.tool", retryable: true }, handler);
 
 export function registerAndroidTools(server: McpServer, android: ServeEmu, appUri: string, copyScreenshot: (bytes: Buffer) => Promise<void>, closeCpu: (deviceId: string) => Promise<void>) {
   const streams = new AndroidStreams(android);
@@ -55,9 +45,7 @@ export function registerAndroidTools(server: McpServer, android: ServeEmu, appUr
     const backend = await android.start(deviceId);
     const response = await fetch(new URL("/api/screenshot", backend.url), { redirect: "error", signal: AbortSignal.timeout(10000) });
     if (!response.ok) throw new Error(`Screenshot failed with HTTP ${response.status}.`);
-    const bytes = Buffer.from(await response.arrayBuffer());
-    if (bytes.length > 16 * 1024 * 1024 || !bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) throw new Error("serve-emu returned an invalid or oversized PNG screenshot.");
-    return bytes;
+    return assertPng(Buffer.from(await response.arrayBuffer()), MAX_SCREENSHOT_BYTES, "serve-emu");
   }
   registerAppTool(server, "mobile_android_capture_screenshot", {
     title: "Android screenshot to chat and clipboard",
@@ -65,11 +53,7 @@ export function registerAndroidTools(server: McpServer, android: ServeEmu, appUr
     inputSchema: deviceInput, annotations: write, _meta: { ui: { resourceUri: appUri, visibility: ["app"] } },
   }, guarded(async ({ deviceId }: { deviceId: string }) => {
     const bytes = await captureScreenshot(deviceId);
-    let copied = false;
-    let clipboardError: string | undefined;
-    try { await copyScreenshot(bytes); copied = true; }
-    catch (error) { clipboardError = errorMessage(error); }
-    return { content: [{ type: "image", mimeType: "image/png", data: bytes.toString("base64") }], structuredContent: { deviceId, copied, ...(clipboardError ? { clipboardError } : {}) } };
+    return screenshotResult(bytes, { deviceId }, { copy: copyScreenshot, operation: "android.clipboard" });
   }));
   server.registerResource("android-video", new ResourceTemplate("android-stream://mobile-dev/{sessionId}/video?after={sequence}", { list: undefined }), {
     mimeType: "application/json", description: "Read H.264 packets from an authorized Android panel stream.",

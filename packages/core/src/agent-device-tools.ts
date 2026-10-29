@@ -8,6 +8,7 @@ import { AgentDeviceRuntime } from "./agent-device-runtime.ts";
 import type { AgentDeviceBackend } from "./agent-device-runtime.ts";
 import type { ServerFeature } from "./server-feature.ts";
 import { captureServerError } from "./telemetry.ts";
+import { isPng, MAX_SCREENSHOT_BYTES } from "./png.ts";
 
 type Schemas = Map<string, z.ZodType>;
 type CallExtra = Pick<RequestHandlerExtra<ServerRequest, ServerNotification>, "signal" | "sendNotification" | "_meta">;
@@ -82,8 +83,6 @@ async function forward(backend: AgentDeviceBackend, params: CallToolRequest["par
   }
 }
 
-const MAX_SCREENSHOT_BYTES = 16 * 1024 * 1024;
-const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const JPEG_SIGNATURE = Buffer.from([0xff, 0xd8, 0xff]);
 
 /**
@@ -100,7 +99,7 @@ async function withScreenshot(result: CallToolResult): Promise<CallToolResult> {
     captureServerError(new Error("Agent Device screenshot could not be read."), "agent_device.screenshot");
     return result;
   }
-  const mimeType = bytes.subarray(0, 8).equals(PNG_SIGNATURE) ? "image/png" : bytes.subarray(0, 3).equals(JPEG_SIGNATURE) ? "image/jpeg" : undefined;
+  const mimeType = isPng(bytes) ? "image/png" : bytes.subarray(0, 3).equals(JPEG_SIGNATURE) ? "image/jpeg" : undefined;
   if (mimeType === undefined || bytes.length > MAX_SCREENSHOT_BYTES) return result;
   return { ...result, content: [...result.content, { type: "image", mimeType, data: bytes.toString("base64") }] };
 }

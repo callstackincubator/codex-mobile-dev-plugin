@@ -11,7 +11,6 @@ import { SENTRY_ORIGIN } from "@mobile-dev/shared/telemetry.ts";
 import { errorMessage, streamMessageSchema, udidSchema } from "@mobile-dev/shared/protocol.ts";
 import { panelTargetSchema } from "@mobile-dev/shared/panel-target.ts";
 import type { PanelTarget } from "@mobile-dev/shared/panel-target.ts";
-import { captureServerError } from "./telemetry.ts";
 import { registerEarlierReleases } from "./earlier-releases.ts";
 import { readBezel } from "./bezel.ts";
 import { Baguette } from "./baguette.ts";
@@ -27,6 +26,9 @@ import { SimulatorInputService } from "./simulator-input.ts";
 import type { InputStatus, SimulatorInput } from "./simulator-input.ts";
 import { retryableFailure } from "./simulator-unavailable.ts";
 import { copyPNGToClipboard } from "./clipboard.ts";
+import { sessionIdSchema } from "./session-registry.ts";
+import { guarded as guardedTool, jsonResult, READ_ONLY as read, WRITES as write } from "./tool-results.ts";
+import { assertPng, MAX_SCREENSHOT_BYTES, screenshotResult } from "./png.ts";
 import { registerPanelAppControlTools } from "./app-control/tools.ts";
 import type { DriverFactory } from "./app-control/tools.ts";
 import { registerOpenRecordingTool } from "./recording-tools.ts";
@@ -40,9 +42,6 @@ export const WORKSPACE_URI = `ui://mobile-dev/${PLUGIN_VERSION}/workspace.html`;
 // older addresses do not fit that pattern.
 const unversionedAppUris = ["ui://mobile-dev/simulator.html", "ui://mobile-dev/0.1.24/mcp-stream/simulator.html"];
 const unversionedWorkspaceUris = ["ui://mobile-dev/workspace.html", "ui://mobile-dev/0.1.24/mcp-stream/workspace.html"];
-const sessionIdSchema = z.string().regex(/^[a-f0-9]{64}$/);
-const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
-const write = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
 const deviceInput = { udid: udidSchema.describe("A simulator UDID returned by mobile_list_simulators.") };
 const deviceSchema = z.object({ udid: udidSchema, name: z.string(), state: z.string(), runtime: z.string() });
 const statusOutput = {
@@ -50,19 +49,8 @@ const statusOutput = {
   devices: z.array(deviceSchema), error: z.string().optional(),
 };
 
-function result(data: Record<string, unknown>, message: string): CallToolResult {
-  return { content: [{ type: "text", text: message }], structuredContent: data };
-}
-
-function guarded<T>(handler: (input: T, context: ServerRequestContext) => Promise<CallToolResult>) {
-  return async (input: T, context: ServerRequestContext): Promise<CallToolResult> => {
-    try { return await handler(input, context); }
-    catch (error) {
-      captureServerError(error, "simulator.tool", { signal: context.signal });
-      return { isError: true, content: [{ type: "text", text: errorMessage(error) }], _meta: { retryable: retryableFailure(error) } };
-    }
-  };
-}
+const result = (data: Record<string, unknown>, message: string) => jsonResult(data, message);
+const guarded = <T>(handler: (input: T, context: ServerRequestContext) => Promise<CallToolResult>) => guardedTool({ operation: "simulator.tool", retryable: true }, handler);
 
 const INSTRUCTIONS = "For mobile app development, open mobile_open_simulator before the first device launch, or reuse the open view. Use selected device IDs. Control apps with the device_* tools when the server has them. When the user asks to see their devices, open or reuse the view, whose device menu lists them. If a task has ambiguous device targets, ask the user with mobile_choose_devices when it is available, otherwise in chat; proceed only after they choose. For a local CPU or React profile path, use mobile_analyze_profile to show TraceSift findings, then wait for the user to choose Investigate. See the Mobile Dev skill, when installed, for device control, logs, profiles, and performance workflows.";
 
@@ -288,11 +276,7 @@ function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, sh
       redirect: "error", signal: AbortSignal.timeout(10000),
     });
     if (!response.ok) throw new Error(`Screenshot failed with HTTP ${response.status}.`);
-    const bytes = Buffer.from(await response.arrayBuffer());
-    if (bytes.length > 16 * 1024 * 1024 || !bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) {
-      throw new Error("Baguette returned an invalid or oversized PNG screenshot.");
-    }
-    return bytes;
+    return assertPng(Buffer.from(await response.arrayBuffer()), MAX_SCREENSHOT_BYTES, "Baguette");
   }
 
   registerAppTool(server, "mobile_capture_screenshot", {
@@ -302,14 +286,7 @@ function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, sh
     _meta: { ui: { resourceUri: APP_URI, visibility: ["app"] } },
   }, guarded(async ({ udid }: { udid: string }) => {
     const bytes = await captureScreenshot(udid);
-    let copied = false;
-    let clipboardError: string | undefined;
-    try { await copyScreenshot(bytes); copied = true; }
-    catch (error) { clipboardError = errorMessage(error); }
-    return {
-      content: [{ type: "image", mimeType: "image/png", data: bytes.toString("base64") }],
-      structuredContent: { udid, copied, ...(clipboardError ? { clipboardError } : {}) },
-    };
+    return screenshotResult(bytes, { udid }, { copy: copyScreenshot, operation: "simulator.clipboard" });
   }));
 
   registerAppTool(server, "mobile_stream_session", {
