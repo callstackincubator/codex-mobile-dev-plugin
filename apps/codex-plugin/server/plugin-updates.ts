@@ -11,7 +11,7 @@ import { PLUGIN_VERSION } from "@mobile-dev/shared/version.ts";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 import { captureServerError } from "@mobile-dev/core/telemetry.ts";
 import { resolveTelemetryEnvironment } from "@mobile-dev/core/telemetry-environment.ts";
-import { createCodexRunner, PluginUpdateError, readPluginStore, STORE_MARKETPLACE, storeSummarySchema } from "./codex-cli.ts";
+import { codexCliResolver, createCodexRunner, PluginUpdateError, readPluginStore, STORE_MARKETPLACE, storeSummarySchema } from "./codex-cli.ts";
 import type { ReadStore, RunCodex, StorePlugin, UpdateFailure } from "./codex-cli.ts";
 
 export { createCodexRunner, readPluginStore, resolveCodexCli } from "./codex-cli.ts";
@@ -98,8 +98,9 @@ export class PluginUpdates {
     const githubCache = join("plugins", "cache", "mobile-dev", "mobile-dev");
     this.runningGithub = pluginParent.endsWith(githubCache);
     this.cachePath = join(this.profile, "mobile-dev", "updates.json");
-    this.run = options.run ?? createCodexRunner(this.profile, { signal: this.abort.signal });
-    this.readStore = options.readStore ?? (() => readPluginStore(this.profile, { signal: this.abort.signal }));
+    const codex = { resolveCli: codexCliResolver(this.profile), signal: this.abort.signal };
+    this.run = options.run ?? createCodexRunner(this.profile, codex);
+    this.readStore = options.readStore ?? (() => readPluginStore(this.profile, codex));
     this.now = options.now ?? Date.now;
   }
 

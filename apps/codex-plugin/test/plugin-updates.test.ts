@@ -8,7 +8,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as Sentry from "@sentry/node";
 import type { Envelope } from "@sentry/core";
-import { createCodexRunner, resolveCodexCli, readPluginStore } from "../server/codex-cli.ts";
+import { codexCliResolver, createCodexRunner, resolveCodexCli, readPluginStore } from "../server/codex-cli.ts";
 import type { ReadStore, RunCodex } from "../server/codex-cli.ts";
 import { registerPluginUpdateTools } from "../server/plugin-update-tools.ts";
 import { PluginUpdates } from "../server/plugin-updates.ts";
@@ -331,6 +331,24 @@ test("update tools remain app-only and the GitHub upgrade tool is removed", asyn
 test("CLI resolution rejects processes other than the launching Codex executable", async () => {
   const resolution = resolveCodexCli(process.pid);
   await assert.rejects(resolution, /Could not locate the Codex executable/);
+});
+
+test("CLI resolution runs once per launching process and retries failed lookups", async t => {
+  const directory = await profile(t);
+  const executable = join(directory, "codex-fixture");
+  await writeFile(executable, "#!/bin/sh\necho '{}'\n", { mode: 0o755 });
+  const lookups: number[] = [];
+  const resolveCli = codexCliResolver(directory, async parentPid => {
+    lookups.push(parentPid);
+    if (lookups.length === 1) throw new Error("ps failed");
+    return executable;
+  });
+  const run = createCodexRunner(directory, { resolveCli });
+  await assert.rejects(run(["plugin", "list"]), /ps failed/);
+  await Promise.all([run(["plugin", "list"]), run(["plugin", "marketplace", "list"])]);
+  const result = await run(["plugin", "list"]);
+  assert.deepEqual(result, {});
+  assert.deepEqual(lookups, [process.ppid, process.ppid]);
 });
 
 async function catalogServer(t: test.TestContext, reject = false) {
