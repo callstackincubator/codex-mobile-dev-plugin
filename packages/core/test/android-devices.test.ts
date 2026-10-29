@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ServeEmu } from "@mobile-dev/core/serve-emu.ts";
+import { ServeEmu } from "../src/serve-emu.ts";
 
 async function fixture(t: TestContext, devices: string, avds: string[] = []) {
   const directory = tmpdir();

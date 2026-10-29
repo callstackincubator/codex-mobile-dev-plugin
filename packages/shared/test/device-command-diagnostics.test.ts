@@ -2,8 +2,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { z } from "zod";
 import { annotateDeviceCommand, backendCommand, classifyCommandFailure, deviceCommandTags } from "../src/device-command-diagnostics.ts";
-import { commandError, commandLabel } from "@mobile-dev/core/app-control/commands.ts";
-import { expectedOutcome } from "../src/error-reporting.ts";
 
 test("command failures are classified from codes, statuses and types, never from their text", () => {
   const fetchFailure = new TypeError("fetch failed PRIVATE_URL", { cause: Object.assign(new Error("PRIVATE_ADDRESS"), { code: "ECONNREFUSED" }) });
@@ -47,17 +45,4 @@ test("backend routes and commands are labeled without device IDs or arguments", 
   assert.equal(backendCommand("baguette", "/simulators/B5C969F6-58A4-4C31-AB12-FB9E56D681DE/status-bar"), "baguette_status_bar");
   assert.equal(backendCommand("baguette", "/simulators.json"), "baguette_simulators");
   assert.equal(backendCommand("serve_emu", "/api/night-mode"), "serve_emu_night_mode");
-  assert.equal(commandLabel("simctl", "get_app_container"), "simctl_get_app_container");
-  assert.equal(commandLabel("adb_shell", "cmd locale get-app-locales com.private.app"), "adb_shell_cmd");
-});
-
-test("command errors name an unexpected failure's command and treat a device that went away as expected", () => {
-  const failure = commandError(Object.assign(new Error("Command failed: PRIVATE"), { code: 4, stderr: "PRIVATE_OUTPUT" }), "Launching the app", "simctl_launch");
-  assert.equal(expectedOutcome(failure), undefined);
-  assert.deepEqual(deviceCommandTags(failure), { device_command: "simctl_launch", device_command_failure: "exit", device_command_status: "4" });
-  for (const stderr of ["Unable to lookup in current state: Shutting Down", "Invalid device: PRIVATE", "adb: device 'emulator-5554' not found",
-    "error: device not found", "error: device offline", "No device found"]) {
-    const gone = commandError(Object.assign(new Error("Command failed"), { code: 1, stderr }), "Stopping the app", "simctl_terminate");
-    assert.equal(expectedOutcome(gone), "device_unavailable", stderr);
-  }
 });

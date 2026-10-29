@@ -6,14 +6,16 @@ import { join } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { iosLocale, parseDefaultsArray, parseIosUrlSchemes, parseSimulatorApps } from "@mobile-dev/core/app-control/simulator.ts";
-import { androidPermissionStates, parseAndroidAppLinks, parseAndroidAppLocales, parseAndroidBadging, parseAndroidRuntimePermissions, parseLauncherActivity, pickAndroidIconFile } from "@mobile-dev/core/app-control/android.ts";
-import { listApps } from "@mobile-dev/core/app-control/driver.ts";
-import type { AppDriver } from "@mobile-dev/core/app-control/driver.ts";
-import { createDrivers, registerAppControlTools } from "@mobile-dev/core/app-control/tools.ts";
-import type { CommandRunner } from "@mobile-dev/core/app-control/commands.ts";
-import { ExpectedOperationError, expectedOutcome } from "../src/error-reporting.ts";
-import { languageTagSchema } from "../src/app-control.ts";
+import { iosLocale, parseDefaultsArray, parseIosUrlSchemes, parseSimulatorApps } from "../src/app-control/simulator.ts";
+import { androidPermissionStates, parseAndroidAppLinks, parseAndroidAppLocales, parseAndroidBadging, parseAndroidRuntimePermissions, parseLauncherActivity, pickAndroidIconFile } from "../src/app-control/android.ts";
+import { listApps } from "../src/app-control/driver.ts";
+import type { AppDriver } from "../src/app-control/driver.ts";
+import { createDrivers, registerAppControlTools } from "../src/app-control/tools.ts";
+import type { CommandRunner } from "../src/app-control/commands.ts";
+import { ExpectedOperationError, expectedOutcome } from "@mobile-dev/shared/error-reporting.ts";
+import { languageTagSchema } from "@mobile-dev/shared/app-control.ts";
+import { deviceCommandTags } from "@mobile-dev/shared/device-command-diagnostics.ts";
+import { commandError, commandLabel } from "../src/app-control/commands.ts";
 
 const ios = { platform: "ios", deviceId: "B5C969F6-58A4-4C31-AB12-FB9E56D681DE" } as const;
 const android = { platform: "android", deviceId: "emulator-5554" } as const;
@@ -314,4 +316,20 @@ test("setting an app language relaunches it so the new language is visible", asy
   const unlaunchable = await client.callTool({ name: "mobile_set_app_language", arguments: { ...android, bundleId: "com.helper", language: "de" } });
   assert.equal(unlaunchable.isError, true);
   assert.match(JSON.stringify(unlaunchable.content), /Changed the app language, but relaunching failed: com\.helper has no launcher activity/);
+});
+
+test("command errors name an unexpected failure's command and treat a device that went away as expected", () => {
+  const failure = commandError(Object.assign(new Error("Command failed: PRIVATE"), { code: 4, stderr: "PRIVATE_OUTPUT" }), "Launching the app", "simctl_launch");
+  assert.equal(expectedOutcome(failure), undefined);
+  assert.deepEqual(deviceCommandTags(failure), { device_command: "simctl_launch", device_command_failure: "exit", device_command_status: "4" });
+  for (const stderr of ["Unable to lookup in current state: Shutting Down", "Invalid device: PRIVATE", "adb: device 'emulator-5554' not found",
+    "error: device not found", "error: device offline", "No device found"]) {
+    const gone = commandError(Object.assign(new Error("Command failed"), { code: 1, stderr }), "Stopping the app", "simctl_terminate");
+    assert.equal(expectedOutcome(gone), "device_unavailable", stderr);
+  }
+});
+
+test("command labels name the tool and subcommand without arguments", () => {
+  assert.equal(commandLabel("simctl", "get_app_container"), "simctl_get_app_container");
+  assert.equal(commandLabel("adb_shell", "cmd locale get-app-locales com.private.app"), "adb_shell_cmd");
 });
