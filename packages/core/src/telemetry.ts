@@ -6,11 +6,7 @@ import { MeasurementWindow, TELEMETRY_HOSTS, TELEMETRY_INTERVAL_MS, TELEMETRY_ME
 import { ExpectedOperationError, expectedOutcome, isRepeatedFailure } from "@mobile-dev/shared/error-reporting.ts";
 import { closeNativeTelemetry } from "./native-telemetry.ts";
 import { closeHttpRuntime } from "./http-runtime.ts";
-import { definitionDiagnosticTags } from "@mobile-dev/shared/simulator-definition-diagnostics.ts";
-import { deviceAppsDiagnosticTags } from "@mobile-dev/shared/device-apps-diagnostics.ts";
-import { getDiscoveryCommandDiagnostic } from "@mobile-dev/shared/device-apps-command-diagnostics.ts";
-import { androidStartupDiagnosticTags } from "@mobile-dev/shared/android-startup-diagnostics.ts";
-import { installIntegrityTags } from "./install-integrity.ts";
+import { diagnosticContexts, diagnosticReportTags, diagnosticTags } from "@mobile-dev/shared/error-diagnostics.ts";
 import type { AndroidStartupSummary, AndroidStartupContext, AndroidStartupFailure, AndroidDeviceState } from "@mobile-dev/shared/android-startup-diagnostics.ts";
 
 export function recordIosMirrorSharing(captures: number, subscribers: number, dropped: number) {
@@ -163,21 +159,15 @@ export class IOSLogProcessingTelemetry {
  */
 export function captureServerError(error: unknown, operation: string, options?: { report?: boolean; signal?: AbortSignal; reportAs?: Error; tags?: Record<string, string> }) {
   const outcome = options?.signal?.aborted ? "cancelled" : expectedOutcome(error);
-  const diagnosticTags = { ...deviceAppsDiagnosticTags(error), ...options?.tags };
-  const definitionTags = definitionDiagnosticTags(error);
+  const tags = { ...diagnosticTags(error), ...options?.tags };
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
-  Sentry.metrics.count("server.error.outcome", 1, { attributes: { operation, outcome: outcome ?? "unexpected", ...diagnosticTags } });
+  Sentry.metrics.count("server.error.outcome", 1, { attributes: { operation, outcome: outcome ?? "unexpected", ...tags } });
   if (outcome !== undefined) return;
   if (options?.report === false || isRepeatedFailure(error)) {
-    Sentry.metrics.count("server.error.repeated", 1, { attributes: { operation, ...diagnosticTags } });
+    Sentry.metrics.count("server.error.repeated", 1, { attributes: { operation, ...tags } });
     return;
   }
-  const androidTags = androidStartupDiagnosticTags(error);
-  const installTags = installIntegrityTags(error);
-  const command = getDiscoveryCommandDiagnostic(error);
-  const contexts = command ? { device_apps_command: { elapsed_ms: command.elapsed_ms, deadline_ms: command.deadline_ms,
-    exit_status: command.exit_status } } : undefined;
-  Sentry.captureException(options?.reportAs ?? error, { tags: { ...diagnosticTags, ...definitionTags, ...androidTags, ...installTags, operation }, contexts });
+  Sentry.captureException(options?.reportAs ?? error, { tags: { ...tags, ...diagnosticReportTags(error), operation }, contexts: diagnosticContexts(error) });
 }
 
 type RequestReporting = { accounted: boolean; sessionResponse?: { release: () => void; close: () => Promise<void> } };

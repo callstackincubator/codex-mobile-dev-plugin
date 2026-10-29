@@ -7,7 +7,8 @@ import {
 } from "@mobile-dev/shared/telemetry.ts";
 import type { Surface, TelemetryAttributes, TelemetryHost } from "@mobile-dev/shared/telemetry.ts";
 import { validateTelemetryIdentity } from "@mobile-dev/shared/telemetry-identity.ts";
-import { deviceAppsDiagnosticTags, getDeviceAppsDiagnostic } from "@mobile-dev/shared/device-apps-diagnostics.ts";
+import { getDeviceAppsDiagnostic } from "@mobile-dev/shared/device-apps-diagnostics.ts";
+import { diagnosticContexts, diagnosticReportTags, diagnosticTags } from "@mobile-dev/shared/error-diagnostics.ts";
 import { FailureEpisodes, expectedOutcome } from "@mobile-dev/shared/error-reporting.ts";
 
 export { ErrorBoundary } from "@sentry/react";
@@ -171,13 +172,13 @@ export function captureUiError(error: unknown, operation: string, context = attr
   }
   const diagnostic = getDeviceAppsDiagnostic(error);
   if (diagnostic?.failure === "cancelled") return;
-  const diagnosticTags = deviceAppsDiagnosticTags(error);
   const contextTags: Record<string, string> = {};
   for (const key of ["surface", "view", "layout", "device_platform", "device_kind"]) {
     const value = context[key];
     if (typeof value === "string") contextTags[key] = value;
   }
-  Sentry.captureException(error, { tags: { ...contextTags, ...diagnosticTags, operation } });
+  const contexts = diagnosticContexts(error);
+  Sentry.captureException(error, { tags: { ...contextTags, ...diagnosticTags(error), ...diagnosticReportTags(error), operation }, ...(contexts && { contexts }) });
 }
 
 export function markUiSurfaceReady(startedAt: number) {

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { errorDiagnostics, setErrorDiagnostic } from "./error-diagnostics.ts";
 // The pinned Baguette build, copied from packages/native/vendor/baguette-release.json so
 // shared code stays free of vendored files; a test keeps the two equal.
 export const BAGUETTE_PIN = { version: "0.2.1", sourceCommit: "db17446e25059247879dba7941e4de641c2f31e2" };
@@ -171,8 +172,6 @@ export type DefinitionDiagnostic = {
   cachedFailure: "true" | "false" | "unknown";
 };
 
-const diagnostics = new WeakMap<object, DefinitionDiagnostic>();
-
 export function parseDefinitionDiagnostic(payload: unknown): DefinitionDiagnostic {
   const diagnostic: DefinitionDiagnostic = {
     stage: "response", failure: "unclassified", model: "unknown", runtime: "unknown", state: "unknown",
@@ -210,23 +209,9 @@ export function definitionDeviceState(value: unknown): DefinitionDiagnostic["sta
 }
 
 export function setDefinitionDiagnostic(error: object, diagnostic: DefinitionDiagnostic) {
-  diagnostics.set(error, diagnostic);
+  setErrorDiagnostic(error, "definition", diagnostic);
 }
 
 export function getDefinitionDiagnostic(error: unknown): DefinitionDiagnostic | undefined {
-  if (error === null || typeof error !== "object") return;
-  return diagnostics.get(error);
-}
-
-export function definitionDiagnosticTags(error: unknown): Record<string, string> {
-  const diagnostic = getDefinitionDiagnostic(error);
-  if (diagnostic === undefined) return {};
-  return {
-    definition_stage: diagnostic.stage, definition_failure: diagnostic.failure,
-    definition_model: diagnostic.model, definition_runtime: diagnostic.runtime,
-    definition_device_state: diagnostic.state, definition_device_before: diagnostic.deviceBefore, definition_device_after: diagnostic.deviceAfter,
-    definition_panel: diagnostic.panel, definition_xcode_version: diagnostic.xcodeVersion,
-    definition_backend_version: diagnostic.backendVersion, definition_backend_source: diagnostic.backendSource,
-    definition_backend_mode: diagnostic.backendMode, definition_cached_failure: diagnostic.cachedFailure,
-  };
+  return errorDiagnostics(error).definition;
 }

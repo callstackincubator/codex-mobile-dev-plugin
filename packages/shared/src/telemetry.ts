@@ -2,6 +2,7 @@ import type { init } from "@sentry/react";
 import { PLUGIN_VERSION } from "./version.ts";
 import { isAnonymousUserId, isTelemetrySessionId } from "./telemetry-identity.ts";
 import { errorCategory, expectedOutcome, errorMessage } from "./error-reporting.ts";
+import { episodeSignatureTags, fingerprintTags } from "./error-diagnostics.ts";
 
 export const SENTRY_UI_DSN = "https://09bfb50068dbab86252bbb5489ce38ce@o4512180958068736.ingest.de.sentry.io/4512181027471440";
 export const SENTRY_SERVER_DSN = "https://2ee03a9449e1f1b48e3e7c7606b6f562@o4512180958068736.ingest.de.sentry.io/4512181033173072";
@@ -77,8 +78,7 @@ export function errorReportSignature(error: unknown, tags: Record<string, string
   const scrubbed = scrubText(message);
   const category = errorCategory(error);
   const name = error instanceof Error ? error.name : "unknown";
-  return [category, name, scrubbed, tags.discovery_stage, tags.discovery_failure, tags.device_platform, tags.device_kind,
-    tags.discovery_command, tags.discovery_cause, tags.discovery_termination].join("|");
+  return [category, name, scrubbed, ...episodeSignatureTags.map(tag => tags[tag])].join("|");
 }
 
 export function scrubErrorEvent(event: ErrorEvent, hint?: ErrorHint): ErrorEvent | null {
@@ -88,7 +88,7 @@ export function scrubErrorEvent(event: ErrorEvent, hint?: ErrorHint): ErrorEvent
   if (operation) {
     const operationName = String(operation);
     event.fingerprint = ["{{default}}", operationName, category];
-    for (const tag of ["resource_kind", "discovery_stage", "discovery_failure", "discovery_command", "discovery_cause"]) {
+    for (const tag of fingerprintTags) {
       const value = event.tags?.[tag];
       if (value !== undefined) {
         const dimension = String(value);

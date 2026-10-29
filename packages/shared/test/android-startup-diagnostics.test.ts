@@ -10,7 +10,8 @@ import { build } from "esbuild";
 import { StartupDiagnostics, adbStartupOutcome } from "../../runtimes/serve-emu/src/startup-diagnostics.ts";
 import type { StartupMessage } from "../../runtimes/serve-emu/src/startup-diagnostics.ts";
 import type { ScrcpyDependencies } from "../../runtimes/serve-emu/src/scrcpy.ts";
-import { androidStartupMessageSchema, androidDeviceState, setAndroidStartupDiagnostic, androidStartupDiagnosticTags } from "../src/android-startup-diagnostics.ts";
+import { androidStartupMessageSchema, androidDeviceState, setAndroidStartupDiagnostic } from "../src/android-startup-diagnostics.ts";
+import { androidStartupDiagnosticTags } from "../src/error-diagnostics.ts";
 import type { AndroidStartupContext } from "../src/android-startup-diagnostics.ts";
 
 let directory: string;

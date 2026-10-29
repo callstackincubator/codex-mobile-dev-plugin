@@ -2,7 +2,8 @@ import type { HostBridge } from "./host-bridge.ts";
 import type { SimulatorDevice } from "@mobile-dev/shared/protocol.ts";
 import { deviceAppsSchema } from "@mobile-dev/shared/device-apps.ts";
 import type { DeviceApps } from "@mobile-dev/shared/device-apps.ts";
-import { deviceAppsDiagnostic, setDeviceAppsDiagnostic, deviceAppsDiagnosticTags } from "@mobile-dev/shared/device-apps-diagnostics.ts";
+import { deviceAppsDiagnostic, setDeviceAppsDiagnostic } from "@mobile-dev/shared/device-apps-diagnostics.ts";
+import { diagnosticTags } from "@mobile-dev/shared/error-diagnostics.ts";
 import type { DeviceAppsStage } from "@mobile-dev/shared/device-apps-diagnostics.ts";
 import { captureUiError, countUiEvent, recordUiTiming, getUiTelemetryAttributes } from "./telemetry.ts";
 import { FailureEpisodes, errorCategory, setErrorCategory, errorMessage } from "@mobile-dev/shared/error-reporting.ts";
@@ -137,7 +138,7 @@ export class DeviceAppsStore {
         setErrorCategory(failure, category);
         const diagnostic = deviceAppsDiagnostic(error, stage, device.platform, device.kind);
         setDeviceAppsDiagnostic(failure, diagnostic);
-        const tags = deviceAppsDiagnosticTags(failure);
+        const tags = diagnosticTags(failure);
         const signature = errorReportSignature(error, tags);
         if (this.failures.shouldReport("discovery", signature)) captureUiError(failure, "device_apps.discover", telemetryContext);
         else countUiEvent("ui.device_apps.discovery_repeated", 1, telemetryContext);
