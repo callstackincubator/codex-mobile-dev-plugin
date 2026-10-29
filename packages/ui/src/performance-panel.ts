@@ -7,7 +7,7 @@ import type { SimulatorDevice } from "@mobile-dev/shared/protocol.ts";
 import type { ThreadHistory, ThreadOrder } from "./performance/types.ts";
 import { DisplayFpsPanel, initialFpsState } from "./display-fps-panel.ts";
 import type { DisplayFpsState } from "./display-fps-panel.ts";
-import type { DeviceAppsStore } from "./device-apps.ts";
+import type { AppDevice, DeviceAppsStore } from "./device-apps.ts";
 import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 import { isDeviceActive, isPhysicalIos, sameDevice } from "@mobile-dev/shared/devices.ts";
 import { Store } from "./store.ts";
@@ -15,6 +15,7 @@ import { callTool } from "./tool-call.ts";
 import { CollectorSessions, openCursorSession } from "./resource-session.ts";
 import { cpuSessionResultSchema } from "@mobile-dev/shared/tool-results.ts";
 
+const appDevice = (device: SimulatorDevice): AppDevice => ({ platform: device.platform, deviceId: device.udid });
 // The session and the resource its batches come from; the target it echoes is not needed.
 const cpuSession = cpuSessionResultSchema.pick({ sessionId: true, cpuUri: true });
 
@@ -38,7 +39,6 @@ export class PerformancePanel extends Store<Snapshot> {
   private readonly deviceApps: DeviceAppsStore;
   private readonly unsubscribeApps: () => void;
   private nextThreadNumber = 1;
-  private selections = new Map<string, string>();
 
   constructor(app: HostBridge, deviceApps: DeviceAppsStore) {
     super({ ...initialFpsState, physical: false, open: false, available: false, discovering: false, monitoring: false,
@@ -64,7 +64,6 @@ export class PerformancePanel extends Store<Snapshot> {
     this.update({ ...fields, samples: [], threadHistory });
   }
   private failed(error: unknown) { this.update({ phase: "failed", monitoring: false, error: errorMessage(error) }); }
-  private deviceKey(device: SimulatorDevice) { return `${device.platform}:${device.udid}`; }
 
   setAvailable(available: boolean) {
     this.fps.setAvailable(available);
@@ -80,11 +79,8 @@ export class PerformancePanel extends Store<Snapshot> {
     if (changed === false) return;
     this.timeOrigin = undefined;
     this.fps.select(simulator);
-    let bundleId = "";
-    if (simulator) {
-      const key = this.deviceKey(simulator);
-      bundleId = this.selections.get(key) ?? "";
-    }
+    // The app picked on this device, else the foreground app once discovery reports it.
+    const bundleId = simulator ? this.deviceApps.pickedApp("performance", appDevice(simulator)) ?? "" : "";
     this.resetHistory({ apps: [], bundleId, discovering: false, monitoring: false, sourceError: "", error: "",
       phase: "idle" });
     void this.stop().catch(error => this.failed(error));
@@ -119,10 +115,7 @@ export class PerformancePanel extends Store<Snapshot> {
 
   selectApp(bundleId: string) {
     if (bundleId === this.state.bundleId) return;
-    if (this.simulator) {
-      const key = this.deviceKey(this.simulator);
-      this.selections.set(key, bundleId);
-    }
+    if (this.simulator) this.deviceApps.pickApp("performance", appDevice(this.simulator), bundleId);
     this.resetHistory({ bundleId, error: "" });
     this.restart();
   }
@@ -148,8 +141,7 @@ export class PerformancePanel extends Store<Snapshot> {
       const foreground = apps.find(app => app.foreground === true);
       if (foreground) bundleId = foreground.bundleId;
     }
-    const key = this.deviceKey(device);
-    this.selections.set(key, bundleId);
+    this.deviceApps.pickApp("performance", appDevice(device), bundleId);
     const selected = apps.find(app => app.bundleId === bundleId);
     this.update({ apps, bundleId });
     if (selected && previous?.pid !== selected.pid) this.restart();

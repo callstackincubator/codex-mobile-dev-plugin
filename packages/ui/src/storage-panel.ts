@@ -1,5 +1,4 @@
 import type { HostBridge } from "./host-bridge.ts";
-import { installedAppsSchema } from "@mobile-dev/shared/app-control.ts";
 import type { InstalledApp } from "@mobile-dev/shared/app-control.ts";
 import { storageClearSchema, storageFileSchema, storageLimits, storageSnapshotSchema, storageTableSchema } from "@mobile-dev/shared/app-storage.ts";
 import type { StorageEntry, StorageFilePreview, StorageSnapshot, StorageStore, StorageTable } from "@mobile-dev/shared/app-storage.ts";
@@ -103,7 +102,6 @@ export class StoragePanel extends Store<StorageState> {
   private poll?: ReturnType<typeof setInterval>;
   // Whether the app listing in flight still applies; a listing for an older device or app is left to finish unused.
   private listing?: () => boolean;
-  private selections = new Map<string, string>();
 
   constructor(app: HostBridge, deviceApps: DeviceAppsStore) {
     super({ open: false, available: false, platform: "ios", deviceId: "", deviceLabel: "", unsupported: "", apps: [], bundleId: "", tab: "browse", changes: [], showSdkChanges: false, busy: null, error: "", status: "" });
@@ -137,7 +135,7 @@ export class StoragePanel extends Store<StorageState> {
       return;
     }
     this.revision++;
-    this.update({ platform, deviceId, deviceLabel: device?.name ?? "", unsupported, apps: [], bundleId: this.selections.get(`${platform}:${deviceId}`) ?? "", snapshot: undefined, changes: [], detail: undefined, watchingSince: undefined, busy: null, error: "", status: "" });
+    this.update({ platform, deviceId, deviceLabel: device?.name ?? "", unsupported, apps: [], bundleId: this.deviceApps.pickedApp("storage", { platform, deviceId }) ?? "", snapshot: undefined, changes: [], detail: undefined, watchingSince: undefined, busy: null, error: "", status: "" });
     if (this.state.open) void this.loadApps();
   }
 
@@ -234,7 +232,8 @@ export class StoragePanel extends Store<StorageState> {
     const idle = () => this.state.busy === "apps" ? null : this.state.busy;
     this.update({ busy: this.state.busy ?? "apps", error: "" });
     try {
-      const data = installedAppsSchema.parse(await measureUiOperation("ui.storage.list_apps", "ui.storage.failure", () => this.call("mobile_list_apps", {})));
+      // App tools on the same device share a listing in flight.
+      const data = await measureUiOperation("ui.storage.list_apps", "ui.storage.failure", () => this.deviceApps.installedApps(this.state));
       if (!current()) return;
       const installed = new Set(data.apps.map(app => app.bundleId));
       const bundleId = [this.state.bundleId, data.runningBundleIds[0]].find(id => id && installed.has(id)) ?? "";
@@ -243,7 +242,7 @@ export class StoragePanel extends Store<StorageState> {
         { measure: work => measureUiOperation("ui.storage.icons", "ui.storage.failure", work) });
       if (bundleId !== this.state.bundleId || this.state.snapshot === undefined) this.selectApp(bundleId);
     } catch (error) {
-      if (current()) this.update({ busy: idle(), error: errorMessage(error) });
+      if (current()) this.update({ busy: idle(), error: errorMessage(error) || "The plugin could not read app storage." });
     } finally {
       if (this.listing === current) this.listing = undefined;
     }
@@ -255,7 +254,7 @@ export class StoragePanel extends Store<StorageState> {
   selectApp(bundleId: string) {
     if (bundleId !== this.state.bundleId) {
       this.revision++;
-      this.selections.set(`${this.state.platform}:${this.state.deviceId}`, bundleId);
+      this.deviceApps.pickApp("storage", this.state, bundleId);
       this.update({ bundleId, snapshot: undefined, changes: [], detail: undefined, watchingSince: undefined, busy: null, error: "", status: "" });
     }
     if (bundleId) void this.refresh();

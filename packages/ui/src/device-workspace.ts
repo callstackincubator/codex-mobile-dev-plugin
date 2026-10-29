@@ -27,7 +27,7 @@ export class DeviceWorkspace {
   }) {
     this.tools = tools;
     this.connectionFailed = options.connectionFailed;
-    const create = (platform: Platform) => createSimulatorPanel(app, platform, tools.context, (_device, active) => {
+    const create = (platform: Platform) => createSimulatorPanel(app, platform, tools, (_device, active) => {
       if (active) this.activePlatform = platform;
       this.updateSelection();
     });

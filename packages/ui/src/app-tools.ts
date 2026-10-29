@@ -4,6 +4,7 @@ import type { AppPermission, AppPermissionEntry, InstalledApp, PermissionState }
 import { measureUiOperation } from "./telemetry.ts";
 import { Store } from "./store.ts";
 import { appIcons } from "./app-icons.ts";
+import type { AppDevice } from "./device-apps.ts";
 import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 
 export type AppToolAction = "list" | "icons" | "launch" | "stop" | "open_url" | "permission" | "push" | "language";
@@ -51,17 +52,21 @@ const deviceDefaults = { loading: false, apps: [], runningBundleIds: [], bundleI
 
 /** Calls an app tool on the panel's device and returns its structured content. */
 export type AppToolCall = (name: string, args: Record<string, unknown>) => Promise<unknown>;
+/** Lists a device's installed apps; the workspace shares one listing per device across its panels. */
+export type InstalledAppsSource = (device: AppDevice) => Promise<unknown>;
 
 export class AppToolsStore extends Store<AppToolsState> {
   private readonly call: AppToolCall;
+  private readonly installedApps: InstalledAppsSource;
   private disposed = false;
   private revision = 0;
   // simctl cannot read privacy decisions, so iOS rows show what this panel last applied.
   private applied = new Map<string, PermissionState>();
 
-  constructor(call: AppToolCall) {
+  constructor(call: AppToolCall, installedApps: InstalledAppsSource = device => call("mobile_list_apps", device)) {
     super({ platform: "ios", deviceId: "", disabled: true, ...deviceDefaults, recentUrls: recentUrls.read(), section: openSection.read() });
     this.call = call;
+    this.installedApps = installedApps;
   }
 
   configure(platform: "ios" | "android", deviceId: string, disabled: boolean) {
@@ -94,7 +99,7 @@ export class AppToolsStore extends Store<AppToolsState> {
     const current = this.current();
     this.update({ loading: true, error: "" });
     try {
-      const data = installedAppsSchema.parse(await this.measure("list", () => this.tool("mobile_list_apps")));
+      const data = installedAppsSchema.parse(await this.measure("list", () => this.installedApps({ platform: this.state.platform, deviceId: this.state.deviceId })));
       if (!current()) return;
       const installed = new Set(data.apps.map(app => app.bundleId));
       // The foreground or newest running app, then the current selection, then the app last picked on this device.

@@ -1,6 +1,8 @@
 import type { HostBridge } from "./host-bridge.ts";
 import type { SimulatorDevice } from "@mobile-dev/shared/protocol.ts";
 import { deviceAppsSchema } from "@mobile-dev/shared/device-apps.ts";
+import { installedAppsSchema } from "@mobile-dev/shared/app-control.ts";
+import type { InstalledApps } from "@mobile-dev/shared/app-control.ts";
 import type { DeviceApps } from "@mobile-dev/shared/device-apps.ts";
 import { deviceAppsDiagnostic, setDeviceAppsDiagnostic } from "@mobile-dev/shared/device-apps-diagnostics.ts";
 import { diagnosticTags } from "@mobile-dev/shared/error-diagnostics.ts";
@@ -24,6 +26,10 @@ export type DeviceAppsVisibility = {
   removeEventListener(name: "visibilitychange", listener: () => void): void;
 };
 type Discovery = { abort: AbortController; done?: Promise<void> };
+/** A device as the app tools name it. */
+export type AppDevice = { platform: "ios" | "android"; deviceId: string };
+/** The panels that remember which app they showed on each device; each weighs that pick in its own preference order. */
+export type AppPanel = "performance" | "storage";
 
 export class DeviceAppsStore extends Store<DeviceAppsSnapshot> {
   private readonly app: HostBridge;
@@ -33,6 +39,8 @@ export class DeviceAppsStore extends Store<DeviceAppsSnapshot> {
   private discovery?: Discovery;
   private readonly failures = new FailureEpisodes();
   private timer?: ReturnType<typeof setInterval>;
+  private readonly listings = new Map<string, Promise<InstalledApps>>();
+  private readonly picks = new Map<string, string>();
 
   constructor(app: HostBridge, visibility: DeviceAppsVisibility) {
     super({ apps: [], foregroundApp: null, discovering: false, ready: false, error: "" });
@@ -140,6 +148,25 @@ export class DeviceAppsStore extends Store<DeviceAppsSnapshot> {
       }
     }
   }
+
+  /**
+   * A device's installed apps, listed again for each request so apps installed since appear.
+   * Panels that ask while a listing for the same device runs share it.
+   */
+  installedApps({ platform, deviceId }: AppDevice): Promise<InstalledApps> {
+    const key = `${platform}:${deviceId}`;
+    let listing = this.listings.get(key);
+    if (listing === undefined) {
+      listing = callTool(this.app, { name: "mobile_list_apps", arguments: { platform, deviceId } }, { timeout: 60000, schema: installedAppsSchema })
+        .finally(() => { this.listings.delete(key); });
+      this.listings.set(key, listing);
+    }
+    return listing;
+  }
+
+  /** The app a panel last showed on a device. */
+  pickedApp(panel: AppPanel, { platform, deviceId }: AppDevice) { return this.picks.get(`${panel}:${platform}:${deviceId}`); }
+  pickApp(panel: AppPanel, { platform, deviceId }: AppDevice, bundleId: string) { this.picks.set(`${panel}:${platform}:${deviceId}`, bundleId); }
 
   dispose() {
     this.disposed = true;

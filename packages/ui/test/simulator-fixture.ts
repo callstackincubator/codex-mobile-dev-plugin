@@ -18,6 +18,7 @@ import type { ScreenAnnotation } from "../../shared/src/screen-annotations.ts";
 import type { DeviceSettingsResult, PhysicalIosDevicesResult, SimulatorStatusResult, StreamSessionMeta, StreamSessionResult } from "../../shared/src/tool-results.ts";
 import type { AndroidVideoBatch } from "../../shared/src/android-video.ts";
 import type { IosVideoBatch } from "../../shared/src/ios-video.ts";
+import { createDeviceApps } from "../../test-support/device-apps-fixtures.ts";
 
 type Platform = "ios" | "android";
 type Call = { name: string; arguments: Record<string, unknown> };
@@ -270,12 +271,13 @@ export function fakeDeviceTools(t: TestContext, { simulators = [iphone], android
     },
     async attachAnnotation(annotation: ScreenAnnotation) { attachedAnnotations.push(annotation); return true; },
   } as unknown as PanelContext;
+  const deviceApps = createDeviceApps(app as never);
   const [ios, androidPanel] = (["ios", "android"] as const).map(platform => {
-    const panel = createSimulatorPanel(app, platform, context, (_device, active) => selections.push({ platform, active }));
+    const panel = createSimulatorPanel(app, platform, { context, deviceApps }, (_device, active) => selections.push({ platform, active }));
     panel.setAvailable(true);
     return harness(panel);
   });
-  t.after(async () => { await Promise.all([ios.panel.dispose(), androidPanel.panel.dispose()]); for (const reset of restore) reset(); });
+  t.after(async () => { await Promise.all([ios.panel.dispose(), androidPanel.panel.dispose()]); deviceApps.dispose(); for (const reset of restore) reset(); });
 
   return {
     app, calls, closed, selections, screenshots, attachedAnnotations, ios, android: androidPanel,

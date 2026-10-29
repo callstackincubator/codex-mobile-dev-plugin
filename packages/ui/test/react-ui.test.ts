@@ -89,6 +89,8 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   const performanceApp = {
     async callServerTool({ name }: { name: string }) {
       if (name === "mobile_performance_sources") return { content: [], structuredContent: { apps: [{ bundleId: "com.example.app", pid: 123, foreground: true }], foregroundApp: { bundleId: "com.example.app", pid: 123 } } };
+      // The workspace lists installed apps once for its panels, through the same host.
+      if (name === "mobile_list_apps") return storageApp.callServerTool({ name });
       if (name === "mobile_cpu_close") return { content: [] };
       if (name === "mobile_cpu_session") cpuSessionsOpened++;
       const sessionId = "1".repeat(64);

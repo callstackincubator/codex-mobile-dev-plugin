@@ -14,6 +14,7 @@ import type { AppToolsStore } from "./app-tools.ts";
 import { createPanelStores } from "./panel-stores.ts";
 import { DeviceStream } from "./device-stream.ts";
 import type { HostBridge } from "./host-bridge.ts";
+import type { DeviceAppsStore } from "./device-apps.ts";
 import type { PanelContext } from "./model-context.ts";
 import type { ScreenAnnotationsStore } from "./screen-annotations.ts";
 import { captureScreen, readScreenTree, takeScreenshot } from "./simulator-capture.ts";
@@ -26,6 +27,8 @@ import { countUiEvent, recordUiTiming } from "./telemetry.ts";
 import { callTool } from "./tool-call.ts";
 
 type SelectionChanged = (device?: SimulatorDevice, active?: boolean) => void;
+/** The workspace's chat context and the installed-apps listings its panels share. */
+export type PanelTools = { context: PanelContext; deviceApps: DeviceAppsStore };
 
 /**
  * One platform's device panel: it lists and opens devices, streams the selected one and turns
@@ -49,7 +52,7 @@ export class SimulatorPanel extends Store<SimulatorPanelSnapshot> {
   private disposing?: Promise<void>;
   private readonly stopObservingAnnotations: () => void;
 
-  constructor(app: HostBridge, platform: Platform, context: PanelContext, selectionChanged: SelectionChanged) {
+  constructor(app: HostBridge, platform: Platform, { context, deviceApps }: PanelTools, selectionChanged: SelectionChanged) {
     const model = initialState(platform, frameLayout({ stage: { width: 0, height: 0 }, showFrame: true, platform }));
     super(panelSnapshot(model, { selecting: false, draft: false, capture: false }, { canAttach: false, canAttachScreenshots: false, canMessage: false }));
     this.model = model;
@@ -76,7 +79,7 @@ export class SimulatorPanel extends Store<SimulatorPanelSnapshot> {
       stop: id => this.stopDevice(id),
       refresh: async () => { if (!this.model.pending && !this.model.disposed && this.model.available) await this.discovery.list(); },
     });
-    ({ settings: this.settings, appTools: this.appTools, annotations: this.annotations } = createPanelStores(app, platform, {
+    ({ settings: this.settings, appTools: this.appTools, annotations: this.annotations } = createPanelStores(app, platform, deviceApps, {
       device: () => this.model, setFrame: visible => this.screen.setFrame(visible),
       capture: () => captureScreen(this.captureTarget()),
       readTree: simulator => readScreenTree(this.captureTarget(), simulator, this.annotations.getSnapshot().capture?.screen.width),
@@ -319,6 +322,6 @@ export class SimulatorPanel extends Store<SimulatorPanelSnapshot> {
 export type SimulatorPanelView = Pick<SimulatorPanel, "platform" | "picker" | "settings" | "appTools" | "annotations" | "subscribe" | "getSnapshot" | "attach" | "activate" | "press" | "screenshot" | "startDevice">;
 
 /** Builds a panel for one platform; the workspace creates one for iOS and one for Android. */
-export function createSimulatorPanel(app: HostBridge, platform: Platform, context: PanelContext, selectionChanged: SelectionChanged) {
-  return new SimulatorPanel(app, platform, context, selectionChanged);
+export function createSimulatorPanel(app: HostBridge, platform: Platform, tools: PanelTools, selectionChanged: SelectionChanged) {
+  return new SimulatorPanel(app, platform, tools, selectionChanged);
 }
