@@ -17,7 +17,7 @@ mod schema;
 #[cfg(test)]
 mod tests;
 
-pub use answer::parse_screen_video_answer;
+pub use answer::{ScreenVideoStream, parse_screen_video_answer};
 pub use offer::{CallInfoBlob, build_screen_audio_offer, build_screen_video_offer};
 
 const KEY_CALL_ID: &str = "avcMediaStreamOptionCallID";

@@ -18,7 +18,7 @@ pub struct TouchSample {
 struct Point { x: u16, y: u16 }
 
 fn normalized(value: f64, size: f64) -> Result<u16, String> {
-    if value.is_finite() == false || size.is_finite() == false || size <= 0.0 || size > 10000.0 || value < 0.0 || value > size {
+    if !value.is_finite() || !size.is_finite() || size <= 0.0 || size > 10000.0 || value < 0.0 || value > size {
         return Err("Invalid physical iOS touch coordinates.".into());
     }
     let scaled = value / size * f64::from(u16::MAX);
