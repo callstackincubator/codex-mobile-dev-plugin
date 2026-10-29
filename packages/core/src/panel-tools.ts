@@ -286,8 +286,8 @@ function registerPanel(server: McpServer, { android, devices, drivers, page, sho
   }, guarded(async ({ udid, fps }: { udid: string; fps: number }, context) => {
     context.signal.throwIfAborted();
     const definition = await baguette.definition(udid);
-    const bezel = await readBezel(baguette, udid, definition.screen);
-    const { inputStatus, inputRepairMessage } = await panelInputStatus(udid);
+    // The frame and the input check do not depend on each other.
+    const [bezel, { inputStatus, inputRepairMessage }] = await Promise.all([readBezel(baguette, udid, definition.screen), panelInputStatus(udid)]);
     const sessionId = await openRequestSession(context.signal, () => streams.open(udid, fps), id => streams.closeSession(id));
     return {
       ...result({ udid, definition, fps, inputStatus, ...(inputRepairMessage ? { inputRepairMessage } : {}) }, `Stream ready for ${definition.identity.name}.`),
