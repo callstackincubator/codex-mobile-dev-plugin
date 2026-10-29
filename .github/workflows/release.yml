@@ -28,6 +28,8 @@ jobs:
     outputs:
       tag: ${{ steps.release.outputs.tag }}
       version: ${{ steps.release.outputs.version }}
+      # Each plugin host's package path, as JSON keyed by host (tooling/release-metadata.mjs).
+      archives: ${{ steps.release.outputs.archives }}
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
     steps:
@@ -103,7 +105,7 @@ jobs:
 
       - name: Validate the extracted release ZIP
         env:
-          RELEASE_ARCHIVE: ${{ steps.release.outputs.archive }}
+          RELEASE_ARCHIVE: ${{ fromJSON(steps.release.outputs.archives).codex }}
         run: |
           unzip -t "$RELEASE_ARCHIVE"
           mkdir "$RUNNER_TEMP/mobile-dev-release"
@@ -113,10 +115,10 @@ jobs:
       # Claude's packages ship without the panel, and every file under the plugin directory's 5 MiB limit.
       - name: Validate the extracted Claude packages
         env:
-          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          CLAUDE_ARCHIVE: ${{ fromJSON(steps.release.outputs.archives).claude }}
         run: |
           mkdir "$RUNNER_TEMP/mobile-dev-claude"
-          unzip -q "release/mobile-dev-$RELEASE_VERSION-claude-plugin-darwin-arm64.zip" -d "$RUNNER_TEMP/mobile-dev-claude"
+          unzip -q "$CLAUDE_ARCHIVE" -d "$RUNNER_TEMP/mobile-dev-claude"
           npm run test:claude -- "$RUNNER_TEMP/mobile-dev-claude"
 
       - name: Upload Sentry source maps and native symbols
@@ -238,11 +240,9 @@ jobs:
         include:
           - host: codex
             branch: latest
-            package: darwin-arm64.zip
             script: apps/codex-plugin/tooling/publish-release.mjs
           - host: claude
             branch: claude
-            package: claude-plugin-darwin-arm64.zip
             script: apps/claude/tooling/publish-release.mjs
     concurrency:
       group: release-${{ matrix.branch }}
@@ -266,11 +266,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.build.outputs.tag }}
-          RELEASE_VERSION: ${{ needs.build.outputs.version }}
           RELEASE_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
-          PACKAGE: ${{ matrix.package }}
+          ARCHIVE: ${{ fromJSON(needs.build.outputs.archives)[matrix.host] }}
           SCRIPT: ${{ matrix.script }}
         run: |
+          test -n "$ARCHIVE"
           mkdir "$RUNNER_TEMP/mobile-dev-plugin"
-          unzip -q "release/mobile-dev-$RELEASE_VERSION-$PACKAGE" -d "$RUNNER_TEMP/mobile-dev-plugin"
+          unzip -q "$ARCHIVE" -d "$RUNNER_TEMP/mobile-dev-plugin"
           node "$SCRIPT" "$RUNNER_TEMP/mobile-dev-plugin"
