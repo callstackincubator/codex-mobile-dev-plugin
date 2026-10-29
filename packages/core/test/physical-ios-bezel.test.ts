@@ -73,10 +73,10 @@ function fixture() {
     if (args[1] === "layout") return jsonOutput({ ...layout, screen });
     assert.equal(args[1], "composite");
     return { stdout: image };
-  }, async (executable, signal) => {
-    assert.match(executable, /\/vendor\/baguette\/Baguette$/);
+  }, async (signal, executable) => {
+    assert.equal(executable, undefined);
     assert.equal(signal.aborted, false);
-    return { DYLD_LIBRARY_PATH: "/selected/toolchain/libraries" };
+    return { executable: "/plugin/vendor/baguette/Baguette", env: { DYLD_LIBRARY_PATH: "/selected/toolchain/libraries" } };
   });
   return {
     read, calls, maskDirectories,

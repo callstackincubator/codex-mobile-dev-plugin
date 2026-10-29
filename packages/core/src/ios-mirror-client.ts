@@ -9,6 +9,7 @@ import { readJsonLines } from "./json-lines.ts";
 import { mirrorReplySchema, mirrorSocketPath, maximumReplyBytes, wireTouchPhases } from "./ios-mirror-rpc.ts";
 import type { MirrorCommand, MirrorReply } from "./ios-mirror-rpc.ts";
 import type { IosCapture } from "./ios-native-capture.ts";
+import { bundled } from "./bundled-runtime.ts";
 
 async function connect(path: string): Promise<Socket> {
   return new Promise((resolve, reject) => {
@@ -28,7 +29,6 @@ async function startService() {
   if (starting) return starting;
   starting = (async () => {
     // Bundles, and the chunks they split into, sit in dist/ beside the service.
-    const bundled = import.meta.url.endsWith(".mjs");
     const entry = bundled ? "./ios-mirror-service.mjs" : "./ios-mirror-service.ts";
     const url = new URL(entry, import.meta.url);
     const path = fileURLToPath(url);

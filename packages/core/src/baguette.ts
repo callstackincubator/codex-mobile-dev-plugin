@@ -1,10 +1,7 @@
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import type { ChildProcess } from "node:child_process";
-import { access } from "node:fs/promises";
-import { constants } from "node:fs";
 import { createServer } from "node:net";
-import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import { normalizeDevices, parseBaseUrl, udidSchema } from "@mobile-dev/shared/protocol.ts";
@@ -16,7 +13,7 @@ import { isMissingFile, MissingRuntimeError } from "./install-integrity.ts";
 import { deferEpisodeReport, ExpectedOperationError, FailureEpisodes, errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 import { annotateDeviceCommand, backendCommand, inheritDeviceCommand } from "@mobile-dev/shared/device-command-diagnostics.ts";
 import { errorReportSignature } from "@mobile-dev/shared/telemetry.ts";
-import { baguetteEnvironment } from "./baguette-runtime.ts";
+import { baguetteRuntime, forgetBaguetteRuntime } from "./baguette-runtime.ts";
 import { captureServerError, recordAccessibilityBridgeRestart } from "./telemetry.ts";
 
 type DescribedUi = { tree?: { label?: unknown } };
@@ -31,26 +28,18 @@ function listError(status: Status): Error {
   return inheritDeviceCommand(error, listFailures.get(status));
 }
 
-async function bundledExecutable(): Promise<string> {
-  const path = fileURLToPath(new URL("./baguette/Baguette", import.meta.url));
-  try {
-    await access(path, constants.X_OK);
-  } catch (error) {
-    if (isMissingFile(error)) throw new MissingRuntimeError("baguette");
-    throw new Error("Mobile Dev cannot run its bundled simulator backend. Reinstall Mobile Dev, then restart the app running it.");
-  }
-  return path;
-}
-
 async function launchBundledBaguette(host: string, port: string, signal: AbortSignal): Promise<ChildProcess> {
   if (process.platform !== "darwin" || process.arch !== "arm64") {
     throw new ExpectedOperationError("unsupported_platform", "Starting Baguette requires an Apple Silicon Mac with Xcode 26 or later.");
   }
-  const executable = await bundledExecutable();
-  const environment = await baguetteEnvironment(executable, signal);
-  return spawn(executable, ["serve", "--host", host, "--port", port, "--no-plugins"], {
-    stdio: ["ignore", "pipe", "pipe"], shell: false, env: environment,
+  const { executable, env } = await baguetteRuntime(signal);
+  const child = spawn(executable, ["serve", "--host", host, "--port", port, "--no-plugins"], {
+    stdio: ["ignore", "pipe", "pipe"], shell: false, env,
   });
+  // A launch that fails to spawn or crashes may have found a toolchain that has since changed.
+  child.once("error", error => forgetBaguetteRuntime(error));
+  child.once("exit", (_code, signal) => { if (signal !== null && signal !== "SIGTERM") forgetBaguetteRuntime(); });
+  return child;
 }
 
 // CoreSimulatorBridge can lose its accessibility connection after backboardd and SpringBoard
@@ -348,11 +337,13 @@ export class Baguette {
 
   async repairInput(udid: string): Promise<void> {
     await this.device(udid, true);
-    const executable = await bundledExecutable();
-    const environment = await baguetteEnvironment(executable, this.lifecycle.signal);
+    const { executable, env } = await baguetteRuntime(this.lifecycle.signal);
     const execute = promisify(execFile);
     const { stdout, stderr } = await execute(executable, ["heal", "--udid", udid], {
-      timeout: 45000, maxBuffer: 1024 * 1024, encoding: "utf8", env: environment, signal: this.lifecycle.signal,
+      timeout: 45000, maxBuffer: 1024 * 1024, encoding: "utf8", env, signal: this.lifecycle.signal,
+    }).catch(error => {
+      forgetBaguetteRuntime(error);
+      throw error;
     });
     if (stdout || stderr) process.stderr.write(stdout + stderr);
   }

@@ -880,7 +880,7 @@ test("physical iOS frames accept profiles without represented models, report a f
     if (file === "/usr/bin/plutil") return output({});
     renders.push(args[1]);
     throw new Error("Device frame layout failed");
-  }, async () => ({}));
+  }, async () => ({ executable: "Baguette", env: {} }));
   const sessions = new IosMirrorSessions(async () => ({
     async read() { return { generation: 1, sequence: 1, dropped: 0, frames: [] }; }, async touch() {}, async reset() {}, async close() {},
   }));
