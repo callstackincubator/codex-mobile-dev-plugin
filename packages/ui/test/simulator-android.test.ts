@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { androidPhone, dispatch, fakeDeviceTools, waitFor } from "./simulator-fixture.ts";
+import { androidPhone, dispatch, fakeDeviceTools } from "./simulator-fixture.ts";
+import { waitFor } from "@mobile-dev/test-support/wait.ts";
 
 const avd = { udid: "emulator-5554", name: "Pixel AVD", state: "Booted", runtime: "Android", platform: "android", kind: "emulator" } as const;
 const lifecycle = (calls: { name: string }[]) => calls.filter(call => call.name.startsWith("mobile_boot") || call.name.startsWith("mobile_shutdown"));

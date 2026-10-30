@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { dispatch, fakeDeviceTools, pasteText, physicalPhone, waitFor } from "./simulator-fixture.ts";
+import { dispatch, fakeDeviceTools, pasteText, physicalPhone } from "./simulator-fixture.ts";
+import { waitFor } from "@mobile-dev/test-support/wait.ts";
 
 const inputs = (calls: { name: string }[]) => calls.filter(call => call.name.endsWith("_stream_input"));
 

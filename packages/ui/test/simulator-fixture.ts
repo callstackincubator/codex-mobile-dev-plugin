@@ -1,7 +1,6 @@
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import type { HostBridge } from "../src/host-bridge.ts";
 import type { PanelContext, ScreenshotAttachment } from "../src/model-context.ts";
 import { createSimulatorPanel } from "../src/simulator-panel.ts";
 import type { SimulatorPanel, SimulatorPanelView } from "../src/simulator-panel.ts";
@@ -19,9 +18,9 @@ import type { DeviceSettingsResult, PhysicalIosDevicesResult, SimulatorStatusRes
 import type { AndroidVideoBatch } from "@mobile-dev/shared/android-video.ts";
 import type { IosVideoBatch } from "@mobile-dev/shared/ios-video.ts";
 import { createDeviceApps } from "@mobile-dev/test-support/device-apps-fixtures.ts";
+import { fakeApp } from "@mobile-dev/test-support/fake-app.ts";
 
 type Platform = "ios" | "android";
-type Call = { name: string; arguments: Record<string, unknown> };
 type Handler = (args: Record<string, unknown>) => CallToolResult | Promise<CallToolResult>;
 
 export const physicalBezel = { rect: { x: 27, y: 18, width: 400, height: 872 }, viewport: { width: 454, height: 908 }, clipRadius: 62, image: "data:image/png;base64,AQID", mask: "data:image/png;base64,BAUG" };
@@ -61,14 +60,6 @@ export function pasteText(target: EventTarget, text: string) {
   Object.assign(event, { clipboardData: { getData: (format: string) => format === "text/plain" ? text : "" } });
   target.dispatchEvent(event);
   return event;
-}
-
-export async function waitFor(predicate: () => boolean) {
-  const end = Date.now() + 2000;
-  while (!predicate()) {
-    assert.ok(Date.now() < end, "Panel did not reach the expected state");
-    await new Promise(resolve => setTimeout(resolve, 5));
-  }
 }
 
 type ViewStores = Partial<Pick<SimulatorPanelView, "picker" | "settings" | "appTools" | "annotations">>;
@@ -121,7 +112,6 @@ export type DeviceTools = {
 export function fakeDeviceTools(t: TestContext, { simulators = [iphone], android = [pixel], physical = [], failures = {} }: DeviceTools = {}) {
   const devices: Record<Platform, SimulatorDevice[]> = { ios: [...simulators], android: [...android] };
   let paired = [...physical];
-  const calls: Call[] = [];
   const closed: string[] = [];
   const selections: { platform: string; active?: boolean }[] = [];
   const screenshots: ScreenshotAttachment[] = [];
@@ -196,15 +186,14 @@ export function fakeDeviceTools(t: TestContext, { simulators = [iphone], android
   }
 
   let capabilities: Record<string, unknown> = { message: { text: {} } };
-  const app = {
+  const app = fakeApp({
     getHostCapabilities: () => capabilities,
-    async callServerTool(call: Call) {
-      calls.push(call);
+    async fallback(call) {
       await delays.get(call.name);
       const result = once.get(call.name);
       if (result) { once.delete(call.name); return result; }
       if (failures[call.name]) return failed(failures[call.name]);
-      return (overrides.get(call.name) ?? handlers[call.name] ?? (() => ok()))(call.arguments ?? {});
+      return (overrides.get(call.name) ?? handlers[call.name] ?? (() => ok()))(call.arguments);
     },
     async readServerResource({ uri }: { uri: string }, { signal }: { signal: AbortSignal }) {
       const address = new URL(uri);
@@ -219,7 +208,8 @@ export function fakeDeviceTools(t: TestContext, { simulators = [iphone], android
         if (signal.aborted) abort(); else signal.addEventListener("abort", abort, { once: true });
       });
     },
-  } as unknown as HostBridge;
+  });
+  const { calls } = app;
 
   const document = Object.assign(new EventTarget(), { visibilityState: "visible", createElement: () => new FakeElement() });
   class Decoder {
@@ -271,7 +261,7 @@ export function fakeDeviceTools(t: TestContext, { simulators = [iphone], android
     },
     async attachAnnotation(annotation: ScreenAnnotation) { attachedAnnotations.push(annotation); return true; },
   } as unknown as PanelContext;
-  const deviceApps = createDeviceApps(app as never);
+  const deviceApps = createDeviceApps(app);
   const [ios, androidPanel] = (["ios", "android"] as const).map(platform => {
     const panel = createSimulatorPanel(app, platform, { context, deviceApps }, (_device, active) => selections.push({ platform, active }));
     panel.setAvailable(true);

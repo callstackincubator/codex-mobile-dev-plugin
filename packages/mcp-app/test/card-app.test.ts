@@ -1,9 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { setTimeout } from "node:timers/promises";
 import { build } from "esbuild";
 import { JSDOM } from "jsdom";
 import { runBundle } from "@mobile-dev/test-support/bundle.ts";
+import { waitFor } from "@mobile-dev/test-support/wait.ts";
 
 const built = await build({
   entryPoints: ["packages/mcp-app/src/main.tsx"],
@@ -37,20 +37,13 @@ for (const view of ["recording", "comparison", "tracesift", "devices"] as const)
     else if (message.id === "teardown") tornDown = true;
     else if (message.id !== undefined) send({ id: message.id, result: {} });
   };
-  async function until(condition: () => boolean, what: string) {
-    for (let attempt = 0; attempt < 200; attempt++) {
-      if (condition()) return;
-      await setTimeout(5);
-    }
-    assert.fail(`The ${view} card did not ${what}.`);
-  }
   runBundle(window, built.outputFiles[0].text);
-  await until(() => initialized, "connect");
-  await until(() => window.document.documentElement.dataset.theme === "dark" || window.document.documentElement.classList.contains("dark"), "apply the host theme");
+  await waitFor(() => initialized, { message: `The ${view} card did not connect` });
+  await waitFor(() => window.document.documentElement.dataset.theme === "dark" || window.document.documentElement.classList.contains("dark"), { message: `The ${view} card did not apply the host theme` });
   // React commits the first render on its own schedule, which can follow the theme.
-  await until(() => Boolean(window.document.getElementById("root")?.childElementCount), "render into the page");
+  await waitFor(() => Boolean(window.document.getElementById("root")?.childElementCount), { message: `The ${view} card did not render into the page` });
   if (view === "devices") assert.match(window.document.getElementById("root")!.textContent ?? "", /earlier version of Mobile Dev/);
-  if (view === "tracesift") await until(() => calls.includes("mobile_get_tracesift_project"), "load the saved TraceSift project");
+  if (view === "tracesift") await waitFor(() => calls.includes("mobile_get_tracesift_project"), { message: `The ${view} card did not load the saved TraceSift project` });
   send({ id: "teardown", method: "ui/resource-teardown", params: {} });
-  await until(() => tornDown, "acknowledge teardown");
+  await waitFor(() => tornDown, { message: `The ${view} card did not acknowledge teardown` });
 });

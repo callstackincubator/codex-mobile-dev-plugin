@@ -1,9 +1,11 @@
 import test from "node:test";
 import type { TestContext } from "node:test";
 import { createDeviceApps } from "@mobile-dev/test-support/device-apps-fixtures.ts";
+import { waitFor } from "@mobile-dev/test-support/wait.ts";
 import assert from "node:assert/strict";
 import { setImmediate } from "node:timers/promises";
 import type { App } from "@modelcontextprotocol/ext-apps";
+import { fakeApp } from "@mobile-dev/test-support/fake-app.ts";
 import type { PanelContext } from "../src/model-context.ts";
 import type { LogOptions, LogRecord } from "@mobile-dev/shared/logs.ts";
 import type { LogSink } from "@mobile-dev/core/native-logs.ts";
@@ -20,23 +22,17 @@ function createPanel(app: App, t: TestContext) {
 }
 
 const device = { udid: "emulator-5554", name: "Pixel", state: "Booted", runtime: "Android", platform: "android" as const, kind: "emulator" as const };
-async function waitFor(predicate: () => boolean) {
-  const end = Date.now() + 2000;
-  while (!predicate()) { assert.ok(Date.now() < end); await new Promise(resolve => setTimeout(resolve, 5)); }
-}
 
 test("the selected connected iPhone opens physical logs and a disconnected phone opens none", async t => {
   const phone: PhysicalIosDevice = { udid: "00008110-000A0B1C2D3E4000", coreDeviceId: "11111111-1111-4111-8111-111111111111",
     name: "Test iPhone", model: "iPhone", productType: "iPhone18,1", runtime: "iOS 27.0", state: "connected", platform: "ios", kind: "physical",
     transportType: "localNetwork", pairingState: "paired" };
   const opened: LogOptions[] = [];
-  const app = { async callServerTool(input: { name: string; arguments: { options?: LogOptions } }) {
-    if (input.name === "mobile_logs_session") {
-      assert.ok(input.arguments.options);
-      opened.push(input.arguments.options);
-    }
+  const app = fakeApp({ tools: { mobile_logs_session: ({ options }) => {
+    assert.ok(options);
+    opened.push(options as LogOptions);
     return { content: [] };
-  } } as unknown as App;
+  } } });
   const { panel, deviceApps } = createPanel(app, t);
   t.after(() => panel.dispose());
   panel.search("process:Example");
@@ -52,17 +48,13 @@ test("the selected connected iPhone opens physical logs and a disconnected phone
 });
 
 test("pausing closes a log session, and a late session cannot restore a closed panel", async t => {
-  const calls: { name: string; arguments: Record<string, unknown> }[] = [];
   let release!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });
-  const app = {
-    async callServerTool(call: { name: string; arguments: Record<string, unknown> }) {
-      calls.push(call);
-      if (call.name === "mobile_logs_session") { await gate; return { content: [], _meta: { sessionId: "late", logsUri: "logs://mobile-dev/late" } }; }
-      return { content: [] };
-    },
+  const app = fakeApp({
+    tools: { mobile_logs_session: async () => { await gate; return { content: [], _meta: { sessionId: "late", logsUri: "logs://mobile-dev/late" } }; } },
     async readServerResource() { throw new Error("A late session must not read resources"); },
-  } as unknown as App;
+  });
+  const { calls } = app;
   const { panel, deviceApps } = createPanel(app, t);
   t.after(() => panel.dispose());
   deviceApps.selectDevice(device); panel.setAvailable(true); panel.show();
@@ -79,10 +71,10 @@ test("source discovery ignores results for an old Metro URL and preserves explic
   let release!: () => void;
   let hold = true;
   const gate = new Promise<void>(resolve => { release = resolve; });
-  const app = { async callServerTool() {
+  const app = fakeApp({ async fallback() {
     if (hold) await gate;
     return { content: [], structuredContent: { android: [{ id: device.udid, name: device.name }], metro: [{ id: "metro-1", title: "App" }], errors: [] } };
-  } } as unknown as App;
+  } });
   const { panel, deviceApps } = createPanel(app, t);
   t.after(() => panel.dispose()); panel.setAvailable(true); panel.configure({ native: "none" });
   const discovering = panel.discover();
@@ -103,17 +95,20 @@ test("hiding logs leaves collection in the server and resumes the same cursor wi
     sink = next;
     return async () => { closes++; };
   }, metro: () => async () => {} });
-  const app = {
-    async callServerTool(input: { name: string; arguments: { options?: LogOptions; sessionId?: string } }) {
-      if (input.name === "mobile_logs_session") {
-        assert.ok(input.arguments.options);
-        const id = logs.open(input.arguments.options);
+  const app = fakeApp({
+    tools: {
+      mobile_logs_session: ({ options }) => {
+        assert.ok(options);
+        const id = logs.open(options as LogOptions);
         opens++;
         return { content: [], _meta: { sessionId: id, logsUri: `logs://mobile-dev/${id}/batch?after=0` } };
-      }
-      assert.ok(input.arguments.sessionId);
-      if (input.name === "mobile_logs_keep_alive") logs.keepAlive(input.arguments.sessionId);
-      else await logs.closeSession(input.arguments.sessionId);
+      },
+    },
+    async fallback({ name, arguments: args }) {
+      const sessionId = args.sessionId as string;
+      assert.ok(sessionId);
+      if (name === "mobile_logs_keep_alive") logs.keepAlive(sessionId);
+      else await logs.closeSession(sessionId);
       return { content: [] };
     },
     readServerResource(input: { uri: string }, options: { signal: AbortSignal }) {
@@ -135,7 +130,7 @@ test("hiding logs leaves collection in the server and resumes the same cursor wi
         if (options.signal.aborted) abort();
       });
     },
-  } as unknown as App;
+  });
   const { panel, deviceApps } = createPanel(app, t);
   t.after(async () => { await panel.dispose(); await logs.close(); });
   deviceApps.selectDevice(device);
@@ -174,20 +169,17 @@ test("hiding logs leaves collection in the server and resumes the same cursor wi
 });
 
 test("a hidden log panel sends only keep-alives and cancels its hidden timer on teardown", async t => {
-  const calls: string[] = [];
   let reads = 0;
-  const app = {
-    async callServerTool(input: { name: string }) {
-      calls.push(input.name);
-      return { content: [], _meta: { sessionId: "session", logsUri: "logs://mobile-dev/session/batch?after=0" } };
-    },
+  const app = fakeApp({
+    fallback: () => ({ content: [], _meta: { sessionId: "session", logsUri: "logs://mobile-dev/session/batch?after=0" } }),
     readServerResource(_input: unknown, options: { signal: AbortSignal }) {
       reads++;
       return new Promise((_, reject) => {
         options.signal.addEventListener("abort", () => reject(new Error("Read cancelled")), { once: true });
       });
     },
-  } as unknown as App;
+  });
+  const calls = () => app.calls.map(call => call.name);
   const { panel, deviceApps } = createPanel(app, t);
   t.after(() => panel.dispose());
   deviceApps.selectDevice(device);
@@ -200,7 +192,7 @@ test("a hidden log panel sends only keep-alives and cancels its hidden timer on 
   await setImmediate();
   t.mock.timers.tick(60000);
   await setImmediate();
-  assert.deepEqual(calls, ["mobile_logs_session", "mobile_logs_keep_alive"]);
+  assert.deepEqual(calls(), ["mobile_logs_session", "mobile_logs_keep_alive"]);
   assert.equal(reads, 1);
   panel.show();
   await setImmediate();
@@ -210,7 +202,7 @@ test("a hidden log panel sends only keep-alives and cancels its hidden timer on 
   await panel.dispose();
   t.mock.timers.tick(120000);
   await setImmediate();
-  assert.deepEqual(calls, ["mobile_logs_session", "mobile_logs_keep_alive", "mobile_logs_close"]);
+  assert.deepEqual(calls(), ["mobile_logs_session", "mobile_logs_keep_alive", "mobile_logs_close"]);
 });
 
 test("expired resource reads reconnect quietly and preserve rows, filters, selection and scroll", async t => {
@@ -218,16 +210,15 @@ test("expired resource reads reconnect quietly and preserve rows, filters, selec
   const closed: string[] = [];
   const cursors: Array<{ id: string; after: string | null }> = [];
   let expire!: (error: Error) => void;
-  const app = {
-    async callServerTool(input: { name: string; arguments: { options?: LogOptions; sessionId?: string } }) {
-      if (input.name === "mobile_logs_session") {
-        opened.push(input.arguments.options!);
+  const app = fakeApp({
+    tools: {
+      mobile_logs_session: ({ options }) => {
+        opened.push(options as LogOptions);
         const id = `session-${opened.length}`;
         return { content: [], _meta: { sessionId: id, logsUri: `logs://mobile-dev/${id}/batch?after=0` } };
-      }
-      closed.push(input.arguments.sessionId!);
-      return { content: [] };
+      },
     },
+    fallback: ({ arguments: { sessionId } }) => { closed.push(sessionId as string); return { content: [] }; },
     async readServerResource(input: { uri: string }, options: { signal: AbortSignal }) {
       const uri = new URL(input.uri);
       const id = uri.pathname.split("/")[1];
@@ -242,7 +233,7 @@ test("expired resource reads reconnect quietly and preserve rows, filters, selec
         options.signal.addEventListener("abort", () => reject(new Error("Read cancelled")), { once: true });
       });
     },
-  } as unknown as App;
+  });
   const { panel, deviceApps } = createPanel(app, t);
   t.after(() => panel.dispose());
   const errors: string[] = [];
@@ -273,21 +264,20 @@ test("expired hidden keep-alives recover without reading hidden logs, and Pause 
     let opens = 0;
     let reads = 0;
     const closed: string[] = [];
-    const app = {
-      async callServerTool(input: { name: string; arguments: { sessionId?: string } }) {
-        if (input.name === "mobile_logs_session") {
+    const app = fakeApp({
+      tools: {
+        mobile_logs_session: () => {
           const id = `session-${++opens}`;
           return { content: [], _meta: { sessionId: id, logsUri: `logs://mobile-dev/${id}/batch?after=0` } };
-        }
-        if (input.name === "mobile_logs_keep_alive") return { isError: true, content: [{ type: "text", text: "This log session expired or closed. Reopen the log panel." }] };
-        closed.push(input.arguments.sessionId!);
-        return { content: [] };
+        },
+        mobile_logs_keep_alive: () => ({ isError: true, content: [{ type: "text", text: "This log session expired or closed. Reopen the log panel." }] }),
       },
+      fallback: ({ arguments: { sessionId } }) => { closed.push(sessionId as string); return { content: [] }; },
       readServerResource(_input: unknown, options: { signal: AbortSignal }) {
         reads++;
         return new Promise((_, reject) => options.signal.addEventListener("abort", () => reject(new Error("Read cancelled")), { once: true }));
       },
-    } as unknown as App;
+    });
     const { panel, deviceApps } = createPanel(app, t);
     t.after(() => panel.dispose());
     deviceApps.selectDevice(device); panel.setAvailable(true); panel.show();
@@ -320,15 +310,16 @@ test("expired hidden keep-alives recover without reading hidden logs, and Pause 
 test("unrelated MCP failures remain visible and invalid source options still stop retries", async t => {
   for (const kind of ["read", "session"]) await t.test(kind, async t => {
     let opens = 0;
-    const app = {
-      async callServerTool(input: { name: string }) {
-        if (input.name !== "mobile_logs_session") return { content: [] };
-        opens++;
-        if (kind === "session") return { isError: true, content: [{ type: "text", text: "Selected device is unauthorized." }] };
-        return { content: [], _meta: { sessionId: "session", logsUri: "logs://mobile-dev/session/batch?after=0" } };
+    const app = fakeApp({
+      tools: {
+        mobile_logs_session: () => {
+          opens++;
+          if (kind === "session") return { isError: true, content: [{ type: "text", text: "Selected device is unauthorized." }] };
+          return { content: [], _meta: { sessionId: "session", logsUri: "logs://mobile-dev/session/batch?after=0" } };
+        },
       },
       async readServerResource() { throw new Error("MCP error -32603: Log reader failed."); },
-    } as unknown as App;
+    });
     const { panel, deviceApps } = createPanel(app, t);
     t.after(() => panel.dispose());
     deviceApps.selectDevice(device); panel.setAvailable(true); panel.show();

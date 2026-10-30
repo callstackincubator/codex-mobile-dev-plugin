@@ -4,6 +4,7 @@ import { setTimeout } from "node:timers/promises";
 import { build } from "esbuild";
 import { JSDOM } from "jsdom";
 import { runBundle } from "@mobile-dev/test-support/bundle.ts";
+import { waitFor } from "@mobile-dev/test-support/wait.ts";
 
 // Both hosts advertise inline and fullscreen. Claude has no control of its own to
 // leave the expanded view, so the shared panel offers one; Codex has its own.
@@ -38,18 +39,14 @@ for (const [host, entry, shown] of [
     else if (message.id === "teardown") tornDown = true;
     else if (message.id !== undefined) send({ id: message.id, result: { content: [] } });
   };
-  async function until(condition: () => boolean) {
-    for (let attempt = 0; attempt < 200 && !condition(); attempt++) await setTimeout(5);
-    assert.ok(condition());
-  }
   t.after(async () => {
     send({ id: "teardown", method: "ui/resource-teardown", params: {} });
-    await until(() => tornDown);
+    await waitFor(() => tornDown);
     window.close();
   });
   runBundle(window, built.outputFiles[0].text);
-  await until(() => initialized);
-  await until(() => window.document.querySelector(".workspace-toolbar") !== null);
+  await waitFor(() => initialized);
+  await waitFor(() => window.document.querySelector(".workspace-toolbar") !== null);
   // Hosts follow the handshake with context changes; the control reacts to those.
   send({ method: "ui/notifications/host-context-changed", params: { displayMode: "fullscreen", availableDisplayModes: ["inline", "fullscreen"] } });
   await setTimeout(20);

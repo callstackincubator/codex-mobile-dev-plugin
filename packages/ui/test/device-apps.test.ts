@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { build } from "esbuild";
 import { JSDOM } from "jsdom";
-import type { App } from "@modelcontextprotocol/ext-apps";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { fakeApp } from "@mobile-dev/test-support/fake-app.ts";
 import type { DeviceApps } from "@mobile-dev/shared/device-apps.ts";
 import { DeviceAppsStore } from "../src/device-apps.ts";
 import { AppVisibility } from "@mobile-dev/test-support/device-apps-fixtures.ts";
@@ -16,16 +17,14 @@ const second: DeviceApps = { apps: [{ bundleId: "app.a", pid: 1, foreground: fal
 
 function fixture() {
   const requests: { deviceId: unknown; signal: AbortSignal; resolve: (data: unknown) => void; reject: (error: Error) => void }[] = [];
-  const app = {
-    callServerTool(input: { arguments: { deviceId: string } }, options: { signal: AbortSignal }) {
-      return new Promise((resolve, reject) => {
-        requests.push({ deviceId: input.arguments.deviceId, signal: options.signal, reject,
-          resolve: data => resolve({ content: [], structuredContent: data }) });
-      });
-    },
-  };
+  const app = fakeApp({
+    fallback: ({ arguments: args }, options) => new Promise<CallToolResult>((resolve, reject) => {
+      requests.push({ deviceId: args.deviceId, signal: options!.signal!, reject,
+        resolve: data => resolve({ content: [], structuredContent: data as Record<string, unknown> }) });
+    }),
+  });
   const visibility = new AppVisibility();
-  const store = new DeviceAppsStore(app as unknown as App, visibility);
+  const store = new DeviceAppsStore(app, visibility);
   return { requests, visibility, store };
 }
 
@@ -186,16 +185,16 @@ test("panels on one device share an installed-apps listing in flight and keep th
   let release!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });
   let listings = 0;
-  const app = {
-    async callServerTool({ name, arguments: args }: { name: string; arguments: Record<string, unknown> }) {
+  const app = fakeApp({
+    async fallback({ name, arguments: args }) {
       assert.equal(name, "mobile_list_apps");
       assert.deepEqual(args, { platform: "ios", deviceId: UDID });
       listings++;
       await gate;
       return { content: [], structuredContent: { apps: [{ bundleId: "app.a", name: "A" }], foregroundBundleId: null, runningBundleIds: ["app.a"] } };
     },
-  };
-  const store = new DeviceAppsStore(app as unknown as App, new AppVisibility());
+  });
+  const store = new DeviceAppsStore(app, new AppVisibility());
   const target = { platform: "ios", deviceId: UDID } as const;
   const storage = store.installedApps(target);
   const tools = store.installedApps(target);

@@ -13,7 +13,7 @@ import { TraceSiftPanel } from "../src/tracesift-panel.ts";
 import { RecordingController } from "../src/recording-controller.ts";
 import { WorkspaceTools } from "../src/workspace-tools.ts";
 import { recordingFixture } from "@mobile-dev/test-support/recording-fixtures.ts";
-import type { App } from "@modelcontextprotocol/ext-apps";
+import { fakeApp } from "@mobile-dev/test-support/fake-app.ts";
 import type { PanelContext } from "../src/model-context.ts";
 import { logKey } from "@mobile-dev/shared/logs.ts";
 import type { StackedLog } from "@mobile-dev/shared/logs.ts";
@@ -85,12 +85,14 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
     async attach(log?: StackedLog) { this.attachedKey = log ? logKey(log) : undefined; for (const listener of contextListeners) listener(); }, async sendLogToChat(log: StackedLog) { sentLog = log; } };
   let emitCpu: ((batch: CpuBatch) => void) | undefined;
   let cpuSessionsOpened = 0;
-  const performanceApp = {
-    async callServerTool({ name }: { name: string }) {
-      if (name === "mobile_performance_sources") return { content: [], structuredContent: { apps: [{ bundleId: "com.example.app", pid: 123, foreground: true }], foregroundApp: { bundleId: "com.example.app", pid: 123 } } };
+  const performanceApp = fakeApp({
+    tools: {
+      mobile_performance_sources: () => ({ content: [], structuredContent: { apps: [{ bundleId: "com.example.app", pid: 123, foreground: true }], foregroundApp: { bundleId: "com.example.app", pid: 123 } } }),
       // The workspace lists installed apps once for its panels, through the same host.
-      if (name === "mobile_list_apps") return storageApp.callServerTool({ name });
-      if (name === "mobile_cpu_close") return { content: [] };
+      mobile_list_apps: () => storageApp.callServerTool({ name: "mobile_list_apps" }),
+      mobile_cpu_close: () => ({ content: [] }),
+    },
+    fallback({ name }) {
       if (name === "mobile_cpu_session") cpuSessionsOpened++;
       const sessionId = "1".repeat(64);
       return { content: [], structuredContent: { sessionId, cpuUri: `cpu://mobile-dev/${sessionId}/batch?after=0` } };
@@ -106,9 +108,9 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
         };
       });
     },
-  };
-  const deviceApps = createDeviceApps(performanceApp as unknown as App);
-  const panel = new LogsPanel({} as App, context as PanelContext, deviceApps);
+  });
+  const deviceApps = createDeviceApps(performanceApp);
+  const panel = new LogsPanel(fakeApp(), context as PanelContext, deviceApps);
   let logSubscribers = 0;
   const subscribe = panel.list.subscribe;
   panel.list.subscribe = listener => {
@@ -117,25 +119,22 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
     return () => { logSubscribers--; unsubscribe(); };
   };
 
-  const performance = new PerformancePanel(performanceApp as unknown as App, deviceApps);
-  const storageCalls: string[] = [];
-  const storageApp = {
-    async callServerTool({ name }: { name: string }) {
-      storageCalls.push(name);
-      if (name === "mobile_list_apps") return { content: [], structuredContent: { apps: [{ bundleId: "com.example.app", name: "Example" }], foregroundBundleId: "com.example.app", runningBundleIds: ["com.example.app"] } };
-      return { content: [], structuredContent: { platform: "ios", bundleId: "com.example.app", readAt: Date.now(), fileCount: 3, totalBytes: 300,
+  const performance = new PerformancePanel(performanceApp, deviceApps);
+  const storageApp = fakeApp({
+    tools: { mobile_list_apps: () => ({ content: [], structuredContent: { apps: [{ bundleId: "com.example.app", name: "Example" }], foregroundBundleId: "com.example.app", runningBundleIds: ["com.example.app"] } }) },
+    fallback: () => ({ content: [], structuredContent: { platform: "ios", bundleId: "com.example.app", readAt: Date.now(), fileCount: 3, totalBytes: 300,
         files: [{ path: "Documents/mmkv/mmkv.default", bytes: 200, store: "mmkv:Documents/mmkv/mmkv.default" }],
         stores: [
           { id: "mmkv:Documents/mmkv/mmkv.default", kind: "mmkv", name: "mmkv.default", path: "Documents/mmkv/mmkv.default", status: "ok", bytes: 200, entryCount: 2,
             entries: [{ key: "onboarding.done", type: "boolean", value: "true", bytes: 1, guessed: true }, { key: "user", type: "json", value: "{\"id\":1}", bytes: 8, guessed: true }] },
           { id: "mmkv:Documents/mmkv/secure", kind: "mmkv", name: "secure", path: "Documents/mmkv/secure", status: "encrypted", note: "Encrypted with a key only the app knows.", bytes: 100, entryCount: 0, entries: [] },
-        ] } };
-    },
-  };
-  const storage = new StoragePanel(storageApp as unknown as App, deviceApps);
+        ] } }),
+  });
+  const storageCalls = () => storageApp.calls.map(call => call.name);
+  const storage = new StoragePanel(storageApp, deviceApps);
   storage.setAvailable(true);
-  const tracesift = new TraceSiftPanel(storageApp as unknown as App);
-  const recordingController = new RecordingController(performanceApp as unknown as App);
+  const tracesift = new TraceSiftPanel(storageApp);
+  const recordingController = new RecordingController(performanceApp);
   const panels = new WorkspaceTools({ context: context as PanelContext, deviceApps, logs: panel, performance, storage, tracesift });
   deviceApps.selectDevice({ udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS", platform: "ios", kind: "simulator" });
   performance.setAvailable(true);
@@ -530,7 +529,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   assert.equal(dom.window.document.querySelector("canvas"), canvas);
   await selectTool("storage");
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
-  assert.deepEqual(storageCalls, ["mobile_list_apps", "mobile_app_icons", "mobile_app_storage"]);
+  assert.deepEqual(storageCalls(), ["mobile_list_apps", "mobile_app_icons", "mobile_app_storage"]);
   const storageDrawer = dom.window.document.getElementById("storage-drawer")!;
   const storeNames = [...storageDrawer.querySelectorAll('nav[aria-label="Stores"] button')].map(button => button.textContent);
   assert.deepEqual(storeNames.slice(0, 2), ["Default instanceMMKV2", "secureMMKV"]);
@@ -548,9 +547,9 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   await act(async () => { (storageDrawer.querySelector('[role="tab"]:nth-child(2)') as HTMLElement).click(); });
   assert.match(storageDrawer.textContent ?? "", /No changes yet/);
   await act(async () => { (storageDrawer.querySelector('[role="tab"]:nth-child(1)') as HTMLElement).click(); });
-  const beforeRefresh = storageCalls.length;
+  const beforeRefresh = storageCalls().length;
   await act(async () => { (storageDrawer.querySelector('button[aria-label="Refresh"]') as HTMLButtonElement).click(); await new Promise(resolve => setTimeout(resolve, 0)); });
-  assert.deepEqual(storageCalls.slice(beforeRefresh).filter(name => name !== "mobile_app_icons"), ["mobile_list_apps", "mobile_app_storage"], "Refresh lists the apps again and rereads the selected app.");
+  assert.deepEqual(storageCalls().slice(beforeRefresh).filter(name => name !== "mobile_app_icons"), ["mobile_list_apps", "mobile_app_storage"], "Refresh lists the apps again and rereads the selected app.");
   assert.equal(dom.window.document.querySelector("canvas"), canvas, "The storage tool preserves the device DOM.");
   await selectTool("logs");
   assert.equal(dom.window.document.getElementById("storage-drawer"), null);

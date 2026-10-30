@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { dispatch, fakeDeviceTools, physicalBezel, physicalPhone, waitFor } from "./simulator-fixture.ts";
+import { dispatch, fakeDeviceTools, physicalBezel, physicalPhone } from "./simulator-fixture.ts";
+import { waitFor } from "@mobile-dev/test-support/wait.ts";
 
 const backendDown = { physical: [physicalPhone], failures: { mobile_list_simulators: "Simulator backend unavailable" } };
 

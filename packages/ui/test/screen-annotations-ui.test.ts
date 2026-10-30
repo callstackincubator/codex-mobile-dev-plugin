@@ -9,6 +9,7 @@ import { PanelContext } from "../src/model-context.ts";
 import { ScreenAnnotationsStore } from "../src/screen-annotations.ts";
 import { panelView } from "./simulator-fixture.ts";
 import type { App } from "@modelcontextprotocol/ext-apps";
+import { fakeApp } from "@mobile-dev/test-support/fake-app.ts";
 
 test("the simulator toolbar opens notes, saves blue markers, and lets users edit and remove them", async t => {
   const dom = new JSDOM('<html><body><div id="root"></div></body></html>', { pretendToBeVisual: true, url: "http://localhost" });
@@ -41,7 +42,7 @@ test("the simulator toolbar opens notes, saves blue markers, and lets users edit
   });
   await act(async () => { root.render(createElement(SimulatorView, { panel: panelView("ios", { annotations: store }), visible: true })); });
   const canvas = dom.window.document.querySelector("canvas");
-  const context = new PanelContext({ getHostCapabilities: () => ({ updateModelContext: { image: {} }, message: { text: {} } }), async sendMessage() { return { isError: true }; } } as unknown as App, () => ({ getCurrent: () => undefined, update: async () => ({ updateId: "annotation-update" }) }));
+  const context = new PanelContext(fakeApp({ getHostCapabilities: () => ({ updateModelContext: { image: {} }, message: { text: {} } }), async sendMessage() { return { isError: true }; } }), () => ({ getCurrent: () => undefined, update: async () => ({ updateId: "annotation-update" }) }));
   await act(async () => {
     store.connect(context); store.configure({ udid: "iphone", name: "iPhone", state: "Booted", runtime: "iOS", platform: "ios", kind: "simulator" }, false);
     store.setViewport({ x: 16, y: 16, width: 150, height: 300, stageWidth: 640, stageHeight: 360 });
@@ -105,11 +106,11 @@ test("the simulator toolbar opens notes, saves blue markers, and lets users edit
   assert.equal(dom.window.document.querySelector('.annotation-marker'), null);
   // Claude uses one shared bar; preparing a draft must preserve its notes.
   const messages: Parameters<App["sendMessage"]>[0][] = [];
-  const standard = new PanelContext({
+  const standard = new PanelContext(fakeApp({
     getHostCapabilities: () => ({ updateModelContext: { text: {} }, message: { text: {} } }),
     async updateModelContext() { return {}; },
     async sendMessage(message) { messages.push(message); return {}; },
-  } as App, () => undefined);
+  }), () => undefined);
   const top = dom.window.document.createElement("div");
   dom.window.document.body.prepend(top);
   const topRoot = createRoot(top);

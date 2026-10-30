@@ -2,7 +2,7 @@ import test from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { setImmediate } from "node:timers/promises";
-import type { App } from "@modelcontextprotocol/ext-apps";
+import { fakeApp } from "@mobile-dev/test-support/fake-app.ts";
 import type { InstalledApp } from "@mobile-dev/shared/app-control.ts";
 import type { PhysicalAndroidDevice } from "@mobile-dev/shared/android-devices.ts";
 import { createDeviceApps } from "@mobile-dev/test-support/device-apps-fixtures.ts";
@@ -19,28 +19,27 @@ const installed = (bundleId: string): InstalledApp => ({ bundleId, name: bundleI
 function fixture(t: TestContext) {
   const device = { apps: [] as InstalledApp[], running: [] as string[], stores: [] as StorageStore[], hold: false };
   const held: (() => void)[] = [];
-  const calls: { name: string; bundleId?: unknown }[] = [];
-  const app = {
-    async callServerTool({ name, arguments: args }: { name: string; arguments: Record<string, unknown> }) {
-      calls.push({ name, bundleId: args.bundleId });
-      if (name === "mobile_list_apps") {
+  const app = fakeApp({
+    tools: {
+      async mobile_list_apps() {
         const data = { apps: [...device.apps], foregroundBundleId: null, runningBundleIds: [...device.running] };
         if (!device.hold) return { content: [], structuredContent: data };
         await new Promise<void>(resolve => held.push(resolve));
         return { isError: true, content: [{ type: "text", text: "Unable to lookup in current state: Shutdown" }] };
-      }
-      if (name === "mobile_app_icons") return { content: [], structuredContent: { apps: {} } };
-      return { content: [], structuredContent: { platform: "ios", bundleId: args.bundleId, readAt: Date.now(), stores: device.stores, files: [], fileCount: 0, totalBytes: 0 } };
+      },
+      mobile_app_icons: () => ({ content: [], structuredContent: { apps: {} } }),
     },
-  };
-  const deviceApps = createDeviceApps(app as unknown as App);
-  const panel = new StoragePanel(app as unknown as App, deviceApps);
+    fallback: ({ arguments: args }) => ({ content: [], structuredContent: { platform: "ios", bundleId: args.bundleId, readAt: Date.now(), stores: device.stores, files: [], fileCount: 0, totalBytes: 0 } }),
+  });
+  const { calls } = app;
+  const deviceApps = createDeviceApps(app);
+  const panel = new StoragePanel(app, deviceApps);
   t.after(() => { panel.dispose(); deviceApps.dispose(); });
   panel.setAvailable(true);
   return {
     device, deviceApps, panel,
     listings: () => calls.filter(call => call.name === "mobile_list_apps").length,
-    reads: () => calls.filter(call => call.name === "mobile_app_storage").map(call => call.bundleId),
+    reads: () => calls.filter(call => call.name === "mobile_app_storage").map(call => call.arguments.bundleId),
     apps: () => panel.getSnapshot().apps.map(app => app.bundleId),
     release: () => { for (const resolve of held.splice(0)) resolve(); },
   };
@@ -185,9 +184,9 @@ test("the change feed hides SDK changes until the toggle shows them", async t =>
 
 test("a slower earlier table page never replaces the page opened after it", async () => {
   const pending: { offset: number; resolve: (result: unknown) => void }[] = [];
-  const app = { callServerTool: ({ arguments: args }: { arguments: { offset: number } }) => new Promise(resolve => pending.push({ offset: args.offset, resolve })) };
+  const app = fakeApp({ fallback: ({ arguments: args }) => new Promise(resolve => pending.push({ offset: args.offset as number, resolve })) });
   // The app picked on this simulator earlier is selected without reading its storage.
-  const panel = new StoragePanel(app as never, { subscribe: () => () => {}, getSnapshot: () => ({ device: simulator }), pickedApp: () => "dev.example", pickApp() {} } as never);
+  const panel = new StoragePanel(app, { subscribe: () => () => {}, getSnapshot: () => ({ device: simulator }), pickedApp: () => "dev.example", pickApp() {} } as never);
   panel.setAvailable(true);
   const page = (offset: number) => ({ structuredContent: { table: "items", columns: [{ name: "id", type: "INTEGER" }], rows: [[offset + 1]], total: 300, offset } });
   const first = panel.openTable("sqlite:app.db", "items", 0);

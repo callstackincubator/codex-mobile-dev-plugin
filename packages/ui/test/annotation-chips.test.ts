@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { App } from "@modelcontextprotocol/ext-apps";
+import { fakeApp } from "@mobile-dev/test-support/fake-app.ts";
 import type { ScreenAnnotation } from "@mobile-dev/shared/screen-annotations.ts";
 import { PanelContext } from "../src/model-context.ts";
 import { ANNOTATION_EDIT_GUIDANCE, ANNOTATION_EDIT_PROMPT, formatAnnotationContext, formatAnnotationMessage } from "@mobile-dev/shared/screen-annotations.ts";
@@ -19,10 +20,10 @@ function fixture() {
   let composerAvailable = true;
   const updates: Parameters<App["updateModelContext"]>[0][] = [];
   const messages: Parameters<App["sendMessage"]>[0][] = [];
-  const context = new PanelContext({
+  const context = new PanelContext(fakeApp({
     getHostCapabilities: () => ({ message: { text: {} } }),
     async sendMessage(message: Parameters<App["sendMessage"]>[0]) { messages.push(message); return {}; },
-  } as unknown as App, () => ({
+  }), () => ({
     async update(params: Parameters<App["updateModelContext"]>[0]) {
       if (!composerAvailable) throw new Error("MCP model context requires an available composer");
       updates.push(params); return { updateId: String(updates.length) };

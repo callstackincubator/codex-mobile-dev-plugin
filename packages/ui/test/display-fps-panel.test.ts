@@ -4,7 +4,7 @@ import { setImmediate } from "node:timers/promises";
 import { createFpsSeries } from "../src/components/performance/fpsSeries.ts";
 import { DisplayFpsPanel } from "../src/display-fps-panel.ts";
 import type { DisplayFpsState } from "../src/display-fps-panel.ts";
-import type { App } from "@modelcontextprotocol/ext-apps";
+import { fakeApp } from "@mobile-dev/test-support/fake-app.ts";
 import type { DisplayFpsBatch } from "@mobile-dev/shared/display-fps.ts";
 import type { SimulatorDevice } from "@mobile-dev/shared/protocol.ts";
 import { createDeviceApps } from "@mobile-dev/test-support/device-apps-fixtures.ts";
@@ -45,13 +45,9 @@ test("FPS covers each measured interval from its start and leaves unmeasured tim
 });
 
 test("the device FPS panel records on physical iOS without an app, backfills history, and closes on disconnect", async () => {
-  const calls: string[] = [];
   let emit: ((batch: DisplayFpsBatch) => void) | undefined;
-  const app = {
-    async callServerTool(input: { name: string }) {
-      calls.push(input.name);
-      return { content: [], structuredContent: { sessionId: "fps", fpsUri: "display-fps://mobile-dev/fps/batch?after=0", timeOrigin: 99 } };
-    },
+  const app = fakeApp({
+    fallback: () => ({ content: [], structuredContent: { sessionId: "fps", fpsUri: "display-fps://mobile-dev/fps/batch?after=0", timeOrigin: 99 } }),
     readServerResource(input: { uri: string }, options: { signal: AbortSignal }) {
       return new Promise((resolve, reject) => {
         const cancelled = () => {
@@ -66,21 +62,22 @@ test("the device FPS panel records on physical iOS without an app, backfills his
         };
       });
     },
-  };
+  });
+  const calls = () => app.calls.map(call => call.name);
   let state: Partial<DisplayFpsState> = {};
-  const panel = new DisplayFpsPanel(app as unknown as App, fields => { state = { ...state, ...fields }; });
+  const panel = new DisplayFpsPanel(app, fields => { state = { ...state, ...fields }; });
   panel.select({ platform: "ios", kind: "physical", udid: "00008150-device", coreDeviceId: "id", name: "iPhone", model: "iPhone", productType: "iPhone18,1", runtime: "iOS 27", state: "connected", pairingState: "paired", transportType: "localNetwork" });
   panel.setAvailable(true);
   panel.show();
   await setImmediate();
-  assert.deepEqual(calls, ["mobile_display_fps_session"]);
+  assert.deepEqual(calls(), ["mobile_display_fps_session"]);
   emit?.({ cursor: 1, phase: "recording", samples: [{ time: 100, interval: 1, fps: 0 }, { time: 101, interval: 1, fps: 60 }] });
   await setImmediate();
   emit?.({ cursor: 2, phase: "recording", samples: [{ time: 100, interval: 1, fps: 30 }] });
   await setImmediate();
   assert.deepEqual(state.fpsSamples, [{ time: 100, interval: 1, fps: 30 }, { time: 101, interval: 1, fps: 60 }]);
   await panel.disconnect();
-  assert.deepEqual(calls, ["mobile_display_fps_session", "mobile_display_fps_close"]);
+  assert.deepEqual(calls(), ["mobile_display_fps_session", "mobile_display_fps_close"]);
   assert.equal(state.fpsPhase, "stopped");
 });
 
@@ -90,16 +87,18 @@ function closeFailureHost() {
   let opening: Promise<void> | undefined;
   let sequence = 0;
   let emit: ((batch: DisplayFpsBatch) => void) | undefined;
-  const app = {
-    async callServerTool(input: { name: string; arguments: { sessionId?: string; target?: { deviceId: string } } }) {
-      if (input.name === "mobile_display_fps_close") {
-        calls.push(`close:${input.arguments.sessionId}`);
+  const app = fakeApp({
+    tools: {
+      mobile_display_fps_close: ({ sessionId }) => {
+        calls.push(`close:${sessionId}`);
         if (closeFailure) throw new Error(closeFailure);
         return { content: [] };
-      }
+      },
+    },
+    async fallback({ arguments: { target } }) {
       await opening;
       const id = `fps${++sequence}`;
-      calls.push(`open:${id}:${input.arguments.target?.deviceId}`);
+      calls.push(`open:${id}:${(target as { deviceId: string } | undefined)?.deviceId}`);
       return { content: [], structuredContent: { sessionId: id, fpsUri: `display-fps://mobile-dev/${id}/batch?after=0`, timeOrigin: 99 } };
     },
     readServerResource(input: { uri: string }, options: { signal: AbortSignal }) {
@@ -113,9 +112,9 @@ function closeFailureHost() {
         };
       });
     },
-  };
+  });
   let state: Partial<DisplayFpsState> = {};
-  const panel = new DisplayFpsPanel(app as unknown as App, fields => { state = { ...state, ...fields }; });
+  const panel = new DisplayFpsPanel(app, fields => { state = { ...state, ...fields }; });
   return { panel, calls, state: () => state, emit(batch: DisplayFpsBatch) { emit?.(batch); },
     failClose(message?: string) { closeFailure = message; }, delayOpen(promise: Promise<void>) { opening = promise; } };
 }
@@ -189,23 +188,20 @@ test("a Display FPS session that opens after a device switch keeps its failed cl
 });
 
 test("CPU and display samples share a clock and selecting another app preserves the device recording", async t => {
-  const calls: string[] = [];
   const reads = new Map<string, (batch: CpuBatch | DisplayFpsBatch) => void>();
   let sequence = 0;
-  const app = {
-    async callServerTool(input: { name: string }) {
-      calls.push(input.name);
-      if (input.name === "mobile_performance_sources") return { content: [], structuredContent: { apps: [
+  const app = fakeApp({
+    tools: {
+      mobile_performance_sources: () => ({ content: [], structuredContent: { apps: [
         { bundleId: "app.a", pid: 1 }, { bundleId: "app.b", pid: 2 },
-      ] , foregroundApp: null } };
-      if (input.name === "mobile_display_fps_session") return { content: [], structuredContent: {
+      ] , foregroundApp: null } }),
+      mobile_display_fps_session: () => ({ content: [], structuredContent: {
         sessionId: "fps", fpsUri: "display-fps://mobile-dev/fps/batch?after=0", timeOrigin: 100,
-      } };
-      if (input.name === "mobile_cpu_session") {
+      } }),
+      mobile_cpu_session: () => {
         const id = `cpu${++sequence}`;
         return { content: [], structuredContent: { sessionId: id, cpuUri: `cpu://mobile-dev/${id}/batch?after=0` } };
-      }
-      return { content: [] };
+      },
     },
     readServerResource(input: { uri: string }, options: { signal: AbortSignal }) {
       return new Promise((resolve, reject) => {
@@ -222,9 +218,10 @@ test("CPU and display samples share a clock and selecting another app preserves 
         });
       });
     },
-  };
-  const deviceApps = createDeviceApps(app as unknown as App);
-  const panel = new PerformancePanel(app as unknown as App, deviceApps);
+  });
+  const calls = () => app.calls.map(call => call.name);
+  const deviceApps = createDeviceApps(app);
+  const panel = new PerformancePanel(app, deviceApps);
   t.after(() => { deviceApps.dispose(); return panel.dispose(); });
   deviceApps.selectDevice({ platform: "android", kind: "physical", transportType: "wired", udid: "phone", name: "Android", state: "Booted", runtime: "Android" });
   panel.setAvailable(true);
@@ -247,7 +244,7 @@ test("CPU and display samples share a clock and selecting another app preserves 
   await setImmediate();
   const changedApp = panel.getSnapshot();
   assert.equal(changedApp.fpsSamples, initial.fpsSamples);
-  const opens = calls.filter(name => name === "mobile_display_fps_session");
+  const opens = calls().filter(name => name === "mobile_display_fps_session");
   assert.equal(opens.length, 1);
   const next = reads.get("cpu:");
   assert.ok(next);
@@ -258,6 +255,6 @@ test("CPU and display samples share a clock and selecting another app preserves 
   const nextApp = panel.getSnapshot();
   assert.equal(nextApp.samples[0].time, 11);
   await panel.disconnect();
-  const closes = calls.filter(name => name === "mobile_display_fps_close");
+  const closes = calls().filter(name => name === "mobile_display_fps_close");
   assert.equal(closes.length, 1);
 });

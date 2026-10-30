@@ -4,6 +4,7 @@ import { setTimeout } from "node:timers/promises";
 import { build } from "esbuild";
 import { JSDOM } from "jsdom";
 import { runBundle } from "@mobile-dev/test-support/bundle.ts";
+import { waitFor } from "@mobile-dev/test-support/wait.ts";
 
 const built = await build({
   entryPoints: ["apps/codex-plugin/ui/main.tsx"],
@@ -64,16 +65,10 @@ for (const notification of ["input", "result"] as const) test(`workspace applies
       result(message.id, {});
     }
   };
-  async function until(condition: () => boolean) {
-    for (let attempt = 0; attempt < 100; attempt++) {
-      if (condition()) return;
-      await setTimeout(5);
-    }
-    assert.fail("The workspace did not reach the expected host state.");
-  }
+  const reached = { message: "The workspace did not reach the expected host state" };
   t.after(async () => {
     send({ id: "teardown", method: "ui/resource-teardown", params: {} });
-    await until(() => tornDown);
+    await waitFor(() => tornDown, reached);
     window.close();
     if (notification === "input") {
       const captured = telemetry.join("\n");
@@ -85,18 +80,18 @@ for (const notification of ["input", "result"] as const) test(`workspace applies
     }
   });
   runBundle(window, built.outputFiles[0].text);
-  await until(() => initialized);
+  await waitFor(() => initialized, reached);
   await setTimeout(10);
   const earlyDiscovery = calls.filter(name => name.startsWith("mobile_list_"));
   assert.deepEqual(earlyDiscovery, []);
   const target = { platform: "android", kind: "emulator", deviceId: "avd:Pixel" };
   if (notification === "input") send({ method: "ui/notifications/tool-input", params: { arguments: target } });
   else send({ method: "ui/notifications/tool-result", params: { content: [], structuredContent: { panelTarget: target } } });
-  await until(() => calls.includes("mobile_list_android_devices"));
-  await until(() => {
+  await waitFor(() => calls.includes("mobile_list_android_devices"), reached);
+  await waitFor(() => {
     const label = window.document.getElementById("platform-select")?.textContent ?? "";
     return label.includes("Android");
-  });
+  }, reached);
   await setTimeout(10);
   const ios = window.document.getElementById("ios-panel");
   const android = window.document.getElementById("android-panel");

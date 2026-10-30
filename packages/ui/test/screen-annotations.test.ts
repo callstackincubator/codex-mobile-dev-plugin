@@ -6,6 +6,7 @@ import type { InspectedTree, ScreenSource } from "../src/screen-annotations.ts";
 import type { ScreenAnnotation } from "@mobile-dev/shared/screen-annotations.ts";
 import { PanelContext } from "../src/model-context.ts";
 import { App } from "@modelcontextprotocol/ext-apps";
+import { fakeApp } from "@mobile-dev/test-support/fake-app.ts";
 import { AppBridge } from "@modelcontextprotocol/ext-apps/app-bridge";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { OpenAIModelContextHostState } from "@openai/mcp-extensions/app";
@@ -28,10 +29,10 @@ function fixture(messageApp?: App) {
   let gate: Promise<void> | undefined;
   const updates: Parameters<App["updateModelContext"]>[0][] = [];
   const messages: Parameters<App["sendMessage"]>[0][] = [];
-  const context = new PanelContext({
+  const context = new PanelContext(fakeApp({
     getHostCapabilities: () => ({ experimental: { "openai/message": {} }, message: { text: {}, ...(imageMessages ? { image: {} } : {}) }, updateModelContext: imageAttachments ? { image: {} } : {} }),
     async sendMessage(message: Parameters<App["sendMessage"]>[0], options: Parameters<App["sendMessage"]>[1]) { if (sendFailures-- > 0) throw new Error("MCP app messages require an available composer"); messages.push(message); return messageApp ? messageApp.sendMessage(message, options) : { isError: rejected }; },
-  } as unknown as App, () => ({
+  }), () => ({
     getCurrent: () => current,
     async update(params: Parameters<App["updateModelContext"]>[0]) {
       updates.push(params); await gate;
@@ -575,11 +576,11 @@ test("a fresh annotation batch starts at one after chat clears or sends the prio
 test("standard hosts receive readable, self-locating drafts and retain selection context until explicitly cleared", async () => {
   const messages: Parameters<App["sendMessage"]>[0][] = [];
   const updates: Parameters<App["updateModelContext"]>[0][] = [];
-  const context = new PanelContext({
+  const context = new PanelContext(fakeApp({
     getHostCapabilities: () => ({ updateModelContext: { text: {}, structuredContent: {} }, message: { text: {} } }),
     async updateModelContext(params) { updates.push(params); return {}; },
     async sendMessage(params) { messages.push(params); return {}; },
-  } as App, () => undefined);
+  }), () => undefined);
   await context.attachAnnotation(annotation);
   assert.equal(context.screenAnnotations.length, 1);
   await context.attachAnnotation({ ...annotation, id: "android-note", simulator: { ...simulator, udid: "android", name: "Pixel", platform: "android", kind: "emulator" } });
@@ -607,11 +608,11 @@ test("a standard annotation draft waits for context and preserves notes when con
   let failContext = false;
   let sends = 0;
   let rejectMessage = true;
-  const context = new PanelContext({
+  const context = new PanelContext(fakeApp({
     getHostCapabilities: () => ({ updateModelContext: { text: {} }, message: { text: {} } }),
     async updateModelContext() { if (failContext) throw new Error("Context unavailable"); return {}; },
     async sendMessage() { sends++; return { isError: rejectMessage }; },
-  } as unknown as App, () => undefined);
+  }), () => undefined);
   await context.attachAnnotation(annotation);
   failContext = true;
   await assert.rejects(context.sendAnnotationsToChat(), /Context unavailable/);
@@ -630,11 +631,11 @@ test("editing a note while its context is publishing prevents an obsolete draft"
   let release: (() => void) | undefined;
   let hold = false;
   let sends = 0;
-  const context = new PanelContext({
+  const context = new PanelContext(fakeApp({
     getHostCapabilities: () => ({ updateModelContext: { text: {} }, message: { text: {} } }),
     async updateModelContext() { if (hold) { hold = false; await new Promise<void>(resolve => { release = resolve; }); } return {}; },
     async sendMessage() { sends++; return {}; },
-  } as unknown as App, () => undefined);
+  }), () => undefined);
   await context.attachAnnotation(annotation);
   hold = true;
   const sending = context.sendAnnotationsToChat();

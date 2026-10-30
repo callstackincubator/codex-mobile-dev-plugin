@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
-import type { App } from "@modelcontextprotocol/ext-apps";
+import { fakeApp } from "@mobile-dev/test-support/fake-app.ts";
 import { startLiveReload } from "../src/live-reload.ts";
 
 test("live reload waits for stream cleanup and keeps the workspace view", async t => {
@@ -15,13 +15,13 @@ test("live reload waits for stream cleanup and keeps the workspace view", async 
   const cleanup = new Promise<void>(resolve => { finishCleanup = resolve; });
   let hostEvents = 0;
   dom.window.addEventListener("mobile-dev-host-probe", () => { hostEvents++; });
-  const app = {
+  const app = fakeApp({
     async readServerResource({ uri }: { uri: string }) {
       assert.equal(uri, `ui://mobile-dev/live?after=${revision}`);
       return { contents: [{ text: JSON.stringify({ revision: "b".repeat(64), html: '<html lang="en" data-view="panel" data-layout="stacked"><head></head><body><div id="root">jonas</div><script>window.dispatchEvent(new Event("mobile-dev-host-probe"))</script></body></html>' }) }] };
     },
     async close() { events.push("closed"); },
-  } as unknown as App;
+  });
   const replace = dom.window.document.body.replaceChildren.bind(dom.window.document.body);
   dom.window.document.body.replaceChildren = (...nodes) => { events.push("written"); replace(...nodes); finishReload(); };
   const stop = startLiveReload(app, async () => { events.push("disposing"); await cleanup; events.push("disposed"); }, dom.window.document);
@@ -45,7 +45,7 @@ test("closing the panel ignores a late live update", async t => {
   let finishRead!: (value: unknown) => void;
   const pending = new Promise(resolve => { finishRead = resolve; });
   let disposed = false;
-  const app = { readServerResource: () => pending } as unknown as App;
+  const app = fakeApp({ readServerResource: () => pending });
   const stop = startLiveReload(app, async () => { disposed = true; }, dom.window.document);
   stop();
   finishRead({ contents: [{ text: JSON.stringify({ revision: "b".repeat(64), html: "new" }) }] });

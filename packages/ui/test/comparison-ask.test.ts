@@ -2,15 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { ComparisonController } from "../src/comparison-controller.ts";
 import { recordingFixture } from "@mobile-dev/test-support/recording-fixtures.ts";
-import type { HostBridge } from "../src/host-bridge.ts";
+import { fakeApp } from "@mobile-dev/test-support/fake-app.ts";
 
 function controller(send: () => Promise<{ isError?: boolean }>) {
   const options: unknown[] = [];
-  const app = {
+  const app = fakeApp({
     getHostCapabilities: () => ({ message: { text: {} } }),
     async sendMessage(_message: unknown, option: unknown) { options.push(option); return send(); },
-    async callServerTool() { throw new Error("Complete comparisons are not read again."); },
-  } as unknown as HostBridge;
+    fallback() { throw new Error("Complete comparisons are not read again."); },
+  });
   const comparison = new ComparisonController(app);
   comparison.hostChanged();
   const first = recordingFixture();

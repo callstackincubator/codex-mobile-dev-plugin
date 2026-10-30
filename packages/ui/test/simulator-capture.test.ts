@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { dispatch, fakeDeviceTools, waitFor } from "./simulator-fixture.ts";
+import { dispatch, fakeDeviceTools } from "./simulator-fixture.ts";
+import { waitFor } from "@mobile-dev/test-support/wait.ts";
 
 test("screenshot attachment failures remain visible until the next action on both platforms", async t => {
   const f = fakeDeviceTools(t);

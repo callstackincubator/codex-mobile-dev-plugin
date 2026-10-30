@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { WorkspaceDevices } from "../src/workspace-devices.ts";
 import type { DeviceLayout } from "../src/device-layout.ts";
-import { androidPhone, fakeDeviceTools, iphone, physicalPhone, waitFor } from "./simulator-fixture.ts";
+import { androidPhone, fakeDeviceTools, iphone, physicalPhone } from "./simulator-fixture.ts";
+import { waitFor } from "@mobile-dev/test-support/wait.ts";
 
 const avd = { udid: "emulator-5554", name: "Pixel AVD", state: "Booted", runtime: "Android", platform: "android", kind: "emulator" } as const;
 
