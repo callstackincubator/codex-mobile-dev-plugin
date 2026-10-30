@@ -13,6 +13,7 @@ import { ListRootsRequestSchema, ListRootsResultSchema, type ClientCapabilities 
 import { EXTENSION_ID, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
 import { Baguette } from "../src/baguette.ts";
 import { createPanel } from "../src/panel-tools.ts";
+import { PANEL_PAGE_META } from "@mobile-dev/shared/panel-target.ts";
 import { BROWSER_CONTEXT_MAX_BYTES, BROWSER_SESSION_IDLE_MS, browserPanel, startPanelPage } from "../src/browser-panel.ts";
 import { SharedTransport } from "../src/shared-transport.ts";
 import { createTestPlugin, fakeBaguette, fakeSimulatorInput } from "../../test-support/fixtures.ts";
@@ -130,7 +131,7 @@ test("opening the panel links the browser page only for hosts without MCP Apps",
   await writeFile(page, "<html></html>");
   t.after(() => rm(directory, { recursive: true, force: true }));
   const template = pathToFileURL(page);
-  const panelFeature = browserPanel(template);
+  const panelFeature = browserPanel({ template });
   const fake = await fakeBaguette();
   t.after(() => fake.close());
   for (const ui of [false, true]) {
@@ -144,8 +145,10 @@ test("opening the panel links the browser page only for hosts without MCP Apps",
     for (const name of ["mobile_open_simulator", "mobile_open_workspace"]) {
       const result = await host.callTool({ name, arguments: { platform: "android" } });
       const texts = (result.content as Array<{ text: string }>).map(item => item.text);
-      if (ui) { assert.equal(texts.length, 1); continue; }
+      const structured = result.structuredContent as { browserPanel?: { url: string } };
+      if (ui) { assert.equal(texts.length, 1); assert.equal(structured.browserPanel, undefined); continue; }
       assert.equal(texts.length, 2);
+      assert.equal(structured.browserPanel?.url, texts[1].match(/http:\/\/127\.0\.0\.1:\d+\/[\w-]+\/\?\S+/)![0]);
       const link = new URL(texts[1].match(/http:\/\/127\.0\.0\.1:\d+\/[\w-]+\/\?\S+/)![0]);
       assert.equal(link.searchParams.get("tool"), name);
       assert.equal(link.searchParams.get("platform"), "android");
@@ -153,6 +156,44 @@ test("opening the panel links the browser page only for hosts without MCP Apps",
     await host.close();
     await plugin.close();
   }
+});
+
+test("a panel that never renders inline links the browser page for MCP Apps hosts too", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "browser-panel-"));
+  const page = join(directory, "browser-panel.html");
+  await writeFile(page, "<html></html>");
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const fake = await fakeBaguette();
+  t.after(() => fake.close());
+  const [hostSide, serverSide] = InMemoryTransport.createLinkedPair();
+  const shared = new SharedTransport(serverSide);
+  const panel = createPanel({ baguette: new Baguette(fake.url), simulatorInput: fakeSimulatorInput(), inline: false });
+  const plugin = await createTestPlugin("<html></html>", { panel, features: [browserPanel({ template: pathToFileURL(page), always: true })], connections: shared });
+  // The desktop app's Code tab renders MCP Apps.
+  const host = new Client({ name: "claude-code", version: "1" }, { capabilities: { extensions: { [EXTENSION_ID]: { mimeTypes: [RESOURCE_MIME_TYPE] } } } as ClientCapabilities });
+  await plugin.server.connect(shared);
+  await host.connect(hostSide);
+  t.after(async () => { await host.close(); await plugin.close(); });
+  const { tools } = await host.listTools();
+  for (const name of ["mobile_open_simulator", "mobile_open_workspace"]) {
+    const tool = tools.find(candidate => candidate.name === name)!;
+    // No UI resource for the host to render, and the page named for the browser panel.
+    assert.equal(tool._meta?.ui, undefined);
+    assert.equal(tool._meta?.["openai/ui"], undefined);
+    assert.match((tool._meta?.[PANEL_PAGE_META] as { resourceUri: string }).resourceUri, /^ui:\/\/mobile-dev\//);
+    const result = await host.callTool({ name, arguments: {} });
+    const text = (result.content as Array<{ text: string }>).map(item => item.text).join("\n");
+    assert.match(text, /beside the chat, not in it/);
+    assert.match(text, /never|Open no other address/);
+    assert.equal(new URL(text.match(/http:\/\/127\.0\.0\.1:\d+\/[\w-]+\/\?\S+/)![0]).searchParams.get("tool"), name);
+    // Claude Code passes the model only the structured result, so the link and its instructions are there too.
+    const { browserPanel: opening } = result.structuredContent as { browserPanel: { url: string; instructions: string } };
+    assert.equal(new URL(opening.url).searchParams.get("tool"), name);
+    assert.match(opening.instructions, /not open yet/);
+    assert.ok(opening.instructions.includes(opening.url));
+  }
+  // Opening a recording would render the workspace in the chat.
+  assert.equal(tools.some(tool => tool.name === "mobile_open_performance_recording"), false);
 });
 
 test("abandoned browser sessions expire while active tabs keep their own session", async t => {
@@ -264,7 +305,7 @@ test("a browser tab's model context reaches the agent and leaves with the tab", 
   const fake = await fakeBaguette();
   const [hostSide, serverSide] = InMemoryTransport.createLinkedPair();
   const shared = new SharedTransport(serverSide);
-  const plugin = await createTestPlugin("<html></html>", { panel: createPanel({ baguette: new Baguette(fake.url), simulatorInput: fakeSimulatorInput() }), features: [browserPanel(pathToFileURL(page))], connections: shared });
+  const plugin = await createTestPlugin("<html></html>", { panel: createPanel({ baguette: new Baguette(fake.url), simulatorInput: fakeSimulatorInput() }), features: [browserPanel({ template: pathToFileURL(page) })], connections: shared });
   const host = new Client({ name: "claude-code", version: "1" });
   await plugin.server.connect(shared);
   await host.connect(hostSide);

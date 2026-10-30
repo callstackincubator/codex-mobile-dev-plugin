@@ -7,7 +7,7 @@
 # install locations.
 set -u
 
-message="Mobile Dev needs Node.js 22.19 or later, and none was found on PATH or in Homebrew, nvm, fnm, Volta, mise or asdf locations. Install it, for example with 'brew install node' or from https://nodejs.org, then restart Claude."
+message="Mobile Dev needs Node.js 22.19 or later, and none was found on PATH or in Homebrew, nvm, fnm, Nix, Volta, mise or asdf locations. Install it, for example with 'brew install node' or from https://nodejs.org, then restart Claude."
 
 usable() {
   [ -x "$1" ] && "$1" -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit(major > 22 || (major === 22 && minor >= 19) ? 0 : 1)' >/dev/null 2>&1
@@ -17,7 +17,8 @@ candidates() {
   command -v node
   for directory in /opt/homebrew/bin /opt/homebrew/opt/node/bin /opt/homebrew/opt/node@24/bin /opt/homebrew/opt/node@22/bin /usr/local/bin \
     "$HOME/.volta/bin" "$HOME/.local/share/mise/shims" "$HOME/.asdf/shims" \
-    "$HOME/.local/share/fnm/aliases/default/bin" "$HOME/Library/Application Support/fnm/aliases/default/bin"; do
+    "$HOME/.local/share/fnm/aliases/default/bin" "$HOME/Library/Application Support/fnm/aliases/default/bin" \
+    "$HOME/.nix-profile/bin" "/etc/profiles/per-user/${USER:-$(id -un)}/bin" /run/current-system/sw/bin /nix/var/nix/profiles/default/bin; do
     echo "$directory/node"
   done
   for path in "$HOME"/.nvm/versions/node/*/bin/node "$HOME"/.local/share/mise/installs/node/*/bin/node \

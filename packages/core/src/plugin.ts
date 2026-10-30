@@ -127,9 +127,10 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
   // Devices cards that chats saved from earlier releases say they came from one.
   registerEarlierReleases(server, "mobile-dev-devices-earlier", "devices", readCard("devices"));
   const panelOpeners: PanelOpener[] = [];
+  // One place shows the panel beyond the host; the first feature that offers one wins.
   const opened: PanelOpener = async open => {
-    const texts = await Promise.all(panelOpeners.map(opener => opener(open)));
-    return texts.filter(Boolean).join("\n\n") || undefined;
+    const openings = await Promise.all(panelOpeners.map(opener => opener(open)));
+    return openings.find(opening => opening !== undefined);
   };
   const closePanel = panel?.register(server, { android, cpu, fps, drivers, page, showRecording, opened });
   const featureContext = { connections: options.connections, onPanelOpen: (opener: PanelOpener) => { panelOpeners.push(opener); } };

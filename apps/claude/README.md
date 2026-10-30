@@ -39,7 +39,7 @@ calls when prompted. Run `claude plugin marketplace update mobile-dev` to update
 
 - An Apple Silicon Mac.
 - **Node.js 22.19 or later.** Mobile Dev looks for it on `PATH` and in the usual
-  Homebrew, nvm, fnm, Volta, mise, and asdf locations. If none is found, Claude tells
+  Homebrew, nvm, fnm, Nix, Volta, mise, and asdf locations. If none is found, Claude tells
   you at the start of a session; install it with `brew install node` or from
   [nodejs.org](https://nodejs.org), then restart Claude.
 - **iOS:** Xcode 26 or later with an installed simulator runtime. Physical iPhone

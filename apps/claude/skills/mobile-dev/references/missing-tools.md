@@ -10,7 +10,7 @@ copy rather than a source checkout or a guessed cache version. In Claude Code,
 `claude mcp list` and `/mcp` show the `mobile-dev` server's status.
 
 The server starts through `scripts/launch-node.sh`, which needs Node.js 22.19 or
-later and looks for it on `PATH` and in the usual Homebrew, nvm, fnm, Volta, mise and
+later and looks for it on `PATH` and in the usual Homebrew, nvm, fnm, Nix, Volta, mise and
 asdf locations. Run `/bin/sh "<plugin-root>/scripts/launch-node.sh" -p process.version`
 to see which Node it finds. If it reports that none was found, explain that Mobile
 Dev needs Node.js 22.19 or later and offer to install it: with `brew install node`
