@@ -83,6 +83,20 @@ async function prepare(release: PanelRuntimeRelease, directory: string, target: 
     recordPanelRuntime("cached", performance.now() - startedAt);
     return target;
   }
+  try { await install(release, directory, target); }
+  catch (error) {
+    const failure = error instanceof RuntimeFailure ? error : new RuntimeFailure("filesystem", errorText(error));
+    recordPanelRuntime("failed", performance.now() - startedAt, undefined, failure.reason);
+    // Offline machines and unreachable releases are expected; a mismatch or a broken archive is not.
+    if (failure.reason !== "network" && failure.reason !== "http") captureServerError(failure, "panel_runtime.prepare", { tags: { panel_runtime_failure: failure.reason } });
+    throw new PanelRuntimeUnavailableError(failure.message);
+  }
+  recordPanelRuntime("downloaded", performance.now() - startedAt, release.bytes);
+  void removeOtherVersions(directory, target).catch(() => {});
+  return target;
+}
+
+async function install(release: PanelRuntimeRelease, directory: string, target: string) {
   const suffix = randomBytes(6).toString("hex");
   const archive = join(directory, `.download-${suffix}.tar.gz`);
   const staging = join(directory, `.staging-${suffix}`);
@@ -96,15 +110,6 @@ async function prepare(release: PanelRuntimeRelease, directory: string, target: 
       // Another server finished the same version first.
       if (await complete(target, release) === false) throw error;
     }
-    recordPanelRuntime("downloaded", performance.now() - startedAt, release.bytes);
-    void removeOtherVersions(directory, target).catch(() => {});
-    return target;
-  } catch (error) {
-    const failure = error instanceof RuntimeFailure ? error : new RuntimeFailure("filesystem", errorText(error));
-    recordPanelRuntime("failed", performance.now() - startedAt, undefined, failure.reason);
-    // Offline machines and unreachable releases are expected; a mismatch or a broken archive is not.
-    if (failure.reason !== "network" && failure.reason !== "http") captureServerError(failure, "panel_runtime.prepare", { tags: { panel_runtime_failure: failure.reason } });
-    throw new PanelRuntimeUnavailableError(failure.message);
   } finally {
     await rm(archive, { force: true });
     await rm(staging, { recursive: true, force: true });
@@ -188,7 +193,9 @@ async function removeOtherVersions(directory: string, keep: string) {
   const versions: { path: string; modified: number }[] = [];
   for (const name of entries) {
     const path = join(directory, name);
-    const { mtimeMs } = await stat(path);
+    // Another server's download can finish and clean up while this one looks.
+    const mtimeMs = await stat(path).then(stats => stats.mtimeMs, () => undefined);
+    if (mtimeMs === undefined) continue;
     if (name.startsWith(".download-") || name.startsWith(".staging-")) {
       if (Date.now() - mtimeMs > STALE_MS) await rm(path, { recursive: true, force: true });
     } else if (installed.test(name) && path !== keep) versions.push({ path, modified: mtimeMs });
