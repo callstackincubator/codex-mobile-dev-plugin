@@ -34,7 +34,7 @@ The website, Starlight docs, social card, and README banner use dark mode only. 
 
 ## The mark
 
-The identity is the uppercase **MOBILE DEV** wordmark on a Signal blue rectangle. A smaller neutral **BY CALLSTACK** chip follows it on wide layouts and is hidden in the phone nav. Keep that order, square corners, and near-black wordmark text. The favicon is a near-black **M** on the same blue block. There is no separate pictorial logo.
+The identity is the uppercase **MOBILE DEV** wordmark on a Signal blue rectangle. A smaller neutral **BY CALLSTACK** chip follows it on wide layouts and is hidden in the phone nav. Keep that order, square corners, and near-black wordmark text. The favicon uses the same phone-and-sparkle icon as Mobile Dev in Codex, in near-black on the same blue block.
 
 Keep the lockup on a solid background. Do not add a phone glyph, gradient, glow, outline effect, or rounded container to it.
 

@@ -1,6 +1,6 @@
 // Renders og/og.html as the social card (public/og-image.jpg, 1200x630, always dark) and the
 // optional dark README banner (--banner, 1660x512), and writes
-// the icons (public/favicon.svg, favicon-32.png, apple-touch-icon.png) from the mark. Run `pnpm og` after changing
+// the icons (public/favicon.svg, favicon-32.png, apple-touch-icon.png) from the Codex icon. Run `pnpm og` after changing
 // src/site/content.ts, src/site/brand.ts, og/og.html or the signature scene.
 //
 // The card never repeats a fact: this script imports content.ts and brand.ts (Node strips
@@ -115,46 +115,21 @@ try {
 }
 
 // ---------- Icons ----------
-// The mark in the accent, each step a whole number of pixels. Without a mark, the wordmark's
-// first letter in dark on an accent block.
 const BG = '#0a0a0a';
-const mark = site.mark ?? [];
-const rowLengths = mark.map((row) => row.length);
-const markW = Math.max(0, ...rowLengths);
-const markH = mark.length;
+const pluginIconPath = new URL('../apps/codex-plugin/assets/icon.svg', rootUrl);
+const pluginIcon = await readFile(pluginIconPath, 'utf8');
+const phoneIcon = pluginIcon.replace('currentColor', BG);
 
-/** An SVG `size` px square: the mark centred on whole-pixel steps, `pad` px clear around it. */
+/** The Codex icon on an accent block, with `pad` px clear around it. */
 function icon(size, pad, background) {
   const fill = background ? `<rect width="${size}" height="${size}" fill="${background}"/>` : '';
-  if (!markH) {
-    const uppercase = site.wordmark.toUpperCase();
-    const letter = [...uppercase][0] ?? '';
-    const box = size - pad * 2;
-    const roundedSize = Math.round(box * 0.72 * 100);
-    const fontSize = roundedSize / 100;
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">${fill}<rect x="${pad}" y="${pad}" width="${box}" height="${box}" fill="${accent}"/><text x="50%" y="50%" dy="0.35em" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-weight="700" font-size="${fontSize}" fill="${BG}">${letter}</text></svg>`;
-  }
-  const markSide = Math.max(markW, markH);
-  const availableStep = (size - pad * 2) / markSide;
-  const wholeStep = Math.floor(availableStep);
-  const step = Math.max(1, wholeStep);
-  const x0 = Math.floor((size - step * markW) / 2);
-  const y0 = Math.floor((size - step * markH) / 2);
-  const pixels = [];
-  for (let y = 0; y < markH; y++) {
-    const row = mark[y];
-    for (let x = 0; x < row.length; x++) {
-      if (row[x] === '#') pixels.push(`<rect x="${x0 + x * step}" y="${y0 + y * step}" width="${step}" height="${step}"/>`);
-    }
-  }
-  const rects = pixels.join('');
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" shape-rendering="crispEdges">${fill}<g fill="${accent}">${rects}</g></svg>`;
+  const box = size - pad * 2;
+  const sizedIcon = phoneIcon.replace('width="24" height="24"', `width="${box}" height="${box}"`);
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">${fill}<rect x="${pad}" y="${pad}" width="${box}" height="${box}" fill="${accent}"/><g transform="translate(${pad} ${pad})">${sizedIcon}</g></svg>`;
 }
 
-// The SVG favicon scales, so any whole step size does; 10px steps keep the numbers readable.
-const side = Math.max(markW, markH, 1) * 10;
 const faviconPath = join(publicPath, 'favicon.svg');
-const favicon = icon(side, 0, '');
+const favicon = icon(24, 0, '');
 await writeFile(faviconPath, favicon);
 for (const [name, size, pad, background] of [
   ['favicon-32.png', 32, 0, ''],
