@@ -1,5 +1,5 @@
 
-!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="291f07d3-338d-5b5a-b057-49949dda4375")}catch(e){}}();
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="fab18d60-fff4-5715-9fd2-e6e06d771fcc")}catch(e){}}();
 import { createRequire as mobileDevBundleRequire } from 'node:module'; const require = mobileDevBundleRequire(import.meta.url);
 import {
   __commonJS,
@@ -62132,7 +62132,7 @@ var nodeRuntimeMetricsIntegration = defineIntegration((options = {}) => {
 });
 
 // packages/shared/src/version.ts
-var PLUGIN_VERSION = "0.1.173";
+var PLUGIN_VERSION = "0.1.174";
 
 // packages/shared/src/device-apps-command-diagnostics.ts
 var foregroundCauses = [
@@ -62632,4 +62632,4 @@ undici/lib/web/websocket/frame.js:
   (*! ws. MIT License. Einar Otto Stangvik <einaros@gmail.com> *)
 */
 
-//# debugId=291f07d3-338d-5b5a-b057-49949dda4375
+//# debugId=fab18d60-fff4-5715-9fd2-e6e06d771fcc
