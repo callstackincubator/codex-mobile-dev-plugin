@@ -44,13 +44,21 @@ async function withServer(label, command, args, env, capabilities, check) {
     // Behavior follows client capabilities, not the host's name.
     assert.match(client.getInstructions(), panels ? /mobile_open_simulator/ : /the host's own simulator view/);
     const { tools } = await client.listTools();
-    for (const tool of expectedTools) assert.ok(tools.some(candidate => candidate.name === tool), tool);
+    // A panel that shows beside the chat names its page under its own key, and leaves out
+    // opening a recording, which would render the workspace in the chat.
+    const workspace = tools.find(tool => tool.name === "mobile_open_workspace");
+    const inline = workspace?._meta?.ui?.resourceUri !== undefined;
+    for (const tool of expectedTools) {
+      if (tool === "mobile_open_performance_recording" && inline === false) continue;
+      assert.ok(tools.some(candidate => candidate.name === tool), tool);
+    }
+    if (panels && inline === false) assert.equal(tools.some(tool => tool.name === "mobile_open_performance_recording"), false);
     // The panel's device form is listed for hosts that render forms; elsewhere the agent asks in chat.
     const forms = capabilities.extensions?.["openai/elicitation"] !== undefined || capabilities.elicitation !== undefined;
     assert.equal(tools.some(tool => tool.name === "mobile_choose_devices"), panels && forms);
     if (panels === false) for (const tool of panelTools) assert.equal(tools.some(candidate => candidate.name === tool), false, tool);
     const view = tools.find(tool => tool.name === (panels ? "mobile_open_workspace" : "mobile_render_performance_recording"));
-    const resource = await client.readResource({ uri: view._meta.ui.resourceUri });
+    const resource = await client.readResource({ uri: view._meta.ui?.resourceUri ?? view._meta["mobile-dev/panel"].resourceUri });
     const html = resource.contents[0].text;
     assert.ok(html.includes(`name="mobile-dev-environment" content="${env.MOBILE_DEV_ENVIRONMENT}"`));
     assert.match(html, /name="mobile-dev-telemetry" content="off"/);
@@ -95,7 +103,7 @@ async function smokeBrowserPanel(client) {
   const result = await client.callTool({ name: "mobile_open_simulator", arguments: { platform: "ios" } });
   const text = JSON.stringify(result.content);
   const address = text.match(/http:\/\/127\.0\.0\.1:\d+\/[\w-]+\/\?[^"\s\\]+/)?.[0];
-  assert.ok(address, "A host without MCP Apps receives a browser panel link.");
+  assert.ok(address, "The host receives a browser panel link to show beside the chat.");
   const page = await fetch(address);
   assert.equal(page.status, 200);
   assert.match(await page.text(), /mobile-dev-browser-panel/);
@@ -188,7 +196,8 @@ try {
   }
   if (panels && bundled === false) {
     const launch = (extra, check) => withServer("panel-runtime", launcher ? server.command : process.execPath, args,
-      { MOBILE_DEV_ENVIRONMENT: "development", [host.root]: plugin, ...launcher ? { PATH } : {}, ...extra }, {}, check);
+      { MOBILE_DEV_ENVIRONMENT: "development", [host.root]: plugin, ...launcher ? { PATH } : {}, ...extra },
+      { extensions: { "io.modelcontextprotocol/ui": { mimeTypes: ["text/html;profile=mcp-app"] } } }, check);
     await smokePanelRuntime(plugin, launch);
     console.log(`${host.label} plugin downloaded, verified and started its pinned panel runtime, and opened the browser panel.`);
   }

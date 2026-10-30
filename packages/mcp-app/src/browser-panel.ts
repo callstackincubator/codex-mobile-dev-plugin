@@ -3,6 +3,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport, StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { PLUGIN_VERSION } from "@mobile-dev/shared/version.ts";
+import { PANEL_PAGE_META } from "@mobile-dev/shared/panel-target.ts";
 
 const dark = matchMedia("(prefers-color-scheme: dark)");
 const DISCONNECTED = "Mobile Dev disconnected from its chat session. Ask the agent to open Mobile Dev again.";
@@ -80,7 +81,9 @@ async function open() {
     heartbeat = setInterval(() => { void check(); }, 30_000);
     const { tools } = await client.listTools();
     const tool = tools.find(candidate => candidate.name === toolName);
-    const uri = tool && getToolUiResourceUri(tool);
+    // A panel that does not render in the chat names its page under its own key.
+    const page = tool?._meta?.[PANEL_PAGE_META] as { resourceUri?: unknown } | undefined;
+    const uri = tool && (getToolUiResourceUri(tool) ?? (typeof page?.resourceUri === "string" ? page.resourceUri : undefined));
     if (tool === undefined || uri === undefined) throw new Error(`Mobile Dev has no panel for ${toolName}.`);
     const resource = await client.readResource({ uri });
     const [content] = resource.contents;

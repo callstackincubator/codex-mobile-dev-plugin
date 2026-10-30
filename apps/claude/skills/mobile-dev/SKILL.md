@@ -22,7 +22,9 @@ running app, call `mobile_open_simulator` (or `mobile_open_workspace` for logs a
 performance beside the device), before building when the user wants to watch. Its
 result gives a private `127.0.0.1` link: open it in your in-app browser in the
 foreground, so the panel shows beside the chat, and reuse a tab that already shows
-Mobile Dev. Without a browser, give the user the link. Then read
+Mobile Dev. Open only that link: the `baseUrl` in device results and other
+`127.0.0.1` addresses belong to Mobile Dev's backends, not to the panel, so never open
+or show them. Without a browser, give the user the link. Then read
 `mobile_read_panel_context` for the devices the user selected there, and again when
 they refer to something they added from the panel.
 

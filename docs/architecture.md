@@ -22,9 +22,10 @@ A host adds to the shared pieces without changing them:
   and the native device form. Codex, Cursor's shared entry and the Mac app pass it.
   Codex and Cursor add agent-device's commands, and Codex the self-updater, which
   installs through Codex's marketplace; the Mac app, which has no agent, adds its page
-  resource. Claude's entry (`apps/claude/server`) passes the panel, which Claude Code
-  shows in a browser through the browser panel feature, and adds agent-device's
-  commands. Every host lists simulators for logs, CPU and device choices with
+  resource. Claude's entry (`apps/claude/server`) passes the panel with `inline: false`,
+  so even MCP Apps hosts such as the desktop app's Code tab render none in the chat, and
+  the browser panel feature with `always: true`, which shows it beside the chat in a
+  browser; it adds agent-device's commands. Every host lists simulators for logs, CPU and device choices with
   simctl, without starting Baguette.
 - **Runtime:** a host's `plugin-host.json` can leave out the panel's parts of `dist/`
   (`"panel": false`, see `PANEL_PARTS` in `tooling/host-runtime.mjs`), download them

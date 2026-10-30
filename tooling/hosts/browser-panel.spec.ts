@@ -1,4 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { EXTENSION_ID, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
+import type { ClientCapabilities } from "@modelcontextprotocol/sdk/types.js";
 import { test as base, expect, startServer } from "./fixtures.ts";
 
 const test = base.extend<{ browserPanel: { url: string; close(): Promise<void>; host: Client } }>({
@@ -75,6 +77,24 @@ test.describe("Browser panels", { tag: "@browser" }, () => {
     await browserPanel.close();
     await page.clock.runFor(30_000);
     await expect(page.getByRole("alert")).toContainText("Mobile Dev disconnected from its chat session");
+  });
+
+  test("a host that renders MCP Apps, like the desktop app's Code tab, gets the page beside the chat", async ({ page }) => {
+    const server = await startServer("claude");
+    const host = new Client({ name: "claude-code", version: "1" }, { capabilities: { extensions: { [EXTENSION_ID]: { mimeTypes: [RESOURCE_MIME_TYPE] } } } as ClientCapabilities });
+    try {
+      await host.connect(server.transport);
+      const { tools } = await host.listTools();
+      expect(tools.find(tool => tool.name === "mobile_open_simulator")?._meta?.ui).toBeUndefined();
+      const result = await host.callTool({ name: "mobile_open_simulator", arguments: { platform: "ios" } });
+      const url = JSON.stringify(result.content).match(/http:\/\/127\.0\.0\.1:\d+\/[\w-]+\/\?[^"\s\\]+/)?.[0];
+      expect(url, "The link to show beside the chat").toBeDefined();
+      await page.goto(url!);
+      await expect(page.frameLocator("iframe").locator("#ios-panel")).toBeVisible();
+    } finally {
+      await host.close();
+      await server.close();
+    }
   });
 
   test("an unrelated tool cannot run from a panel link", async ({ page, browserPanel }) => {

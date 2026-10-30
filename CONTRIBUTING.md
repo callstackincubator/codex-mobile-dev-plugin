@@ -343,9 +343,14 @@ Local builds retain the `development` telemetry environment. Public releases use
 
 ### Claude Code local development
 
-Claude Code advertises no MCP Apps support, so Mobile Dev opens in a browser beside
-the chat; in the Claude desktop app's Code tab that is its built-in browser pane.
-Build, then load the Claude plugin folder from this checkout:
+Claude's server shows Mobile Dev in a browser beside the chat; in the Claude desktop
+app's Code tab that is its built-in browser pane. The terminal advertises no MCP Apps
+support, but the Code tab does (Claude Code runs there with `CLAUDE_CODE_MCP_APPS_HOST=1`)
+and would render the panel inline. So Claude's server passes `createPanel({ inline: false })`,
+whose opening tools carry no `ui.resourceUri` for a host to render and name their page under
+`mobile-dev/panel` instead, and `browserPanel({ always: true })`, which links the page for
+every host. Opening a recording in the workspace is left out there; recordings stay chat
+cards. Build, then load the Claude plugin folder from this checkout:
 
 ```sh
 npm run build

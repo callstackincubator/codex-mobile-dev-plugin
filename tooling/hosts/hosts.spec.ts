@@ -13,7 +13,9 @@ const root = join(import.meta.dirname, "../..");
 // and is covered by the smoke scripts instead.
 
 // Claude shows devices in its own simulator views, so its server has no panel.
-const hasPanel = (server: { tools: { name: string }[] }) => server.tools.some(tool => tool.name === "mobile_open_workspace");
+// A panel that renders in the chat; Claude's shows beside it, in a browser (browser-panel.spec.ts).
+const hasPanel = (server: { tools: { name: string; _meta?: Record<string, unknown> }[] }) =>
+  server.tools.some(tool => tool.name === "mobile_open_workspace" && (tool._meta?.ui as { resourceUri?: string } | undefined)?.resourceUri !== undefined);
 
 test.describe("MCP Apps hosts", () => {
   test("every tool schema compiles as JSON Schema 2020-12", async ({ server }) => {
@@ -53,7 +55,7 @@ test.describe("MCP Apps hosts", () => {
   });
 
   test("the workspace opens every tool without errors", async ({ openView, pageErrors, server }) => {
-    test.skip(hasPanel(server) === false, "This target's server has no panel.");
+    test.skip(hasPanel(server) === false, "This target's server renders no panel in the chat.");
     const { view } = await openView("mobile_open_workspace");
     await expect(view.locator("#tool-select")).toContainText("Logs");
     for (const label of ["Performance", "Storage", "TraceSift", "Logs"]) {
@@ -65,14 +67,14 @@ test.describe("MCP Apps hosts", () => {
   });
 
   test("Back to chat appears only where the host has no control of its own", async ({ openView, target, server }) => {
-    test.skip(hasPanel(server) === false, "This target's server has no panel.");
+    test.skip(hasPanel(server) === false, "This target's server renders no panel in the chat.");
     const { view } = await openView("mobile_open_workspace", { displayMode: "fullscreen" });
     await expect(view.locator(".workspace-toolbar")).toBeVisible();
     await expect(view.getByRole("button", { name: "Back to chat" })).toHaveCount(target === "codex" ? 0 : 1);
   });
 
   test("the panel beside the chat opens inline", async ({ openView, pageErrors, server }) => {
-    test.skip(hasPanel(server) === false, "This target's server has no panel.");
+    test.skip(hasPanel(server) === false, "This target's server renders no panel in the chat.");
     const { view } = await openView("mobile_open_simulator", { displayMode: "inline" });
     await expect(view.locator("#ios-panel, #android-panel").first()).toBeAttached();
     expect(pageErrors).toEqual([]);

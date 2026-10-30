@@ -31,19 +31,28 @@ const contextSchema = z.object({
   ])).max(64).default([]),
 });
 
-/** Hosts without MCP Apps can show the shared panel on a session-owned loopback page. */
-export function browserPanel(template: URL = PAGE): ServerFeature {
+export type BrowserPanelOptions = {
+  template?: URL;
+  /**
+   * Offers the page to every host, also those that render MCP Apps in the chat, for a
+   * server whose panel does not render inline (see createPanel's `inline`).
+   */
+  always?: boolean;
+};
+
+/** Hosts without MCP Apps, or every host with `always`, can show the shared panel on a session-owned loopback page. */
+export function browserPanel({ template = PAGE, always = false }: BrowserPanelOptions = {}): ServerFeature {
   return (server, { connections, onPanelOpen }) => {
     let page: Promise<PanelPage> | undefined;
     onPanelOpen(async ({ tool, target }) => {
       const capabilities = server.server.getClientCapabilities();
-      if (connections === undefined || getUiCapability(capabilities)) return;
+      if (connections === undefined || (always === false && getUiCapability(capabilities))) return;
       const clientInfo = server.server.getClientVersion();
       const host = telemetryHost(clientInfo?.name);
       page ??= startPanelPage(connections, host, template);
       const opened = await page;
       const url = opened.url(tool, target);
-      return `This host shows no Mobile Dev panel. Show it to the user beside the chat now: open ${url} in your in-app browser or side panel, in the foreground, so the page is visible without another click. Reuse a tab that already shows Mobile Dev. If you cannot open pages, give the user the link. The page shares the user's devices and what they add to chat through mobile_read_panel_context; read it before device work.`;
+      return `Mobile Dev's panel is a page to show beside the chat, not in it. Show it to the user now: open ${url} in your in-app browser or side panel, in the foreground, so the page is visible without another click. Reuse a tab that already shows Mobile Dev. Open no other address for it, such as the backend's baseUrl. If you cannot open pages, give the user the link. The page shares the user's devices and what they add to chat through mobile_read_panel_context; read it before device work.`;
     });
     // A browser has no model context of its own, so the agent asks the server for it.
     server.registerTool("mobile_read_panel_context", {
