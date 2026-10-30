@@ -19,7 +19,7 @@ const args = process.argv.slice(2);
 if (args[0] !== "-s" || args[1] !== "emulator-5554" || args[2] !== "shell") process.exit(1);
 if (args[3] === "wm" && args[4] === "size") console.log("Physical size: 1080x2400");
 else if (args[3] === "getprop") {
-  const properties = { "ro.product.model": "sdk_gphone64_arm64", "ro.build.version.release": "16", "ro.build.version.sdk": "36" };
+  const properties = { "sys.boot_completed": "1", "ro.product.model": "sdk_gphone64_arm64", "ro.build.version.release": "16", "ro.build.version.sdk": "36" };
   console.log(properties[args[4]] || "");
 } else process.exit(1);
 `, { mode: 0o755 });
