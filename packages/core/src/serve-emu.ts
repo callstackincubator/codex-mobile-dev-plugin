@@ -5,7 +5,6 @@ import { randomBytes } from "node:crypto";
 import { access } from "node:fs/promises";
 import { constants } from "node:fs";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import { bootAndroidEmulator, parseAvdName } from "./android-emulator.ts";
@@ -16,7 +15,7 @@ import { annotateDeviceCommand, backendCommand, inheritDeviceCommand } from "@mo
 import { requireDevice } from "./device-lookup.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
 import { isMissingFile, MissingRuntimeError } from "./install-integrity.ts";
-import { recordAndroidEmulatorReconnect, recordAndroidBackendStop } from "./telemetry.ts";
+import { recordAndroidEmulatorReconnect, recordAndroidBootWait, recordAndroidBackendStop } from "./telemetry.ts";
 import type { AndroidStartupContext } from "@mobile-dev/shared/android-startup-diagnostics.ts";
 import { AndroidStartupTracker } from "./android-startup.ts";
 import { allocatePort, superviseBackend } from "./backend-process.ts";
@@ -24,6 +23,7 @@ import { responseBytes } from "./response-body.ts";
 import type { ByteRequest } from "./response-body.ts";
 import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 import { androidIdSchema, avdId, isEmulatorSerial, isStoppedAvd } from "@mobile-dev/shared/android-ids.ts";
+import { panelRuntimePath } from "./panel-runtime.ts";
 
 const execute = promisify(execFile);
 // Route handlers send { ok: false, error: message }; the API boundary sends { ok: false, error: { code, message } }.
@@ -190,6 +190,31 @@ export class ServeEmu {
     throw new SimulatorUnavailableError("The Android emulator is still unauthorized. Restart it with a cold boot, or run adb kill-server and try again.");
   }
 
+  // adb lists a device as soon as adbd runs, seconds before Android starts its system services.
+  // A scrcpy server started in that window crashes in Controller.<init> (KeyCharacterMap finds no
+  // input service), so serve-emu starts only once Android reports that it finished booting.
+  private async awaitAndroidBoot(serial: string) {
+    const signal = AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(120000)]);
+    const startedAt = performance.now();
+    let waited = false;
+    while (!signal.aborted) {
+      const response = await execute(await adbPath(), ["-s", serial, "shell", "getprop", "sys.boot_completed"], { timeout: 3000 }).catch((error: unknown) => {
+        const stderr = String((error as { stderr?: unknown }).stderr ?? "");
+        if (/\b(?:not found|no devices|offline|unauthorized)\b/.test(stderr)) throw new SimulatorUnavailableError("The Android device is stopped or offline. Press Start or reconnect it.");
+        return undefined;
+      });
+      if (response?.stdout.trim() === "1") {
+        if (waited) recordAndroidBootWait(performance.now() - startedAt, "booted");
+        return;
+      }
+      waited = true;
+      await delay(500, undefined, { signal }).catch(() => {});
+    }
+    if (this.disposed) throw new Error("The plugin server has closed.");
+    recordAndroidBootWait(performance.now() - startedAt, "timeout");
+    throw new SimulatorUnavailableError("The Android device is still booting. Try again when its home screen appears.");
+  }
+
   async shutdown(id: string) {
     androidIdSchema.parse(id);
     if (!isEmulatorSerial(id)) throw new Error("Only Android emulators can be shut down from this panel.");
@@ -302,8 +327,8 @@ export class ServeEmu {
   }
 
   private async launch(id: string, device: SimulatorDevice): Promise<Backend> {
-    const cliUrl = new URL("./serve-emu/src/cli.mjs", import.meta.url);
-    const cli = fileURLToPath(cliUrl);
+    await this.awaitAndroidBoot(id);
+    const cli = await panelRuntimePath("serve-emu/src/cli.mjs");
     await access(cli).catch(error => {
       if (isMissingFile(error)) throw new MissingRuntimeError("serve-emu");
       throw new Error("Mobile Dev cannot read its bundled Android streaming backend. Reinstall Mobile Dev, then restart the app running it.");

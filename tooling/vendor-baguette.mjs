@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { access, chmod, copyFile, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, chmod, copyFile, cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -21,8 +21,9 @@ try {
   const root = join(temporary, `baguette-v${release.version}-macOS-arm64`);
   await access(join(root, "Baguette"));
   await access(join(root, "Baguette_Baguette.bundle"));
-  await mkdir("packages/native/vendor/baguette", { recursive: true });
-  await cp(root, "packages/native/vendor/baguette", { recursive: true });
+  const models = join(root, "Baguette_Baguette.bundle", "Models3D");
+  await rm("packages/native/vendor/baguette", { recursive: true, force: true });
+  await cp(root, "packages/native/vendor/baguette", { recursive: true, filter: path => path !== models });
   await chmod("packages/native/vendor/baguette/Baguette", 0o755);
   await copyFile("packages/native/vendor/baguette-release.json", "packages/native/vendor/baguette/release.json");
   const license = await fetch(`https://raw.githubusercontent.com/tddworks/baguette/v${release.version}/LICENSE`);

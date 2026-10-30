@@ -1,7 +1,7 @@
 import { canMessage, ChatDeliveryError, sendChat } from "./chat-message.ts";
 import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
-import { cardsCallTools } from "./host-bridge.ts";
-import type { HostBridge } from "./host-bridge.ts";
+import { attachReference, cardsCallTools } from "./host-bridge.ts";
+import type { HostAttachmentsSource, HostBridge } from "./host-bridge.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { comparisonDuration, comparisonReferenceSchema, comparisonSchema } from "@mobile-dev/shared/performance-comparison.ts";
 import type { PerformanceComparison } from "@mobile-dev/shared/performance-comparison.ts";
@@ -27,14 +27,17 @@ type ComparisonState = {
 
 export class ComparisonController extends Store<ComparisonState> {
   private readonly app: HostBridge;
+  private readonly attachments: HostAttachmentsSource;
   private disposed = false;
   private readyAt = performance.now();
   /** The full recordings being read; a newer comparison replaces them. */
   private loading?: AbortController;
 
-  constructor(app: HostBridge, { workspace = false }: { workspace?: boolean } = {}) {
+  /** `attachments` reads the host's composer pills, where it has them; `workspace` says the server has Mobile Dev's workspace. */
+  constructor(app: HostBridge, { attachments = () => undefined, workspace = false }: { attachments?: HostAttachmentsSource; workspace?: boolean } = {}) {
     super({ hiddenIds: new Set(), canMessage: false, workspace, busy: false, error: "" });
     this.app = app;
+    this.attachments = attachments;
   }
   hostChanged() { this.update({ canMessage: canMessage(this.app) }); }
   accept(result: CallToolResult) {
@@ -136,9 +139,21 @@ export class ComparisonController extends Store<ComparisonState> {
     const reference = JSON.stringify({ recordingIds, title: comparison.title, ...(range ? { range } : {}) });
     const interval = range ? `${range.start}–${range.end}s` : "the entire runs";
     const prompt = `Compare CPU, memory, and device-wide Display FPS for ${interval}, aligned at recording start. Read the original runs and summaries with mobile_compare_performance_recordings using ${reference}. Account for different durations, devices, apps and memory definitions. Distinguish measurements from hypotheses about their cause; device-wide display data cannot attribute a slowdown to one app.`;
-    const startedAt = performance.now();
     try {
-      await sendChat(this.app, prompt);
+      // Hosts with composer pills carry the reference there, and the message stays one line.
+      const modelContext = this.attachments();
+      if (modelContext) {
+        const contextStartedAt = performance.now();
+        try {
+          await attachReference(modelContext, {
+            marker: "mobile-dev/comparisonReference", title: range ? `${comparison.title} · ${interval}` : comparison.title, text: prompt,
+            structuredContent: { selectedComparison: { recordingIds, ...(range ? { range } : {}) } },
+          });
+        } finally { recordUiTiming("ui.comparison.context_attach", performance.now() - contextStartedAt); }
+      }
+      if (this.disposed) return;
+      const startedAt = performance.now();
+      await sendChat(this.app, modelContext ? (range ? "Compare this selected range." : "Compare these runs.") : prompt);
       countUiEvent("ui.comparison.ask");
       const elapsed = performance.now() - startedAt;
       recordUiTiming("ui.comparison.message_ack", elapsed);

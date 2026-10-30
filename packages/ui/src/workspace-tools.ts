@@ -46,7 +46,7 @@ export class WorkspaceTools {
       logs: new LogsPanel(host, context, deviceApps),
       performance: new PerformancePanel(host, deviceApps),
       storage: new StoragePanel(host, deviceApps),
-      tracesift: new TraceSiftPanel(host),
+      tracesift: new TraceSiftPanel(host, attachments),
     });
   }
 

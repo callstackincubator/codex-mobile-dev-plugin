@@ -1,6 +1,6 @@
 import { appendFile, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { isReleaseVersion } from "../packages/shared/src/release-version.ts";
+import { isBuildVersion } from "../packages/shared/src/release-version.ts";
 import { releaseArchive } from "./host-runtime.mjs";
 import { discoverHosts } from "./plugin-hosts.mjs";
 
@@ -9,7 +9,9 @@ export async function releaseMetadata(tag, directory = ".") {
   // host's package step writes it into that host's manifest.
   const metadata = JSON.parse(await readFile(`${directory}/package.json`, "utf8"));
   const version = metadata.version;
-  if (isReleaseVersion(version) === false) throw new Error("package.json needs a semantic release version.");
+  // A prerelease, such as 0.1.172-test.1, is a test deployment: the workflow publishes it as a
+  // GitHub prerelease and keeps it off the marketplace branches.
+  if (isBuildVersion(version) === false) throw new Error("package.json needs a semantic release version.");
   if (tag !== `v${version}`) throw new Error(`Release tag must be v${version}; received ${tag}.`);
   // Each plugin host's package, by host, at the path its package step writes it.
   const archives = {};

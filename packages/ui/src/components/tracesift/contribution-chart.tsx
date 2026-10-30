@@ -1,7 +1,7 @@
 // Port of TraceSift's `src/app/contribution-chart.tsx`. Knows only slices (name, share,
-// figure, palette slot); the card beside it keeps everything about a task.
+// figure, palette slot); the finding beside it keeps everything about a task or commit.
 
-import type { ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { squarify, type ContributionChartKind } from "../../tracesift/contribution.ts";
 
 export interface ChartSlice {
@@ -15,15 +15,13 @@ export interface ChartSlice {
   colorIndex: number;
 }
 
-// Fixed rather than measured, so the first paint has tiles without a resize observer.
+// Fixed aspect so tiles are placed before measuring; the width is measured only to drop labels that would not fit.
 const TREEMAP_ASPECT_W = 16;
 const TREEMAP_ASPECT_H = 5;
-
-// Nominal size, used only to decide which tiles get labels. Narrower than the web app's 880
-// because chat cards are narrower than a page.
-const TREEMAP_NOMINAL_WIDTH = 560;
-const TREEMAP_LABEL_MIN_PX = 66;
-const TREEMAP_FIGURE_MIN_PX = 30;
+const LABEL_MIN_WIDTH = 60;
+const LABEL_MIN_HEIGHT = 40;
+/** Below this a tile shows its time alone; its area already shows the share. */
+const FIGURE_FULL_WIDTH = 84;
 
 // Named slices take a palette slot, residuals neutral ink. The two residual kinds mean
 // opposite things (small work of yours vs work that was never yours), so they differ in fill.
@@ -40,40 +38,14 @@ export interface ChartProps<S extends ChartSlice> {
   slices: S[];
   active: S;
   format: MsFormat;
-  onHover: (key: string | null) => void;
+  onHover: (key: string) => void;
   onOpen: (slice: S) => void;
 }
 
-/**
- * Every answer shares one grid cell so the tallest sets the height. Rendering only the
- * active one would move the legend under a stationary pointer, which then flips the
- * active slice back and forth in a loop.
- */
-export function ContributionDetailStack<S extends ChartSlice>({
-  slices,
-  active,
-  render,
-}: {
-  slices: S[];
-  active: S;
-  render: (slice: S) => ReactNode;
-}) {
-  return <div className="contribution-detail-stack">
-    {slices.map(slice => {
-      const selected = slice.key === active.key;
-      return <div
-        key={slice.key}
-        className={`contribution-detail-layer${selected ? " is-active" : ""}`}
-        aria-hidden={selected ? undefined : true}
-      >
-        {render(slice)}
-      </div>;
-    })}
-  </div>;
-}
-
-const sliceLabel = (slice: ChartSlice, format: MsFormat) =>
-  `${slice.name}, ${format(slice.ms)}, ${Math.round(slice.share * 100)}%`;
+const percent = (slice: ChartSlice) => `${Math.round(slice.share * 100)}%`;
+const sliceLabel = (slice: ChartSlice, format: MsFormat) => `${slice.name}, ${format(slice.ms)}, ${percent(slice)}`;
+const partClass = (base: string, slice: ChartSlice, active: ChartSlice) =>
+  `${base}${slice.key === active.key ? " is-active" : ""}${slice.kind === "outside" ? " is-outside" : ""}${slice.colorIndex < 0 ? " is-neutral" : ""}`;
 
 // Percentage widths, not flex-grow, which would spread the 2px gaps into the slice widths.
 export function ContributionBar<S extends ChartSlice>({ slices, active, format, onHover, onOpen }: ChartProps<S>) {
@@ -81,7 +53,7 @@ export function ContributionBar<S extends ChartSlice>({ slices, active, format, 
     {slices.map(slice => <button
       type="button"
       key={slice.key}
-      className={`contribution-band${slice.key === active.key ? " is-active" : ""}${slice.kind === "outside" ? " is-outside" : ""}`}
+      className={partClass("contribution-band", slice, active)}
       style={{ width: `${slice.share * 100}%`, background: sliceColor(slice) }}
       onMouseEnter={() => onHover(slice.key)}
       onFocus={() => onHover(slice.key)}
@@ -92,20 +64,30 @@ export function ContributionBar<S extends ChartSlice>({ slices, active, format, 
 }
 
 export function ContributionTreemap<S extends ChartSlice>({ slices, active, format, onHover, onOpen }: ChartProps<S>) {
+  const root = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(0);
+  useLayoutEffect(() => {
+    const element = root.current;
+    if (!element) return;
+    const measure = () => setWidth(element.clientWidth);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
   const rects = squarify(slices.map(slice => slice.share), TREEMAP_ASPECT_H / TREEMAP_ASPECT_W);
-  const nominalHeight = (TREEMAP_NOMINAL_WIDTH * TREEMAP_ASPECT_H) / TREEMAP_ASPECT_W;
+  const height = (width * TREEMAP_ASPECT_H) / TREEMAP_ASPECT_W;
 
-  return <div
-    className="contribution-treemap"
-    style={{ aspectRatio: `${TREEMAP_ASPECT_W} / ${TREEMAP_ASPECT_H}` }}
-  >
+  return <div ref={root} className="contribution-treemap" style={{ aspectRatio: `${TREEMAP_ASPECT_W} / ${TREEMAP_ASPECT_H}` }}>
     {slices.map((slice, index) => {
       const rect = rects[index];
-      const named = rect.w * TREEMAP_NOMINAL_WIDTH >= TREEMAP_LABEL_MIN_PX && rect.h * nominalHeight >= TREEMAP_FIGURE_MIN_PX;
+      const tileWidth = rect.w * width;
+      const named = tileWidth >= LABEL_MIN_WIDTH && rect.h * height >= LABEL_MIN_HEIGHT;
       return <button
         type="button"
         key={slice.key}
-        className={`contribution-tile${slice.key === active.key ? " is-active" : ""}${slice.kind === "outside" ? " is-outside" : ""}${slice.colorIndex < 0 ? " is-neutral" : ""}`}
+        className={partClass("contribution-tile", slice, active)}
         style={{
           left: `${rect.x * 100}%`, top: `${rect.y * 100}%`,
           width: `${rect.w * 100}%`, height: `${rect.h * 100}%`, background: sliceColor(slice),
@@ -117,16 +99,40 @@ export function ContributionTreemap<S extends ChartSlice>({ slices, active, form
       >
         {named && <span className="contribution-tile-copy">
           <span className="contribution-tile-name">{slice.name}</span>
-          <span className="contribution-tile-figure">{format(slice.ms)} · {Math.round(slice.share * 100)}%</span>
+          <span className="contribution-tile-figure">{tileWidth >= FIGURE_FULL_WIDTH ? `${format(slice.ms)} · ${percent(slice)}` : format(slice.ms)}</span>
         </span>}
       </button>;
     })}
   </div>;
 }
 
-// Required on both charts: keeps slice identity off colour alone.
-export function SliceLegend<S extends ChartSlice>({ slices, active, format, onHover, onOpen }: ChartProps<S>) {
-  return <ul className="contribution-legend">
+export function ContributionChart<S extends ChartSlice>({ kind, ...chart }: ChartProps<S> & { kind: ContributionChartKind }) {
+  return kind === "bar" ? <ContributionBar {...chart} /> : <ContributionTreemap {...chart} />;
+}
+
+/** The part in focus in two lines, at a fixed height so moving across the chart never moves the legend. */
+export function SliceSummary<S extends ChartSlice>({ slice, format, meta, action }: {
+  slice: S;
+  format: MsFormat;
+  meta: ReactNode;
+  action: { label: string; run: () => void };
+}) {
+  return <div className="contribution-summary" aria-live="polite">
+    <div className="contribution-summary-line">
+      <span className="contribution-summary-name"><span className={`contribution-swatch${slice.kind === "outside" ? " is-outside" : ""}`} style={{ background: sliceColor(slice) }} aria-hidden="true" />{slice.name}</span>
+      <span className="contribution-summary-figures"><strong>{format(slice.ms)}</strong> <span>· {percent(slice)}</span></span>
+    </div>
+    <div className="contribution-summary-line">
+      <span className="contribution-summary-meta">{meta}</span>
+      <button type="button" className="contribution-summary-action" onClick={action.run}>{action.label} ›</button>
+    </div>
+  </div>;
+}
+
+// Keeps slice identity off colour alone, and the longest list's height so opening a part never shrinks the card.
+export function SliceLegend<S extends ChartSlice>({ slices, active, format, onHover, onOpen, rows }: ChartProps<S> & { rows: number }) {
+  const style = { "--legend-rows": rows, "--legend-rows-wide": Math.ceil(rows / 2) } as CSSProperties;
+  return <ul className="contribution-legend" style={style}>
     {slices.map(slice => <li key={slice.key}>
       <button
         type="button"
@@ -135,15 +141,11 @@ export function SliceLegend<S extends ChartSlice>({ slices, active, format, onHo
         onFocus={() => onHover(slice.key)}
         onClick={() => onOpen(slice)}
       >
-        <span className="contribution-swatch" style={{ background: sliceColor(slice) }} aria-hidden="true" />
+        <span className={`contribution-swatch${slice.kind === "outside" ? " is-outside" : ""}`} style={{ background: sliceColor(slice) }} aria-hidden="true" />
         <span className="contribution-legend-name">{slice.name}</span>
         <span className="contribution-legend-ms">{format(slice.ms)}</span>
-        <span className="contribution-legend-share">{Math.round(slice.share * 100)}%</span>
+        <span className="contribution-legend-share">{percent(slice)}</span>
       </button>
     </li>)}
   </ul>;
-}
-
-export function ContributionChart<S extends ChartSlice>({ kind, ...chart }: ChartProps<S> & { kind: ContributionChartKind }) {
-  return kind === "bar" ? <ContributionBar {...chart} /> : <ContributionTreemap {...chart} />;
 }

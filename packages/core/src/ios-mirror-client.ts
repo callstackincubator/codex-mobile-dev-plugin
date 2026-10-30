@@ -10,6 +10,7 @@ import { mirrorReplySchema, mirrorSocketPath, maximumReplyBytes, wireTouchPhases
 import type { MirrorCommand, MirrorReply } from "./ios-mirror-rpc.ts";
 import type { IosCapture } from "./ios-native-capture.ts";
 import { bundled } from "./bundled-runtime.ts";
+import { panelRuntimePath } from "./panel-runtime.ts";
 
 async function connect(path: string): Promise<Socket> {
   return new Promise((resolve, reject) => {
@@ -28,10 +29,8 @@ let starting: Promise<void> | undefined;
 async function startService() {
   if (starting) return starting;
   starting = (async () => {
-    // Bundles, and the chunks they split into, sit in dist/ beside the service.
-    const entry = bundled ? "./ios-mirror-service.mjs" : "./ios-mirror-service.ts";
-    const url = new URL(entry, import.meta.url);
-    const path = fileURLToPath(url);
+    // Bundled, the service is one of the panel's parts, beside the server or downloaded.
+    const path = bundled ? await panelRuntimePath("ios-mirror-service.mjs") : fileURLToPath(new URL("./ios-mirror-service.ts", import.meta.url));
     const child = spawn(process.execPath, [path], { detached: true, stdio: "ignore", env: process.env });
     let failure: Error | undefined;
     child.on("error", error => { failure = error; });

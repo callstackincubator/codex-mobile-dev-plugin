@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { RELEASE_VERSION_PATTERN } from "@mobile-dev/shared/release-version.ts";
+import { BUILD_VERSION_PATTERN, RELEASE_VERSION_PATTERN } from "@mobile-dev/shared/release-version.ts";
 
 export { compareReleaseVersions } from "@mobile-dev/shared/release-version.ts";
 
@@ -9,13 +9,16 @@ export const STORE_MIGRATION_VERSION = "0.1.167";
 
 const versionTextSchema = z.string();
 export const releaseVersionSchema = versionTextSchema.regex(RELEASE_VERSION_PATTERN);
+// The running build can be a test deployment's prerelease, such as 0.1.172-test.1;
+// published and store versions are always plain releases.
+const buildVersionSchema = versionTextSchema.regex(BUILD_VERSION_PATTERN);
 const statusSchema = z.enum(["disabled", "unavailable", "current", "available", "migration", "migrated"]);
 const optionalVersionSchema = releaseVersionSchema.optional();
 const booleanSchema = z.boolean();
 const optionalBooleanSchema = booleanSchema.optional();
 export const pluginUpdateSchema = z.object({
   status: statusSchema,
-  currentVersion: releaseVersionSchema,
+  currentVersion: buildVersionSchema,
   latestVersion: optionalVersionSchema,
   storeInstalled: optionalBooleanSchema,
 });

@@ -11,22 +11,28 @@ import { foreignPaths } from "../plugin-hosts.mjs";
 
 const sha256 = bytes => createHash("sha256").update(bytes).digest("hex");
 
-/** The runtime files a package ships, relative to its runtime folder (`dist/`). */
-export function runtimePayloadFiles({ panel }) {
+/**
+ * The runtime files a package ships, relative to its runtime folder (`dist/`). A host
+ * whose package leaves the panel's parts out (`bundlesPanel` false) while its server
+ * keeps the panel pins their archive in `panel-runtime.json` instead.
+ */
+export function runtimePayloadFiles({ panel, bundlesPanel = panel }) {
   return [
-    ...runtimeFiles({ panel }), "telemetry-environment.json", "ios-fps/third-party-licenses.txt", "ios-logs/release.json",
-    ...panel ? ["baguette/Baguette_Baguette.bundle/Web", "serve-emu/release.json"] : [],
+    ...runtimeFiles({ panel: bundlesPanel }), "telemetry-environment.json", "ios-fps/third-party-licenses.txt", "ios-logs/release.json",
+    ...bundlesPanel ? ["baguette/Baguette_Baguette.bundle/Web", "serve-emu/release.json"] : [],
+    ...panel && !bundlesPanel ? ["panel-runtime.json"] : [],
   ];
 }
 
 /**
  * Checks a packaged runtime folder: its files, the environment it was built for, no
  * baked-in telemetry identity, and that its native helpers and bundled runtimes load
- * from where the package put them. Hosts without the panel ship none of its parts.
+ * from where the package put them. Hosts without the panel, or that download its
+ * parts, ship none of them.
  */
-export async function assertRuntimePayload(runtime, { panel }) {
-  for (const path of runtimePayloadFiles({ panel })) await access(join(runtime, path));
-  if (panel === false) for (const part of PANEL_PARTS) await assert.rejects(access(join(runtime, part)), part);
+export async function assertRuntimePayload(runtime, { panel, bundlesPanel = panel }) {
+  for (const path of runtimePayloadFiles({ panel, bundlesPanel })) await access(join(runtime, path));
+  if (bundlesPanel === false) for (const part of PANEL_PARTS) await assert.rejects(access(join(runtime, part)), part);
   const { environment } = JSON.parse(await readFile(join(runtime, "telemetry-environment.json"), "utf8"));
   assert.ok(environment === "development" || environment === "release", `Unexpected telemetry environment ${environment}.`);
   const html = await readFile(join(runtime, "app.html"), "utf8");
@@ -42,7 +48,11 @@ export async function assertRuntimePayload(runtime, { panel }) {
   assert.match(unavailablePhone.stderr, /unavailable to libimobiledevice/);
   const cpuLicense = await readFile(join(runtime, "android-cpu/LICENSE"), "utf8");
   assert.ok(cpuLicense.includes("Copyright (c) 2022 BAM"));
-  if (panel === false) return;
+  if (bundlesPanel === false) return;
+
+  // Baguette ships without the 3D model assets the panel never shows.
+  const baguetteResources = await readdir(join(runtime, "baguette/Baguette_Baguette.bundle"));
+  assert.equal(baguetteResources.includes("Models3D"), false, "Baguette's unused Models3D assets must stay out of the package.");
 
   const mirrorProbe = "const mirror = require(process.argv[1]); if (typeof mirror.openDevice !== 'function') process.exit(1);";
   const mirror = spawnSync(process.execPath, ["-e", mirrorProbe, join(runtime, "ios-mirror/darwin-arm64.node")], { encoding: "utf8" });
@@ -69,7 +79,7 @@ export async function assertRuntimePayload(runtime, { panel }) {
  * manifest or launcher files.
  */
 export async function assertPluginFolder(plugin, host) {
-  await assertRuntimePayload(join(plugin, "dist"), { panel: host.panel });
+  await assertRuntimePayload(join(plugin, "dist"), { panel: host.panel, bundlesPanel: host.bundlesPanel });
   for (const path of RELEASE_DOCUMENTS) await access(join(plugin, path));
   if (host.readme) assert.equal(await readFile(join(plugin, "README.md"), "utf8"), await readFile(host.readme, "utf8"));
   for (const skill of host.skills) await access(join(plugin, "skills", basename(skill), "SKILL.md"));

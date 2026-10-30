@@ -72,3 +72,23 @@ export function buildSharedPage({ output, environment, sentryRoot }) {
     sources: ["packages/ui/src", "packages/mcp-app/src"], output, environment, sourceURL: "app:///mobile-dev-ui.js",
   });
 }
+
+/**
+ * Bundles a page that hosts the UI rather than being it, such as the browser panel
+ * page, into one HTML file. It has no styles to compile and no telemetry of its own.
+ */
+export async function buildHostPage({ entry, template, output }) {
+  const result = await build({
+    entryPoints: [entry], bundle: true, write: false, format: "iife", platform: "browser",
+    target: "chrome120", minify: true, legalComments: "eof",
+  });
+  const js = result.outputFiles[0].text;
+  await mkdir(dirname(output), { recursive: true });
+  await writeFile(output, (await readFile(template, "utf8"))
+    .replace("<!-- APP_SCRIPT -->", () => `<script>${js.replace(/<\/script/gi, "<\\/script")}</script>`));
+}
+
+/** The page hosts that render no MCP Apps panel open in a browser beside the chat, the runtime's `browser-panel.html`. */
+export function buildBrowserPanelPage({ output }) {
+  return buildHostPage({ entry: "packages/mcp-app/src/browser-panel.ts", template: "packages/mcp-app/src/browser-panel.html", output });
+}

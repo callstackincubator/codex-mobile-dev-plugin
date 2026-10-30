@@ -26,7 +26,7 @@ manifest, an icon and a `plugin-host.json`; `tooling/package-plugin.mjs`,
 | `packages/runtimes` | Pinned Node runtimes bundled into the server (agent-device, serve-emu). |
 | `packages/skills` | Agent skills for the shared tools; each host's package step includes the ones its host supports. |
 | `apps/codex-plugin` | Codex: manifest, launcher, assets, and its own server (`server/`, the self-updater) and panel (`ui/`, the update banner). |
-| `apps/claude` | Claude: the Claude Desktop extension (`manifest.json`, MCPB) and the Claude Code plugin (`.claude-plugin/plugin.json`). Both run Claude's server (`server/`): the shared server without the panel, plus agent-device's commands, with its skill in `skills/` and the shared agent-device skill. |
+| `apps/claude` | Claude: the Claude Desktop extension (`manifest.json`, MCPB) and the Claude Code plugin (`.claude-plugin/plugin.json`). Both run Claude's server (`server/`): the shared server with the panel, which Claude Code shows in a browser, and agent-device's commands, with its skill in `skills/` and the shared agent-device skill. The packages leave out the panel's native parts and download them on first use. |
 | `apps/cursor` | Cursor: the Cursor plugin manifest (`.cursor-plugin/plugin.json`). It runs the shared server and panel unchanged. |
 | `apps/mac` | The Mac app: a SwiftUI shell (`Sources/`), the page it hosts (`web/`) and its server (`server/`). |
 | `packages/test-support` | Fixtures shared by tests across packages and apps. |
@@ -141,7 +141,7 @@ changing native code or shared native telemetry; the build validates source and
 binary hashes. For UI or server edits with unchanged native sources, run the build,
 relevant checks, and packaging steps again.
 
-`vendor:baguette` downloads the pinned official release and checks its SHA-256. It keeps the full resource bundle and rebuilds the same v0.2.1 source with Swift 6.4 or later because the official binary crashes in Swift task allocation on macOS 27. Preparing Baguette requires Xcode 27, Git, and network access to fetch its pinned source and Swift dependencies. `rebuild:baguette` repeats the source build. `packages/native/vendor/baguette/release.json` records the source commit, compiler version, and rebuilt binary SHA-256.
+`vendor:baguette` downloads the pinned official release and checks its SHA-256. It excludes the unused `Models3D` assets from the resource bundle and rebuilds the same v0.2.1 source with Swift 6.4 or later because the official binary crashes in Swift task allocation on macOS 27. Preparing Baguette requires Xcode 27, Git, and network access to fetch its pinned source and Swift dependencies. `rebuild:baguette` repeats the source build. `packages/native/vendor/baguette/release.json` records the source commit, compiler version, and rebuilt binary SHA-256.
 
 `vendor:agent-device` installs the exact npm packages in `packages/runtimes/agent-device/package-lock.json` with package scripts disabled. `build` copies this full runtime into `dist/agent-device`, records its integrity and lockfile hash in `release.json`, and copies the commands the plugin servers serve, `packages/runtimes/agent-device/tools.json`. After changing the pin, run `npm run catalog:agent-device` to rewrite that catalog and the agent-device skill's workflow guide (`packages/skills/agent-device/references/workflow.md`, the runtime's `help workflow`); unit tests check both against the pinned runtime, and the weekly dependency update rewrites them. The installed plugin needs no npm install or runtime download. Xcode compiles the shipped Apple runner source on its first use.
 
@@ -308,14 +308,28 @@ npm run test:claude
 This writes `release/mobile-dev-<version>-claude-desktop-darwin-arm64.mcpb`, the
 Claude plugin folder `release/claude-plugin/mobile-dev` with its ZIP, and a local
 `mobile-dev-local` marketplace in `release/claude-plugin`. Both packages run
-Claude's server (`apps/claude/server`), built over the runtime without the panel's
-parts (`"panel": false` in `apps/claude/plugin-host.json`): no Baguette, serve-emu or
-iOS mirror, with agent-device's commands as `device_*` tools, the skill in
-`apps/claude/skills` and the shared agent-device skill. Packaging fails if a file exceeds the Claude plugin
-directory's 5 MiB limit. The plugin folder uses `apps/claude/.claude-plugin/plugin.json`, which
+Claude's server (`apps/claude/server`), with the panel and agent-device's commands as
+`device_*` tools, the skill in `apps/claude/skills` and the shared agent-device skill.
+Packaging fails if a file exceeds the Claude plugin directory's 5 MiB limit, so the
+packages leave out the panel's native parts (`PANEL_PARTS` in
+`tooling/host-runtime.mjs`: Baguette, serve-emu, the iOS mirror addon and its
+service), as `"panelRuntime": "download"` in `apps/claude/plugin-host.json` asks.
+Packaging packs those parts from `dist/` into
+`release/mobile-dev-<version>-panel-runtime-darwin-arm64.tar.gz` and pins it in
+`dist/panel-runtime.json` with its size and SHA-256. A local build pins the archive by
+its `file:` URL; `--release` pins it on the GitHub release `v<version>`, which the
+release workflow creates with every `release/mobile-dev-<version>-*` file, this archive
+included. On the first panel open, the server downloads the archive, checks its size
+and checksum, refuses entries outside the parts and links, and extracts it into
+`${CLAUDE_PLUGIN_DATA}/panel-runtime/<version>-<checksum>` (or
+`~/Library/Caches/mobile-dev/panel-runtime` without it). The folder appears only once
+complete, so other sessions reuse it; a new version keeps the newest other one for
+servers still running it and removes older ones (`packages/core/src/panel-runtime.ts`).
+`npm run test:claude` checks the pin against the archive and starts the copied
+plugin's panel from a local copy of it, before any release exists. The plugin folder uses `apps/claude/.claude-plugin/plugin.json`, which
 starts `dist/server.mjs` through `scripts/launch-node.sh`. Claude opened from the Dock
 starts plugins without the shell's `PATH`, so the launcher also looks for Node.js 22.19
-or later where Homebrew, nvm, fnm, Volta, mise and asdf install it, and a
+or later where Homebrew, nvm, fnm, Nix, Volta, mise and asdf install it, and a
 `SessionStart` hook (`hooks/hooks.json`) runs it with `--check` to tell the user and
 Claude when none is found. The folder ships `apps/claude/README.md`, which the Claude
 plugin directory lists, instead of the repository's README. It leaves out the Codex
@@ -331,6 +345,95 @@ duplicate servers. Rebuild, repackage, and reinstall to update a bundled copy.
 
 Local builds retain the `development` telemetry environment. Public releases use
 `npm run build:release` and `npm run package:claude -- --release`.
+
+### Claude Code local development
+
+Claude's server shows Mobile Dev in a browser beside the chat; in the Claude desktop
+app's Code tab that is its built-in browser pane. The terminal advertises no MCP Apps
+support, but the Code tab does (Claude Code runs there with `CLAUDE_CODE_MCP_APPS_HOST=1`)
+and would render the panel inline. So Claude's server passes `createPanel({ inline: false })`,
+whose opening tools carry no `ui.resourceUri` for a host to render and name their page under
+`mobile-dev/panel` instead, and `browserPanel({ always: true })`, which links the page for
+every host. Opening a recording in the workspace is left out there; recordings stay chat
+cards. Build, then load the Claude plugin folder from this checkout:
+
+```sh
+npm run build
+npm run package:claude
+claude --plugin-dir ./release/claude-plugin/mobile-dev
+```
+
+Ask **“Open Mobile Dev.”** The agent opens the returned loopback link in its
+browser. The server cannot choose how the host shows that browser: the result asks
+the agent to open the page in the foreground, but the host may still show it as a
+card in the chat with an **Open** button. Rebuild, repackage and restart the
+session after code changes.
+
+### Browser panels and Synara
+
+The shared `dist/server.mjs` can serve Mobile Dev in a browser beside the chat.
+Configure Synara's selected provider to launch this server over stdio, using
+Node.js 22.19 or later. For local development, `npm run build` and
+`npm run claude:config` generate a standard MCP JSON entry in
+`.local-dev/claude-desktop-config.json` with absolute command and argument paths.
+Use those paths in the selected provider's MCP configuration, then start a fresh
+Synara provider session. The Claude Code and Cursor packages include this same
+server and `dist/browser-panel.html`. The native Codex plugin runs its own entry;
+use the shared server entry for a Synara browser panel.
+
+Ask the agent to open Mobile Dev. When the MCP client advertises no MCP Apps
+support, the opening tool returns a loopback URL. The agent opens it with
+Synara's `browser_open`, in that task's shared browser. The browser MCP client
+joins the agent's server process, so both use the same devices and sessions.
+Keep only one Mobile Dev MCP registration in that provider to avoid duplicate
+tool catalogs. Rebuild and restart the provider session after code changes.
+
+Each tab gets its own HTTP MCP session and request routing. Tool and resource
+responses use standard per-request SSE, including associated server requests;
+there is no idle GET stream. The SDK's JSON response mode retains completed
+streams in the installed version and cannot deliver those server requests.
+Reloading or leaving the page sends a session DELETE that can finish during
+navigation. Abandoned sessions expire after five idle minutes; ongoing requests
+prevent expiry. The
+page pings every 30 seconds, including when there is no device to poll. A stopped
+chat server shows a message asking the user to reopen Mobile Dev. An expired
+browser connection asks them to reload the page. URLs belong to that running
+server and are unusable after it exits. A failed browser request alone cannot
+prove that the chat server stopped, so the message says it disconnected.
+
+Browser panels advertise tools, resources, web links and model context. The page
+sends each `ui/update-model-context` to its own session's `context` endpoint, which
+replaces that tab's text and images (up to 16 MiB) and drops them when the tab's
+session closes. The agent reads them with `mobile_read_panel_context`, most recent
+tab first, so it sees the user's devices and the logs, screenshots and notes they
+add to chat. The opening tool's result points the agent there. Chat messages stay
+hidden until the host provides a supported bridge. MCP request/response
+traffic is bidirectional, but sampling requests an LLM completion rather than
+appending a user message to the current conversation. Sampling is also
+[deprecated in MCP 2026-07-28](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2026-07-28/client/sampling.mdx).
+
+Synara's [Agent Gateway](https://www.trysynara.com/docs/workflows/agent-gateway)
+has `synara_send_message`, but its credentials and authority belong to provider
+sessions and turns. They are not a browser integration contract. Its
+[External MCP](https://www.trysynara.com/docs/workflows/external-mcp) integration
+exposes a restricted task interface rather than the internal gateway's current
+chat operations. The reviewed Synara source
+([`e5ae7d4`](https://github.com/galonge/codesynara/tree/e5ae7d4a0e3e0f8b26ee926f2f9535f8c1aa7d42))
+isolates ordinary browser pages and exposes no page-facing chat API.
+
+The host integration needed for chat actions is a thread-scoped MCP Apps bridge:
+handle `ui/message` by queuing a message on the owning conversation, and handle
+`ui/update-model-context` by replacing that panel's context for the next prompt.
+The host should bind access to the panel, page origin and owning thread, keep its
+credentials outside the page, acknowledge delivery and clean up on navigation.
+Once that host capability exists, the shared UI's existing message and model
+context actions can use it. A server-side action queue could feed an agent that
+is actively waiting in a tool call, but would not start a new idle chat turn.
+
+`npm run build:hosts` builds the browser page alongside the shared server. The
+`browser` Playwright project checks opening, reloading, sibling tabs, shutdown
+and invalid panel links against that real server. Run it in the Linux host-test
+environment described in [Host regression and visual tests](#host-regression-and-visual-tests).
 
 ### Cursor local development
 

@@ -116,7 +116,7 @@ export class DeviceStream {
   private async openAndReceive(udid: string, kind: TransportKind, epoch: number, signal: AbortSignal) {
     const startedAt = performance.now();
     const transport = streamTransports[kind];
-    const result = await this.host.call(transport.open.tool, transport.open.args(udid), { signal, timeout: 45000 });
+    const result = await this.host.call(transport.open.tool, transport.open.args(udid), { signal, timeout: transport.open.timeout });
     const meta = streamSessionMetaSchema.safeParse(result._meta);
     if (!meta.success) throw new StopReconnectError("The plugin did not return a stream session.");
     const { sessionId: id, frameUri } = meta.data;

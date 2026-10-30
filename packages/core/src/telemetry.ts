@@ -22,6 +22,29 @@ export function count(name: string, value: number, attributes: Attributes) {
 export function gauge(name: string, value: number, attributes: Attributes, unit?: "millisecond" | "byte") {
   if (telemetryEnabled()) Sentry.metrics.gauge(name, value, unit === undefined ? { attributes } : { unit, attributes });
 }
+/** Adds `value` to the distribution `name`, unless telemetry is off. */
+export function distribution(name: string, value: number, attributes: Attributes, unit: "millisecond" | "byte") {
+  if (telemetryEnabled()) Sentry.metrics.distribution(name, value, { unit, attributes });
+}
+
+export function recordBrowserPanelSessions(active: number) {
+  gauge("browser_panel.sessions", active, { component: "server" });
+}
+
+/** Counts browser panel context updates by outcome; sizes only for stored updates, never their content. */
+export function recordBrowserPanelContext(outcome: "stored" | "invalid" | "too_large", bytes?: number) {
+  count("browser_panel.context_update", 1, { component: "server", outcome });
+  if (bytes !== undefined) distribution("browser_panel.context_bytes", bytes, { component: "server" }, "byte");
+}
+
+/**
+ * How long the panel's downloaded runtime took to be ready, by outcome: found complete,
+ * downloaded and extracted, or failed with a bounded reason. Sizes only for downloads.
+ */
+export function recordPanelRuntime(outcome: "cached" | "downloaded" | "failed", duration: number, bytes?: number, reason?: string) {
+  distribution("panel_runtime.ready", duration, { component: "server", outcome, ...reason ? { reason } : {} }, "millisecond");
+  if (bytes !== undefined) distribution("panel_runtime.download_bytes", bytes, { component: "server" }, "byte");
+}
 
 export function recordIosMirrorSharing(captures: number, subscribers: number, dropped: number) {
   const attributes = { component: "ios-mirror-service", surface: "simulator", device_platform: "ios", device_kind: "physical" };
@@ -64,6 +87,12 @@ export function recordAccessibilityBridgeRestart(outcome: "recovered" | "unavail
 
 export function recordAndroidEmulatorReconnect(trigger: "boot" | "selection") {
   count("android.emulator.adb_reconnects", 1, { component: "server", surface: "simulator", device_platform: "android", device_kind: "emulator", trigger });
+}
+
+export function recordAndroidBootWait(duration: number, outcome: "booted" | "timeout") {
+  const attributes = { component: "server", surface: "simulator", device_platform: "android", outcome };
+  count("android.backend.boot_wait.samples", 1, attributes);
+  gauge("android.backend.boot_wait.duration", duration, attributes, "millisecond");
 }
 
 export function recordAndroidBackendStartup(duration: number, outcome: "ready" | "failed") {
@@ -272,9 +301,14 @@ export function setLaunchingTelemetryHost(host: TelemetryHost) {
   tagServerHost(host);
 }
 
+/** The host server telemetry names: the one its MCP client names, unless the launching host named itself. */
+export function serverTelemetryHost(clientName: string | undefined): TelemetryHost {
+  return launchingHost ?? telemetryHost(clientName);
+}
+
 /** Attributes server telemetry to the host its MCP client names, unless the launching host named itself. */
 export function setServerTelemetryHost(clientName: string | undefined) {
-  tagServerHost(launchingHost ?? telemetryHost(clientName));
+  tagServerHost(serverTelemetryHost(clientName));
 }
 
 export function installTracePropagation(transport: Transport) {

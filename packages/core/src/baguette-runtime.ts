@@ -5,7 +5,7 @@ import { constants } from "node:fs";
 import { basename, delimiter, dirname, isAbsolute, join, relative } from "node:path";
 import { promisify } from "node:util";
 import { classifyProcessFailure } from "@mobile-dev/shared/error-diagnostics.ts";
-import { bundledFile } from "./bundled-runtime.ts";
+import { panelRuntimePath } from "./panel-runtime.ts";
 import { isMissingFile, MissingRuntimeError } from "./install-integrity.ts";
 
 export const BAGUETTE_RUNTIME_TIMEOUT_MS = 5000;
@@ -94,7 +94,10 @@ let discovery: Discovery | undefined;
  * The bundled Baguette and the selected Xcode's environment for it. Discovery runs once per Xcode
  * selection, which `xcode-select` reads cheaply; a failed discovery or spawn discovers again.
  */
-export async function baguetteRuntime(signal: AbortSignal, executable = bundledFile("baguette/Baguette"), run: RuntimeCommand = execute): Promise<BaguetteRuntime> {
+export async function baguetteRuntime(signal: AbortSignal, executablePath?: string, run: RuntimeCommand = execute): Promise<BaguetteRuntime> {
+  signal.throwIfAborted();
+  // A host that ships without the panel's parts downloads them here on first use.
+  const executable = executablePath ?? await panelRuntimePath("baguette/Baguette");
   signal.throwIfAborted();
   await access(executable, constants.X_OK).catch(error => {
     if (isMissingFile(error)) throw new MissingRuntimeError("baguette");

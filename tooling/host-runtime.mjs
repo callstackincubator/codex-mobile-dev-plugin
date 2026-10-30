@@ -13,7 +13,7 @@ export const RELEASE_DOCUMENTS = ["README.md", "LICENSE", "THIRD_PARTY_NOTICES.m
 export const PANEL_PARTS = ["baguette", "serve-emu", "ios-mirror", "ios-mirror-service.mjs"];
 
 const RUNTIME_FILES = [
-  "server.mjs", "ios-mirror-service.mjs", "app.html", ...nativeRuntimeFiles(), "serve-emu/src/cli.mjs", "serve-emu/vendor/scrcpy-server-v4.0",
+  "server.mjs", "ios-mirror-service.mjs", "app.html", "browser-panel.html", ...nativeRuntimeFiles(), "serve-emu/src/cli.mjs", "serve-emu/vendor/scrcpy-server-v4.0",
   "agent-device/node_modules/agent-device/dist/apple/runner/AgentDeviceRunner/AgentDeviceRunner.xcodeproj/project.pbxproj",
   "agent-device/tools.json",
 ];

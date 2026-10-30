@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { setImmediate as flushTasks } from "node:timers/promises";
 import { androidPhone, dispatch, fakeDeviceTools } from "./simulator-fixture.ts";
 import { waitFor } from "@mobile-dev/test-support/wait.ts";
 
@@ -48,6 +49,23 @@ for (const state of ["unauthorized", "offline"]) test(`physical Android ${state}
   f.setDevices("android", [androidPhone]);
   await picker.refresh();
   await waitFor(() => f.android.canvas.draws > 0);
+});
+
+test("Android stream opening waits through device boot and backend readiness", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const f = fakeDeviceTools(t);
+  let release!: () => void;
+  f.delay("mobile_android_stream_session", new Promise<void>(resolve => { release = resolve; }));
+  await f.android.panel.load();
+  t.mock.timers.tick(155000);
+  await flushTasks();
+  assert.equal(f.android.view.notice.message, "", "Booting must not report a stream request timeout.");
+  release();
+  await flushTasks();
+  t.mock.timers.tick(0);
+  await flushTasks();
+  assert.ok(f.android.canvas.draws > 0);
+  assert.equal(f.streams("mobile_android_stream_session").length, 1);
 });
 
 test("Android refresh connects an arriving phone once and closes its stream when it disconnects", async t => {

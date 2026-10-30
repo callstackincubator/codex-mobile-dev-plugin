@@ -2,9 +2,11 @@ import { execFileSync } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isReleaseVersion } from "../packages/shared/src/release-version.ts";
+import { isBuildVersion, isReleaseVersion } from "../packages/shared/src/release-version.ts";
 
 const isVersionTag = tag => typeof tag === "string" && tag.startsWith("v") && isReleaseVersion(tag.slice(1));
+// A test deployment's prerelease gets notes too; later notes skip it and start from the last release.
+const isBuildTag = tag => typeof tag === "string" && tag.startsWith("v") && isBuildVersion(tag.slice(1));
 
 export function releaseNotes(tag, repositoryUrl, publishedTags, directory = ".") {
   function git(args) {
@@ -12,7 +14,7 @@ export function releaseNotes(tag, repositoryUrl, publishedTags, directory = ".")
       cwd: directory, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
     });
   }
-  if (isVersionTag(tag) === false) throw new Error("Release notes require a version tag.");
+  if (isBuildTag(tag) === false) throw new Error("Release notes require a version tag.");
   const shallow = git(["rev-parse", "--is-shallow-repository"]);
   if (shallow.trim() === "true") throw new Error("Release notes require the complete Git history and tags.");
   git(["rev-parse", "--verify", `refs/tags/${tag}^{commit}`]);

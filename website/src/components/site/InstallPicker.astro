@@ -1,0 +1,64 @@
+---
+import { installOptions } from '../../site/content';
+---
+
+<dialog id="install-picker" class="install-picker" data-install-picker aria-labelledby="install-title" aria-describedby="install-description install-requirements">
+  <div class="install-panel">
+    <header class="install-heading">
+      <div>
+        <h2 id="install-title">Install Mobile Dev</h2>
+        <p id="install-description">Choose your ADE.</p>
+      </div>
+      <button class="install-close" type="button" data-install-close aria-label="Close install picker"><span aria-hidden="true">×</span></button>
+    </header>
+    <div class="install-options">
+      {installOptions.map(option => (
+        <a class="install-option" data-install-option href={option.href} target={option.external ? '_blank' : undefined} rel={option.external ? 'noopener noreferrer' : undefined}>
+          <span class="install-option-copy">
+            <span class="install-option-name">{option.name}</span>
+            <span class="install-option-detail">{option.detail}</span>
+          </span>
+          <span class="install-option-arrow" aria-hidden="true">{option.external ? '↗' : '→'}</span>
+        </a>
+      ))}
+    </div>
+    <p class="install-requirements label" id="install-requirements">Requires Apple Silicon macOS.</p>
+  </div>
+</dialog>
+
+<script>
+  import './install-picker';
+</script>
+
+<style>
+  :global(html:has(#install-picker[open])) { overflow: hidden; scrollbar-gutter: stable; }
+  .install-picker {
+    width: min(34rem, calc(100vw - 2rem));
+    max-height: calc(100dvh - 2rem);
+    margin: auto;
+    padding: 0;
+    overflow: auto;
+    border: 1px solid var(--line-strong);
+    background: var(--bg);
+    color: var(--text);
+  }
+  .install-picker::backdrop { background: rgb(var(--bg-rgb) / .8); }
+  .install-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1.5rem; padding: 1.5rem; }
+  .install-heading h2 { margin: 0; font-size: 1.5rem; font-weight: 500; line-height: 1.2; letter-spacing: -.025em; }
+  .install-heading p { margin: .625rem 0 0; font-size: .9375rem; color: var(--muted); }
+  .install-close { display: grid; place-items: center; flex: none; width: 2.5rem; height: 2.5rem; border: 1px solid var(--line-strong); padding: 0; background: transparent; color: var(--muted); font: 1.5rem/1 var(--font-mono); cursor: pointer; }
+  .install-close:hover { background: var(--field); color: var(--text); }
+  .install-option { display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; min-height: 6rem; padding: 1.25rem 1.5rem; border-top: 1px solid var(--line); text-decoration: none; }
+  .install-option:hover, .install-option:focus-visible { background: var(--field); }
+  .install-option:focus-visible { outline-offset: -3px; }
+  .install-option-copy { display: flex; flex-direction: column; gap: .375rem; }
+  .install-option-name { font-size: 1.125rem; font-weight: 500; line-height: 1.3; }
+  .install-option-detail { color: var(--muted); font-size: .875rem; line-height: 1.5; }
+  .install-option-arrow { flex: none; color: var(--accent-ink); font-size: 1.25rem; }
+  .install-requirements { margin: 0; border-top: 1px solid var(--line); padding: 1.25rem 1.5rem; color: var(--faint); line-height: 1.6; }
+  @media(max-width:40rem) {
+    .install-heading { padding: 1.25rem; gap: 1rem; }
+    .install-option { padding-inline: 1.25rem; gap: 1rem; }
+    .install-requirements { padding-inline: 1.25rem; }
+  }
+</style>

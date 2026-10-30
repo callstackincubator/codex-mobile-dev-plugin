@@ -49,7 +49,8 @@ export type StreamReceiver = {
 };
 
 export type StreamTransport = {
-  open: { tool: string; args(udid: string): Record<string, unknown> };
+  /** `timeout` covers the server's whole opening: Android waits up to two minutes for boot before its 30-second backend startup. */
+  open: { tool: string; args(udid: string): Record<string, unknown>; timeout: number };
   close: string;
   input: { tool: string; args(stream: PanelStream, messages: StreamMessage[]): Record<string, unknown> };
   /** Asks for a fresh keyframe after the decoder lost its place. */
@@ -185,7 +186,7 @@ async function receiveMirror({ app, stream, signal, current, draw, setScreen, fr
 
 export const streamTransports: Record<TransportKind, StreamTransport> = {
   "ios-simulator": {
-    open: { tool: "mobile_stream_session", args: udid => ({ udid, fps: 60 }) },
+    open: { tool: "mobile_stream_session", args: udid => ({ udid, fps: 60 }), timeout: 45000 },
     close: "mobile_stream_close",
     input: { tool: "mobile_stream_input", args: session },
     reset: "mobile_stream_reset",
@@ -194,7 +195,7 @@ export const streamTransports: Record<TransportKind, StreamTransport> = {
     receive: receiveFrames,
   },
   android: {
-    open: { tool: "mobile_android_stream_session", args: deviceId => ({ deviceId }) },
+    open: { tool: "mobile_android_stream_session", args: deviceId => ({ deviceId }), timeout: 180000 },
     close: "mobile_android_stream_close",
     input: { tool: "mobile_android_stream_input", args: session },
     reset: "mobile_android_stream_reset",
@@ -203,7 +204,7 @@ export const streamTransports: Record<TransportKind, StreamTransport> = {
     receive: receiveAndroid,
   },
   "ios-physical": {
-    open: { tool: "mobile_ios_mirror_session", args: udid => ({ udid }) },
+    open: { tool: "mobile_ios_mirror_session", args: udid => ({ udid }), timeout: 45000 },
     close: "mobile_ios_mirror_close",
     input: { tool: "mobile_ios_mirror_input", args: (stream, messages) => ({ ...session(stream, messages), generation: stream.generation }) },
     reset: "mobile_ios_mirror_reset",

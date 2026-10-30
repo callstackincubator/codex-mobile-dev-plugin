@@ -79,6 +79,15 @@ export function panelView(platform: Platform, stores: ViewStores = {}): Simulato
 }
 
 const ok = (structuredContent?: Record<string, unknown>, extra: Partial<CallToolResult> = {}): CallToolResult => ({ content: [], ...(structuredContent ? { structuredContent } : {}), ...extra });
+
+/** Waits for a delayed answer as the host does: a request with a timeout fails once it passes. */
+async function answerAfter(gate: Promise<void> | undefined, timeout: number | undefined) {
+  if (gate === undefined || timeout === undefined) return gate;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<never>((_resolve, reject) => { timer = setTimeout(() => reject(new Error("Request timed out")), timeout); });
+  try { await Promise.race([gate, expired]); }
+  finally { clearTimeout(timer); }
+}
 const failed = (text: string, meta?: Record<string, unknown>): CallToolResult => ({ isError: true, content: [{ type: "text", text }], ...(meta ? { _meta: meta } : {}) });
 
 /** What one device panel's view would hold: the panel, the canvas and stage it attached, and its snapshot. */
@@ -188,8 +197,8 @@ export function fakeDeviceTools(t: TestContext, { simulators = [iphone], android
   let capabilities: Record<string, unknown> = { message: { text: {} } };
   const app = fakeApp({
     getHostCapabilities: () => capabilities,
-    async fallback(call) {
-      await delays.get(call.name);
+    async fallback(call, options) {
+      await answerAfter(delays.get(call.name), options?.timeout);
       const result = once.get(call.name);
       if (result) { once.delete(call.name); return result; }
       if (failures[call.name]) return failed(failures[call.name]);

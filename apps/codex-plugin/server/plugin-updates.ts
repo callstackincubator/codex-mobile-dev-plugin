@@ -11,18 +11,22 @@ import { PLUGIN_VERSION } from "@mobile-dev/shared/version.ts";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 import { captureServerError } from "@mobile-dev/core/telemetry.ts";
 import { resolveTelemetryEnvironment } from "@mobile-dev/core/telemetry-environment.ts";
-import { codexCliResolver, createCodexRunner, PluginUpdateError, readPluginStore, STORE_MARKETPLACE, storeSummarySchema } from "./codex-cli.ts";
-import type { ReadStore, RunCodex, StorePlugin, UpdateFailure } from "./codex-cli.ts";
+import { codexCliResolver, createCodexRunner, PluginUpdateError, STORE_MARKETPLACE } from "./codex-cli.ts";
+import type { RunCodex, UpdateFailure } from "./codex-cli.ts";
+import { readPluginStore, storeSummarySchema } from "./plugin-store.ts";
+import type { ReadStore, StorePlugin } from "./plugin-store.ts";
 
-export function recordPluginUpdate(operation: "check" | "migrate", outcome: "disabled" | "unavailable" | "current" | "available" | "migration" | "migrated" | "failed", duration: number) {
+export function recordPluginUpdate(operation: "check" | "migrate", outcome: "disabled" | "unavailable" | "current" | "available" | "migration" | "migrated" | "failed", duration: number, failure?: UpdateFailure | "unknown") {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
-  const attributes = { component: "server", operation, outcome };
+  const attributes: Record<string, string> = { component: "server", operation, outcome };
+  if (failure !== undefined) attributes.failure = failure;
   Sentry.metrics.count("plugin.update.operations", 1, { attributes });
   Sentry.metrics.gauge("plugin.update.duration", duration, { unit: "millisecond", attributes });
 }
 
 const repositories = ["callstackincubator/codex-mobile-dev-plugin", "callstackincubator/mobile-dev"];
 const githubPlugin = "mobile-dev@mobile-dev";
+const storePlugin = `mobile-dev@${STORE_MARKETPLACE}`;
 const checkIntervalMs = 60 * 60 * 1000;
 const failedCheckIntervalMs = 15 * 60 * 1000;
 // The cache file keeps the flat format older releases read, so downgrades keep working. A failed
@@ -48,7 +52,8 @@ type KnownCache = { state: "checked" } & Check | { state: "migrated"; migratedVe
 // A failed check keeps the previous result to show until a later check succeeds.
 type Cache = { state: "unchecked" } | { state: "failed"; checkedAt: number; previous?: KnownCache } | KnownCache;
 type SavedCache = Exclude<Cache, { state: "unchecked" }>;
-type Catalog = z.infer<typeof pluginsSchema> & { store: StorePlugin };
+// The store's published release, with this profile's installation of it from the CLI.
+type Catalog = z.infer<typeof pluginsSchema> & { store: StorePlugin & { localVersion: string | null; installed: boolean; enabled: boolean } };
 type MigrationStep = "catalog" | "remove-plugin" | "remove-marketplace" | "verify" | "save";
 
 function updateFailure(error: unknown): UpdateFailure | "unknown" {
@@ -130,7 +135,7 @@ export class PluginUpdates {
     this.cachePath = join(this.profile, "mobile-dev", "updates.json");
     const codex = { resolveCli: codexCliResolver(this.profile), signal: this.abort.signal };
     this.run = options.run ?? createCodexRunner(this.profile, codex);
-    this.readStore = options.readStore ?? (() => readPluginStore(this.profile, codex));
+    this.readStore = options.readStore ?? (() => readPluginStore({ signal: this.abort.signal }));
     this.now = options.now ?? Date.now;
   }
 
@@ -199,12 +204,21 @@ export class PluginUpdates {
   }
 
   private async catalog(): Promise<Catalog> {
-    const plugins = this.run(["plugin", "list", "--available", "--json"]);
+    const plugins = this.run(["plugin", "list", "--marketplace", "mobile-dev", "--available", "--json"]);
+    const installed = this.run(["plugin", "list", "--json"]);
     const store = this.readStore();
-    const results = await Promise.all([plugins, store]);
+    const results = await Promise.all([plugins, installed, store]);
     const catalog = pluginsSchema.parse(results[0]);
-    const summary = storeSummarySchema.parse(results[1]);
-    return { ...catalog, store: summary };
+    const local = pluginsSchema.parse(results[1]);
+    const summary = storeSummarySchema.parse(results[2]);
+    const entry = local.installed.find(plugin => plugin.pluginId === storePlugin && plugin.name === "mobile-dev"
+      && plugin.marketplaceName === STORE_MARKETPLACE && plugin.source.source === "remote" && plugin.source.id === PLUGIN_STORE_ID);
+    const localVersion = entry?.version ?? null;
+    if (localVersion !== null) releaseVersionSchema.parse(localVersion);
+    return {
+      ...catalog,
+      store: { ...summary, localVersion, installed: entry?.installed ?? false, enabled: entry?.enabled ?? false },
+    };
   }
 
   private async storeInstalled(catalog: Catalog): Promise<boolean> {
@@ -236,21 +250,26 @@ export class PluginUpdates {
     if (status.status === "migrated" || this.isFresh(cache)) return status;
     const startedAt = performance.now();
     const checkedAt = this.now();
+    let failure: UpdateFailure | "unknown" | undefined;
     let next: SavedCache;
     try {
       const catalog = await this.catalog();
       const storeInstalled = await this.storeInstalled(catalog);
       next = { state: "checked", checkedAt, latestVersion: catalog.store.version, githubConfigured: githubConfigured(catalog), storeInstalled };
-    } catch { next = { state: "failed", checkedAt, previous: knownCache(cache) }; }
+    } catch (error) {
+      failure = updateFailure(error);
+      next = { state: "failed", checkedAt, previous: knownCache(cache) };
+    }
     this.last = next;
     try { await this.saveCache(next); }
     catch {
       const error = new Error("Could not save the plugin update check.");
       captureServerError(error, "plugin.update.cache");
+      failure = "cache-write";
     }
     const update = this.status(next);
     const elapsed = performance.now() - startedAt;
-    recordPluginUpdate("check", update.status, elapsed);
+    recordPluginUpdate("check", update.status, elapsed, failure);
     return update;
   }
 

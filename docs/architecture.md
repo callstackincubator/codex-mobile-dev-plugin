@@ -21,19 +21,24 @@ A host adds to the shared pieces without changing them:
   host shows it: `createPanel` in `packages/core/src/panel-tools.ts` owns Baguette, the
   panel and workspace pages and the tools only they use, opening recordings in the
   workspace, the App tab's reads and the native device form, and it supplies the
-  server's instructions and the foreground simulator app. Codex, Cursor's shared entry
-  and the Mac app pass it first.
+  server's instructions and the foreground simulator app. Codex, Cursor's shared entry,
+  Claude and the Mac app pass it first.
   Codex and Cursor add agent-device's commands, and Codex the self-updater, which
   installs through Codex's marketplace; the Mac app, which has no agent, adds the
-  telemetry metadata its page reads. Claude shows simulators itself, so its entry (`apps/claude/server`) passes
-  no panel and adds agent-device's commands; its chat cards stay. Every host lists simulators for logs, CPU and device choices with
+  telemetry metadata its page reads. Claude's entry (`apps/claude/server`) passes the
+  panel with `inline: false`, so even MCP Apps hosts such as the desktop app's Code tab
+  render none in the chat, and the browser panel feature with `always: true`, which
+  shows it beside the chat in a browser; it adds agent-device's commands, and its chat
+  cards stay. Every host lists simulators for logs, CPU and device choices with
   simctl, without starting Baguette.
 - **Runtime:** a host's `plugin-host.json` can leave out the panel's parts of `dist/`
-  (`"panel": false`, see `PANEL_PARTS` in `tooling/host-runtime.mjs`) and name a
-  `buildHost` module for its own server or page. Claude ships neither Baguette, serve-emu nor the iOS
-  mirror, and its server loads after telemetry as a separate module, so esbuild
-  splits it into chunks beside `server.mjs`, keeping every file under the Claude
-  plugin directory's 5 MiB limit.
+  (`"panel": false`, see `PANEL_PARTS` in `tooling/host-runtime.mjs`), download them
+  instead (`"panelRuntime": "download"`), and name a `buildHost` module for its own
+  server or page. Claude downloads Baguette, serve-emu and the iOS mirror from a
+  release archive its package pins (`packages/core/src/panel-runtime.ts`), and its
+  server loads after telemetry as a separate module, so esbuild splits it into chunks
+  beside `server.mjs`, keeping every file under the Claude plugin directory's 5 MiB
+  limit.
 - **Panel:** a host's page entry calls `startMcpApp` with its chrome. Codex adds the
   update banner; Claude uses the shared entry, for its cards.
 - **Views:** shared views depend only on `HostBridge`, the subset of `App` they use,

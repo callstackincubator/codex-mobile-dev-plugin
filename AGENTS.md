@@ -11,6 +11,9 @@ differences from advertised capabilities rather than host names. See
 
 ## Host and visual tests
 
+For brand visuals (the website, social cards, slides, diagrams, and videos), follow
+[docs/DESIGN.md](docs/DESIGN.md).
+
 `tooling/hosts` tests every target's real server and page in stand-in hosts on Linux.
 After an intended UI change, refresh the screenshots with
 `npm run test:visual:docker -- --update-snapshots` (never on macOS directly) and

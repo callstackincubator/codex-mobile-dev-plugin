@@ -29,12 +29,18 @@ export function startMcpApp(options: { workspace?: WorkspaceOptions } = {}) {
   });
   else if (view === "comparison") startCardApp({
     name: "mobile-dev-comparison", surface: "comparison", fallback: "This comparison could not render. Reopen it to try again.",
-    create: app => new ComparisonController(app, { workspace }),
+    create: app => {
+      const extensions = new OpenAIExtensions(app);
+      return new ComparisonController(app, { attachments: () => extensions.modelContext, workspace });
+    },
     render: controller => <ComparisonCard controller={controller} />,
   });
   else if (view === "tracesift") startCardApp({
     name: "mobile-dev-tracesift", surface: "tracesift", fallback: "This TraceSift analysis could not render. Reopen it to try again.",
-    create: app => new TraceSiftController(app),
+    create: app => {
+      const extensions = new OpenAIExtensions(app);
+      return new TraceSiftController(app, { attachments: () => extensions.modelContext });
+    },
     render: controller => <TraceSiftCards controller={controller} />,
     hostChanged: (controller, host) => {
       const viewId = host?.toolInfo?.id;
@@ -44,8 +50,6 @@ export function startMcpApp(options: { workspace?: WorkspaceOptions } = {}) {
       const parsed = traceSiftProfileInputSchema.safeParse(input);
       if (parsed.success) controller.setProfileInput(parsed.data.path, parsed.data.profileType);
     },
-    // The inline card investigates too, so it needs the same project the panel saved.
-    connected: controller => void controller.loadProject(),
   });
   // Chats keep devices cards from releases before device choice moved to the host's own form.
   else if (view === "devices") startRetiredCard("This device list came from an earlier version of Mobile Dev. Ask again to choose a device.");

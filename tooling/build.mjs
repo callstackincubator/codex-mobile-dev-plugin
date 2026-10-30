@@ -1,7 +1,7 @@
 import { nativeHelpers, verifyNativeHelper } from "./native-helpers.mjs";
 import { telemetryBuildEnvironment } from "./telemetry-build.mjs";
 import { buildServeEmu } from "./build-serve-emu.mjs";
-import { buildSharedPage } from "./ui-page.mjs";
+import { buildBrowserPanelPage, buildSharedPage } from "./ui-page.mjs";
 import { buildSharedServer } from "./server-bundle.mjs";
 import { copyFile, cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
@@ -41,6 +41,8 @@ await buildServeEmu("dist/serve-emu");
 await rm(".sentry/ui", { recursive: true, force: true });
 await rm(".sentry/server", { recursive: true, force: true });
 const pageMetafiles = [await buildSharedPage({ output: "dist/app.html", environment: telemetryEnvironment, sentryRoot: ".sentry" })];
+// Hosts that render no MCP Apps panel open this page in a browser beside the chat.
+await buildBrowserPanelPage({ output: "dist/browser-panel.html" });
 const serverMetafiles = [await buildSharedServer({ outdir: "dist", sentryRoot: ".sentry" })];
 // Tailwind compiles these styles before esbuild records its input files.
 const packageRoots = new Set(["shadcn", "tailwindcss", "tw-animate-css"].map(name => resolve("node_modules", name)));

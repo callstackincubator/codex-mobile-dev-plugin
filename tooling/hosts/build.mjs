@@ -3,7 +3,7 @@ import { build } from "esbuild";
 import { stageRuntime } from "../host-runtime.mjs";
 import { appHost, buildHost, hosts } from "../plugin-hosts.mjs";
 import { buildSharedServer } from "../server-bundle.mjs";
-import { buildSharedPage } from "../ui-page.mjs";
+import { buildBrowserPanelPage, buildSharedPage } from "../ui-page.mjs";
 import { nativeHelpers } from "../native-helpers.mjs";
 
 /**
@@ -32,6 +32,8 @@ async function sharedRuntime() {
   await mkdir(`${shared}/agent-device`, { recursive: true });
   await copyFile("packages/runtimes/agent-device/tools.json", `${shared}/agent-device/tools.json`);
   await buildSharedPage({ output: `${shared}/app.html`, environment, sentryRoot });
+  // Hosts that render no MCP Apps panel, such as Claude Code, open this page in a browser.
+  await buildBrowserPanelPage({ output: `${shared}/browser-panel.html` });
   await buildSharedServer({ outdir: shared, sentryRoot });
 }
 

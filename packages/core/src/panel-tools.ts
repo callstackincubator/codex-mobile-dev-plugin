@@ -9,7 +9,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { PLUGIN_VERSION } from "@mobile-dev/shared/version.ts";
 import { iosSimulatorSchema, statusSchema, streamMessageSchema, udidSchema } from "@mobile-dev/shared/protocol.ts";
-import { panelTargetSchema } from "@mobile-dev/shared/panel-target.ts";
+import { PANEL_PAGE_META, panelTargetSchema } from "@mobile-dev/shared/panel-target.ts";
 import type { PanelTarget } from "@mobile-dev/shared/panel-target.ts";
 import { registerEarlierReleases } from "./earlier-releases.ts";
 import { readBezel } from "./bezel.ts";
@@ -41,7 +41,13 @@ export const WORKSPACE_URI = `ui://mobile-dev/${PLUGIN_VERSION}/workspace.html`;
 const unversionedAppUris = ["ui://mobile-dev/simulator.html", "ui://mobile-dev/0.1.24/mcp-stream/simulator.html"];
 const unversionedWorkspaceUris = ["ui://mobile-dev/workspace.html", "ui://mobile-dev/0.1.24/mcp-stream/workspace.html"];
 const deviceInput = { udid: udidSchema.describe("A simulator UDID returned by mobile_list_simulators.") };
-const statusOutput = { ...statusSchema.shape, devices: z.array(iosSimulatorSchema.extend({ udid: udidSchema })) };
+const browserPanelOutput = z.object({ url: z.string(), instructions: z.string() }).optional()
+  .describe("Present when the panel is not shown in the chat: the page to open beside it, and how. Follow its instructions.");
+const statusOutput = {
+  ...statusSchema.shape,
+  baseUrl: statusSchema.shape.baseUrl.describe("The bundled backend's private address, for Mobile Dev's own requests. It is not a page: never open it or show it to the user."),
+  devices: z.array(iosSimulatorSchema.extend({ udid: udidSchema })),
+};
 
 const result = (data: Record<string, unknown>, message: string) => jsonResult(data, message);
 const guarded = <T>(handler: (input: T, context: ServerRequestContext) => Promise<CallToolResult>) => guardedTool({ operation: "simulator.tool", retryable: true }, handler);
@@ -53,28 +59,35 @@ export type PanelOptions = {
   baguette?: Baguette;
   simulatorInput?: SimulatorInput;
   copyScreenshot?: typeof copyPNGToClipboard;
+  /**
+   * Whether MCP Apps hosts render the panel in the chat from its opening tools. A host that
+   * shows it beside the chat instead, in a browser, passes false: the tools then name their
+   * page under PANEL_PAGE_META, which hosts ignore and the browser panel reads.
+   */
+  inline?: boolean;
 };
 
 /**
  * Mobile Dev's live device panel and workspace with the tools only they use: device
  * streams and input, screenshots, UI inspection, device settings, physical iPhone
  * mirroring, Baguette's simulator controls, the App tab's reads, opening recordings in
- * the workspace and asking for devices in a native form. Hosts that show devices
- * themselves, such as Claude, leave it out.
+ * the workspace and asking for devices in a native form. Claude shows it beside the
+ * chat in a browser (`inline: false`).
  */
-export function createPanel({ baguette = new Baguette(), simulatorInput, copyScreenshot = copyPNGToClipboard }: PanelOptions = {}): ServerFeature {
+export function createPanel({ baguette = new Baguette(), simulatorInput, copyScreenshot = copyPNGToClipboard, inline = true }: PanelOptions = {}): ServerFeature {
   return {
     instructions: INSTRUCTIONS,
     simulatorForeground: foregroundSimulatorPid,
-    workspace: true,
+    // Cards open recordings in the workspace only where it renders in the chat.
+    workspace: inline,
     register: (server, services) => registerPanel(server, services, {
-      baguette, copyScreenshot, simulatorInput: simulatorInput ?? new SimulatorInputService(udid => baguette.repairInput(udid)),
+      baguette, copyScreenshot, inline, simulatorInput: simulatorInput ?? new SimulatorInputService(udid => baguette.repairInput(udid)),
     }),
   };
 }
 
-function registerPanel(server: McpServer, { android, deviceSessions: devices, drivers, servePage, showRecording, simulators, onInitialized }: ServerServices,
-  { baguette, simulatorInput, copyScreenshot }: Required<PanelOptions>) {
+function registerPanel(server: McpServer, { android, deviceSessions: devices, drivers, servePage, showRecording, simulators, onInitialized, panelOpening }: ServerServices,
+  { baguette, simulatorInput, copyScreenshot, inline }: Required<PanelOptions>) {
   // The device form goes with Mobile Dev's own device views, for hosts that render one.
   const extensions = new OpenAIExtensions(server);
   onInitialized(() => {
@@ -90,7 +103,8 @@ function registerPanel(server: McpServer, { android, deviceSessions: devices, dr
   const closeAndroid = registerAndroidTools(server, android, APP_URI, copyScreenshot, devices);
   const closeDeviceSettings = registerDeviceSettingsTools(server, baguette, android);
   registerPanelAppControlTools(server, drivers);
-  registerOpenRecordingTool(server, showRecording, WORKSPACE_URI);
+  // Opening a recording renders the workspace in the chat; beside the chat, recordings stay cards.
+  if (inline) registerOpenRecordingTool(server, showRecording, WORKSPACE_URI);
   const readPanel = servePage("panel", "fullscreen");
   const readWorkspace = servePage("workspace", "fullscreen");
 
@@ -156,7 +170,7 @@ function registerPanel(server: McpServer, { android, deviceSessions: devices, dr
     }
   });
 
-  const openPanel = guarded(async (panelTarget: PanelTarget) => {
+  const openPanel = (tool: string) => guarded(async (panelTarget: PanelTarget) => {
     let status;
     try { status = await baguette.start(); }
     catch (error) {
@@ -164,28 +178,43 @@ function registerPanel(server: McpServer, { android, deviceSessions: devices, dr
       const fallback = await baguette.status(AbortSignal.timeout(2000));
       status = { ...fallback, error: errorMessage(error) };
     }
-    return result({ ...status, panelTarget }, status.connected ? `Found ${status.devices.length} simulators.` : status.error ?? "The bundled simulator backend could not start.");
+    // Hosts can pass the model either form of a result, and Claude Code passes only the
+    // structured one, so another place to show the panel goes into both.
+    const opening = await panelOpening({ tool, target: panelTarget });
+    const response = result({ ...status, panelTarget, ...opening ? { browserPanel: opening } : {} }, status.connected ? `Found ${status.devices.length} simulators.` : status.error ?? "The bundled simulator backend could not start.");
+    if (opening) response.content.push({ type: "text", text: opening.instructions });
+    return response;
   });
 
-  registerAppTool(server, "mobile_open_workspace", {
-    title: "Mobile Dev",
-    description: "Open the Mobile Dev workspace, with logs and performance tools beside the devices, when the user asks for fullscreen or for those tools. It opens fullscreen where the host supports it. Pass established platform, kind, or discovered deviceId to select the initial device; omit undecided fields. For app development alongside a chat, prefer mobile_open_simulator. Starts the bundled backend without booting a device.",
-    inputSchema: panelTargetSchema, outputSchema: { ...statusOutput, panelTarget: panelTargetSchema }, annotations: write,
-    _meta: {
-      ui: { resourceUri: WORKSPACE_URI, visibility: ["app", "model"] },
-      "openai/ui": { entrypoints: [{ type: "global" }] },
-    },
-  }, openPanel);
+  // Inline, the host renders each opening tool's page in the chat; otherwise the tool only
+  // names it, and a host feature such as the browser panel shows it.
+  const openingTool = (name: string, config: { description: string; resourceUri: string; entrypoint: "global" | "thread" }) => {
+    const definition = {
+      title: "Mobile Dev", description: config.description,
+      inputSchema: panelTargetSchema, outputSchema: { ...statusOutput, panelTarget: panelTargetSchema, browserPanel: browserPanelOutput }, annotations: write,
+    };
+    if (inline === false) {
+      server.registerTool(name, { ...definition, _meta: { [PANEL_PAGE_META]: { resourceUri: config.resourceUri } } }, openPanel(name));
+      return;
+    }
+    registerAppTool(server, name, {
+      ...definition,
+      _meta: {
+        ui: { resourceUri: config.resourceUri, visibility: ["app", "model"] },
+        "openai/ui": { entrypoints: [{ type: config.entrypoint }] },
+      },
+    }, openPanel(name));
+  };
 
-  registerAppTool(server, "mobile_open_simulator", {
-    title: "Mobile Dev",
+  openingTool("mobile_open_workspace", {
+    description: "Open the Mobile Dev workspace, with logs and performance tools beside the devices, when the user asks for fullscreen or for those tools. It opens fullscreen where the host supports it. Pass established platform, kind, or discovered deviceId to select the initial device; omit undecided fields. For app development alongside a chat, prefer mobile_open_simulator. Starts the bundled backend without booting a device.",
+    resourceUri: WORKSPACE_URI, entrypoint: "global",
+  });
+
+  openingTool("mobile_open_simulator", {
     description: "Open Mobile Dev alongside the chat for local mobile app development, before the first device launch unless a view is open or the workflow is tool-only. Pass established platform, kind, or discovered deviceId to select the initial device; omit undecided fields. Starts the bundled backend without booting devices.",
-    inputSchema: panelTargetSchema, outputSchema: { ...statusOutput, panelTarget: panelTargetSchema }, annotations: write,
-    _meta: {
-      ui: { resourceUri: APP_URI, visibility: ["app", "model"] },
-      "openai/ui": { entrypoints: [{ type: "thread" }] },
-    },
-  }, openPanel);
+    resourceUri: APP_URI, entrypoint: "thread",
+  });
 
   server.registerTool("mobile_list_simulators", {
     title: "List iOS simulators", description: "Start the plugin's bundled backend if needed and list available and booted simulators.",

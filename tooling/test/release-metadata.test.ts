@@ -72,9 +72,14 @@ test("release metadata rejects versions that could escape artifact paths or outp
   await assert.rejects(result, /semantic release version/);
 });
 
-test("release metadata rejects prerelease versions, which installed updaters cannot compare", async t => {
+test("release metadata accepts a test deployment's prerelease version and rejects other labels", async t => {
   const directory = await fixture(t);
-  await writeFile(`${directory}/package.json`, '{"version":"1.2.4-rc.1"}');
-  const result = releaseMetadata("v1.2.4-rc.1", directory);
-  await assert.rejects(result, /semantic release version/);
+  const version = "1.2.3-test.1";
+  await writeFile(`${directory}/package.json`, JSON.stringify({ version }));
+  await writeFile(`${directory}/package-lock.json`, JSON.stringify({ version, packages: { "": { version } } }));
+  await writeFile(`${directory}/packages/shared/src/version.ts`, `export const PLUGIN_VERSION = "${version}";`);
+  const metadata = await releaseMetadata(`v${version}`, directory);
+  assert.equal(metadata.version, version);
+  await writeFile(`${directory}/package.json`, '{"version":"1.2.3+build"}');
+  await assert.rejects(releaseMetadata("v1.2.3+build", directory), /semantic release version/);
 });

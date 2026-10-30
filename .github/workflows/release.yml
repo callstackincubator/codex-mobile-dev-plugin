@@ -218,17 +218,24 @@ jobs:
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ needs.build.outputs.tag }}
           RELEASE_VERSION: ${{ needs.build.outputs.version }}
+        # A prerelease version, such as 0.1.172-test.1, is a test deployment: a GitHub
+        # prerelease with every package, whose assets download like a release's.
+        # Release notes skip it, so the next release lists everything since the last.
         run: |
           gh api "repos/$GH_REPO/releases" --paginate \
-            --jq '.[] | select(.draft == false) | .tag_name' > "$RUNNER_TEMP/published-release-tags.txt"
+            --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' > "$RUNNER_TEMP/published-release-tags.txt"
           node tooling/release-notes.mjs \
             "$RUNNER_TEMP/published-release-tags.txt" "$RUNNER_TEMP/release-notes.md"
-          gh release create "$RELEASE_TAG" release/mobile-dev-"$RELEASE_VERSION"-* \
+          prerelease=()
+          case "$RELEASE_VERSION" in *-*) prerelease=(--prerelease) ;; esac
+          gh release create "$RELEASE_TAG" release/mobile-dev-"$RELEASE_VERSION"-* "${prerelease[@]}" \
             --verify-tag --notes-file "$RUNNER_TEMP/release-notes.md" --title "Mobile Dev $RELEASE_VERSION"
 
   # Each host installs its plugin from a branch of this repository: Codex as a Git
   # marketplace on release/latest, Claude Code as a marketplace on release/claude.
+  # Test deployments stay off both branches.
   publish:
+    if: ${{ !contains(needs.build.outputs.version, '-') }}
     needs: [build, release]
     runs-on: ubuntu-latest
     timeout-minutes: 15

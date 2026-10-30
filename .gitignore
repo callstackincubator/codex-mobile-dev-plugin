@@ -13,3 +13,4 @@ packages/native/*/target/
 .host-tests/
 test-results/
 playwright-report/
+.claude/worktrees/

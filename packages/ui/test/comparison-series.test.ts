@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createComparisonSeries, hasComparisonReadings } from "../src/comparison-series.ts";
+import { createComparisonSeries, findSharpChanges, hasComparisonReadings } from "../src/comparison-series.ts";
 import { comparisonSchema, summarizeComparison } from "@mobile-dev/shared/performance-comparison.ts";
 import { recordingFixture } from "@mobile-dev/test-support/recording-fixtures.ts";
 
@@ -79,4 +79,36 @@ test("a comparison track is available when any run has a reading", () => {
   assert.equal(hasComparisonReadings([{ time: 0, run0: null, run1: null }, { time: 1, run0: null, run1: 4 }], 2), true);
   assert.equal(hasComparisonReadings([{ time: 0, run0: null, run1: null }], 2), false);
   assert.equal(hasComparisonReadings([], 2), false);
+});
+
+test("sharp changes mark every jump, spike and dip by a fixed amount, and leave steady runs empty", () => {
+  const MiB = 1048576;
+  const cpu = [3, 3, 40, 84, 84, 57, 83, 83];
+  const steady = recordingFixture();
+  steady.durationSeconds = 8;
+  steady.samples = cpu.map((_, index) => ({ time: index + 1, interval: 1, cpuPercent: 2 + (index % 2) * 3, memoryBytes: 700 * MiB, threads: [] }));
+  const busy = recordingFixture();
+  busy.durationSeconds = 8;
+  busy.samples = cpu.map((value, index) => ({ time: index + 1, interval: 1, cpuPercent: value, memoryBytes: (index < 6 ? 700 : 820) * MiB, threads: [] }));
+  const [quiet, changes] = findSharpChanges([steady, busy]);
+  // A run that only wobbles has nothing to mark, however loud the other run is.
+  assert.deepEqual(quiet, []);
+  assert.deepEqual(changes.map(change => [change.metric, change.start, change.end, change.values]), [
+    ["cpu", 2, 4, [3, 40, 84]],
+    ["cpu", 5, 7, [84, 57, 83]],
+    ["memory", 6, 7, [700, 820]],
+  ]);
+});
+
+test("sharp changes need a larger step across slower readings and never bridge a gap", () => {
+  const recording = recordingFixture();
+  recording.durationSeconds = 10;
+  recording.samples = [
+    { time: 2, interval: 2, cpuPercent: 10, memoryBytes: null, threads: [] },
+    { time: 4, interval: 2, cpuPercent: 25, memoryBytes: null, threads: [] },
+    { time: 6, interval: 2, cpuPercent: 50, memoryBytes: null, threads: [] },
+    { time: 10, interval: 2, cpuPercent: 90, memoryBytes: null, threads: [] },
+  ];
+  // 15 points over two seconds is not sharp; 25 is. The four-second gap is missing readings, not a change.
+  assert.deepEqual(findSharpChanges([recording])[0].map(change => [change.start, change.end]), [[4, 6]]);
 });

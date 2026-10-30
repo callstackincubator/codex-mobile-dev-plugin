@@ -18,13 +18,6 @@ const analysis = {
   }],
 };
 
-const PROJECT = "/private/project";
-
-/** Answers the project read for Investigate; every other call falls through to the test's stub. */
-function withProject({ tools, ...options }: FakeAppOptions) {
-  return fakeApp({ ...options, tools: { mobile_get_tracesift_project: () => ({ content: [], structuredContent: { path: PROJECT } }), ...tools } });
-}
-
 const hostContext: McpUiHostContext = { theme: "light", availableDisplayModes: ["inline", "fullscreen"] };
 
 test("TraceSift Investigate fetches one authoritative handoff and sends it to the active chat", async () => {
@@ -35,16 +28,41 @@ test("TraceSift Investigate fetches one authoritative handoff and sends it to th
     async fallback(call: unknown) { calls.push(call); return { content: [], structuredContent: { apiVersion: 1, handoff: "PRIVATE_HANDOFF" } }; },
     async sendMessage(message: unknown) { messages.push(message); return {}; },
   };
-  const controller = new TraceSiftController(withProject(app));
+  const controller = new TraceSiftController(fakeApp(app));
   controller.hostChanged();
-  await controller.loadProject();
   controller.accept({ content: [], structuredContent: analysis });
   await Promise.all([controller.investigate("react-commit-1-2"), controller.investigate("react-commit-1-2")]);
   assert.equal(calls.length, 1); assert.equal(messages.length, 1);
   assert.deepEqual(calls[0], { name: "mobile_get_tracesift_handoff", arguments: { analysisId: "private-analysis", cardId: "react-commit-1-2" } });
-  // The project line tells the chat which code the named frames belong to.
-  assert.equal((messages[0] as { content: Array<{ text: string }> }).content[0].text, `Investigate this in the project at ${PROJECT}.\n\nPRIVATE_HANDOFF`);
+  // The hand-off goes as written; the chat already works in the reader's project.
+  assert.equal((messages[0] as { content: Array<{ text: string }> }).content[0].text, "PRIVATE_HANDOFF");
   assert.equal((messages[0] as { _meta: unknown })._meta, undefined);
+});
+
+test("TraceSift Investigate puts the handoff in a pill and sends a short prompt on hosts with pills", async () => {
+  const messages: Array<{ content: Array<{ text: string }> }> = [];
+  const updates: Array<{ content: Array<{ text: string; _meta: Record<string, unknown> }>; structuredContent: Record<string, unknown> }> = [];
+  const note = { type: "text", text: "Keep this selected component", _meta: { "openai/title": "Continue button" } };
+  const app = fakeApp({
+    getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
+    getHostContext: () => hostContext,
+    async fallback() { return { content: [], structuredContent: { apiVersion: 1, handoff: "PRIVATE_HANDOFF" } }; },
+    async sendMessage(message) { messages.push(message as typeof messages[number]); return {}; },
+  });
+  const modelContext = {
+    getCurrent: () => ({ updateId: "existing", content: [note], structuredContent: { annotationIds: ["note-1"] } }),
+    async update(params: typeof updates[number]) { updates.push(params); return { updateId: "1" }; },
+  };
+  const controller = new TraceSiftController(app, { attachments: () => modelContext as never });
+  controller.hostChanged();
+  controller.accept({ content: [], structuredContent: analysis });
+  await controller.investigate("react-commit-1-2");
+  assert.equal(updates.length, 1);
+  assert.deepEqual(updates[0].content[0], note);
+  assert.equal(updates[0].content[1].text, "PRIVATE_HANDOFF");
+  assert.equal(updates[0].content[1]._meta["openai/title"], "TraceSift · commit 1: Heavy component");
+  assert.deepEqual(updates[0].structuredContent, { annotationIds: ["note-1"], selectedTraceSiftFinding: { analysisId: "private-analysis", cardId: "react-commit-1-2" } });
+  assert.equal(messages[0].content[0].text, "Investigate this TraceSift commit.");
 });
 
 test("TraceSift disables investigation when host capabilities are absent", async () => {
@@ -54,53 +72,6 @@ test("TraceSift disables investigation when host capabilities are absent", async
   controller.hostChanged(); controller.accept({ content: [], structuredContent: analysis });
   await controller.investigate("react-commit-1-2");
   assert.equal(calls, 0); assert.equal(controller.getSnapshot().canInvestigate, false);
-});
-
-test("TraceSift holds Investigate until a project is chosen, then sends with it", async () => {
-  const messages: unknown[] = [];
-  let saved: string | undefined;
-  const app = fakeApp({
-    getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
-    getHostContext: () => hostContext,
-    tools: {
-      mobile_get_tracesift_project: () => ({ content: [], structuredContent: saved ? { path: saved } : {} }),
-      mobile_pick_tracesift_project: () => { saved = PROJECT; return { content: [], structuredContent: { picked: true, path: PROJECT } }; },
-    },
-    fallback: () => ({ content: [], structuredContent: { apiVersion: 1, handoff: "PRIVATE_HANDOFF" } }),
-    async sendMessage(message: unknown) { messages.push(message); return {}; },
-  });
-  const controller = new TraceSiftController(app);
-  controller.hostChanged();
-  await controller.loadProject();
-  controller.accept({ content: [], structuredContent: analysis });
-  // A profile names frames, not files; without a project the chat would have to guess the code.
-  assert.equal(controller.getSnapshot().project, undefined);
-  await controller.investigate("react-commit-1-2");
-  assert.deepEqual(messages, []);
-
-  await controller.pickProject();
-  assert.equal(controller.getSnapshot().project, PROJECT);
-  await controller.investigate("react-commit-1-2");
-  assert.equal(messages.length, 1);
-  assert.match((messages[0] as { content: Array<{ text: string }> }).content[0]!.text, /^Investigate this in the project at \/private\/project\./);
-  controller.dispose();
-});
-
-test("TraceSift keeps a cancelled folder dialog from clearing the project it had", async () => {
-  const controller = new TraceSiftController(fakeApp({
-    getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
-    getHostContext: () => hostContext,
-    tools: { mobile_get_tracesift_project: () => ({ content: [], structuredContent: { path: PROJECT } }) },
-    fallback: () => ({ content: [], structuredContent: { picked: false } }),
-    async sendMessage() { return {}; },
-  }));
-  controller.hostChanged();
-  await controller.loadProject();
-  assert.equal(controller.getSnapshot().project, PROJECT);
-  await controller.pickProject();
-  assert.equal(controller.getSnapshot().project, PROJECT);
-  assert.equal(controller.getSnapshot().projectBusy, false);
-  controller.dispose();
 });
 
 test("TraceSift restores cards for a recreated inline view", async () => {
@@ -195,9 +166,8 @@ test("TraceSift never retries an unconfirmed send", async () => {
     async fallback() { return { content: [], structuredContent: { apiVersion: 1, handoff: "PRIVATE_HANDOFF" } }; },
     async sendMessage() { sends++; throw Object.assign(new Error("timeout"), { code: -32001 }); },
   };
-  const controller = new TraceSiftController(withProject(app));
+  const controller = new TraceSiftController(fakeApp(app));
   controller.hostChanged();
-  await controller.loadProject();
   controller.accept({ content: [], structuredContent: analysis });
   await controller.investigate("react-commit-1-2");
   assert.equal(sends, 1);
@@ -212,9 +182,8 @@ test("TraceSift waits for the composer like other chat sends, then reports it un
     async fallback() { return { content: [], structuredContent: { apiVersion: 1, handoff: "PRIVATE_HANDOFF" } }; },
     async sendMessage() { sends++; throw new Error("No active composer is available."); },
   };
-  const controller = new TraceSiftController(withProject(app));
+  const controller = new TraceSiftController(fakeApp(app));
   controller.hostChanged();
-  await controller.loadProject();
   controller.accept({ content: [], structuredContent: analysis });
   await controller.investigate("react-commit-1-2");
   assert.equal(sends, 5, "The send is retried while the composer registers, as cached panels need.");
@@ -510,9 +479,8 @@ function exploreApp(messages: unknown[]): FakeAppOptions {
 }
 
 async function exploringTask(messages: unknown[]) {
-  const controller = new TraceSiftController(withProject(exploreApp(messages)));
+  const controller = new TraceSiftController(fakeApp(exploreApp(messages)));
   controller.hostChanged();
-  await controller.loadProject();
   controller.accept({ content: [], structuredContent: cpuAnalysis });
   await controller.openExplore("task-0");
   return controller;
@@ -590,14 +558,13 @@ test("TraceSift will not send an empty selection and says why", async () => {
 
 test("TraceSift reports a selection it cannot describe rather than sending an empty ask", async () => {
   const messages: unknown[] = [];
-  const controller = new TraceSiftController(withProject({
+  const controller = new TraceSiftController(fakeApp({
     getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
     getHostContext: () => hostContext,
     async fallback() { return payloadResult("task", { apiVersion: 1, analysisId: "private-analysis", card: { durationMs: 75, tree: { id: "0", name: "root", frameClass: "app", totalMs: 75, selfMs: 75, invocations: 1, children: [] } } }); },
     async sendMessage(message: unknown) { messages.push(message); return {}; },
   }));
   controller.hostChanged();
-  await controller.loadProject();
   controller.accept({ content: [], structuredContent: cpuAnalysis });
   await controller.openExplore("task-0");
   controller.setPicking(true);
@@ -612,14 +579,13 @@ test("TraceSift reports a selection it cannot describe rather than sending an em
 
 test("TraceSift reports a selection whose tree never arrived without sending an empty ask", async () => {
   const messages: unknown[] = [];
-  const controller = new TraceSiftController(withProject({
+  const controller = new TraceSiftController(fakeApp({
     getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
     getHostContext: () => hostContext,
     async fallback() { return payloadResult("task", { apiVersion: 1, analysisId: "private-analysis" }); },
     async sendMessage(message: unknown) { messages.push(message); return {}; },
   }));
   controller.hostChanged();
-  await controller.loadProject();
   controller.accept({ content: [], structuredContent: cpuAnalysis });
   await controller.openExplore("task-0");
   controller.setPicking(true);
@@ -665,14 +631,13 @@ const reactExplorePayload = {
 };
 
 async function exploringReact(messages: unknown[]) {
-  const controller = new TraceSiftController(withProject({
+  const controller = new TraceSiftController(fakeApp({
     getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
     getHostContext: () => hostContext,
     async fallback() { return payloadResult("react", reactExplorePayload); },
     async sendMessage(message: unknown) { messages.push(message); return {}; },
   }));
   controller.hostChanged();
-  await controller.loadProject();
   controller.accept({ content: [], structuredContent: analysis });
   await controller.openExplore("react-commit-1-2");
   return controller;
@@ -747,7 +712,6 @@ test("TraceSift shows findings only, with no tool calls, where the host does not
   });
   const controller = new TraceSiftController(app);
   controller.hostChanged();
-  await controller.loadProject();
   controller.accept({ content: [], structuredContent: analysis });
   await controller.restore("view-1");
   await controller.openExplore("react-commit-1-2");
@@ -757,5 +721,26 @@ test("TraceSift shows findings only, with no tool calls, where the host does not
   assert.equal(state.error, "");
   assert.match(state.notice, /does not let the card open Explore/);
   assert.deepEqual(app.calls, []);
+  controller.dispose();
+});
+
+test("TraceSift comes back from Explore to the finding that was explored", async () => {
+  const controller = new TraceSiftController(fakeApp(exploreApp([])));
+  controller.hostChanged();
+  const second = { ...cpuAnalysis.cards[0], id: "task-1", taskIndex: 5 };
+  controller.accept({ content: [], structuredContent: { ...cpuAnalysis, cards: [cpuAnalysis.cards[0], second] } });
+  // The first finding is already the one shown, so choosing it changes nothing.
+  controller.selectCard("task-0");
+  assert.equal(controller.getSnapshot().selectedCard, undefined);
+  controller.selectCard("task-1");
+  assert.equal(controller.getSnapshot().selectedCard, "task-1");
+  controller.selectCard("task-0");
+  // The card shows one finding at a time, and Explore replaces it while open.
+  await controller.openExplore("task-1");
+  controller.closeExplore();
+  assert.equal(controller.getSnapshot().selectedCard, "task-1");
+  // A new reading starts at its first finding.
+  controller.accept({ content: [], structuredContent: cpuAnalysis });
+  assert.equal(controller.getSnapshot().selectedCard, undefined);
   controller.dispose();
 });

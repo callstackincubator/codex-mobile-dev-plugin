@@ -50,7 +50,8 @@ test("a serve-emu this server starts requires a fresh token that every request a
   await writeFile(join(directory, "serve-emu/src/cli.mjs"), fakeCli);
   await writeFile(join(directory, "telemetry-environment.json"), '{"environment":"development"}');
   await mkdir(join(directory, "platform-tools"));
-  await writeFile(join(directory, "platform-tools/adb"), `#!${process.execPath}\nif (process.argv[2] === "devices") console.log("List of devices attached\\nauth-test-device device model:Phone");\n`, { mode: 0o755 });
+  // The device has finished booting, so serve-emu starts at once.
+  await writeFile(join(directory, "platform-tools/adb"), `#!${process.execPath}\nif (process.argv[2] === "devices") console.log("List of devices attached\\nauth-test-device device model:Phone");\nelse if (process.argv.includes("getprop")) console.log("1");\n`, { mode: 0o755 });
 
   const runtime = await import(pathToFileURL(output).href);
   const backend = new runtime.ServeEmu();

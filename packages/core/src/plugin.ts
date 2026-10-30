@@ -1,5 +1,6 @@
 import type { UIResource } from "./ui-resource.ts";
-import type { PageDisplay, ReadPage, ServerFeature, ServerServices } from "./server-feature.ts";
+import type { PageDisplay, PanelOpener, ReadPage, ServerFeature, ServerServices } from "./server-feature.ts";
+import type { SharedTransport } from "./shared-transport.ts";
 import { PHONE_ICONS, toolIcons } from "./tool-icons.ts";
 import { LIVE_UI_URI } from "@mobile-dev/shared/live-ui.ts";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -58,6 +59,8 @@ export type PluginOptions = {
   cpu?: CpuSessions;
   /** What the host adds after the shared tools, in order, such as Mobile Dev's panel (createPanel). Hosts that show devices themselves leave the panel out. */
   features?: ServerFeature[];
+  /** The transport the server will connect to, which features can let other connections join. */
+  connections?: SharedTransport;
 };
 
 export function createPlugin(html: string | (() => Promise<UIResource>), options: PluginOptions = {}) {
@@ -122,9 +125,17 @@ export function createPlugin(html: string | (() => Promise<UIResource>), options
   }
   // Devices cards that chats saved from earlier releases say they came from one.
   registerEarlierReleases(server, "mobile-dev-devices-earlier", "devices", servePage("devices", "inline"));
+  const panelOpeners: PanelOpener[] = [];
   const services: ServerServices = {
     closeDevice: deviceId => devices.closeDevice(deviceId), deviceSessions: devices, android, simulators, drivers, servePage, showRecording,
     onInitialized: listener => { initialized.push(listener); },
+    connections: options.connections,
+    onPanelOpen: opener => { panelOpeners.push(opener); },
+    // One place shows the panel beyond the host; the first feature that offers one wins.
+    panelOpening: async open => {
+      const openings = await Promise.all(panelOpeners.map(opener => opener(open)));
+      return openings.find(opening => opening !== undefined);
+    },
   };
   const featureCleanups = features.flatMap(feature => feature.register(server, services) ?? []);
 

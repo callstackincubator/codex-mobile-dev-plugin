@@ -1,8 +1,14 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { access, mkdir, readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { access, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { PANEL_PAGE_META } from "../packages/shared/src/panel-target.ts";
 import { releaseArchive, releaseVersion } from "./host-runtime.mjs";
+import { panelRuntimeArchive } from "./panel-runtime.mjs";
 import { pluginHost, pluginRelease } from "./plugin-hosts.mjs";
 import { tempPlugin, withServer } from "./lib/mcp-smoke.mjs";
 import { assertPluginFolder, assertRuntimePayload } from "./lib/package-payload.mjs";
@@ -22,6 +28,8 @@ const panels = host.panel;
 const panelTools = ["mobile_open_workspace", "mobile_open_simulator", "mobile_list_simulators", "mobile_list_android_devices", "mobile_stream_session", "mobile_open_performance_recording"];
 // Every host's agent controls apps with agent-device's commands.
 const expectedTools = [...panels ? panelTools : ["mobile_render_performance_recording", "mobile_logs_session"], "device_open", "device_snapshot"];
+// Packages that leave the panel's parts out pin their archive instead.
+const bundled = host.bundlesPanel;
 
 async function smokeServer(label, command, args, env, capabilities, check) {
   await withServer({
@@ -31,18 +39,71 @@ async function smokeServer(label, command, args, env, capabilities, check) {
     // Behavior follows client capabilities, not the host's name.
     assert.match(client.getInstructions(), panels ? /mobile_open_simulator/ : /the host's own simulator view/);
     const { tools } = await client.listTools();
-    for (const tool of expectedTools) assert.ok(tools.some(candidate => candidate.name === tool), tool);
+    // A panel that shows beside the chat names its page under its own key, and leaves out
+    // opening a recording, which would render the workspace in the chat.
+    const workspace = tools.find(tool => tool.name === "mobile_open_workspace");
+    const inline = workspace?._meta?.ui?.resourceUri !== undefined;
+    for (const tool of expectedTools) {
+      if (tool === "mobile_open_performance_recording" && inline === false) continue;
+      assert.ok(tools.some(candidate => candidate.name === tool), tool);
+    }
+    if (panels && inline === false) assert.equal(tools.some(tool => tool.name === "mobile_open_performance_recording"), false);
     // The panel's device form is listed for hosts that render forms; elsewhere the agent asks in chat.
     const forms = capabilities.extensions?.["openai/elicitation"] !== undefined || capabilities.elicitation !== undefined;
     assert.equal(tools.some(tool => tool.name === "mobile_choose_devices"), panels && forms);
     if (panels === false) for (const tool of panelTools) assert.equal(tools.some(candidate => candidate.name === tool), false, tool);
     const view = tools.find(tool => tool.name === (panels ? "mobile_open_workspace" : "mobile_render_performance_recording"));
-    const resource = await client.readResource({ uri: view._meta.ui.resourceUri });
+    const resource = await client.readResource({ uri: view._meta.ui?.resourceUri ?? view._meta[PANEL_PAGE_META].resourceUri });
     const html = resource.contents[0].text;
     assert.ok(html.includes(`name="mobile-dev-environment" content="${env.MOBILE_DEV_ENVIRONMENT}"`));
     assert.match(html, /name="mobile-dev-telemetry" content="off"/);
     await check(client, resource);
   });
+}
+
+/** The pin matches the archive packaging wrote, and a release pins its GitHub release. */
+async function assertPanelRuntimePin(directory, environment) {
+  const pin = JSON.parse(await readFile(join(directory, "dist/panel-runtime.json"), "utf8"));
+  const archive = resolve("release", panelRuntimeArchive(version));
+  const bytes = await readFile(archive);
+  assert.equal(pin.version, version);
+  assert.equal(pin.bytes, bytes.length);
+  assert.equal(pin.sha256, createHash("sha256").update(bytes).digest("hex"));
+  if (environment === "release") assert.match(pin.url, new RegExp(`^https://github\\.com/[\\w.-]+/[\\w.-]+/releases/download/v${version}/${panelRuntimeArchive(version)}$`));
+  return { pin, archive };
+}
+
+/** Opens the panel the way Claude Code does, with the parts downloaded from a local copy of the pinned archive. */
+async function smokePanelRuntime(plugin, launch) {
+  const { pin, archive } = await assertPanelRuntimePin(plugin, JSON.parse(await readFile(join(plugin, "dist/telemetry-environment.json"), "utf8")).environment);
+  // The published release may not exist yet, so the copy pins this archive by its file.
+  await writeFile(join(plugin, "dist/panel-runtime.json"), JSON.stringify({ ...pin, url: pathToFileURL(archive).href }));
+  const data = join(temporary, "plugin data");
+  await launch({ CLAUDE_PLUGIN_DATA: data }, async client => {
+    const started = await client.callTool({ name: "mobile_start_baguette", arguments: {} });
+    assert.notEqual(started.isError, true, JSON.stringify(started.content));
+    const installed = await readdir(join(data, "panel-runtime"));
+    assert.deepEqual(installed, [`${version}-${pin.sha256.slice(0, 12)}`]);
+    await smokeBrowserPanel(client);
+  });
+}
+
+async function smokeBrowserPanel(client) {
+  const result = await client.callTool({ name: "mobile_open_simulator", arguments: { platform: "ios" } });
+  const text = JSON.stringify(result.content);
+  const address = text.match(/http:\/\/127\.0\.0\.1:\d+\/[\w-]+\/\?[^"\s\\]+/)?.[0];
+  assert.ok(address, "The host receives a browser panel link to show beside the chat.");
+  const page = await fetch(address);
+  assert.equal(page.status, 200);
+  assert.match(await page.text(), /mobile-dev-browser-panel/);
+  const transport = new StreamableHTTPClientTransport(new URL("mcp", address));
+  const panel = new Client({ name: "browser-package-smoke", version: "1" });
+  try {
+    await panel.connect(transport);
+    const context = await client.callTool({ name: "mobile_read_panel_context", arguments: {} });
+    assert.match(context.content[0].text, /No Mobile Dev browser panel/);
+    await transport.terminateSession();
+  } finally { await panel.close(); }
 }
 
 async function smokeDesktopBundle() {
@@ -58,7 +119,7 @@ async function smokeDesktopBundle() {
   assert.equal(manifest.server.mcp_config.env, undefined);
   assert.equal(manifest.compatibility.runtimes.node, metadata.engines.node);
   await access(join(directory, manifest.server.entry_point));
-  await assertRuntimePayload(join(directory, "dist"), { panel: panels });
+  await assertRuntimePayload(join(directory, "dist"), { panel: panels, bundlesPanel: bundled });
   // No Codex installation, no PATH Node lookup, and no dependency on package cwd.
   const args = manifest.server.mcp_config.args.map(arg => arg.replaceAll("${__dirname}", directory));
   for (const [environment, forms] of [["development", false], ["release", false], ["development", true]]) {
@@ -104,5 +165,12 @@ try {
       assert.doesNotMatch(devices.content[0].text, /Agent Device could not/);
     });
     console.log(`${environment}: ${host.label} plugin manifest, payload, startup from the plugin root and device chooser passed.`);
+  }
+  if (panels && bundled === false) {
+    const launch = (extra, check) => smokeServer("panel-runtime", launcher ? server.command : process.execPath, args,
+      { MOBILE_DEV_ENVIRONMENT: "development", [host.root]: plugin, ...launcher ? { PATH } : {}, ...extra },
+      { extensions: { "io.modelcontextprotocol/ui": { mimeTypes: ["text/html;profile=mcp-app"] } } }, check);
+    await smokePanelRuntime(plugin, launch);
+    console.log(`${host.label} plugin downloaded, verified and started its pinned panel runtime, and opened the browser panel.`);
   }
 } finally { await remove(); }

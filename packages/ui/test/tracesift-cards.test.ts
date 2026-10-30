@@ -46,8 +46,6 @@ test("compact TraceSift cards preserve CPU and React evidence", async t => {
       export async function mount(app, result) {
         startUiTelemetry(app);
         const controller = new TraceSiftController(app); controller.hostChanged();
-        // Investigate waits on the project.
-        await controller.loadProject();
         controller.accept(result);
         const root = createRoot(document.getElementById("root")); flushSync(() => root.render(<TraceSiftCards controller={controller} />));
         return { controller, root, flushSync, async close() { controller.dispose(); root.unmount(); await stopUiTelemetry(); } };
@@ -74,7 +72,6 @@ test("compact TraceSift cards preserve CPU and React evidence", async t => {
         const text = JSON.stringify(taskHandoff);
         return { content: [{ type: "text", text }], structuredContent: { apiVersion: 1, kind: "task", encoding: "json", payloadBytes: text.length } };
       }
-      if (input.name === "mobile_get_tracesift_project") return { content: [], structuredContent: { path: "/private/project" } };
       return input.name === "mobile_open_tracesift_explore"
         ? { content: [], structuredContent: { opened: true } }
         : { content: [], structuredContent: { apiVersion: 1, handoff: "PRIVATE_HANDOFF_TEXT" } };
@@ -86,61 +83,66 @@ test("compact TraceSift cards preserve CPU and React evidence", async t => {
   const act = async (click: () => void) => { click(); await new Promise(resolve => window.setTimeout(resolve, 0)); };
   const mounted = await window.TraceSiftCardTest.mount(app, { content: [], structuredContent: { apiVersion: 1, analysisId: "cpu", profileType: "cpu", title: "CPU", summary: { totalMs: 180, callCountIsExact: true, taskCount: 870 }, cards: [baseTask, { ...baseTask, id: "task-1", taskIndex: 1 }] } });
   t.after(() => window.close());
-  // The card leads with the pathline, as the web card does; the headline skips the duration and offset the card already prints.
-  assert.match(window.document.body.textContent!, /App › Screen › render/);
-  assert.match(window.document.body.textContent!, /2 long tasks of 870 · 180 ms total/);
+  // The finding is named for its path's last frame; the line under it says where that frame sits.
+  const finding = () => window.document.querySelector(".tracesift-finding")!;
+  assert.match(finding().querySelector("h3")!.textContent!, /#1render/);
+  assert.match(window.document.querySelector(".tracesift-level")!.textContent!, /in App › Screen/);
+  assert.match(window.document.body.textContent!, /TraceSift · 2 long tasks of 870 · 180 ms total/);
+  // No folder is asked for: Investigate is ready as soon as the host can send.
+  assert.equal(calls.some(call => call.name.includes("project")), false);
 
-  // One band per boundary frame plus the two residuals that make the task add up, each with a legend row.
-  const contribution = window.document.querySelector(".contribution")!;
-  const bands = [...contribution.querySelectorAll(".contribution-band")];
-  assert.equal(bands.length, contribution.querySelectorAll(".contribution-legend-row").length);
+  // One band per boundary frame plus the residuals that make the task add up, each with a legend row.
+  const bands = [...finding().querySelectorAll(".contribution-band")];
+  assert.equal(bands.length, finding().querySelectorAll(".contribution-legend-row").length);
   assert.ok(bands.length >= 2, "the task's own frame and its residuals each take a band");
   assert.equal(bands[0].getAttribute("aria-label"), "render, 60 ms, 80%");
-  assert.match(window.document.querySelector(".contribution-detail")!.textContent!, /render/);
-  const detailLayers = [...contribution.querySelectorAll(".contribution-detail-layer")];
-  assert.equal(detailLayers.length, bands.length, "every slice reserves its detail height");
-  assert.equal(contribution.querySelectorAll(".contribution-detail-layer.is-active").length, 1);
-  assert.equal(detailLayers.filter(layer => layer.getAttribute("aria-hidden") === "true").length, bands.length - 1);
-  assert.match(window.document.body.textContent!, /what it called/);
-  assert.match(window.document.body.textContent!, /buildRows/);
+  // The heaviest part is summarised before any hover: figures, file and calls, and its action.
+  const summary = () => finding().querySelector(".contribution-summary")!.textContent!;
+  assert.match(summary(), /render60 ms · 80%Screen\.tsx:20 · 2 callsLook inside ›/);
+  // The legend keeps the longest list's room, so opening a part never moves what is below it.
+  assert.equal(finding().querySelector<HTMLElement>(".contribution-legend")!.style.getPropertyValue("--legend-rows"), String(bands.length));
 
-  // Hover only switches the visible pre-rendered layer; keeping all mounted lets the tallest hold the card's height so nothing shifts under the pointer.
+  // Hovering only rewrites the summary in place.
   const outside = bands.at(-1)!;
   flush(() => outside.dispatchEvent(new window.FocusEvent("focusin", { bubbles: true })));
-  assert.equal(contribution.querySelectorAll(".contribution-detail-layer").length, detailLayers.length);
-  const activeDetail = contribution.querySelector(".contribution-detail-layer.is-active")!;
-  assert.match(activeDetail.textContent!, /No frame of your own was on the stack/);
-  assert.equal(activeDetail.getAttribute("aria-hidden"), null);
-  assert.equal(detailLayers[0].getAttribute("aria-hidden"), "true");
+  assert.match(summary(), /Framework and engine only/);
+  assert.equal(finding().querySelectorAll(".contribution-summary").length, 1);
 
-  // Moving from the chart to its detail or legend keeps the last slice selected instead of flashing the default detail.
-  flush(() => contribution.querySelector(".contribution-bar")!.dispatchEvent(new window.MouseEvent("mouseout", {
-    bubbles: true,
-    relatedTarget: activeDetail,
-  })));
-  assert.match(contribution.querySelector(".contribution-detail-layer.is-active")!.textContent!, /No frame of your own was on the stack/);
-
-  // Opening a boundary frame redraws the chart by that frame's self time, with a way back.
+  // Opening a boundary frame redraws the chart by that frame's self time, with a Back button.
   flush(() => (bands[0] as HTMLElement).click());
-  assert.match(window.document.body.textContent!, /inside render/);
-  assert.match(window.document.body.textContent!, /formatRow/);
-  flush(() => window.document.querySelector<HTMLElement>(".contribution-crumb")!.click());
-  assert.equal(window.document.querySelector(".contribution-crumb"), null);
+  assert.match(window.document.querySelector(".tracesift-level")!.textContent!, /BackInside render · 60 ms/);
+  assert.match(finding().textContent!, /formatRow/);
+  // Fewer parts inside, but the legend keeps the task's room.
+  assert.equal(finding().querySelector<HTMLElement>(".contribution-legend")!.style.getPropertyValue("--legend-rows"), String(bands.length));
+  flush(() => window.document.querySelector<HTMLElement>(".tracesift-back")!.click());
+  assert.equal(window.document.querySelector(".tracesift-back"), null);
+  assert.match(window.document.querySelector(".tracesift-level")!.textContent!, /in App › Screen/);
 
-  // The switch swaps the drawing for every card at once.
-  const treemap = [...window.document.querySelectorAll<HTMLElement>(".chart-switch button")].find(button => button.textContent === "treemap")!;
+  // One switch swaps the drawing, and it stays for every finding.
+  const treemap = [...window.document.querySelectorAll<HTMLElement>(".segmented-control button")].find(button => button.textContent === "Treemap")!;
   flush(() => treemap.click());
   assert.equal(window.document.querySelectorAll(".contribution-band").length, 0);
   assert.ok(window.document.querySelectorAll(".contribution-tile").length > 0);
 
-  // Explore loads the full tree and replaces the card list with TraceSift's explorer.
-  const exploreButton = [...window.document.querySelectorAll<HTMLElement>("button")].find(button => button.textContent?.includes("Explore"))!;
+  // The list beside it moves between findings, one at a time.
+  const rows = () => [...window.document.querySelectorAll<HTMLElement>(".tracesift-list-row")];
+  assert.equal(rows().length, 2);
+  assert.equal(rows()[0].getAttribute("aria-current"), "true");
+  flush(() => rows()[1].click());
+  assert.equal(rows()[1].getAttribute("aria-current"), "true");
+  assert.match(finding().querySelector("h3")!.textContent!, /#2render/);
+  assert.ok(window.document.querySelectorAll(".contribution-tile").length > 0, "the drawing stays the one the reader chose");
+  assert.match(window.document.body.textContent!, /Investigate task 2/);
+  flush(() => rows()[0].click());
+
+  // Explore loads the full tree and replaces the card with TraceSift's explorer.
+  const exploreButton = [...window.document.querySelectorAll<HTMLElement>(".recording-actions button")].find(button => button.textContent?.includes("Explore"))!;
   await act(() => exploreButton.click());
   // The bundle adds telemetry `_meta` to every call; only name and arguments are ours to assert.
   assert.equal(calls.at(-1)!.name, "mobile_tracesift_explore_payload");
   // Built in the JSDOM realm, so spread it; a strict compare fails on prototypes.
   assert.deepEqual({ ...calls.at(-1)!.arguments as object }, { analysisId: "cpu", taskIndex: 0 });
-  assert.equal(window.document.querySelector(".hotspot-list"), null);
+  assert.equal(window.document.querySelector(".tracesift-finding"), null);
   assert.match(window.document.querySelector(".tracesift-explorer")!.textContent!, /Render blocked the main thread/);
   // The web app's page wrapper insets the view and scopes its theme tokens; mounting the views bare or renaming the class draws an unpadded grey Explore.
   assert.ok(window.document.querySelector(".tracesift-explorer > .explore-page"), "the explorer renders the Explore page");
@@ -200,22 +202,24 @@ test("compact TraceSift cards preserve CPU and React evidence", async t => {
 
   // Leaving the explorer drops the half-built selection.
   await act(() => [...window.document.querySelectorAll<HTMLElement>("button")].find(button => button.textContent === "Findings")!.click());
-  assert.ok(window.document.querySelector(".hotspot-list"));
+  assert.ok(window.document.querySelector(".tracesift-finding"));
   assert.equal(mounted.controller.getSnapshot().explorer, undefined);
 
   mounted.controller.accept({ content: [], structuredContent: { apiVersion: 1, analysisId: "react", profileType: "react", title: "React", summary: { rootCount: 1, commitCount: 3, totalCommitRenderDurationMs: 50, peakCommitDurationMs: 40, commitsOverBudget: 1, omittedEvidenceCommitCount: 0 }, cards: [baseReact] } });
   await new Promise(resolve => window.setTimeout(resolve, 0));
-  flush(() => [...window.document.querySelectorAll<HTMLElement>(".chart-switch button")].find(button => button.textContent === "bar")!.click());
-  // React commits use the web card's headline; the commit divides into component self time plus the reconciler residual.
-  assert.match(window.document.body.textContent!, /List spent 30 ms rendering/);
-  assert.match(window.document.querySelector(".contribution-lede")!.textContent!, /How the 40 ms divides between the components that rendered/);
+  flush(() => [...window.document.querySelectorAll<HTMLElement>(".segmented-control button")].find(button => button.textContent === "Bar")!.click());
+  // A React commit is named for its component, flagged by speed, and divided into component self time plus the reconciler's work.
+  assert.match(finding().querySelector("h3")!.textContent!, /#1List/);
+  assert.equal(finding().querySelector(".tracesift-severity")!.textContent, "Slow");
+  assert.match(window.document.body.textContent!, /TraceSift · 1 slowest of 3 commits · 50 ms rendering/);
   assert.equal(window.document.querySelectorAll(".contribution-band").length, 2);
-  assert.match(window.document.querySelector(".contribution-detail")!.textContent!, /List75% of commit30 msviaAppfilesrc\/List.tsxprops changed · props items/);
+  assert.match(summary(), /List30 ms · 75%List\.tsx · props changed: itemsExplore ›/);
   assert.match(window.document.body.textContent!, /React itself, no component/);
-  assert.equal([...window.document.querySelectorAll("button")].some(button => button.textContent?.includes("Explore")), true);
+  assert.ok(window.document.querySelector(".tracesift-severity-dot[data-severity=\"high\"]"));
+  assert.match(window.document.body.textContent!, /Investigate commit 1/);
   await mounted.controller.investigate("react-1");
   await mounted.close();
   const encoded = telemetry.join("\n");
-  for (const fragment of ["ui.tracesift.process.mean", "ui.tracesift.handoff.mean", "ui.tracesift.message_ack.mean", "ui.tracesift.investigate", "ui.tracesift.cards", "ui.tracesift.payload.mean", "ui.tracesift.explore", "ui.tracesift.pick_on", "ui.tracesift.frame_add", "ui.tracesift.frame_remove", "ui.tracesift.selected_frames", '"tracesift_view":{"value":"explorer"', '"surface":{"value":"tracesift"', '"view":{"value":"tracesift"']) assert.ok(encoded.includes(fragment), `Missing telemetry: ${fragment}`);
+  for (const fragment of ["ui.tracesift.finding_selected", "ui.tracesift.process.mean", "ui.tracesift.handoff.mean", "ui.tracesift.message_ack.mean", "ui.tracesift.investigate", "ui.tracesift.cards", "ui.tracesift.payload.mean", "ui.tracesift.explore", "ui.tracesift.pick_on", "ui.tracesift.frame_add", "ui.tracesift.frame_remove", "ui.tracesift.selected_frames", '"tracesift_view":{"value":"explorer"', '"surface":{"value":"tracesift"', '"view":{"value":"tracesift"']) assert.ok(encoded.includes(fragment), `Missing telemetry: ${fragment}`);
   for (const fragment of ["src/Screen.tsx", "List used 30 ms", "private-analysis", "react-1", "PRIVATE_HANDOFF_TEXT"]) assert.equal(encoded.includes(fragment), false, `Private TraceSift data reached telemetry: ${fragment}`);
 });

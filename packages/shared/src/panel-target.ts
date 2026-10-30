@@ -18,3 +18,9 @@ export function panelTargetPlatform(target: PanelTarget): "ios" | "android" | un
   if (target.kind === "simulator") return "ios";
   if (target.kind === "emulator") return "android";
 }
+
+/**
+ * Where the opening tools of a panel that does not render inline name their page, a
+ * `{ resourceUri }` that MCP Apps hosts ignore and the browser panel reads.
+ */
+export const PANEL_PAGE_META = "mobile-dev/panel";

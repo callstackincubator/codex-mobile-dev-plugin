@@ -21,7 +21,7 @@ const build = join(root, ".host-tests");
 const HOST_ORIGIN = "https://host.test";
 
 /** The real server a target ships, started over stdio in a throwaway home directory. */
-async function startServer(target: Target) {
+export async function startServer(target: Target) {
   const home = await mkdtemp(join(tmpdir(), "mobile-dev-host-test-"));
   const transport = new StdioClientTransport({
     command: process.execPath, args: [join(build, target, "server.mjs")], cwd: join(build, target), stderr: "pipe",
@@ -59,7 +59,8 @@ export const test = base.extend<Fixtures>({
 
   server: async ({ target }, use) => {
     const server = await startServer(target);
-    const client = new Client({ name: HOSTS[target as keyof typeof HOSTS].clientName, version: "1" });
+    const host = HOSTS[target as keyof typeof HOSTS];
+    const client = new Client({ name: host.clientName, version: "1" }, { capabilities: host.clientCapabilities });
     try {
       await client.connect(server.transport);
       const { tools } = await client.listTools();

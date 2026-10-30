@@ -1,11 +1,12 @@
 import { canMessage, ChatDeliveryError, sendChat } from "./chat-message.ts";
-import { cardsCallTools } from "./host-bridge.ts";
-import type { HostBridge } from "./host-bridge.ts";
+import { attachReference, cardsCallTools } from "./host-bridge.ts";
+import type { HostAttachmentsSource, HostBridge } from "./host-bridge.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { traceSiftAnalysisSchema, traceSiftHandoffSchema, traceSiftRestoreSchema, type TraceSiftAnalysis, type TraceSiftProfileType, type TraceSiftReactCard, type TraceSiftTaskCard } from "@mobile-dev/shared/tracesift.ts";
 import { decodeTraceSiftExplorePayload, TRACE_SIFT_PAYLOAD_MAX_BYTES, traceSiftExploreEnvelopeSchema, TRACE_SIFT_PAYLOAD_TOO_LARGE, traceSiftPayloadRefused, type TraceSiftExploreKind } from "@mobile-dev/shared/tracesift-explore.ts";
 import type { ReactExploreHandoff, TaskHandoff } from "@callstack/tracesift-explore";
 import { buildSelectionPrompt, frameSelectionEvidence, type SelectionCard } from "./tracesift/selection.ts";
+import { findingName } from "./tracesift/labels.ts";
 import { buildReactSelectionPrompt, reactSelectionEvidence, type ReactSelectionRecording } from "./tracesift/react-selection.ts";
 import type { ContributionChartKind } from "./tracesift/contribution.ts";
 import { captureUiError, countUiEvent, markUiSurfaceReady, recordUiTiming, setUiGauge, setUiSurface, setUiTelemetryContext } from "./telemetry.ts";
@@ -37,13 +38,11 @@ type State = {
   error: string;
   /** Said when a finding was handed to the browser window instead of this panel. */
   notice: string;
-  /** Source folder for investigations; Investigate waits for it. */
-  project?: string;
-  /** True while the saved folder is being read or its dialog is open. */
-  projectBusy: boolean;
   /** File name the upload pane is waiting on. Absent in the inline card. */
   analyzing?: { name: string; profileType: TraceSiftProfileType };
   chartKind: ContributionChartKind;
+  /** The finding shown; kept here so returning from Explore lands on the explored finding. */
+  selectedCard?: string;
   /** The card whose hand-off is being fetched, and the one just copied. */
   handoffCard?: string;
   copiedCard?: string;
@@ -68,6 +67,7 @@ export class TraceSiftController extends Store<State> {
   /** When the current explorer's payload arrived, so its own readiness can be timed. */
   private explorerReadyAt = 0;
   private readonly app: HostBridge;
+  private readonly attachments: HostAttachmentsSource;
   private viewId?: string | number;
   private inputKey?: string;
   private copiedTimer?: ReturnType<typeof setTimeout>;
@@ -75,9 +75,11 @@ export class TraceSiftController extends Store<State> {
   private rememberChain: Promise<void> = Promise.resolve();
   /** Bumped by every restore attempt; a response only applies while it still matches the latest one requested. */
   private restoreToken = 0;
-  constructor(app: HostBridge) {
-    super({ canInvestigate: false, canCallTools: false, dark: false, error: "", notice: "", chartKind: "bar", projectBusy: false });
+  /** `attachments` reads the host's composer pills, where it has them. */
+  constructor(app: HostBridge, { attachments = () => undefined }: { attachments?: HostAttachmentsSource } = {}) {
+    super({ canInvestigate: false, canCallTools: false, dark: false, error: "", notice: "", chartKind: "bar" });
     this.app = app;
+    this.attachments = attachments;
   }
 
   /** The authoritative hand-off for one card. Investigate sends it; Copy copies it. */
@@ -114,7 +116,7 @@ export class TraceSiftController extends Store<State> {
     setUiSurface("tracesift");
     setUiGauge("ui.tracesift.cards", analysis.cards.length);
     recordUiTiming("ui.tracesift.process", performance.now() - startedAt);
-    this.update({ analysis, error: "", busyCard: undefined, copiedCard: undefined, handoffCard: undefined, openingExploreCard: undefined, explorer: undefined });
+    this.update({ analysis, error: "", busyCard: undefined, copiedCard: undefined, handoffCard: undefined, openingExploreCard: undefined, explorer: undefined, selectedCard: undefined });
     // Setting the context flushes the previous context's measurements.
     setUiTelemetryContext({ tracesift_view: "cards", tracesift_profile: analysis.profileType });
     // A new analysis drops the picks; `tracesift_view` does not change here, so nothing else would reset the gauge.
@@ -179,16 +181,22 @@ export class TraceSiftController extends Store<State> {
       if (!this.state.analysis) this.update({ error: error instanceof Error ? error.message : "TraceSift could not restore this analysis." });
     }
   }
-  /** A profile names frames, not files; the picked folder tells the agent where to look. */
-  private inProject(handoff: string, project: string) {
-    return `Investigate this in the project at ${project}.\n\n${handoff}`;
-  }
-
-  /** Sends one hand-off to the active chat. Never retry a timeout: the message may have landed. */
-  private async sendHandoff(text: string, event: string) {
+  /** Sends one hand-off to the active chat, as a pill where the host has them. Never retry a timeout: the message may have landed. */
+  private async sendHandoff(text: string, event: string, cardId: string, pill: { title: string; message: string }) {
     try {
+      const modelContext = this.attachments();
+      if (modelContext) {
+        const contextStartedAt = performance.now();
+        try {
+          await attachReference(modelContext, {
+            marker: "mobile-dev/tracesiftHandoff", title: pill.title, text,
+            structuredContent: { selectedTraceSiftFinding: { analysisId: this.state.analysis?.analysisId, cardId } },
+          });
+        } finally { recordUiTiming("ui.tracesift.context_attach", performance.now() - contextStartedAt); }
+      }
+      if (this.disposed) return;
       const sendStartedAt = performance.now();
-      await sendChat(this.app, text);
+      await sendChat(this.app, modelContext ? pill.message : text);
       recordUiTiming("ui.tracesift.message_ack", performance.now() - sendStartedAt);
       countUiEvent(event);
     } catch (error) {
@@ -205,9 +213,14 @@ export class TraceSiftController extends Store<State> {
     }
   }
 
+  /** How the card names a finding, so its pill reads like the list beside it. */
+  private findingLabel(analysis: TraceSiftAnalysis, cardId: string) {
+    const index = analysis.cards.findIndex(card => card.id === cardId);
+    return { noun: analysis.profileType === "cpu" ? "task" : "commit", rank: index + 1, name: findingName(analysis.cards[index]) };
+  }
   investigate = async (cardId: string) => {
-    const { analysis, canInvestigate, busyCard, project } = this.state;
-    if (!analysis || !canInvestigate || !project || busyCard || this.disposed || !analysis.cards.some(card => card.id === cardId)) return;
+    const { analysis, canInvestigate, busyCard } = this.state;
+    if (!analysis || !canInvestigate || busyCard || this.disposed || !analysis.cards.some(card => card.id === cardId)) return;
     this.update({ busyCard: cardId, error: "" });
     try {
       let handoff: string;
@@ -216,12 +229,24 @@ export class TraceSiftController extends Store<State> {
         countUiEvent("ui.tracesift.handoff_failed");
         throw error;
       }
-      await this.sendHandoff(this.inProject(handoff, project), "ui.tracesift.investigate");
+      // The chat already works in the reader's project, so the hand-off goes as is.
+      const { noun, rank, name } = this.findingLabel(analysis, cardId);
+      await this.sendHandoff(handoff, "ui.tracesift.investigate", cardId, {
+        title: `TraceSift · ${noun} ${rank}: ${name}`, message: `Investigate this TraceSift ${noun}.`,
+      });
     } catch (error) {
       this.update({ error: error instanceof Error ? error.message : "Could not start this investigation." });
     } finally { this.update({ busyCard: undefined }); }
   };
   setChartKind = (chartKind: ContributionChartKind) => { this.update({ chartKind }); };
+  /** Show another finding. Counted, because the card shows one at a time and the rest wait in a list. */
+  selectCard = (cardId: string) => {
+    const { analysis, selectedCard } = this.state;
+    const first = analysis?.cards[0]?.id;
+    if (!analysis?.cards.some(card => card.id === cardId) || (selectedCard ?? first) === cardId) return;
+    this.update({ selectedCard: cardId });
+    countUiEvent("ui.tracesift.finding_selected");
+  };
 
   /** The card's hand-off on the clipboard — the same text Investigate sends. */
   copyHandoff = async (cardId: string) => {
@@ -229,8 +254,7 @@ export class TraceSiftController extends Store<State> {
     this.update({ handoffCard: cardId, copiedCard: undefined, error: "" });
     try {
       const handoff = await this.handoff(cardId);
-      const { project } = this.state;
-      await navigator.clipboard.writeText(project ? this.inProject(handoff, project) : handoff);
+      await navigator.clipboard.writeText(handoff);
       countUiEvent("ui.tracesift.copy_handoff");
       this.update({ copiedCard: cardId });
       this.copiedTimer = setTimeout(() => this.update({ copiedCard: undefined }), 2000);
@@ -280,6 +304,7 @@ export class TraceSiftController extends Store<State> {
       void this.requestDisplayMode("fullscreen");
       this.update({
         openingExploreCard: undefined,
+        selectedCard: cardId,
         explorer: {
           ...loaded, cardId,
           ...(focus ? { focus } : {}),
@@ -405,8 +430,8 @@ export class TraceSiftController extends Store<State> {
 
   /** Asks the chat about the picks. Needs no service call: the picks and tree are already here. */
   investigateSelected = async () => {
-    const { analysis, canInvestigate, busyCard, explorer, project } = this.state;
-    if (!analysis || !canInvestigate || !project || busyCard || this.disposed) return;
+    const { analysis, canInvestigate, busyCard, explorer } = this.state;
+    if (!analysis || !canInvestigate || busyCard || this.disposed) return;
     const card = analysis.cards.find(entry => entry.id === explorer?.cardId);
     if (!card || !explorer) return;
 
@@ -428,7 +453,10 @@ export class TraceSiftController extends Store<State> {
         return;
       }
       sending = true;
-      await this.sendHandoff(this.inProject(built.text, project), "ui.tracesift.pick_investigate");
+      const { noun, rank, name } = this.findingLabel(analysis, card.id);
+      await this.sendHandoff(built.text, "ui.tracesift.pick_investigate", card.id, {
+        title: `TraceSift · ${noun} ${rank}: ${name}, selected parts`, message: `Investigate the selected parts of this TraceSift ${noun}.`,
+      });
     } catch (error) {
       if (!sending) {
         countUiEvent("ui.tracesift.pick_investigate_failed");
@@ -513,47 +541,6 @@ export class TraceSiftController extends Store<State> {
       captureUiError(error, "tracesift.analyze");
       if (!this.disposed) this.update({ error: error instanceof Error ? error.message : "TraceSift could not analyze this profile." });
     } finally { this.update({ analyzing: undefined }); }
-  };
-
-  /**
-   * The folder saved by a previous panel, if still there. Called once the host connects,
-   * not from `hostChanged`, which re-enters on every theme and context change.
-   */
-  loadProject = async () => {
-    if (!cardsCallTools(this.app)) return;
-    this.update({ projectBusy: true });
-    try {
-      const result = await this.app.callServerTool({ name: "mobile_get_tracesift_project", arguments: {} });
-      if (this.disposed || result.isError) return;
-      const path = result.structuredContent?.path;
-      if (typeof path === "string" && path !== "") this.update({ project: path });
-      countUiEvent(typeof path === "string" && path !== "" ? "ui.tracesift.project_hit" : "ui.tracesift.project_miss");
-    } catch (error) {
-      countUiEvent("ui.tracesift.project_failed");
-      captureUiError(new Error("The saved TraceSift project could not be read."), "tracesift.project");
-    } finally { this.update({ projectBusy: false }); }
-  };
-
-  /** Chooses the folder through the host's dialog; cancel keeps the current one. */
-  pickProject = async () => {
-    if (this.disposed || this.state.projectBusy) return;
-    this.update({ projectBusy: true, error: "" });
-    const startedAt = performance.now();
-    try {
-      const result = await callTool(this.app, { name: "mobile_pick_tracesift_project", arguments: {} }, {
-        fallback: "This host could not open a folder dialog.", answered: () => { if (!this.disposed) recordUiTiming("ui.tracesift.project_pick", performance.now() - startedAt); },
-      });
-      if (this.disposed) return;
-      const picked = result.structuredContent;
-      if (picked?.picked !== true || typeof picked.path !== "string") { countUiEvent("ui.tracesift.project_cancelled"); return; }
-      countUiEvent("ui.tracesift.project_chosen");
-      this.update({ project: picked.path });
-    } catch (error) {
-      if (this.disposed && error instanceof ToolCallError) return;
-      countUiEvent("ui.tracesift.project_failed");
-      captureUiError(error, "tracesift.project");
-      if (!this.disposed) this.update({ error: error instanceof Error ? error.message : "That project folder could not be chosen." });
-    } finally { this.update({ projectBusy: false }); }
   };
 
   /**

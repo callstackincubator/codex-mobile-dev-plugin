@@ -32,3 +32,19 @@ export interface HostAttachments {
 
 /** Reads the host's attachments when needed; hosts advertise them only after connecting. */
 export type HostAttachmentsSource = () => HostAttachments | undefined;
+
+/** Puts a card's question in the composer as a removable pill. A newer pill with the same `marker` replaces the last; other pills and structured context stay. */
+export async function attachReference(attachments: HostAttachments, { marker, title, text, structuredContent }: {
+  marker: string;
+  title: string;
+  text: string;
+  structuredContent: Record<string, unknown>;
+}) {
+  const current = attachments.getCurrent();
+  await attachments.update({
+    content: [...(current?.content ?? []).filter(item => item._meta?.[marker] !== true), {
+      type: "text", text, _meta: { "openai/title": title.replace(/\s+/g, " ").trim(), [marker]: true },
+    }],
+    structuredContent: { ...current?.structuredContent, ...structuredContent },
+  }, { timeout: 5000 });
+}

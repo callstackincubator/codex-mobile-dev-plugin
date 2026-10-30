@@ -5,9 +5,10 @@
 The `Release plugin` workflow in `.github/workflows/release.yml` runs when you push
 an existing commit with a `v<version>` tag. The tag must match the root `package.json`,
 both root versions in `package-lock.json`, and `packages/shared/src/version.ts`; host
-manifests take the version at package time. Versions are `major.minor.patch` without
-prerelease labels (`packages/shared/src/release-version.ts`), the only versions installed
-Codex updaters compare. After committing your changes, run from the repository root:
+manifests take the version at package time. Release versions are `major.minor.patch`
+(`packages/shared/src/release-version.ts`), the only versions installed Codex updaters
+compare; a prerelease label marks a test deployment (below), which never reaches them.
+After committing your changes, run from the repository root:
 
 ```sh
 npm run public-release
@@ -19,6 +20,19 @@ creates `v<version>` at the current commit, and pushes that tag to `origin`. It
 uses the current plugin version (for example, `v0.1.100`) without bumping it.
 Existing tags are preserved. If the push fails after tag creation, the command
 prints the exact Git command to retry the push.
+
+### Test deployments
+
+A prerelease version, such as `0.1.172-test.1`, runs the same workflow as a test
+deployment. Set that version in the same three places on a branch, commit it as
+`chore(release): prepare 0.1.172-test.1`, and push the commit and its
+`v0.1.172-test.1` tag. The workflow builds, tests and packages it like a release and
+publishes a GitHub prerelease with every package, including Claude's panel runtime
+archive, which the Claude plugin of that build downloads. A prerelease is never
+marked Latest, later release notes skip it, and it stays off `release/latest` and
+`release/claude`, so Codex and Claude users do not receive it. Install its Claude
+plugin from the prerelease's `claude-plugin` ZIP to test the full download. Delete
+the prerelease and its tag when you are done.
 
 You can also run the workflow from GitHub Actions with an existing version tag.
 The workflow checks out that tag, uses the Apple Silicon `xcode-27` runner and
@@ -120,23 +134,26 @@ plugin directory, point the submission at the plugin folder on that branch.
 
 ## Store updates and the GitHub migration
 
-Release builds read the published store version through the app-server
-`plugin/read` RPC, matching Mobile Dev's exact remote store ID. The experimental
-API is enabled explicitly; it preserves the catalog `version` separately from
-`localVersion`. The CLI listing prefers the installed version and cannot serve as
-the update source once a store plugin is installed. The CLI listing is used only
-to identify the legacy Git marketplace for cleanup. GitHub tags and releases do
-not advertise store updates. Successful checks
-are cached for one hour across chats in the active Codex profile; unavailable
-checks retry after fifteen minutes. Old GitHub update caches are discarded.
-Development builds do not check or migrate public installations. The Claude and
-Cursor packages run the shared server, which has no updater.
+Release builds read Mobile Dev's public store endpoint at
+`https://chatgpt.com/backend-api/ps/plugins/plugins_6ac4c117f76881918d3676e851fa4005`.
+The response must match the exact plugin ID and name, have status `ENABLED`, and
+contain a semantic `release.version`. Requests omit credentials and cookies; they
+do not use Codex CLI authentication or start a temporary app-server. API-key CLI
+profiles can check the published version without changing their login.
 
-The app-server plugin API is under development. This integration deliberately
-accepts its compatibility risk. If discovery fails or its response no longer
-matches, the check stays unavailable and retries; it never uses a GitHub version
-as an alternative. The temporary app-server process closes after each lookup,
-and disposal aborts pending requests.
+The published version is separate from the locally installed version. Git
+marketplace discovery is scoped to `mobile-dev`; store installation metadata
+comes from the CLI's installed-only listing and its package manifest. The full
+available catalog is never included in CLI output. GitHub tags and releases do
+not advertise store updates. Successful checks are cached for one hour across
+chats in the active Codex profile; unavailable checks retry after fifteen minutes.
+Old GitHub update caches are discarded. Development builds do not check or migrate
+public installations. The Claude and Cursor packages run the shared server, which
+has no updater.
+
+The public catalog endpoint is internal and may change. If discovery fails or its
+response no longer matches, the check stays unavailable and retries. Requests have
+a twenty-second deadline, reject redirects, and abort when the updater closes.
 
 The update banner opens the store listing through the host's link API. Store
 updates are installed there. The old Git marketplace upgrade tool is removed.
@@ -144,7 +161,7 @@ updates are installed there. The old Git marketplace upgrade tool is removed.
 For GitHub installations, migration requires a published store version of at
 least **0.1.167**, and at least the running plugin version. The user installs and
 enables the store version, then clicks **Finish migration**. An app-only MCP tool
-checks the exact remote identity, enabled installation, installed `localVersion`,
+checks the exact remote identity, enabled installation, locally installed version,
 and package manifest before removing `mobile-dev@mobile-dev` and the verified
 official Git marketplace. It verifies
 the store installation again afterward. Local development marketplaces and user

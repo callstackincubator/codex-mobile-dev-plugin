@@ -11,6 +11,9 @@ import { join, relative } from "node:path";
  *     `<sentryRoot>/ui/<page>` and `<sentryRoot>/server/<host>`.
  *   - `panel`: false for hosts whose server has no Mobile Dev panel; their packages
  *     leave out the panel's parts of the runtime.
+ *   - `panelRuntime`: "download" for hosts whose packages leave out the panel's parts
+ *     while their server keeps the panel. Packaging writes those parts as a release
+ *     archive and pins it in dist/panel-runtime.json, which the server downloads.
  * Hosts that load a plugin folder through their own manifest (the plugin hosts) also have:
  *   - `manifest`: its manifest folder in the app.
  *   - `root`: the plugin-root variable its manifest starts the server from.
@@ -55,7 +58,13 @@ export const sharedSkills = ["packages/skills/mobile-dev", "packages/skills/mobi
 export function appHost(name) {
   const host = hosts[name];
   if (host === undefined) throw new Error(`Pass a host: ${Object.keys(hosts).join(", ")}.`);
-  return { ...host, name, panel: host.panel !== false, build: host.build && `${host.app}/${host.build}` };
+  const panel = host.panel !== false;
+  return {
+    ...host, name, panel,
+    // Whether the host's runtime itself ships the panel's parts.
+    bundlesPanel: panel && host.panelRuntime !== "download",
+    build: host.build && `${host.app}/${host.build}`,
+  };
 }
 
 /** A plugin host with its paths resolved from the repository root. */

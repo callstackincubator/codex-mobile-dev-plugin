@@ -2,19 +2,22 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { scrubErrorEvent, scrubMetric } from "@mobile-dev/shared/telemetry.ts";
 import { setAndroidStartupDiagnostic } from "@mobile-dev/shared/android-startup-diagnostics.ts";
-import { captureServerError, recordAndroidBackendStartup, recordAndroidBackendStop, recordAndroidStartupContext, recordAndroidStartupDeviceState, recordAndroidStartupStages } from "../src/telemetry.ts";
+import { captureServerError, recordAndroidBackendStartup, recordAndroidBackendStop, recordAndroidBootWait, recordAndroidStartupContext, recordAndroidStartupDeviceState, recordAndroidStartupStages } from "../src/telemetry.ts";
 import { assertFragment, captureSentry } from "@mobile-dev/test-support/sentry.ts";
 
 test("Android backend startup metrics retain product attribution and honor opt-out", async t => {
   const sentry = captureSentry(t, { beforeSendMetric: scrubMetric });
   recordAndroidBackendStartup(150, "ready");
   recordAndroidBackendStartup(300, "failed");
+  recordAndroidBootWait(4200, "booted");
+  recordAndroidBootWait(120000, "timeout");
   const sent = await sentry.text();
-  for (const fragment of ["android.backend.startup.samples", "android.backend.startup.duration", "millisecond", '"surface":{"value":"simulator"', '"device_platform":{"value":"android"', '"outcome":{"value":"ready"', '"outcome":{"value":"failed"']) {
+  for (const fragment of ["android.backend.startup.samples", "android.backend.startup.duration", "android.backend.boot_wait.samples", "android.backend.boot_wait.duration", "millisecond", '"surface":{"value":"simulator"', '"device_platform":{"value":"android"', '"outcome":{"value":"ready"', '"outcome":{"value":"failed"', '"outcome":{"value":"booted"', '"outcome":{"value":"timeout"']) {
     assertFragment(sent, fragment);
   }
   sentry.setTelemetry("off");
   recordAndroidBackendStartup(999, "failed");
+  recordAndroidBootWait(999, "timeout");
   const afterOptOut = await sentry.text();
   assert.equal(afterOptOut, sent);
 });
