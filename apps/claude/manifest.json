@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "mobile-dev",
   "display_name": "Mobile Dev",
-  "description": "Live iOS simulators, Android emulators, and connected devices beside your chat. Tap, type, and annotate the screen for your agent, control apps and device settings, read native and Metro logs together, inspect app storage, and record CPU, memory, and FPS into interactive charts in chat. Analyze CPU and React profiles with TraceSift. Requires an Apple Silicon Mac.",
+  "description": "Everything you need for mobile development with your agent. Live devices (simulators, emulators, and physical devices) beside your chat, app and device control, screen annotations, native and Metro logs, app storage inspection, and dedicated tools to profile your app's performance (CPU, memory, FPS, CPU and React profiles with TraceSift). Requires an Apple Silicon Mac.",
   "author": {
     "name": "Callstack"
   },
