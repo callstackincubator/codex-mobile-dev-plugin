@@ -12,7 +12,7 @@
     "name": "mobile-dev-local",
     "manifest": ".claude-plugin/marketplace.json"
   },
-  "panel": false,
+  "panelRuntime": "download",
   "build": "tooling/build.mjs",
   "skills": ["skills/mobile-dev", "../../packages/skills/agent-device"],
   "folders": ["scripts", "hooks"],

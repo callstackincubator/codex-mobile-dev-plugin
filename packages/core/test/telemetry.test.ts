@@ -11,7 +11,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { z } from "zod";
 import { MeasurementWindow, sampleTrace, scrubErrorEvent, scrubMetric, scrubSpan, sampleMetric, createErrorEventFilter, METRIC_SAMPLE_RATE, TELEMETRY_META_KEY } from "../../shared/src/telemetry.ts";
-import { captureServerError, installTracePropagation, instrumentMcpServer, IOSLogProcessingTelemetry, recordAndroidBackendStartup, recordAndroidBootWait, recordIosMirrorSharing } from "../src/telemetry.ts";
+import { captureServerError, installTracePropagation, instrumentMcpServer, IOSLogProcessingTelemetry, recordAndroidBackendStartup, recordAndroidBootWait, recordIosMirrorSharing, recordBrowserPanelContext, recordBrowserPanelSessions, recordPanelRuntime } from "../src/telemetry.ts";
 import { recordPluginUpdate } from "../../../apps/codex-plugin/server/plugin-updates.ts";
 import { deferEpisodeReport, ExpectedOperationError, FailureEpisodes } from "../../shared/src/error-reporting.ts";
 import { parseResourceInput } from "../src/resource-input.ts";
@@ -1243,4 +1243,42 @@ test("device settings report the failed backend request without its reply and co
   contains(encoded, "PRIVATE", false);
   contains(encoded, udid, false);
   contains(encoded, "emulator-5554", false);
+});
+
+test("browser session counts describe plugin resources and honor telemetry opt-out", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, beforeSendMetric: scrubMetric,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  const previous = process.env.MOBILE_DEV_TELEMETRY;
+  delete process.env.MOBILE_DEV_TELEMETRY;
+  t.after(async () => {
+    if (previous === undefined) delete process.env.MOBILE_DEV_TELEMETRY;
+    else process.env.MOBILE_DEV_TELEMETRY = previous;
+    await Sentry.close();
+  });
+  recordBrowserPanelSessions(2);
+  recordBrowserPanelSessions(0);
+  recordBrowserPanelContext("stored", 2048);
+  recordBrowserPanelContext("too_large");
+  recordPanelRuntime("downloaded", 1200, 7_000_000);
+  recordPanelRuntime("failed", 30, undefined, "network");
+  await Sentry.flush();
+  const sent = JSON.stringify(envelopes);
+  contains(sent, "browser_panel.sessions");
+  contains(sent, "browser_panel.context_update");
+  contains(sent, "browser_panel.context_bytes");
+  contains(sent, '"outcome":{"value":"too_large"');
+  contains(sent, "panel_runtime.ready");
+  contains(sent, "panel_runtime.download_bytes");
+  contains(sent, '"reason":{"value":"network"');
+  contains(sent, '"component":{"value":"server"');
+  for (const fragment of ["sessionId", "user.id", "telemetry_session", "localhost", "127.0.0.1", "github.com", "panel-runtime-darwin"]) contains(sent, fragment, false);
+  process.env.MOBILE_DEV_TELEMETRY = "off";
+  recordBrowserPanelSessions(3);
+  recordBrowserPanelContext("stored", 10);
+  recordPanelRuntime("cached", 5);
+  await Sentry.flush();
+  assert.equal(JSON.stringify(envelopes), sent);
 });

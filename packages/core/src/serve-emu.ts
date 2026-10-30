@@ -4,7 +4,6 @@ import { promisify } from "node:util";
 import { access } from "node:fs/promises";
 import { constants } from "node:fs";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { createServer } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
@@ -19,6 +18,7 @@ import { recordAndroidEmulatorReconnect, recordAndroidBootWait, recordAndroidBac
 import { androidStartupMessageSchema, androidDeviceState, setAndroidStartupDiagnostic } from "@mobile-dev/shared/android-startup-diagnostics.ts";
 import type { AndroidStartupContext, AndroidStartupFailure, AndroidStartupSummary } from "@mobile-dev/shared/android-startup-diagnostics.ts";
 import { androidSdkRoots } from "./android-sdk.ts";
+import { panelRuntimePath } from "./panel-runtime.ts";
 
 const execute = promisify(execFile);
 export const androidIdSchema = z.string().min(1).max(256).regex(/^[A-Za-z0-9_.:\[\]%-]+$/);
@@ -278,8 +278,7 @@ export class ServeEmu {
       if (this.external) throw new SimulatorUnavailableError(`SERVE_EMU_URL streams ${health.serial}, not the selected device ${id}.`);
     } catch (error) { if (this.external) throw error; }
     await this.awaitAndroidBoot(id);
-    const cliUrl = new URL("./serve-emu/src/cli.mjs", import.meta.url);
-    const cli = fileURLToPath(cliUrl);
+    const cli = await panelRuntimePath("serve-emu/src/cli.mjs");
     await access(cli).catch(error => {
       if (isMissingFile(error)) throw new MissingRuntimeError("serve-emu");
       throw new Error("Mobile Dev cannot read its bundled Android streaming backend. Reinstall Mobile Dev, then restart the app running it.");

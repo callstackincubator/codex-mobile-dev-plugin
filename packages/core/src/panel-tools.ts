@@ -11,6 +11,7 @@ import { SENTRY_ORIGIN } from "@mobile-dev/shared/telemetry.ts";
 import { errorMessage, streamMessageSchema, udidSchema } from "@mobile-dev/shared/protocol.ts";
 import { panelTargetSchema } from "@mobile-dev/shared/panel-target.ts";
 import type { PanelTarget } from "@mobile-dev/shared/panel-target.ts";
+import type { PanelOpener } from "./server-feature.ts";
 import { captureServerError } from "./telemetry.ts";
 import { registerEarlierReleases } from "./earlier-releases.ts";
 import { readBezel } from "./bezel.ts";
@@ -82,6 +83,8 @@ export type PanelShared = {
   /** The page every view loads, configured for this server. */
   page(): Promise<string>;
   showRecording: ShowRecording;
+  /** Lets host features add to an opening tool's result, such as a browser panel's link. */
+  opened: PanelOpener;
 };
 
 /** Services the panel runs on; tests replace them with fakes. */
@@ -108,7 +111,7 @@ export function createPanel({ baguette = new Baguette(), simulatorInput, copyScr
   };
 }
 
-function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, showRecording }: PanelShared,
+function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, showRecording, opened }: PanelShared,
   { baguette, simulatorInput, copyScreenshot }: Required<PanelOptions>) {
   const streams = new StreamSessions(baguette);
   const closeIosMirror = registerIosMirrorTools(server, APP_URI);
@@ -197,7 +200,7 @@ function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, sh
     }
   });
 
-  const openPanel = guarded(async (panelTarget: PanelTarget) => {
+  const openPanel = (tool: string) => guarded(async (panelTarget: PanelTarget) => {
     let status;
     try { status = await baguette.start(); }
     catch (error) {
@@ -205,7 +208,10 @@ function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, sh
       const fallback = await baguette.status(AbortSignal.timeout(2000));
       status = { ...fallback, error: errorMessage(error) };
     }
-    return result({ ...status, panelTarget }, status.connected ? `Found ${status.devices.length} simulators.` : status.error ?? "The bundled simulator backend could not start.");
+    const response = result({ ...status, panelTarget }, status.connected ? `Found ${status.devices.length} simulators.` : status.error ?? "The bundled simulator backend could not start.");
+    const text = await opened({ tool, target: panelTarget });
+    if (text) response.content.push({ type: "text", text });
+    return response;
   });
 
   registerAppTool(server, "mobile_open_workspace", {
@@ -216,7 +222,7 @@ function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, sh
       ui: { resourceUri: WORKSPACE_URI, visibility: ["app", "model"] },
       "openai/ui": { entrypoints: [{ type: "global" }] },
     },
-  }, openPanel);
+  }, openPanel("mobile_open_workspace"));
 
   registerAppTool(server, "mobile_open_simulator", {
     title: "Mobile Dev",
@@ -226,7 +232,7 @@ function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, sh
       ui: { resourceUri: APP_URI, visibility: ["app", "model"] },
       "openai/ui": { entrypoints: [{ type: "thread" }] },
     },
-  }, openPanel);
+  }, openPanel("mobile_open_simulator"));
 
   server.registerTool("mobile_list_simulators", {
     title: "List iOS simulators", description: "Start the plugin's bundled backend if needed and list available and booted simulators.",

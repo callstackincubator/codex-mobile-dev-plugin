@@ -1,9 +1,14 @@
 # Mobile Dev for Claude
 
-Build, run, and debug iOS and Android apps without leaving Claude. Claude Code shows
-simulators and emulators in its own pane; Mobile Dev gives Claude the tools to control
-them, read their logs, inspect your app, and measure its performance. It works with
-Expo, React Native, SwiftUI, and other native mobile projects.
+Build, run, and debug iOS and Android apps without leaving Claude. Mobile Dev streams
+your simulators, emulators, and devices into a panel that Claude Code opens in its
+browser beside the chat, and gives Claude the tools to control them, read their logs,
+inspect your app, and measure its performance. It works with Expo, React Native,
+SwiftUI, and other native mobile projects.
+
+- **Device panel:** a live, interactive iOS simulator, Android emulator, or connected
+  device, with logs and performance tools beside it. Claude reads the devices you
+  select there and the logs, screenshots, and notes you add to chat.
 
 - **Device control and inspection:** Claude taps, types, scrolls, reads the
   accessibility tree, and takes screenshots through the bundled
@@ -44,9 +49,24 @@ calls when prompted. Run `claude plugin marketplace update mobile-dev` to update
 
 ## What it runs on your Mac
 
-The plugin bundles its runtimes and native helpers, so no `npm install`, account, or
-hosted service is needed. Your project's own tools build the app. Besides its Node.js
-server, it runs:
+The plugin bundles most of its runtimes and native helpers, so no `npm install`,
+account, or hosted service is needed. Your project's own tools build the app. Besides
+its Node.js server, it runs:
+
+- **The device panel's runtime, downloaded once.** The first time you open the panel,
+  Mobile Dev downloads one archive from this project's GitHub release for the
+  installed version (`mobile-dev-<version>-panel-runtime-darwin-arm64.tar.gz`, from
+  `github.com/callstackincubator/codex-mobile-dev-plugin/releases`). The plugin pins
+  the archive's size and SHA-256 checksum and refuses any other file. It holds
+  [Baguette](https://github.com/tddworks/baguette), which streams and controls iOS
+  simulators, serve-emu with scrcpy for Android streaming, and the physical iPhone
+  mirroring addon and its service, built from the source and versions this
+  repository pins. It is unpacked into Claude Code's data folder for the plugin
+  (`~/.claude/plugins/data/`), or `~/Library/Caches/mobile-dev` elsewhere, and kept
+  across sessions; an update downloads its own version and removes older ones.
+  Nothing is downloaded until you open the panel, and the other tools work without it.
+- **A loopback page for the panel:** while the panel is open, the server serves it on
+  `127.0.0.1` at a random port behind a private link, and answers only that page.
 
 - **A Node.js launcher and a session check:** `scripts/launch-node.sh` finds Node.js
   in the locations above and starts the server; at the start of each session it

@@ -4,7 +4,6 @@ import type { ChildProcess } from "node:child_process";
 import { access } from "node:fs/promises";
 import { constants } from "node:fs";
 import { createServer } from "node:net";
-import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import { errorMessage, normalizeDevices, parseBaseUrl, udidSchema } from "@mobile-dev/shared/protocol.ts";
@@ -17,6 +16,7 @@ import { deferEpisodeReport, ExpectedOperationError, FailureEpisodes } from "@mo
 import { annotateDeviceCommand, backendCommand, inheritDeviceCommand } from "@mobile-dev/shared/device-command-diagnostics.ts";
 import { errorReportSignature } from "@mobile-dev/shared/telemetry.ts";
 import { baguetteEnvironment } from "./baguette-runtime.ts";
+import { panelRuntimePath } from "./panel-runtime.ts";
 import { captureServerError, recordAccessibilityBridgeRestart } from "./telemetry.ts";
 
 type DescribedUi = { tree?: { label?: unknown } };
@@ -32,7 +32,7 @@ function listError(status: Status): Error {
 }
 
 async function bundledExecutable(): Promise<string> {
-  const path = fileURLToPath(new URL("./baguette/Baguette", import.meta.url));
+  const path = await panelRuntimePath("baguette/Baguette");
   try {
     await access(path, constants.X_OK);
   } catch (error) {

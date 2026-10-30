@@ -12,7 +12,7 @@ export const RELEASE_DOCUMENTS = ["README.md", "LICENSE", "THIRD_PARTY_NOTICES.m
 export const PANEL_PARTS = ["baguette", "serve-emu", "ios-mirror", "ios-mirror-service.mjs"];
 
 const RUNTIME_FILES = [
-  "server.mjs", "ios-mirror-service.mjs", "app.html", "baguette/Baguette", "baguette/Baguette_Baguette.bundle",
+  "server.mjs", "ios-mirror-service.mjs", "app.html", "browser-panel.html", "baguette/Baguette", "baguette/Baguette_Baguette.bundle",
   "ios-fps/mobile-dev-ios-fps",
   ...["arm64-v8a", "armeabi-v7a", "x86", "x86_64"].map(abi => `android-fps/${abi}/mobile-dev-fps`),
   "ios-mirror/darwin-arm64.node", "ios-mirror/third-party-licenses.txt", "ios-logs/mobile-dev-ios-logs", "ios-logs/third-party-licenses.txt",

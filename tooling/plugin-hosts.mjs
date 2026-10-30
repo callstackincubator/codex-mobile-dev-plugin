@@ -11,6 +11,9 @@ import { join } from "node:path";
  *   - `marketplace`: an optional local marketplace written beside the plugin.
  *   - `panel`: false for hosts whose server has no Mobile Dev panel; their packages
  *     leave out the panel's parts of the runtime.
+ *   - `panelRuntime`: "download" for hosts whose packages leave out the panel's parts
+ *     while their server keeps the panel. Packaging writes those parts as a release
+ *     archive and pins it in dist/panel-runtime.json, which the server downloads.
  *   - `build`: an optional module in the app exporting `buildHost(outdir)`, which
  *     builds the host's own server into its staged runtime.
  *   - `skills`: the skill folders it ships, relative to the app, instead of the shared ones.
@@ -37,6 +40,8 @@ export function pluginHost(name) {
   const app = `apps/${name}`;
   return {
     ...host, app, panel: host.panel !== false,
+    // Whether the package itself ships the panel's parts.
+    bundlesPanel: host.panel !== false && host.panelRuntime !== "download",
     desktopBundle: host.desktopBundle && `${app}/${host.desktopBundle}`,
     build: host.build && `${app}/${host.build}`,
     folders: (host.folders ?? []).map(path => join(app, path)),

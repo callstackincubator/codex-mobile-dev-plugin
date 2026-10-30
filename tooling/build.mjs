@@ -5,7 +5,7 @@ import { androidCpuSourceHash } from "./build-android-cpu.mjs";
 import { baguetteTelemetrySourceHash } from "./rebuild-baguette.mjs";
 import { telemetryBuildEnvironment } from "./telemetry-build.mjs";
 import { buildServeEmu } from "./build-serve-emu.mjs";
-import { buildUIPage } from "./ui-page.mjs";
+import { buildHostPage, buildUIPage } from "./ui-page.mjs";
 import { buildServerBundles } from "./server-bundle.mjs";
 import { access, copyFile, cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
@@ -112,6 +112,8 @@ const pageMetafiles = [
     environment: telemetryEnvironment, sourceURL: "app:///mobile-dev-ui.js",
   }),
 ];
+// Hosts that render no MCP Apps panel open this page in a browser beside the chat.
+await buildHostPage({ entry: "packages/mcp-app/src/browser-panel.ts", template: "packages/mcp-app/src/browser-panel.html", output: "dist/browser-panel.html" });
 const serverMetafiles = [
   await buildServerBundles({
     entryPoints: { server: "packages/core/src/index.ts", "ios-mirror-service": "packages/core/src/ios-mirror-service.ts" },

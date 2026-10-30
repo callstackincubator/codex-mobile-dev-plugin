@@ -17,6 +17,30 @@ Behavior never depends on this value; it only attributes measurements and errors
   Cursor sessions were reported as `other`. Calls before connecting carry no host.
 - The server labels itself from the connecting MCP client's name on initialize and
   reports `other` until then.
+- In hosts that render no MCP Apps panel, such as Claude Code, the panel can open in
+  a browser beside the chat. Its page names itself with the server's label for the
+  chat host, so the panel is attributed to that host. Its requests join the host's
+  server session with the same trace propagation; the browser page adds no
+  telemetry of its own. Page server and cleanup failures are captured as
+  `browser_panel.request` and `browser_panel.close`. The `browser_panel.sessions`
+  gauge measures active browser MCP sessions on creation, deletion, expiry and
+  shutdown, with `component=server`. It contains no session IDs, URLs or tokens
+  and honors telemetry opt-out. `browser_panel.context_update` counts the page's
+  model context updates by `outcome` (`stored`, `invalid` or `too_large`), and
+  `browser_panel.context_bytes` records the size of stored updates in bytes; the
+  context's text and images are never sent.
+- Packages that download the panel's native parts, such as Claude's, measure that
+  step. `panel_runtime.ready` records, in milliseconds, how long the runtime took to be
+  ready on a panel's first backend start in a server, by `outcome`: `cached` when a
+  complete folder was already there, `downloaded` for a download, checksum check and
+  extraction, or `failed` with a bounded `reason` (`network`, `http`, `checksum`,
+  `archive` or `filesystem`). `panel_runtime.download_bytes` records the archive size
+  of each download. A failure surfaces as the expected `download_failed` outcome;
+  checksum, archive and filesystem failures are also captured as
+  `panel_runtime.prepare` errors with a `panel_runtime_failure` tag, while offline
+  machines and unreachable releases are not. URLs, paths and versions are never
+  attributes, and both honor telemetry opt-out. Browser sessions expire after five idle minutes;
+  active requests prevent expiry, and open tabs send a ping every 30 seconds.
 - The server's metadata allowlist accepts only these values; the raw host or
   client name is never sent.
 

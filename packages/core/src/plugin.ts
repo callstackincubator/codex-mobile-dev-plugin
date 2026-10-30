@@ -1,5 +1,6 @@
 import type { UIResource } from "./ui-resource.ts";
-import type { ServerFeature } from "./server-feature.ts";
+import type { PanelOpener, ServerFeature } from "./server-feature.ts";
+import type { SharedTransport } from "./shared-transport.ts";
 import { addToolIcons, PHONE_ICONS } from "./tool-icons.ts";
 import { LIVE_UI_URI } from "@mobile-dev/shared/live-ui.ts";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -59,6 +60,8 @@ export type PluginOptions = {
   android?: ServeEmu;
   cpu?: CpuSessions;
   features?: ServerFeature[];
+  /** The transport the server will connect to, which features can let other connections join. */
+  connections?: SharedTransport;
 };
 
 export async function createPlugin(html: string | (() => Promise<UIResource>), options: PluginOptions = {}) {
@@ -123,8 +126,14 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
   }
   // Devices cards that chats saved from earlier releases say they came from one.
   registerEarlierReleases(server, "mobile-dev-devices-earlier", "devices", readCard("devices"));
-  const closePanel = panel?.register(server, { android, cpu, fps, drivers, page, showRecording });
-  const featureCleanups = features.flatMap(feature => feature(server) ?? []);
+  const panelOpeners: PanelOpener[] = [];
+  const opened: PanelOpener = async open => {
+    const texts = await Promise.all(panelOpeners.map(opener => opener(open)));
+    return texts.filter(Boolean).join("\n\n") || undefined;
+  };
+  const closePanel = panel?.register(server, { android, cpu, fps, drivers, page, showRecording, opened });
+  const featureContext = { connections: options.connections, onPanelOpen: (opener: PanelOpener) => { panelOpeners.push(opener); } };
+  const featureCleanups = features.flatMap(feature => feature(server, featureContext) ?? []);
 
   return {
     server,
