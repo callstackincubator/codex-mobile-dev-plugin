@@ -1,8 +1,8 @@
 {
   "name": "mobile-dev",
-  "version": "0.1.172",
+  "version": "0.1.173",
   "displayName": "Mobile Dev",
-  "description": "Control iOS and Android devices while building, running, or debugging mobile apps. Read native and Metro logs, inspect app storage, and record CPU, memory, and FPS into interactive charts in chat. Apple Silicon development preview.",
+  "description": "Everything you need for mobile development with your agent. Live devices (simulators, emulators, and physical devices) beside your chat, app and device control, screen annotations, logs, app storage inspection, and dedicated tools to profile your app's performance (CPU, memory, FPS, CPU and React profiles with TraceSift). Requires an Apple Silicon Mac.",
   "author": {
     "name": "Callstack",
     "email": "hello@callstack.com"
