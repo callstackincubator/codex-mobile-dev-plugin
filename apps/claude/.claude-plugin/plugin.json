@@ -19,7 +19,7 @@
     "logs",
     "performance"
   ],
-  "icon": "./assets/icon.svg",
+  "icon": "./assets/icon.png",
   "documentationUrl": "https://github.com/callstackincubator/mobile-dev#readme",
   "supportUrl": "https://github.com/callstackincubator/mobile-dev/blob/main/SUPPORT.md",
   "privacyPolicyUrl": "https://github.com/callstackincubator/mobile-dev/blob/main/PRIVACY.md",
