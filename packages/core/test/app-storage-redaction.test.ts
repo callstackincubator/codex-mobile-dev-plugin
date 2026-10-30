@@ -1,15 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import * as Sentry from "@sentry/node";
-import type { Envelope } from "@sentry/core";
 import { scrubMetric } from "@mobile-dev/shared/telemetry.ts";
 import { mkdtemp, mkdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import type { TestContext } from "node:test";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { REDACTED, redactStorageValue } from "../src/app-storage/redaction.ts";
 import { registerAppStorageTools } from "../src/app-storage/tools.ts";
 import { SimulatorContainer } from "../src/app-storage/container.ts";
@@ -18,6 +15,8 @@ import { systemCommands } from "../src/app-control/commands.ts";
 import type { AppDriver } from "../src/app-control/driver.ts";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 import { storageSnapshotSchema, storageTableSchema } from "@mobile-dev/shared/app-storage.ts";
+import { captureSentry } from "@mobile-dev/test-support/sentry.ts";
+import { connectClient } from "@mobile-dev/test-support/mcp.ts";
 
 const target = { platform: "ios", deviceId: "B5C969F6-58A4-4C31-AB12-FB9E56D681DE", bundleId: "com.example" };
 const token = "ghp_0123456789abcdefghijklmnopqrstuvwxyz";
@@ -28,14 +27,10 @@ const containerFor = (files: Record<string, string>, reads: string[] = []): AppC
   remove: async () => { throw new Error("Must not delete data"); },
   reset: async () => { throw new Error("Must not reset data"); },
 });
-async function connect(container: AppContainer) {
+async function connect(t: TestContext, container: AppContainer) {
   const server = new McpServer({ name: "storage-redaction-test", version: "1" });
   registerAppStorageTools(server, systemCommands, () => ({} as AppDriver), async () => container);
-  const client = new Client({ name: "test", version: "1" });
-  const [c, s] = InMemoryTransport.createLinkedPair();
-  await server.connect(s);
-  await client.connect(c);
-  return { client, close: async () => { await client.close(); await server.close(); } };
+  return connectClient(t, server);
 }
 
 function absent(result: unknown, secrets: string[]) {
@@ -69,7 +64,7 @@ test("scoped MCP reads never decode or return unrelated stores and redact before
     "Library/Preferences/unrelated.plist": "unrelated-private-value",
     "Documents/person@example.com.txt": "personal-path",
   }, reads);
-  const { client, close } = await connect(container); t.after(close);
+  const client = await connect(t, container);
   const result = await client.callTool({ name: "mobile_app_storage", arguments: { ...target, store: `async-storage:${path}`, valueLength: 40 } });
   assert.equal(result.isError, undefined);
   const snapshot = storageSnapshotSchema.parse(result.structuredContent);
@@ -97,7 +92,7 @@ test("unscoped MCP reads filter plaintext plist values and sensitive metadata", 
     "Documents/person@example.com.txt": "ignore",
     "Library/Preferences/person@example.com.plist": "ignore",
   });
-  const { client, close } = await connect(container); t.after(close);
+  const client = await connect(t, container);
   const result = await client.callTool({ name: "mobile_app_storage", arguments: target });
   assert.equal(result.isError, undefined);
   absent(result, ["plist-private", "736563726574", token, "person@example.com", "credential-key-value"]);
@@ -107,7 +102,7 @@ test("unscoped MCP reads filter plaintext plist values and sensitive metadata", 
 test("MCP storage errors do not echo raw or expected diagnostic content", async t => {
   for (const error of [new Error("SQL pvt-error /private/path"), new ExpectedOperationError("device_unavailable", "pvt-error /private/path"), new ExpectedOperationError("invalid_input", "pvt-error /private/path")]) {
     const container = containerFor({}); container.list = async () => { throw error; };
-    const { client, close } = await connect(container); t.after(close);
+    const client = await connect(t, container);
     const result = await client.callTool({ name: "mobile_app_storage", arguments: target });
     assert.equal(result.isError, true);
     absent(result, ["pvt-error", "/private/path"]);
@@ -127,7 +122,7 @@ test("MCP SQLite results filter columns, key/value rows, nested JSON and blobs b
     CREATE TABLE tokens (label TEXT, value TEXT); INSERT INTO tokens VALUES ('test', 'sql-token-table');
   `]);
   const before = await readFile(path);
-  const { client, close } = await connect(new SimulatorContainer(root, target.deviceId, systemCommands)); t.after(close);
+  const client = await connect(t, new SimulatorContainer(root, target.deviceId, systemCommands));
   const args = { ...target, store: "sqlite:Documents/app.db", table: "settings", limit: 4 };
   const result = await client.callTool({ name: "mobile_app_storage_table", arguments: args });
   assert.equal(result.isError, undefined);
@@ -151,30 +146,16 @@ test("MCP SQLite results filter columns, key/value rows, nested JSON and blobs b
 
 
 test("filtered MCP reads preserve operation metrics without storage content and honor telemetry opt-out", async t => {
-  const envelopes: Envelope[] = [];
-  Sentry.init({
-    dsn: "https://public@example.com/1", defaultIntegrations: false, beforeSendMetric: scrubMetric,
-    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
-  });
-  const previous = process.env.MOBILE_DEV_TELEMETRY;
-  delete process.env.MOBILE_DEV_TELEMETRY;
-  t.after(async () => {
-    if (previous === undefined) delete process.env.MOBILE_DEV_TELEMETRY;
-    else process.env.MOBILE_DEV_TELEMETRY = previous;
-    await Sentry.close();
-  });
+  const sentry = captureSentry(t, { telemetry: "on", beforeSendMetric: scrubMetric });
   const path = "Library/Preferences/com.example.plist";
-  const { client, close } = await connect(containerFor({ [path]: '<plist><dict><key>password</key><string>private-metric-value</string></dict></plist>' }));
-  t.after(close);
+  const client = await connect(t, containerFor({ [path]: '<plist><dict><key>password</key><string>private-metric-value</string></dict></plist>' }));
   const result = await client.callTool({ name: "mobile_app_storage", arguments: target });
   assert.equal(result.isError, undefined);
   await client.callTool({ name: "mobile_app_storage", arguments: { ...target, store: "private-missing-store" } });
-  await Sentry.flush();
-  const sent = JSON.stringify(envelopes);
+  const sent = await sentry.text();
   for (const fragment of ["app_storage.operation.samples", "app_storage.operation.duration", '"surface":{"value":"storage"', '"operation":{"value":"read"', '"outcome":{"value":"success"', '"outcome":{"value":"failed"']) assert.ok(sent.includes(fragment), fragment);
-  absent(envelopes, ["private-metric-value", "private-missing-store", "password", path, target.bundleId, target.deviceId]);
-  process.env.MOBILE_DEV_TELEMETRY = "off";
+  absent(sentry.envelopes, ["private-metric-value", "private-missing-store", "password", path, target.bundleId, target.deviceId]);
+  sentry.setTelemetry("off");
   await client.callTool({ name: "mobile_app_storage", arguments: target });
-  await Sentry.flush();
-  assert.equal(JSON.stringify(envelopes), sent);
+  assert.equal(await sentry.text(), sent);
 });

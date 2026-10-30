@@ -1,10 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import * as Sentry from "@sentry/node";
-import type { Envelope } from "@sentry/core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { z } from "zod";
 import { annotateDeviceAppsError, getDeviceAppsDiagnostic, DEVICE_APPS_DIAGNOSTIC_META } from "@mobile-dev/shared/device-apps-diagnostics.ts";
 import { readDeviceApps } from "../src/device-apps/sources.ts";
@@ -15,6 +11,8 @@ import { CpuSessions } from "../src/cpu/sessions.ts";
 import { attachedBaguette } from "@mobile-dev/test-support/fixtures.ts";
 import { SimulatorUnavailableError } from "../src/simulator-unavailable.ts";
 import { scrubErrorEvent } from "@mobile-dev/shared/telemetry.ts";
+import { captureSentry } from "@mobile-dev/test-support/sentry.ts";
+import { connectClient } from "@mobile-dev/test-support/mcp.ts";
 
 test("shared discovery distinguishes running-app and foreground failures without changing concurrency", async () => {
   const sources = {
@@ -50,10 +48,7 @@ test("shared discovery distinguishes running-app and foreground failures without
 });
 
 test("MCP discovery reports one classified error, returns only bounded metadata, and retains expected-error exclusions", async t => {
-  const envelopes: Envelope[] = [];
-  Sentry.init({ dsn: "https://public@example.com/1", defaultIntegrations: false, beforeSend: scrubErrorEvent,
-    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
-  });
+  const sentry = captureSentry(t, { beforeSend: scrubErrorEvent });
   const server = new McpServer({ name: "discovery-diagnostic-test", version: "1" });
   const failed = new Error("Command failed: PRIVATE_PATH PRIVATE_DEVICE PRIVATE_ARGUMENT\nPRIVATE_OUTPUT");
   Object.assign(failed, { code: 2 });
@@ -62,27 +57,21 @@ test("MCP discovery reports one classified error, returns only bounded metadata,
     const annotated = annotateDeviceAppsError(failure, "foreground", "ios", "physical");
     throw annotated;
   });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: "discovery-diagnostic-client", version: "1" });
-  t.after(async () => { await client.close(); await server.close(); await Sentry.close(); });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
+  const client = await connectClient(t, server, { name: "discovery-diagnostic-client" });
   const result = await client.callTool({ name: "mobile_performance_sources", arguments: { deviceId: "PRIVATE_DEVICE", kind: "physical" } });
   assert.equal(result.isError, true);
   assert.deepEqual(result._meta?.[DEVICE_APPS_DIAGNOSTIC_META], {
     stage: "foreground", failure: "command_failed", platform: "ios", kind: "physical",
   });
   assert.deepEqual(result.content, [{ type: "text", text: failed.message }]);
-  await Sentry.flush(2000);
-  const items = envelopes.flatMap(envelope => envelope[1]);
-  const events = items.filter(item => item[0].type === "event");
+  const events = await sentry.events();
   assert.equal(events.length, 1);
-  const event = events[0][1];
+  const event = events[0];
   assert.equal(typeof event, "object");
   assert.ok(event && "tags" in event);
   assert.deepEqual(event.tags, { discovery_stage: "foreground", discovery_failure: "command_failed",
     device_platform: "ios", device_kind: "physical", operation: "device_apps.discover" });
-  const encoded = JSON.stringify(envelopes);
+  const encoded = await sentry.text();
   const includesPrivate = encoded.includes("PRIVATE");
   assert.equal(includesPrivate, false);
   const abort = new Error("aborted");
@@ -91,9 +80,7 @@ test("MCP discovery reports one classified error, returns only bounded metadata,
     failure = expected;
     await client.callTool({ name: "mobile_performance_sources", arguments: { deviceId: "PRIVATE_DEVICE", kind: "physical" } });
   }
-  await Sentry.flush(2000);
-  const remainingItems = envelopes.flatMap(envelope => envelope[1]);
-  const remaining = remainingItems.filter(item => item[0].type === "event");
+  const remaining = await sentry.events();
   assert.equal(remaining.length, 1);
 });
 
@@ -103,11 +90,8 @@ test("CPU discovery validation failures carry their stage through the MCP respon
   const baguette = attachedBaguette("http://127.0.0.1:1");
   registerCpuTools(server, cpu, new DeviceResolver({ simulators: baguette, android: async () => [], ios: async () => [] }),
     { apps: async () => { throw new Error("should not discover"); } });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: "validation-diagnostic-client", version: "1" });
-  t.after(async () => { await client.close(); await server.close(); await cpu.close(); baguette.dispose(); });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
+  const client = await connectClient(t, server, { name: "validation-diagnostic-client" });
+  t.after(async () => { await cpu.close(); baguette.dispose(); });
   const result = await client.callTool({ name: "mobile_performance_sources", arguments: { platform: "android", deviceId: "PRIVATE_DEVICE" } });
   assert.deepEqual(result._meta?.[DEVICE_APPS_DIAGNOSTIC_META], {
     stage: "device_validation", failure: "unknown", platform: "android", kind: "unknown",

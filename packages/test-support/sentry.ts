@@ -1,4 +1,5 @@
 import type { TestContext } from "node:test";
+import assert from "node:assert/strict";
 import * as NodeSentry from "@sentry/node";
 import type { Envelope, ErrorEvent, SerializedMetric } from "@sentry/core";
 import { setTelemetry } from "./env.ts";
@@ -52,4 +53,9 @@ export function captureSentry(t: TestContext, { telemetry, sdk = NodeSentry, ...
     /** Turns telemetry on or off for the rest of the test. */
     setTelemetry(state: "on" | "off") { setTelemetry(t, state); },
   };
+}
+
+/** Asserts that sent telemetry text, such as `text()` returns, includes `fragment`, or with `expected` false that it does not. */
+export function assertFragment(text: string, fragment: string, expected = true) {
+  assert.equal(text.includes(fragment), expected, `Telemetry fragment: ${fragment}`);
 }

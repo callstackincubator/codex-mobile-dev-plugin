@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
+import { setEnv } from "@mobile-dev/test-support/env.ts";
 
 // Stands in for the bundled serve-emu CLI: it requires the --token it was given on every request and
 // on the WebSocket upgrade, and logs each request with whether it carried the token.
@@ -37,17 +38,8 @@ process.on("SIGTERM", () => process.exit(0));
 
 test("a serve-emu this server starts requires a fresh token that every request and the stream carry", async t => {
   const directory = await mkdtemp(join(tmpdir(), "serve-emu-auth-"));
-  const previousHome = process.env.ANDROID_HOME;
-  const previousTelemetry = process.env.MOBILE_DEV_TELEMETRY;
-  process.env.ANDROID_HOME = directory;
-  process.env.MOBILE_DEV_TELEMETRY = "off";
-  t.after(async () => {
-    if (previousHome === undefined) delete process.env.ANDROID_HOME;
-    else process.env.ANDROID_HOME = previousHome;
-    if (previousTelemetry === undefined) delete process.env.MOBILE_DEV_TELEMETRY;
-    else process.env.MOBILE_DEV_TELEMETRY = previousTelemetry;
-    await rm(directory, { recursive: true, force: true });
-  });
+  setEnv(t, { ANDROID_HOME: directory, MOBILE_DEV_TELEMETRY: "off" });
+  t.after(() => rm(directory, { recursive: true, force: true }));
   const output = join(directory, "server.mjs");
   await build({
     stdin: { contents: 'export { ServeEmu } from "./packages/core/src/serve-emu.ts"; export { AndroidStreams } from "./packages/core/src/android-streams.ts";', resolveDir: resolve("."), loader: "ts" },

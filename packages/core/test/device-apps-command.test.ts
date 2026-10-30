@@ -1,10 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import * as Sentry from "@sentry/node";
-import type { Envelope } from "@sentry/core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { runDiscoveryCommand, annotateDiscoveryCommand } from "../src/device-apps/command.ts";
 import type { DiscoveryCommand, DiscoveryCause } from "@mobile-dev/shared/device-apps-command-diagnostics.ts";
 import { getDiscoveryCommandDiagnostic } from "@mobile-dev/shared/device-apps-command-diagnostics.ts";
@@ -12,6 +8,8 @@ import { deviceAppsDiagnostic, annotateDeviceAppsError, DEVICE_APPS_DIAGNOSTIC_M
 import { expectedOutcome } from "@mobile-dev/shared/error-reporting.ts";
 import { scrubErrorEvent } from "@mobile-dev/shared/telemetry.ts";
 import { registerDeviceAppsTool } from "../src/device-apps/tools.ts";
+import { captureSentry } from "@mobile-dev/test-support/sentry.ts";
+import { connectClient } from "@mobile-dev/test-support/mcp.ts";
 
 const options: { encoding: "utf8"; timeout: number; maxBuffer: number } = { encoding: "utf8", timeout: 3000, maxBuffer: 4096 };
 
@@ -118,10 +116,7 @@ test("known lifecycle output and unknown signals never forward raw command conte
 });
 
 test("MCP error episodes distinguish helper causes and Sentry retains safe diagnostics after scrubbing", async t => {
-  const envelopes: Envelope[] = [];
-  Sentry.init({ dsn: "https://public@example.com/1", environment: "release", defaultIntegrations: false, beforeSend: scrubErrorEvent,
-    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
-  });
+  const sentry = captureSentry(t, { environment: "release", beforeSend: scrubErrorEvent });
   const server = new McpServer({ name: "command-diagnostic-test", version: "1" });
   let cause = "query_timeout";
   registerDeviceAppsTool(server, async () => {
@@ -132,23 +127,16 @@ test("MCP error episodes distinguish helper causes and Sentry retains safe diagn
     const annotated = annotateDeviceAppsError(error, "foreground", "ios", "physical");
     throw annotated;
   });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: "command-diagnostic-client", version: "1" });
-  t.after(async () => { await client.close(); await server.close(); await Sentry.close(); });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
+  const client = await connectClient(t, server, { name: "command-diagnostic-client" });
   const request = { name: "mobile_performance_sources", arguments: { deviceId: "PRIVATE_DEVICE", kind: "physical" } };
   const result = await client.callTool(request);
   assert.deepEqual(result._meta?.[DEVICE_APPS_DIAGNOSTIC_META], { stage: "foreground", failure: "timeout", platform: "ios", kind: "physical" });
   await client.callTool(request);
   cause = "cleanup_timeout";
   await client.callTool(request);
-  await Sentry.flush(2000);
-  const items = envelopes.flatMap(envelope => envelope[1]);
-  const events = items.filter(item => item[0].type === "event");
+  const events = await sentry.events();
   assert.equal(events.length, 2);
-  for (const item of events) {
-    const event = item[1];
+  for (const event of events) {
     assert.ok(event && typeof event === "object" && "tags" in event && "contexts" in event);
     assert.equal(event.environment, "release");
     assert.equal(event.tags?.discovery_command, "ios_physical_foreground");
@@ -161,7 +149,7 @@ test("MCP error episodes distinguish helper causes and Sentry retains safe diagn
     assert.ok(grouped);
     assert.equal(event.contexts?.node_system_error, undefined);
   }
-  const encoded = JSON.stringify(envelopes);
+  const encoded = await sentry.text();
   const includesPrivate = encoded.includes("PRIVATE");
   assert.equal(includesPrivate, false);
 });
