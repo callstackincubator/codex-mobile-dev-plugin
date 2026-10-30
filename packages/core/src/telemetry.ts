@@ -82,6 +82,13 @@ export function recordAndroidEmulatorReconnect(trigger: "boot" | "selection") {
   Sentry.metrics.count("android.emulator.adb_reconnects", 1, { attributes });
 }
 
+export function recordAndroidBootWait(duration: number, outcome: "booted" | "timeout") {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = { component: "server", surface: "simulator", device_platform: "android", outcome };
+  Sentry.metrics.count("android.backend.boot_wait.samples", 1, { attributes });
+  Sentry.metrics.gauge("android.backend.boot_wait.duration", duration, { unit: "millisecond", attributes });
+}
+
 export function recordAndroidBackendStartup(duration: number, outcome: "ready" | "failed") {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes = { component: "server", surface: "simulator", device_platform: "android", outcome };

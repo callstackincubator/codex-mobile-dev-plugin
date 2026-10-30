@@ -14,7 +14,7 @@ import type { SimulatorDevice, Status } from "@mobile-dev/shared/protocol.ts";
 import { annotateDeviceCommand, backendCommand } from "@mobile-dev/shared/device-command-diagnostics.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
 import { isMissingFile, MissingRuntimeError } from "./install-integrity.ts";
-import { recordAndroidEmulatorReconnect, recordAndroidBackendStartup, recordAndroidStartupStages, recordAndroidStartupContext, recordAndroidStartupDeviceState, recordAndroidBackendStop } from "./telemetry.ts";
+import { recordAndroidEmulatorReconnect, recordAndroidBootWait, recordAndroidBackendStartup, recordAndroidStartupStages, recordAndroidStartupContext, recordAndroidStartupDeviceState, recordAndroidBackendStop } from "./telemetry.ts";
 import { androidStartupMessageSchema, androidDeviceState, setAndroidStartupDiagnostic } from "@mobile-dev/shared/android-startup-diagnostics.ts";
 import type { AndroidStartupContext, AndroidStartupFailure, AndroidStartupSummary } from "@mobile-dev/shared/android-startup-diagnostics.ts";
 import { androidSdkRoots } from "./android-sdk.ts";
@@ -178,6 +178,31 @@ export class ServeEmu {
     throw new SimulatorUnavailableError("The Android emulator is still unauthorized. Restart it with a cold boot, or run adb kill-server and try again.");
   }
 
+  // adb lists a device as soon as adbd runs, seconds before Android starts its system services.
+  // A scrcpy server started in that window crashes in Controller.<init> (KeyCharacterMap finds no
+  // input service), so serve-emu starts only once Android reports that it finished booting.
+  private async awaitAndroidBoot(serial: string) {
+    const signal = AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(120000)]);
+    const startedAt = performance.now();
+    let waited = false;
+    while (!signal.aborted) {
+      const response = await execute(await adbPath(), ["-s", serial, "shell", "getprop", "sys.boot_completed"], { timeout: 3000 }).catch((error: unknown) => {
+        const stderr = String((error as { stderr?: unknown }).stderr ?? "");
+        if (/\b(?:not found|no devices|offline|unauthorized)\b/.test(stderr)) throw new SimulatorUnavailableError("The Android device is stopped or offline. Press Start or reconnect it.");
+        return undefined;
+      });
+      if (response?.stdout.trim() === "1") {
+        if (waited) recordAndroidBootWait(performance.now() - startedAt, "booted");
+        return;
+      }
+      waited = true;
+      await delay(500, undefined, { signal }).catch(() => {});
+    }
+    if (this.disposed) throw new Error("The plugin server has closed.");
+    recordAndroidBootWait(performance.now() - startedAt, "timeout");
+    throw new SimulatorUnavailableError("The Android device is still booting. Try again when its home screen appears.");
+  }
+
   async shutdown(id: string) {
     androidIdSchema.parse(id);
     if (!/^emulator-\d+$/.test(id)) throw new Error("Only Android emulators can be shut down from this panel.");
@@ -252,6 +277,7 @@ export class ServeEmu {
       if (health.serial === id) { const backend = { url: candidate }; this.backends.set(id, backend); return backend; }
       if (this.external) throw new SimulatorUnavailableError(`SERVE_EMU_URL streams ${health.serial}, not the selected device ${id}.`);
     } catch (error) { if (this.external) throw error; }
+    await this.awaitAndroidBoot(id);
     const cli = await panelRuntimePath("serve-emu/src/cli.mjs");
     await access(cli).catch(error => {
       if (isMissingFile(error)) throw new MissingRuntimeError("serve-emu");

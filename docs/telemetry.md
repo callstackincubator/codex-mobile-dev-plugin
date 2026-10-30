@@ -140,6 +140,10 @@ exclusive ownership of the measured memory. Samples uploaded before a renderer
 crash can show preceding heap growth; an abrupt crash may lose the final buffered
 samples and is not itself reported by this collection.
 
+Since 0.1.172, an owned Android backend starts only after the device reports `sys.boot_completed=1`, because adb lists a device seconds before Android starts the system services scrcpy needs. `android.backend.boot_wait.samples` and `android.backend.boot_wait.duration` measure that wait in milliseconds, only when the first check found the device still booting, with a fixed `outcome` of `booted` or `timeout` (after 120 s). They use the simulator surface and Android device platform, send no serials, device names or adb output, and honor telemetry opt-out. The wait ends before process spawn, so `android.backend.startup.duration` keeps excluding device boot.
+
+Android panel stream-opening calls allow 180 s for the boot wait, backend startup and request overhead. Existing UI connection and first-frame timings continue to measure the whole connection attempt.
+
 Since 0.1.140, `android.emulator.adb_reconnects` counts adb transport reconnects for emulators that stay unauthorized, with a fixed `trigger` (`boot` while waiting for an AVD, `selection` for an already running emulator). It uses the simulator surface and Android emulator context and sends no serials, AVD names or adb output. Existing Android startup diagnostics and MCP tool errors cover the boot outcome.
 
 Since 0.1.139, `ios.accessibility_bridge.restarts` counts restarts of the simulator's CoreSimulatorBridge after a describe-UI read reported no accessibility data, with a fixed `outcome` (`recovered`, `unavailable` or `failed`). Failed restarts also report a handled `simulator.accessibility_bridge` error. The existing `inspection.tool` errors, sampled MCP traces and `ui.annotations.inspection` timings cover the retried read. No device identifiers, accessibility content or command output are sent.
@@ -186,6 +190,13 @@ tag (`catalog`, `remove-plugin`, `remove-marketplace`, `verify` or `save`) and a
 `store-unavailable`, `foreign-marketplace`, `not-removed`, `not-verified`,
 `cache-write` or `unknown`). The message, metrics and boundaries are unchanged, and
 no CLI output or store response is included.
+
+Since 0.1.171, the same update-check measurements cover the anonymous HTTP
+store lookup and local CLI installation checks. Failed checks add a bounded
+`failure` attribute using the existing update failure categories. Metric names,
+units, cache-hit exclusions, opt-out and migration-step error coverage are
+preserved. No endpoint response, authentication data or raw error is recorded.
+Closing the updater aborts its HTTP and CLI requests.
 
 Since 0.1.129, discovery command failures retain bounded `discovery_command`, `discovery_cause`,
 `discovery_termination`, and optional `discovery_signal` tags. Failed exception

@@ -80,11 +80,11 @@ try {
   };
   const run = async args => {
     const result = await codex(args);
-    if (args[1] === "list") result.installed.push(store);
+    if (args[1] === "list" && args.includes("--marketplace") === false) result.installed.push(store);
     return result;
   };
   const readStore = async () => ({
-    remotePluginId: PLUGIN_STORE_ID, name: "mobile-dev", version: "0.1.167", localVersion: "0.1.167", installed: true, enabled: true,
+    remotePluginId: PLUGIN_STORE_ID, name: "mobile-dev", version: "0.1.167",
   });
   const options = { enabled: true, profile, pluginRoot: installedCwd, currentVersion: "0.1.167", run, readStore };
   const updates = new PluginUpdates(options);

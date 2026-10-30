@@ -1,6 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { access, cp, mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, cp, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import assert from "node:assert/strict";
@@ -55,6 +55,10 @@ try {
   for (const path of ["SKILL.md", "agents/openai.yaml", "references/workflow.md"]) await access(join(plugin, "skills/agent-device", path));
   await access(join(plugin, "dist/baguette/Baguette"));
   await access(join(plugin, "dist/baguette/Baguette_Baguette.bundle/Web"));
+  const baguetteBundle = join(plugin, "dist/baguette/Baguette_Baguette.bundle");
+  const baguetteResources = await readdir(baguetteBundle);
+  const has3DModels = baguetteResources.includes("Models3D");
+  assert.equal(has3DModels, false);
   const mirrorServicePath = join(plugin, "dist/ios-mirror-service.mjs");
   await access(mirrorServicePath);
   const mirrorPath = join(plugin, "dist/ios-mirror/darwin-arm64.node");

@@ -7,11 +7,14 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as Sentry from "@sentry/node";
-import type { Envelope } from "@sentry/core";
+import type { Envelope, Metric } from "@sentry/core";
 import { createCodexRunner, PluginUpdates, registerPluginUpdateTools, resolveCodexCli, readPluginStore } from "../server/plugin-updates.ts";
 import type { ReadStore, RunCodex } from "../server/plugin-updates.ts";
-import { scrubErrorEvent } from "@mobile-dev/shared/telemetry.ts";
+import { scrubErrorEvent, scrubMetric } from "@mobile-dev/shared/telemetry.ts";
 import { compareReleaseVersions, PLUGIN_STORE_ID, pluginUpdateSchema } from "../shared/plugin-updates.ts";
+
+const githubList = ["plugin", "list", "--marketplace", "mobile-dev", "--available", "--json"];
+const installedList = ["plugin", "list", "--json"];
 
 async function profile(t: test.TestContext) {
   const parent = tmpdir();
@@ -21,10 +24,10 @@ async function profile(t: test.TestContext) {
   return directory;
 }
 
-async function storeManifest(directory: string, version: string) {
+async function storeManifest(directory: string, version: string, manifestVersion = version) {
   const cache = join(directory, "plugins/cache/openai-curated-remote/mobile-dev", version, ".codex-plugin");
   await mkdir(cache, { recursive: true });
-  const text = JSON.stringify({ name: "mobile-dev", version });
+  const text = JSON.stringify({ name: "mobile-dev", version: manifestVersion });
   const path = join(cache, "plugin.json");
   await writeFile(path, text);
 }
@@ -32,7 +35,7 @@ async function storeManifest(directory: string, version: string) {
 type FixtureOptions = {
   github?: boolean; storeVersion?: string; installedVersion?: string; storeInstalled?: boolean;
   storeEnabled?: boolean; storeId?: string; source?: string; keepGithub?: boolean;
-  removeFails?: boolean; marketplaceRemoveFails?: boolean;
+  removeFails?: boolean; marketplaceRemoveFails?: boolean; manifestVersion?: string;
 };
 
 function cliFixture(directory: string, calls: string[][], options: FixtureOptions = {}) {
@@ -53,7 +56,7 @@ function cliFixture(directory: string, calls: string[][], options: FixtureOption
       return { pluginId: "mobile-dev@mobile-dev" };
     }
     const version = options.storeVersion ?? "0.1.167";
-    if (options.storeInstalled) await storeManifest(directory, options.installedVersion ?? version);
+    if (options.storeInstalled) await storeManifest(directory, options.installedVersion ?? version, options.manifestVersion);
     const store = {
       pluginId: "mobile-dev@openai-curated-remote", name: "mobile-dev", marketplaceName: "openai-curated-remote",
       version, installed: options.storeInstalled ?? false, enabled: options.storeEnabled ?? true,
@@ -68,14 +71,11 @@ function cliFixture(directory: string, calls: string[][], options: FixtureOption
     legacy.installed = github;
     if (github) installed.push(legacy);
     else if (marketplace) available.push(legacy);
-    if (store.installed) installed.push({ ...store, version: options.installedVersion ?? store.version });
-    else available.push(store);
+    if (args.includes("--marketplace") === false && store.installed) installed.push({ ...store, version: options.installedVersion ?? store.version });
     return { installed, available };
   };
   const readStore: ReadStore = async () => ({
     remotePluginId: options.storeId ?? PLUGIN_STORE_ID, name: "mobile-dev", version: options.storeVersion ?? "0.1.167",
-    localVersion: options.storeInstalled ? options.installedVersion ?? options.storeVersion ?? "0.1.167" : null,
-    installed: options.storeInstalled ?? false, enabled: options.storeEnabled ?? true,
   });
   return { run, readStore };
 }
@@ -108,12 +108,12 @@ test("the store catalog is the sole update source and checks are shared across c
   assert.equal(initial[1].status, "available");
   const another = new PluginUpdates(options);
   await another.check();
-  assert.deepEqual(calls, [["plugin", "list", "--available", "--json"]]);
+  assert.deepEqual(calls, [githubList, installedList]);
   fixture.storeVersion = "0.1.168";
   now += 60 * 60 * 1000;
   const next = await another.check();
   assert.equal(next.latestVersion, "0.1.168");
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 4);
 });
 
 test("pending review and a newer GitHub build never offer an older store migration", async t => {
@@ -126,7 +126,7 @@ test("pending review and a newer GitHub build never offer an older store migrati
     assert.equal(status.status, "current");
     const migration = updates.migrate();
     await assert.rejects(migration, /Install and enable/);
-    assert.equal(calls.length, 2);
+    assert.equal(calls.length, 4);
   }
   const directory = await profile(t);
   const calls: string[][] = [];
@@ -149,11 +149,11 @@ test("legacy GitHub update caches cannot advertise unpublished store versions", 
   const status = await updates.check();
   assert.equal(status.status, "current");
   assert.equal(status.latestVersion, "0.1.167");
-  assert.equal(calls.length, 1);
+  assert.equal(calls.length, 2);
 });
 
 test("unavailable catalogs, wrong identities and invalid versions stay quiet; development does no CLI work", async t => {
-  for (const fixture of [{ storeId: "another-plugin" }, { storeVersion: "../bad" }]) {
+  for (const fixture of [{ storeId: "another-plugin" }, { storeVersion: "../bad" }, { storeInstalled: true, installedVersion: "invalid" }]) {
     const directory = await profile(t);
     const calls: string[][] = [];
     const { run, readStore } = cliFixture(directory, calls, fixture);
@@ -170,10 +170,10 @@ test("unavailable catalogs, wrong identities and invalid versions stay quiet; de
   const unavailable = await updates.check();
   assert.equal(unavailable.status, "unavailable");
   await updates.check();
-  assert.equal(checks, 1);
+  assert.equal(checks, 2);
   now += 15 * 60 * 1000;
   await updates.check();
-  assert.equal(checks, 2);
+  assert.equal(checks, 4);
   const dev = new PluginUpdates({ enabled: false, run: async () => { assert.fail("Development must not run update commands"); } });
   const disabled = await dev.check();
   assert.equal(disabled.status, "disabled");
@@ -192,7 +192,7 @@ test("migration is offered for the same version and verifies the store before an
     assert.equal(notice.storeInstalled, false);
     const migration = updates.migrate();
     await assert.rejects(migration, /Install and enable/);
-    for (const call of calls) assert.deepEqual(call, ["plugin", "list", "--available", "--json"]);
+    assert.deepEqual(calls, [githubList, installedList, githubList, installedList]);
   }
 });
 
@@ -213,12 +213,12 @@ test("migration removes only GitHub, preserves data, deduplicates clicks and per
   assert.equal(results[0].status, "migrated");
   assert.equal(results[1].status, "migrated");
   assert.deepEqual(calls, [
-    ["plugin", "list", "--available", "--json"],
-    ["plugin", "list", "--available", "--json"],
+    githubList, installedList,
+    githubList, installedList,
     ["plugin", "remove", "mobile-dev@mobile-dev", "--json"],
     ["plugin", "marketplace", "list", "--json"],
     ["plugin", "marketplace", "remove", "mobile-dev", "--json"],
-    ["plugin", "list", "--available", "--json"],
+    githubList, installedList,
   ]);
   const another = new PluginUpdates(options);
   const restart = await another.check();
@@ -331,49 +331,126 @@ test("CLI resolution rejects processes other than the launching Codex executable
   await assert.rejects(resolution, /Could not locate the Codex executable/);
 });
 
-async function catalogServer(t: test.TestContext, reject = false) {
-  const directory = await profile(t);
-  const executable = join(directory, "codex-fixture");
-  const script = `#!${process.execPath}
-import { createInterface } from "node:readline";
-const lines = createInterface({ input: process.stdin });
-for await (const line of lines) {
-  const message = JSON.parse(line);
-  if (message.id === undefined) continue;
-  let result = {};
-  let error;
-  if (message.method === "initialize") {
-    if (message.params.capabilities.experimentalApi !== true) error = { message: "experimental API required" };
-  } else if (${reject}) {
-    error = { message: "PRIVATE_CATALOG_ERROR" };
-  } else if (message.method === "plugin/read" && message.params.remoteMarketplaceName === "openai-curated-remote" && message.params.pluginName === "mobile-dev") {
-    result = { plugin: { summary: { remotePluginId: "${PLUGIN_STORE_ID}", name: "mobile-dev", version: "0.1.168", localVersion: "0.1.167", installed: true, enabled: true } } };
-  } else error = { message: "unexpected request" };
-  const response = JSON.stringify({ id: message.id, result, error });
-  console.log("null");
-  console.log(response);
-}
-`;
-  await writeFile(executable, script, { mode: 0o755 });
-  return { directory, executable };
-}
-
-test("the catalog RPC preserves published and installed versions separately", async t => {
-  const fixture = await catalogServer(t);
-  const plugin = await readPluginStore(fixture.directory, { path: fixture.executable });
-  assert.equal(plugin.version, "0.1.168");
-  assert.equal(plugin.localVersion, "0.1.167");
-  assert.equal(plugin.remotePluginId, PLUGIN_STORE_ID);
+test("published versions are read directly without user authentication or installation state", async () => {
+  const request: typeof fetch = async (url, options) => {
+    assert.equal(url, `https://chatgpt.com/backend-api/ps/plugins/${PLUGIN_STORE_ID}`);
+    assert.equal(options?.credentials, "omit");
+    assert.equal(options?.redirect, "error");
+    const headers = new Headers(options?.headers);
+    assert.equal(headers.get("authorization"), null);
+    assert.equal(headers.get("cookie"), null);
+    assert.equal(headers.get("OAI-Product-Sku"), "codex");
+    return Response.json({ id: PLUGIN_STORE_ID, name: "mobile-dev", status: "ENABLED", release: { version: "0.1.168" }, localVersion: "9.9.9" });
+  };
+  const plugin = await readPluginStore({ fetch: request });
+  assert.deepEqual(plugin, { remotePluginId: PLUGIN_STORE_ID, name: "mobile-dev", version: "0.1.168" });
 });
 
-test("catalog RPC errors are fixed messages and requests stop when aborted", async t => {
-  const fixture = await catalogServer(t, true);
-  const reading = readPluginStore(fixture.directory, { path: fixture.executable });
-  await assert.rejects(reading, /Codex could not read the plugin store catalog/);
-  const abort = new AbortController();
-  const pending = readPluginStore(fixture.directory, { path: fixture.executable, signal: abort.signal });
-  abort.abort();
-  await assert.rejects(pending);
+test("HTTP failures, unpublished releases and malformed store responses use fixed errors", async () => {
+  const valid = { id: PLUGIN_STORE_ID, name: "mobile-dev", status: "ENABLED", release: { version: "0.1.168" } };
+  const responses = [
+    new Response("PRIVATE_CATALOG_ERROR", { status: 503 }),
+    new Response("PRIVATE_CATALOG_ERROR"),
+    Response.json({ ...valid, id: "another-plugin" }),
+    Response.json({ ...valid, name: "another-plugin" }),
+    Response.json({ ...valid, status: "DRAFT" }),
+    Response.json({ ...valid, release: { version: "../bad" } }),
+    Response.json({ ...valid, release: null }),
+  ];
+  for (const response of responses) {
+    const reading = readPluginStore({ fetch: async () => response });
+    await assert.rejects(reading, error => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /Could not read|invalid update response/);
+      const leaked = error.message.includes("PRIVATE_CATALOG_ERROR");
+      assert.equal(leaked, false);
+      return true;
+    });
+  }
+});
+
+test("anonymous check failures preserve timing, classify the cause and exclude private response data", async t => {
+  const metrics: Metric[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false,
+    beforeSendMetric: metric => {
+      const scrubbed = scrubMetric(metric);
+      metrics.push(scrubbed);
+      return null;
+    },
+    transport: () => ({ async send() { return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  const previous = process.env.MOBILE_DEV_TELEMETRY;
+  delete process.env.MOBILE_DEV_TELEMETRY;
+  t.after(async () => {
+    if (previous === undefined) delete process.env.MOBILE_DEV_TELEMETRY;
+    else process.env.MOBILE_DEV_TELEMETRY = previous;
+    await Sentry.close();
+  });
+  const directory = await profile(t);
+  const calls: string[][] = [];
+  const cli = cliFixture(directory, calls);
+  const request: typeof fetch = async () => new Response("PRIVATE_CATALOG_ERROR", { status: 503 });
+  const readStore = () => readPluginStore({ fetch: request });
+  const updates = new PluginUpdates({ enabled: true, profile: directory, run: cli.run, readStore });
+  const result = await updates.check();
+  assert.equal(result.status, "unavailable");
+  const count = metrics.find(metric => metric.name === "plugin.update.operations");
+  assert.equal(count?.attributes?.outcome, "unavailable");
+  assert.equal(count?.attributes?.failure, "store-unavailable");
+  const duration = metrics.find(metric => metric.name === "plugin.update.duration");
+  assert.equal(duration?.unit, "millisecond");
+  const recorded = metrics.length;
+  await updates.check();
+  assert.equal(metrics.length, recorded);
+  const text = JSON.stringify(metrics);
+  const leaked = text.includes("PRIVATE_CATALOG_ERROR") || text.includes(directory);
+  assert.equal(leaked, false);
+});
+
+test("store requests stop when the caller cancels or the deadline expires", async t => {
+  for (const cause of ["caller", "deadline"]) {
+    await t.test(cause, async t => {
+      const caller = new AbortController();
+      const deadline = new AbortController();
+      t.mock.method(AbortSignal, "timeout", () => deadline.signal);
+      const request: typeof fetch = async (_url, options) => {
+        const signal = options?.signal;
+        assert.ok(signal);
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(new Error("PRIVATE_CATALOG_ERROR")), { once: true });
+        });
+      };
+      const reading = readPluginStore({ fetch: request, signal: caller.signal });
+      const controller = cause === "caller" ? caller : deadline;
+      controller.abort();
+      await assert.rejects(reading, /Could not read the Codex plugin store catalog/);
+    });
+  }
+});
+
+test("migration verifies the local installed identity, version, enabled state and manifest", async t => {
+  const fixtures = [
+    { storeInstalled: true, storeId: "another-plugin" },
+    { storeInstalled: true, storeEnabled: false },
+    { storeInstalled: true, installedVersion: "0.1.163" },
+    { storeInstalled: true, manifestVersion: "0.1.166" },
+    { storeInstalled: false },
+  ];
+  for (const fixture of fixtures) {
+    const directory = await profile(t);
+    const calls: string[][] = [];
+    const cli = cliFixture(directory, calls, fixture);
+    const readStore = async () => ({ remotePluginId: PLUGIN_STORE_ID, name: "mobile-dev", version: "0.1.167", installed: true, enabled: true, localVersion: "0.1.167" });
+    const updates = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.167", run: cli.run, readStore });
+    const notice = await updates.check();
+    assert.equal(notice.status, "migration");
+    assert.equal(notice.storeInstalled, false);
+    const migration = updates.migrate();
+    await assert.rejects(migration, /Install and enable/);
+    const removals = calls.filter(call => call[1] === "remove" || call[1] === "marketplace");
+    assert.equal(removals.length, 0);
+  }
 });
 
 test("migration recognizes the renamed official GitHub repository", async t => {
