@@ -1,6 +1,6 @@
 {
-  "version": "0.1.174",
-  "url": "https://github.com/callstackincubator/codex-mobile-dev-plugin/releases/download/v0.1.174/mobile-dev-0.1.174-panel-runtime-darwin-arm64.tar.gz",
-  "sha256": "e869140db8b15838f0cf653c3730551c33f07d8b8f4b2087ebb2af4a124fc8a8",
-  "bytes": 10599772
+  "version": "0.1.175",
+  "url": "https://github.com/callstackincubator/codex-mobile-dev-plugin/releases/download/v0.1.175/mobile-dev-0.1.175-panel-runtime-darwin-arm64.tar.gz",
+  "sha256": "85dc67ce674194b67543898afe4f4d83edbc21dbffe3f07f5a66422b2baba14b",
+  "bytes": 10599778
 }
