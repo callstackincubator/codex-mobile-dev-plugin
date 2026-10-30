@@ -324,7 +324,7 @@ servers still running it and removes older ones (`packages/core/src/panel-runtim
 plugin's panel from a local copy of it, before any release exists. The plugin folder uses `apps/claude/.claude-plugin/plugin.json`, which
 starts `dist/server.mjs` through `scripts/launch-node.sh`. Claude opened from the Dock
 starts plugins without the shell's `PATH`, so the launcher also looks for Node.js 22.19
-or later where Homebrew, nvm, fnm, Volta, mise and asdf install it, and a
+or later where Homebrew, nvm, fnm, Nix, Volta, mise and asdf install it, and a
 `SessionStart` hook (`hooks/hooks.json`) runs it with `--check` to tell the user and
 Claude when none is found. The folder ships `apps/claude/README.md`, which the Claude
 plugin directory lists, instead of the repository's README. It leaves out the Codex

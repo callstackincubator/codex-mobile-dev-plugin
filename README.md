@@ -69,7 +69,7 @@ chat, and TraceSift findings.
 
 On an Apple Silicon Mac with Node.js 22.19 or later, install the Claude Code plugin
 from this repository's `release/claude` branch. It finds Node on `PATH` or where
-Homebrew, nvm, fnm, Volta, mise or asdf install it, and Claude tells you at the start
+Homebrew, nvm, fnm, Nix, Volta, mise or asdf install it, and Claude tells you at the start
 of a session when none is found:
 
 ```sh
