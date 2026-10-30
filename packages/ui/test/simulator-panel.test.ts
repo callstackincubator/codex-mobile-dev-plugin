@@ -2,6 +2,7 @@ import { getDevicePicker } from "../src/device-picker.ts";
 import test from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
+import { setImmediate as flushTasks } from "node:timers/promises";
 import type { App } from "@modelcontextprotocol/ext-apps";
 import type { PanelContext } from "../src/model-context.ts";
 import { createSimulatorPanel } from "../src/simulator-panel.ts";
@@ -140,8 +141,18 @@ function fixture(t: TestContext) {
     if (observeFrames) window.dispatchEvent(Object.assign(new Event("message"), { data: { jsonrpc: "2.0", result }, source: undefined }));
     return result;
   }
+  async function waitForOpen(timeout: number | undefined) {
+    if (delayedOpen === undefined) return;
+    const deadline = Promise.withResolvers<void>();
+    const timer = setTimeout(() => {
+      const error = new Error("Request timed out");
+      deadline.reject(error);
+    }, timeout);
+    try { await Promise.race([delayedOpen, deadline.promise]); }
+    finally { clearTimeout(timer); }
+  }
   const app = {
-    async callServerTool(call: { name: string; arguments: Record<string, unknown> }) {
+    async callServerTool(call: { name: string; arguments: Record<string, unknown> }, options: { timeout?: number } = {}) {
       calls.push(call);
       if (call.name === "mobile_list_android_devices") {
         await delayedDiscovery;
@@ -165,13 +176,13 @@ function fixture(t: TestContext) {
       if (call.name === "mobile_ios_mirror_session") {
         if (physicalCaptureError) return { isError: true, content: [{ type: "text", text: physicalCaptureError }] };
         const id = `physical-${++sessionNumber}`;
-        await delayedOpen;
+        await waitForOpen(options.timeout);
         return { content: [], _meta: { bezel: physicalBezel, sessionId: id, frameUri: `ios-video://mobile-dev/${id}/video` }, structuredContent: { name: "Physical iPhone" } };
       }
       if (call.name.endsWith("_stream_session")) {
         const android = call.name.includes("android");
         const id = `${android ? "android" : "ios"}-${++sessionNumber}`;
-        await delayedOpen;
+        await waitForOpen(options.timeout);
         return { content: [], _meta: { sessionId: id, frameUri: android ? `stream://mobile-dev/${id}/frame` : `mobile-frame://${id}/latest` }, structuredContent: {
           definition: { screen: { rect: { width: 390, height: 844 } } },
           inputStatus: { state: !android && blockedIos ? "blocked" : "ready" },
@@ -473,6 +484,27 @@ for (const state of ["unauthorized", "offline"]) test(`physical Android ${state}
   f.setAndroidDevices([androidPhone]);
   await picker.refresh?.();
   await waitFor(() => f.android.element("screen").draws > 0);
+});
+
+test("Android stream opening waits through device boot and backend readiness", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const f = fixture(t);
+  let release!: () => void;
+  const opening = new Promise<void>(resolve => { release = resolve; });
+  f.delayOpen(opening);
+  await f.android.panel.load();
+  t.mock.timers.tick(155000);
+  await flushTasks();
+  const notice = f.android.element("notice");
+  assert.equal(notice.hidden, true, "Booting must not report a stream request timeout.");
+  release();
+  await flushTasks();
+  t.mock.timers.tick(0);
+  await flushTasks();
+  const screen = f.android.element("screen");
+  assert.ok(screen.draws > 0);
+  const streams = f.calls.filter(call => call.name === "mobile_android_stream_session");
+  assert.equal(streams.length, 1);
 });
 
 test("Android refresh connects an arriving phone once and closes its stream when it disconnects", async t => {

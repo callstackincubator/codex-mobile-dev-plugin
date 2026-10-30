@@ -187,6 +187,7 @@ test("Android MCP flow lists without booting, captures, streams, and closes", as
 });
 
 test("a missing serve-emu runtime tells the user to reinstall and stops the panel's retries", async t => {
+  await fakeInspectionSdk(t);
   // Running from source, serve-emu is never beside this module, so starting a stream finds it missing.
   class Unbundled extends ServeEmu {
     async list() { return { connected: true, managed: false, baseUrl: "", devices: [{ udid: ID, name: "Pixel", state: "Booted", runtime: "Android", platform: "android" as const }] }; }

@@ -11,7 +11,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { z } from "zod";
 import { MeasurementWindow, sampleTrace, scrubErrorEvent, scrubMetric, scrubSpan, sampleMetric, createErrorEventFilter, METRIC_SAMPLE_RATE, TELEMETRY_META_KEY } from "../../shared/src/telemetry.ts";
-import { captureServerError, installTracePropagation, instrumentMcpServer, IOSLogProcessingTelemetry, recordAndroidBackendStartup, recordIosMirrorSharing } from "../src/telemetry.ts";
+import { captureServerError, installTracePropagation, instrumentMcpServer, IOSLogProcessingTelemetry, recordAndroidBackendStartup, recordAndroidBootWait, recordIosMirrorSharing } from "../src/telemetry.ts";
 import { recordPluginUpdate } from "../../../apps/codex-plugin/server/plugin-updates.ts";
 import { deferEpisodeReport, ExpectedOperationError, FailureEpisodes } from "../../shared/src/error-reporting.ts";
 import { parseResourceInput } from "../src/resource-input.ts";
@@ -255,9 +255,11 @@ test("Android backend startup metrics retain product attribution and honor opt-o
   t.after(async () => { await Sentry.close(); });
   recordAndroidBackendStartup(150, "ready");
   recordAndroidBackendStartup(300, "failed");
+  recordAndroidBootWait(4200, "booted");
+  recordAndroidBootWait(120000, "timeout");
   await Sentry.flush();
   const sent = JSON.stringify(envelopes);
-  for (const fragment of ["android.backend.startup.samples", "android.backend.startup.duration", "millisecond", '"surface":{"value":"simulator"', '"device_platform":{"value":"android"', '"outcome":{"value":"ready"', '"outcome":{"value":"failed"']) {
+  for (const fragment of ["android.backend.startup.samples", "android.backend.startup.duration", "android.backend.boot_wait.samples", "android.backend.boot_wait.duration", "millisecond", '"surface":{"value":"simulator"', '"device_platform":{"value":"android"', '"outcome":{"value":"ready"', '"outcome":{"value":"failed"', '"outcome":{"value":"booted"', '"outcome":{"value":"timeout"']) {
     contains(sent, fragment);
   }
   const previous = process.env.MOBILE_DEV_TELEMETRY;
@@ -267,6 +269,7 @@ test("Android backend startup metrics retain product attribution and honor opt-o
     else process.env.MOBILE_DEV_TELEMETRY = previous;
   });
   recordAndroidBackendStartup(999, "failed");
+  recordAndroidBootWait(999, "timeout");
   await Sentry.flush();
   const afterOptOut = JSON.stringify(envelopes);
   assert.equal(afterOptOut, sent);

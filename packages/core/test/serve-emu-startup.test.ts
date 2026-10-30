@@ -44,7 +44,8 @@ const state = ${JSON.stringify(disconnected)};
 if (args[0] === 'devices') { console.log('List of devices attached'); if (fs.existsSync(state) === false) console.log('private-device-id device model:PrivateDevice'); }
 else {
   const command = args.slice(2);
-  if (command[0] === 'forward' && command[1] === 'tcp:0') process.stdout.write('28000');
+  if (command[1] === 'getprop') console.log('1');
+  else if (command[0] === 'forward' && command[1] === 'tcp:0') process.stdout.write('28000');
   else if (command.includes('app_process')) setInterval(() => {}, 1000);
   else if (command[1] === 'cat') { fs.writeFileSync(state, ''); process.stderr.write('device private-device-id not found'); process.exitCode = 1; }
 }
