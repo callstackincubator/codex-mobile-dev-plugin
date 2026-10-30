@@ -4,28 +4,46 @@
   </a>
 </p>
 
-# Mobile Dev
+## Features
 
-Build, run, and debug iOS and Android apps without leaving your AI coding tool.
-Mobile Dev keeps devices beside your agent's chat and works with Expo, React
-Native, SwiftUI, and other native mobile projects.
+### Live devices beside your chat
+Stream iOS simulators, Android emulators, and connected iPhones, iPads, and Android devices. Show iOS and Android together or use the fullscreen workspace.
 
-- [Live devices beside your chat](#live-devices-beside-your-chat): stream iOS and
-  Android simulators, emulators, and physical devices.
-- [Device control, inspection and annotations](#device-control-inspection-and-annotations):
-  let your agent tap, type, and inspect your app, and annotate elements for it.
-- [App control](#app-control): install, launch, and stop apps, open deep links,
-  send pushes, and set permissions and languages.
-- [Device settings and network conditions](#device-settings-and-network-conditions):
-  appearance, text size, rotation, location, status bar, and slow networks.
-- [Native and JavaScript logs](#native-and-javascript-logs): iOS, Android, and
-  Metro logs in one filterable view.
-- [Live performance monitoring and improvements](#live-performance-monitoring-and-improvements):
-  CPU, memory, and FPS charts, with recordings your agent can analyze.
-- [Profile analysis with TraceSift](#profile-analysis-with-tracesift): measured
-  findings from CPU and React profiles, with an explorer.
-- [App storage](#app-storage): browse and watch what your app saves, without
-  adding code to it.
+![](/img/screenshot_side_by_side.png)
+
+### Device control, inspection and annotations
+Select and boot simulators or emulators, interact with taps and drags, type on supported devices, and let your agent inspect accessibility elements and control your app through the bundled [agent-device](https://agent-device.dev/) runtime. Select an element or screen region and leave instructions for your agent, with React Native component and source details when available.
+
+![](/img/screenshot_annotations.png)
+
+### App control
+Install a built app, launch or stop it, and open a deep link or URL to jump to a screen. Send a test push notification to an iOS simulator app. Allow, deny, or reset an app permission without the system prompt, and run an app in another language than the device. The app tools in each device panel launch and stop apps, open URLs, send pushes, and set permissions and language; the agent can also call every action as an MCP tool. Mobile Dev does not build your app; your project's own tools do.
+
+### Device settings and network conditions
+Change the running device's appearance, text size, rotation, location, and status bar without restarting its stream. Switch the network to LTE, 3G, Edge, or Offline to see how the app behaves on a slow or missing connection, then back to Normal. Available settings depend on the platform and device kind.
+
+### Native and JavaScript logs
+Read iOS unified logs, Android logcat, and Metro console messages together. Follow the foreground app, search and filter logs, and send an error and its stack trace to chat.
+
+![](/img/screenshot_logs.png)
+
+### Live performance monitoring and improvements
+Track app CPU and memory, expand individual thread charts, and view device-wide Display FPS on supported devices. Ask your agent to record an interaction, inspect interactive charts in chat, compare runs, and analyze selected ranges. Android recordings include display frame pacing and jank statistics.
+
+![](/img/screenshot_performance.png)
+
+### Profile analysis with TraceSift
+Analyze a local CPU profile or a React DevTools profiling export with TraceSift. The findings appear as cards in chat, each splitting a measured task between the features it entered. Explore opens the full call tree, timeline, and flame graph in the card. Select frames or components there and ask the agent to investigate them, with the measured evidence attached. The TraceSift tool in the device panel uploads a profile and keeps the source folder an investigation should land in.
+
+### App storage
+See what an app has saved without adding code to it, whether it is built with React Native or natively: UserDefaults and App Group containers, Core Data and SwiftData, SharedPreferences, DataStore, MMKV, AsyncStorage, SQLite databases, and the largest files in its data directory. Open SQLite tables as a paged grid, open any file to see JSON, property lists, and archives decoded, search across every store at once, and open the Changes tab to watch keys being added, changed, and removed while you use the app, with only the changed part of JSON values highlighted. SDK data from Firebase, Google Analytics and similar libraries is grouped separately. Clear one store or reset all app data. Works on iOS simulators and debuggable Android builds; MMKV value types are guessed from the stored bytes, and encrypted MMKV instances show as locked.
+
+
+Storage results are filtered before reaching the host or panel. Recognized sensitive
+fields and credential-like values show `[REDACTED]`; binary values are withheld.
+Ask for a specific store/key or table/columns to narrow inspection. This filtering
+cannot identify all personal or confidential data; use synthetic development data.
+See [storage privacy and review checks](docs/storage-privacy.md).
 
 ## Install
 
@@ -121,47 +139,6 @@ npm run build
 npm run build:mac
 open "release/mac/Mobile Dev.app"
 ```
-
-## Features
-
-### Live devices beside your chat
-Stream iOS simulators, Android emulators, and connected iPhones, iPads, and Android devices. Show iOS and Android together or use the fullscreen workspace.
-
-![](/img/screenshot_side_by_side.png)
-
-### Device control, inspection and annotations
-Select and boot simulators or emulators, interact with taps and drags, type on supported devices, and let your agent inspect accessibility elements and control your app through the bundled [agent-device](https://agent-device.dev/) runtime. Select an element or screen region and leave instructions for your agent, with React Native component and source details when available.
-
-![](/img/screenshot_annotations.png)
-
-### App control
-Install a built app, launch or stop it, and open a deep link or URL to jump to a screen. Send a test push notification to an iOS simulator app. Allow, deny, or reset an app permission without the system prompt, and run an app in another language than the device. The app tools in each device panel launch and stop apps, open URLs, send pushes, and set permissions and language; the agent can also call every action as an MCP tool. Mobile Dev does not build your app; your project's own tools do.
-
-### Device settings and network conditions
-Change the running device's appearance, text size, rotation, location, and status bar without restarting its stream. Switch the network to LTE, 3G, Edge, or Offline to see how the app behaves on a slow or missing connection, then back to Normal. Available settings depend on the platform and device kind.
-
-### Native and JavaScript logs
-Read iOS unified logs, Android logcat, and Metro console messages together. Follow the foreground app, search and filter logs, and send an error and its stack trace to chat.
-
-![](/img/screenshot_logs.png)
-
-### Live performance monitoring and improvements
-Track app CPU and memory, expand individual thread charts, and view device-wide Display FPS on supported devices. Ask your agent to record an interaction, inspect interactive charts in chat, compare runs, and analyze selected ranges. Android recordings include display frame pacing and jank statistics.
-
-![](/img/screenshot_performance.png)
-
-### Profile analysis with TraceSift
-Analyze a local CPU profile or a React DevTools profiling export with TraceSift. The findings appear as cards in chat, each splitting a measured task between the features it entered. Explore opens the full call tree, timeline, and flame graph in the card. Select frames or components there and ask the agent to investigate them, with the measured evidence attached. The TraceSift tool in the device panel uploads a profile and keeps the source folder an investigation should land in.
-
-### App storage
-See what an app has saved without adding code to it, whether it is built with React Native or natively: UserDefaults and App Group containers, Core Data and SwiftData, SharedPreferences, DataStore, MMKV, AsyncStorage, SQLite databases, and the largest files in its data directory. Open SQLite tables as a paged grid, open any file to see JSON, property lists, and archives decoded, search across every store at once, and open the Changes tab to watch keys being added, changed, and removed while you use the app, with only the changed part of JSON values highlighted. SDK data from Firebase, Google Analytics and similar libraries is grouped separately. Clear one store or reset all app data. Works on iOS simulators and debuggable Android builds; MMKV value types are guessed from the stored bytes, and encrypted MMKV instances show as locked.
-
-
-Storage results are filtered before reaching the host or panel. Recognized sensitive
-fields and credential-like values show `[REDACTED]`; binary values are withheld.
-Ask for a specific store/key or table/columns to narrow inspection. This filtering
-cannot identify all personal or confidential data; use synthetic development data.
-See [storage privacy and review checks](docs/storage-privacy.md).
 
 ## Requirements
 
