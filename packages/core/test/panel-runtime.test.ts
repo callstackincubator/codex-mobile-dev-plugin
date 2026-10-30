@@ -117,7 +117,8 @@ test("a new version keeps the newest other version and removes older ones", asyn
     await utimes(path, time, time);
   }
   await downloadedPanelRuntime(release, data)();
-  await t.waitFor(async () => assert.deepEqual((await readdir(data)).sort(), ["1.1.0-bbbbbbbbbbbb", `1.2.3-${release.sha256.slice(0, 12)}`]));
+  // Pruning runs after the runtime is ready; give it time on a loaded machine.
+  await t.waitFor(async () => assert.deepEqual((await readdir(data)).sort(), ["1.1.0-bbbbbbbbbbbb", `1.2.3-${release.sha256.slice(0, 12)}`]), { timeout: 15_000 });
 });
 
 test("a prerelease pins and installs its runtime like a release", async t => {

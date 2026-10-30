@@ -304,6 +304,13 @@ test("cleanup can resume when plugin removal succeeded but marketplace removal f
   assert.equal(removals.length, 1);
 });
 
+test("a test deployment's prerelease build compares as the release it precedes", () => {
+  assert.equal(compareReleaseVersions("0.1.172", "0.1.172-test.1"), 0);
+  assert.equal(compareReleaseVersions("0.1.173", "0.1.172-test.1"), 1);
+  assert.equal(pluginUpdateSchema.parse({ status: "current", currentVersion: "0.1.172-test.1", latestVersion: "0.1.171" }).currentVersion, "0.1.172-test.1");
+  assert.throws(() => pluginUpdateSchema.parse({ status: "available", currentVersion: "0.1.171", latestVersion: "0.1.172-test.1" }));
+});
+
 test("update tools remain app-only and the GitHub upgrade tool is removed", async t => {
   const server = new McpServer({ name: "updates-test", version: "1" });
   const updates = new PluginUpdates({ enabled: false });
