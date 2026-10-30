@@ -1,6 +1,6 @@
 {
   "name": "mobile-dev",
-  "version": "0.1.171",
+  "version": "0.1.172",
   "displayName": "Mobile Dev",
   "description": "Control iOS and Android devices while building, running, or debugging mobile apps. Read native and Metro logs, inspect app storage, and record CPU, memory, and FPS into interactive charts in chat. Apple Silicon development preview.",
   "author": {
@@ -20,7 +20,7 @@
     "logs",
     "performance"
   ],
-  "icon": "./assets/icon.svg",
+  "icon": "./assets/icon.png",
   "documentationUrl": "https://github.com/callstackincubator/mobile-dev#readme",
   "supportUrl": "https://github.com/callstackincubator/mobile-dev/blob/main/SUPPORT.md",
   "privacyPolicyUrl": "https://github.com/callstackincubator/mobile-dev/blob/main/PRIVACY.md",

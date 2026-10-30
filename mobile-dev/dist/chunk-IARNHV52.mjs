@@ -1,5 +1,5 @@
 
-!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="e6ca2f03-2fc6-5271-b0a9-e578c36a5477")}catch(e){}}();
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="013ec6d3-255c-55fe-8225-ea85b5bf403e")}catch(e){}}();
 import { createRequire as mobileDevBundleRequire } from 'node:module'; const require = mobileDevBundleRequire(import.meta.url);
 import {
   __commonJS,
@@ -62132,15 +62132,7 @@ var nodeRuntimeMetricsIntegration = defineIntegration((options = {}) => {
 });
 
 // packages/shared/src/version.ts
-var PLUGIN_VERSION = "0.1.171";
-
-// packages/shared/src/telemetry-identity.ts
-function isAnonymousUserId(value) {
-  return typeof value === "string" && /^anon_[a-f0-9]{32}$/.test(value);
-}
-function isTelemetrySessionId(value) {
-  return typeof value === "string" && /^run_[a-f0-9]{32}$/.test(value);
-}
+var PLUGIN_VERSION = "0.1.172";
 
 // packages/shared/src/device-apps-command-diagnostics.ts
 var foregroundCauses = [
@@ -62219,6 +62211,9 @@ function errorCategory(error2) {
 }
 var episodeReports = /* @__PURE__ */ new WeakMap();
 var capturedFailures = /* @__PURE__ */ new WeakSet();
+function deferEpisodeReport(error2, shouldReport) {
+  if (error2 !== null && typeof error2 === "object") episodeReports.set(error2, shouldReport);
+}
 function isRepeatedFailure(error2) {
   if (error2 === null || typeof error2 !== "object") return false;
   const shouldReport = episodeReports.get(error2);
@@ -62247,6 +62242,14 @@ var FailureEpisodes = class {
     this.episodes.clear();
   }
 };
+
+// packages/shared/src/telemetry-identity.ts
+function isAnonymousUserId(value) {
+  return typeof value === "string" && /^anon_[a-f0-9]{32}$/.test(value);
+}
+function isTelemetrySessionId(value) {
+  return typeof value === "string" && /^run_[a-f0-9]{32}$/.test(value);
+}
 
 // packages/shared/src/telemetry.ts
 var SENTRY_SERVER_DSN = "https://2ee03a9449e1f1b48e3e7c7606b6f562@o4512180958068736.ingest.de.sentry.io/4512181033173072";
@@ -62595,6 +62598,7 @@ export {
   ExpectedOperationError,
   expectedOutcome,
   errorCategory,
+  deferEpisodeReport,
   isRepeatedFailure,
   FailureEpisodes,
   SENTRY_SERVER_DSN,
@@ -62628,4 +62632,4 @@ undici/lib/web/websocket/frame.js:
   (*! ws. MIT License. Einar Otto Stangvik <einaros@gmail.com> *)
 */
 
-//# debugId=e6ca2f03-2fc6-5271-b0a9-e578c36a5477
+//# debugId=013ec6d3-255c-55fe-8225-ea85b5bf403e
