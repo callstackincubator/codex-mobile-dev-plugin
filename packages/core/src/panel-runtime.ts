@@ -30,7 +30,7 @@ export function usePanelRuntime(root: () => Promise<string>) {
 }
 
 export const panelRuntimeReleaseSchema = z.object({
-  version: z.string().regex(/^\d+\.\d+\.\d+$/),
+  version: z.string().regex(/^\d+\.\d+\.\d+(?:-[\da-zA-Z.-]+)?$/),
   url: z.string().url().refine(url => /^(?:https|file):/.test(url), "The runtime must come from https or a local file."),
   sha256: z.string().regex(/^[0-9a-f]{64}$/),
   bytes: z.number().int().positive(),
@@ -52,7 +52,7 @@ class RuntimeFailure extends Error {
 
 const DOWNLOAD_TIMEOUT_MS = 10 * 60_000;
 const STALE_MS = 60 * 60_000;
-const installed = /^\d+\.\d+\.\d+-[0-9a-f]{12}$/;
+const installed = /^\d+\.\d+\.\d+(?:-[\da-zA-Z.-]+)?-[0-9a-f]{12}$/;
 const run = promisify(execFile);
 
 /** The persistent folder for downloaded runtimes: the plugin's data folder in Claude Code, else the user's cache. */

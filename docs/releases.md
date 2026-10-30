@@ -18,6 +18,19 @@ uses the current plugin version (for example, `v0.1.100`) without bumping it.
 Existing tags are preserved. If the push fails after tag creation, the command
 prints the exact Git command to retry the push.
 
+### Test deployments
+
+A prerelease version, such as `0.1.172-test.1`, runs the same workflow as a test
+deployment. Set that version in the same three places on a branch, commit it as
+`chore(release): prepare 0.1.172-test.1`, and push the commit and its
+`v0.1.172-test.1` tag. The workflow builds, tests and packages it like a release and
+publishes a GitHub prerelease with every package, including Claude's panel runtime
+archive, which the Claude plugin of that build downloads. A prerelease is never
+marked Latest, later release notes skip it, and it stays off `release/latest` and
+`release/claude`, so Codex and Claude users do not receive it. Install its Claude
+plugin from the prerelease's `claude-plugin` ZIP to test the full download. Delete
+the prerelease and its tag when you are done.
+
 You can also run the workflow from GitHub Actions with an existing version tag.
 The workflow checks out that tag, uses the Apple Silicon `xcode-27` runner and
 Xcode 27 / Swift 6.4, installs the locked JavaScript runtimes, and prepares the

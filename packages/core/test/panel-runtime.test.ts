@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
-import { downloadedPanelRuntime, PANEL_RUNTIME_PARTS, panelRuntimeDirectory, panelRuntimePath, PanelRuntimeUnavailableError, usePanelRuntime, type PanelRuntimeRelease } from "../src/panel-runtime.ts";
+import { downloadedPanelRuntime, PANEL_RUNTIME_PARTS, panelRuntimeDirectory, panelRuntimeReleaseSchema, panelRuntimePath, PanelRuntimeUnavailableError, usePanelRuntime, type PanelRuntimeRelease } from "../src/panel-runtime.ts";
 import { PANEL_PARTS } from "../../../tooling/host-runtime.mjs";
 
 /** A runtime archive laid out like dist/, with extra entries a tampered archive might hold. */
@@ -118,6 +118,15 @@ test("a new version keeps the newest other version and removes older ones", asyn
   }
   await downloadedPanelRuntime(release, data)();
   await t.waitFor(async () => assert.deepEqual((await readdir(data)).sort(), ["1.1.0-bbbbbbbbbbbb", `1.2.3-${release.sha256.slice(0, 12)}`]));
+});
+
+test("a prerelease pins and installs its runtime like a release", async t => {
+  const { release, data } = await archive(t);
+  const pinned = panelRuntimeReleaseSchema.parse({ ...release, version: "0.1.172-test.1" });
+  assert.equal(await downloadedPanelRuntime(pinned, data)(), join(data, `0.1.172-test.1-${release.sha256.slice(0, 12)}`));
+  // A later release replaces it like any other version.
+  await downloadedPanelRuntime({ ...release, version: "0.1.172" }, data)();
+  assert.equal((await readdir(data)).length, 2);
 });
 
 test("Claude Code's plugin data folder holds the runtime when it provides one", () => {
