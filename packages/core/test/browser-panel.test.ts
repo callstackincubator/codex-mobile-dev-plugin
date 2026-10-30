@@ -145,8 +145,10 @@ test("opening the panel links the browser page only for hosts without MCP Apps",
     for (const name of ["mobile_open_simulator", "mobile_open_workspace"]) {
       const result = await host.callTool({ name, arguments: { platform: "android" } });
       const texts = (result.content as Array<{ text: string }>).map(item => item.text);
-      if (ui) { assert.equal(texts.length, 1); continue; }
+      const structured = result.structuredContent as { browserPanel?: { url: string } };
+      if (ui) { assert.equal(texts.length, 1); assert.equal(structured.browserPanel, undefined); continue; }
       assert.equal(texts.length, 2);
+      assert.equal(structured.browserPanel?.url, texts[1].match(/http:\/\/127\.0\.0\.1:\d+\/[\w-]+\/\?\S+/)![0]);
       const link = new URL(texts[1].match(/http:\/\/127\.0\.0\.1:\d+\/[\w-]+\/\?\S+/)![0]);
       assert.equal(link.searchParams.get("tool"), name);
       assert.equal(link.searchParams.get("platform"), "android");
@@ -184,6 +186,11 @@ test("a panel that never renders inline links the browser page for MCP Apps host
     assert.match(text, /beside the chat, not in it/);
     assert.match(text, /never|Open no other address/);
     assert.equal(new URL(text.match(/http:\/\/127\.0\.0\.1:\d+\/[\w-]+\/\?\S+/)![0]).searchParams.get("tool"), name);
+    // Claude Code passes the model only the structured result, so the link and its instructions are there too.
+    const { browserPanel: opening } = result.structuredContent as { browserPanel: { url: string; instructions: string } };
+    assert.equal(new URL(opening.url).searchParams.get("tool"), name);
+    assert.match(opening.instructions, /not open yet/);
+    assert.ok(opening.instructions.includes(opening.url));
   }
   // Opening a recording would render the workspace in the chat.
   assert.equal(tools.some(tool => tool.name === "mobile_open_performance_recording"), false);

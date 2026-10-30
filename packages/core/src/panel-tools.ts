@@ -46,6 +46,8 @@ const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false 
 const write = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
 const deviceInput = { udid: udidSchema.describe("A simulator UDID returned by mobile_list_simulators.") };
 const deviceSchema = z.object({ udid: udidSchema, name: z.string(), state: z.string(), runtime: z.string() });
+const browserPanelOutput = z.object({ url: z.string(), instructions: z.string() }).optional()
+  .describe("Present when the panel is not shown in the chat: the page to open beside it, and how. Follow its instructions.");
 const statusOutput = {
   connected: z.boolean(), managed: z.boolean(),
   baseUrl: z.string().describe("The bundled backend's private address, for Mobile Dev's own requests. It is not a page: never open it or show it to the user."),
@@ -216,9 +218,11 @@ function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, sh
       const fallback = await baguette.status(AbortSignal.timeout(2000));
       status = { ...fallback, error: errorMessage(error) };
     }
-    const response = result({ ...status, panelTarget }, status.connected ? `Found ${status.devices.length} simulators.` : status.error ?? "The bundled simulator backend could not start.");
-    const text = await opened({ tool, target: panelTarget });
-    if (text) response.content.push({ type: "text", text });
+    // Hosts can pass the model either form of a result, and Claude Code passes only the
+    // structured one, so another place to show the panel goes into both.
+    const opening = await opened({ tool, target: panelTarget });
+    const response = result({ ...status, panelTarget, ...opening ? { browserPanel: opening } : {} }, status.connected ? `Found ${status.devices.length} simulators.` : status.error ?? "The bundled simulator backend could not start.");
+    if (opening) response.content.push({ type: "text", text: opening.instructions });
     return response;
   });
 
@@ -227,7 +231,7 @@ function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, sh
   const openingTool = (name: string, config: { description: string; resourceUri: string; entrypoint: "global" | "thread" }) => {
     const definition = {
       title: "Mobile Dev", description: config.description,
-      inputSchema: panelTargetSchema, outputSchema: { ...statusOutput, panelTarget: panelTargetSchema }, annotations: write,
+      inputSchema: panelTargetSchema, outputSchema: { ...statusOutput, panelTarget: panelTargetSchema, browserPanel: browserPanelOutput }, annotations: write,
     };
     if (inline === false) {
       server.registerTool(name, { ...definition, _meta: { [PANEL_PAGE_META]: { resourceUri: config.resourceUri } } }, openPanel(name));

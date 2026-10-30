@@ -52,7 +52,8 @@ export function browserPanel({ template = PAGE, always = false }: BrowserPanelOp
       page ??= startPanelPage(connections, host, template);
       const opened = await page;
       const url = opened.url(tool, target);
-      return `Mobile Dev's panel is a page to show beside the chat, not in it. Show it to the user now: open ${url} in your in-app browser or side panel, in the foreground, so the page is visible without another click. Reuse a tab that already shows Mobile Dev. Open no other address for it, such as the backend's baseUrl. If you cannot open pages, give the user the link. The page shares the user's devices and what they add to chat through mobile_read_panel_context; read it before device work.`;
+      const instructions = `Mobile Dev's panel is a page to show beside the chat, not in it, and it is not open yet. Show it to the user now: open ${url} in your in-app browser or side panel, in the foreground, so the page is visible without another click. Reuse a tab that already shows Mobile Dev. Open no other address for it, such as the backend's baseUrl. If you cannot open pages, give the user the link. The page shares the user's devices and what they add to chat through mobile_read_panel_context; read it before device work.`;
+      return { url, instructions };
     });
     // A browser has no model context of its own, so the agent asks the server for it.
     server.registerTool("mobile_read_panel_context", {
