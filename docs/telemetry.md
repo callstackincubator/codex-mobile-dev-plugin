@@ -28,7 +28,18 @@ Behavior never depends on this value; it only attributes measurements and errors
   and honors telemetry opt-out. `browser_panel.context_update` counts the page's
   model context updates by `outcome` (`stored`, `invalid` or `too_large`), and
   `browser_panel.context_bytes` records the size of stored updates in bytes; the
-  context's text and images are never sent. Browser sessions expire after five idle minutes;
+  context's text and images are never sent.
+- Packages that download the panel's native parts, such as Claude's, measure that
+  step. `panel_runtime.ready` records, in milliseconds, how long the runtime took to be
+  ready on a panel's first backend start in a server, by `outcome`: `cached` when a
+  complete folder was already there, `downloaded` for a download, checksum check and
+  extraction, or `failed` with a bounded `reason` (`network`, `http`, `checksum`,
+  `archive` or `filesystem`). `panel_runtime.download_bytes` records the archive size
+  of each download. A failure surfaces as the expected `download_failed` outcome;
+  checksum, archive and filesystem failures are also captured as
+  `panel_runtime.prepare` errors with a `panel_runtime_failure` tag, while offline
+  machines and unreachable releases are not. URLs, paths and versions are never
+  attributes, and both honor telemetry opt-out. Browser sessions expire after five idle minutes;
   active requests prevent expiry, and open tabs send a ping every 30 seconds.
 - The server's metadata allowlist accepts only these values; the raw host or
   client name is never sent.

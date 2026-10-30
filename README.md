@@ -39,9 +39,12 @@ To install the prebuilt plugin from this repository instead, see
 
 ### Claude Code and Claude Desktop
 
-Claude shows simulators itself, so the Claude version of Mobile Dev has no device
-panel: in Claude Code, ask to see a device and Claude opens its own iOS Simulator or
-Android Emulator pane. Mobile Dev adds device control through the bundled
+In Claude Code, ask to see a device and Claude opens Mobile Dev's device panel in its
+browser beside the chat, such as the Claude desktop app's built-in browser pane. The
+first open downloads the panel's runtime (Baguette, Android streaming and iPhone
+mirroring) once from this repository's GitHub release, checked against the checksum
+the plugin pins. Claude reads the devices you select in the panel and anything you add
+to chat from it. Mobile Dev also adds device control through the bundled
 [agent-device](https://agent-device.dev/) runtime, native
 and Metro logs, app control and storage, interactive CPU, memory and FPS charts in
 chat, and TraceSift findings.
@@ -233,7 +236,7 @@ product in `apps/`:
 | `packages/skills` | Agent skills for the shared tools |
 | `packages/native`, `packages/runtimes` | Native helpers and bundled Node runtimes |
 | `apps/codex-plugin` | The Codex plugin: manifest, updater, and update banner |
-| `apps/claude` | Claude: its server without the panel, skill, and the Claude Desktop extension and Claude Code plugin manifests |
+| `apps/claude` | Claude: its server, which downloads the panel's runtime, skill, and the Claude Desktop extension and Claude Code plugin manifests |
 | `apps/cursor` | Cursor: the Cursor plugin manifest |
 | `apps/mac` | The Mac app: SwiftUI window and its page |
 

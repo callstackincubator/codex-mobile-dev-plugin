@@ -26,6 +26,17 @@ export function recordBrowserPanelContext(outcome: "stored" | "invalid" | "too_l
   if (bytes !== undefined) Sentry.metrics.distribution("browser_panel.context_bytes", bytes, { attributes: { component: "server" }, unit: "byte" });
 }
 
+/**
+ * How long the panel's downloaded runtime took to be ready, by outcome: found complete,
+ * downloaded and extracted, or failed with a bounded reason. Sizes only for downloads.
+ */
+export function recordPanelRuntime(outcome: "cached" | "downloaded" | "failed", duration: number, bytes?: number, reason?: string) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = { component: "server", outcome, ...reason ? { reason } : {} };
+  Sentry.metrics.distribution("panel_runtime.ready", duration, { attributes, unit: "millisecond" });
+  if (bytes !== undefined) Sentry.metrics.distribution("panel_runtime.download_bytes", bytes, { attributes: { component: "server" }, unit: "byte" });
+}
+
 export function recordIosMirrorSharing(captures: number, subscribers: number, dropped: number) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes = { component: "ios-mirror-service", surface: "simulator", device_platform: "ios", device_kind: "physical" };

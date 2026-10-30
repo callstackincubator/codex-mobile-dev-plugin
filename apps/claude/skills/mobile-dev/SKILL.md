@@ -1,13 +1,13 @@
 ---
 name: mobile-dev
-description: Use when building, running, changing, or debugging local iOS, Android, Expo, React Native, or SwiftUI apps in Claude. Opens Claude Code's own simulator when the user wants to see the app, controls devices with Mobile Dev's device_* tools, reads native and Metro logs, and records CPU, memory, and FPS into interactive charts in chat. Skip web-only apps and tasks limited to planning, docs, or code review.
+description: Use when building, running, changing, or debugging local iOS, Android, Expo, React Native, or SwiftUI apps in Claude. Opens Mobile Dev's device panel in the browser beside the chat when the user wants to see the app, controls devices with Mobile Dev's device_* tools, reads native and Metro logs, and records CPU, memory, and FPS into interactive charts in chat. Skip web-only apps and tasks limited to planning, docs, or code review.
 ---
 
 # Mobile Dev
 
-Use the Mobile Dev MCP tools for local iOS and Android work. Mobile Dev has no device
-panel in Claude: Claude Code shows simulators itself, and Mobile Dev adds device
-control, logs, app inspection, and performance recordings with their charts.
+Use the Mobile Dev MCP tools for local iOS and Android work. Mobile Dev's device panel
+opens in a browser beside the chat, and its tools add device control, logs, app
+inspection, and performance recordings with their charts.
 
 If the Mobile Dev tools are missing, tell the user "Mobile Dev could not start." and
 follow [missing-tools recovery](references/missing-tools.md): check which Node.js the
@@ -17,18 +17,21 @@ device tools.
 
 ## Showing a simulator or emulator
 
-When the user asks to open, show, or watch a simulator, emulator, or their running
-app, open Claude Code's own simulator pane: call the **Claude Code iOS Simulator**
-server's `control` tool with `action: "attach"`, or the **Claude Code Android
-Emulator** server's `control` tool for Android. Attach before building when the user
-wants to watch; it opens instantly on a booted device and errors harmlessly when none
-runs, so boot or build first and attach again. Do not describe a Mobile Dev panel.
+When the user asks to open, show, or watch a simulator, emulator, device, or their
+running app, call `mobile_open_simulator` (or `mobile_open_workspace` for logs and
+performance beside the device), before building when the user wants to watch. Its
+result gives a private `127.0.0.1` link: open it in your in-app browser in the
+foreground, so the panel shows beside the chat, and reuse a tab that already shows
+Mobile Dev. Without a browser, give the user the link. Then read
+`mobile_read_panel_context` for the devices the user selected there, and again when
+they refer to something they added from the panel.
 
-Those servers exist only in the Claude desktop app's Code tab, and the user can turn
-them off under Settings → Claude Code → Mobile simulators. Without them, say that
-Claude cannot show a live device here, and use `device_screenshot` when the user
-needs to see the screen. Claude Code's simulator only shows simulators and emulators;
-for a physical iPhone, build and deploy with the project's tools.
+The first open downloads the panel's runtime once, which can take a minute. If it
+fails, tell the user what the result says. In the Claude desktop app's Code tab you
+can show a simulator or emulator with Claude Code's own simulator pane instead: the
+**Claude Code iOS Simulator** or **Claude Code Android Emulator** server's `control`
+tool with `action: "attach"`. Otherwise use `device_screenshot` when the user needs
+to see the screen.
 
 ## Choosing a device
 
@@ -51,7 +54,7 @@ Read device IDs from tool results; never invent them.
   profiling, offer the targets `mobile_performance_sources` finds. Without a
   question tool, ask in chat. Wait for the answer before the pending task; asking
   boots nothing.
-- When the user asks to see their devices, open Claude Code's simulator pane as
+- When the user asks to see their devices, open the Mobile Dev panel as
   above; answer a question about which devices exist briefly from `device_devices`.
 
 ## Controlling the app

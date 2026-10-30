@@ -3,7 +3,7 @@ import { build } from "esbuild";
 import { buildCodexHost } from "../../apps/codex-plugin/tooling/build.mjs";
 import { buildHost as buildClaudeHost } from "../../apps/claude/tooling/build.mjs";
 import { buildServerBundles } from "../server-bundle.mjs";
-import { buildUIPage } from "../ui-page.mjs";
+import { buildHostPage, buildUIPage } from "../ui-page.mjs";
 
 /**
  * Builds every host target's server and page into `.host-tests/<target>`, plus the
@@ -35,10 +35,11 @@ const sharedPage = output => buildUIPage({
 });
 
 const targets = {
-  // Claude Desktop and Claude Code load Claude's server, without the panel, and the
-  // shared page for its cards.
+  // Claude Desktop and Claude Code load Claude's server and the shared page; Claude
+  // Code shows the panel in a browser, through the browser panel's page.
   async claude(directory) {
     await sharedPage(`${directory}/app.html`);
+    await buildHostPage({ entry: "packages/mcp-app/src/browser-panel.ts", template: "packages/mcp-app/src/browser-panel.html", output: `${directory}/browser-panel.html` });
     await buildClaudeHost(directory, { sentryDirectory: ".sentry/host-tests/claude" });
   },
   codex: directory => buildCodexHost(environment, directory),

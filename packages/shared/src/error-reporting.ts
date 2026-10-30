@@ -1,6 +1,6 @@
 import { getDiscoveryCommandDiagnostic } from "./device-apps-command-diagnostics.ts";
 
-export type ExpectedOutcome = "session_expired" | "session_closed" | "cancelled" | "device_unavailable" | "app_unavailable" | "resource_limit" | "unsupported_platform" | "invalid_input";
+export type ExpectedOutcome = "session_expired" | "session_closed" | "cancelled" | "device_unavailable" | "app_unavailable" | "resource_limit" | "unsupported_platform" | "invalid_input" | "download_failed";
 
 export class ExpectedOperationError extends Error {
   readonly outcome: ExpectedOutcome;

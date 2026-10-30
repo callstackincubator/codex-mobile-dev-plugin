@@ -5,6 +5,7 @@ import { telemetryBuildEnvironment } from "./telemetry-build.mjs";
 import { assertRuntime, oversizedFiles, RELEASE_DOCUMENTS as documents, releaseVersion, stageRuntime } from "./host-runtime.mjs";
 import { pluginHost } from "./plugin-hosts.mjs";
 import { pluginMarketplace } from "./plugin-marketplace.mjs";
+import { packPanelRuntime } from "./panel-runtime.mjs";
 
 // Packages the shared server and MCP Apps views for a plugin host: the host-neutral
 // runtime, without the panel's parts for hosts without it, the host's own server where
@@ -20,7 +21,13 @@ const version = await releaseVersion();
 // the same Sentry debug IDs.
 const runtime = resolve(`release/${name}-runtime`);
 await rm(runtime, { recursive: true, force: true });
-await stageRuntime(runtime, { panel: host.panel });
+await stageRuntime(runtime, { panel: host.bundlesPanel });
+// A host that downloads the panel's parts pins their archive, which releases attach.
+if (host.panel && host.bundlesPanel === false) {
+  const { archive, pin } = await packPanelRuntime(version, { release: environment === "release" });
+  await writeFile(`${runtime}/panel-runtime.json`, JSON.stringify(pin, null, 2) + "\n");
+  console.log(`Panel runtime archive: ${archive}`);
+}
 // The server runs agent-device's CLI by its path; npm's bin links are symlinks, which
 // plugin directories reject.
 await rm(`${runtime}/agent-device/node_modules/.bin`, { recursive: true, force: true });

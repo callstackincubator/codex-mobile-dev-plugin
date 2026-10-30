@@ -43,7 +43,7 @@ test.describe("MCP Apps hosts", () => {
     test.skip(pluginHosts[target]?.maxFileBytes === undefined, "This host has no file size limit.");
     const host = pluginHost(target);
     // The built runtime holds every large file the package ships; packaging checks the whole package again.
-    const oversized = await oversizedFiles(join(root, ".host-tests", target), host.maxFileBytes, host.panel ? [] : PANEL_PARTS);
+    const oversized = await oversizedFiles(join(root, ".host-tests", target), host.maxFileBytes, host.bundlesPanel ? [] : PANEL_PARTS);
     expect(oversized, `Files over ${host.label}'s ${host.maxFileBytes}-byte limit`).toEqual([]);
   });
 

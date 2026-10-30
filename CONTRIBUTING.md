@@ -23,7 +23,7 @@ host as an argument.
 | `packages/runtimes` | Pinned Node runtimes bundled into the server (agent-device, serve-emu). |
 | `packages/skills` | Agent skills for the shared tools; each host's package step includes the ones its host supports. |
 | `apps/codex-plugin` | Codex: manifest, launcher, assets, and its own server (`server/`, the self-updater) and panel (`ui/`, the update banner). |
-| `apps/claude` | Claude: the Claude Desktop extension (`manifest.json`, MCPB) and the Claude Code plugin (`.claude-plugin/plugin.json`). Both run Claude's server (`server/`): the shared server without the panel, plus agent-device's commands, with its skill in `skills/` and the shared agent-device skill. |
+| `apps/claude` | Claude: the Claude Desktop extension (`manifest.json`, MCPB) and the Claude Code plugin (`.claude-plugin/plugin.json`). Both run Claude's server (`server/`): the shared server with the panel, which Claude Code shows in a browser, and agent-device's commands, with its skill in `skills/` and the shared agent-device skill. The packages leave out the panel's native parts and download them on first use. |
 | `apps/cursor` | Cursor: the Cursor plugin manifest (`.cursor-plugin/plugin.json`). It runs the shared server and panel unchanged. |
 | `apps/mac` | The Mac app: a SwiftUI shell (`Sources/`), the page it hosts (`web/`) and its server (`server/`). |
 | `packages/test-support` | Fixtures shared by tests across packages and apps. |
@@ -303,11 +303,25 @@ npm run test:claude
 This writes `release/mobile-dev-<version>-claude-desktop-darwin-arm64.mcpb`, the
 Claude plugin folder `release/claude-plugin/mobile-dev` with its ZIP, and a local
 `mobile-dev-local` marketplace in `release/claude-plugin`. Both packages run
-Claude's server (`apps/claude/server`), built over the runtime without the panel's
-parts (`"panel": false` in `apps/claude/plugin-host.json`): no Baguette, serve-emu or
-iOS mirror, with agent-device's commands as `device_*` tools, the skill in
-`apps/claude/skills` and the shared agent-device skill. Packaging fails if a file exceeds the Claude plugin
-directory's 5 MiB limit. The plugin folder uses `apps/claude/.claude-plugin/plugin.json`, which
+Claude's server (`apps/claude/server`), with the panel and agent-device's commands as
+`device_*` tools, the skill in `apps/claude/skills` and the shared agent-device skill.
+Packaging fails if a file exceeds the Claude plugin directory's 5 MiB limit, so the
+packages leave out the panel's native parts (`PANEL_PARTS` in
+`tooling/host-runtime.mjs`: Baguette, serve-emu, the iOS mirror addon and its
+service), as `"panelRuntime": "download"` in `apps/claude/plugin-host.json` asks.
+Packaging packs those parts from `dist/` into
+`release/mobile-dev-<version>-panel-runtime-darwin-arm64.tar.gz` and pins it in
+`dist/panel-runtime.json` with its size and SHA-256. A local build pins the archive by
+its `file:` URL; `--release` pins it on the GitHub release `v<version>`, which the
+release workflow creates with every `release/mobile-dev-<version>-*` file, this archive
+included. On the first panel open, the server downloads the archive, checks its size
+and checksum, refuses entries outside the parts and links, and extracts it into
+`${CLAUDE_PLUGIN_DATA}/panel-runtime/<version>-<checksum>` (or
+`~/Library/Caches/mobile-dev/panel-runtime` without it). The folder appears only once
+complete, so other sessions reuse it; a new version keeps the newest other one for
+servers still running it and removes older ones (`packages/core/src/panel-runtime.ts`).
+`npm run test:claude` checks the pin against the archive and starts the copied
+plugin's panel from a local copy of it, before any release exists. The plugin folder uses `apps/claude/.claude-plugin/plugin.json`, which
 starts `dist/server.mjs` through `scripts/launch-node.sh`. Claude opened from the Dock
 starts plugins without the shell's `PATH`, so the launcher also looks for Node.js 22.19
 or later where Homebrew, nvm, fnm, Volta, mise and asdf install it, and a

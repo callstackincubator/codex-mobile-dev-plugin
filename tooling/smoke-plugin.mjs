@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { access, cp, mkdir, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { access, cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { PANEL_PARTS, releaseVersion } from "./host-runtime.mjs";
+import { panelRuntimeArchive } from "./panel-runtime.mjs";
 import { codexOnlyPaths, pluginHost, pluginHosts } from "./plugin-hosts.mjs";
 
 // Checks a plugin host's packages from a copy in a path with spaces:
@@ -23,6 +27,9 @@ const panelTools = ["mobile_open_workspace", "mobile_open_simulator", "mobile_li
 // Every host's agent controls apps with agent-device's commands.
 const expectedTools = [...panels ? panelTools : ["mobile_render_performance_recording", "mobile_logs_session"], "device_open", "device_snapshot"];
 const panelFiles = PANEL_PARTS.map(part => `dist/${part}`);
+// Packages that leave the panel's parts out pin their archive instead.
+const bundled = host.bundlesPanel;
+const packagedFiles = panels ? bundled ? panelFiles : ["dist/panel-runtime.json", "dist/browser-panel.html"] : [];
 
 async function withServer(label, command, args, env, capabilities, check) {
   const client = new Client({ name: `${name}-${label}-smoke`, version: "1" }, { capabilities });
@@ -57,6 +64,51 @@ async function withServer(label, command, args, env, capabilities, check) {
   } finally { await client.close(); await transport.close(); }
 }
 
+/** The pin matches the archive packaging wrote, and a release pins its GitHub release. */
+async function assertPanelRuntimePin(directory, environment) {
+  const pin = JSON.parse(await readFile(join(directory, "dist/panel-runtime.json"), "utf8"));
+  const archive = resolve("release", panelRuntimeArchive(version));
+  const bytes = await readFile(archive);
+  assert.equal(pin.version, version);
+  assert.equal(pin.bytes, bytes.length);
+  assert.equal(pin.sha256, createHash("sha256").update(bytes).digest("hex"));
+  if (environment === "release") assert.match(pin.url, new RegExp(`^https://github\\.com/[\\w.-]+/[\\w.-]+/releases/download/v${version}/${panelRuntimeArchive(version)}$`));
+  return { pin, archive };
+}
+
+/** Opens the panel the way Claude Code does, with the parts downloaded from a local copy of the pinned archive. */
+async function smokePanelRuntime(plugin, launch) {
+  const { pin, archive } = await assertPanelRuntimePin(plugin, JSON.parse(await readFile(join(plugin, "dist/telemetry-environment.json"), "utf8")).environment);
+  // The published release may not exist yet, so the copy pins this archive by its file.
+  await writeFile(join(plugin, "dist/panel-runtime.json"), JSON.stringify({ ...pin, url: pathToFileURL(archive).href }));
+  const data = join(temporary, "plugin data");
+  await launch({ CLAUDE_PLUGIN_DATA: data }, async client => {
+    const started = await client.callTool({ name: "mobile_start_baguette", arguments: {} });
+    assert.notEqual(started.isError, true, JSON.stringify(started.content));
+    const installed = await readdir(join(data, "panel-runtime"));
+    assert.deepEqual(installed, [`${version}-${pin.sha256.slice(0, 12)}`]);
+    await smokeBrowserPanel(client);
+  });
+}
+
+async function smokeBrowserPanel(client) {
+  const result = await client.callTool({ name: "mobile_open_simulator", arguments: { platform: "ios" } });
+  const text = JSON.stringify(result.content);
+  const address = text.match(/http:\/\/127\.0\.0\.1:\d+\/[\w-]+\/\?[^"\s\\]+/)?.[0];
+  assert.ok(address, "A host without MCP Apps receives a browser panel link.");
+  const page = await fetch(address);
+  assert.equal(page.status, 200);
+  assert.match(await page.text(), /mobile-dev-browser-panel/);
+  const transport = new StreamableHTTPClientTransport(new URL("mcp", address));
+  const panel = new Client({ name: "browser-package-smoke", version: "1" });
+  try {
+    await panel.connect(transport);
+    const context = await client.callTool({ name: "mobile_read_panel_context", arguments: {} });
+    assert.match(context.content[0].text, /No Mobile Dev browser panel/);
+    await transport.terminateSession();
+  } finally { await panel.close(); }
+}
+
 async function smokeDesktopBundle() {
   const archive = resolve(`release/mobile-dev-${version}-${name}-desktop-darwin-arm64.mcpb`);
   const directory = join(temporary, "bundle with spaces");
@@ -69,10 +121,10 @@ async function smokeDesktopBundle() {
   assert.equal(manifest.server.mcp_config.command, "node");
   assert.equal(manifest.server.mcp_config.env, undefined);
   assert.equal(manifest.compatibility.runtimes.node, metadata.engines.node);
-  for (const path of [manifest.server.entry_point, "dist/app.html", "dist/agent-device/tools.json", ...panels ? panelFiles : []]) {
+  for (const path of [manifest.server.entry_point, "dist/app.html", "dist/agent-device/tools.json", ...packagedFiles]) {
     await access(join(directory, path));
   }
-  if (panels === false) for (const path of panelFiles) await assert.rejects(access(join(directory, path)), path);
+  if (bundled === false) for (const path of panelFiles) await assert.rejects(access(join(directory, path)), path);
   // No Codex installation, no PATH Node lookup, and no dependency on package cwd.
   const args = manifest.server.mcp_config.args.map(arg => arg.replaceAll("${__dirname}", directory));
   for (const [environment, forms] of [["development", false], ["release", false], ["development", true]]) {
@@ -103,10 +155,10 @@ try {
   const launcher = server.command !== "node";
   if (launcher) assert.equal(server.command, "/bin/sh");
   assert.deepEqual(server.args, [...launcher ? [`\${${host.root}}/scripts/launch-node.sh`] : [], `\${${host.root}}/dist/server.mjs`]);
-  for (const path of ["LICENSE", "README.md", "PRIVACY.md", "dist/app.html", ...host.skills.map(skill => `skills/${basename(skill)}/SKILL.md`), "skills/agent-device/references/workflow.md", ...panels ? panelFiles : []]) {
+  for (const path of ["LICENSE", "README.md", "PRIVACY.md", "dist/app.html", ...host.skills.map(skill => `skills/${basename(skill)}/SKILL.md`), "skills/agent-device/references/workflow.md", ...packagedFiles]) {
     await access(join(plugin, path));
   }
-  if (panels === false) for (const path of panelFiles) await assert.rejects(access(join(plugin, path)), path);
+  if (bundled === false) for (const path of panelFiles) await assert.rejects(access(join(plugin, path)), path);
   if (host.readme) assert.equal(await readFile(join(plugin, "README.md"), "utf8"), await readFile(host.readme, "utf8"));
   // Plugin directories reject symlinks, and agents/openai.yaml is Codex's skill metadata.
   for (const entry of await readdir(plugin, { recursive: true, withFileTypes: true })) {
@@ -133,5 +185,11 @@ try {
       assert.doesNotMatch(devices.content[0].text, /Agent Device could not/);
     });
     console.log(`${environment}: ${host.label} plugin manifest, payload, startup from the plugin root, device chooser and no Codex updater passed.`);
+  }
+  if (panels && bundled === false) {
+    const launch = (extra, check) => withServer("panel-runtime", launcher ? server.command : process.execPath, args,
+      { MOBILE_DEV_ENVIRONMENT: "development", [host.root]: plugin, ...launcher ? { PATH } : {}, ...extra }, {}, check);
+    await smokePanelRuntime(plugin, launch);
+    console.log(`${host.label} plugin downloaded, verified and started its pinned panel runtime, and opened the browser panel.`);
   }
 } finally { await rm(temporary, { recursive: true, force: true }); }
