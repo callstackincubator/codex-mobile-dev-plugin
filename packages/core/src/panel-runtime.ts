@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { z } from "zod";
 import { ExpectedOperationError, errorMessage } from "@mobile-dev/shared/error-reporting.ts";
+import { BUILD_VERSION_PATTERN } from "@mobile-dev/shared/release-version.ts";
 import { bundledFile } from "./bundled-runtime.ts";
 import { captureServerError, recordPanelRuntime } from "./telemetry.ts";
 
@@ -30,7 +31,8 @@ export function usePanelRuntime(root: () => Promise<string>) {
 }
 
 export const panelRuntimeReleaseSchema = z.object({
-  version: z.string().regex(/^\d+\.\d+\.\d+(?:-[\da-zA-Z.-]+)?$/),
+  // A test deployment's prerelease pins its archive like a release.
+  version: z.string().regex(BUILD_VERSION_PATTERN),
   url: z.string().url().refine(url => /^(?:https|file):/.test(url), "The runtime must come from https or a local file."),
   sha256: z.string().regex(/^[0-9a-f]{64}$/),
   bytes: z.number().int().positive(),
