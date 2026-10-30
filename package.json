@@ -1,6 +1,6 @@
 {
   "name": "mobile-dev",
-  "version": "0.1.172",
+  "version": "0.1.172-test.4",
   "private": true,
   "workspaces": [
     "packages/shared",
