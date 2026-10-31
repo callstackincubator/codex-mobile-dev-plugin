@@ -4,6 +4,9 @@ import { access, realpath } from "node:fs/promises";
 import { constants } from "node:fs";
 import { basename, delimiter, dirname, isAbsolute, join, relative } from "node:path";
 import { promisify } from "node:util";
+import { classifyProcessFailure } from "@mobile-dev/shared/error-diagnostics.ts";
+import { panelRuntimePath } from "./panel-runtime.ts";
+import { isMissingFile, MissingRuntimeError } from "./install-integrity.ts";
 
 export const BAGUETTE_RUNTIME_TIMEOUT_MS = 5000;
 
@@ -78,4 +81,64 @@ export async function baguetteEnvironment(executable: string, signal: AbortSigna
   }
   discoverySignal.throwIfAborted();
   return environment;
+}
+
+export type BaguetteRuntime = { executable: string; env: NodeJS.ProcessEnv };
+/** Finds Baguette and the environment it runs in; tests replace it. */
+export type BaguetteRuntimeReader = (signal: AbortSignal, executable?: string) => Promise<BaguetteRuntime>;
+type Toolchain = Pick<NodeJS.ProcessEnv, "DEVELOPER_DIR" | "DYLD_LIBRARY_PATH">;
+type Discovery = { executable: string; selection: string; toolchain: Promise<Toolchain> };
+let discovery: Discovery | undefined;
+
+/**
+ * The bundled Baguette and the selected Xcode's environment for it. Discovery runs once per Xcode
+ * selection, which `xcode-select` reads cheaply; a failed discovery or spawn discovers again.
+ */
+export async function baguetteRuntime(signal: AbortSignal, executablePath?: string, run: RuntimeCommand = execute): Promise<BaguetteRuntime> {
+  signal.throwIfAborted();
+  // A host that ships without the panel's parts downloads them here on first use.
+  const executable = executablePath ?? await panelRuntimePath("baguette/Baguette");
+  signal.throwIfAborted();
+  await access(executable, constants.X_OK).catch(error => {
+    if (isMissingFile(error)) throw new MissingRuntimeError("baguette");
+    throw new Error("Mobile Dev cannot run its bundled simulator backend. Reinstall Mobile Dev, then restart the app running it.");
+  });
+  const selectionSignal = AbortSignal.any([signal, AbortSignal.timeout(BAGUETTE_RUNTIME_TIMEOUT_MS)]);
+  // A failed read leaves its explanation to the full discovery.
+  const selection = await run("/usr/bin/xcode-select", ["--print-path"], { signal: selectionSignal, encoding: "utf8", maxBuffer: 64 * 1024 })
+    .then(result => result.stdout.trim(), () => "");
+  signal.throwIfAborted();
+  let current = discovery;
+  if (current === undefined || current.executable !== executable || current.selection !== selection || selection === "") {
+    // Callers share the discovery, so one caller's cancellation leaves it running for the others.
+    const toolchain = baguetteEnvironment(executable, new AbortController().signal, run)
+      .then(({ DEVELOPER_DIR, DYLD_LIBRARY_PATH }) => ({ DEVELOPER_DIR, DYLD_LIBRARY_PATH }));
+    const started: Discovery = { executable, selection, toolchain };
+    discovery = current = started;
+    toolchain.catch(() => { if (discovery === started) discovery = undefined; });
+  }
+  const { DEVELOPER_DIR, DYLD_LIBRARY_PATH } = await untilAborted(current.toolchain, signal);
+  const env: NodeJS.ProcessEnv = { ...process.env, DEVELOPER_DIR };
+  delete env.DYLD_LIBRARY_PATH;
+  if (DYLD_LIBRARY_PATH !== undefined) env.DYLD_LIBRARY_PATH = DYLD_LIBRARY_PATH;
+  return { executable, env };
+}
+
+/**
+ * Discovers the runtime again after Baguette could not start or load, as a changed toolchain can
+ * cause. Without an error, or for a failure to launch or a crash, rather than a command's own failure.
+ */
+export function forgetBaguetteRuntime(error?: unknown) {
+  const { termination } = classifyProcessFailure(error);
+  if (error === undefined || termination === "missing_executable" || termination === "signal" || termination === "system_error") discovery = undefined;
+}
+
+async function untilAborted<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {
+  let abort!: () => void;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    abort = () => reject(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
+  });
+  try { return await Promise.race([pending, aborted]); }
+  finally { signal.removeEventListener("abort", abort); }
 }

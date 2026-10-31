@@ -83,14 +83,6 @@ export const traceSiftRestoreSchema = z.discriminatedUnion("restored", [
 
 export const traceSiftHandoffSchema = z.object({ apiVersion: z.literal(1), handoff: z.string().min(1).max(1_000_000) });
 
-/**
- * The full card handed to the explorer. Bulk fields stay `unknown`: megabytes
- * only the explorer draws. Shapes match the package's own handoff types.
- */
-export type TraceSiftTaskHandoff = { analysisId: string; profileTitle: string; totalMs: number; card: Record<string, unknown> };
-/** Every commit timeline of one React analysis, plus the cards that label them. */
-export type TraceSiftReactHandoff = { analysisId: string; profileTitle: string; explore: unknown; cards: unknown[] };
-
 export type TraceSiftTaskCard = z.infer<typeof traceSiftTaskCardSchema>;
 export type TraceSiftReactCard = z.infer<typeof traceSiftReactCardSchema>;
 export type TraceSiftCpuAnalysis = Extract<TraceSiftAnalysis, { profileType: "cpu" }>;

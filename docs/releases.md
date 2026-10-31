@@ -5,7 +5,10 @@
 The `Release plugin` workflow in `.github/workflows/release.yml` runs when you push
 an existing commit with a `v<version>` tag. The tag must match the root `package.json`,
 both root versions in `package-lock.json`, and `packages/shared/src/version.ts`; host
-manifests take the version at package time. After committing your changes, run from the repository root:
+manifests take the version at package time. Release versions are `major.minor.patch`
+(`packages/shared/src/release-version.ts`), the only versions installed Codex updaters
+compare; a prerelease label marks a test deployment (below), which never reaches them.
+After committing your changes, run from the repository root:
 
 ```sh
 npm run public-release

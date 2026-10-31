@@ -8,7 +8,8 @@ release/
 .local-dev/
 .sentry/
 .env.sentry-build-plugin
-packages/native/ios-mirror/target/
+packages/native/target/
+packages/native/*/target/
 .host-tests/
 test-results/
 playwright-report/

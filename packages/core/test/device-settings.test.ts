@@ -1,12 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { DeviceSettingsService } from "../src/device-settings.ts";
-import { DeviceSettingsStore } from "../../ui/src/device-settings.ts";
 import type { Baguette } from "../src/baguette.ts";
 import type { ServeEmu } from "../src/serve-emu.ts";
 import type { AndroidNetworkThrottle, ThrottleReading } from "../src/network-throttle/android.ts";
-import { deviceSettingSchema } from "../../shared/src/device-settings.ts";
-import { expectedOutcome } from "../../shared/src/error-reporting.ts";
+import { deviceSettingSchema } from "@mobile-dev/shared/device-settings.ts";
+import { expectedOutcome } from "@mobile-dev/shared/error-reporting.ts";
 import { SimulatorUnavailableError } from "../src/simulator-unavailable.ts";
 
 const ios = { platform: "ios", id: "B5C969F6-58A4-4C31-AB12-FB9E56D681DE" } as const;
@@ -49,7 +48,7 @@ function fixture() {
   const serveEmu = {
     async start(id: string) { return { url: new URL(`http://localhost/${id}/`) }; },
     device: listed,
-    async json(url: URL, path: string, options: RequestInit = {}) {
+    async json({ url }: { url: URL }, path: string, options: RequestInit = {}) {
       const body = options.body ? JSON.parse(String(options.body)) : undefined;
       requests.push({ platform: "android", id: url.pathname.slice(1, -1), path, method: options.method ?? "GET", body });
       if (path === "/api/night-mode") return { ok: true, nightMode: { mode: body?.mode ?? "light" } };
@@ -168,76 +167,4 @@ test("a failure on a device that stopped or went away is an expected outcome, an
   assert.equal(expectedOutcome(font), "device_unavailable");
   const unsupported = await f.service.update(android, { setting: "increaseContrast", value: true }).catch(error => error);
   assert.equal(expectedOutcome(unsupported), "invalid_input", "an expected outcome is not looked up again");
-});
-
-test("switching devices ignores pending settings and frame changes stay local", async () => {
-  const store = new DeviceSettingsStore();
-  let resolve!: (value: object) => void;
-  let requests = 0;
-  store.request = () => { requests++; return new Promise(done => { resolve = done; }); };
-  store.configure(ios.id, false);
-  const load = store.load();
-  store.configure(android.id, false);
-  resolve({ appearance: "dark", locationSupported: true });
-  await load;
-  assert.equal(store.getSnapshot().settings, undefined);
-  assert.equal(store.getSnapshot().loading, false);
-  let visible = true;
-  store.setFrame = value => { visible = value; };
-  store.toggleFrame(false);
-  assert.equal(visible, false);
-  assert.equal(requests, 1);
-  store.dispose();
-  assert.equal(store.getSnapshot().disabled, true);
-});
-
-test("rapid edits stay interactive and save in order without overwriting queued choices", async () => {
-  const store = new DeviceSettingsStore();
-  const writes: { change: unknown; resolve: (value: object) => void; reject: (error: Error) => void }[] = [];
-  store.configure(ios.id, false);
-  store.request = async change => {
-    if (!change) return { appearance: "light", contentSize: "large", locationSupported: true };
-    return new Promise((resolve, reject) => writes.push({ change, resolve, reject }));
-  };
-  await store.load();
-  const first = store.change({ setting: "appearance", value: "dark" });
-  const second = store.change({ setting: "contentSize", value: "small" });
-  assert.equal(store.getSnapshot().disabled, false);
-  assert.equal(store.getSnapshot().settings?.appearance, "dark");
-  assert.equal(store.getSnapshot().settings?.contentSize, "small");
-  assert.equal(writes.length, 1);
-  writes[0].resolve({ appearance: "dark", contentSize: "large" });
-  await first;
-  assert.equal(store.getSnapshot().settings?.contentSize, "small");
-  assert.equal(writes.length, 2);
-  const third = store.change({ setting: "appearance", value: "light" });
-  writes[1].resolve({ appearance: "dark", contentSize: "small" });
-  await second;
-  assert.equal(store.getSnapshot().settings?.appearance, "light");
-  writes[2].reject(new Error("Device rejected appearance"));
-  await third;
-  assert.equal(store.getSnapshot().settings?.appearance, "dark");
-  assert.equal(store.getSnapshot().settings?.contentSize, "small");
-  assert.match(store.getSnapshot().error, /rejected appearance/);
-  assert.equal(store.getSnapshot().busy, false);
-});
-
-test("a background refresh never replaces a newer edit", async () => {
-  const store = new DeviceSettingsStore();
-  store.configure(ios.id, false);
-  let refresh!: (value: object) => void;
-  let reads = 0;
-  store.request = async change => {
-    if (change) return { appearance: "dark" };
-    if (++reads === 1) return { appearance: "light", locationSupported: true };
-    return new Promise(resolve => { refresh = resolve; });
-  };
-  await store.load();
-  const loading = store.load();
-  await Promise.resolve();
-  assert.equal(store.getSnapshot().settings?.appearance, "light");
-  await store.change({ setting: "appearance", value: "dark" });
-  refresh({ appearance: "light", locationSupported: true });
-  await loading;
-  assert.equal(store.getSnapshot().settings?.appearance, "dark");
 });

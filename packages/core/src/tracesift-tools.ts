@@ -1,35 +1,34 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import { errorMessage } from "@mobile-dev/shared/protocol.ts";
 import { TRACESIFT_URI, traceSiftAnalysisSchema, traceSiftHandoffSchema, traceSiftProfileInputSchema, traceSiftReactCardSchema, traceSiftTaskCardSchema } from "@mobile-dev/shared/tracesift.ts";
 import { gzip as gzipCallback } from "node:zlib";
 import { promisify } from "node:util";
 import { TRACE_SIFT_PAYLOAD_GZIP_MIN_BYTES, TRACE_SIFT_PAYLOAD_MAX_BYTES, traceSiftExploreEnvelopeSchema, TRACE_SIFT_PAYLOAD_TOO_LARGE, traceSiftPayloadTooDeep } from "@mobile-dev/shared/tracesift-explore.ts";
-import { captureServerError, recordTraceSiftOperation, recordTraceSiftPayload } from "./telemetry.ts";
+import { recordTraceSiftOperation, recordTraceSiftPayload } from "./telemetry.ts";
+import { guarded, jsonResult, READ_ONLY as read, WRITES } from "./tool-results.ts";
 import type { TraceSiftClient } from "./tracesift-client.ts";
 import { TraceSiftError } from "./tracesift-client.ts";
 import { pickProfileFile, pickProjectFolder } from "./profile-picker.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 
 // Async so compressing a large tree does not stall other tool calls.
 const gzip = promisify(gzipCallback);
-const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 // Analysis replaces the latest-input reference; remember replaces the host-view reference.
-const persist = { readOnlyHint: false, destructiveHint: true, openWorldHint: false };
+const persist = { ...WRITES, destructiveHint: true };
 // Service-backed reads can start a local background process; Explore also opens a browser.
-const localService = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
+const localService = WRITES;
 const visibility: ("app" | "model")[] = ["app", "model"];
+type TraceSiftProfileInput = z.infer<typeof traceSiftProfileInputSchema>;
 const analysisOutput = {
   apiVersion: z.literal(1), analysisId: z.string(), profileType: z.enum(["cpu", "react"]), title: z.string(),
   summary: z.record(z.string(), z.unknown()), cards: z.array(z.union([traceSiftTaskCardSchema, traceSiftReactCardSchema])),
 };
 
-function failure(error: unknown, operation: "analyze" | "remember" | "restore" | "handoff" | "task" | "payload" | "pick" | "project", startedAt: number, signal: AbortSignal): CallToolResult {
-  recordTraceSiftOperation(operation, "failed", performance.now() - startedAt);
-  captureServerError(error, `tracesift.${operation}`, { signal });
-  return { isError: true, content: [{ type: "text", text: errorMessage(error) }] };
-}
+type TraceSiftOperation = Parameters<typeof recordTraceSiftOperation>[0];
+const timed = (operation: TraceSiftOperation) => ({
+  operation: `tracesift.${operation}`, timed: (outcome: "success" | "failed", duration: number) => recordTraceSiftOperation(operation, outcome, duration),
+});
 
 export function registerTraceSiftTools(server: McpServer, client: TraceSiftClient) {
   registerAppTool(server, "mobile_analyze_profile", {
@@ -38,18 +37,14 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
     inputSchema: traceSiftProfileInputSchema.shape,
     outputSchema: analysisOutput, annotations: persist,
     _meta: { ui: { resourceUri: TRACESIFT_URI, visibility } },
-  }, async ({ path, profileType }, context) => {
-    const startedAt = performance.now();
-    try {
-      const analysis = await client.analyze(path, profileType, context.signal,
-        (outcome, duration) => recordTraceSiftOperation("ready", outcome, duration));
-      recordTraceSiftOperation("analyze", "success", performance.now() - startedAt);
-      // Name each card with its ID so the agent can fetch a card's handoff where the card cannot.
-      const kind = analysis.profileType === "cpu" ? "task" : "React commit";
-      const cards = analysis.cards.map((card, index) => `#${index + 1} (card ${card.id}, ${Math.round(card.durationMs)} ms): ${card.headline}`).join("; ");
-      return { content: [{ type: "text", text: `TraceSift found ${analysis.cards.length} ${kind} cards in analysis ${analysis.analysisId}: ${cards}. Show the inline cards and wait for the user to choose Investigate.` }], structuredContent: analysis };
-    } catch (error) { return failure(error, "analyze", startedAt, context.signal); }
-  });
+  }, guarded(timed("analyze"), async ({ path, profileType }: TraceSiftProfileInput, context) => {
+    const analysis = await client.analyze(path, profileType, context.signal,
+      (outcome, duration) => recordTraceSiftOperation("ready", outcome, duration));
+    // Name each card with its ID so the agent can fetch a card's handoff where the card cannot.
+    const kind = analysis.profileType === "cpu" ? "task" : "React commit";
+    const cards = analysis.cards.map((card, index) => `#${index + 1} (card ${card.id}, ${Math.round(card.durationMs)} ms): ${card.headline}`).join("; ");
+    return { content: [{ type: "text", text: `TraceSift found ${analysis.cards.length} ${kind} cards in analysis ${analysis.analysisId}: ${cards}. Show the inline cards and wait for the user to choose Investigate.` }], structuredContent: analysis };
+  }));
 
   registerAppTool(server, "mobile_pick_profile_file", {
     title: "Choose a profile file to analyze",
@@ -57,17 +52,13 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
     inputSchema: {},
     outputSchema: { picked: z.boolean(), path: z.string().optional() }, annotations: localService,
     _meta: { ui: { visibility: ["app"] } },
-  }, async (_input, context) => {
-    const startedAt = performance.now();
-    try {
-      const chosen = await pickProfileFile();
-      recordTraceSiftOperation("pick", "success", performance.now() - startedAt);
-      return {
-        content: [{ type: "text", text: chosen.picked ? "A profile file was chosen." : "No profile file was chosen." }],
-        structuredContent: chosen.picked ? { picked: true, path: chosen.path } : { picked: false },
-      };
-    } catch (error) { return failure(error, "pick", startedAt, context.signal); }
-  });
+  }, guarded(timed("pick"), async () => {
+    const chosen = await pickProfileFile();
+    return {
+      content: [{ type: "text", text: chosen.picked ? "A profile file was chosen." : "No profile file was chosen." }],
+      structuredContent: chosen.picked ? { picked: true, path: chosen.path } : { picked: false },
+    };
+  }));
 
   registerAppTool(server, "mobile_get_tracesift_project", {
     title: "Read the project TraceSift findings are investigated in",
@@ -75,17 +66,13 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
     inputSchema: {},
     outputSchema: { path: z.string().optional() }, annotations: read,
     _meta: { ui: { visibility: ["app"] } },
-  }, async (_input, context) => {
-    const startedAt = performance.now();
-    try {
-      const path = await client.readProject();
-      recordTraceSiftOperation("project", "success", performance.now() - startedAt);
-      return {
-        content: [{ type: "text", text: path ? "A project folder is chosen." : "No project folder is chosen." }],
-        structuredContent: path ? { path } : {},
-      };
-    } catch (error) { return failure(error, "project", startedAt, context.signal); }
-  });
+  }, guarded(timed("project"), async () => {
+    const path = await client.readProject();
+    return {
+      content: [{ type: "text", text: path ? "A project folder is chosen." : "No project folder is chosen." }],
+      structuredContent: path ? { path } : {},
+    };
+  }));
 
   registerAppTool(server, "mobile_pick_tracesift_project", {
     title: "Choose the project TraceSift findings are investigated in",
@@ -93,19 +80,15 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
     inputSchema: {},
     outputSchema: { picked: z.boolean(), path: z.string().optional() }, annotations: persist,
     _meta: { ui: { visibility: ["app"] } },
-  }, async (_input, context) => {
-    const startedAt = performance.now();
-    try {
-      const chosen = await pickProjectFolder();
-      // Cancel leaves the saved folder standing, so nothing is written for it.
-      const path = chosen.picked ? await client.writeProject(chosen.path) : undefined;
-      recordTraceSiftOperation("project", "success", performance.now() - startedAt);
-      return {
-        content: [{ type: "text", text: path ? "A project folder was chosen." : "No project folder was chosen." }],
-        structuredContent: path ? { picked: true, path } : { picked: false },
-      };
-    } catch (error) { return failure(error, "project", startedAt, context.signal); }
-  });
+  }, guarded(timed("project"), async () => {
+    const chosen = await pickProjectFolder();
+    // Cancel leaves the saved folder standing, so nothing is written for it.
+    const path = chosen.picked ? await client.writeProject(chosen.path) : undefined;
+    return {
+      content: [{ type: "text", text: path ? "A project folder was chosen." : "No project folder was chosen." }],
+      structuredContent: path ? { picked: true, path } : { picked: false },
+    };
+  }));
 
   registerAppTool(server, "mobile_remember_tracesift_analysis", {
     title: "Remember a TraceSift analysis for this card",
@@ -113,14 +96,10 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
     inputSchema: { viewId: z.union([z.string(), z.number()]), analysisId: z.string().min(1).max(256) },
     outputSchema: { remembered: z.literal(true) }, annotations: persist,
     _meta: { ui: { visibility: ["app"] } },
-  }, async ({ viewId, analysisId }, context) => {
-    const startedAt = performance.now();
-    try {
-      await client.remember(viewId, analysisId);
-      recordTraceSiftOperation("remember", "success", performance.now() - startedAt);
-      return { content: [{ type: "text", text: "TraceSift analysis remembered for this card." }], structuredContent: { remembered: true as const } };
-    } catch (error) { return failure(error, "remember", startedAt, context.signal); }
-  });
+  }, guarded(timed("remember"), async ({ viewId, analysisId }: { viewId: string | number; analysisId: string }) => {
+    await client.remember(viewId, analysisId);
+    return { content: [{ type: "text", text: "TraceSift analysis remembered for this card." }], structuredContent: { remembered: true as const } };
+  }));
 
   registerAppTool(server, "mobile_restore_tracesift_analysis", {
     title: "Restore a TraceSift analysis",
@@ -128,15 +107,11 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
     inputSchema: { viewId: z.union([z.string(), z.number()]) },
     outputSchema: { apiVersion: z.literal(1), restored: z.boolean(), analysis: traceSiftAnalysisSchema.optional() }, annotations: read,
     _meta: { ui: { visibility: ["app"] } },
-  }, async ({ viewId }, context) => {
-    const startedAt = performance.now();
-    try {
-      const analysis = await client.restore(viewId);
-      recordTraceSiftOperation("restore", "success", performance.now() - startedAt);
-      const structuredContent = { apiVersion: 1 as const, restored: analysis !== undefined, ...(analysis ? { analysis } : {}) };
-      return { content: [{ type: "text", text: analysis ? "TraceSift analysis restored." : "No saved TraceSift analysis was found." }], structuredContent };
-    } catch (error) { return failure(error, "restore", startedAt, context.signal); }
-  });
+  }, guarded(timed("restore"), async ({ viewId }: { viewId: string | number }) => {
+    const analysis = await client.restore(viewId);
+    const structuredContent = { apiVersion: 1 as const, restored: analysis !== undefined, ...(analysis ? { analysis } : {}) };
+    return { content: [{ type: "text", text: analysis ? "TraceSift analysis restored." : "No saved TraceSift analysis was found." }], structuredContent };
+  }));
 
   registerAppTool(server, "mobile_restore_tracesift_analysis_by_input", {
     title: "Restore a TraceSift analysis from its original profile input",
@@ -144,15 +119,11 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
     inputSchema: traceSiftProfileInputSchema.shape,
     outputSchema: { apiVersion: z.literal(1), restored: z.boolean(), analysis: traceSiftAnalysisSchema.optional() }, annotations: read,
     _meta: { ui: { visibility: ["app"] } },
-  }, async ({ path, profileType }, context) => {
-    const startedAt = performance.now();
-    try {
-      const analysis = await client.restoreInput(path, profileType);
-      recordTraceSiftOperation("restore", "success", performance.now() - startedAt);
-      const structuredContent = { apiVersion: 1 as const, restored: analysis !== undefined, ...(analysis ? { analysis } : {}) };
-      return { content: [{ type: "text", text: analysis ? "TraceSift analysis restored." : "No saved TraceSift analysis was found." }], structuredContent };
-    } catch (error) { return failure(error, "restore", startedAt, context.signal); }
-  });
+  }, guarded(timed("restore"), async ({ path, profileType }: TraceSiftProfileInput) => {
+    const analysis = await client.restoreInput(path, profileType);
+    const structuredContent = { apiVersion: 1 as const, restored: analysis !== undefined, ...(analysis ? { analysis } : {}) };
+    return { content: [{ type: "text", text: analysis ? "TraceSift analysis restored." : "No saved TraceSift analysis was found." }], structuredContent };
+  }));
 
   registerAppTool(server, "mobile_open_tracesift_explore", {
     title: "Open a TraceSift finding in its web explorer",
@@ -164,20 +135,16 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
     },
     outputSchema: { opened: z.literal(true) }, annotations: localService,
     _meta: { ui: { visibility: ["app"] } },
-  }, async ({ analysisId, taskIndex, rootId, commitIndex, focus }, context) => {
-    const startedAt = performance.now();
-    try {
-      if (taskIndex !== undefined && rootId === undefined && commitIndex === undefined) {
-        await client.openExplore(analysisId, taskIndex, focus, context.signal);
-      } else if (taskIndex === undefined && rootId !== undefined && commitIndex !== undefined && focus === undefined) {
-        await client.openReactExplore(analysisId, rootId, commitIndex, context.signal);
-      } else {
-        throw new Error("Explore requires either a CPU task index or a React root and commit index.");
-      }
-      recordTraceSiftOperation("task", "success", performance.now() - startedAt);
-      return { content: [{ type: "text", text: "TraceSift Explore opened." }], structuredContent: { opened: true as const } };
-    } catch (error) { return failure(error, "task", startedAt, context.signal); }
-  });
+  }, guarded(timed("task"), async ({ analysisId, taskIndex, rootId, commitIndex, focus }: { analysisId: string; taskIndex?: number; rootId?: number; commitIndex?: number; focus?: string }, context) => {
+    if (taskIndex !== undefined && rootId === undefined && commitIndex === undefined) {
+      await client.openExplore(analysisId, taskIndex, focus, context.signal);
+    } else if (taskIndex === undefined && rootId !== undefined && commitIndex !== undefined && focus === undefined) {
+      await client.openReactExplore(analysisId, rootId, commitIndex, context.signal);
+    } else {
+      throw new Error("Explore requires either a CPU task index or a React root and commit index.");
+    }
+    return { content: [{ type: "text", text: "TraceSift Explore opened." }], structuredContent: { opened: true as const } };
+  }));
 
   registerAppTool(server, "mobile_tracesift_explore_payload", {
     title: "Load the full data one TraceSift finding explores",
@@ -189,36 +156,28 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
     outputSchema: traceSiftExploreEnvelopeSchema.shape,
     annotations: localService,
     _meta: { ui: { visibility: ["app"] } },
-  }, async ({ analysisId, taskIndex }, context) => {
-    const startedAt = performance.now();
-    try {
-      const handoff = taskIndex === undefined
-        ? { kind: "react" as const, value: await client.exploreReact(analysisId, context.signal) as unknown }
-        : { kind: "task" as const, value: await client.exploreTask(analysisId, taskIndex, context.signal) as unknown };
-      // Checked iteratively: `JSON.stringify` recurses and a runaway tree would overflow the stack first.
-      if (traceSiftPayloadTooDeep(handoff.value)) throw new TraceSiftError(TRACE_SIFT_PAYLOAD_TOO_LARGE, "response");
-      // V8 can still overflow under the depth bound; treat it as too large.
-      let json: string;
-      try { json = JSON.stringify(handoff.value); }
-      catch (error) { throw error instanceof RangeError ? new TraceSiftError(TRACE_SIFT_PAYLOAD_TOO_LARGE, "response") : error; }
-      const raw = { kind: handoff.kind, json };
-      if (raw.json.length > TRACE_SIFT_PAYLOAD_MAX_BYTES) throw new TraceSiftError(TRACE_SIFT_PAYLOAD_TOO_LARGE, "response");
-      // Compressed payloads cross as a string the host's structured decoder never walks.
-      const compressed = raw.json.length > TRACE_SIFT_PAYLOAD_GZIP_MIN_BYTES;
-      const text = compressed ? (await gzip(raw.json, { level: 6 })).toString("base64") : raw.json;
-      const result: CallToolResult = {
-        content: [{ type: "text", text }],
-        structuredContent: {
-          apiVersion: 1 as const, kind: raw.kind,
-          encoding: compressed ? "gzip+base64" as const : "json" as const,
-          payloadBytes: raw.json.length,
-        },
-      };
-      recordTraceSiftOperation("payload", "success", performance.now() - startedAt);
-      recordTraceSiftPayload(result.structuredContent.kind, result.structuredContent.payloadBytes);
-      return result;
-    } catch (error) { return failure(error, "payload", startedAt, context.signal); }
-  });
+  }, guarded(timed("payload"), async ({ analysisId, taskIndex }: { analysisId: string; taskIndex?: number }, context) => {
+    const handoff = taskIndex === undefined
+      ? { kind: "react" as const, value: await client.exploreReact(analysisId, context.signal) as unknown }
+      : { kind: "task" as const, value: await client.exploreTask(analysisId, taskIndex, context.signal) as unknown };
+    // Checked iteratively: `JSON.stringify` recurses and a runaway tree would overflow the stack first.
+    if (traceSiftPayloadTooDeep(handoff.value)) throw new TraceSiftError(TRACE_SIFT_PAYLOAD_TOO_LARGE, "response");
+    // V8 can still overflow under the depth bound; treat it as too large.
+    let json: string;
+    try { json = JSON.stringify(handoff.value); }
+    catch (error) { throw error instanceof RangeError ? new TraceSiftError(TRACE_SIFT_PAYLOAD_TOO_LARGE, "response") : error; }
+    const raw = { kind: handoff.kind, json };
+    if (raw.json.length > TRACE_SIFT_PAYLOAD_MAX_BYTES) throw new TraceSiftError(TRACE_SIFT_PAYLOAD_TOO_LARGE, "response");
+    // Compressed payloads cross as a string the host's structured decoder never walks.
+    const compressed = raw.json.length > TRACE_SIFT_PAYLOAD_GZIP_MIN_BYTES;
+    const text = compressed ? (await gzip(raw.json, { level: 6 })).toString("base64") : raw.json;
+    recordTraceSiftPayload(raw.kind, raw.json.length);
+    return jsonResult({
+      apiVersion: 1 as const, kind: raw.kind,
+      encoding: compressed ? "gzip+base64" as const : "json" as const,
+      payloadBytes: raw.json.length,
+    }, text);
+  }));
 
   registerAppTool(server, "mobile_get_tracesift_handoff", {
     title: "Get a TraceSift card handoff",
@@ -226,14 +185,10 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
     inputSchema: { analysisId: z.string().min(1).max(256), cardId: z.string().min(1).max(256) },
     outputSchema: traceSiftHandoffSchema.shape, annotations: localService,
     _meta: { ui: { visibility } },
-  }, async ({ analysisId, cardId }, context) => {
-    const startedAt = performance.now();
-    try {
-      const handoff = await client.handoff(analysisId, cardId, context.signal);
-      recordTraceSiftOperation("handoff", "success", performance.now() - startedAt);
-      const structuredContent = { apiVersion: 1 as const, handoff };
-      // The handoff is the evidence an investigation starts from; the agent reads it as text.
-      return { content: [{ type: "text", text: handoff }], structuredContent };
-    } catch (error) { return failure(error, "handoff", startedAt, context.signal); }
-  });
+  }, guarded(timed("handoff"), async ({ analysisId, cardId }: { analysisId: string; cardId: string }, context) => {
+    const handoff = await client.handoff(analysisId, cardId, context.signal);
+    const structuredContent = { apiVersion: 1 as const, handoff };
+    // The handoff is the evidence an investigation starts from; the agent reads it as text.
+    return { content: [{ type: "text", text: handoff }], structuredContent };
+  }));
 }

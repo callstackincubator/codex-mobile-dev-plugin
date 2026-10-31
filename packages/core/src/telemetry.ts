@@ -3,27 +3,38 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { McpServer, ResourceTemplate, ResourceMetadata, ReadResourceCallback, ReadResourceTemplateCallback, RegisteredResource, RegisteredResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { MeasurementWindow, TELEMETRY_HOSTS, TELEMETRY_INTERVAL_MS, TELEMETRY_META_KEY, telemetryHost } from "@mobile-dev/shared/telemetry.ts";
+import type { TelemetryHost } from "@mobile-dev/shared/telemetry.ts";
 import { ExpectedOperationError, expectedOutcome, isRepeatedFailure } from "@mobile-dev/shared/error-reporting.ts";
 import { closeNativeTelemetry } from "./native-telemetry.ts";
 import { closeHttpRuntime } from "./http-runtime.ts";
-import { definitionDiagnosticTags } from "@mobile-dev/shared/simulator-definition-diagnostics.ts";
-import { deviceAppsDiagnosticTags } from "@mobile-dev/shared/device-apps-diagnostics.ts";
-import { getDiscoveryCommandDiagnostic } from "@mobile-dev/shared/device-apps-command-diagnostics.ts";
-import { androidStartupDiagnosticTags } from "@mobile-dev/shared/android-startup-diagnostics.ts";
-import { installIntegrityTags } from "./install-integrity.ts";
+import { diagnosticContexts, diagnosticReportTags, diagnosticTags } from "@mobile-dev/shared/error-diagnostics.ts";
 import type { AndroidStartupSummary, AndroidStartupContext, AndroidStartupFailure, AndroidDeviceState } from "@mobile-dev/shared/android-startup-diagnostics.ts";
 
+/** Whether the user allows telemetry; read on each call, since tests switch it. */
+export const telemetryEnabled = () => process.env.MOBILE_DEV_TELEMETRY !== "off";
+
+type Attributes = Record<string, string | number | boolean>;
+/** Adds `value` to the count `name`, unless telemetry is off. */
+export function count(name: string, value: number, attributes: Attributes) {
+  if (telemetryEnabled()) Sentry.metrics.count(name, value, { attributes });
+}
+/** Records the gauge `name`, unless telemetry is off. */
+export function gauge(name: string, value: number, attributes: Attributes, unit?: "millisecond" | "byte") {
+  if (telemetryEnabled()) Sentry.metrics.gauge(name, value, unit === undefined ? { attributes } : { unit, attributes });
+}
+/** Adds `value` to the distribution `name`, unless telemetry is off. */
+export function distribution(name: string, value: number, attributes: Attributes, unit: "millisecond" | "byte") {
+  if (telemetryEnabled()) Sentry.metrics.distribution(name, value, { unit, attributes });
+}
+
 export function recordBrowserPanelSessions(active: number) {
-  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
-  Sentry.metrics.gauge("browser_panel.sessions", active, { attributes: { component: "server" } });
+  gauge("browser_panel.sessions", active, { component: "server" });
 }
 
 /** Counts browser panel context updates by outcome; sizes only for stored updates, never their content. */
 export function recordBrowserPanelContext(outcome: "stored" | "invalid" | "too_large", bytes?: number) {
-  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
-  const attributes = { component: "server", outcome };
-  Sentry.metrics.count("browser_panel.context_update", 1, { attributes });
-  if (bytes !== undefined) Sentry.metrics.distribution("browser_panel.context_bytes", bytes, { attributes: { component: "server" }, unit: "byte" });
+  count("browser_panel.context_update", 1, { component: "server", outcome });
+  if (bytes !== undefined) distribution("browser_panel.context_bytes", bytes, { component: "server" }, "byte");
 }
 
 /**
@@ -31,33 +42,28 @@ export function recordBrowserPanelContext(outcome: "stored" | "invalid" | "too_l
  * downloaded and extracted, or failed with a bounded reason. Sizes only for downloads.
  */
 export function recordPanelRuntime(outcome: "cached" | "downloaded" | "failed", duration: number, bytes?: number, reason?: string) {
-  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
-  const attributes = { component: "server", outcome, ...reason ? { reason } : {} };
-  Sentry.metrics.distribution("panel_runtime.ready", duration, { attributes, unit: "millisecond" });
-  if (bytes !== undefined) Sentry.metrics.distribution("panel_runtime.download_bytes", bytes, { attributes: { component: "server" }, unit: "byte" });
+  distribution("panel_runtime.ready", duration, { component: "server", outcome, ...reason ? { reason } : {} }, "millisecond");
+  if (bytes !== undefined) distribution("panel_runtime.download_bytes", bytes, { component: "server" }, "byte");
 }
 
 export function recordIosMirrorSharing(captures: number, subscribers: number, dropped: number) {
-  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes = { component: "ios-mirror-service", surface: "simulator", device_platform: "ios", device_kind: "physical" };
-  Sentry.metrics.gauge("ios.mirror.shared.captures", captures, { attributes });
-  Sentry.metrics.gauge("ios.mirror.shared.subscribers", subscribers, { attributes });
-  if (dropped > 0) Sentry.metrics.count("ios.mirror.shared.queue_dropped", dropped, { attributes });
+  gauge("ios.mirror.shared.captures", captures, attributes);
+  gauge("ios.mirror.shared.subscribers", subscribers, attributes);
+  if (dropped > 0) count("ios.mirror.shared.queue_dropped", dropped, attributes);
 }
 
 export type AppStorageOperation = "read" | "clear" | "reset" | "table" | "file";
 export function recordAppStorageOperation(operation: AppStorageOperation, platform: "ios" | "android", outcome: "success" | "failed", duration: number) {
-  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes = { component: "server", surface: "storage", operation, device_platform: platform, outcome };
-  Sentry.metrics.count("app_storage.operation.samples", 1, { attributes });
-  Sentry.metrics.gauge("app_storage.operation.duration", duration, { unit: "millisecond", attributes });
+  count("app_storage.operation.samples", 1, attributes);
+  gauge("app_storage.operation.duration", duration, attributes, "millisecond");
 }
 
 export function recordTraceSiftOperation(operation: "ready" | "analyze" | "remember" | "restore" | "handoff" | "task" | "payload" | "pick" | "project", outcome: "success" | "failed", duration: number) {
-  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes = { component: "server", surface: "tracesift", operation, outcome };
-  Sentry.metrics.count("tracesift.operation.samples", 1, { attributes });
-  Sentry.metrics.gauge("tracesift.operation.duration", duration, { unit: "millisecond", attributes });
+  count("tracesift.operation.samples", 1, attributes);
+  gauge("tracesift.operation.duration", duration, attributes, "millisecond");
 }
 
 /**
@@ -65,35 +71,34 @@ export function recordTraceSiftOperation(operation: "ready" | "analyze" | "remem
  * the bridge handles shows up here long before a reader reports it.
  */
 export function recordTraceSiftPayload(kind: "task" | "react", bytes: number) {
-  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
-  const attributes = { component: "server", surface: "tracesift", kind };
-  Sentry.metrics.gauge("tracesift.explore.payload_bytes", bytes, { unit: "byte", attributes });
+  gauge("tracesift.explore.payload_bytes", bytes, { component: "server", surface: "tracesift", kind }, "byte");
+}
+
+export type CollectorReadiness = { collector: "cpu" | "fps"; platform: "ios" | "android"; kind: "simulator" | "physical" | "emulator" };
+export function recordCollectorReady({ collector, platform, kind }: CollectorReadiness, outcome: "ready" | "failed" | "cancelled", duration: number) {
+  const attributes = { component: "server", surface: "performance", collector, device_platform: platform, device_kind: kind, outcome };
+  count("collector.ready.samples", 1, attributes);
+  gauge("collector.ready.duration", duration, attributes, "millisecond");
 }
 
 export function recordAccessibilityBridgeRestart(outcome: "recovered" | "unavailable" | "failed") {
-  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
-  const attributes = { component: "server", device_platform: "ios", device_kind: "simulator", outcome };
-  Sentry.metrics.count("ios.accessibility_bridge.restarts", 1, { attributes });
+  count("ios.accessibility_bridge.restarts", 1, { component: "server", device_platform: "ios", device_kind: "simulator", outcome });
 }
 
 export function recordAndroidEmulatorReconnect(trigger: "boot" | "selection") {
-  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
-  const attributes = { component: "server", surface: "simulator", device_platform: "android", device_kind: "emulator", trigger };
-  Sentry.metrics.count("android.emulator.adb_reconnects", 1, { attributes });
+  count("android.emulator.adb_reconnects", 1, { component: "server", surface: "simulator", device_platform: "android", device_kind: "emulator", trigger });
 }
 
 export function recordAndroidBootWait(duration: number, outcome: "booted" | "timeout") {
-  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes = { component: "server", surface: "simulator", device_platform: "android", outcome };
-  Sentry.metrics.count("android.backend.boot_wait.samples", 1, { attributes });
-  Sentry.metrics.gauge("android.backend.boot_wait.duration", duration, { unit: "millisecond", attributes });
+  count("android.backend.boot_wait.samples", 1, attributes);
+  gauge("android.backend.boot_wait.duration", duration, attributes, "millisecond");
 }
 
 export function recordAndroidBackendStartup(duration: number, outcome: "ready" | "failed") {
-  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes = { component: "server", surface: "simulator", device_platform: "android", outcome };
-  Sentry.metrics.count("android.backend.startup.samples", 1, { attributes });
-  Sentry.metrics.gauge("android.backend.startup.duration", duration, { unit: "millisecond", attributes });
+  count("android.backend.startup.samples", 1, attributes);
+  gauge("android.backend.startup.duration", duration, attributes, "millisecond");
 }
 
 function androidStartupAttributes(context: AndroidStartupContext) {
@@ -105,50 +110,44 @@ function androidStartupAttributes(context: AndroidStartupContext) {
 }
 
 export function recordAndroidStartupStages(summary: AndroidStartupSummary, context: AndroidStartupContext) {
-  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const product = androidStartupAttributes(context);
   for (const stage of summary.stages) {
     if (stage.samples === 0) continue;
     const attributes = { ...product, stage: stage.stage, outcome: summary.outcome };
     const mean = stage.totalMs / stage.samples;
-    Sentry.metrics.count("android.backend.startup.stage.samples", stage.samples, { attributes });
-    Sentry.metrics.gauge("android.backend.startup.stage.mean", mean, { unit: "millisecond", attributes });
-    Sentry.metrics.gauge("android.backend.startup.stage.max", stage.maxMs, { unit: "millisecond", attributes });
+    count("android.backend.startup.stage.samples", stage.samples, attributes);
+    gauge("android.backend.startup.stage.mean", mean, attributes, "millisecond");
+    gauge("android.backend.startup.stage.max", stage.maxMs, attributes, "millisecond");
     for (const [commandOutcome, samples] of Object.entries(stage.outcomes)) {
       if (samples === undefined || samples === 0) continue;
-      const outcomeAttributes = { ...attributes, command_outcome: commandOutcome };
-      Sentry.metrics.count("android.backend.startup.stage.outcomes", samples, { attributes: outcomeAttributes });
+      count("android.backend.startup.stage.outcomes", samples, { ...attributes, command_outcome: commandOutcome });
     }
     if (stage.timedSamples > 0) {
-      Sentry.metrics.count("android.backend.startup.execution.spawned", stage.spawnedSamples, { attributes });
+      count("android.backend.startup.execution.spawned", stage.spawnedSamples, attributes);
       const queueMean = stage.queueMs / stage.timedSamples;
       const executionMean = stage.executionMs / stage.timedSamples;
-      Sentry.metrics.gauge("android.backend.startup.queue.mean", queueMean, { unit: "millisecond", attributes });
-      Sentry.metrics.gauge("android.backend.startup.execution.mean", executionMean, { unit: "millisecond", attributes });
+      gauge("android.backend.startup.queue.mean", queueMean, attributes, "millisecond");
+      gauge("android.backend.startup.execution.mean", executionMean, attributes, "millisecond");
     }
   }
 }
 
 export function recordAndroidStartupContext(context: AndroidStartupContext) {
-  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes = androidStartupAttributes(context);
-  Sentry.metrics.gauge("android.backend.startup.active_backends", context.activeBackends, { attributes });
-  Sentry.metrics.gauge("android.backend.startup.stopping_backends", context.stoppingBackends, { attributes });
-  Sentry.metrics.gauge("android.backend.startup.in_flight", context.startingBackends, { attributes });
+  gauge("android.backend.startup.active_backends", context.activeBackends, attributes);
+  gauge("android.backend.startup.stopping_backends", context.stoppingBackends, attributes);
+  gauge("android.backend.startup.in_flight", context.startingBackends, attributes);
 }
 
 export function recordAndroidStartupDeviceState(state: AndroidDeviceState, duration: number, context: AndroidStartupContext, failure: AndroidStartupFailure) {
-  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const product = androidStartupAttributes(context);
   const attributes = { ...product, android_device_state_after: state, stage: failure.stage, command_outcome: failure.outcome };
-  Sentry.metrics.count("android.backend.startup.device_state.samples", 1, { attributes });
-  Sentry.metrics.gauge("android.backend.startup.device_state.duration", duration, { unit: "millisecond", attributes });
+  count("android.backend.startup.device_state.samples", 1, attributes);
+  gauge("android.backend.startup.device_state.duration", duration, attributes, "millisecond");
 }
 
 export function recordAndroidBackendStop(duration: number, context: AndroidStartupContext) {
-  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
-  const attributes = androidStartupAttributes(context);
-  Sentry.metrics.gauge("android.backend.process_shutdown.duration", duration, { unit: "millisecond", attributes });
+  gauge("android.backend.process_shutdown.duration", duration, androidStartupAttributes(context), "millisecond");
 }
 
 export class IOSLogProcessingTelemetry {
@@ -159,24 +158,24 @@ export class IOSLogProcessingTelemetry {
 
   constructor(kind: "physical" | "simulator") {
     this.attributes = { surface: "logs", device_platform: "ios", device_kind: kind };
-    if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+    if (!telemetryEnabled()) return;
     this.timer = setInterval(() => this.flush(), TELEMETRY_INTERVAL_MS);
     this.timer.unref();
   }
 
   record(duration: number) {
-    if (this.closed || process.env.MOBILE_DEV_TELEMETRY === "off") return;
+    if (this.closed || !telemetryEnabled()) return;
     this.window.record(duration);
   }
 
   private flush() {
     const summary = this.window.take();
-    if (summary === undefined || process.env.MOBILE_DEV_TELEMETRY === "off") return;
+    if (summary === undefined) return;
     const attributes = this.attributes;
-    Sentry.metrics.count("logs.ios.parse.samples", summary.count, { attributes });
-    Sentry.metrics.gauge("logs.ios.parse.mean", summary.mean, { unit: "millisecond", attributes });
-    Sentry.metrics.gauge("logs.ios.parse.p95", summary.p95, { unit: "millisecond", attributes });
-    Sentry.metrics.gauge("logs.ios.parse.max", summary.max, { unit: "millisecond", attributes });
+    count("logs.ios.parse.samples", summary.count, attributes);
+    gauge("logs.ios.parse.mean", summary.mean, attributes, "millisecond");
+    gauge("logs.ios.parse.p95", summary.p95, attributes, "millisecond");
+    gauge("logs.ios.parse.max", summary.max, attributes, "millisecond");
   }
 
   close() {
@@ -194,21 +193,15 @@ export class IOSLogProcessingTelemetry {
  */
 export function captureServerError(error: unknown, operation: string, options?: { report?: boolean; signal?: AbortSignal; reportAs?: Error; tags?: Record<string, string> }) {
   const outcome = options?.signal?.aborted ? "cancelled" : expectedOutcome(error);
-  const diagnosticTags = { ...deviceAppsDiagnosticTags(error), ...options?.tags };
-  const definitionTags = definitionDiagnosticTags(error);
-  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
-  Sentry.metrics.count("server.error.outcome", 1, { attributes: { operation, outcome: outcome ?? "unexpected", ...diagnosticTags } });
+  const tags = { ...diagnosticTags(error), ...options?.tags };
+  if (!telemetryEnabled()) return;
+  count("server.error.outcome", 1, { operation, outcome: outcome ?? "unexpected", ...tags });
   if (outcome !== undefined) return;
   if (options?.report === false || isRepeatedFailure(error)) {
-    Sentry.metrics.count("server.error.repeated", 1, { attributes: { operation, ...diagnosticTags } });
+    count("server.error.repeated", 1, { operation, ...tags });
     return;
   }
-  const androidTags = androidStartupDiagnosticTags(error);
-  const installTags = installIntegrityTags(error);
-  const command = getDiscoveryCommandDiagnostic(error);
-  const contexts = command ? { device_apps_command: { elapsed_ms: command.elapsed_ms, deadline_ms: command.deadline_ms,
-    exit_status: command.exit_status } } : undefined;
-  Sentry.captureException(options?.reportAs ?? error, { tags: { ...diagnosticTags, ...definitionTags, ...androidTags, ...installTags, operation }, contexts });
+  Sentry.captureException(options?.reportAs ?? error, { tags: { ...tags, ...diagnosticReportTags(error), operation }, contexts: diagnosticContexts(error) });
 }
 
 type RequestReporting = { accounted: boolean; sessionResponse?: { release: () => void; close: () => Promise<void> } };
@@ -229,20 +222,29 @@ function recordResourceFailure(error: unknown, signal: AbortSignal): Error {
   }
   const reporting = requestReporting.getStore();
   if (reporting) reporting.accounted = true;
-  if (process.env.MOBILE_DEV_TELEMETRY !== "off") {
-    const outcome = expectedOutcome(normalized) ?? "unexpected";
-    Sentry.metrics.count("server.error.outcome", 1, { attributes: { operation: "resources.read", outcome } });
-  }
+  count("server.error.outcome", 1, { operation: "resources.read", outcome: expectedOutcome(normalized) ?? "unexpected" });
   return normalized;
 }
 
-export function instrumentMcpServer(server: McpServer) {
+type SetRequestHandler = McpServer["server"]["setRequestHandler"];
+type RequestHandler = Parameters<SetRequestHandler>[1];
+/** Adapts a request handler before the server registers it, such as toolIcons. */
+export type RequestHandlerWrapper = (schema: Parameters<SetRequestHandler>[0], handler: RequestHandler) => RequestHandler;
+
+/**
+ * Accounts and reports MCP request failures, traces tools and resources, and applies
+ * `wrappers` to every request handler, first outermost, inside that accounting. This is
+ * the one patch of setRequestHandler, so call it before registering any tool: the SDK
+ * sets the tools/list handler on the first registration.
+ */
+export function instrumentMcpServer(server: McpServer, ...wrappers: RequestHandlerWrapper[]) {
   const register = server.server.setRequestHandler.bind(server.server);
   server.server.setRequestHandler = (schema, handler) => {
+    const adapted = wrappers.reduceRight((inner, wrap) => wrap(schema, inner), handler as RequestHandler);
     register(schema, async (request, extra) => {
       const reporting = requestReporting.getStore();
       try {
-        return await handler(request, extra);
+        return await adapted(request, extra);
       } catch (error) {
         const accounted = reporting?.accounted === true;
         if (reporting) {
@@ -286,11 +288,27 @@ const allowedContext: Record<string, readonly string[]> = {
   device_platform: ["ios", "android", "mixed"], device_kind: ["physical", "simulator", "emulator", "none"], host: TELEMETRY_HOSTS,
 };
 
-/** Attributes server telemetry to the host that launched it: the Mac app sets `MOBILE_DEV_HOST`, other hosts are named by their MCP client. */
-export function setServerTelemetryHost(clientName: string | undefined) {
-  const host = process.env.MOBILE_DEV_HOST === "mac" ? "mac" : telemetryHost(clientName);
+let launchingHost: TelemetryHost | undefined;
+
+function tagServerHost(host: TelemetryHost) {
   Sentry.setTag("host", host);
   Sentry.setAttribute("host", host);
+}
+
+/** Attributes server telemetry to the host whose own server entry launched it, whatever its MCP client reports. */
+export function setLaunchingTelemetryHost(host: TelemetryHost) {
+  launchingHost = host;
+  tagServerHost(host);
+}
+
+/** The host server telemetry names: the one its MCP client names, unless the launching host named itself. */
+export function serverTelemetryHost(clientName: string | undefined): TelemetryHost {
+  return launchingHost ?? telemetryHost(clientName);
+}
+
+/** Attributes server telemetry to the host its MCP client names, unless the launching host named itself. */
+export function setServerTelemetryHost(clientName: string | undefined) {
+  tagServerHost(serverTelemetryHost(clientName));
 }
 
 export function installTracePropagation(transport: Transport) {

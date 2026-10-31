@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { ExpectedOperationError } from "./error-reporting.ts";
-import type { PhysicalIosDevice } from "./ios-devices.ts";
-import type { PhysicalAndroidDevice } from "./android-devices.ts";
+import { physicalIosDeviceSchema } from "./ios-devices.ts";
+import { physicalAndroidDeviceSchema } from "./android-devices.ts";
 
 export const udidSchema = z.uuid();
 const point = z.number().finite().min(0).max(10000);
@@ -37,23 +37,30 @@ export const streamMessageSchema = z.union([
   z.object({ type: z.literal("set_scale"), scale: z.number().int().min(1).max(4) }).strict(),
 ]);
 
-export type SimulatorDevice = { udid: string; name: string; state: string; runtime: string; platform?: "ios" | "android"; kind?: "simulator" | "emulator" } | PhysicalIosDevice | PhysicalAndroidDevice;
-export type DeviceList = { running: unknown[]; available: unknown[] };
-export type Status = {
-  connected: boolean;
-  managed: boolean;
-  baseUrl: string;
-  devices: SimulatorDevice[];
-  error?: string;
-};
+const virtualDeviceFields = { udid: z.string(), name: z.string(), state: z.string(), runtime: z.string() };
+export const iosSimulatorSchema = z.object({ ...virtualDeviceFields, platform: z.literal("ios"), kind: z.literal("simulator") });
+export type IosSimulator = z.infer<typeof iosSimulatorSchema>;
+export const androidEmulatorSchema = z.object({ ...virtualDeviceFields, platform: z.literal("android"), kind: z.literal("emulator") });
+export type AndroidEmulator = z.infer<typeof androidEmulatorSchema>;
+export const simulatorDeviceSchema = z.union([iosSimulatorSchema, androidEmulatorSchema, physicalIosDeviceSchema, physicalAndroidDeviceSchema]);
+export type SimulatorDevice = z.infer<typeof simulatorDeviceSchema>;
+// A device backend's listing: Baguette or simctl for iOS simulators, adb and the emulator for Android.
+export const statusSchema = z.object({
+  connected: z.boolean(),
+  managed: z.boolean(),
+  baseUrl: z.string(),
+  devices: z.array(simulatorDeviceSchema),
+  error: z.string().optional(),
+});
+export type Status = z.infer<typeof statusSchema>;
 
-export function normalizeDevices(payload: unknown): SimulatorDevice[] {
+export function normalizeDevices(payload: unknown): IosSimulator[] {
   const parsed = z.object({ running: z.array(z.unknown()), available: z.array(z.unknown()) }).parse(payload);
-  const devices = new Map<string, SimulatorDevice>();
+  const devices = new Map<string, IosSimulator>();
   for (const [list, fallback] of [[parsed.available, "Shutdown"], [parsed.running, "Booted"]] as const) {
     for (const item of list) {
       const device = z.object({ udid: udidSchema, name: z.string(), state: z.string().optional(), runtime: z.string().optional() }).parse(item);
-      devices.set(device.udid, { ...device, state: device.state ?? fallback, runtime: device.runtime ?? "" });
+      devices.set(device.udid, { ...device, state: device.state ?? fallback, runtime: device.runtime ?? "", platform: "ios", kind: "simulator" });
     }
   }
   return [...devices.values()].sort((a, b) => Number(b.state === "Booted") - Number(a.state === "Booted") || a.name.localeCompare(b.name));
@@ -68,8 +75,4 @@ export function parseBaseUrl(value: string, label = "BAGUETTE_URL"): URL {
     throw new ExpectedOperationError("invalid_input", `${label} must be a loopback HTTP origin, such as http://127.0.0.1:8421.`);
   }
   return url;
-}
-
-export function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

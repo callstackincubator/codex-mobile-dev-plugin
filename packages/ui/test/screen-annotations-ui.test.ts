@@ -6,7 +6,10 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { PanelContext } from "../src/model-context.ts";
+import { ScreenAnnotationsStore } from "../src/screen-annotations.ts";
+import { panelView } from "./simulator-fixture.ts";
 import type { App } from "@modelcontextprotocol/ext-apps";
+import { fakeApp } from "@mobile-dev/test-support/fake-app.ts";
 
 test("the simulator toolbar opens notes, saves blue markers, and lets users edit and remove them", async t => {
   const dom = new JSDOM('<html><body><div id="root"></div></body></html>', { pretendToBeVisual: true, url: "http://localhost" });
@@ -28,19 +31,20 @@ test("the simulator toolbar opens notes, saves blue markers, and lets users edit
   let cleanup = async () => {};
   t.after(async () => { await cleanup(); dom.window.close(); for (const [key, descriptor] of previous) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else Reflect.deleteProperty(globalThis, key); } await rm(directory, { recursive: true, force: true }); });
   const output = resolve(directory, "annotations.mjs");
-  await build({ stdin: { contents: 'export { ContextAttachments } from "./packages/mcp-app/src/components/context-attachments.tsx"; export { SimulatorView } from "./packages/ui/src/components/simulator-view.tsx"; export { getScreenAnnotations } from "./packages/ui/src/screen-annotations.ts";', resolveDir: process.cwd(), loader: "ts" }, outfile: output, bundle: true, format: "esm", platform: "node", jsx: "automatic", external: ["react", "react/*", "react-dom", "react-dom/*", "radix-ui", "lucide-react", "@base-ui/react/*"] });
-  const { ContextAttachments, SimulatorView, getScreenAnnotations } = await import(pathToFileURL(output).href);
+  await build({ stdin: { contents: 'export { ContextAttachments } from "./packages/mcp-app/src/components/context-attachments.tsx"; export { SimulatorView } from "./packages/ui/src/components/simulator-view.tsx";', resolveDir: process.cwd(), loader: "ts" }, outfile: output, bundle: true, format: "esm", platform: "node", jsx: "automatic", external: ["react", "react/*", "react-dom", "react-dom/*", "radix-ui", "lucide-react", "@base-ui/react/*"] });
+  const { ContextAttachments, SimulatorView } = await import(pathToFileURL(output).href);
   const { act, createElement } = await import("react"); const { createRoot } = await import("react-dom/client");
   const root = createRoot(dom.window.document.getElementById("root")!);
   cleanup = async () => { await act(async () => { root.unmount(); }); };
-  await act(async () => { root.render(createElement(SimulatorView, { platform: "ios", visible: true })); });
+  const store = new ScreenAnnotationsStore({
+    capture: () => ({ screenshot: { id: "capture", data: "AA==", capturedAt: "2026-10-01T10:00:00Z" }, screen: { width: 390, height: 844, units: "points" } }),
+    readTree: async () => ({ tree: { label: "Continue", identifier: "continue", role: "AXButton", frame: { x: 10, y: 20, width: 100, height: 40 } } }),
+  });
+  await act(async () => { root.render(createElement(SimulatorView, { panel: panelView("ios", { annotations: store }), visible: true })); });
   const canvas = dom.window.document.querySelector("canvas");
-  const store = getScreenAnnotations(dom.window.document.querySelector('[data-element="stage"]'));
-  const context = new PanelContext({ getHostCapabilities: () => ({ updateModelContext: { image: {} }, message: { text: {} } }), async sendMessage() { return { isError: true }; } } as unknown as App, () => ({ getCurrent: () => undefined, update: async () => ({ updateId: "annotation-update" }) }));
-  store.capture = () => ({ screenshot: { id: "capture", data: "AA==", capturedAt: "2026-10-01T10:00:00Z" }, screen: { width: 390, height: 844, units: "points" } });
-  store.readTree = async () => ({ tree: { label: "Continue", identifier: "continue", role: "AXButton", frame: { x: 10, y: 20, width: 100, height: 40 } } });
+  const context = new PanelContext(fakeApp({ getHostCapabilities: () => ({ updateModelContext: { image: {} }, message: { text: {} } }), async sendMessage() { return { isError: true }; } }), () => ({ getCurrent: () => undefined, update: async () => ({ updateId: "annotation-update" }) }));
   await act(async () => {
-    store.connect(context); store.configure({ udid: "iphone", name: "iPhone", state: "Booted", runtime: "iOS", platform: "ios" }, false);
+    store.connect(context); store.configure({ udid: "iphone", name: "iPhone", state: "Booted", runtime: "iOS", platform: "ios", kind: "simulator" }, false);
     store.setViewport({ x: 16, y: 16, width: 150, height: 300, stageWidth: 640, stageHeight: 360 });
   });
   const selectButton = dom.window.document.querySelector('[data-element="select-mode"]') as HTMLButtonElement;
@@ -68,7 +72,7 @@ test("the simulator toolbar opens notes, saves blue markers, and lets users edit
   await act(async () => { editInput.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true })); });
   assert.equal(context.screenAnnotations[0].text, "Make this button blue");
   assert.equal(dom.window.document.querySelector('[aria-label="Annotation note"]'), null);
-  await act(async () => { store.configure({ udid: "iphone", name: "iPhone", state: "Booted", runtime: "iOS", platform: "ios" }, true); });
+  await act(async () => { store.configure({ udid: "iphone", name: "iPhone", state: "Booted", runtime: "iOS", platform: "ios", kind: "simulator" }, true); });
   const sendButton = Array.from(dom.window.document.querySelectorAll("button")).find(button => button.textContent === "Send to chat")!;
   assert.equal(sendButton.disabled, false, "Saved notes can send while the simulator reconnects.");
   await act(async () => { sendButton.click(); });
@@ -94,7 +98,7 @@ test("the simulator toolbar opens notes, saves blue markers, and lets users edit
   await act(async () => { copyButton.click(); });
   assert.equal(copied, message.value);
   assert.equal(errorPopover.querySelector('[role="status"]')!.textContent!, "Copied");
-  await act(async () => { errorButton.click(); store.configure({ udid: "iphone", name: "iPhone", state: "Booted", runtime: "iOS", platform: "ios" }, false); });
+  await act(async () => { errorButton.click(); store.configure({ udid: "iphone", name: "iPhone", state: "Booted", runtime: "iOS", platform: "ios", kind: "simulator" }, false); });
   // Let the closing popover restore focus before opening the notes menu.
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
   await act(async () => { (Array.from(dom.window.document.querySelectorAll("button")).find(button => button.textContent === "1 note") as HTMLButtonElement).click(); });
@@ -102,11 +106,11 @@ test("the simulator toolbar opens notes, saves blue markers, and lets users edit
   assert.equal(dom.window.document.querySelector('.annotation-marker'), null);
   // Claude uses one shared bar; preparing a draft must preserve its notes.
   const messages: Parameters<App["sendMessage"]>[0][] = [];
-  const standard = new PanelContext({
+  const standard = new PanelContext(fakeApp({
     getHostCapabilities: () => ({ updateModelContext: { text: {} }, message: { text: {} } }),
     async updateModelContext() { return {}; },
     async sendMessage(message) { messages.push(message); return {}; },
-  } as App, () => undefined);
+  }), () => undefined);
   const top = dom.window.document.createElement("div");
   dom.window.document.body.prepend(top);
   const topRoot = createRoot(top);

@@ -210,7 +210,7 @@ export function formatAnnotationDraft(annotations: ScreenAnnotation[]): string {
 export function formatAnnotationContext(annotation: ScreenAnnotation): string {
   const { component, screen, simulator } = annotation, source = component.react?.source;
   const target = component.label ?? component.name;
-  const lines = [`#${annotation.number} ${simulator.platform ?? "ios"}`, `Edit: ${JSON.stringify(annotation.text)}`];
+  const lines = [`#${annotation.number} ${simulator.platform}`, `Edit: ${JSON.stringify(annotation.text)}`];
   if (source) lines.push(`${component.react?.sourceKind === "owner" ? "Owner source (search hint, selected element source unavailable)" : "Source"}: ${sourceLocation(source)}`);
   lines.push(`Target: ${JSON.stringify(target)}${component.role ? ` (${component.role})` : ""}`);
   if (component.nodeId) lines.push(`Selected node: ${JSON.stringify(component.nodeId)} (snapshot ID, not a code identifier)`);

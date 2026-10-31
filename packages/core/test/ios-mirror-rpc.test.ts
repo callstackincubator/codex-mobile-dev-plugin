@@ -10,7 +10,9 @@ import { randomUUID } from "node:crypto";
 import { IosMirrorHub } from "../src/ios-mirror-hub.ts";
 import { createIosMirrorServer } from "../src/ios-mirror-server.ts";
 import { connectIosCapture } from "../src/ios-mirror-client.ts";
+import { mirrorRequestSchema, wireTouchPhases } from "../src/ios-mirror-rpc.ts";
 import type { NativeCapture } from "../src/ios-native-capture.ts";
+import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 
 async function message(child: ChildProcess) {
   const result = await once(child, "message", { signal: AbortSignal.timeout(5000) });
@@ -116,4 +118,34 @@ test("service shutdown rejects pending video reads and releases its capture", { 
   await service.close();
   await rejection;
   assert.equal(closes, 1);
+});
+
+test("the service's expected failures stay expected across the socket", async t => {
+  let stop!: () => void;
+  const stopped = new Promise<void>(resolve => { stop = resolve; });
+  const capture: NativeCapture = {
+    async read() { await stopped; return { generation: 1, dropped: 0, frames: [] }; },
+    async touch() {}, requestKeyframe() {}, async close() { stop(); },
+  };
+  const hub = new IosMirrorHub(async () => capture);
+  const service = createIosMirrorServer(hub, () => {}, () => {});
+  const path = `/tmp/mobile-dev-mirror-test-${randomUUID()}.sock`;
+  service.server.listen(path);
+  await once(service.server, "listening");
+  t.after(() => service.close());
+  const client = await connectIosCapture(path, "phone");
+  const expected = (outcome: string) => (error: unknown) => error instanceof ExpectedOperationError && error.outcome === outcome;
+  await assert.rejects(client.touch([{ phase: "down", x: 1, y: 1, width: 10, height: 10 }], 0), expected("device_unavailable"));
+  void client.read().catch(() => {});
+  await assert.rejects(client.read(), expected("resource_limit"));
+  await client.close();
+});
+
+test("touch phases keep their numeric wire form between plugin versions", () => {
+  const sample = { x: 1, y: 2, width: 400, height: 800 };
+  const request = mirrorRequestSchema.parse({ id: 1, method: "touch", generation: 3, samples: [0, 1, 2].map(phase => ({ ...sample, phase })) });
+  assert.equal(request.method, "touch");
+  if (request.method === "touch") assert.deepEqual(request.samples.map(touch => touch.phase), ["down", "move", "up"]);
+  assert.deepEqual(wireTouchPhases, ["down", "move", "up"]);
+  assert.throws(() => mirrorRequestSchema.parse({ id: 1, method: "touch", generation: 3, samples: [{ ...sample, phase: "up" }] }));
 });

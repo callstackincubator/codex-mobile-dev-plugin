@@ -3,6 +3,9 @@ import test from "node:test";
 import { gzipSync } from "node:zlib";
 import { TraceSiftController } from "../src/tracesift-controller.ts";
 import { getUiTelemetryAttributes } from "../src/telemetry.ts";
+import type { McpUiHostContext } from "@modelcontextprotocol/ext-apps";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { fakeApp, type FakeAppOptions } from "@mobile-dev/test-support/fake-app.ts";
 
 const analysis = {
   apiVersion: 1, analysisId: "private-analysis", profileType: "react", title: "Profile", summary: { rootCount: 1, commitCount: 3, totalCommitRenderDurationMs: 50, peakCommitDurationMs: 30, commitsOverBudget: 1, omittedEvidenceCommitCount: 0 },
@@ -15,17 +18,17 @@ const analysis = {
   }],
 };
 
-const hostContext = { theme: "light", availableDisplayModes: ["inline", "fullscreen"] };
+const hostContext: McpUiHostContext = { theme: "light", availableDisplayModes: ["inline", "fullscreen"] };
 
 test("TraceSift Investigate fetches one authoritative handoff and sends it to the active chat", async () => {
   const calls: unknown[] = []; const messages: unknown[] = [];
-  const app = {
+  const app: FakeAppOptions = {
     getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
     getHostContext: () => hostContext,
-    async callServerTool(input: unknown) { calls.push(input); return { content: [], structuredContent: { apiVersion: 1, handoff: "PRIVATE_HANDOFF" } }; },
+    async fallback(call: unknown) { calls.push(call); return { content: [], structuredContent: { apiVersion: 1, handoff: "PRIVATE_HANDOFF" } }; },
     async sendMessage(message: unknown) { messages.push(message); return {}; },
   };
-  const controller = new TraceSiftController(app as never);
+  const controller = new TraceSiftController(fakeApp(app));
   controller.hostChanged();
   controller.accept({ content: [], structuredContent: analysis });
   await Promise.all([controller.investigate("react-commit-1-2"), controller.investigate("react-commit-1-2")]);
@@ -40,17 +43,17 @@ test("TraceSift Investigate puts the handoff in a pill and sends a short prompt 
   const messages: Array<{ content: Array<{ text: string }> }> = [];
   const updates: Array<{ content: Array<{ text: string; _meta: Record<string, unknown> }>; structuredContent: Record<string, unknown> }> = [];
   const note = { type: "text", text: "Keep this selected component", _meta: { "openai/title": "Continue button" } };
-  const app = {
+  const app = fakeApp({
     getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
     getHostContext: () => hostContext,
-    async callServerTool() { return { content: [], structuredContent: { apiVersion: 1, handoff: "PRIVATE_HANDOFF" } }; },
-    async sendMessage(message: typeof messages[number]) { messages.push(message); return {}; },
-  };
+    async fallback() { return { content: [], structuredContent: { apiVersion: 1, handoff: "PRIVATE_HANDOFF" } }; },
+    async sendMessage(message) { messages.push(message as typeof messages[number]); return {}; },
+  });
   const modelContext = {
     getCurrent: () => ({ updateId: "existing", content: [note], structuredContent: { annotationIds: ["note-1"] } }),
     async update(params: typeof updates[number]) { updates.push(params); return { updateId: "1" }; },
   };
-  const controller = new TraceSiftController(app as never, { attachments: () => modelContext as never });
+  const controller = new TraceSiftController(app, { attachments: () => modelContext as never });
   controller.hostChanged();
   controller.accept({ content: [], structuredContent: analysis });
   await controller.investigate("react-commit-1-2");
@@ -64,101 +67,90 @@ test("TraceSift Investigate puts the handoff in a pill and sends a short prompt 
 
 test("TraceSift disables investigation when host capabilities are absent", async () => {
   let calls = 0;
-  const app = { getHostCapabilities: () => ({}), getHostContext: () => undefined, async callServerTool() { calls++; return {}; }, async sendMessage() { calls++; return {}; } };
-  const controller = new TraceSiftController(app as never);
+  const app = fakeApp({ getHostCapabilities: () => ({}), getHostContext: () => undefined, async fallback() { calls++; return { content: [] }; }, async sendMessage() { calls++; return {}; } });
+  const controller = new TraceSiftController(app);
   controller.hostChanged(); controller.accept({ content: [], structuredContent: analysis });
   await controller.investigate("react-commit-1-2");
   assert.equal(calls, 0); assert.equal(controller.getSnapshot().canInvestigate, false);
 });
 
 test("TraceSift restores cards for a recreated inline view", async () => {
-  const calls: unknown[] = [];
-  const app = {
+  const app = fakeApp({
     getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
     getHostContext: () => hostContext,
-    async callServerTool(input: unknown) {
-      calls.push(input);
+    async fallback() {
       return { content: [], structuredContent: { apiVersion: 1, restored: true, analysis } };
     },
     async sendMessage() { return {}; },
-  };
-  const controller = new TraceSiftController(app as never);
+  });
+  const controller = new TraceSiftController(app);
   controller.hostChanged();
   await controller.restore("tool-view-17");
-  assert.deepEqual(calls, [{ name: "mobile_restore_tracesift_analysis", arguments: { viewId: "tool-view-17" } }]);
+  assert.deepEqual(app.calls, [{ name: "mobile_restore_tracesift_analysis", arguments: { viewId: "tool-view-17" } }]);
   assert.equal(controller.getSnapshot().analysis?.analysisId, "private-analysis");
 });
 
 test("TraceSift restores cards from replayed tool input when host view IDs are absent", async () => {
-  const calls: unknown[] = [];
-  const app = {
+  const app = fakeApp({
     getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
     getHostContext: () => hostContext,
-    async callServerTool(input: unknown) {
-      calls.push(input);
+    async fallback() {
       return { content: [], structuredContent: { apiVersion: 1, restored: true, analysis } };
     },
     async sendMessage() { return {}; },
-  };
-  const controller = new TraceSiftController(app as never);
+  });
+  const controller = new TraceSiftController(app);
   controller.setProfileInput("App/sample-profiles/trace.json", "auto");
   await new Promise(resolve => setImmediate(resolve));
-  assert.deepEqual(calls, [{ name: "mobile_restore_tracesift_analysis_by_input", arguments: { path: "App/sample-profiles/trace.json", profileType: "auto" } }]);
+  assert.deepEqual(app.calls, [{ name: "mobile_restore_tracesift_analysis_by_input", arguments: { path: "App/sample-profiles/trace.json", profileType: "auto" } }]);
   assert.equal(controller.getSnapshot().analysis?.analysisId, "private-analysis");
 });
 
 test("TraceSift registers a live result against the stable host view", async () => {
-  const calls: unknown[] = [];
-  const app = {
+  const app = fakeApp({
     getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
     getHostContext: () => hostContext,
-    async callServerTool(input: unknown) {
-      calls.push(input);
+    async fallback() {
       return { content: [], structuredContent: { remembered: true } };
     },
     async sendMessage() { return {}; },
-  };
-  const controller = new TraceSiftController(app as never);
+  });
+  const controller = new TraceSiftController(app);
   controller.accept({ content: [], structuredContent: analysis });
   controller.setViewId("exec-stable-view");
   await new Promise(resolve => setImmediate(resolve));
-  assert.deepEqual(calls, [{ name: "mobile_remember_tracesift_analysis", arguments: { viewId: "exec-stable-view", analysisId: "private-analysis" } }]);
+  assert.deepEqual(app.calls, [{ name: "mobile_remember_tracesift_analysis", arguments: { viewId: "exec-stable-view", analysisId: "private-analysis" } }]);
 });
 
 test("TraceSift registers a live result when host context arrives before the result", async () => {
-  const calls: Array<{ name: string; arguments: unknown }> = [];
-  const app = {
+  const app = fakeApp({
     getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
     getHostContext: () => hostContext,
-    async callServerTool(input: { name: string; arguments: unknown }) {
-      calls.push(input);
-      return input.name === "mobile_restore_tracesift_analysis"
-        ? { content: [], structuredContent: { apiVersion: 1, restored: false } }
-        : { content: [], structuredContent: { remembered: true } };
-    },
+    tools: { mobile_restore_tracesift_analysis: () => ({ content: [], structuredContent: { apiVersion: 1, restored: false } }) },
+    fallback: () => ({ content: [], structuredContent: { remembered: true } }),
     async sendMessage() { return {}; },
-  };
-  const controller = new TraceSiftController(app as never);
+  });
+  const controller = new TraceSiftController(app);
   controller.setViewId("exec-stable-view");
   await new Promise(resolve => setImmediate(resolve));
   controller.accept({ content: [], structuredContent: analysis });
   await new Promise(resolve => setImmediate(resolve));
-  assert.deepEqual(calls, [
+  assert.deepEqual(app.calls, [
     { name: "mobile_restore_tracesift_analysis", arguments: { viewId: "exec-stable-view" } },
     { name: "mobile_remember_tracesift_analysis", arguments: { viewId: "exec-stable-view", analysisId: "private-analysis" } },
   ]);
 });
 
 test("TraceSift does not replace a result that arrived while restore was pending", async () => {
-  let finish!: (value: unknown) => void;
-  const pending = new Promise(resolve => { finish = resolve; });
-  const app = {
+  let finish!: (value: CallToolResult) => void;
+  const pending = new Promise<CallToolResult>(resolve => { finish = resolve; });
+  const app = fakeApp({
     getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
     getHostContext: () => hostContext,
-    async callServerTool() { return pending; },
+    async fallback() { return pending; },
     async sendMessage() { return {}; },
-  };
-  const controller = new TraceSiftController(app as never);
+  });
+  const controller = new TraceSiftController(app);
   const restoring = controller.restore(23);
   controller.accept({ content: [], structuredContent: { ...cpuAnalysis, analysisId: "live-analysis" } });
   finish({ content: [], structuredContent: { apiVersion: 1, restored: true, analysis } });
@@ -168,13 +160,13 @@ test("TraceSift does not replace a result that arrived while restore was pending
 
 test("TraceSift never retries an unconfirmed send", async () => {
   let sends = 0;
-  const app = {
+  const app: FakeAppOptions = {
     getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
     getHostContext: () => hostContext,
-    async callServerTool() { return { content: [], structuredContent: { apiVersion: 1, handoff: "PRIVATE_HANDOFF" } }; },
+    async fallback() { return { content: [], structuredContent: { apiVersion: 1, handoff: "PRIVATE_HANDOFF" } }; },
     async sendMessage() { sends++; throw Object.assign(new Error("timeout"), { code: -32001 }); },
   };
-  const controller = new TraceSiftController(app as never);
+  const controller = new TraceSiftController(fakeApp(app));
   controller.hostChanged();
   controller.accept({ content: [], structuredContent: analysis });
   await controller.investigate("react-commit-1-2");
@@ -182,19 +174,19 @@ test("TraceSift never retries an unconfirmed send", async () => {
   assert.match(controller.getSnapshot().error, /Check the chat before retrying/);
 });
 
-test("TraceSift reports an unavailable composer without retrying", async () => {
+test("TraceSift waits for the composer like other chat sends, then reports it unavailable", async () => {
   let sends = 0;
-  const app = {
+  const app: FakeAppOptions = {
     getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
     getHostContext: () => hostContext,
-    async callServerTool() { return { content: [], structuredContent: { apiVersion: 1, handoff: "PRIVATE_HANDOFF" } }; },
+    async fallback() { return { content: [], structuredContent: { apiVersion: 1, handoff: "PRIVATE_HANDOFF" } }; },
     async sendMessage() { sends++; throw new Error("No active composer is available."); },
   };
-  const controller = new TraceSiftController(app as never);
+  const controller = new TraceSiftController(fakeApp(app));
   controller.hostChanged();
   controller.accept({ content: [], structuredContent: analysis });
   await controller.investigate("react-commit-1-2");
-  assert.equal(sends, 1);
+  assert.equal(sends, 5, "The send is retried while the composer registers, as cached panels need.");
   assert.match(controller.getSnapshot().error, /Reopen the chat/);
 });
 
@@ -208,26 +200,25 @@ const cpuAnalysis = {
   }],
 };
 
-function payloadResult(kind: "task" | "react", payload: unknown) {
+function payloadResult(kind: "task" | "react", payload: unknown): CallToolResult {
   const text = JSON.stringify(payload);
   return { content: [{ type: "text", text }], structuredContent: { apiVersion: 1, kind, encoding: "json", payloadBytes: text.length } };
 }
 
 test("TraceSift Explore opens the embedded explorer with the task's full tree", async () => {
-  const calls: unknown[] = [];
   const modes: string[] = [];
-  const app = {
+  const app = fakeApp({
     getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
     getHostContext: () => hostContext,
-    async requestDisplayMode({ mode }: { mode: string }) { modes.push(mode); return { mode }; },
-    async callServerTool(input: unknown) { calls.push(input); return payloadResult("task", { apiVersion: 1, analysisId: "private-analysis", card: { tree: { id: "n0" } } }); },
+    async requestDisplayMode({ mode }) { modes.push(mode); return { mode }; },
+    async fallback() { return payloadResult("task", { apiVersion: 1, analysisId: "private-analysis", card: { tree: { id: "n0" } } }); },
     async sendMessage() { return {}; },
-  };
-  const controller = new TraceSiftController(app as never);
+  });
+  const controller = new TraceSiftController(app);
   controller.hostChanged(); controller.accept({ content: [], structuredContent: cpuAnalysis });
   // The tree is looked up by task index, not card id; the focused node is not part of the request.
   await controller.openExplore("task-0", "n0");
-  assert.deepEqual(calls[0], { name: "mobile_tracesift_explore_payload", arguments: { analysisId: "private-analysis", taskIndex: 4 } });
+  assert.deepEqual(app.calls[0], { name: "mobile_tracesift_explore_payload", arguments: { analysisId: "private-analysis", taskIndex: 4 } });
   assert.equal(controller.getSnapshot().error, "");
   const explorer = controller.getSnapshot().explorer;
   assert.equal(explorer?.kind, "task");
@@ -239,14 +230,13 @@ test("TraceSift Explore opens the embedded explorer with the task's full tree", 
 });
 
 test("TraceSift Explore opens one React analysis and remembers which commit the card named", async () => {
-  const calls: unknown[] = [];
-  const app = {
+  const app = fakeApp({
     getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
     getHostContext: () => ({ theme: "light", availableDisplayModes: ["inline"] }),
-    async callServerTool(input: unknown) { calls.push(input); return payloadResult("react", { apiVersion: 1, explore: {}, cards: [] }); },
+    async fallback() { return payloadResult("react", { apiVersion: 1, explore: {}, cards: [] }); },
     async sendMessage() { return {}; },
-  };
-  const controller = new TraceSiftController(app as never);
+  });
+  const controller = new TraceSiftController(app);
   controller.hostChanged();
   controller.accept({ content: [], structuredContent: {
     apiVersion: 1, analysisId: "react-analysis", profileType: "react", title: "React",
@@ -258,7 +248,7 @@ test("TraceSift Explore opens one React analysis and remembers which commit the 
   } });
   // One fetch carries every commit; the explorer starts on the pressed one.
   await controller.openExplore("react-7-12");
-  assert.deepEqual(calls[0], { name: "mobile_tracesift_explore_payload", arguments: { analysisId: "react-analysis" } });
+  assert.deepEqual(app.calls[0], { name: "mobile_tracesift_explore_payload", arguments: { analysisId: "react-analysis" } });
   assert.equal(controller.getSnapshot().explorer?.commitKey, "7.12");
   controller.setExploreCommit("7.3");
   assert.equal(controller.getSnapshot().explorer?.commitKey, "7.3");
@@ -266,25 +256,19 @@ test("TraceSift Explore opens one React analysis and remembers which commit the 
 });
 
 test("TraceSift Explore sends a finding too large for the panel to the browser window", async () => {
-  const calls: { name: string; arguments: unknown }[] = [];
-  const app = {
+  const app = fakeApp({
     getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
     getHostContext: () => ({ theme: "light", availableDisplayModes: ["inline"] }),
-    async callServerTool(input: { name: string; arguments: unknown }) {
-      calls.push(input);
-      if (input.name === "mobile_tracesift_explore_payload") {
-        return { isError: true, content: [{ type: "text", text: "This finding is larger than the panel can open." }] };
-      }
-      return { content: [], structuredContent: { opened: true } };
-    },
+    tools: { mobile_tracesift_explore_payload: () => ({ isError: true, content: [{ type: "text", text: "This finding is larger than the panel can open." }] }) },
+    fallback: () => ({ content: [], structuredContent: { opened: true } }),
     async sendMessage() { return {}; },
-  };
-  const controller = new TraceSiftController(app as never);
+  });
+  const controller = new TraceSiftController(app);
   controller.hostChanged(); controller.accept({ content: [], structuredContent: cpuAnalysis });
   await controller.openExplore("task-0", "n0");
   // The refusal falls back to the path that needs no bridge, carrying the clicked node.
-  assert.deepEqual(calls.map(call => call.name), ["mobile_tracesift_explore_payload", "mobile_open_tracesift_explore"]);
-  assert.deepEqual(calls[1]!.arguments, { analysisId: "private-analysis", taskIndex: 4, focus: "n0" });
+  assert.deepEqual(app.calls.map(call => call.name), ["mobile_tracesift_explore_payload", "mobile_open_tracesift_explore"]);
+  assert.deepEqual(app.calls[1]!.arguments, { analysisId: "private-analysis", taskIndex: 4, focus: "n0" });
   assert.equal(controller.getSnapshot().error, "");
   assert.match(controller.getSnapshot().notice, /Opened it in your browser/);
   assert.equal(controller.getSnapshot().explorer, undefined);
@@ -293,13 +277,13 @@ test("TraceSift Explore sends a finding too large for the panel to the browser w
 });
 
 test("TraceSift Explore reports a payload failure without leaving the explorer open", async () => {
-  const app = {
+  const app = fakeApp({
     getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
     getHostContext: () => ({ theme: "light", availableDisplayModes: ["inline"] }),
-    async callServerTool() { return { isError: true, content: [{ type: "text", text: "This analysis is no longer available to Explore. Run it again." }] }; },
+    async fallback() { return { isError: true, content: [{ type: "text", text: "This analysis is no longer available to Explore. Run it again." }] }; },
     async sendMessage() { return {}; },
-  };
-  const controller = new TraceSiftController(app as never);
+  });
+  const controller = new TraceSiftController(app);
   controller.hostChanged(); controller.accept({ content: [], structuredContent: cpuAnalysis });
   await controller.openExplore("task-0");
   assert.match(controller.getSnapshot().error, /no longer available to Explore/);
@@ -309,13 +293,13 @@ test("TraceSift Explore reports a payload failure without leaving the explorer o
 });
 
 test("TraceSift Explore rejects an unreadable payload rather than rendering it", async () => {
-  const app = {
+  const app = fakeApp({
     getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
     getHostContext: () => ({ theme: "light", availableDisplayModes: ["inline"] }),
-    async callServerTool() { return { content: [{ type: "text", text: "{not json" }], structuredContent: { apiVersion: 1, kind: "task", encoding: "json", payloadBytes: 8 } }; },
+    async fallback() { return { content: [{ type: "text", text: "{not json" }], structuredContent: { apiVersion: 1, kind: "task", encoding: "json", payloadBytes: 8 } }; },
     async sendMessage() { return {}; },
-  };
-  const controller = new TraceSiftController(app as never);
+  });
+  const controller = new TraceSiftController(app);
   controller.hostChanged(); controller.accept({ content: [], structuredContent: cpuAnalysis });
   await controller.openExplore("task-0");
   assert.match(controller.getSnapshot().error, /could not read/);
@@ -324,13 +308,13 @@ test("TraceSift Explore rejects an unreadable payload rather than rendering it",
 });
 
 test("TraceSift returns from the explorer to the cards and drops the payload", async () => {
-  const app = {
+  const app = fakeApp({
     getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
     getHostContext: () => ({ theme: "light", availableDisplayModes: ["inline"] }),
-    async callServerTool() { return payloadResult("task", { apiVersion: 1, card: {} }); },
+    async fallback() { return payloadResult("task", { apiVersion: 1, card: {} }); },
     async sendMessage() { return {}; },
-  };
-  const controller = new TraceSiftController(app as never);
+  });
+  const controller = new TraceSiftController(app);
   controller.hostChanged(); controller.accept({ content: [], structuredContent: cpuAnalysis });
   await controller.openExplore("task-0");
   assert.ok(controller.getSnapshot().explorer);
@@ -342,14 +326,14 @@ test("TraceSift returns from the explorer to the cards and drops the payload", a
 
 test("TraceSift hands the width back to the cards when the explorer closes", async () => {
   const modes: string[] = [];
-  const app = {
+  const app = fakeApp({
     getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
     getHostContext: () => hostContext,
-    async requestDisplayMode({ mode }: { mode: string }) { modes.push(mode); return { mode }; },
-    async callServerTool() { return payloadResult("task", { apiVersion: 1, card: {} }); },
+    async requestDisplayMode({ mode }) { modes.push(mode); return { mode }; },
+    async fallback() { return payloadResult("task", { apiVersion: 1, card: {} }); },
     async sendMessage() { return {}; },
-  };
-  const controller = new TraceSiftController(app as never);
+  });
+  const controller = new TraceSiftController(app);
   controller.hostChanged(); controller.accept({ content: [], structuredContent: cpuAnalysis });
   await controller.openExplore("task-0");
   controller.closeExplore();
@@ -361,17 +345,17 @@ test("TraceSift hands the width back to the cards when the explorer closes", asy
 
 test("TraceSift drops an explorer payload whose analysis was replaced while it loaded", async () => {
   let release: (() => void) | undefined;
-  const app = {
+  const app = fakeApp({
     getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
     getHostContext: () => hostContext,
-    async requestDisplayMode({ mode }: { mode: string }) { return { mode }; },
-    async callServerTool() {
+    async requestDisplayMode({ mode }) { return { mode }; },
+    async fallback() {
       await new Promise<void>(resolve => { release = resolve; });
       return payloadResult("task", { apiVersion: 1, card: {} });
     },
     async sendMessage() { return {}; },
-  };
-  const controller = new TraceSiftController(app as never);
+  });
+  const controller = new TraceSiftController(app);
   controller.hostChanged(); controller.accept({ content: [], structuredContent: cpuAnalysis });
   const opening = controller.openExplore("task-0");
   // A second reading lands while the first payload is still in flight.
@@ -385,31 +369,30 @@ test("TraceSift drops an explorer payload whose analysis was replaced while it l
 });
 
 test("TraceSift keeps the browser window as an explicit alternative", async () => {
-  const calls: unknown[] = [];
-  const app = {
+  const app = fakeApp({
     getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
     getHostContext: () => ({ theme: "light", availableDisplayModes: ["inline"] }),
-    async callServerTool(input: unknown) { calls.push(input); return { content: [], structuredContent: { opened: true } }; },
+    async fallback() { return { content: [], structuredContent: { opened: true } }; },
     async sendMessage() { return {}; },
-  };
-  const controller = new TraceSiftController(app as never);
+  });
+  const controller = new TraceSiftController(app);
   controller.hostChanged(); controller.accept({ content: [], structuredContent: cpuAnalysis });
   await controller.openExploreInBrowser("task-0");
-  assert.deepEqual(calls[0], { name: "mobile_open_tracesift_explore", arguments: { analysisId: "private-analysis", taskIndex: 4 } });
+  assert.deepEqual(app.calls[0], { name: "mobile_open_tracesift_explore", arguments: { analysisId: "private-analysis", taskIndex: 4 } });
   assert.equal(controller.getSnapshot().explorer, undefined);
   controller.dispose();
 });
 
 test("TraceSift explores inline when the host offers no fullscreen", async () => {
   let requested = 0;
-  const app = {
+  const app = fakeApp({
     getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
     getHostContext: () => ({ theme: "light", availableDisplayModes: ["inline"] }),
     async requestDisplayMode() { requested++; return { mode: "inline" }; },
-    async callServerTool() { return payloadResult("task", { apiVersion: 1, card: {} }); },
+    async fallback() { return payloadResult("task", { apiVersion: 1, card: {} }); },
     async sendMessage() { return {}; },
-  };
-  const controller = new TraceSiftController(app as never);
+  });
+  const controller = new TraceSiftController(app);
   controller.hostChanged(); controller.accept({ content: [], structuredContent: cpuAnalysis });
   await controller.openExplore("task-0");
   assert.equal(requested, 0);
@@ -420,14 +403,14 @@ test("TraceSift explores inline when the host offers no fullscreen", async () =>
 test("TraceSift inflates a compressed payload before rendering it", async () => {
   const payload = { apiVersion: 1, analysisId: "private-analysis", card: { tree: { id: "n0" } } };
   const text = gzipSync(JSON.stringify(payload)).toString("base64");
-  const app = {
+  const app = fakeApp({
     getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
     getHostContext: () => hostContext,
-    async requestDisplayMode({ mode }: { mode: string }) { return { mode }; },
-    async callServerTool() { return { content: [{ type: "text", text }], structuredContent: { apiVersion: 1, kind: "task", encoding: "gzip+base64", payloadBytes: JSON.stringify(payload).length } }; },
+    async requestDisplayMode({ mode }) { return { mode }; },
+    async fallback() { return { content: [{ type: "text" as const, text }], structuredContent: { apiVersion: 1, kind: "task", encoding: "gzip+base64", payloadBytes: JSON.stringify(payload).length } }; },
     async sendMessage() { return {}; },
-  };
-  const controller = new TraceSiftController(app as never);
+  });
+  const controller = new TraceSiftController(app);
   controller.hostChanged(); controller.accept({ content: [], structuredContent: cpuAnalysis });
   await controller.openExplore("task-0");
   assert.deepEqual(controller.getSnapshot().explorer?.payload, payload);
@@ -435,23 +418,18 @@ test("TraceSift inflates a compressed payload before rendering it", async () => 
 });
 
 test("TraceSift hands a payload past the panel's limit to the browser before decoding it", async () => {
-  const names: string[] = [];
-  const app = {
+  const app = fakeApp({
     getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
     getHostContext: () => hostContext,
-    async callServerTool({ name }: { name: string }) {
-      names.push(name);
-      return name === "mobile_tracesift_explore_payload"
-        ? { content: [{ type: "text", text: "x" }], structuredContent: { apiVersion: 1, kind: "task", encoding: "json", payloadBytes: 25 * 1024 * 1024 } }
-        : { content: [], structuredContent: { opened: true } };
-    },
+    tools: { mobile_tracesift_explore_payload: () => ({ content: [{ type: "text", text: "x" }], structuredContent: { apiVersion: 1, kind: "task", encoding: "json", payloadBytes: 25 * 1024 * 1024 } }) },
+    fallback: () => ({ content: [], structuredContent: { opened: true } }),
     async sendMessage() { return {}; },
-  };
-  const controller = new TraceSiftController(app as never);
+  });
+  const controller = new TraceSiftController(app);
   controller.hostChanged(); controller.accept({ content: [], structuredContent: cpuAnalysis });
   await controller.openExplore("task-0");
   // The size is known from the envelope before inflating, so the browser window takes it instead.
-  assert.deepEqual(names, ["mobile_tracesift_explore_payload", "mobile_open_tracesift_explore"]);
+  assert.deepEqual(app.calls.map(call => call.name), ["mobile_tracesift_explore_payload", "mobile_open_tracesift_explore"]);
   assert.equal(controller.getSnapshot().error, "");
   assert.match(controller.getSnapshot().notice, /larger than the panel can open/);
   assert.equal(controller.getSnapshot().explorer, undefined);
@@ -460,15 +438,15 @@ test("TraceSift hands a payload past the panel's limit to the browser before dec
 
 test("TraceSift Copy handoff puts the authoritative text on the clipboard and never sends it to the chat", async () => {
   const copied: string[] = []; const messages: unknown[] = [];
-  const app = {
+  const app = fakeApp({
     getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
     getHostContext: () => hostContext,
-    async callServerTool() { return { content: [], structuredContent: { apiVersion: 1, handoff: "PRIVATE_HANDOFF" } }; },
+    async fallback() { return { content: [], structuredContent: { apiVersion: 1, handoff: "PRIVATE_HANDOFF" } }; },
     async sendMessage(message: unknown) { messages.push(message); return {}; },
-  };
+  });
   const clipboard = { async writeText(text: string) { copied.push(text); } };
   Object.defineProperty(globalThis, "navigator", { value: { clipboard }, configurable: true });
-  const controller = new TraceSiftController(app as never);
+  const controller = new TraceSiftController(app);
   controller.hostChanged(); controller.accept({ content: [], structuredContent: cpuAnalysis });
   await controller.copyHandoff("task-0");
   assert.deepEqual(copied, ["PRIVATE_HANDOFF"]);
@@ -491,17 +469,17 @@ const taskHandoff = {
   },
 };
 
-function exploreApp(messages: unknown[]) {
+function exploreApp(messages: unknown[]): FakeAppOptions {
   return {
     getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
     getHostContext: () => hostContext,
-    async callServerTool() { return payloadResult("task", taskHandoff); },
+    async fallback() { return payloadResult("task", taskHandoff); },
     async sendMessage(message: unknown) { messages.push(message); return {}; },
   };
 }
 
 async function exploringTask(messages: unknown[]) {
-  const controller = new TraceSiftController(exploreApp(messages) as never);
+  const controller = new TraceSiftController(fakeApp(exploreApp(messages)));
   controller.hostChanged();
   controller.accept({ content: [], structuredContent: cpuAnalysis });
   await controller.openExplore("task-0");
@@ -580,12 +558,12 @@ test("TraceSift will not send an empty selection and says why", async () => {
 
 test("TraceSift reports a selection it cannot describe rather than sending an empty ask", async () => {
   const messages: unknown[] = [];
-  const controller = new TraceSiftController({
+  const controller = new TraceSiftController(fakeApp({
     getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
     getHostContext: () => hostContext,
-    async callServerTool() { return payloadResult("task", { apiVersion: 1, analysisId: "private-analysis", card: { durationMs: 75, tree: { id: "0", name: "root", frameClass: "app", totalMs: 75, selfMs: 75, invocations: 1, children: [] } } }); },
+    async fallback() { return payloadResult("task", { apiVersion: 1, analysisId: "private-analysis", card: { durationMs: 75, tree: { id: "0", name: "root", frameClass: "app", totalMs: 75, selfMs: 75, invocations: 1, children: [] } } }); },
     async sendMessage(message: unknown) { messages.push(message); return {}; },
-  } as never);
+  }));
   controller.hostChanged();
   controller.accept({ content: [], structuredContent: cpuAnalysis });
   await controller.openExplore("task-0");
@@ -601,12 +579,12 @@ test("TraceSift reports a selection it cannot describe rather than sending an em
 
 test("TraceSift reports a selection whose tree never arrived without sending an empty ask", async () => {
   const messages: unknown[] = [];
-  const controller = new TraceSiftController({
+  const controller = new TraceSiftController(fakeApp({
     getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
     getHostContext: () => hostContext,
-    async callServerTool() { return payloadResult("task", { apiVersion: 1, analysisId: "private-analysis" }); },
+    async fallback() { return payloadResult("task", { apiVersion: 1, analysisId: "private-analysis" }); },
     async sendMessage(message: unknown) { messages.push(message); return {}; },
-  } as never);
+  }));
   controller.hostChanged();
   controller.accept({ content: [], structuredContent: cpuAnalysis });
   await controller.openExplore("task-0");
@@ -653,12 +631,12 @@ const reactExplorePayload = {
 };
 
 async function exploringReact(messages: unknown[]) {
-  const controller = new TraceSiftController({
+  const controller = new TraceSiftController(fakeApp({
     getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
     getHostContext: () => hostContext,
-    async callServerTool() { return payloadResult("react", reactExplorePayload); },
+    async fallback() { return payloadResult("react", reactExplorePayload); },
     async sendMessage(message: unknown) { messages.push(message); return {}; },
-  } as never);
+  }));
   controller.hostChanged();
   controller.accept({ content: [], structuredContent: analysis });
   await controller.openExplore("react-commit-1-2");
@@ -726,14 +704,13 @@ test("TraceSift reports React picks it cannot place rather than sending an empty
 });
 
 test("TraceSift shows findings only, with no tool calls, where the host does not let cards call tools", async () => {
-  const calls: unknown[] = [];
   // Claude Code renders cards but advertises neither server tools nor messages.
-  const app = {
+  const app = fakeApp({
     getHostCapabilities: () => ({}),
     getHostContext: () => hostContext,
-    async callServerTool(input: unknown) { calls.push(input); throw new Error("must not call"); },
-  };
-  const controller = new TraceSiftController(app as never);
+    async fallback() { throw new Error("must not call"); },
+  });
+  const controller = new TraceSiftController(app);
   controller.hostChanged();
   controller.accept({ content: [], structuredContent: analysis });
   await controller.restore("view-1");
@@ -743,12 +720,12 @@ test("TraceSift shows findings only, with no tool calls, where the host does not
   assert.equal(state.analysis?.cards.length, 1);
   assert.equal(state.error, "");
   assert.match(state.notice, /does not let the card open Explore/);
-  assert.deepEqual(calls, []);
+  assert.deepEqual(app.calls, []);
   controller.dispose();
 });
 
 test("TraceSift comes back from Explore to the finding that was explored", async () => {
-  const controller = new TraceSiftController(exploreApp([]) as never);
+  const controller = new TraceSiftController(fakeApp(exploreApp([])));
   controller.hostChanged();
   const second = { ...cpuAnalysis.cards[0], id: "task-1", taskIndex: 5 };
   controller.accept({ content: [], structuredContent: { ...cpuAnalysis, cards: [cpuAnalysis.cards[0], second] } });

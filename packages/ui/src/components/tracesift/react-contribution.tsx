@@ -1,9 +1,8 @@
 // A React commit divided by each component's own render time; every part leads to Explore.
 
-import { reactCommitSlices, type ReactSlice } from "@mobile-dev/shared/tracesift-contribution.ts";
-import { findingName, formatReactMs } from "@mobile-dev/shared/tracesift-labels.ts";
+import { reactCommitSlices, type ContributionChartKind, type ReactSlice } from "../../tracesift/contribution.ts";
+import { findingName, formatReactMs } from "../../tracesift/labels.ts";
 import type { TraceSiftReactCard } from "@mobile-dev/shared/tracesift.ts";
-import type { ContributionChartKind } from "./contribution-chart.tsx";
 import { FindingView } from "./finding.tsx";
 import { findingPath } from "./task-contribution.tsx";
 

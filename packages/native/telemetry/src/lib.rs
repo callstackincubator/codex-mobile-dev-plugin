@@ -37,6 +37,7 @@ pub fn init(component: &str) {
     });
 }
 
+// Mirrors telemetry.h's mobile_dev_timing in order; build.rs fails the build when they differ.
 #[derive(Clone, Copy)]
 #[repr(i32)]
 pub enum Timing { Connect, FrameProcess, Input, LogProcess, CpuSample, FpsRead }

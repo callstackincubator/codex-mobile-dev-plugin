@@ -3,8 +3,9 @@
 import { useState, type ReactNode } from "react";
 import { ChevronLeftIcon } from "lucide-react";
 import { InfoPopover, SegmentedControl } from "../card-parts.tsx";
+import type { ContributionChartKind } from "../../tracesift/contribution.ts";
 import {
-  ContributionChart, SliceLegend, SliceSummary, type ChartSlice, type ContributionChartKind, type MsFormat,
+  ContributionChart, SliceLegend, SliceSummary, type ChartSlice, type MsFormat,
 } from "./contribution-chart.tsx";
 
 const SEVERITY: Record<string, string | undefined> = { high: "Slow", medium: "Over budget" };

@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use crate::codec::Configuration;
+use crate::{codec::Configuration, error::MirrorError};
 
 pub const MAX_FRAMES: usize = 8;
 pub const MAX_BYTES: usize = 4 * 1024 * 1024;
@@ -17,7 +17,7 @@ pub struct Queue {
     pub generation: u32,
     pub configuration: Option<Configuration>,
     pub configuration_pending: bool,
-    pub error: Option<String>,
+    pub error: Option<MirrorError>,
     pub closed: bool,
     pub dropped: u32,
 }

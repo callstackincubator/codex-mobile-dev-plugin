@@ -7,14 +7,18 @@ import {
 } from "@mobile-dev/shared/telemetry.ts";
 import type { Surface, TelemetryAttributes, TelemetryHost } from "@mobile-dev/shared/telemetry.ts";
 import { validateTelemetryIdentity } from "@mobile-dev/shared/telemetry-identity.ts";
-import { deviceAppsDiagnosticTags, getDeviceAppsDiagnostic } from "@mobile-dev/shared/device-apps-diagnostics.ts";
+import { getDeviceAppsDiagnostic } from "@mobile-dev/shared/device-apps-diagnostics.ts";
+import { diagnosticContexts, diagnosticReportTags, diagnosticTags } from "@mobile-dev/shared/error-diagnostics.ts";
 import { FailureEpisodes, expectedOutcome } from "@mobile-dev/shared/error-reporting.ts";
+import { streamOpenTools } from "./stream-transports.ts";
 
 export { ErrorBoundary } from "@sentry/react";
 
 let running = false;
 let surface: Surface = "simulator";
-let attributes: TelemetryAttributes = { component: "ui", surface, view: "panel", layout: "ios" };
+// An `undefined` value clears that attribute on the Sentry scope, which drops undefined attributes when it serializes.
+type UiTelemetryContext = Record<string, TelemetryAttributes[string] | undefined>;
+let attributes: UiTelemetryContext = { component: "ui", surface, view: "panel", layout: "ios" };
 let visibleSince = 0;
 let previousFrame: number | undefined;
 let frameId: number | undefined;
@@ -144,7 +148,7 @@ export function setUiSurface(next: Surface) {
   }
 }
 
-export function setUiTelemetryContext(next: TelemetryAttributes) {
+export function setUiTelemetryContext(next: UiTelemetryContext) {
   const changed = Object.entries(next).some(([key, value]) => attributes[key] !== value);
   if (changed === false) return;
   flushUiMeasurements();
@@ -158,7 +162,7 @@ export function setUiTelemetryHost(host: TelemetryHost) {
   if (running) Sentry.setTag("host", host);
 }
 
-export function getUiTelemetryAttributes(): TelemetryAttributes {
+export function getUiTelemetryAttributes(): UiTelemetryContext {
   return attributes;
 }
 
@@ -171,13 +175,13 @@ export function captureUiError(error: unknown, operation: string, context = attr
   }
   const diagnostic = getDeviceAppsDiagnostic(error);
   if (diagnostic?.failure === "cancelled") return;
-  const diagnosticTags = deviceAppsDiagnosticTags(error);
   const contextTags: Record<string, string> = {};
   for (const key of ["surface", "view", "layout", "device_platform", "device_kind"]) {
     const value = context[key];
     if (typeof value === "string") contextTags[key] = value;
   }
-  Sentry.captureException(error, { tags: { ...contextTags, ...diagnosticTags, operation } });
+  const contexts = diagnosticContexts(error);
+  Sentry.captureException(error, { tags: { ...contextTags, ...diagnosticTags(error), ...diagnosticReportTags(error), operation }, ...(contexts && { contexts }) });
 }
 
 export function markUiSurfaceReady(startedAt: number) {
@@ -218,14 +222,26 @@ function visibilityChanged() {
   previousFrame = undefined;
 }
 
-export function startUiTelemetry(app: HostBridge) {
-  const environmentMeta = document.querySelector<HTMLMetaElement>('meta[name="mobile-dev-environment"]');
-  const environment = validateTelemetryEnvironment(environmentMeta?.content);
-  const telemetryMeta = document.querySelector<HTMLMetaElement>('meta[name="mobile-dev-telemetry"]');
-  const enabled = telemetryMeta?.content !== "off";
-  const userMeta = document.querySelector<HTMLMetaElement>('meta[name="mobile-dev-user-id"]');
-  const sessionMeta = document.querySelector<HTMLMetaElement>('meta[name="mobile-dev-session-id"]');
-  const identity = enabled ? validateTelemetryIdentity(userMeta?.content, sessionMeta?.content) : undefined;
+/**
+ * The server-owned settings UI telemetry starts with: the environment, the opt-out
+ * (`telemetry: "off"`) and the anonymous identity. Pages a host reads from the server
+ * carry them in `mobile-dev-*` meta tags.
+ */
+export type UiTelemetryMetadata = { environment?: string; telemetry?: string; userId?: string; sessionId?: string };
+
+function documentTelemetryMetadata(): UiTelemetryMetadata {
+  const content = (name: string) => document.querySelector<HTMLMetaElement>(`meta[name="mobile-dev-${name}"]`)?.content;
+  return { environment: content("environment"), telemetry: content("telemetry"), userId: content("user-id"), sessionId: content("session-id") };
+}
+
+/**
+ * Starts UI telemetry with the page's meta tags, or with `metadata` the page read from the server itself.
+ * A page that knows its host from the start passes `host`; MCP Apps panels set it once connected.
+ */
+export function startUiTelemetry(app: HostBridge, { metadata = documentTelemetryMetadata(), host }: { metadata?: UiTelemetryMetadata; host?: TelemetryHost } = {}) {
+  const environment = validateTelemetryEnvironment(metadata.environment);
+  const enabled = metadata.telemetry !== "off";
+  const identity = enabled ? validateTelemetryIdentity(metadata.userId, metadata.sessionId) : undefined;
   const browserTracing = Sentry.browserTracingIntegration({ instrumentNavigation: false });
   Sentry.init({
     dsn: SENTRY_UI_DSN,
@@ -251,8 +267,6 @@ export function startUiTelemetry(app: HostBridge) {
   const requestedView = document.documentElement.dataset.view;
   const view = requestedView === "recording" || requestedView === "workspace" || requestedView === "comparison" || requestedView === "tracesift" ? requestedView : "panel";
   if (view === "recording" || view === "comparison" || view === "tracesift") surface = view;
-  // A page that names its host carries it from the start; MCP Apps panels learn it on connect.
-  const host = document.documentElement.dataset.host === "mac" ? "mac" : undefined;
   attributes = { ...attributes, surface, view, ...(host ? { host } : {}) };
   Sentry.setTags({ component: "ui", surface, view, ...(host ? { host } : {}) });
   Sentry.setAttributes(attributes);
@@ -279,7 +293,6 @@ export function startUiTelemetry(app: HostBridge) {
 
   const call = app.callServerTool.bind(app);
   const retryFailures = new WeakMap<AbortSignal, FailureEpisodes>();
-  const streamOpenTools = new Set(["mobile_stream_session", "mobile_android_stream_session", "mobile_ios_mirror_session"]);
   app.callServerTool = (params, options) => {
     if (isFrequentTool(params.name)) return call(params, options);
     const operationAttributes = attributes;

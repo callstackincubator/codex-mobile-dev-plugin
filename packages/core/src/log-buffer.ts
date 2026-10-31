@@ -1,49 +1,40 @@
 import type { LogBatch, LogEntry, LogRecord, LogSourceStatus } from "@mobile-dev/shared/logs.ts";
+import { RevisionBuffer, Waiters } from "./revision-buffer.ts";
 
 export class LogBuffer {
-  private entries: LogEntry[] = [];
-  private sequence = 0;
+  private readonly entries: RevisionBuffer<LogEntry>;
   private bytes = 0;
   private readonly sizes = new Map<number, number>();
   private readonly statuses = new Map<string, LogSourceStatus>();
-  private readonly waiters = new Set<() => void>();
-  private readonly batches = new Set<() => void>();
-  private closed = false;
-  private readonly limit: number;
+  private readonly batches = new Waiters();
   private readonly byteLimit: number;
 
-  constructor(limit = 2000, byteLimit = 4 * 1024 * 1024) { this.limit = limit; this.byteLimit = byteLimit; }
-
-  push(record: LogRecord) {
-    if (this.closed) return;
-    const entry = { ...record, message: record.message.slice(0, 16384), stack: record.stack?.slice(0, 16384), sequence: ++this.sequence };
-    const size = JSON.stringify(entry).length * 2;
-    this.entries.push(entry); this.sizes.set(entry.sequence, size); this.bytes += size;
-    while (this.entries.length > this.limit || this.bytes > this.byteLimit) {
-      const old = this.entries.shift()!;
-      this.bytes -= this.sizes.get(old.sequence) ?? 0; this.sizes.delete(old.sequence);
-    }
-    this.notify();
+  constructor(limit = 2000, byteLimit = 4 * 1024 * 1024) {
+    this.byteLimit = byteLimit;
+    this.entries = new RevisionBuffer({ limit, evicted: ({ revision }) => {
+      this.bytes -= this.sizes.get(revision) ?? 0; this.sizes.delete(revision);
+    } });
   }
 
-  status(status: LogSourceStatus) { if (!this.closed) { this.statuses.set(status.source, status); this.notify(); } }
-  private notify() { for (const resolve of this.waiters) resolve(); this.waiters.clear(); }
-  close() { this.closed = true; this.notify(); for (const resolve of this.batches) resolve(); this.batches.clear(); }
+  push(record: LogRecord) {
+    if (this.entries.closed) return;
+    const entry = { ...record, message: record.message.slice(0, 16384), stack: record.stack?.slice(0, 16384), sequence: this.entries.revision + 1 };
+    const size = JSON.stringify(entry).length * 2;
+    this.sizes.set(entry.sequence, size); this.bytes += size;
+    this.entries.append(entry);
+    while (this.bytes > this.byteLimit && this.entries.first !== undefined) this.entries.drop();
+  }
 
-  async read(after: number, waitMs = 1000): Promise<LogBatch> {
-    if (!this.closed && after >= this.sequence && waitMs > 0) await new Promise<void>(resolve => {
-      const done = () => { clearTimeout(timer); this.waiters.delete(done); resolve(); };
-      const timer = setTimeout(done, waitMs);
-      this.waiters.add(done);
-    });
+  status(status: LogSourceStatus) { if (!this.entries.closed) { this.statuses.set(status.source, status); this.entries.wake(); } }
+  close() { this.entries.close(); this.batches.wake(); }
+
+  async read(after: number, waitMs = 1000, signal?: AbortSignal): Promise<LogBatch> {
+    await this.entries.wait(after, waitMs, signal);
     // Batch bursts into one MCP read rather than one call for each line.
-    if (!this.closed && waitMs > 0 && after < this.sequence) await new Promise<void>(resolve => {
-      const done = () => { clearTimeout(timer); this.batches.delete(done); resolve(); };
-      const timer = setTimeout(done, 75);
-      this.batches.add(done);
-    });
-    const entries = this.entries.filter(entry => entry.sequence > after).slice(0, 100);
-    const first = this.entries[0]?.sequence ?? this.sequence + 1;
-    return { entries, cursor: entries.at(-1)?.sequence ?? Math.max(after, this.sequence), dropped: Math.max(0, first - after - 1), statuses: [...this.statuses.values()] };
+    if (!this.entries.closed && waitMs > 0 && after < this.entries.revision) await this.batches.wait(75, signal);
+    const sequence = this.entries.revision;
+    const entries = this.entries.since(after).slice(0, 100).map(entry => entry.value);
+    const first = this.entries.first ?? sequence + 1;
+    return { entries, cursor: entries.at(-1)?.sequence ?? Math.max(after, sequence), dropped: Math.max(0, first - after - 1), statuses: [...this.statuses.values()] };
   }
 }

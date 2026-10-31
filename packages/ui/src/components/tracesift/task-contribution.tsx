@@ -2,10 +2,9 @@
 // draw two different wholes at the same width.
 
 import { useState } from "react";
-import { boundaryDrillSlices, taskBreakdownSlices, type ContributionSlice } from "@mobile-dev/shared/tracesift-contribution.ts";
-import { findingName, formatMs } from "@mobile-dev/shared/tracesift-labels.ts";
+import { boundaryDrillSlices, taskBreakdownSlices, type ContributionChartKind, type ContributionSlice } from "../../tracesift/contribution.ts";
+import { findingName, formatMs } from "../../tracesift/labels.ts";
 import type { TraceSiftTaskCard } from "@mobile-dev/shared/tracesift.ts";
-import type { ContributionChartKind } from "./contribution-chart.tsx";
 import { FindingView } from "./finding.tsx";
 
 /** Where a finding sits: the path above its own frame, or its shape when it has no path. */

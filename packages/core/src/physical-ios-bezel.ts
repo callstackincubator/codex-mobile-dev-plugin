@@ -2,15 +2,16 @@ import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { z } from "zod";
 import { bezelGeometrySchema } from "@mobile-dev/shared/bezel.ts";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 import type { Bezel } from "@mobile-dev/shared/bezel.ts";
 import type { PhysicalIosDevice } from "@mobile-dev/shared/ios-devices.ts";
-import { baguetteEnvironment } from "./baguette-runtime.ts";
+import { baguetteRuntime, forgetBaguetteRuntime } from "./baguette-runtime.ts";
+import type { BaguetteRuntimeReader } from "./baguette-runtime.ts";
 import { captureServerError } from "./telemetry.ts";
+import { isPng } from "./png.ts";
 
 const execute = promisify(execFile);
 type BezelCommand = (file: string, args: string[], options: { encoding: "buffer"; timeout: number; maxBuffer: number; env?: NodeJS.ProcessEnv }) => Promise<{ stdout: Buffer }>;
@@ -28,13 +29,11 @@ const rectSchema = bezelGeometrySchema.shape.rect;
 const viewportSchema = bezelGeometrySchema.shape.viewport;
 const radiusSchema = bezelGeometrySchema.shape.clipRadius;
 const layoutSchema = z.object({ screen: rectSchema, composite: viewportSchema, innerCornerRadius: radiusSchema });
-const pngSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const commandOptions = { encoding: "buffer", timeout: 15000, maxBuffer: 8 * 1024 * 1024 } satisfies Parameters<BezelCommand>[2];
 const missingFrameRetryDelay = 5 * 60 * 1000;
 
 function pngDataUri(bytes: Buffer): string {
-  const signature = bytes.subarray(0, 8);
-  if (bytes.length > commandOptions.maxBuffer || signature.equals(pngSignature) === false) throw new Error("Invalid Apple device frame PNG.");
+  if (bytes.length > commandOptions.maxBuffer || isPng(bytes) === false) throw new Error("Invalid Apple device frame PNG.");
   const encoded = bytes.toString("base64");
   return `data:image/png;base64,${encoded}`;
 }
@@ -53,7 +52,7 @@ async function readMask(identifier: string, run: BezelCommand): Promise<string> 
   }
 }
 
-async function renderBezel(device: PhysicalIosDevice, run: BezelCommand, runtime: typeof baguetteEnvironment): Promise<Bezel> {
+async function renderBezel(device: PhysicalIosDevice, run: BezelCommand, runtime: BaguetteRuntimeReader): Promise<Bezel> {
   const typesOutput = await run("/usr/bin/xcrun", ["simctl", "list", "devicetypes", "--json"], commandOptions);
   const typesJson = typesOutput.stdout.toString("utf8");
   const typesPayload = JSON.parse(typesJson);
@@ -81,28 +80,28 @@ async function renderBezel(device: PhysicalIosDevice, run: BezelCommand, runtime
   // Without an installed device type the screen mirrors without a frame.
   if (selected === undefined) throw new ExpectedOperationError("unsupported_platform", "Xcode has no Apple device frame for this model.");
   const { type, profile } = selected;
-  // Bundles, and the chunks they split into, sit in dist/ beside the helpers.
-  const root = import.meta.url.endsWith(".mjs") ? "./baguette/" : "../../native/vendor/baguette/";
-  const url = new URL(`${root}Baguette`, import.meta.url);
-  const executable = fileURLToPath(url);
   const signal = AbortSignal.timeout(commandOptions.timeout);
-  const environment = await runtime(executable, signal);
-  const renderOptions = { ...commandOptions, env: environment };
+  const { executable, env } = await runtime(signal);
+  const renderOptions = { ...commandOptions, env };
+  const render = (args: string[]) => run(executable, args, renderOptions).catch(error => {
+    forgetBaguetteRuntime(error);
+    throw error;
+  });
 
-  const layoutOutput = await run(executable, ["chrome", "layout", "--device-name", type.name], renderOptions);
+  const layoutOutput = await render(["chrome", "layout", "--device-name", type.name]);
   const layoutJson = layoutOutput.stdout.toString("utf8");
   const layoutPayload = JSON.parse(layoutJson);
   const layout = layoutSchema.parse(layoutPayload);
   // The CLI layout already includes button margins, unlike the simulator HTTP definition.
   const geometry = bezelGeometrySchema.parse({ rect: layout.screen, viewport: layout.composite, clipRadius: layout.innerCornerRadius });
-  const imageOutput = await run(executable, ["chrome", "composite", "--device-name", type.name], renderOptions);
+  const imageOutput = await render(["chrome", "composite", "--device-name", type.name]);
   const image = pngDataUri(imageOutput.stdout);
   const bezel: Bezel = { ...geometry, image };
   if (profile.framebufferMask !== undefined) bezel.mask = await readMask(profile.framebufferMask, run);
   return bezel;
 }
 
-export function createPhysicalIosBezelReader(run: BezelCommand = execute, runtime = baguetteEnvironment): PhysicalIosBezelReader {
+export function createPhysicalIosBezelReader(run: BezelCommand = execute, runtime: BaguetteRuntimeReader = baguetteRuntime): PhysicalIosBezelReader {
   const cache = new Map<string, Promise<Bezel | undefined>>();
   async function read(device: PhysicalIosDevice): Promise<Bezel | undefined> {
     try {

@@ -1,11 +1,10 @@
-import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
-import { errorMessage } from "@mobile-dev/shared/protocol.ts";
+import { ExpectedOperationError, errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 import { networkPresets, type NetworkPreset } from "@mobile-dev/shared/device-settings.ts";
 import { runAdb, systemCommands, type Commands } from "../app-control/commands.ts";
 import { proxyToken, ThrottleProxy } from "./proxy.ts";
+import { isEmulatorSerial } from "@mobile-dev/shared/android-ids.ts";
 
 const marker = "mobile_dev_network_throttle";
-const emulatorSerial = /^emulator-\d+$/;
 type DeviceState = { proxy: string | null; owner: { token: string; port: number; preset: NetworkPreset } | null };
 export type ThrottleReading = { preset: NetworkPreset | null } | { foreignProxy: string };
 
@@ -39,7 +38,7 @@ export class AndroidNetworkThrottle {
 
   // Phones reach the Mac's proxy through adb reverse; emulators reach it at 10.0.2.2.
   private async reverse(serial: string, action: string, args: string[]) {
-    if (emulatorSerial.test(serial)) return;
+    if (isEmulatorSerial(serial)) return;
     // A listener that is already gone needs no removal.
     try { await runAdb(this.commands, serial, action, ["reverse", ...args], 10000); }
     catch (error) { if (!/not found/i.test(errorMessage(error))) throw error; }
@@ -49,7 +48,7 @@ export class AndroidNetworkThrottle {
     return parseThrottleState(await this.shell(serial, "Reading the network throttle", `settings get global http_proxy; settings get global ${marker}`));
   }
 
-  private proxyAddress(serial: string, port: number) { return `${emulatorSerial.test(serial) ? "10.0.2.2" : "127.0.0.1"}:${port}`; }
+  private proxyAddress(serial: string, port: number) { return `${isEmulatorSerial(serial) ? "10.0.2.2" : "127.0.0.1"}:${port}`; }
 
   // A marker only counts while the device still points at the proxy it names.
   private ours(serial: string, state: DeviceState) {

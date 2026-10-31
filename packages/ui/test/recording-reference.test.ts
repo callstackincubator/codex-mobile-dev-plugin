@@ -3,8 +3,10 @@ import assert from "node:assert/strict";
 import { setTimeout } from "node:timers/promises";
 import { build } from "esbuild";
 import { JSDOM } from "jsdom";
-import { recordingFixture } from "../../test-support/recording-fixtures.ts";
-import { recordingPreview } from "../../shared/src/recordings.ts";
+import { recordingFixture } from "@mobile-dev/test-support/recording-fixtures.ts";
+import { recordingPreview } from "@mobile-dev/shared/recordings.ts";
+import { runBundle } from "@mobile-dev/test-support/bundle.ts";
+import { waitFor } from "@mobile-dev/test-support/wait.ts";
 
 // Tools that show a recording send its ID and, when it fits, a preview without thread or
 // frame detail: hosts cap tool results (Codex keeps ~50 KB), and some let cards call
@@ -22,7 +24,7 @@ const built = await build({
 type Call = { name: string; arguments: Record<string, unknown> };
 function load(read: (call: Call) => unknown, { cardsCallTools = true } = {}) {
   const dom = new JSDOM("<html><body></body></html>", { runScripts: "outside-only", url: "https://mobile-dev.test/" });
-  dom.window.eval(built.outputFiles[0].text);
+  runBundle(dom.window, built.outputFiles[0].text);
   const calls: Call[] = [];
   const app = {
     getHostCapabilities() { return cardsCallTools ? { serverTools: {}, message: { text: {} } } : {}; },
@@ -32,10 +34,6 @@ function load(read: (call: Call) => unknown, { cardsCallTools = true } = {}) {
 }
 // Objects made inside the page come from its realm; compare them as plain data.
 const plain = (value: unknown) => JSON.parse(JSON.stringify(value));
-async function until(condition: () => boolean) {
-  for (let attempt = 0; attempt < 100 && !condition(); attempt++) await setTimeout(5);
-  assert.ok(condition());
-}
 
 test("a recording reference makes the card read the recording with its range", async t => {
   const recording = recordingFixture();
@@ -43,7 +41,7 @@ test("a recording reference makes the card read the recording with its range", a
   t.after(close);
   const controller = new cards.RecordingController(app);
   controller.accept({ content: [], structuredContent: { recordingId: recording.id, title: recording.title, status: "finished", durationSeconds: 30, range: { start: 2, end: 8 }, summary: {} } });
-  await until(() => controller.getSnapshot().recording !== undefined);
+  await waitFor(() => controller.getSnapshot().recording !== undefined);
   assert.deepEqual(plain(calls), [{ name: "mobile_read_performance_recording", arguments: { recordingId: recording.id } }]);
   assert.equal(controller.getSnapshot().recording.id, recording.id);
   assert.deepEqual(plain(controller.getSnapshot().range), { start: 2, end: 8 });
@@ -68,7 +66,7 @@ test("a host that drops the samples shows an error instead of loading forever", 
   t.after(close);
   const controller = new cards.RecordingController(app);
   controller.accept({ content: [], structuredContent: { recordingId: recording.id, title: recording.title, status: "finished", durationSeconds: 30, summary: {} } });
-  await until(() => controller.getSnapshot().error !== "");
+  await waitFor(() => controller.getSnapshot().error !== "");
   assert.match(controller.getSnapshot().error, /Could not load this recording/);
   assert.equal(controller.getSnapshot().recording, undefined);
   controller.dispose();
@@ -82,7 +80,7 @@ test("a comparison reference makes the card read every recording", async t => {
   t.after(close);
   const controller = new cards.ComparisonController(app);
   controller.accept({ content: [], structuredContent: { title: "Before and after", recordingIds: [first.id, second.id], range: { start: 0, end: 10 }, summaries: [] } });
-  await until(() => controller.getSnapshot().comparison !== undefined);
+  await waitFor(() => controller.getSnapshot().comparison !== undefined);
   assert.deepEqual(calls.map(call => call.arguments.recordingId), [first.id, second.id]);
   const { comparison, range } = controller.getSnapshot();
   assert.equal(comparison.title, "Before and after");
@@ -99,7 +97,7 @@ test("a comparison whose recording cannot be read reports it", async t => {
   t.after(close);
   const controller = new cards.ComparisonController(app);
   controller.accept({ content: [], structuredContent: { title: "Missing run", recordingIds: [first.id, "27cfecab-d99c-4533-90dd-e14a7cb0087b"], summaries: [] } });
-  await until(() => controller.getSnapshot().error !== "");
+  await waitFor(() => controller.getSnapshot().error !== "");
   assert.equal(controller.getSnapshot().error, "Recording not found.");
   assert.equal(controller.getSnapshot().comparison, undefined);
   controller.dispose();
@@ -134,7 +132,7 @@ test("where cards can call tools, the full recording replaces the preview and ke
   assert.equal(controller.getSnapshot().recording.samples[0].threads.length, 0);
   controller.select({ start: 3, end: 9 });
   release();
-  await until(() => controller.getSnapshot().preview === undefined);
+  await waitFor(() => controller.getSnapshot().preview === undefined);
   assert.ok(controller.getSnapshot().recording.samples[0].threads.length > 0);
   assert.deepEqual(plain(controller.getSnapshot().range), { start: 3, end: 9 });
   controller.dispose();
@@ -146,7 +144,7 @@ test("a failed read keeps the preview on screen", async t => {
   t.after(close);
   const controller = new cards.RecordingController(app);
   controller.accept(reference(recording, { preview: recordingPreview(recording) }));
-  await until(() => controller.getSnapshot().preview === "only");
+  await waitFor(() => controller.getSnapshot().preview === "only");
   assert.equal(controller.getSnapshot().error, "");
   assert.equal(controller.getSnapshot().recording.id, recording.id);
   controller.dispose();
@@ -185,7 +183,7 @@ test("cards offer to open a recording only where the server has the workspace, a
   withWorkspace.dispose();
   const controller = new cards.RecordingController(app);
   controller.accept(reference(recording, { preview: recordingPreview(recording) }));
-  await until(() => controller.getSnapshot().preview === undefined);
+  await waitFor(() => controller.getSnapshot().preview === undefined);
   assert.equal(controller.getSnapshot().canOpen, false);
   controller.dispose();
 });
@@ -196,7 +194,7 @@ test("a full read the server refuses keeps the preview instead of loading foreve
   t.after(close);
   const controller = new cards.RecordingController(app);
   controller.accept(reference(recording, { preview: recordingPreview(recording) }));
-  await until(() => controller.getSnapshot().preview === "only");
+  await waitFor(() => controller.getSnapshot().preview === "only");
   assert.equal(controller.getSnapshot().error, "");
   controller.dispose();
 });
@@ -214,7 +212,7 @@ test("a newer recording replaces one still loading, whichever read finishes last
   const controller = new cards.RecordingController(app, { workspace: true });
   controller.accept(reference(first, { preview: recordingPreview(first) }));
   controller.accept(reference(second, { preview: recordingPreview(second) }));
-  await until(() => controller.getSnapshot().preview === undefined);
+  await waitFor(() => controller.getSnapshot().preview === undefined);
   releaseFirst();
   await setTimeout(20);
   assert.equal(controller.getSnapshot().recording.id, second.id);
@@ -229,7 +227,7 @@ test("comparison previews stay when a full read is refused", async t => {
   t.after(close);
   const controller = new cards.ComparisonController(app);
   controller.accept({ content: [], structuredContent: { title: "Before and after", recordingIds: [first.id, second.id], summaries: [], previews: [recordingPreview(first), recordingPreview(second)] } });
-  await until(() => controller.getSnapshot().preview === "only");
+  await waitFor(() => controller.getSnapshot().preview === "only");
   assert.equal(controller.getSnapshot().comparison.recordings.length, 2);
   assert.equal(controller.getSnapshot().error, "");
   controller.dispose();

@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { agentDeviceClient } from "../../test-support/agent-device-fixtures.ts";
-import { PNG } from "../../test-support/fixtures.ts";
+import { agentDeviceClient } from "@mobile-dev/test-support/agent-device-fixtures.ts";
+import { PNG } from "@mobile-dev/test-support/fixtures.ts";
 
 function text(result: { content: unknown }) {
   return (result.content as { text: string }[])[0].text;
@@ -34,6 +34,15 @@ test("forwarding preserves named sessions, metadata and native results without r
   const iosInput = { session: "ios-task", interactiveOnly: true };
   await client.callTool({ name: "device_snapshot", arguments: iosInput });
   assert.deepEqual(calls[3].arguments, iosInput);
+});
+
+test("shutting a device down closes the plugin's sessions on it first", async t => {
+  const { client, calls, closedDevices } = await agentDeviceClient(t);
+  await client.callTool({ name: "device_shutdown", arguments: { platform: "ios", udid: "selected-ios" } });
+  await client.callTool({ name: "device_shutdown", arguments: { platform: "android", serial: "emulator-5554" } });
+  await client.callTool({ name: "device_shutdown", arguments: { session: "named" } });
+  assert.deepEqual(closedDevices, ["selected-ios", "emulator-5554"]);
+  assert.equal(calls.length, 3);
 });
 
 test("a screenshot returns the saved image beside agent-device's own result", async t => {

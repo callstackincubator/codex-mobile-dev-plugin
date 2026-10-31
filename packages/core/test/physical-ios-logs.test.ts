@@ -8,20 +8,21 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { nativeLogTargetSchema } from "../../shared/src/logs.ts";
-import type { LogRecord, LogSourceStatus } from "../../shared/src/logs.ts";
-import type { PhysicalIosDevice } from "../../shared/src/ios-devices.ts";
+import { nativeLogTargetSchema } from "@mobile-dev/shared/logs.ts";
+import type { LogRecord, LogSourceStatus } from "@mobile-dev/shared/logs.ts";
+import type { PhysicalIosDevice } from "@mobile-dev/shared/ios-devices.ts";
 import { physicalIosLogCommand } from "../src/physical-ios-logs.ts";
 import type { PhysicalIosLogTarget } from "../src/physical-ios-logs.ts";
 import { startNativeLogs } from "../src/native-logs.ts";
 import { LogSessions } from "../src/log-sessions.ts";
 import { registerLogTools } from "../src/log-tools.ts";
-import { Baguette } from "../src/baguette.ts";
+import { DeviceResolver } from "../src/devices.ts";
+import { attachedBaguette } from "@mobile-dev/test-support/fixtures.ts";
 import { parseIOSLog } from "../src/log-parsers.ts";
 import { listIosDevices } from "../src/ios-devices.ts";
+import { connectClient } from "@mobile-dev/test-support/mcp.ts";
+import { waitFor } from "@mobile-dev/test-support/wait.ts";
 
 const execute = promisify(execFile);
 const phone: PhysicalIosDevice = {
@@ -31,13 +32,7 @@ const phone: PhysicalIosDevice = {
 };
 const target: PhysicalIosLogTarget = { platform: "ios", kind: "physical", deviceId: phone.udid, process: "Example" };
 
-async function waitFor(predicate: () => boolean) {
-  const deadline = Date.now() + 4000;
-  while (predicate() === false) {
-    assert.ok(Date.now() < deadline, "Timed out waiting for the log reader.");
-    await new Promise(resolve => setTimeout(resolve, 5));
-  }
-}
+const logReader = { timeout: 4000, message: "The log reader did not reach the expected state" };
 
 test("physical log targets require a hardware UDID and cannot enter the simulator route", () => {
   const valid = nativeLogTargetSchema.safeParse(target);
@@ -117,10 +112,10 @@ test("physical iOS PID filters exclude other processes and records without an id
   let accepted!: () => void;
   const ready = new Promise<void>(resolve => { accepted = resolve; });
   const pidTarget: PhysicalIosLogTarget = { platform: "ios", kind: "physical", deviceId: phone.udid, pid: 123 };
-  const code = `console.log('{"ready":true}');
+  const code = `console.log('{"type":"ready"}');
     for (const processID of [456, undefined, 123]) console.log(JSON.stringify({ timestamp: '2026-10-02T12:00:00Z', processID,
       process: 'Example', eventMessage: 'fixture' }));
-    setInterval(() => {}, 1000);`;
+    process.stdin.on('end', () => process.exit(0)); process.stdin.resume();`;
   const stop = startNativeLogs(pidTarget, { log: log => { entries.push(log); accepted(); }, status() {} }, async selected => {
     assert.deepEqual(selected, pidTarget);
     return { command: process.execPath, args: ["-e", code] };
@@ -137,19 +132,19 @@ test("physical streams wait for acceptance, preserve process metadata across PID
   const entries: LogRecord[] = [];
   const statuses: LogSourceStatus[] = [];
   const code = `setTimeout(() => {
-    console.log('{"ready":true}');
+    console.log('{"type":"ready"}');
     for (const processID of [123, 456]) console.log(JSON.stringify({ timestamp: '1970-01-01T00:00:42.123456Z', messageType: 'Error',
       process: 'Example', processID, eventMessage: 'fixture', subsystem: 'com.example', category: 'javascript' }));
-    setInterval(() => {}, 1000);
+    process.stdin.on('end', () => process.exit(0)); process.stdin.resume();
   }, 100);`;
   const stop = startNativeLogs(target, { log: log => entries.push(log), status: status => statuses.push(status) }, async selected => {
     assert.deepEqual(selected, target);
     return { command: process.execPath, args: ["-e", code] };
   });
   t.after(stop);
-  await waitFor(() => statuses.length > 0);
+  await waitFor(() => statuses.length > 0, logReader);
   assert.equal(statuses.some(status => status.state === "live"), false);
-  await waitFor(() => entries.length === 2);
+  await waitFor(() => entries.length === 2, logReader);
   assert.equal(statuses.at(-1)?.state, "live");
   assert.deepEqual(entries.map(entry => entry.pid), [123, 456]);
   for (const entry of entries) {
@@ -172,11 +167,11 @@ test("a failed physical reader reports diagnostics and rediscovers before reconn
   const stop = startNativeLogs(target, { log: log => entries.push(log), status: status => statuses.push(status) }, async () => {
     attempts++;
     const code = attempts === 1 ? "console.error('fixture disconnect'); process.exit(1)" :
-      "console.log('{\"ready\":true}'); console.log('{\"eventMessage\":\"reconnected\",\"process\":\"Example\"}'); setInterval(() => {}, 1000)";
+      "console.log('{\"type\":\"ready\"}'); console.log('{\"eventMessage\":\"reconnected\",\"process\":\"Example\"}'); process.stdin.on('end', () => process.exit(0)); process.stdin.resume()";
     return { command: process.execPath, args: ["-e", code] };
   });
   t.after(stop);
-  await waitFor(() => entries.length > 0);
+  await waitFor(() => entries.length > 0, logReader);
   assert.equal(attempts, 2);
   assert.ok(statuses.some(status => status.state === "reconnecting" && status.message === "fixture disconnect"));
   assert.equal(entries[0].deviceId, phone.udid);
@@ -193,13 +188,10 @@ test("MCP validates physical devices independently of Baguette and closes the au
     return async () => { closed++; };
   }, metro: () => async () => {} });
   const server = new McpServer({ name: "physical-log-test", version: "1" });
-  const baguette = new Baguette("http://127.0.0.1:1");
-  registerLogTools(server, logs, baguette, async () => [current]);
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: "physical-log-client", version: "1" });
-  t.after(async () => { await client.close(); await logs.close(); await server.close(); baguette.dispose(); });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
+  const baguette = attachedBaguette("http://127.0.0.1:1");
+  registerLogTools(server, logs, new DeviceResolver({ simulators: baguette, ios: async () => [current] }));
+  t.after(async () => { await logs.close(); baguette.dispose(); });
+  const client = await connectClient(t, server);
   for (const invalid of [{ ...phone, state: "disconnected" }, { ...phone, pairingState: "unpaired" }]) {
     current = invalid;
     const result = await client.callTool({ name: "mobile_logs_session", arguments: { options: { native: target } } });

@@ -1,5 +1,5 @@
 import type { CpuPoint, CpuSample } from "@mobile-dev/shared/cpu.ts";
-import type { ThreadHistory, ThreadOrder } from "../../performance/types";
+import type { ThreadHistory, ThreadOrder } from "./types";
 
 export type CpuThreadSeries = { id: string; name: string; running: boolean; data: CpuPoint[] };
 

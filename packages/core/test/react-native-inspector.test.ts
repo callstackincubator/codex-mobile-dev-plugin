@@ -4,14 +4,12 @@ import { createServer } from "node:http";
 import { WebSocketServer } from "ws";
 import { inspectReactNative, readSnapshot, type InspectorNode } from "../src/react-native-inspector.ts";
 import { collectReactNativeTree } from "../src/react-native-snapshot.js";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { Baguette } from "../src/baguette.ts";
-import { createTestPlugin, fakeBaguette, fakeSimulatorInput, UDID } from "../../test-support/fixtures.ts";
-import { screenComponents, componentAt, componentsAt } from "../../shared/src/screen-annotations.ts";
+import { createTestPlugin, fakeBaguette, fakeSimulatorInput, UDID, attachedBaguette } from "@mobile-dev/test-support/fixtures.ts";
+import { screenComponents, componentAt, componentsAt } from "@mobile-dev/shared/screen-annotations.ts";
 import { ServeEmu } from "../src/serve-emu.ts";
-import { fakeInspectionSdk } from "../../test-support/android-inspection-fixtures.ts";
+import { fakeInspectionSdk } from "@mobile-dev/test-support/android-inspection-fixtures.ts";
 import { createPanel } from "../src/panel-tools.ts";
+import { connectClient } from "@mobile-dev/test-support/mcp.ts";
 
 const card = { source: "react-native", role: "Pressable", label: "Row", frame: { x: 10, y: 100, width: 350, height: 70 }, children: [
   { source: "react-native", role: "Text", label: "Title", frame: { x: 30, y: 120, width: 150, height: 20 }, children: [] },
@@ -225,12 +223,9 @@ test("runtime adapter reads native bounds, keeps logical parents and excludes un
 test("the panel receives runtime and native elements through an MCP tool, with native fallback", async t => {
   const inspector = await backend(t);
   const native = await fakeBaguette();
-  const plugin = await createTestPlugin("<canvas></canvas>", { panel: createPanel({ baguette: new Baguette(native.url), simulatorInput: fakeSimulatorInput() }) });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: "inspection-test", version: "1" });
-  t.after(async () => { await client.close(); await plugin.close(); await native.close(); });
-  await plugin.server.connect(serverTransport);
-  await client.connect(clientTransport);
+  const plugin = await createTestPlugin("<canvas></canvas>", { features: [createPanel({ baguette: attachedBaguette(native.url), simulatorInput: fakeSimulatorInput() })] });
+  t.after(async () => { await plugin.close(); await native.close(); });
+  const client = await connectClient(t, plugin.server);
   const args = { platform: "ios", deviceId: UDID, deviceName: "iPhone 17", screenWidth: 400, metroUrl: inspector.origin, targetId: "app" };
   const result = await client.callTool({ name: "mobile_inspect_ui", arguments: args });
   assert.notEqual(result.isError, true);
@@ -256,11 +251,9 @@ test("Android MCP inspection aligns native and React bounds with downscaled vide
       ] } };
     }
   }
-  const plugin = await createTestPlugin("<canvas></canvas>", { panel: createPanel({ baguette: new Baguette(native.url), simulatorInput: fakeSimulatorInput() }), android: new Android() });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: "android-inspection-test", version: "1" });
-  t.after(async () => { await client.close(); await plugin.close(); await native.close(); });
-  await plugin.server.connect(serverTransport); await client.connect(clientTransport);
+  const plugin = await createTestPlugin("<canvas></canvas>", { features: [createPanel({ baguette: attachedBaguette(native.url), simulatorInput: fakeSimulatorInput() })], android: new Android() });
+  t.after(async () => { await plugin.close(); await native.close(); });
+  const client = await connectClient(t, plugin.server);
   const args = { platform: "android", deviceId: "emulator-5554", deviceName: "Pixel_8_API_36", screenWidth: 576, metroUrl: inspector.origin };
   for (const runtimeAvailable of [true, false]) {
     if (!runtimeAvailable) inspector.setTargets([]);
@@ -282,12 +275,9 @@ test("deep runtime trees cross MCP as shallow records with their parent links in
   for (let i = 0; i < 90; i++) tree = { source: "react-native", role: `Wrapper${i}`, frame: { x: 0, y: 0, width: 400, height: 800 }, children: [tree] };
   inspector.setResponse({ available: true, tree: [tree], windowWidth: 400, truncated: false });
   const native = await fakeBaguette();
-  const plugin = await createTestPlugin("<canvas></canvas>", { panel: createPanel({ baguette: new Baguette(native.url), simulatorInput: fakeSimulatorInput() }) });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: "inspection-depth-test", version: "1" });
-  t.after(async () => { await client.close(); await plugin.close(); await native.close(); });
-  await plugin.server.connect(serverTransport);
-  await client.connect(clientTransport);
+  const plugin = await createTestPlugin("<canvas></canvas>", { features: [createPanel({ baguette: attachedBaguette(native.url), simulatorInput: fakeSimulatorInput() })] });
+  t.after(async () => { await plugin.close(); await native.close(); });
+  const client = await connectClient(t, plugin.server);
   const result = await client.callTool({ name: "mobile_inspect_ui", arguments: { platform: "ios", deviceId: UDID, deviceName: "iPhone 17", screenWidth: 400, metroUrl: inspector.origin, targetId: "app" } });
   assert.notEqual(result.isError, true);
   const pending: [unknown, number][] = [[result, 0]];

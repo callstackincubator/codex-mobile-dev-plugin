@@ -1,4 +1,4 @@
-use crate::media::hevc::HevcParameterSets;
+use crate::media::hevc::{GeneralProfile, HevcParameterSets};
 
 pub struct Configuration {
     pub revision: u64,
@@ -8,26 +8,42 @@ pub struct Configuration {
     pub description: Vec<u8>,
 }
 
-pub fn configuration(parameters: HevcParameterSets) -> Result<Configuration, String> {
-    let mut rbsp = Vec::with_capacity(parameters.sequence_parameter_set.len());
-    let mut zeroes = 0;
-    for byte in parameters.sequence_parameter_set.iter().skip(2).copied() {
-        if zeroes >= 2 && byte == 3 { zeroes = 0; continue; }
-        rbsp.push(byte);
-        zeroes = if byte == 0 { zeroes + 1 } else { 0 };
-    }
-    if rbsp.len() < 13 { return Err("Invalid HEVC profile.".into()); }
-    let profile = rbsp[1];
-    let space = ["", "A", "B", "C"][(profile >> 6) as usize];
-    let compatibility = u32::from_be_bytes(rbsp[2..6].try_into().unwrap()).reverse_bits();
-    let tier = if profile & 32 == 0 { "L" } else { "H" };
-    let mut constraints = rbsp[6..12].to_vec();
-    while constraints.last() == Some(&0) { constraints.pop(); }
+/// The RFC 6381 `hvc1` codec string (ISO/IEC 14496-15 Annex E).
+fn codec_string(profile: &GeneralProfile) -> String {
+    let space = ["", "A", "B", "C"][usize::from(profile.profile_space & 3)];
+    let compatibility = profile.compatibility_flags.reverse_bits();
+    let tier = if profile.high_tier { "H" } else { "L" };
+    let mut constraints = profile.constraint_flags.as_slice();
+    while let [rest @ .., 0] = constraints { constraints = rest; }
     let constraint_string = constraints.iter().map(|byte| format!(".{byte:X}")).collect::<String>();
-    let codec = format!("hvc1.{space}{}.{compatibility:X}.{tier}{}{constraint_string}", profile & 31, rbsp[12]);
+    format!("hvc1.{space}{}.{compatibility:X}.{tier}{}{constraint_string}", profile.profile_idc, profile.level_idc)
+}
+
+/// The general profile, tier and level bytes in `profile_tier_level` order.
+fn profile_tier_level_bytes(profile: &GeneralProfile) -> [u8; 12] {
+    let mut bytes = [0; 12];
+    bytes[0] = (profile.profile_space << 6) | (u8::from(profile.high_tier) << 5) | (profile.profile_idc & 31);
+    bytes[1..5].copy_from_slice(&profile.compatibility_flags.to_be_bytes());
+    bytes[5..11].copy_from_slice(&profile.constraint_flags);
+    bytes[11] = profile.level_idc;
+    bytes
+}
+
+/// Builds the decoder configuration: the codec string and the
+/// HEVCDecoderConfigurationRecord (`hvcC`) with one VPS, SPS and PPS array.
+pub fn configuration(parameters: HevcParameterSets) -> Result<Configuration, String> {
+    let sps = parameters.sps;
+    // hvcC stores each bit depth minus 8 in three bits.
+    let bit_depth = |depth: u8| depth.checked_sub(8).filter(|minus8| *minus8 <= 7);
+    let luma = bit_depth(sps.bit_depth_luma).ok_or("Unsupported HEVC luma bit depth.")?;
+    let chroma = bit_depth(sps.bit_depth_chroma).ok_or("Unsupported HEVC chroma bit depth.")?;
+    let codec = codec_string(&sps.profile);
     let mut description = vec![1];
-    description.extend_from_slice(&rbsp[1..13]);
-    description.extend_from_slice(&[0xf0, 0, 0xfc, 0xfd, 0xf8, 0xf8, 0, 0, 0x0f, 3]);
+    description.extend_from_slice(&profile_tier_level_bytes(&sps.profile));
+    // min_spatial_segmentation_idc 0, parallelismType 0, then the reserved-bit-prefixed
+    // chromaFormat and bit depths, avgFrameRate 0, one nested temporal layer,
+    // four-byte NAL lengths and three parameter-set arrays.
+    description.extend_from_slice(&[0xf0, 0, 0xfc, 0xfc | (sps.chroma_format_idc & 3), 0xf8 | luma, 0xf8 | chroma, 0, 0, 0x0f, 3]);
     for (nal_type, bytes) in [(32, parameters.video_parameter_set), (33, parameters.sequence_parameter_set), (34, parameters.picture_parameter_set)] {
         let length = u16::try_from(bytes.len()).map_err(|_| "HEVC parameter set exceeds the supported size.")?;
         description.push(0x80 | nal_type);
@@ -35,5 +51,88 @@ pub fn configuration(parameters: HevcParameterSets) -> Result<Configuration, Str
         description.extend_from_slice(&length.to_be_bytes());
         description.extend_from_slice(&bytes);
     }
-    Ok(Configuration { revision: parameters.revision, width: parameters.pixel_width, height: parameters.pixel_height, codec, description })
+    Ok(Configuration { revision: parameters.revision, width: sps.pixel_width, height: sps.pixel_height, codec, description })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::media::hevc::SpsInfo;
+
+    const VPS: [u8; 3] = [0x40, 1, 0x10];
+    const PPS: [u8; 3] = [0x44, 1, 0x30];
+    // The synthetic 64x64 8-bit 4:2:0 SPS from the HEVC tests.
+    const SPS_64_X_64: [u8; 39] = [
+        0x42, 0x01, 0x01, 0x04, 0x08, 0x00, 0x00, 0x03, 0x00, 0x9f, 0xa8, 0x00, 0x00, 0x03, 0x00,
+        0x00, 0xff, 0xa0, 0x20, 0x81, 0x05, 0x96, 0xea, 0x49, 0x32, 0xbc, 0x05, 0xa0, 0x20, 0x00,
+        0x00, 0x03, 0x00, 0x20, 0x00, 0x00, 0x03, 0x00, 0x21,
+    ];
+    // The general fields of that SPS: RExt profile 4 at level 255.
+    const PROFILE_64_X_64: GeneralProfile = GeneralProfile {
+        profile_space: 0, high_tier: false, profile_idc: 4, compatibility_flags: 0x0800_0000,
+        constraint_flags: [0x9f, 0xa8, 0, 0, 0, 0], level_idc: 255,
+    };
+
+    fn parameters(sps: SpsInfo, sequence_parameter_set: &[u8]) -> HevcParameterSets {
+        HevcParameterSets {
+            revision: 1, sps, video_parameter_set: VPS.to_vec(),
+            sequence_parameter_set: sequence_parameter_set.to_vec(), picture_parameter_set: PPS.to_vec(),
+        }
+    }
+
+    #[test]
+    fn keeps_the_codec_string_and_record_of_8_bit_4_2_0_streams() {
+        let sps = SpsInfo { profile: PROFILE_64_X_64, chroma_format_idc: 1, bit_depth_luma: 8, bit_depth_chroma: 8, pixel_width: 64, pixel_height: 64 };
+        let configuration = configuration(parameters(sps, &SPS_64_X_64)).unwrap();
+        assert_eq!(configuration.codec, "hvc1.4.10.L255.9F.A8");
+        // Produced by the implementation that read profile bytes at fixed offsets.
+        let mut expected = vec![
+            0x01, 0x04, 0x08, 0x00, 0x00, 0x00, 0x9f, 0xa8, 0x00, 0x00, 0x00, 0x00, 0xff, 0xf0, 0x00, 0xfc,
+            0xfd, 0xf8, 0xf8, 0x00, 0x00, 0x0f, 0x03, 0xa0, 0x00, 0x01, 0x00, 0x03, 0x40, 0x01, 0x10, 0xa1,
+            0x00, 0x01, 0x00, 0x27,
+        ];
+        expected.extend_from_slice(&SPS_64_X_64);
+        expected.extend_from_slice(&[0xa2, 0x00, 0x01, 0x00, 0x03, 0x44, 0x01, 0x30]);
+        assert_eq!(configuration.description, expected);
+        assert_eq!((configuration.width, configuration.height, configuration.revision), (64, 64, 1));
+    }
+
+    #[test]
+    fn formats_profile_space_tier_and_trims_trailing_constraint_bytes() {
+        let profile = GeneralProfile {
+            profile_space: 1, high_tier: true, profile_idc: 1, compatibility_flags: 0x6000_0000,
+            constraint_flags: [0xb0, 0, 0x10, 0, 0, 0], level_idc: 153,
+        };
+        assert_eq!(codec_string(&profile), "hvc1.A1.6.H153.B0.0.10");
+        assert_eq!(profile_tier_level_bytes(&profile), [0x61, 0x60, 0, 0, 0, 0xb0, 0, 0x10, 0, 0, 0, 153]);
+    }
+
+    #[test]
+    fn writes_the_sps_chroma_format_and_bit_depths_into_the_record() {
+        let main10 = GeneralProfile {
+            profile_space: 0, high_tier: false, profile_idc: 2, compatibility_flags: 0x2000_0000,
+            constraint_flags: [0x90, 0, 0, 0, 0, 0], level_idc: 150,
+        };
+        let sps = SpsInfo { profile: main10, chroma_format_idc: 1, bit_depth_luma: 10, bit_depth_chroma: 10, pixel_width: 64, pixel_height: 64 };
+        let ten_bit = configuration(parameters(sps, &SPS_64_X_64)).unwrap();
+        assert_eq!(ten_bit.codec, "hvc1.2.4.L150.90");
+        assert_eq!(&ten_bit.description[13..23], &[0xf0, 0x00, 0xfc, 0xfd, 0xfa, 0xfa, 0x00, 0x00, 0x0f, 0x03]);
+
+        let sps = SpsInfo { chroma_format_idc: 2, bit_depth_luma: 12, bit_depth_chroma: 8, ..sps };
+        let mixed = configuration(parameters(sps, &SPS_64_X_64)).unwrap();
+        assert_eq!(&mixed.description[16..19], &[0xfe, 0xfc, 0xf8]);
+    }
+
+    #[test]
+    fn rejects_bit_depths_the_record_cannot_store() {
+        let sps = SpsInfo { profile: PROFILE_64_X_64, chroma_format_idc: 1, bit_depth_luma: 16, bit_depth_chroma: 8, pixel_width: 64, pixel_height: 64 };
+        assert!(configuration(parameters(sps, &SPS_64_X_64)).is_err());
+    }
+
+    #[test]
+    fn rejects_parameter_sets_that_do_not_fit_the_record() {
+        let sps = SpsInfo { profile: PROFILE_64_X_64, chroma_format_idc: 1, bit_depth_luma: 8, bit_depth_chroma: 8, pixel_width: 64, pixel_height: 64 };
+        let oversized = vec![0x42; usize::from(u16::MAX) + 1];
+        assert!(configuration(parameters(sps, &oversized)).is_err());
+    }
 }

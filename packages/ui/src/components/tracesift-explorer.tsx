@@ -12,8 +12,8 @@ export function TraceSiftExplorer({ controller }: { controller: TraceSiftControl
   const card = state.analysis?.cards.find(entry => entry.id === explorer.cardId);
   // A payload whose card is gone is a stale view, not a reader error.
   if (card === undefined) return <p className="tracesift-error" role="alert">This TraceSift finding is no longer available.</p>;
-  const task: ExploreLoad<TaskHandoff> | null = explorer.kind === "task" ? { state: "ready", handoff: explorer.payload as TaskHandoff } : null;
-  const react: ExploreLoad<ReactExploreHandoff> | null = explorer.kind === "react" ? { state: "ready", handoff: explorer.payload as ReactExploreHandoff } : null;
+  const task: ExploreLoad<TaskHandoff> | null = explorer.kind === "task" ? { state: "ready", handoff: explorer.payload } : null;
+  const react: ExploreLoad<ReactExploreHandoff> | null = explorer.kind === "react" ? { state: "ready", handoff: explorer.payload } : null;
   const picks = explorer.kind === "react"
     ? { one: "component", many: "components", where: "the render tree or the components table" }
     : { one: "frame", many: "frames", where: "the timeline, flame graph, call tree or culprits" };

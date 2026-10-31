@@ -3,22 +3,30 @@ import type { ScreenAnnotation, ScreenBounds, ScreenComponent, ScreenPoint, Scre
 import { recordUiTiming, countUiEvent } from "./telemetry.ts";
 import type { SimulatorDevice } from "@mobile-dev/shared/protocol.ts";
 import type { PanelContext } from "./model-context.ts";
-import { elementStores } from "./element-store.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
+import { Store } from "./store.ts";
 
-type Capture = { screenshot: ScreenAnnotation["screenshot"]; screen: ScreenAnnotation["screen"] };
+export type ScreenCapture = { screenshot: ScreenAnnotation["screenshot"]; screen: ScreenAnnotation["screen"] };
 export type InspectedTree = { tree: unknown; screen?: ScreenSize };
+/** Where the screen is drawn in the stage. */
+export type ScreenViewport = { x: number; y: number; width: number; height: number; stageWidth: number; stageHeight: number };
+type Capture = ScreenCapture;
 type Draft = Capture & { id: string; number: number; component: ScreenComponent; point: ScreenPoint; text: string; nearbyText?: string[]; selection?: ScreenSelectionContext };
-export class ScreenAnnotationsStore {
-  private state = {
-    disabled: true, selecting: false, loading: false, busy: false, sending: false, sendError: "", canSend: false, hostAttachments: true,
-    error: "", status: "", annotations: [] as ScreenAnnotation[],
-    draft: undefined as Draft | undefined, hovered: undefined as ScreenComponent | undefined,
-    viewport: { x: 0, y: 0, width: 0, height: 0, stageWidth: 0, stageHeight: 0 },
-    capture: undefined as Capture | undefined,
-    selectionBounds: undefined as ScreenBounds | undefined,
-    candidates: [] as ScreenComponent[],
-  };
-  private listeners = new Set<() => void>();
+export type ScreenAnnotationsState = {
+  disabled: boolean; selecting: boolean; loading: boolean; busy: boolean; sending: boolean; sendError: string; canSend: boolean; hostAttachments: boolean;
+  error: string; status: string; annotations: ScreenAnnotation[]; draft?: Draft; hovered?: ScreenComponent; viewport: ScreenViewport;
+  capture?: Capture; selectionBounds?: ScreenBounds; candidates: ScreenComponent[];
+};
+
+/** How the panel captures its screen and reads the selected device's components. */
+export type ScreenSource = {
+  capture(): Capture;
+  readTree(simulator: SimulatorDevice): Promise<InspectedTree>;
+};
+
+export class ScreenAnnotationsStore extends Store<ScreenAnnotationsState> {
+  private readonly source: ScreenSource;
+  private disposed = false;
   private simulator?: SimulatorDevice;
   private context?: PanelContext;
   private unsubscribe?: () => void;
@@ -27,12 +35,16 @@ export class ScreenAnnotationsStore {
   private hoverPoint?: ScreenPoint;
   private revision = 0;
   private nextNumber = 1;
-  capture?: () => Capture;
-  readTree?: (simulator: SimulatorDevice) => Promise<InspectedTree>;
-  subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
-  getSnapshot = () => this.state;
+
+  constructor(source: ScreenSource) {
+    super({
+      disabled: true, selecting: false, loading: false, busy: false, sending: false, sendError: "", canSend: false, hostAttachments: true,
+      error: "", status: "", annotations: [], viewport: { x: 0, y: 0, width: 0, height: 0, stageWidth: 0, stageHeight: 0 }, candidates: [],
+    });
+    this.source = source;
+  }
+
   get messageText() { return formatAnnotationMessage(this.state.annotations); }
-  private update(patch: Partial<typeof this.state>) { this.state = { ...this.state, ...patch }; for (const listener of this.listeners) listener(); }
 
   connect(context: PanelContext) {
     this.unsubscribe?.();
@@ -67,22 +79,22 @@ export class ScreenAnnotationsStore {
       this.update({ disabled });
     }
   }
-  setViewport(viewport: typeof this.state.viewport) {
+  setViewport(viewport: ScreenViewport) {
     if (Object.keys(viewport).some(key => viewport[key as keyof typeof viewport] !== this.state.viewport[key as keyof typeof viewport])) this.update({ viewport });
   }
   async toggle() {
     if (this.state.selecting) { this.exit(); return; }
-    if (this.state.disabled || !this.simulator || !this.capture || !this.readTree || this.state.busy) return;
+    if (this.state.disabled || !this.simulator || this.disposed || this.state.busy) return;
     const revision = ++this.revision;
     let capture: Capture;
-    try { capture = this.capture(); }
-    catch (error) { this.update({ error: error instanceof Error ? error.message : String(error) }); return; }
+    try { capture = this.source.capture(); }
+    catch (error) { this.update({ error: errorMessage(error) }); return; }
     try {
       this.components = [];
       this.hoverPoint = undefined;
       this.cancelSelection();
       this.update({ selecting: true, loading: true, capture, hovered: undefined, draft: undefined, candidates: [], error: "", status: "" });
-      const { tree, screen } = await this.readTree(this.simulator);
+      const { tree, screen } = await this.source.readTree(this.simulator);
       if (revision === this.revision) {
         this.adoptScreen(screen);
         const startedAt = performance.now();
@@ -96,7 +108,7 @@ export class ScreenAnnotationsStore {
         }
       }
     } catch (error) {
-      if (revision === this.revision) this.update({ error: `Could not read component names. You can still annotate a screen region. ${error instanceof Error ? error.message : String(error)}` });
+      if (revision === this.revision) this.update({ error: `Could not read component names. You can still annotate a screen region. ${errorMessage(error)}` });
     } finally { if (revision === this.revision) { this.update({ loading: false }); this.hover(this.hoverPoint); } }
   }
   // Bezel definitions can describe a smaller screen cutout than the accessibility screen that
@@ -209,7 +221,7 @@ export class ScreenAnnotationsStore {
       const attached = await this.context.attachAnnotation({ ...draft, text: draft.text.trim(), simulator: this.simulator });
       if (revision !== this.revision) return;
       this.update({ draft: undefined, status: attached ? this.savedStatus() : "Annotation removed from chat." });
-    } catch (error) { if (revision === this.revision) this.update({ error: error instanceof Error ? error.message : String(error) }); }
+    } catch (error) { if (revision === this.revision) this.update({ error: errorMessage(error) }); }
     finally { if (revision === this.revision) this.update({ busy: false }); }
   }
   async remove(id: string) {
@@ -217,7 +229,7 @@ export class ScreenAnnotationsStore {
     const revision = this.revision;
     this.update({ busy: true, error: "" });
     try { await this.context.removeAnnotation(id); if (revision === this.revision) this.update({ draft: undefined, status: "Annotation removed." }); }
-    catch (error) { if (revision === this.revision) this.update({ error: error instanceof Error ? error.message : String(error) }); }
+    catch (error) { if (revision === this.revision) this.update({ error: errorMessage(error) }); }
     finally { if (revision === this.revision) this.update({ busy: false }); }
   }
   async send() {
@@ -225,13 +237,9 @@ export class ScreenAnnotationsStore {
     const simulatorId = this.simulator.udid;
     this.update({ busy: true, sending: true, error: "", sendError: "" });
     try { await this.context.sendAnnotationsToChat(simulatorId); if (simulatorId === this.simulator?.udid) this.update({ status: this.context.usesHostAttachments ? "Annotations sent to chat." : "Added to chat input. Review and send there." }); }
-    catch (error) { if (simulatorId === this.simulator?.udid) { const message = error instanceof Error ? error.message : String(error); this.update({ error: message, sendError: message }); } }
+    catch (error) { if (simulatorId === this.simulator?.udid) { const message = errorMessage(error); this.update({ error: message, sendError: message }); } }
     // Stream readiness can change the selection revision while chat is sending.
     finally { this.update({ busy: false, sending: false }); }
   }
-  dispose() { this.revision++; this.cancelSelection(); this.unsubscribe?.(); this.context = undefined; this.capture = undefined; this.readTree = undefined; }
+  dispose() { this.revision++; this.disposed = true; this.cancelSelection(); this.unsubscribe?.(); this.context = undefined; this.close(); }
 }
-
-const stores = elementStores(() => new ScreenAnnotationsStore());
-export const bindScreenAnnotations = stores.bind;
-export const getScreenAnnotations = stores.get;

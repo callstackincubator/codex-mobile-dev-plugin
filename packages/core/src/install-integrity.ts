@@ -1,6 +1,7 @@
 import { statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { Event } from "@sentry/node";
+import { setErrorDiagnostic } from "@mobile-dev/shared/error-diagnostics.ts";
 
 export type InstallIntegrity = "intact" | "removed" | "replaced";
 export type BundledRuntime = "serve-emu" | "baguette";
@@ -47,13 +48,11 @@ export class MissingRuntimeError extends Error {
       : `Mobile Dev was updated or removed while it was running and cannot find its ${labels[runtime]}. Restart the app running Mobile Dev to load the installed version.`);
     this.runtime = runtime;
     this.integrity = integrity === "intact" ? "incomplete" : integrity;
+    setErrorDiagnostic(this, "installIntegrity", { integrity: this.integrity, runtime });
   }
 }
 
-export function installIntegrityTags(error: unknown): Record<string, string> {
-  if (error instanceof MissingRuntimeError === false) return {};
-  return { install_integrity: error.integrity, bundled_runtime: error.runtime };
-}
+export { installIntegrityTags } from "@mobile-dev/shared/error-diagnostics.ts";
 
 /** Tags every error event of a server whose files were removed or replaced, however it was captured. */
 export function tagInstallIntegrity(event: Event): Event {

@@ -6,7 +6,7 @@ import { PassThrough } from "node:stream";
 import { LinkPacer, ThrottleProxy, isLocalDestination, relay } from "../src/network-throttle/proxy.ts";
 import { AndroidNetworkThrottle, parseThrottleState } from "../src/network-throttle/android.ts";
 import type { Commands } from "../src/app-control/commands.ts";
-import { expectedOutcome } from "../../shared/src/error-reporting.ts";
+import { expectedOutcome } from "@mobile-dev/shared/error-reporting.ts";
 
 const marker = "mobile_dev_network_throttle";
 

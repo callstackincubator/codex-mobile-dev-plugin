@@ -1,4 +1,4 @@
-import test from "node:test";
+import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -6,24 +6,18 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import { buildServeEmu } from "../../../tooling/build-serve-emu.mjs";
+import { setEnv, setTelemetry } from "@mobile-dev/test-support/env.ts";
+import { waitFor } from "@mobile-dev/test-support/wait.ts";
 
 type Boot = "boots" | "booting" | "missing";
 
 // A fake adb that reports sys.boot_completed=1 only from its third probe ("boots"), never
 // ("booting"), or fails the probe as adb does for a device that went away ("missing").
-async function androidFixture(t: test.TestContext, boot: Boot, withRuntime: boolean) {
+async function androidFixture(t: TestContext, boot: Boot, withRuntime: boolean) {
   const directory = await mkdtemp(join(tmpdir(), "android-boot-wait-"));
-  const previousHome = process.env.ANDROID_HOME;
-  const previousTelemetry = process.env.MOBILE_DEV_TELEMETRY;
-  process.env.ANDROID_HOME = directory;
-  process.env.MOBILE_DEV_TELEMETRY = "off";
-  t.after(async () => {
-    if (previousHome === undefined) delete process.env.ANDROID_HOME;
-    else process.env.ANDROID_HOME = previousHome;
-    if (previousTelemetry === undefined) delete process.env.MOBILE_DEV_TELEMETRY;
-    else process.env.MOBILE_DEV_TELEMETRY = previousTelemetry;
-    await rm(directory, { recursive: true, force: true });
-  });
+  setEnv(t, { ANDROID_HOME: directory });
+  setTelemetry(t, "off");
+  t.after(() => rm(directory, { recursive: true, force: true }));
   const output = join(directory, "server.mjs");
   await build({
     stdin: { contents: 'export { ServeEmu } from "./packages/core/src/serve-emu.ts";', resolveDir: resolve("."), loader: "ts" },
@@ -86,8 +80,7 @@ test("a device that disappears while booting fails at once without starting serv
 test("closing the plugin server ends a boot wait without starting serve-emu", async t => {
   const { backend, adbCalls } = await androidFixture(t, "booting", false);
   const started = backend.start("booting-device");
-  const deadline = Date.now() + 5000;
-  while ((await adbCalls().catch(() => [])).length === 0 && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 20));
+  await waitFor(async () => (await adbCalls().catch(() => [])).length > 0, { timeout: 5000, interval: 20, message: "The boot wait did not probe the device" });
   backend.dispose();
   await assert.rejects(started, /The plugin server has closed/);
   const calls = await adbCalls();

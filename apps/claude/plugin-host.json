@@ -9,7 +9,7 @@
     "target": "Claude Desktop Settings > Developer > Edit Config, then fully restart Claude"
   },
   "marketplace": {
-    "name": "mobile-dev-local",
+    "module": "tooling/plugin-marketplace.mjs",
     "manifest": ".claude-plugin/marketplace.json"
   },
   "panelRuntime": "download",

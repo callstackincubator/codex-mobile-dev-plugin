@@ -1,8 +1,9 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { udidSchema } from "@mobile-dev/shared/protocol.ts";
+import type { InputStatus } from "@mobile-dev/shared/tool-results.ts";
 
-export type InputStatus = { state: "ready" | "blocked" | "unknown" };
+export type { InputStatus };
 export interface SimulatorInput {
   status(udid: string, options?: { fresh: boolean }): Promise<InputStatus>;
   repair(udid: string): Promise<InputStatus>;

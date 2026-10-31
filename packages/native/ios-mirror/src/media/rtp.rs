@@ -10,7 +10,12 @@
 // decoding build on top of `RtpPacket`.
 
 /// A parsed RTP packet (RFC 3550), borrowing its payload from the input buffer.
+///
+/// The capture path reads the marker, payload type, sequence number,
+/// timestamp, SSRC and payload; the other header fields are parsed for tests
+/// and diagnostics.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct RtpPacket<'a> {
     pub version: u8,
     pub padding: bool,

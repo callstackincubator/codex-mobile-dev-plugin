@@ -1,5 +1,6 @@
 import { appDetailsBatch, appDetailsSchema } from "@mobile-dev/shared/app-control.ts";
 import type { AppDetails } from "@mobile-dev/shared/app-control.ts";
+import { Store } from "./store.ts";
 
 type Call = (name: string, args: Record<string, unknown>) => Promise<unknown>;
 type LoadOptions = {
@@ -11,14 +12,12 @@ type LoadOptions = {
 
 // App icons and Android labels for every panel in this view, fetched once per device and app.
 // The server caches the extracted PNGs; this cache avoids asking again while the view is open.
-export class AppIconStore {
+// The snapshot is a version that changes as icons arrive.
+export class AppIconStore extends Store<number> {
   private readonly entries = new Map<string, AppDetails>();
   private readonly pending = new Set<string>();
-  private readonly listeners = new Set<() => void>();
-  private version = 0;
 
-  subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
-  getSnapshot = () => this.version;
+  constructor() { super(0); }
 
   private key(platform: string, deviceId: string, bundleId: string) { return `${platform}\u0000${deviceId}\u0000${bundleId}`; }
 
@@ -38,8 +37,7 @@ export class AppIconStore {
         const data = appDetailsSchema.parse(await measure(() => call("mobile_app_icons", { platform, deviceId, bundleIds: batch })));
         // Apps without a readable icon are remembered too, so they keep their initial without another request.
         for (const bundleId of batch) this.entries.set(this.key(platform, deviceId, bundleId), data.apps[bundleId] ?? {});
-        this.version++;
-        for (const listener of this.listeners) listener();
+        this.set(this.state + 1);
         onBatch?.();
       } catch {
         // Initials remain; the next load tries these apps again.

@@ -1,4 +1,8 @@
-export type AndroidVideoBatch = { generation: number; sequence: number; packets: { sequence: number; data: string }[] };
+import { z } from "zod";
+
+const count = z.number().int().nonnegative();
+export const androidVideoBatchSchema = z.object({ generation: count, sequence: count, packets: z.array(z.object({ sequence: count, data: z.string() })) });
+export type AndroidVideoBatch = z.infer<typeof androidVideoBatchSchema>;
 
 export function videoPacket(bytes: Uint8Array) {
   let timestamp: number | undefined;

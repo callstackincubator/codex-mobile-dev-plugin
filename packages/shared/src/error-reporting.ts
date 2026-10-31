@@ -1,6 +1,8 @@
 import { getDiscoveryCommandDiagnostic } from "./device-apps-command-diagnostics.ts";
+import { errorDiagnostics, setErrorDiagnostic } from "./error-diagnostics.ts";
 
-export type ExpectedOutcome = "session_expired" | "session_closed" | "cancelled" | "device_unavailable" | "app_unavailable" | "resource_limit" | "unsupported_platform" | "invalid_input" | "download_failed";
+export const expectedOutcomes = ["session_expired", "session_closed", "cancelled", "device_unavailable", "app_unavailable", "resource_limit", "unsupported_platform", "invalid_input", "download_failed"] as const;
+export type ExpectedOutcome = typeof expectedOutcomes[number];
 
 export class ExpectedOperationError extends Error {
   readonly outcome: ExpectedOutcome;
@@ -9,6 +11,10 @@ export class ExpectedOperationError extends Error {
     super(message);
     this.outcome = outcome;
   }
+}
+
+export function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 export function expectedOutcome(error: unknown): ExpectedOutcome | undefined {
@@ -27,17 +33,16 @@ export function expectedOutcome(error: unknown): ExpectedOutcome | undefined {
 }
 
 export type ErrorCategory = "unknown" | "timeout" | "host_thread_missing" | "cancellation" | "unexpected";
-const categories = new WeakMap<object, ErrorCategory>();
 
 export function setErrorCategory(error: object, category: ErrorCategory) {
-  categories.set(error, category);
+  setErrorDiagnostic(error, "category", category);
 }
 
 export function errorCategory(error: unknown): ErrorCategory {
   if (error === null || typeof error !== "object") return "unknown";
   const command = getDiscoveryCommandDiagnostic(error);
   if (command?.termination === "deadline" || command?.cause.endsWith("_timeout")) return "timeout";
-  const category = categories.get(error);
+  const category = errorDiagnostics(error).category;
   if (category !== undefined) return category;
   if ("code" in error && (error.code === -32001 || error.code === "ETIMEDOUT")) return "timeout";
   if ("name" in error && error.name === "TimeoutError") return "timeout";

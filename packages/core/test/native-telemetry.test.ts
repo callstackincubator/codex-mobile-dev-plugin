@@ -2,8 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { NativeTelemetryRelay, nativeCollectorCommand, parseNativeEnvelope } from "../src/native-telemetry.ts";
-import { SENTRY_NATIVE_DSN, SENTRY_RELEASE } from "../../shared/src/telemetry.ts";
+import { SENTRY_NATIVE_DSN, SENTRY_RELEASE } from "@mobile-dev/shared/telemetry.ts";
 import { getTelemetryIdentity } from "../src/telemetry-identity.ts";
+import { setTelemetry } from "@mobile-dev/test-support/env.ts";
 
 function encode(type: string, payload: unknown, dsn = SENTRY_NATIVE_DSN) {
   const json = JSON.stringify(payload);
@@ -62,7 +63,7 @@ test("native relay rejects other projects, attachments, invalid lengths and over
   assert.equal(diagnostic, "Native Sentry report was invalid and discarded.\nnext diagnostic\n");
 });
 
-test("Android launch commands propagate release, environment, anonymous identity and the telemetry off switch", () => {
+test("Android launch commands propagate release, environment, anonymous identity and the telemetry off switch", t => {
   const command = nativeCollectorCommand("/data/local/tmp/mobile-dev-cpu", ["123"]);
   assert.ok(command.includes(SENTRY_RELEASE));
   assert.match(command, /MOBILE_DEV_NATIVE_ENVIRONMENT='(?:development|release)'/);
@@ -73,21 +74,15 @@ test("Android launch commands propagate release, environment, anonymous identity
   assert.ok(userIncluded);
   assert.ok(sessionIncluded);
   assert.match(command, /exec '\/data\/local\/tmp\/mobile-dev-cpu' '123'$/);
-  const previous = process.env.MOBILE_DEV_TELEMETRY;
-  try {
-    process.env.MOBILE_DEV_TELEMETRY = "off";
-    const disabled = nativeCollectorCommand("/data/local/tmp/mobile-dev-fps");
-    assert.match(disabled, /MOBILE_DEV_TELEMETRY=off/);
-    const disabledIncludesUser = disabled.includes("MOBILE_DEV_NATIVE_USER_ID");
-    const disabledIncludesSession = disabled.includes("MOBILE_DEV_NATIVE_SESSION_ID");
-    assert.equal(disabledIncludesUser, false);
-    assert.equal(disabledIncludesSession, false);
-    const quoted = nativeCollectorCommand("/tmp/helper", ["a'b"]);
-    assert.ok(quoted.includes("'a'\\''b'"));
-  } finally {
-    if (previous === undefined) delete process.env.MOBILE_DEV_TELEMETRY;
-    else process.env.MOBILE_DEV_TELEMETRY = previous;
-  }
+  setTelemetry(t, "off");
+  const disabled = nativeCollectorCommand("/data/local/tmp/mobile-dev-fps");
+  assert.match(disabled, /MOBILE_DEV_TELEMETRY=off/);
+  const disabledIncludesUser = disabled.includes("MOBILE_DEV_NATIVE_USER_ID");
+  const disabledIncludesSession = disabled.includes("MOBILE_DEV_NATIVE_SESSION_ID");
+  assert.equal(disabledIncludesUser, false);
+  assert.equal(disabledIncludesSession, false);
+  const quoted = nativeCollectorCommand("/tmp/helper", ["a'b"]);
+  assert.ok(quoted.includes("'a'\\''b'"));
 });
 
 test("the C SDK and the host relay use the same native project", async () => {

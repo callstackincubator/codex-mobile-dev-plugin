@@ -1,6 +1,7 @@
 import type { PerformanceRecording } from "@mobile-dev/shared/recordings.ts";
 import { createRecordingCpuSeries, createRecordingFpsSeries } from "./recording-series.ts";
 import type { RecordingPoint } from "./recording-series.ts";
+import { mebibytes } from "./recording-format.ts";
 
 export type ComparisonMetric = "cpu" | "rss" | "physical-footprint" | "fps";
 export type ComparisonPoint = { time: number; [key: string]: number | null };
@@ -17,7 +18,7 @@ function metricSeries(recording: PerformanceRecording, metric: ComparisonMetric)
     if (previousTime !== undefined && sample.time - previousTime > sample.interval * 1.5) {
       points.push({ time: previousTime, value: null }, { time: sample.time, value: null });
     }
-    const value = sample.memoryBytes === null ? null : sample.memoryBytes / 1048576;
+    const value = sample.memoryBytes === null ? null : mebibytes(sample.memoryBytes);
     points.push({ time: sample.time, value });
     previousTime = sample.time;
   }
@@ -75,6 +76,16 @@ export function createComparisonSeries(recordings: PerformanceRecording[], metri
   return rows;
 }
 
+/** Whether any run has a reading in `rows`, the series `createComparisonSeries` built for `runs` recordings. */
+export function hasComparisonReadings(rows: ComparisonPoint[], runs: number): boolean {
+  for (const row of rows) {
+    for (let index = 0; index < runs; index++) {
+      if (row[`run${index}`] !== null) return true;
+    }
+  }
+  return false;
+}
+
 export type SharpMetric = "cpu" | "memory" | "fps";
 /** One stretch of a run where a measure moved sharply, with the readings across it. */
 export type SharpChange = { run: number; metric: SharpMetric; start: number; end: number; values: number[] };
@@ -90,7 +101,7 @@ function readings(recording: PerformanceRecording, metric: SharpMetric): Reading
   return recording.samples.map(sample => ({
     time: sample.time,
     interval: sample.interval,
-    value: metric === "cpu" ? sample.cpuPercent : sample.memoryBytes === null ? null : sample.memoryBytes / 1048576,
+    value: metric === "cpu" ? sample.cpuPercent : sample.memoryBytes === null ? null : mebibytes(sample.memoryBytes),
   }));
 }
 

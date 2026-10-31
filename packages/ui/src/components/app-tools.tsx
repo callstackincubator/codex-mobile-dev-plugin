@@ -9,9 +9,10 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "./ui/input-group";
 import { Textarea } from "./ui/textarea";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "./ui/base-select";
+import { OptionSelect } from "./ui/option-select";
 import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "./ui/collapsible";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 
 type SectionProps = { store: AppToolsStore; state: AppToolsState; app: AppEntry; blocked: boolean };
 
@@ -51,28 +52,24 @@ function AppPicker({ store, state, app, blocked }: SectionProps) {
   const running = state.runningBundleIds.includes(app.bundleId);
   const action = "h-auto w-9 shrink-0 rounded-none border-l border-l-border text-muted-foreground hover:text-foreground focus-visible:z-10";
   return <div className="flex rounded-lg border">
-    <Select items={state.apps.map(entry => ({ value: entry.bundleId, label: entry.name }))} value={app.bundleId} disabled={blocked} onValueChange={value => { if (value !== null) void store.open(value); }}>
-      <SelectTrigger aria-label="App" title="Choose an app to launch" className="min-w-0 flex-1 gap-2.5 rounded-r-none border-0 py-2 pl-2 pr-2 data-[size=default]:h-auto hover:bg-muted/50 focus-visible:z-10 [&>svg]:text-muted-foreground">
-        <span className="flex min-w-0 flex-1 items-center gap-2.5 text-left">
-          <AppAvatar name={app.name} icon={app.icon} />
-          <span className="min-w-0 flex-1">
-            <span className="block truncate font-medium leading-5">{app.name}</span>
-            <span className="flex items-center gap-1.5 text-xs leading-4 text-muted-foreground">
-              {running && <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-green-500" />}
-              <span className="truncate">{running ? `Running · ${app.bundleId}` : app.bundleId}</span>
-            </span>
+    <OptionSelect aria-label="App" title="Choose an app to launch" className="min-w-0 flex-1 gap-2.5 rounded-r-none border-0 py-2 pl-2 pr-2 data-[size=default]:h-auto hover:bg-muted/50 focus-visible:z-10 [&>svg]:text-muted-foreground"
+      contentClassName="w-(--anchor-width)" itemClassName="py-1.5 *:first:min-w-0 *:first:shrink"
+      items={state.apps.map(entry => ({ value: entry.bundleId, label: entry.name, entry }))} value={app.bundleId} disabled={blocked} onChange={bundleId => void store.open(bundleId)}
+      renderItem={({ entry }) => <span className="flex min-w-0 items-center gap-2.5">
+        <AppAvatar name={entry.name} icon={entry.icon} running={state.runningBundleIds.includes(entry.bundleId)} size="sm" />
+        <span className="flex min-w-0 flex-col"><span className="truncate leading-5">{entry.name}</span>{entry.name !== entry.bundleId && <span className="truncate text-xs leading-4 text-muted-foreground">{entry.bundleId}</span>}</span>
+      </span>}>
+      <span className="flex min-w-0 flex-1 items-center gap-2.5 text-left">
+        <AppAvatar name={app.name} icon={app.icon} />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate font-medium leading-5">{app.name}</span>
+          <span className="flex items-center gap-1.5 text-xs leading-4 text-muted-foreground">
+            {running && <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-green-500" />}
+            <span className="truncate">{running ? `Running · ${app.bundleId}` : app.bundleId}</span>
           </span>
         </span>
-      </SelectTrigger>
-      <SelectContent align="start" alignItemWithTrigger={false} className="w-(--anchor-width)"><SelectGroup>
-        {state.apps.map(entry => <SelectItem key={entry.bundleId} value={entry.bundleId} className="py-1.5 *:first:min-w-0 *:first:shrink">
-          <span className="flex min-w-0 items-center gap-2.5">
-            <AppAvatar name={entry.name} icon={entry.icon} running={state.runningBundleIds.includes(entry.bundleId)} size="sm" />
-            <span className="flex min-w-0 flex-col"><span className="truncate leading-5">{entry.name}</span>{entry.name !== entry.bundleId && <span className="truncate text-xs leading-4 text-muted-foreground">{entry.bundleId}</span>}</span>
-          </span>
-        </SelectItem>)}
-      </SelectGroup></SelectContent>
-    </Select>
+      </span>
+    </OptionSelect>
     <Button variant="ghost" size="icon" className={action} disabled={blocked} aria-label={`${running ? "Relaunch" : "Launch"} ${app.name}`} title={running ? "Relaunch" : "Launch"} onClick={() => void store.launch()}><RotateCwIcon className={state.busy === "launch" ? "animate-spin" : ""} /></Button>
     <Button variant="ghost" size="icon" className={`${action} rounded-r-lg`} disabled={blocked} aria-label={`Stop ${app.name}`} title="Stop" onClick={() => void store.stop()}><SquareIcon className="size-3 fill-current" /></Button>
   </div>;
@@ -146,15 +143,12 @@ function Language({ store, state, blocked }: SectionProps) {
   const items = [{ value: deviceLanguage, label: "Device language" }, ...tags.map(tag => ({ value: tag, label: languageLabel(tag) }))];
   const selected = items.find(item => item.value.toLowerCase() === (current ?? deviceLanguage).toLowerCase())?.value ?? deviceLanguage;
   return <Disclosure section="language" state={state} store={store} icon={LanguagesIcon} title="Language" summary={current === undefined ? "Loading…" : current ? languageLabel(current) : "Device language"}>
-    <Select items={items} value={selected} disabled={blocked || current === undefined} onValueChange={value => { if (value !== null && value !== selected) void store.setLanguage(value === deviceLanguage ? null : value); }}>
-      <SelectTrigger aria-label="App language" className="w-full min-w-0"><SelectValue /></SelectTrigger>
-      <SelectContent align="start" alignItemWithTrigger={false} className="w-(--anchor-width)"><SelectGroup>
-        {items.map(item => <SelectItem key={item.value} value={item.value}>
-          <span className="flex-1 truncate">{item.label}</span>
-          {item.value !== deviceLanguage && <span className="font-mono text-xs text-muted-foreground">{item.value}</span>}
-        </SelectItem>)}
-      </SelectGroup></SelectContent>
-    </Select>
+    <OptionSelect aria-label="App language" className="w-full min-w-0" contentClassName="w-(--anchor-width)"
+      items={items} value={selected} disabled={blocked || current === undefined} onChange={value => { if (value !== selected) void store.setLanguage(value === deviceLanguage ? null : value); }}
+      renderItem={item => <>
+        <span className="flex-1 truncate">{item.label}</span>
+        {item.value !== deviceLanguage && <span className="font-mono text-xs text-muted-foreground">{item.value}</span>}
+      </>} />
     <p className="mt-2 flex gap-1.5 text-xs text-muted-foreground"><InfoIcon aria-hidden className="mt-0.5 size-3 shrink-0" />Changing it relaunches the app. The device keeps its language.</p>
   </Disclosure>;
 }
@@ -173,7 +167,7 @@ function PushNotification({ store, state, app, blocked }: SectionProps) {
       if (!payload.success) throw new Error("Payload must be a JSON object.");
       setJsonError("");
       void store.push(payload.data);
-    } catch (error) { setJsonError(error instanceof Error ? error.message : String(error)); }
+    } catch (error) { setJsonError(errorMessage(error)); }
   };
   return <Disclosure section="push" state={state} store={store} icon={BellIcon} title="Test notification">
     <form className="space-y-2" onSubmit={event => { event.preventDefault(); send(); }}>

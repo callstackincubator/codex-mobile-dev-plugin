@@ -1,14 +1,32 @@
-import { chatMessage } from "./chat-message.ts";
+import { canMessage, ChatDeliveryError, sendChat } from "./chat-message.ts";
 import { attachReference, cardsCallTools } from "./host-bridge.ts";
 import type { HostAttachmentsSource, HostBridge } from "./host-bridge.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { traceSiftAnalysisSchema, traceSiftHandoffSchema, traceSiftRestoreSchema, type TraceSiftAnalysis, type TraceSiftProfileType } from "@mobile-dev/shared/tracesift.ts";
+import { traceSiftAnalysisSchema, traceSiftHandoffSchema, traceSiftRestoreSchema, type TraceSiftAnalysis, type TraceSiftProfileType, type TraceSiftReactCard, type TraceSiftTaskCard } from "@mobile-dev/shared/tracesift.ts";
 import { decodeTraceSiftExplorePayload, TRACE_SIFT_PAYLOAD_MAX_BYTES, traceSiftExploreEnvelopeSchema, TRACE_SIFT_PAYLOAD_TOO_LARGE, traceSiftPayloadRefused, type TraceSiftExploreKind } from "@mobile-dev/shared/tracesift-explore.ts";
-import { buildSelectionPrompt, frameSelectionEvidence, type SelectionCard } from "@mobile-dev/shared/tracesift-selection.ts";
-import { findingName } from "@mobile-dev/shared/tracesift-labels.ts";
-import { buildReactSelectionPrompt, reactSelectionEvidence, type ReactSelectionRecording } from "@mobile-dev/shared/tracesift-react-selection.ts";
-import type { ContributionChartKind } from "./components/tracesift/contribution-chart.tsx";
+import type { ReactExploreHandoff, TaskHandoff } from "@callstack/tracesift-explore";
+import { buildSelectionPrompt, frameSelectionEvidence, type SelectionCard } from "./tracesift/selection.ts";
+import { findingName } from "./tracesift/labels.ts";
+import { buildReactSelectionPrompt, reactSelectionEvidence, type ReactSelectionRecording } from "./tracesift/react-selection.ts";
+import type { ContributionChartKind } from "./tracesift/contribution.ts";
 import { captureUiError, countUiEvent, markUiSurfaceReady, recordUiTiming, setUiGauge, setUiSurface, setUiTelemetryContext } from "./telemetry.ts";
+import { Store } from "./store.ts";
+import { callTool, ToolCallError, toolResultText } from "./tool-call.ts";
+import type { ToolCallParams } from "./tool-call.ts";
+
+/** The finding the explorer draws, as the payload tool delivered it. */
+type ExplorerPayload = { kind: "task"; payload: TaskHandoff } | { kind: "react"; payload: ReactExploreHandoff };
+type ProfileCard = { profileType: "cpu"; card: TraceSiftTaskCard } | { profileType: "react"; card: TraceSiftReactCard };
+
+/** The analysis's card `cardId`, tagged with the profile type so the card's fields narrow with it. */
+function findCard(analysis: TraceSiftAnalysis, cardId: string): ProfileCard | undefined {
+  if (analysis.profileType === "cpu") {
+    const card = analysis.cards.find(entry => entry.id === cardId);
+    return card && { profileType: "cpu", card };
+  }
+  const card = analysis.cards.find(entry => entry.id === cardId);
+  return card && { profileType: "react", card };
+}
 
 type State = {
   analysis?: TraceSiftAnalysis;
@@ -30,11 +48,8 @@ type State = {
   copiedCard?: string;
   openingExploreCard?: string;
   /** The finding whose full explorer is on screen, or nothing while in the cards list. */
-  explorer?: {
+  explorer?: ExplorerPayload & {
     cardId: string;
-    kind: "task" | "react";
-    /** `TaskHandoff` or `ReactExploreHandoff` from @callstack/tracesift-explore. */
-    payload: unknown;
     /** The call-tree node the card's chart band was clicked, if any. */
     focus?: string;
     /** Which commit of a React timeline is open, as `<rootId>.<commitIndex>`; the explorer reports switches. */
@@ -46,14 +61,7 @@ type State = {
   };
 };
 
-function composerUnavailable(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
-  return /(?:no (?:active |available )?composer|composer.*(?:unavailable|not available|not active)|requires? an (?:active|available) composer|MCP app messages are disabled for this view)/i.test(message);
-}
-
-export class TraceSiftController {
-  private state: State = { canInvestigate: false, canCallTools: false, dark: false, error: "", notice: "", chartKind: "bar" };
-  private listeners = new Set<() => void>();
+export class TraceSiftController extends Store<State> {
   private disposed = false;
   private readyAt = performance.now();
   /** When the current explorer's payload arrived, so its own readiness can be timed. */
@@ -69,6 +77,7 @@ export class TraceSiftController {
   private restoreToken = 0;
   /** `attachments` reads the host's composer pills, where it has them. */
   constructor(app: HostBridge, { attachments = () => undefined }: { attachments?: HostAttachmentsSource } = {}) {
+    super({ canInvestigate: false, canCallTools: false, dark: false, error: "", notice: "", chartKind: "bar" });
     this.app = app;
     this.attachments = attachments;
   }
@@ -78,25 +87,17 @@ export class TraceSiftController {
     const analysisId = this.state.analysis?.analysisId;
     if (!analysisId) throw new Error("No analysis is open.");
     const startedAt = performance.now();
-    const result = await this.app.callServerTool({ name: "mobile_get_tracesift_handoff", arguments: { analysisId, cardId } });
-    recordUiTiming("ui.tracesift.handoff", performance.now() - startedAt);
-    if (result.isError) throw new Error(result.content.filter(item => item.type === "text").map(item => item.text).join("\n") || "TraceSift could not prepare this investigation.");
+    const result = await callTool(this.app, { name: "mobile_get_tracesift_handoff", arguments: { analysisId, cardId } }, {
+      fallback: "TraceSift could not prepare this investigation.", answered: () => recordUiTiming("ui.tracesift.handoff", performance.now() - startedAt),
+    });
     const parsed = traceSiftHandoffSchema.safeParse(result.structuredContent);
     if (!parsed.success) throw new Error("TraceSift returned an invalid handoff result.");
     return parsed.data.handoff;
   }
-  subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
-  getSnapshot = () => this.state;
-  private update(next: Partial<State>) {
-    if (this.disposed) return;
-    this.state = { ...this.state, ...next };
-    for (const listener of this.listeners) listener();
-  }
   hostChanged() {
-    const capabilities = this.app.getHostCapabilities();
     // TraceSift's components read the theme from a `.dark` ancestor, not the document attribute.
     this.update({
-      canInvestigate: cardsCallTools(this.app) && Boolean(capabilities?.message?.text),
+      canInvestigate: cardsCallTools(this.app) && canMessage(this.app),
       canCallTools: cardsCallTools(this.app),
       dark: this.app.getHostContext()?.theme === "dark",
     });
@@ -104,7 +105,7 @@ export class TraceSiftController {
   accept(result: CallToolResult, remember = true) {
     if (this.disposed) return;
     if (result.isError) {
-      this.update({ error: result.content.filter(item => item.type === "text").map(item => item.text).join("\n") });
+      this.update({ error: toolResultText(result) });
       return;
     }
     if (result.structuredContent?.analysisId === undefined) return;
@@ -141,9 +142,10 @@ export class TraceSiftController {
       if (!cardsCallTools(this.app)) return;
       const startedAt = performance.now();
       try {
-        const result = await this.app.callServerTool({ name: "mobile_remember_tracesift_analysis", arguments: { viewId, analysisId } });
-        recordUiTiming("ui.tracesift.remember", performance.now() - startedAt);
-        if (result.isError || result.structuredContent?.remembered !== true) throw new Error("TraceSift could not remember this analysis.");
+        const result = await callTool(this.app, { name: "mobile_remember_tracesift_analysis", arguments: { viewId, analysisId } }, {
+          answered: () => recordUiTiming("ui.tracesift.remember", performance.now() - startedAt),
+        });
+        if (result.structuredContent?.remembered !== true) throw new Error("TraceSift could not remember this analysis.");
         countUiEvent("ui.tracesift.remember_success");
       } catch {
         countUiEvent("ui.tracesift.remember_failed");
@@ -154,49 +156,33 @@ export class TraceSiftController {
     this.rememberChain = this.rememberChain.then(run);
     return this.rememberChain;
   };
-  restore = async (viewId: string | number) => {
+  restore = (viewId: string | number) => this.restoreFrom({ name: "mobile_restore_tracesift_analysis", arguments: { viewId } }, "TraceSift analysis restore failed.", "tracesift.restore");
+  private restoreInput = (path: string, profileType: TraceSiftProfileType) =>
+    this.restoreFrom({ name: "mobile_restore_tracesift_analysis_by_input", arguments: { path, profileType } }, "TraceSift analysis input restore failed.", "tracesift.restore_input");
+  private async restoreFrom(params: ToolCallParams, failure: string, operation: string) {
     if (this.disposed || this.state.analysis || !cardsCallTools(this.app)) return;
     const token = ++this.restoreToken;
     const startedAt = performance.now();
+    // A restore no longer applies once the card closed, an analysis arrived, or a newer restore started.
+    const stale = () => this.disposed || this.state.analysis !== undefined || token !== this.restoreToken;
     try {
-      const result = await this.app.callServerTool({ name: "mobile_restore_tracesift_analysis", arguments: { viewId } });
-      recordUiTiming("ui.tracesift.restore", performance.now() - startedAt);
-      if (this.disposed || this.state.analysis || token !== this.restoreToken) return;
-      if (result.isError) throw new Error(result.content.filter(item => item.type === "text").map(item => item.text).join("\n") || "TraceSift could not restore this analysis.");
+      const result = await callTool(this.app, params, {
+        fallback: "TraceSift could not restore this analysis.", answered: () => recordUiTiming("ui.tracesift.restore", performance.now() - startedAt),
+      });
+      if (stale()) return;
       const parsed = traceSiftRestoreSchema.safeParse(result.structuredContent);
       if (!parsed.success) throw new Error("TraceSift returned an invalid restore result.");
       countUiEvent(parsed.data.restored ? "ui.tracesift.restore_hit" : "ui.tracesift.restore_miss");
-      if (parsed.data.analysis) this.accept({ content: [], structuredContent: parsed.data.analysis }, false);
+      if (parsed.data.restored) this.accept({ content: [], structuredContent: parsed.data.analysis }, false);
     } catch (error) {
-      if (token !== this.restoreToken) return;
+      if (token !== this.restoreToken || (error instanceof ToolCallError && stale())) return;
       countUiEvent("ui.tracesift.restore_failed");
-      captureUiError(new Error("TraceSift analysis restore failed."), "tracesift.restore");
+      captureUiError(new Error(failure), operation);
       if (!this.state.analysis) this.update({ error: error instanceof Error ? error.message : "TraceSift could not restore this analysis." });
     }
-  };
-  private restoreInput = async (path: string, profileType: TraceSiftProfileType) => {
-    if (this.disposed || this.state.analysis || !cardsCallTools(this.app)) return;
-    const token = ++this.restoreToken;
-    const startedAt = performance.now();
-    try {
-      const result = await this.app.callServerTool({ name: "mobile_restore_tracesift_analysis_by_input", arguments: { path, profileType } });
-      recordUiTiming("ui.tracesift.restore", performance.now() - startedAt);
-      if (this.disposed || this.state.analysis || token !== this.restoreToken) return;
-      if (result.isError) throw new Error(result.content.filter(item => item.type === "text").map(item => item.text).join("\n") || "TraceSift could not restore this analysis.");
-      const parsed = traceSiftRestoreSchema.safeParse(result.structuredContent);
-      if (!parsed.success) throw new Error("TraceSift returned an invalid restore result.");
-      countUiEvent(parsed.data.restored ? "ui.tracesift.restore_hit" : "ui.tracesift.restore_miss");
-      if (parsed.data.analysis) this.accept({ content: [], structuredContent: parsed.data.analysis }, false);
-    } catch (error) {
-      if (token !== this.restoreToken) return;
-      countUiEvent("ui.tracesift.restore_failed");
-      captureUiError(new Error("TraceSift analysis input restore failed."), "tracesift.restore_input");
-      if (!this.state.analysis) this.update({ error: error instanceof Error ? error.message : "TraceSift could not restore this analysis." });
-    }
-  };
+  }
   /** Sends one hand-off to the active chat, as a pill where the host has them. Never retry a timeout: the message may have landed. */
   private async sendHandoff(text: string, event: string, cardId: string, pill: { title: string; message: string }) {
-    let sending = false;
     try {
       const modelContext = this.attachments();
       if (modelContext) {
@@ -209,23 +195,20 @@ export class TraceSiftController {
         } finally { recordUiTiming("ui.tracesift.context_attach", performance.now() - contextStartedAt); }
       }
       if (this.disposed) return;
-      const message = chatMessage(this.app, modelContext ? pill.message : text);
       const sendStartedAt = performance.now();
-      sending = true;
-      const sent = await this.app.sendMessage(message, { timeout: 5000, maxTotalTimeout: 5000 });
-      if (sent.isError) throw new Error("The host could not start this investigation.");
+      await sendChat(this.app, modelContext ? pill.message : text);
       recordUiTiming("ui.tracesift.message_ack", performance.now() - sendStartedAt);
       countUiEvent(event);
     } catch (error) {
-      const timedOut = sending && typeof error === "object" && error !== null && "code" in error && error.code === -32001;
-      const missingComposer = sending && composerUnavailable(error);
-      countUiEvent(timedOut ? "ui.tracesift.delivery_unconfirmed" : missingComposer ? "ui.tracesift.composer_unavailable" : "ui.tracesift.send_failed");
-      if (!timedOut && !missingComposer) captureUiError(new Error("TraceSift investigation action failed."), "tracesift.investigate");
-      throw new Error(timedOut
+      const failure = error instanceof ChatDeliveryError ? error.reason : undefined;
+      countUiEvent(failure === "unconfirmed" ? "ui.tracesift.delivery_unconfirmed" : failure === "no-composer" ? "ui.tracesift.composer_unavailable" : "ui.tracesift.send_failed");
+      if (failure !== "unconfirmed" && failure !== "no-composer") captureUiError(new Error("TraceSift investigation action failed."), "tracesift.investigate");
+      throw new Error(failure === "unconfirmed"
         ? "The host did not confirm delivery. Check the chat before retrying to avoid sending the investigation twice."
-        : missingComposer
+        : failure === "no-composer"
           ? "The host could not find this chat's input. Reopen the chat, then try Investigate again."
-          : error instanceof Error ? error.message : "Could not start this investigation.",
+          : failure === "rejected" ? "The host could not start this investigation."
+            : error instanceof Error ? error.message : "Could not start this investigation.",
         { cause: error });
     }
   }
@@ -285,8 +268,8 @@ export class TraceSiftController {
   openExplore = async (cardId: string, focus = "") => {
     const { analysis } = this.state;
     if (!analysis || this.disposed || this.state.openingExploreCard || this.state.explorer) return;
-    const card = analysis.cards.find(entry => entry.id === cardId);
-    if (!card) return;
+    const found = findCard(analysis, cardId);
+    if (!found) return;
     if (!cardsCallTools(this.app)) {
       this.update({ notice: "This app does not let the card open Explore. Ask the agent about this card." });
       return;
@@ -294,23 +277,24 @@ export class TraceSiftController {
     this.update({ openingExploreCard: cardId, error: "", notice: "" });
     const startedAt = performance.now();
     try {
-      const result = await this.app.callServerTool({
+      const result = await callTool(this.app, {
         name: "mobile_tracesift_explore_payload",
-        arguments: analysis.profileType === "cpu"
-          ? { analysisId: analysis.analysisId, taskIndex: card.taskIndex }
+        arguments: found.profileType === "cpu"
+          ? { analysisId: analysis.analysisId, taskIndex: found.card.taskIndex }
           : { analysisId: analysis.analysisId },
-      });
-      if (result.isError) throw new Error(result.content.filter(item => item.type === "text" && "text" in item).map(item => item.text).join("\n") || "TraceSift could not open this task.");
+      }, { fallback: "TraceSift could not open this task." });
       const envelope = traceSiftExploreEnvelopeSchema.safeParse(result.structuredContent);
       if (!envelope.success) throw new Error("TraceSift did not return the data this explorer needs.");
       if (envelope.data.payloadBytes > TRACE_SIFT_PAYLOAD_MAX_BYTES) throw new Error(TRACE_SIFT_PAYLOAD_TOO_LARGE);
-      const payload = await decodeTraceSiftExplorePayload(result, envelope.data);
+      const decoded = await decodeTraceSiftExplorePayload(result, envelope.data);
       // `accept` may have replaced the analysis while the payload loaded; installing it would pair the new reading with an unknown card id.
       if (this.disposed || this.state.analysis?.analysisId !== analysis.analysisId) {
         this.update({ openingExploreCard: undefined });
         return;
       }
       const kind: TraceSiftExploreKind = envelope.data.kind;
+      // The explorer and the selection hand-offs check the fields they read.
+      const loaded: ExplorerPayload = kind === "task" ? { kind, payload: decoded as TaskHandoff } : { kind, payload: decoded as ReactExploreHandoff };
       // Switched before recording timings so the fetch is attributed to the explorer.
       setUiTelemetryContext({ tracesift_view: "explorer" });
       recordUiTiming("ui.tracesift.payload", performance.now() - startedAt);
@@ -322,9 +306,9 @@ export class TraceSiftController {
         openingExploreCard: undefined,
         selectedCard: cardId,
         explorer: {
-          cardId, kind, payload,
+          ...loaded, cardId,
           ...(focus ? { focus } : {}),
-          ...(kind === "react" ? { commitKey: `${card.rootId}.${card.commitIndex}` } : {}),
+          ...(kind === "react" && found.profileType === "react" ? { commitKey: `${found.card.rootId}.${found.card.commitIndex}` } : {}),
         },
       });
       countUiEvent("ui.tracesift.explore");
@@ -407,11 +391,8 @@ export class TraceSiftController {
    * The hand-off for picked task frames, or why there is none. Split per kind because
    * a CPU profile is sampled and a React one is not.
    */
-  private taskSelectionHandoff(payload: unknown, selected: readonly string[], profileTitle?: string) {
-    const handoff = payload as { card?: unknown } | null;
-    const card = handoff && typeof handoff.card === "object" && handoff.card !== null
-      ? handoff.card as SelectionCard
-      : undefined;
+  private taskSelectionHandoff(handoff: TaskHandoff | null, selected: readonly string[], profileTitle?: string) {
+    const card: SelectionCard | undefined = typeof handoff?.card === "object" && handoff.card !== null ? handoff.card : undefined;
     if (!card?.tree) return { error: "This task's call tree is not loaded, so its selection cannot be described." };
     const evidence = frameSelectionEvidence(card, selected);
     if (evidence.frames.length === 0) {
@@ -426,11 +407,8 @@ export class TraceSiftController {
   }
 
   /** Same, for components picked from a React recording's commits. */
-  private reactSelectionHandoff(payload: unknown, selected: readonly string[], profileTitle?: string) {
-    const handoff = payload as { explore?: unknown } | null;
-    const recording = handoff && typeof handoff.explore === "object" && handoff.explore !== null
-      ? handoff.explore as ReactSelectionRecording
-      : undefined;
+  private reactSelectionHandoff(handoff: ReactExploreHandoff | null, selected: readonly string[], profileTitle?: string) {
+    const recording: ReactSelectionRecording | undefined = typeof handoff?.explore === "object" && handoff.explore !== null ? handoff.explore : undefined;
     if (!recording?.commits) return { error: "This recording's commits are not loaded, so its selection cannot be described." };
     const evidence = reactSelectionEvidence(recording, selected);
     if (evidence.components.length === 0) {
@@ -492,18 +470,17 @@ export class TraceSiftController {
   openExploreInBrowser = async (cardId: string, focus = "") => {
     const { analysis } = this.state;
     if (!analysis || this.disposed || this.state.openingExploreCard) return;
-    const card = analysis.cards.find(entry => entry.id === cardId);
-    if (!card) return;
+    const found = findCard(analysis, cardId);
+    if (!found) return;
     this.update({ openingExploreCard: cardId, error: "", notice: "" });
     const startedAt = performance.now();
     try {
-      const result = await this.app.callServerTool({
+      const result = await callTool(this.app, {
         name: "mobile_open_tracesift_explore",
-        arguments: analysis.profileType === "cpu"
-          ? { analysisId: analysis.analysisId, taskIndex: card.taskIndex, ...(focus ? { focus } : {}) }
-          : { analysisId: analysis.analysisId, rootId: card.rootId, commitIndex: card.commitIndex },
-      });
-      if (result.isError) throw new Error(result.content.filter(item => item.type === "text" && "text" in item).map(item => item.text).join("\n") || "TraceSift could not open this task.");
+        arguments: found.profileType === "cpu"
+          ? { analysisId: analysis.analysisId, taskIndex: found.card.taskIndex, ...(focus ? { focus } : {}) }
+          : { analysisId: analysis.analysisId, rootId: found.card.rootId, commitIndex: found.card.commitIndex },
+      }, { fallback: "TraceSift could not open this task." });
       if (result.structuredContent?.opened !== true) throw new Error("TraceSift did not confirm that Explore opened.");
       recordUiTiming("ui.tracesift.explore_browser", performance.now() - startedAt);
       countUiEvent("ui.tracesift.explore_browser");
@@ -530,8 +507,7 @@ export class TraceSiftController {
     this.update({ error: "", notice: "" });
     const startedAt = performance.now();
     try {
-      const result = await this.app.callServerTool({ name: "mobile_pick_profile_file", arguments: {} });
-      if (result.isError) throw new Error(result.content.filter(item => item.type === "text").map(item => item.text).join("\n") || "This host could not open a file dialog.");
+      const result = await callTool(this.app, { name: "mobile_pick_profile_file", arguments: {} }, { fallback: "This host could not open a file dialog." });
       recordUiTiming("ui.tracesift.pick", performance.now() - startedAt);
       const picked = result.structuredContent;
       // Cancel leaves the pane as is.
@@ -552,13 +528,15 @@ export class TraceSiftController {
     this.update({ analyzing: { name, profileType }, error: "", notice: "" });
     const startedAt = performance.now();
     try {
-      const result = await this.app.callServerTool({ name: "mobile_analyze_profile", arguments: { path, profileType } });
+      const result = await callTool(this.app, { name: "mobile_analyze_profile", arguments: { path, profileType } }, {
+        fallback: "TraceSift could not analyze this profile.", answered: () => { if (!this.disposed) recordUiTiming("ui.tracesift.analyze", performance.now() - startedAt); },
+      });
       if (this.disposed) return;
-      recordUiTiming("ui.tracesift.analyze", performance.now() - startedAt);
-      if (result.isError) throw new Error(result.content.filter(item => item.type === "text").map(item => item.text).join("\n") || "TraceSift could not analyze this profile.");
       countUiEvent("ui.tracesift.analyze");
       this.accept(result);
     } catch (error) {
+      // An answer that lands after the card closed is dropped, failed or not.
+      if (this.disposed && error instanceof ToolCallError) return;
       countUiEvent("ui.tracesift.analyze_failed");
       captureUiError(error, "tracesift.analyze");
       if (!this.disposed) this.update({ error: error instanceof Error ? error.message : "TraceSift could not analyze this profile." });
@@ -587,6 +565,6 @@ export class TraceSiftController {
   dispose() {
     this.disposed = true;
     if (this.copiedTimer !== undefined) clearTimeout(this.copiedTimer);
-    this.listeners.clear();
+    this.close();
   }
 }

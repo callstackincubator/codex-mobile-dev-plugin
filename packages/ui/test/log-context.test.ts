@@ -1,23 +1,24 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { App } from "@modelcontextprotocol/ext-apps";
+import { fakeApp } from "@mobile-dev/test-support/fake-app.ts";
 import type { OpenAIModelContextHostState } from "@openai/mcp-extensions/app";
 import { PanelContext, type ScreenshotAttachment } from "../src/model-context.ts";
-import { stackLogs } from "../../shared/src/logs.ts";
-import { UDID } from "../../test-support/fixtures.ts";
-import type { PhysicalIosDevice } from "../../shared/src/ios-devices.ts";
-import type { PhysicalAndroidDevice } from "../../shared/src/android-devices.ts";
+import { stackLogs } from "@mobile-dev/shared/logs.ts";
+import { UDID } from "@mobile-dev/test-support/fixtures.ts";
+import type { PhysicalIosDevice } from "@mobile-dev/shared/ios-devices.ts";
+import type { PhysicalAndroidDevice } from "@mobile-dev/shared/android-devices.ts";
 import type { HostAttachments } from "../src/host-bridge.ts";
 
-const simulator = { udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS 26" };
+const simulator = { udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS 26", platform: "ios" as const, kind: "simulator" as const };
 const log = stackLogs([{ timestamp: "2026-09-30T12:00:00Z", message: "Request failed", level: "error", source: "js", origin: "metro", stack: "at load (App.tsx:9:3)", sequence: 1 }])[0];
 
 test("hosts without context pills receive the clicked log in the message", async () => {
   const messages: Parameters<App["sendMessage"]>[0][] = [];
-  const context = new PanelContext({
+  const context = new PanelContext(fakeApp({
     getHostCapabilities: () => ({ experimental: { "openai/message": {} }, message: { text: {} } }),
     async sendMessage(params: Parameters<App["sendMessage"]>[0]) { messages.push(params); return {}; },
-  } as App, () => undefined);
+  }), () => undefined);
   for (const level of ["error", "warn", "info", "debug"] as const) {
     await context.sendLogToChat({ ...log, level });
     const message = messages.at(-1)!;
@@ -29,12 +30,12 @@ test("hosts without context pills receive the clicked log in the message", async
 });
 
 test("chat actions report host rejection and unsupported hosts", async () => {
-  const context = new PanelContext({
+  const context = new PanelContext(fakeApp({
     getHostCapabilities: () => ({ experimental: { "openai/message": {} }, message: { text: {} } }),
     async sendMessage() { return { isError: true }; },
-  } as unknown as App, () => undefined);
+  }), () => undefined);
   await assert.rejects(context.sendLogToChat(log), /Could not send/);
-  const unsupported = new PanelContext({ getHostCapabilities: () => ({}) } as App, () => undefined);
+  const unsupported = new PanelContext(fakeApp({ getHostCapabilities: () => ({}) }), () => undefined);
   await assert.rejects(unsupported.sendLogToChat(log), /does not support chat/);
 });
 
@@ -53,10 +54,10 @@ function fixture(send: App["sendMessage"] = async () => ({})) {
     },
   };
   const messages: Parameters<App["sendMessage"]>[0][] = [];
-  const context = new PanelContext({
+  const context = new PanelContext(fakeApp({
     getHostCapabilities: () => ({ experimental: { "openai/message": {} }, message: { text: {} }, updateModelContext: { image: {} } }),
     async sendMessage(...args: Parameters<App["sendMessage"]>) { messages.push(args[0]); return send(...args); },
-  } as App, () => modelContext);
+  }), () => modelContext);
   return { context, updates, messages, clear() { current = null; context.hostChanged(); }, removeContent() { if (current) current = { ...current, content: [] }; context.hostChanged(); }, removeScreenshot(id: string) { if (current) current = { ...current, updateId: "removed", content: current.content?.filter(item => item._meta?.["mobile-dev/screenshotId"] !== id) }; context.hostChanged(); }, fail() { failure = true; }, hold(value: Promise<void>) { gate = value; } };
 }
 
@@ -212,7 +213,7 @@ test("a host clear during an attachment write queues a removal without deadlock"
 
 test("Android selection shares its serial and platform for Mobile Dev control", async () => {
   const { context, updates } = fixture();
-  context.selectSimulator({ udid: "emulator-5554", name: "Pixel", state: "Booted", runtime: "Android", platform: "android" });
+  context.selectSimulator({ udid: "emulator-5554", name: "Pixel", state: "Booted", runtime: "Android", platform: "android", kind: "emulator" });
   await context.attach(undefined);
   assert.match(JSON.stringify(updates.at(-1)?.content), /emulator-5554/);
   assert.match(JSON.stringify(updates.at(-1)?.content), /serial.*platform android/);
@@ -318,14 +319,14 @@ test("a failed screenshot attachment restores the prior image", async () => {
 });
 
 test("a host without image attachment support rejects screenshots", async () => {
-  const context = new PanelContext({ getHostCapabilities: () => ({}) } as App, () => ({}) as HostAttachments);
+  const context = new PanelContext(fakeApp({ getHostCapabilities: () => ({}) }), () => ({}) as HostAttachments);
   assert.equal(context.canAttachScreenshots, false);
   await assert.rejects(context.attachScreenshot(screenshot), /does not support screenshot/);
 });
 
 test("side by side devices share both IDs while logs keep the active selection", async () => {
   const { context, updates } = fixture();
-  const android = { udid: "emulator-5554", name: "Pixel", state: "Booted", runtime: "Android", platform: "android" as const };
+  const android = { udid: "emulator-5554", name: "Pixel", state: "Booted", runtime: "Android", platform: "android" as const, kind: "emulator" as const };
   context.selectSimulators([simulator, android], android);
   await context.attach(log);
   const last = updates.at(-1)!;
@@ -343,11 +344,11 @@ test("side by side devices share both IDs while logs keep the active selection",
 test("standard context supports logs, local removal and complete chat messages", async () => {
   const updates: Parameters<App["updateModelContext"]>[0][] = [];
   const messages: Parameters<App["sendMessage"]>[0][] = [];
-  const context = new PanelContext({
+  const context = new PanelContext(fakeApp({
     getHostCapabilities: () => ({ message: { text: {} }, updateModelContext: { text: {}, structuredContent: {} } }),
     async updateModelContext(params) { updates.push(params); return {}; },
     async sendMessage(params) { messages.push(params); return {}; },
-  } as App, () => undefined);
+  }), () => undefined);
   assert.equal(context.canAttach, true);
   assert.equal(context.canAttachScreenshots, false);
   await context.attach(log);
@@ -366,10 +367,10 @@ test("standard screenshot context is capability-gated and clearing rolls back on
   let images = false;
   let fail = false;
   const updates: Parameters<App["updateModelContext"]>[0][] = [];
-  const context = new PanelContext({
+  const context = new PanelContext(fakeApp({
     getHostCapabilities: () => ({ updateModelContext: { text: {}, ...(images ? { image: {} } : {}) } }),
     async updateModelContext(params) { if (fail) throw new Error("Host unavailable"); updates.push(params); return {}; },
-  } as unknown as App, () => undefined);
+  }), () => undefined);
   const screenshot = { id: "shot-standard", simulator, data: "cG5n", mimeType: "image/png" } as ScreenshotAttachment;
   await assert.rejects(context.attachScreenshot(screenshot), /does not support/);
   images = true;
@@ -388,11 +389,11 @@ test("standard screenshot context is capability-gated and clearing rolls back on
 
 test("failed standard context cleanup never retries a delivered message", async () => {
   let sent = 0;
-  const context = new PanelContext({
+  const context = new PanelContext(fakeApp({
     getHostCapabilities: () => ({ message: { text: {} }, updateModelContext: { text: {}, structuredContent: {} } }),
     async updateModelContext() { if (sent) throw new Error("Cleanup unavailable"); return {}; },
     async sendMessage() { sent++; return {}; },
-  } as unknown as App, () => undefined);
+  }), () => undefined);
   await context.sendLogToChat(log);
   assert.equal(sent, 1);
 });

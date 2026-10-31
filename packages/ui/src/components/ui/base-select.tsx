@@ -111,11 +111,13 @@ function SelectLabel({
   )
 }
 
+// Base UI's item props omit `id`, but it reaches the rendered element, which
+// tests and smoke checks find items by.
 function SelectItem({
   className,
   children,
   ...props
-}: SelectPrimitive.Item.Props) {
+}: SelectPrimitive.Item.Props & { id?: string }) {
   return (
     <SelectPrimitive.Item
       data-slot="select-item"

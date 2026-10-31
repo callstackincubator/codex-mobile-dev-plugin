@@ -8,65 +8,73 @@ import type { WorkspaceTools } from "./workspace-tools.ts";
 
 type Platform = "ios" | "android";
 
+const showsPlatform = (layout: DeviceLayout, platform: Platform) => layout === "both" || layout === platform;
+
 /**
  * The iOS and Android device panels of one workspace, shared by every host.
- * The host renders `SimulatorView` for both platforms before constructing this,
- * and owns the chrome that changes the layout.
+ * The host renders `SimulatorView` for each of `panels`. The layout lives in
+ * `WorkspaceTools`, whose snapshot the host's chrome renders; this applies it to
+ * the device panels and chooses layouts for the user.
  */
 export class DeviceWorkspace {
   readonly panels: readonly [ReturnType<typeof createSimulatorPanel>, ReturnType<typeof createSimulatorPanel>];
-  private readonly tools: Pick<WorkspaceTools, "context" | "deviceApps">;
+  private readonly tools: Pick<WorkspaceTools, "context" | "deviceApps" | "subscribe" | "getSnapshot" | "setLayout">;
   private readonly devices: WorkspaceDevices;
   private readonly connectionFailed: (error: unknown) => void;
+  private readonly unsubscribe: () => void;
   private activePlatform: Platform = "ios";
+  private layout: DeviceLayout;
+  private manual: boolean;
 
-  constructor(app: HostBridge, tools: Pick<WorkspaceTools, "context" | "deviceApps">, options: {
-    /** A layout chosen for the user, such as after the host opens a device. */
-    onAutomaticLayout: (layout: DeviceLayout) => void;
+  constructor(app: HostBridge, tools: Pick<WorkspaceTools, "context" | "deviceApps" | "subscribe" | "getSnapshot" | "setLayout">, options: {
     connectionFailed: (error: unknown) => void;
   }) {
     this.tools = tools;
     this.connectionFailed = options.connectionFailed;
-    const create = (platform: Platform) => {
-      const root = document.getElementById(`${platform}-panel`)!;
-      return createSimulatorPanel(app, root, platform, tools.context, (_device, active) => {
-        if (active) this.activePlatform = platform;
-        this.updateSelection();
-      });
-    };
-    this.panels = [create("ios"), create("android")];
-    this.devices = new WorkspaceDevices(this.panels, layout => {
-      this.changeLayout(layout);
-      options.onAutomaticLayout(layout);
+    const create = (platform: Platform) => createSimulatorPanel(app, platform, tools, (_device, active) => {
+      if (active) this.activePlatform = platform;
+      this.updateSelection();
     });
+    this.panels = [create("ios"), create("android")];
+    this.devices = new WorkspaceDevices(this.panels, layout => tools.setLayout(layout));
+    ({ layout: this.layout, manual: this.manual } = tools.getSnapshot());
+    this.unsubscribe = tools.subscribe(() => this.layoutChanged());
+    this.applyLayout(false);
   }
+
+  private layoutChanged() {
+    const { layout, manual } = this.tools.getSnapshot();
+    if (layout === this.layout && manual === this.manual) return;
+    const chosen = manual && !this.manual;
+    this.layout = layout;
+    this.manual = manual;
+    if (chosen) this.devices.selectLayout();
+    this.applyLayout(manual);
+  }
+
+  private visiblePanels() { return this.panels.filter(panel => showsPlatform(this.layout, panel.platform)); }
 
   updateSelection() {
-    const visible = this.panels.filter(panel => !panel.root.hidden);
+    const visible = this.visiblePanels();
     const active = visible.find(panel => panel.platform === this.activePlatform) ?? visible[0];
     const selected = active?.selected;
-    const devicePlatform = selected ? active?.platform : undefined;
-    const virtualKind = devicePlatform === "android" ? "emulator" : "simulator";
-    const deviceKind = selected?.kind ?? (selected ? virtualKind : undefined);
-    setUiTelemetryContext({ device_platform: devicePlatform, device_kind: deviceKind });
+    setUiTelemetryContext({ device_platform: selected?.platform, device_kind: selected?.kind });
     this.tools.context.selectSimulators(visible.flatMap(panel => panel.selected ? [panel.selected] : []), selected);
     this.tools.deviceApps.selectDevice(selected);
-    for (const panel of this.panels) panel.root.dataset.active = String(panel === active);
+    for (const panel of this.panels) panel.setActive(panel === active);
   }
 
-  changeLayout(layout: DeviceLayout, manual = false) {
-    if (manual) this.devices.selectLayout();
+  // `SimulatorView` renders each panel's `hidden` from the same layout.
+  private applyLayout(manual: boolean) {
+    const layout = this.layout;
     setUiTelemetryContext({ layout });
     if (layout === "ios" || layout === "android") this.activePlatform = layout;
-    for (const panel of this.panels) {
-      panel.root.hidden = layout !== "both" && layout !== panel.platform;
-    }
-    requestAnimationFrame(() => { for (const panel of this.panels) if (!panel.root.hidden) panel.fitScreen(); });
+    // Only a shown panel polls for devices.
+    for (const panel of this.panels) panel.setVisible(showsPlatform(layout, panel.platform));
+    requestAnimationFrame(() => { for (const panel of this.visiblePanels()) panel.fitScreen(); });
     this.updateSelection();
     if (manual) {
-      for (const panel of this.panels) {
-        if (panel.root.hidden === false) void panel.resume().catch(this.connectionFailed);
-      }
+      for (const panel of this.visiblePanels()) void panel.resume().catch(this.connectionFailed);
     }
   }
 
@@ -78,6 +86,7 @@ export class DeviceWorkspace {
   refit() { for (const panel of this.panels) { panel.fitScreen(); panel.controls(); } }
 
   async dispose() {
+    this.unsubscribe();
     this.devices.dispose();
     await Promise.allSettled(this.panels.map(panel => panel.dispose()));
   }

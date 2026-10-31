@@ -1,12 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
-import type { App } from "@modelcontextprotocol/ext-apps";
+import { fakeApp } from "@mobile-dev/test-support/fake-app.ts";
 import { startLiveReload } from "../src/live-reload.ts";
 
 test("live reload waits for stream cleanup and keeps the workspace view", async t => {
   const revision = "a".repeat(64);
-  const dom = new JSDOM(`<html data-view="workspace"><head><meta name="mobile-dev-live-revision" content="${revision}"></head><body>old</body></html>`, { runScripts: "dangerously" });
+  const dom = new JSDOM(`<html data-view="workspace" data-layout="split"><head><meta name="mobile-dev-live-revision" content="${revision}"></head><body>old</body></html>`, { runScripts: "dangerously" });
   t.after(() => dom.window.close());
   const events: string[] = [];
   let finishCleanup!: () => void;
@@ -15,13 +15,13 @@ test("live reload waits for stream cleanup and keeps the workspace view", async 
   const cleanup = new Promise<void>(resolve => { finishCleanup = resolve; });
   let hostEvents = 0;
   dom.window.addEventListener("mobile-dev-host-probe", () => { hostEvents++; });
-  const app = {
+  const app = fakeApp({
     async readServerResource({ uri }: { uri: string }) {
       assert.equal(uri, `ui://mobile-dev/live?after=${revision}`);
-      return { contents: [{ text: JSON.stringify({ revision: "b".repeat(64), html: '<html data-view="panel" data-layout="stacked"><head></head><body><div id="root">jonas</div><script>window.dispatchEvent(new Event("mobile-dev-host-probe"))</script></body></html>' }) }] };
+      return { contents: [{ text: JSON.stringify({ revision: "b".repeat(64), html: '<html lang="en" data-view="panel" data-layout="stacked"><head></head><body><div id="root">jonas</div><script>window.dispatchEvent(new Event("mobile-dev-host-probe"))</script></body></html>' }) }] };
     },
     async close() { events.push("closed"); },
-  } as unknown as App;
+  });
   const replace = dom.window.document.body.replaceChildren.bind(dom.window.document.body);
   dom.window.document.body.replaceChildren = (...nodes) => { events.push("written"); replace(...nodes); finishReload(); };
   const stop = startLiveReload(app, async () => { events.push("disposing"); await cleanup; events.push("disposed"); }, dom.window.document);
@@ -34,6 +34,7 @@ test("live reload waits for stream cleanup and keeps the workspace view", async 
   assert.deepEqual(events, ["disposing", "disposed", "closed", "written"]);
   assert.equal(dom.window.document.documentElement.dataset.view, "workspace");
   assert.equal(dom.window.document.documentElement.dataset.layout, "split");
+  assert.equal(dom.window.document.documentElement.lang, "en", "The page takes the update's other attributes");
   assert.equal(dom.window.document.getElementById("root")?.textContent, "jonas");
   assert.equal(hostEvents, 1, "The new script runs and the host's window listener survives");
 });
@@ -44,7 +45,7 @@ test("closing the panel ignores a late live update", async t => {
   let finishRead!: (value: unknown) => void;
   const pending = new Promise(resolve => { finishRead = resolve; });
   let disposed = false;
-  const app = { readServerResource: () => pending } as unknown as App;
+  const app = fakeApp({ readServerResource: () => pending });
   const stop = startLiveReload(app, async () => { disposed = true; }, dom.window.document);
   stop();
   finishRead({ contents: [{ text: JSON.stringify({ revision: "b".repeat(64), html: "new" }) }] });

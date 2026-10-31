@@ -2,7 +2,7 @@
 // figure, palette slot); the finding beside it keeps everything about a task or commit.
 
 import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { squarify } from "@mobile-dev/shared/tracesift-contribution.ts";
+import { squarify, type ContributionChartKind } from "../../tracesift/contribution.ts";
 
 export interface ChartSlice {
   key: string;
@@ -14,8 +14,6 @@ export interface ChartSlice {
   /** Palette slot counting from 0, or -1 for a residual. */
   colorIndex: number;
 }
-
-export type ContributionChartKind = "bar" | "treemap";
 
 // Fixed aspect so tiles are placed before measuring; the width is measured only to drop labels that would not fit.
 const TREEMAP_ASPECT_W = 16;

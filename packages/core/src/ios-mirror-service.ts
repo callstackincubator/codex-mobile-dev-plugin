@@ -16,7 +16,7 @@ let stopping: Promise<void> | undefined;
 let idleTimer: NodeJS.Timeout | undefined;
 let metricsTimer: NodeJS.Timeout | undefined;
 let previousDropped = 0;
-const hub = new IosMirrorHub(openNativeIosCapture, () => {}, error => captureServerError(error, "ios-mirror.shared-capture"));
+const hub = new IosMirrorHub(openNativeIosCapture, error => captureServerError(error, "ios-mirror.shared-capture"));
 function metrics() {
   const state = hub.snapshot();
   const dropped = state.dropped - previousDropped;

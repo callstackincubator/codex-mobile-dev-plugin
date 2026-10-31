@@ -1,11 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { Baguette } from "../src/baguette.ts";
-import { fakeBaguette, UDID } from "../../test-support/fixtures.ts";
+import { fakeBaguette, UDID, attachedBaguette } from "@mobile-dev/test-support/fixtures.ts";
+import { waitFor } from "@mobile-dev/test-support/wait.ts";
 
 test("booting a running simulator skips the route that can repair input", async t => {
   const fake = await fakeBaguette();
-  const baguette = new Baguette(fake.url);
+  const baguette = attachedBaguette(fake.url);
   t.after(async () => { baguette.dispose(); await fake.close(); });
   const status = await baguette.changeDeviceState(UDID, "boot");
   assert.equal(status.devices.find(device => device.udid === UDID)?.state, "Booted");
@@ -15,12 +15,12 @@ test("booting a running simulator skips the route that can repair input", async 
 test("concurrent boot calls share one boot and wait for the reported device state", async t => {
   const fake = await fakeBaguette();
   fake.setState("Shutdown"); fake.setLifecycleState("Booting");
-  const baguette = new Baguette(fake.url);
+  const baguette = attachedBaguette(fake.url);
   t.after(async () => { baguette.dispose(); await fake.close(); });
   let finished = false;
   const first = baguette.changeDeviceState(UDID, "boot").then(status => { finished = true; return status; });
   const second = baguette.changeDeviceState(UDID, "boot");
-  await waitFor(() => fake.requests.some(request => request.path.endsWith("/boot")));
+  await waitFor(() => fake.requests.some(request => request.path.endsWith("/boot")), simulatorState);
   assert.equal(finished, false);
   assert.equal(fake.requests.filter(request => request.path.endsWith("/boot")).length, 1);
   fake.setState("Booted");
@@ -32,11 +32,11 @@ test("concurrent boot calls share one boot and wait for the reported device stat
 test("shutdown waits for a pending boot instead of racing its request", async t => {
   const fake = await fakeBaguette();
   fake.setState("Shutdown"); fake.setLifecycleState("Booting");
-  const baguette = new Baguette(fake.url);
+  const baguette = attachedBaguette(fake.url);
   t.after(async () => { baguette.dispose(); await fake.close(); });
   const boot = baguette.changeDeviceState(UDID, "boot");
   const shutdown = baguette.changeDeviceState(UDID, "shutdown");
-  await waitFor(() => fake.requests.some(request => request.path.endsWith("/boot")));
+  await waitFor(() => fake.requests.some(request => request.path.endsWith("/boot")), simulatorState);
   assert.equal(fake.requests.some(request => request.path.endsWith("/shutdown")), false);
   fake.setLifecycleState(); fake.setState("Booted");
   await boot;
@@ -47,10 +47,10 @@ test("shutdown waits for a pending boot instead of racing its request", async t 
 test("a simulator already booting finishes without a second boot request", async t => {
   const fake = await fakeBaguette();
   fake.setState("Booting");
-  const baguette = new Baguette(fake.url);
+  const baguette = attachedBaguette(fake.url);
   t.after(async () => { baguette.dispose(); await fake.close(); });
   const pending = baguette.changeDeviceState(UDID, "boot");
-  await waitFor(() => fake.requests.filter(request => request.path === "/simulators.json").length >= 3);
+  await waitFor(() => fake.requests.filter(request => request.path === "/simulators.json").length >= 3, simulatorState);
   fake.setState("Booted");
   const status = await pending;
   assert.equal(status.devices.find(device => device.udid === UDID)?.state, "Booted");
@@ -60,7 +60,7 @@ test("a simulator already booting finishes without a second boot request", async
 test("a boot failure does not prevent a later boot", async t => {
   const fake = await fakeBaguette();
   fake.setState("Shutdown"); fake.setLifecycleFailure(true);
-  const baguette = new Baguette(fake.url);
+  const baguette = attachedBaguette(fake.url);
   t.after(async () => { baguette.dispose(); await fake.close(); });
   await assert.rejects(baguette.changeDeviceState(UDID, "boot"), /boot failed/);
   fake.setLifecycleFailure(false);
@@ -71,7 +71,7 @@ test("a boot failure does not prevent a later boot", async t => {
 test("a boot reply without a ready state times out instead of claiming success", async t => {
   const fake = await fakeBaguette();
   fake.setState("Shutdown"); fake.setLifecycleState("Booting");
-  const baguette = new Baguette(fake.url);
+  const baguette = attachedBaguette(fake.url);
   t.after(async () => { baguette.dispose(); await fake.close(); });
   await assert.rejects(baguette.changeDeviceState(UDID, "boot", 40), /did not finish booting/);
 });
@@ -79,20 +79,28 @@ test("a boot reply without a ready state times out instead of claiming success",
 test("disposing the adapter cancels a pending boot and its queued shutdown", async t => {
   const fake = await fakeBaguette();
   fake.setState("Shutdown"); fake.setLifecycleState("Booting");
-  const baguette = new Baguette(fake.url);
+  const baguette = attachedBaguette(fake.url);
   t.after(() => fake.close());
   const boot = assert.rejects(baguette.changeDeviceState(UDID, "boot"), /server has closed/);
   const shutdown = assert.rejects(baguette.changeDeviceState(UDID, "shutdown"), /server has closed/);
-  await waitFor(() => fake.requests.some(request => request.path.endsWith("/boot")));
+  await waitFor(() => fake.requests.some(request => request.path.endsWith("/boot")), simulatorState);
   baguette.dispose();
   await Promise.all([boot, shutdown]);
   assert.equal(fake.requests.some(request => request.path.endsWith("/shutdown")), false);
 });
 
-async function waitFor(condition: () => boolean) {
-  const deadline = Date.now() + 2000;
-  while (!condition()) {
-    if (Date.now() > deadline) throw new Error("Timed out waiting for simulator state.");
-    await new Promise(resolve => setTimeout(resolve, 10));
-  }
-}
+const simulatorState = { message: "The simulator did not reach the expected state" };
+
+test("a device lookup and a stream definition each list the simulators once", async t => {
+  const fake = await fakeBaguette();
+  const baguette = attachedBaguette(fake.url);
+  t.after(async () => { baguette.dispose(); await fake.close(); });
+  await baguette.start();
+  const listings = () => fake.requests.filter(request => request.path === "/simulators.json").length;
+  const before = listings();
+  assert.equal((await baguette.device(UDID, true)).name, "iPhone 17");
+  assert.equal(listings() - before, 1);
+  await baguette.definition(UDID);
+  assert.equal(listings() - before, 2);
+  await assert.rejects(baguette.device("A17F4F36-7E21-4CA0-8ACD-BBB530887763", true), /The simulator is stopped\. Press Start to boot it\./);
+});

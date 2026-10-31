@@ -4,6 +4,7 @@ import { StreamableHTTPClientTransport, StreamableHTTPError } from "@modelcontex
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { PLUGIN_VERSION } from "@mobile-dev/shared/version.ts";
 import { PANEL_PAGE_META } from "@mobile-dev/shared/panel-target.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 
 const dark = matchMedia("(prefers-color-scheme: dark)");
 const DISCONNECTED = "Mobile Dev disconnected from its chat session. Ask the agent to open Mobile Dev again.";
@@ -153,6 +154,5 @@ async function open() {
 }
 
 open().catch(error => {
-  const message = error instanceof Error ? error.message : String(error);
-  notice(`Mobile Dev could not open: ${message}`);
+  notice(`Mobile Dev could not open: ${errorMessage(error)}`);
 });

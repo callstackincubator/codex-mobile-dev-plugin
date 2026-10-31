@@ -1,32 +1,31 @@
-import { SENTRY_ORIGIN } from "../../shared/src/telemetry.ts";
+import { SENTRY_ORIGIN } from "@mobile-dev/shared/telemetry.ts";
 import { setImmediate } from "node:timers/promises";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { SimulatorInputService } from "../src/simulator-input.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { OpenAIUiToolMetadataSchema, OpenAIUiResourceMetadataSchema } from "@openai/mcp-extensions/server";
 import { APP_URI, createPanel, WORKSPACE_URI } from "../src/panel-tools.ts";
-import { RECORDING_URI } from "../../shared/src/recordings.ts";
-import { COMPARISON_URI } from "../../shared/src/performance-comparison.ts";
-import { TRACESIFT_URI } from "../../shared/src/tracesift.ts";
-import { Baguette } from "../src/baguette.ts";
+import { RECORDING_URI } from "@mobile-dev/shared/recordings.ts";
+import { COMPARISON_URI } from "@mobile-dev/shared/performance-comparison.ts";
+import { TRACESIFT_URI } from "@mobile-dev/shared/tracesift.ts";
 import { SimulatorUnavailableError } from "../src/simulator-unavailable.ts";
-import { parseBaseUrl } from "../../shared/src/protocol.ts";
-import { createTestPlugin, fakeBaguette, fakeSimulatorInput, UDID, PNG } from "../../test-support/fixtures.ts";
+import { parseBaseUrl } from "@mobile-dev/shared/protocol.ts";
+import { createTestPlugin, fakeBaguette, fakeSimulatorInput, UDID, PNG, attachedBaguette } from "@mobile-dev/test-support/fixtures.ts";
 import { getTelemetryIdentity } from "../src/telemetry-identity.ts";
+import { LogSessions } from "../src/log-sessions.ts";
+import type { ServerServices } from "../src/server-feature.ts";
 import manifest from "../../../package.json" with { type: "json" };
+import { connectClient } from "@mobile-dev/test-support/mcp.ts";
+import { setEnv, setTelemetry } from "@mobile-dev/test-support/env.ts";
 
 test("both opening tools accept optional device intent and preserve it in their results", async t => {
   const fake = await fakeBaguette();
-  const plugin = await createTestPlugin("<html></html>", { panel: createPanel({ baguette: new Baguette(fake.url), simulatorInput: fakeSimulatorInput() }) });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: "opening-target-test", version: "1" });
-  t.after(async () => { await client.close(); await plugin.close(); await fake.close(); });
-  await plugin.server.connect(serverTransport);
-  await client.connect(clientTransport);
+  const plugin = await createTestPlugin("<html></html>", { features: [createPanel({ baguette: attachedBaguette(fake.url), simulatorInput: fakeSimulatorInput() })] });
+  const client = await connectClient(t, plugin.server, { name: "opening-target-test" });
+  t.after(async () => { await plugin.close(); await fake.close(); });
   for (const name of ["mobile_open_simulator", "mobile_open_workspace"]) {
     for (const target of [{}, { platform: "android", kind: "emulator" }, { platform: "ios", kind: "physical", deviceId: "00008110-000A0B1C2D3E4000" }]) {
       const result = await client.callTool({ name, arguments: target });
@@ -49,11 +48,8 @@ test("the device chooser is listed only for hosts with a native form", async t =
     [{ extensions: { "openai/elicitation": { form: {} } } }, true],
     [{ elicitation: {} }, true],
   ] as const) {
-    const plugin = await createTestPlugin("<html></html>", { panel: createPanel({ baguette: new Baguette(fake.url), simulatorInput: fakeSimulatorInput() }) });
-    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-    const client = new Client({ name: "device-choice-host", version: "1" }, { capabilities });
-    await plugin.server.connect(serverTransport);
-    await client.connect(clientTransport);
+    const plugin = await createTestPlugin("<html></html>", { features: [createPanel({ baguette: attachedBaguette(fake.url), simulatorInput: fakeSimulatorInput() })] });
+    const client = await connectClient(t, plugin.server, { name: "device-choice-host", capabilities });
     const choice = (await client.listTools()).tools.find(tool => tool.name === "mobile_choose_devices");
     assert.equal(choice !== undefined, listed, JSON.stringify(capabilities));
     if (choice) {
@@ -67,12 +63,9 @@ test("the device chooser is listed only for hosts with a native form", async t =
 
 test("live UI reads use MCP and allow only Sentry browser connections", async t => {
   let revision = "a".repeat(64);
-  const plugin = await createTestPlugin(async () => ({ html: '<html data-view="panel">jonas</html>', liveRevision: revision }), { panel: createPanel() });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: "dev-panel-test", version: "1" });
-  t.after(async () => { await client.close(); await plugin.close(); });
-  await plugin.server.connect(serverTransport);
-  await client.connect(clientTransport);
+  const plugin = await createTestPlugin(async () => ({ html: '<html data-view="panel">jonas</html>', liveRevision: revision }), { features: [createPanel()] });
+  const client = await connectClient(t, plugin.server, { name: "dev-panel-test" });
+  t.after(() => plugin.close());
   const first = await client.readResource({ uri: APP_URI });
   assert.deepEqual(first.contents[0]._meta?.ui, { permissions: { clipboardWrite: {} }, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } });
   const uri = `ui://mobile-dev/live?after=${revision}`;
@@ -84,21 +77,12 @@ test("live UI reads use MCP and allow only Sentry browser connections", async t 
 });
 
 test("environment overrides apply to both initial UI resources and live reload", async t => {
-  const previous = process.env.MOBILE_DEV_ENVIRONMENT;
-  process.env.MOBILE_DEV_ENVIRONMENT = "release";
+  setEnv(t, { MOBILE_DEV_ENVIRONMENT: "release" });
   const html = '<html><meta name="mobile-dev-environment" content="development"></html>';
   const revision = "a".repeat(64);
-  const plugin = await createTestPlugin(async () => ({ html, liveRevision: revision }), { panel: createPanel() });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: "telemetry-environment-test", version: "1" });
-  t.after(async () => {
-    if (previous === undefined) delete process.env.MOBILE_DEV_ENVIRONMENT;
-    else process.env.MOBILE_DEV_ENVIRONMENT = previous;
-    await client.close();
-    await plugin.close();
-  });
-  await plugin.server.connect(serverTransport);
-  await client.connect(clientTransport);
+  const plugin = await createTestPlugin(async () => ({ html, liveRevision: revision }), { features: [createPanel()] });
+  const client = await connectClient(t, plugin.server, { name: "telemetry-environment-test" });
+  t.after(() => plugin.close());
   const initial = await client.readResource({ uri: APP_URI });
   const initialText = initial.contents[0].text;
   assert.ok(typeof initialText === "string");
@@ -108,7 +92,7 @@ test("environment overrides apply to both initial UI resources and live reload",
   assert.ok(typeof liveText === "string");
   const update = JSON.parse(liveText);
   assert.match(update.html, /mobile-dev-environment" content="release"/);
-  process.env.MOBILE_DEV_ENVIRONMENT = "development";
+  setEnv(t, { MOBILE_DEV_ENVIRONMENT: "development" });
   const development = await client.readResource({ uri: APP_URI });
   const developmentText = development.contents[0].text;
   assert.ok(typeof developmentText === "string");
@@ -116,19 +100,11 @@ test("environment overrides apply to both initial UI resources and live reload",
 });
 
 test("local packaged UI uses development without a live watcher", async t => {
-  const previous = process.env.MOBILE_DEV_ENVIRONMENT;
-  delete process.env.MOBILE_DEV_ENVIRONMENT;
+  setEnv(t, { MOBILE_DEV_ENVIRONMENT: undefined });
   const html = '<html><meta name="mobile-dev-environment" content="release"></html>';
-  const plugin = await createTestPlugin(html, { panel: createPanel() });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: "local-build-environment-test", version: "1" });
-  t.after(async () => {
-    if (previous !== undefined) process.env.MOBILE_DEV_ENVIRONMENT = previous;
-    await client.close();
-    await plugin.close();
-  });
-  await plugin.server.connect(serverTransport);
-  await client.connect(clientTransport);
+  const plugin = await createTestPlugin(html, { features: [createPanel()] });
+  const client = await connectClient(t, plugin.server, { name: "local-build-environment-test" });
+  t.after(() => plugin.close());
   const resource = await client.readResource({ uri: APP_URI });
   const content = resource.contents[0].text;
   assert.ok(typeof content === "string");
@@ -136,20 +112,11 @@ test("local packaged UI uses development without a live watcher", async t => {
 });
 
 test("UI surfaces and live reload receive the server's anonymous identity and opt-out", async t => {
-  const previous = process.env.MOBILE_DEV_TELEMETRY;
-  delete process.env.MOBILE_DEV_TELEMETRY;
+  setTelemetry(t, "on");
   const html = '<html data-view="panel"><head><meta name="mobile-dev-environment" content="development"></head></html>';
-  const plugin = await createTestPlugin(async () => ({ html, liveRevision: "new" }), { panel: createPanel() });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: "identity-test", version: "1" });
-  t.after(async () => {
-    if (previous === undefined) delete process.env.MOBILE_DEV_TELEMETRY;
-    else process.env.MOBILE_DEV_TELEMETRY = previous;
-    await client.close();
-    await plugin.close();
-  });
-  await plugin.server.connect(serverTransport);
-  await client.connect(clientTransport);
+  const plugin = await createTestPlugin(async () => ({ html, liveRevision: "new" }), { features: [createPanel()] });
+  const client = await connectClient(t, plugin.server, { name: "identity-test" });
+  t.after(() => plugin.close());
   const identity = getTelemetryIdentity();
   assert.ok(identity);
   const userMarker = `name="mobile-dev-user-id" content="${identity.userId}"`;
@@ -171,7 +138,7 @@ test("UI surfaces and live reload receive the server's anonymous identity and op
   const liveIncludesSession = update.html.includes(sessionMarker);
   assert.ok(liveIncludesUser);
   assert.ok(liveIncludesSession);
-  process.env.MOBILE_DEV_TELEMETRY = "off";
+  setTelemetry(t, "off");
   const disabled = await client.readResource({ uri: APP_URI });
   const disabledText = disabled.contents[0].text;
   assert.ok(typeof disabledText === "string");
@@ -184,12 +151,9 @@ test("UI surfaces and live reload receive the server's anonymous identity and op
 
 test("cached side tabs and saved cards load the current UI through old resource addresses", async t => {
   const html = '<!doctype html><html data-view="panel"><title>Current simulator</title><canvas></canvas></html>';
-  const plugin = await createTestPlugin(html, { panel: createPanel() });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: "cached-panel-test", version: "1" });
-  t.after(async () => { await client.close(); await plugin.close(); });
-  await plugin.server.connect(serverTransport);
-  await client.connect(clientTransport);
+  const plugin = await createTestPlugin(html, { features: [createPanel()] });
+  const client = await connectClient(t, plugin.server, { name: "cached-panel-test" });
+  t.after(() => plugin.close());
   assert.equal(APP_URI, `ui://mobile-dev/${manifest.version}/simulator.html`);
   const previousPanel = await client.readResource({ uri: "ui://mobile-dev/0.1.147/simulator.html" });
   assert.equal(previousPanel.contents[0].text, html);
@@ -217,12 +181,9 @@ test("cached side tabs and saved cards load the current UI through old resource 
 
 test("MCP tools expose native entrypoints and complete the simulator workflow", async t => {
   const fake = await fakeBaguette();
-  const plugin = await createTestPlugin('<!doctype html><html data-view="panel" data-layout="stacked"><title>Mobile Dev</title></html>', { panel: createPanel({ baguette: new Baguette(fake.url), simulatorInput: fakeSimulatorInput() }) });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: "test", version: "1" });
-  t.after(async () => { await client.close(); await plugin.close(); await fake.close(); });
-  await plugin.server.connect(serverTransport);
-  await client.connect(clientTransport);
+  const plugin = await createTestPlugin('<!doctype html><html data-view="panel" data-layout="stacked"><title>Mobile Dev</title></html>', { features: [createPanel({ baguette: attachedBaguette(fake.url), simulatorInput: fakeSimulatorInput() })] });
+  const client = await connectClient(t, plugin.server);
+  t.after(async () => { await plugin.close(); await fake.close(); });
   const tools = await client.listTools();
   const open = tools.tools.find(tool => tool.name === "mobile_open_simulator")!;
   assert.equal(tools.tools.find(tool => tool.name === "mobile_list_simulators")?.icons, undefined);
@@ -348,14 +309,12 @@ test("the toolbar capture copies the returned PNG and still returns it when clip
   const fake = await fakeBaguette();
   const copies: Buffer[] = [];
   let copyFails = false;
-  const plugin = await createTestPlugin("<title>Mobile Dev</title>", { panel: createPanel({ baguette: new Baguette(fake.url), simulatorInput: fakeSimulatorInput(), copyScreenshot: async bytes => {
+  const plugin = await createTestPlugin("<title>Mobile Dev</title>", { features: [createPanel({ baguette: attachedBaguette(fake.url), simulatorInput: fakeSimulatorInput(), copyScreenshot: async bytes => {
     if (copyFails) throw new Error("Clipboard unavailable");
     copies.push(bytes);
-  } }) });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: "screenshot-test", version: "1" });
-  t.after(async () => { await client.close(); await plugin.close(); await fake.close(); });
-  await plugin.server.connect(serverTransport); await client.connect(clientTransport);
+  } })] });
+  const client = await connectClient(t, plugin.server, { name: "screenshot-test" });
+  t.after(async () => { await plugin.close(); await fake.close(); });
   const tools = await client.listTools();
   const capture = tools.tools.find(tool => tool.name === "mobile_capture_screenshot")!;
   assert.deepEqual((capture._meta?.ui as { visibility: string[] }).visibility, ["app"]);
@@ -382,12 +341,9 @@ test("the toolbar capture copies the returned PNG and still returns it when clip
 test("Device Hub blockage repairs automatically, limits repeated repairs, and permits manual recovery", async t => {
   const fake = await fakeBaguette();
   const input = fakeSimulatorInput();
-  const plugin = await createTestPlugin("<title>Mobile Dev</title>", { panel: createPanel({ baguette: new Baguette(fake.url), simulatorInput: input }) });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: "blocked-input-test", version: "1" });
-  t.after(async () => { await client.close(); await plugin.close(); await fake.close(); });
-  await plugin.server.connect(serverTransport);
-  await client.connect(clientTransport);
+  const plugin = await createTestPlugin("<title>Mobile Dev</title>", { features: [createPanel({ baguette: attachedBaguette(fake.url), simulatorInput: input })] });
+  const client = await connectClient(t, plugin.server, { name: "blocked-input-test" });
+  t.after(async () => { await plugin.close(); await fake.close(); });
   const session = await client.callTool({ name: "mobile_stream_session", arguments: { udid: UDID } });
   assert.deepEqual(session.structuredContent?.inputStatus, { state: "ready" });
   await client.readResource({ uri: session._meta?.frameUri as string });
@@ -432,25 +388,20 @@ test("only a loopback HTTP origin can become a backend target", () => {
   assert.equal(parseBaseUrl("http://127.0.0.1:8421").port, "8421");
 });
 
-test("a reused backend survives disposal of the adapter", async t => {
-  const fake = await fakeBaguette();
-  t.after(() => fake.close());
-  const baguette = new Baguette(fake.url);
-  assert.equal((await baguette.start()).managed, false);
-  baguette.dispose();
-  assert.equal((await fetch(`${fake.url}/simulators.json`)).status, 200);
-});
-
 test("a stale accessibility bridge restarts once before reading the UI again", async t => {
   let now = 0;
   t.mock.method(Date, "now", () => now);
   let responses: unknown[] = [];
-  const server = createServer((_request, response) => response.end(JSON.stringify(responses.shift() ?? { ok: false, error: "no accessibility data" })));
+  const server = createServer((request, response) => {
+    if (request.url === "/simulators.json") response.end('{"running":[],"available":[]}');
+    else response.end(JSON.stringify(responses.shift() ?? { ok: false, error: "no accessibility data" }));
+  });
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
   t.after(() => server.close());
   const restarts: string[] = [];
-  const baguette = new Baguette(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, async udid => { restarts.push(udid); });
+  const baguette = attachedBaguette(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, { kickstartBridge: async udid => { restarts.push(udid); } });
   t.after(() => baguette.dispose());
+  await baguette.start();
 
   responses = [{ ok: false, error: "no accessibility data" }, { ok: true, tree: { label: "HorseTinder" } }];
   assert.equal((await baguette.describeUi(UDID)).tree?.label, "HorseTinder");
@@ -487,12 +438,10 @@ test("panel input reaches the native socket during a pending refresh and blocks 
       });
     });
   });
-  const plugin = await createTestPlugin("<head></head>", { panel: createPanel({ baguette: new Baguette(fake.url), simulatorInput: input }) });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: "background-input-test", version: "1" });
-  t.after(async () => { resolveRefresh("state 0"); await client.close(); await plugin.close(); await fake.close(); });
-  await plugin.server.connect(serverTransport);
-  await client.connect(clientTransport);
+  const plugin = await createTestPlugin("<head></head>", { features: [createPanel({ baguette: attachedBaguette(fake.url), simulatorInput: input })] });
+  t.after(() => resolveRefresh("state 0"));
+  const client = await connectClient(t, plugin.server, { name: "background-input-test" });
+  t.after(async () => { await plugin.close(); await fake.close(); });
   const session = await client.callTool({ name: "mobile_stream_session", arguments: { udid: UDID } });
   await client.readResource({ uri: session._meta?.frameUri as string });
   now = 1000;
@@ -531,11 +480,8 @@ test("without the panel, the server keeps its cards and finds simulators without
     },
   };
   const plugin = await createTestPlugin('<html data-view="panel"></html>', { simulators });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: "no-panel-host", version: "1" });
-  t.after(async () => { await client.close(); await plugin.close(); });
-  await plugin.server.connect(serverTransport);
-  await client.connect(clientTransport);
+  const client = await connectClient(t, plugin.server, { name: "no-panel-host" });
+  t.after(() => plugin.close());
   assert.match(client.getInstructions() ?? "", /the host's own simulator view/);
   const names = (await client.listTools()).tools.map(tool => tool.name);
   for (const name of ["mobile_logs_session", "mobile_record_performance", "mobile_render_performance_recording", "mobile_compare_performance_recordings", "mobile_analyze_profile", "mobile_list_apps", "mobile_app_storage"]) {
@@ -553,4 +499,23 @@ test("without the panel, the server keeps its cards and finds simulators without
   assert.equal(logs.isError, true);
   assert.match((logs.content as { text: string }[])[0].text, /Boot it first/);
   assert.deepEqual(reads, [UDID]);
+});
+
+test("hosts without the panel close a device's sessions through their features, and failed feature cleanups do not stop shutdown", async t => {
+  let stops = 0;
+  const logs = new LogSessions({ native: () => async () => { stops++; }, metro: () => async () => {} });
+  let services!: ServerServices;
+  const plugin = await createTestPlugin("<html></html>", { logs, features: [
+    { register: (_server, provided) => { services = provided; return () => { throw new Error("Cleanup failed"); }; } },
+    { register: () => async () => { throw new Error("Async cleanup failed"); } },
+  ] });
+  t.after(() => plugin.close());
+  const kept = logs.open({ native: { platform: "android", deviceId: "emulator-5556" } });
+  const closed = logs.open({ native: { platform: "android", deviceId: "emulator-5554" } });
+  await services.closeDevice("emulator-5554");
+  assert.equal(stops, 1);
+  await assert.rejects(logs.read(closed, 0, 0), /expired or closed/);
+  assert.equal((await logs.read(kept, 0, 0)).entries.length, 0);
+  await plugin.close();
+  assert.equal(stops, 2);
 });

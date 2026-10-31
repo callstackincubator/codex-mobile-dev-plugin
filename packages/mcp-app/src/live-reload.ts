@@ -7,8 +7,15 @@ function replaceLiveDocument(html: string, hostDocument: Document) {
   const next = new Parser().parseFromString(html, "text/html");
   const scripts = Array.from(next.querySelectorAll("script"));
   for (const script of scripts) script.remove();
-  for (const attribute of Array.from(hostDocument.documentElement.attributes)) hostDocument.documentElement.removeAttribute(attribute.name);
-  for (const attribute of Array.from(next.documentElement.attributes)) hostDocument.documentElement.setAttribute(attribute.name, attribute.value);
+  // The update is the page as first served; the page keeps the view and layout its host opened.
+  const root = hostDocument.documentElement;
+  const kept = ["data-view", "data-layout"].flatMap(name => {
+    const value = root.getAttribute(name);
+    return value === null ? [] : [[name, value] as const];
+  });
+  for (const attribute of Array.from(root.attributes)) root.removeAttribute(attribute.name);
+  for (const attribute of Array.from(next.documentElement.attributes)) root.setAttribute(attribute.name, attribute.value);
+  for (const [name, value] of kept) root.setAttribute(name, value);
   // document.open() would also remove the native host's window listeners.
   hostDocument.head.replaceChildren(...Array.from(next.head.childNodes));
   hostDocument.body.replaceChildren(...Array.from(next.body.childNodes));
@@ -39,15 +46,11 @@ export function startLiveReload(app: App, beforeReload: () => Promise<void>, hos
         // Turning off development stops polling without disturbing the panel.
         if (!update.revision) { stop(); return; }
         if (/^[a-f0-9]{64}$/.test(update.revision) && update.revision !== revision && typeof update.html === "string") {
-          const view = hostDocument.documentElement.dataset.view;
-          const html = view === "workspace"
-            ? update.html.replace('data-view="panel"', 'data-view="workspace"').replace('data-layout="stacked"', 'data-layout="split"')
-            : update.html;
           await beforeReload();
           if (stopped) return;
           stop();
           await app.close();
-          replaceLiveDocument(html, hostDocument);
+          replaceLiveDocument(update.html, hostDocument);
           return;
         }
       }

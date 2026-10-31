@@ -133,19 +133,22 @@ test("older and repeated releases never replace the latest payload", async t => 
   assert.equal(current, head);
 });
 
-test("prerelease ordering follows semantic versions and cannot replace the same stable version", async t => {
+test("prerelease versions are not published, since installed updaters cannot compare them", async t => {
   const { remote, plugin, version } = await fixture(t);
-  await version("1.2.3-rc.2");
-  await publishRelease(plugin, "v1.2.3-rc.2", remote);
-  await version("1.2.3-rc.10");
-  const next = await publishRelease(plugin, "v1.2.3-rc.10", remote);
+  await version("1.2.4-rc.1");
+  const prerelease = publishRelease(plugin, "v1.2.4-rc.1", remote);
+  await assert.rejects(prerelease, /version must match/);
+  const refs = git(remote, ["for-each-ref"]);
+  assert.equal(refs, "");
+});
+
+test("versions compare numerically, not as text", async t => {
+  const { remote, plugin, version } = await fixture(t);
+  await version("1.2.9");
+  await publishRelease(plugin, "v1.2.9", remote);
+  await version("1.2.10");
+  const next = await publishRelease(plugin, "v1.2.10", remote);
   assert.equal(next.published, true);
-  await version("1.2.3");
-  const stable = await publishRelease(plugin, "v1.2.3", remote);
-  assert.equal(stable.published, true);
-  await version("1.2.3-rc.11");
-  const prerelease = await publishRelease(plugin, "v1.2.3-rc.11", remote);
-  assert.equal(prerelease.published, false);
 });
 
 test("a mismatched tag or development build fails before creating the branch", async t => {

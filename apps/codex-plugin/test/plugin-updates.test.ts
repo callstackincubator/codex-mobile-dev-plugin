@@ -3,15 +3,17 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import * as Sentry from "@sentry/node";
-import type { Envelope, Metric } from "@sentry/core";
-import { createCodexRunner, PluginUpdates, registerPluginUpdateTools, resolveCodexCli, readPluginStore } from "../server/plugin-updates.ts";
-import type { ReadStore, RunCodex } from "../server/plugin-updates.ts";
+import { codexCliResolver, createCodexRunner, resolveCodexCli } from "../server/codex-cli.ts";
+import type { RunCodex } from "../server/codex-cli.ts";
+import { readPluginStore } from "../server/plugin-store.ts";
+import type { ReadStore } from "../server/plugin-store.ts";
+import { registerPluginUpdateTools } from "../server/plugin-update-tools.ts";
+import { PluginUpdates, recordPluginUpdate } from "../server/plugin-updates.ts";
 import { scrubErrorEvent, scrubMetric } from "@mobile-dev/shared/telemetry.ts";
 import { compareReleaseVersions, PLUGIN_STORE_ID, pluginUpdateSchema } from "../shared/plugin-updates.ts";
+import { assertFragment, captureSentry } from "@mobile-dev/test-support/sentry.ts";
+import { connectClient } from "@mobile-dev/test-support/mcp.ts";
 
 const githubList = ["plugin", "list", "--marketplace", "mobile-dev", "--available", "--json"];
 const installedList = ["plugin", "list", "--json"];
@@ -152,6 +154,26 @@ test("legacy GitHub update caches cannot advertise unpublished store versions", 
   assert.equal(calls.length, 2);
 });
 
+test("update caches keep the flat format earlier releases read and write", async t => {
+  const directory = await profile(t);
+  const path = join(directory, "mobile-dev/updates.json");
+  await mkdir(join(directory, "mobile-dev"));
+  const migrated = { source: PLUGIN_STORE_ID, checkedAt: 1000000, latestVersion: "0.1.168", githubConfigured: false, storeInstalled: true, migratedVersion: "0.1.167" };
+  await writeFile(path, JSON.stringify(migrated));
+  const calls: string[][] = [];
+  const { run, readStore } = cliFixture(directory, calls, { github: false, storeVersion: "0.1.169" });
+  const options = { enabled: true, profile: directory, currentVersion: "0.1.167", run, readStore, now: () => 1000000 };
+  const github = new PluginUpdates({ ...options, pluginRoot: githubRoot(directory) });
+  assert.deepEqual(await github.check(), { status: "migrated", currentVersion: "0.1.167", latestVersion: "0.1.167", storeInstalled: true });
+  const store = new PluginUpdates(options);
+  assert.equal((await store.check()).status, "available");
+  assert.equal(calls.length, 0);
+  const later = new PluginUpdates({ ...options, now: () => 1000000 + 60 * 60 * 1000 });
+  assert.equal((await later.check()).latestVersion, "0.1.169");
+  const saved = JSON.parse(await readFile(path, "utf8"));
+  assert.deepEqual(saved, { source: PLUGIN_STORE_ID, checkedAt: 1000000 + 60 * 60 * 1000, latestVersion: "0.1.169", githubConfigured: false, storeInstalled: false });
+});
+
 test("unavailable catalogs, wrong identities and invalid versions stay quiet; development does no CLI work", async t => {
   for (const fixture of [{ storeId: "another-plugin" }, { storeVersion: "../bad" }, { storeInstalled: true, installedVersion: "invalid" }]) {
     const directory = await profile(t);
@@ -179,6 +201,60 @@ test("unavailable catalogs, wrong identities and invalid versions stay quiet; de
   assert.equal(disabled.status, "disabled");
   const migration = dev.migrate();
   await assert.rejects(migration, /Development builds/);
+});
+
+test("failed checks keep the last known status and retry after the failed interval", async t => {
+  const directory = await profile(t);
+  const calls: string[][] = [];
+  const cli = cliFixture(directory, calls, { storeInstalled: true });
+  let offline = false;
+  const run: RunCodex = async args => { if (offline) throw new Error("Offline"); return cli.run(args); };
+  let now = 1000000;
+  const options = { enabled: true, profile: directory, currentVersion: "0.1.167", run, readStore: cli.readStore, now: () => now };
+  const updates = new PluginUpdates(options);
+  assert.equal((await updates.check()).status, "migration");
+  offline = true;
+  now += 60 * 60 * 1000;
+  const failed = await updates.check();
+  assert.deepEqual(failed, { status: "migration", currentVersion: "0.1.167", latestVersion: "0.1.167", storeInstalled: true });
+  const path = join(directory, "mobile-dev/updates.json");
+  const saved = JSON.parse(await readFile(path, "utf8"));
+  assert.equal(saved.checkedAt, 1000000);
+  assert.equal(saved.failedAt, now);
+  assert.equal(saved.latestVersion, "0.1.167");
+  const anotherChat = new PluginUpdates(options);
+  assert.equal((await anotherChat.check()).status, "migration");
+  assert.deepEqual(calls, [githubList, installedList]);
+  now += 15 * 60 * 1000;
+  assert.equal((await anotherChat.check()).status, "migration");
+  assert.equal(JSON.parse(await readFile(path, "utf8")).checkedAt, 1000000);
+  offline = false;
+  now += 15 * 60 * 1000;
+  assert.equal((await anotherChat.check()).status, "migration");
+  assert.equal(calls.length, 4);
+  const recovered = JSON.parse(await readFile(path, "utf8"));
+  assert.equal(recovered.failedAt, undefined);
+  assert.equal(recovered.checkedAt, now);
+});
+
+test("checks that cannot be saved still report and reuse their result", async t => {
+  const sentry = captureSentry(t, { telemetry: "on", beforeSend: scrubErrorEvent });
+  const directory = await profile(t);
+  // A directory at the cache path makes every write fail.
+  await mkdir(join(directory, "mobile-dev/updates.json/blocked"), { recursive: true });
+  const calls: string[][] = [];
+  const { run, readStore } = cliFixture(directory, calls, { storeInstalled: true });
+  let now = 1000000;
+  const updates = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.167", run, readStore, now: () => now });
+  const notice = await updates.check();
+  assert.deepEqual(notice, { status: "migration", currentVersion: "0.1.167", latestVersion: "0.1.167", storeInstalled: true });
+  assert.ok((await sentry.text()).includes("Could not save the plugin update check."));
+  now += 30 * 60 * 1000;
+  assert.equal((await updates.check()).status, "migration");
+  assert.deepEqual(calls, [githubList, installedList]);
+  now += 30 * 60 * 1000;
+  await updates.check();
+  assert.equal(calls.length, 4);
 });
 
 test("migration is offered for the same version and verifies the store before any deletion", async t => {
@@ -248,18 +324,7 @@ test("wrong marketplaces, failed deletion and unremoved GitHub installations nev
 });
 
 test("migration failures report the failed step and cause without CLI output", async t => {
-  const envelopes: Envelope[] = [];
-  Sentry.init({
-    dsn: "https://public@example.com/1", defaultIntegrations: false, beforeSend: scrubErrorEvent,
-    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
-  });
-  const previous = process.env.MOBILE_DEV_TELEMETRY;
-  delete process.env.MOBILE_DEV_TELEMETRY;
-  t.after(async () => {
-    if (previous === undefined) delete process.env.MOBILE_DEV_TELEMETRY;
-    else process.env.MOBILE_DEV_TELEMETRY = previous;
-    await Sentry.close();
-  });
+  const sentry = captureSentry(t, { telemetry: "on", beforeSend: scrubErrorEvent });
   const cases = [
     { fixture: { source: "https://github.com/other/repo" }, step: "remove-marketplace", failure: "foreign-marketplace" },
     { fixture: { keepGithub: true }, step: "verify", failure: "not-verified" },
@@ -267,7 +332,7 @@ test("migration failures report the failed step and cause without CLI output", a
     { fixture: {}, invalidStore: true, step: "catalog", failure: "invalid-response" },
   ];
   for (const { fixture, failRemoval, invalidStore, step, failure } of cases) {
-    envelopes.length = 0;
+    sentry.clear();
     const directory = await profile(t);
     const calls: string[][] = [];
     const cli = cliFixture(directory, calls, { ...fixture, storeInstalled: true });
@@ -277,8 +342,7 @@ test("migration failures report the failed step and cause without CLI output", a
     const readStore: ReadStore = invalidStore ? async () => ({ name: "mobile-dev" }) : cli.readStore;
     const updates = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.167", run, readStore });
     await assert.rejects(updates.migrate());
-    await Sentry.flush();
-    const sent = JSON.stringify(envelopes);
+    const sent = await sentry.text();
     assert.ok(sent.includes("The plugin store migration failed."), step);
     assert.ok(sent.includes(`"plugin_update_step":"${step}"`), sent);
     assert.ok(sent.includes(`"plugin_update_failure":"${failure}"`), sent);
@@ -315,11 +379,8 @@ test("update tools remain app-only and the GitHub upgrade tool is removed", asyn
   const server = new McpServer({ name: "updates-test", version: "1" });
   const updates = new PluginUpdates({ enabled: false });
   registerPluginUpdateTools(server, updates);
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: "updates-test", version: "1" });
-  t.after(async () => { updates.close(); await client.close(); await server.close(); });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
+  t.after(() => updates.close());
+  const client = await connectClient(t, server, { name: "updates-test" });
   const tools = await client.listTools();
   for (const tool of tools.tools) {
     assert.deepEqual(tool._meta?.ui, { visibility: ["app"] });
@@ -336,6 +397,24 @@ test("update tools remain app-only and the GitHub upgrade tool is removed", asyn
 test("CLI resolution rejects processes other than the launching Codex executable", async () => {
   const resolution = resolveCodexCli(process.pid);
   await assert.rejects(resolution, /Could not locate the Codex executable/);
+});
+
+test("CLI resolution runs once per launching process and retries failed lookups", async t => {
+  const directory = await profile(t);
+  const executable = join(directory, "codex-fixture");
+  await writeFile(executable, "#!/bin/sh\necho '{}'\n", { mode: 0o755 });
+  const lookups: number[] = [];
+  const resolveCli = codexCliResolver(directory, async parentPid => {
+    lookups.push(parentPid);
+    if (lookups.length === 1) throw new Error("ps failed");
+    return executable;
+  });
+  const run = createCodexRunner(directory, { resolveCli });
+  await assert.rejects(run(["plugin", "list"]), /ps failed/);
+  await Promise.all([run(["plugin", "list"]), run(["plugin", "marketplace", "list"])]);
+  const result = await run(["plugin", "list"]);
+  assert.deepEqual(result, {});
+  assert.deepEqual(lookups, [process.ppid, process.ppid]);
 });
 
 test("published versions are read directly without user authentication or installation state", async () => {
@@ -377,23 +456,7 @@ test("HTTP failures, unpublished releases and malformed store responses use fixe
 });
 
 test("anonymous check failures preserve timing, classify the cause and exclude private response data", async t => {
-  const metrics: Metric[] = [];
-  Sentry.init({
-    dsn: "https://public@example.com/1", defaultIntegrations: false,
-    beforeSendMetric: metric => {
-      const scrubbed = scrubMetric(metric);
-      metrics.push(scrubbed);
-      return null;
-    },
-    transport: () => ({ async send() { return { statusCode: 200 }; }, async flush() { return true; } }),
-  });
-  const previous = process.env.MOBILE_DEV_TELEMETRY;
-  delete process.env.MOBILE_DEV_TELEMETRY;
-  t.after(async () => {
-    if (previous === undefined) delete process.env.MOBILE_DEV_TELEMETRY;
-    else process.env.MOBILE_DEV_TELEMETRY = previous;
-    await Sentry.close();
-  });
+  const sentry = captureSentry(t, { telemetry: "on", beforeSendMetric: scrubMetric });
   const directory = await profile(t);
   const calls: string[][] = [];
   const cli = cliFixture(directory, calls);
@@ -402,17 +465,12 @@ test("anonymous check failures preserve timing, classify the cause and exclude p
   const updates = new PluginUpdates({ enabled: true, profile: directory, run: cli.run, readStore });
   const result = await updates.check();
   assert.equal(result.status, "unavailable");
-  const count = metrics.find(metric => metric.name === "plugin.update.operations");
-  assert.equal(count?.attributes?.outcome, "unavailable");
-  assert.equal(count?.attributes?.failure, "store-unavailable");
-  const duration = metrics.find(metric => metric.name === "plugin.update.duration");
-  assert.equal(duration?.unit, "millisecond");
-  const recorded = metrics.length;
+  const sent = await sentry.text();
+  for (const fragment of ["plugin.update.operations", "plugin.update.duration", "millisecond", '"outcome":{"value":"unavailable"', '"failure":{"value":"store-unavailable"']) assertFragment(sent, fragment);
+  const recorded = (await sentry.metrics()).length;
   await updates.check();
-  assert.equal(metrics.length, recorded);
-  const text = JSON.stringify(metrics);
-  const leaked = text.includes("PRIVATE_CATALOG_ERROR") || text.includes(directory);
-  assert.equal(leaked, false);
+  assert.equal((await sentry.metrics()).length, recorded);
+  for (const fragment of ["PRIVATE_CATALOG_ERROR", directory]) assertFragment(await sentry.text(), fragment, false);
 });
 
 test("store requests stop when the caller cancels or the deadline expires", async t => {
@@ -471,4 +529,18 @@ test("migration recognizes the renamed official GitHub repository", async t => {
   assert.equal(migrated.status, "migrated");
   const removed = calls.some(call => call[1] === "remove" && call[2] === "mobile-dev@mobile-dev");
   assert.equal(removed, true);
+});
+
+test("plugin update metrics measure plugin work without device context and honor opt-out", async t => {
+  const sentry = captureSentry(t, { telemetry: "on", beforeSendMetric: scrubMetric });
+  recordPluginUpdate("check", "available", 80);
+  recordPluginUpdate("migrate", "migrated", 2000);
+  recordPluginUpdate("migrate", "failed", 3000);
+  const sent = await sentry.text();
+  for (const fragment of ["plugin.update.operations", "plugin.update.duration", "millisecond", '"operation":{"value":"check"', '"outcome":{"value":"migrated"', '"outcome":{"value":"failed"']) assertFragment(sent, fragment);
+  for (const fragment of ["device_platform", "device_kind", "latestVersion", "currentVersion", "user.id", "telemetry_session"]) assertFragment(sent, fragment, false);
+  sentry.setTelemetry("off");
+  recordPluginUpdate("migrate", "migrated", 999);
+  const afterOptOut = await sentry.text();
+  assert.equal(afterOptOut, sent);
 });

@@ -1,11 +1,13 @@
-import { chatMessage } from "./chat-message.ts";
+import { canMessage, ChatDeliveryError, sendChat } from "./chat-message.ts";
 import { attachReference, cardsCallTools } from "./host-bridge.ts";
 import type { HostAttachmentsSource, HostBridge } from "./host-bridge.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { recordingRangeSchema, recordingReferenceSchema, recordingSchema, summarizeRecording } from "@mobile-dev/shared/recordings.ts";
 import type { PerformanceRecording, RecordingRange } from "@mobile-dev/shared/recordings.ts";
 import { captureUiError, countUiEvent, markUiSurfaceReady, recordUiTiming, setUiGauge, setUiSurface, setUiTelemetryContext } from "./telemetry.ts";
-import { readRecording, RecordingReadError, RecordingTrimmedError, toolResultText } from "./recording-reader.ts";
+import { readRecording, RecordingTrimmedError } from "./recording-reader.ts";
+import { toolResultText, ToolCallError } from "./tool-call.ts";
+import { Store } from "./store.ts";
 
 type RecordingState = {
   recording?: PerformanceRecording;
@@ -26,11 +28,9 @@ export type RecordingOptions = {
   workspace?: boolean;
 };
 
-export class RecordingController {
+export class RecordingController extends Store<RecordingState> {
   private readonly app: HostBridge;
   private readonly attachments: HostAttachmentsSource;
-  private state: RecordingState;
-  private listeners = new Set<() => void>();
   private timer?: ReturnType<typeof setTimeout>;
   private disposed = false;
   private polling = false;
@@ -41,25 +41,13 @@ export class RecordingController {
   private loading?: AbortController;
 
   constructor(app: HostBridge, { attachments = () => undefined, workspace = false }: RecordingOptions = {}) {
+    super({ canMessage: false, canOpen: workspace, busy: false, error: "" });
     this.app = app;
     this.attachments = attachments;
-    this.state = { canMessage: false, canOpen: workspace, busy: false, error: "" };
     document.addEventListener("visibilitychange", this.visibilityChanged);
   }
-  subscribe = (listener: () => void) => {
-    this.listeners.add(listener);
-    return () => { this.listeners.delete(listener); };
-  };
-  getSnapshot = () => this.state;
-  private update(next: Partial<RecordingState>) {
-    if (this.disposed) return;
-    this.state = { ...this.state, ...next };
-    for (const listener of this.listeners) listener();
-  }
   hostChanged() {
-    const capabilities = this.app.getHostCapabilities();
-    const canMessage = Boolean(capabilities?.message?.text);
-    this.update({ canMessage });
+    this.update({ canMessage: canMessage(this.app) });
     this.schedule();
   }
   setVisible(visible: boolean) { this.visible = visible; this.schedule(); }
@@ -128,10 +116,10 @@ export class RecordingController {
       this.present(recording, range);
     } catch (error) {
       if (loading.signal.aborted || this.disposed) return;
-      if (error instanceof RecordingReadError === false) captureUiError(error, "recording.load");
+      if (error instanceof ToolCallError === false) captureUiError(error, "recording.load");
       // A preview already on screen stays; the card only lacks thread and frame detail.
       if (this.state.preview) this.update({ preview: "only" });
-      else this.update({ error: error instanceof RecordingReadError ? error.message : "Could not load this recording. Reopen it to try again." });
+      else this.update({ error: error instanceof ToolCallError ? error.message : "Could not load this recording. Reopen it to try again." });
     }
   }
   select = (range?: RecordingRange) => {
@@ -187,7 +175,6 @@ export class RecordingController {
     const prompt = action === "ask"
       ? `Explain ${metricNames} during ${selected.start}–${selected.end}s of “${recording.title}”. Read the original samples with mobile_read_performance_recording using ${reference}. Distinguish measurements from hypotheses about their cause${displayContext}${frameContext}.`
       : `Open “${recording.title}” in Mobile Dev with ${selected.start}–${selected.end}s selected. Use mobile_open_performance_recording with ${reference}.`;
-    let sending = false;
     try {
       const modelContext = this.attachments();
       if (modelContext) {
@@ -201,18 +188,17 @@ export class RecordingController {
       }
       if (this.disposed) return;
       const text = modelContext ? (action === "ask" ? (range ? "Explain this selected range." : "Explain this recording.") : "Open this recording in Mobile Dev.") : prompt;
-      const message = chatMessage(this.app, text);
       const startedAt = performance.now();
-      sending = true;
-      const result = await this.app.sendMessage(message, { timeout: 5000, maxTotalTimeout: 5000 });
-      if (result.isError) throw new Error("The host could not send this recording to chat.");
+      await sendChat(this.app, text);
       countUiEvent(`ui.recording.${action}`);
       const elapsed = performance.now() - startedAt;
       recordUiTiming("ui.recording.message_ack", elapsed);
     } catch (error) {
       captureUiError(new Error("Recording chat action failed."), `recording.${action}`);
-      const timedOut = sending && typeof error === "object" && error !== null && "code" in error && error.code === -32001;
-      const message = timedOut ? "The host did not confirm delivery. Check the chat before retrying to avoid sending the question twice." : error instanceof Error ? error.message : "Could not send this recording to chat.";
+      const failure = error instanceof ChatDeliveryError ? error.reason : undefined;
+      const message = failure === "unconfirmed" ? "The host did not confirm delivery. Check the chat before retrying to avoid sending the question twice."
+        : failure === "rejected" ? "The host could not send this recording to chat."
+        : error instanceof Error ? error.message : "Could not send this recording to chat.";
       this.update({ error: message });
     } finally { this.update({ busy: false }); }
   }
@@ -222,6 +208,6 @@ export class RecordingController {
     this.loading?.abort();
     clearTimeout(this.timer);
     document.removeEventListener("visibilitychange", this.visibilityChanged);
-    this.listeners.clear();
+    this.close();
   }
 }

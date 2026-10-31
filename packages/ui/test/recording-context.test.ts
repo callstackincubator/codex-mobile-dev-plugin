@@ -2,9 +2,10 @@ import test from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import type { App } from "@modelcontextprotocol/ext-apps";
+import { fakeApp } from "@mobile-dev/test-support/fake-app.ts";
 import type { OpenAIModelContextHostState } from "@openai/mcp-extensions/app";
 import { RecordingController } from "../src/recording-controller.ts";
-import { recordingWithFramesFixture } from "../../test-support/recording-fixtures.ts";
+import { recordingWithFramesFixture } from "@mobile-dev/test-support/recording-fixtures.ts";
 
 function fixture(t: TestContext, pills = true) {
   const previous = Object.getOwnPropertyDescriptor(globalThis, "document");
@@ -27,7 +28,7 @@ function fixture(t: TestContext, pills = true) {
       return { updateId: current.updateId };
     },
   };
-  const app = {
+  const app = fakeApp({
     getHostCapabilities: () => ({ experimental: { "openai/message": {} }, message: { text: {} } }),
     async sendMessage(params: Parameters<App["sendMessage"]>[0], options: { timeout?: number; maxTotalTimeout?: number }) {
       assert.equal(options.timeout, 5000);
@@ -36,7 +37,7 @@ function fixture(t: TestContext, pills = true) {
       if (sendTimeout) throw Object.assign(new Error("Request timed out"), { code: -32001 });
       return { isError: sendFailure };
     },
-  } as unknown as App;
+  });
   const controller = new RecordingController(app, { attachments: () => pills ? modelContext : undefined, workspace: true });
   const recording = recordingWithFramesFixture();
   controller.hostChanged();

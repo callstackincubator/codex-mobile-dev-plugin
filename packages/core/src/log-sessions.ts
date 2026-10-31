@@ -1,37 +1,33 @@
-import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
-import { randomBytes } from "node:crypto";
 import type { LogBatch, LogOptions } from "@mobile-dev/shared/logs.ts";
 import { logOptionsSchema } from "@mobile-dev/shared/logs.ts";
 import { LogBuffer } from "./log-buffer.ts";
 import { startNativeLogs } from "./native-logs.ts";
 import type { LogSink, StopLogSource } from "./native-logs.ts";
 import { startMetroLogs } from "./metro-logs.ts";
+import { SessionRegistry } from "./session-registry.ts";
 
-type Session = { buffer: LogBuffer; stops: StopLogSource[]; expires: number };
+type Session = { options: LogOptions; buffer: LogBuffer; stops: StopLogSource[] };
 export type LogSources = { native: typeof startNativeLogs; metro: typeof startMetroLogs };
 
 export class LogSessions {
-  private readonly sessions = new Map<string, Session>();
-  private readonly closing = new Set<Promise<void>>();
-  private disposed = false;
-  private readonly expiry: NodeJS.Timeout;
+  private readonly sessions = new SessionRegistry<Session>({
+    limit: 8, name: "Log session",
+    limitMessage: "Too many log streams. Close a log panel and retry.",
+    expiredMessage: "This log session expired or closed. Reopen the log panel.",
+    deviceId: session => session.options.native?.deviceId,
+    stop: async session => {
+      session.buffer.close();
+      await Promise.allSettled(session.stops.map(stop => Promise.resolve().then(stop)));
+    },
+  });
   private readonly sources: LogSources;
 
-  constructor(sources: LogSources = { native: startNativeLogs, metro: startMetroLogs }) {
-    this.sources = sources;
-    this.expiry = setInterval(() => {
-      for (const [id, session] of this.sessions) if (session.expires < Date.now()) void this.closeSession(id);
-    }, 10000);
-    this.expiry.unref();
-  }
+  constructor(sources: LogSources = { native: startNativeLogs, metro: startMetroLogs }) { this.sources = sources; }
 
   open(input: LogOptions): string {
     const options = logOptionsSchema.parse(input);
-    if (this.disposed) throw new ExpectedOperationError("session_closed", "The plugin server has closed.");
-    if (this.sessions.size >= 8) throw new ExpectedOperationError("resource_limit", "Too many log streams. Close a log panel and retry.");
-    const session: Session = { buffer: new LogBuffer(), stops: [], expires: Date.now() + 5 * 60 * 1000 };
-    const id = randomBytes(32).toString("hex");
-    this.sessions.set(id, session);
+    const session: Session = { options, buffer: new LogBuffer(), stops: [] };
+    const id = this.sessions.add(session);
     const sink: LogSink = { log: entry => session.buffer.push(entry), status: status => session.buffer.status(status) };
     try {
       if (options.native) session.stops.push(this.sources.native(options.native, sink));
@@ -40,32 +36,13 @@ export class LogSessions {
     return id;
   }
 
-  private touch(id: string): Session {
-    const session = this.sessions.get(id);
-    if (!session) throw new ExpectedOperationError("session_expired", "This log session expired or closed. Reopen the log panel.");
-    session.expires = Date.now() + 5 * 60 * 1000;
-    return session;
+  keepAlive(id: string) { this.sessions.get(id); }
+
+  async read(id: string, after: number, waitMs = 1000, signal?: AbortSignal): Promise<LogBatch> {
+    return this.sessions.get(id).buffer.read(after, waitMs, signal);
   }
 
-  keepAlive(id: string) { this.touch(id); }
-
-  async read(id: string, after: number, waitMs = 1000): Promise<LogBatch> {
-    const session = this.touch(id);
-    return session.buffer.read(after, waitMs);
-  }
-
-  async closeSession(id: string) {
-    const session = this.sessions.get(id);
-    if (!session) return;
-    this.sessions.delete(id); session.buffer.close();
-    const closing = Promise.allSettled(session.stops.map(stop => Promise.resolve().then(stop))).then(() => {});
-    this.closing.add(closing);
-    try { await closing; } finally { this.closing.delete(closing); }
-  }
-
-  async close() {
-    this.disposed = true; clearInterval(this.expiry);
-    await Promise.all([...this.sessions.keys()].map(id => this.closeSession(id)));
-    await Promise.all(this.closing);
-  }
+  closeSession(id: string) { return this.sessions.closeSession(id); }
+  closeDevice(deviceId: string) { return this.sessions.closeDevice(deviceId); }
+  close() { return this.sessions.close(); }
 }

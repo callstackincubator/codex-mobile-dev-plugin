@@ -1,15 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { setImmediate } from "node:timers/promises";
-import type { App } from "@modelcontextprotocol/ext-apps";
-import type { DeviceApp } from "../../shared/src/device-apps.ts";
-import type { CpuBatch, CpuSample, CpuTarget } from "../../shared/src/cpu.ts";
-import type { SimulatorDevice } from "../../shared/src/protocol.ts";
-import { createDeviceApps } from "../../test-support/device-apps-fixtures.ts";
+import { fakeApp } from "@mobile-dev/test-support/fake-app.ts";
+import type { DeviceApp } from "@mobile-dev/shared/device-apps.ts";
+import type { CpuBatch, CpuSample, CpuTarget } from "@mobile-dev/shared/cpu.ts";
+import type { SimulatorDevice } from "@mobile-dev/shared/protocol.ts";
+import { createDeviceApps } from "@mobile-dev/test-support/device-apps-fixtures.ts";
 import { PerformancePanel } from "../src/performance-panel.ts";
-import { UDID, OTHER_UDID } from "../../test-support/fixtures.ts";
+import { UDID, OTHER_UDID } from "@mobile-dev/test-support/fixtures.ts";
 
-const device = { udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS" };
+const device = { udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS", platform: "ios", kind: "simulator" } as const;
 async function tick() { for (let i = 0; i < 8; i++) await setImmediate(); }
 
 function host() {
@@ -21,22 +21,24 @@ function host() {
   let closeFailure: string | undefined;
   let opening: Promise<void> | undefined;
   let emit: ((batch: CpuBatch) => void) | undefined;
-  const app = {
-    async callServerTool(input: { name: string; arguments: { sessionId?: string; deviceId?: string; target?: CpuTarget; kind?: string } }) {
-      if (input.name === "mobile_performance_sources") {
-        sources.push(input.arguments.deviceId!);
+  const app = fakeApp({
+    tools: {
+      mobile_performance_sources: ({ deviceId }) => {
+        sources.push(deviceId as string);
         const foreground = apps.find(app => app.foreground === true);
         const marked = apps.map(app => ({ ...app, foreground: app === foreground }));
         return { content: [], structuredContent: { apps: marked, foregroundApp: foreground ?? null } };
-      }
-      if (input.name === "mobile_display_fps_session") return { isError: true, content: [{ type: "text", text: "FPS not provided by this CPU fixture" }] };
-      if (input.name === "mobile_cpu_close") {
-        events.push(`close:${input.arguments.sessionId}`);
+      },
+      mobile_display_fps_session: () => ({ isError: true, content: [{ type: "text", text: "FPS not provided by this CPU fixture" }] }),
+      mobile_cpu_close: ({ sessionId }) => {
+        events.push(`close:${sessionId}`);
         if (closeFailure) throw new Error(closeFailure);
         return { content: [] };
-      }
+      },
+    },
+    async fallback({ arguments: { target } }) {
       await opening;
-      if (input.arguments.target) targets.push(input.arguments.target);
+      if (target) targets.push(target as CpuTarget);
       const id = String(++sequence).padStart(64, "0");
       events.push(`open:${id}`);
       return { content: [], structuredContent: { sessionId: id, cpuUri: `cpu://mobile-dev/${id}/batch?after=0` } };
@@ -52,8 +54,8 @@ function host() {
         };
       });
     },
-  };
-  return { app: app as unknown as App, events, sources, targets, emit(batch: CpuBatch) { emit?.(batch); },
+  });
+  return { app, events, sources, targets, emit(batch: CpuBatch) { emit?.(batch); },
     setApps(next: DeviceApp[]) { apps = next; }, delayOpen(promise: Promise<void>) { opening = promise; },
     failClose(message?: string) { closeFailure = message; } };
 }
@@ -255,7 +257,7 @@ test("switching between iOS and Android closes the previous monitor and selects 
   fake.emit({ cursor: 1, phase: "recording", memoryMetric: "physical-footprint", samples: [{ time: 1, interval: 1, cpuPercent: 60, memoryBytes: 104857600, threads: [] }] });
   await tick();
   panel.setThreadOrder("first-seen");
-  deviceApps.selectDevice({ ...device, udid: "emulator-5554", name: "Pixel", platform: "android" });
+  deviceApps.selectDevice({ ...device, udid: "emulator-5554", name: "Pixel", platform: "android", kind: "emulator" });
   await tick();
   const android = panel.getSnapshot();
   assert.equal(android.threadOrder, "first-seen");

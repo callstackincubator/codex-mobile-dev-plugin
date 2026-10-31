@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { recordingPreview, recordingSchema } from "../src/recordings.ts";
-import { longestRecordingFixture, recordingWithFramesFixture } from "../../test-support/recording-fixtures.ts";
+import { longestRecordingFixture, recordingWithFramesFixture } from "@mobile-dev/test-support/recording-fixtures.ts";
 
 test("a preview keeps every sample at its time, rounded, without thread detail", () => {
   const recording = longestRecordingFixture();

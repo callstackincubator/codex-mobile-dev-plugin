@@ -9,19 +9,20 @@ import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { z } from "zod";
-import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
+import { ExpectedOperationError, errorMessage } from "@mobile-dev/shared/error-reporting.ts";
+import { BUILD_VERSION_PATTERN } from "@mobile-dev/shared/release-version.ts";
+import { bundledFile } from "./bundled-runtime.ts";
 import { captureServerError, recordPanelRuntime } from "./telemetry.ts";
 
 /** The panel's native parts, as the runtime archive and dist/ lay them out (tooling's PANEL_PARTS). */
 export const PANEL_RUNTIME_PARTS = ["baguette", "serve-emu", "ios-mirror", "ios-mirror-service.mjs"] as const;
 export type PanelRuntimeFile = "baguette/Baguette" | "serve-emu/src/cli.mjs" | "ios-mirror-service.mjs";
 
-// Bundled, this module is server.mjs or a chunk in dist/, beside the parts.
-let locate: () => Promise<string> = async () => fileURLToPath(new URL("./", import.meta.url));
+let locate: (() => Promise<string>) | undefined;
 
-/** Where a panel part lives: beside the server by default, or where usePanelRuntime puts it. */
+/** Where a panel part lives: beside the server by default (see bundledFile), or where usePanelRuntime puts it. */
 export async function panelRuntimePath(file: PanelRuntimeFile): Promise<string> {
-  return join(await locate(), file);
+  return locate ? join(await locate(), file) : bundledFile(file);
 }
 
 /** Lets a host that ships without the panel's parts provide them, such as from a download. */
@@ -30,7 +31,8 @@ export function usePanelRuntime(root: () => Promise<string>) {
 }
 
 export const panelRuntimeReleaseSchema = z.object({
-  version: z.string().regex(/^\d+\.\d+\.\d+(?:-[\da-zA-Z.-]+)?$/),
+  // A test deployment's prerelease pins its archive like a release.
+  version: z.string().regex(BUILD_VERSION_PATTERN),
   url: z.string().url().refine(url => /^(?:https|file):/.test(url), "The runtime must come from https or a local file."),
   sha256: z.string().regex(/^[0-9a-f]{64}$/),
   bytes: z.number().int().positive(),
@@ -85,7 +87,7 @@ async function prepare(release: PanelRuntimeRelease, directory: string, target: 
   }
   try { await install(release, directory, target); }
   catch (error) {
-    const failure = error instanceof RuntimeFailure ? error : new RuntimeFailure("filesystem", errorText(error));
+    const failure = error instanceof RuntimeFailure ? error : new RuntimeFailure("filesystem", errorMessage(error));
     recordPanelRuntime("failed", performance.now() - startedAt, undefined, failure.reason);
     // Offline machines and unreachable releases are expected; a mismatch or a broken archive is not.
     if (failure.reason !== "network" && failure.reason !== "http") captureServerError(failure, "panel_runtime.prepare", { tags: { panel_runtime_failure: failure.reason } });
@@ -131,7 +133,7 @@ async function download(url: URL, destination: string, release: PanelRuntimeRele
   else {
     let response: Response;
     try { response = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) }); }
-    catch (error) { throw new RuntimeFailure("network", `the download did not complete (${errorText(error)}).`); }
+    catch (error) { throw new RuntimeFailure("network", `the download did not complete (${errorMessage(error)}).`); }
     if (response.ok === false || response.body === null) throw new RuntimeFailure("http", `the release returned HTTP ${response.status}.`);
     body = Readable.fromWeb(response.body as import("node:stream/web").ReadableStream<Uint8Array>);
   }
@@ -148,14 +150,14 @@ async function download(url: URL, destination: string, release: PanelRuntimeRele
   try { await pipeline(body, measure, createWriteStream(destination, { flags: "wx", mode: 0o600 })); }
   catch (error) {
     if (error instanceof RuntimeFailure) throw error;
-    throw new RuntimeFailure(url.protocol === "file:" ? "filesystem" : "network", `the download did not complete (${errorText(error)}).`);
+    throw new RuntimeFailure(url.protocol === "file:" ? "filesystem" : "network", `the download did not complete (${errorMessage(error)}).`);
   }
   if (size !== release.bytes || hash.digest("hex") !== release.sha256) throw new RuntimeFailure("checksum", "the archive does not match the release it pins.");
 }
 
 async function extract(archive: string, staging: string) {
   const { stdout } = await run("/usr/bin/tar", ["-tzf", archive], { maxBuffer: 16 * 1024 * 1024 }).catch(error => {
-    throw new RuntimeFailure("archive", `the archive could not be read (${errorText(error)}).`);
+    throw new RuntimeFailure("archive", `the archive could not be read (${errorMessage(error)}).`);
   });
   for (const member of stdout.split("\n").filter(Boolean)) {
     const segments = member.replace(/^\.\//, "").split("/");
@@ -166,7 +168,7 @@ async function extract(archive: string, staging: string) {
   await mkdir(staging);
   // Without -P, bsdtar refuses absolute paths, .. and writes through symlinks.
   await run("/usr/bin/tar", ["-xzf", archive, "-C", staging, "--no-same-owner"]).catch(error => {
-    throw new RuntimeFailure("archive", `the archive could not be extracted (${errorText(error)}).`);
+    throw new RuntimeFailure("archive", `the archive could not be extracted (${errorMessage(error)}).`);
   });
   await assertPlainFiles(staging);
   for (const part of PANEL_RUNTIME_PARTS) {
@@ -202,8 +204,4 @@ async function removeOtherVersions(directory: string, keep: string) {
   }
   versions.sort((a, b) => b.modified - a.modified);
   for (const { path } of versions.slice(1)) await rm(path, { recursive: true, force: true });
-}
-
-function errorText(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
 }

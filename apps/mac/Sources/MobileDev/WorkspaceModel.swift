@@ -16,7 +16,6 @@ final class WorkspaceModel {
   @ObservationIgnored private var sidebarVisible = true
   @ObservationIgnored let page = PageBridge()
   @ObservationIgnored private var server: ServerProcess?
-  @ObservationIgnored private var loader: PageLoader?
 
   init() {
     page.onServerMessage = { [weak self] line in self?.server?.send(line) }
@@ -54,17 +53,17 @@ final class WorkspaceModel {
     page.select(layout: layout)
   }
 
+  /// Starts the server and loads the page, which is the server's only MCP client:
+  /// it initializes the connection and reads the server's telemetry metadata itself.
   private func start() {
     status = .starting
-    let process: ServerProcess
-    do { process = ServerProcess(runtime: try ServerRuntime.bundled()) }
-    catch { status = .failed(error.localizedDescription); return }
-    let loader = PageLoader(send: { process.send($0) }) { [weak self] result in
-      switch result {
-      case .success(let html): self?.page.load(html: html)
-      case .failure(let error): self?.status = .failed(error.localizedDescription)
-      }
-    }
+    let runtime: ServerRuntime
+    let html: String
+    do {
+      runtime = try ServerRuntime.bundled()
+      html = try String(contentsOf: runtime.page, encoding: .utf8)
+    } catch { status = .failed(error.localizedDescription); return }
+    let process = ServerProcess(runtime: runtime)
     do {
       try process.start(
         onLine: { [weak self] line in self?.receive(line, from: process) },
@@ -74,13 +73,11 @@ final class WorkspaceModel {
       return
     }
     server = process
-    self.loader = loader
-    loader.begin()
+    page.load(html: html)
   }
 
   private func receive(_ line: String, from process: ServerProcess) {
     guard process === server else { return }
-    if loader?.receive(line) == true { return }
     page.deliver(line)
   }
 

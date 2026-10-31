@@ -6,7 +6,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { PerformancePanel } from "../src/performance-panel.ts";
-import type { CpuSample } from "../../shared/src/cpu.ts";
+import type { CpuSample } from "@mobile-dev/shared/cpu.ts";
 
 test("performance tracks share immediate zoom, fill a fixed scale, and preserve scrolled history", async t => {
   const dom = new JSDOM('<div id="root"></div>', { pretendToBeVisual: true });
@@ -67,7 +67,7 @@ test("performance tracks share immediate zoom, fill a fixed scale, and preserve 
     plugins: [{ name: "observe-chart-inputs", setup(builder) {
       builder.onLoad({ filter: /PerformanceAreaChart\.tsx$/ }, () => ({ loader: "tsx", contents: `
         import { useContext } from "react";
-        import { TimelineChartWidth } from "../../performance/TimelineChartWidth";
+        import { TimelineChartWidth } from "./TimelineChartWidth";
         export function PerformanceAreaChart({ zoomState, onZoomChange, onZoomOut }) {
           const width = useContext(TimelineChartWidth);
           return <div data-chart-width={width} data-domain={zoomState.left + ":" + zoomState.right + ":" + zoomState.viewDuration}>
@@ -77,7 +77,7 @@ test("performance tracks share immediate zoom, fill a fixed scale, and preserve 
         }` }));
       builder.onLoad({ filter: /TimelineRuler\.tsx$/ }, () => ({ loader: "tsx", contents: `
         import { useContext } from "react";
-        import { TimelineChartWidth } from "../../performance/TimelineChartWidth";
+        import { TimelineChartWidth } from "./TimelineChartWidth";
         export function TimelineRuler({ zoomState, cursorLabel }) {
           const width = useContext(TimelineChartWidth);
           return <div data-chart-width={width} data-domain={zoomState.left + ":" + zoomState.right + ":" + zoomState.viewDuration}><span ref={cursorLabel} /></div>;
@@ -97,7 +97,7 @@ test("performance tracks share immediate zoom, fill a fixed scale, and preserve 
   let snapshot: ReturnType<PerformancePanel["getSnapshot"]> = { open: true, available: true, discovering: false, monitoring: true, physical: false,
     fpsSamples: [], fpsPhase: "idle", fpsError: "", fpsMonitoring: false, fpsSupported: false,
     selectedLabel: "Test device", platform: "ios", bundleId: "test.app", apps: [{ bundleId: "test.app", pid: 1 }], samples: initialSamples,
-    threadHistory: new Map([["worker", { number: 1, peakCpuPercent: 20 }]]), threadOrder: "first-seen", phase: "recording", error: "", sourceError: "" };
+    threadHistory: new Map([["worker", { number: 1, peakCpuPercent: 20 }]]), threadOrder: "first-seen", phase: "recording", error: "", sourceError: "", running: true, displayPhase: "recording" };
   const listeners = new Set<() => void>();
   let refreshes = 0;
   const panel = { refreshApps() { refreshes++; return Promise.resolve(); },

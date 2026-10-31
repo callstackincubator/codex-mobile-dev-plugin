@@ -4,8 +4,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { startNativeLogs } from "../src/native-logs.ts";
-import type { LogRecord } from "../../shared/src/logs.ts";
-import { UDID } from "../../test-support/fixtures.ts";
+import type { LogRecord } from "@mobile-dev/shared/logs.ts";
+import { UDID } from "@mobile-dev/test-support/fixtures.ts";
 
 test("simulator foreground logs select the PID upstream and retain only that process", { skip: process.platform !== "darwin" }, async t => {
   const directory = await mkdtemp(join(tmpdir(), "mobile-dev-log-pid-"));

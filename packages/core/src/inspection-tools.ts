@@ -8,11 +8,11 @@ import type { ServeEmu } from "./serve-emu.ts";
 import { inspectReactNative } from "./react-native-inspector.ts";
 import type { InspectorRequest } from "./react-native-inspector.ts";
 import { readDeviceApps } from "./device-apps/sources.ts";
-import { captureServerError } from "./telemetry.ts";
-import { errorMessage, udidSchema } from "@mobile-dev/shared/protocol.ts";
+import { deviceRefSchema, deviceTargetSchema } from "@mobile-dev/shared/device-ref.ts";
 import { accessibilityScreen, screenComponents } from "@mobile-dev/shared/screen-annotations.ts";
 import type { ScreenSize } from "@mobile-dev/shared/screen-annotations.ts";
-import { adbPath } from "./native-logs.ts";
+import { adbPath } from "./android-sdk.ts";
+import { guarded, jsonResult, READ_ONLY } from "./tool-results.ts";
 
 const execute = promisify(execFile);
 
@@ -22,8 +22,7 @@ type NativeSnapshot = {
   screen?: ScreenSize;
 };
 
-async function iosSnapshot(baguette: Baguette, deviceId: string, signal: AbortSignal): Promise<NativeSnapshot> {
-  const udid = udidSchema.parse(deviceId);
+async function iosSnapshot(baguette: Baguette, udid: string, signal: AbortSignal): Promise<NativeSnapshot> {
   const device = await baguette.device(udid, true);
   const response = await baguette.describeUi(udid);
   return {
@@ -39,7 +38,7 @@ async function iosSnapshot(baguette: Baguette, deviceId: string, signal: AbortSi
 
 async function androidSnapshot(android: ServeEmu, deviceId: string, deviceName: string, screenWidth: number): Promise<NativeSnapshot> {
   const [response, deviceAliases] = await Promise.all([android.accessibility(deviceId), androidAliases(deviceId)]);
-  const packages = new Set<string>((response.tree.nodes ?? []).map((item: { packageName?: string }) => item.packageName).filter((name: unknown): name is string => typeof name === "string" && !name.startsWith("com.android.") && name !== "android"));
+  const packages = new Set((response.tree.nodes ?? []).map(item => item.packageName).filter((name): name is string => typeof name === "string" && !name.startsWith("com.android.") && name !== "android"));
   return {
     native: screenComponents(response.tree, screenWidth / response.screen.width),
     app: { deviceName, deviceAliases, appId: packages.size === 1 ? [...packages][0] : undefined },
@@ -59,36 +58,33 @@ async function androidAliases(deviceId: string): Promise<string[]> {
   }
 }
 
+type Inspection = { platform: "ios" | "android"; deviceId: string; deviceName: string; screenWidth: number; metroUrl?: string; targetId?: string };
+
 export function registerInspectionTools(server: McpServer, baguette: Baguette, android: ServeEmu) {
   const controller = new AbortController();
   registerAppTool(server, "mobile_inspect_ui", {
     title: "Inspect app elements",
     description: "Read native accessibility elements and, for a matching React Native development app, measured runtime component bounds through an existing local Metro debugger. Does not start Metro, modify app props or take over an exclusive debugger. iOS bounds use device points; Android bounds use screen pixels. Optional targetId selects a known Metro target explicitly.",
     inputSchema: {
-      platform: z.enum(["ios", "android"]), deviceId: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/), deviceName: z.string().min(1).max(256),
+      ...deviceRefSchema.shape, deviceName: z.string().min(1).max(256),
       screenWidth: z.number().positive().max(16384), metroUrl: z.string().max(2048).optional(), targetId: z.string().max(512).optional(),
     },
-    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    annotations: READ_ONLY,
     _meta: { ui: { visibility: ["app", "model"] } },
-  }, async ({ platform, deviceId, deviceName, screenWidth, metroUrl, targetId }) => {
+  }, guarded("inspection.tool", async ({ platform, deviceId, deviceName, screenWidth, metroUrl, targetId }: Inspection) => {
+    const target = deviceTargetSchema.parse({ platform, id: deviceId });
+    const { native, app, screen } = target.platform === "ios"
+      ? await iosSnapshot(baguette, target.id, controller.signal)
+      : await androidSnapshot(android, target.id, deviceName, screenWidth);
+    let runtime: Awaited<ReturnType<typeof inspectReactNative>>;
     try {
-      const { native, app, screen } = platform === "ios"
-        ? await iosSnapshot(baguette, deviceId, controller.signal)
-        : await androidSnapshot(android, deviceId, deviceName, screenWidth);
-      let runtime: Awaited<ReturnType<typeof inspectReactNative>>;
-      try {
-        runtime = await inspectReactNative({ ...app, url: metroUrl, targetId, platform, screenWidth }, controller.signal);
-      } catch {
-        // Metro is optional. Native apps, absent servers and reloads retain AX selection.
-        runtime = { available: false, reason: "inspector-unavailable" };
-      }
-      // Deep React trees exceed host JSON decoder limits. Keep ancestry as IDs on flat records.
-      const data = { tree: screenComponents(runtime.available ? [runtime.tree, native] : native), runtime: { available: runtime.available, truncated: runtime.available ? runtime.truncated : false }, ...(screen && { screen }) };
-      return { content: [{ type: "text", text: JSON.stringify(data) }], structuredContent: data };
-    } catch (error) {
-      captureServerError(error, "inspection.tool");
-      return { isError: true, content: [{ type: "text", text: errorMessage(error) }] };
+      runtime = await inspectReactNative({ ...app, url: metroUrl, targetId, platform, screenWidth }, controller.signal);
+    } catch {
+      // Metro is optional. Native apps, absent servers and reloads retain AX selection.
+      runtime = { available: false, reason: "inspector-unavailable" };
     }
-  });
+    // Deep React trees exceed host JSON decoder limits. Keep ancestry as IDs on flat records.
+    return jsonResult({ tree: screenComponents(runtime.available ? [runtime.tree, native] : native), runtime: { available: runtime.available, truncated: runtime.available ? runtime.truncated : false }, ...(screen && { screen }) });
+  }));
   return () => controller.abort();
 }

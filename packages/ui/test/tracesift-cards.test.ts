@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { build } from "esbuild";
 import { JSDOM } from "jsdom";
+import { runBundle } from "@mobile-dev/test-support/bundle.ts";
 
 const baseTask = {
   id: "task-0", taskIndex: 0, startMs: 120, durationMs: 75, boundaries: "tasks", headline: "Render blocked the main thread",
@@ -59,7 +60,7 @@ test("compact TraceSift cards preserve CPU and React evidence", async t => {
   Object.defineProperty(window.performance, "getEntries", { value: () => [] });
   const telemetry: string[] = [];
   window.fetch = async (_url, options) => { telemetry.push(String(options?.body ?? "")); return new Response("", { status: 200 }); };
-  window.eval(built.outputFiles[0].text);
+  runBundle(window, built.outputFiles[0].text);
   const calls: { name: string; arguments: unknown }[] = [];
   const app = {
     getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),

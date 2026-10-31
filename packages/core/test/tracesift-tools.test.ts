@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import type { TestContext } from "node:test";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { registerTraceSiftTools } from "../src/tracesift-tools.ts";
 import type { TraceSiftClient } from "../src/tracesift-client.ts";
+import { connectClient } from "@mobile-dev/test-support/mcp.ts";
 
 /** Crosses the boundary the card's frame will: the SDK validates the envelope on both sides. */
 function deepTree(depth: number) {
@@ -13,27 +13,22 @@ function deepTree(depth: number) {
   return node;
 }
 
-async function connect(client: Partial<TraceSiftClient>) {
+async function connect(t: TestContext, client: Partial<TraceSiftClient>) {
   // A throwaway server, not the plugin fixture: the telemetry test owns its real MCP child
   // process, which one process per file cannot share.
   const server = new McpServer({ name: "tracesift-tools-test", version: "1" });
   registerTraceSiftTools(server, client as TraceSiftClient);
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const mcp = new Client({ name: "tracesift-tools-test-client", version: "1" });
-  await server.connect(serverTransport);
-  await mcp.connect(clientTransport);
-  return { mcp, close: async () => { await mcp.close(); await server.close(); } };
+  return { mcp: await connectClient(t, server) };
 }
 
 test("the Explore payload tool carries a full task tree as one JSON text item", async t => {
   const requested: unknown[] = [];
-  const { mcp, close } = await connect({
+  const { mcp } = await connect(t, {
     async exploreTask(analysisId: string, taskIndex: number) {
       requested.push({ analysisId, taskIndex });
       return { analysisId, profileTitle: "Profile", totalMs: 200, card: { id: "task-0", tree: deepTree(400), timeline: { boxes: [] } } };
     },
   });
-  t.after(close);
   const result = await mcp.callTool({ name: "mobile_tracesift_explore_payload", arguments: { analysisId: "analysis-1", taskIndex: 4 } });
   assert.deepEqual(requested, [{ analysisId: "analysis-1", taskIndex: 4 }]);
   assert.equal(result.isError, undefined);
@@ -52,14 +47,13 @@ test("the Explore payload tool survives a several-megabyte card", async t => {
     id: `b${index}`, name: `component-${index}`, frameClass: "app", totalMs: 5, selfMs: 1, invocations: 2,
     children: Array.from({ length: 12 }, (_, child) => ({ id: `b${index}-${child}`, name: `leaf-${index}-${child}`, frameClass: "lib", totalMs: 1, selfMs: 1, invocations: 1, children: [] })),
   }));
-  const { mcp, close } = await connect({
+  const { mcp } = await connect(t, {
     async exploreTask(analysisId: string) {
       return { analysisId, profileTitle: "Profile", totalMs: 4_000,
         card: { id: "task-0", tree: { id: "root", name: "root", frameClass: "app", totalMs: 4_000, selfMs: 0, invocations: 1, children: wide },
           timeline: { boxes: Array.from({ length: 20_000 }, (_, index) => ({ startMs: index, durationMs: 1, kind: "app" })) } } };
     },
   });
-  t.after(close);
   const startedAt = performance.now();
   const result = await mcp.callTool({ name: "mobile_tracesift_explore_payload", arguments: { analysisId: "analysis-1", taskIndex: 0 } });
   const elapsed = performance.now() - startedAt;
@@ -77,13 +71,12 @@ test("the Explore payload tool survives a several-megabyte card", async t => {
 
 test("the Explore payload tool serves one React timeline for the whole analysis", async t => {
   const requested: unknown[] = [];
-  const { mcp, close } = await connect({
+  const { mcp } = await connect(t, {
     async exploreReact(analysisId: string) {
       requested.push(analysisId);
       return { analysisId, profileTitle: "React", explore: { commits: [{ index: 0 }] }, cards: [] };
     },
   });
-  t.after(close);
   const result = await mcp.callTool({ name: "mobile_tracesift_explore_payload", arguments: { analysisId: "analysis-9" } });
   assert.deepEqual(requested, ["analysis-9"]);
   assert.equal((result.structuredContent as { kind: string }).kind, "react");
@@ -91,18 +84,16 @@ test("the Explore payload tool serves one React timeline for the whole analysis"
 });
 
 test("the Explore payload tool reports an expired analysis as its message", async t => {
-  const { mcp, close } = await connect({
+  const { mcp } = await connect(t, {
     async exploreTask() { throw new Error("This analysis is no longer available to Explore. Run it again."); },
   });
-  t.after(close);
   const result = await mcp.callTool({ name: "mobile_tracesift_explore_payload", arguments: { analysisId: "gone", taskIndex: 0 } });
   assert.equal(result.isError, true);
   assert.match((result.content as Array<{ text: string }>)[0]!.text, /no longer available to Explore/);
 });
 
 test("the Explore payload tool is app-only and keeps the browser tool beside it", async t => {
-  const { mcp, close } = await connect({});
-  t.after(close);
+  const { mcp } = await connect(t, {});
   const { tools } = await mcp.listTools();
   const payload = tools.find(tool => tool.name === "mobile_tracesift_explore_payload");
   assert.ok(payload);
@@ -112,20 +103,19 @@ test("the Explore payload tool is app-only and keeps the browser tool beside it"
 
 test("the Explore payload tool carries a real recording's call depth", async t => {
   // A node and its `children` array are two object levels each; real React Native recordings reach this depth.
-  const { mcp, close } = await connect({
+  const { mcp } = await connect(t, {
     async exploreTask(analysisId: string) {
       return { analysisId, profileTitle: "Profile", totalMs: 200, card: { id: "task-0", tree: deepTree(1000), timeline: { boxes: [] } } };
     },
   });
-  t.after(close);
   const result = await mcp.callTool({ name: "mobile_tracesift_explore_payload", arguments: { analysisId: "analysis-1", taskIndex: 0 } });
   assert.equal(result.isError, undefined);
   assert.equal((result.structuredContent as { kind: string }).kind, "task");
 });
 
-test("the Explore payload tool refuses a tree too deep to serialize", async () => {
+test("the Explore payload tool refuses a tree too deep to serialize", async t => {
   // `JSON.stringify` recurses, so this must be caught before serialization.
-  const { mcp, close } = await connect({
+  const { mcp } = await connect(t, {
     async exploreTask(analysisId: string) {
       return { analysisId, profileTitle: "Profile", totalMs: 200, card: { id: "task-0", tree: deepTree(5000), timeline: { boxes: [] } } };
     },
@@ -133,13 +123,11 @@ test("the Explore payload tool refuses a tree too deep to serialize", async () =
   const result = await mcp.callTool({ name: "mobile_tracesift_explore_payload", arguments: { analysisId: "analysis-1", taskIndex: 0 } });
   assert.equal(result.isError, true);
   assert.match((result.content as { text: string }[])[0]!.text, /larger than the panel can open/);
-  await close();
 });
 
 
 test("published TraceSift annotations distinguish saved references, service startup, and file-only restores", async t => {
-  const { mcp, close } = await connect({});
-  t.after(close);
+  const { mcp } = await connect(t, {});
   const { tools } = await mcp.listTools();
   const expected = {
     mobile_analyze_profile: [false, true],

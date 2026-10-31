@@ -1,18 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { accessibilityScreen, componentAt, componentsAt, screenComponents, screenSize, formatAnnotationContext, screenSelectionContext, ANNOTATION_EDIT_GUIDANCE } from "../../shared/src/screen-annotations.ts";
+import { accessibilityScreen, componentAt, componentsAt, screenComponents, screenSize, formatAnnotationContext, screenSelectionContext, ANNOTATION_EDIT_GUIDANCE } from "@mobile-dev/shared/screen-annotations.ts";
 import { ScreenAnnotationsStore } from "../src/screen-annotations.ts";
-import type { InspectedTree } from "../src/screen-annotations.ts";
-import type { ScreenAnnotation } from "../../shared/src/screen-annotations.ts";
+import type { InspectedTree, ScreenSource } from "../src/screen-annotations.ts";
+import type { ScreenAnnotation } from "@mobile-dev/shared/screen-annotations.ts";
 import { PanelContext } from "../src/model-context.ts";
 import { App } from "@modelcontextprotocol/ext-apps";
+import { fakeApp } from "@mobile-dev/test-support/fake-app.ts";
 import { AppBridge } from "@modelcontextprotocol/ext-apps/app-bridge";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { OpenAIModelContextHostState } from "@openai/mcp-extensions/app";
-import { PNG, UDID } from "../../test-support/fixtures.ts";
+import { PNG, UDID } from "@mobile-dev/test-support/fixtures.ts";
 import type { HostAttachments } from "../src/host-bridge.ts";
 
-const simulator = { udid: UDID, name: "iPhone", runtime: "iOS 26", state: "Booted", platform: "ios" as const };
+const simulator = { udid: UDID, name: "iPhone", runtime: "iOS 26", state: "Booted", platform: "ios" as const, kind: "simulator" as const };
 const capture = { screenshot: { id: "screen-1", data: PNG.toString("base64"), capturedAt: "2026-10-01T10:00:00Z" }, screen: { width: 393, height: 852, units: "points" as const } };
 const component = { name: "Continue", identifier: "continue-button", role: "AXButton", depth: 2, bounds: { x: 10, y: 20, width: 100, height: 40 } };
 const annotation: ScreenAnnotation = { ...capture, id: "note-1", number: 1, text: "Make this button larger", simulator, point: { x: 50, y: 40 }, component };
@@ -28,10 +29,10 @@ function fixture(messageApp?: App) {
   let gate: Promise<void> | undefined;
   const updates: Parameters<App["updateModelContext"]>[0][] = [];
   const messages: Parameters<App["sendMessage"]>[0][] = [];
-  const context = new PanelContext({
+  const context = new PanelContext(fakeApp({
     getHostCapabilities: () => ({ experimental: { "openai/message": {} }, message: { text: {}, ...(imageMessages ? { image: {} } : {}) }, updateModelContext: imageAttachments ? { image: {} } : {} }),
     async sendMessage(message: Parameters<App["sendMessage"]>[0], options: Parameters<App["sendMessage"]>[1]) { if (sendFailures-- > 0) throw new Error("MCP app messages require an available composer"); messages.push(message); return messageApp ? messageApp.sendMessage(message, options) : { isError: rejected }; },
-  } as unknown as App, () => ({
+  }), () => ({
     getCurrent: () => current,
     async update(params: Parameters<App["updateModelContext"]>[0]) {
       updates.push(params); await gate;
@@ -39,10 +40,10 @@ function fixture(messageApp?: App) {
       current = { ...params, updateId: String(updates.length) }; return { updateId: current.updateId };
     },
   }) as unknown as HostAttachments);
-  const store = new ScreenAnnotationsStore();
-  store.connect(context); store.configure(simulator, false); store.capture = () => capture;
-  store.readTree = async () => ({ tree: { elements: [{ ...component, label: component.name, frame: component.bounds }] } });
-  return { context, store, updates, messages,
+  const source: ScreenSource = { capture: () => capture, readTree: async () => ({ tree: { elements: [{ ...component, label: component.name, frame: component.bounds }] } }) };
+  const store = new ScreenAnnotationsStore({ capture: () => source.capture(), readTree: device => source.readTree(device) });
+  store.connect(context); store.configure(simulator, false);
+  return { context, store, source, updates, messages,
     clear() { current = null; context.hostChanged(); },
     remove(id: string) { if (current) current = { ...current, updateId: "removed", content: current.content?.filter(item => item._meta?.["mobile-dev/annotationId"] !== id) }; context.hostChanged(); },
     fail() { failure = "Host refused context"; }, reject(value = true) { rejected = value; }, hold(value?: Promise<void>) { gate = value; },
@@ -125,7 +126,7 @@ test("a card painted on top hides the slightly smaller next card under a stack",
 
 test("a sparse accessibility tree supports explicit regions without pixel guesses", async () => {
   const f = fixture();
-  f.store.readTree = async () => ({ tree: { role: "AXApplication", frame: { x: 0, y: 0, width: 393, height: 852 } } });
+  f.source.readTree = async () => ({ tree: { role: "AXApplication", frame: { x: 0, y: 0, width: 393, height: 852 } } });
   await f.store.toggle();
   f.store.hover({ x: 150, y: 280 });
   assert.equal(f.store.getSnapshot().hovered, undefined);
@@ -144,7 +145,7 @@ test("a sparse accessibility tree supports explicit regions without pixel guesse
 test("pending inspection accepts clicks and upgrades the open note when elements arrive", async () => {
   const f = fixture();
   let release!: (result: InspectedTree) => void;
-  f.store.readTree = () => new Promise(resolve => { release = resolve; });
+  f.source.readTree = () => new Promise(resolve => { release = resolve; });
   const reading = f.store.toggle();
   assert.equal(f.store.getSnapshot().loading, true);
   assert.equal(f.store.beginSelection({ x: 50, y: 40 }), true);
@@ -161,9 +162,9 @@ test("pending inspection accepts clicks and upgrades the open note when elements
 test("the accessibility screen size replaces a smaller bezel cutout and rescales pending pointer state", async () => {
   const f = fixture();
   // The bezel cutout reports 400×872 for a 402×874 device; element bounds use the real screen.
-  f.store.capture = () => ({ ...capture, screen: { width: 400, height: 872, units: "points" } });
+  f.source.capture = () => ({ ...capture, screen: { width: 400, height: 872, units: "points" } });
   let release!: (result: InspectedTree) => void;
-  f.store.readTree = () => new Promise(resolve => { release = resolve; });
+  f.source.readTree = () => new Promise(resolve => { release = resolve; });
   const reading = f.store.toggle();
   f.store.hover({ x: 200, y: 436 });
   assert.equal(f.store.beginSelection({ x: 100, y: 218 }), true);
@@ -179,8 +180,8 @@ test("the accessibility screen size replaces a smaller bezel cutout and rescales
 
   // Pixel captures keep their size, and the MCP boundary rejects invalid sizes.
   f.store.exit();
-  f.store.capture = () => ({ ...capture, screen: { width: 1080, height: 2400, units: "pixels" } });
-  f.store.readTree = async () => ({ tree: [], screen: { width: 402, height: 874 } });
+  f.source.capture = () => ({ ...capture, screen: { width: 1080, height: 2400, units: "pixels" } });
+  f.source.readTree = async () => ({ tree: [], screen: { width: 402, height: 874 } });
   await f.store.toggle();
   assert.equal(f.store.getSnapshot().capture?.screen.width, 1080);
   assert.equal(screenSize({ width: -1, height: 874 }), undefined);
@@ -193,7 +194,7 @@ test("the accessibility screen size replaces a smaller bezel cutout and rescales
 test("pending or failed inspection keeps manual region selection working", async () => {
   const f = fixture();
   let reject!: (error: Error) => void;
-  f.store.readTree = () => new Promise((_resolve, fail) => { reject = fail; });
+  f.source.readTree = () => new Promise((_resolve, fail) => { reject = fail; });
   const reading = f.store.toggle();
   f.store.beginSelection({ x: 10, y: 20 });
   f.store.endSelection({ x: 110, y: 60 });
@@ -215,7 +216,7 @@ test("real parents remain selectable without choosing overlapping siblings", asy
   assert.equal(candidates[0].parentId, candidates[1].nodeId);
   assert.equal(componentAt(items, { x: 300, y: 130 }, capture.screen)?.name, "Card");
   const f = fixture();
-  f.store.readTree = async () => ({ tree });
+  f.source.readTree = async () => ({ tree });
   await f.store.toggle();
   f.store.select({ x: 40, y: 125 });
   assert.deepEqual(f.store.getSnapshot().draft?.selection?.ancestors.map(item => item.name), ["Card"]);
@@ -238,7 +239,7 @@ test("a child deletion identifies one repeated instance and keeps enclosing rows
       { source: "react-native", role: "RCTText", label: "Subtitle", nodeId: `subtitle-${index}`, frame: { x: 30, y: 140 + index * 90, width: 150, height: 20 }, react: { component: "Text", owners: ["HomeScreen", "Row"], source } },
     ],
   }));
-  f.store.readTree = async () => ({ tree: rows });
+  f.source.readTree = async () => ({ tree: rows });
   await f.store.toggle();
   f.store.select({ x: 40, y: 235 }); f.store.setText("Remove this subtitle"); await f.store.save();
   const saved = f.context.screenAnnotations[0];
@@ -295,7 +296,7 @@ test("flat MCP snapshots retain element names, depths and real parents", async (
   const snapshot = JSON.parse(JSON.stringify(items));
   assert.deepEqual(screenComponents(snapshot), items);
   const f = fixture();
-  f.store.readTree = async () => ({ tree: snapshot });
+  f.source.readTree = async () => ({ tree: snapshot });
   await f.store.toggle();
   f.store.hover({ x: 300, y: 130 });
   assert.equal(f.store.getSnapshot().hovered?.name, "Card");
@@ -309,7 +310,7 @@ test("flat MCP snapshots retain element names, depths and real parents", async (
 test("a saved and sent note retains its source location, owners, testID and nearby text", async () => {
   const react = { component: "Text", owners: ["HomeScreen", "CardRow", "Text"], source: { file: "/project/src/HomeScreen.tsx", line: 49, column: 11, functionName: "HomeScreen.renderItem" } };
   const f = fixture();
-  f.store.readTree = async () => ({ tree: [{ ...component, source: "react-native", react, label: "Continue" }, { name: "Go to the next step", label: "Go to the next step", role: "Text", bounds: { x: 10, y: 65, width: 100, height: 20 } }] });
+  f.source.readTree = async () => ({ tree: [{ ...component, source: "react-native", react, label: "Continue" }, { name: "Go to the next step", label: "Go to the next step", role: "Text", bounds: { x: 10, y: 65, width: 100, height: 20 } }] });
   await f.store.toggle(); f.store.select({ x: 50, y: 40 }); f.store.setText("Make this larger"); await f.store.save();
   assert.deepEqual(f.context.screenAnnotations[0].component.react, react);
   assert.deepEqual(f.context.screenAnnotations[0].nearbyText, ["Go to the next step"]);
@@ -435,7 +436,7 @@ test("selecting supports hover, multiple notes, edits, regions, and Escape witho
   assert.equal(f.context.screenAnnotations.length, 2); assert.equal(f.context.screenAnnotations.at(-1)?.text, "Make it blue");
   f.store.exit();
   let release!: (result: InspectedTree) => void;
-  f.store.readTree = () => new Promise(resolve => { release = resolve; });
+  f.source.readTree = () => new Promise(resolve => { release = resolve; });
   const reading = f.store.toggle(); f.store.exit(); release({ tree: { elements: [component] } }); await reading;
   assert.equal(f.store.getSnapshot().selecting, false); assert.equal(f.store.getSnapshot().loading, false);
   f.store.dispose();
@@ -575,14 +576,14 @@ test("a fresh annotation batch starts at one after chat clears or sends the prio
 test("standard hosts receive readable, self-locating drafts and retain selection context until explicitly cleared", async () => {
   const messages: Parameters<App["sendMessage"]>[0][] = [];
   const updates: Parameters<App["updateModelContext"]>[0][] = [];
-  const context = new PanelContext({
+  const context = new PanelContext(fakeApp({
     getHostCapabilities: () => ({ updateModelContext: { text: {}, structuredContent: {} }, message: { text: {} } }),
     async updateModelContext(params) { updates.push(params); return {}; },
     async sendMessage(params) { messages.push(params); return {}; },
-  } as App, () => undefined);
+  }), () => undefined);
   await context.attachAnnotation(annotation);
   assert.equal(context.screenAnnotations.length, 1);
-  await context.attachAnnotation({ ...annotation, id: "android-note", simulator: { ...simulator, udid: "android", name: "Pixel", platform: "android" } });
+  await context.attachAnnotation({ ...annotation, id: "android-note", simulator: { ...simulator, udid: "android", name: "Pixel", platform: "android", kind: "emulator" } });
   await context.sendAnnotationsToChat();
   assert.match(JSON.stringify(messages[0].content), /Make this button larger/);
   assert.match(JSON.stringify(messages[0].content), /iPhone/);
@@ -607,11 +608,11 @@ test("a standard annotation draft waits for context and preserves notes when con
   let failContext = false;
   let sends = 0;
   let rejectMessage = true;
-  const context = new PanelContext({
+  const context = new PanelContext(fakeApp({
     getHostCapabilities: () => ({ updateModelContext: { text: {} }, message: { text: {} } }),
     async updateModelContext() { if (failContext) throw new Error("Context unavailable"); return {}; },
     async sendMessage() { sends++; return { isError: rejectMessage }; },
-  } as unknown as App, () => undefined);
+  }), () => undefined);
   await context.attachAnnotation(annotation);
   failContext = true;
   await assert.rejects(context.sendAnnotationsToChat(), /Context unavailable/);
@@ -630,11 +631,11 @@ test("editing a note while its context is publishing prevents an obsolete draft"
   let release: (() => void) | undefined;
   let hold = false;
   let sends = 0;
-  const context = new PanelContext({
+  const context = new PanelContext(fakeApp({
     getHostCapabilities: () => ({ updateModelContext: { text: {} }, message: { text: {} } }),
     async updateModelContext() { if (hold) { hold = false; await new Promise<void>(resolve => { release = resolve; }); } return {}; },
     async sendMessage() { sends++; return {}; },
-  } as unknown as App, () => undefined);
+  }), () => undefined);
   await context.attachAnnotation(annotation);
   hold = true;
   const sending = context.sendAnnotationsToChat();

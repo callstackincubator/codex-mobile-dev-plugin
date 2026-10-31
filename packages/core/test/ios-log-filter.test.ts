@@ -5,9 +5,9 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { parseIOSLog, parseLogcat, parseMetroEvent } from "../src/log-parsers.ts";
 import { startNativeLogs } from "../src/native-logs.ts";
-import { nativeLogTargetSchema } from "../../shared/src/logs.ts";
-import type { LogRecord, NativeLogTarget } from "../../shared/src/logs.ts";
-import { UDID } from "../../test-support/fixtures.ts";
+import { nativeLogTargetSchema } from "@mobile-dev/shared/logs.ts";
+import type { LogRecord, NativeLogTarget } from "@mobile-dev/shared/logs.ts";
+import { UDID } from "@mobile-dev/test-support/fixtures.ts";
 
 function parse(fields: Record<string, unknown>, hideSystemLogs = true) {
   const line = JSON.stringify({ eventMessage: "fixture", ...fields });
@@ -147,7 +147,7 @@ test("simulator and physical streams apply the setting before delivering records
     { eventMessage: "done", messageType: "Debug", subsystem: "com.example.app" },
   ];
   const encoded = JSON.stringify(records);
-  const code = `console.log('{"ready":true}');
+  const code = `console.log('{"type":"ready"}');
     const records = ${encoded};
     for (const record of records) console.log(JSON.stringify({ processID: 123, process: 'Example', ...record }));
     setInterval(() => {}, 1000);`;
@@ -173,7 +173,7 @@ test("simulator and physical streams apply the setting before delivering records
         const target: NativeLogTarget = { platform: "ios", kind, deviceId, pid: 123, hideSystemLogs };
         const stop = startNativeLogs(target, {
           log(record) { entries.push(record); if (record.message === "done") accepted(); }, status() {},
-        }, async () => ({ command: process.execPath, args: ["-e", code] }));
+        }, async () => ({ command: process.execPath, args: ["-e", `${code}\nprocess.stdin.on('end', () => process.exit(0)); process.stdin.resume();`] }));
         subtest.after(stop);
         await ready;
         await stop();

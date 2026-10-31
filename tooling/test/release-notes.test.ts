@@ -49,6 +49,22 @@ test("release notes link all commit titles since the previous public release in 
   assert.equal(notes, expected);
 });
 
+test("a test deployment gets notes since the last release, and the next release skips it", async t => {
+  const { directory, git, commit } = await fixture(t);
+  commit("Prepare the old release");
+  git(["tag", "v1.0.0"]);
+  const feature = commit("feat: add monitoring");
+  git(["tag", "v1.1.0-test.1"]);
+  const fix = commit("fix: handle disconnects");
+  git(["tag", "v1.1.0"]);
+  const testNotes = releaseNotes("v1.1.0-test.1", repositoryUrl, ["v1.0.0"], directory);
+  assert.ok(testNotes.includes(`[Full diff](${repositoryUrl}/compare/v1.0.0...v1.1.0-test.1)`));
+  // The workflow lists only published releases; a prerelease among them is still skipped.
+  const notes = releaseNotes("v1.1.0", repositoryUrl, ["v1.0.0", "v1.1.0-test.1"], directory);
+  assert.ok(notes.includes(feature) && notes.includes(fix));
+  assert.ok(notes.includes(`[Full diff](${repositoryUrl}/compare/v1.0.0...v1.1.0)`));
+});
+
 test("the first public release includes legacy history and escapes Markdown in linked titles", async t => {
   const { directory, git, commit } = await fixture(t);
   const legacy = commit("Initial project");

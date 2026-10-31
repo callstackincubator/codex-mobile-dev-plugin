@@ -5,12 +5,13 @@ import { join } from "node:path";
 import type { CpuSample, CpuTarget } from "@mobile-dev/shared/cpu.ts";
 import { recordingIdSchema, recordingSchema } from "@mobile-dev/shared/recordings.ts";
 import type { PerformanceRecording } from "@mobile-dev/shared/recordings.ts";
-import { errorMessage } from "@mobile-dev/shared/protocol.ts";
 import { captureServerError } from "./telemetry.ts";
 import type { CpuSessions } from "./cpu/sessions.ts";
 import type { DisplayFpsSessions } from "./fps/sessions.ts";
 import type { DisplayFpsSample } from "@mobile-dev/shared/display-fps.ts";
 import { displayFrameTime } from "@mobile-dev/shared/display-fps.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
+import { deviceCapabilities } from "./devices.ts";
 
 export const RECORDINGS_DIRECTORY = join(homedir(), "Library/Application Support/mobile-dev/recordings");
 
@@ -91,7 +92,7 @@ export class PerformanceRecordings {
     const recording: PerformanceRecording = {
       schemaVersion: 1, id: randomUUID(), title, target, deviceName, durationSeconds,
       startedAt: new Date().toISOString(), status: "connecting",
-      memoryMetric: target.platform === "android" ? "rss" : "physical-footprint", samples: [],
+      memoryMetric: deviceCapabilities(target).memoryMetric, samples: [],
       fps: { status: "connecting", samples: [] },
     };
     recordingSchema.parse(recording);
@@ -158,8 +159,9 @@ export class PerformanceRecordings {
     let latestCpu: CpuSample | undefined;
     let cpuOrigin: number | undefined;
     let cursor = 0;
+    const capabilities = deviceCapabilities(recording.target);
     try {
-      if (recording.target.platform === "ios" && recording.target.kind !== "physical") {
+      if (capabilities.displayFps === false) {
         recording.fps.status = "unavailable";
         recording.fps.error = "Display FPS is not supported on iOS simulators.";
       } else {
@@ -219,8 +221,7 @@ export class PerformanceRecordings {
       const end = Math.min(recording.durationSeconds, elapsed);
       recording.status = "finishing";
       await this.cpu.closeSession(sessionId);
-      const drainMs = recording.target.platform === "android" ? 5000 : 1500;
-      const drainUntil = performance.now() + drainMs;
+      const drainUntil = performance.now() + capabilities.fpsDrainMs;
       while (fps.sessionId !== undefined && active.interrupted === false && performance.now() < drainUntil) {
         const remaining = drainUntil - performance.now();
         const waitMs = Math.max(0, Math.min(1000, remaining));

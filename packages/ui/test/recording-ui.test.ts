@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { build } from "esbuild";
 import { JSDOM } from "jsdom";
-import { recordingFixture, recordingWithFramesFixture } from "../../test-support/recording-fixtures.ts";
+import { recordingFixture, recordingWithFramesFixture } from "@mobile-dev/test-support/recording-fixtures.ts";
+import { runBundle } from "@mobile-dev/test-support/bundle.ts";
 
 for (const reducedMotion of [false, true]) {
   const description = reducedMotion
@@ -33,7 +34,7 @@ for (const reducedMotion of [false, true]) {
     const dom = new JSDOM(html, { pretendToBeVisual: true, runScripts: "outside-only", url: "https://mobile-dev.test/" });
     const window = dom.window;
     window.Math.random = () => 0;
-    const styles = await readFile("packages/ui/src/style.css", "utf8");
+    const styles = (await Promise.all(["packages/ui/src/style.css", "packages/ui/src/components/recording.css"].map(file => readFile(file, "utf8")))).join("\n");
     const style = window.document.createElement("style");
     style.textContent = styles;
     window.document.head.append(style);
@@ -75,7 +76,7 @@ for (const reducedMotion of [false, true]) {
       async sendMessage(message: typeof messages[number]) { messages.push(message); return {}; },
       async callServerTool() { throw new Error("Finished recordings must not poll"); },
     };
-    window.eval(built.outputFiles[0].text);
+    runBundle(window, built.outputFiles[0].text);
     const recording = recordingWithFramesFixture();
     const mounted = window.RecordingTest.mount(app, { content: [], structuredContent: { recording } }, attachments);
     t.after(async () => {

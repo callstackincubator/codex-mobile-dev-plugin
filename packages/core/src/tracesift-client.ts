@@ -6,7 +6,9 @@ import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { createServer } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
-import { traceSiftAnalysisSchema, traceSiftHandoffSchema, type TraceSiftAnalysis, type TraceSiftProfileType, type TraceSiftReactHandoff, type TraceSiftTaskHandoff } from "@mobile-dev/shared/tracesift.ts";
+import type { ReactCard, ReactExplore, ReactExploreHandoff, TaskCard, TaskHandoff } from "@callstack/tracesift-explore";
+import { z } from "zod";
+import { traceSiftAnalysisSchema, traceSiftHandoffSchema, type TraceSiftAnalysis, type TraceSiftProfileType } from "@mobile-dev/shared/tracesift.ts";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 
 const STARTUP_TIMEOUT_MS = 60_000;
@@ -14,7 +16,20 @@ const REQUEST_TIMEOUT_MS = 10 * 60_000;
 const EXPLORE_TIMEOUT_MS = 15_000;
 /** Health only proves integration API v1, which predates the Explore endpoints. */
 const EXPLORE_UNSUPPORTED = "This TraceSift service cannot open findings in the panel. Update TraceSift and restart it, or use Open in browser.";
-type Descriptor = { version: string; apiVersion: 1; pid: number; childPid: number; instance: string; baseUrl: string; token: string; startedAt: number };
+const versioned = z.object({ apiVersion: z.literal(1) });
+const descriptorSchema = versioned.extend({
+  version: z.string(), pid: z.number(), childPid: z.number(), instance: z.string(),
+  baseUrl: z.string().regex(/^http:\/\/127\.0\.0\.1:\d+$/), token: z.string().min(16), startedAt: z.number(),
+});
+type Descriptor = z.infer<typeof descriptorSchema>;
+// Explore responses are checked at their seams; the trees inside pass through unread.
+const objectValue = z.custom<object>(value => typeof value === "object" && value !== null);
+const exploreResponse = versioned.extend({ analysisId: z.string(), title: z.string() });
+const taskResponseSchema = exploreResponse.extend({ totalMs: z.number(), card: z.looseObject({ tree: objectValue, timeline: objectValue }) });
+const reactResponseSchema = exploreResponse.extend({ explore: objectValue, cards: z.array(z.unknown()) });
+const referenceSchema = z.object({ analysisId: z.string().min(1) });
+const projectSchema = z.object({ path: z.string().min(1) });
+type Reference = "view" | "input";
 
 export class TraceSiftError extends ExpectedOperationError {
   readonly kind: "setup" | "version" | "startup" | "request" | "response";
@@ -41,13 +56,10 @@ async function parseDescriptor(path: string): Promise<Descriptor | undefined> {
     throw new TraceSiftError("TraceSift service.json could not be read. Stop TraceSift, remove the stale file if no process is running, and retry.", "setup");
   }
   if (typeof raw !== "object" || raw === null) throw new TraceSiftError("TraceSift service.json is invalid. Restart TraceSift.", "setup");
-  const value = raw as Record<string, unknown>;
-  if (value.apiVersion !== 1) throw new TraceSiftError("This TraceSift service uses an incompatible integration API. Update TraceSift and restart it.", "version");
-  if (typeof value.baseUrl !== "string" || !/^http:\/\/127\.0\.0\.1:\d+$/.test(value.baseUrl)
-    || typeof value.token !== "string" || value.token.length < 16 || typeof value.instance !== "string"
-    || typeof value.version !== "string" || typeof value.pid !== "number" || typeof value.childPid !== "number"
-    || typeof value.startedAt !== "number") throw new TraceSiftError("TraceSift service.json is invalid. Restart TraceSift.", "setup");
-  return value as Descriptor;
+  if (versioned.safeParse(raw).success === false) throw new TraceSiftError("This TraceSift service uses an incompatible integration API. Update TraceSift and restart it.", "version");
+  const parsed = descriptorSchema.safeParse(raw);
+  if (parsed.success === false) throw new TraceSiftError("TraceSift service.json is invalid. Restart TraceSift.", "setup");
+  return parsed.data;
 }
 
 async function freePort() {
@@ -73,6 +85,21 @@ async function health(descriptor: Descriptor, signal?: AbortSignal) {
     const body = await response.json() as { apiVersion?: unknown; instance?: unknown };
     return body.apiVersion === 1 && body.instance === descriptor.instance;
   } catch { return false; }
+}
+
+/**
+ * The profile as one multipart Blob that streams from disk. fetch pumps a FormData body
+ * on its own, outside the request, and throws an unhandled rejection into the server
+ * when TraceSift answers before reading the whole upload.
+ */
+function profileUpload(profile: Blob, filename: string, profileType: TraceSiftProfileType) {
+  const boundary = `mobile-dev-${randomUUID()}`;
+  const name = filename.replace(/\n/g, "%0A").replace(/\r/g, "%0D").replace(/"/g, "%22");
+  return new Blob([
+    `--${boundary}\r\nContent-Disposition: form-data; name="profile"; filename="${name}"\r\nContent-Type: application/octet-stream\r\n\r\n`,
+    profile,
+    `\r\n--${boundary}\r\nContent-Disposition: form-data; name="profileType"\r\n\r\n${profileType}\r\n--${boundary}--\r\n`,
+  ], { type: `multipart/form-data; boundary=${boundary}` });
 }
 
 function responseError(status: number, body: unknown) {
@@ -135,51 +162,39 @@ export class TraceSiftClient {
 
   async readyService(signal?: AbortSignal) { await this.service(signal); }
 
+  // The plugin's files beside TraceSift's own, in a directory only this user can read.
+  private get directory() { return join(this.home, "integrations", "mobile-dev"); }
+
   private analysisPath(analysisId: string) {
-    return join(this.home, "integrations", "mobile-dev", `${createHash("sha256").update(analysisId).digest("hex")}.json`);
+    return join(this.directory, `${createHash("sha256").update(analysisId).digest("hex")}.json`);
   }
 
-  private viewPath(viewId: string | number) {
-    const key = createHash("sha256").update(JSON.stringify(viewId)).digest("hex");
-    return join(this.home, "integrations", "mobile-dev", `view-${key}.json`);
-  }
-
-  private inputPath(path: string, profileType: TraceSiftProfileType) {
-    const key = createHash("sha256").update(JSON.stringify({ path, profileType })).digest("hex");
-    return join(this.home, "integrations", "mobile-dev", `input-${key}.json`);
+  /** Where a view's or a profile input's analysis reference is saved; `key` is hashed. */
+  private referencePath(kind: Reference, key: unknown) {
+    return join(this.directory, `${kind}-${createHash("sha256").update(JSON.stringify(key)).digest("hex")}.json`);
   }
 
   private async writePrivateJson(file: string, value: unknown) {
-    const directory = join(this.home, "integrations", "mobile-dev");
-    const temporary = join(directory, `.analysis-${randomUUID()}`);
+    await mkdir(this.directory, { recursive: true, mode: 0o700 });
+    const temporary = join(this.directory, `.analysis-${randomUUID()}`);
     try {
       await writeFile(temporary, `${JSON.stringify(value)}\n`, { flag: "wx", mode: 0o600 });
       await rename(temporary, file);
     } finally { await rm(temporary, { force: true }); }
   }
 
-  private async persistAnalysis(analysis: TraceSiftAnalysis) {
-    const directory = join(this.home, "integrations", "mobile-dev");
-    await mkdir(directory, { recursive: true, mode: 0o700 });
-    await this.writePrivateJson(this.analysisPath(analysis.analysisId), analysis);
+  private writeReference(kind: Reference, key: unknown, analysisId: string) {
+    return this.writePrivateJson(this.referencePath(kind, key), { apiVersion: 1, analysisId });
   }
 
   async remember(viewId: string | number, analysisId: string) {
     const analysis = await stat(this.analysisPath(analysisId)).catch(() => undefined);
     if (!analysis?.isFile()) throw new TraceSiftError("This TraceSift analysis is no longer available. Run it again.", "request");
-    const directory = join(this.home, "integrations", "mobile-dev");
-    await mkdir(directory, { recursive: true, mode: 0o700 });
-    await this.writePrivateJson(this.viewPath(viewId), { apiVersion: 1, analysisId });
-  }
-
-  private async rememberInput(path: string, profileType: TraceSiftProfileType, analysisId: string) {
-    const directory = join(this.home, "integrations", "mobile-dev");
-    await mkdir(directory, { recursive: true, mode: 0o700 });
-    await this.writePrivateJson(this.inputPath(path, profileType), { apiVersion: 1, analysisId });
+    await this.writeReference("view", viewId, analysisId);
   }
 
   // The investigation's source folder: the plugin's choice, not TraceSift's, stored beside the analyses to inherit their 0700 directory.
-  private projectPath() { return join(this.home, "integrations", "mobile-dev", "project.json"); }
+  private projectPath() { return join(this.directory, "project.json"); }
 
   async readProject(): Promise<string | undefined> {
     let stored: unknown;
@@ -188,9 +203,9 @@ export class TraceSiftClient {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") return;
       throw new TraceSiftError("The saved project could not be read.", "request");
     }
-    const path = typeof stored === "object" && stored !== null && "path" in stored
-      && typeof stored.path === "string" ? stored.path : undefined;
-    if (!path) throw new TraceSiftError("The saved project is invalid. Choose it again.", "request");
+    const project = projectSchema.safeParse(stored);
+    if (!project.success) throw new TraceSiftError("The saved project is invalid. Choose it again.", "request");
+    const { path } = project.data;
     // A moved or deleted folder is no longer a project; don't hand the chat a dead path.
     const directory = await stat(path).catch(() => undefined);
     return directory?.isDirectory() ? path : undefined;
@@ -200,63 +215,60 @@ export class TraceSiftClient {
     const directory = await stat(path).catch(() => undefined);
     if (!directory?.isDirectory()) throw new TraceSiftError("That project folder does not exist.", "request");
     const resolved = await realpath(path);
-    await mkdir(join(this.home, "integrations", "mobile-dev"), { recursive: true, mode: 0o700 });
     await this.writePrivateJson(this.projectPath(), { apiVersion: 1, path: resolved });
     return resolved;
   }
 
-  private async restoreReference(referencePath: string): Promise<TraceSiftAnalysis | undefined> {
-    let reference: unknown;
-    try { reference = JSON.parse(await readFileAsync(referencePath, "utf8")); }
+  private async restoreReference(kind: Reference, key: unknown): Promise<TraceSiftAnalysis | undefined> {
+    let stored: unknown;
+    try { stored = JSON.parse(await readFileAsync(this.referencePath(kind, key), "utf8")); }
     catch (error) {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") return;
       throw new Error("The saved TraceSift analysis reference could not be read.");
     }
-    const analysisId = typeof reference === "object" && reference !== null && "analysisId" in reference
-      && typeof reference.analysisId === "string" ? reference.analysisId : undefined;
-    if (!analysisId) throw new Error("The saved TraceSift analysis reference is invalid.");
-    let stored: unknown;
-    try { stored = JSON.parse(await readFileAsync(this.analysisPath(analysisId), "utf8")); }
+    const reference = referenceSchema.safeParse(stored);
+    if (!reference.success) throw new Error("The saved TraceSift analysis reference is invalid.");
+    let analysis: unknown;
+    try { analysis = JSON.parse(await readFileAsync(this.analysisPath(reference.data.analysisId), "utf8")); }
     catch (error) {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") return;
       throw new Error("The saved TraceSift analysis could not be read.");
     }
-    const parsed = traceSiftAnalysisSchema.safeParse(stored);
+    const parsed = traceSiftAnalysisSchema.safeParse(analysis);
     if (!parsed.success) throw new Error("The saved TraceSift analysis is invalid.");
     return parsed.data;
   }
 
   async restore(viewId: string | number): Promise<TraceSiftAnalysis | undefined> {
-    return this.restoreReference(this.viewPath(viewId));
+    return this.restoreReference("view", viewId);
   }
 
   async restoreInput(path: string, profileType: TraceSiftProfileType): Promise<TraceSiftAnalysis | undefined> {
-    return this.restoreReference(this.inputPath(path, profileType));
+    return this.restoreReference("input", { path, profileType });
   }
 
-  private async request(path: string, init: RequestInit, signal?: AbortSignal, unsupported?: string): Promise<unknown> {
-    let descriptor = await this.service(signal);
-    const send = (requestSignal: AbortSignal) => fetch(new URL(path, descriptor.baseUrl), {
-      ...init, headers: { ...init.headers, Authorization: `Bearer ${descriptor.token}` },
-      signal: requestSignal, redirect: "error",
-    });
-    let response: Response;
+  /** One attempt at the service; undefined when it could not be reached. */
+  private async sendOnce(path: string, init: RequestInit, signal?: AbortSignal): Promise<Response | undefined> {
+    const descriptor = await this.service(signal);
+    const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
     try {
-      const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
-      response = await send(signal ? AbortSignal.any([signal, timeout]) : timeout);
+      return await fetch(new URL(path, descriptor.baseUrl), {
+        ...init, headers: { ...init.headers, Authorization: `Bearer ${descriptor.token}` },
+        signal: signal ? AbortSignal.any([signal, timeout]) : timeout, redirect: "error",
+      });
     } catch (error) {
       signal?.throwIfAborted();
       if (error instanceof Error && error.name === "TimeoutError") throw new Error("TraceSift did not respond to the request in time. Restart it and retry.");
+    }
+  }
+
+  private async request(path: string, init: RequestInit, signal?: AbortSignal, unsupported?: string): Promise<unknown> {
+    let response = await this.sendOnce(path, init, signal);
+    if (response === undefined) {
+      // The service stopped since it was found; find or start it again, once.
       this.ready = undefined;
-      descriptor = await this.service(signal);
-      try {
-        const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
-        response = await send(signal ? AbortSignal.any([signal, timeout]) : timeout);
-      } catch (retryError) {
-        signal?.throwIfAborted();
-        if (retryError instanceof Error && retryError.name === "TimeoutError") throw new Error("TraceSift did not respond to the request in time. Restart it and retry.");
-        throw new Error("TraceSift stopped while handling the request. Restart it and retry.");
-      }
+      response = await this.sendOnce(path, init, signal);
+      if (response === undefined) throw new Error("TraceSift stopped while handling the request. Restart it and retry.");
     }
     let body: unknown;
     let unreadable = false;
@@ -279,39 +291,34 @@ export class TraceSiftClient {
     const resolved = await realpath(path).catch(() => { throw new TraceSiftError("The profile path does not exist or is not readable.", "setup"); });
     const metadata = await stat(resolved).catch(() => { throw new TraceSiftError("The profile path does not exist or is not readable.", "setup"); });
     if (!metadata.isFile()) throw new TraceSiftError("The profile path must point to a regular file.", "setup");
-    let form: FormData;
-    try {
-      const file = await openAsBlob(resolved);
-      form = new FormData();
-      form.set("profile", file, basename(resolved));
-      form.set("profileType", profileType);
-    } catch { throw new TraceSiftError("The profile could not be opened for upload. Check its permissions and retry.", "setup"); }
+    let form: Blob;
+    try { form = profileUpload(await openAsBlob(resolved), basename(resolved), profileType); }
+    catch { throw new TraceSiftError("The profile could not be opened for upload. Check its permissions and retry.", "setup"); }
     const readyAt = performance.now();
     try { await this.service(signal); ready?.("success", performance.now() - readyAt); }
     catch (error) { ready?.("failed", performance.now() - readyAt); throw error; }
     const parsed = traceSiftAnalysisSchema.safeParse(await this.request("/api/integration/v1/analyze", { method: "POST", body: form }, signal));
     if (!parsed.success) throw new Error("TraceSift returned an invalid analysis response.");
-    await this.persistAnalysis(parsed.data);
-    await this.rememberInput(path, profileType, parsed.data.analysisId);
+    await this.writePrivateJson(this.analysisPath(parsed.data.analysisId), parsed.data);
+    await this.writeReference("input", { path, profileType }, parsed.data.analysisId);
     return parsed.data;
   }
 
   /** Has the TraceSift CLI open its own loopback Explore URL. The tree and timeline stay in the running service; the persisted analysis carries only card ids. */
   async openExplore(analysisId: string, taskIndex: number, focus?: string, signal?: AbortSignal) {
-    await this.service(signal);
-    const analysisPath = this.analysisPath(analysisId);
-    const analysisFile = await stat(analysisPath).catch(() => undefined);
-    if (!analysisFile?.isFile()) throw new TraceSiftError("This analysis is no longer available to Explore. Run it again.", "request");
-    const args = ["explore", analysisPath, "--task", String(taskIndex), ...(focus ? ["--focus", focus] : [])];
-    await this.launchExplore(args, signal);
+    await this.explore(analysisId, ["--task", String(taskIndex), ...(focus ? ["--focus", focus] : [])], signal);
   }
 
   async openReactExplore(analysisId: string, rootId: number, commitIndex: number, signal?: AbortSignal) {
+    await this.explore(analysisId, ["--commit", `${rootId}.${commitIndex}`], signal);
+  }
+
+  private async explore(analysisId: string, selection: string[], signal?: AbortSignal) {
     await this.service(signal);
     const analysisPath = this.analysisPath(analysisId);
     const analysisFile = await stat(analysisPath).catch(() => undefined);
     if (!analysisFile?.isFile()) throw new TraceSiftError("This analysis is no longer available to Explore. Run it again.", "request");
-    await this.launchExplore(["explore", analysisPath, "--commit", `${rootId}.${commitIndex}`], signal);
+    await this.launchExplore(["explore", analysisPath, ...selection], signal);
   }
 
   private async launchExplore(args: string[], signal?: AbortSignal) {
@@ -339,29 +346,22 @@ export class TraceSiftClient {
   }
 
   /** One task with its call tree and timeline, which `/analyze` never ships. Checked at its seams only. */
-  async exploreTask(analysisId: string, taskIndex: number, signal?: AbortSignal): Promise<TraceSiftTaskHandoff> {
+  async exploreTask(analysisId: string, taskIndex: number, signal?: AbortSignal): Promise<TaskHandoff> {
     const body = await this.request(`/api/integration/v1/task?analysisId=${encodeURIComponent(analysisId)}&taskIndex=${taskIndex}`, { method: "GET" }, signal, EXPLORE_UNSUPPORTED);
-    if (typeof body !== "object" || body === null) throw new Error("TraceSift returned an invalid task response.");
-    const value = body as Record<string, unknown>;
-    if (value.apiVersion !== 1 || typeof value.analysisId !== "string"
-      || typeof value.title !== "string" || typeof value.totalMs !== "number" || !Number.isFinite(value.totalMs)
-      || typeof value.card !== "object" || value.card === null || typeof (value.card as Record<string, unknown>).tree !== "object"
-      || (value.card as Record<string, unknown>).tree === null || typeof (value.card as Record<string, unknown>).timeline !== "object"
-      || (value.card as Record<string, unknown>).timeline === null) throw new Error("TraceSift returned an invalid task response.");
+    const parsed = taskResponseSchema.safeParse(body);
+    if (!parsed.success) throw new Error("TraceSift returned an invalid task response.");
+    const { title, totalMs, card } = parsed.data;
     // The service names the profile `title`, the explorer's hand-off `profileTitle`.
-    return { analysisId: value.analysisId, profileTitle: value.title, totalMs: value.totalMs, card: value.card as Record<string, unknown> };
+    return { analysisId: parsed.data.analysisId, profileTitle: title, totalMs, card: card as unknown as TaskCard };
   }
 
   /** Every commit timeline of one React analysis. */
-  async exploreReact(analysisId: string, signal?: AbortSignal): Promise<TraceSiftReactHandoff> {
+  async exploreReact(analysisId: string, signal?: AbortSignal): Promise<ReactExploreHandoff> {
     const body = await this.request(`/api/integration/v1/react-explore?analysisId=${encodeURIComponent(analysisId)}`, { method: "GET" }, signal, EXPLORE_UNSUPPORTED);
-    if (typeof body !== "object" || body === null) throw new Error("TraceSift returned an invalid commit timeline response.");
-    const value = body as Record<string, unknown>;
-    if (value.apiVersion !== 1 || typeof value.analysisId !== "string" || typeof value.title !== "string"
-      || typeof value.explore !== "object" || value.explore === null || !Array.isArray(value.cards)) {
-      throw new Error("TraceSift returned an invalid commit timeline response.");
-    }
-    return { analysisId: value.analysisId, profileTitle: value.title, explore: value.explore, cards: value.cards };
+    const parsed = reactResponseSchema.safeParse(body);
+    if (!parsed.success) throw new Error("TraceSift returned an invalid commit timeline response.");
+    const { title, explore, cards } = parsed.data;
+    return { analysisId: parsed.data.analysisId, profileTitle: title, explore: explore as ReactExplore, cards: cards as ReactCard[] };
   }
 
   async handoff(analysisId: string, cardId: string, signal?: AbortSignal) {

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ExpectedOperationError, expectedOutcome } from "@mobile-dev/shared/error-reporting.ts";
 import { annotateDeviceCommand, classifyCommandFailure } from "@mobile-dev/shared/device-command-diagnostics.ts";
-import { adbPath } from "../native-logs.ts";
+import { adbPath } from "../android-sdk.ts";
 import { androidSdkRoots } from "../android-sdk.ts";
 
 export type CommandOptions = { timeout: number; input?: string; maxBuffer?: number };

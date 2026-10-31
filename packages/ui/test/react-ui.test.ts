@@ -6,20 +6,25 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { LogsPanel } from "../src/logs-panel.ts";
-import { createDeviceApps } from "../../test-support/device-apps-fixtures.ts";
+import { createDeviceApps } from "@mobile-dev/test-support/device-apps-fixtures.ts";
 import { PerformancePanel } from "../src/performance-panel.ts";
 import { StoragePanel } from "../src/storage-panel.ts";
 import { TraceSiftPanel } from "../src/tracesift-panel.ts";
 import { RecordingController } from "../src/recording-controller.ts";
 import { WorkspaceTools } from "../src/workspace-tools.ts";
-import { recordingFixture } from "../../test-support/recording-fixtures.ts";
-import type { App } from "@modelcontextprotocol/ext-apps";
+import { recordingFixture } from "@mobile-dev/test-support/recording-fixtures.ts";
+import { fakeApp } from "@mobile-dev/test-support/fake-app.ts";
 import type { PanelContext } from "../src/model-context.ts";
-import { logKey } from "../../shared/src/logs.ts";
-import type { StackedLog } from "../../shared/src/logs.ts";
-import type { CpuBatch } from "../../shared/src/cpu.ts";
-import { UDID } from "../../test-support/fixtures.ts";
-import type { DeviceLayout } from "../src/device-layout.ts";
+import { logKey } from "@mobile-dev/shared/logs.ts";
+import type { StackedLog } from "@mobile-dev/shared/logs.ts";
+import type { CpuBatch } from "@mobile-dev/shared/cpu.ts";
+import { UDID } from "@mobile-dev/test-support/fixtures.ts";
+import { DevicePickerStore } from "../src/device-picker.ts";
+import { DeviceSettingsStore } from "../src/device-settings.ts";
+import { AppToolsStore } from "../src/app-tools.ts";
+import type { AppToolCall } from "../src/app-tools.ts";
+import type { DeviceSetting, DeviceSettings } from "@mobile-dev/shared/device-settings.ts";
+import { panelView } from "./simulator-fixture.ts";
 
 test("React log controls filter virtual rows, attach full logs, and preserve simulator DOM", async t => {
   const dom = new JSDOM('<html><body><div id="root"></div></body></html>', { pretendToBeVisual: true, url: "http://localhost" });
@@ -58,19 +63,36 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
     await rm(directory, { recursive: true, force: true });
   });
   const output = resolve(directory, "workspace.mjs");
-  await build({ stdin: { contents: 'export { Workspace } from "./packages/mcp-app/src/components/workspace.tsx"; export { getDeviceSettings } from "./packages/ui/src/device-settings.ts"; export { getDevicePicker } from "./packages/ui/src/device-picker.ts"; export { getAppTools } from "./packages/ui/src/app-tools.ts";', resolveDir: process.cwd(), loader: "ts" }, outfile: output, bundle: true, format: "esm", platform: "node", jsx: "automatic",
+  await build({ stdin: { contents: 'export { Workspace } from "./packages/mcp-app/src/components/workspace.tsx";', resolveDir: process.cwd(), loader: "ts" }, outfile: output, bundle: true, format: "esm", platform: "node", jsx: "automatic",
     external: ["recharts", "react", "react/*", "react-dom", "react-dom/*", "@legendapp/list/react", "radix-ui", "lucide-react", "@base-ui/react/*", "react-resizable-panels"] });
-  const { Workspace, getDeviceSettings, getDevicePicker, getAppTools } = await import(pathToFileURL(output).href);
+  const { Workspace } = await import(pathToFileURL(output).href);
+  // The iOS panel's view stores; the test plays the panel behind them.
+  let pickerRefreshes = 0;
+  let deviceChanges = 0;
+  let stopDevice = async (_id: string) => {};
+  const pickerStore = new DevicePickerStore({ select() { deviceChanges++; }, stop: id => stopDevice(id), async refresh() { pickerRefreshes++; } });
+  let settingsRequest = async (_change?: DeviceSetting): Promise<Partial<DeviceSettings>> => ({});
+  const iosSettings = new DeviceSettingsStore({ request: change => settingsRequest(change), setFrame() {} });
+  let appCall: AppToolCall = async () => ({});
+  const appTools = new AppToolsStore((name, args) => appCall(name, args));
+  const devices = [panelView("ios", { picker: pickerStore, settings: iosSettings, appTools }), panelView("android")] as const;
   const { act, createElement, Profiler } = await import("react");
   const { createRoot } = await import("react-dom/client");
   let sentLog: StackedLog | undefined;
-  const context = { canAttach: true, canSendMessage: true, attachedKey: undefined as string | undefined, onChange() {}, async attach(log?: StackedLog) { this.attachedKey = log ? logKey(log) : undefined; this.onChange(); }, async sendLogToChat(log: StackedLog) { sentLog = log; } };
+  const contextListeners = new Set<() => void>();
+  const context = { canAttach: true, canSendMessage: true, attachedKey: undefined as string | undefined,
+    subscribe(listener: () => void) { contextListeners.add(listener); return () => { contextListeners.delete(listener); }; },
+    async attach(log?: StackedLog) { this.attachedKey = log ? logKey(log) : undefined; for (const listener of contextListeners) listener(); }, async sendLogToChat(log: StackedLog) { sentLog = log; } };
   let emitCpu: ((batch: CpuBatch) => void) | undefined;
   let cpuSessionsOpened = 0;
-  const performanceApp = {
-    async callServerTool({ name }: { name: string }) {
-      if (name === "mobile_performance_sources") return { content: [], structuredContent: { apps: [{ bundleId: "com.example.app", pid: 123, foreground: true }], foregroundApp: { bundleId: "com.example.app", pid: 123 } } };
-      if (name === "mobile_cpu_close") return { content: [] };
+  const performanceApp = fakeApp({
+    tools: {
+      mobile_performance_sources: () => ({ content: [], structuredContent: { apps: [{ bundleId: "com.example.app", pid: 123, foreground: true }], foregroundApp: { bundleId: "com.example.app", pid: 123 } } }),
+      // The workspace lists installed apps once for its panels, through the same host.
+      mobile_list_apps: () => storageApp.callServerTool({ name: "mobile_list_apps" }),
+      mobile_cpu_close: () => ({ content: [] }),
+    },
+    fallback({ name }) {
       if (name === "mobile_cpu_session") cpuSessionsOpened++;
       const sessionId = "1".repeat(64);
       return { content: [], structuredContent: { sessionId, cpuUri: `cpu://mobile-dev/${sessionId}/batch?after=0` } };
@@ -86,9 +108,9 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
         };
       });
     },
-  };
-  const deviceApps = createDeviceApps(performanceApp as unknown as App);
-  const panel = new LogsPanel({} as App, context as PanelContext, deviceApps);
+  });
+  const deviceApps = createDeviceApps(performanceApp);
+  const panel = new LogsPanel(fakeApp(), context as PanelContext, deviceApps);
   let logSubscribers = 0;
   const subscribe = panel.list.subscribe;
   panel.list.subscribe = listener => {
@@ -97,36 +119,34 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
     return () => { logSubscribers--; unsubscribe(); };
   };
 
-  const performance = new PerformancePanel(performanceApp as unknown as App, deviceApps);
-  const storageCalls: string[] = [];
-  const storageApp = {
-    async callServerTool({ name }: { name: string }) {
-      storageCalls.push(name);
-      if (name === "mobile_list_apps") return { content: [], structuredContent: { apps: [{ bundleId: "com.example.app", name: "Example" }], foregroundBundleId: "com.example.app", runningBundleIds: ["com.example.app"] } };
-      return { content: [], structuredContent: { platform: "ios", bundleId: "com.example.app", readAt: Date.now(), fileCount: 3, totalBytes: 300,
+  const performance = new PerformancePanel(performanceApp, deviceApps);
+  const storageApp = fakeApp({
+    tools: { mobile_list_apps: () => ({ content: [], structuredContent: { apps: [{ bundleId: "com.example.app", name: "Example" }], foregroundBundleId: "com.example.app", runningBundleIds: ["com.example.app"] } }) },
+    fallback: () => ({ content: [], structuredContent: { platform: "ios", bundleId: "com.example.app", readAt: Date.now(), fileCount: 3, totalBytes: 300,
         files: [{ path: "Documents/mmkv/mmkv.default", bytes: 200, store: "mmkv:Documents/mmkv/mmkv.default" }],
         stores: [
           { id: "mmkv:Documents/mmkv/mmkv.default", kind: "mmkv", name: "mmkv.default", path: "Documents/mmkv/mmkv.default", status: "ok", bytes: 200, entryCount: 2,
             entries: [{ key: "onboarding.done", type: "boolean", value: "true", bytes: 1, guessed: true }, { key: "user", type: "json", value: "{\"id\":1}", bytes: 8, guessed: true }] },
           { id: "mmkv:Documents/mmkv/secure", kind: "mmkv", name: "secure", path: "Documents/mmkv/secure", status: "encrypted", note: "Encrypted with a key only the app knows.", bytes: 100, entryCount: 0, entries: [] },
-        ] } };
-    },
-  };
-  const storage = new StoragePanel(storageApp as unknown as App, deviceApps);
+        ] } }),
+  });
+  const storageCalls = () => storageApp.calls.map(call => call.name);
+  const storage = new StoragePanel(storageApp, deviceApps);
   storage.setAvailable(true);
-  const tracesift = new TraceSiftPanel(storageApp as unknown as App);
-  const recordingController = new RecordingController(performanceApp as unknown as App);
+  const tracesift = new TraceSiftPanel(storageApp);
+  const recordingController = new RecordingController(performanceApp);
   const panels = new WorkspaceTools({ context: context as PanelContext, deviceApps, logs: panel, performance, storage, tracesift });
-  deviceApps.selectDevice({ udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS" });
+  deviceApps.selectDevice({ udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS", platform: "ios", kind: "simulator" });
   performance.setAvailable(true);
   deviceApps.setAvailable(true);
   const root = createRoot(dom.window.document.getElementById("root")!);
   cleanupView = async () => { recordingController.dispose(); await act(async () => { root.unmount(); await panel.dispose(); deviceApps.dispose(); storage.dispose(); tracesift.dispose(); await performance.dispose(); }); };
   const layouts: string[] = [];
   let commits = 0;
-  const onLayout = (layout: string) => { layouts.push(layout); };
-  const renderWorkspace = (automaticLayout?: DeviceLayout) => {
-    const workspace = createElement(Workspace, { panels, recordingController, automaticLayout, onLayout });
+  let shownLayout = panels.getSnapshot().layout;
+  panels.subscribe(() => { const { layout } = panels.getSnapshot(); if (layout !== shownLayout) layouts.push(shownLayout = layout); });
+  const renderWorkspace = () => {
+    const workspace = createElement(Workspace, { panels, devices, recordingController, fullscreen: false });
     const profiled = createElement(Profiler, { id: "workspace", onRender() { commits++; } }, workspace);
     root.render(profiled);
   };
@@ -135,7 +155,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   const iosPanel = dom.window.document.getElementById("ios-panel") as HTMLElement;
   const androidPanel = dom.window.document.getElementById("android-panel") as HTMLElement;
   for (const layout of ["android", "both", "none", "ios"] as const) {
-    await act(async () => { renderWorkspace(layout); });
+    await act(async () => { panels.setLayout(layout); });
     assert.equal(iosPanel.hidden, layout === "android" || layout === "none");
     assert.equal(androidPanel.hidden, layout === "ios" || layout === "none");
     assert.equal(dom.window.document.querySelector("canvas"), canvas, "Device discovery preserves the mounted stream canvas.");
@@ -154,20 +174,17 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   layouts.length = 0;
   const picker = dom.window.document.querySelector('[data-element="devices"] [data-slot="select-trigger"]');
   assert.ok(picker);
-  const pickerElement = dom.window.document.querySelector('#ios-panel [data-element="devices"]')!;
-  const pickerStore = getDevicePicker(pickerElement);
-  let pickerRefreshes = 0;
-  pickerStore.refresh = async () => { pickerRefreshes++; };
-  let deviceChanges = 0;
-  pickerElement.addEventListener("change", () => { deviceChanges++; });
-  await act(async () => { pickerStore.update({ value: "iphone", disabled: false, items: [{ value: "iphone", label: "iPhone", running: true, canStop: true }, { value: "ipad", label: "iPad", running: false, canStop: false }] }); });
+  await act(async () => {
+    pickerStore.show({ value: "iphone", placeholder: "Select a device", items: [{ value: "iphone", label: "iPhone", running: true, canStop: true }, { value: "ipad", label: "iPad", running: false, canStop: false }] });
+    pickerStore.disabled = false;
+  });
   await act(async () => { (picker as HTMLButtonElement).click(); });
   await act(async () => { (dom.window.document.querySelector('[data-device-option="iphone"]') as HTMLButtonElement).click(); });
   assert.equal(deviceChanges, 1, "Reselecting a running device retries its connection.");
   assert.equal(pickerRefreshes, 1);
   deviceChanges = 0;
   let stoppedDevice = "";
-  pickerStore.stop = async (id: string) => { stoppedDevice = id; pickerStore.update({ items: [{ value: "iphone", label: "iPhone", running: false, canStop: false }, { value: "ipad", label: "iPad", running: false, canStop: false }] }); };
+  stopDevice = async (id: string) => { stoppedDevice = id; pickerStore.show({ value: pickerStore.value, placeholder: "Select a device", items: [{ value: "iphone", label: "iPhone", running: false, canStop: false }, { value: "ipad", label: "iPad", running: false, canStop: false }] }); };
   await act(async () => { (picker as HTMLButtonElement).click(); });
   const stopButton = dom.window.document.querySelector('[aria-label="Stop iPhone"]') as HTMLButtonElement;
   assert.ok(stopButton);
@@ -179,9 +196,8 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   assert.equal(pickerStore.value, "iphone");
   await act(async () => { (dom.window.document.querySelector('[data-device-option="iphone"]') as HTMLButtonElement).click(); });
   assert.equal(deviceChanges, 1);
-  const iosSettings = getDeviceSettings(dom.window.document.querySelector('#ios-panel [data-element="settings"]'));
   const changes: unknown[] = [];
-  iosSettings.request = async (change: unknown) => { changes.push(change); return { appearance: "light", contentSize: "large", increaseContrast: false, locationSupported: true }; };
+  settingsRequest = async change => { changes.push(change); return { appearance: "light", contentSize: "large", increaseContrast: false, locationSupported: true }; };
   await act(async () => { iosSettings.configure("iphone", false); });
   const settingsButton = dom.window.document.querySelector('[aria-label="iOS device settings"]') as HTMLButtonElement;
   await act(async () => { settingsButton.click(); });
@@ -198,7 +214,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   assert.deepEqual(changes.at(-1), { setting: "contentSize", value: "accessibility-large" });
   assert.ok(dom.window.document.querySelector('[data-slot="popover-content"][aria-label="Device settings"]'));
   let finishAppearance!: (value: object) => void;
-  iosSettings.request = async (change: unknown) => { changes.push(change); return new Promise(resolve => { finishAppearance = resolve; }); };
+  settingsRequest = async change => { changes.push(change); return new Promise(resolve => { finishAppearance = resolve; }); };
   const appearanceTabs = settingsPopover.querySelectorAll<HTMLButtonElement>('[role="tab"]');
   const darkAppearance = Array.from(appearanceTabs).find(tab => tab.textContent === "Dark");
   assert.ok(darkAppearance);
@@ -214,9 +230,8 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   assert.equal(iosSettings.getSnapshot().frame, false);
   await act(async () => { settingsButton.click(); });
   assert.equal(dom.window.document.querySelector("canvas"), canvas);
-  const appTools = getAppTools(dom.window.document.querySelector('#ios-panel [data-element="settings"]'));
   const appCalls: { name: string; args: Record<string, unknown> }[] = [];
-  appTools.call = async (name: string, args: Record<string, unknown>) => {
+  appCall = async (name: string, args: Record<string, unknown>) => {
     appCalls.push({ name, args });
     if (name === "mobile_list_apps") return { apps: [{ bundleId: "com.acme.shop", name: "Acme Shop" }, { bundleId: "dev.other", name: "Other" }], foregroundBundleId: "com.acme.shop", runningBundleIds: ["com.acme.shop"] };
     if (name === "mobile_app_permissions") return { permissions: [{ permission: "location", state: null }, { permission: "photos", state: null }] };
@@ -227,7 +242,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
     if (name === "mobile_set_app_language") return { language: args.language, launched: args.bundleId };
     return {};
   };
-  iosSettings.request = async (change: { setting: string; value: unknown } | undefined) => {
+  settingsRequest = async change => {
     if (change) { changes.push(change); return { [change.setting]: change.value }; }
     return { appearance: "light", contentSize: "large", increaseContrast: false, locationSupported: true, statusBar: "live", network: "normal" };
   };
@@ -422,9 +437,14 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   assert.match(networkTitle, /Native name: com\.apple\.NSURLConnectionLoader/);
   const cpuState = performance.getSnapshot();
   assert.equal(cpuState.samples[0].threads[1].name, "hades");
-  const threadOrder = dom.window.document.querySelector<HTMLSelectElement>('[aria-label="Thread order"]');
-  assert.ok(threadOrder);
-  assert.equal(threadOrder.value, "activity");
+  const threadOrder = () => dom.window.document.querySelector<HTMLButtonElement>('[aria-label="Thread order"]');
+  assert.ok(threadOrder()?.textContent?.startsWith("Activity"));
+  async function chooseThreadOrder(label: string) {
+    await act(async () => { threadOrder()!.click(); });
+    const option = [...dom.window.document.querySelectorAll<HTMLElement>('[role="option"]')].find(item => item.textContent === label);
+    assert.ok(option, `The thread order menu offers ${label}.`);
+    await act(async () => { option.click(); });
+  }
   const threadIds = () => {
     const labels = dom.window.document.querySelectorAll('[title*="Native name:"]');
     const positions = Array.from(labels, label => {
@@ -442,10 +462,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   const activityIds = threadIds();
   assert.deepEqual(activityIds, ["0xc963bb", "0xc963a4", "0xc963dd"], "Previously active threads rank above never-active threads even after exit.");
   const gcRow = gcThread?.parentElement;
-  await act(async () => {
-    threadOrder.value = "first-seen";
-    threadOrder.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
-  });
+  await chooseThreadOrder("First seen");
   const firstSeenIds = threadIds();
   assert.deepEqual(firstSeenIds, ["0xc963a4", "0xc963bb", "0xc963dd"]);
   const reorderedGc = dom.window.document.querySelector('[title*="ID: 0xc963bb"]');
@@ -458,16 +475,10 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   });
   const stableIds = threadIds();
   assert.deepEqual(stableIds, firstSeenIds, "First seen does not shift when usage and native enumeration change.");
-  await act(async () => {
-    threadOrder.value = "activity";
-    threadOrder.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
-  });
+  await chooseThreadOrder("Activity");
   const changedActivityIds = threadIds();
   assert.deepEqual(changedActivityIds, ["0xc963dd", "0xc963bb", "0xc963a4"]);
-  await act(async () => {
-    threadOrder.value = "first-seen";
-    threadOrder.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
-  });
+  await chooseThreadOrder("First seen");
   assert.equal(dom.window.document.querySelector("canvas"), canvas);
   assert.equal(dom.window.document.querySelector('[data-element="devices"] [data-slot="select-trigger"]'), picker);
   await selectTool("logs");
@@ -479,8 +490,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   const reopenCpu = dom.window.document.querySelector<HTMLButtonElement>('[aria-label="Expand CPU"]');
   assert.ok(reopenCpu);
   await act(async () => { reopenCpu.click(); });
-  const restoredOrder = dom.window.document.querySelector<HTMLSelectElement>('[aria-label="Thread order"]');
-  assert.equal(restoredOrder?.value, "first-seen", "The selected order survives switching away from Performance.");
+  assert.ok(threadOrder()?.textContent?.startsWith("First seen"), "The selected order survives switching away from Performance.");
   const manyThreads = Array.from({ length: 100 }, (_, index) => ({ id: `worker-${index}`, name: `Worker ${index}`, cpuPercent: index }));
   await act(async () => {
     emitCpu!({ cursor: 4, phase: "recording", memoryMetric: "physical-footprint", samples: [
@@ -509,7 +519,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   await togglePlatform("ios");
   await togglePlatform("android");
   assert.deepEqual(layouts, ["both", "android", "none"]);
-  await act(async () => { renderWorkspace("both"); });
+  await act(async () => { panels.setLayout("both"); });
   assert.equal(iosPanel.hidden, true);
   assert.equal(androidPanel.hidden, true);
   assert.deepEqual(layouts, ["both", "android", "none"], "Late discovery preserves a manual platform choice.");
@@ -519,7 +529,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   assert.equal(dom.window.document.querySelector("canvas"), canvas);
   await selectTool("storage");
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
-  assert.deepEqual(storageCalls, ["mobile_list_apps", "mobile_app_icons", "mobile_app_storage"]);
+  assert.deepEqual(storageCalls(), ["mobile_list_apps", "mobile_app_icons", "mobile_app_storage"]);
   const storageDrawer = dom.window.document.getElementById("storage-drawer")!;
   const storeNames = [...storageDrawer.querySelectorAll('nav[aria-label="Stores"] button')].map(button => button.textContent);
   assert.deepEqual(storeNames.slice(0, 2), ["Default instanceMMKV2", "secureMMKV"]);
@@ -537,9 +547,9 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   await act(async () => { (storageDrawer.querySelector('[role="tab"]:nth-child(2)') as HTMLElement).click(); });
   assert.match(storageDrawer.textContent ?? "", /No changes yet/);
   await act(async () => { (storageDrawer.querySelector('[role="tab"]:nth-child(1)') as HTMLElement).click(); });
-  const beforeRefresh = storageCalls.length;
+  const beforeRefresh = storageCalls().length;
   await act(async () => { (storageDrawer.querySelector('button[aria-label="Refresh"]') as HTMLButtonElement).click(); await new Promise(resolve => setTimeout(resolve, 0)); });
-  assert.deepEqual(storageCalls.slice(beforeRefresh).filter(name => name !== "mobile_app_icons"), ["mobile_list_apps", "mobile_app_storage"], "Refresh lists the apps again and rereads the selected app.");
+  assert.deepEqual(storageCalls().slice(beforeRefresh).filter(name => name !== "mobile_app_icons"), ["mobile_list_apps", "mobile_app_storage"], "Refresh lists the apps again and rereads the selected app.");
   assert.equal(dom.window.document.querySelector("canvas"), canvas, "The storage tool preserves the device DOM.");
   await selectTool("logs");
   assert.equal(dom.window.document.getElementById("storage-drawer"), null);
@@ -556,7 +566,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   assert.equal(dom.window.document.querySelector(".recording-overview-bar")?.getAttribute("aria-label"), "Selected range: 12.0s–18.0s");
   assert.ok(dom.window.document.body.textContent?.includes("Checkout scroll · Run 1"));
   assert.equal(layouts.at(-1), "none", "Opening a saved run gives the detailed chart the workspace.");
-  await act(async () => { renderWorkspace("android"); });
+  await act(async () => { panels.setLayout("android"); });
   assert.equal(layouts.at(-1), "none", "Device discovery does not interrupt a saved recording.");
   assert.equal(cpuSessionsOpened, sessionsBeforeOpening, "Opening a saved recording does not start another collector.");
   assert.equal(dom.window.document.querySelector("canvas"), canvas, "Saved recordings preserve the existing device DOM.");

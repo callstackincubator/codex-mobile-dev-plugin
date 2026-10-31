@@ -7,11 +7,14 @@ and native helpers. To use the prebuilt plugin, see the [README](README.md#insta
 
 The repository is an npm workspace. Host-independent code lives in `packages/`; each
 product that ships it lives in `apps/`. Adding a host means adding an app; the shared
-packages know no host by name. Hosts that load a plugin folder with the shared server
-(Claude, Cursor) need only an app with a manifest, an icon and a `plugin-host.json`
-describing it: [`tooling/plugin-hosts.mjs`](tooling/plugin-hosts.mjs) finds those apps,
-and `tooling/package-plugin.mjs`, `smoke-plugin.mjs` and `plugin-config.mjs` take the
-host as an argument.
+packages know no host by name. Every app has a `plugin-host.json` describing it, which
+[`tooling/plugin-hosts.mjs`](tooling/plugin-hosts.mjs) finds. An app that builds its own
+server or page names a module exporting `buildHost({ outdir, environment, sentryRoot })`,
+which the package steps and `npm run build:hosts` call over a copy of the shared runtime.
+Hosts that load a plugin folder with the shared server (Cursor) need only an app with a
+manifest, an icon and a `plugin-host.json`; `tooling/package-plugin.mjs`,
+`smoke-plugin.mjs` and `plugin-config.mjs` take the host as an argument, and the
+`plugin-host.json` fields that differ between hosts are documented in `plugin-hosts.mjs`.
 
 | Path | Contents |
 | --- | --- |
@@ -56,9 +59,9 @@ window provides the native sidebar (tools and visible device platforms); a web
 view renders `apps/mac/web`, the shared views without the Codex toolbar.
 
 The app starts the bundled server over stdio exactly as Codex does and relays
-JSON-RPC lines between it and the page. Before the page connects, the app reads
-`ui://mobile-dev/mac.html` from the server, so the page gets the server's telemetry
-metadata. The page implements `HostBridge` (`packages/ui/src/host-bridge.ts`) with
+JSON-RPC lines between it and the page, the server's only MCP client. The app loads
+the page from its bundle; once connected, the page reads the server's telemetry
+metadata from `ui://mobile-dev/mac-telemetry.json` before its telemetry starts. The page implements `HostBridge` (`packages/ui/src/host-bridge.ts`) with
 an MCP client and offers no chat capabilities, so chat-only actions stay hidden.
 
 ```sh
@@ -81,6 +84,8 @@ keep it. Restart the server from **View › Restart Server** (⇧⌘R).
 - An Apple Silicon Mac with Xcode 27 and Swift 6.4 or later selected as the active
   developer tools, plus an installed iOS simulator runtime.
 - Node.js 22.19 or later, npm, Git, and network access to fetch pinned dependencies.
+  CI uses Node.js 22. Avoid Node.js 24.14 to 24.17 for the tests: their V8 can crash
+  a test process in garbage collection, which `npm test` reports as a file that failed.
 - Rust and Cargo for the iOS native helpers. The release workflow uses Rust 1.98.1.
 - CMake, Ninja, pkg-config, OpenSSL 3, Autoconf, Automake, and Libtool for native
   builds. With Homebrew, install them using:
@@ -166,8 +171,8 @@ them in [`tooling/hosts`](tooling/hosts):
   each host's capabilities and style tokens from [`profiles.ts`](tooling/hosts/profiles.ts)
   and answers the panel through the real server over stdio. Update a profile when a
   host changes what it advertises.
-- The Mac app's page loads the way its `PageLoader` does, with a stand-in for the
-  WebKit relay.
+- The Mac app's page loads from the build the way the app loads it from its bundle,
+  with a stand-in for the WebKit relay.
 - Each target's package limits: Codex's server against [Codex's tool limits](docs/architecture.md#runtime),
   the same measurement `npm run check:mcp-budget` makes for a packaged plugin, and every
   runtime file of a host with `maxFileBytes` in its `plugin-host.json`, such as Claude's

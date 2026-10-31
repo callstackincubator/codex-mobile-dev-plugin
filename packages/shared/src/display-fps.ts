@@ -1,5 +1,6 @@
 import { z } from "zod";
-import type { CpuPhase } from "./cpu.ts";
+import { cpuPhaseSchema } from "./cpu.ts";
+import { deviceRefSchema } from "./device-ref.ts";
 
 export const MAX_DISPLAY_FRAMES_PER_INTERVAL = 4096;
 const integerString = z.string();
@@ -33,8 +34,10 @@ export const frameTimelineSchema = z.object({
 });
 export type DisplayFrame = z.infer<typeof displayFrameSchema>;
 export type DisplayFrameTimeline = z.infer<typeof frameTimelineSchema>;
-export type DisplayFpsSample = { time: number; interval: number; fps: number | null; frameTimeline?: DisplayFrameTimeline };
-export type DisplayFpsBatch = { cursor: number; phase: CpuPhase; samples: DisplayFpsSample[]; error?: string };
+export const displayFpsSampleSchema = z.object({ time: z.number(), interval: z.number(), fps: z.number().nullable(), frameTimeline: frameTimelineSchema.optional() });
+export type DisplayFpsSample = z.infer<typeof displayFpsSampleSchema>;
+export const displayFpsBatchSchema = z.object({ cursor: z.number().int().nonnegative(), phase: cpuPhaseSchema, samples: z.array(displayFpsSampleSchema), error: z.string().optional() });
+export type DisplayFpsBatch = z.infer<typeof displayFpsBatchSchema>;
 
 export function displayFrameTime(frame: DisplayFrame, intervalEndNs: string, intervalEndTime: number) {
   const end = BigInt(frame.endTimeNs);
@@ -43,11 +46,5 @@ export function displayFrameTime(frame: DisplayFrame, intervalEndNs: string, int
   const elapsed = Number(elapsedNs) / 1e9;
   return intervalEndTime + elapsed;
 }
-const platform = z.enum(["ios", "android"]);
-const deviceString = z.string();
-const nonemptyDevice = deviceString.min(1);
-const boundedDevice = nonemptyDevice.max(256);
-const deviceId = boundedDevice.regex(/^[a-zA-Z0-9_.:-]+$/);
-const target = z.object({ platform, deviceId });
-export const displayFpsTargetSchema = target.strict();
+export const displayFpsTargetSchema = deviceRefSchema.strict();
 export type DisplayFpsTarget = z.infer<typeof displayFpsTargetSchema>;

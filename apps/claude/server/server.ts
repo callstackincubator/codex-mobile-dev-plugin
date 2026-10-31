@@ -14,4 +14,4 @@ import { downloadedPanelRuntime, panelRuntimeReleaseSchema, usePanelRuntime } fr
 // host tests, the parts sit beside the server.
 const pinned = await readFile(new URL("./panel-runtime.json", import.meta.url), "utf8").catch(() => undefined);
 if (pinned !== undefined) usePanelRuntime(downloadedPanelRuntime(panelRuntimeReleaseSchema.parse(JSON.parse(pinned))));
-await runStdioServer({ panel: createPanel({ inline: false }), features: [agentDeviceTools(readAgentDeviceCatalog()), browserPanel({ always: true })] });
+await runStdioServer({ features: [createPanel({ inline: false }), agentDeviceTools(readAgentDeviceCatalog()), browserPanel({ always: true })] });

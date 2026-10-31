@@ -7,10 +7,11 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import type { ImageContent, TextContent } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import type { PanelTarget } from "@mobile-dev/shared/panel-target.ts";
-import { telemetryHost, type TelemetryHost } from "@mobile-dev/shared/telemetry.ts";
+import type { TelemetryHost } from "@mobile-dev/shared/telemetry.ts";
 import type { ServerFeature } from "./server-feature.ts";
+import { READ_ONLY } from "./tool-results.ts";
 import type { SharedTransport } from "./shared-transport.ts";
-import { captureServerError, recordBrowserPanelContext, recordBrowserPanelSessions } from "./telemetry.ts";
+import { captureServerError, recordBrowserPanelContext, recordBrowserPanelSessions, serverTelemetryHost } from "./telemetry.ts";
 
 const PAGE = new URL("./browser-panel.html", import.meta.url);
 export const BROWSER_SESSION_IDLE_MS = 5 * 60_000;
@@ -42,33 +43,34 @@ export type BrowserPanelOptions = {
 
 /** Hosts without MCP Apps, or every host with `always`, can show the shared panel on a session-owned loopback page. */
 export function browserPanel({ template = PAGE, always = false }: BrowserPanelOptions = {}): ServerFeature {
-  return (server, { connections, onPanelOpen }) => {
-    let page: Promise<PanelPage> | undefined;
-    onPanelOpen(async ({ tool, target }) => {
-      const capabilities = server.server.getClientCapabilities();
-      if (connections === undefined || (always === false && getUiCapability(capabilities))) return;
-      const clientInfo = server.server.getClientVersion();
-      const host = telemetryHost(clientInfo?.name);
-      page ??= startPanelPage(connections, host, template);
-      const opened = await page;
-      const url = opened.url(tool, target);
-      const instructions = `Mobile Dev's panel is a page to show beside the chat, not in it, and it is not open yet. Show it to the user now: open ${url} in your in-app browser or side panel, in the foreground, so the page is visible without another click. Opening a page can leave the browser pane hidden: when your host has a tool that brings its browser or preview pane into view, such as a show_pane tool for its preview pane, load it if needed and call it right after. Reuse a tab that already shows Mobile Dev. Open no other address for it, such as the backend's baseUrl. If you cannot open pages, give the user the link. The page shares the user's devices and what they add to chat through mobile_read_panel_context; read it before device work.`;
-      return { url, instructions };
-    });
-    // A browser has no model context of its own, so the agent asks the server for it.
-    server.registerTool("mobile_read_panel_context", {
-      title: "Read Mobile Dev panel context",
-      description: "Read what a Mobile Dev panel opened in a browser shares with the chat: the active and visible device IDs, and logs, screenshots and screen notes the user added to chat. Call it before device work and when the user refers to something in the panel. Hosts that render the panel in the chat share this directly.",
-      inputSchema: {}, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-    }, async () => {
-      const opened = await page?.catch(() => undefined);
-      const content = opened?.context() ?? [];
-      return { content: content.length ? content : [{ type: "text", text: NO_CONTEXT }] };
-    });
-    return async () => {
-      const opened = await page?.catch(() => undefined);
-      await opened?.close();
-    };
+  return {
+    register(server, { connections, onPanelOpen }) {
+      let page: Promise<PanelPage> | undefined;
+      onPanelOpen(async ({ tool, target }) => {
+        const capabilities = server.server.getClientCapabilities();
+        if (connections === undefined || (always === false && getUiCapability(capabilities))) return;
+        const host = serverTelemetryHost(server.server.getClientVersion()?.name);
+        page ??= startPanelPage(connections, host, template);
+        const opened = await page;
+        const url = opened.url(tool, target);
+        const instructions = `Mobile Dev's panel is a page to show beside the chat, not in it, and it is not open yet. Show it to the user now: open ${url} in your in-app browser or side panel, in the foreground, so the page is visible without another click. Opening a page can leave the browser pane hidden: when your host has a tool that brings its browser or preview pane into view, such as a show_pane tool for its preview pane, load it if needed and call it right after. Reuse a tab that already shows Mobile Dev. Open no other address for it, such as the backend's baseUrl. If you cannot open pages, give the user the link. The page shares the user's devices and what they add to chat through mobile_read_panel_context; read it before device work.`;
+        return { url, instructions };
+      });
+      // A browser has no model context of its own, so the agent asks the server for it.
+      server.registerTool("mobile_read_panel_context", {
+        title: "Read Mobile Dev panel context",
+        description: "Read what a Mobile Dev panel opened in a browser shares with the chat: the active and visible device IDs, and logs, screenshots and screen notes the user added to chat. Call it before device work and when the user refers to something in the panel. Hosts that render the panel in the chat share this directly.",
+        inputSchema: {}, annotations: READ_ONLY,
+      }, async () => {
+        const opened = await page?.catch(() => undefined);
+        const content = opened?.context() ?? [];
+        return { content: content.length ? content : [{ type: "text", text: NO_CONTEXT }] };
+      });
+      return async () => {
+        const opened = await page?.catch(() => undefined);
+        await opened?.close();
+      };
+    },
   };
 }
 

@@ -1,4 +1,4 @@
-import type { PerformanceRecording } from "../shared/src/recordings.ts";
+import type { PerformanceRecording } from "@mobile-dev/shared/recordings.ts";
 
 export function recordingFixture(): PerformanceRecording {
   return {

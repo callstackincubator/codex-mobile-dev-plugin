@@ -1,31 +1,48 @@
 import { execFile, spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
+import { randomBytes } from "node:crypto";
 import { access } from "node:fs/promises";
 import { constants } from "node:fs";
 import { dirname, join } from "node:path";
-import { createServer } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import { bootAndroidEmulator, parseAvdName } from "./android-emulator.ts";
-import { adbPath } from "./native-logs.ts";
-import { errorMessage, parseBaseUrl } from "@mobile-dev/shared/protocol.ts";
+import { adbDevices, adbPath, androidSdkRoots } from "./android-sdk.ts";
+import { parseBaseUrl } from "@mobile-dev/shared/protocol.ts";
 import type { SimulatorDevice, Status } from "@mobile-dev/shared/protocol.ts";
-import { annotateDeviceCommand, backendCommand } from "@mobile-dev/shared/device-command-diagnostics.ts";
+import { annotateDeviceCommand, backendCommand, inheritDeviceCommand } from "@mobile-dev/shared/device-command-diagnostics.ts";
+import { requireDevice } from "./device-lookup.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
 import { isMissingFile, MissingRuntimeError } from "./install-integrity.ts";
-import { recordAndroidEmulatorReconnect, recordAndroidBootWait, recordAndroidBackendStartup, recordAndroidStartupStages, recordAndroidStartupContext, recordAndroidStartupDeviceState, recordAndroidBackendStop } from "./telemetry.ts";
-import { androidStartupMessageSchema, androidDeviceState, setAndroidStartupDiagnostic } from "@mobile-dev/shared/android-startup-diagnostics.ts";
-import type { AndroidStartupContext, AndroidStartupFailure, AndroidStartupSummary } from "@mobile-dev/shared/android-startup-diagnostics.ts";
-import { androidSdkRoots } from "./android-sdk.ts";
+import { recordAndroidEmulatorReconnect, recordAndroidBootWait, recordAndroidBackendStop } from "./telemetry.ts";
+import type { AndroidStartupContext } from "@mobile-dev/shared/android-startup-diagnostics.ts";
+import { AndroidStartupTracker } from "./android-startup.ts";
+import { allocatePort, superviseBackend } from "./backend-process.ts";
+import { responseBytes } from "./response-body.ts";
+import type { ByteRequest } from "./response-body.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
+import { androidIdSchema, avdId, isEmulatorSerial, isStoppedAvd } from "@mobile-dev/shared/android-ids.ts";
 import { panelRuntimePath } from "./panel-runtime.ts";
 
 const execute = promisify(execFile);
-export const androidIdSchema = z.string().min(1).max(256).regex(/^[A-Za-z0-9_.:\[\]%-]+$/);
 // Route handlers send { ok: false, error: message }; the API boundary sends { ok: false, error: { code, message } }.
 const serveEmuErrorSchema = z.object({ ok: z.literal(false), error: z.union([z.string(), z.object({ message: z.string() }).loose()]).optional() }).loose();
 const healthSchema = z.object({ serial: androidIdSchema, codec: z.string(), size: z.object({ width: z.number().positive(), height: z.number().positive() }) });
-type Backend = { url: URL; child?: ChildProcess };
+// serve-emu's accessibility nodes, of which the plugin reads only the app each belongs to.
+const accessibilitySchema = z.object({ nodes: z.array(z.object({ packageName: z.unknown() }).partial().loose()).optional() }).loose();
+/** A serve-emu backend. One this server starts is its `child` and requires `token`; one the user runs has neither. */
+export type ServeEmuBackend = { url: URL; child?: ChildProcess; token?: string };
+type Backend = ServeEmuBackend;
+
+/** Headers that authorize a request to the backend. */
+export function backendHeaders(backend: Backend, headers?: HeadersInit): Headers {
+  const authorized = new Headers(headers);
+  if (backend.token !== undefined) authorized.set("Authorization", `Bearer ${backend.token}`);
+  return authorized;
+}
+type Started = { backend: Backend; device: SimulatorDevice };
+const ANDROID_DEVICE = { missing: "This Android device is no longer available. Refresh the device list.", stopped: "The Android device is stopped or offline. Press Start or reconnect it." };
 
 export function androidDisplaySize(output: string, video: { width: number; height: number }) {
   const matches = [...output.matchAll(/(?:Physical|Override) size:\s*(\d+)x(\d+)/g)];
@@ -43,7 +60,7 @@ export class ServeEmu {
   private readonly backends = new Map<string, Backend>();
   private readonly booting = new Map<string, Promise<Status>>();
   private readonly lifetime = new AbortController();
-  private readonly starting = new Map<string, Promise<Backend>>();
+  private readonly starting = new Map<string, Promise<Started>>();
   private readonly stopping = new Set<ChildProcess>();
   private readonly backendContexts = new WeakMap<ChildProcess, AndroidStartupContext>();
   private disposed = false;
@@ -62,41 +79,32 @@ export class ServeEmu {
     return "emulator";
   }
 
-  async list(): Promise<Status> {
+  async devices(): Promise<SimulatorDevice[]> {
     try {
       const adb = await adbPath();
       const emulator = await this.emulatorPath();
       const [devices, avds] = await Promise.all([
-        execute(adb, ["devices", "-l"], { timeout: 5000, maxBuffer: 1024 * 1024 }),
+        adbDevices(adb),
         execute(emulator, ["-list-avds"], { timeout: 5000, maxBuffer: 1024 * 1024 }).catch(error => {
           if (error.code === "ENOENT") return { stdout: "" };
           throw error;
         }),
       ]);
-      const deviceLines = devices.stdout.split(/\r?\n/);
-      const runningReads = deviceLines.flatMap(line => {
-        const match = line.match(/^(\S+)\s+(device|offline|unauthorized)(?:\s|$)(.*)/);
-        if (!match) return [];
-        const parsedId = androidIdSchema.safeParse(match[1]);
-        if (parsedId.success === false) return [];
-        return [(async (): Promise<SimulatorDevice> => {
-          const rawModel = match[3].match(/(?:^|\s)model:(\S+)/)?.[1];
-          const model = rawModel?.replace(/_/g, " ");
-          let name = model ?? match[1];
-          const emulatorDevice = /^emulator-\d+$/.test(match[1]);
-          // The emulator console names the AVD before adb authorizes the device.
-          if (emulatorDevice) {
-            const response = await execute(adb, ["-s", match[1], "emu", "avd", "name"], { timeout: 3000 }).catch(() => undefined);
-            const avdName = parseAvdName(response?.stdout);
-            if (avdName) this.avdNames.set(match[1], avdName);
-            name = avdName ?? this.avdNames.get(match[1]) ?? name;
-          }
-          const identity = { udid: match[1], name, state: match[2] === "device" ? "Booted" : match[2], runtime: "Android", platform: "android" as const };
-          if (emulatorDevice) return { ...identity, kind: "emulator" };
-          const network = /:\d+$|\._adb(?:-tls-connect)?\._tcp\.?$/.test(match[1]);
-          const transportType = network ? "localNetwork" : "wired";
-          return { ...identity, kind: "physical", transportType, ...(model ? { model } : {}) };
-        })()];
+      const runningReads = devices.map(async ({ serial, state, model }): Promise<SimulatorDevice> => {
+        let name = model ?? serial;
+        const emulatorDevice = isEmulatorSerial(serial);
+        // The emulator console names the AVD before adb authorizes the device.
+        if (emulatorDevice) {
+          const response = await execute(adb, ["-s", serial, "emu", "avd", "name"], { timeout: 3000 }).catch(() => undefined);
+          const avdName = parseAvdName(response?.stdout);
+          if (avdName) this.avdNames.set(serial, avdName);
+          name = avdName ?? this.avdNames.get(serial) ?? name;
+        }
+        const identity = { udid: serial, name, state: state === "device" ? "Booted" : state, runtime: "Android", platform: "android" as const };
+        if (emulatorDevice) return { ...identity, kind: "emulator" };
+        const network = /:\d+$|\._adb(?:-tls-connect)?\._tcp\.?$/.test(serial);
+        const transportType = network ? "localNetwork" : "wired";
+        return { ...identity, kind: "physical", transportType, ...(model ? { model } : {}) };
       });
       const running = await Promise.all(runningReads);
       for (const serials of [this.avdNames, this.reconnects]) for (const serial of serials.keys()) if (!running.some(device => device.udid === serial)) serials.delete(serial);
@@ -104,25 +112,29 @@ export class ServeEmu {
       const avdLines = avdOutput.split(/\r?\n/);
       const stoppedNames = avdLines.filter(name => {
         if (!name) return false;
-        const parsedId = androidIdSchema.safeParse(`avd:${name}`);
+        const parsedId = androidIdSchema.safeParse(avdId(name));
         const runningAvd = running.some(device => device.kind === "emulator" && device.name === name);
         return parsedId.success && !runningAvd;
       });
-      const stopped = stoppedNames.map(name => ({ udid: `avd:${name}`, name, state: "Shutdown", runtime: "Android", platform: "android" as const, kind: "emulator" as const }));
-      return { connected: true, managed: [...this.backends.values()].some(backend => !!backend.child), baseUrl: this.external?.origin ?? "", devices: [...running, ...stopped] };
+      const stopped = stoppedNames.map(name => ({ udid: avdId(name), name, state: "Shutdown", runtime: "Android", platform: "android" as const, kind: "emulator" as const }));
+      return [...running, ...stopped];
     } catch (error) {
-      return { connected: false, managed: false, baseUrl: "", devices: [], error: `Cannot list Android devices. Install Android SDK platform-tools and emulator. ${errorMessage(error)}` };
+      throw inheritDeviceCommand(new Error(`Cannot list Android devices. Install Android SDK platform-tools and emulator. ${errorMessage(error)}`), error);
     }
+  }
+
+  async list(): Promise<Status> {
+    try { return this.connected(await this.devices()); }
+    catch (error) { return { connected: false, managed: false, baseUrl: "", devices: [], error: errorMessage(error) }; }
+  }
+
+  private connected(devices: SimulatorDevice[]): Status {
+    return { connected: true, managed: [...this.backends.values()].some(backend => !!backend.child), baseUrl: this.external?.origin ?? "", devices };
   }
 
   async device(id: string, booted = false) {
     androidIdSchema.parse(id);
-    const status = await this.list();
-    if (!status.connected) throw new Error(status.error);
-    const device = status.devices.find(device => device.udid === id);
-    if (!device) throw new SimulatorUnavailableError("This Android device is no longer available. Refresh the device list.");
-    if (booted && device.state !== "Booted") throw new SimulatorUnavailableError("The Android device is stopped or offline. Press Start or reconnect it.");
-    return device;
+    return requireDevice(await this.devices(), id, { ...ANDROID_DEVICE, booted });
   }
 
   async boot(id: string): Promise<Status> {
@@ -137,10 +149,11 @@ export class ServeEmu {
   }
 
   private async ensureBooted(id: string): Promise<Status> {
-    const device = await this.device(id);
-    if (device.state === "Booted") return this.list();
+    const devices = await this.devices();
+    const device = requireDevice(devices, id, ANDROID_DEVICE);
+    if (device.state === "Booted") return this.connected(devices);
     if (device.kind === "emulator" && device.state === "unauthorized") return this.awaitRunningEmulator(id);
-    if (!id.startsWith("avd:")) throw new SimulatorUnavailableError("Reconnect and authorize this Android device through adb.");
+    if (!isStoppedAvd(id)) throw new SimulatorUnavailableError("Reconnect and authorize this Android device through adb.");
     // Launch separately from serve-emu so closing the panel never stops the AVD.
     return bootAndroidEmulator({
       name: device.name, executable: await this.emulatorPath(), signal: this.lifetime.signal,
@@ -150,13 +163,12 @@ export class ServeEmu {
 
   // Ready means adb authorized the emulator and Android finished booting.
   private async emulatorReady(matches: (device: SimulatorDevice) => boolean, trigger: "boot" | "selection"): Promise<Status | undefined> {
-    const status = await this.list();
-    if (!status.connected) throw new Error(status.error);
-    const running = status.devices.find(item => item.kind === "emulator" && matches(item));
+    const devices = await this.devices();
+    const running = devices.find(item => item.kind === "emulator" && matches(item));
     if (running?.state === "unauthorized") await this.reconnectEmulator(running.udid, trigger);
     if (running?.state !== "Booted") return;
     const response = await execute(await adbPath(), ["-s", running.udid, "shell", "getprop", "sys.boot_completed"], { timeout: 3000 }).catch(() => undefined);
-    if (response?.stdout.trim() === "1") return status;
+    if (response?.stdout.trim() === "1") return this.connected(devices);
   }
 
   // A quick-boot snapshot can restore an emulator after adb has marked it unauthorized, and adb
@@ -205,10 +217,9 @@ export class ServeEmu {
 
   async shutdown(id: string) {
     androidIdSchema.parse(id);
-    if (!/^emulator-\d+$/.test(id)) throw new Error("Only Android emulators can be shut down from this panel.");
-    const before = await this.list();
-    if (!before.connected) throw new Error(before.error);
-    if (!before.devices.some(device => device.udid === id)) return before;
+    if (!isEmulatorSerial(id)) throw new Error("Only Android emulators can be shut down from this panel.");
+    const before = await this.devices();
+    if (!before.some(device => device.udid === id)) return this.connected(before);
     await execute(await adbPath(), ["-s", id, "emu", "kill"], { timeout: 5000 });
     const backend = this.backends.get(id);
     if (backend) this.stopBackend(backend);
@@ -216,33 +227,55 @@ export class ServeEmu {
     const signal = AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(15000)]);
     while (true) {
       signal.throwIfAborted();
-      const status = await this.list();
-      if (!status.connected) throw new Error(status.error);
-      if (!status.devices.some(device => device.udid === id)) return status;
+      const devices = await this.devices();
+      if (!devices.some(device => device.udid === id)) return this.connected(devices);
       await delay(250, undefined, { signal });
     }
   }
 
-  async json(url: URL, path: string, options: RequestInit = {}) {
+  private async request(backend: Backend, path: string, command: string, options: RequestInit = {}, timeout = 10000): Promise<Response> {
+    return fetch(new URL(path, backend.url), {
+      ...options, headers: backendHeaders(backend, options.headers), redirect: "error", signal: AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(timeout)]),
+    }).catch(error => { throw annotateDeviceCommand(error, command); });
+  }
+
+  async json<T = unknown>(backend: Backend, path: string, { schema, ...options }: RequestInit & { schema?: z.ZodType<T> } = {}): Promise<T> {
     const command = backendCommand("serve_emu", path);
-    const response = await fetch(new URL(path, url), { ...options, redirect: "error", signal: AbortSignal.timeout(10000) })
-      .catch(error => { throw annotateDeviceCommand(error, command); });
+    const response = await this.request(backend, path, command, options);
     const payload = response.ok ? await response.json().catch(error => { throw annotateDeviceCommand(error, command); }) : await response.json().catch(() => undefined);
     const rejection = serveEmuErrorSchema.safeParse(payload);
-    if (response.ok && !rejection.success) return payload;
+    if (response.ok && !rejection.success) {
+      if (schema === undefined) return payload;
+      try { return schema.parse(payload); }
+      catch (error) { throw annotateDeviceCommand(error, command); }
+    }
     const error = rejection.data?.error;
     const message = (typeof error === "string" ? error : error?.message) || (response.ok ? "serve-emu rejected the request." : `serve-emu returned HTTP ${response.status} for ${path}.`);
     throw annotateDeviceCommand(new Error(message), command, response.ok ? { failure: "rejected" } : { failure: "http_status", status: response.status });
   }
 
-  private async health(url: URL) {
-    const response = await fetch(new URL("/health", url), { redirect: "error", signal: AbortSignal.timeout(1500) });
+  /** A binary response, such as a screenshot. */
+  async fetchBytes(backend: Backend, path: string, request: ByteRequest): Promise<Buffer> {
+    const command = backendCommand("serve_emu", path);
+    const response = await this.request(backend, path, command, {}, request.timeout);
+    return responseBytes(response, command, "serve-emu", path, request);
+  }
+
+  private async health(backend: Backend, signal?: AbortSignal) {
+    const response = await fetch(new URL("/health", backend.url), {
+      headers: backendHeaders(backend), redirect: "error", signal: AbortSignal.any([AbortSignal.timeout(1500), ...(signal ? [signal] : [])]),
+    });
     if (!response.ok) throw new Error(`serve-emu health returned HTTP ${response.status}.`);
     return healthSchema.parse(await response.json());
   }
 
-  async assertDevice(id: string, url: URL) {
-    if ((await this.health(url)).serial !== id) throw new SimulatorUnavailableError("The Android backend switched to another device. Refresh and reconnect the selected device.");
+  /** Whether `backend` still serves the device, which a restarted or stopped backend no longer does. */
+  current(id: string, backend: Backend): boolean {
+    return this.backends.get(id) === backend;
+  }
+
+  async assertDevice(id: string, backend: Backend) {
+    if ((await this.health(backend)).serial !== id) throw new SimulatorUnavailableError("The Android backend switched to another device. Refresh and reconnect the selected device.");
   }
 
   // Listeners run after each successful start and must handle their own failures.
@@ -252,147 +285,109 @@ export class ServeEmu {
   }
 
   async start(id: string): Promise<Backend> {
+    return (await this.startDevice(id)).backend;
+  }
+
+  /** Starts or reuses the device's backend, with the device as the start listed it. */
+  private async startDevice(id: string): Promise<Started> {
     if (this.disposed) throw new Error("The plugin server has closed.");
     let pending = this.starting.get(id);
     if (!pending) {
-      pending = this.ensureStarted(id).then(backend => {
+      pending = this.ensureStarted(id).then(started => {
         for (const listener of this.startListeners) listener(id);
-        return backend;
+        return started;
       }).finally(() => this.starting.delete(id));
       this.starting.set(id, pending);
     }
     return pending;
   }
 
-  private async ensureStarted(id: string): Promise<Backend> {
+  private async ensureStarted(id: string): Promise<Started> {
     const device = await this.device(id, true);
+    const backend = await this.reuse(id) ?? await this.adopt(id) ?? await this.launch(id, device);
+    return { backend, device };
+  }
+
+  /** The backend this server already uses for the device, unless it stopped streaming it. */
+  private async reuse(id: string): Promise<Backend | undefined> {
     const existing = this.backends.get(id);
-    if (existing) {
-      try { if ((await this.health(existing.url)).serial === id) return existing; } catch { /* Restart our failed backend. */ }
-      this.stopBackend(existing); this.backends.delete(id);
-    }
-    const candidate = this.external ?? new URL("http://127.0.0.1:3300");
+    if (!existing) return;
+    try { if ((await this.health(existing)).serial === id) return existing; } catch { /* Restart our failed backend. */ }
+    this.stopBackend(existing); this.backends.delete(id);
+  }
+
+  /** A serve-emu the user runs for the device, at SERVE_EMU_URL or else on its default port. */
+  private async adopt(id: string): Promise<Backend | undefined> {
+    const candidate: Backend = { url: this.external ?? new URL("http://127.0.0.1:3300") };
     try {
       const health = await this.health(candidate);
-      if (health.serial === id) { const backend = { url: candidate }; this.backends.set(id, backend); return backend; }
+      if (health.serial === id) { this.backends.set(id, candidate); return candidate; }
       if (this.external) throw new SimulatorUnavailableError(`SERVE_EMU_URL streams ${health.serial}, not the selected device ${id}.`);
     } catch (error) { if (this.external) throw error; }
+  }
+
+  private async launch(id: string, device: SimulatorDevice): Promise<Backend> {
     await this.awaitAndroidBoot(id);
     const cli = await panelRuntimePath("serve-emu/src/cli.mjs");
     await access(cli).catch(error => {
       if (isMissingFile(error)) throw new MissingRuntimeError("serve-emu");
       throw new Error("Mobile Dev cannot read its bundled Android streaming backend. Reinstall Mobile Dev, then restart the app running it.");
     });
-    const listener = createServer();
-    await new Promise<void>((resolve, reject) => { listener.once("error", reject); listener.listen(0, "127.0.0.1", resolve); });
-    const address = listener.address();
-    await new Promise<void>(resolve => listener.close(() => resolve()));
-    if (!address || typeof address === "string") throw new Error("Cannot allocate an Android stream port.");
+    const port = await allocatePort("Cannot allocate an Android stream port.");
     if (this.disposed) throw new Error("The plugin server has closed.");
-    const url = new URL(`http://127.0.0.1:${address.port}`);
-    const startedAt = performance.now();
-    const context: AndroidStartupContext = {
+    const url = new URL(`http://127.0.0.1:${port}`);
+    // serve-emu only compares a request's Origin with its Host, which a DNS-rebinding page passes, so
+    // backends this server starts require a token.
+    const token = randomBytes(32).toString("hex");
+    let activeBackends = 0;
+    for (const backend of this.backends.values()) if (backend.child) activeBackends++;
+    const startup = new AndroidStartupTracker({
       deviceKind: device.kind === "physical" ? "physical" : "emulator",
-      transport: device.kind === "physical" ? device.transportType ?? "unknown" : "emulator",
-      stateBefore: "online", activeBackends: 0, stoppingBackends: this.stopping.size,
+      transport: device.kind !== "physical" ? "emulator" : device.transportType === "wired" || device.transportType === "localNetwork" ? device.transportType : "unknown",
+      stateBefore: "online", activeBackends, stoppingBackends: this.stopping.size,
       startingBackends: this.starting.size,
-    };
-    for (const backend of this.backends.values()) if (backend.child) context.activeBackends++;
-    recordAndroidStartupContext(context);
+    });
     const adb = await adbPath();
-    const child = spawn(process.execPath, [cli, "--host", "127.0.0.1", "--port", url.port, "--serial", id, "--max-fps", "30"], {
+    const child = spawn(process.execPath, [cli, "--host", "127.0.0.1", "--port", url.port, "--token", token, "--serial", id, "--max-fps", "30"], {
       stdio: ["ignore", "pipe", "pipe", "ipc"], shell: false,
       env: { ...process.env, PATH: `${dirname(adb)}:${process.env.PATH ?? ""}`, SERVE_EMU_UPDATE_CHECK: "0" },
     });
-    this.backendContexts.set(child, context);
-    let stage: AndroidStartupFailure["stage"] = "process-launch";
-    let summary: AndroidStartupSummary | undefined;
-    let observedFailure: AndroidStartupFailure | undefined;
-    let parentOutcome: AndroidStartupFailure["outcome"] = "unknown";
-    const onDiagnostic = (message: unknown) => {
-      if (process.env.MOBILE_DEV_TELEMETRY === "off" || summary) return;
-      const parsed = androidStartupMessageSchema.safeParse(message);
-      if (parsed.success === false) return;
-      if (parsed.data.type === "mobile-dev/android-startup") stage = parsed.data.stage;
-      else if (parsed.data.type === "mobile-dev/android-startup-failure") observedFailure = { stage: parsed.data.stage, outcome: parsed.data.outcome };
-      else {
-        summary = parsed.data;
-        if (summary.outcome === "ready") stage = "health-readiness";
-        recordAndroidStartupStages(summary, context);
-        child.off("message", onDiagnostic);
-      }
-    };
-    child.on("message", onDiagnostic);
-    child.once("close", () => child.off("message", onDiagnostic));
-    const backend = { url, child };
+    this.backendContexts.set(child, startup.context);
+    startup.observe(child);
+    const backend = { url, child, token };
     this.backends.set(id, backend);
-    let launchError: Error | undefined;
-    let diagnostics = "";
-    child.on("error", error => { launchError = error; });
     child.on("exit", () => { if (this.backends.get(id) === backend) this.backends.delete(id); });
-    for (const output of [child.stdout, child.stderr]) output?.on("data", chunk => {
-      diagnostics = (diagnostics + chunk).slice(-4000); process.stderr.write(chunk);
-    });
     try {
-      const deadline = Date.now() + 30000;
-      while (Date.now() < deadline && !this.disposed) {
-        if (launchError) {
-          parentOutcome = "spawn-error";
-          throw new Error(`Cannot start the bundled Node.js serve-emu runtime. ${launchError.message}`);
-        }
-        if (child.exitCode !== null || child.signalCode !== null) {
-          parentOutcome = "error";
-          throw new Error(`serve-emu exited before it became ready. ${diagnostics.trim()}`);
-        }
-        try {
-          const health = await this.health(url);
-          if (health.serial === id) {
-            const duration = performance.now() - startedAt;
-            recordAndroidBackendStartup(duration, "ready");
-            return backend;
-          }
-        } catch { /* Wait for scrcpy startup. */ }
-        await delay(250);
-      }
-      parentOutcome = this.disposed ? "aborted" : "timeout";
-      throw new Error(`serve-emu did not become ready within 30 seconds. ${diagnostics.trim()}`);
+      await superviseBackend(child, {
+        name: "serve-emu", deadlineMs: 30000, redact: token,
+        // Health fails until scrcpy streams the device.
+        probe: async signal => (await this.health(backend, signal)).serial === id ? backend : undefined,
+        closed: () => this.disposed,
+        spawnError: error => new Error(`Cannot start the bundled Node.js serve-emu runtime. ${error.message}`),
+        stop: () => this.stopBackend(backend),
+      });
+      startup.ready();
+      return backend;
     } catch (error) {
-      const duration = performance.now() - startedAt;
-      recordAndroidBackendStartup(duration, "failed");
-      const failure: AndroidStartupFailure = {
-        stage: summary?.failedStage ?? observedFailure?.stage ?? stage,
-        outcome: summary?.failure ?? observedFailure?.outcome ?? parentOutcome,
-      };
-      setAndroidStartupDiagnostic(error, failure, context);
-      this.stopBackend(backend);
       this.backends.delete(id);
-      if (this.disposed === false && process.env.MOBILE_DEV_TELEMETRY !== "off") {
-        const checkedAt = performance.now();
-        void execute(adb, ["devices"], { timeout: 2000, maxBuffer: 1024 * 1024, signal: this.lifetime.signal }).then(response => {
-          const state = androidDeviceState(response.stdout, id);
-          const elapsed = performance.now() - checkedAt;
-          recordAndroidStartupDeviceState(state, elapsed, context, failure);
-        }, () => {
-          const elapsed = performance.now() - checkedAt;
-          recordAndroidStartupDeviceState("unknown", elapsed, context, failure);
-        });
-      }
+      const failure = startup.failure(error);
+      if (this.disposed === false) startup.checkDeviceAfter(adb, id, failure, this.lifetime.signal);
       throw error;
     }
   }
 
   async definition(id: string) {
-    const backend = await this.start(id);
-    const health = await this.health(backend.url);
-    return { identity: { udid: id, name: (await this.device(id)).name, model: "Android" }, screen: { rect: health.size } };
+    const { backend, device } = await this.startDevice(id);
+    const health = await this.health(backend);
+    return { identity: { udid: id, name: device.name, model: "Android" }, screen: { rect: health.size } };
   }
 
   async accessibility(id: string) {
     const backend = await this.start(id);
     const adb = await adbPath();
     const [tree, health, display] = await Promise.all([
-      this.json(backend.url, "/api/accessibility"),
-      this.health(backend.url),
+      this.json(backend, "/api/accessibility", { schema: accessibilitySchema }),
+      this.health(backend),
       execute(adb, ["-s", id, "shell", "wm", "size"], { timeout: 3000, maxBuffer: 4096 }),
     ]);
     return { tree, screen: androidDisplaySize(display.stdout, health.size) };

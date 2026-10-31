@@ -7,6 +7,7 @@ import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 import type { DeviceLayout } from "@mobile-dev/ui/device-layout.ts";
 import { DeviceWorkspace } from "@mobile-dev/ui/device-workspace.ts";
+import { readPageView } from "@mobile-dev/ui/page-view.ts";
 import { ErrorBoundary, captureUiError, startUiTelemetry, stopUiTelemetry } from "@mobile-dev/ui/telemetry.ts";
 import { isToolName, WorkspaceTools, type ToolName } from "@mobile-dev/ui/workspace-tools.ts";
 import { MacHostBridge, postToShell } from "./mac-bridge.ts";
@@ -15,30 +16,30 @@ import { MacWorkspace } from "./mac-workspace.tsx";
 const layouts = ["ios", "android", "both", "none"] as const;
 const isLayout = (value: unknown): value is DeviceLayout => layouts.includes(value as DeviceLayout);
 
+const fullscreen = readPageView() === "workspace";
 const bridge = new MacHostBridge();
-startUiTelemetry(bridge);
 // The Mac app has no chat, so the panels have no host attachments.
 const panels = WorkspaceTools.create(bridge);
 let tool: ToolName | undefined;
-let layout: DeviceLayout = "none";
+let layout = panels.getSnapshot().layout;
+const devices = new DeviceWorkspace(bridge, panels, { connectionFailed });
 const reactRoot = createRoot(document.getElementById("root")!);
 function render() {
   reactRoot.render(<ErrorBoundary fallback={<p role="alert">Mobile Dev could not render. Reload the window to try again.</p>}>
-    <MacWorkspace panels={panels} tool={tool} layout={layout} />
+    <MacWorkspace panels={panels} devices={devices.panels} tool={tool} layout={layout} fullscreen={fullscreen} />
   </ErrorBoundary>);
 }
 flushSync(render);
 
-const devices = new DeviceWorkspace(bridge, panels, {
-  onAutomaticLayout: next => {
-    layout = next;
-    render();
-    postToShell({ type: "layout", layout: next });
-  },
-  connectionFailed,
+panels.subscribe(() => {
+  const { layout: next, manual } = panels.getSnapshot();
+  if (next === layout) return;
+  layout = next;
+  render();
+  // The sidebar already shows the layouts it chose; tell it about the ones chosen for the user.
+  if (!manual) postToShell({ type: "layout", layout: next });
 });
-panels.logs.setLayout(true);
-devices.changeLayout("none");
+panels.logs.openForSplitLayout();
 
 function connectionFailed(error: unknown) {
   captureUiError(error, "host.connect");
@@ -57,9 +58,7 @@ function selectTool(next: ToolName | undefined) {
 
 function selectLayout(next: DeviceLayout) {
   if (next === layout) return;
-  layout = next;
-  devices.changeLayout(next, true);
-  render();
+  panels.setLayout(next, { manual: true });
 }
 
 declare global {
@@ -94,6 +93,9 @@ window.addEventListener("pagehide", () => {
 void (async () => {
   try {
     await bridge.connect();
+    // The app loads this page from its bundle, so telemetry starts with the server's
+    // environment, opt-out and anonymous identity once the page can read them.
+    startUiTelemetry(bridge, { metadata: await bridge.readTelemetryMetadata(), host: "mac" });
     panels.setAvailable(true);
     await devices.setAvailable(true);
     postToShell({ type: "ready" });

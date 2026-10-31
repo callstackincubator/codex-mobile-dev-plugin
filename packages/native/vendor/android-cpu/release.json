@@ -1,24 +1,24 @@
 {
-  "sourceSHA256": "92d8b951cceb8006836ae6152ed204e815d43ade06b820a2e992cd1db22f453d",
-  "compiler": "Android (12470979, +pgo, -bolt, +lto, -mlgo, based on r522817c) clang version 18.0.3 (https://android.googlesource.com/toolchain/llvm-project d8003a456d14a3deb8054cdaa529ffbf02d9b262)\nTarget: x86_64-apple-darwin27.0.0\nThread model: posix\nInstalledDir: /Users/hannomargelo/Library/Android/sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/darwin-x86_64/bin\n",
+  "sourceSHA256": "ebc3760a70622562aed29f3cb29c0c8ba676f6e64ea7f5a31d668168cd91ddbf",
+  "compiler": "Android (12285214, +pgo, -bolt, +lto, -mlgo, based on r522817b) clang version 18.0.2 (https://android.googlesource.com/toolchain/llvm-project d8003a456d14a3deb8054cdaa529ffbf02d9b262)\nTarget: x86_64-apple-darwin27.0.0\nThread model: posix\nInstalledDir: /Users/laurids/Library/Android/sdk/ndk/27.1.12297006/toolchains/llvm/prebuilt/darwin-x86_64/bin\n",
   "api": 21,
   "flashlightCommit": "5ef203ae184547a3b2984fa4f9b76d672895f861",
   "binaries": {
-    "arm64-v8a": {
-      "sha256": "c46f602ca5b5a419bcaf2efc0d723042b340fd2639a59344d92024cf7ec06672",
-      "bytes": 1558328
+    "arm64-v8a/mobile-dev-cpu": {
+      "sha256": "43138bf41d78f903696750b1c684b504f617ed051120c33c1e11440235da52cf",
+      "bytes": 1559064
     },
-    "armeabi-v7a": {
-      "sha256": "24fd1b5aabec27a1b4965f5bfdc3a39e20669256e44b2af4680e42b1c0840f68",
-      "bytes": 972564
+    "armeabi-v7a/mobile-dev-cpu": {
+      "sha256": "ebd9158a331c5edfff0696320013ea73f1c86cbba11715007a15985437dfd170",
+      "bytes": 973284
     },
-    "x86": {
-      "sha256": "4441151743d30e308de5b89ba0bdb98b3a2c1a5da4d85a0f1d8e5e55f5b8b18e",
-      "bytes": 1639060
+    "x86/mobile-dev-cpu": {
+      "sha256": "8bda7975c4ff30ff4d8d09da55c539f2e3ef94ce37e93f31074c12cc23f77f9b",
+      "bytes": 1639780
     },
-    "x86_64": {
-      "sha256": "8094ccc0fc3eca6a65c3ec55dfd7da110385f5d2555e669fa6f70e95d1ea11d1",
-      "bytes": 1507688
+    "x86_64/mobile-dev-cpu": {
+      "sha256": "ca9a61d7ebe4bc0efb13a43220af27859993d5b862c836bfb9e377ae5a38147c",
+      "bytes": 1508536
     }
   }
 }

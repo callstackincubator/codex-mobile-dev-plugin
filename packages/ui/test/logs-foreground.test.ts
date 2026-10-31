@@ -2,16 +2,16 @@ import test from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { setImmediate } from "node:timers/promises";
-import type { App } from "@modelcontextprotocol/ext-apps";
-import type { ForegroundApp } from "../../shared/src/device-apps.ts";
-import type { LogOptions, LogEntry, MetroTarget } from "../../shared/src/logs.ts";
+import { fakeApp } from "@mobile-dev/test-support/fake-app.ts";
+import type { ForegroundApp } from "@mobile-dev/shared/device-apps.ts";
+import type { LogOptions, LogEntry, MetroTarget } from "@mobile-dev/shared/logs.ts";
 import type { PanelContext } from "../src/model-context.ts";
 import { LogsPanel } from "../src/logs-panel.ts";
-import { createDeviceApps } from "../../test-support/device-apps-fixtures.ts";
-import { UDID, OTHER_UDID } from "../../test-support/fixtures.ts";
+import { createDeviceApps } from "@mobile-dev/test-support/device-apps-fixtures.ts";
+import { UDID, OTHER_UDID } from "@mobile-dev/test-support/fixtures.ts";
 
-const ios = { udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS", platform: "ios" as const };
-const android = { udid: "emulator-5554", name: "Pixel", state: "Booted", runtime: "Android", platform: "android" as const };
+const ios = { udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS", platform: "ios" as const, kind: "simulator" as const };
+const android = { udid: "emulator-5554", name: "Pixel", state: "Booted", runtime: "Android", platform: "android" as const, kind: "emulator" as const };
 const first: ForegroundApp = { bundleId: "com.example.first", pid: 123 };
 const second: ForegroundApp = { bundleId: "com.example.second", pid: 456 };
 const record: LogEntry = { sequence: 1, timestamp: "2026-10-02T12:00:00Z", source: "native", origin: "ios", level: "info", message: "fixture", pid: 123 };
@@ -23,27 +23,27 @@ function fixture(t: TestContext) {
   const opened: LogOptions[] = [];
   const closed: string[] = [];
   const readings: { signal: AbortSignal; resolve: (entries: LogEntry[]) => void }[] = [];
-  const app = {
-    async callServerTool(input: { name: string; arguments: { options?: LogOptions; sessionId?: string } }) {
-      if (input.name === "mobile_performance_sources") {
+  const app = fakeApp({
+    tools: {
+      mobile_performance_sources: () => {
         if (failure) throw new Error("fixture discovery failure");
         return { content: [], structuredContent: { apps: [{ bundleId: first.bundleId, pid: first.pid }, { bundleId: second.bundleId, pid: second.pid }], foregroundApp } };
-      }
-      if (input.name === "mobile_log_sources") return { content: [], structuredContent: { android: [], metro: targets, errors: [] } };
-      if (input.name === "mobile_logs_session") {
-        assert.ok(input.arguments.options);
-        opened.push(input.arguments.options);
+      },
+      mobile_log_sources: () => ({ content: [], structuredContent: { android: [], metro: targets, errors: [] } }),
+      mobile_logs_session: ({ options }) => {
+        assert.ok(options);
+        opened.push(options as LogOptions);
         const sessionId = `session-${opened.length}`;
         return { content: [], _meta: { sessionId, logsUri: `logs://mobile-dev/${sessionId}/batch?after=0` } };
-      }
-      if (input.name === "mobile_logs_close") {
-        assert.ok(input.arguments.sessionId);
-        closed.push(input.arguments.sessionId);
+      },
+      mobile_logs_close: ({ sessionId }) => {
+        assert.ok(sessionId);
+        closed.push(sessionId as string);
         return { content: [] };
-      }
-      if (input.name === "mobile_logs_keep_alive") return { content: [] };
-      throw new Error(`Unexpected tool: ${input.name}`);
+      },
+      mobile_logs_keep_alive: () => ({ content: [] }),
     },
+    fallback: ({ name }) => { throw new Error(`Unexpected tool: ${name}`); },
     readServerResource(input: { uri: string }, options: { signal: AbortSignal }) {
       return new Promise((resolve, reject) => {
         const abort = () => reject(new Error("Read cancelled"));
@@ -55,10 +55,9 @@ function fixture(t: TestContext) {
         } });
       });
     },
-  };
-  const client = app as unknown as App;
-  const deviceApps = createDeviceApps(client);
-  const panel = new LogsPanel(client, { canAttach: true } as PanelContext, deviceApps);
+  });
+  const deviceApps = createDeviceApps(app);
+  const panel = new LogsPanel(app, { canAttach: true, subscribe: () => () => {} } as unknown as PanelContext, deviceApps);
   t.after(async () => { await panel.dispose(); deviceApps.dispose(); });
   const refresh = async (value: ForegroundApp | null) => {
     foregroundApp = value;

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { build } from "esbuild";
 import { JSDOM } from "jsdom";
+import { runBundle } from "@mobile-dev/test-support/bundle.ts";
 
 const update = { status: "available", currentVersion: "0.1.166", latestVersion: "0.1.167" };
 
@@ -26,7 +27,7 @@ async function banner(t: test.TestContext, app: unknown) {
     bundle: true, write: false, format: "iife", globalName: "UpdateUI", platform: "browser", jsx: "automatic",
     define: { "process.env.NODE_ENV": '"production"' },
   });
-  dom.window.eval(bundle.outputFiles[0].text);
+  runBundle(dom.window, bundle.outputFiles[0].text);
   const mounted = dom.window.UpdateUI.mount(app);
   t.after(() => { mounted.dispose(); dom.window.close(); });
   const settle = () => new Promise(resolve => { dom.window.setTimeout(resolve, 0); });

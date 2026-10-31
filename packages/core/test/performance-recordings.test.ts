@@ -7,8 +7,8 @@ import { setTimeout } from "node:timers/promises";
 import { DisplayFpsSessions } from "../src/fps/sessions.ts";
 import { CpuSessions } from "../src/cpu/sessions.ts";
 import { PerformanceRecordings, RecordingStore } from "../src/performance-recordings.ts";
-import { summarizeRecording } from "../../shared/src/recordings.ts";
-import { recordingFixture, unavailableFps } from "../../test-support/recording-fixtures.ts";
+import { summarizeRecording } from "@mobile-dev/shared/recordings.ts";
+import { recordingFixture, unavailableFps } from "@mobile-dev/test-support/recording-fixtures.ts";
 
 test("range summaries weight interval overlap, preserve CPU above 100%, zero memory, and missing values", () => {
   const recording = recordingFixture();

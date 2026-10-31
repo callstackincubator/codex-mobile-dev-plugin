@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { build } from "esbuild";
 import { JSDOM } from "jsdom";
-import { recordingFixture } from "../../test-support/recording-fixtures.ts";
+import { recordingFixture } from "@mobile-dev/test-support/recording-fixtures.ts";
+import { runBundle } from "@mobile-dev/test-support/bundle.ts";
 
 const userId = "anon_0123456789abcdef0123456789abcdef";
 const sessionId = "run_1234567890abcdef1234567890abcdef";
@@ -52,7 +53,7 @@ test("UI heap collection uses the existing timer, active context and byte units 
       bodies.push(body);
       return new Response("", { status: 200 });
     };
-    window.eval(built.outputFiles[0].text);
+    runBundle(window, built.outputFiles[0].text);
     const api = window.Telemetry;
     api.startUiTelemetry({ async callServerTool() { return { content: [] }; } });
     assert.equal(reads, 1);
@@ -155,7 +156,7 @@ test("UI heap collection handles unavailable APIs, invalid bytes, hidden startup
       bodies.push(body);
       return new Response("", { status: 200 });
     };
-    window.eval(built.outputFiles[0].text);
+    runBundle(window, built.outputFiles[0].text);
     const api = window.Telemetry;
     api.startUiTelemetry({ async callServerTool() { return { content: [] }; } });
     await api.stopUiTelemetry();
@@ -196,7 +197,7 @@ test("browser errors use the served environment regardless of live-reload marker
       bodies.push(body);
       return new Response("", { status: 200 });
     };
-    dom.window.eval(built.outputFiles[0].text);
+    runBundle(dom.window, built.outputFiles[0].text);
     const api = dom.window.Telemetry;
     api.startUiTelemetry({ async callServerTool() { return { content: [] }; } });
     const error = new dom.window.Error("Environment validation");
@@ -211,22 +212,61 @@ test("browser errors use the served environment regardless of live-reload marker
   }
   const invalid = new JSDOM("<html><head></head></html>", { runScripts: "outside-only" });
   t.after(() => invalid.window.close());
-  invalid.window.eval(built.outputFiles[0].text);
+  runBundle(invalid.window, built.outputFiles[0].text);
   assert.throws(() => invalid.window.Telemetry.startUiTelemetry({}), /Sentry environment must be/);
   const missingIdentity = new JSDOM('<head><meta name="mobile-dev-environment" content="development"></head>', { runScripts: "outside-only" });
   t.after(() => missingIdentity.window.close());
-  missingIdentity.window.eval(built.outputFiles[0].text);
+  runBundle(missingIdentity.window, built.outputFiles[0].text);
   assert.throws(() => missingIdentity.window.Telemetry.startUiTelemetry({}), /generated anonymous/);
   const disabled = new JSDOM('<head><meta name="mobile-dev-environment" content="development"><meta name="mobile-dev-telemetry" content="off"></head>', { runScripts: "outside-only" });
   t.after(() => disabled.window.close());
   let disabledRequests = 0;
   disabled.window.fetch = async () => { disabledRequests++; return new Response("", { status: 200 }); };
-  disabled.window.eval(built.outputFiles[0].text);
+  runBundle(disabled.window, built.outputFiles[0].text);
   disabled.window.Telemetry.startUiTelemetry({});
   const disabledError = new disabled.window.Error("Disabled telemetry");
   disabled.window.Telemetry.captureUiError(disabledError, "test");
   await disabled.window.Telemetry.stopUiTelemetry();
   assert.equal(disabledRequests, 0);
+});
+
+test("a page that reads the server's telemetry metadata itself starts with it instead of meta tags", async t => {
+  const built = await build({
+    stdin: { contents: 'export * from "./packages/ui/src/telemetry.ts";', resolveDir: process.cwd(), loader: "ts" },
+    bundle: true, write: false, format: "iife", globalName: "Telemetry", platform: "browser", target: "chrome120",
+    define: { "process.env.NODE_ENV": '"production"' },
+  });
+  // The Mac page carries no metadata of its own; the server's opt-out wins as it does in meta tags.
+  for (const telemetry of ["on", "off"]) {
+    const dom = new JSDOM('<html data-view="workspace"><head></head></html>', { pretendToBeVisual: true, runScripts: "outside-only", url: "https://mobile-dev.test/" });
+    t.after(() => dom.window.close());
+    dom.window.Math.random = () => 0;
+    Object.defineProperty(dom.window.performance, "getEntriesByType", { value: () => [] });
+    Object.defineProperty(dom.window.performance, "getEntries", { value: () => [] });
+    const bodies: string[] = [];
+    dom.window.fetch = async (_url, options) => {
+      bodies.push(String(options?.body ?? ""));
+      return new Response("", { status: 200 });
+    };
+    runBundle(dom.window, built.outputFiles[0].text);
+    const api = dom.window.Telemetry;
+    const metadata = telemetry === "on" ? { environment: "release", telemetry, userId, sessionId } : { environment: "release", telemetry };
+    api.startUiTelemetry({ async callServerTool() { return { content: [] }; } }, { metadata });
+    api.captureUiError(new dom.window.Error("Server metadata"), "test");
+    await api.stopUiTelemetry();
+    const captured = bodies.join("\n");
+    if (telemetry === "off") {
+      assert.equal(bodies.length, 0);
+      continue;
+    }
+    contains(captured, '"environment":"release"');
+    contains(captured, `"user":{"id":"${userId}"}`);
+    contains(captured, `"telemetry_session":"${sessionId}"`);
+  }
+  const invalid = new JSDOM(`<html><head><meta name="mobile-dev-environment" content="development">${identityMeta}</head></html>`, { runScripts: "outside-only" });
+  t.after(() => invalid.window.close());
+  runBundle(invalid.window, built.outputFiles[0].text);
+  assert.throws(() => invalid.window.Telemetry.startUiTelemetry({}, { metadata: { environment: "development", telemetry: "on" } }), /generated anonymous/);
 });
 
 test("browser telemetry labels surface measurements, propagates traces, and flushes on teardown", async t => {
@@ -264,7 +304,7 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
     frames.clear();
     for (const callback of callbacks) callback(timestamp);
   }
-  window.eval(built.outputFiles[0].text);
+  runBundle(window, built.outputFiles[0].text);
   const api = window.Telemetry;
   const calls: Record<string, unknown>[] = [];
   const callRestriction = "A phone or VoIP call is currently in progress on the device.";
@@ -287,13 +327,14 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
     if (sendFailure) throw new Error("PRIVATE_SEND_ERROR");
     return {};
   } }, () => ({ getCurrent: () => undefined, async update() { return { updateId: "PRIVATE_UPDATE" }; } }));
-  const store = new api.ScreenAnnotationsStore();
-  store.connect(context);
-  store.configure({ udid: "PRIVATE_DEVICE", name: "PRIVATE_DEVICE_NAME", runtime: "iOS 26", state: "Booted" }, false);
-  store.capture = () => ({ screenshot: { id: "PRIVATE_CAPTURE", data: "PRIVATE_IMAGE", capturedAt: "2026-10-01T10:00:00Z" }, screen: { width: 402, height: 874, units: "points" } });
-  store.readTree = async () => ({ tree: [{ source: "react-native", role: "RCTText", label: "PRIVATE_LABEL", bounds: { x: 10, y: 20, width: 100, height: 40 }, react: {
+  const store = new api.ScreenAnnotationsStore({
+    capture: () => ({ screenshot: { id: "PRIVATE_CAPTURE", data: "PRIVATE_IMAGE", capturedAt: "2026-10-01T10:00:00Z" }, screen: { width: 402, height: 874, units: "points" } }),
+    readTree: async () => ({ tree: [{ source: "react-native", role: "RCTText", label: "PRIVATE_LABEL", bounds: { x: 10, y: 20, width: 100, height: 40 }, react: {
     component: "PRIVATE_COMPONENT", owners: ["PRIVATE_OWNER"], key: "PRIVATE_REACT_KEY", source: { file: "/Users/alice/private.tsx", line: 49, column: 11 },
-  } }] });
+  } }] }),
+  });
+  store.connect(context);
+  store.configure({ udid: "PRIVATE_DEVICE", name: "PRIVATE_DEVICE_NAME", runtime: "iOS 26", state: "Booted", platform: "ios", kind: "simulator" }, false);
   await store.toggle(); store.select({ x: 50, y: 40 }); store.setText("PRIVATE_NOTE"); await store.save(); await store.send();
   store.select({ x: 50, y: 40 }); store.setText("PRIVATE_NOTE_AGAIN"); await store.save();
   for (const failure of ["timeout", "composer", "unexpected", ""]) { sendFailure = failure; await store.send(); }
@@ -306,10 +347,10 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
     async readServerResource() { throw new window.Error("MCP error -32603: This log session expired or closed. Reopen the log panel."); },
   };
   const expiredApps = new api.DeviceAppsStore(expiredClient, window.document);
-  const expiredLogs = new api.LogsPanel(expiredClient, { canAttach: true }, expiredApps);
+  const expiredLogs = new api.LogsPanel(expiredClient, { canAttach: true, subscribe: () => () => {} }, expiredApps);
   expiredLogs.configure({ followApp: false });
   t.after(() => { expiredApps.dispose(); return expiredLogs.dispose(); });
-  expiredApps.selectDevice({ udid: "PRIVATE_DEVICE", name: "PRIVATE_NAME", state: "Booted", runtime: "iOS" });
+  expiredApps.selectDevice({ udid: "PRIVATE_DEVICE", name: "PRIVATE_NAME", state: "Booted", runtime: "iOS", platform: "ios", kind: "simulator" });
   expiredLogs.setAvailable(true);
   expiredLogs.show();
   await new Promise(resolve => window.setTimeout(resolve, 0));
@@ -338,7 +379,7 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   };
   const logApps = new api.DeviceAppsStore(logsClient, window.document);
   const logPanel = new api.LogsPanel(logsClient, context, logApps);
-  logApps.selectDevice({ udid: "PRIVATE_DEVICE", name: "PRIVATE_DEVICE_NAME", state: "Booted", platform: "ios" });
+  logApps.selectDevice({ udid: "PRIVATE_DEVICE", name: "PRIVATE_DEVICE_NAME", state: "Booted", platform: "ios", kind: "simulator" });
   logPanel.setAvailable(true);
   logPanel.show();
   logApps.setAvailable(true);
@@ -543,7 +584,7 @@ test("shared app discovery measures the active context and excludes cancelled or
     bodies.push(String(options?.body ?? ""));
     return new Response("", { status: 200 });
   };
-  window.eval(built.outputFiles[0].text);
+  runBundle(window, built.outputFiles[0].text);
   const api = window.Telemetry;
   let resolve!: (result: unknown) => void;
   const app = { callServerTool() { return new Promise(done => { resolve = done; }); } };
@@ -552,7 +593,7 @@ test("shared app discovery measures the active context and excludes cancelled or
   api.setUiTelemetryContext({ device_platform: "ios", device_kind: "simulator" });
   const store = new api.DeviceAppsStore(app, window.document);
   t.after(() => store.dispose());
-  store.selectDevice({ udid: "PRIVATE_DEVICE", name: "PRIVATE_NAME", state: "Booted", runtime: "iOS" });
+  store.selectDevice({ udid: "PRIVATE_DEVICE", name: "PRIVATE_NAME", state: "Booted", runtime: "iOS", platform: "ios", kind: "simulator" });
   store.setAvailable(true);
   const initial = store.refresh();
   now = 130;
@@ -618,7 +659,7 @@ test("stream retries exclude expected host lifecycle failures and retain unexpec
     bodies.push(body);
     return new Response("", { status: 200 });
   };
-  window.eval(built.outputFiles[0].text);
+  runBundle(window, built.outputFiles[0].text);
   const api = window.Telemetry;
   let outcome = "thread";
   const teardown = new window.AbortController();
@@ -686,33 +727,42 @@ test("UI telemetry attributes each call to the host that renders the page", asyn
     bundle: true, write: false, format: "iife", globalName: "Telemetry", platform: "browser", target: "chrome120",
     define: { "process.env.NODE_ENV": '"production"' },
   });
-  // The Mac page names itself. MCP Apps panels have no label until the shell maps
-  // the connected host; unknown or private names never pass through.
-  for (const [attribute, connected, expected] of [
-    [' data-host="mac"', undefined, "mac"],
-    ["", undefined, undefined],
-    ["", "claude", "claude"],
-    ["", "codex", "codex"],
-    [' data-host="PRIVATE_HOST"', undefined, undefined],
+  // The Mac page passes its label from the start. MCP Apps panels have no label until
+  // the shell maps the connected host; the page's markup never names it.
+  for (const [attribute, host, connected, expected] of [
+    ["", "mac", undefined, "mac"],
+    ["", undefined, undefined, undefined],
+    ["", undefined, "claude", "claude"],
+    ["", undefined, "codex", "codex"],
+    [' data-host="mac"', undefined, undefined, undefined],
   ] as const) {
     const html = `<html data-view="workspace"${attribute}><head><meta name="mobile-dev-environment" content="development">${identityMeta}</head></html>`;
     const dom = new JSDOM(html, { pretendToBeVisual: true, runScripts: "outside-only", url: "https://mobile-dev.test/" });
     t.after(() => dom.window.close());
     const window = dom.window;
+    window.Math.random = () => 0;
     Object.defineProperty(window.performance, "getEntriesByType", { value: () => [] });
     Object.defineProperty(window.performance, "getEntries", { value: () => [] });
-    window.fetch = async () => new Response("", { status: 200 });
-    window.eval(built.outputFiles[0].text);
+    const bodies: string[] = [];
+    window.fetch = async (_url, options) => {
+      bodies.push(String(options?.body ?? ""));
+      return new Response("", { status: 200 });
+    };
+    runBundle(window, built.outputFiles[0].text);
     const api = window.Telemetry;
     const calls: { _meta?: Record<string, Record<string, unknown>> }[] = [];
     const app = { async callServerTool(params: { _meta?: Record<string, Record<string, unknown>> }) { calls.push(params); return { content: [] }; } };
-    api.startUiTelemetry(app);
+    api.startUiTelemetry(app, { host });
     if (connected) api.setUiTelemetryHost(connected);
     assert.equal(api.getUiTelemetryAttributes().host, expected);
     await app.callServerTool({ name: "mobile_cpu_session", arguments: {} });
     assert.equal(calls[0]._meta?.["mobile-dev/telemetry"].host, expected);
     await api.stopUiTelemetry();
-    if (attribute === "") {
+    // A label passed at start also attributes the page's first measurements.
+    const opened = bodies.flatMap(body => body.split("\n")).filter(line => line.includes('"items"'))
+      .flatMap(line => JSON.parse(line).items).find(metric => metric.name === "ui.panel.opened");
+    assert.equal(opened?.attributes.host?.value, connected ? undefined : expected);
+    if (attribute === "" && host === undefined) {
       for (const [name, label] of [["Codex Desktop", "codex"], ["openai-codex", "codex"], ["Claude", "claude"], ["claude-ai", "claude"], ["cursor-vscode", "cursor"], ["PRIVATE_HOST", "other"], [undefined, "other"]] as const) {
         assert.equal(api.telemetryHost(name), label);
       }

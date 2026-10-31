@@ -2,39 +2,40 @@ use idevice::{ReadWrite, RemoteXpcClient, xpc::{Dictionary, XPCObject}};
 use uuid::Uuid;
 use std::time::Duration;
 use std::future::Future;
+use crate::error::{ErrorCode, MirrorError, Result};
 
-async fn await_reply<T>(operation: impl Future<Output = Result<T, idevice::IdeviceError>>) -> Result<T, String> {
-    let result = tokio::time::timeout(Duration::from_secs(5), operation).await;
-    result.map_err(|_| "The iPhone display service did not respond.".to_string())?.map_err(|error| error.to_string())
+fn failed(message: &str) -> MirrorError {
+    MirrorError::new(ErrorCode::DisplayServiceFailed, message)
 }
 
-fn display_output(response: &plist::Value) -> Result<plist::Value, String> {
+async fn await_reply<T>(operation: impl Future<Output = std::result::Result<T, idevice::IdeviceError>>) -> Result<T> {
+    let result = tokio::time::timeout(Duration::from_secs(5), operation).await;
+    result.map_err(|_| failed("The iPhone display service did not respond."))?.map_err(MirrorError::from_display(ErrorCode::DisplayServiceFailed))
+}
+
+/// Keeps CoreDevice's error code next to its localized description.
+fn core_device_error(error: &plist::Value) -> MirrorError {
+    let error = error.as_dictionary();
+    let code = error.and_then(|error| error.get("code")).and_then(plist::Value::as_signed_integer);
+    let code = code.map_or(ErrorCode::CoreDeviceUnknown, ErrorCode::CoreDevice);
+    let description = error.and_then(|error| error.get("userInfo")).and_then(plist::Value::as_dictionary)
+        .and_then(|info| info.get("NSLocalizedDescription")).and_then(plist::Value::as_string)
+        .filter(|description| !description.trim().is_empty());
+    let message = description.unwrap_or("The device returned a display-service error without a description.");
+    MirrorError::new(code, message)
+}
+
+fn display_output(response: &plist::Value) -> Result<plist::Value> {
     let dictionary = response.as_dictionary();
-    let response = dictionary.ok_or("The device returned an invalid display-service response.")?;
-    if let Some(error) = response.get("CoreDevice.error") {
-        let invalid = "The device returned a display-service error without a description.";
-        let dictionary = error.as_dictionary();
-        let error = dictionary.ok_or(invalid)?;
-        let info = error.get("userInfo").ok_or(invalid)?;
-        let dictionary = info.as_dictionary();
-        let info = dictionary.ok_or(invalid)?;
-        let value = info.get("NSLocalizedDescription").ok_or(invalid)?;
-        let text = value.as_string();
-        let description = text.ok_or(invalid)?;
-        let trimmed = description.trim();
-        if trimmed.is_empty() {
-            let message = invalid.to_owned();
-            return Err(message);
-        }
-        let message = description.to_owned();
-        return Err(message);
-    }
+    let response = dictionary.ok_or_else(|| failed("The device returned an invalid display-service response."))?;
+    if let Some(error) = response.get("CoreDevice.error") { return Err(core_device_error(error)); }
     let output = response.get("CoreDevice.output");
     let output = output.cloned();
-    output.ok_or_else(|| "The device returned no display-service output or error.".to_owned())
+    output.ok_or_else(|| failed("The device returned no display-service output or error."))
 }
 
-pub fn sender_port(response: &plist::Value) -> Result<u16, String> {
+pub fn sender_port(response: &plist::Value) -> Result<u16> {
+    let invalid = || MirrorError::new(ErrorCode::NegotiationFailed, "The device returned an invalid video feedback port.");
     let port = response.as_dictionary()
         .and_then(|output| output.get("connection"))
         .and_then(plist::Value::as_dictionary)
@@ -42,9 +43,9 @@ pub fn sender_port(response: &plist::Value) -> Result<u16, String> {
         .and_then(plist::Value::as_dictionary)
         .and_then(|sender| sender.get("port"))
         .and_then(plist::Value::as_unsigned_integer)
-        .ok_or("The device returned no video feedback port.")?;
-    let port = u16::try_from(port).map_err(|_| "The device returned an invalid video feedback port.")?;
-    if port == 0 { return Err("The device returned an invalid video feedback port.".into()); }
+        .ok_or_else(|| MirrorError::new(ErrorCode::NegotiationFailed, "The device returned no video feedback port."))?;
+    let port = u16::try_from(port).map_err(|_| invalid())?;
+    if port == 0 { return Err(invalid()); }
     Ok(port)
 }
 
@@ -54,7 +55,7 @@ pub struct Control<R: ReadWrite> {
 }
 
 impl<R: ReadWrite> Control<R> {
-    pub async fn new(stream: R) -> Result<Self, String> {
+    pub async fn new(stream: R) -> Result<Self> {
         let connect = RemoteXpcClient::new(stream);
         let mut client = await_reply(connect).await?;
         let handshake = client.do_handshake();
@@ -62,7 +63,7 @@ impl<R: ReadWrite> Control<R> {
         Ok(Self { client })
     }
 
-    pub async fn invoke(&mut self, feature: &str, input: Dictionary, action: Option<&str>) -> Result<plist::Value, String> {
+    pub async fn invoke(&mut self, feature: &str, input: Dictionary, action: Option<&str>) -> Result<plist::Value> {
         let mut version = Dictionary::new();
         version.insert("components".into(), XPCObject::Array(vec![XPCObject::UInt64(443), XPCObject::UInt64(18)]));
         version.insert("originalComponentsCount".into(), XPCObject::Int64(2));
@@ -80,13 +81,13 @@ impl<R: ReadWrite> Control<R> {
         }
         let send = self.client.send_object(request, true);
         let result = tokio::time::timeout(Duration::from_secs(5), send).await;
-        result.map_err(|_| "The iPhone display request timed out.")?.map_err(|error| error.to_string())?;
+        result.map_err(|_| failed("The iPhone display request timed out."))?.map_err(MirrorError::from_display(ErrorCode::DisplayServiceFailed))?;
         let receive = self.client.recv();
         let response = await_reply(receive).await?;
         display_output(&response)
     }
 
-    pub async fn stop(&mut self, ids: &[u64]) -> Result<(), String> {
+    pub async fn stop(&mut self, ids: &[u64]) -> Result<()> {
         if ids.is_empty() { return Ok(()); }
         let mut input = Dictionary::new();
         input.insert("stopAll".into(), XPCObject::Bool(false));
@@ -121,9 +122,20 @@ mod tests {
         response.insert(error_key, error);
         let response = plist::Value::Dictionary(response);
         let result = display_output(&response);
-        let expected_message = message.to_owned();
-        let expected = Err(expected_message);
+        let expected = Err(MirrorError::new(ErrorCode::CoreDevice(9022), message));
         assert_eq!(result, expected);
+        let reason = result.unwrap_err().reason();
+        assert_eq!(reason, format!("[core_device_9022] {message}"));
+    }
+
+    #[test]
+    fn a_core_device_error_without_code_or_description_stays_a_core_device_error() {
+        let mut response = plist::Dictionary::new();
+        response.insert("CoreDevice.error".to_owned(), plist::Value::Dictionary(plist::Dictionary::new()));
+        let response = plist::Value::Dictionary(response);
+        let error = display_output(&response).unwrap_err();
+        assert_eq!(error.code, ErrorCode::CoreDeviceUnknown);
+        assert_eq!(error.message, "The device returned a display-service error without a description.");
     }
 
     #[test]
@@ -145,8 +157,8 @@ mod tests {
         let dictionary = plist::Dictionary::new();
         let response = plist::Value::Dictionary(dictionary);
         let result = display_output(&response);
-        let message = "The device returned no display-service output or error.".to_owned();
-        let expected = Err(message);
+        let message = "The device returned no display-service output or error.";
+        let expected = Err(MirrorError::new(ErrorCode::DisplayServiceFailed, message));
         assert_eq!(result, expected);
     }
 

@@ -1,0 +1,30 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { scrubMetric } from "@mobile-dev/shared/telemetry.ts";
+import { recordBrowserPanelContext, recordBrowserPanelSessions, recordPanelRuntime } from "../src/telemetry.ts";
+import { assertFragment, captureSentry } from "@mobile-dev/test-support/sentry.ts";
+
+test("browser session counts describe plugin resources and honor telemetry opt-out", async t => {
+  const sentry = captureSentry(t, { beforeSendMetric: scrubMetric, telemetry: "on" });
+  recordBrowserPanelSessions(2);
+  recordBrowserPanelSessions(0);
+  recordBrowserPanelContext("stored", 2048);
+  recordBrowserPanelContext("too_large");
+  recordPanelRuntime("downloaded", 1200, 7_000_000);
+  recordPanelRuntime("failed", 30, undefined, "network");
+  const sent = await sentry.text();
+  assertFragment(sent, "browser_panel.sessions");
+  assertFragment(sent, "browser_panel.context_update");
+  assertFragment(sent, "browser_panel.context_bytes");
+  assertFragment(sent, '"outcome":{"value":"too_large"');
+  assertFragment(sent, "panel_runtime.ready");
+  assertFragment(sent, "panel_runtime.download_bytes");
+  assertFragment(sent, '"reason":{"value":"network"');
+  assertFragment(sent, '"component":{"value":"server"');
+  for (const fragment of ["sessionId", "user.id", "telemetry_session", "localhost", "127.0.0.1", "github.com", "panel-runtime-darwin"]) assertFragment(sent, fragment, false);
+  sentry.setTelemetry("off");
+  recordBrowserPanelSessions(3);
+  recordBrowserPanelContext("stored", 10);
+  recordPanelRuntime("cached", 5);
+  assert.equal(await sentry.text(), sent);
+});

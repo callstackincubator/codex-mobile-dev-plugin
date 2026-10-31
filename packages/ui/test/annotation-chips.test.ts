@@ -1,14 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { App } from "@modelcontextprotocol/ext-apps";
-import type { ScreenAnnotation } from "../../shared/src/screen-annotations.ts";
+import { fakeApp } from "@mobile-dev/test-support/fake-app.ts";
+import type { ScreenAnnotation } from "@mobile-dev/shared/screen-annotations.ts";
 import { PanelContext } from "../src/model-context.ts";
-import { ANNOTATION_EDIT_GUIDANCE, ANNOTATION_EDIT_PROMPT, formatAnnotationContext, formatAnnotationMessage } from "../../shared/src/screen-annotations.ts";
+import { ANNOTATION_EDIT_GUIDANCE, ANNOTATION_EDIT_PROMPT, formatAnnotationContext, formatAnnotationMessage } from "@mobile-dev/shared/screen-annotations.ts";
 import type { HostAttachments } from "../src/host-bridge.ts";
 
 const annotation: ScreenAnnotation = {
   id: "header-note", number: 1, text: "Make this\n  smaller.",
-  simulator: { udid: "test-device", name: "iPhone", runtime: "iOS 26", state: "Booted", platform: "ios" },
+  simulator: { udid: "test-device", name: "iPhone", runtime: "iOS 26", state: "Booted", platform: "ios", kind: "simulator" },
   component: { name: "Header title", depth: 2, bounds: { x: 20, y: 80, width: 200, height: 30 },
     react: { component: "Text", owners: ["Header"], source: { file: "/app/src/Header.tsx", line: 12 } } },
   point: { x: 40, y: 90 }, screen: { width: 402, height: 874, units: "points" },
@@ -19,10 +20,10 @@ function fixture() {
   let composerAvailable = true;
   const updates: Parameters<App["updateModelContext"]>[0][] = [];
   const messages: Parameters<App["sendMessage"]>[0][] = [];
-  const context = new PanelContext({
+  const context = new PanelContext(fakeApp({
     getHostCapabilities: () => ({ message: { text: {} } }),
     async sendMessage(message: Parameters<App["sendMessage"]>[0]) { messages.push(message); return {}; },
-  } as unknown as App, () => ({
+  }), () => ({
     async update(params: Parameters<App["updateModelContext"]>[0]) {
       if (!composerAvailable) throw new Error("MCP model context requires an available composer");
       updates.push(params); return { updateId: String(updates.length) };

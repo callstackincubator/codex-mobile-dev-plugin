@@ -7,16 +7,16 @@ import { ComparisonController } from "@mobile-dev/ui/comparison-controller.ts";
 import { ComparisonCard } from "@mobile-dev/ui/components/comparison-card.tsx";
 import { RecordingCard } from "@mobile-dev/ui/components/recording-card.tsx";
 import { TraceSiftCards } from "@mobile-dev/ui/components/tracesift-cards.tsx";
+import { readPageView } from "@mobile-dev/ui/page-view.ts";
 import { RecordingController } from "@mobile-dev/ui/recording-controller.ts";
 import { TraceSiftController } from "@mobile-dev/ui/tracesift-controller.ts";
-import { startCardApp } from "./card-app.tsx";
-import { startRetiredCard } from "./retired-card.tsx";
+import { startCardApp, startRetiredCard } from "./card-app.tsx";
 import { startWorkspaceApp } from "./workspace-app.tsx";
 import type { WorkspaceOptions } from "./workspace-extension.ts";
 
 /** Starts the view the served page asks for; a host's page entry passes the chrome it adds. */
 export function startMcpApp(options: { workspace?: WorkspaceOptions } = {}) {
-  const view = document.documentElement.dataset.view;
+  const view = readPageView();
   // Servers with Mobile Dev's workspace say so on their cards, which can then open recordings there.
   const workspace = document.documentElement.dataset.workspace !== undefined;
   if (view === "recording") startCardApp({
@@ -53,5 +53,6 @@ export function startMcpApp(options: { workspace?: WorkspaceOptions } = {}) {
   });
   // Chats keep devices cards from releases before device choice moved to the host's own form.
   else if (view === "devices") startRetiredCard("This device list came from an earlier version of Mobile Dev. Ask again to choose a device.");
-  else startWorkspaceApp(options.workspace);
+  // `workspace` fills the host; `panel` sits beside the chat.
+  else startWorkspaceApp(options.workspace, { fullscreen: view === "workspace" });
 }

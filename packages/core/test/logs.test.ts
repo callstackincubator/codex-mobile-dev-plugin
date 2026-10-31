@@ -3,17 +3,19 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { once } from "node:events";
 import { WebSocketServer } from "ws";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { parseIOSLog, parseLogcat, parseMetroEvent } from "../src/log-parsers.ts";
 import { LogBuffer } from "../src/log-buffer.ts";
 import { LogSessions } from "../src/log-sessions.ts";
 import { metroTargets, startMetroLogs } from "../src/metro-logs.ts";
-import { runLogProcess } from "../src/native-logs.ts";
-import { stackLogs, formatLogContext, logOptionsSchema } from "../../shared/src/logs.ts";
-import type { LogEntry, LogRecord } from "../../shared/src/logs.ts";
+import { runLogProcess, superviseLogSource } from "../src/native-logs.ts";
+import { registerLogTools } from "../src/log-tools.ts";
+import { DeviceResolver } from "../src/devices.ts";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { stackLogs, formatLogContext, logOptionsSchema } from "@mobile-dev/shared/logs.ts";
+import type { LogEntry, LogRecord, LogSourceStatus } from "@mobile-dev/shared/logs.ts";
 import type { LogSink } from "../src/native-logs.ts";
-import { createTestPlugin, fakeSimctl, UDID, OTHER_UDID } from "../../test-support/fixtures.ts";
+import { createTestPlugin, fakeSimctl, UDID, OTHER_UDID } from "@mobile-dev/test-support/fixtures.ts";
+import { connectClient } from "@mobile-dev/test-support/mcp.ts";
 
 const record: LogRecord = { timestamp: "2026-09-30T12:00:00.000Z", level: "warn", source: "js", origin: "ios", process: "Example", message: "Request failed" };
 
@@ -133,9 +135,8 @@ test("MCP log sessions validate devices and expose batches without browser netwo
   let sink: LogSink | undefined; let stopped = false;
   const logs = new LogSessions({ native: (_target, next) => { sink = next; return async () => { stopped = true; }; }, metro: () => async () => {} });
   const plugin = await createTestPlugin("<head></head><title>Logs</title>", { simulators: fakeSimctl(), logs });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair(); const client = new Client({ name: "logs-test", version: "1" });
-  t.after(async () => { await client.close(); await plugin.close(); });
-  await plugin.server.connect(serverTransport); await client.connect(clientTransport);
+  t.after(() => plugin.close());
+  const client = await connectClient(t, plugin.server);
   const invalid = await client.callTool({ name: "mobile_logs_session", arguments: { options: { native: { platform: "ios", deviceId: OTHER_UDID } } } });
   assert.equal(invalid.isError, true); assert.equal(sink, undefined);
   const opened = await client.callTool({ name: "mobile_logs_session", arguments: { options: { native: { platform: "ios", deviceId: UDID, process: "Example" } } } });
@@ -154,4 +155,40 @@ test("MCP log sessions validate devices and expose batches without browser netwo
   assert.equal(unauthorized.isError, true);
   await client.callTool({ name: "mobile_logs_close", arguments: { sessionId: opened._meta?.sessionId } });
   assert.equal(stopped, true); await assert.rejects(client.readResource({ uri: opened._meta?.logsUri as string }), /expired or closed/);
+});
+
+test("a supervised log source reconnects after a failure and reports each phase", async () => {
+  const statuses: LogSourceStatus[] = [];
+  let attempts = 0;
+  let second!: () => void;
+  const reconnected = new Promise<void>(resolve => { second = resolve; });
+  let stopped = false;
+  const stop = superviseLogSource("native", { log() {}, status: status => statuses.push(status) }, async signal => {
+    if (++attempts === 1) throw new Error("Reader exited.");
+    second();
+    await new Promise(resolve => signal.addEventListener("abort", resolve, { once: true }));
+  }, () => { stopped = true; });
+  await reconnected;
+  await stop();
+  assert.deepEqual(statuses, [
+    { source: "native", state: "connecting" },
+    { source: "native", state: "reconnecting", message: "Reader exited." },
+    { source: "native", state: "reconnecting" },
+  ]);
+  assert.equal(stopped, true);
+});
+
+test("log sources list Android and Metro at once and keep Android's error first", async t => {
+  const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+  const http = createServer(async (_request, response) => { await delay(500); response.writeHead(500).end(); });
+  http.listen(0, "127.0.0.1"); await once(http, "listening");
+  t.after(() => { http.closeAllConnections(); http.close(); });
+  const metroUrl = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  const server = new McpServer({ name: "log-sources-test", version: "1" });
+  registerLogTools(server, new LogSessions(), new DeviceResolver({ android: async () => { await delay(600); throw new Error("adb is missing"); } }));
+  const client = await connectClient(t, server);
+  const started = performance.now();
+  const result = await client.callTool({ name: "mobile_log_sources", arguments: { metroUrl } });
+  assert.ok(performance.now() - started < 1000, "Android and Metro are listed concurrently");
+  assert.deepEqual(result.structuredContent, { android: [], metro: [], errors: ["Android: adb is missing", "Metro: Metro returned HTTP 500."] });
 });

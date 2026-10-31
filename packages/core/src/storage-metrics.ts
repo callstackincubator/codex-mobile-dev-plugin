@@ -1,6 +1,6 @@
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
-import * as Sentry from "@sentry/node";
+import { captureServerError, gauge, telemetryEnabled } from "./telemetry.ts";
 
 export async function directoryBytes(directory: string): Promise<number> {
   let entries;
@@ -26,7 +26,9 @@ export async function directoryBytes(directory: string): Promise<number> {
   return bytes;
 }
 
+/** Gauges each directory's size every five minutes, from now; nothing runs while telemetry is off. */
 export function startStorageMetrics(directories: Record<string, string>): () => void {
+  if (!telemetryEnabled()) return () => {};
   let collecting = false;
   let stopped = false;
   async function collect() {
@@ -36,9 +38,9 @@ export function startStorageMetrics(directories: Record<string, string>): () => 
       for (const [kind, directory] of Object.entries(directories)) {
         const bytes = await directoryBytes(directory);
         if (stopped) return;
-        Sentry.metrics.gauge("storage.bytes", bytes, { unit: "byte", attributes: { kind } });
+        gauge("storage.bytes", bytes, { kind }, "byte");
       }
-    } catch (error) { Sentry.captureException(error, { tags: { operation: "storage.measure" } }); }
+    } catch (error) { captureServerError(error, "storage.measure"); }
     finally { collecting = false; }
   }
   void collect();

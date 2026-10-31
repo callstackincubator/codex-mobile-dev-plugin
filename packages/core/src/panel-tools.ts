@@ -3,37 +3,36 @@ import { openRequestSession } from "./request-session.ts";
 import type { ServerRequestContext } from "./request-session.ts";
 import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
-import type { CallToolResult, ReadResourceResult } from "@modelcontextprotocol/sdk/types.js";
+import { registerAppResource, registerAppTool } from "@modelcontextprotocol/ext-apps/server";
+import { OpenAIExtensions } from "@openai/mcp-extensions/server";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { PLUGIN_VERSION } from "@mobile-dev/shared/version.ts";
-import { SENTRY_ORIGIN } from "@mobile-dev/shared/telemetry.ts";
-import { errorMessage, streamMessageSchema, udidSchema } from "@mobile-dev/shared/protocol.ts";
+import { iosSimulatorSchema, statusSchema, streamMessageSchema, udidSchema } from "@mobile-dev/shared/protocol.ts";
 import { PANEL_PAGE_META, panelTargetSchema } from "@mobile-dev/shared/panel-target.ts";
 import type { PanelTarget } from "@mobile-dev/shared/panel-target.ts";
-import type { PanelOpener } from "./server-feature.ts";
-import { captureServerError } from "./telemetry.ts";
 import { registerEarlierReleases } from "./earlier-releases.ts";
 import { readBezel } from "./bezel.ts";
 import { Baguette } from "./baguette.ts";
-import type { ServeEmu } from "./serve-emu.ts";
 import { registerAndroidTools } from "./android-tools.ts";
 import { registerIosMirrorTools } from "./ios-mirror-tools.ts";
 import { registerInspectionTools } from "./inspection-tools.ts";
 import { registerDeviceSettingsTools } from "./device-settings.ts";
 import { StreamSessions } from "./stream-sessions.ts";
-import type { CpuSessions } from "./cpu/sessions.ts";
-import type { DisplayFpsSessions } from "./fps/sessions.ts";
+import type { ServerFeature, ServerServices } from "./server-feature.ts";
+import { deviceChoiceFormSupport, registerDeviceChoiceTools } from "./device-choice-tools.ts";
+import { listIosDevices } from "./ios-devices.ts";
 import { SimulatorInputService } from "./simulator-input.ts";
 import type { InputStatus, SimulatorInput } from "./simulator-input.ts";
 import { retryableFailure } from "./simulator-unavailable.ts";
 import { copyPNGToClipboard } from "./clipboard.ts";
+import { sessionIdSchema } from "./session-registry.ts";
+import { guarded as guardedTool, jsonResult, READ_ONLY as read, WRITES as write } from "./tool-results.ts";
+import { assertPng, MAX_SCREENSHOT_BYTES, screenshotRequest, screenshotResult } from "./png.ts";
 import { registerPanelAppControlTools } from "./app-control/tools.ts";
-import type { DriverFactory } from "./app-control/tools.ts";
 import { registerOpenRecordingTool } from "./recording-tools.ts";
-import type { ShowRecording } from "./recording-tools.ts";
 import { foregroundSimulatorPid } from "./device-apps/foreground.ts";
-import type { SimulatorForeground } from "./device-apps/foreground.ts";
+import { errorMessage } from "@mobile-dev/shared/error-reporting.ts";
 
 export const APP_URI = `ui://mobile-dev/${PLUGIN_VERSION}/simulator.html`;
 export const WORKSPACE_URI = `ui://mobile-dev/${PLUGIN_VERSION}/workspace.html`;
@@ -41,54 +40,19 @@ export const WORKSPACE_URI = `ui://mobile-dev/${PLUGIN_VERSION}/workspace.html`;
 // older addresses do not fit that pattern.
 const unversionedAppUris = ["ui://mobile-dev/simulator.html", "ui://mobile-dev/0.1.24/mcp-stream/simulator.html"];
 const unversionedWorkspaceUris = ["ui://mobile-dev/workspace.html", "ui://mobile-dev/0.1.24/mcp-stream/workspace.html"];
-const sessionIdSchema = z.string().regex(/^[a-f0-9]{64}$/);
-const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
-const write = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
 const deviceInput = { udid: udidSchema.describe("A simulator UDID returned by mobile_list_simulators.") };
-const deviceSchema = z.object({ udid: udidSchema, name: z.string(), state: z.string(), runtime: z.string() });
 const browserPanelOutput = z.object({ url: z.string(), instructions: z.string() }).optional()
   .describe("Present when the panel is not shown in the chat: the page to open beside it, and how. Follow its instructions.");
 const statusOutput = {
-  connected: z.boolean(), managed: z.boolean(),
-  baseUrl: z.string().describe("The bundled backend's private address, for Mobile Dev's own requests. It is not a page: never open it or show it to the user."),
-  devices: z.array(deviceSchema), error: z.string().optional(),
+  ...statusSchema.shape,
+  baseUrl: statusSchema.shape.baseUrl.describe("The bundled backend's private address, for Mobile Dev's own requests. It is not a page: never open it or show it to the user."),
+  devices: z.array(iosSimulatorSchema.extend({ udid: udidSchema })),
 };
 
-function result(data: Record<string, unknown>, message: string): CallToolResult {
-  return { content: [{ type: "text", text: message }], structuredContent: data };
-}
-
-function guarded<T>(handler: (input: T, context: ServerRequestContext) => Promise<CallToolResult>) {
-  return async (input: T, context: ServerRequestContext): Promise<CallToolResult> => {
-    try { return await handler(input, context); }
-    catch (error) {
-      captureServerError(error, "simulator.tool", { signal: context.signal });
-      return { isError: true, content: [{ type: "text", text: errorMessage(error) }], _meta: { retryable: retryableFailure(error) } };
-    }
-  };
-}
+const result = (data: Record<string, unknown>, message: string) => jsonResult(data, message);
+const guarded = <T>(handler: (input: T, context: ServerRequestContext) => Promise<CallToolResult>) => guardedTool({ operation: "simulator.tool", retryable: true }, handler);
 
 const INSTRUCTIONS = "For mobile app development, open mobile_open_simulator before the first device launch, or reuse the open view. Use selected device IDs. Control apps with the device_* tools when the server has them. When the user asks to see their devices, open or reuse the view, whose device menu lists them. If a task has ambiguous device targets, ask the user with mobile_choose_devices when it is available, otherwise in chat; proceed only after they choose. For a local CPU or React profile path, use mobile_analyze_profile to show TraceSift findings, then wait for the user to choose Investigate. See the Mobile Dev skill, when installed, for device control, logs, profiles, and performance workflows.";
-
-/** Mobile Dev's own device views, which a host adds to the server it runs (see createPanel). */
-export type Panel = {
-  instructions: string;
-  simulatorForeground: SimulatorForeground;
-  register(server: McpServer, shared: PanelShared): () => Promise<void>;
-};
-
-/** What the server shares with its panel. */
-export type PanelShared = {
-  android: ServeEmu;
-  cpu: CpuSessions;
-  fps: DisplayFpsSessions;
-  drivers: DriverFactory;
-  /** The page every view loads, configured for this server. */
-  page(): Promise<string>;
-  showRecording: ShowRecording;
-  /** Lets host features add to an opening tool's result, such as a browser panel's link. */
-  opened: PanelOpener;
-};
 
 /** Services the panel runs on; tests replace them with fakes. */
 export type PanelOptions = {
@@ -107,46 +71,42 @@ export type PanelOptions = {
  * Mobile Dev's live device panel and workspace with the tools only they use: device
  * streams and input, screenshots, UI inspection, device settings, physical iPhone
  * mirroring, Baguette's simulator controls, the App tab's reads, opening recordings in
- * the workspace and asking for devices in a native form. Hosts that show devices
- * themselves, such as Claude, leave it out.
+ * the workspace and asking for devices in a native form. Claude shows it beside the
+ * chat in a browser (`inline: false`).
  */
-export function createPanel({ baguette = new Baguette(), simulatorInput, copyScreenshot = copyPNGToClipboard, inline = true }: PanelOptions = {}): Panel {
+export function createPanel({ baguette = new Baguette(), simulatorInput, copyScreenshot = copyPNGToClipboard, inline = true }: PanelOptions = {}): ServerFeature {
   return {
     instructions: INSTRUCTIONS,
     simulatorForeground: foregroundSimulatorPid,
-    register: (server, shared) => registerPanel(server, shared, {
+    // Cards open recordings in the workspace only where it renders in the chat.
+    workspace: inline,
+    register: (server, services) => registerPanel(server, services, {
       baguette, copyScreenshot, inline, simulatorInput: simulatorInput ?? new SimulatorInputService(udid => baguette.repairInput(udid)),
     }),
   };
 }
 
-function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, showRecording, opened }: PanelShared,
+function registerPanel(server: McpServer, { android, deviceSessions: devices, drivers, servePage, showRecording, simulators, onInitialized, panelOpening }: ServerServices,
   { baguette, simulatorInput, copyScreenshot, inline }: Required<PanelOptions>) {
+  // The device form goes with Mobile Dev's own device views, for hosts that render one.
+  const extensions = new OpenAIExtensions(server);
+  onInitialized(() => {
+    const form = deviceChoiceFormSupport(server.server.getClientCapabilities());
+    if (form) registerDeviceChoiceTools(server, extensions, {
+      simulators: () => simulators.list(), android: () => android.list(), physicalIos: listIosDevices,
+    }, form);
+  });
   const streams = new StreamSessions(baguette);
+  devices.add(udid => streams.closeDevice(udid));
   const closeIosMirror = registerIosMirrorTools(server, APP_URI);
   const closeInspection = registerInspectionTools(server, baguette, android);
-  const closeAndroid = registerAndroidTools(server, android, APP_URI, copyScreenshot, async deviceId => {
-    const closeCpu = cpu.closeDevice(deviceId);
-    const closeFps = fps.closeDevice(deviceId);
-    await Promise.all([closeCpu, closeFps]);
-  });
+  const closeAndroid = registerAndroidTools(server, android, APP_URI, copyScreenshot, devices);
   const closeDeviceSettings = registerDeviceSettingsTools(server, baguette, android);
   registerPanelAppControlTools(server, drivers);
   // Opening a recording renders the workspace in the chat; beside the chat, recordings stay cards.
   if (inline) registerOpenRecordingTool(server, showRecording, WORKSPACE_URI);
-
-  const readApp = async (uri: URL): Promise<ReadResourceResult> => {
-    const content = await page();
-    return { contents: [{
-      uri: uri.href, mimeType: RESOURCE_MIME_TYPE, text: uri.href.endsWith("/workspace.html")
-        ? content.replace('data-view="panel"', 'data-view="workspace"').replace('data-layout="stacked"', 'data-layout="split"')
-        : content,
-      _meta: {
-        ui: { permissions: { clipboardWrite: {} }, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } },
-        "openai/ui": { preferredDisplayMode: "fullscreen", availableDisplayModes: ["inline", "fullscreen"] },
-      },
-    }] };
-  };
+  const readPanel = servePage("panel", "fullscreen");
+  const readWorkspace = servePage("workspace", "fullscreen");
 
   type PanelInputStatus = { inputStatus: InputStatus; inputRepairMessage?: string };
   const automaticRepairs = new Map<string, { attemptedAt: number; pending: Promise<PanelInputStatus> }>();
@@ -181,13 +141,13 @@ function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, sh
     };
   }
 
-  registerAppResource(server, "mobile-dev-simulator", APP_URI, {}, readApp);
-  registerAppResource(server, "mobile-dev-workspace", WORKSPACE_URI, {}, readApp);
+  registerAppResource(server, "mobile-dev-simulator", APP_URI, {}, readPanel);
+  registerAppResource(server, "mobile-dev-workspace", WORKSPACE_URI, {}, readWorkspace);
   for (const [index, uri] of [...unversionedAppUris, ...unversionedWorkspaceUris].entries()) {
-    registerAppResource(server, `mobile-dev-unversioned-${index}`, uri, {}, readApp);
+    registerAppResource(server, `mobile-dev-unversioned-${index}`, uri, {}, unversionedWorkspaceUris.includes(uri) ? readWorkspace : readPanel);
   }
-  registerEarlierReleases(server, "mobile-dev-simulator-earlier", "simulator", readApp);
-  registerEarlierReleases(server, "mobile-dev-workspace-earlier", "workspace", readApp);
+  registerEarlierReleases(server, "mobile-dev-simulator-earlier", "simulator", readPanel);
+  registerEarlierReleases(server, "mobile-dev-workspace-earlier", "workspace", readWorkspace);
 
   const frameTemplate = new ResourceTemplate("mobile-frame://{sessionId}/latest{?after}", { list: undefined });
   server.registerResource("simulator-latest-frame", frameTemplate, { mimeType: "image/jpeg" }, async (uri, variables, extra) => {
@@ -220,7 +180,7 @@ function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, sh
     }
     // Hosts can pass the model either form of a result, and Claude Code passes only the
     // structured one, so another place to show the panel goes into both.
-    const opening = await opened({ tool, target: panelTarget });
+    const opening = await panelOpening({ tool, target: panelTarget });
     const response = result({ ...status, panelTarget, ...opening ? { browserPanel: opening } : {} }, status.connected ? `Found ${status.devices.length} simulators.` : status.error ?? "The bundled simulator backend could not start.");
     if (opening) response.content.push({ type: "text", text: opening.instructions });
     return response;
@@ -281,9 +241,8 @@ function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, sh
       inputSchema: deviceInput, outputSchema: statusOutput,
       annotations: { ...write, destructiveHint: action === "shutdown" },
     }, guarded(async ({ udid }: { udid: string }) => {
-      if (action === "shutdown") await cpu.closeDevice(udid);
+      if (action === "shutdown") await devices.closeDevice(udid);
       const status = await baguette.changeDeviceState(udid, action);
-      if (action === "shutdown") streams.closeDevice(udid);
       return result(status, `${action === "boot" ? "Booted" : "Shut down"} ${udid}.`);
     }));
   }
@@ -312,15 +271,8 @@ function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, sh
 
   async function captureScreenshot(udid: string) {
     await baguette.device(udid, true);
-    const response = await fetch(new URL(`/simulators/${udid}/screenshot.png`, baguette.baseUrl), {
-      redirect: "error", signal: AbortSignal.timeout(10000),
-    });
-    if (!response.ok) throw new Error(`Screenshot failed with HTTP ${response.status}.`);
-    const bytes = Buffer.from(await response.arrayBuffer());
-    if (bytes.length > 16 * 1024 * 1024 || !bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) {
-      throw new Error("Baguette returned an invalid or oversized PNG screenshot.");
-    }
-    return bytes;
+    const bytes = await baguette.fetchBytes(`/simulators/${udid}/screenshot.png`, screenshotRequest("Baguette"));
+    return assertPng(bytes, MAX_SCREENSHOT_BYTES, "Baguette");
   }
 
   registerAppTool(server, "mobile_capture_screenshot", {
@@ -330,14 +282,7 @@ function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, sh
     _meta: { ui: { resourceUri: APP_URI, visibility: ["app"] } },
   }, guarded(async ({ udid }: { udid: string }) => {
     const bytes = await captureScreenshot(udid);
-    let copied = false;
-    let clipboardError: string | undefined;
-    try { await copyScreenshot(bytes); copied = true; }
-    catch (error) { clipboardError = errorMessage(error); }
-    return {
-      content: [{ type: "image", mimeType: "image/png", data: bytes.toString("base64") }],
-      structuredContent: { udid, copied, ...(clipboardError ? { clipboardError } : {}) },
-    };
+    return screenshotResult(bytes, { udid }, { copy: copyScreenshot, operation: "simulator.clipboard" });
   }));
 
   registerAppTool(server, "mobile_stream_session", {
@@ -348,8 +293,8 @@ function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, sh
   }, guarded(async ({ udid, fps }: { udid: string; fps: number }, context) => {
     context.signal.throwIfAborted();
     const definition = await baguette.definition(udid);
-    const bezel = await readBezel(baguette, udid, definition.screen);
-    const { inputStatus, inputRepairMessage } = await panelInputStatus(udid);
+    // The frame and the input check do not depend on each other.
+    const [bezel, { inputStatus, inputRepairMessage }] = await Promise.all([readBezel(baguette, udid, definition.screen), panelInputStatus(udid)]);
     const sessionId = await openRequestSession(context.signal, () => streams.open(udid, fps), id => streams.closeSession(id));
     return {
       ...result({ udid, definition, fps, inputStatus, ...(inputRepairMessage ? { inputRepairMessage } : {}) }, `Stream ready for ${definition.identity.name}.`),

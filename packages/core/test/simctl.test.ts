@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { parseSimulatorList, Simctl, simulatorRuntimeName } from "../src/simctl.ts";
 import { SimulatorUnavailableError } from "../src/simulator-unavailable.ts";
-import { OTHER_UDID, UDID } from "../../test-support/fixtures.ts";
+import { OTHER_UDID, UDID } from "@mobile-dev/test-support/fixtures.ts";
 
 const listing = JSON.stringify({ devices: {
   "com.apple.CoreSimulator.SimRuntime.iOS-26-0": [
@@ -16,8 +16,8 @@ test("simctl's listing reads as Baguette's: available simulators, booted first, 
   assert.equal(simulatorRuntimeName("com.apple.CoreSimulator.SimRuntime.watchOS-11-2"), "watchOS 11.2");
   assert.equal(simulatorRuntimeName("custom"), "custom");
   assert.deepEqual(parseSimulatorList(listing), [
-    { udid: UDID, name: "iPhone 18 Pro", state: "Booted", runtime: "iOS 27.0.1" },
-    { udid: OTHER_UDID, name: "iPhone 17", state: "Shutdown", runtime: "iOS 26.0" },
+    { udid: UDID, name: "iPhone 18 Pro", state: "Booted", runtime: "iOS 27.0.1", platform: "ios", kind: "simulator" },
+    { udid: OTHER_UDID, name: "iPhone 17", state: "Shutdown", runtime: "iOS 26.0", platform: "ios", kind: "simulator" },
   ]);
 });
 

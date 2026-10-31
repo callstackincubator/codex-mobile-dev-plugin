@@ -6,4 +6,4 @@ import { codexUpdates } from "./codex-updates.ts";
 
 // Codex's server: the shared server with Mobile Dev's panel and agent-device's commands, plus
 // the updater for Codex plugin installs.
-await runStdioServer({ panel: createPanel(), features: [agentDeviceTools(readAgentDeviceCatalog()), codexUpdates] });
+await runStdioServer({ features: [createPanel(), agentDeviceTools(readAgentDeviceCatalog()), codexUpdates] });

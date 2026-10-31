@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { foregroundPhysicalPid, foregroundSimulatorPid, foregroundAndroidApp, parseAndroidForegroundPackage, unknownSimulatorForeground } from "../src/device-apps/foreground.ts";
 import { deviceAppSources, readDeviceApps } from "../src/device-apps/sources.ts";
-import type { DeviceApp } from "../../shared/src/device-apps.ts";
+import type { DeviceApp } from "@mobile-dev/shared/device-apps.ts";
 
 const udid = "00008150-001068280AE8C01C";
 
@@ -24,10 +24,10 @@ process.stdout.write('{"pid":123}');
 `;
   await writeFile(path, script, { mode: 0o700 });
   const controller = new AbortController();
-  const pid = await foregroundSimulatorPid(udid, controller.signal, url, async (executable, signal) => {
+  const pid = await foregroundSimulatorPid(udid, controller.signal, url, async (signal, executable) => {
     assert.equal(executable, path);
     assert.equal(signal, controller.signal);
-    return { DYLD_LIBRARY_PATH: "/selected/libraries" };
+    return { executable: path, env: { DYLD_LIBRARY_PATH: "/selected/libraries" } };
   });
   assert.equal(pid, 123);
 });

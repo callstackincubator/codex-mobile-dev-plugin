@@ -1,0 +1,119 @@
+.recording-card { container-type: inline-size; margin: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--background); color: var(--foreground); font-size: 13px; overflow: hidden; }
+.recording-header { display: flex; align-items: center; gap: 16px; padding: 18px 22px; border-bottom: 1px solid var(--border); }
+html:is([data-view="recording"], [data-view="comparison"], [data-view="tracesift"]) .recording-card { width: 100%; margin: 0; border: 0; border-radius: 0; background: transparent; }
+html:is([data-view="recording"], [data-view="comparison"], [data-view="tracesift"]) .recording-header { border-top: 1px solid var(--border); }
+.recording-icon { display: grid; place-items: center; width: 42px; height: 42px; flex-shrink: 0; border: 1px solid var(--border); border-radius: 10px; color: #2583ff; }
+.recording-heading { flex: 1; min-width: 0; }
+.recording-heading h2 { font-size: 18px; line-height: 1.35; font-weight: 600; overflow-wrap: anywhere; }
+.recording-heading p, .recording-actions p, .recording-footnote { color: var(--muted-foreground); font-size: 12px; line-height: 1.5; }
+.recording-heading p { margin-top: 3px; overflow-wrap: anywhere; }
+.recording-status { flex-shrink: 0; border-radius: 999px; padding: 5px 12px; background: var(--muted); font-size: 12px; }
+.recording-body { display: grid; grid-template-columns: minmax(0, 1fr); }
+.recording-charts { min-width: 0; padding: 16px 20px 12px; }
+.recording-track + .recording-track { margin-top: 22px; }
+.recording-track h3, .recording-section-heading h3, .comparison-summary h3, .tracesift-finding h3 { font-size: 14px; font-weight: 600; line-height: 1.4; }
+.recording-track-heading, .recording-section-heading { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.recording-track-heading { flex-wrap: wrap; margin-bottom: 2px; }
+.recording-track-metric { display: inline-flex; align-items: baseline; gap: 14px; color: var(--muted-foreground); font-size: 14px; }
+.recording-track-metric strong { color: var(--foreground); font-weight: 600; font-variant-numeric: tabular-nums; }
+.recording-info { width: 22px; height: 22px; border-radius: 50%; color: var(--muted-foreground); }
+.recording-info-content { width: min(280px, calc(100vw - 24px)); font-size: 12px; line-height: 1.5; }
+.recording-chart { width: 100%; touch-action: pan-y; user-select: none; cursor: crosshair; }
+.recording-track[data-reveal="pending"] .recording-change-highlight { opacity: 0; }
+.recording-track[data-reveal="finished"] .recording-change-highlight { animation: recording-highlight-reveal 150ms ease-out 250ms both; }
+@keyframes recording-highlight-reveal { from { opacity: 0; } to { opacity: 1; } }
+.recording-sidebar { display: flex; flex-direction: column; min-width: 0; padding: 16px; border-top: 1px solid var(--border); gap: 16px; }
+.recording-overview { border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+.recording-overview-bar { position: relative; height: 18px; margin-top: 14px; border-radius: 5px; background: var(--muted); overflow: hidden; }
+.recording-overview-change, .recording-overview-range { position: absolute; top: 0; bottom: 0; min-width: 2px; }
+.recording-overview-change { border-inline: 2px solid #9873e6; background: #9873e629; }
+.recording-overview-range { border-inline: 2px solid #2583ff; background: #2583ff29; }
+.recording-overview-labels { display: flex; justify-content: space-between; gap: 12px; margin-top: 6px; color: var(--muted-foreground); font-variant-numeric: tabular-nums; font-size: 12px; }
+.recording-clear-range { margin-left: auto; color: var(--muted-foreground); font-size: 11px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.recording-clear-range:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; border-radius: 2px; }
+.recording-breakdown, .recording-display-summary { border-top: 1px solid var(--border); padding-top: 14px; }
+.recording-breakdown p { margin-top: 10px; color: var(--muted-foreground); font-size: 12px; }
+.recording-breakdown dl { margin-top: 10px; }
+.recording-breakdown dl > div { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 8px 0; }
+.recording-breakdown dl > div + div { border-top: 1px solid var(--border); }
+.recording-breakdown dt { min-width: 0; overflow-wrap: anywhere; }
+.recording-breakdown dd { flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.recording-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 10px; }
+.recording-metrics dt { font-size: 11px; color: var(--muted-foreground); }
+.recording-metrics dd { margin-top: 3px; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.recording-frame-stats { margin-top: 14px; font-size: 12px; color: var(--muted-foreground); }
+.recording-frame-stats summary { color: var(--foreground); cursor: pointer; }
+.recording-frame-stats p { margin-top: 8px; line-height: 1.5; }
+.recording-actions { display: flex; flex-direction: column; gap: 9px; margin-top: auto; border-top: 1px solid var(--border); padding-top: 16px; }
+.recording-actions > button { width: 100%; height: 38px; gap: 10px; font-size: 13px; white-space: normal; }
+.recording-footnote { margin-top: 10px; }
+.recording-error { color: var(--destructive); font-size: 12px; overflow-wrap: anywhere; }
+.recording-workspace { height: 100%; overflow: auto; padding: 12px; }
+@container (min-width: 640px) {
+  .recording-body { grid-template-columns: minmax(0, 2.1fr) minmax(220px, 1fr); }
+  .recording-sidebar { border-top: 0; border-left: 1px solid var(--border); }
+}
+@container (max-width: 380px) {
+  .recording-header { padding: 14px; gap: 10px; }
+  .recording-heading h2 { font-size: 16px; }
+  .recording-charts { padding: 14px 10px 10px; }
+  .recording-sidebar { padding: 14px; }
+  .recording-track-metric { gap: 8px; font-size: 12px; }
+}
+/* Shared card controls and the comparison card, which reuses the recording card's frame, tracks and sidebar. */
+.recording-card button { min-height: 0; min-width: 0; }
+.segmented-control { margin-left: auto; display: inline-flex; flex: none; padding: 2px; border-radius: 8px; background: var(--muted); }
+.segmented-control button { padding: 2px 8px; border: 0; border-radius: 6px; background: none; color: var(--muted-foreground); font-size: 11px; line-height: 18px; cursor: pointer; }
+.segmented-control button[aria-pressed="true"] { background: var(--background); color: var(--foreground); box-shadow: 0 1px 2px rgb(0 0 0 / .12); }
+.segmented-control button:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+.comparison-marker { display: inline-grid; place-items: center; flex: none; width: 18px; height: 18px; border-radius: 50%; color: #fff; font-size: 11px; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
+.comparison-dot { display: inline-block; flex: none; width: 8px; height: 8px; border-radius: 50%; align-self: center; }
+.comparison-track-metric { flex-wrap: wrap; gap: 4px 10px; }
+.comparison-run-value { display: inline-flex; align-items: baseline; gap: 5px; }
+.comparison-run-value[data-hidden], .comparison-bar-row[data-hidden], .comparison-lane-markers [data-hidden], .comparison-lane[data-hidden] { opacity: .4; }
+.comparison-tooltip { padding: 6px 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--popover); color: var(--popover-foreground); box-shadow: 0 4px 14px rgb(0 0 0 / .1); font-size: 12px; }
+.comparison-tooltip b { display: block; margin-bottom: 4px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.comparison-tooltip div { display: flex; align-items: center; gap: 6px; margin-top: 3px; }
+.comparison-tooltip div span:last-child { margin-left: auto; padding-left: 10px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.comparison-tooltip .comparison-marker { width: 16px; height: 16px; }
+.comparison-summary { margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--border); }
+.comparison-measures { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 14px 20px; margin-top: 10px; }
+.comparison-measure dt { margin-bottom: 6px; color: var(--muted-foreground); font-size: 12px; }
+.comparison-measure dd { display: grid; gap: 5px; }
+.comparison-bar-row { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 8px; font-variant-numeric: tabular-nums; }
+.comparison-bar-track { height: 6px; border-radius: 3px; background: var(--muted); overflow: hidden; }
+.comparison-bar-track span { display: block; height: 100%; min-width: 2px; border-radius: 3px; }
+.comparison-bar-value { min-width: 6ch; text-align: right; font-weight: 600; }
+.comparison-lanes { display: grid; grid-template-columns: 16px minmax(0, 1fr); column-gap: 8px; margin-top: 12px; }
+.comparison-lane-markers, .comparison-lane-stack { display: grid; gap: 4px; }
+.comparison-lane-markers .comparison-marker { width: 16px; height: 16px; }
+.comparison-lane-stack { position: relative; }
+.comparison-lane { position: relative; height: 16px; }
+.comparison-lane::before { content: ""; position: absolute; top: 6px; left: 0; width: var(--lane-width); height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--lane) 22%, transparent); }
+.comparison-lane-change { position: absolute; top: 5px; height: 6px; min-width: 4px; border-radius: 3px; background: var(--lane); cursor: pointer; }
+.comparison-lane-change:hover, .comparison-lane-change[data-current] { box-shadow: 0 0 0 2px color-mix(in srgb, var(--lane) 35%, transparent); }
+.comparison-lane-range { position: absolute; top: -2px; bottom: -2px; min-width: 2px; border-inline: 2px solid #2583ff; background: #2583ff1f; pointer-events: none; }
+.comparison-lane-labels { margin-left: 24px; }
+.comparison-change-list { display: grid; gap: 2px; margin-top: 10px; }
+.comparison-change { display: flex; align-items: flex-start; justify-content: flex-start; gap: 6px; width: calc(100% + 12px); margin-left: -6px; padding: 4px 6px; border: 0; border-radius: 6px; background: none; color: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.comparison-change:hover, .comparison-change[aria-pressed="true"] { background: var(--muted); }
+.comparison-change:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+.comparison-change .comparison-marker { width: 16px; height: 16px; }
+.comparison-change-copy { display: grid; flex: 1; min-width: 0; line-height: 16px; }
+.comparison-change-copy small { color: var(--muted-foreground); font-size: 12px; font-variant-numeric: tabular-nums; }
+.comparison-changes-empty { margin-top: 8px; color: var(--muted-foreground); font-size: 12px; }
+.comparison-runs { border-top: 1px solid var(--border); padding-top: 14px; }
+.comparison-run { display: flex; align-items: flex-start; justify-content: flex-start; gap: 9px; width: 100%; margin-top: 6px; padding: 8px 0; border: 0; border-top: 1px solid var(--border); background: none; color: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.comparison-run:first-of-type { border-top: 0; }
+.comparison-run:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.comparison-run .comparison-marker { margin-top: 1px; }
+.comparison-run-copy { display: grid; flex: 1; min-width: 0; gap: 1px; }
+.comparison-run-copy strong { display: -webkit-box; overflow: hidden; font-weight: 400; overflow-wrap: anywhere; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.comparison-run-copy small { color: var(--muted-foreground); font-size: 12px; }
+.comparison-run:hover strong { text-decoration: underline; text-underline-offset: 3px; }
+.comparison-run[aria-pressed="false"] .comparison-marker, .comparison-run[aria-pressed="false"] .comparison-run-copy { opacity: .45; }
+svg.lucide.comparison-run-eye { width: 15px; height: 15px; margin-top: 1px; color: var(--muted-foreground); }
+.comparison-runs .recording-error { margin-top: 8px; }
+@media (prefers-reduced-motion: reduce) {
+  .recording-track .recording-change-highlight { opacity: 1 !important; animation: none !important; }
+}

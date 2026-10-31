@@ -15,25 +15,30 @@ whose page calls the server with an MCP client.
 
 A host adds to the shared pieces without changing them:
 
-- **Server:** each host's entry calls `runStdioServer` with Mobile Dev's panel, where
-  the host shows it, and its `ServerFeature`s. The panel (`createPanel` in
-  `packages/core/src/panel-tools.ts`) owns Baguette, the panel and workspace pages and
-  the tools only they use, opening recordings in the workspace, the App tab's reads
-  and the native device form. Codex, Cursor's shared entry and the Mac app pass it.
+- **Server:** each host's entry calls `runStdioServer` with its `ServerFeature`s, which
+  register after the shared tools, in order, with the services the server shares
+  (`packages/core/src/server-feature.ts`). Mobile Dev's panel is one of them, where the
+  host shows it: `createPanel` in `packages/core/src/panel-tools.ts` owns Baguette, the
+  panel and workspace pages and the tools only they use, opening recordings in the
+  workspace, the App tab's reads and the native device form, and it supplies the
+  server's instructions and the foreground simulator app. Codex, Cursor's shared entry,
+  Claude and the Mac app pass it first.
   Codex and Cursor add agent-device's commands, and Codex the self-updater, which
-  installs through Codex's marketplace; the Mac app, which has no agent, adds its page
-  resource. Claude's entry (`apps/claude/server`) passes the panel with `inline: false`,
-  so even MCP Apps hosts such as the desktop app's Code tab render none in the chat, and
-  the browser panel feature with `always: true`, which shows it beside the chat in a
-  browser; it adds agent-device's commands. Every host lists simulators for logs, CPU and device choices with
+  installs through Codex's marketplace; the Mac app, which has no agent, adds the
+  telemetry metadata its page reads. Claude's entry (`apps/claude/server`) passes the
+  panel with `inline: false`, so even MCP Apps hosts such as the desktop app's Code tab
+  render none in the chat, and the browser panel feature with `always: true`, which
+  shows it beside the chat in a browser; it adds agent-device's commands, and its chat
+  cards stay. Every host lists simulators for logs, CPU and device choices with
   simctl, without starting Baguette.
 - **Runtime:** a host's `plugin-host.json` can leave out the panel's parts of `dist/`
   (`"panel": false`, see `PANEL_PARTS` in `tooling/host-runtime.mjs`), download them
-  instead (`"panelRuntime": "download"`), and name a server build of its own. Claude
-  downloads Baguette, serve-emu and the iOS mirror from a release archive its package
-  pins (`packages/core/src/panel-runtime.ts`), and its server loads after telemetry as
-  a separate module, so esbuild splits it into chunks beside `server.mjs`, keeping
-  every file under the Claude plugin directory's 5 MiB limit.
+  instead (`"panelRuntime": "download"`), and name a `buildHost` module for its own
+  server or page. Claude downloads Baguette, serve-emu and the iOS mirror from a
+  release archive its package pins (`packages/core/src/panel-runtime.ts`), and its
+  server loads after telemetry as a separate module, so esbuild splits it into chunks
+  beside `server.mjs`, keeping every file under the Claude plugin directory's 5 MiB
+  limit.
 - **Panel:** a host's page entry calls `startMcpApp` with its chrome. Codex adds the
   update banner; Claude uses the shared entry, for its cards.
 - **Views:** shared views depend only on `HostBridge`, the subset of `App` they use,
@@ -243,7 +248,7 @@ frames** back off empties the set — the bar that explains picking goes with th
 mode, so the picks go with it, and a send never carries a set whose count the
 reader can no longer see.
 
-**Investigate selected** writes its own hand-off, in `packages/shared/src/tracesift-selection.ts`
+**Investigate selected** writes its own hand-off, in `packages/ui/src/tracesift/selection.ts`
 rather than through `mobile_get_tracesift_handoff`. The picks exist only in this
 frame and the whole call tree is already in it, so a round trip could not have
 answered the question anyway — and an older installed service is never asked
@@ -260,7 +265,7 @@ looking at.
 The same switch, over a recording. **Select components** turns the render tree
 and the component table from navigating to collecting, and **Investigate
 selected components** writes its own hand-off from
-`packages/shared/src/tracesift-react-selection.ts`. The state is the one field the task
+`packages/ui/src/tracesift/react-selection.ts`. The state is the one field the task
 side uses, because it is the same shape; what differs is the id, the arithmetic
 and the words.
 

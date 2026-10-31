@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { setImmediate } from "node:timers/promises";
 import { SimulatorInputService } from "../src/simulator-input.ts";
-import { UDID, OTHER_UDID } from "../../test-support/fixtures.ts";
+import { UDID, OTHER_UDID } from "@mobile-dev/test-support/fixtures.ts";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;

@@ -1,7 +1,11 @@
 {
   "target": "darwin-arm64",
-  "sourceSHA256": "dfcf98430974e2f8a63d62a8050b3a1fdad0fcae17dec067c92152e64ac486fb",
-  "binarySHA256": "b5b59348193efd80c77181bff1c911d7c671f314e96311e6ff9913d912e5b7b7",
-  "bytes": 2584320,
+  "sourceSHA256": "a047b12de328ab27ac4b3a9d70fe257cbabcab6bceda4de55531517af0ed8db1",
+  "binaries": {
+    "mobile-dev-ios-fps": {
+      "sha256": "23b8e16c00bab9686f0fc51a60aa7019eba2d0d5e15d18ef9658a2a03db3b989",
+      "bytes": 2617440
+    }
+  },
   "ideviceCommit": "a64b8867815b3da17b5c927531bdba877e8456ef"
 }

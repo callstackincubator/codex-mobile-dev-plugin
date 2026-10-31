@@ -1,4 +1,11 @@
+import { ToolCallError } from "./tool-call.ts";
+
 export class StopReconnectError extends Error {}
+
+/** Errors that end the loop: a StopReconnectError, or a tool failure the server marked as not retryable. */
+function stops(error: unknown) {
+  return error instanceof StopReconnectError || (error instanceof ToolCallError && error.meta.retryable === false);
+}
 
 export class ReconnectLoop {
   private controller?: AbortController;
@@ -25,7 +32,7 @@ export class ReconnectLoop {
       try { await work(signal); break; }
       catch (error) {
         if (signal.aborted) return;
-        if (error instanceof StopReconnectError) {
+        if (stops(error)) {
           if (this.controller === controller) this.controller = undefined;
           stopped(error);
           return;

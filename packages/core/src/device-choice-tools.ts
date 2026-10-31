@@ -6,10 +6,11 @@ import { androidChoices, deviceChoiceInputSchema, isRunningDevice, isSelectableD
 import type { DeviceChoice, DeviceChoiceInput, DeviceChoiceReference } from "@mobile-dev/shared/device-choice.ts";
 import type { PhysicalIosDevice } from "@mobile-dev/shared/ios-devices.ts";
 import type { Status } from "@mobile-dev/shared/protocol.ts";
-import { errorMessage } from "@mobile-dev/shared/protocol.ts";
 import { captureServerError } from "./telemetry.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
 import { deviceChoiceThumbnails } from "./device-choice-thumbnails.ts";
+import { errorMessage, ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
+import { isPhysicalIos } from "@mobile-dev/shared/devices.ts";
 
 export type DeviceChoiceSources = {
   simulators: () => Promise<Status>;
@@ -59,24 +60,27 @@ async function statusDevices(read: () => Promise<Status>) {
   return status;
 }
 
+// A selection the form or the caller got wrong, rather than a failure.
+const invalidSelection = (error: unknown) => error instanceof ExpectedOperationError && error.outcome === "invalid_input";
+
 export async function resolveDeviceChoices(references: DeviceChoiceReference[], sources: DeviceChoiceSources): Promise<DeviceChoice[]> {
   const keys = new Set<string>();
   for (const reference of references) {
     const key = `${reference.platform}:${reference.deviceId}`;
-    if (keys.has(key)) throw new SimulatorUnavailableError("Each candidate device must appear only once.");
+    if (keys.has(key)) throw new ExpectedOperationError("invalid_input", "Each candidate device must appear only once.");
     keys.add(key);
   }
   const reads: Promise<DeviceChoice[]>[] = [];
   if (references.some(device => device.platform === "ios" && device.kind === "simulator")) reads.push(statusDevices(sources.simulators).then(simulatorChoices));
   if (references.some(device => device.platform === "android")) reads.push(statusDevices(sources.android).then(androidChoices));
-  if (references.some(device => device.platform === "ios" && device.kind === "physical")) reads.push(sources.physicalIos().then(physicalIosChoices));
+  if (references.some(device => isPhysicalIos(device))) reads.push(sources.physicalIos().then(physicalIosChoices));
   const lists = await Promise.all(reads);
   const discovered = lists.flat();
   return references.map(reference => {
     const device = discovered.find(candidate => candidate.platform === reference.platform && candidate.kind === reference.kind && candidate.deviceId === reference.deviceId);
     if (device === undefined) throw new SimulatorUnavailableError("A candidate device is no longer available. Refresh discovery before requesting a selection.");
     if (isSelectableDevice(device) === false) {
-      if (device.kind === "physical" && device.platform === "ios") throw new SimulatorUnavailableError("Connect and pair the candidate iPhone or iPad before requesting a selection.");
+      if (isPhysicalIos(device)) throw new SimulatorUnavailableError("Connect and pair the candidate iPhone or iPad before requesting a selection.");
       throw new SimulatorUnavailableError("A candidate device is offline or unauthorized. Reconnect it before requesting a selection.");
     }
     return { ...reference, name: device.name, runtime: device.runtime, state: device.state, ...(device.transportType ? { transportType: device.transportType } : {}), ...(device.pairingState ? { pairingState: device.pairingState } : {}) };
@@ -146,14 +150,14 @@ export function registerDeviceChoiceTools(server: McpServer, extensions: Pick<Op
       }
       stage = "validate";
       const submitted = input.selectionMode === "multiple" ? answer.content?.devices : [answer.content?.device];
-      if (Array.isArray(submitted) === false || submitted.length === 0 || submitted.length > devices.length) throw new SimulatorUnavailableError("The device selection is invalid. Request a new selection.");
+      if (Array.isArray(submitted) === false || submitted.length === 0 || submitted.length > devices.length) throw new ExpectedOperationError("invalid_input", "The device selection is invalid. Request a new selection.");
       const selected: DeviceChoiceReference[] = [];
       const selectedKeys = new Set<string>();
       for (const key of submitted) {
-        if (typeof key !== "string" || selectedKeys.has(key)) throw new SimulatorUnavailableError("The device selection is invalid. Request a new selection.");
+        if (typeof key !== "string" || selectedKeys.has(key)) throw new ExpectedOperationError("invalid_input", "The device selection is invalid. Request a new selection.");
         selectedKeys.add(key);
         const index = devices.findIndex((_, candidateIndex) => key === `device-${candidateIndex + 1}`);
-        if (index < 0) throw new SimulatorUnavailableError("The selected device was not offered. Request a new selection.");
+        if (index < 0) throw new ExpectedOperationError("invalid_input", "The selected device was not offered. Request a new selection.");
         selected.push(references[index]);
       }
       const current = await resolveDeviceChoices(selected, sources);
@@ -164,7 +168,7 @@ export function registerDeviceChoiceTools(server: McpServer, extensions: Pick<Op
       return { content: [{ type: "text", text: JSON.stringify(data) }], structuredContent: data };
     } catch (error) {
       Sentry.metrics.count("device_picker.result", 1, { attributes: { ...attributes, outcome: extra.signal.aborted ? "cancel" : "failed" } });
-      if (extra.signal.aborted === false && error instanceof SimulatorUnavailableError === false) {
+      if (extra.signal.aborted === false && error instanceof SimulatorUnavailableError === false && invalidSelection(error) === false) {
         const report = new Error(`Device picker ${stage} failed.`);
         captureServerError(report, "device_picker.tool");
       }

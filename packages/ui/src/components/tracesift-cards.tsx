@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { ChartNoAxesCombinedIcon, CheckIcon, CopyIcon, MessageCircleIcon, UploadIcon } from "lucide-react";
 import type { TraceSiftController } from "../tracesift-controller.ts";
-import { findingName, formatMs, formatReactMs } from "@mobile-dev/shared/tracesift-labels.ts";
+import { findingName, formatMs, formatReactMs } from "../tracesift/labels.ts";
 import type { TraceSiftAnalysis, TraceSiftCpuAnalysis } from "@mobile-dev/shared/tracesift.ts";
 import { Button } from "./ui/button.tsx";
 import { InfoPopover } from "./card-parts.tsx";

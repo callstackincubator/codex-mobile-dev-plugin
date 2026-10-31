@@ -5,11 +5,11 @@ import { JSDOM } from "jsdom";
 import { mkdtemp, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { createDeviceApps } from "../../test-support/device-apps-fixtures.ts";
+import { createDeviceApps } from "@mobile-dev/test-support/device-apps-fixtures.ts";
 import { LogsPanel } from "../src/logs-panel.ts";
-import type { App } from "@modelcontextprotocol/ext-apps";
+import { fakeApp } from "@mobile-dev/test-support/fake-app.ts";
 import type { PanelContext } from "../src/model-context.ts";
-import type { LogEntry } from "../../shared/src/logs.ts";
+import type { LogEntry } from "@mobile-dev/shared/logs.ts";
 
 test("the rendered log list follows batches, pauses for user scrolling, and resumes at the bottom", async t => {
   const dom = new JSDOM('<div id="root"></div>', { pretendToBeVisual: true });
@@ -89,9 +89,9 @@ test("the rendered log list follows batches, pauses for user scrolling, and resu
   const { LogsView } = await import(url.href);
   const { act, createElement } = await import("react");
   const { createRoot } = await import("react-dom/client");
-  const context = { onChange() {} };
-  const deviceApps = createDeviceApps({} as App);
-  const panel = new LogsPanel({} as App, context as PanelContext, deviceApps);
+  const context = { subscribe: () => () => {} };
+  const deviceApps = createDeviceApps(fakeApp());
+  const panel = new LogsPanel(fakeApp(), context as PanelContext, deviceApps);
   t.after(() => deviceApps.dispose());
   panel.show();
   let sequence = 0;

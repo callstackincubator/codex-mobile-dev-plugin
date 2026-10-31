@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { access, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { createPhysicalIosBezelReader } from "../src/physical-ios-bezel.ts";
-import type { PhysicalIosDevice } from "../../shared/src/ios-devices.ts";
+import type { PhysicalIosDevice } from "@mobile-dev/shared/ios-devices.ts";
 
 const phone: PhysicalIosDevice = {
   udid: "00008150-0000111122223333", coreDeviceId: "11111111-1111-4111-8111-111111111111",
@@ -73,10 +73,10 @@ function fixture() {
     if (args[1] === "layout") return jsonOutput({ ...layout, screen });
     assert.equal(args[1], "composite");
     return { stdout: image };
-  }, async (executable, signal) => {
-    assert.match(executable, /\/vendor\/baguette\/Baguette$/);
+  }, async (signal, executable) => {
+    assert.equal(executable, undefined);
     assert.equal(signal.aborted, false);
-    return { DYLD_LIBRARY_PATH: "/selected/toolchain/libraries" };
+    return { executable: "/plugin/vendor/baguette/Baguette", env: { DYLD_LIBRARY_PATH: "/selected/toolchain/libraries" } };
   });
   return {
     read, calls, maskDirectories,

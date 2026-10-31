@@ -1,11 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { listIosDevices, registerIosDeviceTools } from "../src/ios-devices.ts";
-import { physicalIosDeviceSchema, physicalConnectionLabel } from "../../shared/src/ios-devices.ts";
+import { physicalIosDeviceSchema, physicalConnectionLabel } from "@mobile-dev/shared/ios-devices.ts";
+import { connectClient } from "@mobile-dev/test-support/mcp.ts";
 
 const coreDeviceId = "11111111-1111-4111-8111-111111111111";
 const udid = "00008110-000A0B1C2D3E4000";
@@ -156,11 +155,7 @@ test("physical discovery is a read-only MCP tool and reports failure instead of 
     if (fail) throw new Error("Discovery unavailable");
     return devices;
   });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: "ios-discovery-client", version: "1" });
-  t.after(async () => { await client.close(); await server.close(); });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
+  const client = await connectClient(t, server);
   const tools = await client.listTools();
   const tool = tools.tools.find(tool => tool.name === "mobile_list_ios_devices");
   assert.equal(tool?.annotations?.readOnlyHint, true);

@@ -11,12 +11,11 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ListRootsRequestSchema, ListRootsResultSchema, type ClientCapabilities } from "@modelcontextprotocol/sdk/types.js";
 import { EXTENSION_ID, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
-import { Baguette } from "../src/baguette.ts";
 import { createPanel } from "../src/panel-tools.ts";
 import { PANEL_PAGE_META } from "@mobile-dev/shared/panel-target.ts";
 import { BROWSER_CONTEXT_MAX_BYTES, BROWSER_SESSION_IDLE_MS, browserPanel, startPanelPage } from "../src/browser-panel.ts";
 import { SharedTransport } from "../src/shared-transport.ts";
-import { createTestPlugin, fakeBaguette, fakeSimulatorInput } from "../../test-support/fixtures.ts";
+import { attachedBaguette, createTestPlugin, fakeBaguette, fakeSimulatorInput } from "@mobile-dev/test-support/fixtures.ts";
 
 /** A server whose tools report which client the server believes it serves. */
 async function sharedServer(capabilities: ClientCapabilities = {}) {
@@ -137,7 +136,7 @@ test("opening the panel links the browser page only for hosts without MCP Apps",
   for (const ui of [false, true]) {
     const [hostSide, serverSide] = InMemoryTransport.createLinkedPair();
     const shared = new SharedTransport(serverSide);
-    const plugin = await createTestPlugin("<html></html>", { panel: createPanel({ baguette: new Baguette(fake.url), simulatorInput: fakeSimulatorInput() }), features: [panelFeature], connections: shared });
+    const plugin = await createTestPlugin("<html></html>", { features: [createPanel({ baguette: attachedBaguette(fake.url), simulatorInput: fakeSimulatorInput() }), panelFeature], connections: shared });
     const capabilities = ui ? { extensions: { [EXTENSION_ID]: { mimeTypes: [RESOURCE_MIME_TYPE] } } } : {};
     const host = new Client({ name: "claude-code", version: "1" }, { capabilities });
     await plugin.server.connect(shared);
@@ -167,8 +166,8 @@ test("a panel that never renders inline links the browser page for MCP Apps host
   t.after(() => fake.close());
   const [hostSide, serverSide] = InMemoryTransport.createLinkedPair();
   const shared = new SharedTransport(serverSide);
-  const panel = createPanel({ baguette: new Baguette(fake.url), simulatorInput: fakeSimulatorInput(), inline: false });
-  const plugin = await createTestPlugin("<html></html>", { panel, features: [browserPanel({ template: pathToFileURL(page), always: true })], connections: shared });
+  const panel = createPanel({ baguette: attachedBaguette(fake.url), simulatorInput: fakeSimulatorInput(), inline: false });
+  const plugin = await createTestPlugin("<html></html>", { features: [panel, browserPanel({ template: pathToFileURL(page), always: true })], connections: shared });
   // The desktop app's Code tab renders MCP Apps.
   const host = new Client({ name: "claude-code", version: "1" }, { capabilities: { extensions: { [EXTENSION_ID]: { mimeTypes: [RESOURCE_MIME_TYPE] } } } as ClientCapabilities });
   await plugin.server.connect(shared);
@@ -305,7 +304,7 @@ test("a browser tab's model context reaches the agent and leaves with the tab", 
   const fake = await fakeBaguette();
   const [hostSide, serverSide] = InMemoryTransport.createLinkedPair();
   const shared = new SharedTransport(serverSide);
-  const plugin = await createTestPlugin("<html></html>", { panel: createPanel({ baguette: new Baguette(fake.url), simulatorInput: fakeSimulatorInput() }), features: [browserPanel({ template: pathToFileURL(page) })], connections: shared });
+  const plugin = await createTestPlugin("<html></html>", { features: [createPanel({ baguette: attachedBaguette(fake.url), simulatorInput: fakeSimulatorInput() }), browserPanel({ template: pathToFileURL(page) })], connections: shared });
   const host = new Client({ name: "claude-code", version: "1" });
   await plugin.server.connect(shared);
   await host.connect(hostSide);

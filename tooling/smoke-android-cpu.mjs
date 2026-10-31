@@ -3,8 +3,8 @@ import { spawn, execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { once } from "node:events";
 import { createInterface } from "node:readline";
-import { adbPath } from "../packages/core/src/native-logs.ts";
-import { deployAndroidCollector, loadAndroidCollector, startAndroidCpuMonitor } from "../packages/core/src/cpu/android.ts";
+import { adbPath } from "../packages/core/src/android-sdk.ts";
+import { androidCpuCollector, startAndroidCpuMonitor } from "../packages/core/src/cpu/android.ts";
 import { androidSampleSchema, androidReadySchema, AndroidCpuSampler } from "../packages/core/src/cpu/android-counters.ts";
 
 const [deviceId, pidText, countText = "20"] = process.argv.slice(2);
@@ -17,8 +17,8 @@ const execute = promisify(execFile);
 const adb = await adbPath();
 const signal = AbortSignal.timeout(90000);
 const root = new URL("../packages/native/vendor/android-cpu/", import.meta.url);
-const collector = await loadAndroidCollector(root);
-const remote = await deployAndroidCollector(adb, deviceId, signal, collector);
+const collector = androidCpuCollector(root);
+const remote = await collector.deploy(adb, deviceId, signal);
 const child = spawn(adb, ["-s", deviceId, "shell", "-T", `exec ${remote} ${pid}`], { stdio: ["pipe", "pipe", "pipe"] });
 const closed = once(child, "close");
 const lines = createInterface({ input: child.stdout });
@@ -63,7 +63,7 @@ try {
   let transport;
   const readings = [];
   const monitor = await startAndroidCpuMonitor({ deviceId, pid, signal, onSample: reading => readings.push(reading) }, {
-    adbPath, deploy: (adb, serial, signal) => deployAndroidCollector(adb, serial, signal, collector),
+    adbPath, deploy: (adb, serial, signal) => collector.deploy(adb, serial, signal),
     spawn: (...arguments_) => { transport = spawn(...arguments_); return transport; },
   });
   await new Promise(resolve => setTimeout(resolve, 2200));

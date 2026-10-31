@@ -1,22 +1,22 @@
-import { useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import type { CSSProperties, PointerEvent, ReactNode } from "react";
-import { CartesianGrid, Line, LineChart, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { useLayoutEffect, useMemo, useState, useSyncExternalStore } from "react";
+import type { CSSProperties, ReactNode } from "react";
+import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { TooltipContentProps } from "recharts";
 import { EyeIcon, EyeOffIcon, MessageCircleIcon } from "lucide-react";
 import { comparisonDuration, summarizeComparison } from "@mobile-dev/shared/performance-comparison.ts";
 import type { PerformanceRecording, RecordingRange, RecordingSummary } from "@mobile-dev/shared/recordings.ts";
 import type { ComparisonController } from "../comparison-controller.ts";
-import { COMPARISON_COLORS, createComparisonSeries, findSharpChanges } from "../comparison-series.ts";
+import { COMPARISON_COLORS, createComparisonSeries, findSharpChanges, hasComparisonReadings } from "../comparison-series.ts";
 import type { ComparisonMetric, ComparisonPoint, SharpChange } from "../comparison-series.ts";
+import { mebibytes, seconds } from "../recording-format.ts";
 import { countUiEvent, recordUiTiming, setUiGauge } from "../telemetry.ts";
 import { Button } from "./ui/button";
 import { InfoPopover, SegmentedControl } from "./card-parts";
+import { CHART_RIGHT_MARGIN, CHART_Y_AXIS_WIDTH, CHAT_SELECTION_UNSUPPORTED, RangeHighlight, RecordingLoading, useRangeDrag } from "./recording-chart-parts";
 
-const MIB = 1048576;
 type MemoryScale = "absolute" | "change";
 type RunSummary = RecordingSummary | null;
 
-function seconds(value: number) { return `${value.toFixed(1)}s`; }
 /** A sign that follows the rounded figure, so −0.4 reads 0 rather than −0. */
 function signed(value: number, digits = 0) {
   const rounded = Number(value.toFixed(digits));
@@ -64,48 +64,21 @@ function ComparisonChart({ label, info, metric, toolbar, data, recordings, hidde
   axis: { domain: [number | "auto" | ((max: number) => number), number | "auto" | ((max: number) => number)]; tick: (value: number) => string };
   onDrag: (range?: RecordingRange) => void; onSelect: (range?: RecordingRange) => void;
 }) {
-  const root = useRef<HTMLDivElement>(null);
-  const anchor = useRef<number | undefined>(undefined);
-  function timeAt(event: PointerEvent<HTMLDivElement>) {
-    const bounds = root.current!.getBoundingClientRect();
-    const width = Math.max(1, bounds.width - 64);
-    const fraction = (event.clientX - bounds.left - 52) / width;
-    const clamped = Math.max(0, Math.min(1, fraction));
-    const rounded = Math.round(clamped * duration * 10) / 10;
-    return Math.min(duration, rounded);
-  }
-  function selection(event: PointerEvent<HTMLDivElement>) {
-    if (anchor.current === undefined) return;
-    const time = timeAt(event);
-    const start = Math.min(anchor.current, time);
-    const end = Math.max(anchor.current, time);
-    if (end > start) return { start, end };
-  }
+  const { ref, handlers } = useRangeDrag(duration, { onDrag, onSelect, clampToDuration: true });
   return <section className="recording-track" aria-label={label}>
     <div className="recording-track-heading"><h3>{label}</h3><InfoPopover label={label}>{info}</InfoPopover>{metric}{toolbar}</div>
-    <div ref={root} className="recording-chart" onPointerDown={event => {
-      if (event.button !== 0) return;
-      anchor.current = timeAt(event);
-      event.currentTarget.setPointerCapture(event.pointerId);
-    }} onPointerMove={event => { if (anchor.current !== undefined) onDrag(selection(event)); }} onPointerUp={event => {
-      if (anchor.current === undefined) return;
-      const next = selection(event);
-      anchor.current = undefined;
-      onDrag(undefined);
-      onSelect(next);
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }} onPointerCancel={() => { anchor.current = undefined; onDrag(undefined); }}>
+    <div ref={ref} className="recording-chart" {...handlers}>
       <ResponsiveContainer width="100%" height={170}>
-        <LineChart data={data} margin={{ left: 0, right: 12, top: 12, bottom: 0 }}>
+        <LineChart data={data} margin={{ left: 0, right: CHART_RIGHT_MARGIN, top: 12, bottom: 0 }}>
           <CartesianGrid stroke="var(--border)" />
           <XAxis dataKey="time" type="number" domain={[0, duration]} allowDataOverflow tickFormatter={seconds} tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} />
-          <YAxis width={52} domain={axis.domain} tickFormatter={axis.tick} tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} />
+          <YAxis width={CHART_Y_AXIS_WIDTH} domain={axis.domain} tickFormatter={axis.tick} tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} />
           <Tooltip filterNull isAnimationActive={false} content={props => <ComparisonTooltip {...props as TooltipContentProps<number, string>} format={format} />} />
           {recordings.map((recording, index) => <Line key={recording.id} type="linear" dataKey={`run${index}`}
             name={`${index + 1}`} stroke={COMPARISON_COLORS[index]} strokeWidth={2}
             strokeDasharray={index > 2 ? "6 3" : undefined} hide={hiddenIds.has(recording.id)}
             dot={false} activeDot={{ r: 3.5, strokeWidth: 1.5, stroke: "var(--background)" }} connectNulls={false} isAnimationActive={false} />)}
-          {range && <ReferenceArea className="recording-range-highlight" x1={range.start} x2={range.end} fill="#2583ff" fillOpacity={0.12} stroke="#2583ff" strokeOpacity={0.5} />}
+          <RangeHighlight range={range} />
         </LineChart>
       </ResponsiveContainer>
     </div>
@@ -180,7 +153,7 @@ type Measure = { key: string; label: string; digits: number; pick: (summary: Run
 const MEASURES: Measure[] = [
   { key: "cpu-average", label: "Average CPU", digits: 1, pick: summary => summary?.averageCpuPercent, format: value => `${value.toFixed(1)}%` },
   { key: "cpu-peak", label: "Peak CPU", digits: 1, pick: summary => summary?.peakCpuPercent, format: value => `${value.toFixed(1)}%` },
-  { key: "memory", label: "Memory Δ (MiB)", digits: 0, pick: summary => summary?.memoryChangeBytes == null ? null : summary.memoryChangeBytes / MIB, format: value => signed(value) },
+  { key: "memory", label: "Memory Δ (MiB)", digits: 0, pick: summary => summary?.memoryChangeBytes == null ? null : mebibytes(summary.memoryChangeBytes), format: value => signed(value) },
   { key: "fps", label: "Average FPS", digits: 1, pick: summary => summary?.averageFps, format: value => value.toFixed(1) },
   { key: "jank", label: "Jank rate", digits: 1, pick: summary => summary?.frameStats?.jankRatePercent, format: value => `${value.toFixed(1)}%` },
   { key: "p95", label: "P95 frame interval", digits: 2, pick: summary => summary?.frameStats?.p95FrameIntervalMs, format: value => `${value.toFixed(2)} ms` },
@@ -233,14 +206,7 @@ export function ComparisonCard({ controller }: { controller: ComparisonControlle
     const metrics: ComparisonMetric[] = ["cpu", "rss", "physical-footprint", "fps"];
     const tracks = metrics.map(metric => {
       const data = createComparisonSeries(comparison.recordings, metric);
-      let available = false;
-      for (const row of data) {
-        for (let index = 0; index < comparison.recordings.length; index++) {
-          if (row[`run${index}`] !== null) available = true;
-        }
-        if (available) break;
-      }
-      return { metric, data, available };
+      return { metric, data, available: hasComparisonReadings(data, comparison.recordings.length) };
     });
     const total = summarizeComparison(comparison.recordings);
     const duration = comparisonDuration(comparison.recordings);
@@ -282,7 +248,7 @@ export function ComparisonCard({ controller }: { controller: ComparisonControlle
     return shifted;
   }, [derived, memoryScale]);
   if (comparison === undefined || derived === undefined || selected === undefined) {
-    return <article className="recording-card"><p role="status">Loading performance comparison…</p>{state.error && <p role="alert">{state.error}</p>}</article>;
+    return <RecordingLoading label="Loading performance comparison…" error={state.error} />;
   }
   const recordings = comparison.recordings;
   const summaries = selected.map(run => run.summary);
@@ -317,7 +283,7 @@ export function ComparisonCard({ controller }: { controller: ComparisonControlle
     const change = memoryScale === "change";
     return <ComparisonChart key={metric} {...common} data={memoryData?.get(metric) ?? data} label={mixedMemory ? `Memory · ${definition} (MiB)` : "Memory (MiB)"}
       info={`${definition} in mebibytes. Δ compares each run's first and last reading.${mixedMemory ? " RSS and physical footprint measure different things, so each has its own chart." : ""} Change plots every run against its own first reading, so runs that start at different sizes stay comparable.`}
-      metric={<TrackMetric label="Δ" values={values(metric, summary => summary?.memoryChangeBytes == null ? null : summary.memoryChangeBytes / MIB, value => signed(value))} hiddenIds={state.hiddenIds} recordings={recordings} />}
+      metric={<TrackMetric label="Δ" values={values(metric, summary => summary?.memoryChangeBytes == null ? null : mebibytes(summary.memoryChangeBytes), value => signed(value))} hiddenIds={state.hiddenIds} recordings={recordings} />}
       toolbar={scaleSwitch} format={value => change ? `${signed(value)} MiB` : `${value.toFixed(0)} MiB`}
       axis={{ domain: ["auto", "auto"], tick: value => change && value > 0 ? `+${value}` : `${value}` }} />;
   }
@@ -367,7 +333,7 @@ export function ComparisonCard({ controller }: { controller: ComparisonControlle
         </section>
         <div className="recording-actions comparison-actions">
           <Button disabled={state.canMessage === false || state.busy} onClick={() => { void controller.ask(); }}><MessageCircleIcon />{range ? "Ask about this range" : "Ask about comparison"}</Button>
-          {state.canMessage === false && <p>This host does not support sending chart selections to chat.</p>}
+          {state.canMessage === false && <p>{CHAT_SELECTION_UNSUPPORTED}</p>}
           {state.error && <p role="alert" className="recording-error">{state.error}</p>}
         </div>
       </aside>
