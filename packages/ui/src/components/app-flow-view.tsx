@@ -178,9 +178,20 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
   const uiStates = useMemo(() => uiStateCount(state.result?.nodes ?? []), [state.result]);
   // The count rides on the option label so the picker says how much the other canvas holds.
   const viewOptions = useMemo(() => VIEW_OPTIONS.map(option => option.value === "ui-states" && uiStates > 0 ? { ...option, label: `${option.label} · ${uiStates}` } : option), [uiStates]);
+  /**
+   * Persisted on change, not on Start — the same discipline the "Capture UI states" switch next
+   * to it already follows. The view is mounted conditionally by the workspace, and the effect
+   * above restores `mode` from this key on every mount, so a selection that only lived in React
+   * state until Start was silently reverted to "Structure only" by any unmount in between
+   * (hiding the panel, switching tools). A sweep then ran as a structure parse, which looks from
+   * the outside like Start doing nothing.
+   */
+  const changeMode = (next: AppFlowBuildMode) => {
+    setMode(next);
+    if (state.projectPath) write(`app-flow-mode:${state.projectPath}`, next);
+  };
   const start = () => {
     if (!state.projectPath) return;
-    write(`app-flow-mode:${state.projectPath}`, mode);
     void panel.start({ mode, ...(mode === "screen-ui-and-structure" ? {
       explorationMode: "adaptive" as const, deepLinkJudgeMode: "never" as const, captureUiStates
     } : {}) });
@@ -210,7 +221,7 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
         </div>
       </div>
       <div className="flex flex-wrap items-center justify-end gap-2">
-        <ToolbarSelect label="App Flow capture mode" value={mode} items={CAPTURE_MODE_OPTIONS} disabled={isRunning} onChange={setMode} />
+        <ToolbarSelect label="App Flow capture mode" value={mode} items={CAPTURE_MODE_OPTIONS} disabled={isRunning} onChange={changeMode} />
         {mode === "screen-ui-and-structure" && <Popover>
           <PopoverTrigger asChild><Button variant="secondary" size="sm" className="min-w-0 max-w-56 justify-start" title="Capture options">
             <Settings2 aria-hidden /><span className="truncate">Capture options</span></Button></PopoverTrigger>
