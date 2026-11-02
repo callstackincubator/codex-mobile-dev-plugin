@@ -350,7 +350,21 @@ export class AppFlowPanel {
     this.update({ runId: null, progress: null, sweepSummary: null, prompt: null });
     this.countUiStateOption(options);
     const input = { projectPath, ...options, mode: "screen-ui-and-structure" satisfies AppFlowBuildMode };
-    const prompt = `Start an App Flow screen sweep with mobile_appflow_start using these exact arguments, then service its mobile_appflow_next_decision and mobile_appflow_submit_decision loop until the run completes, fails, is cancelled, is suspended, or needs user action. Do not resolve a human auth/review prompt yourself.\n\n${JSON.stringify(input)}`;
+    // The sweep tools answer with run status and the decision requests the loop needs, and nothing
+    // else: `start` returns instructions, `next_decision`/`submit_decision` return the pending
+    // request for the navigation and judging roles. None of them carries a capture. So an agent
+    // that is only told to service the loop finishes holding nothing about the screens the user
+    // ticked, and the ask — "explore this screen with AI" — ends in a bare run summary. That is
+    // what the paragraph below fixes: the captures live behind `mobile_appflow_result`, which the
+    // loop never mentions, so the read and the write-up have to be asked for here. A screen whose
+    // work is already done makes the loop terminate at once, which is exactly the case where the
+    // summary was the whole reply, and the one this matters most for.
+    //
+    // The ids are repeated only to say which captures to describe. They are already in `input`,
+    // where the queue enforces them; wording has never bounded the run and does not start to here.
+    const targets = options.screenIds ?? [];
+    const explain = targets.length === 0 ? "" : `\n\nWhen the run reaches a terminal state, read the captures with mobile_appflow_result using {"projectPath":${JSON.stringify(projectPath)}} and describe ${targets.length === 1 ? "this screen" : "each of these screens"} for the user: ${targets.join(", ")}. Cover what the screen shows, its UI structure, and how it is reached. Read mobile_appflow_screenshot when an image would settle a detail. If the run captured nothing for a screen, say that instead of describing it from its name.`;
+    const prompt = `Start an App Flow screen sweep with mobile_appflow_start using these exact arguments, then service its mobile_appflow_next_decision and mobile_appflow_submit_decision loop until the run completes, fails, is cancelled, is suspended, or needs user action. Do not resolve a human auth/review prompt yourself.\n\n${JSON.stringify(input)}${explain}`;
     this.update({ agentStartPending: true, error: null });
     try {
       const response = await this.app.sendMessage({ role: "user", content: [{ type: "text", text: prompt }] }, { timeout: 5000, maxTotalTimeout: 5000 });

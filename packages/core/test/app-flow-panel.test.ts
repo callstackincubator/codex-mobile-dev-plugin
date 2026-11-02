@@ -66,6 +66,22 @@ test("structure builds call the server directly while screen sweeps wake the act
   assert.equal(host.messages.length, 1);
   assert.match(host.messages[0].content[0].text, /mobile_appflow_next_decision/);
   assert.match(host.messages[0].content[0].text, /"projectPath":"\/projects\/demo"/);
+  assert.doesNotMatch(host.messages[0].content[0].text, /mobile_appflow_result/, "a whole-app sweep has no picked screens to write up");
+});
+
+// Servicing the decision loop leaves the agent holding run status and nothing else: the captures
+// are only reachable through `mobile_appflow_result`, which no tool in the loop names. Without the
+// ask below, "Explore with AI" on a screen that needs no decisions ended in a bare run summary —
+// the loop reached a terminal state immediately and the agent had nothing to say about the screen.
+test("exploring picked screens asks the agent to read the captures and describe them", async t => {
+  const host = fixture(); const panel = new AppFlowPanel(host.app); t.after(() => panel.dispose());
+  panel.setAvailable(true); await panel.selectProject("/projects/demo");
+  await panel.requestAgentStart({ mode: "screen-ui-and-structure", explorationMode: "ai", screenIds: ["NotFound"] });
+  const text = host.messages.at(-1)!.content[0].text;
+  assert.match(text, /"screenIds":\["NotFound"\]/, "the queue is still bounded by the request, not the wording");
+  assert.match(text, /mobile_appflow_result/);
+  assert.match(text, /describe this screen for the user: NotFound/);
+  assert.match(text, /captured nothing for a screen/, "an uncaptured screen is reported, not invented");
 });
 
 test("progress notifications preserve the last tally and keep auth prompts human-owned", async t => {
