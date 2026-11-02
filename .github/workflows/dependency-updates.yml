@@ -62,7 +62,6 @@ jobs:
       # its pull requests start CI on their own; without it CI is dispatched.
       UPDATE_TOKEN: ${{ secrets.DEPENDENCY_UPDATES_TOKEN }}
       GH_TOKEN: ${{ github.token }}
-      WORK: ${{ runner.temp }}/dependency-update
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -109,6 +108,9 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git switch -C "$BRANCH"
+          # Later steps read it too; the runner context is not available in job env.
+          export WORK="$RUNNER_TEMP/dependency-update"
+          echo "WORK=$WORK" >> "$GITHUB_ENV"
           node tooling/weekly-dependency-update.mjs "$WORK"
 
       - name: Open or update the pull request
