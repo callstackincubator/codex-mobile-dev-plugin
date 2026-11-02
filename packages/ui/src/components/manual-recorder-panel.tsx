@@ -6,7 +6,22 @@ import { Button } from "./ui/button.tsx";
 import { Input } from "./ui/input.tsx";
 
 const PANEL_WIDTH = 360;
-const WIREFRAME_MAX_HEIGHT = 520;
+/**
+ * A caption is only drawn when its box is big enough to hold a line of it. The snapshot reports
+ * overlapping rects — a post's whole text as the label on an avatar-sized rect, a tab button's
+ * name on the icon inside it — and a caption that does not fit lands on top of its neighbour's,
+ * which is what made a dense screen unreadable. Below this the outline and the tooltip carry the
+ * element, and the list view names every one of them.
+ */
+const CAPTION_MIN_WIDTH = 34;
+const CAPTION_MIN_HEIGHT = 12;
+/**
+ * Keeps the dialog inside the canvas so the footer's "Stop and save" is always on screen: the
+ * wireframe is the one part that gives up height, the rest of the chrome is pinned. The floor is
+ * there for a panel dragged near the bottom edge, where the remaining room goes to nothing.
+ */
+const PANEL_MARGIN = 16;
+const PANEL_MIN_HEIGHT = 240;
 
 type Mode = "preview" | "list";
 
@@ -41,8 +56,8 @@ export function ManualRecorderPanel({ projectPath, title, store }: { projectPath
   const finished = recording.outcome !== null;
   const act = (action: Parameters<AppFlowRecordingStore["act"]>[1]) => { if (!locked) void store.act(projectPath, action); };
   return <div role="dialog" aria-label={`Recording a path to ${title}`} className="absolute z-30 flex flex-col rounded-2xl border border-border bg-background/95 shadow-2xl backdrop-blur"
-    style={{ left: position.x, top: position.y, width: PANEL_WIDTH + 24 }}>
-    <div className="flex cursor-grab items-start justify-between gap-2 border-b border-border px-3 py-2 active:cursor-grabbing"
+    style={{ left: position.x, top: position.y, width: PANEL_WIDTH + 24, maxHeight: `max(${PANEL_MIN_HEIGHT}px, calc(100% - ${position.y + PANEL_MARGIN}px))` }}>
+    <div className="flex shrink-0 cursor-grab items-start justify-between gap-2 border-b border-border px-3 py-2 active:cursor-grabbing"
       onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}>
       <div className="min-w-0">
         <div className="flex items-center gap-1.5">
@@ -54,17 +69,17 @@ export function ManualRecorderPanel({ projectPath, title, store }: { projectPath
       <Button variant="ghost" size="icon-xs" aria-label={finished ? "Close" : "Discard recording"} title={finished ? "Close" : "Discard this recording"}
         onClick={() => void (finished ? store.dismiss() : store.cancel(projectPath))}>×</Button>
     </div>
-    {recording.error && <div className="flex items-start gap-2 border-b border-border bg-amber-500/10 px-3 py-2 text-[10px] leading-snug text-amber-700 dark:text-amber-300">
+    {recording.error && <div className="flex shrink-0 items-start gap-2 border-b border-border bg-amber-500/10 px-3 py-2 text-[10px] leading-snug text-amber-700 dark:text-amber-300">
       <span aria-hidden>!</span><span className="min-w-0 flex-1">{recording.error}<div className="mt-0.5 opacity-80">The recording is still live — try another element, or scroll and try again.</div></span>
       <Button variant="ghost" size="icon-xs" aria-label="Dismiss this error" onClick={() => store.clearError()}>×</Button></div>}
-    {finished ? <div className="flex flex-col gap-2 px-3 py-3">
+    {finished ? <div className="flex min-h-0 flex-col gap-2 overflow-auto px-3 py-3">
       <div className="text-xs font-medium">{recording.outcome?.replayVerified ? "Saved as a verified replay" : "Saved as a command list"}</div>
       {recording.outcome?.fallbackReason && <div className="text-[10px] leading-snug text-muted-foreground">{recording.outcome.fallbackReason}</div>}
       <pre className="max-h-40 overflow-auto rounded-md bg-muted p-2 text-[10px] leading-relaxed">{recording.outcome?.pathToReach.join("\n")}</pre>
       <div className="text-[10px] text-muted-foreground">The app stays up, so recording a path to the next screen starts straight away.</div>
       <Button variant="outline" size="sm" onClick={() => store.dismiss()}>Done</Button>
     </div> : <>
-      <div className="flex items-center justify-between gap-2 px-3 pt-2">
+      <div className="flex shrink-0 items-center justify-between gap-2 px-3 pt-2">
         <div className="flex rounded-md border border-border p-0.5" role="group" aria-label="How to choose an element">
           {(["preview", "list"] as const).map(value => <button key={value} type="button" aria-pressed={mode === value}
             className={`rounded-[5px] px-2 py-0.5 text-[10px] font-medium capitalize ${mode === value ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"}`}
@@ -73,12 +88,13 @@ export function ManualRecorderPanel({ projectPath, title, store }: { projectPath
         <div className="text-[10px] text-muted-foreground" title="Wrappers are drawn as outlines and only clickable by their corner chip, so the controls inside them stay reachable. The list reaches every element.">
           {boxes.length} element{boxes.length === 1 ? "" : "s"}{boxes.some(box => box.container) ? ` · ${boxes.filter(box => box.container).length} wrappers` : ""}</div>
       </div>
-      <div className="relative m-3 mt-2 overflow-auto rounded-lg border border-border bg-muted/40" style={{ width: PANEL_WIDTH, maxHeight: WIREFRAME_MAX_HEIGHT }}>
+      <div className="relative m-3 mt-2 min-h-24 flex-1 overflow-auto rounded-lg border border-border bg-muted/40" style={{ width: PANEL_WIDTH }}>
         {mode === "preview"
           ? <div className="relative" style={{ width: PANEL_WIDTH, height }}>
             {boxes.map((box, index) => {
               const chosen = selectedKey !== null && elementKey(box.node) === selectedKey;
-              const frame = `absolute overflow-hidden rounded-sm border text-left text-[9px] leading-tight ${box.addressable ? "border-border/70 text-foreground" : "border-dashed border-amber-500/60 text-muted-foreground"}`;
+              const frame = `absolute overflow-hidden whitespace-nowrap rounded-sm border text-left text-[9px] leading-tight ${box.addressable ? "border-border/70 text-foreground" : "border-dashed border-amber-500/60 text-muted-foreground"}`;
+              const label = box.width >= CAPTION_MIN_WIDTH && box.height >= CAPTION_MIN_HEIGHT ? box.caption : "";
               const place = { left: box.left, top: box.top, width: box.width, height: box.height, zIndex: box.z };
               // A wrapper is drawn but takes no clicks: on this screen the feed, the tab bar's own
               // container and the compose overlay each span most of the device, and whichever one
@@ -88,9 +104,9 @@ export function ManualRecorderPanel({ projectPath, title, store }: { projectPath
               return <button key={`${box.node.ref}:${index}`} type="button" disabled={locked} title={describe(box.node)}
                 onClick={() => choose(box.node)}
                 className={`${frame} px-1 transition-colors hover:border-primary hover:bg-primary/25 ${chosen ? "bg-primary/30" : ""}`}
-                style={place}>{box.caption}</button>;
+                style={place}>{label}</button>;
             })}
-            {boxes.map((box, index) => box.container && box.caption ? <button key={`chip:${box.node.ref}:${index}`} type="button" disabled={locked}
+            {boxes.map((box, index) => box.container && box.caption && box.addressable ? <button key={`chip:${box.node.ref}:${index}`} type="button" disabled={locked}
               title={`${describe(box.node)}\nThis element wraps others — the outline is its edge.`} onClick={() => choose(box.node)}
               className="absolute truncate rounded-[3px] border border-border/70 bg-background/85 px-1 text-[8px] leading-[12px] text-muted-foreground hover:border-primary hover:bg-primary/25 hover:text-foreground"
               style={{ left: box.left + 1, top: box.top + 1, maxWidth: Math.max(0, Math.min(box.width - 2, 110)), zIndex: box.z + boxes.length }}>{box.caption}</button> : null)}
@@ -111,29 +127,29 @@ export function ManualRecorderPanel({ projectPath, title, store }: { projectPath
         {locked && <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-background/60 text-[10px] font-medium text-muted-foreground">
           {saving ? "Saving…" : starting ? "Starting the app…" : "Waiting for the device…"}</div>}
       </div>
-      {selected && <div className="flex items-center gap-2 px-3 pb-2">
+      {selected && <div className="flex shrink-0 items-center gap-2 px-3 pb-2">
         <Input className="min-w-0 flex-1" autoFocus placeholder={`Type into ${selected.label ?? selected.identifier ?? "field"}`}
           value={fillValue} onChange={event => setFillValue(event.target.value)}
           onKeyDown={event => { if (event.key === "Enter" && fillValue && !locked) { setSelectedKey(null); act({ type: "fill", target: selected, value: fillValue }); } }} />
         <Button variant="outline" size="sm" disabled={locked || !fillValue}
           onClick={() => { setSelectedKey(null); act({ type: "fill", target: selected, value: fillValue }); }}>Type</Button>
         <Button variant="ghost" size="sm" onClick={() => setSelectedKey(null)}>Cancel</Button></div>}
-      <div className="flex items-center gap-2 px-3 pb-2">
+      <div className="flex shrink-0 items-center gap-2 px-3 pb-2">
         <span className="text-[10px] text-muted-foreground">Scroll</span>
         {SCROLLS.map(([direction, glyph]) => <Button key={direction} variant="outline" size="xs" disabled={locked}
           aria-label={`Scroll ${direction}`} title={`Scroll ${direction}`} onClick={() => act({ type: "scroll", direction })}>{glyph}</Button>)}
       </div>
-      <button type="button" aria-expanded={showSteps} className="flex items-center gap-1.5 border-t border-border px-3 py-1.5 text-[10px] font-medium text-muted-foreground hover:bg-muted/50"
+      <button type="button" aria-expanded={showSteps} className="flex shrink-0 items-center gap-1.5 border-t border-border px-3 py-1.5 text-[10px] font-medium text-muted-foreground hover:bg-muted/50"
         onClick={() => setShowSteps(value => !value)}>
         <span aria-hidden>{showSteps ? "▾" : "▸"}</span>Steps
         <span className="ml-auto rounded-full bg-muted px-1.5 tabular-nums">{recording.steps.length}</span></button>
-      {showSteps && <div className="max-h-28 overflow-auto px-3 pb-2 text-[10px] text-muted-foreground">
+      {showSteps && <div className="max-h-28 shrink-0 overflow-auto px-3 pb-2 text-[10px] text-muted-foreground">
         {recording.steps.length === 0 ? <span>The app launch is already recorded. Pick an element above to add the first step.</span>
           : recording.steps.map((step, index) => <div key={index} className="flex items-start gap-1.5 py-0.5" title={step.portable ? step.command : `${step.command} — recorded by position, so it will not survive a layout or device-size change`}>
             <span className="w-4 shrink-0 text-right tabular-nums opacity-60">{index + 1}</span>
             <span className={`shrink-0 ${step.portable ? "opacity-60" : "text-amber-600 dark:text-amber-400"}`} aria-hidden>{step.portable ? "·" : "!"}</span>
             <span className="min-w-0 flex-1 truncate">{step.command}</span></div>)}</div>}
-      <div className="flex items-center gap-2 border-t border-border px-3 py-2">
+      <div className="flex shrink-0 items-center gap-2 border-t border-border px-3 py-2">
         <Button className="flex-1" size="sm" disabled={locked} onClick={() => void store.stop(projectPath)}>
           {saving ? "Saving…" : "Stop and save"}</Button>
         <Button variant="ghost" size="sm" disabled={saving} onClick={() => void store.cancel(projectPath)}>Discard</Button></div>
