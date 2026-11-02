@@ -3,7 +3,7 @@ import { sentryEsbuildPlugin } from "@sentry/node/esbuild";
 import SentryCli from "@sentry/cli";
 import { SENTRY_PROJECTS } from "./sentry-projects.mjs";
 import { copyFile, mkdir, rm } from "node:fs/promises";
-import { basename } from "node:path";
+import { basename, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 
 export const serverBundleBanner = [
@@ -27,6 +27,11 @@ export const serverBundleBanner = [
 export async function buildServerBundles({ entryPoints, outdir, sentryDirectory, splitting = false }) {
   const result = await build({
     entryPoints, outdir, outExtension: { ".js": ".mjs" }, bundle: true, splitting,
+    // typescript.js is a single ~9.9 MB module, which no amount of splitting can bring under
+    // Claude's 5 MiB per-file limit. App-flow's sources keep importing "typescript" so tsc
+    // still sees the real declarations; at runtime this shim resolves the compiler from the
+    // project being parsed, which always ships its own copy.
+    alias: { typescript: resolve("packages/core/src/app-flow/typescript-runtime.ts") },
     format: "esm", platform: "node", target: "node22", minify: false, legalComments: "eof", metafile: true,
     sourcemap: "external",
     plugins: [sentryEsbuildPlugin({ project: SENTRY_PROJECTS.server, telemetry: false, sourcemaps: { disable: true }, release: { inject: false, create: false, finalize: false } })],

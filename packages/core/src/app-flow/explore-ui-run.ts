@@ -37,6 +37,7 @@ import { listMetroTargets } from './cdp/discovery.ts'
 import { addSourcePreviewPlans } from './preview-plans.ts'
 import { scanPresentations } from './presentations-source.ts'
 import { createSourceUnits, createSymbolResolver } from './source-units.ts'
+import { setTypeScriptProject } from './typescript-runtime.ts'
 import { scanSourceViews } from './views-source.ts'
 import {
   exploreUiStates,
@@ -105,6 +106,8 @@ export async function collectProjectSources(root: string): Promise<{ file: strin
  * compiled from both. Pure — nothing here touches a device.
  */
 export async function buildPresentationCatalog(root: string): Promise<AppFlowPresentations> {
+  // Every scan below parses with the compiler, which the bundle resolves from the project.
+  setTypeScriptProject(root)
   const units = createSourceUnits(await collectProjectSources(root))
   const symbol = createSymbolResolver(units, { root })
   const found = scanPresentations(units, root, symbol)

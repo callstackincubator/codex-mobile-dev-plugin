@@ -1,6 +1,7 @@
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { dirname, extname, join, posix, relative, resolve } from 'node:path'
 import ts from 'typescript'
+import { setTypeScriptProject } from './typescript-runtime.ts'
 import type {
   AppFlowEdge,
   AppFlowGuard,
@@ -1600,6 +1601,9 @@ export async function parseReactNavigation(projectRoot: string): Promise<ParsedA
 }
 
 export async function parseProject(projectRoot: string): Promise<ParsedAppGraph | null> {
+  // The shipped bundle carries no compiler; point the runtime at this project's copy before
+  // any `ts.*` access below reaches for one.
+  setTypeScriptProject(projectRoot)
   const dependencies = await projectDependencies(projectRoot)
   const candidates = ['app', 'src/app'].map((d) => join(projectRoot, d))
   if (dependencies['expo-router'])
