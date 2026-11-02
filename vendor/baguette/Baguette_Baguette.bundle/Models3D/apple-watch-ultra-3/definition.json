@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "apple-watch-ultra-3",
+  "displayName": "Apple Watch Ultra 3 (49mm)",
+  "matches": {
+    "simulatorDeviceTypes": ["com.apple.CoreSimulator.SimDeviceType.Apple-Watch-Ultra-3-49mm"],
+    "deviceNames": ["Apple Watch Ultra 3 (49mm)"]
+  },
+  "asset": {"file": "device.usdz", "downloadURL": null, "sha256": null},
+  "scene": {
+    "rootNode": "QQOFUksZCFObocz",
+    "screenNode": null,
+    "screenMaterial": "ScreenMaterial",
+    "nativeOrientation": "portrait",
+    "textureSize": {"width": 422, "height": 514},
+    "usesScreenOverlay": false
+  },
+  "variantSets": []
+}

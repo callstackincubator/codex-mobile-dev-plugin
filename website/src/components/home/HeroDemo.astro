@@ -1,0 +1,141 @@
+---
+import Dither from '../site/Dither.astro';
+---
+<div class="ticket-demo">
+        <div class="ticket-stage" data-ticket-demo aria-label="Coding workflow: the ADE expands to include a simulator, then an agent changes the app title from Trips to My trips.">
+          <Dither scene="workspace" focus={0.78} />
+          <div class="workspace">
+            <div class="window-bar"><span class="wordmark">YOUR ADE</span><span class="plugin-chip">MOBILE DEV</span><span class="window-controls" aria-hidden="true">− □ ×</span></div>
+            <div class="chat">
+              <div class="sidebar" aria-hidden="true"><i></i><i></i><i></i></div>
+              <div class="messages">
+                <p class="message user opening">Work on <button type="button" class="ticket-reference" data-ticket-trigger popovertarget="demo-ticket-preview" aria-describedby="demo-ticket-preview">MOB-142</button>.</p>
+                <div class="message connection"><p>I’m opening the app beside this chat.</p></div>
+                <p class="message user request">Change the title to My trips.</p>
+                <div class="edit input-call"><span class="edit-file">App.tsx</span><code><span class="before">Trips</span> → <span class="after">My trips</span></code></div>
+                <p class="message reply">Updated. Ready for you to review.</p>
+              </div>
+              <div class="composer"><span>Ask your agent…</span><span class="send">↑</span></div>
+            </div>
+            <div class="device-panel">
+              <div class="device-bar"><span>iOS simulator ▾</span><span class="live">LIVE</span></div>
+              <div class="phone">
+                <div class="phone-screen">
+                  <div class="island"></div><span class="phone-time">9:41</span>
+                  <div class="app"><div class="app-heading"><span class="old-title">Trips</span><span class="new-title">My trips</span></div><p class="app-subtitle">Where to next?</p><div class="trip-art" aria-hidden="true"><svg viewBox="0 0 100 50"><path d="M14 34H35V18H65V30H85"/><rect x="11" y="31" width="6" height="6"/><rect x="62" y="15" width="6" height="6"/><rect x="82" y="27" width="6" height="6"/></svg></div><div class="trip"><span>Kyoto</span><span class="trip-detail">Saved trip</span></div><div class="trip"><span>Lisbon</span><span class="trip-detail">Saved trip</span></div><div class="trip"><span>Copenhagen</span><span class="trip-detail">Saved trip</span></div></div>
+                  <div class="home-indicator"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <aside id="demo-ticket-preview" class="ticket-preview" data-ticket-preview popover="auto" role="tooltip">
+            <div class="ticket-preview-header"><span>Ticket</span><span class="ticket-preview-id">MOB-142</span></div>
+            <h2>Update the trips screen</h2>
+            <p>Rename the heading from “Trips” to “My trips” and keep the saved destinations.</p>
+            <div class="ticket-preview-change"><span>Trips</span><span aria-hidden="true">→</span><span>My trips</span></div>
+          </aside>
+        </div>
+</div>
+<script>
+import { whenNear } from '../site/lazy';
+for (const root of document.querySelectorAll<HTMLElement>('[data-ticket-demo]')) {
+  whenNear(root, async () => {
+    const module = await import('./ticket-motion');
+    module.startTicketDemo(root);
+  });
+}
+</script>
+<style>
+      .ticket-stage { container-type: inline-size; position: relative; height: 440px; overflow: hidden; }
+
+      .workspace { position: absolute; left: 4%; top: 7%; height: 86%; width: calc(52% + var(--grow, 1) * 40%); border: 1px solid var(--line-strong); background: var(--bg); overflow: hidden; }
+      .window-bar { position: absolute; inset: 0 0 auto; height: 30px; display: flex; align-items: center; gap: 9px; padding: 0 10px; border-bottom: 1px solid var(--line); font: 10px 'Geist Mono', monospace; }
+      .wordmark { color: var(--text); font-weight: 400; white-space: nowrap; }
+      .plugin-chip { padding: 1px 5px; background: var(--accent); color: var(--on-accent); font-size: 10px; opacity: var(--panel, 1); white-space: nowrap; }
+      .window-controls { color: var(--faint); margin-left: auto; letter-spacing: 5px; white-space: nowrap; }
+      .chat { position: absolute; left: 0; top: 30px; bottom: 0; width: calc(52cqw - 2px); }
+      .sidebar { position: absolute; inset: 0 auto 0 0; width: 29px; border-right: 1px solid var(--line); display: flex; align-items: center; flex-direction: column; gap: 16px; padding-top: 15px; }
+      .sidebar i { width: 8px; height: 8px; border: 1px solid var(--faint); }
+      .sidebar i:first-child { border-color: var(--accent-ink); background: var(--accent-tint); }
+      .messages { position: absolute; left: 29px; right: 0; top: 0; bottom: 35px; padding: 16px 14px; display: flex; flex-direction: column; gap: 16px; }
+      .message { font-size: 13px; line-height: 1.4; margin: 0; }
+      .user { align-self: flex-end; border: 1px solid var(--line); background: var(--field); padding: 8px 10px; max-width: 96%; }
+      .opening { opacity: var(--opening, 1); clip-path: inset(0 calc((1 - var(--opening, 1)) * 100%) 0 0); }
+      .connection { opacity: var(--connection, 1); display: flex; flex-direction: column; gap: 5px; }
+      .call { color: var(--text); font: 10px/1.6 'Geist Mono', monospace; white-space: nowrap; }
+      .dot { color: var(--accent-ink); margin-right: 4px; }
+      .result { color: var(--muted); font-size: 12px; }
+      .request { opacity: var(--request, 1); clip-path: inset(0 calc((1 - var(--request, 1)) * 100%) 0 0); }
+      .input-call { opacity: var(--input-call, 1); }
+      .reply { opacity: var(--reply, 1); color: var(--muted); font-size: 12px; }
+      .composer { position: absolute; left: 41px; bottom: 11px; right: 12px; height: 24px; border: 1px solid var(--line-strong); display: flex; align-items: center; padding: 0 7px; color: var(--faint); font: 10px 'Geist Mono', monospace; }
+      .send { margin-left: auto; color: var(--text); }
+      .device-panel { position: absolute; left: calc(52cqw - 2px); right: 0; top: 30px; bottom: 0; border-left: 1px solid var(--line); opacity: var(--panel, 1); background: var(--surface); }
+      .device-bar { position: absolute; left: 0; top: 0; right: 0; display: flex; justify-content: space-between; gap: 8px; align-items: center; height: 28px; padding: 0 10px; border-bottom: 1px solid var(--line); color: var(--muted); font: 11px var(--font-mono); white-space: nowrap; }
+      .live { display: flex; align-items: center; gap: 5px; color: var(--accent-ink); }
+      .live::before { content: ''; width: 4px; height: 4px; background: currentColor; }
+      .phone { position: absolute; height: 286px; width: 143px; top: 45px; left: calc(50% - 71.5px); background: var(--device-line); clip-path: polygon(8px 0,calc(100% - 8px) 0,calc(100% - 8px) 4px,calc(100% - 4px) 4px,calc(100% - 4px) 8px,100% 8px,100% calc(100% - 8px),calc(100% - 4px) calc(100% - 8px),calc(100% - 4px) calc(100% - 4px),calc(100% - 8px) calc(100% - 4px),calc(100% - 8px) 100%,8px 100%,8px calc(100% - 4px),4px calc(100% - 4px),4px calc(100% - 8px),0 calc(100% - 8px),0 8px,4px 8px,4px 4px,8px 4px); }
+      .phone-screen { position: absolute; inset: 1px; background: var(--device); clip-path: inherit; }
+      .island { position: absolute; top: 8px; width: 32px; height: 5px; left: calc(50% - 16px); background: var(--text); }
+      .phone-time { position: absolute; top: 20px; left: 9px; font: 10px var(--font-mono); color: var(--muted); }
+      .app { position: absolute; top: 43px; left: 9px; right: 9px; text-align: center; }
+
+
+
+
+
+
+
+
+      .home-indicator { position: absolute; bottom: 7px; width: 32px; height: 2px; background: var(--text); left: calc(50% - 16px); }
+
+.ticket-stage :global(.dither){opacity:.55}
+.connection p{margin:0}.connection{color:var(--muted)}
+.edit{display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;padding:10px 12px;border:1px solid var(--line);background:var(--surface)}.edit-file{font:11px var(--font-mono);color:var(--faint)}.edit code{font:12px/1.5 var(--font-mono);color:var(--muted)}.before{text-decoration:line-through}.after{color:var(--accent-ink)}
+.app{text-align:left;left:12px;right:12px}.app-heading{position:relative;height:23px;font-size:16px;font-weight:500;letter-spacing:-.025em}.app-heading span{position:absolute;inset:0}.old-title{opacity:calc(1 - var(--updated,1))}.new-title{opacity:var(--updated,1)}
+.app-subtitle{font-size:10px;color:var(--faint);margin:1px 0 11px}.trip-art{display:flex;gap:3px;align-items:center;justify-content:center;height:48px;background:var(--accent-tint);margin-bottom:9px}.trip-art i{display:block;width:6px;background:var(--accent-ink);height:12px}.trip-art i:nth-child(2),.trip-art i:nth-child(4){height:25px}.trip-art i:nth-child(3){height:38px}
+.trip{border-top:1px solid var(--line);padding:4px 0;display:flex;flex-direction:column;gap:1px;font-size:11px;line-height:1.2}.trip-detail{font-size:10px;line-height:1.2;color:var(--faint)}
+@container(max-width:500px){.window-bar{padding:0 7px;gap:6px}.window-controls{letter-spacing:2px}.plugin-chip{display:none}.sidebar{width:20px}.messages{left:20px;padding:12px 8px;gap:12px}.message{font-size:11px}.user{padding:8px}.edit{padding:8px;gap:3px}.edit code{font-size:10px}.edit-file{font-size:10px;width:100%}.composer{left:28px;right:8px;font-size:10px}.device-bar{padding:0 7px;font-size:10px}.live span{display:none}.phone{width:110px;height:278px;left:calc(50% - 55px);top:48px}.app{left:9px;right:9px}.app-heading{font-size:14px}.reply{font-size:11px}}
+
+</style>
+
+<style>.trip-art svg{width:100%;height:100%;padding:4px}.trip-art path{stroke:var(--accent-ink);stroke-width:1;fill:none}.trip-art rect{fill:var(--accent-ink)}</style>
+
+<style>
+  .ticket-reference {
+    display: inline-block;
+    min-height: 24px;
+    border: 0;
+    padding: 2px 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    white-space: nowrap;
+    text-decoration-line: underline;
+    text-decoration-style: wavy;
+    text-decoration-color: var(--accent-ink);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 4px;
+    cursor: pointer;
+  }
+  .ticket-reference:hover, .ticket-reference[aria-expanded='true'] { color: var(--accent-ink); }
+  .ticket-preview {
+    position: fixed;
+    inset: auto;
+    margin: 0;
+    width: min(19rem, calc(100vw - 2rem));
+    max-height: calc(100dvh - 2rem);
+    overflow: auto;
+    border: 1px solid var(--line-strong);
+    border-top-color: var(--accent-ink);
+    padding: 1.25rem;
+    background: var(--bg);
+    color: var(--text);
+  }
+  .ticket-preview-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; color: var(--faint); font: 12px var(--font-mono); text-transform: uppercase; }
+  .ticket-preview-id { color: var(--accent-ink); }
+  .ticket-preview h2 { margin: 1rem 0 .625rem; font-size: 18px; font-weight: 500; line-height: 1.3; letter-spacing: -.01em; }
+  .ticket-preview p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.55; }
+  .ticket-preview-change { display: flex; align-items: center; gap: 1rem; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--line); font-size: 14px; color: var(--muted); }
+  .ticket-preview-change span:last-child { color: var(--accent-ink); }
+</style>

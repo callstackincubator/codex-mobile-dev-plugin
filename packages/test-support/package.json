@@ -1,0 +1,7 @@
+{
+  "name": "@mobile-dev/test-support",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Fixtures shared by tests across packages and apps."
+}

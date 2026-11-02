@@ -1,0 +1,493 @@
+---
+import Faq from '../site/Faq.astro';
+import Marquee from '../site/Marquee.astro';
+import PixelIcon from '../site/PixelIcon.astro';
+import Window from '../site/Window.astro';
+import { docs, environments, features } from '../../site/content';
+
+const steps = [
+  { title: 'Add Mobile Dev', body: 'Install the package for your environment, then start a new agent conversation.', href: docs.start, link: 'Choose your environment' },
+  { title: 'Open your project', body: 'Keep your existing app, build tools, and development server. Pick an iOS or Android device.', href: docs.devices, link: 'Connect a device' },
+  { title: 'Work with the app', body: 'Ask for a change, review it on the device, and bring the relevant logs or data into the conversation.', href: docs.intro, link: 'Explore the workflow' },
+];
+const tracks = [
+  { name: 'CPU', unit: '% of one core', path: 'M0 46H24V42H44V45H68V32H88V34H108V20H128V16H148V25H168V38H188V35H208V30H228V24H248V32H268V40H288V42H308V36H328V45H350V42H374V47H400V44H440' },
+  { name: 'Memory', unit: 'MiB', path: 'M0 43H25V42H52V42H78V40H105V38H132V33H159V32H186V30H213V28H240V27H267V25H294V24H321V23H348V24H375V22H402V21H440' },
+  { name: 'Display FPS', unit: 'device-wide', path: 'M0 17H25V17H50V19H75V18H100V22H125V32H150V35H175V29H200V20H225V18H250V20H275V22H300V17H325V18H350V17H375V20H400V17H440' },
+];
+---
+
+<Marquee />
+
+<section id="tools" aria-labelledby="tools-title">
+  <p class="section-head label"><b>[01]</b> A mobile IDE in your ADE</p>
+  <div class="intro">
+    <h2 class="h2" id="tools-title">From the first run. <em>Through the next fix.</em></h2>
+    <p class="lede">Work with the running app, then inspect the evidence behind what you see.</p>
+  </div>
+  <div class="cells cells--4 feature-grid">
+    {features.map(feature => (
+      <a class="cell cell--link" href={feature.href}>
+        <span class="cell-top"><PixelIcon name={feature.icon} size={27} class="accent" /></span>
+        <h3 class="h3">{feature.title}</h3>
+        <p class="body">{feature.body}</p>
+        <span class="label more">Read the guide <span aria-hidden="true">→</span></span>
+      </a>
+    ))}
+  </div>
+</section>
+
+<section id="workflow" aria-labelledby="workflow-title">
+  <p class="section-head label"><b>[02]</b> Your environment</p>
+  <div class="intro">
+    <h2 class="h2" id="workflow-title">Your project. <em>Your existing workflow.</em></h2>
+    <p class="lede">Add the mobile tools to the ADE you already use. Your agent keeps working with your app’s own build tools.</p>
+  </div>
+  <ol class="cells cells--3">
+    {steps.map((step, stepIndex) => (
+      <li class="cell setup-step">
+        <span class="label cell-num">0{stepIndex + 1}</span>
+        <h3 class="h3">{step.title}</h3>
+        <p class="body">{step.body}</p>
+        <a class="label more" href={step.href}>{step.link} <span aria-hidden="true">→</span></a>
+      </li>
+    ))}
+  </ol>
+  <div class="cells cells--4 environment-grid">
+    {environments.map(environment => (
+      <a class="cell cell--link" href={environment.href}>
+        <span class="label environment-status">{environment.name === 'Claude' || environment.name === 'Cursor' ? 'Preview · manual install' : environment.status}</span>
+        <h3 class="h3">{environment.name}</h3>
+        <p class="body">{environment.detail}</p>
+        <span class="label more">Set up <span aria-hidden="true">→</span></span>
+      </a>
+    ))}
+  </div>
+  <p class="section-note">Runs on Apple Silicon macOS. Embedded device panels require an environment with MCP Apps support.</p>
+</section>
+
+<section id="performance" aria-labelledby="performance-title">
+  <p class="section-head label"><b>[03]</b> Performance</p>
+  <div class="demo-split">
+    <div class="demo-copy">
+      <h2 class="h2" id="performance-title">Performance profiling <em>Using the right tools</em></h2>
+      <p class="lede">Ask your agent to run an interaction and record CPU, memory, and device-wide Display FPS on supported devices. Review the results together.</p>
+      <p class="body">For CPU and React profiles, TraceSift adds a call tree, timeline, and flame graph you can explore together.</p>
+      <a class="label more" href={docs.performance}>Performance guide <span aria-hidden="true">→</span></a>
+    </div>
+    <div class="demo-visual" data-recording-demo data-range="selection">
+      <div class="human-prompt"><span class="label">You</span><p>Profile this interaction.</p></div>
+      <Window title="Performance">
+        <div class="demo-toolbar"><span class="label">Scroll trip list</span></div>
+        <div class="range-controls" role="group" aria-label="Recording range">
+          <button class="label range-button" type="button" data-recording-range="all" aria-pressed="false">Full recording</button>
+          <button class="label range-button" type="button" data-recording-range="selection" aria-pressed="true">Selected range</button>
+          <span class="range-time" data-recording-time>4–7 s</span>
+        </div>
+        <div class="tracks">
+          {tracks.map(track => (
+            <div class="track">
+              <div class="track-label"><span>{track.name}</span><span>{track.unit}</span></div>
+              <svg viewBox="0 0 440 60" role="img" aria-label={`${track.name} track`} preserveAspectRatio="none">
+                <path class="chart-grid" d="M0 15H440M0 30H440M0 45H440" />
+                <rect class="chart-selection" x="146" y="0" width="110" height="60" />
+                <path class="chart-line" d={track.path} />
+                <path class="selection-edge" d="M146 0V60M256 0V60" />
+              </svg>
+            </div>
+          ))}
+        </div>
+        <div class="chart-axis" aria-hidden="true"><span>0 s</span><span>4 s</span><span>8 s</span><span>12 s</span></div>
+      </Window>
+    </div>
+  </div>
+</section>
+
+<section id="storage" aria-labelledby="storage-title">
+  <p class="section-head label"><b>[04]</b> App storage</p>
+  <div class="demo-split storage-split">
+    <div class="demo-copy storage-copy">
+      <h2 class="h2" id="storage-title">See what the app saved. <em>Watch what changes.</em></h2>
+      <p class="lede">Browse key-value stores, files, and SQLite tables without adding code to your app. Follow changed values while you use it.</p>
+      <p class="body">Inspect the selected store with your agent, or open a table and narrow the rows and columns you need.</p>
+      <a class="label more" href={docs.storage}>Storage guide <span aria-hidden="true">→</span></a>
+    </div>
+    <div class="demo-visual storage-visual" data-storage-demo data-state="changed">
+      <div class="human-prompt"><span class="label">You</span><p>Analyze app storage.</p></div>
+      <Window title="Storage">
+        <div class="demo-toolbar"><span class="label">MMKV · app preferences</span></div>
+        <div class="storage-controls"><span class="label">3 keys · 1 store</span><button class="label storage-button" type="button" data-storage-toggle aria-pressed="true">Show change</button></div>
+        <table class="storage-table">
+          <caption class="sr-only">App preferences, before and after a title change</caption>
+          <thead><tr><th scope="col">Store</th><th scope="col">Key</th><th scope="col">Value</th></tr></thead>
+          <tbody>
+            <tr class="changed-row"><td>MMKV</td><th scope="row">screen_title</th><td><span data-storage-before hidden>Trips</span><span data-storage-after>My trips</span></td></tr>
+            <tr><td>MMKV</td><th scope="row">saved_trips</th><td>3</td></tr>
+            <tr><td>MMKV</td><th scope="row">onboarding_complete</th><td>true</td></tr>
+          </tbody>
+        </table>
+        <div class="change-detail"><span class="label">Changed value</span><span><del data-storage-after>Trips</del><span class="change-arrow" data-storage-after aria-hidden="true">→</span><ins data-storage-after>My trips</ins><span data-storage-before hidden>No changes yet</span></span></div>
+      </Window>
+    </div>
+  </div>
+</section>
+
+<Faq num="05" />
+
+<script>
+  import './feature-demos';
+</script>
+
+<style>
+  .setup-step .more {
+    white-space: normal;
+    line-height: 1.5;
+  }
+
+  .environment-grid {
+    border-top: 0;
+  }
+
+  .environment-status {
+    color: var(--faint);
+    line-height: 1.5;
+  }
+
+  .section-note {
+    margin: 0;
+    padding: 1.25rem var(--pad);
+    color: var(--faint);
+    font-size: 0.8125rem;
+    line-height: 1.55;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .feature-grid .cell-top {
+    margin-bottom: 0.75rem;
+  }
+
+  .demo-split {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    align-items: center;
+    gap: clamp(2rem, 5vw, 4rem);
+    padding: var(--rhythm) var(--pad);
+  }
+
+  .demo-copy {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1.25rem;
+  }
+
+  .demo-copy .h2 {
+    max-width: 18ch;
+  }
+
+  #performance-title {
+    max-width: none;
+  }
+
+  #performance-title em {
+    display: block;
+  }
+
+  .demo-copy .more {
+    min-height: 2.5rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .demo-visual {
+    min-width: 0;
+  }
+
+  .human-prompt {
+    display: flex;
+    gap: 0.875rem;
+    align-items: baseline;
+    margin-bottom: 1.25rem;
+  }
+
+  .human-prompt .label {
+    color: var(--faint);
+  }
+
+  .human-prompt p {
+    margin: 0;
+    font-size: 1rem;
+    color: var(--text);
+  }
+
+  .demo-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.5rem 1rem;
+    padding: 0.875rem 1rem;
+    border-bottom: 1px solid var(--line);
+    color: var(--text);
+  }
+
+  .demo-toolbar .label {
+    font-size: 0.625rem;
+    line-height: 1.5;
+    letter-spacing: 0.035em;
+  }
+
+  .range-controls {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .range-button,
+  .storage-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.5rem;
+    padding: 0.5rem 0.75rem;
+    border: 0;
+    background: transparent;
+    color: var(--faint);
+    cursor: pointer;
+    font-size: 0.625rem;
+    letter-spacing: 0.025em;
+  }
+
+  .range-button {
+    border-bottom: 2px solid transparent;
+    border-right: 1px solid var(--line);
+  }
+
+  .range-button[aria-pressed='true'] {
+    border-bottom-color: var(--accent-ink);
+    color: var(--text);
+  }
+
+  .range-button:hover,
+  .storage-button:hover {
+    background: var(--surface);
+    color: var(--text);
+  }
+
+  .range-time {
+    margin-left: auto;
+    padding: 0 0.75rem;
+    white-space: nowrap;
+    color: var(--accent-ink);
+    font: 0.6875rem var(--font-mono);
+  }
+
+  .tracks {
+    padding: 0.75rem 1rem 0;
+  }
+
+  .track + .track {
+    margin-top: 0.75rem;
+  }
+
+  .track-label {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.25rem;
+    color: var(--text);
+    font: 0.6875rem/1.5 var(--font-mono);
+  }
+
+  .track-label span:last-child {
+    color: var(--faint);
+  }
+
+  .track svg {
+    width: 100%;
+    height: 3rem;
+  }
+
+  .chart-grid {
+    fill: none;
+    stroke: var(--line);
+    stroke-width: 1;
+  }
+
+  .chart-line {
+    fill: none;
+    stroke: var(--accent-ink);
+    stroke-width: 1.5;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .chart-selection {
+    fill: var(--accent-tint);
+  }
+
+  .selection-edge {
+    fill: none;
+    stroke: var(--accent-ink);
+    stroke-width: 1;
+    stroke-dasharray: 2 3;
+    vector-effect: non-scaling-stroke;
+  }
+
+  [data-range='all'] .chart-selection,
+  [data-range='all'] .selection-edge {
+    display: none;
+  }
+
+  .chart-axis {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.5rem 1rem 0.75rem;
+    color: var(--faint);
+    font: 0.625rem var(--font-mono);
+  }
+
+  .storage-split {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  }
+
+  .storage-copy {
+    order: 2;
+  }
+
+  .storage-visual {
+    order: 1;
+  }
+
+  .storage-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding-left: 1rem;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .storage-controls > .label {
+    font-size: 0.625rem;
+    color: var(--faint);
+  }
+
+  .storage-button {
+    border-left: 1px solid var(--line);
+    color: var(--text);
+  }
+
+  .storage-button[aria-pressed='true'] {
+    color: var(--accent-ink);
+  }
+
+  .storage-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    color: var(--text);
+    font: 0.6875rem/1.6 var(--font-mono);
+  }
+
+  .storage-table th,
+  .storage-table td {
+    padding: 0.875rem 0.75rem;
+    border-bottom: 1px solid var(--line);
+    text-align: left;
+    overflow-wrap: anywhere;
+    vertical-align: top;
+    font-weight: 400;
+  }
+
+  .storage-table thead {
+    color: var(--faint);
+  }
+
+  .storage-table th:first-child,
+  .storage-table td:first-child {
+    width: 22%;
+  }
+
+  .storage-table thead th:nth-child(2) {
+    width: 43%;
+  }
+
+  [data-state='changed'] .changed-row {
+    background: var(--accent-tint);
+  }
+
+  [data-state='changed'] .changed-row td:last-child {
+    color: var(--accent-ink);
+  }
+
+  .change-detail {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1rem;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.875rem 1rem;
+  }
+
+  .change-detail > .label {
+    color: var(--faint);
+    font-size: 0.625rem;
+  }
+
+  .change-detail > span:last-child {
+    display: flex;
+    gap: 0.625rem;
+    font: 0.75rem var(--font-mono);
+  }
+
+  .change-detail del {
+    color: var(--faint);
+  }
+
+  .change-detail ins {
+    text-decoration: none;
+    color: var(--accent-ink);
+  }
+
+  .change-arrow {
+    color: var(--faint);
+  }
+
+  @media (max-width: 64rem) {
+    .demo-split,
+    .storage-split {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 2rem;
+    }
+
+    .demo-copy .h2 {
+      max-width: 24ch;
+    }
+
+    .demo-visual {
+      width: min(100%, 40rem);
+    }
+
+    .storage-copy,
+    .storage-visual {
+      order: initial;
+    }
+  }
+
+  @media (max-width: 30rem) {
+    .range-time {
+      font-size: 0.625rem;
+      padding: 0 0.5rem;
+    }
+
+    .range-button {
+      padding-inline: 0.5rem;
+    }
+
+    .storage-table th,
+    .storage-table td {
+      padding-inline: 0.5rem;
+    }
+  }
+</style>

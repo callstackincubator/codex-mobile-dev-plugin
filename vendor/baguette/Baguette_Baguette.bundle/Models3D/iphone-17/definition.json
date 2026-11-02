@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "iphone-17",
+  "displayName": "iPhone 17",
+  "matches": {
+    "simulatorDeviceTypes": ["com.apple.CoreSimulator.SimDeviceType.iPhone-17"],
+    "deviceNames": ["iPhone 17"]
+  },
+  "asset": {"file": "device.usdz", "downloadURL": null, "sha256": null},
+  "scene": {
+    "rootNode": "bXDawDnMkgfmwGF",
+    "screenNode": null,
+    "screenMaterial": "ScreenMaterial",
+    "nativeOrientation": "portrait",
+    "textureSize": {"width": 1206, "height": 2622},
+    "usesScreenOverlay": false
+  },
+  "variantSets": []
+}

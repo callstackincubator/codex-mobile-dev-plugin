@@ -1,0 +1,29 @@
+{
+  "name": "storage-test-app",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "expo": "~58.0.16",
+    "expo-file-system": "~58.0.10",
+    "expo-sqlite": "~58.0.13",
+    "expo-status-bar": "~58.0.3",
+    "react": "19.3.0",
+    "react-native": "0.88.0",
+    "react-native-default-preference": "^1.4.4",
+    "react-native-mmkv": "^4.3.2",
+    "react-native-nitro-modules": "^0.37.1",
+    "react-native-safe-area-context": "~5.10.1"
+  },
+  "devDependencies": {
+    "@types/react": "~19.3.0",
+    "typescript": "~6.0.3"
+  },
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web"
+  },
+  "private": true
+}

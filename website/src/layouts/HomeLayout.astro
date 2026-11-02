@@ -1,0 +1,27 @@
+---
+import Site from './Site.astro';
+import Nav from '../components/site/Nav.astro';
+import Closing from '../components/site/Closing.astro';
+import Footer from '../components/site/Footer.astro';
+import { faq, site } from '../site/content';
+const homeUrl = new URL('/', Astro.site).href;
+const jsonLd = {
+  '@context':'https://schema.org',
+  '@graph':[
+    {'@type':'WebSite',name:site.name,url:homeUrl,description:site.description},
+    {'@type':'Organization',name:'Callstack',url:'https://callstack.com/'},
+    {'@type':'SoftwareApplication',name:site.name,description:site.description,applicationCategory:'DeveloperApplication',operatingSystem:'macOS',license:site.license.spdx,offers:{'@type':'Offer',price:'0',priceCurrency:'USD'}},
+    {'@type':'SoftwareSourceCode',name:site.name,codeRepository:site.repo,programmingLanguage:site.language},
+    {'@type':'FAQPage',mainEntity:faq.map(({q,a}) => ({'@type':'Question',name:q,acceptedAnswer:{'@type':'Answer',text:a}}))},
+  ],
+};
+---
+<Site description={site.description} jsonLd={jsonLd}>
+  <a class="skip" href="#main">Skip to content</a>
+  <Nav />
+  <main class="frame" id="main"><slot /><Closing /></main>
+  <Footer />
+</Site>
+<style>
+.skip{position:absolute;top:-5rem;left:1rem;z-index:30;padding:.75rem;background:var(--accent);color:var(--on-accent)}.skip:focus{top:.5rem}
+</style>

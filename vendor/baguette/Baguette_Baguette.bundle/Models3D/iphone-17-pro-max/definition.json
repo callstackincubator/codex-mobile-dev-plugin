@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "id": "iphone-17-pro-max",
+  "displayName": "iPhone 17 Pro Max",
+  "matches": {
+    "simulatorDeviceTypes": ["com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro-Max"],
+    "deviceNames": ["iPhone 17 Pro Max"]
+  },
+  "asset": {"file": "device.usdz", "downloadURL": null, "sha256": null},
+  "scene": {
+    "rootNode": "uqyXUHbCOHbdqXa",
+    "screenNode": null,
+    "screenMaterial": "ScreenMaterial",
+    "nativeOrientation": "portrait",
+    "textureSize": {"width": 1320, "height": 2868},
+    "usesScreenOverlay": false
+  },
+  "variantSets": [
+    {
+      "id": "finish",
+      "displayName": "Device finish",
+      "kind": "materials",
+      "primPath": "/",
+      "usdName": "Finish",
+      "default": "cosmic-orange",
+      "choices": [
+        {
+          "id": "cosmic-orange",
+          "displayName": "Cosmic Orange",
+          "usdValue": "Cosmic_Orange",
+          "previewColor": "#D96129"
+        },
+        {
+          "id": "deep-blue",
+          "displayName": "Deep Blue",
+          "usdValue": "Deep_Blue",
+          "previewColor": "#5B627C",
+          "materialColors": {
+            "HETovHCBsEjcSiP": "#5B627C", "SMUhrjUPCjJkPUK": "#5B627C",
+            "PJgHvfOhNXkxvzq": "#5B627C", "SLmJkLdkhbbuEfG": "#5B627C",
+            "VXTclbUnoLmmPoD": "#5B627C", "YQFhPSFSryEqJMp": "#5B627C",
+            "awYxKfiOpRgQIxD": "#5B627C", "hiWLrxfkqoGxruc": "#5B627C",
+            "iAKEWdNafBldSCV": "#5B627C", "nwfiSfJrPZRLBAj": "#5B627C",
+            "ooxVuxObmmqIeuh": "#5B627C", "sJxAokqqlZYuwzy": "#5B627C",
+            "yPEFElLJTRhfWfw": "#5B627C", "ybSvSfarxzoBKlb": "#5B627C"
+          }
+        },
+        {
+          "id": "silver",
+          "displayName": "Silver",
+          "usdValue": "Silver",
+          "previewColor": "#D8D8D8",
+          "materialColors": {
+            "HETovHCBsEjcSiP": "#D8D8D8", "SMUhrjUPCjJkPUK": "#D8D8D8",
+            "PJgHvfOhNXkxvzq": "#D8D8D8", "SLmJkLdkhbbuEfG": "#D8D8D8",
+            "VXTclbUnoLmmPoD": "#D8D8D8", "YQFhPSFSryEqJMp": "#D8D8D8",
+            "awYxKfiOpRgQIxD": "#D8D8D8", "hiWLrxfkqoGxruc": "#D8D8D8",
+            "iAKEWdNafBldSCV": "#D8D8D8", "nwfiSfJrPZRLBAj": "#D8D8D8",
+            "ooxVuxObmmqIeuh": "#D8D8D8", "sJxAokqqlZYuwzy": "#C0C0C0",
+            "yPEFElLJTRhfWfw": "#D8D8D8", "ybSvSfarxzoBKlb": "#D8D8D8"
+          }
+        }
+      ]
+    }
+  ]
+}

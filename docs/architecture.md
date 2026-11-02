@@ -2,11 +2,47 @@
 
 [Back to README](../README.md) · [Contributing](../CONTRIBUTING.md)
 
-The Agent Device MCP entry and skill are currently disabled; their implementation and bundled runtime are retained for later reactivation.
+The plugin servers for Codex, Claude and Cursor serve agent-device's commands as `device_*` tools, which the agent controls apps with.
+
+## Hosts
+
+The server (`packages/core`), the shared UI (`packages/ui`) and the MCP Apps panel
+(`packages/mcp-app`) run in every host. Codex, Claude and Cursor load the panel as an
+MCP App: the `App` from ext-apps carries tool calls and resource reads through the
+host, and the panel adapts to the capabilities each host advertises. The Mac app
+(`apps/mac`) starts the server over stdio and relays its JSON-RPC lines to a web view,
+whose page calls the server with an MCP client.
+
+A host adds to the shared pieces without changing them:
+
+- **Server:** each host's entry calls `runStdioServer` with Mobile Dev's panel, where
+  the host shows it, and its `ServerFeature`s. The panel (`createPanel` in
+  `packages/core/src/panel-tools.ts`) owns Baguette, the panel and workspace pages and
+  the tools only they use, opening recordings in the workspace, the App tab's reads
+  and the native device form. Codex, Cursor's shared entry and the Mac app pass it.
+  Codex and Cursor add agent-device's commands, and Codex the self-updater, which
+  installs through Codex's marketplace; the Mac app, which has no agent, adds its page
+  resource. Claude's entry (`apps/claude/server`) passes the panel with `inline: false`,
+  so even MCP Apps hosts such as the desktop app's Code tab render none in the chat, and
+  the browser panel feature with `always: true`, which shows it beside the chat in a
+  browser; it adds agent-device's commands. Every host lists simulators for logs, CPU and device choices with
+  simctl, without starting Baguette.
+- **Runtime:** a host's `plugin-host.json` can leave out the panel's parts of `dist/`
+  (`"panel": false`, see `PANEL_PARTS` in `tooling/host-runtime.mjs`), download them
+  instead (`"panelRuntime": "download"`), and name a server build of its own. Claude
+  downloads Baguette, serve-emu and the iOS mirror from a release archive its package
+  pins (`packages/core/src/panel-runtime.ts`), and its server loads after telemetry as
+  a separate module, so esbuild splits it into chunks beside `server.mjs`, keeping
+  every file under the Claude plugin directory's 5 MiB limit.
+- **Panel:** a host's page entry calls `startMcpApp` with its chrome. Codex adds the
+  update banner; Claude uses the shared entry, for its cards.
+- **Views:** shared views depend only on `HostBridge`, the subset of `App` they use,
+  plus optional host context attachments. `DeviceWorkspace` keeps the iOS and Android
+  panels, their selection and layout identical in every host.
 
 ## Shared app discovery
 
-`src/ui/device-apps.ts` owns one `DeviceAppsStore` per workspace. Device selection
+`packages/ui/src/device-apps.ts` owns one `DeviceAppsStore` per workspace. Device selection
 feeds this store; it polls every three seconds while the panel is visible and the
 selected device is connected, including before Performance opens. Consumers share
 `subscribe` and `getSnapshot` (also usable with React's `useSyncExternalStore`).
@@ -16,7 +52,7 @@ Device changes, hidden panels, disconnection, and disposal cancel pending work,
 clear foreground state, and ignore late results. A failed query is not a confirmed
 absence: consumers should check `ready` before interpreting `foregroundApp: null`.
 
-`src/server/device-apps/` contains platform discovery, exposed through the existing
+`packages/core/src/device-apps/` contains platform discovery, exposed through the existing
 `mobile_performance_sources` tool. Android reads the top resumed activity from ADB;
 iOS simulators read the frontmost accessibility translation's PID without walking
 the UI tree; paired iPhones retain their accessibility-audit PID query. Foreground
@@ -30,13 +66,44 @@ and preserves its chosen recording target across foreground changes.
 
 Each MCP process owns one bundled Baguette child process. It selects a free loopback port, launches `dist/baguette/Baguette serve --host 127.0.0.1 --port <port> --no-plugins`, and shares that child across its tool calls and panel sessions. It does not use a separate Baguette server on port 8421. An opening failure returns an error the panel can show.
 
-The retained, currently inactive Agent Device entry point is `dist/agent-device-server.mjs`, which launches the official bundled `agent-device mcp` with Node through an SDK adapter. The adapter publishes all 55 operations, preserves their typed command arguments and output contracts, and validates inputs before forwarding them. State paths, remote daemon credentials, runner configuration and output-format settings belong to the plugin and are absent from tool inputs. Batch steps use the same compact contracts. Device selectors remain on setup, discovery, installation and script tools; interactions require a named session and reuse the upstream runtime's device binding. There is no global platform override. File operations retain `cwd` where it is relevant.
+The bundled Baguette runs each accessibility translator step on its main queue, where Apple's translator also handles simulator notifications. Concurrent UI reads take turns step by step, and gestures queued behind a read wait for one step rather than the whole read. When Baguette stops reading a helper command's output, it releases the pipe instead of closing a handle Foundation still monitors, which could close a descriptor another file had reused.
 
-The wrapper uses an explicit empty package config and a private temporary state directory. Default platform and form selectors would bypass the native session's device binding, so those are set only through device setup commands. It clears inherited agent-device settings so a global or cloud daemon cannot take over this connection. Commands start its local daemon as needed. On MCP shutdown, the wrapper runs the bundled `daemon stop --state-dir <own-directory> --clean` command, which checks the daemon's PID identity and releases its runner leases. It keeps logs and artifacts in that state directory for later reads. Call agent-device `session` with `action: "state-dir"` to find it.
+The plugin servers serve agent-device's commands as `device_<command>` tools
+(`packages/core/src/agent-device-tools.ts`), registered from
+`packages/runtimes/agent-device/tools.json`, which `npm run catalog:agent-device` writes
+from the pinned runtime and a unit test checks against it. The catalog keeps the
+runtime's typed command arguments and leaves out the commands Mobile Dev's own tools
+cover (`logs`, `perf`) and those for remote daemons, TVs and browsers. State paths,
+remote daemon credentials, runner configuration and output-format settings belong to
+the plugin and are absent from tool inputs. Batch steps use the same compact contracts.
+Device selectors remain on setup, discovery, installation and script tools;
+interactions require a named session and reuse the upstream runtime's device binding.
+There is no global platform override. File operations retain `cwd` where it is relevant.
+Each command carries the annotations of Mobile Dev's own matching tools, since
+agent-device declares none: hosts run reads, device input and app control without
+asking, and ask before commands that install apps, run scripts or app-defined events,
+write files where the agent says, read or replace the clipboard, or reach development
+servers. `screenshot`, `open` and `close` leave out their file outputs so they can run
+without asking. `catalog:agent-device` fails on a new upstream command until it is
+classified in `commandAnnotations`.
+They replace the panel's former model tools for screenshots, accessibility reads and
+input; the panel keeps `mobile_describe_ui` and `mobile_android_describe_ui` as
+app-only tools for its annotations.
 
-`npm run check:mcp-budget` reads the packaged servers' catalogs and estimates their model-visible specifications, including repeated namespace instructions and plugin attribution, before the host applies lossy schema compaction. With Agent Device deactivated, the current estimate is 45,315 bytes for 38 model-visible tools, below [Codex's shared 64,000-byte plugin budget](https://github.com/openai/codex/blob/main/codex-rs/core/src/mcp_tool_exposure.rs). The schema cleanup in 0.1.68 reduced the combined catalog from 238,784 to 99,568 bytes; temporarily removing its Agent Device entry makes room for the recording tools. Other enabled plugins also consume the shared budget. Splitting the same tools into more enabled MCP servers does not avoid it.
+The first command starts the bundled `agent-device mcp` with Node
+(`AgentDeviceRuntime`), with an explicit empty package config and a private temporary
+state directory. Default platform and form selectors would bypass the native session's
+device binding, so those are set only through device setup commands. It clears
+inherited agent-device settings so a global or cloud daemon cannot take over this
+connection. An unexpected exit restarts it on the next command. On MCP shutdown, the
+server runs the bundled `daemon stop --state-dir <own-directory> --clean` command, which
+checks the daemon's PID identity and releases its runner leases. It keeps logs and
+artifacts in that state directory for later reads. Call `device_session` with
+`action: "state-dir"` to find it.
 
-Use the panel's UDID and a named agent-device session for agent work. Refs belong to the latest snapshot or settled diff in that session. `press` and `fill` take a target such as `{ "kind": "ref", "ref": "@e12" }` or `{ "kind": "selector", "selector": "label=\"Search\"" }`. Use actual refs from the current result. Closing a session can close its app; leave `shutdown` unset to keep the simulator running. Another live agent-device daemon can own a runner lease. End that owner's work or choose another simulator instead of releasing its live claim.
+`npm run check:mcp-budget` reads the packaged servers' catalogs, estimates their model-visible specifications, and checks them against [Codex's tool limits](https://github.com/openai/codex/blob/main/codex-rs/core/src/mcp_tool_exposure.rs). Codex compacts any MCP tool input schema over 5,000 bytes, dropping descriptions, so the check fails when one exceeds it. The host regression tests make the same measurement of Codex's server on every pull request. Codex's 8,000-byte per-tool and 64,000-byte combined limits apply only to Agent Plugins, whose manifest is `plugin.json` at the plugin root; tools past them are hidden from the model. This plugin uses `.codex-plugin/plugin.json`, the legacy format, so those limits do not apply. Moving to the Agent Plugin format would hide part of the catalog, which is about 160 KB with agent-device's commands. On models that support tool search, Codex defers MCP tools from every plugin: they leave the initial tool list but stay discoverable and callable.
+
+Use the device's UDID or serial and a named agent-device session for agent work. Refs belong to the latest snapshot or settled diff in that session. `press` and `fill` take a target such as `{ "kind": "ref", "ref": "@e12" }` or `{ "kind": "selector", "selector": "label=\"Search\"" }`. Use actual refs from the current result. Closing a session can close its app; leave `shutdown` unset to keep the simulator running. Another live agent-device daemon can own a runner lease. End that owner's work or choose another simulator instead of releasing its live claim.
 
 The app gets a random stream session through an app-only MCP tool. The MCP server opens a WebSocket to its bundled Baguette, keeps the latest JPEG, and returns it through `resources/read`. The iOS viewer requests 60 FPS, overlaps reads with JPEG decoding, and paints only the newest decoded frame. Frame and decode queues stay bounded; older pending frames are discarded. JPEG bytes are base64-encoded only when a reader requests the latest frame. The app sends input through an app-only tool that checks each message. Frames and input stay inside the host's MCP bridge. The UI sends telemetry to Sentry's configured ingestion origin.
 
@@ -74,15 +141,25 @@ The MCP server returns a flat element list with `nodeId`, `parentId` and `depth`
 
 Annotations send text only. Each note includes the user request, element label, test ID when present, React component and owner names when available, and nearby text. React debug creation stacks resolve through one bounded request to the matching Metro server's `/symbolicate` endpoint. Source maps supply an app file, line, column and function so the agent can open the element's JSX directly. This is the element creation site, not necessarily the component definition. Library frames and unresolved bundle locations never become edit locations. Missing source maps leave selection working and mark the source location unavailable. Coordinates remain a fallback. The paused image stays local for editing; use Screenshot separately to attach an image.
 
-## Native device requests
+## Device requests
 
-When a mobile task has ambiguous targets, `mobile_choose_devices` asks the user
-through Codex's native inline request form. The agent discovers suitable devices
-first, then supplies their IDs, platform and kind, a task-specific question, and
-optional operation details. The form shows canonical device names, platform/type,
-runtime, optional verified app labels, and platform phone illustrations. Use
-`selectionMode: "multiple"` to let the user choose several devices. No device is
-preselected.
+Showing devices belongs to the panel's device menu, or to the host's own simulator
+views in Claude Code. When a mobile task has ambiguous targets in a host with the
+panel, the agent asks with `mobile_choose_devices` and a task-specific `message`. The
+tool is listed only for hosts that render a native request form: OpenAI's
+`openai/elicitation` form extension (Codex), preferred for its thumbnails, or MCP's
+own form elicitation. Other hosts never see it, and the agent asks in chat. Claude's
+server has no panel and no device form: Claude asks with its own question card,
+which also shows in the desktop app's Code tab, where MCP forms are declined unseen.
+Candidate
+`devices` are optional: omitted, the tool discovers them itself, and the form offers
+at most 20 selectable devices, running ones first; a backend that cannot list
+devices (no Android SDK, older Xcode) leaves the others offered. The agent may
+instead supply discovered IDs, platform and kind, plus optional operation details.
+The form shows canonical device names, platform/type, runtime and optional verified
+app labels; OpenAI's adds platform phone illustrations, and MCP's titled options
+carry the details in each title. Use `selectionMode: "multiple"` to let the user
+choose several devices. No device is preselected.
 
 The tool waits for an answer and returns `action` and selected `devices`, checking
 their availability both before opening the form and after acceptance. Cancellation
@@ -91,11 +168,128 @@ apps, open streams or start recordings. Stopped simulators/AVDs can be offered f
 build tasks; profiling candidates should already be running. Physical iOS uses
 the hardware UDID and requires a connected paired device.
 
-This local MCP connection uses the OpenAI Extensions SDK's native form elicitation.
-The host must advertise `extensions["openai/elicitation"].form`; unsupported hosts
-return an explicit error. Codex owns layout and button labels, so the native form
-does not reproduce custom footer buttons from a design mockup. Thumbnails are
-illustrations, not captured app screens.
+The host owns the form's layout and button labels, so it does not reproduce custom
+footer buttons from a design mockup. Thumbnails are illustrations, not captured app
+screens. An inline devices card was removed before it shipped in a release: listing
+belongs to the panel or the host's simulator views, and choices to forms.
+
+## Embedded TraceSift explorer
+
+Pressing **Explore** on a card opens TraceSift's full explorer in the card's own
+frame rather than a browser window. The renderer is not a copy: both TraceSift's
+web page and this plugin import the same components from
+`@callstack/tracesift-explore`, so a drill-down cannot drift from the app that
+produced the numbers.
+
+The card's frame cannot reach the TraceSift service — Codex strips plain HTTP
+origins from widget CSP — so its data rides MCP like everything else here.
+`mobile_tracesift_explore_payload` fetches `/api/integration/v1/task` or
+`/api/integration/v1/react-explore` with the service bearer token and returns the
+payload as one text item plus a small `structuredContent` envelope
+(`apiVersion`, `kind`, `encoding`, `payloadBytes`). A full task card carries its
+whole call tree and timeline, which runs to megabytes, so past 64 KiB the text is
+gzip-compressed base64; a measured 25 MB tree crosses in about 8 ms at a fifth
+of its JSON size. Below that threshold it stays plain JSON. Keeping the tree out
+of structured content avoids the deep-structured-payload failure documented
+above: the SDK and host validate only the envelope, and the iframe inflates and
+parses the payload once into the shapes the explorer draws. Payloads above
+24 MiB are refused before decoding and point at the browser window; the service
+already caps its trees at 60k nodes and 5k commits. Payload size is reported as
+`tracesift.explore.payload_bytes`, which is where an oversized tree shows up
+before a reader reports a spinner.
+
+The same rule applies to the payload's age: it is fetched from the live service,
+so an expired analysis answers with the existing "run it again" error instead of
+a half-drawn tree. **Open in browser** keeps the previous path, which hands the
+selection to `tracesift explore`.
+
+Version skew favours the reader's installed service: payloads are additive-only
+within integration API v1, the explorers ignore fields they do not know, and an
+older service that cannot answer the endpoint fails with an update message. The
+plugin folds the package's one compiled stylesheet into its single HTML bundle,
+after the plugin's own Tailwind layer, so neither build compiles the other's
+sources. That sheet opens by writing its theme tokens to `:root` and `.dark`,
+which would recolor the plugin's cards behind the explorer, so the fold scopes
+both token blocks to `.tracesift-explorer` — descendants inherit the custom
+properties, and a block that no longer has the shape the fold expects fails the
+build rather than leaking globally. The package is an ordinary npm dependency,
+so its React and `@rozenite/ui` peers resolve to this project's own copies and
+the bundle never carries a second React.
+
+### Picking frames to investigate
+
+**Select frames** in the explorer's bar switches its four task views from
+navigating to collecting: a click adds a frame to a set instead of refocusing the
+timeline, call tree and culprits or zooming the flame graph, and a second click
+takes it back out. One set is shared by all four views because all four already
+address a frame the same way — a `TaskTreeNode.id`, the dotted sibling path over
+the merged call tree, which a timeline box carries as `nodeId`, a culprit row as
+`nodeId`, and a flame box as its graph key. The package owns the drawing
+(`FrameSelection`, in `frame-selection.tsx`) and the plugin owns the state
+(`explorer.selected`, in `TraceSiftController`), so the web app and the panel
+still render one explorer and only the panel offers the question.
+
+Selection is deliberately not a second focus. Focus says where a view is standing
+and stays exactly one frame; a selection is a set the reader is assembling and
+survives moving the focus, which is what lets someone pick four frames on the
+timeline and still see all four ringed after opening one in the call tree.
+
+A pick rings the *frame*, not one drawing of it. The timeline draws one box per
+call and the merged tree one node per call site, so a function that ran eight
+times is eight boxes against the clock and one row elsewhere; the package rings
+every box of the picked function wherever it appears, and clicking any of those is
+the second click on the pick that exists rather than a new one. Turning **Select
+frames** back off empties the set — the bar that explains picking goes with the
+mode, so the picks go with it, and a send never carries a set whose count the
+reader can no longer see.
+
+**Investigate selected** writes its own hand-off, in `packages/shared/src/tracesift-selection.ts`
+rather than through `mobile_get_tracesift_handoff`. The picks exist only in this
+frame and the whole call tree is already in it, so a round trip could not have
+answered the question anyway — and an older installed service is never asked
+something it has never heard. It keeps the conventions of the service's prompts:
+measured evidence and no conclusion, each figure labelled with what it counts, the
+overlap named where one pick contains another (inclusive times are not additive;
+self times are, so the set's own time and the honest remainder are the only
+sums), and the caveats that decide how a number is read. Frames folded by the
+focused views are folded in its tree too, so it describes the stack the reader was
+looking at.
+
+### Picking components out of a React recording
+
+The same switch, over a recording. **Select components** turns the render tree
+and the component table from navigating to collecting, and **Investigate
+selected components** writes its own hand-off from
+`packages/shared/src/tracesift-react-selection.ts`. The state is the one field the task
+side uses, because it is the same shape; what differs is the id, the arithmetic
+and the words.
+
+A pick is a `reactNodeKey` — `<rootId>.<commitIndex>.<fiberId>` — rather than a
+bare fiber id, because a fiber id is unique inside its root and nowhere else.
+Naming the commit is what lets a selection outlive the commit picker: a reader
+works a cascade by stepping through commits, and a per-commit set would empty
+itself under exactly the navigation the reading is made of. Choosing a commit
+stays navigation, the way moving the task focus is.
+
+One pick rings one fiber, which is the opposite of the task side and
+deliberately so. A task's merged tree has one node per call site, so one pick has
+to ring every box drawn of that function; React's tree merges nothing, and two
+renders of a component are two fibers with their own causes, their own changed
+props and their own time. Ringing both because they share a name would claim a
+sameness React did not record. The render tree says so when a pick of the open
+commit is not drawn — collapsed as a pass-through, or below one that was.
+
+The hand-off keeps the same conventions and almost none of the same caveats,
+because the measurement is different. React's profiler is not sampled:
+`selfDuration` and `actualDuration` are recorded per fiber per commit, so the
+figures are exact for the render phase and say nothing about the commit phase,
+the effects, or the time between two commits — which the prompt states rather
+than leaving a reader to assume a recording covers an interaction. Own time is a
+true partition of a commit, so the picks' own times add and the remainder is the
+other components plus the reconciler's own walk; inclusive times overlap every
+ancestor and are never summed. Picks are grouped by the commit that measured
+them, and the same component picked in two commits is named as the repeated
+render it is rather than as one finding listed twice.
 
 ## Sources
 

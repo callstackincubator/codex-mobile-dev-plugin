@@ -2,6 +2,88 @@
 
 [Back to README](../README.md) · [Contributing](../CONTRIBUTING.md)
 
+## Hosts
+
+Since 0.1.165, UI and server telemetry carry a `host` tag and attribute with one of
+`codex`, `claude`, `cursor`, `mac` or `other`. Codex, Claude, Cursor and other MCP
+Apps hosts load the same panel and server; the Mac app runs the same server and shared UI.
+Behavior never depends on this value; it only attributes measurements and errors.
+
+- The Mac page names itself (`data-host="mac"`); the Mac app also starts the server
+  with `MOBILE_DEV_HOST=mac`.
+- MCP Apps panels are labelled once connected: `codex` when the host advertises
+  OpenAI extensions, otherwise the host's reported name mapped by `telemetryHost`
+  (`claude` for Claude, `cursor` for Cursor, else `other`). Before the Cursor plugin,
+  Cursor sessions were reported as `other`. Calls before connecting carry no host.
+- The server labels itself from the connecting MCP client's name on initialize and
+  reports `other` until then.
+- In hosts that render no MCP Apps panel, such as Claude Code, the panel can open in
+  a browser beside the chat. Its page names itself with the server's label for the
+  chat host, so the panel is attributed to that host. Its requests join the host's
+  server session with the same trace propagation; the browser page adds no
+  telemetry of its own. Page server and cleanup failures are captured as
+  `browser_panel.request` and `browser_panel.close`. The `browser_panel.sessions`
+  gauge measures active browser MCP sessions on creation, deletion, expiry and
+  shutdown, with `component=server`. It contains no session IDs, URLs or tokens
+  and honors telemetry opt-out. `browser_panel.context_update` counts the page's
+  model context updates by `outcome` (`stored`, `invalid` or `too_large`), and
+  `browser_panel.context_bytes` records the size of stored updates in bytes; the
+  context's text and images are never sent.
+- Packages that download the panel's native parts, such as Claude's, measure that
+  step. `panel_runtime.ready` records, in milliseconds, how long the runtime took to be
+  ready on a panel's first backend start in a server, by `outcome`: `cached` when a
+  complete folder was already there, `downloaded` for a download, checksum check and
+  extraction, or `failed` with a bounded `reason` (`network`, `http`, `checksum`,
+  `archive` or `filesystem`). `panel_runtime.download_bytes` records the archive size
+  of each download. A failure surfaces as the expected `download_failed` outcome;
+  checksum, archive and filesystem failures are also captured as
+  `panel_runtime.prepare` errors with a `panel_runtime_failure` tag, while offline
+  machines and unreachable releases are not. URLs, paths and versions are never
+  attributes, and both honor telemetry opt-out. Browser sessions expire after five idle minutes;
+  active requests prevent expiry, and open tabs send a ping every 30 seconds.
+- The server's metadata allowlist accepts only these values; the raw host or
+  client name is never sent.
+
+Earlier releases have no `host` value. Surfaces, measurement names, units and
+boundaries are unchanged in every host.
+
+The Mac app loads its page through the server's `ui://mobile-dev/mac.html` resource,
+so the page receives the same server-owned environment, opt-out and anonymous
+identity as the Codex panel. Mac builds are development-only for now; the SwiftUI
+shell has no native Sentry SDK.
+
+## Volume policy
+
+Since 0.1.164, application metrics in the UI, Node servers and native helpers use
+independent 0.5% point sampling before SDK buffering and network transmission.
+This reduces metric point volume by 99.5% on average, including automatic Node
+runtime measurements and frequent outcome counters. Retained values, units,
+surface/context attribution and timing-window boundaries are unchanged. Every
+retained point carries `telemetry.sample_rate=0.005`; user and session identifiers
+remain excluded. Sampling is independent of the existing 10% trace sampling.
+
+Gauge and distribution queries describe the retained sample. Counter totals and
+timing `.samples` totals now count only retained observations; multiply sums by
+200 to estimate unsampled totals. Do not compare raw totals across this version
+boundary. Rare operations may have no retained metric points, so metrics are
+for aggregate trends rather than a complete operation history.
+
+Expected host-thread closure, cancellation, unavailable/offline/unauthorized or
+stopped devices, unavailable foreground apps, unsupported host capabilities and
+explicit session/concurrency limits do not create error events. Unexpected
+timeouts, malformed responses, implementation errors and native crashes remain
+reportable. Handled JavaScript failures are sampled at 5%, deduplicated by
+scrubbed signature for one hour and capped at 20 reports per SDK runtime per
+hour. New unhandled JavaScript failures bypass the handled-error sample and cap;
+their repeated signatures are still deduplicated. The signature table is bounded
+at 256 entries per hour. Native crash/error capture remains unsampled.
+
+These client controls leave headroom for growth but cannot enforce a shared
+organization billing quota. Older installed releases and other projects retain
+their own reporting policies. All existing privacy, environment, anonymous error
+identity, opt-out, hidden-panel collection and timer/observer cleanup rules remain
+in effect.
+
 Since 0.1.159, remembered physical iOS devices without a reported transport are
 successful discovery results. Discovery failures use `ios.devices.discovery`
 handled-error reporting with the existing scrubbing and outcome metrics. Repeated
@@ -9,6 +91,19 @@ failures report once per continuous category episode; a successful discovery res
 the episode. Diagnostics identify schema fields without including device values.
 Discovery sampling exclusions, UI timings and surface attribution retain their
 existing boundaries. No new collector or native telemetry is added.
+
+Since 0.1.170, the server waits Baguette's standard 10 seconds for the simulator list
+instead of 2, because CoreSimulator can take seconds to answer while a device boots.
+`Cannot reach Baguette at [url]. The operation was aborted due to timeout` errors now
+mean an unresponsive backend rather than a slow one. A failed list from the server's
+own running Baguette reports that failure; earlier releases probed the port and
+reported it as `Port N already answers HTTP but has no valid Baguette device list`.
+Baguette start failures report once per continuous failure episode, from the first
+operation that captures one, whichever tool or operation triggered the start. Callers
+that only log the failure or were cancelled leave the report for a later capture. Later
+captures with the same scrubbed message count as `server.error.repeated` under the
+caller's operation, and a successful start resets the episode. Ports, PIDs and timestamps do not start a new episode. Episode keys and
+signatures stay local. No new metric, attribute or native telemetry is added.
 
 Since 0.1.158, opening device intent is applied before screen connections start.
 Existing MCP operation traces, `ui.video.first_frame`, rendering/input timings,
@@ -56,6 +151,9 @@ App Flow's manual path recorder — the panel's "Record path" button — now rep
 The App Flow runtime state-variant pass has been removed from the product, and with it the `app_flow.runtime.state_capture`, `app_flow.states.node` and `app_flow.states.phase` server series and the `ui.app_flow.states_rendered` and `ui.app_flow.state_viewed` UI measurements introduced in 0.1.141. This is a deliberate change of meaning rather than a rename: the pass they described no longer runs, no replacement series stands in for them, and dashboards or alerts built on those five names will go permanently silent from this release. The `states` App Flow progress phase and the `stateCaptureMode` start option are gone for the same reason. Every other App Flow series above — `app_flow.runtime.{connect,command,settle,verify,navigate,state}`, `app_flow.decision_wait.duration` and the `ui.app_flow.*` start/progress/graph measurements — keeps its existing name, unit, attributes and boundaries, so sweep coverage stays comparable across this release.
 
 Since 0.1.141, the `path` attribute on `app_flow.runtime.verify` covers a wider set of arrivals on the `runtime` side. Deterministic Fast now accepts the runtime's own readiness snapshot whenever that snapshot is complete — the target screen found and focused, its parameters matching, content present, and the dispatched navigator path focused — regardless of whether the readiness poll ended on `settled` or gave up on a timeout. Screens that never go quiet (live feeds) previously fell through to the vision judge and were counted as `judge`; they are now counted as `runtime`. The series name, unit (milliseconds), attribute names and verdict values are unchanged, so durations stay comparable across releases while the runtime/judge split shifts towards `runtime` at this release. The judge path remains for incomplete evidence. No new data is collected.
+Since 0.1.172, an owned Android backend starts only after the device reports `sys.boot_completed=1`, because adb lists a device seconds before Android starts the system services scrcpy needs. `android.backend.boot_wait.samples` and `android.backend.boot_wait.duration` measure that wait in milliseconds, only when the first check found the device still booting, with a fixed `outcome` of `booted` or `timeout` (after 120 s). They use the simulator surface and Android device platform, send no serials, device names or adb output, and honor telemetry opt-out. The wait ends before process spawn, so `android.backend.startup.duration` keeps excluding device boot.
+
+Android panel stream-opening calls allow 180 s for the boot wait, backend startup and request overhead. Existing UI connection and first-frame timings continue to measure the whole connection attempt.
 
 Since 0.1.140, `android.emulator.adb_reconnects` counts adb transport reconnects for emulators that stay unauthorized, with a fixed `trigger` (`boot` while waiting for an AVD, `selection` for an already running emulator). It uses the simulator surface and Android emulator context and sends no serials, AVD names or adb output. Existing Android startup diagnostics and MCP tool errors cover the boot outcome.
 
@@ -64,6 +162,8 @@ Since 0.1.139, `ios.accessibility_bridge.restarts` counts restarts of the simula
 Since 0.1.134, physical iOS capture runs in the shared `ios-mirror-service` Node process. Existing native packet-processing, input acknowledgement, connection, resource, and crash instrumentation stays attached to the active capture. Native resource measurements now overlap that service's Node process rather than each chat's MCP process. The service uses centralized server initialization, its packaged development/release environment, and server-owned anonymous installation/process-session identity. UI decode/render timings and sampled MCP operations retain their existing boundaries. Subscriber keyframe requests no longer invalidate the shared native queue or release another panel’s touch. The native packet-processing and recovery measurements remain on this active path; the rebuilt addon retains matching debug symbols.
 
 `ios.mirror.shared.captures` and `ios.mirror.shared.subscribers` report active counts. `ios.mirror.shared.queue_dropped` counts frames discarded by subscriber queue overflow. Counts aggregate in 30-second windows and flush on service shutdown, using the simulator surface and physical iOS context. No per-frame events, device identifiers, subscription IDs, payloads, or paths are sent. The service clears its collection timer on shutdown and honors telemetry opt-out.
+
+Since 0.1.170, a physical iOS bezel that can't be rendered no longer fails `mobile_ios_mirror_session`. Mirroring opens without the frame, and an unexpected render failure reports a handled `ios-mirror.bezel` error. The server keeps a missing frame for five minutes, so each hardware model reports at most once in that window instead of on every panel reconnect. A device type that Xcode doesn't have is expected: it counts as an `unsupported_platform` outcome and sends no event. Earlier releases reported these failures as `mobile_ios_mirror_session` errors, so compare `ios-mirror.bezel` with those events when reading trends. No metrics are added. The existing `server.error.outcome` count carries the new operation value.
 
 Since 0.1.132, `plugin.update.operations` counts release checks and installations
 by fixed operation and outcome, and `plugin.update.duration` measures their
@@ -81,6 +181,33 @@ roots. Existing installation duration, outcome, handled-error, and MCP tracing
 coverage remains on this path with the same boundaries and units. Execution and
 invalid-response errors use fixed messages without implying a network failure;
 raw CLI errors and output are not sent to telemetry.
+
+Since 0.1.167, update checks measure the Codex store catalog lookup instead of
+GitHub HTTP requests. The existing operation count and duration names and units
+remain unchanged. The `install` operation is replaced by `migrate`, covering
+verification and GitHub cleanup; its successful outcome is `migrated`. Checks can
+report `migration` while the GitHub installation remains. UI events
+`ui.plugin_update.store_opened` and `ui.plugin_update.migrated` distinguish opening
+the store from completing cleanup; the old `installed` event is removed. Fixed
+migration errors retain handled-error coverage. A missing or disabled store
+installation is an expected user action condition and does not report an error.
+No CLI output, store metadata,
+versions, paths, or user data are included. Disposal aborts CLI requests and clears
+the UI timer and visibility listener.
+
+Since 0.1.170, the fixed `plugin.update.migrate` error carries a `plugin_update_step`
+tag (`catalog`, `remove-plugin`, `remove-marketplace`, `verify` or `save`) and a
+`plugin_update_failure` tag (`codex-not-found`, `command-failed`, `invalid-response`,
+`store-unavailable`, `foreign-marketplace`, `not-removed`, `not-verified`,
+`cache-write` or `unknown`). The message, metrics and boundaries are unchanged, and
+no CLI output or store response is included.
+
+Since 0.1.171, the same update-check measurements cover the anonymous HTTP
+store lookup and local CLI installation checks. Failed checks add a bounded
+`failure` attribute using the existing update failure categories. Metric names,
+units, cache-hit exclusions, opt-out and migration-step error coverage are
+preserved. No endpoint response, authentication data or raw error is recorded.
+Closing the updater aborts its HTTP and CLI requests.
 
 Since 0.1.129, discovery command failures retain bounded `discovery_command`, `discovery_cause`,
 `discovery_termination`, and optional `discovery_signal` tags. Failed exception
@@ -121,7 +248,9 @@ reconnect abort signal; cancellation without an aborted operation and host
 Cancelled stream requests close sessions that finish opening after cancellation
 or before a discarded response. Unexpected cleanup failures retain their own
 `stream.cancel_cleanup` capture. Response delivery releases cancellation ownership;
-failed response delivery closes its undelivered session. Physical iOS mirror startup now also captures
+failed response delivery closes its undelivered session. CPU, Display FPS and log session
+starts follow the same ownership and report their cleanup failures as `stream.cancel_cleanup`;
+their tool failures after request cancellation count as `cancelled`. Physical iOS mirror startup now also captures
 unexpected server errors before returning the existing visible failure.
 
 Server discovery failures no longer create a second generic UI exception. The
@@ -214,22 +343,53 @@ Since 0.1.147, app control tools (`mobile_list_apps`, `mobile_launch_app`,
 message, because command output can contain bundle IDs, URLs, device serials, and
 local paths. Expected outcomes such as a missing app, an unhandled URL, an
 unrequested permission, or a stopped device count only through
-`server.error.outcome`. Extracted app icons and Android labels stay in the server's
+`server.error.outcome`. Since 0.1.170 these reports and outcome counts also carry
+the device command tags described below, and a simulator that is shutting down
+counts as a stopped device. Extracted app icons and Android labels stay in the server's
 memory cache and are returned only to the panel.
 
 The device popover's App tab records `ui.app_tools.list`, `.icons`, `.launch`,
 `.stop`, `.open_url`, `.permission`, `.push`, and `.language` round trips in
-milliseconds with bounded aggregate windows, and counts `ui.app_tools.failure`.
+milliseconds with bounded aggregate windows, and counts `ui.app_tools.failure`. Since 0.1.161 app icons come from a cache shared by
+every panel in the view, so an icon requested by one panel is not fetched again by
+another; each caller keeps its own timing name (`ui.app_tools.icons`, `ui.storage.icons`).
 Results that finish after a surface or device change are not recorded. Recent URLs
 and the last picked app stay in the panel's local storage and are never sent.
+
+The Storage tool (`mobile_app_storage`, `mobile_app_storage_table`, `mobile_app_storage_file`, `mobile_clear_app_storage`) uses the `storage`
+surface. The server records `app_storage.operation.duration` in milliseconds and
+`app_storage.operation.samples` per operation (`read`, `clear`, `reset`, `table`, `file`) with the device
+platform and a success or failure outcome. The duration covers listing the data
+directory, reading and decoding the requested stores, filtering results before
+returning them, and for clears stopping the app first. Scoped reads skip decoding
+unselected stores; duration therefore depends on the requested scope. Unexpected failures report under `app_storage.<operation>` with a fixed
+message; a release Android build, a missing app, or a stopped device counts only
+through `server.error.outcome`. The panel records `ui.storage.list_apps`, `.icons`, `.read`, `.table`, `.file`,
+`.clear`, `.reset`, and `.launch` round trips, `ui.storage.process` for validating
+a snapshot and computing the Changes feed, gauges `ui.storage.stores` and `ui.storage.entries`,
+and counts `ui.storage.failure`. Bundle IDs, store names, paths, keys, values, and
+file names are never sent to Sentry. Filtered table names and cell values from
+`mobile_app_storage_table`, and filtered file contents from `mobile_app_storage_file`,
+are returned to the host application; this is separate from telemetry. See
+[storage result filtering](storage-privacy.md). Since 0.1.161 the Changes tab reads storage again every
+5 seconds while it is open and the page is visible; each read is one `ui.storage.read`
+sample, and the interval stops when the tab, panel, or page is hidden. The panel
+lists installed apps each time it opens, when the selected device boots or reconnects,
+and on Refresh; each listing is one `ui.storage.list_apps` sample, and a listing
+already in flight is reused rather than repeated.
 
 Since 0.1.152, `mobile_app_language` and `mobile_set_app_language` use the same
 app control coverage under `app_control.language` and `app_control.set_language`.
 Language tags are not sent. The device settings tools report unexpected Baguette or
 serve-emu failures under `device_settings.read` or `device_settings.<setting>` with a
-fixed message. Android throttling runs through a local proxy on the Mac, so its adb
-failures report under `device_settings.network`; throttling a device that already
-uses its own proxy counts only through `server.error.outcome`. When the plugin first
+fixed message. Since 0.1.170 they carry the device command tags described below,
+and a failure on a device that stopped or went away during the request counts as
+`device_unavailable` through `server.error.outcome` instead of a report. The check
+reads the device list without starting a backend, giving Baguette two seconds; when
+Baguette or adb cannot list devices, the failure is reported as before. Android throttling runs through a local
+proxy on the Mac, so its adb failures report under `device_settings.network`;
+throttling a device that already uses its own proxy counts only through
+`server.error.outcome`. When the plugin first
 starts an Android backend, it clears a throttle left by a plugin process that exited;
 unexpected adb failures there report under `device_settings.network_recovery`, and a
 device that went away counts only through `server.error.outcome`. Proxy
@@ -239,6 +399,32 @@ them. The Device tab
 records `ui.device_settings.change` round trips in milliseconds and counts
 `ui.device_settings.failure`, with the same surface and device-change exclusions as
 the App tab. Setting values, throttle presets, and device IDs are not sent.
+
+Device setting and app control reports keep their fixed messages, so their Sentry
+issues keep grouping as before. Since 0.1.170 they add these device command tags,
+which their `server.error.outcome` counts also carry:
+
+- `device_platform`: `ios` or `android`, from the tool's target.
+- `device_command`: the program and subcommand or backend route that failed, such
+  as `simctl_launch`, `simctl_privacy`, `adb_shell_am`, `adb_install`, `plutil`,
+  `baguette_interface`, `baguette_start`, `serve_emu_night_mode`, or
+  `serve_emu_start`. A Baguette start that fails on its device list or its own
+  process names `baguette_simulators` or `baguette_serve` instead of
+  `baguette_start`. It is absent when the failure did not come from a named
+  command, such as a reply that failed validation. Labels come from code; anything
+  else is sent as `other`.
+- `device_command_failure`: `exit`, `signal`, `deadline`, `cancelled`,
+  `output_limit`, `missing_executable`, `system_error`, `connection_failed`,
+  `http_status`, `rejected`, `invalid_response`, `unexpected_output`, or `unknown`.
+  The value comes from error codes, HTTP statuses, and error types. Messages and
+  output are never read.
+- `device_command_status`: the exit status (0 to 255) for `exit`, or the HTTP
+  status for `http_status`.
+- `device_command_signal`: the signal name for `signal`, or `other`.
+
+Arguments, output, replies, bundle IDs, URLs, serials, and paths are not sent.
+serve-emu startup failures under `device_settings.*` keep their `android_startup_*`
+tags.
 
 Saved chart cards use the `recording` surface and view. Existing readiness,
 interaction and frame-pacing coverage is preserved. `ui.recording.process` and
@@ -251,7 +437,18 @@ measured curve with the fill following it. Since 0.1.85, the entrance pause is
 550 ms and change highlights fade in after drawing finishes. The intentional
 pause and highlight fade are excluded from the reveal timing;
 `ui.recording.message_ack` ends when the host acknowledges a button's message. Since 0.1.98, `ui.recording.context_attach` measures the preceding context attachment round trip in milliseconds, including failed writes. Both use the active recording surface. Recording IDs, titles, ranges and context text remain local. Handled action errors use a fixed telemetry message.
-`ui.recording.samples` counts samples held by the visible card, and bounded event
+Since 0.1.168, the tools that show a recording send its ID, summary and, when it fits,
+a preview (every sample, without per-thread CPU or Android frame timelines) instead of
+its full samples, because hosts cap tool results. The card draws the preview at once and,
+where the host lets cards call tools, reads the full recording with
+`mobile_read_performance_recording`. Readiness ends at the first chart drawn, preview or
+full. `ui.recording.preview` counts previews shown, and `ui.recording.load` measures the
+full read in milliseconds. `ui.recording.process` and the `ui.recording.samples`,
+`fps_samples` and `display_frames` gauges describe full recordings only, so they stay
+comparable with releases that sent full recordings; previews are only counted. A host
+returning the recording without its structured samples is a handled error with a fixed
+message; a server's own refusal, such as a deleted recording, is shown without a report.
+Either way a preview on screen stays. Bounded event
 counts record range selections and Ask/Open actions. `storage.bytes` with
 `kind: recordings` measures local saved-file storage. Recording polling is excluded
 from trace sampling, and hidden cards stop polling. None of these measurements
@@ -259,13 +456,24 @@ contains device CPU/memory values, recording IDs, titles or selected intervals.
 
 Comparison cards use the `comparison` surface and view, preserving shared
 readiness, interaction, browser frame pacing and teardown coverage. Bounded
-`ui.comparison.process` measures result validation, `ui.comparison.derive` covers
-overlay series and whole-run summaries, and `ui.comparison.summary` covers shared
+`ui.comparison.process` measures result validation; since 0.1.168, comparisons use
+previews as single recordings do when they fit: `ui.comparison.preview` counts them and
+`ui.comparison.load` measures reading every compared recording. As for recordings,
+`ui.comparison.process` and the comparison size gauges describe full recordings only. `ui.comparison.derive` covers
+overlay series, whole-run summaries and, since the card's redesign, finding each
+run's sharp changes; `ui.comparison.summary` covers shared
 selection summaries. `ui.comparison.commit` measures the card render through its
 DOM commit in milliseconds; it does not measure paint or device rendering.
-`ui.comparison.message_ack` ends at host acknowledgement. Numeric gauges count
+`ui.comparison.message_ack` ends at host acknowledgement. On hosts with composer
+pills, Ask puts the comparison's reference in a pill and sends a one-line message,
+as recording actions do; `ui.comparison.context_attach` measures that attachment
+round trip in milliseconds, including failed writes. Numeric gauges count
 runs, CPU/memory samples, FPS samples, retained display frames and overlay rows.
-Counters record range selection, run toggles and Ask actions. No recording IDs,
+Counters record range selection, run toggles and Ask actions;
+`ui.comparison.change_selected` counts choosing a listed sharp change, which also
+counts as a range selection, and `ui.comparison.memory_scale_changed` counts
+switching the memory charts between absolute values and change from each run's
+first reading. No recording IDs,
 titles, selections or device measurements enter this telemetry. The comparison
 MCP operation retains the existing sampled server trace and handled-error path.
 
@@ -281,6 +489,13 @@ Since 0.1.93, `ui.video.paint` and the platform frame counters also cover frames
 
 `ui.annotations.send` measures the host send round trip, including composer retries. Outcome counters distinguish success, a missing composer, timeout and other failures. Unexpected send failures use a fixed error message. No message content goes to Sentry. A timeout keeps notes for a manual retry; it never triggers an automatic resend, since delivery may have succeeded without acknowledgement.
 
+The standard-host attachment bar reuses these annotation measurements. On standard hosts,
+the measured operation includes publishing selection context before preparing the
+chat draft. `ui.annotations.send_success` means the host accepted the request;
+it does not confirm user submission or a model response. Notes remain until the
+user clears them. Message/context construction timings, surface attribution, and
+content scrubbing are preserved; no note text or selection evidence enters telemetry.
+
 Since 0.1.99, `ui.logs.foreground_change` counts automatic app-filter changes applied while Logs is active, including selected-device and process-lifetime changes. From 0.1.103, these changes update the visible query and local process identity mapping instead of restarting a scoped collector. `ui.logs.app_identity` measures batch insertion with native PID-to-app joins and discovery updates in milliseconds, using bounded aggregate windows. Hidden or closed log views defer row processing until reopened. Shared `ui.device_apps.discovery` timing and handled discovery-error coverage remain in place, including Android's foreground PID lookup; native session operations retain MCP tracing, Node runtime coverage, and `logs.ios.parse` timings. No app IDs, PIDs, package names, device IDs, or query text are attached to these measurements. Native helper telemetry and symbols are unchanged.
 
 Since 0.1.99, `ui.logs.query_parse` measures query compilation in milliseconds once per edit, including automatic app-clause edits from 0.1.103. Existing `ui.logs.filter`, buffered/filtered row gauges, and search counts cover keyword filtering and visible age refreshes; filtering time still covers snapshot derivation and grouping. Query text, field values, regex patterns, and validation messages remain local. Age refresh timers stop when Logs closes, unmounts, or the document becomes hidden.
@@ -291,9 +506,9 @@ Since 0.1.99, `ui.logs.query_parse` measures query compilation in milliseconds o
 
 `ui.logs.retention` measures bounded buffer updates in milliseconds. `ui.logs.evicted` counts rows removed locally to meet the shared row and text limits; `ui.logs.dropped` still counts only rows lost from the server buffer. Existing filter timing and row gauges cover the resulting list. These measurements contain no log text or source metadata.
 
-The React UI reports to `codex-mobile-dev-ui` (project `4512181027471440`). The main Node MCP server and the agent-device launcher report to `codex-mobile-dev-server`, distinguished by the `component` attribute. Native helpers report to `codex-mobile-dev-native`: Baguette, physical iOS mirroring, iOS FPS and logs, and Android CPU and FPS collectors. All three projects use release `mobile-dev@<plugin version>`.
+Since 0.1.165 the projects are named `mobile-dev-ui`, `mobile-dev-server` and `mobile-dev-native`; they were `codex-mobile-dev-*` before. Project IDs and DSNs are unchanged, so history and incoming events continue in the same projects. The React UI reports to `mobile-dev-ui` (project `4512181027471440`). The main Node MCP server and the iOS mirroring service report to `mobile-dev-server`, distinguished by the `component` attribute. The `agent-device-wrapper` component no longer reports, because the plugin servers run agent-device themselves. Native helpers report to `mobile-dev-native`: Baguette, physical iOS mirroring, iOS FPS and logs, and Android CPU and FPS collectors. All three projects use release `mobile-dev@<plugin version>`.
 
-TraceSift cards use the `tracesift` surface. `tracesift.operation.duration` measures local service readiness as part of analysis, profile upload and analysis, stable host-view registration when the host supplies it, persisted-analysis restoration from either a host view or replayed tool input, handoff generation, and invoking `tracesift explore` with a persisted compact analysis, in milliseconds; `tracesift.operation.samples` records the bounded operation and success/failure outcome. `ui.tracesift.process` measures result validation, `ui.tracesift.remember` measures the app-to-server registration round trip for a live card, `ui.tracesift.restore` measures the app-to-server restore round trip after a card view is recreated, `ui.tracesift.handoff` measures the app-to-server handoff round trip, and `ui.tracesift.message_ack` ends when the host acknowledges the investigation message. `ui.tracesift.explore` measures the app-to-server round trip through successful CLI browser launch for either a CPU task or a React commit; full Explore data remains in the local TraceSift service. A card-count gauge and bounded counters cover registration successes and failures, restore hits, misses and failures, Investigate actions, Explore openings and failures, hand-off copies and copy failures, handoff failures, composer unavailability, send failures, and unconfirmed delivery. Readiness, shared interaction, visibility, and cleanup measurements use the existing UI aggregation. Profile paths and contents, filenames, card text, frame and file names, task, root, and commit indices, analysis/card/host-view identifiers, handoffs, service URLs, process identifiers, tokens, and TraceSift diagnostics are never added to telemetry; replayed profile inputs are hashed only for local lookup. Expected setup, validation, expiry, cancellation, and version outcomes use existing expected-error classification; unexpected transport and malformed-response failures retain handled server/UI error coverage. These measurements describe plugin and local-service work, not the profiled app's performance.
+TraceSift cards use the `tracesift` surface, which is also the workspace tool of the same name: the tool's upload pane, cards and explorer are the same surface the inline card reports, so its measurements stay comparable across the two entry points and the server's metadata validation accepts `tracesift` as both a surface and a view. `tracesift.operation.duration` measures local service readiness as part of analysis, profile upload and analysis, stable host-view registration when the host supplies it, persisted-analysis restoration from either a host view or replayed tool input, handoff generation, and invoking `tracesift explore` with a persisted compact analysis, in milliseconds; `tracesift.operation.samples` records the bounded operation and success/failure outcome. `ui.tracesift.pick` measures the app-to-server round trip that opens the host's file dialog and waits for a choice, so a slow dialog is told apart from a slow analysis; `ui.tracesift.pick_cancelled` counts dialogs closed without a file and `ui.tracesift.pick_failed` counts hosts with no dialog at all, and `tracesift.operation` adds a `pick` operation for the same call on the server. `ui.tracesift.analyze` measures the panel-initiated analysis round trip, counted by `ui.tracesift.analyze` and `ui.tracesift.analyze_failed`; the server's existing `analyze` and `ready` operations still measure the service side of that same work, whether the model or the panel started it. The card no longer asks for a project folder: Investigate hands the finding to the chat as written, because the chat already works in the reader's project. The `ui.tracesift.project_*` measurements stopped with that change; the server's `project` operation remains only for the folder tools, which nothing in the card calls. The card shows one finding at a time, and `ui.tracesift.finding_selected` counts moving to another one from the sidebar's list or timeline, which says whether readers look past the first finding. `ui.tracesift.reset` counts returning to the upload pane, which also sets `tracesift_view` to `upload` and clears the card gauge so a dropped reading's figures are not read against the next one. `ui.tracesift.process` measures result validation, `ui.tracesift.remember` measures the app-to-server registration round trip for a live card, `ui.tracesift.restore` measures the app-to-server restore round trip after a card view is recreated, `ui.tracesift.handoff` measures the app-to-server handoff round trip, and `ui.tracesift.message_ack` ends when the host acknowledges the investigation message. On hosts with composer pills, Investigate and investigating picks put the hand-off in a pill and send a one-line message, and `ui.tracesift.context_attach` measures that attachment round trip in milliseconds, including failed writes, which count as send failures. `ui.tracesift.explore` counts opening the embedded explorer, and `ui.tracesift.payload` measures that app-to-server round trip, which carries the finding's full call tree or commit timeline through MCP; `ui.tracesift.payload_bytes` records how large those delivered payloads are, and `tracesift.operation` adds a `payload` operation for the same fetch on the server. Since Explore renders in-panel, the older meaning of `ui.tracesift.explore` (a successful CLI browser launch) now belongs to the `ui.tracesift.explore_browser` counter and its `ui.tracesift.explore_browser` timing and `ui.tracesift.explore_browser_failed` counter. `ui.tracesift.explore_too_large` counts the findings the bridge refused on size or serialization depth, which Explore then opens in the browser window instead of reporting as a failure; those opens are counted and timed by the `ui.tracesift.explore_browser` measurements like any other browser launch, so a rise in panel refusals is read against them rather than against `ui.tracesift.explore_failed`. Explorer readiness reuses `ui.surface.ready`, which the tool restarts from the moment it is opened rather than from the workspace frame that holds it, and `tracesift_view` distinguishes `cards`, `explorer` and the tool's `upload` pane so explorer work is not attributed to the card list; navigating back resets that context. `tracesift_profile` distinguishes a `cpu` recording from a `react` one, taken from the analysis when it arrives, so the two explorers' payload and processing timings are not read as one figure; it is set with the analysis and never derived from the device, the profile's contents or its path. Picking inside the explorer counts `ui.tracesift.pick_on` and `pick_off` for the mode, `ui.tracesift.frame_add` and `frame_remove` per click, and `pick_clear` for emptying the set, which switching picking off with picks standing also counts; `ui.tracesift.selected_frames` gauges how many picks the open reading holds and is reset to zero whenever that set is dropped — emptying it, switching picking off, closing the explorer, or taking a new analysis — so one reading's picks are never read against another's. The same counters and gauge cover both explorers: since 0.1.157 a React recording's components are picked the same way a CPU task's frames are, told apart by `tracesift_profile` rather than by counter names, so the measurement boundaries stay comparable across releases. Sending them counts `ui.tracesift.pick_investigate`, with `pick_investigate_empty` when the reader sent nothing placeable and `pick_investigate_failed` when the description could not be built at all; delivery reuses the existing `ui.tracesift.message_ack` timing and the composer and delivery counters. A card-count gauge and bounded counters cover registration successes and failures, restore hits, misses and failures, Investigate actions, Explore openings and failures, hand-off copies and copy failures, handoff failures, composer unavailability, send failures, and unconfirmed delivery. Readiness, shared interaction, visibility, and cleanup measurements use the existing UI aggregation. The chosen file's name is shown in the pane while analysis runs and is never sent as telemetry. Profile paths and contents, filenames, card text, frame, component and file names, selected frame and component names and their node, fiber and commit identifiers, task, root, and commit indices, analysis/card/host-view identifiers, handoffs, service URLs, process identifiers, tokens, and TraceSift diagnostics are never added to telemetry; replayed profile inputs are hashed only for local lookup. Expected setup, validation, expiry, cancellation, and version outcomes use existing expected-error classification; unexpected transport and malformed-response failures retain handled server/UI error coverage. These measurements describe plugin and local-service work, not the profiled app's performance.
 
 The environments are `development` and `release`. `npm run build` and `npm run package` default to `development`, including local installed packages. For a public release, run `npm run build:release` followed by `npm run package:release`. Packaging rejects a build from the other environment. The package stores its environment in `dist/telemetry-environment.json`; Node telemetry, native helpers and the served UI use that setting. Live reload does not determine the environment. Set `MOBILE_DEV_ENVIRONMENT=development` or `MOBILE_DEV_ENVIRONMENT=release` in the MCP launch environment to override explicitly, then restart the MCP processes and reopen the panel.
 
@@ -301,7 +516,8 @@ Baguette startup, input repair, simulator foreground detection and physical iOS
 bezel rendering discover required Swift compatibility libraries
 from the host's selected full Xcode installation before launching the native
 helper. Existing sampled MCP traces and UI app-discovery timings include discovery;
-handled failures retain their tool error paths. Setup failures use fixed messages without
+handled failures retain their tool error paths. Since 0.1.170, physical iOS bezel
+failures report under `ios-mirror.bezel` instead. Setup failures use fixed messages without
 developer directories or scanner output. Native telemetry initialization and
 matching dSYMs are preserved; rebuilds remove build-toolchain rpaths and re-sign
 the executable before retaining symbols. No additional telemetry fields or
@@ -348,20 +564,39 @@ release, scrubbing and opt-out remain in the parent. Installation and process-se
 IDs never enter performance measurements. These diagnostics distinguish failure
 mechanisms; they do not by themselves identify the cause of an ADB stall.
 
+Since 0.1.170, the server records the inode and modification time of its bundle file
+(`server.mjs`, or the chunk beside it in split builds) when it loads. Every error event
+from a server whose file is gone carries `install_integrity: removed`, as when an update
+or uninstall deletes the running version's folder; another file in its place gives
+`replaced`. Split builds name chunks by content, so an in-place update there reads as
+`removed`. A missing bundled serve-emu or Baguette runtime also carries `bundled_runtime`
+(`serve-emu` or `baguette`), with `install_integrity: incomplete` when the server's file
+is unchanged, so the installation it started from lacks the runtime. A runtime file that
+exists but cannot be read or run is not reported as missing. Only these fixed values are
+sent, never paths. The panel no longer retries a missing runtime on every reconnect.
+Missing-runtime errors now have new messages and are created in `install-integrity.ts`,
+so they group into new Sentry issues; compare them with MOBILE-DEV-SERVER-68
+(serve-emu) and MOBILE-DEV-SERVER-7C (Baguette) when reading trends.
+
 Unhandled JavaScript errors and rejected promises, React render errors, and handled MCP tool failures produce issues. Expected stopped-device errors and cancelled operations are excluded. Sentry traces 10% of ordinary tool actions, continuing the UI trace through the MCP bridge. Frame reads, polling, discovery and pointer input are excluded from trace sampling. The SDK does not record MCP arguments or results.
 
-Native device requests retain the ordinary sampled MCP trace. `device_picker.prepare`
+Device requests retain the ordinary sampled MCP trace. `device_picker.prepare`
 measures candidate discovery/validation in milliseconds, excluding time spent waiting
-for the user. `device_picker.result` counts accept, cancel, decline, unsupported and
-failed outcomes; `device_picker.selected` records only the number of selected devices.
-Attributes contain only the selection mode and outcome. Unexpected handled failures
+for the user. `device_picker.result` counts accept, cancel, decline and failed
+outcomes; `device_picker.selected` records only the number of selected devices.
+Attributes contain only the selection mode, outcome and `form`, the native form used
+(`openai` or `mcp`), which replaced `mode`. Its `card` and `browse` values and the
+`unsupported` and `rendered` outcomes belonged to the removed devices card, and hosts
+without a form no longer list the tool. When candidates are omitted, `prepare`
+also covers discovery of every device, so compare it with validation-only samples by
+whether candidates were passed. Unexpected handled failures
 use fixed messages. Device IDs/names, app labels, questions, operation details and
 thumbnails are never sent to Sentry. The form is rendered by the host, so plugin UI
 readiness/render timing cannot measure that surface.
 
 Physical iOS display rejections, including an active phone or VoIP call, appear in the panel's Screen unavailable state while it retries. These expected device responses preserve native connection timing, sampled MCP traces and `ui.action.result` outcomes on the simulator surface. Their localized descriptions remain local and do not produce separate Sentry issues.
 
-Agent Device telemetry is inactive while its MCP entry is disabled; the active Mobile Dev server and recording UI retain their existing coverage. When enabled, the Agent Device adapter measures ordinary `tools/call <command>` operations with sampled traces and continues incoming trace metadata through to the native MCP request. Discovery and session lookup are excluded from sampling. `agent_device.catalog.ready` measures catalog loading and validator compilation in milliseconds at startup. Handled native failures use static error messages so app content and tool payloads cannot enter telemetry. Node runtime and owned-storage measurements retain the `agent-device-wrapper` component. Unexpected backend disconnects replace the raw launcher's exit-code/signal report, since the SDK owns the child process lifecycle.
+The plugin servers for Codex, Claude and Cursor serve agent-device's commands as `device_<command>` tools, measured like its other tools by the server's MCP instrumentation (`tools/call device_<command>` spans). The runtime starts on the first command; `agent_device.runtime.ready` measures that start, from the first command to a connected runtime, in milliseconds. Handled failures use static messages under `agent_device.<command>`, `agent_device.start`, `agent_device.exit` and `agent_device.cleanup`, and its storage measurements come from the server process. Incoming trace metadata continues through to the native MCP request; discovery and session lookups (`device_devices`, `device_apps`, `device_appstate`, `device_capabilities`, `device_session`, `device_events`) are excluded from sampling. Handled native failures use static error messages so app content and tool payloads cannot enter telemetry. The standalone agent-device server, its `agent_device.catalog.ready` measurement and its `agent-device-wrapper` component were removed.
 
 | Measurement | Collection and interpretation |
 | --- | --- |
@@ -373,7 +608,8 @@ Agent Device telemetry is inactive while its MCP entry is disabled; the active M
 | UI responsiveness | Browser tracing captures available web vitals. Custom metrics record visible animation-frame intervals, intervals over 50 ms, Event Timing interaction durations, long tasks and long animation frames where supported. |
 | Product surfaces | Metrics carry `surface=app-flow`, `simulator`, `logs`, `performance`, `recording` or `comparison`, plus view, visible device layout and monitoring state. App Flow readiness/graph work, log filter time, buffered/filtered rows, performance batch processing, canvas draw time and time to first video frame help explain slow surfaces. |
 | Frame capture | `ui.screenshot.capture` measures synchronous canvas PNG encoding and base64 extraction in milliseconds for Select captures and physical iOS screenshots. `ui.screenshot.encode` measures PNG decoding, bounded JPEG encoding, and base64 extraction for chat attachments in milliseconds. Screenshot tools retain sampled MCP traces and report handled capture, attachment, and clipboard failures without image content. |
-| Storage | Every five minutes, the agent-device launcher measures its own session state directory and the shared Apple runner cache in bytes. It skips symlinks and sends only the storage kind and size. |
+| Pasted input | Command-V paste uses the existing ordered device input queue and `ui.device_input.round_trip` timing through MCP acknowledgement. It retains simulator surface/device context and existing input failure reporting. Clipboard content and validation failures are not sent to Sentry. |
+| Storage | Every five minutes, a server with agent-device measures its session state directory and the shared Apple runner cache in bytes, from the runtime's first start. It skips symlinks and sends only the storage kind and size. |
 | Usage | Surface views and visible time, tool action outcomes, log searches, attachments and send-to-chat actions are counted without their content. |
 
 UI timings are aggregated into bounded 30-second windows with `.samples`, `.mean`, `.p95` and `.max`; windows also close on a surface or context change. The p95 uses a reservoir of up to 256 observations and describes that window, rather than the percentile of all measurements across users. Filter by environment, release, surface and layout to compare like workloads. `ui.frame_interval` measures browser callback pacing, not actual rendered FPS. Event Timing measures interaction duration through the next paint; `ui.device_input.round_trip` measures the device input request through its MCP acknowledgement. Neither measures device touch-to-photon latency. `ui.interaction.supported` identifies whether the browser supports that API. Codex's embedded UI does not expose reliable renderer CPU, total memory or disk measurements. Since 0.1.80, recording processing, derivation, change-density, and reveal timings include the FPS track when present. `ui.recording.fps_samples` gauges the count of saved FPS intervals, never their measured values. Since 0.1.86, `ui.recording.process` also covers parsing retained Android display frames, and `ui.recording.display_frames` gauges their count on the recording surface. Since 0.1.87, `ui.recording.derive` also includes jank classification and presentation-interval statistics. Whole-run derivation runs when recording data changes; selected-range recomputation is measured separately under the same timing name, without repeating full-run processing during a drag. Device CPU/memory/FPS and frame timestamps, tokens, jank metadata, and derived device jank/pacing values remain local and are not forwarded to Sentry. No per-frame telemetry is emitted.
@@ -384,7 +620,7 @@ Error and crash events carry only a generated anonymous `user.id` and a `telemet
 
 Session Replay, minidumps, screenshots and profiling are disabled. Requests, account details, app log content, tool payloads, automatic console breadcrumbs and exception source context are excluded. JavaScript error text redacts common tokens, identifiers, URLs, email addresses and local home paths. Native reports retain source basenames and debug IDs, omit absolute module paths, and never send Rust panic payloads. Safe product attributes and source locations remain available for diagnosis. `MOBILE_DEV_TELEMETRY=off` disables reporting across JavaScript and native helpers.
 
-Builds generate debug IDs and source maps under the ignored `.sentry/` directory. Native rebuilds retain macOS dSYMs and unstripped Android ELF files in `.sentry/native` before stripping the bundled binaries. Release runs can reuse each helper's exact build artifact, restoring the vendor files and matching symbols together after SHA-256 verification. Reused symbols are still uploaded by the current release's Sentry step. Native helpers receive the current release and environment at runtime, so reuse preserves release attribution, measurement boundaries and debug IDs. Symbols, source maps and the upload credential are excluded from the plugin package. Native builds require CMake and Ninja, with an Android NDK for Android collectors. The SDK source archive is pinned and checked by SHA-256. Store the organization build token in the ignored `.env.sentry-build-plugin` file at the repository root:
+Builds generate debug IDs and source maps under the ignored `.sentry/` directory. Each page and server bundle keeps its maps in its own folder: `.sentry/ui/<page>` (`mcp-app`, `codex`, `mac`) and `.sentry/server` with host servers under `.sentry/server/<host>`. `npm run sentry:upload` uploads both trees, so every host's bundles share the release and its debug IDs. Host servers keep the shared server's component, metric names and boundaries; Codex's `plugin.update.*` metrics now come only from Codex's server. Native rebuilds retain macOS dSYMs and unstripped Android ELF files in `.sentry/native` before stripping the bundled binaries. Release runs can reuse each helper's exact build artifact, restoring the vendor files and matching symbols together after SHA-256 verification. Reused symbols are still uploaded by the current release's Sentry step. Native helpers receive the current release and environment at runtime, so reuse preserves release attribution, measurement boundaries and debug IDs. Symbols, source maps and the upload credential are excluded from the plugin package. Native builds require CMake and Ninja, with an Android NDK for Android collectors. The SDK source archive is pinned and checked by SHA-256. Store the organization build token in the ignored `.env.sentry-build-plugin` file at the repository root:
 
 ```dotenv
 SENTRY_AUTH_TOKEN=your_org_token

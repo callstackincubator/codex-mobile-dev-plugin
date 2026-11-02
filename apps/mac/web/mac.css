@@ -1,0 +1,11 @@
+/* While the native sidebar is collapsed, the window's traffic lights and sidebar
+   button sit over the page's top-left corner. Swift sets --mac-titlebar-inset to
+   their width, and the leading panel's top row makes room for them. */
+.mac-leading .panel-toolbar {
+  padding-left: calc(var(--mac-titlebar-inset, 0px) + 0.5rem);
+  transition: padding-left 150ms ease;
+}
+/* Views without a toolbar row, such as TraceSift, move below the controls instead. */
+.mac-leading:not(:has(.panel-toolbar)) {
+  padding-top: var(--mac-titlebar-height, 0px);
+}

@@ -68,14 +68,14 @@ The server verifies and retains all collector binaries in memory at startup.
 New CPU sessions deploy from that retained copy, so reconnecting still works if
 a plugin update removes the old installed cache. Host staging files are removed
 after each deployment. The app-side collector and sampling rate are unchanged.
-`node scripts/smoke-cpu-cache.mjs` checks packaged CPU reconnection after deleting
+`node tooling/smoke-cpu-cache.mjs` checks packaged CPU reconnection after deleting
 a temporary copy of the plugin cache, using fake ADB without touching a device.
 
 On an arm64 Android emulator with 23 app threads, 20 CPU and memory samples over 19.0 seconds
 used 0.046% of one core in the helper (0.460 ms of CPU per sample). This measures
 the collector itself, excluding ADB and video streaming; overhead varies with
 thread count and device. Reproduce with
-`node scripts/smoke-android-cpu.mjs DEVICE_SERIAL RUNNING_PID`.
+`node tooling/smoke-android-cpu.mjs DEVICE_SERIAL RUNNING_PID`.
 
 The Memory track shows the main process's current usage, sampled average, maximum and minimum in MiB. Android reads RSS from `/proc/<pid>/statm` using the device's runtime page size; shared resident pages are counted in full. iOS requests `phys_footprint` in the same debugserver profiling stream, including compressed memory. These are different platform metrics, identified in the track tooltip; their values are not directly comparable across platforms. Memory is available from the first sample, shares CPU's timeline and session, and resets with the app's PID.
 

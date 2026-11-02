@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "iphone-air",
+  "displayName": "iPhone Air",
+  "matches": {
+    "simulatorDeviceTypes": ["com.apple.CoreSimulator.SimDeviceType.iPhone-Air"],
+    "deviceNames": ["iPhone Air"]
+  },
+  "asset": {"file": "device.usdz", "downloadURL": null, "sha256": null},
+  "scene": {
+    "rootNode": "SpydoZjumCMfwOv",
+    "screenNode": null,
+    "screenMaterial": "ScreenMaterial",
+    "nativeOrientation": "portrait",
+    "textureSize": {"width": 1260, "height": 2736},
+    "usesScreenOverlay": false
+  },
+  "variantSets": []
+}

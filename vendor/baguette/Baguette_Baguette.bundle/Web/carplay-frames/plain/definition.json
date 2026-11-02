@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "plain",
+  "displayName": "Plain",
+  "viewport": { "width": 1600, "height": 900 },
+  "screen": { "x": 0, "y": 0, "width": 1600, "height": 900, "clipRadius": 0 },
+  "layers": [],
+  "stream": {
+    "defaultSize": { "width": 800, "height": 450 },
+    "fit": "contain"
+  }
+}

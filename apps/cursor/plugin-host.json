@@ -1,0 +1,10 @@
+{
+  "label": "Cursor",
+  "manifest": ".cursor-plugin",
+  "root": "CURSOR_PLUGIN_ROOT",
+  "config": {
+    "file": "cursor-mcp.json",
+    "server": { "type": "stdio" },
+    "target": "~/.cursor/mcp.json, then reload Cursor"
+  }
+}

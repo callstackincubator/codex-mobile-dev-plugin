@@ -1,0 +1,12 @@
+---
+import Default from '@astrojs/starlight/components/Head.astro';
+import geistMonoMedium from '../../fonts/GeistMono-Medium.woff2?url';
+import geistMonoRegular from '../../fonts/GeistMono-Regular.woff2?url';
+import switzerMedium from '../../fonts/Switzer-Medium.woff2?url';
+import switzerRegular from '../../fonts/Switzer-Regular.woff2?url';
+
+const fonts = [switzerRegular, switzerMedium, geistMonoRegular, geistMonoMedium];
+---
+
+{fonts.map(href => <link rel="preload" href={href} as="font" type="font/woff2" crossorigin />)}
+<Default />

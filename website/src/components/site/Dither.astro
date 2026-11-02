@@ -1,0 +1,75 @@
+---
+import { site } from '../../site/content';
+import type { SceneName } from './dither';
+
+interface Props {
+  scene?: SceneName;
+  /** The visual's horizontal focus, from 0 to 1. */
+  focus?: number;
+  /** Size of one dither cell in CSS pixels. */
+  cell?: number;
+  class?: string;
+}
+const { scene = 'workspace', focus = 0.72, cell = 2, class: className } = Astro.props;
+---
+
+<canvas
+  class:list={['dither', className]}
+  data-scene={scene}
+  data-focus={focus}
+  data-cell={cell}
+  data-mark={site.mark?.join('/')}
+  aria-hidden="true"></canvas>
+
+<script>
+  type Runtime = typeof import('./dither-host');
+  let runtime: Runtime | undefined;
+  let pending: Promise<Runtime> | undefined;
+  let nearby: IntersectionObserver | undefined;
+  let generation = 0;
+
+  async function mount(canvas: HTMLCanvasElement, version: number) {
+    pending ??= import('./dither-host');
+    runtime = await pending;
+    if (version === generation) runtime.host(canvas);
+  }
+
+  function start() {
+    const version = ++generation;
+    nearby = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          nearby?.unobserve(entry.target);
+          const canvas = entry.target as HTMLCanvasElement;
+          void mount(canvas, version);
+        }
+      }
+    }, { rootMargin: '200px' });
+    const canvases = document.querySelectorAll<HTMLCanvasElement>('canvas.dither');
+    for (const canvas of canvases) nearby.observe(canvas);
+  }
+
+  function stop() {
+    generation++;
+    removeEventListener('load', start);
+    nearby?.disconnect();
+    nearby = undefined;
+    runtime?.disposeAll();
+  }
+
+  addEventListener('pagehide', stop);
+  addEventListener('pageshow', (event) => {
+    if (event.persisted) {
+      // A transferred canvas cannot be transferred again after the worker was terminated.
+      const canvases = document.querySelectorAll<HTMLCanvasElement>('canvas.dither');
+      for (const canvas of canvases) {
+        const replacement = document.createElement('canvas');
+        for (const { name, value } of canvas.attributes) replacement.setAttribute(name, value);
+        canvas.replaceWith(replacement);
+      }
+      start();
+    }
+  });
+  if (document.readyState === 'complete') start();
+  else addEventListener('load', start, { once: true });
+</script>

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "apple-watch-series-11-42mm",
+  "displayName": "Apple Watch Series 11 (42mm)",
+  "matches": {
+    "simulatorDeviceTypes": ["com.apple.CoreSimulator.SimDeviceType.Apple-Watch-Series-11-42mm"],
+    "deviceNames": ["Apple Watch Series 11 (42mm)"]
+  },
+  "asset": {"file": "device.usdz", "downloadURL": null, "sha256": null},
+  "scene": {
+    "rootNode": "MswjViAcFQPAHRi",
+    "screenNode": null,
+    "screenMaterial": "ScreenMaterial",
+    "nativeOrientation": "portrait",
+    "textureSize": {"width": 374, "height": 446},
+    "usesScreenOverlay": false
+  },
+  "variantSets": []
+}
