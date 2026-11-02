@@ -1,8 +1,8 @@
 {
   "name": "mobile-dev-agent-device-runtime",
   "private": true,
-  "version": "0.20.9",
+  "version": "0.21.33",
   "dependencies": {
-    "agent-device": "0.20.9"
+    "agent-device": "0.21.33"
   }
 }

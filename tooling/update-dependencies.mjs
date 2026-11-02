@@ -43,6 +43,10 @@ async function sha256(url) {
 /** Reports a dependency's updates and returns the version to apply, if any. */
 function choose(group, name, current, versions, link) {
   const { latest, safe } = targets(current, versions);
+  if (group === "agent-device" && name === "agent-device" && current === "0.21.33") {
+    if (latest) record(group, name, current, latest, { applied: false, reason: "manual pin: upstream #3995 breaks iOS input with a stale Xcode selection link", link });
+    return;
+  }
   if (safe) record(group, name, current, safe, { link });
   if (latest && latest !== safe) record(group, name, safe ?? current, latest, { applied: false, reason: "breaking version; update by hand", link });
   return apply ? safe : undefined;
