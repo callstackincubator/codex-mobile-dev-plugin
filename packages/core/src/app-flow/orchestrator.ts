@@ -1686,11 +1686,9 @@ export async function buildAppFlow(
           `[app-flow] checkpoint pipeline changed — kept ${reconciled.retained} successful capture(s), re-queued unfinished screens`
         )
       }
-      // The one condition under which this build inherits the previous one's elapsed time: it is
-      // continuing the same sweep the checkpoint describes — the same test, in the same place, the
-      // captures themselves are reused under. A completed sweep deletes that checkpoint, so the
-      // next build is a fresh chain no matter what the manifest still shows; a re-parse of a moved
-      // structure fails this test for the same reason. Both should (and now do) reset the total.
+      // This build inherits the previous one's elapsed time when it is continuing that sweep's
+      // work — the same test the captures themselves are reused under. A re-parse of a moved
+      // structure fails it and resets the total.
       if (resuming) {
         carriedDurationMs = carriedSweepDurationMs(previousManifest, true)
       }
@@ -1701,11 +1699,23 @@ export async function buildAppFlow(
       // result, leaving only genuinely explorable misses in the queue. This preserves the canvas
       // and prevents AI completion from repeating known runtime/deep-link failures.
       if (explorationMode === 'ai') {
+        let reusedPriorCapture = false
         for (const [id, prior] of previousById) {
           const capture = prior.capture
           if (!capture) continue
           const settledWithoutAI = isNonActionableAiCapture(capture)
-          if (capture.screenshot || settledWithoutAI) captureMap[id] ??= { ...capture, stale: false }
+          if (capture.screenshot || settledWithoutAI) {
+            captureMap[id] ??= { ...capture, stale: false }
+            reusedPriorCapture = true
+          }
+        }
+        // Explore with AI builds on the map already on screen, so its clock belongs on top of the
+        // total that produced that map rather than replacing it — the header would otherwise read
+        // the explore pass's few seconds as the cost of the whole flow. The checkpoint is gone
+        // after a completed sweep, so `resuming` is false here; the reused captures are the proof
+        // that the chain continues.
+        if (reusedPriorCapture) {
+          carriedDurationMs = carriedSweepDurationMs(previousManifest, true)
         }
       }
       const openedByNode: Record<string, { app: string; url: string }> = { ...checkpoint.opened }

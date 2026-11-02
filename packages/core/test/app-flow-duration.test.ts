@@ -24,9 +24,16 @@ describe("carriedSweepDurationMs", () => {
   });
 
   it("resets the chain when the build is not resuming a matching checkpoint", () => {
-    // A completed sweep deletes its checkpoint, and a re-parse of a moved structure fails the
-    // resume test: in both cases the next build must start its own chain at zero.
+    // A re-parse of a moved structure fails the resume test, so the next build starts its own
+    // chain at zero.
     assert.equal(carriedSweepDurationMs(manifest({ durationMs: 150_000, cumulativeDurationMs: 150_000 }), false), 0);
+  });
+
+  it("carries the chain total into an Explore-with-AI pass that reuses the finished sweep's captures", () => {
+    // The completed sweep cleared its checkpoint, so the explore pass is not `resuming`; it still
+    // continues the chain, because the map it completes is the one that 2m30s paid for. The header
+    // must read 2m30s + the explore clock, not the explore clock alone.
+    assert.equal(carriedSweepDurationMs(manifest({ durationMs: 150_000, cumulativeDurationMs: 150_000 }), true), 150_000);
   });
 
   it("carries nothing when there is no previous manifest at all", () => {

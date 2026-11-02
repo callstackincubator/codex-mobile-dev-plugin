@@ -484,10 +484,11 @@ export interface AppFlowManifest {
    * the first unfinished screen; charging each resumed run only its own clock used to hide the
    * real cost of a flow (a 2m30s sweep resumed for 1m5s read as 1m5s). The carried total is only
    * taken when the saved checkpoint's structure fingerprint still matches this build's parse —
-   * the same condition the resume itself requires — so a fresh sweep of a changed app, or the
-   * first sweep after one completed (whose checkpoint was cleared), starts a new chain at its own
-   * duration rather than accumulating forever. Absent on documents written before this field
-   * existed; readers fall back to `durationMs`.
+   * the same condition the resume itself requires — so a fresh sweep of a changed app starts a new
+   * chain at its own duration rather than accumulating forever. An Explore-with-AI pass carries the
+   * total too: it runs after a completed sweep (whose checkpoint was cleared) but reuses that
+   * sweep's captures, so its clock adds to the map's cost instead of replacing it. Absent on
+   * documents written before this field existed; readers fall back to `durationMs`.
    */
   cumulativeDurationMs?: number
   buildMode?: AppFlowBuildMode
@@ -785,8 +786,9 @@ export function emptyTokenUsage(): TokenUsage {
  * What earlier runs of the resume chain contributed to the next build's `cumulativeDurationMs`.
  *
  * Non-zero only when the next build continues the *same* chain of work — a sweep resuming the
- * checkpoint its structure fingerprint still matches, or a structure-only rebuild that keeps
- * carrying the previous sweep's captures as "Previous capture". The caller passes that from the
+ * checkpoint its structure fingerprint still matches, a structure-only rebuild that keeps
+ * carrying the previous sweep's captures as "Previous capture", or an Explore-with-AI pass that
+ * reuses the finished sweep's captures to complete the map on screen. The caller passes that from the
  * identical structure-key test the captures' own resume uses, so the clock chain can never
  * outlive the checkpoint it mirrors (see `AppFlowManifest.cumulativeDurationMs`). Falls back to
  * `durationMs` so a chain begun by a build that predates this field still carries its last
