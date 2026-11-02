@@ -1,12 +1,17 @@
 name: Weekly dependency updates
 
-# Updates every external dependency that has a compatible release, rebuilds the native
-# helpers whose pins changed, runs the checks on a Mac with a simulator, lets Claude
-# fix what broke, and opens or refreshes one pull request. CI then adds the Linux,
-# Codex regression and visual jobs to that pull request.
+# Updates every external dependency that has a compatible release, one lane at a time
+# (tooling/dependency-lanes.mjs): installs it or rebuilds the native helpers whose pins
+# changed, lets Claude fix what broke and leaves out a lane that still fails. The
+# remaining lanes get the checks on a Mac with a simulator, which Claude may fix too,
+# and one pull request. CI then adds the Linux, Codex regression and visual jobs to it.
+# A run that produces no pull request opens or updates an issue.
 on:
   schedule:
-    - cron: '0 5 * * 1'
+    # Off the hour, when GitHub drops fewer scheduled runs. Tuesday runs only if no
+    # run succeeded since Monday, in case Monday's never started or crashed.
+    - cron: '23 4 * * 1'
+    - cron: '23 4 * * 2'
   workflow_dispatch:
 
 permissions:
@@ -21,21 +26,44 @@ env:
   BRANCH: deps/weekly
 
 jobs:
+  due:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    outputs:
+      run: ${{ steps.due.outputs.run }}
+    steps:
+      - id: due
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RETRY: ${{ github.event.schedule == '23 4 * * 2' }}
+        run: |
+          run=true
+          if [ "$RETRY" = true ]; then
+            since=$(date -u -d yesterday +%F)
+            done=$(gh run list -R "$GITHUB_REPOSITORY" --workflow dependency-updates.yml --status success --created ">=$since" --json databaseId -q length)
+            if [ "$done" != 0 ]; then run=false; fi
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
   update:
+    needs: due
+    if: needs.due.outputs.run == 'true'
     runs-on: xcode-27
     timeout-minutes: 300
     permissions:
       contents: write
       pull-requests: write
       actions: write
+      issues: write
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
       # Optional. A token with workflow permission also updates pinned actions, and
       # its pull requests start CI on their own; without it CI is dispatched.
       UPDATE_TOKEN: ${{ secrets.DEPENDENCY_UPDATES_TOKEN }}
-      # Optional. Without it, failed checks are reported for a person to fix.
-      AGENT_ENABLED: ${{ secrets.ANTHROPIC_API_KEY != '' }}
       GH_TOKEN: ${{ github.token }}
+      WORK: ${{ runner.temp }}/dependency-update
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -69,134 +97,66 @@ jobs:
           npm run vendor:agent-device
           npm run vendor:serve-emu
 
+      # Applies, prepares and commits each lane on the update branch, then runs the
+      # checks. Needs the native release tools above to rebuild changed helpers.
       - name: Update dependencies
         id: update
-        run: |
-          flags=(--apply --report "$RUNNER_TEMP/updates.md")
-          if [ -z "$UPDATE_TOKEN" ]; then flags+=(--skip-workflows); fi
-          node tooling/update-dependencies.mjs "${flags[@]}"
-          if [ -z "$(git status --porcelain)" ]; then echo "changed=false" >> "$GITHUB_OUTPUT"; else echo "changed=true" >> "$GITHUB_OUTPUT"; fi
-
-      - name: Install the updated dependencies
-        if: steps.update.outputs.changed == 'true'
-        run: |
-          npm ci --no-audit --no-fund
-          npm run vendor:agent-device
-          npm run catalog:agent-device
-          npm run vendor:serve-emu
-
-      # Rebuilds each helper whose pins or sources changed and restores the rest from
-      # earlier release builds.
-      - name: Rebuild changed native helpers
-        if: steps.update.outputs.changed == 'true'
-        run: node tooling/release-native.mjs
-
-      - name: Commit the updates
-        if: steps.update.outputs.changed == 'true'
+        env:
+          # Optional. Without it, a lane that fails to install or build is left out,
+          # and failed checks are reported for a person to fix. Only Claude gets it.
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git switch -C "$BRANCH"
-          git add -A
-          git commit -q -m 'chore(deps): weekly dependency updates'
-
-      - name: Run checks
-        id: checks
-        if: steps.update.outputs.changed == 'true'
-        continue-on-error: true
-        run: node tooling/dependency-checks.mjs "$RUNNER_TEMP/checks"
-
-      - name: Let Claude fix the failed checks
-        id: agent
-        if: steps.checks.outcome == 'failure' && env.AGENT_ENABLED == 'true'
-        continue-on-error: true
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GH_TOKEN: ''
-        run: |
-          cat > "$RUNNER_TEMP/prompt.md" <<EOF
-          You are fixing this repository's weekly dependency update on a macOS CI runner.
-          The updates are committed on the current branch: \`git show --stat HEAD\` lists them and
-          $RUNNER_TEMP/updates.md describes them. These checks failed, with their logs:
-
-          $(cat "$RUNNER_TEMP/checks/failed.txt")
-
-          Make the checks pass while keeping the updates:
-          - Fix the code, Baguette's source patches (tooling/baguette-*.mjs, tooling/rebuild-baguette.mjs)
-            or other build scripts so they work with the new versions. Follow AGENTS.md.
-          - Never weaken, skip or delete tests or checks to make them pass.
-          - If one update cannot work without a larger change, revert only that dependency's pin
-            (and its lockfile) and explain why.
-          - Rebuild native helpers you touch with their npm scripts (see package.json), then rerun the
-            failing check, for example: node tooling/dependency-checks.mjs $RUNNER_TEMP/agent-checks
-          - Do not commit or push.
-          Finish by writing what you changed and why, as short Markdown bullet points, to
-          $RUNNER_TEMP/agent-notes.md.
-          EOF
-          npx -y @anthropic-ai/claude-code@2.1.311 -p "$(cat "$RUNNER_TEMP/prompt.md")" \
-            --model opus --max-budget-usd 20 --permission-mode bypassPermissions --output-format text \
-            > "$RUNNER_TEMP/agent-output.md"
-
-      - name: Rerun checks after Claude's changes
-        id: recheck
-        if: steps.agent.outcome != 'skipped' && steps.checks.outcome == 'failure' && env.AGENT_ENABLED == 'true'
-        continue-on-error: true
-        run: |
-          rm -rf "$RUNNER_TEMP/checks"
-          node tooling/dependency-checks.mjs "$RUNNER_TEMP/checks"
-
-      - name: Commit Claude's changes
-        if: steps.agent.outcome != 'skipped' && steps.checks.outcome == 'failure' && env.AGENT_ENABLED == 'true'
-        run: |
-          git add -A
-          git diff --cached --quiet || git commit -q -m 'fix(deps): adapt to the weekly dependency updates'
+          node tooling/weekly-dependency-update.mjs "$WORK"
 
       - name: Open or update the pull request
         if: steps.update.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ secrets.DEPENDENCY_UPDATES_TOKEN || github.token }}
-          CHECKS: ${{ steps.recheck.outcome == 'success' && 'passed after Claude''s fixes' || steps.checks.outcome == 'success' && 'passed' || 'failed' }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           git push -q --force origin "$BRANCH"
-          {
-            echo "Weekly update of every dependency with a compatible release. Native helpers whose pins changed were rebuilt on the Mac runner."
-            echo
-            echo "**Mac checks: $CHECKS.** CI adds the unit tests on Linux, the Codex regression tests and the visual comparison with main."
-            echo
-            cat "$RUNNER_TEMP/updates.md"
-            echo
-            echo "### Checks on macOS"
-            echo
-            cat "$RUNNER_TEMP/checks/summary.md"
-            if [ -s "$RUNNER_TEMP/agent-notes.md" ]; then
-              echo
-              echo "### Changes by Claude"
-              echo
-              echo "Review these in the \`fix(deps)\` commit."
-              echo
-              cat "$RUNNER_TEMP/agent-notes.md"
-            fi
-            echo
-            echo "Logs: [workflow run]($RUN_URL). Check physical-iPhone features (mirroring, logs) on a device before merging when their native pins changed."
-          } > "$RUNNER_TEMP/body.md"
           number=$(gh pr list --head "$BRANCH" --state open --json number -q '.[0].number')
-          if [ -n "$number" ]; then gh pr edit "$number" --body-file "$RUNNER_TEMP/body.md"
-          else gh pr create --base main --head "$BRANCH" --title 'chore(deps): weekly dependency updates' --body-file "$RUNNER_TEMP/body.md"; fi
+          if [ -n "$number" ]; then gh pr edit "$number" --body-file "$WORK/body.md"
+          else gh pr create --base main --head "$BRANCH" --title 'chore(deps): weekly dependency updates' --body-file "$WORK/body.md"; fi
 
       # Pull requests opened with the workflow token do not start other workflows.
       - name: Start CI on the pull request
         if: steps.update.outputs.changed == 'true' && env.UPDATE_TOKEN == ''
         run: gh workflow run ci.yml --ref "$BRANCH"
 
-      - if: always() && steps.update.outputs.changed == 'true'
+      # No pull request means nobody would notice: every lane was left out, or the run
+      # crashed. The next run that opens one, or finds nothing to update, closes it.
+      - name: Report a failed update
+        if: failure() || (steps.update.outputs.changed == 'false' && steps.update.outputs.left_out != '')
+        env:
+          LEFT_OUT: ${{ steps.update.outputs.left_out }}
+        run: |
+          title='Weekly dependency update failed'
+          if [ -n "$LEFT_OUT" ] && [ -f "$WORK/body.md" ]; then
+            body=$(printf 'Every lane with updates was left out ([run](%s)):\n\n%s' "$RUN_URL" "$(cat "$WORK/body.md")")
+          else
+            body="The [weekly dependency update]($RUN_URL) failed before it could open a pull request. Its logs are in the run and its dependency-update-logs artifact."
+          fi
+          number=$(gh issue list --state open --search "in:title \"$title\"" --json number,title -q ".[] | select(.title == \"$title\") | .number" | head -1)
+          if [ -n "$number" ]; then gh issue comment "$number" --body "$body"
+          else gh issue create --title "$title" --body "$body"; fi
+
+      - name: Close the failure report
+        if: success() && !(steps.update.outputs.changed == 'false' && steps.update.outputs.left_out != '')
+        run: |
+          title='Weekly dependency update failed'
+          for number in $(gh issue list --state open --search "in:title \"$title\"" --json number,title -q ".[] | select(.title == \"$title\") | .number"); do
+            gh issue close "$number" --comment "Fixed by [this run]($RUN_URL)."
+          done
+
+      - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: dependency-update-logs
           path: |
-            ${{ runner.temp }}/checks
-            ${{ runner.temp }}/updates.md
-            ${{ runner.temp }}/agent-notes.md
-            ${{ runner.temp }}/agent-output.md
+            ${{ runner.temp }}/dependency-update
+            !${{ runner.temp }}/dependency-update/native-artifacts
           if-no-files-found: ignore
           retention-days: 14
