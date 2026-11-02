@@ -6,6 +6,15 @@ import { copyFile, mkdir, rm } from "node:fs/promises";
 import { basename } from "node:path";
 import { execFileSync } from "node:child_process";
 
+export const serverBundleBanner = [
+  "import { createRequire as mobileDevBundleRequire } from 'node:module';",
+  "import { fileURLToPath as mobileDevFileURLToPath } from 'node:url';",
+  "import { dirname as mobileDevPathDirname } from 'node:path';",
+  "const require = mobileDevBundleRequire(import.meta.url);",
+  "const __filename = mobileDevFileURLToPath(import.meta.url);",
+  "const __dirname = mobileDevPathDirname(__filename);",
+].join(" ");
+
 /**
  * Bundles Node entry points into `outdir` as `<name>.mjs`. Sentry debug IDs are
  * injected into the copies kept under `sentryDirectory` with their source maps,
@@ -21,7 +30,10 @@ export async function buildServerBundles({ entryPoints, outdir, sentryDirectory,
     format: "esm", platform: "node", target: "node22", minify: false, legalComments: "eof", metafile: true,
     sourcemap: "external",
     plugins: [sentryEsbuildPlugin({ project: SENTRY_PROJECTS.server, telemetry: false, sourcemaps: { disable: true }, release: { inject: false, create: false, finalize: false } })],
-    banner: { js: "import { createRequire as mobileDevBundleRequire } from 'node:module'; const require = mobileDevBundleRequire(import.meta.url);" },
+    // Some CommonJS dependencies that esbuild wraps inside the ESM output still
+    // resolve these Node globals at runtime. Define all three compatibility
+    // globals at bundle scope so an installed server behaves like its sources.
+    banner: { js: serverBundleBanner },
   });
   const names = Object.keys(result.metafile.outputs).filter(path => path.endsWith(".mjs")).map(path => basename(path));
   await mkdir(sentryDirectory, { recursive: true });

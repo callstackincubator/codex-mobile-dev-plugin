@@ -37,6 +37,36 @@ const FOCUS_VIEW_OPTIONS = { duration: 400, padding: 0.35, minZoom: 0.4, maxZoom
 
 export type FocusPick = { kind: "screen"; id: string } | { kind: "ui-state"; option: UiStateOption };
 
+/** A focus asked for from outside the canvas. See `FocusRequestBridge`. */
+export interface FocusRequest {
+  id: string;
+  /** Bumped per request so asking for the same screen twice still focuses it. */
+  nonce: number;
+}
+
+/**
+ * Lets chrome outside the canvas focus a node. `fitView` is only reachable through
+ * `useReactFlow`, which needs a component inside `<ReactFlow>`, so a caller in the header passes
+ * a `FocusRequest` down and this renders nothing but the effect that honours it.
+ *
+ * A node the request names may not be on this canvas — the selection it came from is built off a
+ * stored result, and the other canvas draws different nodes. That is a no-op, not an error: the
+ * caller is told nothing, and the previous view stands.
+ */
+export function FocusRequestBridge({ request, onFocus }: { request?: FocusRequest; onFocus?: (id: string) => void }) {
+  const flow = useReactFlow();
+  const nonce = request?.nonce;
+  const id = request?.id;
+  useEffect(() => {
+    if (!id || nonce === undefined || !flow.getNode(id)) return;
+    void flow.fitView({ nodes: [{ id }], ...FOCUS_VIEW_OPTIONS });
+    // The same plain count the in-canvas jump picker reports; no node identity rides on it.
+    countUiEvent("ui.app_flow.focus_screen");
+    onFocus?.(id);
+  }, [flow, id, nonce]);
+  return null;
+}
+
 /**
  * Themed compact dropdown (base-select) used by every App Flow choice — the header toolbar and the
  * pickers over the canvas — so an open list matches the panel theme instead of the OS menu.

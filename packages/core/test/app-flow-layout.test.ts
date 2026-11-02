@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import type { AppFlowEdge, AppFlowNode, ManualSnapshotNode, ManualSnapshotRect } from "@mobile-dev/shared/app-flow.ts";
-import { NODE_WIDTH, UI_STATE_COL_GAP, UI_STATE_NODE_HEIGHT, UI_STATE_NODE_WIDTH, UI_STATE_ROW_GAP, captureTally, displayableUiStates, hasUiStates, layoutTopology, layoutUiStates, nodeTitle, screenOptions, uiStateCount, uiStateNodeId, uiStateOptions, unresolvedSummary, type ResolvedEdge } from "@mobile-dev/ui/components/app-flow-layout.ts";
+import { NODE_WIDTH, UI_STATE_COL_GAP, UI_STATE_NODE_HEIGHT, UI_STATE_NODE_WIDTH, UI_STATE_ROW_GAP, captureTally, displayableUiStates, hasUiStates, layoutTopology, layoutUiStates, nodeTitle, screenOptions, uiStateCount, uiStateNodeId, uiStateOptions, unresolvedSummary, aiEligibleScreens, type ResolvedEdge } from "@mobile-dev/ui/components/app-flow-layout.ts";
 import { isTextInput, layoutWireframe, STATUS_BAR_POINTS } from "@mobile-dev/ui/components/manual-wireframe.ts";
 
 function screen(id: string, status?: string): AppFlowNode {
@@ -80,6 +80,21 @@ describe("App Flow capture tally", () => {
       node("Gone", { status: "unavailable", screenshot: null, note: "Not in this build" }),
     ]);
     assert.deepEqual(summary, { aiEligible: 2, parameters: 1, authentication: 1, unavailable: 1 });
+  });
+
+  test("the AI picker lists exactly the screens the eligible count counts", () => {
+    const nodes = [
+      node("Captured", { status: "ok", screenshot: "captured.png" }),
+      node("Params", { status: "missing", screenshot: null, note: "Unresolved route parameters: id" }),
+      node("Unclear", { status: "missing", screenshot: null, note: "Runtime could not verify arrival" }),
+      node("Auth", { status: "auth-wall", screenshot: null, note: "Sign in required" }),
+      node("Gone", { status: "unavailable", screenshot: null, note: "Not in this build" }),
+      node("chrome:tabs", { status: "missing", screenshot: null }, "chrome"),
+    ];
+    const screens = aiEligibleScreens(nodes);
+    assert.deepEqual(screens.map(screen => screen.id), ["Params", "Unclear"]);
+    assert.equal(screens.length, unresolvedSummary(nodes).aiEligible);
+    assert.deepEqual(aiEligibleScreens([]), []);
   });
 
 });

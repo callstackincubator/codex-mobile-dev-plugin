@@ -72,6 +72,16 @@ export interface StartAppFlowInput {
    * so a host that cannot reach the agent must not offer it.
    */
   judgeUnclearScreens?: boolean
+  /**
+   * Restrict the sweep's queue to these screen ids. Omitted or empty means every screen the
+   * structure holds — the behaviour every run had before this option existed.
+   *
+   * It exists for the AI continuation: the panel lets the user tick the unreached screens worth a
+   * model walk, and a walk of two screens must not re-queue the other forty. Ids the structure
+   * does not hold are ignored rather than rejected, because the panel's list is built from a
+   * result that a re-parse may have moved on from.
+   */
+  screenIds?: string[]
 }
 export type AppFlowSweepStatus =
   'not-requested' | 'running' | 'awaiting-user' | 'completed' | 'paused' | 'stopped' | 'failed'

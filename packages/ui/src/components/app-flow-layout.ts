@@ -70,15 +70,41 @@ export interface UnresolvedSummary {
 export function unresolvedSummary(nodes: AppFlowNode[]): UnresolvedSummary {
   const summary: UnresolvedSummary = { aiEligible: 0, parameters: 0, authentication: 0, unavailable: 0 };
   for (const node of nodes) {
-    if (node.origin === "chrome" || node.capture?.screenshot) continue;
-    const capture = node.capture;
-    const note = capture?.note ?? "";
-    if (capture?.status === "unavailable" || capture?.status === "not-found") { summary.unavailable += 1; continue; }
-    if (capture?.status === "auth-wall" || /\b(auth|sign[ -]?in|log[ -]?in)\b/i.test(note)) { summary.authentication += 1; continue; }
-    if (/unresolved route parameters?/i.test(note)) summary.parameters += 1;
-    summary.aiEligible += 1;
+    const reason = unresolvedReason(node);
+    if (!reason) continue;
+    if (reason === "ai-eligible" || reason === "parameters") summary.aiEligible += 1;
+    if (reason === "parameters") summary.parameters += 1;
+    else if (reason === "authentication") summary.authentication += 1;
+    else if (reason === "unavailable") summary.unavailable += 1;
   }
   return summary;
+}
+
+/** Why a node has no capture, or null for one that is captured or is not a screen at all. */
+type UnresolvedReason = "ai-eligible" | "parameters" | "authentication" | "unavailable";
+
+function unresolvedReason(node: AppFlowNode): UnresolvedReason | null {
+  if (node.origin === "chrome" || node.capture?.screenshot) return null;
+  const capture = node.capture;
+  const note = capture?.note ?? "";
+  if (capture?.status === "unavailable" || capture?.status === "not-found") return "unavailable";
+  if (capture?.status === "auth-wall" || /\b(auth|sign[ -]?in|log[ -]?in)\b/i.test(note)) return "authentication";
+  if (/unresolved route parameters?/i.test(note)) return "parameters";
+  return "ai-eligible";
+}
+
+/**
+ * The screens the AI continuation may be pointed at, in the order the picker lists them. The same
+ * set `unresolvedSummary().aiEligible` counts — one predicate, so a row the user can tick can
+ * never disagree with the number on the button beside it.
+ */
+export function aiEligibleScreens(nodes: AppFlowNode[]): ScreenOption[] {
+  return nodes.filter(node => {
+    const reason = unresolvedReason(node);
+    return reason === "ai-eligible" || reason === "parameters";
+  })
+    .map(node => ({ id: node.id, label: nodeTitle(node), captured: false }))
+    .sort((left, right) => left.label.localeCompare(right.label) || left.id.localeCompare(right.id));
 }
 
 /**

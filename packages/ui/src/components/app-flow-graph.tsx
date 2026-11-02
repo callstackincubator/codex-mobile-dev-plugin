@@ -4,12 +4,14 @@ import type { AppFlowEdge, AppFlowNode, AppFlowUiState } from "@mobile-dev/share
 import { featureGateNotice } from "@mobile-dev/shared/app-flow.ts";
 import type { AppFlowPanel } from "../app-flow-panel.ts";
 import { recordUiTiming, setUiGauge } from "../telemetry.ts";
-import { GraphContext, GraphFocusPanel, Screenshot, type GraphView, type GraphViewOption } from "./app-flow-graph-shared.tsx";
+import { FocusRequestBridge, GraphContext, GraphFocusPanel, Screenshot, type FocusRequest, type GraphView, type GraphViewOption } from "./app-flow-graph-shared.tsx";
 import { BAND_COLUMNS, COL_GAP, NODE_HEIGHT, NODE_WIDTH, STRUCTURE_NODE_HEIGHT, captureStatus, displayableUiStates, layoutTopology, nodeTitle, routeBadge, screenOptions, uiStateCount, type CaptureTone, type NodePlacement, type ResolvedEdge } from "./app-flow-layout.ts";
 import { ManualRecorderPanel } from "./manual-recorder-panel.tsx";
 
 type Props = { nodes: AppFlowNode[]; edges: AppFlowEdge[]; runtimeEdges?: AppFlowEdge[]; entryScreenIds?: string[]; projectPath?: string; projectId: string; panel: AppFlowPanel;
-  view: GraphView; viewOptions: GraphViewOption[]; onViewChange: (view: GraphView) => void };
+  view: GraphView; viewOptions: GraphViewOption[]; onViewChange: (view: GraphView) => void;
+  /** A screen the header asked to focus — see `FocusRequestBridge`. */
+  focusRequest?: FocusRequest };
 const EMPTY_NODE_TITLE_SOURCE = { title: "", urlPath: null };
 const FIT_VIEW_OPTIONS = { padding: 0.12, minZoom: 0.7, maxZoom: 1 };
 
@@ -150,7 +152,7 @@ function BandHeading({ data }: NodeProps) { const value = data as { title: strin
     <div className="max-w-3xl text-[10px] leading-snug text-muted-foreground/70">{value.detail}</div></div>; }
 const nodeTypes = { screen: ScreenNode, band: BandHeading };
 
-export function AppFlowGraph({ nodes, edges, runtimeEdges, entryScreenIds, projectPath, projectId, panel, view, viewOptions, onViewChange }: Props) {
+export function AppFlowGraph({ nodes, edges, runtimeEdges, entryScreenIds, projectPath, projectId, panel, view, viewOptions, onViewChange, focusRequest }: Props) {
   const renderStartedAt = performance.now();
   const navigations = useMemo(() => resolvedEdges([...edges, ...(runtimeEdges ?? [])]), [edges, runtimeEdges]);
   const topology = useMemo(() => { const startedAt = performance.now(); const value = layoutTopology(nodes, navigations, entryScreenIds ?? []);
@@ -186,6 +188,7 @@ export function AppFlowGraph({ nodes, edges, runtimeEdges, entryScreenIds, proje
           and the UI-states view is where a state is a node in its own right. */}
       <GraphFocusPanel view={view} viewOptions={viewOptions} onViewChange={onViewChange} screens={screens} uiStates={[]} uiStateFocusId={option => option.nodeId}
         onPick={pick => { if (pick.kind === "screen") setSelectedId(pick.id); }} />
+      <FocusRequestBridge request={focusRequest} onFocus={setSelectedId} />
       <Controls fitViewOptions={FIT_VIEW_OPTIONS} /><Background gap={16} size={1} />
     </ReactFlow>
     {projectPath && recording.nodeId && <ManualRecorderPanel projectPath={projectPath} store={panel.recording}

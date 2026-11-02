@@ -19,19 +19,23 @@ import type {
  * `judgeUnclearScreens` defaults to off because it is what makes a Fast sweep need the decision
  * loop at all: defaulting it on would quietly hand every Fast run back the chat round trip the
  * mode exists to avoid.
+ * `screenIds` defaults to the empty list, which the queue reads as "every screen": a filter is
+ * something a caller opts into, and an absent one must never narrow a sweep.
  */
 export const APP_FLOW_START_DEFAULTS = {
   mode: 'structure-only',
   explorationMode: 'adaptive',
   deepLinkJudgeMode: 'never',
   captureUiStates: false,
-  judgeUnclearScreens: false
+  judgeUnclearScreens: false,
+  screenIds: [] as readonly string[]
 } as const satisfies {
   mode: AppFlowBuildMode
   explorationMode: ExplorationMode
   deepLinkJudgeMode: DeepLinkJudgeMode
   captureUiStates: boolean
   judgeUnclearScreens: boolean
+  screenIds: readonly string[]
 }
 
 /**
@@ -62,7 +66,8 @@ export function resolveAppFlowStart(input: StartAppFlowInput): ResolvedAppFlowSt
     explorationMode: input.explorationMode ?? APP_FLOW_START_DEFAULTS.explorationMode,
     deepLinkJudgeMode: input.deepLinkJudgeMode ?? APP_FLOW_START_DEFAULTS.deepLinkJudgeMode,
     captureUiStates: input.captureUiStates ?? APP_FLOW_START_DEFAULTS.captureUiStates,
-    judgeUnclearScreens: input.judgeUnclearScreens ?? APP_FLOW_START_DEFAULTS.judgeUnclearScreens
+    judgeUnclearScreens: input.judgeUnclearScreens ?? APP_FLOW_START_DEFAULTS.judgeUnclearScreens,
+    screenIds: input.screenIds ?? []
   }
 }
 
@@ -117,7 +122,8 @@ export function parseAppFlowStartRequest(raw: unknown): ParsedAppFlowStart {
     explorationMode,
     deepLinkJudgeMode,
     captureUiStates,
-    judgeUnclearScreens
+    judgeUnclearScreens,
+    screenIds
   } = raw as Record<string, unknown>
   if (typeof projectPath !== 'string' || projectPath.length > 4096)
     return { ok: false, error: 'Invalid project path.' }
@@ -140,6 +146,12 @@ export function parseAppFlowStartRequest(raw: unknown): ParsedAppFlowStart {
     return { ok: false, error: 'Capture UI states must be true or false.' }
   if (judgeUnclearScreens !== undefined && typeof judgeUnclearScreens !== 'boolean')
     return { ok: false, error: 'Judge unclear screens must be true or false.' }
+  if (
+    screenIds !== undefined &&
+    (!Array.isArray(screenIds) ||
+      screenIds.some((id) => typeof id !== 'string' || id.length === 0 || id.length > 1024))
+  )
+    return { ok: false, error: 'Screen ids must be an array of non-empty strings.' }
   return {
     ok: true,
     input: {
@@ -149,7 +161,8 @@ export function parseAppFlowStartRequest(raw: unknown): ParsedAppFlowStart {
       explorationMode,
       deepLinkJudgeMode,
       captureUiStates,
-      judgeUnclearScreens: judgeUnclearScreens as boolean | undefined
+      judgeUnclearScreens: judgeUnclearScreens as boolean | undefined,
+      screenIds: screenIds as string[] | undefined
     }
   }
 }

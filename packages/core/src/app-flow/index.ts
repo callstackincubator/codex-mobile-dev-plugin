@@ -230,7 +230,8 @@ export function createAppFlowService(host: AppFlowHostPorts): {
         explorationMode,
         deepLinkJudgeMode,
         captureUiStates,
-        judgeUnclearScreens
+        judgeUnclearScreens,
+        screenIds
       } = resolveAppFlowStart(input)
       // Same narrowing as `buildAppFlow`'s own check, and for the same reason: Fast asks no model
       // anything it cannot do without (see the throw there), so refusing to start it when the host
@@ -287,6 +288,7 @@ export function createAppFlowService(host: AppFlowHostPorts): {
           deepLinkJudgeMode,
           captureUiStates,
           judgeUnclearScreens,
+          screenIds,
           launchedDevice
         })
         .catch((error: unknown) => {

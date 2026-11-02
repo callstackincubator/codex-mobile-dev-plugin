@@ -109,6 +109,7 @@ export function registerAppFlowTools(server: McpServer, host: AppFlowHost, proje
       deepLinkJudgeMode: z.enum(["on", "off", "never"]).optional(),
       captureUiStates: z.boolean().optional(),
       judgeUnclearScreens: z.boolean().optional(),
+      screenIds: z.array(z.string().min(1).max(1024)).max(1000).optional(),
     },
     annotations: write,
     _meta: sharedVisibility,

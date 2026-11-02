@@ -341,6 +341,15 @@ export interface AppFlowBuildOptions {
   captureUiStates?: boolean
   /** Fast only: ask the arrival judge about a screen the runtime snapshot could not vouch for. */
   judgeUnclearScreens?: boolean
+  /**
+   * Restrict the sweep queue to these screen ids. Omitted or empty sweeps every screen.
+   *
+   * Applied where the queue is built, not to `nodesWithSlug`: every lookup above and below the
+   * loop — navigation targets, parameter ingestion, the final result's node list — still needs the
+   * whole structure, and an unselected screen is still somewhere the sweep may walk *through*. It
+   * just never becomes a queue entry of its own.
+   */
+  screenIds?: readonly string[]
   /** An app the user already launched. The sweep adopts it instead of building and booting again. */
   launchedDevice?: CaptureDevice
   onEvent(event: AppFlowProgressEvent): void
@@ -1788,8 +1797,35 @@ export async function buildAppFlow(
           `${paramBlocked} param-blocked until a value is observed, ${noUrl} with no URL; ` +
           `${orphans} have no static path from an entry in the parsed edge graph`
       )
-      const total = nodesWithSlug.length
-      const alreadyCaptured = nodesWithSlug.filter((node) => captureMap[node.id]).length
+      /**
+       * Which screens this run may queue, or `null` for every screen. Built here, beside `total`,
+       * so every count the sweep reports — the headline, the resume line, each progress event —
+       * describes the same set the queue will serve; reporting "1 / 40" for a two-screen AI
+       * continuation reads as a sweep that gave up.
+       *
+       * Ids the re-parse no longer holds are dropped rather than rejected: the panel builds the
+       * selection from a stored result, and a renamed route should narrow the sweep, not fail it.
+       * A selection matching nothing falls back to the whole structure, because a queue of zero
+       * screens is never what the caller meant.
+       */
+      const requestedIds = new Set(options.screenIds ?? [])
+      const selectedNodes = nodesWithSlug.filter((node) => requestedIds.has(node.id))
+      if (requestedIds.size > 0 && selectedNodes.length === 0) {
+        console.warn(
+          '[app-flow] screenIds matched no parsed screen — sweeping every screen instead'
+        )
+      }
+      const sweepScope: Set<string> | null = selectedNodes.length
+        ? new Set(selectedNodes.map((node) => node.id))
+        : null
+      if (sweepScope) {
+        console.log(
+          `[app-flow] sweep scoped to ${sweepScope.size} of ${nodesWithSlug.length} screens by screenIds`
+        )
+      }
+      const scopedNodes = sweepScope ? selectedNodes : nodesWithSlug
+      const total = scopedNodes.length
+      const alreadyCaptured = scopedNodes.filter((node) => captureMap[node.id]).length
       if (alreadyCaptured > 0) {
         console.log(
           `[app-flow] resuming sweep — ${alreadyCaptured}/${total} screens already checkpointed`
@@ -2991,7 +3027,9 @@ export async function buildAppFlow(
       // strictly before the current one, not yet counting the one in flight), and `queue.remaining`
       // exactly like the old `total - i` — both used at every call site below that used to spell out
       // that arithmetic by hand.
-      const sweepQueue = new ReachQueue(sweptNodes)
+      const sweepQueue = new ReachQueue(
+        sweepScope ? sweptNodes.filter((node) => sweepScope.has(node.id)) : sweptNodes
+      )
       let sweepPaused = false
       /** Nodes the blocked-run breaker has already re-served once. See the `requeueCurrent` call
        *  site for why a second retry is always wasted work rather than a second chance. */
@@ -4677,6 +4715,8 @@ export class AppFlowBuilder extends EventEmitter {
     captureUiStates?: boolean
   /** Fast only: ask the arrival judge about a screen the runtime snapshot could not vouch for. */
   judgeUnclearScreens?: boolean
+    /** Restrict the sweep queue to these screen ids. Omitted or empty sweeps every screen. */
+    screenIds?: readonly string[]
     launchedDevice?: CaptureDevice
   }): Promise<void> {
     if (this.running) throw new Error('Build already in progress')

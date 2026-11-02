@@ -382,8 +382,37 @@ test('App Flow start no longer exposes a render transport switch', () => {
     explorationMode: 'fast',
     deepLinkJudgeMode: 'never',
     captureUiStates: false,
-    judgeUnclearScreens: false
+    judgeUnclearScreens: false,
+    screenIds: []
   })
+})
+
+test('a screen selection survives the start boundary and defaults to every screen', () => {
+  const parsed = parseAppFlowStartRequest({
+    projectPath: '/project',
+    mode: 'screen-ui-and-structure',
+    explorationMode: 'ai',
+    screenIds: ['app/profile/[id]', 'app/settings']
+  })
+  assert.equal(parsed.ok, true)
+  if (!parsed.ok) return
+  assert.deepEqual(resolveAppFlowStart(parsed.input).screenIds, [
+    'app/profile/[id]',
+    'app/settings'
+  ])
+
+  // An absent selection must never narrow a sweep — the queue reads the empty list as "all".
+  assert.deepEqual(
+    resolveAppFlowStart({ projectPath: '/project' }).screenIds,
+    []
+  )
+
+  for (const value of ['app/settings', [''], [1], [{ id: 'x' }], ['x'.repeat(1025)]])
+    assert.equal(
+      parseAppFlowStartRequest({ projectPath: '/project', screenIds: value }).ok,
+      false,
+      `screenIds ${JSON.stringify(value)} must be rejected`
+    )
 })
 
 test('adaptive capture is model-free and AI completion requires a decision provider', () => {
