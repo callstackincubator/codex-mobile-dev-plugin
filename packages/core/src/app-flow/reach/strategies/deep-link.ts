@@ -292,11 +292,24 @@ export async function deepLinkStrategy(
     // is not testifying about the route — and `pressables` is the settle's own last read, which is
     // what the screenshot below is about to be compared against. See `RouteSettleResult`.
     const route = await ports.device.waitForRoute()
-    // A route that still needs the judge even with the sweep's switch off — see
-    // `routeDeclaresParams` for why param routes are the exception.
-    const judgeThisOpen = arrivalJudge === 'never'
-      ? false
-      : arrivalJudge || routeDeclaresParams(node)
+    // A partial open is never judged, whatever the sweep's switch says. It put the app on a prefix
+    // URL rather than on this node, so the question the judge answers — "is this the destination?"
+    // — has a cheaper answer that does not need a model: no, unless the prefix happens to render
+    // the target, which the ladder's own last hop is better placed to establish than a 3.5s call
+    // per truncating route. `verdictWithoutJudge` below synthesises the `mismatch`/`ok` the judge
+    // used to return here, which is the `deep-link-partial-landed` case and the bounded walk from
+    // a screen the app is already standing on.
+    //
+    // The cost is the prefix that *does* resolve to the target — `/profile` landing on the
+    // signed-in user's profile for `/profile/:name`. That now reports a mismatch and is reached by
+    // the last hop in `ai`/`thorough`, and is left uncaptured in `adaptive`, whose ladder has no
+    // exploration rung. Judging it was the only way to claim it, and the claim cost a call on
+    // every partial to buy the few that land.
+    //
+    // For a full open the rule is unchanged: `routeDeclaresParams` is the route that keeps the
+    // judge even with the sweep's switch off.
+    const judgeThisOpen =
+      arrivalJudge === 'never' || partial ? false : arrivalJudge || routeDeclaresParams(node)
     // `withPressables`: this screen's controls are read while the judge is thinking rather than
     // after it answers — see that option's doc comment. On a mismatch they are simply dropped,
     // which costs nothing, because the read ran inside the judge's own latency either way.
@@ -350,22 +363,19 @@ export async function deepLinkStrategy(
                     reason: `${signal.reason} (detected without the arrival judge, rule: ${signal.rule})`
                   }
                 : {
-                    // Only reachable now for a node whose `unresolvedParams` do not match a route
-                    // that declares any — a truncating open on a param route keeps the judge (see
-                    // `routeDeclaresParams`), and a route with no params has nothing to truncate.
-                    // Kept because it is still the correct synthesis for that shape and because it
-                    // is what the rule reverts to if the param carve-out is ever narrowed.
+                    // The `match` arm is the full open with the judge off: a fixed URL that did
+                    // not render the build's 404 is the screen it names.
                     //
-                    // A *partial* open put the app on a prefix URL, never on this node — with the
-                    // judge on, the judge is what said so. With it off, nothing on the frame can
-                    // say so either, so a partial that is not a 404 is reported exactly as the
-                    // judge reported it: a mismatch that landed on a real screen, which is the
-                    // `deep-link-partial-landed` case and the bounded last hop below. Calling it a
-                    // match would claim the target was reached by opening something else.
+                    // The `mismatch` arm is every partial open, which no longer reaches the judge
+                    // at all (see `judgeThisOpen`). A partial put the app on a prefix URL, never
+                    // on this node, so a partial that is not a 404 is a mismatch that landed on a
+                    // real screen — the `deep-link-partial-landed` case and the bounded last hop
+                    // below. Calling it a match would claim the target was reached by opening
+                    // something else.
                     verdict: partial ? 'mismatch' : 'match',
                     status: 'ok',
                     reason: partial
-                      ? `${target} opened a real screen short of the target (arrival judge disabled for deep links)`
+                      ? `${target} opened a real screen short of the target, so the last hop is still to walk`
                       : `${target} opened and the app did not render its not-found screen (arrival judge disabled for deep links)`
                   }
             }

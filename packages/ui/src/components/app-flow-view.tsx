@@ -246,7 +246,11 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
             <Button size="sm" onClick={start} disabled={!state.projectPath || state.launching || state.agentStartPending}>
               {state.agentStartPending ? "Asking Codex…" : isPaused || resumable ? "Resume" : state.result ? "Regenerate" : "Start"}</Button></>}
       </div>
-      {mode === "screen-ui-and-structure" && !isRunning && <AppFlowWarning title="Sign in before capture">The deterministic pass does not inspect sign-in state. Launch the app and finish signing in first.</AppFlowWarning>}
+      {/* Shown for every mode, not just the deterministic pass. The AI modes do run a sign-in check
+          and stop to ask, but stopping mid-sweep is the expensive way to learn this, and a user who
+          signs in first never pays for it. The advice is the same either way, so the banner no
+          longer depends on which build is selected. */}
+      {!isRunning && <AppFlowWarning title="Sign in before capture">Launch the app and finish signing in first. A signed-out app captures its sign-in wall instead of the screens behind it.</AppFlowWarning>}
     </header>
     {isRunning && state.progress && <div className="flex items-center gap-3 border-b bg-muted/40 px-4 py-2"><Loader2 className="size-4 animate-spin" />
       <div className="min-w-0 flex-1"><div className="text-sm capitalize">{state.progress.phase}</div><div className="truncate text-xs text-muted-foreground">{state.progress.message}</div></div>
