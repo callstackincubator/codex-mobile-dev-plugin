@@ -123,7 +123,11 @@ function idClause(selector: string): string | undefined {
 
 /** The `wait "<selector>" <timeout>` line agent-device would have recorded for this id clause. */
 function waitLineFor(clause: string): string {
-  return `wait "${clause.replace(/"/g, '\\"')}" ${INSERTED_WAIT_TIMEOUT_MS}`
+  // Backslashes must be escaped before quotes, matching the unescape above (`/\\(["\\])/g`):
+  // escaping only `"` leaves a clause ending in a literal backslash (`id="foo\\"`) parsing as an
+  // escaped quote that swallows the line's own closing quote.
+  const escaped = clause.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+  return `wait "${escaped}" ${INSERTED_WAIT_TIMEOUT_MS}`
 }
 
 /** The previous executable line before a file index, or `undefined` at the start of the script. */

@@ -136,7 +136,10 @@ export function walkStepCommand(step: AppFlowStep): string | null {
   if (step.type === 'wait') return null
   if (step.type === 'swipe') return scrollCommand(step.direction ?? 'up')
   if (!step.locator) return null
-  const selector = `${step.locator.by}="${step.locator.value.replace(/"/g, '\\"')}"`
+  // `JSON.stringify` to match `serializeLocator`'s (`exploration.ts`) canonical `by="value"` form —
+  // a hand-escaped `"${value.replace(/"/g, '\\"')}"` escapes quotes but not backslashes, so a value
+  // ending in one produces a selector whose closing quote the reader can no longer find.
+  const selector = `${step.locator.by}=${JSON.stringify(step.locator.value)}`
   if (step.type === 'input') return fillCommand(selector, step.value ?? '')
   if (step.type === 'tap') return pressCommand(selector)
   return null

@@ -60,7 +60,7 @@ import { parsePathStep } from './manual/path-commands.ts'
  * else (a bare `@ref`, a selector form a future agent-device grows).
  *
  * Unquoted values are accepted because `parsePathStep`'s own tests show them arriving that way
- * (`agent-device press id=submit`); the inner `\"` escape `walkStepCommand` writes is undone, so a
+ * (`agent-device press id=submit`); the `\"`/`\\` escapes `walkStepCommand` writes are undone, so a
  * value is compared as the app actually renders it.
  */
 export function selectorParts(
@@ -69,7 +69,7 @@ export function selectorParts(
   const match = /^(id|label|text)=(?:"([\s\S]*)"|([\s\S]*))$/.exec(selector.trim())
   if (!match) return null
   const raw = match[2] ?? match[3] ?? ''
-  return { by: match[1] as 'id' | 'label' | 'text', value: raw.replace(/\\"/g, '"') }
+  return { by: match[1] as 'id' | 'label' | 'text', value: raw.replace(/\\(["\\])/g, '$1') }
 }
 
 /**

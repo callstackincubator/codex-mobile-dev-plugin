@@ -51,10 +51,13 @@ export function createCoalescedWriter(options: {
   const writeNow = async (): Promise<void> => {
     const pending = revision
     if (saved >= pending) return
-    saved = pending
     lastWriteAt = options.now()
     writes += 1
+    // `saved` only advances once the write actually lands. A failed `write()` must leave the
+    // revision pending so the next `mark`/`flush` retries it instead of treating it as durable —
+    // otherwise a transient failure silently drops the latest crash-resume checkpoint forever.
     await options.write()
+    saved = Math.max(saved, pending)
   }
 
   const flush = async (): Promise<void> => {

@@ -600,7 +600,7 @@ export async function createAppFlowHost(options: {
   };
   let activeDecisions: CodexAppFlowDecisionProvider | undefined;
   let flow: Awaited<ReturnType<typeof createAppFlowService>>;
-  const sharedRun = (run: MutableRun): Omit<SharedAppFlowRun, "updatedAt"> => ({ ...run, ownerPid: process.pid });
+  const sharedRun = (run: MutableRun): Omit<SharedAppFlowRun, "updatedAt" | "seq"> => ({ ...run, ownerPid: process.pid });
   const persistRun = (run: MutableRun) => {
     const snapshot = sharedRun(run);
     const previous = runWrites.get(run.runId) ?? Promise.resolve();
@@ -688,30 +688,47 @@ export async function createAppFlowHost(options: {
         throw new Error("Another App Flow run is already active.");
       }
       const selectedProjectPath = String(input.projectPath ?? "");
+      // A recording drives the same device these do, and now sometimes literally the same one:
+      // the recorder adopts the app the user launched rather than booting its own. Checked before
+      // the run below is registered: throwing after registration left a `running` run behind with
+      // nothing driving it, so every later start was rejected as "Another App Flow run is already
+      // active" and the panel could show a run that never actually started.
+      if (manual.isActive(selectedProjectPath)) {
+        throw new ExpectedOperationError("invalid_input", "Stop the active App Flow recording first.");
+      }
       const run: MutableRun = { runId: context.runId, projectPath: selectedProjectPath, state: "running" };
       runs.set(run.runId, run);
       persistRun(run);
       recentEvents.delete(`project:${getProjectId(selectedProjectPath)}`);
       recentEvents.delete(`manual:${getProjectId(selectedProjectPath)}`);
-      // A recording drives the same device these do, and now sometimes literally the same one:
-      // the recorder adopts the app the user launched rather than booting its own.
-      if (manual.isActive(selectedProjectPath)) {
-        throw new ExpectedOperationError("invalid_input", "Stop the active App Flow recording first.");
-      }
-      // A device the recorder is keeping warm holds the iOS runner lease the sweep is about to
-      // ask for. See `releaseDevices`.
-      await manual.releaseDevices(selectedProjectPath);
-      activeDecisions = context.decisions;
-      const started = await flow.start(input as never);
-      if (!started.ok) {
-        run.state = "failed";
-        run.error = started.error;
-        persistRun(run);
-        runs.delete(run.runId);
+      try {
+        // A device the recorder is keeping warm holds the iOS runner lease the sweep is about to
+        // ask for. See `releaseDevices`.
+        await manual.releaseDevices(selectedProjectPath);
+        activeDecisions = context.decisions;
+        const started = await flow.start(input as never);
+        if (!started.ok) {
+          run.state = "failed";
+          run.error = started.error;
+          persistRun(run);
+          runs.delete(run.runId);
+          activeDecisions = undefined;
+          throw new Error(started.error);
+        }
+        return started;
+      } catch (error) {
+        // Any setup failure after the run is registered — `releaseDevices` included — must leave
+        // it terminal rather than stuck `running`, for the same reason the preflight check above
+        // runs first: a `running` run nothing is driving blocks every later start.
+        if (run.state === "running") {
+          run.state = "failed";
+          run.error = error instanceof Error ? error.message : String(error);
+          persistRun(run);
+          runs.delete(run.runId);
+        }
         activeDecisions = undefined;
-        throw new Error(started.error);
+        throw error;
       }
-      return started;
     },
     async status(query) {
       if (query.runId) {
@@ -848,28 +865,41 @@ export async function createAppFlowHost(options: {
       if ([...runs.values()].some(run => run.state === "running" || run.state === "needs-user-action")) {
         throw new Error("Another App Flow run is already active.");
       }
+      // A recording drives the same device these do, and now sometimes literally the same one:
+      // the recorder adopts the app the user launched rather than booting its own. Checked before
+      // the run below is registered — see `start` for why registering first leaves a zombie run.
+      if (manual.isActive(selectedProjectPath)) {
+        throw new ExpectedOperationError("invalid_input", "Stop the active App Flow recording first.");
+      }
       const run: MutableRun = { runId: context.runId, projectPath: selectedProjectPath, state: "running" };
       runs.set(run.runId, run);
       persistRun(run);
       recentEvents.delete(`project:${getProjectId(selectedProjectPath)}`);
-      // A recording drives the same device these do, and now sometimes literally the same one:
-      // the recorder adopts the app the user launched rather than booting its own.
-      if (manual.isActive(selectedProjectPath)) {
-        throw new ExpectedOperationError("invalid_input", "Stop the active App Flow recording first.");
+      try {
+        await manual.releaseDevices(selectedProjectPath);
+        const started = await flow.exploreUi(selectedProjectPath, exploreOptions);
+        if (!started.ok) {
+          run.state = "failed";
+          run.error = started.error;
+          persistRun(run);
+          runs.delete(run.runId);
+          // Benign states of the surface are tagged so the reporter counts them rather than filing
+          // an exception — the same split `launchApp` makes below.
+          if (started.expected) throw new ExpectedOperationError("invalid_input", started.error);
+          throw new Error(started.error);
+        }
+        return started;
+      } catch (error) {
+        // Any setup failure after the run is registered — `releaseDevices` included — must leave
+        // it terminal rather than stuck `running`; see `start` for the same discipline.
+        if (run.state === "running") {
+          run.state = "failed";
+          run.error = error instanceof Error ? error.message : String(error);
+          persistRun(run);
+          runs.delete(run.runId);
+        }
+        throw error;
       }
-      await manual.releaseDevices(selectedProjectPath);
-      const started = await flow.exploreUi(selectedProjectPath, exploreOptions);
-      if (!started.ok) {
-        run.state = "failed";
-        run.error = started.error;
-        persistRun(run);
-        runs.delete(run.runId);
-        // Benign states of the surface are tagged so the reporter counts them rather than filing
-        // an exception — the same split `launchApp` makes below.
-        if (started.expected) throw new ExpectedOperationError("invalid_input", started.error);
-        throw new Error(started.error);
-      }
-      return started;
     },
     async launchApp(selectedProjectPath) {
       // A recording drives the same device these do, and now sometimes literally the same one:

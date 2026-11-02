@@ -116,7 +116,7 @@ export function createSymbolResolver(
   function moduleFile(unit: AppFlowSourceUnit, module: string): string | undefined {
     const bases = module.startsWith('.') ? [resolve(dirname(unit.file), module)] : Object.entries(paths).flatMap(([key, values]) => {
       const prefix = key.replace(/\*$/, '')
-      return module.startsWith(prefix) && Array.isArray(values) ? values.map(value => resolve(root, value.replace('*', module.slice(prefix.length)))) : []
+      return module.startsWith(prefix) && Array.isArray(values) ? values.map(value => resolve(root, value.replace(/\*/g, module.slice(prefix.length)))) : []
     })
     if (/^[#@~]\//.test(module)) bases.push(resolve(root, 'src', module.slice(2)), resolve(root, module.slice(2)))
     for (const base of bases) {

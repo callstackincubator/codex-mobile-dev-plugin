@@ -8,6 +8,14 @@ export interface SharedAppFlowRun extends AppFlowRunSnapshot {
   runId: string;
   ownerPid: number;
   updatedAt: string;
+  /**
+   * A persisted, strictly increasing revision — not `updatedAt` millisecond-precision wall-clock
+   * time. Two writes landing in the same millisecond would otherwise stamp the same cursor value;
+   * once `readEvent` had returned the first to a poller, `seq > since` would drop the second (which
+   * can be the terminal event) forever, since the file holds only the latest snapshot and nothing
+   * is left to supersede it with a later timestamp.
+   */
+  seq: number;
 }
 
 interface SharedPromptResolution {
@@ -58,8 +66,14 @@ export class AppFlowRunStore {
     return join(this.directory(projectPath), "prompt-resolution.json");
   }
 
-  async writeRun(run: Omit<SharedAppFlowRun, "updatedAt">): Promise<void> {
-    await writeJson(this.runPath(run.projectPath), { ...run, updatedAt: new Date().toISOString() });
+  async writeRun(run: Omit<SharedAppFlowRun, "updatedAt" | "seq">): Promise<void> {
+    const previous = await readJson(this.runPath(run.projectPath));
+    const previousSeq = typeof previous?.seq === "number" && Number.isFinite(previous.seq) ? previous.seq : 0;
+    await writeJson(this.runPath(run.projectPath), {
+      ...run,
+      updatedAt: new Date().toISOString(),
+      seq: previousSeq + 1,
+    });
   }
 
   async readRun(projectPath: string): Promise<SharedAppFlowRun | null> {
@@ -77,8 +91,7 @@ export class AppFlowRunStore {
   async readEvent(projectPath: string, runId: string, since: number): Promise<{ seq: number; runId: string; event: unknown } | null> {
     const run = await this.readRun(projectPath);
     if (!run || run.runId !== runId || !run.event) return null;
-    const timestamp = Date.parse(run.updatedAt);
-    const seq = Number.isFinite(timestamp) ? Math.max(1, timestamp) : 1;
+    const seq = typeof run.seq === "number" && Number.isFinite(run.seq) ? run.seq : 1;
     return seq > since ? { seq, runId, event: run.event } : null;
   }
 

@@ -52,9 +52,12 @@ export interface ChromePathDevice {
  *  an unordered set of things that were on screen, not a gesture sequence, so inventing a scroll
  *  from one would be the fabrication the paragraph above refuses. The press/fill lines themselves
  *  are that module's, `--settle` and all. */
-function stepToPathCommand(step: AppFlowStep): string | null {
+export function stepToPathCommand(step: AppFlowStep): string | null {
   if (!step.locator) return null
-  const selector = `${step.locator.by}="${step.locator.value.replace(/"/g, '\\"')}"`
+  // `JSON.stringify` to match `serializeLocator`'s (`exploration.ts`) canonical `by="value"` form —
+  // a hand-escaped `"${value.replace(/"/g, '\\"')}"` escapes quotes but not backslashes, so a value
+  // ending in one produces a selector whose closing quote the reader can no longer find.
+  const selector = `${step.locator.by}=${JSON.stringify(step.locator.value)}`
   if (step.type === 'input') return fillCommand(selector, step.value ?? '')
   if (step.type === 'tap') return pressCommand(selector)
   return null
@@ -63,8 +66,8 @@ function stepToPathCommand(step: AppFlowStep): string | null {
 /** Same selector form as `stepToPathCommand`, for a chrome edge's own `trigger` rather than a
  *  persisted `AppFlowStep` — `AppFlowTrigger` has no `type`, so pressing is the only sensible
  *  action for it. */
-function triggerToPathCommand(trigger: AppFlowTrigger): string {
-  return pressCommand(`${trigger.by}="${trigger.value.replace(/"/g, '\\"')}"`)
+export function triggerToPathCommand(trigger: AppFlowTrigger): string {
+  return pressCommand(`${trigger.by}=${JSON.stringify(trigger.value)}`)
 }
 
 /**

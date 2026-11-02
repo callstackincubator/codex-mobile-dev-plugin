@@ -66,6 +66,31 @@ test("a legacy panel event poll can replay the durable prompt once", async () =>
   assert.equal(await owner.readEvent(projectPath, runId, replay?.seq ?? 0), null);
 });
 
+test("two writes in the same millisecond still produce a strictly increasing event cursor", async () => {
+  const owner = await store();
+  const projectPath = "/projects/demo";
+  const runId = "533dd84d-9564-4ebc-a7e5-425f0ee0875c";
+  const write = (message: string) => owner.writeRun({
+    runId,
+    projectPath,
+    state: "needs-user-action",
+    ownerPid: process.pid,
+    event: { type: "prompt", phase: "capture", message, prompt: { id: "prompt-1", kind: "review", detail: message, screenshot: null, remaining: 2 } },
+  });
+
+  // Sequential writes with nothing forcing the clock forward between them — on a fast machine
+  // both can easily land in the same millisecond, which `Date.parse(updatedAt)` could not tell
+  // apart. The fix no longer depends on wall-clock resolution at all.
+  await write("first");
+  const first = await owner.readEvent(projectPath, runId, 0);
+  assert.ok(first);
+
+  await write("second");
+  const second = await owner.readEvent(projectPath, runId, first!.seq);
+  assert.ok(second, "the second same-millisecond write must still be visible to a poller");
+  assert.ok(second!.seq > first!.seq);
+});
+
 test("a prompt response is delivered once to the owning process", async () => {
   const relay = await store();
   const projectPath = "/projects/demo";

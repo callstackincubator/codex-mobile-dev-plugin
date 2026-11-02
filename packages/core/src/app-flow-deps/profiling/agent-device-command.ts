@@ -6,21 +6,36 @@ export function tokenizeAgentDeviceCommand(command: string): string[] {
   // empty token is otherwise indistinguishable from the gap between two others.
   let quoted = false
   let quote: "'" | '"' | null = null
+  // Whether the previous character outside a quote was an unquoted backslash. `quoteCliArg()`
+  // escapes an embedded `'` as `'\''` — close quote, backslash-escaped quote, reopen quote — which
+  // only round-trips if a backslash outside quotes is treated as escaping the character after it
+  // rather than as literal text. Without this, `it's` (quoted as `'it'\''s'`) tokenizes with a
+  // literal backslash in place of the apostrophe instead of recovering it.
+  let escaped = false
   const push = (): void => {
     if (current || quoted) tokens.push(current)
     current = ''
     quoted = false
   }
   for (const char of command) {
-    if (quote) {
+    if (escaped) {
+      current += char
+      quoted = true
+      escaped = false
+    } else if (quote) {
       if (char === quote) quote = null
       else current += char
+    } else if (char === '\\') {
+      escaped = true
     } else if (char === "'" || char === '"') {
       quote = char
       quoted = true
     } else if (/\s/.test(char)) push()
     else current += char
   }
+  // A trailing unquoted backslash with nothing after it escapes nothing; keep it literal rather
+  // than silently dropping it.
+  if (escaped) current += '\\'
   push()
   return tokens
 }
