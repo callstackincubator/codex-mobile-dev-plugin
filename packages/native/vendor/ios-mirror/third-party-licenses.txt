@@ -1560,7 +1560,7 @@ DEALINGS IN THE SOFTWARE.
 
 ====================
 
-cc 1.5.1 (MIT OR Apache-2.0)
+cc 1.11.0 (MIT OR Apache-2.0)
 https://github.com/rust-lang/cc-rs
 
                               Apache License
@@ -2527,7 +2527,7 @@ DEALINGS IN THE SOFTWARE.
 
 ====================
 
-crc32fast 1.5.2 (MIT OR Apache-2.0)
+crc32fast 1.5.4 (MIT OR Apache-2.0)
 https://github.com/srijs/rust-crc32fast
 
                                  Apache License
@@ -3208,7 +3208,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 ====================
 
-deranged 0.5.8 (MIT OR Apache-2.0)
+deranged 0.5.9 (MIT OR Apache-2.0)
 https://github.com/jhpratt/deranged
 
 
@@ -3673,7 +3673,7 @@ DEALINGS IN THE SOFTWARE.
 
 ====================
 
-equivalent 1.0.2 (Apache-2.0 OR MIT)
+equivalent 1.0.3 (Apache-2.0 OR MIT)
 https://github.com/indexmap-rs/equivalent
 
                               Apache License
@@ -3908,7 +3908,7 @@ DEALINGS IN THE SOFTWARE.
 
 ====================
 
-find-msvc-tools 0.1.14 (MIT OR Apache-2.0)
+find-msvc-tools 0.1.15 (MIT OR Apache-2.0)
 https://github.com/rust-lang/cc-rs
 
                               Apache License
@@ -7938,7 +7938,7 @@ DEALINGS IN THE SOFTWARE.
 
 ====================
 
-jktcp 0.1.7 (MIT)
+jktcp 0.1.8 (MIT)
 https://github.com/jkcoxson/jktcp
 
 MIT License
@@ -7966,7 +7966,7 @@ SOFTWARE.
 
 ====================
 
-js-sys 0.3.106 (MIT OR Apache-2.0)
+js-sys 0.3.107 (MIT OR Apache-2.0)
 https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/js-sys
 
                               Apache License
@@ -8201,7 +8201,7 @@ DEALINGS IN THE SOFTWARE.
 
 ====================
 
-libc 0.2.189 (MIT OR Apache-2.0)
+libc 0.2.191 (MIT OR Apache-2.0)
 https://github.com/rust-lang/libc
 
                               Apache License
@@ -9188,7 +9188,7 @@ Permission is granted to anyone to use this software for any purpose, including 
 
 ====================
 
-mio 1.2.3 (MIT)
+mio 1.2.4 (MIT)
 https://github.com/tokio-rs/mio
 
 Copyright (c) 2014 Carl Lerche and other MIO contributors
@@ -9221,7 +9221,7 @@ mobile-dev-telemetry 0.1.0 (MIT)
 
 ====================
 
-napi 3.14.0 (MIT)
+napi 3.16.1 (MIT)
 https://github.com/napi-rs/napi-rs
 
 
@@ -9235,21 +9235,21 @@ https://github.com/napi-rs/napi-rs
 
 ====================
 
-napi-derive 3.6.10 (MIT)
+napi-derive 3.7.0 (MIT)
 https://github.com/napi-rs/napi-rs
 
 
 
 ====================
 
-napi-derive-backend 6.1.4 (MIT)
+napi-derive-backend 7.0.0 (MIT)
 https://github.com/napi-rs/napi-rs
 
 
 
 ====================
 
-napi-sys 3.4.0 (MIT)
+napi-sys 3.4.1 (MIT)
 https://github.com/napi-rs/napi-rs
 
 
@@ -11073,7 +11073,7 @@ DEALINGS IN THE SOFTWARE.
 
 ====================
 
-plist 1.10.1 (MIT)
+plist 1.10.3 (MIT)
 https://github.com/ebarnard/rust-plist/
 
 Copyright (c) 2015 Edward Barnard
@@ -11105,7 +11105,7 @@ https://github.com/jkcoxson/plist_macro
 
 ====================
 
-powerfmt 0.2.0 (MIT OR Apache-2.0)
+powerfmt 0.2.1 (MIT OR Apache-2.0)
 https://github.com/jhpratt/powerfmt
 
 
@@ -13646,7 +13646,7 @@ DEALINGS IN THE SOFTWARE.
 
 ====================
 
-rustls 0.23.45 (Apache-2.0 OR ISC OR MIT)
+rustls 0.23.46 (Apache-2.0 OR ISC OR MIT)
 https://github.com/rustls/rustls
 
                               Apache License
@@ -14133,7 +14133,7 @@ DEALINGS IN THE SOFTWARE.
 
 ====================
 
-rustls-webpki 0.103.15 (ISC)
+rustls-webpki 0.103.16 (ISC)
 https://github.com/rustls/webpki
 
 Except as otherwise noted, this project is licensed under the following
@@ -15434,7 +15434,7 @@ DEALINGS IN THE SOFTWARE.
 
 ====================
 
-serde_json 1.0.151 (MIT OR Apache-2.0)
+serde_json 1.0.154 (MIT OR Apache-2.0)
 https://github.com/serde-rs/json
 
                               Apache License
@@ -15745,7 +15745,7 @@ DEALINGS IN THE SOFTWARE.
 
 ====================
 
-smallvec 1.16.2 (MIT OR Apache-2.0)
+smallvec 1.16.4 (MIT OR Apache-2.0)
 https://github.com/servo/rust-smallvec
 
                               Apache License
@@ -16459,7 +16459,7 @@ DEALINGS IN THE SOFTWARE.
 
 ====================
 
-syn 3.0.6 (MIT OR Apache-2.0)
+syn 3.0.9 (MIT OR Apache-2.0)
 https://github.com/dtolnay/syn
 
                               Apache License
@@ -17698,7 +17698,7 @@ SOFTWARE.
 
 ====================
 
-tokio 1.53.1 (MIT)
+tokio 1.54.1 (MIT)
 https://github.com/tokio-rs/tokio
 
 MIT License
@@ -18318,7 +18318,7 @@ SOFTWARE.
 
 ====================
 
-unicode-ident 1.0.26 ((MIT OR Apache-2.0) AND Unicode-3.0)
+unicode-ident 1.0.27 ((MIT OR Apache-2.0) AND Unicode-3.0)
 https://github.com/dtolnay/unicode-ident
 
                               Apache License
@@ -18822,7 +18822,7 @@ https://github.com/briansmith/untrusted
 
 ====================
 
-uuid 1.26.1 (Apache-2.0 OR MIT)
+uuid 1.29.0 (Apache-2.0 OR MIT)
 https://github.com/uuid-rs/uuid
 
                               Apache License
@@ -20197,7 +20197,7 @@ DEALINGS IN THE SOFTWARE.
 
 ====================
 
-wasm-bindgen 0.2.129 (MIT OR Apache-2.0)
+wasm-bindgen 0.2.130 (MIT OR Apache-2.0)
 https://github.com/wasm-bindgen/wasm-bindgen
 
                               Apache License
@@ -20432,7 +20432,7 @@ DEALINGS IN THE SOFTWARE.
 
 ====================
 
-wasm-bindgen-futures 0.4.79 (MIT OR Apache-2.0)
+wasm-bindgen-futures 0.4.80 (MIT OR Apache-2.0)
 https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/futures
 
                               Apache License
@@ -20667,7 +20667,7 @@ DEALINGS IN THE SOFTWARE.
 
 ====================
 
-wasm-bindgen-macro 0.2.129 (MIT OR Apache-2.0)
+wasm-bindgen-macro 0.2.130 (MIT OR Apache-2.0)
 https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/macro
 
                               Apache License
@@ -20902,7 +20902,7 @@ DEALINGS IN THE SOFTWARE.
 
 ====================
 
-wasm-bindgen-macro-support 0.2.129 (MIT OR Apache-2.0)
+wasm-bindgen-macro-support 0.2.130 (MIT OR Apache-2.0)
 https://github.com/wasm-bindgen/wasm-bindgen/tree/main/crates/macro-support
 
                               Apache License
@@ -21137,7 +21137,7 @@ DEALINGS IN THE SOFTWARE.
 
 ====================
 
-wasm-bindgen-shared 0.2.129 (MIT OR Apache-2.0)
+wasm-bindgen-shared 0.2.130 (MIT OR Apache-2.0)
 https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/shared
 
                               Apache License
@@ -24857,7 +24857,7 @@ DEALINGS IN THE SOFTWARE.
 
 ====================
 
-zerocopy 0.8.59 (BSD-2-Clause OR Apache-2.0 OR MIT)
+zerocopy 0.8.63 (BSD-2-Clause OR Apache-2.0 OR MIT)
 https://github.com/google/zerocopy
 
                                  Apache License
@@ -25120,7 +25120,7 @@ DEALINGS IN THE SOFTWARE.
 
 ====================
 
-zerocopy-derive 0.8.59 (BSD-2-Clause OR Apache-2.0 OR MIT)
+zerocopy-derive 0.8.63 (BSD-2-Clause OR Apache-2.0 OR MIT)
 https://github.com/google/zerocopy
 
                                  Apache License
@@ -25383,7 +25383,7 @@ DEALINGS IN THE SOFTWARE.
 
 ====================
 
-zeroize 1.9.0 (Apache-2.0 OR MIT)
+zeroize 1.9.1 (Apache-2.0 OR MIT)
 https://github.com/RustCrypto/utils
 
 
@@ -25675,7 +25675,7 @@ DEALINGS IN THE SOFTWARE.
 
 ====================
 
-sentry-native 0.17.1
+sentry-native 0.17.5
 https://github.com/getsentry/sentry-native
 
 Copyright (c) 2019 Sentry (https://sentry.io) and individual contributors.

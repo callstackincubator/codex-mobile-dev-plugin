@@ -3,8 +3,8 @@ import { createHash } from "node:crypto";
 import { access, copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
-export const NATIVE_SENTRY_VERSION = "0.17.1";
-const archiveSHA256 = "e510b714ac0fb5c24b08011e07c5b13fa01c9bd0f40708356e4af022aa20c5a1";
+export const NATIVE_SENTRY_VERSION = "0.17.5";
+const archiveSHA256 = "64d1e29f43116d236076fd751f11305e3b9e31ab14ecbb8d7058246b56f43991";
 const root = resolve(".local-dev/sentry-native");
 
 export async function nativeTelemetrySourceHash(hash) {

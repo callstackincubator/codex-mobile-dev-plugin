@@ -1,7 +1,7 @@
 {
   "name": "mobile-dev-ios-logs",
   "target": "darwin-arm64",
-  "sourceSHA256": "013d00837b1356638a17ccc6a0839c52b9676ae4b62c261f0c118a6580826787",
+  "sourceSHA256": "4dc921121b6616d6a2bb50d250b1e85534790cd94f1d147c590f8e504221f805",
   "sources": [
     {
       "name": "libplist",
@@ -11,9 +11,9 @@
     },
     {
       "name": "libimobiledevice-glue",
-      "version": "1.3.2",
-      "url": "https://github.com/libimobiledevice/libimobiledevice-glue/releases/download/1.3.2/libimobiledevice-glue-1.3.2.tar.bz2",
-      "sha256": "6489a3411b874ecd81c87815d863603f518b264a976319725e0ed59935546774"
+      "version": "1.3.3",
+      "url": "https://github.com/libimobiledevice/libimobiledevice-glue/releases/download/1.3.3/libimobiledevice-glue-1.3.3.tar.bz2",
+      "sha256": "920ce01382a32695f49b23292b4979a03f0afd16c58e8755d8b7f41804acc1a9"
     },
     {
       "name": "libusbmuxd",
@@ -34,39 +34,39 @@
       "sha256": "23cc0077e221c7d991bd0eb02150a0d49199bcca1ddf059edccee9ffd914939d"
     }
   ],
-  "openssl": "OpenSSL 3.6.2 7 Apr 2026 (Library: OpenSSL 3.6.2 7 Apr 2026)",
+  "openssl": "OpenSSL 3.5.9 29 Sep 2026 (Library: OpenSSL 3.5.9 29 Sep 2026)",
   "binaries": {
     "mobile-dev-ios-logs": {
-      "sha256": "1a78a7b6782c5c0fb9c606db89416a1181484cdba1c836980b508b31b2b43e46",
-      "bytes": 385024
+      "sha256": "5b614fd08cb9a621047eaa75d7714866877143ed8fc24dccfde8ad80f04c932b",
+      "bytes": 385344
     },
     "libimobiledevice-1.0.6.dylib": {
-      "sha256": "229bb457ff0b3b701045ed124e3fdbce0e2115daf01b163735dcfba69c765927",
+      "sha256": "b997888928022a4fdb45345af20b2ab83057dd43f3a9be69eecc62dff63db358",
       "bytes": 278608
     },
     "libimobiledevice-glue-1.0.0.dylib": {
-      "sha256": "e2fa173219ed5b6352d76232556b499cdac255cf28b0e277a8867e6b7a1615b8",
+      "sha256": "ff719852d378c599e4775818bb93de82c83eb1f25f9f6643ae14fe8ef2ee1a79",
       "bytes": 79568
     },
     "libplist-2.0.12.dylib": {
-      "sha256": "205279316a58b20e84495fdfdb8d9f860e5197e1602bfd7e80f75a7bcced1ee6",
+      "sha256": "59929d71156878d2fefbef477d8c40b6d403ef1305bc2c0e487525efe830bc6c",
       "bytes": 114976
     },
     "libtatsu.0.dylib": {
-      "sha256": "3a85f550bca667dc9ff46ccb72fe716b33b9f13126d34dfb0bc88f6176fd2a1f",
+      "sha256": "5abfcafc49353fb1de37a9a5dc7dfcb8541810a3cddc7721fc950e711bb94944",
       "bytes": 55408
     },
     "libusbmuxd-2.0.7.dylib": {
-      "sha256": "fad3c8ea428fe603b894133d64610921ddd573e7951a9670b11ea54b03fd584b",
+      "sha256": "f07c633c540e79720e8a5483b2c7d7b87dbe710f53982fbc3229d080a531c2a8",
       "bytes": 71984
     },
     "libssl.3.dylib": {
-      "sha256": "11291c1d6f0527e20448dc06d5bc93f839f33f22a552cf24d6edbd0d1160d158",
-      "bytes": 866576
+      "sha256": "aa5592da518730e26b5a1a7a7a258af138512d82d0ad345fd56df2437febb982",
+      "bytes": 883184
     },
     "libcrypto.3.dylib": {
-      "sha256": "fe33b1fe402dc6f540edb1b10e5619f9ddc3dfa90d0ae977c0e0843019495eba",
-      "bytes": 4827728
+      "sha256": "a04e19cf8931e6fbdb620d36c70966526cfe5442a99e1550af57370a1dcf4337",
+      "bytes": 4692784
     }
   }
 }
