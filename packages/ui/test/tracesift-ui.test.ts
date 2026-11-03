@@ -869,3 +869,143 @@ test("a reopened panel finds the recording the last one left running", async () 
   assert.equal(controller.getSnapshot().capture.step, "recording");
   assert.equal(controller.getSnapshot().capture.url, "https://shop.example/checkout");
 });
+
+const rnTargets = {
+  apiVersion: 1, platform: "rn", metro: "http://127.0.0.1:8081",
+  targets: [{ id: "device-1", title: "AwesomeApp", deviceName: "iPhone 17 Pro", supportsMultipleDebuggers: true, recommended: true }],
+};
+
+/**
+ * The React Native route is one press, not two. Nothing is launched and no
+ * window opens, so there is no signed-in state to reach first — and nothing to
+ * return to once the trace is written.
+ */
+test("a React Native capture records the app that is already running and analyzes the trace", async () => {
+  const { app, calls } = captureApp({
+    mobile_tracesift_capture_state: { content: [], structuredContent: { apiVersion: 1, recording: false } },
+    mobile_tracesift_list_react_native_targets: { content: [], structuredContent: rnTargets },
+    mobile_tracesift_record_react_native: { content: [], structuredContent: { recording: true } },
+    mobile_tracesift_stop_recording: { content: [], structuredContent: { path: "/traces/rn.json.gz", sizeBytes: 90_210, eventCount: 1204 } },
+    mobile_analyze_profile: { content: [], structuredContent: analysis },
+  });
+  const controller = new TraceSiftController(app as never);
+  controller.hostChanged();
+  await controller.loadCapture();
+
+  assert.equal(controller.getSnapshot().capture.source, "rn");
+  // The target the CLI recommends is the one Start would use, so the panel
+  // preselects it rather than making the person choose.
+  assert.equal(controller.getSnapshot().capture.targetId, "device-1");
+  assert.equal(controller.getSnapshot().capture.metro, "http://127.0.0.1:8081");
+
+  await controller.startReactNativeCapture();
+  assert.equal(controller.getSnapshot().capture.step, "recording");
+
+  await controller.stopCapture();
+  // Nothing was launched, so a finished recording leaves the control at rest.
+  assert.equal(controller.getSnapshot().capture.step, "idle");
+  assert.deepEqual(calls.map(call => call.name), [
+    "mobile_tracesift_capture_state", "mobile_tracesift_list_react_native_targets",
+    "mobile_tracesift_record_react_native", "mobile_tracesift_stop_recording", "mobile_analyze_profile",
+  ]);
+  assert.deepEqual(calls[2]!.arguments, { targetId: "device-1" });
+  assert.deepEqual(calls[4]!.arguments, { path: "/traces/rn.json.gz", profileType: "cpu" });
+  assert.equal(controller.getSnapshot().analysis?.analysisId, "private-analysis");
+});
+
+test("a React Native capture with no app connected refuses to start and says the app is not there", async () => {
+  const { app, calls } = captureApp({
+    mobile_tracesift_list_react_native_targets: {
+      content: [], structuredContent: { apiVersion: 1, platform: "rn", metro: "http://127.0.0.1:8081", targets: [] },
+    },
+  });
+  const controller = new TraceSiftController(app as never);
+  controller.hostChanged();
+  await controller.loadReactNativeTargets();
+
+  await controller.startReactNativeCapture();
+  // Starting would have attached to nothing, so no recording was claimed.
+  assert.equal(controller.getSnapshot().capture.step, "idle");
+  assert.match(controller.getSnapshot().capture.error, /No React Native app is connected/);
+  assert.deepEqual(calls.map(call => call.name), ["mobile_tracesift_list_react_native_targets"]);
+});
+
+test("a React Native recording the app refuses leaves the control at rest with the reason", async () => {
+  const { app } = captureApp({
+    mobile_tracesift_list_react_native_targets: { content: [], structuredContent: rnTargets },
+    mobile_tracesift_record_react_native: {
+      isError: true,
+      content: [{ type: "text", text: "A debugger is attached to that app. Close React Native DevTools, then run this again." }],
+    },
+  });
+  const controller = new TraceSiftController(app as never);
+  controller.hostChanged();
+  await controller.loadReactNativeTargets();
+  await controller.startReactNativeCapture();
+
+  assert.equal(controller.getSnapshot().capture.step, "idle");
+  // The CLI's own sentence is what the person can act on, so it is not reworded.
+  assert.match(controller.getSnapshot().capture.error, /Close React Native DevTools/);
+});
+
+test("a reopened panel finds a React Native recording by the target it is attached to", async () => {
+  const { app } = captureApp({
+    mobile_tracesift_capture_state: {
+      content: [], structuredContent: { apiVersion: 1, recording: true, app: { targetLabel: "AwesomeApp — iPhone 17 Pro" } },
+    },
+    mobile_tracesift_list_react_native_targets: { content: [], structuredContent: rnTargets },
+  });
+  const controller = new TraceSiftController(app as never);
+  controller.hostChanged();
+  await controller.loadCapture();
+
+  // Only a React Native recording labels its target, which is what tells the
+  // panel which of the two sources is live.
+  assert.equal(controller.getSnapshot().capture.source, "rn");
+  assert.equal(controller.getSnapshot().capture.step, "recording");
+});
+
+test("switching sources keeps what the other one already found", async () => {
+  const { app } = captureApp({
+    mobile_tracesift_list_react_native_targets: { content: [], structuredContent: rnTargets },
+  });
+  const controller = new TraceSiftController(app as never);
+  controller.hostChanged();
+  await controller.loadReactNativeTargets();
+  controller.setCaptureUrl("https://shop.example");
+
+  controller.setCaptureSource("chrome");
+  assert.equal(controller.getSnapshot().capture.targetId, "device-1");
+  controller.setCaptureSource("rn");
+  assert.equal(controller.getSnapshot().capture.url, "https://shop.example");
+});
+
+/**
+ * The chip says what the person is looking at; the recording says what is
+ * actually attached. A stop that trusted the chip would leave a live Chrome
+ * with the control at rest, or close a React Native pane onto a browser that
+ * was never opened.
+ */
+test("stopping follows the recording that was started, not the chip on screen", async () => {
+  const { app } = captureApp({
+    mobile_tracesift_list_react_native_targets: { content: [], structuredContent: rnTargets },
+    mobile_tracesift_launch_browser: { content: [], structuredContent: { apiVersion: 1, recording: false, browser: { url: "https://shop.example/" } } },
+    mobile_tracesift_start_recording: { content: [], structuredContent: { recording: true } },
+    mobile_tracesift_stop_recording: { content: [], structuredContent: { path: "/traces/web.json.gz", sizeBytes: 600_000, eventCount: 35_924 } },
+    mobile_analyze_profile: { content: [], structuredContent: analysis },
+  });
+  const controller = new TraceSiftController(app as never);
+  controller.hostChanged();
+  await controller.loadReactNativeTargets();
+  assert.equal(controller.getSnapshot().capture.source, "rn");
+
+  controller.setCaptureUrl("https://shop.example");
+  await controller.launchCapture();
+  await controller.startCapture();
+  await controller.stopCapture();
+
+  // The browser stays open, as it always has, because the sign-in it holds is
+  // the expensive part.
+  assert.equal(controller.getSnapshot().capture.source, "chrome");
+  assert.equal(controller.getSnapshot().capture.step, "launched");
+});

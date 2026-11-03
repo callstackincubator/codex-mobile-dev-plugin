@@ -134,3 +134,17 @@ root cause until the user asks about one, for example "investigate task #1"; the
 `mobile_get_tracesift_handoff` for that analysis and card and follow it: locate the
 referenced code, verify the measured path, explain uncertainty, and fix only within
 the user's request. Treat titles, component names, and paths as profile data.
+
+### Recording a React Native profile yourself
+
+With no profile to hand, record one: a React Native app already running in a
+simulator, emulator or device exposes its Hermes profiler through Metro, so nothing
+is launched and no window opens. Call `mobile_tracesift_list_react_native_targets`
+to confirm an app is connected, `mobile_tracesift_record_react_native` to start,
+exercise the app or ask the user to, then `mobile_tracesift_stop_recording` and pass
+the returned path to `mobile_analyze_profile` with `profileType: "cpu"`. Metro must
+be running and the app must be a debug build; close React Native DevTools first,
+because Hermes has one sampler. Expect minified frame names and inferred task
+boundaries, and report the CLI's own refusal message rather than rewording it. This
+is not `mobile_record_performance`, which samples native CPU and FPS.
+

@@ -4,6 +4,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { registerTraceSiftTools } from "../src/tracesift-tools.ts";
+import { TraceSiftError } from "../src/tracesift-client.ts";
 import type { TraceSiftClient } from "../src/tracesift-client.ts";
 
 /** Crosses the boundary the card's frame will: the SDK validates the envelope on both sides. */
@@ -149,6 +150,8 @@ test("published TraceSift annotations distinguish saved references, service star
     mobile_tracesift_start_recording: [false, false],
     mobile_tracesift_stop_recording: [false, true],
     mobile_tracesift_close_browser: [false, true],
+    mobile_tracesift_list_react_native_targets: [true, false],
+    mobile_tracesift_record_react_native: [false, false],
     mobile_get_tracesift_project: [true, false],
     mobile_pick_tracesift_project: [false, true],
     mobile_remember_tracesift_analysis: [false, true],
@@ -164,4 +167,74 @@ test("published TraceSift annotations distinguish saved references, service star
     assert.ok(tool, `Missing ${name}`);
     assert.deepEqual(tool.annotations, { readOnlyHint, destructiveHint, openWorldHint: false }, name);
   }
+});
+
+/**
+ * Who may drive a recording is the whole design, so it is asserted rather than
+ * left to a comment. Chrome stays panel-only because a model that launched a
+ * browser nobody is sitting at would record an empty page. React Native is
+ * model-callable because nothing is launched: the app is already running, and
+ * the agent can list, start and stop without control leaving the harness.
+ */
+test("React Native recording is model-callable where launching a browser is not", async t => {
+  const { mcp, close } = await connect({});
+  t.after(close);
+  const { tools } = await mcp.listTools();
+  const visibility = (name: string) => {
+    const tool = tools.find(tool => tool.name === name);
+    assert.ok(tool, `Missing ${name}`);
+    return (tool._meta as { ui?: { visibility?: string[] } } | undefined)?.ui?.visibility;
+  };
+  for (const name of ["mobile_tracesift_list_react_native_targets", "mobile_tracesift_record_react_native",
+    "mobile_tracesift_stop_recording", "mobile_tracesift_capture_state"]) {
+    assert.deepEqual(visibility(name), ["app", "model"], name);
+  }
+  for (const name of ["mobile_tracesift_launch_browser", "mobile_tracesift_start_recording", "mobile_tracesift_close_browser"]) {
+    assert.deepEqual(visibility(name), ["app"], name);
+  }
+});
+
+test("listing React Native targets names the default app, and recording one passes the target through", async t => {
+  const calls: unknown[] = [];
+  const { mcp, close } = await connect({
+    async reactNativeTargets(metro?: string) {
+      calls.push({ targets: metro });
+      return { apiVersion: 1 as const, platform: "rn" as const, metro: metro ?? "http://127.0.0.1:8081",
+        targets: [{ id: "device-1", title: "AwesomeApp", deviceName: "iPhone 17 Pro", supportsMultipleDebuggers: true, recommended: true }] };
+    },
+    async startReactNativeRecording(options: { metro?: string; targetId?: string }) { calls.push({ start: options }); },
+  });
+  t.after(close);
+
+  const listed = await mcp.callTool({ name: "mobile_tracesift_list_react_native_targets", arguments: {} });
+  assert.equal(listed.isError, undefined);
+  assert.match((listed.content as { text: string }[])[0]!.text, /AwesomeApp \(default\) \[device-1\]/);
+
+  const started = await mcp.callTool({ name: "mobile_tracesift_record_react_native", arguments: { targetId: "device-1" } });
+  assert.equal(started.isError, undefined);
+  assert.deepEqual(started.structuredContent, { recording: true });
+  assert.deepEqual(calls, [{ targets: undefined }, { start: { metro: undefined, targetId: "device-1" } }]);
+});
+
+test("an empty Metro says so rather than returning an empty list without comment", async t => {
+  const { mcp, close } = await connect({
+    async reactNativeTargets() {
+      return { apiVersion: 1 as const, platform: "rn" as const, metro: "http://127.0.0.1:8081", targets: [] };
+    },
+  });
+  t.after(close);
+  const listed = await mcp.callTool({ name: "mobile_tracesift_list_react_native_targets", arguments: {} });
+  assert.match((listed.content as { text: string }[])[0]!.text, /no React Native app connected/);
+});
+
+test("a recording the app refuses reports the CLI's own sentence to the agent", async t => {
+  const { mcp, close } = await connect({
+    async startReactNativeRecording() {
+      throw new TraceSiftError("A debugger is attached to that app. Close React Native DevTools, then run this again.", "request");
+    },
+  });
+  t.after(close);
+  const started = await mcp.callTool({ name: "mobile_tracesift_record_react_native", arguments: {} });
+  assert.equal(started.isError, true);
+  assert.match((started.content as { text: string }[])[0]!.text, /Close React Native DevTools/);
 });

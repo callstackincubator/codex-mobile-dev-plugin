@@ -343,6 +343,11 @@ html[data-theme="dark"] .tracesift-explorer { color-scheme: dark; }
 .tracesift-upload .upload-analyzing { padding: 10px; border: 1px dashed var(--border); border-radius: 8px; color: var(--muted-foreground); }
 
 .tracesift-upload .capture-pane { padding: 12px; background: var(--muted); border: 1px solid var(--border); border-radius: 10px; }
+.tracesift-upload .capture-sources { display: flex; gap: 6px; margin-bottom: 10px; }
+.tracesift-upload .capture-target { flex: 1 1 180px; min-width: 0; padding: 7px 10px; color: inherit; font: inherit; font-size: 13px; background: var(--card); border: 1px solid var(--border); border-radius: 7px; }
+.tracesift-upload .capture-target:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+.tracesift-upload .capture-target:disabled { opacity: 0.55; cursor: not-allowed; }
+.tracesift-upload .capture-status small { color: var(--muted-foreground); font-size: 11px; }
 .tracesift-upload .capture-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .tracesift-upload .capture-url { flex: 1 1 200px; min-width: 0; padding: 7px 10px; color: inherit; font: inherit; font-size: 13px; background: var(--card); border: 1px solid var(--border); border-radius: 7px; }
 .tracesift-upload .capture-url:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }

@@ -2,13 +2,15 @@ import { chatMessage } from "./chat-message.ts";
 import { attachReference, cardsCallTools } from "./host-bridge.ts";
 import type { HostAttachmentsSource, HostBridge } from "./host-bridge.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { traceSiftAnalysisSchema, traceSiftCaptureSchema, traceSiftCaptureUrlSchema, traceSiftHandoffSchema, traceSiftRestoreSchema, type TraceSiftAnalysis, type TraceSiftProfileType } from "@mobile-dev/shared/tracesift.ts";
+import { traceSiftAnalysisSchema, traceSiftCaptureSchema, traceSiftCaptureUrlSchema, traceSiftHandoffSchema, traceSiftRestoreSchema, traceSiftRnTargetsSchema, type TraceSiftAnalysis, type TraceSiftProfileType, type TraceSiftRnTarget } from "@mobile-dev/shared/tracesift.ts";
 import { decodeTraceSiftExplorePayload, TRACE_SIFT_PAYLOAD_MAX_BYTES, traceSiftExploreEnvelopeSchema, TRACE_SIFT_PAYLOAD_TOO_LARGE, traceSiftPayloadRefused, type TraceSiftExploreKind } from "@mobile-dev/shared/tracesift-explore.ts";
 import { buildSelectionPrompt, frameSelectionEvidence, type SelectionCard } from "@mobile-dev/shared/tracesift-selection.ts";
 import { findingName } from "@mobile-dev/shared/tracesift-labels.ts";
 import { buildReactSelectionPrompt, reactSelectionEvidence, type ReactSelectionRecording } from "@mobile-dev/shared/tracesift-react-selection.ts";
 import type { ContributionChartKind } from "./components/tracesift/contribution-chart.tsx";
 import { captureUiError, countUiEvent, markUiSurfaceReady, recordUiTiming, setUiGauge, setUiSurface, setUiTelemetryContext } from "./telemetry.ts";
+
+export type TraceSiftCaptureSource = "rn" | "chrome";
 
 type State = {
   analysis?: TraceSiftAnalysis;
@@ -23,16 +25,30 @@ type State = {
   /** File name the upload pane is waiting on. Absent in the inline card. */
   analyzing?: { name: string; profileType: TraceSiftProfileType };
   /**
-   * Recording a web app, rather than reading a profile someone already has.
+   * Recording a running app, rather than reading a profile someone already has.
    *
-   * `step` is where the control stands: `idle` offers an address, `launched`
+   * `step` is where the control stands: `idle` offers a start, `launched`
    * waits for the person to sign in or navigate, `recording` is live. The busy
    * steps are separate so the buttons can disable themselves without a second
    * flag, and `url` outlives the launch so a reopened panel can say what is open.
+   *
+   * `source` is which of the two the control is pointed at. React Native needs
+   * no `launched` step at all — the app is already running, so one press
+   * records — and the two sources keep their own fields side by side so
+   * switching chips does not throw away what the other one found.
    */
   capture: {
+    source: TraceSiftCaptureSource;
     step: "idle" | "launching" | "launched" | "starting" | "recording" | "stopping" | "closing";
+    /** Chrome: the address to open. */
     url: string;
+    /** React Native: the apps Metro reported, and which of them to record. */
+    targets: TraceSiftRnTarget[];
+    /** Empty means let the CLI pick the app it recommends, as the agent does. */
+    targetId: string;
+    metro: string;
+    targetsError: string;
+    loadingTargets: boolean;
     error: string;
   };
   /** Which drawing every card on this analysis carries; one switch, as on the web. */
@@ -67,7 +83,7 @@ function composerUnavailable(error: unknown) {
 
 export class TraceSiftController {
   private state: State = { canInvestigate: false, canCallTools: false, dark: false, error: "", notice: "", chartKind: "bar",
-    capture: { step: "idle", url: "", error: "" } };
+    capture: { source: "rn", step: "idle", url: "", targets: [], targetId: "", metro: "", targetsError: "", loadingTargets: false, error: "" } };
   private listeners = new Set<() => void>();
   private disposed = false;
   private readyAt = performance.now();
@@ -598,19 +614,85 @@ export class TraceSiftController {
    *
    * The browser and the recording outlive this panel — they belong to Chrome
    * and to a detached recorder — so a reopened panel asks the recorder rather
-   * than assuming it starts at `idle`.
+   * than assuming it starts at `idle`. Only a React Native recording carries a
+   * target label, so that is what tells the panel which source is live.
    */
   loadCapture = async () => {
     try {
       const state = traceSiftCaptureSchema.safeParse(await this.captureTool("mobile_tracesift_capture_state", {}, "TraceSift could not report the recording."));
       if (this.disposed || !state.success) return;
       const step = state.data.recording ? "recording" as const : state.data.browser ? "launched" as const : "idle" as const;
-      this.captureUpdate({ step, url: state.data.browser?.url || this.state.capture.url });
+      this.captureUpdate({
+        step, url: state.data.browser?.url || this.state.capture.url,
+        ...(state.data.app ? { source: "rn" as const } : state.data.browser ? { source: "chrome" as const } : {}),
+      });
       if (step !== "idle") countUiEvent("ui.tracesift.capture_resumed");
     } catch (error) {
       // Nothing is on screen yet that depends on this, so a host without the
       // capture tools simply shows the control at rest.
       captureUiError(error, "tracesift.capture");
+    }
+    // Asked once on open and again only when the person presses Refresh: an
+    // app that reconnects to Metro later is a press away, not worth a timer
+    // spawning a subprocess behind a panel nobody is looking at.
+    await this.loadReactNativeTargets();
+  };
+
+  setCaptureSource = (source: TraceSiftCaptureSource) => {
+    if (this.state.capture.source === source) return;
+    this.captureUpdate({ source, error: "" });
+  };
+
+  /** The React Native apps connected to Metro, and which of them Start would record. */
+  loadReactNativeTargets = async () => {
+    if (this.disposed || this.state.capture.loadingTargets) return;
+    this.captureUpdate({ loadingTargets: true, targetsError: "" });
+    const startedAt = performance.now();
+    try {
+      const listed = traceSiftRnTargetsSchema.safeParse(
+        await this.captureTool("mobile_tracesift_list_react_native_targets", {}, "TraceSift could not list the React Native apps."));
+      if (this.disposed) return;
+      if (!listed.success) throw new Error("TraceSift returned an invalid React Native target list.");
+      recordUiTiming("ui.tracesift.capture_rn_targets", performance.now() - startedAt);
+      const { targets, metro } = listed.data;
+      // Keep the person's own choice when the app they picked is still there;
+      // otherwise fall in behind the one the CLI would pick on its own.
+      const kept = targets.some(target => target.id === this.state.capture.targetId) ? this.state.capture.targetId : "";
+      this.captureUpdate({ targets, metro, targetsError: "", targetId: kept || targets.find(target => target.recommended)?.id || targets[0]?.id || "" });
+    } catch (error) {
+      countUiEvent("ui.tracesift.capture_rn_targets_failed");
+      captureUiError(error, "tracesift.capture");
+      if (!this.disposed) this.captureUpdate({ targets: [], targetsError: error instanceof Error ? error.message : "TraceSift could not list the React Native apps." });
+    } finally { if (!this.disposed) this.captureUpdate({ loadingTargets: false }); }
+  };
+
+  setCaptureTarget = (targetId: string) => { this.captureUpdate({ targetId, error: "" }); };
+
+  /**
+   * Record the React Native app that is already running.
+   *
+   * One press, not two: nothing is launched and no window opens, so there is
+   * no signed-in state to reach first the way there is in a browser.
+   */
+  startReactNativeCapture = async () => {
+    if (this.disposed || this.state.capture.step !== "idle" || this.state.capture.source !== "rn") return;
+    if (!this.state.capture.targets.length) {
+      this.captureUpdate({ error: "No React Native app is connected to Metro. Start the app, then refresh." });
+      return;
+    }
+    const { targetId } = this.state.capture;
+    this.captureUpdate({ source: "rn", step: "starting", error: "" });
+    const startedAt = performance.now();
+    try {
+      await this.captureTool("mobile_tracesift_record_react_native", targetId ? { targetId } : {}, "TraceSift could not start recording.");
+      if (this.disposed) return;
+      recordUiTiming("ui.tracesift.capture_rn_start", performance.now() - startedAt);
+      countUiEvent("ui.tracesift.capture_rn_start");
+      this.captureUpdate({ step: "recording" });
+    } catch (error) {
+      countUiEvent("ui.tracesift.capture_rn_start_failed");
+      captureUiError(error, "tracesift.capture");
+      if (!this.disposed) this.captureUpdate({ step: "idle", error: error instanceof Error ? error.message : "TraceSift could not start recording." });
     }
   };
 
@@ -622,7 +704,9 @@ export class TraceSiftController {
       this.captureUpdate({ error: "Enter an http:// or https:// address." });
       return;
     }
-    this.captureUpdate({ step: "launching", error: "" });
+    // The action settles the source, not the chip: whatever the panel was
+    // showing, this recording is Chrome's, and stopping it must know that.
+    this.captureUpdate({ source: "chrome", step: "launching", error: "" });
     const startedAt = performance.now();
     try {
       await this.captureTool("mobile_tracesift_launch_browser", { url }, "TraceSift could not open a browser.");
@@ -673,7 +757,9 @@ export class TraceSiftController {
       recordUiTiming("ui.tracesift.capture_stop", performance.now() - startedAt);
       countUiEvent("ui.tracesift.capture_stop");
       path = capture.data.path;
-      this.captureUpdate({ step: "launched" });
+      // Chrome keeps the browser, and with it the sign-in worth reusing. React
+      // Native launched nothing, so there is nothing to return to.
+      this.captureUpdate({ step: this.state.capture.source === "rn" ? "idle" : "launched" });
     } catch (error) {
       countUiEvent("ui.tracesift.capture_stop_failed");
       captureUiError(error, "tracesift.capture");

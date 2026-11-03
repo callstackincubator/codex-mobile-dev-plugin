@@ -319,3 +319,91 @@ test("a recorder state file that is not readable JSON is named rather than treat
   await assert.rejects(client.captureState(), (error: unknown) =>
     error instanceof TraceSiftError && error.kind === "setup" && /recording state is invalid/.test(error.message));
 });
+
+test("a React Native recording lists the connected apps, attaches to one, and reports the trace it wrote", async t => {
+  const fake = await fixture(); t.after(fake.close);
+  const record = join(fake.home, "record.json");
+  const targets = JSON.stringify({
+    apiVersion: 1, platform: "rn", metro: "http://127.0.0.1:8081",
+    targets: [{ id: "device-1", title: "AwesomeApp", appId: "com.awesome", deviceName: "iPhone 17 Pro",
+      supportsMultipleDebuggers: true, recommended: true }],
+  });
+  const command = await fakeRecorder(fake.home, [
+    `case "$2" in`,
+    // No browser.json: React Native launches nothing, so only the recorder's
+    // own state file is ever written.
+    `  targets) printf '%s' ${JSON.stringify(targets)} ;;`,
+    `  start) printf '%s' '{"apiVersion":1,"pid":'$PPID',"state":"recording","mode":"local","targetLabel":"AwesomeApp (Hermes) — iPhone 17 Pro"}' > ${JSON.stringify(record)} ;;`,
+    `  stop) printf '%s' '{"apiVersion":1,"pid":'$PPID',"state":"captured","mode":"local","export":{"path":"/traces/rn.json.gz","sizeBytes":90210,"eventCount":1204}}' > ${JSON.stringify(record)} ;;`,
+    `esac`,
+  ].join("\n"));
+  const client = new TraceSiftClient(command, fake.home); t.after(() => client.close());
+
+  const listed = await client.reactNativeTargets();
+  assert.equal(listed.metro, "http://127.0.0.1:8081");
+  assert.deepEqual(listed.targets.map(target => [target.id, target.recommended]), [["device-1", true]]);
+  // The real CLI omits `vm` on a React Native that does not name its engine.
+  assert.equal(listed.targets[0]?.vm, undefined);
+
+  await client.startReactNativeRecording({ targetId: "device-1" });
+  const running = await client.captureState();
+  assert.equal(running.recording, true);
+  // Nothing was launched, so the browser stays absent; the target label is what
+  // says this recording belongs to React Native rather than Chrome.
+  assert.equal(running.browser, undefined);
+  assert.deepEqual(running.app, { targetLabel: "AwesomeApp (Hermes) — iPhone 17 Pro" });
+
+  assert.deepEqual(await client.stopRecording(), { path: "/traces/rn.json.gz", sizeBytes: 90210, eventCount: 1204 });
+  // A finished recording is no longer attached to anything.
+  assert.equal((await client.captureState()).app, undefined);
+
+  const args = (await readFile(join(fake.home, "record-args.txt"), "utf8")).trim().split("\n");
+  // `start` forces the local sink for the same reason the Chrome path does, and
+  // carries the chosen target so the list and the recording cannot disagree.
+  assert.deepEqual(args, ["record", "targets", "--platform", "rn", "--json",
+    "record", "start", "--platform", "rn", "--sink", "local", "--target-id", "device-1",
+    "record", "stop"]);
+});
+
+test("a React Native recording with no target named lets the CLI choose, and a Metro URL is passed through", async t => {
+  const fake = await fixture(); t.after(fake.close);
+  const command = await fakeRecorder(fake.home, "exit 0");
+  const client = new TraceSiftClient(command, fake.home); t.after(() => client.close());
+
+  await client.startReactNativeRecording({ metro: "http://127.0.0.1:9000" });
+  const args = (await readFile(join(fake.home, "record-args.txt"), "utf8")).trim().split("\n");
+  assert.deepEqual(args, ["record", "start", "--platform", "rn", "--sink", "local", "--metro", "http://127.0.0.1:9000"]);
+});
+
+test("a targets command that fails says what it reported on stdout rather than an exit code", async t => {
+  const fake = await fixture(); t.after(fake.close);
+  // `record targets --json` reports its own failure as JSON on stdout and exits
+  // 1, so there is no stderr prose to read.
+  const command = await fakeRecorder(fake.home,
+    `printf '%s' '{"apiVersion":1,"error":"No Metro dev server is listening on http://127.0.0.1:8081."}'\nexit 1`);
+  const client = new TraceSiftClient(command, fake.home); t.after(() => client.close());
+
+  await assert.rejects(client.reactNativeTargets(), error =>
+    error instanceof TraceSiftError && error.kind === "request"
+    && error.message === "No Metro dev server is listening on http://127.0.0.1:8081.");
+});
+
+test("a TraceSift that knows record but not --platform reads as a version to update", async t => {
+  const fake = await fixture(); t.after(fake.close);
+  const command = await fakeRecorder(fake.home, "echo \"tracesift: Unknown option '--platform'.\" >&2\nexit 1");
+  const client = new TraceSiftClient(command, fake.home); t.after(() => client.close());
+
+  await assert.rejects(client.reactNativeTargets(), error =>
+    error instanceof TraceSiftError && error.kind === "version" && /cannot record React Native/.test(error.message));
+  await assert.rejects(client.startReactNativeRecording(), error =>
+    error instanceof TraceSiftError && error.kind === "version" && /0\.6\.0 or newer/.test(error.message));
+});
+
+test("a targets command that answers with prose rather than JSON is named, not guessed at", async t => {
+  const fake = await fixture(); t.after(fake.close);
+  const command = await fakeRecorder(fake.home, "echo 'Metro on http://127.0.0.1:8081'");
+  const client = new TraceSiftClient(command, fake.home); t.after(() => client.close());
+
+  await assert.rejects(client.reactNativeTargets(), error =>
+    error instanceof TraceSiftError && error.kind === "response" && /other than JSON/.test(error.message));
+});
