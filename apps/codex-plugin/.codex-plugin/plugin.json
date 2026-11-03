@@ -1,6 +1,6 @@
 {
   "name": "mobile-dev",
-  "description": "Keep a simulator beside the chat while building, running, or debugging iOS and Android apps. Stream devices, read native and Metro logs, analyze CPU and React profiles with TraceSift, render interactive CPU, memory, and FPS recordings, and control apps with Mobile Dev tools.",
+  "description": "Keep a simulator beside the chat while building, running, or debugging iOS and Android apps. Stream devices, read native and Metro logs, analyze CPU and React profiles with TraceSift, render interactive CPU, memory, and FPS recordings, map your app's screens and navigation with App Flow, and control apps with Mobile Dev tools.",
   "author": {
     "name": "Callstack",
     "email": "hello@callstack.com"
@@ -75,7 +75,7 @@
   "interface": {
     "displayName": "Mobile Dev",
     "shortDescription": "Devices, logs, and performance",
-    "longDescription": "Keep an iOS simulator or Android device beside your chat while building, running, or debugging Expo, React Native, SwiftUI, and other mobile apps. Monitor native CPU, memory, and device-wide Display FPS, analyze local CPU and React profiles with TraceSift cards, render interactive performance recordings in chat, read native and Metro logs, and inspect and control apps with Mobile Dev tools.",
+    "longDescription": "Keep an iOS simulator or Android device beside your chat while building, running, or debugging Expo, React Native, SwiftUI, and other mobile apps. Monitor native CPU, memory, and device-wide Display FPS, analyze local CPU and React profiles with TraceSift cards, render interactive performance recordings in chat, read native and Metro logs, map your app's screens and navigation with App Flow, and inspect and control apps with Mobile Dev tools.",
     "developerName": "Callstack",
     "websiteURL": "https://github.com/callstackincubator/mobile-dev",
     "supportURL": "https://github.com/callstackincubator/mobile-dev/blob/main/SUPPORT.md",

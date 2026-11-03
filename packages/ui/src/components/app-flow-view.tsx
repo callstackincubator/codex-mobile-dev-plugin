@@ -57,12 +57,12 @@ function AppFlowHelp() {
       <div className="space-y-1"><p className="font-medium">Map creation</p>
         <ul className="list-disc space-y-1 pl-4 text-muted-foreground">
           <li><span className="text-foreground">Structure only</span> reads the navigation out of your source. It takes seconds and needs no device, but has no screenshots.</li>
-          <li><span className="text-foreground">Screen UI + Structure</span> also walks the app on a simulator or emulator and photographs every screen it reaches. Sign in first.</li>
+          <li><span className="text-foreground">Screen UI + Structure</span> also walks the app on an iOS simulator and photographs every screen it reaches. Sign in first.</li>
         </ul></div>
 
       <div className="space-y-1"><p className="font-medium">Launching (the walk only)</p>
         <ul className="list-disc space-y-1 pl-4 text-muted-foreground">
-          <li>Runs the project&rsquo;s <code>ios</code> / <code>android</code> script, then Metro. No such script, no walk.</li>
+          <li>Runs the project&rsquo;s <code>ios</code> script, then Metro. No such script, no walk.</li>
           <li>An install is reused while the native sources are unchanged.</li>
           <li>Runtime reads need a debug build; a release build has no DevTools hook.</li>
         </ul></div>

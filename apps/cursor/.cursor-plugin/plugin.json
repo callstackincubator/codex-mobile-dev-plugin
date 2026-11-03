@@ -1,6 +1,6 @@
 {
   "name": "mobile-dev",
-  "description": "Stream iOS and Android devices into the chat while building, running, or debugging mobile apps. Read native and Metro logs, inspect and control apps, and record CPU, memory, and FPS. Apple Silicon development preview.",
+  "description": "Stream iOS and Android devices into the chat while building, running, or debugging mobile apps. Read native and Metro logs, inspect and control apps, map your app's screens and navigation with App Flow, and record CPU, memory, and FPS. Apple Silicon development preview.",
   "author": {
     "name": "Callstack",
     "email": "hello@callstack.com"

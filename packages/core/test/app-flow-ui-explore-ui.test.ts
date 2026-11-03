@@ -78,7 +78,11 @@ test("App Flow uses adaptive capture and offers AI only for actionable misses", 
   await act(async () => { help.click(); });
   const guide = document.querySelector('[aria-label="How App Flow works"][data-slot="popover-content"]');
   const guideText = guide?.textContent ?? "";
-  assert.match(guideText, /ios.+android.+script/s, "the guide names the launch scripts it needs");
+  // The sweep only ever runs on iOS: `CaptureContext.platform` in `app-flow/capture.ts` is the
+  // literal 'ios', and every construction site passes it. The guide must name that one script and
+  // promise no Android walk, so this pins the claim to what the walk can actually do.
+  assert.match(guideText, /ios.+script/s, "the guide names the launch script it needs");
+  assert.doesNotMatch(guideText, /android/i, "the guide does not promise an Android walk");
   assert.match(guideText, /release build/, "the guide explains what a release build costs");
   assert.match(guideText, /deep link/, "the guide explains the deep-link fallback");
   assert.match(guideText, /Structure only.+Screen UI \+ Structure/s, "the guide explains both capture modes");

@@ -32,6 +32,7 @@ export const docs = {
   start: '/docs/getting-started',
   devices: '/docs/devices',
   control: '/docs/app-control',
+  appFlow: '/docs/app-flow',
   logs: '/docs/logs',
   performance: '/docs/performance',
   profiles: '/docs/profiles',
@@ -88,6 +89,7 @@ export const features: Feature[] = [
   { icon: 'panel', title: 'Native and app logs', body: 'Follow iOS, Android, and Metro logs, then send the relevant error to your agent.', href: docs.logs },
   { icon: 'gauge', title: 'Performance recordings', body: 'Record CPU, memory, and supported device Display FPS over the interaction you want to understand.', href: docs.performance },
   { icon: 'flame', title: 'Profile analysis', body: 'Explore CPU and React profiles with TraceSift, and investigate selected frames with your agent.', href: docs.profiles },
+  { icon: 'grid', title: 'App Flow', body: 'Map every screen and navigation edge, and capture each screen on a simulator or emulator.', href: docs.appFlow },
   { icon: 'database', title: 'App storage', body: 'Inspect files, databases, and key-value stores. Watch changes while you use your app.', href: docs.storage },
   { icon: 'network', title: 'Your existing stack', body: 'Use your app’s own build tools with Expo, React Native, SwiftUI, and native projects.', href: docs.start },
 ];

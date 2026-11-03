@@ -21,6 +21,7 @@ The agent opens Mobile Dev, selects a suitable installed device, and uses the pr
 | --- | --- |
 | Select simulators, emulators, or physical devices; inspect and annotate the screen | [Devices](/docs/devices) |
 | Install or relaunch an app, open a deep link, change permissions, or test another language | [App control](/docs/app-control) |
+| Map an app's screens and navigation, capture each screen, and record a path to one | [App Flow](/docs/app-flow) |
 | Read native and Metro messages together and send a log to your agent | [Logs](/docs/logs) |
 | Record CPU, memory, and supported device Display FPS; select and compare ranges | [Performance](/docs/performance) |
 | Explore a CPU or React profile and investigate a measured finding | [Profiles](/docs/profiles) |
