@@ -7,6 +7,7 @@ import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mc
 import { PLUGIN_VERSION } from "@mobile-dev/shared/version.ts";
 import { SENTRY_ORIGIN } from "@mobile-dev/shared/telemetry.ts";
 import { instrumentMcpServer, setServerTelemetryHost } from "./telemetry.ts";
+import { instrumentProductAnalytics } from "./analytics.ts";
 import { resolveTelemetryEnvironment } from "./telemetry-environment.ts";
 import { getTelemetryIdentity } from "./telemetry-identity.ts";
 import { registerAppResource, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
@@ -70,10 +71,13 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
   const fps = new DisplayFpsSessions();
   const server = new McpServer({ name: "mobile-dev", version: PLUGIN_VERSION }, { instructions: panel?.instructions ?? INSTRUCTIONS });
   instrumentMcpServer(server);
+  const analytics = instrumentProductAnalytics(server);
   addToolIcons(server, { mobile_open_workspace: PHONE_ICONS, mobile_open_simulator: PHONE_ICONS, mobile_choose_devices: PHONE_ICONS });
   const extensions = new OpenAIExtensions(server);
   server.server.oninitialized = () => {
-    setServerTelemetryHost(server.server.getClientVersion()?.name);
+    const clientName = server.server.getClientVersion()?.name;
+    setServerTelemetryHost(clientName);
+    analytics.sessionStarted(clientName);
     // The device form goes with Mobile Dev's own device views, for hosts that render one.
     const form = panel && deviceChoiceFormSupport(server.server.getClientCapabilities());
     if (form) registerDeviceChoiceTools(server, extensions, {
@@ -144,7 +148,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
       // Recordings finish while the collectors they read are still open.
       await recordings.close();
       try { await Promise.all([logs.close(), cpu.close(), fps.close(), traceSift.close(), closePanel?.()]); }
-      finally { android.dispose(); await server.close(); }
+      finally { android.dispose(); await server.close(); await analytics.close(); }
     },
   };
 }

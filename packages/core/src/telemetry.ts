@@ -3,6 +3,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { McpServer, ResourceTemplate, ResourceMetadata, ReadResourceCallback, ReadResourceTemplateCallback, RegisteredResource, RegisteredResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { MeasurementWindow, TELEMETRY_HOSTS, TELEMETRY_INTERVAL_MS, TELEMETRY_META_KEY, telemetryHost } from "@mobile-dev/shared/telemetry.ts";
+import type { TelemetryHost } from "@mobile-dev/shared/telemetry.ts";
 import { ExpectedOperationError, expectedOutcome, isRepeatedFailure } from "@mobile-dev/shared/error-reporting.ts";
 import { closeNativeTelemetry } from "./native-telemetry.ts";
 import { closeHttpRuntime } from "./http-runtime.ts";
@@ -68,6 +69,12 @@ export function recordTraceSiftPayload(kind: "task" | "react", bytes: number) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes = { component: "server", surface: "tracesift", kind };
   Sentry.metrics.gauge("tracesift.explore.payload_bytes", bytes, { unit: "byte", attributes });
+}
+
+/** Counts each batch sent to Mixpanel by whether Mixpanel accepted it. */
+export function recordAnalyticsFlush(outcome: "success" | "failed") {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  Sentry.metrics.count("analytics.flush", 1, { attributes: { component: "server", outcome } });
 }
 
 export function recordAccessibilityBridgeRestart(outcome: "recovered" | "unavailable" | "failed") {
@@ -286,9 +293,14 @@ const allowedContext: Record<string, readonly string[]> = {
   device_platform: ["ios", "android", "mixed"], device_kind: ["physical", "simulator", "emulator", "none"], host: TELEMETRY_HOSTS,
 };
 
-/** Attributes server telemetry to the host that launched it: the Mac app sets `MOBILE_DEV_HOST`, other hosts are named by their MCP client. */
+/** The host that launched the server: the Mac app sets `MOBILE_DEV_HOST`, other hosts are named by their MCP client. */
+export function serverTelemetryHost(clientName: string | undefined): TelemetryHost {
+  return process.env.MOBILE_DEV_HOST === "mac" ? "mac" : telemetryHost(clientName);
+}
+
+/** Attributes server telemetry to the host that launched it. */
 export function setServerTelemetryHost(clientName: string | undefined) {
-  const host = process.env.MOBILE_DEV_HOST === "mac" ? "mac" : telemetryHost(clientName);
+  const host = serverTelemetryHost(clientName);
   Sentry.setTag("host", host);
   Sentry.setAttribute("host", host);
 }

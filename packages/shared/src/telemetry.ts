@@ -8,6 +8,13 @@ export const SENTRY_SERVER_DSN = "https://2ee03a9449e1f1b48e3e7c7606b6f562@o4512
 export const SENTRY_NATIVE_DSN = "https://1deeefda39022a67df902c638dcf3c8f@o4512180958068736.ingest.de.sentry.io/4512181036318800";
 export const SENTRY_ORIGIN = "https://o4512180958068736.ingest.de.sentry.io";
 export const SENTRY_RELEASE = `mobile-dev@${PLUGIN_VERSION}`;
+/** Public token of the EU-resident Mixpanel project for product analytics. */
+export const MIXPANEL_TOKEN = "780e4817b73c1234479ad8d418d34e89";
+/**
+ * Mixpanel's EU ingestion endpoint. `ip=0` stops Mixpanel from storing or geolocating the sender's IP;
+ * `verbose=1` makes rejected batches say so, since Mixpanel answers them with HTTP 200 too.
+ */
+export const MIXPANEL_TRACK_URL = "https://api-eu.mixpanel.com/track?ip=0&verbose=1";
 export const TELEMETRY_META_KEY = "mobile-dev/telemetry";
 export const TELEMETRY_INTERVAL_MS = 30_000;
 export const TELEMETRY_HOSTS = ["codex", "claude", "cursor", "mac", "other"] as const;
