@@ -185,7 +185,7 @@ export function DeviceSettings({ platform }: { platform: "ios" | "android" }) {
           <AnimatedHeight>
           <TabsContent value="app"><AppTools store={appTools} /></TabsContent>
           <TabsContent value="device" className="space-y-3">
-        {settings && <fieldset disabled={disabled} className="space-y-3">
+        {settings && <fieldset disabled={disabled} className="min-w-0 space-y-3">
           <Group label="Display">
             {settings.appearance !== undefined && <Row label="Appearance" id={`${id}-appearance`}><Tabs value={settings.appearance} onValueChange={value => { if (value) void store.change({ setting: "appearance", value: value as "light" | "dark" | "auto" }); }}>
               {/* Android's third option leaves no room for icons. */}
