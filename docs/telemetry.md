@@ -52,6 +52,24 @@ so the page receives the same server-owned environment, opt-out and anonymous
 identity as the Codex panel. Mac builds are development-only for now; the SwiftUI
 shell has no native Sentry SDK.
 
+## Product analytics
+
+Since 0.1.177, release servers send basic product analytics to Mixpanel's EU
+project (`packages/core/src/analytics.ts`) to count installations and feature use.
+`instrumentMcpServer` reports `Tool Called` with the tool name and `success` or
+`error` outcome; a connected client reports `Session Started`. Every event carries
+only `host`, `plugin_version`, `os` (`process.platform`), a timestamp, an insert ID
+and the server-owned installation ID as `distinct_id`. Frequent polling and
+`*_input` tools are skipped. Events are batched (50 per request, at most 500 queued)
+and flushed every 30 seconds and on shutdown; failed batches are dropped.
+Requests go to `api-eu.mixpanel.com/track?ip=0`, so Mixpanel neither stores the
+IP nor geolocates it. No user profiles are created.
+
+Development builds send nothing. `MOBILE_DEV_TELEMETRY=off` turns analytics off
+along with Sentry; `MOBILE_DEV_ANALYTICS=off` or `DO_NOT_TRACK=1` turns off only
+analytics. `analytics.flush` counts each Mixpanel request by `outcome` with
+`component=server`. The panel UI sends nothing to Mixpanel, and its CSP is unchanged.
+
 ## Volume policy
 
 Since 0.1.164, application metrics in the UI, Node servers and native helpers use

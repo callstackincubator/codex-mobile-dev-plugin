@@ -6,6 +6,7 @@ import { MeasurementWindow, TELEMETRY_HOSTS, TELEMETRY_INTERVAL_MS, TELEMETRY_ME
 import { ExpectedOperationError, expectedOutcome, isRepeatedFailure } from "@mobile-dev/shared/error-reporting.ts";
 import { closeNativeTelemetry } from "./native-telemetry.ts";
 import { closeHttpRuntime } from "./http-runtime.ts";
+import { productAnalytics } from "./analytics.ts";
 import { definitionDiagnosticTags } from "@mobile-dev/shared/simulator-definition-diagnostics.ts";
 import { deviceAppsDiagnosticTags } from "@mobile-dev/shared/device-apps-diagnostics.ts";
 import { getDiscoveryCommandDiagnostic } from "@mobile-dev/shared/device-apps-command-diagnostics.ts";
@@ -241,9 +242,13 @@ export function instrumentMcpServer(server: McpServer) {
   server.server.setRequestHandler = (schema, handler) => {
     register(schema, async (request, extra) => {
       const reporting = requestReporting.getStore();
+      const tool = request.method === "tools/call" && typeof request.params?.name === "string" ? request.params.name : undefined;
       try {
-        return await handler(request, extra);
+        const result = await handler(request, extra);
+        if (tool) productAnalytics.toolCalled(tool, "isError" in result && result.isError === true ? "error" : "success");
+        return result;
       } catch (error) {
+        if (tool) productAnalytics.toolCalled(tool, "error");
         const accounted = reporting?.accounted === true;
         if (reporting) {
           reporting.accounted = true;
@@ -291,6 +296,8 @@ export function setServerTelemetryHost(clientName: string | undefined) {
   const host = process.env.MOBILE_DEV_HOST === "mac" ? "mac" : telemetryHost(clientName);
   Sentry.setTag("host", host);
   Sentry.setAttribute("host", host);
+  productAnalytics.setHost(host);
+  productAnalytics.sessionStarted();
 }
 
 export function installTracePropagation(transport: Transport) {
@@ -358,6 +365,7 @@ export function installTracePropagation(transport: Transport) {
 export async function closeServerTelemetry() {
   try {
     await closeNativeTelemetry();
+    await productAnalytics.close();
     await Sentry.close(2000);
   } finally {
     await closeHttpRuntime();
