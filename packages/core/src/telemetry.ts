@@ -53,7 +53,7 @@ export function recordAppStorageOperation(operation: AppStorageOperation, platfo
   Sentry.metrics.gauge("app_storage.operation.duration", duration, { unit: "millisecond", attributes });
 }
 
-export function recordTraceSiftOperation(operation: "ready" | "analyze" | "remember" | "restore" | "handoff" | "task" | "payload" | "pick" | "project", outcome: "success" | "failed", duration: number) {
+export function recordTraceSiftOperation(operation: "ready" | "analyze" | "remember" | "restore" | "handoff" | "task" | "payload" | "pick" | "project" | "record", outcome: "success" | "failed", duration: number) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes = { component: "server", surface: "tracesift", operation, outcome };
   Sentry.metrics.count("tracesift.operation.samples", 1, { attributes });

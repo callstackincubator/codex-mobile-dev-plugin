@@ -3,7 +3,7 @@ import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { errorMessage } from "@mobile-dev/shared/protocol.ts";
-import { TRACESIFT_URI, traceSiftAnalysisSchema, traceSiftHandoffSchema, traceSiftProfileInputSchema, traceSiftReactCardSchema, traceSiftTaskCardSchema } from "@mobile-dev/shared/tracesift.ts";
+import { TRACESIFT_URI, traceSiftAnalysisSchema, traceSiftCaptureSchema, traceSiftCaptureUrlSchema, traceSiftHandoffSchema, traceSiftProfileInputSchema, traceSiftReactCardSchema, traceSiftTaskCardSchema } from "@mobile-dev/shared/tracesift.ts";
 import { gzip as gzipCallback } from "node:zlib";
 import { promisify } from "node:util";
 import { TRACE_SIFT_PAYLOAD_GZIP_MIN_BYTES, TRACE_SIFT_PAYLOAD_MAX_BYTES, traceSiftExploreEnvelopeSchema, TRACE_SIFT_PAYLOAD_TOO_LARGE, traceSiftPayloadTooDeep } from "@mobile-dev/shared/tracesift-explore.ts";
@@ -25,7 +25,7 @@ const analysisOutput = {
   summary: z.record(z.string(), z.unknown()), cards: z.array(z.union([traceSiftTaskCardSchema, traceSiftReactCardSchema])),
 };
 
-function failure(error: unknown, operation: "analyze" | "remember" | "restore" | "handoff" | "task" | "payload" | "pick" | "project", startedAt: number, signal: AbortSignal): CallToolResult {
+function failure(error: unknown, operation: "analyze" | "remember" | "restore" | "handoff" | "task" | "payload" | "pick" | "project" | "record", startedAt: number, signal: AbortSignal): CallToolResult {
   recordTraceSiftOperation(operation, "failed", performance.now() - startedAt);
   captureServerError(error, `tracesift.${operation}`, { signal });
   return { isError: true, content: [{ type: "text", text: errorMessage(error) }] };
@@ -67,6 +67,86 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
         structuredContent: chosen.picked ? { picked: true, path: chosen.path } : { picked: false },
       };
     } catch (error) { return failure(error, "pick", startedAt, context.signal); }
+  });
+
+  // Recording a web app. Four verbs because the recording has to begin after
+  // the person has signed in or navigated, not when the browser opens, and the
+  // browser outlives the trace so several recordings can come from one sign-in.
+  // All app-only: the panel's buttons drive them, and a model that started a
+  // browser nobody is sitting at would record an empty page.
+  registerAppTool(server, "mobile_tracesift_capture_state", {
+    title: "Read where a TraceSift recording stands",
+    description: "Return whether a TraceSift-launched Chrome is open, whether a recording is running, and the trace the last recording wrote. Reads the recorder's own state files and starts nothing, so a reopened panel finds a recording that is still going.",
+    inputSchema: {},
+    outputSchema: traceSiftCaptureSchema.shape, annotations: read,
+    _meta: { ui: { visibility: ["app"] } },
+  }, async (_input, context) => {
+    const startedAt = performance.now();
+    try {
+      const state = await client.captureState();
+      recordTraceSiftOperation("record", "success", performance.now() - startedAt);
+      return { content: [{ type: "text", text: state.recording ? "A TraceSift recording is running." : "No TraceSift recording is running." }], structuredContent: state };
+    } catch (error) { return failure(error, "record", startedAt, context.signal); }
+  });
+
+  registerAppTool(server, "mobile_tracesift_launch_browser", {
+    title: "Open a web app in a Chrome TraceSift can record",
+    description: "Launch Chrome against a throwaway profile with the DevTools Protocol enabled and open the given http or https address, leaving it running. Sign in or navigate there by hand, then start the recording so the trace covers the state you reached. Opens a window on this machine.",
+    inputSchema: { url: traceSiftCaptureUrlSchema },
+    outputSchema: traceSiftCaptureSchema.shape, annotations: localService,
+    _meta: { ui: { visibility: ["app"] } },
+  }, async ({ url }, context) => {
+    const startedAt = performance.now();
+    try {
+      const state = await client.launchBrowser(url, context.signal);
+      recordTraceSiftOperation("record", "success", performance.now() - startedAt);
+      return { content: [{ type: "text", text: "Chrome is open and ready to record." }], structuredContent: state };
+    } catch (error) { return failure(error, "record", startedAt, context.signal); }
+  });
+
+  registerAppTool(server, "mobile_tracesift_start_recording", {
+    title: "Start recording the open browser",
+    description: "Begin a Chrome performance trace of whatever the TraceSift-launched browser is already showing, without navigating it. The trace is written as a local file rather than streamed into the running TraceSift, so the panel can analyze it by path. Only one recording runs at a time.",
+    inputSchema: {},
+    outputSchema: { recording: z.literal(true) }, annotations: localService,
+    _meta: { ui: { visibility: ["app"] } },
+  }, async (_input, context) => {
+    const startedAt = performance.now();
+    try {
+      await client.startRecording(context.signal);
+      recordTraceSiftOperation("record", "success", performance.now() - startedAt);
+      return { content: [{ type: "text", text: "Recording." }], structuredContent: { recording: true as const } };
+    } catch (error) { return failure(error, "record", startedAt, context.signal); }
+  });
+
+  registerAppTool(server, "mobile_tracesift_stop_recording", {
+    title: "Stop recording and keep the trace",
+    description: "End the running recording, wait for Chrome to write the trace, and return the file it wrote. The launched browser stays open, so another recording can follow from the same signed-in session.",
+    inputSchema: {},
+    outputSchema: { path: z.string(), sizeBytes: z.number(), eventCount: z.number() }, annotations: persist,
+    _meta: { ui: { visibility: ["app"] } },
+  }, async (_input, context) => {
+    const startedAt = performance.now();
+    try {
+      const capture = await client.stopRecording(context.signal);
+      recordTraceSiftOperation("record", "success", performance.now() - startedAt);
+      return { content: [{ type: "text", text: `Recorded ${capture.eventCount.toLocaleString()} events.` }], structuredContent: capture };
+    } catch (error) { return failure(error, "record", startedAt, context.signal); }
+  });
+
+  registerAppTool(server, "mobile_tracesift_close_browser", {
+    title: "Close the browser TraceSift launched",
+    description: "Quit the Chrome opened for recording and delete the throwaway profile it used. Refuses while a recording is still running. Traces already written are left alone.",
+    inputSchema: {},
+    outputSchema: { closed: z.literal(true) }, annotations: persist,
+    _meta: { ui: { visibility: ["app"] } },
+  }, async (_input, context) => {
+    const startedAt = performance.now();
+    try {
+      await client.closeBrowser(context.signal);
+      recordTraceSiftOperation("record", "success", performance.now() - startedAt);
+      return { content: [{ type: "text", text: "The browser is closed." }], structuredContent: { closed: true as const } };
+    } catch (error) { return failure(error, "record", startedAt, context.signal); }
   });
 
   registerAppTool(server, "mobile_get_tracesift_project", {

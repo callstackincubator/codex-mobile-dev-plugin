@@ -342,6 +342,19 @@ html[data-theme="dark"] .tracesift-explorer { color-scheme: dark; }
 .tracesift-upload .browse-button { margin-top: 14px; padding: 6px 11px; color: var(--primary); background: var(--card); border: 1px solid var(--border); border-radius: 7px; font-size: 12px; font-weight: 650; }
 .tracesift-upload .upload-analyzing { padding: 10px; border: 1px dashed var(--border); border-radius: 8px; color: var(--muted-foreground); }
 
+.tracesift-upload .capture-pane { padding: 12px; background: var(--muted); border: 1px solid var(--border); border-radius: 10px; }
+.tracesift-upload .capture-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tracesift-upload .capture-url { flex: 1 1 200px; min-width: 0; padding: 7px 10px; color: inherit; font: inherit; font-size: 13px; background: var(--card); border: 1px solid var(--border); border-radius: 7px; }
+.tracesift-upload .capture-url:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+.tracesift-upload .capture-status { flex: 1 1 180px; margin: 0; color: var(--muted-foreground); font-size: 12px; }
+.tracesift-upload .capture-button { padding: 7px 12px; color: var(--primary-foreground); background: var(--primary); border: 1px solid transparent; border-radius: 7px; font-size: 12px; font-weight: 650; cursor: pointer; }
+/* Red while live, so the one button that is costing a trace is never the one
+   pressed by mistake. */
+.tracesift-upload .capture-button.is-recording { color: var(--destructive-foreground, #fff); background: var(--destructive); }
+.tracesift-upload .capture-close { padding: 7px 10px; color: var(--muted-foreground); background: var(--card); border: 1px solid var(--border); border-radius: 7px; font-size: 12px; cursor: pointer; }
+.tracesift-upload .capture-button:disabled, .tracesift-upload .capture-close:disabled, .tracesift-upload .capture-url:disabled { opacity: 0.55; cursor: not-allowed; }
+.tracesift-upload .capture-button:focus-visible, .tracesift-upload .capture-close:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+
 @media (prefers-reduced-motion: reduce) {
   .tracesift-upload .upload-pane { transition: none; }
 }

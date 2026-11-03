@@ -48,6 +48,59 @@ function UploadPane({ controller, profileType, busy }: { controller: TraceSiftCo
   </>;
 }
 
+/**
+ * Record a running web app instead of reading a profile someone already has.
+ *
+ * Two presses, not one: Chrome opens first and the recording starts when the
+ * person says so, because the state worth profiling is usually behind a sign-in
+ * or a few clicks, and a trace that began at page load would be mostly the
+ * sign-in. Stopping analyzes what was recorded and leaves the browser open for
+ * the next one.
+ */
+function CapturePane({ controller, busy }: { controller: TraceSiftController; busy: boolean }) {
+  const { capture } = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
+  const { step } = capture;
+  const working = step === "launching" || step === "starting" || step === "stopping" || step === "closing";
+  const open = step !== "idle" && step !== "launching";
+
+  return <div className="capture-pane">
+    {!open
+      ? <div className="capture-row">
+        <input
+          type="url"
+          className="capture-url"
+          placeholder="https://localhost:3000"
+          aria-label="Web app address to record"
+          value={capture.url}
+          disabled={busy || working}
+          onChange={event => controller.setCaptureUrl(event.target.value)}
+          onKeyDown={event => { if (event.key === "Enter") void controller.launchCapture(); }}
+        />
+        <button type="button" className="capture-button" disabled={busy || working} onClick={() => void controller.launchCapture()}>
+          {step === "launching" ? "Opening Chrome…" : "Launch web app"}
+        </button>
+      </div>
+      : <div className="capture-row">
+        <p className="capture-status" role="status">
+          {step === "recording" || step === "stopping"
+            ? "Recording. Use the app, then stop."
+            : "Chrome is open. Sign in or navigate, then start."}
+        </p>
+        {step === "recording" || step === "stopping"
+          ? <button type="button" className="capture-button is-recording" disabled={busy || step === "stopping"} onClick={() => void controller.stopCapture()}>
+            {step === "stopping" ? "Writing the trace…" : "Stop and analyze"}
+          </button>
+          : <button type="button" className="capture-button" disabled={busy || working} onClick={() => void controller.startCapture()}>
+            {step === "starting" ? "Starting…" : "Start profile"}
+          </button>}
+        <button type="button" className="capture-close" disabled={busy || working || step === "recording"} onClick={() => void controller.closeCapture()}>
+          {step === "closing" ? "Closing…" : "Close browser"}
+        </button>
+      </div>}
+    {capture.error && <p className="tracesift-error" role="alert">{capture.error}</p>}
+  </div>;
+}
+
 function TraceSiftUpload({ controller, available }: { controller: TraceSiftController; available: boolean }) {
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
   const [profileType, setProfileType] = useState<TraceSiftProfileType>("cpu");
@@ -87,6 +140,13 @@ function TraceSiftUpload({ controller, available }: { controller: TraceSiftContr
     {analyzing
       ? <p className="upload-analyzing" role="status">Analyzing {analyzing.name} with TraceSift…</p>
       : <UploadPane controller={controller} profileType={profileType} busy={!available} />}
+
+    {/* Only for CPU: a React profile comes out of React DevTools, which this
+        cannot drive. */}
+    {!analyzing && profileType === "cpu" && <>
+      <div className="workflow-label"><span>or</span><strong>Record a web app</strong><small>Opens Chrome on this machine.</small></div>
+      <CapturePane controller={controller} busy={!available} />
+    </>}
 
     {state.error && <p className="tracesift-error" role="alert">{state.error}</p>}
   </main>;

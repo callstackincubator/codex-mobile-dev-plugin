@@ -767,3 +767,105 @@ test("TraceSift comes back from Explore to the finding that was explored", async
   assert.equal(controller.getSnapshot().selectedCard, undefined);
   controller.dispose();
 });
+
+/**
+ * The capture control. The browser and the recorder are separate processes that
+ * outlive this frame, so what the controller must get right is the order of the
+ * presses and what it believes after each answer.
+ */
+function captureApp(answers: Record<string, unknown>, calls: { name: string; arguments?: unknown }[] = []) {
+  return {
+    calls,
+    app: {
+      getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
+      getHostContext: () => hostContext,
+      async callServerTool(input: { name: string; arguments?: unknown }) {
+        calls.push(input);
+        const answer = answers[input.name];
+        if (answer === undefined) throw new Error(`unexpected tool ${input.name}`);
+        return answer;
+      },
+      async sendMessage() { return {}; },
+    },
+  };
+}
+
+test("a capture launches a browser, records what the person reached, and analyzes the trace", async () => {
+  const { app, calls } = captureApp({
+    mobile_tracesift_launch_browser: { content: [], structuredContent: { apiVersion: 1, recording: false, browser: { url: "https://example.com/" } } },
+    mobile_tracesift_start_recording: { content: [], structuredContent: { recording: true } },
+    mobile_tracesift_stop_recording: { content: [], structuredContent: { path: "/traces/one.json.gz", sizeBytes: 600_000, eventCount: 35_924 } },
+    mobile_analyze_profile: { content: [], structuredContent: analysis },
+  });
+  const controller = new TraceSiftController(app as never);
+  controller.hostChanged();
+
+  // Start is refused until a browser is open: the recorder would have nothing
+  // to attach to, and the panel would be claiming a recording that never began.
+  await controller.startCapture();
+  assert.equal(calls.length, 0);
+
+  controller.setCaptureUrl("https://example.com");
+  await controller.launchCapture();
+  assert.equal(controller.getSnapshot().capture.step, "launched");
+
+  await controller.startCapture();
+  assert.equal(controller.getSnapshot().capture.step, "recording");
+
+  await controller.stopCapture();
+  // The browser stays open, so the sign-in it holds can serve another recording.
+  assert.equal(controller.getSnapshot().capture.step, "launched");
+  assert.deepEqual(calls.map(call => call.name), [
+    "mobile_tracesift_launch_browser", "mobile_tracesift_start_recording",
+    "mobile_tracesift_stop_recording", "mobile_analyze_profile",
+  ]);
+  // Launching navigates; starting does not, so the trace covers the state the
+  // person reached rather than a fresh page load.
+  assert.deepEqual(calls[0]!.arguments, { url: "https://example.com" });
+  assert.deepEqual(calls[1]!.arguments, {});
+  assert.deepEqual(calls[3]!.arguments, { path: "/traces/one.json.gz", profileType: "cpu" });
+  assert.equal(controller.getSnapshot().analysis?.analysisId, "private-analysis");
+});
+
+test("a capture refuses an address Chrome should not be handed, without calling the host", async () => {
+  const { app, calls } = captureApp({});
+  const controller = new TraceSiftController(app as never);
+  controller.hostChanged();
+  for (const bad of ["", "   ", "example.com", "file:///etc/passwd", "javascript:alert(1)"]) {
+    controller.setCaptureUrl(bad);
+    await controller.launchCapture();
+    assert.equal(controller.getSnapshot().capture.step, "idle", bad);
+    assert.match(controller.getSnapshot().capture.error, /http/);
+  }
+  assert.equal(calls.length, 0);
+});
+
+test("a failed stop leaves the recording running rather than losing it", async () => {
+  const { app, calls } = captureApp({
+    mobile_tracesift_launch_browser: { content: [], structuredContent: { apiVersion: 1, recording: false, browser: { url: "https://example.com/" } } },
+    mobile_tracesift_start_recording: { content: [], structuredContent: { recording: true } },
+    mobile_tracesift_stop_recording: { isError: true, content: [{ type: "text", text: "Chrome did not finish writing the trace in time." }] },
+  });
+  const controller = new TraceSiftController(app as never);
+  controller.hostChanged();
+  controller.setCaptureUrl("https://example.com");
+  await controller.launchCapture();
+  await controller.startCapture();
+  await controller.stopCapture();
+  assert.equal(controller.getSnapshot().capture.step, "recording");
+  assert.match(controller.getSnapshot().capture.error, /did not finish writing/);
+  // Nothing was analyzed, so the pane is still the pane.
+  assert.equal(controller.getSnapshot().analysis, undefined);
+  assert.equal(calls.filter(call => call.name === "mobile_analyze_profile").length, 0);
+});
+
+test("a reopened panel finds the recording the last one left running", async () => {
+  const { app } = captureApp({
+    mobile_tracesift_capture_state: { content: [], structuredContent: { apiVersion: 1, recording: true, browser: { url: "https://shop.example/checkout" } } },
+  });
+  const controller = new TraceSiftController(app as never);
+  controller.hostChanged();
+  await controller.loadCapture();
+  assert.equal(controller.getSnapshot().capture.step, "recording");
+  assert.equal(controller.getSnapshot().capture.url, "https://shop.example/checkout");
+});

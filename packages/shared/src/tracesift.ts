@@ -8,6 +8,34 @@ export const traceSiftProfileInputSchema = z.object({
   path: z.string().min(1).max(16_384), profileType: traceSiftProfileTypeSchema.default("auto"),
 });
 
+/**
+ * A web address the panel may ask TraceSift to record.
+ *
+ * Only http and https: the CLI hands this to Chrome as an argument, and a
+ * `file:` or `javascript:` address typed into the panel is not a web app to
+ * profile.
+ */
+export const traceSiftCaptureUrlSchema = z.string().trim().min(1).max(2048).refine(value => {
+  try { const url = new URL(value); return url.protocol === "http:" || url.protocol === "https:"; }
+  catch { return false; }
+}, "Enter an http:// or https:// address.");
+
+/**
+ * Where a capture stands, read from the recorder's own state files rather than
+ * held in this process — so a reopened panel finds a recording still running.
+ */
+export const traceSiftCaptureSchema = z.object({
+  apiVersion: z.literal(1),
+  /** The Chrome `record launch` left open, when one is still alive. */
+  browser: z.object({ url: z.string() }).optional(),
+  recording: z.boolean(),
+  /** The trace the last recording wrote, which the panel analyzes by path. */
+  capture: z.object({
+    path: z.string(), sizeBytes: z.number().nonnegative(), eventCount: z.number().nonnegative(),
+  }).optional(),
+});
+export type TraceSiftCapture = z.infer<typeof traceSiftCaptureSchema>;
+
 const finite = z.number().finite().nonnegative();
 const taskCulpritSchema = z.object({
   name: z.string(), location: z.string().optional(), frameClass: z.string(), selfMs: finite,

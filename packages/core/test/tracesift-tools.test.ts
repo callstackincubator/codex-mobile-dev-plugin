@@ -144,6 +144,11 @@ test("published TraceSift annotations distinguish saved references, service star
   const expected = {
     mobile_analyze_profile: [false, true],
     mobile_pick_profile_file: [false, false],
+    mobile_tracesift_capture_state: [true, false],
+    mobile_tracesift_launch_browser: [false, false],
+    mobile_tracesift_start_recording: [false, false],
+    mobile_tracesift_stop_recording: [false, true],
+    mobile_tracesift_close_browser: [false, true],
     mobile_get_tracesift_project: [true, false],
     mobile_pick_tracesift_project: [false, true],
     mobile_remember_tracesift_analysis: [false, true],

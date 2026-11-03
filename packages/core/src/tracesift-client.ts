@@ -6,12 +6,17 @@ import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { createServer } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
-import { traceSiftAnalysisSchema, traceSiftHandoffSchema, type TraceSiftAnalysis, type TraceSiftProfileType, type TraceSiftReactHandoff, type TraceSiftTaskHandoff } from "@mobile-dev/shared/tracesift.ts";
+import { traceSiftAnalysisSchema, traceSiftHandoffSchema, type TraceSiftAnalysis, type TraceSiftCapture, type TraceSiftProfileType, type TraceSiftReactHandoff, type TraceSiftTaskHandoff } from "@mobile-dev/shared/tracesift.ts";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 
 const STARTUP_TIMEOUT_MS = 60_000;
 const REQUEST_TIMEOUT_MS = 10 * 60_000;
 const EXPLORE_TIMEOUT_MS = 15_000;
+const RECORD_LAUNCH_TIMEOUT_MS = 60_000;
+const RECORD_START_TIMEOUT_MS = 60_000;
+/** Chrome writes the whole trace through the protocol before `record stop` returns. */
+const RECORD_STOP_TIMEOUT_MS = 4 * 60_000;
+const RECORD_CLOSE_TIMEOUT_MS = 30_000;
 /** Health only proves integration API v1, which predates the Explore endpoints. */
 const EXPLORE_UNSUPPORTED = "This TraceSift service cannot open findings in the panel. Update TraceSift and restart it, or use Open in browser.";
 type Descriptor = { version: string; apiVersion: 1; pid: number; childPid: number; instance: string; baseUrl: string; token: string; startedAt: number };
@@ -315,6 +320,27 @@ export class TraceSiftClient {
   }
 
   private async launchExplore(args: string[], signal?: AbortSignal) {
+    await this.runCommand(args, {
+      timeoutMs: EXPLORE_TIMEOUT_MS, signal,
+      cancelled: "TraceSift Explore was cancelled.",
+      timedOut: "TraceSift Explore did not open within 15 seconds.",
+      missing: "TraceSift is not installed or could not run `tracesift explore`.",
+      failed: code => `TraceSift Explore exited with code ${code}.`,
+    });
+  }
+
+  /**
+   * Run one `tracesift` subcommand to completion.
+   *
+   * The CLI reports its own failures on stderr as `tracesift: <message>`, so a
+   * non-zero exit carries the sentence worth showing; only when it says nothing
+   * does the caller's own wording stand in.
+   */
+  private async runCommand(args: string[], messages: {
+    timeoutMs: number; signal?: AbortSignal; cancelled: string; timedOut: string; missing: string;
+    failed: (code: number | null) => string;
+  }) {
+    const { signal } = messages;
     await new Promise<void>((resolve, reject) => {
       let diagnostics = "";
       let settled = false;
@@ -330,10 +356,20 @@ export class TraceSiftClient {
         signal?.removeEventListener("abort", abort);
         if (error) reject(error); else resolve();
       };
-      const abort = () => { child.kill("SIGTERM"); finish(signal?.reason instanceof Error ? signal.reason : new Error("TraceSift Explore was cancelled.")); };
-      const timeout = setTimeout(() => { child.kill("SIGTERM"); finish(new Error("TraceSift Explore did not open within 15 seconds.")); }, EXPLORE_TIMEOUT_MS);
-      child.once("error", () => finish(new TraceSiftError("TraceSift is not installed or could not run `tracesift explore`.", "setup")));
-      child.once("exit", code => finish(code === 0 ? undefined : new Error(diagnostics.trim() || `TraceSift Explore exited with code ${code}.`)));
+      const abort = () => { child.kill("SIGTERM"); finish(signal?.reason instanceof Error ? signal.reason : new Error(messages.cancelled)); };
+      const timeout = setTimeout(() => { child.kill("SIGTERM"); finish(new Error(messages.timedOut)); }, messages.timeoutMs);
+      child.once("error", () => finish(new TraceSiftError(messages.missing, "setup")));
+      child.once("exit", code => {
+        if (code === 0) { finish(); return; }
+        const said = diagnostics.trim().replace(/^tracesift:\s*/, "");
+        // A TraceSift without `record` rejects the verb itself, which is a
+        // version to update rather than a recording that went wrong.
+        if (/unknown command/i.test(said)) {
+          finish(new TraceSiftError("This TraceSift cannot record. Update @callstack/tracesift, run `tracesift init`, and retry.", "version"));
+          return;
+        }
+        finish(said ? new TraceSiftError(said, "request") : new Error(messages.failed(code)));
+      });
       if (signal?.aborted) abort(); else signal?.addEventListener("abort", abort, { once: true });
     });
   }
@@ -370,6 +406,105 @@ export class TraceSiftClient {
     }, signal));
     if (!parsed.success) throw new Error("TraceSift returned an invalid handoff response.");
     return parsed.data.handoff;
+  }
+
+  /**
+   * The recorder's own state files.
+   *
+   * `tracesift record` keeps `browser.json` and `record.json` in its home for
+   * exactly this: a second process can see what the first one left. Reading
+   * them beats parsing the sentences the CLI prints for a person, and it means
+   * a panel reopened mid-recording finds the recording still there.
+   */
+  private async readRecordFile(name: string): Promise<Record<string, unknown> | undefined> {
+    let raw: string;
+    try { raw = await readFileAsync(join(this.home, name), "utf8"); }
+    catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") return;
+      throw new TraceSiftError("The TraceSift recording state could not be read.", "setup");
+    }
+    let parsed: unknown;
+    try { parsed = JSON.parse(raw); }
+    catch { throw new TraceSiftError("The TraceSift recording state is invalid. Run `tracesift record close` and retry.", "setup"); }
+    if (typeof parsed !== "object" || parsed === null) throw new TraceSiftError("The TraceSift recording state is invalid. Run `tracesift record close` and retry.", "setup");
+    return parsed as Record<string, unknown>;
+  }
+
+  /** What the panel needs to draw the capture control, without starting anything. */
+  async captureState(): Promise<TraceSiftCapture> {
+    const browser = await this.readRecordFile("browser.json");
+    const record = await this.readRecordFile("record.json");
+    const open = browser !== undefined && typeof browser.pid === "number" && processAlive(browser.pid);
+    const state = typeof record?.state === "string" ? record.state : undefined;
+    const exported = typeof record?.export === "object" && record.export !== null ? record.export as Record<string, unknown> : undefined;
+    return {
+      apiVersion: 1,
+      ...(open ? { browser: { url: typeof browser.url === "string" ? browser.url : "" } } : {}),
+      // `starting` and `flushing` are as busy as `recording`: a control that
+      // offered Start during either would race the recorder that owns the lock.
+      recording: state === "starting" || state === "recording" || state === "flushing",
+      ...(state === "captured" && typeof exported?.path === "string"
+        ? { capture: { path: exported.path, sizeBytes: typeof exported.sizeBytes === "number" ? exported.sizeBytes : 0,
+          eventCount: typeof exported.eventCount === "number" ? exported.eventCount : 0 } }
+        : {}),
+    };
+  }
+
+  /** Open a Chrome that outlives this command, so a person can sign in before recording. */
+  async launchBrowser(url: string, signal?: AbortSignal): Promise<TraceSiftCapture> {
+    await this.runCommand(["record", "launch", "--url", url], {
+      timeoutMs: RECORD_LAUNCH_TIMEOUT_MS, signal,
+      cancelled: "Launching the browser was cancelled.",
+      timedOut: "Chrome did not open within 60 seconds.",
+      missing: "TraceSift is not installed or could not run `tracesift record`.",
+      failed: code => `TraceSift could not launch Chrome (exit code ${code}).`,
+    });
+    const state = await this.captureState();
+    if (!state.browser) throw new TraceSiftError("Chrome did not stay open. Retry, or record without launching first.", "startup");
+    return state;
+  }
+
+  /**
+   * Begin tracing whatever that browser is already showing.
+   *
+   * No `--url`, so the recording covers the signed-in state the person reached
+   * rather than a fresh page load, and `--sink local` so the trace lands as a
+   * file this plugin can hand to `analyze` even while a TraceSift is running.
+   */
+  async startRecording(signal?: AbortSignal) {
+    await this.runCommand(["record", "start", "--sink", "local"], {
+      timeoutMs: RECORD_START_TIMEOUT_MS, signal,
+      cancelled: "Starting the recording was cancelled.",
+      timedOut: "Chrome did not start recording within 60 seconds.",
+      missing: "TraceSift is not installed or could not run `tracesift record`.",
+      failed: code => `TraceSift could not start recording (exit code ${code}).`,
+    });
+  }
+
+  /** End the recording and wait for Chrome to flush it; the browser stays open. */
+  async stopRecording(signal?: AbortSignal): Promise<{ path: string; sizeBytes: number; eventCount: number }> {
+    await this.runCommand(["record", "stop"], {
+      // Flushing a long trace is minutes of work in Chrome, not seconds.
+      timeoutMs: RECORD_STOP_TIMEOUT_MS, signal,
+      cancelled: "Stopping the recording was cancelled.",
+      timedOut: "Chrome did not finish writing the trace in time.",
+      missing: "TraceSift is not installed or could not run `tracesift record`.",
+      failed: code => `TraceSift could not stop the recording (exit code ${code}).`,
+    });
+    const state = await this.captureState();
+    if (!state.capture) throw new TraceSiftError("The recording stopped without writing a trace. Try recording again.", "response");
+    return state.capture;
+  }
+
+  /** Quit the launched browser and delete the throwaway profile it used. */
+  async closeBrowser(signal?: AbortSignal) {
+    await this.runCommand(["record", "close"], {
+      timeoutMs: RECORD_CLOSE_TIMEOUT_MS, signal,
+      cancelled: "Closing the browser was cancelled.",
+      timedOut: "Chrome did not quit within 30 seconds.",
+      missing: "TraceSift is not installed or could not run `tracesift record`.",
+      failed: code => `TraceSift could not close the browser (exit code ${code}).`,
+    });
   }
 
   async close() {

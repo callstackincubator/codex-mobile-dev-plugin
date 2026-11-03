@@ -23,12 +23,14 @@ test("TraceSift operation metrics retain only bounded product attribution", asyn
   recordTraceSiftOperation("remember", "success", 2);
   recordTraceSiftOperation("restore", "success", 4);
   recordTraceSiftOperation("handoff", "failed", 10);
+  // A capture names the operation and nothing about the site it recorded.
+  recordTraceSiftOperation("record", "success", 1200);
   recordTraceSiftPayload("task", 4_000_000);
   recordTraceSiftPayload("react", 1_500_000);
   await Sentry.flush();
   const sent = JSON.stringify(envelopes);
-  for (const fragment of ["tracesift.operation.samples", "tracesift.operation.duration", "millisecond", "tracesift.explore.payload_bytes", '"byte"', '"surface":{"value":"tracesift"', '"operation":{"value":"ready"', '"operation":{"value":"analyze"', '"operation":{"value":"remember"', '"operation":{"value":"restore"', '"operation":{"value":"handoff"', '"outcome":{"value":"success"', '"outcome":{"value":"failed"', '"kind":{"value":"task"', '"kind":{"value":"react"']) assert.ok(sent.includes(fragment), `Missing telemetry: ${fragment}`);
-  for (const fragment of ["PRIVATE_PROFILE_PATH", "PRIVATE_CARD_ID", "PRIVATE_HANDOFF", "analysisId", "cardId", "token", "baseUrl", "pid", "user.id", "telemetry_session"]) assert.equal(sent.includes(fragment), false, `Private TraceSift data reached telemetry: ${fragment}`);
+  for (const fragment of ["tracesift.operation.samples", "tracesift.operation.duration", "millisecond", "tracesift.explore.payload_bytes", '"byte"', '"surface":{"value":"tracesift"', '"operation":{"value":"ready"', '"operation":{"value":"analyze"', '"operation":{"value":"remember"', '"operation":{"value":"restore"', '"operation":{"value":"handoff"', '"operation":{"value":"record"', '"outcome":{"value":"success"', '"outcome":{"value":"failed"', '"kind":{"value":"task"', '"kind":{"value":"react"']) assert.ok(sent.includes(fragment), `Missing telemetry: ${fragment}`);
+  for (const fragment of ["PRIVATE_PROFILE_PATH", "PRIVATE_CARD_ID", "PRIVATE_HANDOFF", "example.com", ".json.gz", "analysisId", "cardId", "token", "baseUrl", "pid", "user.id", "telemetry_session"]) assert.equal(sent.includes(fragment), false, `Private TraceSift data reached telemetry: ${fragment}`);
   process.env.MOBILE_DEV_TELEMETRY = "off";
   recordTraceSiftOperation("analyze", "failed", 999);
   recordTraceSiftPayload("task", 8_000_000);

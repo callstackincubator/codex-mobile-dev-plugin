@@ -2,7 +2,7 @@ import { chatMessage } from "./chat-message.ts";
 import { attachReference, cardsCallTools } from "./host-bridge.ts";
 import type { HostAttachmentsSource, HostBridge } from "./host-bridge.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { traceSiftAnalysisSchema, traceSiftHandoffSchema, traceSiftRestoreSchema, type TraceSiftAnalysis, type TraceSiftProfileType } from "@mobile-dev/shared/tracesift.ts";
+import { traceSiftAnalysisSchema, traceSiftCaptureSchema, traceSiftCaptureUrlSchema, traceSiftHandoffSchema, traceSiftRestoreSchema, type TraceSiftAnalysis, type TraceSiftProfileType } from "@mobile-dev/shared/tracesift.ts";
 import { decodeTraceSiftExplorePayload, TRACE_SIFT_PAYLOAD_MAX_BYTES, traceSiftExploreEnvelopeSchema, TRACE_SIFT_PAYLOAD_TOO_LARGE, traceSiftPayloadRefused, type TraceSiftExploreKind } from "@mobile-dev/shared/tracesift-explore.ts";
 import { buildSelectionPrompt, frameSelectionEvidence, type SelectionCard } from "@mobile-dev/shared/tracesift-selection.ts";
 import { findingName } from "@mobile-dev/shared/tracesift-labels.ts";
@@ -22,6 +22,20 @@ type State = {
   notice: string;
   /** File name the upload pane is waiting on. Absent in the inline card. */
   analyzing?: { name: string; profileType: TraceSiftProfileType };
+  /**
+   * Recording a web app, rather than reading a profile someone already has.
+   *
+   * `step` is where the control stands: `idle` offers an address, `launched`
+   * waits for the person to sign in or navigate, `recording` is live. The busy
+   * steps are separate so the buttons can disable themselves without a second
+   * flag, and `url` outlives the launch so a reopened panel can say what is open.
+   */
+  capture: {
+    step: "idle" | "launching" | "launched" | "starting" | "recording" | "stopping" | "closing";
+    url: string;
+    error: string;
+  };
+  /** Which drawing every card on this analysis carries; one switch, as on the web. */
   chartKind: ContributionChartKind;
   /** The finding shown; kept here so returning from Explore lands on the explored finding. */
   selectedCard?: string;
@@ -52,7 +66,8 @@ function composerUnavailable(error: unknown) {
 }
 
 export class TraceSiftController {
-  private state: State = { canInvestigate: false, canCallTools: false, dark: false, error: "", notice: "", chartKind: "bar" };
+  private state: State = { canInvestigate: false, canCallTools: false, dark: false, error: "", notice: "", chartKind: "bar",
+    capture: { step: "idle", url: "", error: "" } };
   private listeners = new Set<() => void>();
   private disposed = false;
   private readyAt = performance.now();
@@ -563,6 +578,126 @@ export class TraceSiftController {
       captureUiError(error, "tracesift.analyze");
       if (!this.disposed) this.update({ error: error instanceof Error ? error.message : "TraceSift could not analyze this profile." });
     } finally { this.update({ analyzing: undefined }); }
+  };
+
+  private captureUpdate(next: Partial<State["capture"]>) {
+    this.update({ capture: { ...this.state.capture, ...next } });
+  }
+
+  /** One capture tool call, with the panel's own wording when the tool says nothing. */
+  private async captureTool(name: string, args: Record<string, unknown>, fallback: string) {
+    const result = await this.app.callServerTool({ name, arguments: args });
+    if (result.isError) throw new Error(result.content.filter(item => item.type === "text").map(item => item.text).join("\n") || fallback);
+    return result.structuredContent;
+  }
+
+  setCaptureUrl = (url: string) => { this.captureUpdate({ url, error: "" }); };
+
+  /**
+   * Pick the recording back up where it actually is.
+   *
+   * The browser and the recording outlive this panel — they belong to Chrome
+   * and to a detached recorder — so a reopened panel asks the recorder rather
+   * than assuming it starts at `idle`.
+   */
+  loadCapture = async () => {
+    try {
+      const state = traceSiftCaptureSchema.safeParse(await this.captureTool("mobile_tracesift_capture_state", {}, "TraceSift could not report the recording."));
+      if (this.disposed || !state.success) return;
+      const step = state.data.recording ? "recording" as const : state.data.browser ? "launched" as const : "idle" as const;
+      this.captureUpdate({ step, url: state.data.browser?.url || this.state.capture.url });
+      if (step !== "idle") countUiEvent("ui.tracesift.capture_resumed");
+    } catch (error) {
+      // Nothing is on screen yet that depends on this, so a host without the
+      // capture tools simply shows the control at rest.
+      captureUiError(error, "tracesift.capture");
+    }
+  };
+
+  /** Open the address in a Chrome that stays open, so a person can sign in before recording. */
+  launchCapture = async () => {
+    if (this.disposed || this.state.capture.step !== "idle") return;
+    const url = this.state.capture.url.trim();
+    if (!traceSiftCaptureUrlSchema.safeParse(url).success) {
+      this.captureUpdate({ error: "Enter an http:// or https:// address." });
+      return;
+    }
+    this.captureUpdate({ step: "launching", error: "" });
+    const startedAt = performance.now();
+    try {
+      await this.captureTool("mobile_tracesift_launch_browser", { url }, "TraceSift could not open a browser.");
+      if (this.disposed) return;
+      recordUiTiming("ui.tracesift.capture_launch", performance.now() - startedAt);
+      countUiEvent("ui.tracesift.capture_launch");
+      this.captureUpdate({ step: "launched" });
+    } catch (error) {
+      countUiEvent("ui.tracesift.capture_launch_failed");
+      captureUiError(error, "tracesift.capture");
+      if (!this.disposed) this.captureUpdate({ step: "idle", error: error instanceof Error ? error.message : "TraceSift could not open a browser." });
+    }
+  };
+
+  startCapture = async () => {
+    if (this.disposed || this.state.capture.step !== "launched") return;
+    this.captureUpdate({ step: "starting", error: "" });
+    const startedAt = performance.now();
+    try {
+      await this.captureTool("mobile_tracesift_start_recording", {}, "TraceSift could not start recording.");
+      if (this.disposed) return;
+      recordUiTiming("ui.tracesift.capture_start", performance.now() - startedAt);
+      countUiEvent("ui.tracesift.capture_start");
+      this.captureUpdate({ step: "recording" });
+    } catch (error) {
+      countUiEvent("ui.tracesift.capture_start_failed");
+      captureUiError(error, "tracesift.capture");
+      if (!this.disposed) this.captureUpdate({ step: "launched", error: error instanceof Error ? error.message : "TraceSift could not start recording." });
+    }
+  };
+
+  /**
+   * End the recording and read what it wrote.
+   *
+   * The browser is left open on purpose: the sign-in it holds is the expensive
+   * part, and the next recording should not have to repeat it.
+   */
+  stopCapture = async () => {
+    if (this.disposed || this.state.capture.step !== "recording") return;
+    this.captureUpdate({ step: "stopping", error: "" });
+    const startedAt = performance.now();
+    let path: string | undefined;
+    try {
+      const capture = traceSiftCaptureSchema.shape.capture.unwrap()
+        .safeParse(await this.captureTool("mobile_tracesift_stop_recording", {}, "TraceSift could not stop the recording."));
+      if (this.disposed) return;
+      if (!capture.success) throw new Error("TraceSift returned an invalid recording result.");
+      recordUiTiming("ui.tracesift.capture_stop", performance.now() - startedAt);
+      countUiEvent("ui.tracesift.capture_stop");
+      path = capture.data.path;
+      this.captureUpdate({ step: "launched" });
+    } catch (error) {
+      countUiEvent("ui.tracesift.capture_stop_failed");
+      captureUiError(error, "tracesift.capture");
+      if (!this.disposed) this.captureUpdate({ step: "recording", error: error instanceof Error ? error.message : "TraceSift could not stop the recording." });
+      return;
+    }
+    // A trace is only worth recording for the cards it becomes, so the reading
+    // follows the stop without a second press.
+    await this.analyze(path, "cpu");
+  };
+
+  closeCapture = async () => {
+    if (this.disposed || this.state.capture.step !== "launched") return;
+    this.captureUpdate({ step: "closing", error: "" });
+    try {
+      await this.captureTool("mobile_tracesift_close_browser", {}, "TraceSift could not close the browser.");
+      if (this.disposed) return;
+      countUiEvent("ui.tracesift.capture_close");
+      this.captureUpdate({ step: "idle" });
+    } catch (error) {
+      countUiEvent("ui.tracesift.capture_close_failed");
+      captureUiError(error, "tracesift.capture");
+      if (!this.disposed) this.captureUpdate({ step: "launched", error: error instanceof Error ? error.message : "TraceSift could not close the browser." });
+    }
   };
 
   /**

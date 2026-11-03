@@ -237,3 +237,85 @@ test("the saved project is a real folder, resolved once and dropped when it goes
   assert.equal(await client.writeProject(second), await realpath(second));
   assert.equal(await client.readProject(), await realpath(second));
 });
+
+/**
+ * A stand-in for `tracesift record`. The real one leaves `browser.json` and
+ * `record.json` behind for a later process to read, which is exactly the
+ * contract these tests hold it to.
+ */
+async function fakeRecorder(home: string, body: string) {
+  const command = join(home, "tracesift-record");
+  await writeFile(command, `#!/bin/sh\nprintf '%s\\n' "$@" >> ${JSON.stringify(join(home, "record-args.txt"))}\n${body}\n`, { mode: 0o755 });
+  await chmod(command, 0o755);
+  return command;
+}
+
+test("a recording launches a browser, traces what is on screen, and reports the trace it wrote", async t => {
+  const fake = await fixture(); t.after(fake.close);
+  const browser = join(fake.home, "browser.json");
+  const record = join(fake.home, "record.json");
+  const command = await fakeRecorder(fake.home, [
+    `case "$2" in`,
+    // `record launch` publishes the live browser; `start` and `stop` publish the
+    // recorder's state, exactly as the CLI's own state files do.
+    `  launch) printf '%s' '{"apiVersion":1,"pid":'$PPID',"url":"https://example.com/","userDataDir":"/tmp/p","ownsProfile":true,"port":1,"webSocketDebuggerUrl":"ws://x","startedAt":1}' > ${JSON.stringify(browser)} ;;`,
+    `  start) printf '%s' '{"apiVersion":1,"pid":'$PPID',"state":"recording","mode":"local"}' > ${JSON.stringify(record)} ;;`,
+    `  stop) printf '%s' '{"apiVersion":1,"pid":'$PPID',"state":"captured","mode":"local","export":{"path":"/traces/one.json.gz","sizeBytes":612345,"eventCount":35924}}' > ${JSON.stringify(record)} ;;`,
+    `  close) rm -f ${JSON.stringify(browser)} ;;`,
+    `esac`,
+  ].join("\n"));
+  const client = new TraceSiftClient(command, fake.home); t.after(() => client.close());
+
+  assert.deepEqual(await client.captureState(), { apiVersion: 1, recording: false });
+  const launched = await client.launchBrowser("https://example.com");
+  assert.deepEqual(launched.browser, { url: "https://example.com/" });
+
+  await client.startRecording();
+  assert.equal((await client.captureState()).recording, true);
+
+  const capture = await client.stopRecording();
+  assert.deepEqual(capture, { path: "/traces/one.json.gz", sizeBytes: 612345, eventCount: 35924 });
+  // Stopping leaves the browser open, so another recording can follow.
+  assert.equal((await client.captureState()).browser?.url, "https://example.com/");
+  assert.equal((await client.captureState()).recording, false);
+
+  await client.closeBrowser();
+  assert.equal((await client.captureState()).browser, undefined);
+
+  const args = (await readFile(join(fake.home, "record-args.txt"), "utf8")).trim().split("\n");
+  // `start` carries no --url: the trace is of the state the person reached. It
+  // forces the local sink so a trace exists as a file even while a TraceSift runs.
+  assert.deepEqual(args, ["record", "launch", "--url", "https://example.com",
+    "record", "start", "--sink", "local", "record", "stop", "record", "close"]);
+});
+
+test("a TraceSift without the record verb reads as a version to update", async t => {
+  const fake = await fixture(); t.after(fake.close);
+  const command = await fakeRecorder(fake.home, "echo 'tracesift: Unknown command. Run tracesift --help.' >&2\nexit 1");
+  const client = new TraceSiftClient(command, fake.home); t.after(() => client.close());
+  await assert.rejects(client.launchBrowser("https://example.com"), (error: unknown) =>
+    error instanceof TraceSiftError && error.kind === "version" && /Update @callstack\/tracesift/.test(error.message));
+});
+
+test("a recording that fails says what the CLI said, and a stop that wrote nothing is not a capture", async t => {
+  const fake = await fixture(); t.after(fake.close);
+  const refuse = await fakeRecorder(fake.home, "echo 'tracesift: A recording is already running. Stop it with `tracesift record stop`.' >&2\nexit 1");
+  const refusing = new TraceSiftClient(refuse, fake.home); t.after(() => refusing.close());
+  await assert.rejects(refusing.startRecording(), (error: unknown) =>
+    error instanceof TraceSiftError && /already running/.test(error.message));
+
+  // A `record stop` that exits clean but leaves no export is a trace that went
+  // missing, not a capture to hand on to the analyzer.
+  const silent = await fakeRecorder(fake.home, "exit 0");
+  const silently = new TraceSiftClient(silent, fake.home); t.after(() => silently.close());
+  await assert.rejects(silently.stopRecording(), (error: unknown) =>
+    error instanceof TraceSiftError && /without writing a trace/.test(error.message));
+});
+
+test("a recorder state file that is not readable JSON is named rather than treated as idle", async t => {
+  const fake = await fixture(); t.after(fake.close);
+  await writeFile(join(fake.home, "record.json"), "{ not json");
+  const client = new TraceSiftClient("missing-tracesift", fake.home); t.after(() => client.close());
+  await assert.rejects(client.captureState(), (error: unknown) =>
+    error instanceof TraceSiftError && error.kind === "setup" && /recording state is invalid/.test(error.message));
+});
