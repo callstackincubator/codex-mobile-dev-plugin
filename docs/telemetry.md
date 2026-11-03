@@ -54,21 +54,24 @@ shell has no native Sentry SDK.
 
 ## Product analytics
 
-Since 0.1.177, release servers send basic product analytics to Mixpanel's EU
-project (`packages/core/src/analytics.ts`) to count installations and feature use.
-`instrumentMcpServer` reports `Tool Called` with the tool name and `success` or
-`error` outcome; a connected client reports `Session Started`. Every event carries
-only `host`, `plugin_version`, `os` (`process.platform`), a timestamp, an insert ID
-and the server-owned installation ID as `distinct_id`. Frequent polling and
-`*_input` tools are skipped. Events are batched (50 per request, at most 500 queued)
-and flushed every 30 seconds and on shutdown; failed batches are dropped.
-Requests go to `api-eu.mixpanel.com/track?ip=0`, so Mixpanel neither stores the
-IP nor geolocates it. No user profiles are created.
+Since 0.1.177, release MCP servers send basic product analytics to Mixpanel's EU
+project to count installations and feature use. `instrumentProductAnalytics`
+(`packages/core/src/analytics.ts`) wraps the `tools/call` handler and reports
+`Tool Called` with the tool name and a `success` or `error` outcome; the chat
+client's initialization reports `Session Started`. Every event carries only
+`host`, `plugin_version`, `os` (`process.platform`), a timestamp, an insert ID and
+the server-owned installation ID as `distinct_id`. Tools `isFrequentTool` lists are
+skipped. Events are batched (50 per request, at most 500 queued), sent every 30
+seconds and when the plugin closes; failed batches are dropped. Requests go to
+`api-eu.mixpanel.com/track?ip=0&verbose=1`: Mixpanel neither stores nor geolocates
+the IP, and reports rejected batches in its reply. No user profiles are created.
 
-Development builds send nothing. `MOBILE_DEV_TELEMETRY=off` turns analytics off
-along with Sentry; `MOBILE_DEV_ANALYTICS=off` or `DO_NOT_TRACK=1` turns off only
-analytics. `analytics.flush` counts each Mixpanel request by `outcome` with
-`component=server`. The panel UI sends nothing to Mixpanel, and its CSP is unchanged.
+Development builds send nothing, and neither does the iOS mirror service. The
+choice is made when the server starts: `MOBILE_DEV_TELEMETRY=off` turns analytics
+off along with Sentry; `MOBILE_DEV_ANALYTICS=off` or `DO_NOT_TRACK=1` turns off only
+analytics. `analytics.flush` counts each Mixpanel request with `component=server`
+and `outcome=success` only when Mixpanel accepted the batch. The panel UI sends
+nothing to Mixpanel, and its CSP is unchanged.
 
 ## Volume policy
 

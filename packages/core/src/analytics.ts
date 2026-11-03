@@ -1,123 +1,109 @@
 import { randomUUID } from "node:crypto";
-import * as Sentry from "@sentry/node";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import type { CallToolRequest, CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { PLUGIN_VERSION } from "@mobile-dev/shared/version.ts";
-import { isFrequentTool, TELEMETRY_INTERVAL_MS } from "@mobile-dev/shared/telemetry.ts";
+import { isFrequentTool, MIXPANEL_TOKEN, MIXPANEL_TRACK_URL, TELEMETRY_INTERVAL_MS } from "@mobile-dev/shared/telemetry.ts";
 import type { TelemetryEnvironment, TelemetryHost } from "@mobile-dev/shared/telemetry.ts";
 import { TELEMETRY_ENVIRONMENT } from "./telemetry-environment.ts";
 import { getTelemetryIdentity } from "./telemetry-identity.ts";
+import { recordAnalyticsFlush, serverTelemetryHost } from "./telemetry.ts";
 
-/** Public project token of the EU-resident Mixpanel project. Empty disables product analytics. */
-export const MIXPANEL_TOKEN = "780e4817b73c1234479ad8d418d34e89";
-/** Mixpanel's EU ingestion endpoint; `ip=0` stops Mixpanel from reading or storing the sender's IP. */
-export const MIXPANEL_TRACK_URL = "https://api-eu.mixpanel.com/track?ip=0";
+// Mixpanel takes at most 50 events per request; the queue stays bounded while it is unreachable.
 const BATCH_SIZE = 50;
 const MAX_QUEUED = 500;
 
 type AnalyticsEvent = { event: string; properties: Record<string, string | number> };
 type Send = (url: string, init: RequestInit) => Promise<Response>;
 
-export type AnalyticsOptions = {
-  token?: string;
-  environment?: TelemetryEnvironment;
-  distinctId?: () => string | undefined;
-  send?: Send;
-  intervalMs?: number;
+/** Services analytics uses; tests replace them. */
+export type AnalyticsOptions = { token?: string; environment?: TelemetryEnvironment; userId?: string; send?: Send };
+
+export type ProductAnalytics = {
+  /** Counts a connected host session, which gives active installations per host. */
+  sessionStarted(clientName: string | undefined): void;
+  /** Sends what is queued and stops sending. */
+  close(): Promise<void>;
 };
 
-/** Whether the person running the server has turned off product analytics or all telemetry. */
-export function analyticsDisabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.MOBILE_DEV_TELEMETRY === "off" || env.MOBILE_DEV_ANALYTICS === "off" || env.DO_NOT_TRACK === "1";
+const disabled: ProductAnalytics = { sessionStarted() {}, async close() {} };
+
+// The SDK's generic handler schema type does not overlap its own exported schemas, so compare untyped.
+function isCallTool(schema: unknown) {
+  return schema === CallToolRequestSchema;
+}
+
+function optedOut() {
+  return process.env.MOBILE_DEV_TELEMETRY === "off" || process.env.MOBILE_DEV_ANALYTICS === "off" || process.env.DO_NOT_TRACK === "1";
+}
+
+async function deliver(send: Send, batch: AnalyticsEvent[]): Promise<"success" | "failed"> {
+  try {
+    const response = await send(MIXPANEL_TRACK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(batch),
+      signal: AbortSignal.timeout(5000),
+    });
+    const reply = await response.json() as { status?: number };
+    return response.ok && reply.status === 1 ? "success" : "failed";
+  } catch { return "failed"; }
 }
 
 /**
- * Anonymous product analytics: which tools are used and by how many installations.
- * Events carry only the tool name, outcome, host, plugin version and OS, never arguments,
- * results, device details, paths or IPs. Release builds only.
+ * Sends anonymous product analytics to Mixpanel from release servers: connected host sessions and the
+ * tools they call. Events carry only the tool name and outcome, host, plugin version, OS and the
+ * installation ID; never arguments, results, device details, paths or IPs. Install before tools register.
  */
-export class ProductAnalytics {
-  private readonly queue: AnalyticsEvent[] = [];
-  private readonly token: string;
-  private readonly distinctId: () => string | undefined;
-  private readonly send: Send;
-  private readonly enabled: boolean;
-  private readonly timer?: NodeJS.Timeout;
-  private host: TelemetryHost = "other";
-  private flushing?: Promise<void>;
+export function instrumentProductAnalytics(server: McpServer, options: AnalyticsOptions = {}): ProductAnalytics {
+  const { token = MIXPANEL_TOKEN, environment = TELEMETRY_ENVIRONMENT, userId = getTelemetryIdentity()?.userId, send = fetch } = options;
+  if (token === "" || environment !== "release" || userId === undefined || optedOut()) return disabled;
+  const distinctId = userId;
+  const queue: AnalyticsEvent[] = [];
+  let host: TelemetryHost = "other";
+  let sending: Promise<void> | undefined;
 
-  constructor(options: AnalyticsOptions = {}) {
-    this.token = options.token ?? MIXPANEL_TOKEN;
-    this.distinctId = options.distinctId ?? (() => getTelemetryIdentity()?.userId);
-    this.send = options.send ?? fetch;
-    const environment = options.environment ?? TELEMETRY_ENVIRONMENT;
-    this.enabled = this.token !== "" && environment === "release";
-    if (this.enabled === false) return;
-    this.timer = setInterval(() => { void this.flush(); }, options.intervalMs ?? TELEMETRY_INTERVAL_MS);
-    this.timer.unref();
+  async function drain() {
+    while (queue.length > 0) recordAnalyticsFlush(await deliver(send, queue.splice(0, BATCH_SIZE)));
   }
-
-  setHost(host: TelemetryHost) {
-    this.host = host;
+  function flush() {
+    sending ??= drain().finally(() => { sending = undefined; });
+    return sending;
   }
-
-  /** Marks a connected host session, which counts active installations per host. */
-  sessionStarted() {
-    this.track("Session Started", {});
-  }
-
-  /** Counts a tool call. Polling and input tools are left out: they measure pacing, not feature use. */
-  toolCalled(tool: string, outcome: "success" | "error") {
-    if (isFrequentTool(tool) || /_input$/.test(tool)) return;
-    this.track("Tool Called", { tool, outcome });
-  }
-
-  private track(event: string, properties: Record<string, string>) {
-    if (this.enabled === false || analyticsDisabled()) return;
-    const distinctId = this.distinctId();
-    if (distinctId === undefined || this.queue.length >= MAX_QUEUED) return;
-    this.queue.push({ event, properties: {
-      ...properties,
-      token: this.token,
-      distinct_id: distinctId,
-      time: Date.now(),
-      $insert_id: randomUUID(),
-      host: this.host,
-      plugin_version: PLUGIN_VERSION,
-      os: process.platform,
+  function track(event: string, properties: Record<string, string> = {}) {
+    if (queue.length >= MAX_QUEUED) return;
+    queue.push({ event, properties: {
+      ...properties, token, distinct_id: distinctId, time: Date.now(), $insert_id: randomUUID(),
+      host, plugin_version: PLUGIN_VERSION, os: process.platform,
     } });
-    if (this.queue.length >= BATCH_SIZE) void this.flush();
+    if (queue.length >= BATCH_SIZE) void flush();
   }
 
-  /** Sends queued events; failed batches are dropped rather than retried. */
-  flush(): Promise<void> {
-    if (this.flushing) return this.flushing;
-    if (this.queue.length === 0) return Promise.resolve();
-    this.flushing = (async () => {
-      try {
-        while (this.queue.length > 0) {
-          const batch = this.queue.splice(0, BATCH_SIZE);
-          let outcome: "success" | "failed" = "success";
-          try {
-            const response = await this.send(MIXPANEL_TRACK_URL, {
-              method: "POST",
-              headers: { "Content-Type": "application/json", Accept: "text/plain" },
-              body: JSON.stringify(batch),
-              signal: AbortSignal.timeout(5000),
-            });
-            if (response.ok === false) outcome = "failed";
-          } catch { outcome = "failed"; }
-          if (process.env.MOBILE_DEV_TELEMETRY !== "off") {
-            Sentry.metrics.count("analytics.flush", 1, { attributes: { component: "server", outcome } });
-          }
-        }
-      } finally { this.flushing = undefined; }
-    })();
-    return this.flushing;
-  }
+  // Polling and input tools measure pacing, not feature use.
+  const register = server.server.setRequestHandler.bind(server.server);
+  server.server.setRequestHandler = (schema, handler) => {
+    if (isCallTool(schema) === false) return register(schema, handler);
+    register(schema, async (request, extra) => {
+      const { name } = (request as CallToolRequest).params;
+      if (isFrequentTool(name)) return handler(request, extra);
+      let result: CallToolResult;
+      try { result = await handler(request, extra) as CallToolResult; }
+      catch (error) { track("Tool Called", { tool: name, outcome: "error" }); throw error; }
+      track("Tool Called", { tool: name, outcome: result.isError === true ? "error" : "success" });
+      return result;
+    });
+  };
+  const timer = setInterval(() => { void flush(); }, TELEMETRY_INTERVAL_MS);
+  timer.unref();
 
-  async close() {
-    clearInterval(this.timer);
-    await this.flush();
-  }
+  return {
+    sessionStarted(clientName) {
+      host = serverTelemetryHost(clientName);
+      track("Session Started");
+    },
+    async close() {
+      clearInterval(timer);
+      await flush();
+    },
+  };
 }
-
-export const productAnalytics = new ProductAnalytics();
