@@ -6,12 +6,21 @@ import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { createServer } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
-import { traceSiftAnalysisSchema, traceSiftHandoffSchema, type TraceSiftAnalysis, type TraceSiftProfileType, type TraceSiftReactHandoff, type TraceSiftTaskHandoff } from "@mobile-dev/shared/tracesift.ts";
+import { traceSiftAnalysisSchema, traceSiftHandoffSchema, traceSiftRnTargetsSchema, type TraceSiftAnalysis, type TraceSiftCapture, type TraceSiftProfileType, type TraceSiftReactHandoff, type TraceSiftRnTargets, type TraceSiftTaskHandoff } from "@mobile-dev/shared/tracesift.ts";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 
 const STARTUP_TIMEOUT_MS = 60_000;
 const REQUEST_TIMEOUT_MS = 10 * 60_000;
 const EXPLORE_TIMEOUT_MS = 15_000;
+const RECORD_LAUNCH_TIMEOUT_MS = 60_000;
+const RECORD_START_TIMEOUT_MS = 60_000;
+/** Chrome writes the whole trace through the protocol before `record stop` returns. */
+const RECORD_STOP_TIMEOUT_MS = 4 * 60_000;
+const RECORD_CLOSE_TIMEOUT_MS = 30_000;
+/** Listing React Native targets is one `/json/list` fetch behind a 5s timeout of its own. */
+const RECORD_TARGETS_TIMEOUT_MS = 15_000;
+/** A target list is a handful of short strings; anything larger is not one. */
+const MAX_CLI_STDOUT_BYTES = 1024 * 1024;
 /** Health only proves integration API v1, which predates the Explore endpoints. */
 const EXPLORE_UNSUPPORTED = "This TraceSift service cannot open findings in the panel. Update TraceSift and restart it, or use Open in browser.";
 type Descriptor = { version: string; apiVersion: 1; pid: number; childPid: number; instance: string; baseUrl: string; token: string; startedAt: number };
@@ -79,6 +88,37 @@ function responseError(status: number, body: unknown) {
   const message = typeof body === "object" && body !== null && "error" in body && typeof body.error === "string"
     ? body.error : `TraceSift request failed with HTTP ${status}.`;
   return status < 500 ? new TraceSiftError(message, "request") : new Error(`TraceSift request failed with HTTP ${status}.`);
+}
+
+/** The one JSON object a `--json` subcommand prints, or nothing when it printed prose. */
+function parseCliJson(output: string): Record<string, unknown> | undefined {
+  const text = output.trim();
+  if (!text.startsWith("{")) return;
+  let parsed: unknown;
+  try { parsed = JSON.parse(text); } catch { return; }
+  return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? parsed as Record<string, unknown> : undefined;
+}
+
+/**
+ * Turn a non-zero `tracesift` exit into the sentence worth showing.
+ *
+ * A `--json` subcommand reports its own failure as `{ error }` on stdout, so
+ * that is read before stderr. A CLI that rejects the verb or the flag is a
+ * version to update rather than a recording that went wrong, and the two cases
+ * differ: `record` itself is missing, or `record` is there without the React
+ * Native options 0.6.0 added.
+ */
+function cliFailure(diagnostics: string, output: string, code: number | null, failed: (code: number | null) => string): Error {
+  const said = diagnostics.trim().replace(/^tracesift:\s*/, "");
+  if (/unknown command/i.test(said)) {
+    return new TraceSiftError("This TraceSift cannot record. Update @callstack/tracesift, run `tracesift init`, and retry.", "version");
+  }
+  if (/unknown option '?-{0,2}(platform|metro|target-id)'?/i.test(said)) {
+    return new TraceSiftError("This TraceSift cannot record React Native. Update @callstack/tracesift to 0.6.0 or newer, run `tracesift init`, and retry.", "version");
+  }
+  const reported = parseCliJson(output)?.error;
+  if (typeof reported === "string" && reported.trim()) return new TraceSiftError(reported.trim().slice(0, 1024), "request");
+  return said ? new TraceSiftError(said, "request") : new Error(failed(code));
 }
 
 export class TraceSiftClient {
@@ -315,12 +355,38 @@ export class TraceSiftClient {
   }
 
   private async launchExplore(args: string[], signal?: AbortSignal) {
-    await new Promise<void>((resolve, reject) => {
+    await this.runCommand(args, {
+      timeoutMs: EXPLORE_TIMEOUT_MS, signal,
+      cancelled: "TraceSift Explore was cancelled.",
+      timedOut: "TraceSift Explore did not open within 15 seconds.",
+      missing: "TraceSift is not installed or could not run `tracesift explore`.",
+      failed: code => `TraceSift Explore exited with code ${code}.`,
+    });
+  }
+
+  /**
+   * Run one `tracesift` subcommand to completion and hand back what it printed.
+   *
+   * The CLI reports its own failures on stderr as `tracesift: <message>`, so a
+   * non-zero exit carries the sentence worth showing; only when it says nothing
+   * does the caller's own wording stand in. Stdout is captured rather than
+   * discarded because the `--json` subcommands answer there, and a failing one
+   * puts its message there too.
+   */
+  private async runCommand(args: string[], messages: {
+    timeoutMs: number; signal?: AbortSignal; cancelled: string; timedOut: string; missing: string;
+    failed: (code: number | null) => string;
+  }): Promise<string> {
+    const { signal } = messages;
+    return await new Promise<string>((resolve, reject) => {
       let diagnostics = "";
+      let output = "";
       let settled = false;
       const child = spawn(this.command, args, {
-        stdio: ["ignore", "ignore", "pipe"], env: { ...process.env, TRACE_SIFT_HOME: this.home },
+        stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, TRACE_SIFT_HOME: this.home },
       });
+      child.stdout?.setEncoding("utf8");
+      child.stdout?.on("data", chunk => { if (output.length < MAX_CLI_STDOUT_BYTES) output += String(chunk).slice(0, MAX_CLI_STDOUT_BYTES - output.length); });
       child.stderr?.setEncoding("utf8");
       child.stderr?.on("data", chunk => { if (diagnostics.length < 16_384) diagnostics += String(chunk).slice(0, 16_384 - diagnostics.length); });
       const finish = (error?: Error) => {
@@ -328,14 +394,25 @@ export class TraceSiftClient {
         settled = true;
         clearTimeout(timeout);
         signal?.removeEventListener("abort", abort);
-        if (error) reject(error); else resolve();
+        if (error) reject(error); else resolve(output);
       };
-      const abort = () => { child.kill("SIGTERM"); finish(signal?.reason instanceof Error ? signal.reason : new Error("TraceSift Explore was cancelled.")); };
-      const timeout = setTimeout(() => { child.kill("SIGTERM"); finish(new Error("TraceSift Explore did not open within 15 seconds.")); }, EXPLORE_TIMEOUT_MS);
-      child.once("error", () => finish(new TraceSiftError("TraceSift is not installed or could not run `tracesift explore`.", "setup")));
-      child.once("exit", code => finish(code === 0 ? undefined : new Error(diagnostics.trim() || `TraceSift Explore exited with code ${code}.`)));
+      const abort = () => { child.kill("SIGTERM"); finish(signal?.reason instanceof Error ? signal.reason : new Error(messages.cancelled)); };
+      const timeout = setTimeout(() => { child.kill("SIGTERM"); finish(new Error(messages.timedOut)); }, messages.timeoutMs);
+      child.once("error", () => finish(new TraceSiftError(messages.missing, "setup")));
+      child.once("exit", code => {
+        if (code === 0) { finish(); return; }
+        finish(cliFailure(diagnostics, output, code, messages.failed));
+      });
       if (signal?.aborted) abort(); else signal?.addEventListener("abort", abort, { once: true });
     });
+  }
+
+  /** One `--json` subcommand, with its object parsed. */
+  private async runCommandJson(args: string[], messages: Parameters<TraceSiftClient["runCommand"]>[1]): Promise<unknown> {
+    const output = await this.runCommand(args, messages);
+    const parsed = parseCliJson(output);
+    if (parsed === undefined) throw new TraceSiftError("TraceSift answered with something other than JSON. Update @callstack/tracesift and retry.", "response");
+    return parsed;
   }
 
   /** One task with its call tree and timeline, which `/analyze` never ships. Checked at its seams only. */
@@ -370,6 +447,174 @@ export class TraceSiftClient {
     }, signal));
     if (!parsed.success) throw new Error("TraceSift returned an invalid handoff response.");
     return parsed.data.handoff;
+  }
+
+  /**
+   * The recorder's own state files.
+   *
+   * `tracesift record` keeps `browser.json` and `record.json` in its home for
+   * exactly this: a second process can see what the first one left. Reading
+   * them beats parsing the sentences the CLI prints for a person, and it means
+   * a panel reopened mid-recording finds the recording still there.
+   */
+  private async readRecordFile(name: string): Promise<Record<string, unknown> | undefined> {
+    let raw: string;
+    try { raw = await readFileAsync(join(this.home, name), "utf8"); }
+    catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") return;
+      throw new TraceSiftError("The TraceSift recording state could not be read.", "setup");
+    }
+    let parsed: unknown;
+    try { parsed = JSON.parse(raw); }
+    catch { throw new TraceSiftError("The TraceSift recording state is invalid. Run `tracesift record close` and retry.", "setup"); }
+    if (typeof parsed !== "object" || parsed === null) throw new TraceSiftError("The TraceSift recording state is invalid. Run `tracesift record close` and retry.", "setup");
+    return parsed as Record<string, unknown>;
+  }
+
+  /** What the panel needs to draw the capture control, without starting anything. */
+  async captureState(): Promise<TraceSiftCapture> {
+    const browser = await this.readRecordFile("browser.json");
+    const record = await this.readRecordFile("record.json");
+    const open = browser !== undefined && typeof browser.pid === "number" && processAlive(browser.pid);
+    const state = typeof record?.state === "string" ? record.state : undefined;
+    const exported = typeof record?.export === "object" && record.export !== null ? record.export as Record<string, unknown> : undefined;
+    // `starting` and `flushing` are as busy as `recording`: a control that
+    // offered Start during either would race the recorder that owns the lock.
+    const recording = state === "starting" || state === "recording" || state === "flushing";
+    // Only a React Native recording labels its target, so the label is also
+    // what says which of the two sources a live recording belongs to.
+    const targetLabel = recording && typeof record?.targetLabel === "string" ? record.targetLabel.slice(0, 512) : undefined;
+    return {
+      apiVersion: 1,
+      ...(open ? { browser: { url: typeof browser.url === "string" ? browser.url : "" } } : {}),
+      ...(targetLabel ? { app: { targetLabel } } : {}),
+      recording,
+      ...(state === "captured" && typeof exported?.path === "string"
+        ? { capture: { path: exported.path, sizeBytes: typeof exported.sizeBytes === "number" ? exported.sizeBytes : 0,
+          eventCount: typeof exported.eventCount === "number" ? exported.eventCount : 0 } }
+        : {}),
+    };
+  }
+
+  /** Open a Chrome that outlives this command, so a person can sign in before recording. */
+  async launchBrowser(url: string, signal?: AbortSignal): Promise<TraceSiftCapture> {
+    await this.runCommand(["record", "launch", "--url", url], {
+      timeoutMs: RECORD_LAUNCH_TIMEOUT_MS, signal,
+      cancelled: "Launching the browser was cancelled.",
+      timedOut: "Chrome did not open within 60 seconds.",
+      missing: "TraceSift is not installed or could not run `tracesift record`.",
+      failed: code => `TraceSift could not launch Chrome (exit code ${code}).`,
+    });
+    const state = await this.captureState();
+    if (!state.browser) throw new TraceSiftError("Chrome did not stay open. Retry, or record without launching first.", "startup");
+    return state;
+  }
+
+  /**
+   * Begin tracing whatever that browser is already showing.
+   *
+   * No `--url`, so the recording covers the signed-in state the person reached
+   * rather than a fresh page load, and `--sink local` so the trace lands as a
+   * file this plugin can hand to `analyze` even while a TraceSift is running.
+   */
+  async startRecording(signal?: AbortSignal) {
+    await this.runCommand(["record", "start", "--sink", "local"], {
+      timeoutMs: RECORD_START_TIMEOUT_MS, signal,
+      cancelled: "Starting the recording was cancelled.",
+      timedOut: "Chrome did not start recording within 60 seconds.",
+      missing: "TraceSift is not installed or could not run `tracesift record`.",
+      failed: code => `TraceSift could not start recording (exit code ${code}).`,
+    });
+  }
+
+  /** End the recording and wait for Chrome to flush it; the browser stays open. */
+  async stopRecording(signal?: AbortSignal): Promise<{ path: string; sizeBytes: number; eventCount: number }> {
+    await this.runCommand(["record", "stop"], {
+      // Flushing a long trace is minutes of work in Chrome, not seconds.
+      timeoutMs: RECORD_STOP_TIMEOUT_MS, signal,
+      cancelled: "Stopping the recording was cancelled.",
+      timedOut: "Chrome did not finish writing the trace in time.",
+      missing: "TraceSift is not installed or could not run `tracesift record`.",
+      failed: code => `TraceSift could not stop the recording (exit code ${code}).`,
+    });
+    const state = await this.captureState();
+    if (!state.capture) throw new TraceSiftError("The recording stopped without writing a trace. Try recording again.", "response");
+    return state.capture;
+  }
+
+  /**
+   * The React Native apps connected to Metro that a recording could attach to.
+   *
+   * Asked of the CLI rather than fetched from `/json/list` here, even though
+   * `metroTargets` would answer: `recommended` is the target `record start`
+   * would pick on its own, so going through the CLI keeps the list and the
+   * silent choice from disagreeing, and a TraceSift too old to know
+   * `--platform` says so here rather than when someone presses Start.
+   */
+  async reactNativeTargets(metro?: string, signal?: AbortSignal): Promise<TraceSiftRnTargets> {
+    const body = await this.runCommandJson(["record", "targets", "--platform", "rn", "--json",
+      ...(metro ? ["--metro", metro] : [])], {
+      timeoutMs: RECORD_TARGETS_TIMEOUT_MS, signal,
+      cancelled: "Listing the React Native apps was cancelled.",
+      timedOut: "Metro did not answer within 15 seconds.",
+      missing: "TraceSift is not installed or could not run `tracesift record`.",
+      failed: code => `TraceSift could not list the React Native apps (exit code ${code}).`,
+    });
+    // The CLI reads these off a running app, so bound them before zod sees them.
+    const reported = body as Record<string, unknown>;
+    const targets = Array.isArray(reported.targets) ? reported.targets : [];
+    const string = (value: unknown) => typeof value === "string" ? value.slice(0, 512) : undefined;
+    const parsed = traceSiftRnTargetsSchema.safeParse({
+      ...reported,
+      targets: targets.slice(0, 100).flatMap(item => {
+        if (typeof item !== "object" || item === null) return [];
+        const target = item as Record<string, unknown>;
+        if (typeof target.id !== "string") return [];
+        return [{
+          id: target.id.slice(0, 512), title: string(target.title) ?? target.id.slice(0, 512),
+          ...(string(target.appId) ? { appId: string(target.appId) } : {}),
+          ...(string(target.deviceName) ? { deviceName: string(target.deviceName) } : {}),
+          ...(string(target.deviceId) ? { deviceId: string(target.deviceId) } : {}),
+          ...(string(target.vm) ? { vm: string(target.vm) } : {}),
+          supportsMultipleDebuggers: target.supportsMultipleDebuggers === true,
+          recommended: target.recommended === true,
+        }];
+      }),
+    });
+    if (!parsed.success) throw new TraceSiftError("TraceSift returned an invalid React Native target list.", "response");
+    return parsed.data;
+  }
+
+  /**
+   * Begin a Hermes CPU profile of an app that is already running.
+   *
+   * Nothing is launched and no window opens, which is what lets an agent drive
+   * this itself. No `--target-id` means the CLI picks the app it recommends,
+   * matching what `reactNativeTargets` reported. `--sink local` for the same
+   * reason the Chrome path forces it: the trace must land as a file `analyze`
+   * can take by path even while a TraceSift service is running.
+   */
+  async startReactNativeRecording(options: { metro?: string; targetId?: string } = {}, signal?: AbortSignal) {
+    await this.runCommand(["record", "start", "--platform", "rn", "--sink", "local",
+      ...(options.metro ? ["--metro", options.metro] : []),
+      ...(options.targetId ? ["--target-id", options.targetId] : [])], {
+      timeoutMs: RECORD_START_TIMEOUT_MS, signal,
+      cancelled: "Starting the recording was cancelled.",
+      timedOut: "The app did not start recording within 60 seconds.",
+      missing: "TraceSift is not installed or could not run `tracesift record`.",
+      failed: code => `TraceSift could not start recording (exit code ${code}).`,
+    });
+  }
+
+  /** Quit the launched browser and delete the throwaway profile it used. */
+  async closeBrowser(signal?: AbortSignal) {
+    await this.runCommand(["record", "close"], {
+      timeoutMs: RECORD_CLOSE_TIMEOUT_MS, signal,
+      cancelled: "Closing the browser was cancelled.",
+      timedOut: "Chrome did not quit within 30 seconds.",
+      missing: "TraceSift is not installed or could not run `tracesift record`.",
+      failed: code => `TraceSift could not close the browser (exit code ${code}).`,
+    });
   }
 
   async close() {
