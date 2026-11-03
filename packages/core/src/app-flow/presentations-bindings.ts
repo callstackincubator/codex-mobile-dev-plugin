@@ -1,6 +1,6 @@
 import { isAbsolute, relative } from 'node:path'
 import { parseBaseUrl } from '@mobile-dev/shared/protocol.ts'
-import type { AppFlowPresentationAction, AppFlowPresentations, AppFlowStateSite } from '@mobile-dev/shared/app-flow.ts'
+import type { AppFlowPresentationAction, AppFlowPresentations } from '@mobile-dev/shared/app-flow.ts'
 
 /**
  * One hook or JSX binding reported by the in-app runtime. A binding knows only

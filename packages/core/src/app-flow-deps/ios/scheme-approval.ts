@@ -9,28 +9,16 @@ const OPEN_IN_PROMPT_RE = /\bopen in\b/i
 /**
  * Budget for the one alert probe in `acceptOpenInAppPrompt`.
  *
- * The iOS runner gives an `alert` command's main-thread block exactly the `timeoutMs` we pass, and
- * the work inside it enumerates SpringBoard's alert and sheet hierarchies — an XCTest query that on
- * a cold simulator, mid app-launch, routinely runs for tens of seconds. A budget the query cannot
- * finish inside does not cancel it: XCTest work cannot be cancelled, so the runner abandons the
- * block and refuses *every* later command with RUNNER_BUSY until it drains. Generous here, because
- * the cost of being wrong in that direction is one slow probe, and in the other direction it is the
- * whole sweep — see `dismissOpenInAppPrompt`'s callers.
+ * XCTest cannot cancel an alert query that exceeds this timeout; the runner remains busy until the
+ * query drains. Keep the budget generous enough for a cold simulator during app launch.
  */
 const OPEN_IN_PROMPT_TIMEOUT_MS = 15_000
 
 /**
- * Simulators on which a scheme's launch-services approval has been written, and whether an open has
- * since confirmed that the approval took effect. The approval is a device-level fact (one `defaults
- * write` per scheme per simulator), so it belongs here rather than on any one capture or profiling
- * session: a later session opening the same scheme on the same simulator is equally covered, and
- * equally has no prompt to look for.
+ * Scheme approvals by simulator. They are device-level state and therefore span capture sessions.
  *
- * `pending` exists because writing the approval and opening the URL happen in the same breath. On a
- * simulator that booted seconds ago, `launchservicesd` has not read the write back by the time the
- * open lands, so the *first* open after a write still gets the "Open in …?" sheet. Treating the
- * write as proof would skip the one probe that can clear it, and the user sees the simulator boot
- * with the app never coming up — the second click then works, because the OS has caught up.
+ * A write remains `pending` until an open confirms it: `launchservicesd` may not apply a fresh
+ * write before the first URL open, which can still show the "Open in …?" sheet.
  */
 const schemeApprovals = new Map<string, 'pending' | 'approved'>()
 
@@ -38,14 +26,7 @@ function preapprovalKey(udid: string, scheme: string): string {
   return `${udid}\u0000${scheme.toLowerCase()}`
 }
 
-/**
- * Whether this simulator has already been taught to open `url`'s scheme without asking *and* an
- * open has confirmed it.
- *
- * Callers use it to skip the "Open in …?" probe entirely. That probe is the single most expensive
- * thing a sweep can do when it is not needed — see `OPEN_IN_PROMPT_TIMEOUT_MS` — so it stays worth
- * skipping, just not before the approval has been shown to work once.
- */
+/** Whether an open has confirmed this simulator's approval for the URL scheme. */
 export function isUrlSchemePreapproved(udid: string | null | undefined, url: string): boolean {
   const scheme = urlSchemeFromUrl(url)
   if (!scheme || !udid?.trim()) return false
@@ -140,9 +121,7 @@ export async function preapproveIosUrlScheme(options: {
         options.bundleId
       ])
     }
-    // Pending, not approved: `launchservicesd` has not necessarily read this back yet, and the very
-    // open this write is for may still land on the sheet. One probe decides it — see
-    // `schemeApprovals` and `markUrlSchemeApproved`.
+    // The first open can still show the prompt before launchservicesd applies the write.
     const key = preapprovalKey(options.udid, scheme)
     if (schemeApprovals.get(key) !== 'approved') schemeApprovals.set(key, 'pending')
     return true
@@ -158,12 +137,7 @@ export async function preapproveIosUrlScheme(options: {
 export async function acceptOpenInAppPrompt(
   client: IosSchemeApprovalClient
 ): Promise<'accepted' | 'absent' | 'skipped'> {
-  // One alert command, not two. The previous pair — `wait` and then `get` — ran SpringBoard's modal
-  // enumeration twice, and the `wait` gave its block a 2.5s main-thread budget that the enumeration
-  // could not finish inside. Every sweep therefore abandoned that block on the first deep link, and
-  // the runner answered RUNNER_BUSY to every snapshot behind it for the two minutes it took to
-  // reach the wedge threshold and be recycled. `wait` was never a distinct action on the runner
-  // anyway: it resolves the alert and falls through to the same branch `get` does.
+  // `wait` and `get` both enumerate the modal hierarchy; use one command to avoid wedging the runner.
   let info: unknown
   try {
     info = await client.command.alert({

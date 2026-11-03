@@ -1,14 +1,6 @@
 /**
- * Locating and editing a single step inside a recorded `.ad` script.
- *
- * Pure and separate from `capture.ts` for the same reason `replay-divergence.ts` is: `capture.ts`
- * reaches `electron` through `./storage` and cannot be imported under the test runner. What lives
- * here decides which line of a verified recording gets rewritten, so it is worth testing.
- *
- * Step numbers in agent-device's divergence reports are 1-based over the lines it *executes*, which
- * is every line except `context`, blanks and comments — the `# agent-device:target-v1` identity
- * records among them. Step 5 of the measured social-app seeds is therefore script line 8, and
- * nothing may assume the two numberings agree.
+ * Pure helpers for editing recorded `.ad` scripts without importing `capture.ts` and its Electron
+ * dependencies. agent-device step numbers are 1-based over executable lines, not file lines.
  */
 
 /** The `# agent-device:target-v1 {...}` comment that records the identity of the step below it. */
@@ -46,22 +38,8 @@ export function pressSelectorAtStep(lines: readonly string[], step: number): str
 /**
  * Drop the recorded identity comment above a press step, leaving the press itself untouched.
  *
- * This is the last lever available for the failure that costs this sweep every seed but Home. The
- * recorded identity is *correct about the button* — `matchCount 1`, no competing candidate, every
- * field matching except where the button sits — and wrong only about the tree around it, which
- * reads `application/"Blue Sky"` on one snapshot and `other/"Home"` on the next of the same screen.
- * Record-and-heal cannot win that: it re-recorded the identical ancestry and the healed script
- * failed at the same step. Removing the annotation removes the guard built from it, so the step
- * resolves on its selector alone — which already matched one element and the right one.
- *
- * What is given up is narrow and worth naming: that press no longer re-verifies *which* element it
- * found. The destination `wait` after it keeps its own identity record, so arrival is still proved;
- * only the press's own structural assertion goes. Callers must therefore strip on the evidence of
- * an ancestry-only mismatch and never as a way to quiet a `SELECTOR_MISS` or an ambiguous match,
- * where it would turn a caught mistake into a silent wrong tap.
- *
- * Returns `undefined` when there is nothing to strip — the step is not a press, or it carries no
- * identity comment — so a caller can tell "already stripped" from "stripped now" and stop looping.
+ * This recovery is safe only for an ancestry-only mismatch; using it for a missing or ambiguous
+ * selector could hide a wrong tap. Returns `undefined` when the step has no removable identity.
  */
 export function stripRecordedIdentity(
   lines: readonly string[],
@@ -148,38 +126,10 @@ export interface UnguardedPresses {
  * Drop every recorded identity that hangs off the node a divergence just proved unstable, and give
  * each unguarded press a selector wait in its place.
  *
- * Two changes to `stripRecordedIdentity`'s one-step-at-a-time behaviour, both measured on the
- * 15-53-19 sweep, where this path cost 17s across two replays and still published nothing.
- *
- * **All at once, not one per replay.** The caller used to strip the reported step, replay (~8s),
- * read the next report, strip again. But the instability is a property of a *node*, not of a step:
- * `ProfileFollowers` recorded `application/"Blue Sky"` in the ancestry of both its presses and the
- * replay rejected both, the second only after a round trip that could have been predicted from the
- * first. So every press sharing an ancestry entry with the proven-unstable one is stripped in the
- * same pass. Steps whose ancestry is disjoint keep their guard: the evidence is about one node, and
- * widening past it would start swallowing the moved-or-relabelled control that record-and-heal is
- * the right answer for. An identity with no recorded ancestry at all proves nothing shareable, so
- * only the reported step is touched.
- *
- * **A wait where the guard was.** `stripRecordedIdentity`'s doc names what a strip gives up — the
- * press stops re-verifying *which* element it found — and treats the destination wait as enough to
- * cover it. For `ProfileFollowers` step 7 it was not: that press had no wait in front of it at all,
- * so dropping its identity turned `IDENTITY_MISMATCH` into `COMMAND_FAILED`, the bare selector
- * evaluated against a tree whose header was still `other/"Profile banner placeholder"` — the same
- * placeholder the earlier mismatch had named. The identity record had been doing double duty as a
- * *temporal* guard. Replacing it with the selector wait agent-device records for its own presses
- * restores that, for the better reason: the press now waits for the control to exist rather than
- * asserting the shape of the tree around it.
- *
- * Only a press leading with an `id="…"` alternative gets a wait, and only when the step before it
- * is not already that wait — an id is the one part of a recorded selector that is not derived from
- * volatile display text (`label="1 follower"`), and a wait on the rest would be a guess.
- *
- * Inserting a wait renumbers every later step, so the result is not a base for a second round of
- * report-driven stripping: the caller replays it once and restores the original if it still fails.
- *
- * Returns `undefined` when `step` is not a press carrying an identity — the same "nothing to do"
- * signal `stripRecordedIdentity` gives, so an already-stripped script cannot be processed twice.
+ * All presses sharing the unstable ancestry are handled in one pass; unrelated identities retain
+ * their guards. A leading `id="…"` selector receives a wait unless the preceding executable line is
+ * already identical. Because inserted waits renumber later steps, callers must not feed the result
+ * into another report-driven pass. Returns `undefined` when the reported step has no identity.
  */
 export function unguardPressSteps(
   lines: readonly string[],

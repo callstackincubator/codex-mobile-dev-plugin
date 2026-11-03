@@ -2556,7 +2556,7 @@ export function agentAttributeBindings(pres: any): void {
  */
 export function agentResolvePresentationEntry(pres: any, action: any, tree: any): any {
   if (action.effect.kind === 'state') return agentResolveStateEntry(pres, action, tree)
-  if (action.effect.kind === 'control') return agentResolveControlEntry(pres, action, tree)
+  if (action.effect.kind === 'control') return agentResolveControlEntry(action, tree)
   if (action.effect.kind === 'mount') {
     var type = agentMountedExport(pres, action.effect.file, action.effect.export)
     if (!type) return { reason: 'not-loaded', error: 'The source component is not loaded.' }
@@ -2601,7 +2601,7 @@ export function agentResolvePresentationEntry(pres: any, action: any, tree: any)
  *
  * Returns `{ owners, openers }`, or a refusal `{ reason, error }` from a closed set.
  */
-export function agentResolveOpener(pres: any, action: any, tree: any): any {
+export function agentResolveOpener(action: any, tree: any): any {
   var scope = agentFocusedScope(tree)
   var inScope = function (fiber: any): boolean {
     return !scope || tree.inside(fiber, scope)
@@ -2721,7 +2721,7 @@ export function agentResolveStateEntry(pres: any, action: any, tree: any): any {
   if (action.input) {
     return refuse('unsupported', 'This opening needs data from its opener, which this runtime cannot supply.')
   }
-  var resolved = agentResolveOpener(pres, action, tree)
+  var resolved = agentResolveOpener(action, tree)
   if (resolved.error) return resolved
   var site: any = null
   var states = pres.catalog.states
@@ -2829,7 +2829,7 @@ export function agentCondition(node: any, props: any): any {
  *
  * Every refusal carries a `reason` from a closed set, so it can be counted without naming anything.
  */
-export function agentResolveControlEntry(pres: any, action: any, tree: any): any {
+export function agentResolveControlEntry(action: any, tree: any): any {
   var effect = action.effect
   var scope = agentFocusedScope(tree)
   var inScope = function (fiber: any): boolean {
@@ -2887,7 +2887,7 @@ export function agentResolveControlEntry(pres: any, action: any, tree: any): any
     )
   }
 
-  var resolved = agentResolveOpener(pres, action, tree)
+  var resolved = agentResolveOpener(action, tree)
   if (resolved.error) return resolved
   var owners = resolved.owners
   var last: any = null
@@ -3209,7 +3209,7 @@ export function agentContainPreviewErrors(pres: any, focus: any, record: any, bo
   }
   var original = root.onCaughtError
   var projected = pres.projected
-  var wrapped = function (this: any, error: any, info: any): any {
+  var wrapped = function (this: any, _error: any, info: any): any {
     for (var index = 0; index < projected.length; index++) {
       var item = projected[index]
       if (item.errorRoot === root && info && info.errorBoundary && info.errorBoundary.constructor === item.boundaryType) {

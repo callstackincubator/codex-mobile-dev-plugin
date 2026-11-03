@@ -83,44 +83,14 @@ export interface CaptureContext {
 
 const LAUNCH_TIMEOUT_MS = 10 * 60 * 1000
 /**
- * How long the frame from before a launch is disbelieved — and, only when there is no such frame to
- * compare against, a flat sleep before the first readiness poll.
- *
- * Deliberately shorter than the launch itself takes: it was never sized to cover a cold start, only
- * to stop the very first accessibility read landing on a process that has not drawn a single frame
- * yet. Everything beyond that is `waitForAppReady`'s stability poll, which has the full
- * `APP_READY_TIMEOUT_MS` to work with and catches a slow start by construction.
- *
- * It is no longer usually spent at all. A relaunch is nearly always preceded by a successful read,
- * so the poll can tell a frozen pre-launch frame from the app's first real one by comparing them,
- * and a warm relaunch — where the first read is already the new screen — pays nothing. This value
- * then bounds only how long an *unchanged* frame is held, which is the same window the sleep was
- * approximating. Measured on a warm simulator run: the first poll after this wait already read a
- * fully drawn screen, i.e. the whole thing was dead time on the common path.
+ * Maximum time to distrust an unchanged pre-launch frame. If no comparison frame exists, this is
+ * the initial delay before readiness polling; the full cold-start budget remains below.
  */
 const APP_LOAD_WAIT_MS = 1_500
 const APP_READY_TIMEOUT_MS = 90 * 1000
 /**
- * How long a frame that has *settled below* `minInteractiveElements` is given to grow before the
- * wait gives up on the floor and returns.
- *
- * Separate from `timeoutMs` because the two bound different failures. `timeoutMs` is sized for a
- * cold 6130-module bundle that has not drawn anything yet; this is sized for an app that has drawn
- * something and the caller does not believe it. Collapsing them would mean a genuinely sparse
- * first screen — a login form is three controls — holding the sweep for the full 90s to learn
- * what the first settle already said.
- *
- * Twenty seconds, from two launches of the same app that disagreed: the first went substantive
- * 12.5s after the poll first settled on a splash, the second about 18s after. Fifteen was set from
- * the first alone and the second missed it by seconds — the wait gave up at 2 elements and the
- * auth gate's own wait, running straight afterwards, found 20 elements in 1.7s.
- *
- * That near-miss is also why this is sized generously rather than tightly. Expiring here is a
- * handoff, not a failure: `AUTH_GATE_FRAME_WAIT_MS` holds the identical floor immediately
- * downstream, so the cost of being slightly short is a re-paid settle handshake, while the cost of
- * being long is a genuinely sparse first screen — a login form is three controls — waiting this
- * out before anyone looks at it. Both are small; the second is the one that scales with nothing,
- * so the number sits above the measurements rather than between them.
+ * Grace period for a settled frame below `minInteractiveElements` to become substantive. This is
+ * separate from the cold-start timeout so a legitimately sparse screen does not wait the full 90s.
  */
 export const SUBSTANTIVE_FRAME_GRACE_MS = 20 * 1000
 /** Quiet window `startReplayRecording`'s recorded `wait stable` requires before it calls the UI
@@ -131,39 +101,13 @@ const APP_STABLE_QUIET_MS = 500
  *  whole 90s here would only delay the wait that can actually rescue a slow start. */
 const APP_STABLE_TIMEOUT_MS = 20 * 1000
 /**
- * How long the recorded entry gate waits for the walk's first press target — see
- * `pendingEntryGate` on `CaptureDevice`.
- *
- * Two clocks share this one number, which is the point of it. Live it resolves on the first check,
- * because the gate is only ever issued against an element the planner just read off the screen, so
- * it costs the walk nothing. At *replay* time the same line becomes the budget for a cold app to
- * draw the screen that element is on, which is the entire reason the gate exists, so it cannot be
- * short. 15s matches the destination guard `saveAndReplayRecording` appends at the other end of the
- * script: the two are the same mechanism pointed at opposite ends of a journey, and there is no
- * reason for them to disagree about how long an app gets to render a screen.
+ * Timeout for the recorded first-target gate. It matches the destination guard so replay gives
+ * both ends of a journey the same render budget.
  */
 const ENTRY_GATE_TIMEOUT_MS = 15 * 1000
-/**
- * How long a dev-client launcher recovery is left to take effect before `waitForAppReady`
- * escalates to the next move.
- *
- * Sized for the slow half of what the first move has to do: reconnecting tells the dev client to
- * fetch and evaluate a debug bundle from Metro, which on a cold Metro is a full transform of the
- * app, not a reload. Too short and the poll relaunches the app out from under a reconnect that was
- * working; the cost of too long is only that a hopeless launcher is declared hopeless later, and
- * `waitForAppReady`'s own deadline still bounds that.
- */
+/** Grace period for a dev-client reconnect, including a cold Metro transform. */
 const LAUNCHER_RECOVERY_GRACE_MS = 30 * 1000
-/**
- * Sleep *between* readiness polls — not the interval between them.
- *
- * The distinction is the whole reason this is as low as it is: a poll is a `capturePressables`,
- * which measured 0.9–1.7s against a simulator, so the real spacing between two consecutive reads
- * is this value plus that. At the old 1_500 the effective spacing was ~3.1s and the cheapest
- * possible settle — two matching reads — cost ~4.6s on every screen, of which only the two reads
- * were doing any work. The question a second read answers is "is this still the same screen", and
- * the read's own latency already provides most of the separation that question needs.
- */
+/** Sleep between readiness polls; capture latency adds to the effective interval. */
 const APP_READY_POLL_MS = 400
 /**
  * How alike two consecutive polls must be for the screen to count as settled. Matches the
@@ -173,87 +117,22 @@ const APP_READY_POLL_MS = 400
 export const APP_READY_SETTLE_SIMILARITY = 0.98
 /**
  * How alike a settled frame must be to the frame from *before* the action for the settle to be
- * disbelieved as stale. Deliberately far below `APP_READY_SETTLE_SIMILARITY`, because the two
- * comparisons ask different questions and 0.98 answers the wrong one.
- *
- * 0.98 asks "is this the identical render". The stale guard's question is "is this still the
- * screen we came from" — and a frame caught *mid-transition* is neither: it is a composite, the
- * outgoing screen with some of the incoming one drawn over it. Measured on
- * `session_2026-10-13_14-33-40.log`, ProfileFollowers: the pre-open frame was Profile's own
- * delivery read at t=235.945 (30 controls), the settle at t=241.663 agreed twice on **46**
- * controls, and the delivery read 0.9s later found **9** — the real Followers screen. A 46-control
- * composite sitting over a 30-control profile clears 0.98 trivially (it is 16 controls richer), so
- * the guard was live, compared, and waved the straddle through; the screenshot written to
- * `screens/profilefollowers.png` is the MyProfile screen, verified by eye.
- *
- * 0.88 is set between the two things that have to stay apart. Above it: a composite that still
- * carries the old screen's controls, which is what this must catch. Below it: two genuinely
- * different screens, which must not be held — the same run's ProfileFollowers pair (46 mid-flight
- * vs 9 settled) and PostLikedBy's (52 vs 8) share almost no vocabulary at all. Being wrong in the
- * "hold" direction costs at most `ROUTE_STALE_GRACE_MS` of polling on a screen that had in fact
- * arrived; being wrong the other way costs a whole wrong capture, which is what this run paid
- * eight times.
+ * disbelieved as stale. It is lower than `APP_READY_SETTLE_SIMILARITY` because mid-transition
+ * composites can retain most of the previous screen without being identical renders.
  */
 export const APP_READY_STALE_SIMILARITY = 0.88
 /** Consecutive failing accessibility reads after which `waitForAppReady` stops waiting. */
 const APP_READY_MAX_READ_FAILURES = 3
-/**
- * The router's own transition beat: how long the pre-open frame is disbelieved after a deep link.
- *
- * Was a flat sleep in front of the settle poll, and that is the only thing it ever covered. It used
- * to be sized as if it were the entire wait — 2.5s — which stopped being true once
- * `settleAfterRoute` put the stability poll behind it. Trimming it to 800ms left the last of the
- * problem in place: a deep link that has already landed by the time the poll starts still paid it,
- * which was 11 of these per sweep in an eight-screen run, ~9s of nothing.
- *
- * Now the window is measured instead. The poll compares what it reads against the frame from
- * before the open (`isFrameUnchangedSinceAction`), so an arrived screen settles on the first two
- * agreeing reads and only a screen that still looks like where it came from waits — after which
- * an unchanged frame is accepted, because a deep link to the screen the app is already on is a
- * legitimate no-op.
- *
- * What is left here is only the flat post-*tap* sleep `waitForRoute` pays (see that function). The
- * deep-link guard's ceiling moved to `ROUTE_STALE_GRACE_MS`, because 800ms turned out to be too
- * short for the guard and raising it here would have charged every tap in the sweep for it.
- */
+/** Flat post-tap delay; deep-link stale-frame handling uses `ROUTE_STALE_GRACE_MS`. */
 const ROUTE_WAIT_MS = 800
 /**
- * The ceiling on the *stale-frame* guard after a deep link — `ROUTE_WAIT_MS`'s other job, split
- * off from it because the two numbers are now sized by different measurements.
- *
- * `ROUTE_WAIT_MS` is still the flat sleep `waitForRoute` pays after a tap (~30 per sweep), where
- * raising it is a pure cost. This is the budget `settleAfterRoute` gives the guard to disbelieve a
- * frame that still looks like where we came from, where 800ms was demonstrably too short.
- * Measured on `session_2026-10-13_14-33-40.log`, PostLikedBy: `apps.open` at t=458.609,
- * `waitForAppReady` entered at t=459.188, and the first agreeing pair landed at t=460.369 — 1.18s
- * into the poll, past an 800ms grace that had therefore already expired before the guard had a
- * single pair to judge. The guard was not wrong there; it was never consulted. That settle agreed
- * on 52 controls, which is exactly PostThread's own count from its delivery read at t=454.565 —
- * the previous screen, photographed as `screens/postlikedby.png` while the real Liked By screen
- * (8 controls) arrived 0.8s later.
- *
- * 2000ms covers that case with room: every one of the eight straddles in that run had its real
- * screen in hand within ~1.0s of the first (wrong) agreeing pair. The cost is bounded and paid
- * only by a screen that genuinely has not moved, and only until it does — see
- * `ROUTE_STALE_MIN_REJECTED_PAIRS`, which is the half of this budget a fast machine cannot
- * silently opt out of.
+ * Wall-clock ceiling for rejecting a post-deep-link frame that still resembles the previous one.
+ * The minimum-pair guard below keeps this effective on fast devices.
  */
 const ROUTE_STALE_GRACE_MS = 2_000
 /**
- * Agreeing pairs the stale guard must reject before the wall-clock grace above is allowed to run
- * out on it.
- *
- * This exists because a millisecond budget alone is a guard that quietly disables itself on fast
- * hardware: the faster the accessibility read, the more likely the first agreeing pair lands after
- * the grace rather than inside it, which is precisely how PostLikedBy's guard came to be dead on
- * arrival at 1.18s against 800ms. Counting rejections instead states the intent directly — "do not
- * accept a frame that looks like where we came from until you have disbelieved it at least twice"
- * — and is invariant to how quick the device is.
- *
- * Two, not one: one rejection plus a poll interval is ~0.6s on the measured device, which is
- * inside the window the eight straddles landed in. Two takes the guard past it while costing a
- * genuinely-unchanged screen (a deep link to the screen the app is already on) two extra reads at
- * ~0.18s each before the grace clock even starts counting.
+ * Agreeing stale-frame pairs to reject before the wall-clock grace may expire. A count prevents
+ * faster accessibility reads from bypassing a time-only guard.
  */
 const ROUTE_STALE_MIN_REJECTED_PAIRS = 2
 /**
@@ -264,14 +143,8 @@ const ROUTE_STALE_MIN_REJECTED_PAIRS = 2
  */
 const ROUTE_OPEN_CLOCK_MAX_AGE_MS = 5_000
 /**
- * The quiet window agent-device must observe before it calls a post-action UI settled.
- *
- * Its default is 500ms and it is a flat cost on every tap and every text entry — ~30 of them per
- * sweep, which is where the `press` phase's 3.60s average largely comes from. 200ms is still
- * several frames of stillness at 60Hz, which is what the window is for: distinguishing "the screen
- * stopped changing" from "the screen is mid-transition". It is shortened rather than removed
- * because the thing it guards against, reading the pre-action frame as the result of the action,
- * is the failure that costs a whole wrong capture.
+ * Post-action quiet window. It remains long enough to distinguish stillness from a transition
+ * without charging agent-device's 500ms default to every interaction.
  */
 const SETTLE_QUIET_MS = 200
 /** Bound on the post-deep-link settle poll — see `settleAfterRoute`. Far below
@@ -285,37 +158,14 @@ const APP_ALIVE_PROBE_TIMEOUT_MS = 5 * 1000
 /**
  * How old a read may be and still describe the frame the app was on *before* the caller's action.
  *
- * Deliberately far more generous than `APP_ALIVE_REUSE_MS`, which this was first written to share.
- * That one answers "is the process alive right now", where a ten-second-old yes is worthless. This
- * one answers "what was on screen before we acted", and nothing between the two reads touches the
- * device — the gap is almost always a model call — so age does not make the answer wrong.
- *
- * The asymmetry is what makes a loose bound safe. A before-frame that has gone stale can only
- * cause a *false hold*, it can never cause a false settle, and a false hold requires the stale
- * frame to still match what is on screen — which means it is the same screen after all. The bound
- * exists only to rule out a read from so long ago that the app may have been relaunched out from
- * under it.
- *
- * Sharing the 10s bar cost two launch sleeps per sweep in a measured run: every wait that followed
- * a model call found its read "too old" and fell back to sleeping, which is exactly the case the
- * comparison handles best.
+ * This is intentionally looser than the liveness cache: a model call can make a valid before-frame
+ * old without touching the device. The bound only excludes frames old enough to span a relaunch.
  */
 const FRAME_COMPARISON_MAX_AGE_MS = 60 * 1000
 
 /**
- * How recently `capturePressables` must have succeeded for `openDeepLink` to take its word for it
- * instead of spending a snapshot on the liveness probe.
- *
- * The probe asks one question — "is this process alive and drawing" — and a read that came back
- * with interactive elements a moment ago has already answered it. On the sweep's hot path the
- * previous screen's delivery read is always that answer, so the probe was re-asking something the
- * harness had just been told, at ~0.9s of accessibility snapshot per screen.
- *
- * Bounded rather than unbounded because the thing it guards against is a *cold* process, and the
- * gap this covers is local bookkeeping — choosing delivery sources, copying a frame, writing the
- * checkpoint — not anything that can start the app over. Ten seconds is comfortably longer than
- * that gap and far shorter than a launch, so a reused answer is never one that had time to stop
- * being true; anything slower falls through and pays for the real read.
+ * Reuse window for a successful accessibility read as proof that the app is alive. Older reads
+ * fall through to the real liveness probe because the process may have gone cold.
  */
 const APP_ALIVE_REUSE_MS = 10 * 1000
 // Match post-install CLI output only. xcodebuild prints "BUILD SUCCEEDED" before
@@ -2744,64 +2594,22 @@ export async function executeNavigationActions(
         )
         break
     }
-    // The sleep is what stops the next screenshot or accessibility read from landing on the frame
-    // from *before* this action — a mistake that costs a wrong capture and a full exploration,
-    // against 0.8s saved. So it is skipped only on the evidence that something equivalent already
-    // happened: agent-device reporting that it watched the UI go quiet after the action
-    // (`settleQuietMs` above). A settle that was requested but not observed, and a swipe, which
-    // cannot request one, both still pay it.
+    // Skip the delay only when agent-device already observed the UI settle after the action.
+    // Requested-but-unobserved settling and swipes still need it to avoid reading a stale frame.
     if (action.type !== 'wait' && !settled) {
       await waitForRoute(ctx.signal, Math.max(0, deadline - Date.now()))
     }
   }
 }
 
-// `verifyAndSaveReplay` lived here: save the live recording, close the session and replay the file
-// to prove it. Its one caller was the runtime state-variant pass in `orchestrator.ts`, which has
-// since been removed.
-
 /**
  * Drop the recorded identity of every press that hangs off the node a divergence proved unstable,
  * give each unguarded press a selector wait in its place, and replay the result once.
  *
- * The only recovery tier there is. It used to be the second of two, reached once agent-device's
- * record-and-heal had declined, and the heal is gone because every firing of it this repo recorded
- * was a failure — the 20-05-23 evidence below, and the same three-seed result on the 15-07-13
- * sweep (`replay-divergence.ts`). There was never a fallback chain to lose, either: the two tiers
- * were selected by complementary predicates, so at most one of them could ever run on a given
- * divergence. See `unguardPressSteps` for why re-recording provably cannot fix this class, what the
- * strip gives up and what the inserted wait puts back.
- *
- * One pass, where this used to loop a strip and a replay per diverging step. The loop was charging
- * a full replay for information the first report already carried: instability belongs to a *node*,
- * and `ProfileFollowers` recorded that same node in the ancestry of both its presses. Measured on
- * the 15-53-19 sweep it spent 269-286s on two rounds, published nothing, and left the screen that
- * depended on it to walk itself from a cold launch. `unguardPressSteps` now acts on every press
- * sharing the proven ancestry at once, so there is one replay to pay for and nothing to iterate.
- *
- * Still evidence-gated, never optimistic. `parseStructuralOnlyMismatchStep` returns a step only
- * for an `IDENTITY_MISMATCH` with `matchCount === 1`, no competing candidate and no mismatched
- * field outside `ancestry[...]` and `position:` — the two that describe where the node sits rather
- * than what it is, and the two a replay cannot influence. Anything else — a `SELECTOR_MISS`, an
- * ambiguous match, a label that moved — declines with the original failure intact, as does
- * `unguardPressSteps` finding nothing to do, which is what stops a script already stripped from
- * being processed twice.
- *
- * `position:` is why this tier sees the walks that used to die in the heal. On the 20-05-23 sweep
- * `MyProfile`, `Profile` and `ProfileFollowers` all failed their tab-bar press with a position
- * mismatch reported alongside the ancestry one, which left the divergence looking heal-shaped:
- * all three were healed, all three heals reproduced the failure, and all three candidates were
- * discarded — 117s, 39% of that sweep, that published nothing. Counting position as structural
- * routes them here instead, because dropping the annotation stops pre-action verification running
- * and takes the position check with it.
- *
- * Only a failure carrying no divergence at all is retried, and only once: a divergence is the app
- * disagreeing with the script and repeating it changes nothing, whereas a bare `Daemon request
- * timed out` is the plumbing, and discarding a candidate over it reports a failure the app never
- * had. Measured: `Profile` lost its seed to exactly that, after a strip nothing suggests was wrong.
- *
- * The original bytes are restored on failure. A preserved `.failed` candidate is read to find out
- * what the walk recorded, and leaving an edited script there would misreport that.
+ * Recovery is limited to a single-match identity mismatch whose differences are ancestry or
+ * position only. Missing, ambiguous, or changed controls keep the original failure. All presses
+ * sharing the unstable ancestry are rewritten in one pass, then replayed once; only a transport
+ * failure with no divergence gets one retry. The original script is restored if recovery fails.
  */
 async function stripIdentityAndReplay(
   ctx: CaptureContext,

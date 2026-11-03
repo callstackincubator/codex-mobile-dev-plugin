@@ -224,7 +224,7 @@ export function scanSourceViews(units: Map<string, Unit>, root: string, symbol: 
     }
     return true
   }
-  const mountable = (unit: Unit, fn: Fn): AppFlowSourceView['mount'] => {
+  const mountable = (fn: Fn): AppFlowSourceView['mount'] => {
     const own = name(fn)
     if (!/^[A-Z]/.test(own)) return
     const isDefault = defaultExport(fn)
@@ -441,7 +441,7 @@ export function scanSourceViews(units: Map<string, Unit>, root: string, symbol: 
       if (other) { add(unit, other, 'branch', { branch: { condition: n.expression.getText(), side: 'false' } }); stateBranch(unit, n.expression, other, 'false') }
     }
     if (ts.isSwitchStatement(n)) for (const v of origins(read(unit, n.expression))) for (const c of n.caseBlock.clauses) if (ts.isCaseClause(c)) { const value = finite(unit, c.expression); if (value !== undefined) { v.site.paths.push(v.path); add(unit, c, 'state', { state: { site: v.site.id, path: v.path, value }, branch: { condition: n.expression.getText(), side: 'case' } }) } }
-    if (ts.isFunctionLike(n) && 'body' in n && n.body && (/^[A-Z]/.test(name(n as Fn)) || defaultExport(n as Fn))) add(unit, n.body, 'component', { owner: name(n as Fn), name: name(n as Fn), mount: mountable(unit, n as Fn) })
+    if (ts.isFunctionLike(n) && 'body' in n && n.body && (/^[A-Z]/.test(name(n as Fn)) || defaultExport(n as Fn))) add(unit, n.body, 'component', { owner: name(n as Fn), name: name(n as Fn), mount: mountable(n as Fn) })
     if (ts.isJsxOpeningElement(n) || ts.isJsxSelfClosingElement(n)) {
       for (const a of attrs(n)) {
         const prop = a.name.getText(), e = expr(a)

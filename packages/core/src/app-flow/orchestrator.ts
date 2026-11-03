@@ -2,7 +2,6 @@ import { EventEmitter } from 'node:events'
 import { createHash, randomUUID } from 'node:crypto'
 import { copyFile, readFile, unlink } from 'node:fs/promises'
 import { basename, isAbsolute, join } from 'node:path'
-import * as Sentry from '@sentry/node'
 import type {
   AgentDeviceScreenEntry,
   AgentDeviceScreensMap,
@@ -44,24 +43,19 @@ import {
   captureScreenshot,
   closeDevice,
   ensureAdoptedMetro,
-  executeNavigationActions,
   goHome,
-  isOnDevClientLauncher,
-  openDeepLink,
   replayPathToReach,
   reopenBoundApp,
   SUBSTANTIVE_FRAME_GRACE_MS,
   waitForAppReady,
-  settleAfterRoute,
   type CaptureContext,
   type CaptureDevice
 } from './capture.ts'
 import { normalizeAppFlowScreenLimit, requiresDecisionProvider } from './start-request.ts'
 import { parseProject } from './parser.ts'
-import { baselineLaunchCommands, walkCommands, walkStepCommand } from './walk-commands.ts'
+import { baselineLaunchCommands, walkStepCommand } from './walk-commands.ts'
 import { contentMatchedSelectors, minimizeWalkCommands } from './path-minimize.ts'
 import { isPathVerified } from './path-provenance.ts'
-import { runPathToReach } from './path-run.ts'
 import type { ReachMetricsPort } from './reach/ports.ts'
 import { createReachPorts } from './reach/adapters.ts'
 import {
@@ -200,7 +194,6 @@ import { ParamStore } from './param-store.ts'
 import {
   readNavState,
   selectNavStateTarget,
-  type NavRoute,
   type NavStateDeps
 } from './nav-state.ts'
 import { NAV_STATE_SPECULATIVE_READS, selectNavStateWaiters } from './nav-state-gate.ts'
