@@ -1,5 +1,5 @@
 // Re-renders the branch's authored scenes with the plugin's actual dark tokens.
-// Usage: node scripts/render-feature-previews.mjs <stageshow-directory> [--only annotation] [--stills|--serve]
+// Usage: node scripts/render-feature-previews.mjs <stageshow-directory> [--only storage] [--stills|--serve]
 // Adapted from Stageshow's MIT-licensed exporter; see public/previews/LICENSE.
 import { once } from 'node:events';
 import { mkdir, mkdtemp, readFile, realpath, rename, writeFile } from 'node:fs/promises';
@@ -98,10 +98,8 @@ console.log(`Review frames: ${review}`);
 await mkdir(output, { recursive: true });
 
 const scenes = [
-  { name: 'md-recording', asset: 'performance', poster: 9, surface: '.mr-card', leadIn: 0, width: 960, height: 540 },
-  { name: 'md-storage', asset: 'storage', poster: 7, surface: '.mst-body', leadIn: 0, width: 960, height: 540 },
-  { name: 'md-annotate', asset: 'annotation', poster: 9, surface: '.ma-body', leadIn: 0.35, width: 960, height: 540 },
-  { name: 'md-annotate', asset: 'annotation-compact', poster: 9, surface: '.ma-pane', leadIn: 0.35, width: 358, height: 516 },
+  { name: 'md-recording', asset: 'performance', poster: 9, surface: '.mr-card', width: 960, height: 540 },
+  { name: 'md-storage', asset: 'storage', poster: 7, surface: '.mst-body', width: 960, height: 540 },
 ];
 const selectedScenes = scenes.filter(scene => onlyFlag < 0 || scene.asset === onlyAsset);
 try {
@@ -121,10 +119,6 @@ try {
       const loops = await page.evaluate(() => window.__loops);
       if (mounted > 0 && loops > 0) break;
       if (frame > fps * 10) throw new Error(`${scene.name} did not start.`);
-      await page.evaluate(() => window.__stageshow.clock.step(1));
-    }
-
-    for (let frame = 0; frame < scene.leadIn * fps; frame += 1) {
       await page.evaluate(() => window.__stageshow.clock.step(1));
     }
 

@@ -93,9 +93,9 @@ Place text on solid surfaces over the scene. Keep secondary scenes quiet. Do not
 
 ## Motion
 
-The hero uses the dark annotation recording: the pointer tool selects the carrot button, the developer writes “Make this an apple,” and the selected element arrives in the agent's composer as context. The loop trims 0.35 seconds of opening idle time. Use the wide source layout on desktop and its portrait composition below 600px so the selection and note remain readable.
+The hero renders the annotation workflow as native HTML and inline SVG: the pointer tool selects the carrot button, the developer writes “Make this an apple,” and the selected element arrives in the agent's composer as context. Embed the inner UI directly in the page, without an outer window, border, padding, or background fill. Desktop shows the chat beside the device; below 600px the composer sits at the device view's foot.
 
-Video playback pauses while hidden or offscreen and respects a manual pause. Native controls support keyboard playback and fullscreen viewing. Reduced motion shows the annotation payoff poster, with the numbered pin on the selected element and its context attached to the composer.
+The hero's shared 12-second Web Animations timeline pauses while hidden or offscreen. A keyboard-accessible pause button controls playback. Reduced motion shows the finished annotation, with the numbered pin on the selected element and its context attached to the composer. Measure targets after layout and on resize so the pointer, selection, note, and attachment stay aligned with the actual HTML.
 
 Dither motion updates at about 12fps near the viewport and pauses while hidden or offscreen. Its scene uses one OffscreenCanvas worker implementation, bounded repaint work, and cleanup for observers and timers. UI hover transitions are short, around 120–150ms.
 
@@ -120,7 +120,7 @@ The README banner uses copy on the left and the large dithered workspace-and-pho
 ## Website
 
 - `website/src/pages/index.astro`: approved split header, direct product description, actions, and tool-guide bar.
-- `website/src/components/home/HeroDemo.astro`: the dark annotation hero with wide and portrait source compositions.
+- `website/src/components/home/HeroDemo.astro` and `annotation/`: the native dark annotation hero and responsive choreography.
 - `website/src/components/home/HomeSections.astro`: mobile tools (“A mobile IDE in your ADE”), environment setup, performance recording, storage inspection, and FAQ, in that order.
 - `website/src/pages/404.astro`: the approved empty-workspace message, requested address, recovery links, and hollow scene.
 - `website/src/content/docs/docs/`: Starlight guides for installation, devices, controls, logs, performance, profiles, storage, privacy, and terms.

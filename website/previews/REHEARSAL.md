@@ -58,24 +58,26 @@ fullscreen viewing. No source compact redesign or touch-device testing was done
 in that color pass. Docker-based host screenshot updates remain unavailable on
 this machine.
 
-## Alternate annotation hero
+## Native annotation hero
 
-The hero uses the source's `md-annotate` scene in its wide (1920 × 1080) and
-compact (716 × 1032) layouts. Both use the same plugin palette and trim 0.35
-seconds of opening idle time. The wide loop is 717 frames / 11.95 seconds and
-the compact loop is 684 frames / 11.4 seconds, both at 60 fps. Each poster shows
-the selected element and attached context at 9 seconds.
+The annotation hero now adapts `md-annotate` into Astro HTML, CSS, inline SVG,
+and a shared 12-second Web Animations timeline. Its implementation and source
+attribution live in `website/src/components/home/annotation/`. The annotation
+MP4s, posters, and their renderer configuration have been removed.
 
-Inspected wide and compact source frames at 0, 3.5, 7, 9, and 11 seconds. A
-separate fresh-eye review found no actionable color, clipping, or readability
-issue in those ten frames. Confirmed actual browser playback of the wide clip
-on desktop and portrait clip on a phone layout. The hidden layout stays paused
-and unloaded. The old hero's animation and ticket-preview scripts are removed.
+The inner chat and device UI sit directly in the page. Verified that the hero
+wrapper has a transparent background, zero border, zero padding, and no video
+elements. Desktop and tablet show the chat beside the device; the phone layout
+keeps the selected button clear of the composer. The note's full text fits its
+field. Checked desktop at 1440px, tablet near 768px, and phone at 390px without
+horizontal overflow.
 
-The source's native motion gates were not repeated for this hero pass. Its
-viewport-dependent movement timing is retained after the opening trim. Browser
-layout and playback checks, source-frame review, and the website check/build
-provide the validation for this alternative.
+Verified the visible Pause control in the browser and stable pointer placement
+while paused. An isolated lifecycle check covers offscreen pausing, preserving
+a manual pause across visibility changes, hidden tabs, resize progress, reduced
+motion's finished state, back/forward restoration, and observer/listener/animation
+cleanup. Website diagnostics and the production build pass. Docker screenshot
+updates remain unavailable because the Docker executable is missing.
 
 The marketing site still sends no remote telemetry. Plugin Sentry initialization,
 instrumentation, and data boundaries are unaffected.

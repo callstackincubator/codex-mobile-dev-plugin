@@ -1,43 +1,75 @@
 ---
-import FeaturePreview from '../site/FeaturePreview.astro';
+import HeroIcon from './annotation/HeroIcon.astro';
+import HeroPhone from './annotation/HeroPhone.astro';
+import './annotation/hero-annotation.css';
 
-const label = 'Point at an element in the running app, add a note, and send the selected element to the agent as context.';
+const description = 'Point at an element in the running app, write “Make this an apple,” and send the selected element to the agent as context.';
 ---
 
-<div class="hero-preview hero-preview--wide">
-  <FeaturePreview
-    src="/previews/annotation.mp4"
-    poster="/previews/annotation.webp"
-    label={label}
-  />
+<div class="hero-demo" data-annotation-demo>
+  <div class="hero-scene" role="img" aria-label={description}>
+    <div class="hero-chat" aria-hidden="true">
+      <div class="hero-history">
+        <div class="hero-message"><span class="hero-bar" style="width: 9rem"></span></div>
+        <div class="hero-answer">
+          <span class="hero-bar" style="width: 5rem"></span>
+          <span class="hero-bar" style="width: 96%"></span>
+          <span class="hero-bar" style="width: 90%"></span>
+          <span class="hero-bar" style="width: 54%"></span>
+        </div>
+        <div class="hero-files">
+          <div class="hero-files-heading"><HeroIcon name="file" /><span class="hero-bar" style="width: 6rem"></span></div>
+          {[8, 6.5].map(width => (
+            <div class="hero-file">
+              <span class="hero-bar" style={`width: ${width}rem`}></span>
+              <span class="hero-file-count">+12 −4</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div class="hero-composer">
+        <div class="hero-context-row">
+          <span class="hero-context-chip" data-annotation-target="context"><HeroIcon name="phone" />Context · 1</span>
+        </div>
+        <span class="hero-composer-placeholder">Do anything</span>
+        <div class="hero-composer-tools">
+          <HeroIcon name="plus" />
+          <span class="hero-bar" style="width: 3.5rem"></span>
+          <span class="hero-spacer"></span>
+          <HeroIcon name="mic" />
+          <span class="hero-send"><HeroIcon name="arrow" /></span>
+        </div>
+      </div>
+    </div>
+    <div class="hero-device" aria-hidden="true">
+      <div class="hero-toolbar">
+        <span class="hero-picker"><HeroIcon name="phone" /><span>iPhone 17 Pro</span><HeroIcon name="chevron" /></span>
+        <span class="hero-spacer"></span>
+        <span class="hero-tool"><HeroIcon name="home" /></span>
+        <span class="hero-tool"><HeroIcon name="camera" /></span>
+        <span class="hero-tool hero-select" data-annotation-target="select"><HeroIcon name="pointer" /></span>
+        <span class="hero-playback-space"></span>
+      </div>
+      <div class="hero-device-view" data-annotation-target="panel">
+        <HeroPhone />
+      </div>
+    </div>
+    <div class="hero-highlight" aria-hidden="true"></div>
+    <div class="hero-note" aria-hidden="true">
+      <span class="hero-note-copy"><span class="hero-note-text">Make this an apple</span></span>
+      <span class="hero-send" data-annotation-target="send"><HeroIcon name="arrow" /></span>
+    </div>
+    <span class="hero-context-chip hero-flying-chip" aria-hidden="true"><HeroIcon name="phone" />Context · 1</span>
+    <svg class="hero-cursor" width="24" height="28" viewBox="0 0 24 28" aria-hidden="true">
+      <path d="M3 2v21l5.5-5.2L12 25l4-2-3.6-7.1H20L3 2Z" fill="#0d0d0d" stroke="#f5f5f5" stroke-width="1.5" stroke-linejoin="round" />
+    </svg>
+  </div>
+  <button class="hero-playback" type="button" aria-label="Pause animation" aria-pressed="false" hidden>
+    <span class="hero-pause-icon"><HeroIcon name="pause" /></span>
+    <span class="hero-play-icon"><HeroIcon name="play" /></span>
+  </button>
 </div>
-<div class="hero-preview hero-preview--compact">
-  <FeaturePreview
-    src="/previews/annotation-compact.mp4"
-    poster="/previews/annotation-compact.webp"
-    label={label}
-    width={716}
-    height={1032}
-  />
-</div>
 
-<style>
-  .hero-preview :global(.feature-preview) {
-    margin-top: 0;
-    border: 0;
-  }
-
-  .hero-preview--compact {
-    display: none;
-  }
-
-  @media (max-width: 600px) {
-    .hero-preview--wide {
-      display: none;
-    }
-
-    .hero-preview--compact {
-      display: block;
-    }
-  }
-</style>
+<script>
+  import './annotation/hero-annotation';
+</script>

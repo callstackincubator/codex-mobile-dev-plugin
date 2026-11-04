@@ -1,0 +1,24 @@
+---
+const paths = {
+  arrow: '<path d="M12 19V5m-7 7 7-7 7 7"/>',
+  camera: '<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3Z"/><circle cx="12" cy="13" r="3"/>',
+  carrot: '<path d="M14 6c3.5-6 6 0 6 0s6 2.5 0 6M2.5 21.5l4.7-12a4 4 0 0 1 6.6-1.4l2.1 2.1a4 4 0 0 1-1.4 6.6l-12 4.7ZM7.5 13.5l3 3M11 9l3 3"/>',
+  check: '<path d="m9 12 2 2 4-4"/><circle cx="12" cy="12" r="10"/>',
+  chevron: '<path d="m6 9 6 6 6-6"/>',
+  close: '<path d="m6 6 12 12M6 18 18 6"/>',
+  file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6Zm0 0v6h6M8 13h8m-8 4h5"/>',
+  heart: '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/>',
+  home: '<path d="m3 10 9-8 9 8v10a1 1 0 0 1-1 1h-5v-8H9v8H4a1 1 0 0 1-1-1V10Z"/>',
+  mic: '<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2m-7 9v3m-4 0h8"/>',
+  pause: '<path d="M8 5v14M16 5v14"/>',
+  phone: '<rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/>',
+  play: '<path d="m8 4 12 8-12 8V4Z"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  pointer: '<path d="m4 3 7.1 18 2.5-7.4L21 11 4 3Z"/>',
+};
+
+interface Props { name: keyof typeof paths; }
+const { name } = Astro.props;
+---
+
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" set:html={paths[name]} />
