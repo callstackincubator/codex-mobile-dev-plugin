@@ -1,0 +1,1 @@
+const e=new Map;async function t(t,n){let r=e.get(t);if(r){await r;return}let i,a=new Promise(e=>{i=e});e.set(t,a);try{await n()}finally{e.get(t)===a&&e.delete(t),i()}}async function n(t){await e.get(t)}export{n,t};

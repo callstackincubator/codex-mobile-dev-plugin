@@ -1,0 +1,1 @@
+import{t as e}from"./app-launch.js";export{e as closeIosApp};

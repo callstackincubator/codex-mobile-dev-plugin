@@ -1,5 +1,5 @@
 import { n as DaemonArtifactType } from "./sdk-contracts.js";
-//#region src/io.d.ts
+//#region packages/contracts/src/artifact-adapter.d.ts
 type FileInputRef = {
   kind: 'path';
   path: string;
@@ -73,6 +73,8 @@ type LocalArtifactAdapterOptions = {
   tempDir?: string;
   rootDir?: string;
 };
+//#endregion
+//#region src/io.d.ts
 declare function createLocalArtifactAdapter(options?: LocalArtifactAdapterOptions): ArtifactAdapter;
 //#endregion
-export { FileOutputRef as a, ReserveOutputOptions as c, ResolvedInputFile as d, TemporaryFile as f, FileInputRef as i, ReservedOutputFile as l, ArtifactDescriptor as n, LocalArtifactAdapterOptions as o, createLocalArtifactAdapter as p, CreateTempFileOptions as r, OutputVisibility as s, ArtifactAdapter as t, ResolveInputOptions as u };
+export { FileInputRef as a, OutputVisibility as c, ResolveInputOptions as d, ResolvedInputFile as f, CreateTempFileOptions as i, ReserveOutputOptions as l, ArtifactAdapter as n, FileOutputRef as o, TemporaryFile as p, ArtifactDescriptor as r, LocalArtifactAdapterOptions as s, createLocalArtifactAdapter as t, ReservedOutputFile as u };

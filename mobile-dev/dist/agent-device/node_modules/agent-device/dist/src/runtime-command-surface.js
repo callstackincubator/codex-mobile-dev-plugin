@@ -1,0 +1,1 @@
+import{a as e,n as t,o as n,t as r}from"./runtime-factory.js";function i(i){let a=r(i);return{...a,capture:t(a),selectors:n(a),interactions:e(a)}}export{i as createCommandSurfaceAgentDevice};

@@ -1,0 +1,1 @@
+function e(e){return Math.round(e*10)/10}function t(t){return e(t)}export{e as n,t};

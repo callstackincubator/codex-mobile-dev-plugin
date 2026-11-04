@@ -1,0 +1,1 @@
+const e=`--launch-console is supported only for iOS simulator app launches`,t=`--launch-console requires a direct app launch and cannot be used with URL opens`;export{e as n,t};

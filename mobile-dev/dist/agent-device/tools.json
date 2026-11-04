@@ -1,7 +1,35 @@
 [
  {
+  "name": "action-button",
+  "description": "Press the iPhone or iPad Action Button once. The press is dispatched without activating the session app and nothing is re-observed afterwards, so the app keeps the state the press found. What the system does with the press is not observed by this command: Simulators run no Shortcuts or App Intents, so delivery to an assigned Shortcut is verifiable only on a physical iPhone. Times out after 90s.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "noRecord": {
+     "type": "boolean",
+     "description": "Do not record this action."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "session"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "alert",
-  "description": "Inspect, wait for, accept, or dismiss a platform alert. Use get before acting when the alert content matters; accept and dismiss change the active alert state.",
+  "description": "Inspect, wait for, accept, or dismiss a platform alert. Use get before acting when the alert content matters; accept and dismiss change the active alert state. Each iOS XCTest execution activates once, then only observes. Local Apple XCTest and Limrun iOS choose recognized English labels by preference (Allow While Using App before Allow Once); equal-ranked choices and unknown labels refuse, including a lone unknown button. Open, Done, and Confirm… accept; Keep Browsing, Deny, and Skip dismiss. On the Apple XCUITest runner, dismiss taps only a recognized decline label (Cancel, Don't Allow, Ask App Not to Track, and similar) or the close element of a popover whose accessibility marker reads exactly \"dismiss popup\"; when no button fits the action, accept and dismiss answer ALERT_BUTTON_NOT_FOUND having tapped nothing — read labels with alert get, then press the button by label. Inspect again after an unconfirmed action; never assume a timeout means nothing happened. Times out after 90s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -41,7 +69,7 @@
  },
  {
   "name": "app-switcher",
-  "description": "Open the device app switcher to inspect or change foreground apps. This changes the visible system UI and may move focus away from the current app.",
+  "description": "Open the device app switcher to inspect or change foreground apps. This changes the visible system UI and may move focus away from the current app. Times out after 90s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -69,7 +97,7 @@
  },
  {
   "name": "apps",
-  "description": "List the apps installed on the selected device. Include system or OEM apps only when they are needed as automation targets.",
+  "description": "List the apps installed on the selected device. Include system or OEM apps only when they are needed as automation targets. Times out after 90s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -95,15 +123,15 @@
     },
     "device": {
      "type": "string",
-     "description": "Device name selector."
+     "description": "Device name selector (a UDID belongs in udid, a serial in serial)."
     },
     "udid": {
      "type": "string",
-     "description": "iOS device UDID selector."
+     "description": "Apple device or simulator UDID; the selector that pins one device when several share a name."
     },
     "serial": {
      "type": "string",
-     "description": "Android device or Vega VVD serial selector."
+     "description": "Android, HarmonyOS, or Vega VVD serial selector."
     },
     "appsFilter": {
      "type": "string",
@@ -125,7 +153,7 @@
  },
  {
   "name": "appstate",
-  "description": "Show foreground app/activity",
+  "description": "Show foreground app/activity (Android and HarmonyOS; iOS and macOS answer per session) Times out after 90s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -151,15 +179,15 @@
     },
     "device": {
      "type": "string",
-     "description": "Device name selector."
+     "description": "Device name selector (a UDID belongs in udid, a serial in serial)."
     },
     "udid": {
      "type": "string",
-     "description": "iOS device UDID selector."
+     "description": "Apple device or simulator UDID; the selector that pins one device when several share a name."
     },
     "serial": {
      "type": "string",
-     "description": "Android device or Vega VVD serial selector."
+     "description": "Android, HarmonyOS, or Vega VVD serial selector."
     }
    },
    "additionalProperties": false,
@@ -173,7 +201,7 @@
  },
  {
   "name": "back",
-  "description": "Navigate back in the app or through system navigation. Use in-app for the app navigation stack and system when the platform back behavior is required.",
+  "description": "Navigate back in the app or through system navigation. Use in-app for the app navigation stack and system when the platform back behavior is required. On iOS, a single-screen iPhone or an iPad whose app provably fills its screen can use a top-leading tap when the app tree is unreadable, with before/after visual verification. A capture failure reports an unknown outcome. Times out after 90s; a caller-supplied budget extends it.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -196,7 +224,7 @@
     },
     "settleQuietMs": {
      "type": "integer",
-     "description": "Settle: quiet window in milliseconds (default 500).",
+     "description": "Settle: quiet window in milliseconds (default 500; 300 when the settled tree comes from the iOS simulator snapshot bridge). On iOS, a broad screen replacement such as a modal dismissal is confirmed for at least 1500ms whatever window is asked for, within the timeoutMs settle deadline; a replacement from a screen the pre-action capture read as presenting nothing, such as a tab switch, gets no 1500ms confirmation and keeps the asked window.",
      "minimum": 0
     },
     "timeoutMs": {
@@ -222,7 +250,7 @@
  },
  {
   "name": "batch",
-  "description": "Execute multiple commands in one daemon request",
+  "description": "Execute multiple commands in one daemon request. Times out after 90s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -231,10 +259,6 @@
      "minLength": 1,
      "pattern": "\\S",
      "description": "Named session opened with open."
-    },
-    "cwd": {
-     "type": "string",
-     "description": "Working directory for command execution."
     },
     "steps": {
      "type": "array",
@@ -261,6 +285,7 @@
          "keyboard",
          "install",
          "reinstall",
+         "uninstall",
          "push",
          "trigger-app-event",
          "open",
@@ -277,6 +302,7 @@
          "click",
          "fill",
          "longpress",
+         "hover",
          "press",
          "type",
          "get",
@@ -286,11 +312,15 @@
          "home",
          "tv-remote",
          "orientation",
+         "fold",
+         "telephony",
          "scroll",
          "swipe",
          "focus",
          "screenshot",
          "app-switcher",
+         "action-button",
+         "hardware-button",
          "install-from-source"
         ],
         "description": "Command name to run with structured input."
@@ -298,6 +328,7 @@
        "input": {
         "type": "object",
         "additionalProperties": true,
+        "commandInputFor": "command",
         "description": "Structured command input for the nested command. Use the matching MCP tool schema for this object."
        },
        "runtime": {
@@ -345,7 +376,7 @@
  },
  {
   "name": "boot",
-  "description": "Boot or prepare the selected device or simulator so later commands can target it. The device is chosen through the device-selection inputs, not by naming it here.",
+  "description": "Boot or prepare the selected device or simulator so later commands can target it. The device is chosen through the device-selection inputs, not by naming it here. Times out after 90s; a caller-supplied budget extends it.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -371,19 +402,24 @@
     },
     "device": {
      "type": "string",
-     "description": "Device name selector."
+     "description": "Device name selector (a UDID belongs in udid, a serial in serial)."
     },
     "udid": {
      "type": "string",
-     "description": "iOS device UDID selector."
+     "description": "Apple device or simulator UDID; the selector that pins one device when several share a name."
     },
     "serial": {
      "type": "string",
-     "description": "Android device or Vega VVD serial selector."
+     "description": "Android, HarmonyOS, or Vega VVD serial selector."
     },
     "headless": {
      "type": "boolean",
      "description": "Boot without showing simulator UI when supported."
+    },
+    "timeoutMs": {
+     "type": "integer",
+     "description": "Startup budget in milliseconds. Bounds the boot wait, so a never-booted Simulator can finish its first-boot migration or a cold emulator its boot; omit for the default startup behavior.",
+     "minimum": 1
     }
    },
    "additionalProperties": false,
@@ -397,7 +433,7 @@
  },
  {
   "name": "capabilities",
-  "description": "List the commands supported by the selected device or active session. Use device-selection inputs when checking support before a session is open.",
+  "description": "List the commands supported by the selected device or active session. Use device-selection inputs when checking support before a session is open. Times out after 90s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -423,15 +459,15 @@
     },
     "device": {
      "type": "string",
-     "description": "Device name selector."
+     "description": "Device name selector (a UDID belongs in udid, a serial in serial)."
     },
     "udid": {
      "type": "string",
-     "description": "iOS device UDID selector."
+     "description": "Apple device or simulator UDID; the selector that pins one device when several share a name."
     },
     "serial": {
      "type": "string",
-     "description": "Android device or Vega VVD serial selector."
+     "description": "Android, HarmonyOS, or Vega VVD serial selector."
     }
    },
    "additionalProperties": false,
@@ -445,7 +481,7 @@
  },
  {
   "name": "click",
-  "description": "Activate a UI target by snapshot ref, selector, or coordinates. Prefer a ref or selector after a snapshot; use coordinates only when semantic targeting is unavailable. This can change app state; use settle or verify to confirm the result without a follow-up snapshot.",
+  "description": "Activate a UI target by snapshot ref, selector, or coordinates. Prefer a ref or selector after a snapshot; use coordinates only when semantic targeting is unavailable. This can change app state. Success means the click was dispatched, not that it landed: use settle or verify to confirm the result without a follow-up snapshot, or wait for the expected screen. A ref or selector target is re-checked for motion before dispatch when the session's previous action just animated the screen, and is dispatched at its resting position; one that has not stopped refuses with target_still_moving rather than acting where it was. Times out after 90s; a caller-supplied budget extends it.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -560,7 +596,7 @@
     },
     "jitterPx": {
      "type": "integer",
-     "description": "Randomization radius in pixels.",
+     "description": "Deterministic per-axis coordinate jitter in pixels (each press offsets x and y by up to this amount).",
      "minimum": 0
     },
     "doubleTap": {
@@ -577,7 +613,7 @@
     },
     "settleQuietMs": {
      "type": "integer",
-     "description": "Settle: quiet window in milliseconds (default 500).",
+     "description": "Settle: quiet window in milliseconds (default 500; 300 when the settled tree comes from the iOS simulator snapshot bridge). On iOS, a broad screen replacement such as a modal dismissal is confirmed for at least 1500ms whatever window is asked for, within the timeoutMs settle deadline; a replacement from a screen the pre-action capture read as presenting nothing, such as a tab switch, gets no 1500ms confirmation and keeps the asked window.",
      "minimum": 0
     },
     "timeoutMs": {
@@ -604,7 +640,7 @@
  },
  {
   "name": "clipboard",
-  "description": "Read the current device clipboard text, or replace its contents with the given text.",
+  "description": "Read the current device clipboard text, or replace its contents with the given text. Android runs both through the clipboard service shell command, and a build that implements none (Android 16 does not) refuses with UNSUPPORTED_OPERATION rather than reporting an empty clipboard. Times out after 90s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -643,7 +679,7 @@
  },
  {
   "name": "close",
-  "description": "Close the named app, or close the active session app when app is omitted. Use shutdown only when the selected simulator or emulator should also stop.",
+  "description": "Close the named app, or close the active session app when app is omitted. Use shutdown only when the selected simulator or emulator should also stop. Android ADB close fails with android-app-close-timeout if the app stays foreground, or its process stays running, past its 2s check window. Times out after 90s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -679,7 +715,7 @@
  },
  {
   "name": "debug",
-  "description": "Symbolicate Apple crash artifacts with matching dSYM UUIDs. This debug namespace is intentionally narrow: use logs for app logs, network for HTTP evidence, perf for performance samples, record/trace for media and traces, and react-devtools for React Native profiles.",
+  "description": "Symbolicate Apple crash artifacts with matching dSYM UUIDs. This debug namespace is intentionally narrow: use logs for app logs, network for HTTP evidence, perf for performance samples, record/trace for media and traces, and react-devtools for React Native components and render profiles. Times out after 90s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -688,10 +724,6 @@
      "minLength": 1,
      "pattern": "\\S",
      "description": "Named session opened with open."
-    },
-    "cwd": {
-     "type": "string",
-     "description": "Working directory for command execution."
     },
     "action": {
      "type": "string",
@@ -730,7 +762,7 @@
  },
  {
   "name": "devices",
-  "description": "List available devices and simulators that can be selected for automation. Use platform, device, udid, or serial inputs on later commands to target one result.",
+  "description": "List available devices and simulators that can be selected for automation. Use platform, device, udid, or serial inputs on later commands to target one result. Times out after 90s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -756,15 +788,15 @@
     },
     "device": {
      "type": "string",
-     "description": "Device name selector."
+     "description": "Device name selector (a UDID belongs in udid, a serial in serial)."
     },
     "udid": {
      "type": "string",
-     "description": "iOS device UDID selector."
+     "description": "Apple device or simulator UDID; the selector that pins one device when several share a name."
     },
     "serial": {
      "type": "string",
-     "description": "Android device or Vega VVD serial selector."
+     "description": "Android, HarmonyOS, or Vega VVD serial selector."
     }
    },
    "additionalProperties": false,
@@ -778,7 +810,7 @@
  },
  {
   "name": "diff",
-  "description": "Compare accessibility snapshots or screenshots to identify UI changes. Use snapshot comparisons for semantic tree changes and screenshot comparisons for pixel differences.",
+  "description": "Compare accessibility snapshots or screenshots to identify UI changes. Use snapshot comparisons for semantic tree changes and screenshot comparisons for pixel differences. Times out after 90s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -787,10 +819,6 @@
      "minLength": 1,
      "pattern": "\\S",
      "description": "Named session opened with open."
-    },
-    "cwd": {
-     "type": "string",
-     "description": "Working directory for command execution."
     },
     "kind": {
      "type": "string",
@@ -830,7 +858,7 @@
  },
  {
   "name": "doctor",
-  "description": "Diagnose device, app, development-server, and React Native or Expo readiness issues. Returns compact evidence for local inventory, sessions, optional app discovery, toolchains, and server reachability. On iOS simulators it also warms the XCTest runner build cache in the background when missing, so run it before the first Apple snapshot or interaction of a session.",
+  "description": "Diagnose device, app, development-server, and React Native or Expo readiness issues. Returns compact evidence for local inventory, sessions, optional app discovery, toolchains, and server reachability. On iOS simulators it also warms the XCTest runner build cache in the background when missing, so run it before the first Apple snapshot or interaction of a session. Times out after 90s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -856,15 +884,15 @@
     },
     "device": {
      "type": "string",
-     "description": "Device name selector."
+     "description": "Device name selector (a UDID belongs in udid, a serial in serial)."
     },
     "udid": {
      "type": "string",
-     "description": "iOS device UDID selector."
+     "description": "Apple device or simulator UDID; the selector that pins one device when several share a name."
     },
     "serial": {
      "type": "string",
-     "description": "Android device or Vega VVD serial selector."
+     "description": "Android, HarmonyOS, or Vega VVD serial selector."
     },
     "targetApp": {
      "type": "string",
@@ -886,7 +914,7 @@
  },
  {
   "name": "events",
-  "description": "Read the daemon-owned session event timeline as paged JSON-friendly entries",
+  "description": "Read the daemon-owned session event timeline as paged JSON-friendly entries Times out after 90s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -914,7 +942,7 @@
  },
  {
   "name": "fill",
-  "description": "Replace text in a UI input selected by snapshot ref, selector, or coordinates. Prefer refs or selectors after snapshot; use recordAs to keep sensitive text out of a recorded replay while sending it to the live app.",
+  "description": "Replace text in a UI input selected by snapshot ref, selector, or coordinates. Pass an empty text to clear the field. Inspect unconfirmed evidence and assert the expected value or resulting screen before continuing. Prefer refs or selectors after snapshot; use recordAs to keep sensitive text out of a recorded replay while sending it to the live app. Times out after 90s; a caller-supplied budget extends it.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -992,7 +1020,7 @@
     },
     "text": {
      "type": "string",
-     "description": "Text to enter into the target."
+     "description": "Text to enter into the target. Pass \"\" to clear it."
     },
     "delayMs": {
      "type": "integer",
@@ -1026,7 +1054,7 @@
     },
     "settleQuietMs": {
      "type": "integer",
-     "description": "Settle: quiet window in milliseconds (default 500).",
+     "description": "Settle: quiet window in milliseconds (default 500; 300 when the settled tree comes from the iOS simulator snapshot bridge). On iOS, a broad screen replacement such as a modal dismissal is confirmed for at least 1500ms whatever window is asked for, within the timeoutMs settle deadline; a replacement from a screen the pre-action capture read as presenting nothing, such as a tab switch, gets no 1500ms confirmation and keeps the asked window.",
      "minimum": 0
     },
     "timeoutMs": {
@@ -1054,7 +1082,7 @@
  },
  {
   "name": "find",
-  "description": "Find by text/label/value/role/id and run action",
+  "description": "Find by text/label/value/role/id and run action. The role locator matches snapshot kind vocabulary (button, text, text-field, switch, ...); pre-reconciliation leaf spellings (statictext, edittext, textview) stay accepted on the nodes that carried them during a deprecation window. Times out after 90s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1133,7 +1161,7 @@
  },
  {
   "name": "focus",
-  "description": "Move input focus to explicit screen coordinates without entering text. Prefer semantic interactions when a snapshot ref or selector is available; use type or fill after focus.",
+  "description": "Move input focus to explicit screen coordinates without entering text. Prefer semantic interactions when a snapshot ref or selector is available; use type or fill after focus. Times out after 90s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1170,8 +1198,93 @@
   }
  },
  {
+  "name": "fold",
+  "description": "Fold or unfold a foldable iPhone simulator (iPhone Duo) or a foldable Android emulator into the closed, half-open, or open pose. iOS sends a simulator HID hinge event, then reads the hinge angle back inside the simulator to confirm it, and can follow timestamped angle keyframes; Android sets the emulator console posture, then confirms the device state the guest commits and reports the hinge angle the AVD profile defines for that posture, and dismisses the lock screen a fold to the cover display can raise. On iOS a pose change moves the app to a different panel with a different point size; on Android a fold to or from closed moves the app between the cover and inner displays, and any pose change can reshape the app window, whose size the next snapshot reports. Either way every ref and coordinate from before it is stale: re-snapshot after this command. Taps, long presses, and scrolling target the app window on its current panel in closed, half-open, and open poses. Simulator and emulator only; iOS requires the iOS simulator SDK; Device Hub and host Accessibility permission are not required. An iOS simulator in a scoped simulator set folds the same way as one in the default set. Times out after 255s.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "pose": {
+     "type": "string",
+     "enum": [
+      "closed",
+      "half-open",
+      "open"
+     ],
+     "description": "Instant preset; mutually exclusive with keyframes."
+    },
+    "keyframes": {
+     "type": "array",
+     "minItems": 2,
+     "maxItems": 64,
+     "description": "Piecewise-linear hinge motion. Start at 0ms; strictly increasing timestamps, up to 60000ms. Repeated angles create holds. Mutually exclusive with pose.",
+     "items": {
+      "type": "object",
+      "required": [
+       "atMs",
+       "angle"
+      ],
+      "additionalProperties": false,
+      "properties": {
+       "atMs": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 60000
+       },
+       "angle": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 180
+       }
+      }
+     }
+    },
+    "noRecord": {
+     "type": "boolean",
+     "description": "Do not record this action."
+    }
+   },
+   "additionalProperties": false,
+   "oneOf": [
+    {
+     "required": [
+      "pose"
+     ],
+     "not": {
+      "required": [
+       "keyframes"
+      ]
+     }
+    },
+    {
+     "required": [
+      "keyframes"
+     ],
+     "not": {
+      "required": [
+       "pose"
+      ]
+     }
+    }
+   ],
+   "required": [
+    "session"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "gesture",
-  "description": "Perform a structured pan, fling, swipe, pinch, rotate, transform, or drag gesture. Select the gesture kind, then provide only the inputs that apply to that kind.",
+  "description": "Perform a structured pan, fling, swipe, pinch, rotate, transform, tap, or drag gesture. Select the gesture kind, then provide only the inputs that apply to that kind. A tap touches 2 to 5 points at once; repeat it with count and pauseMs. Times out after 90s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1190,6 +1303,7 @@
       "pinch",
       "rotate",
       "transform",
+      "tap",
       "drag"
      ],
      "description": "Gesture variant."
@@ -1273,6 +1387,47 @@
      "minimum": 1,
      "maximum": 2
     },
+    "points": {
+     "type": "array",
+     "description": "Tap contact points, held together for holdMs.",
+     "items": {
+      "type": "object",
+      "description": "One contact point.",
+      "properties": {
+       "x": {
+        "type": "number"
+       },
+       "y": {
+        "type": "number"
+       }
+      },
+      "required": [
+       "x",
+       "y"
+      ],
+      "additionalProperties": false
+     },
+     "minItems": 2,
+     "maxItems": 5
+    },
+    "holdMs": {
+     "type": "integer",
+     "description": "Tap contact hold duration.",
+     "minimum": 16,
+     "maximum": 10000
+    },
+    "count": {
+     "type": "integer",
+     "description": "Tap repetitions; the same contacts run this many times.",
+     "minimum": 1,
+     "maximum": 200
+    },
+    "pauseMs": {
+     "type": "integer",
+     "description": "Delay between tap repetitions, added to each repetition’s own time.",
+     "minimum": 0,
+     "maximum": 10000
+    },
     "source": {
      "type": "string",
      "description": "Drag source @ref or selector."
@@ -1318,7 +1473,7 @@
  },
  {
   "name": "get",
-  "description": "Read text or accessibility attributes from a snapshot ref or selector without changing the app. Use format text for visible content or attrs for the element attribute map.",
+  "description": "Read text or accessibility attributes from a snapshot ref or selector without changing the app. Use format text for visible content or attrs for the element attribute map. Times out after 90s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1416,8 +1571,54 @@
   }
  },
  {
+  "name": "hardware-button",
+  "description": "Press a phone hardware button once: volume-up, volume-down, power, mute, sleep, wake, media-play-pause, media-next, media-previous, media-rewind, or media-fast-forward. The press is dispatched without activating the session app and nothing is re-observed afterwards, so the OS decides what the key does — which audio stream a volume press moves, which media session a media key reaches, and whether the HUD shows, is device behavior this command does not claim. Power toggles the Android screen; sleep and wake are the explicit Android events that turn it off or on without toggling, and after a press that turns it off, later commands may hit a locked screen. Android (ADB-backed and Appium) presses all eleven on phones and tablets; a physical iPhone or iPad presses volume only through the local runner or Appium, never power, mute, sleep, wake, or media. iOS Simulators, Android TV and tvOS targets refuse: on TV targets use tv-remote. Times out after 90s.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "button": {
+     "type": "string",
+     "enum": [
+      "volume-up",
+      "volume-down",
+      "power",
+      "mute",
+      "sleep",
+      "wake",
+      "media-play-pause",
+      "media-next",
+      "media-previous",
+      "media-rewind",
+      "media-fast-forward"
+     ],
+     "description": "One press each. volume-up and volume-down move the system volume stream the OS selects; power toggles the screen on Android; sleep and wake are the explicit Android events that turn the screen off or on without toggling; mute, media-play-pause, media-next, media-previous, media-rewind, and media-fast-forward are Android keys the OS routes to its own streams and media sessions. All of these except volume are refused on every Apple leaf."
+    },
+    "noRecord": {
+     "type": "boolean",
+     "description": "Do not record this action."
+    }
+   },
+   "required": [
+    "button",
+    "session"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "home",
-  "description": "Send the selected device to its home screen. This leaves the app session open but moves the foreground away from the app.",
+  "description": "Send the selected device to its home screen. This leaves the app session open but moves the foreground away from the app. Times out after 90s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1445,7 +1646,7 @@
  },
  {
   "name": "install",
-  "description": "Install an app binary from a local path. Provide an app identifier with the path when the target needs explicit app selection; use reinstall to replace an already installed app.",
+  "description": "Install an app binary from a local path. Provide an app identifier with the path when the target needs explicit app selection; use reinstall to replace an already installed app. Times out after 180s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1471,19 +1672,15 @@
     },
     "device": {
      "type": "string",
-     "description": "Device name selector."
+     "description": "Device name selector (a UDID belongs in udid, a serial in serial)."
     },
     "udid": {
      "type": "string",
-     "description": "iOS device UDID selector."
+     "description": "Apple device or simulator UDID; the selector that pins one device when several share a name."
     },
     "serial": {
      "type": "string",
-     "description": "Android device or Vega VVD serial selector."
-    },
-    "cwd": {
-     "type": "string",
-     "description": "Working directory for command execution."
+     "description": "Android, HarmonyOS, or Vega VVD serial selector."
     },
     "app": {
      "type": "string",
@@ -1511,7 +1708,7 @@
  },
  {
   "name": "is",
-  "description": "Check whether a selector satisfies a UI predicate such as visible, hidden, editable, selected, focused, or text. Use wait when the condition may appear asynchronously.",
+  "description": "Check whether a selector satisfies a UI predicate such as visible, hidden, exists, absent, editable, selected, focused, or text. `absent` passes only when one readable, complete, settled, unscoped, full-depth accessibility capture has zero matches. Use wait when the condition may appear asynchronously. Times out after 90s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1527,6 +1724,7 @@
       "visible",
       "hidden",
       "exists",
+      "absent",
       "editable",
       "selected",
       "focused",
@@ -1576,7 +1774,7 @@
  },
  {
   "name": "keyboard",
-  "description": "Inspect Android keyboard visibility/type or press/dismiss the device keyboard. To hide the keyboard, use keyboard dismiss. It taps the keyboard dismiss/hide key when one is exposed, verifies the keyboard closed, and reports UNSUPPORTED_OPERATION when no dismiss key exists — background taps are never attempted.",
+  "description": "Inspect Android keyboard visibility/type or press/dismiss the device keyboard. To hide the keyboard, use keyboard dismiss. It taps the keyboard dismiss/hide key when one is exposed, verifies the keyboard closed, and reports UNSUPPORTED_OPERATION when no dismiss key exists — background taps are never attempted. Times out after 90s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1613,7 +1811,7 @@
  },
  {
   "name": "longpress",
-  "description": "Hold a UI target by snapshot ref, selector, or coordinates to open a context menu or perform another hold gesture. Set durationMs when the default hold duration is unsuitable.",
+  "description": "Hold a UI target by snapshot ref, selector, or coordinates to open a context menu or perform another hold gesture. Set durationMs when the default hold duration is unsuitable. Times out after 320s; a caller-supplied budget extends it.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1713,7 +1911,7 @@
     },
     "settleQuietMs": {
      "type": "integer",
-     "description": "Settle: quiet window in milliseconds (default 500).",
+     "description": "Settle: quiet window in milliseconds (default 500; 300 when the settled tree comes from the iOS simulator snapshot bridge). On iOS, a broad screen replacement such as a modal dismissal is confirmed for at least 1500ms whatever window is asked for, within the timeoutMs settle deadline; a replacement from a screen the pre-action capture read as presenting nothing, such as a tab switch, gets no 1500ms confirmation and keeps the asked window.",
      "minimum": 0
     },
     "timeoutMs": {
@@ -1740,7 +1938,7 @@
  },
  {
   "name": "metro",
-  "description": "Prepare a React Native development server or ask connected apps to reload, using the development server this session is bound to. Provide explicit runtime inputs only to override that binding for one call. The binding is cleared when the session closes, and a fresh open without runtime hints also clears any leftover binding from a previous same-name session.",
+  "description": "Prepare a React Native development server or ask connected apps to reload, using the development server this session is bound to. Provide explicit runtime inputs only to override that binding for one call. The binding is cleared when the session closes, and a fresh open without runtime hints also clears any leftover binding from a previous same-name session. Times out after 90s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1749,10 +1947,6 @@
      "minLength": 1,
      "pattern": "\\S",
      "description": "Named session opened with open."
-    },
-    "cwd": {
-     "type": "string",
-     "description": "Working directory for command execution."
     },
     "action": {
      "type": "string",
@@ -1768,12 +1962,6 @@
      "type": "string"
     },
     "publicBaseUrl": {
-     "type": "string"
-    },
-    "proxyBaseUrl": {
-     "type": "string"
-    },
-    "bearerToken": {
      "type": "string"
     },
     "bridgeScope": {
@@ -1836,7 +2024,7 @@
  },
  {
   "name": "network",
-  "description": "Dump recent HTTP(s) traffic parsed from the session app log",
+  "description": "Dump recent HTTP(s) traffic parsed from the session app log Times out after 90s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1879,7 +2067,7 @@
  },
  {
   "name": "open",
-  "description": "Boot the selected device when needed, then open an app, deep link, or URL in a session. Use the app or URL inputs to choose what becomes the foreground automation target. Metro and debug runtime hints given here are recorded as the session's dev-server binding, so a later reload reuses them; a fresh open without them clears any binding left by a previous same-name session.",
+  "description": "Boot the selected device when needed, then open an app, deep link, or URL in a session. Use the app or URL inputs to choose what becomes the foreground automation target. metroHost, metroPort, and bundleUrl choose the app's Metro server and save its address for later reloads. launchUrl selects the app's launch URL and does not select the reload server. A fresh open without Metro hints clears an older same-name binding; close also clears it. Times out after 90s; a caller-supplied budget extends it.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1905,19 +2093,15 @@
     },
     "device": {
      "type": "string",
-     "description": "Device name selector."
+     "description": "Device name selector (a UDID belongs in udid, a serial in serial)."
     },
     "udid": {
      "type": "string",
-     "description": "iOS device UDID selector."
+     "description": "Apple device or simulator UDID; the selector that pins one device when several share a name."
     },
     "serial": {
      "type": "string",
-     "description": "Android device or Vega VVD serial selector."
-    },
-    "cwd": {
-     "type": "string",
-     "description": "Working directory for command execution."
+     "description": "Android, HarmonyOS, or Vega VVD serial selector."
     },
     "app": {
      "type": "string",
@@ -1943,7 +2127,7 @@
     },
     "launchConsole": {
      "type": "string",
-     "description": "Launch console mode."
+     "description": "File path on the daemon host for the stdout and stderr of the initial app launch. iOS simulator direct app launches only; not for URL opens."
     },
     "launchArgs": {
      "type": "array",
@@ -1956,13 +2140,20 @@
      "type": "boolean",
      "description": "Force relaunch."
     },
+    "timeoutMs": {
+     "type": "integer",
+     "description": "Startup budget in milliseconds. Bounds the Simulator boot wait, so a never-booted Simulator can finish its first-boot migration; omit for the default startup behavior.",
+     "minimum": 1
+    },
+    "waitMs": {
+     "type": "integer",
+     "description": "Block this open for up to n milliseconds (100-120000) while another session holds the device, then fail with DEVICE_IN_USE naming that session. Only session contention is waited for: a device claim held by another workspace is refused at once with its recovery command. A device that never frees, or is taken again while this open waits, costs the full budget, which extends this command's timeout envelope rather than eating into it.",
+     "minimum": 100,
+     "maximum": 120000
+    },
     "foreground": {
      "type": "boolean",
      "description": "Include an initial interactive snapshot in a fresh open response. With no app argument, discover the sole running app on the sole booted iOS simulator; ambiguous environments fail closed."
-    },
-    "deviceHub": {
-     "type": "boolean",
-     "description": "Use Xcode Device Hub when surfacing Apple simulators."
     },
     "testIme": {
      "type": "boolean",
@@ -1988,7 +2179,7 @@
     },
     "launchUrl": {
      "type": "string",
-     "description": "Session-scoped launch URL hint applied to the opened app."
+     "description": "Launch URL for the opened app; does not select the server used by metro reload."
     }
    },
    "additionalProperties": false,
@@ -2005,7 +2196,7 @@
  },
  {
   "name": "orientation",
-  "description": "Set device orientation on iOS and Android",
+  "description": "Set device orientation on iOS and Android. auto hands rotation back to the sensor on ADB-backed Android (local and Limrun); other backends refuse it. A foldable iPhone simulator (iPhone Duo) refuses portrait-upside-down, and refuses every rotation in a scoped simulator set. Times out after 90s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -2021,7 +2212,8 @@
       "portrait",
       "portrait-upside-down",
       "landscape-left",
-      "landscape-right"
+      "landscape-right",
+      "auto"
      ]
     },
     "noRecord": {
@@ -2043,7 +2235,7 @@
  },
  {
   "name": "press",
-  "description": "Short-press a UI target by snapshot ref, selector, or coordinates. Use longpress instead when the target requires a context-menu or hold gesture.",
+  "description": "Short-press a UI target by snapshot ref, selector, or coordinates. Use longpress instead when the target requires a context-menu or hold gesture. Success means the press was dispatched, not that it landed: use settle or verify to confirm the result, or wait for the expected screen. A ref or selector target is re-checked for motion before dispatch when the session's previous action just animated the screen, and is dispatched at its resting position; one that has not stopped refuses with target_still_moving rather than acting where it was. Times out after 90s; a caller-supplied budget extends it.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -2149,7 +2341,7 @@
     },
     "jitterPx": {
      "type": "integer",
-     "description": "Randomization radius in pixels.",
+     "description": "Deterministic per-axis coordinate jitter in pixels (each press offsets x and y by up to this amount).",
      "minimum": 0
     },
     "doubleTap": {
@@ -2166,7 +2358,7 @@
     },
     "settleQuietMs": {
      "type": "integer",
-     "description": "Settle: quiet window in milliseconds (default 500).",
+     "description": "Settle: quiet window in milliseconds (default 500; 300 when the settled tree comes from the iOS simulator snapshot bridge). On iOS, a broad screen replacement such as a modal dismissal is confirmed for at least 1500ms whatever window is asked for, within the timeoutMs settle deadline; a replacement from a screen the pre-action capture read as presenting nothing, such as a tab switch, gets no 1500ms confirmation and keeps the asked window.",
      "minimum": 0
     },
     "timeoutMs": {
@@ -2193,7 +2385,7 @@
  },
  {
   "name": "push",
-  "description": "Deliver push notification payloads to an installed app.",
+  "description": "Deliver push notification payloads to an installed app. Times out after 90s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -2237,7 +2429,7 @@
  },
  {
   "name": "react-native",
-  "description": "Run supported React Native automation helpers. Use dismiss-overlay to close a visible development error overlay before continuing normal UI automation.",
+  "description": "Run supported React Native automation helpers. Use dismiss-overlay to close a visible development error overlay before continuing normal UI automation. Times out after 90s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -2272,7 +2464,7 @@
  },
  {
   "name": "record",
-  "description": "Start or stop a screen recording for the active app session or, where supported, the selected device. Long Android recordings can return multiple video artifacts; HarmonyOS supports whole-screen recording on physical devices.",
+  "description": "Start or stop a screen recording for the active app session or, where supported, the selected device, or build a contact-sheet PNG from a recording already exported. Long Android recordings can return multiple video artifacts; HarmonyOS supports whole-screen recording on physical devices. Times out after 90s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -2281,10 +2473,6 @@
      "minLength": 1,
      "pattern": "\\S",
      "description": "Named session opened with open."
-    },
-    "cwd": {
-     "type": "string",
-     "description": "Working directory for command execution."
     },
     "action": {
      "type": "string",
@@ -2336,7 +2524,7 @@
  },
  {
   "name": "reinstall",
-  "description": "Replace an installed app with a binary from a local path. Use this when preserving the same app identity while installing a new build on the selected device.",
+  "description": "Replace an installed app with a binary from a local path. Use this when preserving the same app identity while installing a new build on the selected device. Times out after 180s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -2362,19 +2550,15 @@
     },
     "device": {
      "type": "string",
-     "description": "Device name selector."
+     "description": "Device name selector (a UDID belongs in udid, a serial in serial)."
     },
     "udid": {
      "type": "string",
-     "description": "iOS device UDID selector."
+     "description": "Apple device or simulator UDID; the selector that pins one device when several share a name."
     },
     "serial": {
      "type": "string",
-     "description": "Android device or Vega VVD serial selector."
-    },
-    "cwd": {
-     "type": "string",
-     "description": "Working directory for command execution."
+     "description": "Android, HarmonyOS, or Vega VVD serial selector."
     },
     "app": {
      "type": "string"
@@ -2402,7 +2586,7 @@
  },
  {
   "name": "replay",
-  "description": "Run a recorded automation script, including compatible Maestro YAML flows. A script without a terminal close leaves its session active for subsequent automation.",
+  "description": "Run a recorded automation script, including compatible Maestro YAML flows. A script without a terminal close leaves its session active for subsequent automation. Times out after 90s; a caller-supplied budget extends it.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -2428,19 +2612,15 @@
     },
     "device": {
      "type": "string",
-     "description": "Device name selector."
+     "description": "Device name selector (a UDID belongs in udid, a serial in serial)."
     },
     "udid": {
      "type": "string",
-     "description": "iOS device UDID selector."
+     "description": "Apple device or simulator UDID; the selector that pins one device when several share a name."
     },
     "serial": {
      "type": "string",
-     "description": "Android device or Vega VVD serial selector."
-    },
-    "cwd": {
-     "type": "string",
-     "description": "Working directory for command execution."
+     "description": "Android, HarmonyOS, or Vega VVD serial selector."
     },
     "path": {
      "type": "string"
@@ -2484,7 +2664,7 @@
     },
     "timeoutMs": {
      "type": "integer",
-     "description": "Maximum wall-clock duration for the replay request."
+     "description": "Operation wall-clock budget in milliseconds (default 60000). The client allows another 30000 milliseconds for the daemon result."
     },
     "saveScript": {
      "oneOf": [
@@ -2498,6 +2678,10 @@
     },
     "force": {
      "type": "boolean"
+    },
+    "testIme": {
+     "type": "boolean",
+     "description": "Activate the headless Android test IME for the sessions this replay opens (default on for emulators; opt-in on real devices)."
     }
    },
    "required": [
@@ -2513,7 +2697,7 @@
  },
  {
   "name": "screenshot",
-  "description": "Capture a screenshot of the active app or web session. Choose the capture scope, density, size, or annotations through the corresponding input fields when needed.",
+  "description": "Capture a screenshot of the active app or web session. Choose the capture scope, density, size, or annotations through the corresponding input fields when needed. Times out after 90s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -2522,6 +2706,10 @@
      "minLength": 1,
      "pattern": "\\S",
      "description": "Named session opened with open."
+    },
+    "cropOn": {
+     "type": "string",
+     "description": "Selector expression; the capture is cropped to the frame the selector resolves on the same screen."
     },
     "overlayRefs": {
      "type": "boolean"
@@ -2573,7 +2761,7 @@
  },
  {
   "name": "scroll",
-  "description": "Scroll in a direction, or toward the top/bottom edge of scrollable content.",
+  "description": "Scroll in a direction, or toward the top/bottom edge of scrollable content. Set until to a selector to reach an off-screen target in one command rather than a scroll-and-check loop. The optional amount is the finger-path fraction of the viewport axis, honored up to 0.8 of it; directional scrolls reduce release momentum, while app scroll physics determine the final content offset. A visible keyboard shortens the swiped band instead of being dismissed; when too little is left, the command refuses with scroll_keyboard_occludes_surface. A directional scroll also reports the movement it observed as movement: moved, at-edge, unchanged, or unobserved when the two reads could not back a claim either way; an unchanged surface inside a container that still hides content in that direction refuses with scroll_no_progress rather than repeating the requested distance. The movement field is absent where a tier verifies per pass (top/bottom, until), where the runtime cannot read a screen, or where a settle observation or a replay already owns that observation. Times out after 90s; a caller-supplied budget extends it.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -2603,6 +2791,16 @@
      "description": "Pixel scroll amount.",
      "minimum": 0
     },
+    "until": {
+     "type": "string",
+     "description": "Repeat scroll passes until this selector is visible on screen, then stop. Not valid with the top/bottom edge directions, which carry their own stop condition."
+    },
+    "maxPasses": {
+     "type": "integer",
+     "description": "Maximum scroll gestures for an until search (default 12). Requires until.",
+     "minimum": 1,
+     "maximum": 200
+    },
     "durationMs": {
      "type": "integer",
      "description": "Scroll duration in milliseconds when the backend supports pacing.",
@@ -2615,7 +2813,7 @@
     },
     "settleQuietMs": {
      "type": "integer",
-     "description": "Settle: quiet window in milliseconds (default 500).",
+     "description": "Settle: quiet window in milliseconds (default 500; 300 when the settled tree comes from the iOS simulator snapshot bridge). On iOS, a broad screen replacement such as a modal dismissal is confirmed for at least 1500ms whatever window is asked for, within the timeoutMs settle deadline; a replacement from a screen the pre-action capture read as presenting nothing, such as a tab switch, gets no 1500ms confirmation and keeps the asked window.",
      "minimum": 0
     },
     "timeoutMs": {
@@ -2642,7 +2840,7 @@
  },
  {
   "name": "session",
-  "description": "List active sessions, print the effective daemon state directory, or publish an armed open-to-destination script without closing its session",
+  "description": "List active sessions, print the effective daemon state directory, or publish an armed open-to-destination script without closing its session Times out after 90s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -2651,10 +2849,6 @@
      "minLength": 1,
      "pattern": "\\S",
      "description": "Named session opened with open."
-    },
-    "cwd": {
-     "type": "string",
-     "description": "Working directory for command execution."
     },
     "action": {
      "type": "string",
@@ -2685,7 +2879,7 @@
  },
  {
   "name": "settings",
-  "description": "Change supported operating-system settings, animation scales, appearance, or app permissions on the selected target. Platform support varies by setting and action.",
+  "description": "Read or change supported operating-system settings, animation scales, appearance, or app permissions on the selected target. Platform support varies by setting and action. Times out after 90s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -2696,13 +2890,30 @@
      "description": "Named session opened with open."
     },
     "setting": {
-     "type": "string"
+     "type": "string",
+     "enum": [
+      "wifi",
+      "bluetooth",
+      "airplane",
+      "mobile-data",
+      "location",
+      "animations",
+      "appearance",
+      "text-size",
+      "faceid",
+      "touchid",
+      "fingerprint",
+      "clear-app-state",
+      "reset-keychain",
+      "permission"
+     ]
     },
     "state": {
      "type": "string"
     },
     "app": {
-     "type": "string"
+     "type": "string",
+     "description": "App the change targets, by bundle id, package name, or app name: the app `clear-app-state` clears, or the app a `permission` change (or an iOS-simulator `location on|off` privacy change) lands on. A name resolves to the installed app as `open` resolves it: an iOS simulator matches display names and accepts only an installed bundle id, Android accepts only an installed package and refuses a name that resolves to an intent with `setting_app_not_package`, and a Limrun iOS session resolves only the `settings` alias. One that resolves to nothing is refused with `app_not_installed` before anything changes. The app need not be running. Without it the session app is used; a device-wide change (`location set` on any target, the Android `location on|off` toggle, `mobile-data`, macOS permissions) refuses one with `setting_app_not_consumed`. The CLI reads it only from this invocation, never from `AGENT_DEVICE_TARGET_APP` or config `targetApp`."
     },
     "latitude": {
      "type": "number"
@@ -2727,7 +2938,6 @@
    },
    "required": [
     "setting",
-    "state",
     "session"
    ],
    "additionalProperties": false
@@ -2740,7 +2950,7 @@
  },
  {
   "name": "shutdown",
-  "description": "Shutdown a selected simulator or emulator.",
+  "description": "Shutdown a selected simulator or emulator. Times out after 90s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -2766,15 +2976,15 @@
     },
     "device": {
      "type": "string",
-     "description": "Device name selector."
+     "description": "Device name selector (a UDID belongs in udid, a serial in serial)."
     },
     "udid": {
      "type": "string",
-     "description": "iOS device UDID selector."
+     "description": "Apple device or simulator UDID; the selector that pins one device when several share a name."
     },
     "serial": {
      "type": "string",
-     "description": "Android device or Vega VVD serial selector."
+     "description": "Android, HarmonyOS, or Vega VVD serial selector."
     }
    },
    "additionalProperties": false,
@@ -2788,7 +2998,7 @@
  },
  {
   "name": "snapshot",
-  "description": "Capture the accessibility tree or compare it with the previous session baseline. Use the returned refs for subsequent semantic interactions and the diff option to verify UI changes.",
+  "description": "Capture the accessibility tree or compare it with the previous session baseline. Use the returned refs for subsequent semantic interactions and the diff option to verify UI changes. Times out after 90s; a caller-supplied budget extends it.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -2813,6 +3023,10 @@
     "customActions": {
      "type": "boolean",
      "description": "Name the affordances an element merged away (iOS UIAccessibilityCustomAction, React Native accessibilityActions) — a card whose reply/options controls are not separate elements still lists them here. The names are for PLANNING, not invocation: there is no API to trigger them, so reach the affordance through the element detail screen, through the same control exposed as a labeled element elsewhere, or by coordinates from its rect. iOS simulator only; costs one accessibility round trip per merged element."
+    },
+    "observeOnly": {
+     "type": "boolean",
+     "description": "iOS only. Refuse instead of activating or repairing the session app. Reports XCUIApplication state, which does not prove screen ownership (#2696)."
     },
     "forceFull": {
      "type": "boolean"
@@ -2843,7 +3057,7 @@
  },
  {
   "name": "swipe",
-  "description": "Quick coordinate fling with optional repeat pattern.",
+  "description": "Quick coordinate fling with optional repeat pattern. Times out after 90s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -2925,8 +3139,86 @@
   }
  },
  {
+  "name": "telephony",
+  "description": "Simulate an incoming phone call or SMS on an Android emulator through its console over adb: call rings from the number, accept answers, cancel ends the call, and sms delivers a text message. The call screen or notification can cover the app, so re-snapshot afterwards. Times out after 90s.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "action": {
+     "type": "string",
+     "enum": [
+      "call",
+      "accept",
+      "cancel",
+      "sms"
+     ],
+     "description": "call starts an incoming call, accept answers it, cancel ends it, sms delivers a text message."
+    },
+    "number": {
+     "type": "string",
+     "description": "Caller or sender phone number: digits with an optional leading +."
+    },
+    "text": {
+     "type": "string",
+     "description": "Message text for sms; required for sms and refused for the call actions. The emulator drops characters outside the Basic Multilingual Plane, such as emoji."
+    },
+    "noRecord": {
+     "type": "boolean",
+     "description": "Do not record this action."
+    }
+   },
+   "required": [
+    "action",
+    "number",
+    "session"
+   ],
+   "additionalProperties": false,
+   "oneOf": [
+    {
+     "properties": {
+      "action": {
+       "type": "string",
+       "const": "sms"
+      }
+     },
+     "required": [
+      "text"
+     ]
+    },
+    {
+     "properties": {
+      "action": {
+       "type": "string",
+       "enum": [
+        "call",
+        "accept",
+        "cancel"
+       ]
+      }
+     },
+     "not": {
+      "required": [
+       "text"
+      ]
+     }
+    }
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "test",
-  "description": "Run one or more replay scripts as a serial test suite",
+  "description": "Run one or more replay scripts as a serial test suite Streams progress; no fixed client timeout.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -2952,19 +3244,15 @@
     },
     "device": {
      "type": "string",
-     "description": "Device name selector."
+     "description": "Device name selector (a UDID belongs in udid, a serial in serial)."
     },
     "udid": {
      "type": "string",
-     "description": "iOS device UDID selector."
+     "description": "Apple device or simulator UDID; the selector that pins one device when several share a name."
     },
     "serial": {
      "type": "string",
-     "description": "Android device or Vega VVD serial selector."
-    },
-    "cwd": {
-     "type": "string",
-     "description": "Working directory for command execution."
+     "description": "Android, HarmonyOS, or Vega VVD serial selector."
     },
     "paths": {
      "type": "array",
@@ -3019,6 +3307,10 @@
     },
     "shardSplit": {
      "type": "integer"
+    },
+    "testIme": {
+     "type": "boolean",
+     "description": "Activate the headless Android test IME for the sessions each suite attempt opens (default on for emulators; opt-in on real devices)."
     }
    },
    "required": [
@@ -3034,7 +3326,7 @@
  },
  {
   "name": "trace",
-  "description": "Start or stop trace-log capture and return the resulting artifact when capture ends. Use the same artifact path for the matching start and stop requests when an explicit path is required.",
+  "description": "Start or stop trace-log capture and return the resulting artifact when capture ends. Without a path, start writes a timestamped trace log named after the session in the sessions directory of the daemon state; a path on stop moves the finished trace there. Times out after 90s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -3043,10 +3335,6 @@
      "minLength": 1,
      "pattern": "\\S",
      "description": "Named session opened with open."
-    },
-    "cwd": {
-     "type": "string",
-     "description": "Working directory for command execution."
     },
     "action": {
      "type": "string",
@@ -3077,7 +3365,7 @@
  },
  {
   "name": "trigger-app-event",
-  "description": "Ask the app to handle an app-defined automation or test event, with an optional structured payload. Call this only for event names and payload shapes the app documents.",
+  "description": "Ask the app to handle an app-defined automation or test event, with an optional structured payload. Call this only for event names and payload shapes the app documents. Times out after 90s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -3115,7 +3403,7 @@
  },
  {
   "name": "type",
-  "description": "Append text to the currently focused input. Use fill when the existing field value should be replaced, and focus first when no input is active.",
+  "description": "Append text to the currently focused input. Use fill when the existing field value should be replaced, and focus first when no input is active. Times out after 90s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -3152,8 +3440,66 @@
   }
  },
  {
+  "name": "uninstall",
+  "description": "Remove an installed app from the selected device. A package name or bundle id that is not installed succeeds with wasInstalled: false. Times out after 180s.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "\\S",
+     "description": "Named session opened with open."
+    },
+    "platform": {
+     "type": "string",
+     "enum": [
+      "apple",
+      "android",
+      "harmonyos",
+      "vega",
+      "linux",
+      "web",
+      "ios",
+      "macos"
+     ],
+     "description": "Platform selector used to resolve a device."
+    },
+    "device": {
+     "type": "string",
+     "description": "Device name selector (a UDID belongs in udid, a serial in serial)."
+    },
+    "udid": {
+     "type": "string",
+     "description": "Apple device or simulator UDID; the selector that pins one device when several share a name."
+    },
+    "serial": {
+     "type": "string",
+     "description": "Android, HarmonyOS, or Vega VVD serial selector."
+    },
+    "app": {
+     "type": "string",
+     "description": "Package name, bundle id, or installed app name."
+    },
+    "noRecord": {
+     "type": "boolean",
+     "description": "Do not record this action."
+    }
+   },
+   "required": [
+    "app"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "wait",
-  "description": "Wait for a duration, text, snapshot ref, selector, or stable UI. Use text, ref, or selector for a specific readiness condition; stable waits until the UI stays quiet for the requested window.",
+  "description": "Wait for a duration, text, snapshot ref, selector to appear, selector to be strictly absent, or stable UI. Use the strict absence target when zero selector matches are required; stable waits until the UI stays quiet for the requested window. Times out after 90s; a caller-supplied budget extends it.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -3170,6 +3516,7 @@
       "text",
       "ref",
       "selector",
+      "absent",
       "stable"
      ]
     },
@@ -3183,6 +3530,9 @@
      "type": "string"
     },
     "selector": {
+     "type": "string"
+    },
+    "absent": {
      "type": "string"
     },
     "stable": {
@@ -3212,6 +3562,26 @@
    "required": [
     "session"
    ]
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "help",
+  "description": "Usage guides. No topic: the root decision card. topic = one of commands, manual-qa, maestro, workflow, scripting, gestures, tv, debugging, react-devtools, cdp, react-native, physical-device, ios-system-ui, foldable, remote, macos, web, dogfood, validate for that guide, or a tool name for its complete flag reference. For specialized work or an unclear command shape only; not a startup step, not needed after an error that carries a hint.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "topic": {
+     "type": "string",
+     "description": "Guide topic or tool name; omit for the card."
+    }
+   },
+   "additionalProperties": false,
+   "required": []
   },
   "annotations": {
    "readOnlyHint": true,

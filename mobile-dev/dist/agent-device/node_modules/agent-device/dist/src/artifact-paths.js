@@ -1,0 +1,1 @@
+import e from"node:path";function t(e){return i(e,`native`)}function n(e){return i(e,`collected`)}function r(t){let n=e.extname(t);return`${n===``?t:t.slice(0,-n.length)}.contact-sheet.png`}function i(t,n){let r=e.extname(t);return`${r===``?t:t.slice(0,-r.length)}.${n}${r}`}export{t as n,r,n as t};
