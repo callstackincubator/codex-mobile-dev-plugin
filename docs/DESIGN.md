@@ -78,7 +78,6 @@ For a 16:9 slide or video, retain the rectangular frame, section-head row, and h
 - **Icons:** the crisp unit-square bitmaps in `website/src/components/site/icons.ts`; do not mix in a different icon style.
 - **Devices:** a thin stepped outline with solid screen fill, top island, and home indicator. Keep all visible app content inside the screen. Do not use smooth rounded mockup hardware.
 - **Product pictures:** factual captures must match the current plugin. Product diagrams use plausible data without personal information. Omit “example,” “illustrative,” and similar labels and notes from the homepage diagrams, ticket preview, and accessibility descriptions.
-- **Ticket preview:** a wavy blue underline on `MOB-142`; a square ticket card opens on hover, keyboard focus, or tap. It is an example ticket, not an issue-tracker integration claim.
 
 Command bars are for a real install command that a visitor can use. The homepage sends visitors to environment-specific installation rather than presenting one environment’s command as universal.
 
@@ -94,13 +93,13 @@ Place text on solid surfaces over the scene. Keep secondary scenes quiet. Do not
 
 ## Motion
 
-Use stepped movement and clean cuts. The hero loops over 12 seconds: the request appears, the ADE grows in 16 width steps, the phone panel appears, the developer requests a title change, an `App.tsx` edit appears, and the phone heading changes from **Trips** to **My trips**. The final reply invites review. Layout reserves room for the largest state.
+The hero uses the dark annotation recording: the pointer tool selects the carrot button, the developer writes “Make this an apple,” and the selected element arrives in the agent's composer as context. The loop trims 0.35 seconds of opening idle time. Use the wide source layout on desktop and its portrait composition below 600px so the selection and note remain readable.
 
-Text and phone panels appear at full opacity; fades must not lower text contrast. The title change is an immediate before/after cut. Dither and hero motion update at about 12fps, start near the viewport, and pause while hidden or offscreen. The ticket card pauses the demo while open and allows 150ms to move the pointer into it. UI hover transitions are short, around 120–150ms.
+Video playback pauses while hidden or offscreen and respects a manual pause. Native controls support keyboard playback and fullscreen viewing. Reduced motion shows the annotation payoff poster, with the numbered pin on the selected element and its context attached to the composer.
 
-Reduced motion shows the meaningful final state at nine seconds, with the integrated phone and updated title. That same state exists in the initial HTML. The scene has one OffscreenCanvas worker implementation, bounded repaint work, and cleanup for observers and timers.
+Dither motion updates at about 12fps near the viewport and pauses while hidden or offscreen. Its scene uses one OffscreenCanvas worker implementation, bounded repaint work, and cleanup for observers and timers. UI hover transitions are short, around 120–150ms.
 
-Video follows the same stepped expansion, readable pauses, and cuts rather than cross-fades. Keep the chat request visible long enough to establish the cause before showing the app change.
+Product videos retain their authored movement and reading pauses. Keep the initiating action visible long enough to establish the cause before showing its result.
 
 ## Words
 
@@ -121,7 +120,7 @@ The README banner uses copy on the left and the large dithered workspace-and-pho
 ## Website
 
 - `website/src/pages/index.astro`: approved split header, direct product description, actions, and tool-guide bar.
-- `website/src/components/home/HeroDemo.astro`, `ticket-motion.ts`, and `ticket-preview.ts`: the expanding ADE, app edit, and ticket preview.
+- `website/src/components/home/HeroDemo.astro`: the dark annotation hero with wide and portrait source compositions.
 - `website/src/components/home/HomeSections.astro`: mobile tools (“A mobile IDE in your ADE”), environment setup, performance recording, storage inspection, and FAQ, in that order.
 - `website/src/pages/404.astro`: the approved empty-workspace message, requested address, recovery links, and hollow scene.
 - `website/src/content/docs/docs/`: Starlight guides for installation, devices, controls, logs, performance, profiles, storage, privacy, and terms.

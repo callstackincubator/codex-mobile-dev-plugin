@@ -53,10 +53,29 @@ This pass does not change the source scene's timing or handoffs.
 
 ## Limits
 
-No live compact Stageshow scene is shipped: the embedded videos keep the wide
-composition and offer native fullscreen viewing. No source compact redesign or
-touch-device testing was done in this color pass. Docker-based host screenshot
-updates remain unavailable on this machine.
+Storage and performance keep the wide video composition and offer native
+fullscreen viewing. No source compact redesign or touch-device testing was done
+in that color pass. Docker-based host screenshot updates remain unavailable on
+this machine.
+
+## Alternate annotation hero
+
+The hero uses the source's `md-annotate` scene in its wide (1920 × 1080) and
+compact (716 × 1032) layouts. Both use the same plugin palette and trim 0.35
+seconds of opening idle time. The wide loop is 717 frames / 11.95 seconds and
+the compact loop is 684 frames / 11.4 seconds, both at 60 fps. Each poster shows
+the selected element and attached context at 9 seconds.
+
+Inspected wide and compact source frames at 0, 3.5, 7, 9, and 11 seconds. A
+separate fresh-eye review found no actionable color, clipping, or readability
+issue in those ten frames. Confirmed actual browser playback of the wide clip
+on desktop and portrait clip on a phone layout. The hidden layout stays paused
+and unloaded. The old hero's animation and ticket-preview scripts are removed.
+
+The source's native motion gates were not repeated for this hero pass. Its
+viewport-dependent movement timing is retained after the opening trim. Browser
+layout and playback checks, source-frame review, and the website check/build
+provide the validation for this alternative.
 
 The marketing site still sends no remote telemetry. Plugin Sentry initialization,
 instrumentation, and data boundaries are unaffected.

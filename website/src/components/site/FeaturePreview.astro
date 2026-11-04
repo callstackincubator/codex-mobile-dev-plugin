@@ -3,9 +3,11 @@ interface Props {
   src: string;
   poster: string;
   label: string;
+  width?: number;
+  height?: number;
 }
 
-const { src, poster, label } = Astro.props;
+const { src, poster, label, width = 1920, height = 1080 } = Astro.props;
 ---
 
 <div class="feature-preview not-content">
@@ -14,8 +16,8 @@ const { src, poster, label } = Astro.props;
     src={src}
     poster={poster}
     aria-label={label}
-    width="1920"
-    height="1080"
+    width={width}
+    height={height}
     controls
     muted
     loop
@@ -38,6 +40,5 @@ const { src, poster, label } = Astro.props;
     display: block;
     width: 100%;
     height: auto;
-    aspect-ratio: 16 / 9;
   }
 </style>

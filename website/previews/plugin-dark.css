@@ -7,7 +7,8 @@ html[data-theme="dark"] {
   }
 
   .mr .ss-stage,
-  .mst .ss-stage {
+  .mst .ss-stage,
+  .ma .ss-stage {
     --ss-canvas: var(--background);
     --ss-surface: var(--background);
     --ss-chrome: var(--card);
@@ -147,5 +148,68 @@ html[data-theme="dark"] {
 
   .mst .mst-btn--destructive[data-hover] {
     background: color-mix(in srgb, var(--destructive) 30%, var(--background));
+  }
+
+  .ma .ss-stage {
+    --ma-ink: var(--foreground);
+    --ma-line: var(--border);
+    --ma-shadow: 0 0 0 1px var(--border), 0 6px 14px rgb(0 0 0 / .2);
+  }
+
+  .ma .ma-body,
+  .ma .ma-pane {
+    background: var(--background);
+  }
+
+  .ma .ma-bubble,
+  .ma .ma-files__icon,
+  .ma .ma-tool--select[data-hover] {
+    background: var(--secondary);
+  }
+
+  .ma .ma-picker,
+  .ma .ma-chip {
+    color: var(--foreground);
+  }
+
+  .ma .ma-picker__device,
+  .ma .ma-ico,
+  .ma .ma-tool,
+  .ma .ma-chip svg,
+  .ma .ma-composer__placeholder,
+  .ma .ma-field__placeholder {
+    color: var(--muted-foreground);
+  }
+
+  .ma .ma-tool--select[data-on] {
+    background: rgb(59 130 246 / .15);
+    color: var(--ma-blue);
+  }
+
+  .ma .ma-picker__dot {
+    box-shadow: 0 0 0 1.5px var(--card);
+  }
+
+  .ma .ma-composer {
+    background: var(--card);
+  }
+
+  .ma .ma-chip {
+    background: var(--accent);
+  }
+
+  .ma .ma-field {
+    background: var(--popover);
+    box-shadow: 0 0 0 1px var(--input), 0 2px 12px rgb(0 0 0 / .25);
+  }
+
+  .ma .ma-composer__send,
+  .ma .ma-field__send {
+    background: var(--primary);
+    color: var(--primary-foreground);
+  }
+
+  .ma .ma-field__send[data-hover] {
+    background: color-mix(in srgb, var(--primary) 80%, var(--background));
   }
 }

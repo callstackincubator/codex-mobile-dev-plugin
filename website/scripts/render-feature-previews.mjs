@@ -1,5 +1,5 @@
 // Re-renders the branch's authored scenes with the plugin's actual dark tokens.
-// Usage: node scripts/render-feature-previews.mjs <stageshow-directory> [--stills|--serve]
+// Usage: node scripts/render-feature-previews.mjs <stageshow-directory> [--only annotation] [--stills|--serve]
 // Adapted from Stageshow's MIT-licensed exporter; see public/previews/LICENSE.
 import { once } from 'node:events';
 import { mkdir, mkdtemp, readFile, realpath, rename, writeFile } from 'node:fs/promises';
@@ -21,6 +21,8 @@ if (sourceArgument === undefined) {
 const sourcePath = resolve(sourceArgument);
 const source = await realpath(sourcePath);
 const stillsOnly = process.argv.includes('--stills');
+const onlyFlag = process.argv.indexOf('--only');
+const onlyAsset = onlyFlag >= 0 ? process.argv[onlyFlag + 1] : undefined;
 const websiteUrl = new URL('..', import.meta.url);
 const website = fileURLToPath(websiteUrl);
 const repository = resolve(website, '..');
@@ -95,12 +97,18 @@ const browser = await chromium.launch({ channel: 'chrome' });
 console.log(`Review frames: ${review}`);
 await mkdir(output, { recursive: true });
 
+const scenes = [
+  { name: 'md-recording', asset: 'performance', poster: 9, surface: '.mr-card', leadIn: 0, width: 960, height: 540 },
+  { name: 'md-storage', asset: 'storage', poster: 7, surface: '.mst-body', leadIn: 0, width: 960, height: 540 },
+  { name: 'md-annotate', asset: 'annotation', poster: 9, surface: '.ma-body', leadIn: 0.35, width: 960, height: 540 },
+  { name: 'md-annotate', asset: 'annotation-compact', poster: 9, surface: '.ma-pane', leadIn: 0.35, width: 358, height: 516 },
+];
+const selectedScenes = scenes.filter(scene => onlyFlag < 0 || scene.asset === onlyAsset);
 try {
-  for (const scene of [
-    { name: 'md-recording', asset: 'performance', poster: 9, surface: '.mr-card' },
-    { name: 'md-storage', asset: 'storage', poster: 7, surface: '.mst-body' },
-  ]) {
-    const capture = await browser.newContext({ viewport: { width: 960, height: 540 }, deviceScaleFactor: 2 });
+  if (selectedScenes.length === 0) throw new Error(`Unknown preview: ${onlyAsset}`);
+  for (const scene of selectedScenes) {
+    const viewport = { width: scene.width, height: scene.height };
+    const capture = await browser.newContext({ viewport, deviceScaleFactor: 2 });
     await capture.addInitScript({ content: init });
     const page = await capture.newPage();
     let pageError;
@@ -113,6 +121,10 @@ try {
       const loops = await page.evaluate(() => window.__loops);
       if (mounted > 0 && loops > 0) break;
       if (frame > fps * 10) throw new Error(`${scene.name} did not start.`);
+      await page.evaluate(() => window.__stageshow.clock.step(1));
+    }
+
+    for (let frame = 0; frame < scene.leadIn * fps; frame += 1) {
       await page.evaluate(() => window.__stageshow.clock.step(1));
     }
 

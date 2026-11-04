@@ -3,12 +3,15 @@
 These videos are dark renders of the authored scenes from
 [`feat/feature-previews` at `5796aecb574fa2ab005854ec6a7ff1dc75cdd5d7`](https://github.com/callstackincubator/codex-mobile-dev-plugin/tree/5796aecb574fa2ab005854ec6a7ff1dc75cdd5d7/design/stageshow).
 Their React sources and rehearsal notes live under `design/stageshow/examples/`
-at the same commit. The original layout, story, and timing are retained.
+at the same commit. The original layout and story are retained; the hero's opening
+trim is described below.
 
 | Website asset | Source scene | Poster timestamp |
 | --- | --- | --- |
 | `performance.mp4` | `md-recording` | 9 seconds: finished recording with a selected range |
 | `storage.mp4` | `md-storage` | 7 seconds: stored values and change history |
+| `annotation.mp4` | `md-annotate`, wide | 9 seconds: selected element and context attached to the chat |
+| `annotation-compact.mp4` | `md-annotate`, compact | 9 seconds: selected element and context attached to the chat |
 
 The palette comes from the plugin's dark declarations in `packages/ui/src/theme.css`
 and the dark host variables in `tooling/hosts/profiles.ts`. Storage's semantic
@@ -18,6 +21,9 @@ the plugin window. The phone's app retains its own colors.
 
 `website/scripts/render-feature-previews.mjs` steps the source's virtual clock
 at 60 fps, renders 1920 × 1080 frames, and encodes silent H.264 with FFmpeg.
+The compact annotation version renders the source's portrait layout at 716 × 1032.
+Both annotation loops trim 0.35 seconds of opening idle time so the first action
+starts sooner; their remaining choreography is unchanged.
 The matching WebP posters are encoded from the same rendered frames with Sharp.
 The scenes use authored demonstration data.
 
@@ -36,6 +42,9 @@ pnpm --dir website previews "$preview_source/design/stageshow"
 Add `--stills` to inspect key frames without replacing the published assets, or
 `--serve` to preview the dark source scenes in the browser. Review-frame paths
 and the preview server URL are printed by the renderer.
+
+Use `--only annotation` or `--only annotation-compact` to render just one hero
+asset without regenerating the storage and performance recordings.
 
 Stageshow is MIT licensed; its notice is preserved in `LICENSE`. Product names
 and illustrated interfaces remain with their respective owners and do not imply

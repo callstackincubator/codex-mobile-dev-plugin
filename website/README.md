@@ -38,7 +38,7 @@ The final production domain is undecided. Transfer the project to its eventual o
 - `src/site/content.ts`: links, feature copy, environments, FAQ, and homepage metadata.
 - `src/site/brand.ts`: the Signal blue accent and its derived dark palette.
 - `src/content/docs/docs/`: user guides adapted from the repository documentation.
-- `src/components/home/HeroDemo.astro`: illustrated coding workflow; this does not imply an issue-tracker integration.
+- `src/components/home/HeroDemo.astro`: dark annotation workflow, with wide and portrait recordings for desktop and phone layouts.
 - `src/components/site/FeaturePreview.astro`: shared video player for the homepage and the Storage and Performance guides.
 - `public/previews/`: storage and performance recording videos rendered from `feat/feature-previews` with the plugin's dark palette, with still posters and source attribution.
 - `previews/plugin-dark.css` and `scripts/render-feature-previews.mjs`: the source color mapping and repeatable dark-video renderer, using the plugin's theme and host tokens.
