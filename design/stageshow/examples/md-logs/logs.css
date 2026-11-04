@@ -1,0 +1,493 @@
+@property --mdl-fade {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 0;
+}
+
+/* All rules belong to this example, including its compact design. */
+.mdl {
+  /* Mobile Dev's tokens: shadcn neutral, Inter, hairlines, small radii */
+  & .ss-stage {
+    --md-fg: #0a0a0a;
+    --md-muted: #737373;
+    --md-line: #e5e5e5;
+    --md-row-line: #ededed;
+    --md-hover: #f5f5f5;
+    --md-err: #c62836;
+    --md-info: #1769bb;
+    --md-font: 'Inter Variable', Inter, system-ui, -apple-system, sans-serif;
+    --md-mono: ui-monospace, 'SFMono-Regular', Menlo, Monaco, Consolas, monospace;
+    /* The page is the ground: no plate */
+    overflow: hidden;
+    background: transparent;
+    font-family: var(--md-font);
+  }
+
+  /* Wide: the window sits on the shared md frame (md-shared/frame.css) */
+
+  /* Compact: the panel alone, a card over the simulator's foot, a 14px
+     gutter on three sides */
+  .mdl-card {
+    position: absolute;
+    top: 184px;
+    left: 14px;
+    width: 330px;
+    height: 374px;
+    overflow: hidden;
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06), 0 7px 14px -7px rgba(50, 50, 93, 0.24), 0 3px 8px -3px rgba(0, 0, 0, 0.12);
+    color: var(--md-fg);
+  }
+
+  .mdl-card .mdl-logs {
+    width: 100%;
+    height: 100%;
+    border-right: 0;
+  }
+
+  .mdl-win .ss-window__bar {
+    background: #fff;
+  }
+
+  .mdl-body {
+    display: flex;
+    height: 100%;
+    background: #fff;
+    color: var(--md-fg);
+  }
+
+  /* ---- Toolbar ---- */
+
+  .mdl-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: 8px;
+  }
+
+  .mdl-select {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 6px;
+    height: 26px;
+    padding: 0 7px 0 8px;
+    border: 1px solid var(--md-line);
+    border-radius: 7px;
+    background: #fff;
+    font-size: 12.5px;
+    font-weight: 450;
+    line-height: 1;
+    color: var(--md-fg);
+    white-space: nowrap;
+  }
+
+  .mdl-chev {
+    color: var(--md-muted);
+  }
+
+  .mdl-device-pick {
+    gap: 7px;
+    margin-right: 4px;
+  }
+
+  .mdl-phone-glyph {
+    position: relative;
+    display: flex;
+    color: var(--md-muted);
+  }
+
+  .mdl-running {
+    position: absolute;
+    top: -1px;
+    right: -1px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #22c55e;
+    box-shadow: 0 0 0 2px #fff;
+  }
+
+  .mdl-icon-btn {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    color: #404040;
+  }
+
+  .mdl-icon-btn[data-pressed-look] {
+    background: var(--md-hover);
+  }
+
+  /* ---- Logs pane ---- */
+
+  .mdl-logs {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    border-right: 1px solid var(--md-line);
+  }
+
+  .mdl-tools {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 3px;
+    height: 44px;
+    padding: 0 8px;
+    border-bottom: 1px solid var(--md-line);
+  }
+
+  .mdl-filter {
+    flex: 1;
+    min-width: 0;
+    margin-right: 4px;
+    --ss-control: 28px;
+    --ss-accent: #b5b5b5;
+    --ss-accent-soft: rgba(181, 181, 181, 0.35);
+  }
+
+  .mdl-filter .ss-field__box {
+    gap: 7px;
+    padding: 0 8px;
+    border-radius: 7px;
+    box-shadow: inset 0 0 0 1px var(--md-line), 0 0 0 0 transparent;
+    font-size: 12px;
+  }
+
+  .mdl-filter[data-focused] .ss-field__box {
+    box-shadow: inset 0 0 0 1px var(--ss-accent), 0 0 0 3px var(--ss-accent-soft);
+  }
+
+  .mdl-filter .ss-field__placeholder {
+    color: var(--md-muted);
+  }
+
+  .mdl-filter-icon {
+    flex: none;
+    color: var(--md-muted);
+  }
+
+  .mdl-split {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  /* The list follows new logs: pinned to its foot while it overflows, from
+     the top once the filter leaves fewer rows than fit */
+  .mdl-list {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    justify-content: flex-end;
+    min-height: 0;
+    overflow: hidden;
+    /* Rows scrolled past the top fade out under the toolbar's rule; the
+       fade clears when the filter leaves the list whole */
+    --mdl-fade: 0;
+    mask-image: linear-gradient(to bottom, rgb(0 0 0 / var(--mdl-fade)) 0, #000 22px);
+    transition: --mdl-fade 0.35s ease;
+  }
+
+  .mdl-list[data-whole] {
+    --mdl-fade: 1;
+  }
+
+  .mdl-track {
+    display: flex;
+    flex: 1 0 auto;
+    flex-direction: column;
+  }
+
+  /* ---- Rows: the product's grid ---- */
+
+  .mdl-row {
+    flex: none;
+    --c: var(--md-fg);
+    --tint: transparent;
+    position: relative;
+    display: grid;
+    grid-template-columns: 14px 8ch 1px minmax(0, 1fr);
+    column-gap: 8px;
+    align-items: start;
+    min-height: 28px;
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--md-row-line);
+    font-family: var(--md-mono);
+    font-size: 12px;
+    font-variant-ligatures: none;
+    line-height: 18px;
+    color: var(--c);
+    background: var(--tint);
+    transition: background 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .mdl-row[data-level='info'] {
+    --c: var(--md-info);
+    --tint: #419cff08;
+  }
+
+  .mdl-row[data-level='error'] {
+    --c: var(--md-err);
+    --tint: #ff5d640e;
+    transition: background 0.15s ease, box-shadow 0.15s ease, padding-right 0.3s cubic-bezier(0.45, 0, 0.1, 1);
+  }
+
+  /* The error's two lines break at the same word with or without the
+     badge's room, so nothing reflows when the log stacks */
+  .mdl-row[data-level='error'] .mdl-msg {
+    text-wrap: balance;
+  }
+
+  /* Room for the repeat badge, as the product makes it once a log stacks */
+  .mdl-row[data-stacked] {
+    padding-right: 36px;
+  }
+
+  .mdl-row[data-level='error'][data-hover] {
+    background: color-mix(in srgb, var(--c) 9%, transparent);
+  }
+
+  .mdl-row[data-selected] {
+    background: color-mix(in srgb, var(--c) 15%, transparent);
+    box-shadow: inset 2px 0 var(--c);
+  }
+
+  .mdl-sev {
+    margin-top: 2px;
+  }
+
+  .mdl-sev > :first-child {
+    fill: var(--c);
+    stroke: var(--c);
+  }
+
+  .mdl-sev > :not(:first-child) {
+    stroke: #fff;
+  }
+
+  .mdl-time {
+    display: block;
+    height: 18px;
+    color: var(--md-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .mdl-rule {
+    width: 1px;
+    height: 14px;
+    margin-top: 2px;
+    background: #a8a8a8;
+  }
+
+  .mdl-msg {
+    min-width: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .mdl-line {
+    display: flex;
+    align-items: center;
+    height: 18px;
+  }
+
+  .mdl-bar-time {
+    background: #e6e6e6;
+  }
+
+  .mdl-bar-msg {
+    background: #d3e2f3;
+  }
+
+  /* The repeat badge: in the row's top right, as the product draws it */
+  .mdl-count {
+    position: absolute;
+    top: 4px;
+    right: 8px;
+    display: grid;
+    place-items: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 5px;
+    border: 1px solid var(--md-line);
+    border-radius: 10px;
+    background: #f5f5f5;
+    font-family: var(--md-font);
+    font-size: 10.5px;
+    font-weight: 500;
+    line-height: 1;
+    color: #171717;
+    font-variant-numeric: tabular-nums;
+    opacity: 0;
+    scale: 0.6;
+    will-change: transform;
+    transition: opacity 0.2s ease, scale 0.35s cubic-bezier(0.25, 0.8, 0.25, 1);
+  }
+
+  .mdl-count[data-show] {
+    opacity: 1;
+    scale: 1;
+  }
+
+  /* ---- Details ---- */
+
+  .mdl-detail-wrap {
+    flex: none;
+  }
+
+  .mdl-detail {
+    --c: var(--md-err);
+    display: flex;
+    flex-direction: column;
+    /* The split under the toolbar (378) less the error row (45) */
+    height: 333px;
+    border-top: 1px solid var(--md-line);
+    will-change: transform;
+    background: #fff;
+  }
+
+  & .ss-stage[data-layout='compact'] .mdl-detail {
+    height: 249px;
+  }
+
+  & .ss-stage[data-layout='compact'] .mdl-detail-body {
+    padding: 12px;
+  }
+
+  .mdl-detail-head {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 8px;
+    height: 40px;
+    padding: 0 8px 0 12px;
+    border-bottom: 1px solid var(--md-line);
+    background: linear-gradient(100deg, transparent, color-mix(in srgb, var(--c) 14%, transparent));
+  }
+
+  .mdl-detail-head .mdl-sev {
+    margin-top: 0;
+  }
+
+  .mdl-detail-title {
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .mdl-detail-x {
+    margin-left: auto;
+    color: var(--md-muted);
+  }
+
+  .mdl-detail-body {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 10px;
+    min-height: 0;
+    padding: 12px 14px;
+  }
+
+  .mdl-section {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .mdl-label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 18px;
+    padding-right: 6px;
+    font-family: var(--md-mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--md-muted);
+  }
+
+  .mdl-value {
+    font-family: var(--md-mono);
+    font-size: 12px;
+    line-height: 18px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .mdl-pre {
+    padding: 6px 10px;
+    border: 1px solid var(--md-line);
+    border-radius: 8px;
+    font-family: var(--md-mono);
+    font-size: 12px;
+    font-variant-ligatures: none;
+    line-height: 19px;
+    color: var(--c);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .mdl-fix {
+    display: inline-flex;
+    align-items: center;
+    align-self: flex-start;
+    gap: 6px;
+    height: 30px;
+    margin-top: auto;
+    padding: 0 11px 0 10px;
+    border: 1px solid var(--md-line);
+    border-radius: 8px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    font-size: 12.5px;
+    font-weight: 500;
+    line-height: 1;
+  }
+
+  /* ---- Device column ---- */
+
+  /* The device pane: the simulator centered both ways */
+  .mdl-device {
+    display: grid;
+    place-items: center;
+    min-height: 0;
+  }
+
+  .mdl-phone-sat {
+    position: absolute;
+    top: -221px;
+    left: 79px;
+  }
+
+  /* Keycaps sit inside the panel, clear of its edge and of Fix in chat */
+  & .ss-keys {
+    bottom: 52px;
+  }
+
+  & .ss-stage[data-layout='compact'] .ss-keys {
+    bottom: 28px;
+  }
+
+  .mdl-prefix {
+    flex: none;
+    margin-right: 1ch;
+    white-space: nowrap;
+  }
+
+  .mdl-rest {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+  }
+
+}

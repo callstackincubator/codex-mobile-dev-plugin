@@ -1,0 +1,433 @@
+/* Mobile Dev's comparison card in an AI chat, on a white page: no plate.
+   Tokens from packages/ui/src/theme.css (shadcn neutral). */
+.mdc .ss-stage {
+  overflow: hidden;
+  background: transparent;
+  --mdc-border: #e5e5e5;
+  --mdc-fg: #0a0a0a;
+  --mdc-muted: #737373;
+  font-family: 'Inter Variable', Inter, system-ui, sans-serif;
+  --ss-count-unit-gap: 0px;
+}
+
+/* The window body is the chat's white surface; the chat column inside it
+   is 720 wide, centered (72px each side), as in md-recording */
+.mdc .mdc-surface {
+  background: var(--ss-surface);
+}
+
+.mdc .mdc-body {
+  position: relative;
+  height: 100%;
+}
+
+/* The thread is pinned at its foot, the card's bottom; earlier turns go up
+   out of the window as the card opens, fading, never sliced by the bar */
+.mdc .mdc-thread {
+  position: absolute;
+  top: 0;
+  left: 72px;
+  width: 720px;
+  height: 402px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 10px;
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, transparent, #000 14px);
+}
+
+.mdc .mdc-thread > * {
+  flex: none;
+  will-change: transform;
+}
+
+.mdc .mdc-past {
+  display: grid;
+  gap: 8px;
+}
+
+.mdc .mdc-past-q {
+  justify-self: end;
+}
+
+/* The person's message: a black bubble, white words */
+.mdc .mdc-q {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.mdc .mdc-q span {
+  max-width: 78%;
+  padding: 8px 14px;
+  border-radius: 16px;
+  background: #0a0a0a;
+  color: #fff;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.mdc .mdc-a {
+  margin: 0;
+  color: var(--mdc-fg);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+/* The comparison card: .recording-card at chat scale */
+.mdc .mdc-card {
+  border: 1px solid var(--mdc-border);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--mdc-fg);
+  font-size: 12px;
+  overflow: hidden;
+}
+
+.mdc .mdc-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--mdc-border);
+}
+
+.mdc .mdc-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--mdc-border);
+  border-radius: 9px;
+  color: var(--mdc-blue, #2583ff);
+}
+
+.mdc .mdc-heading {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.mdc .mdc-title {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.mdc .mdc-sub {
+  color: var(--mdc-muted);
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+
+.mdc .mdc-cbody {
+  padding: 12px 14px 8px;
+}
+
+/* Run chips: one per recording, bordered in its color */
+.mdc .mdc-legend {
+  display: flex;
+  gap: 8px;
+}
+
+.mdc .mdc-run {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px 5px 10px;
+  border: 1px solid;
+  border-radius: 8px;
+}
+
+.mdc .mdc-run__text {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.mdc .mdc-run strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.mdc .mdc-run small {
+  color: var(--mdc-muted);
+  font-size: 11px;
+}
+
+.mdc .mdc-swatch {
+  display: inline-block;
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.mdc .mdc-track {
+  margin-top: 8px;
+}
+
+.mdc .mdc-label {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.mdc .mdc-plot {
+  position: relative;
+  margin-top: 8px;
+}
+
+.mdc .mdc-svg {
+  display: block;
+  overflow: visible;
+}
+
+.mdc .mdc-grid {
+  stroke: var(--mdc-border);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+
+.mdc .mdc-range {
+  fill: rgb(37 131 255 / 0.12);
+  stroke: rgb(37 131 255 / 0.5);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+
+/* A run's line draws left to right along its own length */
+.mdc .mdc-line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-dasharray: 1 1;
+  stroke-dashoffset: 1;
+  transition: stroke-dashoffset 0s;
+}
+
+.mdc .mdc-line[data-on] {
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset 1.3s cubic-bezier(0.45, 0, 0.2, 1);
+}
+
+.mdc .mdc-ytick,
+.mdc .mdc-xtick {
+  position: absolute;
+  color: var(--mdc-muted);
+  font-size: 10.5px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.mdc .mdc-ytick {
+  left: 0;
+  text-align: right;
+  transform: translateY(-50%);
+}
+
+.mdc .mdc-xtick {
+  transform: translateX(-50%);
+}
+
+.mdc .mdc-xtick[data-edge] {
+  transform: translateX(-100%);
+}
+
+/* The summary table: the card's columns and formats */
+.mdc .mdc-table {
+  width: 100%;
+  margin-top: 4px;
+  border-collapse: collapse;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.mdc .mdc-table th,
+.mdc .mdc-table td {
+  padding: 5px 0 5px 12px;
+  border-bottom: 1px solid var(--mdc-border);
+  text-align: right;
+  white-space: nowrap;
+  line-height: 1.3;
+}
+
+.mdc .mdc-table tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
+.mdc .mdc-table th {
+  font-weight: 500;
+}
+
+.mdc .mdc-table thead th {
+  color: var(--mdc-muted);
+}
+
+.mdc .mdc-table th:first-child {
+  padding-left: 0;
+  text-align: left;
+}
+
+.mdc .mdc-table tbody th .mdc-swatch {
+  margin-right: 7px;
+}
+
+/* Narrow: no window; the chat column on the page, a 16px gutter each side,
+   its earlier turns fading off the top. The table drops its Range column */
+.mdc .mdc-page {
+  position: absolute;
+  inset: 0;
+  background: transparent;
+}
+
+.mdc .ss-stage[data-layout='compact'] .mdc-thread {
+  left: 16px;
+  width: 326px;
+  height: 504px;
+  mask-image: linear-gradient(to bottom, transparent, #000 40px);
+}
+
+.mdc .ss-stage[data-layout='compact'] .mdc-card {
+  box-shadow: var(--ss-shadow-ground);
+}
+
+.mdc .ss-stage[data-layout='compact'] .mdc-head {
+  padding: 10px 12px;
+  gap: 12px;
+}
+
+.mdc .ss-stage[data-layout='compact'] .mdc-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+}
+
+.mdc .ss-stage[data-layout='compact'] .mdc-cbody {
+  padding: 12px 12px 4px;
+}
+
+.mdc .ss-stage[data-layout='compact'] .mdc-run small {
+  display: none;
+}
+
+.mdc .ss-stage[data-layout='compact'] .mdc-table th,
+.mdc .ss-stage[data-layout='compact'] .mdc-table td {
+  padding-left: 8px;
+  font-size: 11.5px;
+}
+
+.mdc .ss-stage[data-layout='compact'] .mdc-table th:first-child {
+  padding-left: 0;
+}
+
+.mdc .ss-stage[data-layout='compact'] .mdc-sub {
+  font-size: 11px;
+}
+
+/* The earlier recording card: placeholder, a quiet outline with a plot well */
+.mdc .mdc-past-card {
+  display: grid;
+  gap: 12px;
+  margin: 4px 0;
+  padding: 14px 16px 16px;
+  border: 1px solid var(--mdc-border);
+  border-radius: 12px;
+}
+
+.mdc .mdc-past-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mdc .mdc-past-title {
+  color: var(--mdc-fg);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.mdc .mdc-badge {
+  flex: none;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: #f5f5f5;
+  color: var(--mdc-fg);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+/* The earlier run's CPU, quiet: the same samples as run 1 */
+.mdc .mdc-past-plot {
+  display: block;
+  width: 100%;
+  height: 44px;
+  overflow: visible;
+}
+
+.mdc .mdc-past-plot path {
+  fill: none;
+  stroke-width: 1.5;
+  opacity: 0.55;
+  vector-effect: non-scaling-stroke;
+}
+
+/* The card is far taller than a message: its space opens at the travel
+   pace, so the thread rides up rather than jumping, and the card rises into
+   the space as it opens */
+.mdc .mdc-slot[data-open] {
+  transition: grid-template-rows 0.9s cubic-bezier(0.45, 0, 0.1, 1), opacity 0.4s ease 0.15s;
+}
+
+.mdc .mdc-slot[data-open] > .ss-collapse__inner > * {
+  transition: transform 0.8s cubic-bezier(0.22, 1, 0.36, 1) 0.15s;
+}
+
+.mdc .mdc-slot:not([data-open]) {
+  transition: grid-template-rows 0.75s cubic-bezier(0.45, 0, 0.1, 1) 0.05s, opacity 0.5s cubic-bezier(0, 0.8, 0.5, 1);
+}
+
+/* The loop's reset: the opening picture crossfades in over the thread */
+.mdc .mdc-thread {
+  transition: opacity 0.3s ease;
+}
+
+.mdc .mdc-thread[data-fade],
+.mdc .mdc-ghost[data-on] {
+  transition: opacity 0.6s ease;
+}
+
+.mdc .mdc-thread[data-fade] {
+  opacity: 0;
+}
+
+.mdc .mdc-ghost {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.mdc .mdc-ghost[data-on] {
+  opacity: 1;
+}
+
+/* A reading's "—" and its figure share one right-aligned cell */
+.mdc .mdc-cell {
+  display: inline-grid;
+  justify-items: end;
+}
+
+.mdc .mdc-layer {
+  grid-area: 1 / 1;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.mdc .mdc-layer[data-on] {
+  opacity: 1;
+}

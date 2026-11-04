@@ -1,0 +1,28 @@
+/* Shared frame for the md-* feature previews. Values match frame.ts. */
+.ss-stage {
+  /* One shadow for every window: a hairline ring plus a soft drop that
+     reaches 28px below and 16px to the sides, inside the 40/48px gutter. */
+  --md-shadow-window: 0 0 0 1px rgba(0, 0, 0, 0.07), 0 1px 2px rgba(0, 0, 0, 0.04), 0 12px 28px -12px rgba(0, 0, 0, 0.18);
+}
+
+.ss-stage:not([data-layout="compact"]) .md-window {
+  position: absolute;
+  left: 48px;
+  top: 40px;
+  width: 864px;
+  height: 460px;
+  box-shadow: var(--md-shadow-window);
+}
+
+.ss-stage:not([data-layout="compact"]) .md-device-pane {
+  flex: 0 0 300px;
+  width: 300px;
+}
+
+.ss-stage:not([data-layout="compact"]) .md-overlay-phone {
+  position: absolute;
+  left: 690px;
+  top: 50px;
+  /* Reaches 34px below: inside the stage at every edge. */
+  filter: drop-shadow(0 16px 18px rgba(0, 0, 0, 0.16));
+}

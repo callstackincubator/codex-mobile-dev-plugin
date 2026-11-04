@@ -1,0 +1,548 @@
+/* All rules belong to this example, including its compact design. */
+.ma {
+  & .ss-stage {
+    --ma-blue: #3b82f6;
+    --ma-ink: #0a0a0a;
+    --ma-line: rgba(0, 0, 0, 0.09);
+    --ss-canvas: #fff;
+    --ss-chrome: #fff;
+    --ss-line: rgba(0, 0, 0, 0.08);
+    /* Compact's pane shadow, faded out inside its gutter (wide uses the shared frame's) */
+    --ma-shadow: 0 0 0 1px rgba(0, 0, 0, 0.07), 0 2px 4px rgba(0, 0, 0, 0.03), 0 6px 14px -4px rgba(0, 0, 0, 0.08);
+    overflow: hidden;
+  }
+
+  /* Wide, the window's box and shadow are the shared frame's (.md-window) */
+
+  .ma-lead {
+    display: flex;
+    align-items: center;
+    margin-left: 8px;
+  }
+
+  /* The device view's toolbar sits over its own column, from the divider */
+  .ma-window .ma-toolbar {
+    position: absolute;
+    top: 0;
+    right: 0;
+    box-sizing: border-box;
+    width: 300px;
+    border-left: 1px solid var(--ss-line);
+  }
+
+  .ma-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    height: 38px;
+    padding: 0 6px 0 8px;
+  }
+
+  .ma-picker {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    height: 28px;
+    padding: 0 8px;
+    border-radius: 7px;
+    color: #262626;
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .ma-picker__device {
+    position: relative;
+    display: grid;
+    flex: none;
+    width: 14px;
+    height: 14px;
+    color: #525252;
+  }
+
+  .ma-picker__dot {
+    position: absolute;
+    top: -1px;
+    right: -2px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #22c55e;
+    box-shadow: 0 0 0 1.5px #fff;
+  }
+
+  .ma-ico {
+    flex: none;
+    color: #737373;
+  }
+
+  .ma-spacer {
+    flex: 1;
+  }
+
+  .ma-tool {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
+    color: #525252;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+
+  .ma-tool--select[data-hover] {
+    background: rgba(0, 0, 0, 0.05);
+  }
+
+  .ma-tool--select[data-on] {
+    background: rgba(59, 130, 246, 0.15);
+    color: var(--ma-blue);
+  }
+
+  .ma-tool--select[data-pressed] {
+    transform: scale(0.94);
+  }
+
+  .ma-tool--select {
+    transition: background-color 0.15s ease, color 0.15s ease, transform 0.12s ease;
+  }
+
+  .ma-body {
+    display: flex;
+    height: 100%;
+    background: #fff;
+  }
+
+  /* ---- The agent's chat ---- */
+
+  .ma-chat {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .ma-history {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    padding: 28px 28px;
+  }
+
+  .ma-bubble {
+    display: flex;
+    align-items: center;
+    align-self: flex-end;
+    height: 30px;
+    padding: 0 14px;
+    border-radius: 15px;
+    background: var(--ma-ink);
+  }
+
+  .ma-answer {
+    display: grid;
+    gap: 12px;
+  }
+
+  .ma-answer__lines {
+    display: grid;
+    gap: 9px;
+  }
+
+  .ma-files {
+    border: 1px solid var(--ma-line);
+    border-radius: 10px;
+  }
+
+  .ma-files__head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 40px;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--ss-line);
+  }
+
+  .ma-files__icon {
+    width: 20px;
+    height: 20px;
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.05);
+  }
+
+  .ma-files__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 32px;
+    padding: 0 12px;
+  }
+
+  .ma-files__row + .ma-files__row {
+    border-top: 1px solid var(--ss-line);
+  }
+
+  .ma-files__counts {
+    display: flex;
+    gap: 6px;
+  }
+
+  /* The composer: pinned by its foot, so an attachment grows it upward */
+  .ma-composer {
+    position: absolute;
+    right: 20px;
+    bottom: 20px;
+    left: 20px;
+    padding: 12px 10px 10px 14px;
+    border: 1px solid var(--ma-line);
+    border-radius: 16px;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03), 0 6px 16px -6px rgba(0, 0, 0, 0.08);
+  }
+
+  .ma-composer__room {
+    display: flex;
+    padding-bottom: 8px;
+  }
+
+  .ma-chip-slot {
+    display: flex;
+    opacity: 0;
+  }
+
+  .ma-chip-slot[data-show] {
+    opacity: 1;
+    transition: opacity 0.12s ease;
+  }
+
+  /* The flyer fades off the chip that has faded in under it */
+  .ma-flyer--done .ss-fly__lift {
+    opacity: 0;
+    transition: opacity 0.1s ease;
+  }
+
+  .ma-composer__placeholder {
+    display: block;
+    padding: 1px 0 16px;
+    color: #a3a3a3;
+    font-size: 12.5px;
+    line-height: 18px;
+  }
+
+  .ma-composer__row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 26px;
+  }
+
+  .ma-composer__send {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: var(--ma-ink);
+    color: #fff;
+  }
+
+  .ma-chip {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 5px;
+    box-sizing: border-box;
+    height: 24px;
+    padding: 0 8px;
+    border: 1px solid var(--ma-line);
+    border-radius: 8px;
+    background: #fff;
+    color: #262626;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  .ma-chip svg {
+    flex: none;
+    color: #525252;
+  }
+
+  .ma-flyer .ma-chip {
+    box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.14);
+  }
+
+  /* ---- The device view ---- */
+
+  /* Wide: the shared 300px device pane, the phone centered in it both ways */
+  .ma-panel {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    min-width: 0;
+    border-left: 1px solid var(--ss-line);
+  }
+
+  .ma-phone {
+    flex: none;
+  }
+
+  /* ---- The annotation overlay ---- */
+
+  .ma-highlight {
+    z-index: 20;
+    box-sizing: border-box;
+    border: 2px solid var(--ma-blue);
+    background: rgba(59, 130, 246, 0.1);
+  }
+
+  .ma-pin {
+    position: absolute;
+    z-index: 22;
+    display: grid;
+    place-items: center;
+    box-sizing: border-box;
+    width: 20px;
+    height: 20px;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    background: var(--ma-blue);
+    color: #fff;
+    font-size: 10.5px;
+    font-weight: 600;
+    line-height: 1;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    opacity: 0;
+    transform: scale(0.3);
+    will-change: transform, opacity;
+    transition: opacity 0.2s ease, transform 0.32s cubic-bezier(0.25, 0.8, 0.25, 1);
+  }
+
+  .ma-pin > span {
+    opacity: 0;
+    transition: opacity 0.12s ease;
+  }
+
+  .ma-pin[data-show] {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  .ma-pin[data-show] > span {
+    opacity: 1;
+    transition: opacity 0.16s ease 0.14s;
+  }
+
+  .ma-field {
+    position: absolute;
+    z-index: 25;
+    display: flex;
+    align-items: center;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 4px;
+    border-radius: 999px;
+    background: #fff;
+    color: var(--ma-ink);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08), 0 2px 12px rgba(0, 0, 0, 0.1);
+    opacity: 0;
+    transform: translateY(2px) scale(0.94);
+    will-change: transform, opacity;
+    transform-origin: 0 50%;
+    transition: opacity 0.14s ease, transform 0.22s cubic-bezier(0.25, 0.8, 0.25, 1);
+  }
+
+  .ma-field[data-show] {
+    transition: opacity 0.07s ease, transform 0.22s cubic-bezier(0.25, 0.8, 0.25, 1);
+    opacity: 1;
+    transform: none;
+  }
+
+  .ma-field__text {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    min-width: 0;
+    padding: 0 8px 0 11px;
+    overflow: hidden;
+    font-size: 12.5px;
+    line-height: 18px;
+    white-space: nowrap;
+  }
+
+  .ma-field__placeholder {
+    color: #8a8a8a;
+  }
+
+  .ma-caret {
+    flex: none;
+    order: -1;
+    width: 1px;
+    height: 15px;
+    margin-right: 1px;
+    background: var(--ma-ink);
+    animation: ma-blink 1s steps(1) infinite;
+  }
+
+  .ma-field__text[data-typing] .ma-caret {
+    order: 0;
+    margin-right: 0;
+    margin-left: 1px;
+    animation: none;
+  }
+
+  .ma-field__send {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--ma-ink);
+    color: #fff;
+    opacity: 0.45;
+    transition: opacity 0.15s ease, transform 0.12s ease, background-color 0.15s ease;
+  }
+
+  .ma-field__send[data-ready] {
+    opacity: 1;
+  }
+
+  .ma-field__send[data-hover] {
+    background: #262626;
+  }
+
+  .ma-field__send[data-pressed] {
+    transform: scale(0.92);
+  }
+
+  /* The phone is small in its pane, so the field is sized to the room beside
+     the Mega Carrot button (FIELD in index.tsx): wide, 9.5px of note */
+  & .ss-stage:not([data-layout='compact']) .ma-field {
+    gap: 4px;
+    padding: 2px;
+  }
+
+  & .ss-stage:not([data-layout='compact']) .ma-field__text {
+    padding: 0 0 0 4px;
+    font-size: 9.5px;
+    letter-spacing: -0.1px;
+  }
+
+  & .ss-stage:not([data-layout='compact']) .ma-field__send {
+    width: 20px;
+    height: 20px;
+  }
+
+  & .ss-stage:not([data-layout='compact']) .ma-field__send svg {
+    width: 11px;
+    height: 11px;
+  }
+
+  & .ss-stage:not([data-layout='compact']) .ma-caret {
+    height: 11px;
+  }
+
+  & .ss-stage:not([data-layout='compact']) .ma-pin {
+    width: 18px;
+    height: 18px;
+    font-size: 10px;
+  }
+
+  .ma-rest {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+  }
+
+  /* ---- Compact: the device view's pane alone, the composer in front of its foot ---- */
+
+  & .ss-stage[data-layout='compact'] {
+    --gutter: 16px;
+  }
+
+  .ma-pane {
+    position: absolute;
+    top: var(--gutter);
+    right: var(--gutter);
+    left: var(--gutter);
+    height: 600px;
+    display: flex;
+    flex-direction: column;
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: var(--ma-shadow);
+  }
+
+  .ma-pane .ma-toolbar {
+    flex: none;
+    height: 44px;
+    border-bottom: 1px solid var(--ss-line);
+  }
+
+  .ma-pane .ma-panel {
+    display: block;
+    flex: 1;
+    overflow: hidden;
+    border-left: 0;
+  }
+
+  /* Left of center, so the note has its width beside the Mega Carrot button;
+     cropped at the top under the toolbar, inside Monty's photo, so the
+     buttons and the pin sit clear above the composer */
+  .ma-pane .ma-phone {
+    position: absolute;
+    top: -221px;
+    left: calc(50% - 135px - 8px);
+  }
+
+  /* Inset in the pane by the field's own 12px, a gutter and a half above the foot */
+  & .ss-stage[data-layout='compact'] .ma-composer-wrap {
+    position: absolute;
+    right: 28px;
+    bottom: 28px;
+    left: 28px;
+    z-index: 15;
+  }
+
+  & .ss-stage[data-layout='compact'] .ma-composer {
+    position: relative;
+    right: auto;
+    bottom: auto;
+    left: auto;
+    box-shadow: var(--ss-shadow-satellite);
+  }
+
+  & .ss-stage[data-layout='compact'] .ma-pane {
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.07), 0 2px 4px rgba(0, 0, 0, 0.03), 0 4px 10px -4px rgba(0, 0, 0, 0.07);
+  }
+
+  & .ss-stage[data-layout='compact'] .ma-field {
+    gap: 4px;
+    padding: 2px;
+  }
+
+  & .ss-stage[data-layout='compact'] .ma-field__text {
+    padding: 0 0 0 6px;
+    font-size: 10px;
+  }
+
+  & .ss-stage[data-layout='compact'] .ma-field__send {
+    width: 22px;
+    height: 22px;
+  }
+
+  & .ss-stage[data-layout='compact'] .ma-caret {
+    height: 12px;
+  }
+}
+
+@keyframes ma-blink {
+  50% {
+    opacity: 0;
+  }
+}

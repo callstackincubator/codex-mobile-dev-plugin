@@ -1,0 +1,843 @@
+/* Mobile Dev's Storage beside its simulator: a white window on a white
+   page. Wide, the window sits on the shared md-* frame (md-shared/frame.css
+   places it, sizes it and gives it its shadow); compact keeps its own crop.
+   The panel is shadcn neutral, as the product is; the store's chips, the
+   change marks and the old and new values keep the product's own tints.
+   The phone runs the shared HorseTinder (md-shared); only its home screen,
+   the close/launch layer and the deck's motion live here. */
+
+@keyframes mst-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.mst {
+  & .ss-stage {
+    --mst-ink: #171717;
+    --mst-muted: #737373;
+    --mst-faint: #a3a3a3;
+    --mst-line: #e5e5e5;
+    --mst-hover: #f5f5f5;
+    --mst-mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, monospace;
+    overflow: hidden;
+    background: transparent;
+    font-family: Inter, system-ui, -apple-system, sans-serif;
+  }
+
+  .mst-frame {
+    position: absolute;
+  }
+
+
+  .mst-win .ss-window__bar {
+    background: #fff;
+    border-bottom-color: var(--mst-line);
+  }
+
+  .mst-body {
+    position: relative;
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    background: #fff;
+  }
+
+  /* ---- Selects in the title bar and the toolbar ---- */
+
+  .mst-select {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 6px 0 8px;
+    border: 1px solid var(--mst-line);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--mst-ink);
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.3;
+    white-space: nowrap;
+  }
+
+  .mst-tool,
+  .mst-device {
+    height: 24px;
+    border-radius: 7px;
+  }
+
+  .mst-tool > svg:first-child {
+    color: var(--mst-ink);
+  }
+
+  .mst-chev {
+    flex: none;
+    color: var(--mst-muted);
+  }
+
+  .mst-device__icon {
+    position: relative;
+    display: flex;
+    color: var(--mst-muted);
+  }
+
+  /* Running: the small green dot on the phone's corner, as the picker draws it */
+  .mst-device__dot {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #22c55e;
+    box-shadow: 0 0 0 2px #fff;
+  }
+
+  .mst-app-icon {
+    flex: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.06);
+  }
+
+  /* ---- The two panes ---- */
+
+  .mst-storage {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  /* The docked simulator pane: the phone centered both ways */
+  .mst-sim {
+    display: flex;
+    order: 1;
+    align-items: center;
+    justify-content: center;
+    border-left: 1px solid var(--mst-line);
+  }
+
+  .mst-phone {
+    flex: none;
+  }
+
+  /* ---- Storage's toolbar ---- */
+
+  .mst-tools {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 6px;
+    height: 46px;
+    padding: 0 8px;
+    border-bottom: 1px solid var(--mst-line);
+  }
+
+  .mst-tabs {
+    display: flex;
+    flex: none;
+    gap: 2px;
+    height: 28px;
+    padding: 3px;
+    border-radius: 8px;
+    background: var(--mst-hover);
+  }
+
+  .mst-tab {
+    display: flex;
+    align-items: center;
+    height: 22px;
+    padding: 0 7px;
+    border-radius: 6px;
+    color: var(--mst-muted);
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.3;
+    white-space: nowrap;
+    transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .mst-tab[data-on] {
+    background: #fff;
+    color: var(--mst-ink);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.08);
+  }
+
+  .mst-tab[data-hover]:not([data-on]) {
+    color: var(--mst-ink);
+  }
+
+  .mst-tab__count {
+    margin-left: 6px;
+    color: var(--mst-muted);
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .mst-filter {
+    display: flex;
+    flex: 1 1 0;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    height: 28px;
+    padding: 0 8px;
+    border: 1px solid var(--mst-line);
+    border-radius: 8px;
+    color: var(--mst-muted);
+    font-size: 12px;
+    line-height: 1.3;
+  }
+
+  .mst-filter svg {
+    flex: none;
+  }
+
+  .mst-filter__stack {
+    display: grid;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .mst-filter__text {
+    grid-area: 1 / 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+
+  .mst-filter__text[data-on] {
+    opacity: 1;
+  }
+
+  /* Refresh and Reset, joined. Both rest while a read is running */
+  .mst-group {
+    display: flex;
+    flex: none;
+    transition: opacity 0.15s ease;
+  }
+
+  .mst-group[data-busy] {
+    opacity: 0.5;
+  }
+
+  .mst-btn {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    height: 28px;
+    padding: 0 10px;
+    border: 1px solid var(--mst-line);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--mst-ink);
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.3;
+    white-space: nowrap;
+    transition: background-color 0.15s ease;
+  }
+
+  .mst-btn[data-hover],
+  .mst-btn[data-on] {
+    background: var(--mst-hover);
+  }
+
+  .mst-group > .mst-btn:not(:only-child):first-child {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+
+  .mst-group > .mst-btn:not(:only-child):last-child {
+    border-left: 0;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+  }
+
+  .mst-btn--icon {
+    width: 28px;
+    padding: 0;
+  }
+
+  .mst-btn--xs {
+    height: 24px;
+    padding: 0 8px;
+    border-radius: 7px;
+    font-size: 11.5px;
+  }
+
+  .mst-btn--danger {
+    color: #dc2626;
+  }
+
+  .mst-btn--ghost {
+    border-color: transparent;
+    background: transparent;
+    color: var(--mst-ink);
+  }
+
+  .mst-btn--destructive {
+    border-color: transparent;
+    background: #dc2626;
+    color: #fff;
+  }
+
+  .mst-btn--destructive[data-hover] {
+    background: #c81e1e;
+  }
+
+  /* ---- Reset's confirm, as the product's popover ---- */
+
+  .mst-confirm {
+    padding: 12px;
+    border-radius: 10px;
+    --ss-popover-bg: #fff;
+    --ss-popover-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08), 0 4px 8px -2px rgba(0, 0, 0, 0.08), 0 10px 20px -8px rgba(0, 0, 0, 0.14);
+    color: var(--mst-ink);
+    font-size: 12px;
+    line-height: 16px;
+  }
+
+  .mst-confirm p {
+    margin: 0;
+  }
+
+  .mst-confirm__title {
+    margin-bottom: 4px !important;
+    font-weight: 500;
+  }
+
+  .mst-confirm__text {
+    margin-bottom: 12px !important;
+    color: var(--mst-muted);
+  }
+
+  .mst-confirm__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  /* ---- The status strip after a reset ---- */
+
+  .mst-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 41px;
+    padding: 0 8px 0 12px;
+    border-bottom: 1px solid var(--mst-line);
+    will-change: transform;
+    color: var(--mst-ink);
+    font-size: 12px;
+    line-height: 16px;
+  }
+
+  /* The strip takes the pane's width, never its text's */
+  .mst-status-wrap {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mst-status-wrap > .ss-collapse__inner {
+    min-width: 0;
+  }
+
+  .mst-status__text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .mst-refresh[data-spin] {
+    animation: mst-spin 0.8s linear;
+  }
+
+  /* ---- Browse and Changes share the body; a tab crossfades it ---- */
+
+  .mst-views {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  /* The old page is out before the new one is half in, so the two never
+     read as one onion skin */
+  .mst-view {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(8px);
+    transition: opacity 0.1s ease, transform 0s 0.1s, visibility 0s 0.1s;
+    will-change: transform;
+  }
+
+  .mst-view[data-on] {
+    opacity: 1;
+    visibility: visible;
+    transform: none;
+    transition: opacity 0.2s ease 0.08s, transform 0.2s ease 0.08s, visibility 0s;
+  }
+
+  /* The store's header, as the product's detail header */
+  .mst-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--mst-line);
+  }
+
+  .mst-head__text {
+    display: grid;
+    flex: 1;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .mst-head__title {
+    color: var(--mst-ink);
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.3;
+  }
+
+  .mst-head__sub {
+    overflow: hidden;
+    color: var(--mst-muted);
+    font-size: 11.5px;
+    line-height: 1.3;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .mst-head__end {
+    display: flex;
+    flex: none;
+    gap: 6px;
+  }
+
+  .mst-kind {
+    display: inline-grid;
+    flex: none;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 5px;
+    background: #ede9fe;
+    box-shadow: inset 0 0 0 1px rgba(139, 92, 246, 0.25);
+    color: #7c3aed;
+  }
+
+  .mst-kind[data-size='lg'] {
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
+  }
+
+  /* Keys and values: one line each, the product's three columns */
+  .mst-entry,
+  .mst-change {
+    position: relative;
+    isolation: isolate;
+    display: grid;
+    align-items: center;
+    gap: 12px;
+    border-bottom: 1px solid var(--mst-line);
+    color: var(--mst-ink);
+    font-family: var(--mst-mono);
+    font-size: 12px;
+    line-height: 16px;
+    white-space: nowrap;
+  }
+
+  .mst-entry {
+    grid-template-columns: 16px minmax(0, 2fr) minmax(0, 3fr);
+    height: 29px;
+    padding: 0 12px;
+  }
+
+  /* One wash on the row that changed, then gone */
+  .mst-entry::before,
+  .mst-change::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: rgba(16, 185, 129, 0.16);
+    opacity: 0;
+    transition: opacity 1.2s ease;
+  }
+
+  .mst-entry[data-wash]::before,
+  .mst-change[data-wash]::before {
+    opacity: 1;
+    transition-duration: 0.12s;
+  }
+
+  .mst-type {
+    color: var(--mst-faint);
+  }
+
+  .mst-key {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .mst-val {
+    display: flex;
+    min-width: 0;
+  }
+
+  .mst-val--muted {
+    color: var(--mst-muted);
+  }
+
+  .mst-val--num {
+    color: #2563eb;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .mst-bool {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: rgba(16, 185, 129, 0.1);
+    color: #047857;
+    font-family: Inter, system-ui, sans-serif;
+    font-size: 11px;
+    line-height: 15px;
+  }
+
+  .mst-bool__dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #10b981;
+  }
+
+  /* ---- Changes: the list over the product's footer ---- */
+
+  .mst-view--changes {
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* The list scrolls in the product: its foot fades, so a row the reset
+     carries up is never seen sliced by the footer */
+  .mst-changes {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
+  }
+
+  .mst-foot {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 8px;
+    height: 36px;
+    padding: 0 8px 0 12px;
+    border-top: 1px solid var(--mst-line);
+    color: var(--mst-muted);
+    font-size: 12px;
+    line-height: 16px;
+    white-space: nowrap;
+  }
+
+  .mst-foot__count {
+    display: flex;
+    gap: 4px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .mst-foot__sdk {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+  }
+
+  /* An off switch, as shadcn's at size sm */
+  .mst-switch {
+    position: relative;
+    width: 28px;
+    height: 16px;
+    border-radius: 999px;
+    background: var(--mst-line);
+  }
+
+  .mst-switch::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  }
+
+  .mst-change {
+    grid-template-columns: 16px 58px 160px minmax(0, 1fr);
+    height: 37px;
+    padding: 0 12px;
+  }
+
+  .mst-change__icon {
+    color: #d97706;
+  }
+
+  .mst-time {
+    color: var(--mst-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .mst-change__key {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .mst-key--strong {
+    font-weight: 500;
+  }
+
+  .mst-diff {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .mst-old,
+  .mst-new {
+    overflow: hidden;
+    padding: 0 4px;
+    border-radius: 4px;
+    text-overflow: ellipsis;
+  }
+
+  /* The new value is the point: the old one gives way first */
+  .mst-old {
+    flex: 0 4 auto;
+    background: rgba(244, 63, 94, 0.1);
+    color: #be123c;
+    text-decoration: line-through;
+    text-decoration-color: rgba(251, 113, 133, 0.7);
+  }
+
+  .mst-new {
+    flex: 0 1 auto;
+    background: rgba(16, 185, 129, 0.12);
+    color: #065f46;
+  }
+
+  .mst-field {
+    flex: none;
+    color: var(--mst-muted);
+  }
+
+  .mst-arrow {
+    flex: none;
+    color: rgba(115, 115, 115, 0.6);
+  }
+
+  /* ---- The phone's home screen and the app over it, in screen points ---- */
+
+  .mst-home {
+    position: absolute;
+    inset: 0;
+  }
+
+  .mst-home__grid {
+    position: absolute;
+    top: 76px;
+    right: 30px;
+    left: 30px;
+    display: grid;
+    grid-template-columns: repeat(4, 62px);
+    justify-content: space-between;
+    row-gap: 20px;
+  }
+
+  .mst-home__app {
+    display: grid;
+    justify-items: center;
+    gap: 6px;
+  }
+
+  .mst-home__icon {
+    display: block;
+    width: 62px;
+    height: 62px;
+    border-radius: 15px;
+    background: rgba(255, 255, 255, 0.4);
+  }
+
+  .mst-home__icon[data-tint='1'] {
+    background: rgba(255, 255, 255, 0.3);
+  }
+
+  .mst-home__icon[data-tint='2'] {
+    background: rgba(255, 255, 255, 0.5);
+  }
+
+  .mst-home__icon[data-tint='3'] {
+    background: rgba(255, 255, 255, 0.36);
+  }
+
+  .mst-home__bar {
+    height: 6px;
+    margin: 5px 0;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.5);
+  }
+
+  .mst-home__label {
+    color: #fff;
+    font-family: -apple-system, system-ui, sans-serif;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 16px;
+    white-space: nowrap;
+  }
+
+  .mst-home__dock {
+    position: absolute;
+    right: 16px;
+    bottom: 22px;
+    left: 16px;
+    display: flex;
+    justify-content: space-between;
+    height: 96px;
+    padding: 0 16px;
+    align-items: center;
+    border-radius: 36px;
+    background: rgba(255, 255, 255, 0.24);
+  }
+
+  /* The running app. It closes into its icon (row 4, column 2: centered at
+     154, 419) and opens out of it, rounding to the icon's corner as it goes */
+  .mst-launch {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    border-radius: 0;
+    transform-origin: 154px 419px;
+    transition: transform 0.45s cubic-bezier(0.3, 0.75, 0.1, 1), border-radius 0.45s cubic-bezier(0.3, 0.75, 0.1, 1), opacity 0.24s ease;
+    will-change: transform;
+  }
+
+  .mst-launch[data-closed] {
+    border-radius: 96px;
+    opacity: 0;
+    transform: scale(0.154);
+    transition: transform 0.38s cubic-bezier(0.4, 0, 0.2, 1), border-radius 0.38s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.14s ease 0.24s;
+  }
+
+  /* ---- HorseTinder's deck (md-shared), moved through its card props ---- */
+
+  /* The next card waits a step back under the one on top, as the app's deck
+     does, and comes up as the top one leaves */
+  .mst-under {
+    transform: translateY(10px) scale(0.96);
+    transition: transform 0.3s cubic-bezier(0.3, 0.75, 0.1, 1);
+    will-change: transform;
+  }
+
+  .mst-under[data-up] {
+    transform: none;
+  }
+
+  /* LIKE throws the card off to the right, turning with it: the app's own
+     300ms ease-out */
+  .mst-top {
+    transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    will-change: transform;
+  }
+
+  .mst-top[data-fling] {
+    transform: translateX(135%) rotate(18deg);
+  }
+}
+
+/* Compact: the simulator leads, cut at the stage's top inside the photo,
+   and Storage comes up over its empty foot in a narrow window. The toolbar
+   keeps the app, the tabs, Refresh and Reset */
+.mst .ss-stage[data-layout='compact'] {
+  & .mst-win {
+    width: 100%;
+    height: 100%;
+    box-shadow: var(--ss-shadow-hero);
+  }
+
+  & .mst-foot__sdk {
+    display: none;
+  }
+
+  /* The app picker takes what the row leaves and truncates, as the
+     product's select does */
+  & .mst-app-pick {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  & .mst-app-pick .mst-select__label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  & .mst-foot__count {
+    margin-right: auto;
+  }
+
+  & .mst-satellite {
+    position: absolute;
+    z-index: 1;
+  }
+
+  & .mst-frame {
+    z-index: 2;
+  }
+
+  & .mst-select,
+  & .mst-tab {
+    font-size: 11.5px;
+  }
+
+  & .mst-entry {
+    grid-template-columns: 16px minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  & .mst-change {
+    grid-template-columns: 16px minmax(0, 88px) minmax(0, 1fr);
+  }
+
+  & .mst-change .mst-kind {
+    display: none;
+  }
+
+  & .mst-change .mst-time {
+    display: none;
+  }
+}

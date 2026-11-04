@@ -1,0 +1,153 @@
+/* HorseTinder, the md-logs look, shared by every md-* phone. Screen points:
+   on the 402 x 874 iPhone screen the logo sits at 72, the card at 132 and
+   540 tall, the buttons at 692. A column, so a taller or shorter screen
+   (the Android frame) gives the card the difference. */
+.ht {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 72px 14px 78px;
+  font-family: system-ui, -apple-system, sans-serif;
+  color: #1c1c1e;
+}
+
+.ht-logo {
+  display: flex;
+  flex: 0 0 44px;
+  justify-content: center;
+  gap: 2px;
+  margin-bottom: 16px;
+  font-family: ui-rounded, 'SF Pro Rounded', system-ui, sans-serif;
+  font-size: 36px;
+  font-weight: 800;
+  line-height: 44px;
+  letter-spacing: -0.5px;
+  color: #ec456d;
+}
+
+.ht-logo-heart {
+  margin-top: -4px;
+  color: #ec2f63;
+  rotate: 14deg;
+}
+
+.ht-deck {
+  position: relative;
+  flex: 1 1 auto;
+}
+
+.ht-card {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: 34px;
+}
+
+/* A warm photo, drawn: never a real picture. One recipe, three coats. */
+.ht-photo {
+  position: absolute;
+  inset: 0;
+  --ht-hi: #b98259;
+  --ht-low: #5a3624;
+  --ht-a: #8a5a3c;
+  --ht-b: #5b3826;
+  --ht-c: #3a2318;
+  background:
+    linear-gradient(0deg, rgba(20, 10, 6, 0.72) 0%, rgba(20, 10, 6, 0) 46%),
+    radial-gradient(42% 34% at 52% 34%, var(--ht-hi) 0%, transparent 100%),
+    radial-gradient(60% 50% at 30% 70%, var(--ht-low) 0%, transparent 100%),
+    linear-gradient(165deg, var(--ht-a) 0%, var(--ht-b) 55%, var(--ht-c) 100%);
+}
+
+.ht-card[data-photo="palomino"] .ht-photo {
+  --ht-hi: #e2bf86;
+  --ht-low: #8f6a3c;
+  --ht-a: #c89a5e;
+  --ht-b: #93683a;
+  --ht-c: #5a3e22;
+}
+
+.ht-card[data-photo="grey"] .ht-photo {
+  --ht-hi: #d9d6d2;
+  --ht-low: #6d6862;
+  --ht-a: #a9a49e;
+  --ht-b: #77716b;
+  --ht-c: #45403c;
+}
+
+.ht-info {
+  position: absolute;
+  left: 22px;
+  right: 22px;
+  bottom: 24px;
+  color: #fff;
+}
+
+.ht-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 36px;
+  font-weight: 800;
+  /* An even line box, so the 26px check centers on whole pixels */
+  line-height: 42px;
+}
+
+.ht-check {
+  fill: #2f8cff;
+  color: #fff;
+}
+
+.ht-sub {
+  margin-top: 4px;
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.ht-tags {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.ht-tag {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.ht-actions {
+  display: flex;
+  flex: 0 0 104px;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+  margin-top: 20px;
+}
+
+.ht-btn {
+  display: grid;
+  place-items: center;
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 8px 22px rgba(214, 60, 106, 0.2);
+  color: #f0447a;
+  transition: scale 0.12s ease;
+}
+
+.ht-carrot {
+  width: 104px;
+  height: 104px;
+  color: #f2691d;
+}
+
+.ht-btn[data-pressed] {
+  scale: 0.9;
+}

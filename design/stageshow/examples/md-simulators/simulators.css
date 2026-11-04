@@ -1,0 +1,562 @@
+/* Mobile Dev's simulators panel. Wide: the shared md-* window (frame.css
+   places, sizes and shadows it), a quiet Logs column beside two device panes.
+   Compact: a window in from the top, left and right, running off the bottom
+   with its phones. The panel is shadcn neutral, as the product is; the
+   phones run the shared HorseTinder (md-shared/horsetinder.css). */
+
+.mds {
+  & .ss-stage {
+    --mds-ink: #171717;
+    --mds-muted: #737373;
+    --mds-line: #e5e5e5;
+    --mds-hover: #f5f5f5;
+    /* The panel's two curves: the split travels, the menu is quick */
+    --mds-travel: cubic-bezier(0.45, 0, 0.1, 1);
+    overflow: hidden;
+    background: transparent;
+    font-family: Inter, system-ui, -apple-system, sans-serif;
+  }
+
+  /* Compact's window: placed by its wrapper, its lift tightened so it fades
+     out inside the 16px gutter */
+  .mds-frame {
+    position: absolute;
+  }
+
+  & .ss-stage[data-layout='compact'] .mds-win-wrap,
+  & .ss-stage[data-layout='compact'] .mds-win {
+    width: 100%;
+    height: 100%;
+  }
+
+  & .ss-stage[data-layout='compact'] .mds-win {
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06), 0 14px 22px -12px rgba(50, 50, 93, 0.22), 0 4px 10px -4px rgba(0, 0, 0, 0.08);
+  }
+
+  .mds-win .ss-window__bar {
+    background: #fff;
+    border-bottom-color: var(--mds-line);
+  }
+
+  .mds-body {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    background: #fff;
+  }
+
+  /* ---- Wide: the bar over three columns ---- */
+
+  /* The title and the platform select take the Logs column's stretch of the
+     bar; the device toolbars take the rest, each over its pane */
+  & .ss-stage:not([data-layout='compact']) .mds-win .ss-window__bar {
+    position: relative;
+    padding-right: calc(var(--mds-devices) + 10px);
+  }
+
+  & .ss-stage:not([data-layout='compact']) {
+    --mds-devices: 600px;
+  }
+
+  /* Down over the bar's rule, so each toolbar draws its own and meets its
+     pane */
+  .mds-devbar {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: -1px;
+    overflow: hidden;
+  }
+
+  .mds-seg {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    border-bottom: 1px solid var(--mds-line);
+    background: #fff;
+  }
+
+  /* The column's divider runs up through the bar */
+  .mds-seg::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 1px;
+    background: var(--mds-line);
+  }
+
+  .mds-seg .mds-bar {
+    gap: 0;
+    height: 100%;
+    padding: 0 8px;
+    border-bottom: 0;
+  }
+
+  .mds-seg .mds-picker {
+    flex: 0 1 auto;
+    height: 26px;
+    margin-right: 4px;
+    border-radius: 7px;
+  }
+
+  .mds-seg .mds-icon {
+    width: 26px;
+    height: 26px;
+  }
+
+  /* The emulator's toolbar rides in with its pane */
+  .mds-seg--android {
+    visibility: hidden;
+    transform: translateX(calc(var(--mds-pane) + 1px));
+    transition: transform 0.9s var(--mds-travel), visibility 0s 0.9s;
+    will-change: transform;
+  }
+
+  .mds-devbar[data-both] .mds-seg--android {
+    visibility: visible;
+    transform: none;
+    transition: transform 0.9s var(--mds-travel), visibility 0s;
+  }
+
+  /* ---- Wide: the Logs column, filler beside the devices ---- */
+
+  .mds-logs {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+  }
+
+  .mds-logs__tools {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 2px;
+    height: 44px;
+    padding: 0 8px;
+    border-bottom: 1px solid var(--mds-line);
+  }
+
+  .mds-logs__tools .mds-icon {
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+  }
+
+  .mds-icon[data-pressed-look] {
+    background: var(--mds-hover);
+  }
+
+  .mds-filter {
+    flex: 1;
+    min-width: 0;
+    margin-right: 4px;
+    --ss-control: 28px;
+  }
+
+  .mds-filter .ss-field__box {
+    gap: 7px;
+    padding: 0 8px;
+    border-radius: 7px;
+    box-shadow: inset 0 0 0 1px var(--mds-line);
+    font-size: 12px;
+  }
+
+  .mds-filter .ss-field__placeholder {
+    color: var(--mds-muted);
+  }
+
+  .mds-filter__icon {
+    flex: none;
+    color: var(--mds-muted);
+  }
+
+  /* Pinned to its foot, as the product follows new logs */
+  .mds-logs__list {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    justify-content: flex-end;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .mds-log {
+    flex: none;
+    display: grid;
+    grid-template-columns: 14px 8ch 1px minmax(0, 1fr);
+    column-gap: 8px;
+    align-items: start;
+    min-height: 27px;
+    padding: 4px 8px;
+    border-bottom: 1px solid #ededed;
+    background: #419cff08;
+    color: #1769bb;
+    font-family: ui-monospace, 'SFMono-Regular', Menlo, Monaco, Consolas, monospace;
+    font-size: 12px;
+    font-variant-ligatures: none;
+    line-height: 18px;
+  }
+
+  .mds-log:last-child {
+    border-bottom: 0;
+  }
+
+  .mds-log__sev {
+    margin-top: 2px;
+  }
+
+  .mds-log__sev > :first-child {
+    fill: currentColor;
+  }
+
+  .mds-log__sev > :not(:first-child) {
+    stroke: #fff;
+  }
+
+  .mds-log__line {
+    display: flex;
+    align-items: center;
+    height: 18px;
+    white-space: pre;
+  }
+
+  .mds-log__rule {
+    width: 1px;
+    height: 14px;
+    margin-top: 2px;
+    background: #a8a8a8;
+  }
+
+  .mds-log__msg {
+    min-width: 0;
+  }
+
+  .mds-log__tag {
+    margin-right: 0.6em;
+  }
+
+  /* ---- Wide: the device panes ---- */
+
+  & .ss-stage:not([data-layout='compact']) {
+    --mds-pane: 300px;
+  }
+
+  .mds-devices {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    overflow: hidden;
+    border-left: 1px solid var(--mds-line);
+    margin-left: -1px;
+  }
+
+  /* Each pane centers its phone both ways */
+  .mds-dpane {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Alone, the iPhone's pane sits in the middle of the device area; it moves
+     to the left half as the emulator's pane slides in on the right */
+  .mds-dpane--ios {
+    transform: translateX(calc(var(--mds-pane) / 2));
+    transition: transform 0.9s var(--mds-travel);
+    will-change: transform;
+  }
+
+  .mds-devices[data-both] .mds-dpane--ios {
+    transform: none;
+  }
+
+  .mds-dpane--android {
+    visibility: hidden;
+    transform: translateX(calc(var(--mds-pane) + 1px));
+    transition: transform 0.9s var(--mds-travel), visibility 0s 0.9s;
+    will-change: transform;
+  }
+
+  .mds-dpane--android::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 1px;
+    background: var(--mds-line);
+  }
+
+  .mds-devices[data-both] .mds-dpane--android {
+    visibility: visible;
+    transform: none;
+    transition: transform 0.9s var(--mds-travel), visibility 0s;
+  }
+
+  /* ---- The platform select, in the window's toolbar ---- */
+
+  .mds-platform {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 4px;
+    height: 24px;
+    padding: 0 6px 0 9px;
+    border: 1px solid var(--mds-line);
+    border-radius: 7px;
+    background: #fff;
+    color: var(--mds-ink);
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1;
+    transition: background-color 0.15s ease;
+    will-change: transform;
+  }
+
+  .mds-platform svg {
+    flex: none;
+    color: var(--mds-muted);
+  }
+
+  .mds-platform[data-hover],
+  .mds-platform[data-open] {
+    background: var(--mds-hover);
+  }
+
+  .mds-menu {
+    padding: 4px;
+    --ss-popover-bg: #fff;
+    --ss-popover-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08), 0 8px 24px -6px rgba(0, 0, 0, 0.16);
+    border-radius: 9px;
+  }
+
+  /* As the product's select draws its rows: the words, and the check in a
+     slot of its own at the right, shown only on a chosen platform */
+  .mds-menu {
+    width: max-content;
+    min-width: 120px;
+    will-change: transform;
+  }
+
+  .mds-menu__item {
+    position: relative;
+    height: 28px;
+    padding: 0 32px 0 8px;
+    line-height: 28px;
+    border-radius: 6px;
+    color: var(--mds-ink);
+    font-size: 12.5px;
+    transition: background-color 0.15s ease;
+  }
+
+  .mds-menu__item[data-hover] {
+    background: var(--mds-hover);
+    transition-duration: 0s;
+  }
+
+  .mds-menu__tick {
+    position: absolute;
+    top: 7px;
+    right: 8px;
+    color: var(--mds-ink);
+    transition: opacity 0.18s ease, transform 0.18s ease;
+  }
+
+  .mds-menu__tick[data-off] {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+
+  /* ---- The panel: one pane, or two side by side ---- */
+
+  .mds-panel {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+  }
+
+  .mds-pane {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    background: #fff;
+  }
+
+  .mds-pane--ios {
+    width: var(--mds-full);
+  }
+
+  /* The iPhone's pane narrows to half: its toolbar shrinks with it and its
+     stage slides so the phone stays centered in what is left */
+  .mds-pane--ios .mds-bar {
+    width: var(--mds-full);
+    transition: width 0.9s var(--mds-travel);
+  }
+
+  .mds-pane--ios .mds-stage {
+    width: var(--mds-full);
+    transition: transform 0.9s var(--mds-travel);
+    will-change: transform;
+  }
+
+  .mds-panel[data-both] .mds-pane--ios .mds-bar {
+    width: var(--mds-half);
+  }
+
+  .mds-panel[data-both] .mds-pane--ios .mds-stage {
+    transform: translateX(calc(var(--mds-half) / -2));
+  }
+
+  /* The emulator's pane slides in from the window's right edge, its divider
+     leading, its contents riding with it */
+  .mds-pane--android {
+    left: var(--mds-half);
+    right: 0;
+    overflow: hidden;
+    border-left: 1px solid var(--mds-line);
+    visibility: hidden;
+    transform: translateX(calc(var(--mds-half) + 1px));
+    transition: transform 0.9s var(--mds-travel), visibility 0s 0.9s;
+    will-change: transform;
+  }
+
+  .mds-panel[data-both] .mds-pane--android {
+    visibility: visible;
+    transform: none;
+    transition: transform 0.9s var(--mds-travel), visibility 0s;
+  }
+
+  .mds-pane__inner {
+    height: 100%;
+  }
+
+  .mds-bar {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    height: 42px;
+    padding: 0 8px;
+    border-bottom: 1px solid var(--mds-line);
+  }
+
+  .mds-pane__inner .mds-bar {
+    width: 100%;
+  }
+
+  .mds-picker {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    height: 28px;
+    margin-right: 3px;
+    padding: 0 6px 0 8px;
+    border: 1px solid var(--mds-line);
+    border-radius: 8px;
+    color: var(--mds-ink);
+    font-size: 12px;
+  }
+
+  .mds-picker__icon {
+    position: relative;
+    display: flex;
+    flex: none;
+    color: var(--mds-muted);
+  }
+
+  /* Running: the small green dot on the phone's corner, as the picker draws it */
+  .mds-picker__dot {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #22c55e;
+    box-shadow: 0 0 0 2px #fff;
+  }
+
+  .mds-picker__label {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    line-height: 1.3;
+  }
+
+  .mds-picker__chev {
+    flex: none;
+    color: var(--mds-muted);
+  }
+
+  .mds-icon {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 26px;
+    height: 28px;
+    border-radius: 7px;
+    color: #404040;
+  }
+
+  .mds-stage {
+    display: flex;
+    justify-content: center;
+    padding-top: 14px;
+  }
+
+  .mds-pane__inner .mds-stage {
+    width: 100%;
+  }
+
+  .mds-phone {
+    flex: none;
+  }
+
+  /* ---- HorseTinder's deck on the emulator (the app is md-shared's) ---- */
+
+  /* Juniper, thrown: a lasting layer, so her text does not step as she moves */
+  .mds-throw {
+    will-change: transform;
+  }
+
+  /* Clover waits a step back under Juniper and comes up as she leaves */
+  .mds-rise {
+    transform: scale(0.94);
+    transition: transform 0.55s cubic-bezier(0.3, 0.75, 0.1, 1);
+    will-change: transform;
+  }
+
+  .mds-rise[data-up] {
+    transform: none;
+  }
+}
+
+/* Compact: two phones in a phone column. The toolbars keep only the device
+   picker */
+.mds .ss-stage[data-layout='compact'] {
+  & .mds-bar {
+    padding: 0 6px;
+  }
+
+  & .mds-picker {
+    gap: 6px;
+    margin-right: 0;
+    padding: 0 6px;
+    font-size: 11.5px;
+  }
+}

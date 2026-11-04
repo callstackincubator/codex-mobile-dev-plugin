@@ -1,0 +1,456 @@
+/* Mobile Dev's Live performance panel, beside the mirrored phone. Colors are
+   the product's: neutral grays, hairline borders, CPU blue, Memory orange,
+   Display FPS green, the hover hairline and ruler pill in blue-500. */
+.ml {
+  --ml-fg: #252525;
+  --ml-muted: #737373;
+  --ml-border: #e8e8e8;
+  --ml-side: #fcfcfc;
+  --ml-blue: #3b82f6;
+  /* The panel writes 5.8% and 229.4 MiB: the % sits on its figure */
+  --ss-count-unit-gap: 0.02em;
+
+  & .ss-stage {
+    overflow: hidden;
+    background: transparent;
+  }
+
+  /* Wide: the shared frame places and shadows the window (md-window).
+     Compact: inset top and left, off the bottom; whole across so the
+     header's status and Start stay in frame */
+  & .ss-stage[data-layout='compact'] .ml-win {
+    position: absolute;
+    top: 16px;
+    left: 16px;
+    height: 360px;
+    box-shadow: var(--ss-shadow-hero);
+  }
+
+  /* Wide: the overlay phone covers the window's right 222px from the bar
+     down (window x 642). The bar's device controls and the header's status,
+     Start/Stop and settings end 14px before it, so nothing the story uses
+     sits under the phone; what it covers is the timeline's empty future. */
+  & .ss-stage:not([data-layout='compact']) {
+    & .ml-icons {
+      margin-right: 236px;
+    }
+
+    & .ml-head {
+      height: 46px;
+      padding-right: 236px;
+    }
+
+    & .ml-ruler {
+      height: 25px;
+    }
+
+    & .ml-ruler__label {
+      padding: 0 14px;
+      font-size: 11px;
+    }
+
+    & .ml-label {
+      padding: 11px 14px 10px;
+    }
+
+    & .ml-label__head {
+      font-size: 13px;
+    }
+
+    & .ml-metrics {
+      gap: 2px;
+    }
+
+    & .ml-metric {
+      font-size: 11px;
+      line-height: 15px;
+    }
+
+    /* The last track meets the window's own edge */
+    & .ml-track:last-child > * {
+      border-bottom: 0;
+    }
+  }
+
+  & .ml-win .ss-window__body {
+    background: #fff;
+  }
+
+  /* The product's toolbar in the window's bar */
+  & .ml-tools {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: 14px;
+  }
+
+  & .ml-pick {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 6px;
+    height: 24px;
+    padding: 0 7px 0 8px;
+    border: 1px solid var(--ml-border);
+    border-radius: 7px;
+    background: #fff;
+    color: var(--ml-fg);
+    font-size: 12px;
+    line-height: 1;
+    white-space: nowrap;
+
+    & svg {
+      flex: none;
+    }
+  }
+
+  & .ml-pick__chev {
+    color: var(--ml-muted);
+  }
+
+  & .ml-device {
+    position: relative;
+    display: inline-flex;
+
+    & i {
+      position: absolute;
+      top: 0;
+      left: -1px;
+      width: 5px;
+      height: 5px;
+      border: 1px solid #fff;
+      border-radius: 50%;
+      background: #22c55e;
+    }
+  }
+
+  & .ml-icons {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-right: 14px;
+    color: #525252;
+  }
+
+  /* The panel */
+  & .ml-panel {
+    display: flex;
+    flex-direction: column;
+    color: var(--ml-fg);
+  }
+
+  & .ml-head {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 8px;
+    height: 45px;
+    padding: 0 8px 0 12px;
+    border-bottom: 1px solid var(--ml-border);
+  }
+
+  & .ml-head__icon {
+    flex: none;
+    color: var(--ml-blue);
+  }
+
+  & .ml-head__text {
+    display: grid;
+    gap: 1px;
+    min-width: 0;
+    margin-right: auto;
+    font-size: 12px;
+    line-height: 1.3;
+    white-space: nowrap;
+  }
+
+  & .ml-head__sub {
+    color: var(--ml-muted);
+    font-size: 10.5px;
+  }
+
+  & .ml-status {
+    flex: none;
+    margin-right: 2px;
+    color: var(--ml-muted);
+    font-size: 11px;
+  }
+
+  & .ml-icon-btn {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    color: #404040;
+    transition: background-color 0.15s ease;
+
+    &[data-hover],
+    &[data-pressed] {
+      background: #f2f2f2;
+    }
+  }
+
+  /* The ruler: mono ticks, a blue pill at the hovered time */
+  & .ml-ruler {
+    display: flex;
+    flex: none;
+    height: 24px;
+    border-bottom: 1px solid var(--ml-border);
+  }
+
+  & .ml-ruler__label {
+    display: flex;
+    flex: none;
+    align-items: center;
+    padding: 0 12px;
+    border-right: 1px solid var(--ml-border);
+    color: var(--ml-muted);
+    font-size: 10.5px;
+    white-space: nowrap;
+  }
+
+  & .ml-ruler__plot {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+  }
+
+  & .ml-tick {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    padding-left: 5px;
+    border-left: 1px solid var(--ml-border);
+    color: var(--ml-muted);
+    font-family: var(--ss-mono);
+    font-size: 10px;
+    white-space: nowrap;
+    transition: color 0.15s ease;
+
+    /* A label the hover pill covers steps back, as its line stays */
+    &[data-under] {
+      color: transparent;
+    }
+  }
+
+  & .ml-pill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    will-change: transform;
+    bottom: -1px;
+    width: 1px;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+
+    &[data-on] {
+      opacity: 1;
+    }
+
+    &::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 1px;
+      height: 50%;
+      background: var(--ml-blue);
+    }
+
+    & span {
+      position: absolute;
+      top: 50%;
+      left: 0;
+      z-index: 1;
+      padding: 1px 6px;
+      border-radius: 999px;
+      background: var(--ml-blue);
+      color: #fff;
+      font-family: var(--ss-mono);
+      font-size: 10px;
+      font-weight: 700;
+      line-height: 14px;
+      white-space: nowrap;
+      translate: -50% -50%;
+    }
+  }
+
+  /* A track: its label column, then the plot */
+  & .ml-track {
+    display: flex;
+    flex: none;
+  }
+
+  & .ml-label {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 9px 12px;
+    border-right: 1px solid var(--ml-border);
+    border-bottom: 1px solid var(--ml-border);
+    background: var(--ml-side);
+  }
+
+  & .ml-label__head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #525252;
+  }
+
+  & .ml-label__chev {
+    margin-left: auto;
+    color: #404040;
+  }
+
+  & .ml-ic {
+    flex: none;
+  }
+
+  & .ml-ic--fps {
+    color: #22c55e;
+  }
+
+  & .ml-ic--cpu {
+    color: var(--ml-blue);
+  }
+
+  & .ml-ic--mem {
+    color: #f97316;
+  }
+
+  & .ml-metrics {
+    display: grid;
+    gap: 1px;
+  }
+
+  & .ml-metric {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    color: var(--ml-muted);
+    font-size: 10px;
+    line-height: 14px;
+    white-space: nowrap;
+  }
+
+  & .ml-parts {
+    display: inline-flex;
+    align-items: baseline;
+  }
+
+  /* The clear leading zero of a CPU figure under 10% */
+  & .ss-count[data-lead] .ss-count__digit:first-of-type {
+    color: transparent;
+  }
+
+  & .ss-count .ss-count__digit:first-of-type {
+    transition: color 0.2s ease;
+  }
+
+  & .ml-metric__value {
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+
+  & .ml-plot {
+    position: relative;
+    border-bottom: 1px solid var(--ml-border);
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  & .ml-grid {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--ml-border);
+  }
+
+  /* The head of the stream: a clip that runs linearly sample to sample */
+  & .ml-reveal {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    overflow: hidden;
+    transition: width 0.5s linear, opacity 0.22s ease;
+
+    &[data-clearing] {
+      opacity: 0;
+    }
+  }
+
+  & .ml-series {
+    display: block;
+  }
+
+  & .ml-hair {
+    position: absolute;
+    top: 0;
+    left: 0;
+    will-change: transform;
+    bottom: -1px;
+    z-index: 2;
+    width: 1px;
+    background: var(--ml-blue);
+    opacity: 0;
+    transition: opacity 0.15s ease;
+
+    &[data-on] {
+      opacity: 1;
+    }
+  }
+
+  & .ml-tip {
+    position: absolute;
+    top: 0;
+    left: 0;
+    will-change: transform;
+    z-index: 3;
+    padding: 1px 4px;
+    border: 1px solid var(--ml-border);
+    border-radius: 4px;
+    background: #fff;
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.06);
+    color: var(--ml-fg);
+    font-family: var(--ss-mono);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 14px;
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+
+    &[data-on] {
+      opacity: 1;
+    }
+  }
+
+  /* The mirrored phone: the shared overlay box (md-overlay-phone), over
+     the timeline's empty future */
+  & .ml-phone {
+    z-index: 2;
+  }
+
+  /* The shared HorseTinder card's drag: it follows the pointer while held,
+     then springs back to the deck */
+  & .ml-card {
+    transform-origin: 50% 110%;
+    transition: transform 0.5s cubic-bezier(0.3, 0.75, 0.1, 1);
+    will-change: transform;
+
+    &[data-held] {
+      transition: none;
+    }
+  }
+}
