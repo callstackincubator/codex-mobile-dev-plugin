@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { agentDeviceClient } from "../../test-support/agent-device-fixtures.ts";
+import { agentDeviceCatalogFile, agentDeviceClient } from "../../test-support/agent-device-fixtures.ts";
+import { readAgentDeviceCatalog } from "../src/agent-device-tools.ts";
 import { PNG } from "../../test-support/fixtures.ts";
 
 function text(result: { content: unknown }) {
@@ -34,6 +35,54 @@ test("forwarding preserves named sessions, metadata and native results without r
   const iosInput = { session: "ios-task", interactiveOnly: true };
   await client.callTool({ name: "device_snapshot", arguments: iosInput });
   assert.deepEqual(calls[3].arguments, iosInput);
+});
+
+test("hosts receive the complete JSON Schema for every agent-device tool", async t => {
+  const { client } = await agentDeviceClient(t);
+  const { tools } = await client.listTools();
+  const catalog = readAgentDeviceCatalog(agentDeviceCatalogFile);
+  for (const tool of catalog) {
+    const listed = tools.find(candidate => candidate.name === `device_${tool.name}`);
+    assert.ok(listed, tool.name);
+    const { $schema, ...inputSchema } = listed.inputSchema;
+    assert.deepEqual(inputSchema, tool.inputSchema, tool.name);
+  }
+});
+
+test("fold and telephony enforce their JSON Schema conditions directly and in batches", async t => {
+  const { client, calls } = await agentDeviceClient(t);
+  const keyframes = [{ atMs: 0, angle: 0 }, { atMs: 1000, angle: 180 }];
+  const invalid = [
+    { command: "fold", input: {} },
+    { command: "fold", input: { pose: "open", keyframes } },
+    { command: "fold", input: { keyframes: [{ atMs: 0, angle: 181 }, { atMs: 1000, angle: 0 }] } },
+    { command: "telephony", input: { action: "sms", number: "5551234" } },
+    { command: "telephony", input: { action: "call", number: "5551234", text: "message" } },
+  ];
+  for (const { command, input } of invalid) {
+    const result = await client.callTool({ name: `device_${command}`, arguments: { session: "task", ...input } });
+    assert.equal(result.isError, true, command);
+    const batch = await client.callTool({ name: "device_batch", arguments: { session: "task", steps: [{ command, input }] } });
+    assert.equal(batch.isError, true, command);
+  }
+  assert.equal(calls.length, 0);
+  const valid = [
+    { command: "fold", input: { pose: "open" } },
+    { command: "fold", input: { keyframes } },
+    { command: "telephony", input: { action: "sms", number: "5551234", text: "message" } },
+    { command: "telephony", input: { action: "call", number: "5551234" } },
+  ];
+  for (const { command, input } of valid) {
+    const args = { session: "task", ...input };
+    const result = await client.callTool({ name: `device_${command}`, arguments: args });
+    assert.equal(result.isError, undefined, command);
+    const forwarded = calls.at(-1);
+    assert.deepEqual(forwarded?.arguments, args);
+    const steps = [{ command, input }];
+    const batch = await client.callTool({ name: "device_batch", arguments: { session: "task", steps } });
+    assert.equal(batch.isError, undefined, command);
+  }
+  assert.equal(calls.length, valid.length * 2);
 });
 
 test("a screenshot returns the saved image beside agent-device's own result", async t => {

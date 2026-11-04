@@ -6,6 +6,7 @@ import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { agentDeviceCatalog, compactAgentDeviceTool } from "../src/agent-device-catalog.ts";
 import { agentDeviceCatalogFile, agentDeviceGuideFile, runtimeUrl, upstreamCatalog } from "../../test-support/agent-device-fixtures.ts";
 
+const originalTools = structuredClone(upstreamCatalog.tools);
 const tools = upstreamCatalog.tools.map(compactAgentDeviceTool);
 function tool(name: string) {
   const found = tools.find(candidate => candidate.name === name);
@@ -14,7 +15,7 @@ function tool(name: string) {
 }
 
 test("compact catalog keeps all official operations, output contracts and typed targets", () => {
-  assert.equal(tools.length, 55);
+  assert.equal(tools.length, 62);
   for (const [index, current] of tools.entries()) {
     const original = upstreamCatalog.tools[index];
     assert.equal(current.name, original.name);
@@ -25,8 +26,8 @@ test("compact catalog keeps all official operations, output contracts and typed 
     for (const name of ["stateDir", "mcpOutputFormat", "includeCost", "responseLevel", "daemonBaseUrl", "daemonAuthToken", "tenant", "runId", "leaseId", "iosXctestrunFile", "iosSimulatorDeviceSet", "debug", "deviceTarget"]) {
       assert.equal(current.inputSchema.properties?.[name], undefined, `${current.name} exposes ${name}`);
     }
-    assert.ok(original.inputSchema.properties?.stateDir, "The source catalog must remain intact");
   }
+  assert.deepEqual(upstreamCatalog.tools, originalTools, "The source catalog must remain intact");
   const press = tool("press");
   const upstreamPress = upstreamCatalog.tools.find(candidate => candidate.name === "press");
   assert.ok(upstreamPress);
@@ -39,13 +40,13 @@ test("compact catalog keeps all official operations, output contracts and typed 
 });
 
 test("device selection belongs to setup and discovery while interactions require only a session", async () => {
-  for (const name of ["open", "apps", "devices", "boot", "install", "replay", "test"]) {
+  for (const name of ["open", "apps", "devices", "boot", "install", "replay", "test", "uninstall"]) {
     const current = tool(name);
     assert.ok(current.inputSchema.properties?.platform);
     assert.ok(current.inputSchema.properties?.udid);
     assert.equal(current.inputSchema.properties?.target, undefined);
   }
-  for (const name of ["snapshot", "press", "fill", "scroll", "close", "batch"]) {
+  for (const name of ["snapshot", "press", "fill", "scroll", "close", "batch", "action-button", "fold", "hardware-button", "telephony"]) {
     const schema = tool(name).inputSchema;
     const requiresSession = schema.required?.includes("session");
     assert.ok(requiresSession);
@@ -62,7 +63,7 @@ test("device selection belongs to setup and discovery while interactions require
 test("packaged defaults do not bypass native session device binding", async () => {
   const configUrl = new URL("../../runtimes/agent-device/config.json", import.meta.url);
   const cliConfigUrl = new URL("../../runtimes/agent-device/node_modules/agent-device/dist/src/cli-config.js", import.meta.url);
-  // These exports belong to the pinned 0.20.9 runtime; keep this check with its version update.
+  // These exports belong to the pinned 0.21.33 runtime; keep this check with its version update.
   const configuration = await import(cliConfigUrl.href);
   assert.equal(typeof configuration.t, "function");
   for (const command of ["snapshot", "press", "close"]) {
@@ -76,7 +77,13 @@ test("the committed catalog is the pinned runtime's commands that Mobile Dev ser
   const committed = JSON.parse(await readFile(agentDeviceCatalogFile, "utf8"));
   assert.deepEqual(committed, JSON.parse(JSON.stringify(agentDeviceCatalog(upstreamCatalog.tools))));
   const names = committed.map((entry: { name: string }) => entry.name);
-  for (const name of ["logs", "perf", "install-from-source", "artifacts", "viewport", "tv-remote", "audio"]) assert.equal(names.includes(name), false, name);
+  for (const name of ["logs", "perf", "install-from-source", "artifacts", "viewport", "tv-remote", "audio", "hover"]) assert.equal(names.includes(name), false, name);
+  for (const name of ["action-button", "fold", "hardware-button", "telephony", "uninstall", "help"]) {
+    const included = names.includes(name);
+    assert.ok(included, name);
+  }
+  const help = committed.find((entry: Tool) => entry.name === "help");
+  assert.deepEqual(help.inputSchema.required, []);
   assert.ok(committed.every((entry: { outputSchema?: unknown }) => entry.outputSchema === undefined), "The tools return agent-device's own results.");
 });
 
@@ -91,10 +98,10 @@ function codexAsks(annotations: Tool["annotations"]) {
 test("hosts run the device control loop without asking, and ask before installs, scripts, files and the clipboard", () => {
   const catalog = agentDeviceCatalog(upstreamCatalog.tools);
   const asks = (name: string) => codexAsks(catalog.find(entry => entry.name === name)?.annotations);
-  for (const name of ["devices", "apps", "open", "snapshot", "press", "fill", "type", "scroll", "wait", "is", "get", "find", "screenshot", "close", "boot", "settings", "push"]) {
+  for (const name of ["devices", "apps", "open", "snapshot", "press", "fill", "type", "scroll", "wait", "is", "get", "find", "screenshot", "close", "boot", "settings", "push", "fold", "hardware-button", "help"]) {
     assert.equal(asks(name), false, `${name} should run without asking`);
   }
-  for (const name of ["install", "reinstall", "replay", "test", "batch", "session", "record", "trace", "debug", "diff", "clipboard", "metro", "doctor", "trigger-app-event"]) {
+  for (const name of ["install", "reinstall", "replay", "test", "batch", "session", "record", "trace", "debug", "diff", "clipboard", "metro", "doctor", "trigger-app-event", "action-button", "telephony", "uninstall"]) {
     assert.equal(asks(name), true, `${name} should ask`);
   }
   // Commands that run without asking cannot write files where the agent says.

@@ -8,10 +8,10 @@ const pluginOptions = new Set([
 const deviceOptions = new Set(["platform", "device", "udid", "serial"]);
 const deviceCommands = new Set([
   "apps", "appstate", "boot", "capabilities", "devices", "doctor", "install", "install-from-source",
-  "open", "reinstall", "replay", "shutdown", "test",
+  "open", "reinstall", "replay", "shutdown", "test", "uninstall",
 ]);
 const independentCommands = new Set([
-  ...deviceCommands, "artifacts", "debug", "events", "metro", "session",
+  ...deviceCommands, "artifacts", "debug", "events", "help", "metro", "session",
 ]);
 const fileCommands = new Set([
   "artifacts", "batch", "debug", "diff", "install", "install-from-source", "logs", "metro", "open",
@@ -50,7 +50,7 @@ export function compactAgentDeviceTool(tool: Tool): Tool {
 
 // Commands that Mobile Dev's own tools cover (logs, performance), or that need a remote
 // daemon, a TV or a browser.
-const omitted = new Set(["logs", "perf", "install-from-source", "artifacts", "viewport", "tv-remote", "audio"]);
+const omitted = new Set(["logs", "perf", "install-from-source", "artifacts", "viewport", "tv-remote", "audio", "hover"]);
 
 type Annotations = NonNullable<Tool["annotations"]>;
 const read: Annotations = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
@@ -66,15 +66,15 @@ const destructive: Annotations = { ...write, destructiveHint: true };
  * servers keep asking. agent-device declares none of its own.
  */
 const commandAnnotations: Record<string, Annotations> = {
-  apps: read, appstate: read, capabilities: read, devices: read, events: read, get: read, is: read,
+  apps: read, appstate: read, capabilities: read, devices: read, events: read, get: read, help: read, is: read,
   network: read, screenshot: read, snapshot: read, wait: read,
   alert: write, "app-switcher": write, back: write, boot: write, click: write, close: write, fill: write,
-  find: write, focus: write, gesture: write, home: write, keyboard: write, longpress: write, open: write,
+  find: write, focus: write, fold: write, gesture: write, "hardware-button": write, home: write, keyboard: write, longpress: write, open: write,
   orientation: write, press: write, push: write, "react-native": write, scroll: write, settings: write,
   shutdown: write, swipe: write, type: write,
-  batch: destructive, clipboard: destructive, debug: destructive, diff: destructive, install: destructive,
+  "action-button": destructive, batch: destructive, clipboard: destructive, debug: destructive, diff: destructive, install: destructive,
   record: destructive, reinstall: destructive, replay: destructive, session: destructive, test: destructive,
-  trace: destructive, "trigger-app-event": destructive,
+  telephony: destructive, trace: destructive, "trigger-app-event": destructive, uninstall: destructive,
   doctor: { ...write, openWorldHint: true }, metro: { ...write, openWorldHint: true },
 };
 

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { z } from "zod";
+import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv";
 import type { RequestHandlerExtra, RequestOptions } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type { CallToolRequest, CallToolResult, ServerNotification, ServerRequest, Tool } from "@modelcontextprotocol/sdk/types.js";
 import { isObject } from "./agent-device-catalog.ts";
@@ -23,14 +24,21 @@ export function readAgentDeviceCatalog(url = new URL("./agent-device/tools.json"
  */
 export function agentDeviceTools(catalog: Tool[], runtime: Pick<AgentDeviceRuntime, "connect" | "close"> = new AgentDeviceRuntime()): ServerFeature {
   return server => {
+    const validator = new AjvJsonSchemaValidator();
     const schemas: Schemas = new Map();
     for (const tool of catalog) {
-      // The catalog's input schemas are JSON Schema objects, which zod reads as such.
-      const inputSchema = z.fromJSONSchema(tool.inputSchema as z.core.JSONSchema.JSONSchema);
+      const validate = validator.getValidator(tool.inputSchema);
+      // The SDK requires a Zod object; Ajv validates the original JSON Schema, which
+      // metadata preserves for tools/list, including conditional and exclusive inputs.
+      const objectSchema = z.looseObject({});
+      const checkedSchema = objectSchema.superRefine((input, context) => {
+        const result = validate(input);
+        if (result.valid) return;
+        context.addIssue({ code: "custom", message: result.errorMessage });
+      });
+      const inputSchema = checkedSchema.meta(tool.inputSchema);
       schemas.set(tool.name, inputSchema);
-      server.registerTool(`device_${tool.name}`, { title: tool.title, description: tool.description, inputSchema, annotations: tool.annotations }, async (input, extra) => {
-        // The server validated the input against this object schema; its callback type cannot express that.
-        const args = input as Record<string, unknown>;
+      server.registerTool(`device_${tool.name}`, { title: tool.title, description: tool.description, inputSchema, annotations: tool.annotations }, async (args, extra) => {
         const issue = stepIssue(tool.name, args, schemas);
         if (issue !== undefined) return invalid(issue);
         let backend: AgentDeviceBackend;

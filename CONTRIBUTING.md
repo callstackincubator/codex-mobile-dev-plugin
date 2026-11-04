@@ -140,6 +140,8 @@ relevant checks, and packaging steps again.
 
 `vendor:agent-device` installs the exact npm packages in `packages/runtimes/agent-device/package-lock.json` with package scripts disabled. `build` copies this full runtime into `dist/agent-device`, records its integrity and lockfile hash in `release.json`, and copies the commands the plugin servers serve, `packages/runtimes/agent-device/tools.json`. After changing the pin, run `npm run catalog:agent-device` to rewrite that catalog and the agent-device skill's workflow guide (`packages/skills/agent-device/references/workflow.md`, the runtime's `help workflow`); unit tests check both against the pinned runtime, and the weekly dependency update rewrites them. The installed plugin needs no npm install or runtime download. Xcode compiles the shipped Apple runner source on its first use.
 
+agent-device is held at 0.21.33 in the weekly dependency updater. Versions 0.21.34 and 0.21.35 reject iOS input when an obsolete Xcode selection link points at a deleted installation, even when `xcode-select -p` and `xcrun` resolve the installed Xcode. See [upstream #3995](https://github.com/callstack/agent-device/pull/3995). Verify that case before raising the pin and removing the updater hold.
+
 `build` also bundles JavaScript and CSS with esbuild and copies Baguette into `dist/baguette`. It does not run TypeScript, lint, Biome, visual checks, or React Doctor.
 
 `package` copies built files into `release/marketplace/plugins/mobile-dev` and creates the ZIP. It includes agent-device's runtime `node_modules`, licenses, and Apple runner source. The Codex compatibility manifest lives at `apps/codex-plugin/.codex-plugin/plugin.json` and declares `.mcp.json`. The MCP entry invokes `apps/codex-plugin/scripts/launch-mcp.sh` (`scripts/launch-mcp.sh` inside the package) through `/bin/sh` and explicitly forwards `HOME` and the telemetry settings. The launcher directly executes Codex's bundled Node at `$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node`. `npm start` uses the same launcher. The `build-codex-native-plugins` skill in `.agents/skills` helps agents working on this repository and is not shipped.
@@ -194,26 +196,32 @@ visual-regression/playwright-report`. Keep the image tag in `ci.yml` in step wit
 ## Weekly dependency updates
 
 [`dependency-updates.yml`](.github/workflows/dependency-updates.yml) runs every Monday
-(or from the Actions tab) on the release build's Mac runner and keeps one pull
-request, `deps/weekly`, current:
+(again on Tuesday if Monday's run did not succeed, or from the Actions tab) on the
+release build's Mac runner and keeps one pull request, `deps/weekly`, current.
+[`weekly-dependency-update.mjs`](tooling/weekly-dependency-update.mjs) drives it:
 
-1. [`update-dependencies.mjs`](tooling/update-dependencies.mjs) applies every
-   compatible update: npm packages in all workspaces and both device runtimes,
-   pinned GitHub Actions, Baguette, sentry-native, the iOS log reader's
-   libimobiledevice sources and the iPhone mirror's Rust crates. Compatible means the
-   same major version, or the same minor for 0.x. Breaking versions, the serve-emu
-   fork, scrcpy, Perfetto and unreleased Git pins are listed in the pull request for a
-   person to update.
-2. `release-native.mjs` rebuilds the native helpers whose pins changed.
+1. It takes the lanes in [`dependency-lanes.mjs`](tooling/dependency-lanes.mjs) one
+   at a time: npm packages, both device runtimes and pinned GitHub Actions;
+   sentry-native; Baguette; the iOS log reader's libimobiledevice sources; the iPhone
+   mirror's Rust crates. For each,
+   [`update-dependencies.mjs`](tooling/update-dependencies.mjs) `--only <lane>`
+   applies every compatible update (the same major version, or the same minor for
+   0.x), and the lane is installed or its native helpers rebuilt. Breaking versions,
+   the serve-emu fork, scrcpy, Perfetto and unreleased Git pins are listed in the pull
+   request for a person to update.
+2. If installing or building a lane fails and the `ANTHROPIC_API_KEY` secret is set,
+   Claude Code gets the log and fixes the code or Baguette's patches (or reverts one
+   update it cannot make work) in a separate `fix(deps)` commit. A lane that still
+   fails is reset and left out, so it does not hold back the others.
 3. [`dependency-checks.mjs`](tooling/dependency-checks.mjs) runs the unit tests,
    build, package, the packaged server, a simulator stream with a Baguette restart
-   and the Codex regression tests.
-4. If a check fails and the `ANTHROPIC_API_KEY` secret is set, Claude Code fixes the
-   code or Baguette's patches (or reverts one update it cannot make work), and the
-   checks run again. Its changes are a separate `fix(deps)` commit with notes in the
-   pull request.
-5. The pull request lists what changed and the check results, and CI adds the Linux
-   unit tests, Codex regression tests and the visual comparison with main.
+   and the Codex regression tests on the lanes that remain. Claude fixes failed
+   checks the same way, and they run again.
+4. The pull request lists each lane's result, what changed, what was left out and
+   why, and the check results. CI adds the Linux unit tests, Codex regression tests
+   and the visual comparison with main. A run that cannot open a pull request (every
+   lane left out, or a crash) opens or comments on a "Weekly dependency update
+   failed" issue, which the next good run closes.
 
 Run `node tooling/update-dependencies.mjs` to see available updates without changing
 anything. Without a `DEPENDENCY_UPDATES_TOKEN` secret (a token with `contents`,
