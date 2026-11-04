@@ -13,13 +13,13 @@ export function startTicketDemo(root: HTMLElement) {
     return Math.max(0, bounded);
   };
   const render = () => {
-    const growth = ramp(1.5, 1.4);
+    const growth = ramp(1.5, 0.3);
     const stepped = Math.floor(growth * 16) / 16;
     const values = {
       '--grow': stepped,
       '--opening': time >= 0.6 ? 1 : 0,
       '--connection': time >= 1.2 ? 1 : 0,
-      '--panel': time >= 3.1 ? 1 : 0,
+      '--panel': time >= 1.8 ? 1 : 0,
       '--request': time >= 4.5 ? 1 : 0,
       '--input-call': time >= 5.3 ? 1 : 0,
       '--updated': time >= 5.8 ? 1 : 0,
