@@ -103,7 +103,7 @@ and completed request are visible together. Confirmed the macOS frame while the
 outer website wrapper remains borderless, unpadded, and transparent. The story
 check verifies that the request enters the chat before the code change, the
 apple appears after that change, and the loop returns to the carrot. Lifecycle
-checks still cover pause persistence, offscreen/hidden pausing, resize progress,
+checks still cover offscreen/hidden pausing, resize progress,
 the completed reduced-motion state, restoration, and cleanup. Website check and
 production build pass. Docker screenshot updates still cannot run because the
 Docker executable is missing.

@@ -85,12 +85,11 @@
 .hero-spacer { flex: 1; }
 .hero-send { display: grid; flex: none; place-items: center; width: 1.625rem; height: 1.625rem; border-radius: 50%; background: var(--demo-text); color: #0d0d0d; }
 .hero-device { display: flex; grid-column: 2; grid-row: 1 / -1; flex-direction: column; min-width: 0; border-left: 1px solid var(--demo-line); container-type: inline-size; }
-.hero-toolbar { display: flex; align-items: center; gap: .125rem; flex: none; height: 2.375rem; border-bottom: 1px solid var(--demo-line); padding-left: .5rem; color: var(--demo-muted); }
+.hero-toolbar { display: flex; align-items: center; gap: .125rem; flex: none; height: 2.375rem; border-bottom: 1px solid var(--demo-line); padding-inline: .5rem; color: var(--demo-muted); }
 .hero-picker { display: flex; flex: none; align-items: center; gap: .375rem; font-size: .75rem; white-space: nowrap; }
 .hero-picker svg:last-child { width: .6875rem; }
 .hero-tool { display: grid; flex: none; place-items: center; width: 1.75rem; height: 1.75rem; border-radius: .4375rem; }
 .hero-select { color: var(--demo-muted); }
-.hero-playback-space { flex: none; width: 2.5rem; }
 .hero-device-view { position: relative; display: grid; flex: 1; place-items: center; min-height: 0; overflow: hidden; }
 .hero-phone {
   position: relative;
@@ -134,11 +133,6 @@
 .hero-note .hero-send { width: 1.5rem; height: 1.5rem; }
 .hero-flying-chip { position: absolute; z-index: 20; top: 0; left: 0; opacity: 0; }
 .hero-cursor { position: absolute; z-index: 25; top: 0; left: 0; opacity: 0; pointer-events: none; }
-.hero-playback { position: absolute; z-index: 30; top: .125rem; right: 0; display: grid; place-items: center; width: 2.5rem; height: 2.5rem; padding: 0; border: 0; background: none; color: var(--demo-muted); cursor: pointer; }
-.hero-playback[hidden], .hero-play-icon { display: none; }
-.hero-playback:hover { color: var(--demo-text); }
-.hero-playback[aria-pressed="true"] .hero-pause-icon { display: none; }
-.hero-playback[aria-pressed="true"] .hero-play-icon { display: block; }
 
 @media (max-width: 600px) {
   .hero-scene { grid-template-columns: minmax(0, 1fr); grid-template-rows: 2.375rem 25rem 20rem; height: auto; }
@@ -155,5 +149,4 @@
   .hero-device { grid-column: 1; grid-row: 2; height: 100%; border-left: 0; }
   .hero-phone { position: absolute; top: -13.8125rem; left: calc(50% - 8.9375rem); width: 16.875rem; }
   .hero-device-view { display: block; }
-  .hero-playback { top: 2.5rem; }
 }

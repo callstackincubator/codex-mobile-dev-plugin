@@ -7,7 +7,6 @@ type Point = { x: number; y: number };
 
 function initialize(root: HTMLElement) {
   const scene = root.querySelector<HTMLElement>('.hero-scene')!;
-  const button = root.querySelector<HTMLButtonElement>('.hero-playback')!;
   const cursor = root.querySelector<SVGElement>('.hero-cursor')!;
   const highlight = root.querySelector<HTMLElement>('.hero-highlight')!;
   const pin = root.querySelector<HTMLElement>('.hero-pin')!;
@@ -31,20 +30,14 @@ function initialize(root: HTMLElement) {
   const { signal } = controller;
   let animations: Animation[] = [];
   let visible = false;
-  let userPaused = false;
   let suspended = false;
 
   function syncPlayback() {
-    const playing = visible && document.hidden === false && motion.matches === false && userPaused === false && suspended === false;
+    const playing = visible && document.hidden === false && motion.matches === false && suspended === false;
     for (const animation of animations) {
       if (playing) animation.play();
       else animation.pause();
     }
-    const label = userPaused ? 'Play animation' : 'Pause animation';
-    button.setAttribute('aria-label', label);
-    const pressed = String(userPaused);
-    button.setAttribute('aria-pressed', pressed);
-    button.hidden = motion.matches;
   }
 
   function box(target: string, origin: { left: number; top: number }): Box {
@@ -214,10 +207,6 @@ function initialize(root: HTMLElement) {
     syncPlayback();
   }
 
-  button.addEventListener('click', () => {
-    userPaused = userPaused === false;
-    syncPlayback();
-  }, { signal });
   motion.addEventListener('change', () => {
     for (const animation of animations) animation.currentTime = motion.matches ? posterTime : 0;
     syncPlayback();

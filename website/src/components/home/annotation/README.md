@@ -12,8 +12,8 @@ device view inside the same window.
 
 `hero-annotation.ts` measures the real element positions after layout and creates
 one shared 16-second timeline with the Web Animations API. Resizing updates the
-positions while preserving playback progress. Playback pauses offscreen, while
-the tab is hidden, or when the visitor presses Pause. Reduced motion and the
+positions while preserving playback progress. Playback pauses offscreen or while
+the tab is hidden. Reduced motion and the
 HTML before script initialization show the finished edit: the request is in the
 chat, the agent has changed `<Carrot />` to `<Apple />`, and the phone shows the
 apple. During playback, the request first arrives in the composer, the cursor
