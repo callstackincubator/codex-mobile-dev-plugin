@@ -1,5 +1,10 @@
 /* Docs-page styling on top of theme.css: typography, sidebar, and Starlight's built-in components. */
 
+/* ---------- Feature previews ---------- */
+.sl-markdown-content .feature-preview {
+  --line-strong: var(--cs-line);
+}
+
 /* ---------- Page title and headings ---------- */
 h1#_top {
   font-family: var(--cs-font-display);

@@ -39,8 +39,13 @@ The final production domain is undecided. Transfer the project to its eventual o
 - `src/site/brand.ts`: the Signal blue accent and its derived dark palette.
 - `src/content/docs/docs/`: user guides adapted from the repository documentation.
 - `src/components/home/HeroDemo.astro`: illustrated coding workflow; this does not imply an issue-tracker integration.
+- `src/components/site/FeaturePreview.astro`: shared video player for the homepage and the Storage and Performance guides.
+- `public/previews/`: storage and performance recording videos rendered from `feat/feature-previews` with the plugin's dark palette, with still posters and source attribution.
+- `previews/plugin-dark.css` and `scripts/render-feature-previews.mjs`: the source color mapping and repeatable dark-video renderer, using the plugin's theme and host tokens.
 - `src/components/site/dither.ts`: generated pixel scenes, rendered by one OffscreenCanvas worker implementation.
 
 The website, docs, and README banner use a fixed dark palette. The site ignores system colour preferences and former saved theme choices; no theme controls are rendered.
 
-Performance and storage diagrams use fixed demonstration data. Website work does not change the plugin’s Sentry initialization or instrumentation, and the marketing site does not send remote telemetry.
+The homepage's storage and performance sections and the corresponding docs guides use the same authored feature-preview videos and player. They play when visible, pause offscreen or in a hidden tab, respect a manual pause, and show still posters for reduced motion. Native video controls support playback and fullscreen viewing. Their source and poster timestamps are recorded in `public/previews/README.md`.
+
+Website work does not change the plugin’s Sentry initialization or instrumentation, and the marketing site does not send remote telemetry.
