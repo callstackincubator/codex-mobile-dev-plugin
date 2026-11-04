@@ -16,7 +16,11 @@ import HeroIcon from './HeroIcon.astro';
   </div>
   <div class="phone-actions">
     <span class="phone-action"><HeroIcon name="close" /></span>
-    <span class="phone-action phone-carrot" data-annotation-target="carrot"><HeroIcon name="carrot" /><span class="hero-pin">1</span></span>
+    <span class="phone-action phone-edit-action" data-annotation-target="action">
+      <span class="phone-carrot-icon"><HeroIcon name="carrot" /></span>
+      <span class="phone-apple-icon"><HeroIcon name="apple" /></span>
+      <span class="hero-pin">1</span>
+    </span>
     <span class="phone-action phone-like"><HeroIcon name="heart" /></span>
   </div>
   <div class="phone-home"></div>

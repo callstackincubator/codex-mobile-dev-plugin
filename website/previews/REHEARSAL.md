@@ -58,7 +58,7 @@ fullscreen viewing. No source compact redesign or touch-device testing was done
 in that color pass. Docker-based host screenshot updates remain unavailable on
 this machine.
 
-## Native annotation hero
+## Frameless native checkpoint (`799fc619`)
 
 The annotation hero now adapts `md-annotate` into Astro HTML, CSS, inline SVG,
 and a shared 12-second Web Animations timeline. Its implementation and source
@@ -78,6 +78,35 @@ a manual pause across visibility changes, hidden tabs, resize progress, reduced
 motion's finished state, back/forward restoration, and observer/listener/animation
 cleanup. Website diagnostics and the production build pass. Docker screenshot
 updates remain unavailable because the Docker executable is missing.
+
+## macOS window and completed app edit
+
+Restored the app window's title bar, traffic lights, outline, divider, and dark
+surface. The website wrapper stays transparent with zero border and padding.
+The frameless checkpoint remains available at
+https://mobile-d8orj01fp-margelo.vercel.app.
+
+The shared timeline now runs for 16 seconds. After attaching the selection,
+the note appears in the composer and the cursor presses its Send button. The
+request enters the chat, the agent shows the `Carrot` to `Apple` code change,
+and the app's button changes to an apple. The completed result holds before
+resetting. Reduced motion shows this completed result. The geometry origin
+includes the window's border inset so overlays and the attachment land on their
+measured targets.
+
+Below 600px the device and chat are stacked inside the same macOS window, with
+room for the request, code change, confirmation, and composer.
+
+Checked the finished edit in the browser at 1440px, near 768px, and 390px: no
+horizontal overflow, the conversation stays above the composer, and the apple
+and completed request are visible together. Confirmed the macOS frame while the
+outer website wrapper remains borderless, unpadded, and transparent. The story
+check verifies that the request enters the chat before the code change, the
+apple appears after that change, and the loop returns to the carrot. Lifecycle
+checks still cover pause persistence, offscreen/hidden pausing, resize progress,
+the completed reduced-motion state, restoration, and cleanup. Website check and
+production build pass. Docker screenshot updates still cannot run because the
+Docker executable is missing.
 
 The marketing site still sends no remote telemetry. Plugin Sentry initialization,
 instrumentation, and data boundaries are unaffected.

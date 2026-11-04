@@ -93,9 +93,9 @@ Place text on solid surfaces over the scene. Keep secondary scenes quiet. Do not
 
 ## Motion
 
-The hero renders the annotation workflow as native HTML and inline SVG: the pointer tool selects the carrot button, the developer writes “Make this an apple,” and the selected element arrives in the agent's composer as context. Embed the inner UI directly in the page, without an outer window, border, padding, or background fill. Desktop shows the chat beside the device; below 600px the composer sits at the device view's foot.
+The hero renders the annotation workflow as native HTML and inline SVG inside a macOS app window. Keep the window's title bar, traffic lights, surface, outline, and rounded corners. Embed that window directly in the page without an additional surrounding box, border, padding, or background fill. Desktop shows the chat beside the device; below 600px the chat sits beneath the device view inside the same window.
 
-The hero's shared 12-second Web Animations timeline pauses while hidden or offscreen. A keyboard-accessible pause button controls playback. Reduced motion shows the finished annotation, with the numbered pin on the selected element and its context attached to the composer. Measure targets after layout and on resize so the pointer, selection, note, and attachment stay aligned with the actual HTML.
+The shared 16-second Web Animations timeline shows the complete edit: select the carrot button, type “Make this an apple,” attach the context, send the request to the chat, show the agent's code change, then replace the carrot with an apple in the running app. Hold the finished result before resetting. Playback pauses while hidden or offscreen, and a keyboard-accessible pause button controls it. Reduced motion shows the sent request, completed code change, and apple. Measure targets after layout and on resize so the pointer, selection, note, and attachment stay aligned with the actual HTML.
 
 Dither motion updates at about 12fps near the viewport and pauses while hidden or offscreen. Its scene uses one OffscreenCanvas worker implementation, bounded repaint work, and cleanup for observers and timers. UI hover transitions are short, around 120–150ms.
 

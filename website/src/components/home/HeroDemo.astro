@@ -3,11 +3,15 @@ import HeroIcon from './annotation/HeroIcon.astro';
 import HeroPhone from './annotation/HeroPhone.astro';
 import './annotation/hero-annotation.css';
 
-const description = 'Point at an element in the running app, write “Make this an apple,” and send the selected element to the agent as context.';
+const description = 'Select the carrot button, write “Make this an apple,” and send the request to the chat. The agent updates the code, and the running app shows an apple.';
 ---
 
 <div class="hero-demo" data-annotation-demo>
   <div class="hero-scene" role="img" aria-label={description}>
+    <div class="hero-window-chrome" aria-hidden="true">
+      <span class="hero-window-lights"><span></span><span></span><span></span></span>
+      <span class="hero-window-title">Mobile Dev</span>
+    </div>
     <div class="hero-chat" aria-hidden="true">
       <div class="hero-history">
         <div class="hero-message"><span class="hero-bar" style="width: 9rem"></span></div>
@@ -27,17 +31,32 @@ const description = 'Point at an element in the running app, write “Make this 
           ))}
         </div>
       </div>
+      <div class="hero-thread">
+        <div class="hero-sent-message">
+          <span class="hero-sent-context"><HeroIcon name="phone" />Context · 1</span>
+          <span>Make this an apple</span>
+        </div>
+        <div class="hero-agent-work">Updating the button…</div>
+        <div class="hero-agent-change">
+          <div class="hero-change-heading"><HeroIcon name="file" />App.tsx</div>
+          <div class="hero-change-code"><span>− &lt;Carrot /&gt;</span><span>+ &lt;Apple /&gt;</span></div>
+        </div>
+        <div class="hero-agent-done">Replaced the carrot with an apple.</div>
+      </div>
       <div class="hero-composer">
         <div class="hero-context-row">
           <span class="hero-context-chip" data-annotation-target="context"><HeroIcon name="phone" />Context · 1</span>
         </div>
-        <span class="hero-composer-placeholder">Do anything</span>
+        <div class="hero-composer-line">
+          <span class="hero-composer-placeholder">Do anything</span>
+          <span class="hero-composer-request">Make this an apple</span>
+        </div>
         <div class="hero-composer-tools">
           <HeroIcon name="plus" />
           <span class="hero-bar" style="width: 3.5rem"></span>
           <span class="hero-spacer"></span>
           <HeroIcon name="mic" />
-          <span class="hero-send"><HeroIcon name="arrow" /></span>
+          <span class="hero-send" data-annotation-target="chat-send"><HeroIcon name="arrow" /></span>
         </div>
       </div>
     </div>
