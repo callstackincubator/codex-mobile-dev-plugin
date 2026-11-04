@@ -19,6 +19,7 @@ const sidebar = [
   { label: 'Getting started', slug: 'docs/getting-started' },
   { label: 'Devices', slug: 'docs/devices' },
   { label: 'App control', slug: 'docs/app-control' },
+  { label: 'App Flow', slug: 'docs/app-flow' },
   { label: 'Logs', slug: 'docs/logs' },
   { label: 'Performance', slug: 'docs/performance' },
   { label: 'Profiles', slug: 'docs/profiles' },

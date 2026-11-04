@@ -15,6 +15,9 @@ import { OpenAIExtensions } from "@openai/mcp-extensions/server";
 import { createDrivers, registerAppControlTools } from "./app-control/tools.ts";
 import { systemCommands } from "./app-control/commands.ts";
 import { registerAppStorageTools } from "./app-storage/tools.ts";
+import { APP_FLOW_DIRECTORY, createAppFlowHost } from "./app-flow-host.ts";
+import { AppFlowProjectChoices } from "./app-flow-projects.ts";
+import { registerAppFlowTools } from "./app-flow-tools.ts";
 import { ServeEmu } from "./serve-emu.ts";
 import { listIosDevices, registerIosDeviceTools } from "./ios-devices.ts";
 import { deviceChoiceFormSupport, registerDeviceChoiceTools } from "./device-choice-tools.ts";
@@ -69,7 +72,12 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
   const { panel, simulators = new Simctl(), logs = new LogSessions(), android = new ServeEmu(), features = [] } = options;
   const cpu = options.cpu ?? await createCpuSessions();
   const fps = new DisplayFpsSessions();
-  const server = new McpServer({ name: "mobile-dev", version: PLUGIN_VERSION }, { instructions: panel?.instructions ?? INSTRUCTIONS });
+  const server = new McpServer({ name: "mobile-dev", version: PLUGIN_VERSION }, {
+    instructions: panel?.instructions ?? INSTRUCTIONS,
+    // App Flow progress arrives as logging notifications. Without this capability the SDK rejects
+    // every sendLoggingMessage, so the app-flow event channel would fail silently.
+    capabilities: { logging: {} },
+  });
   instrumentMcpServer(server);
   const analytics = instrumentProductAnalytics(server);
   addToolIcons(server, { mobile_open_workspace: PHONE_ICONS, mobile_open_simulator: PHONE_ICONS, mobile_choose_devices: PHONE_ICONS });
@@ -99,6 +107,8 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
   registerDisplayFpsTools(server, fps);
   registerAppControlTools(server, drivers);
   registerAppStorageTools(server);
+  const appFlow = await createAppFlowHost();
+  const closeAppFlow = registerAppFlowTools(server, appFlow, new AppFlowProjectChoices(APP_FLOW_DIRECTORY));
 
   const resource = async () => typeof html === "string" ? { html } : await html();
   const page = async () => configureUI((await resource()).html);
@@ -147,7 +157,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
       stopRecordingStorageMetrics();
       // Recordings finish while the collectors they read are still open.
       await recordings.close();
-      try { await Promise.all([logs.close(), cpu.close(), fps.close(), traceSift.close(), closePanel?.()]); }
+      try { await Promise.all([logs.close(), cpu.close(), fps.close(), traceSift.close(), closeAppFlow(), closePanel?.()]); }
       finally { android.dispose(); await server.close(); await analytics.close(); }
     },
   };

@@ -54,6 +54,17 @@ export function recordAppStorageOperation(operation: AppStorageOperation, platfo
   Sentry.metrics.gauge("app_storage.operation.duration", duration, { unit: "millisecond", attributes });
 }
 
+/**
+ * Time the App Flow project dialog stayed open. Like the sweep's decision wait, this is a person
+ * deciding rather than plugin work, so it is reported on its own and never folded into a UI timing.
+ */
+export function recordProjectDialog(outcome: "chosen" | "cancelled" | "failed", duration: number) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = { component: "server", surface: "app-flow", outcome };
+  Sentry.metrics.count("app_flow.project_dialog.samples", 1, { attributes });
+  Sentry.metrics.distribution("app_flow.project_dialog.duration", Math.max(0, duration), { unit: "millisecond", attributes });
+}
+
 export function recordTraceSiftOperation(operation: "ready" | "analyze" | "remember" | "restore" | "handoff" | "task" | "payload" | "pick" | "project", outcome: "success" | "failed", duration: number) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes = { component: "server", surface: "tracesift", operation, outcome };
@@ -289,7 +300,7 @@ const resourceKinds: Record<string, string> = {
   "android-stream:": "android_video", "ios-video:": "ios_video", "ui:": "ui",
 };
 const allowedContext: Record<string, readonly string[]> = {
-  surface: ["logs", "performance", "storage", "simulator", "recording", "comparison", "tracesift"], view: ["panel", "workspace", "recording", "comparison", "tracesift"], layout: ["ios", "android", "both", "none"],
+  surface: ["app-flow", "logs", "performance", "storage", "simulator", "recording", "comparison", "tracesift"], view: ["panel", "workspace", "recording", "comparison", "tracesift"], layout: ["ios", "android", "both", "none"],
   device_platform: ["ios", "android", "mixed"], device_kind: ["physical", "simulator", "emulator", "none"], host: TELEMETRY_HOSTS,
 };
 

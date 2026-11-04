@@ -13,6 +13,12 @@ export type HostBridge = Pick<App,
   | "updateModelContext"
   | "requestDisplayMode">;
 
+/**
+ * App Flow follows the server's logging notifications where a host forwards them, and polls
+ * `mobile_appflow_events` where it does not, so the two handler methods stay optional.
+ */
+export type AppFlowHostBridge = HostBridge & Partial<Pick<App, "setNotificationHandler" | "removeNotificationHandler">>;
+
 /** Whether the host lets views call server tools. Hosts without it, such as Claude Code, show only what the tool result carries; Mobile Dev's panel needs it. */
 export function cardsCallTools(app: Pick<HostBridge, "getHostCapabilities">): boolean {
   return app.getHostCapabilities()?.serverTools !== undefined;

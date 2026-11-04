@@ -22,6 +22,9 @@ Install a built app, launch or stop it, and open a deep link or URL to jump to a
 ### Device settings and network conditions
 Change the running device's appearance, text size, rotation, location, and status bar without restarting its stream. Switch the network to LTE, 3G, Edge, or Offline to see how the app behaves on a slow or missing connection, then back to Normal. Available settings depend on the platform and device kind.
 
+### App Flow
+Build a visual map of your app's screens and the navigation between them, for Expo Router and React Navigation projects. **Structure only** reads the navigation out of your source in seconds and needs no device; **Screen UI + Structure** also walks the app on an iOS simulator and photographs every screen it reaches, optionally opening each screen's sheets, modals, and dialogs. The walk runs your project's own `ios` script and reaches each screen through in-app navigation, a deep link, or a path you recorded; record one by hand on the live wireframe for a screen it cannot reach. Explore with AI lists the screens the deterministic pass missed and retries only the ones you pick. Maps, captures, and recorded paths are stored per project under `~/Library/Application Support/mobile-dev/app-flow`.
+
 ### Native and JavaScript logs
 Read iOS unified logs, Android logcat, and Metro console messages together. Follow the foreground app, search and filter logs, and send an error and its stack trace to chat.
 

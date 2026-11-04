@@ -33,6 +33,7 @@ import type { ServeEmu } from "../src/serve-emu.ts";
 import { setAndroidStartupDiagnostic } from "../../shared/src/android-startup-diagnostics.ts";
 import type { OpenAIFormResult } from "@openai/mcp-extensions/server";
 import { agentDeviceClient } from "../../test-support/agent-device-fixtures.ts";
+import { recordRuntimeAmount, recordRuntimeCount, recordRuntimeTiming } from "../src/app-flow/runtime-telemetry.ts";
 import { setDiscoveryCommandDiagnostic } from "../../shared/src/device-apps-command-diagnostics.ts";
 
 type ReportedEvent = { exception?: { values?: { value?: string }[] }; tags?: Record<string, string> };
@@ -200,7 +201,7 @@ test("UI timing windows retain exact totals, reset, and ignore invalid measureme
 test("high frequency reads and input avoid trace sampling even with a sampled parent", () => {
   let inherited = 0;
   const inherit = (rate: number) => { inherited++; return rate; };
-  for (const name of ["resources/read frame://private-session", "notifications/tools/list_changed", "tools/call mobile_stream_input", "tools/call mobile_ios_mirror_input", "tools/call mobile_read_cpu", "tools/call device_devices", "tools/call device_session", "tools/call device_events"]) {
+  for (const name of ["resources/read frame://private-session", "notifications/tools/list_changed", "tools/call mobile_stream_input", "tools/call mobile_ios_mirror_input", "tools/call mobile_read_cpu", "tools/call mobile_appflow_status", "tools/call mobile_appflow_next_decision", "tools/call device_devices", "tools/call device_session", "tools/call device_events"]) {
     const rate = sampleTrace(name, inherit);
     assert.equal(rate, 0);
   }
@@ -463,6 +464,12 @@ test("UI trace context crosses the MCP bridge and handled server errors exclude 
   assert.equal(observedTags?.device_platform, "mixed");
   assert.equal(observedTags?.device_kind, "none");
   assert.equal(observedTags?.recordingIds, undefined);
+  await client.callTool({ name: "test_action", arguments: { secret: "PRIVATE_APP_FLOW_ARGUMENT" }, _meta: {
+    [TELEMETRY_META_KEY]: { surface: "app-flow", view: "workspace", projectPath: "PRIVATE_PROJECT_PATH", runId: "PRIVATE_RUN_ID" },
+  } });
+  assert.equal(observedTags?.surface, "app-flow");
+  assert.equal(observedTags?.projectPath, undefined);
+  assert.equal(observedTags?.runId, undefined);
   // TraceSift is its own workspace surface; its attribution must survive the metadata allowlist.
   await client.callTool({ name: "test_action", arguments: { secret: "PRIVATE_PROFILE_PATH" }, _meta: {
     [TELEMETRY_META_KEY]: { surface: "tracesift", view: "tracesift", profilePath: "PRIVATE_PROFILE_PATH" },
@@ -487,14 +494,14 @@ test("UI trace context crosses the MCP bridge and handled server errors exclude 
   contains(encoded, "Handled tool failed");
   const eventItems = envelopes.flatMap(envelope => envelope[1]);
   const errors = eventItems.filter(item => item[0].type === "event");
-  // One handled failure per tool call above: logs, recording, comparison, TraceSift and two host checks.
-  assert.equal(errors.length, 6);
+  // One handled failure per tool call above: logs, recording, comparison, App Flow, TraceSift and two host checks.
+  assert.equal(errors.length, 7);
   const unavailable = new SimulatorUnavailableError("Expected stopped simulator");
   captureServerError(unavailable, "expected");
   await Sentry.flush();
   const afterItems = envelopes.flatMap(envelope => envelope[1]);
   const afterErrors = afterItems.filter(item => item[0].type === "event");
-  assert.equal(afterErrors.length, 6);
+  assert.equal(afterErrors.length, 7);
 });
 
 test("error filters retain only generated identity while metrics and spans omit user dimensions", async () => {
@@ -1136,6 +1143,159 @@ test("cancellation during stream response preparation closes the session and ret
   const encoded = JSON.stringify(events);
   contains(encoded, "stream.cancel_cleanup");
   contains(encoded, "Unexpected stream cleanup failure");
+});
+
+test("app flow runtime metrics report settle, verify and navigate with bounded attributes and honor opt-out", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, beforeSendMetric: scrubMetric,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  t.after(async () => { await Sentry.close(); });
+  t.after(() => { delete process.env.MOBILE_DEV_TELEMETRY; });
+
+  // The three measurements the Fast reach path adds, plus the command series Step 6 extends with a
+  // new operation rather than a new name — the legacy and fast nav-state reads stay comparable.
+  recordRuntimeTiming("app_flow.runtime.settle", 340, { stop: "stable-not-quiet" });
+  recordRuntimeTiming("app_flow.runtime.verify", 21, { path: "runtime", verdict: "match" });
+  recordRuntimeCount("app_flow.runtime.navigate", { outcome: "nested" });
+  recordRuntimeTiming("app_flow.runtime.command", 118, { operation: "nav-state" });
+  await Sentry.flush();
+  const emitted = JSON.stringify(envelopes);
+  for (const name of ["app_flow.runtime.settle", "app_flow.runtime.verify", "app_flow.runtime.navigate", "app_flow.runtime.command"]) contains(emitted, name);
+  contains(emitted, "millisecond");
+  contains(emitted, '"surface":{"value":"app-flow"');
+  contains(emitted, '"device_platform":{"value":"ios"');
+  contains(emitted, '"stop":{"value":"stable-not-quiet"');
+  contains(emitted, '"path":{"value":"runtime"');
+  contains(emitted, '"verdict":{"value":"match"');
+  contains(emitted, '"outcome":{"value":"nested"');
+  contains(emitted, '"operation":{"value":"nav-state"');
+  // Product data a reader might expect to find alongside a route measurement, and which these
+  // series must never carry: unbounded route names and node ids.
+  contains(emitted, "HomeTab/Profile", false);
+
+  const before = JSON.stringify(envelopes);
+  process.env.MOBILE_DEV_TELEMETRY = "off";
+  recordRuntimeTiming("app_flow.runtime.settle", 900, { stop: "timeout" });
+  recordRuntimeTiming("app_flow.runtime.verify", 2500, { path: "judge", verdict: "mismatch" });
+  recordRuntimeCount("app_flow.runtime.navigate", { outcome: "refused" });
+  await Sentry.flush();
+  assert.equal(JSON.stringify(envelopes), before, "Opt-out silences every app-flow runtime metric.");
+});
+
+test("runtime replay reports a closed outcome and carries no route, node or parameter", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, beforeSendMetric: scrubMetric,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  t.after(async () => { await Sentry.close(); });
+  t.after(() => { delete process.env.MOBILE_DEV_TELEMETRY; });
+
+  // The two names runtime replay adds. Everything else it spends — the handshake, the dispatch,
+  // the settle — is billed to the Fast series above, which is what keeps a replay's runtime cost
+  // comparable with a sweep's instead of arriving under names of its own.
+  recordRuntimeCount("app_flow.runtime_replay", { outcome: "unresolved-params" });
+  recordRuntimeTiming("app_flow.runtime_replay.duration", 4_210, { outcome: "ok" });
+  await Sentry.flush();
+  const emitted = JSON.stringify(envelopes);
+  contains(emitted, "app_flow.runtime_replay");
+  contains(emitted, "app_flow.runtime_replay.duration");
+  contains(emitted, "millisecond");
+  contains(emitted, '"surface":{"value":"app-flow"');
+  contains(emitted, '"outcome":{"value":"unresolved-params"');
+  contains(emitted, '"outcome":{"value":"ok"');
+  // What a replay knows and must never send: the screen it was asked for, the route it dispatched
+  // and the parameter value it dispatched with. The param store refuses to log values for the
+  // same reason, and the dispatch reason stays in the local console line and on the node.
+  contains(emitted, "HomeTab/Profile", false);
+  contains(emitted, "/user/", false);
+  contains(emitted, "alice.test", false);
+
+  const before = JSON.stringify(envelopes);
+  process.env.MOBILE_DEV_TELEMETRY = "off";
+  recordRuntimeCount("app_flow.runtime_replay", { outcome: "refused" });
+  recordRuntimeTiming("app_flow.runtime_replay.duration", 90, { outcome: "refused" });
+  await Sentry.flush();
+  assert.equal(JSON.stringify(envelopes), before, "Opt-out silences runtime replay too.");
+});
+
+test("explore-ui presentation metrics carry a closed outcome/kind pair and honor opt-out", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, beforeSendMetric: scrubMetric,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  t.after(async () => { await Sentry.close(); });
+  t.after(() => { delete process.env.MOBILE_DEV_TELEMETRY; });
+
+  // One measurement per opened presentation, one per pass, and one bounded count of the bindings
+  // Metro's source maps could not resolve — never one per poll and never one per binding.
+  recordRuntimeTiming("app_flow.runtime.presentation", 412, { outcome: "captured", kind: "state" });
+  recordRuntimeTiming("app_flow.runtime.presentation", 2100, { outcome: "failed", kind: "control" });
+  recordRuntimeTiming("app_flow.runtime.presentation_pass", 9400, { outcome: "completed" });
+  recordRuntimeTiming("app_flow.runtime.presentation_open_session", 640, { outcome: "ready" });
+  recordRuntimeAmount("app_flow.runtime.presentation_unbound", 7, { stage: "configure" });
+  recordRuntimeAmount("app_flow.runtime.presentation_refused", 3, { stage: "list", reason: "unbound" });
+  await Sentry.flush();
+  const emitted = JSON.stringify(envelopes);
+  for (const name of ["app_flow.runtime.presentation", "app_flow.runtime.presentation_pass", "app_flow.runtime.presentation_open_session", "app_flow.runtime.presentation_unbound", "app_flow.runtime.presentation_refused"]) contains(emitted, name);
+  contains(emitted, '"reason":{"value":"unbound"');
+  contains(emitted, "millisecond");
+  contains(emitted, '"surface":{"value":"app-flow"');
+  contains(emitted, '"outcome":{"value":"captured"');
+  contains(emitted, '"kind":{"value":"control"');
+  contains(emitted, '"stage":{"value":"configure"');
+  // Product detail these series must never carry: the screen, the recipe, the component it opens.
+  contains(emitted, "SettingsSheet", false);
+  contains(emitted, "HomeTab/Home", false);
+  contains(emitted, "src/Screen.tsx", false);
+
+  const before = JSON.stringify(envelopes);
+  process.env.MOBILE_DEV_TELEMETRY = "off";
+  recordRuntimeTiming("app_flow.runtime.presentation", 50, { outcome: "captured", kind: "mount" });
+  recordRuntimeTiming("app_flow.runtime.presentation_pass", 60, { outcome: "failed" });
+  recordRuntimeTiming("app_flow.runtime.presentation_open_session", 60, { outcome: "unavailable" });
+  recordRuntimeAmount("app_flow.runtime.presentation_unbound", 3, { stage: "configure" });
+  await Sentry.flush();
+  assert.equal(JSON.stringify(envelopes), before, "Opt-out silences every explore-ui metric.");
+});
+
+test("the sweep's in-line UI-state capture emits the same app-flow series, attributed to the sweep and free of screen names", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, beforeSendMetric: scrubMetric,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  t.after(async () => { await Sentry.close(); });
+  const { createSweepUiStateCapturer } = await import("../src/app-flow/explore-ui.ts");
+  const capturer = createSweepUiStateCapturer({
+    note() {},
+    open: async () => ({
+      catalog: { states: [], actions: [{ id: "open-1", name: "SettingsSheet", file: "src/Screen.tsx", line: 1, owner: "S", component: "B", prop: "p", effect: { kind: "state", site: "s", path: [], value: true } }] },
+      ports: {
+        runtime: {
+          async setup() { return { ok: true, bindings: 1, matched: 1 }; },
+          async configure() { return { configured: 0 }; },
+          async list() { return { available: [{ id: "open-1", kind: "state" }], unavailable: 0 }; },
+          async open() { return { ok: true, kind: "state", checkpoint: 1 }; },
+          async rollback() { return { ok: true, checkpoint: 0 }; },
+        },
+        async bind() { return []; }, async settle() {}, async screenshot(slug: string) { return `screens/${slug}.png`; }, emit() {},
+      },
+    } as never),
+  });
+  await capturer.capture({ id: "HomeTab/Home", slug: "home" });
+  await Sentry.flush();
+  const emitted = JSON.stringify(envelopes);
+  for (const name of ["app_flow.runtime.presentation", "app_flow.runtime.presentation_pass", "app_flow.runtime.presentation_open_session", "app_flow.runtime.presentation_unbound"]) contains(emitted, name);
+  contains(emitted, '"surface":{"value":"app-flow"');
+  contains(emitted, '"outcome":{"value":"completed"');
+  contains(emitted, '"outcome":{"value":"ready"');
+  contains(emitted, "SettingsSheet", false);
+  contains(emitted, "HomeTab/Home", false);
+  contains(emitted, "home_state_open_1", false);
 });
 
 test("app control reports how unexpected commands failed without command output and skips expected outcomes", async t => {
