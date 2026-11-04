@@ -75,7 +75,7 @@ Not checked:
 - Other looks (dark).
 - Touch devices.
 
-## Unify (shared md-* frame, UNIFY.md)
+## Unify (shared md-* frame, the shared frame spec (`../md-shared/frame.ts`))
 
 What changed (wide only; compact is untouched apart from the sidebar gap):
 - Stage `STAGE` (960 x 540). The kit `Window` has `md-window`, so it sits whole at 48/40, 864 x 460, with `--md-shadow-window` and the standard 38px bar ("Profile card swipe lag"). Removed the old `.mr-win` inset, size, bleed and hero shadow.

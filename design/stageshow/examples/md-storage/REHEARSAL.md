@@ -1,6 +1,6 @@
 # Rehearsal: md-storage
 
-## Unify pass (UNIFY.md, shared md-* frame)
+## Unify pass (the shared frame spec (`../md-shared/frame.ts`), shared md-* frame)
 
 What changed:
 - Stage 960 × 540 from `STAGE`. The main Window has `md-window`, so `md-shared/frame.css` places it at 48, 40, 864 × 460 with `--md-shadow-window`. The wide `.mst-frame` wrapper, its inline geometry and the hero shadow are gone (compact keeps its own wrapper and shadow). `unframed` on the Stage, as md-annotate, md-recording, md-simulators and md-performance-live do: the spec's whole window in an even gutter would otherwise trip film's floating-window `framing:` line.

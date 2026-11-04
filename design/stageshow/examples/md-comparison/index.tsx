@@ -202,7 +202,7 @@ function Plot({ s, layout }: { s: S; layout: 'wide' | 'compact' }) {
 }
 
 // Wide: the chat window, whole on the shared md-* frame (md-shared/frame.ts;
-// `unframed` on the Stage, since UNIFY.md asks for the window whole in an
+// `unframed` on the Stage, since the shared frame (md-shared/frame.ts) asks for the window whole in an
 // even 48/40 gutter). Compact: the chat column alone on the page, since a
 // window cut to the phone column's width would read taller than wide
 function Frame({ compact, children }: { compact: boolean; children: ReactNode }) {

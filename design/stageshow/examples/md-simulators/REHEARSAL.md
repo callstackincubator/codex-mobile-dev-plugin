@@ -1,12 +1,12 @@
 # Rehearsal: md-simulators
 
-## One HorseTinder phone (PHONE.md)
+## One HorseTinder phone (the shared phone spec (`../md-shared/HorseTinder.tsx`))
 
 Both phones now run the shared app (`examples/md-shared/HorseTinder.tsx`) through `<HorseTinderPhone>`, in wide and compact. The iPhone is `frame="pro"` on Monty. The emulator is `frame="android"` with Juniper on top and Clover as `next`. The old wordmark, painted SVG horses, cards, tags, PASS / Mega Carrot / LIKE labels, wallpaper and every `.hts-*` rule are gone. The swipe goes through `card`: `data-target="adeck"`, the class `mds-throw` (a lasting layer) and the drag/throw transform, transition and visibility. Clover's rise goes through `nextCard`: the class `mds-rise`, scale 0.94 until `data-up`. No `.ht-*` rule is restyled. The drag scale `k` now comes from the phone width over the Pixel's 434pt frame width, since the deck is no longer a target. In compact, the crop now falls in the pink between the card and the buttons.
 
 Gate: `rehearsal passed` at 1280 and at 390, both inconclusive (sampling gaps). New line at both widths: `half-pixel glyph` on the shared `.ht-name` check (26px icon in a 41.4px line box) while a card moves. This is md-shared geometry, so it is left alone. At 390 there is also a `near aligned` line: the compact iPhone picker label sits 13.7px from the HorseTinder logo. `dark slab` and the compact `small text` are unchanged from before, and the horse-eye `drift` is gone. Video re-exported (13.8 s). Frames at 0.5 s, 6.9 s and 9.6 s were checked.
 
-## Unified frame (UNIFY.md)
+## Unified frame (the shared frame spec (`../md-shared/frame.ts`))
 
 Wide now sits on the shared md-* frame (`examples/md-shared`): a 960 × 540 stage with the kit `Window` as `md-window` (whole at 48, 40, 864 × 460, `--md-shadow-window`). The old 720 × 440 stage, the window that ran off the bottom and its own shadow and position rules are gone from the wide layout. Compact is unchanged: the same 358 × 336 design, its old window and shadow now scoped to `[data-layout='compact']`.
 
@@ -16,7 +16,7 @@ The device toolbars moved into the window bar, each over its pane, the way md-lo
 
 HorseTinder is laid out for whole phones in wide (scoped CSS): the card runs down to the buttons, and the Mega Carrot button is the big one, riding over the card's foot as in the app. Its foot is level with PASS and LIKE, so the three labels share a line. Compact keeps the old geometry, so its crop still falls in the pink above the buttons.
 
-Cursor: `REST` is derived from `WINDOW` (the empty band between the Logs column and the lone iPhone). The cursor no longer "clears the way" during the split in wide, because the menu is over the logs and it is already clear. After the throw it moves into the gap between the phones (`stage-ios` at x 0.93). Everything else aims at `data-target`s as before. The Stage is `unframed` like the other md-* previews: UNIFY.md asks for the window whole in an even gutter, which the floating-window check would otherwise fail.
+Cursor: `REST` is derived from `WINDOW` (the empty band between the Logs column and the lone iPhone). The cursor no longer "clears the way" during the split in wide, because the menu is over the logs and it is already clear. After the throw it moves into the gap between the phones (`stage-ios` at x 0.93). Everything else aims at `data-target`s as before. The Stage is `unframed` like the other md-* previews: the shared frame spec (`../md-shared/frame.ts`) asks for the window whole in an even gutter, which the floating-window check would otherwise fail.
 
 Gate (wide 1280 and 390): `rehearsal passed` on both loops and on `--states` wide. Every run is "inconclusive" because of sampling gaps of 28 to 55 ms on a machine shared with parallel builders. Lines left standing: `dark slab` (the kit phone glass), `drift` (the horse's eyes on the rotating card), and at 390 `small text` on the kit status bars and the swiped card `clipped` by its screen. All four are explained below and unchanged from before. Video: `videos/md-simulators.mp4`, 1920 × 1080, 60 fps, 13.8 s. Frames at 0.1 s (lone iPhone), 6.9 s (the throw) and 9.6 s (payoff: Monty and Clover) were checked.
 

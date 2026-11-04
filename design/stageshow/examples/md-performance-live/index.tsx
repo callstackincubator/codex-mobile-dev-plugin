@@ -300,7 +300,7 @@ export default function PerformanceLive() {
     <Stage<S>
       width={STAGE.width}
       height={STAGE.height}
-      // UNIFY.md asks for the window whole on the shared frame, an even 48/40
+      // The shared frame (md-shared/frame.ts) asks for the window whole on the shared frame, an even 48/40
       // gutter, so film's floating-window check stands down, as in the other md-* scenes
       unframed
       compact={{ below: 720, width: 358, height: 340 }}

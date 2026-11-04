@@ -449,7 +449,7 @@ export default function MdStorage() {
       poster={poster}
       script={script}
       cursor={{ at: REST }}
-      // UNIFY.md puts the window whole in an even gutter on every md-* video,
+      // The shared frame (md-shared/frame.ts) puts the window whole in an even gutter on every md-* video,
       // which film's floating-window check would otherwise flag
       unframed
       className="mst"

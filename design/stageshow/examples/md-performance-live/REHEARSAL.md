@@ -65,7 +65,7 @@ ground, as in `device-pair`.
 Not checked: dark theme, other looks, a real touch device, live rAF pacing on a
 host page, pause/resume and offscreen return in the viewer.
 
-## Unified frame (UNIFY.md)
+## Unified frame (the shared frame spec (`../md-shared/frame.ts`))
 
 The wide design is now the shared md-* frame (`examples/md-shared/frame.ts`):
 the stage is 960 × 540, the window is `md-window` (whole at 48, 40, 864 × 460 with

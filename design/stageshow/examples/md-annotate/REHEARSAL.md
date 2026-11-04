@@ -2,7 +2,7 @@
 
 ## Phone (shared HorseTinder)
 
-Per `PHONE.md`, the phone runs `examples/md-shared/HorseTinder.tsx` in both layouts:
+Per the shared phone spec (`../md-shared/HorseTinder.tsx`), the phone runs `examples/md-shared/HorseTinder.tsx` in both layouts:
 - `<HorseTinderPhone>` at `DEVICE_PANE.phone` (wide) and 270 (compact), time 17:44, `phoneClassName="ma-phone"`. The example's own app markup and every `.ht*` rule (logo, card, drawn subject, info, tags, buttons, labels, wallpaper, fonts) are gone.
 - Targets through the props: `card={{ 'data-target': 'card' }}` and `buttons.carrot` gets `data-target="carrot"`, so the annotation now picks the whole Mega Carrot button (it used to be the carrot glyph inside it). `data-cursor="crosshair"` goes on the Phone through `phoneProps` while the pointer tool is on.
 - The cursor moves to a point on the carrot instead of targeting it. In select mode the overlay takes the click, so the app's button does not press. Targeting the button set `data-pressed`, the shared `scale: 0.9` shrank `rect('carrot')`, and the note field jumped 3px as it opened (compact gate line `jump ... at pick`).
@@ -13,7 +13,7 @@ Gate: `--gate` at 1280 and 390 both end `rehearsal passed`. The remaining lines 
 
 ## Unify (shared md-* frame)
 
-Moved onto `examples/md-shared/frame.ts` + `frame.css`, per `UNIFY.md`:
+Moved onto `examples/md-shared/frame.ts` + `frame.css`, per the shared frame spec (`../md-shared/frame.ts`):
 - Stage `STAGE` (960 × 540), `unframed` (the shared frame asks for the window whole with an even margin, which film's floating check would otherwise fail as `framing`).
 - The window is `md-window`: whole at 48/40, 864 × 460, `--md-shadow-window`. The example's own window position, size and shadow, and the bottom bleed, are gone. Standard 38px kit bar with lights; the device toolbar still sits over the device column, now 300 wide from the window's right.
 - The device view is `md-device-pane` (300 wide) with the kit `Phone` at `DEVICE_PANE.phone` (190), centered both ways in the 422 body.

@@ -2,7 +2,7 @@
 
 ## Unify pass (shared md frame)
 
-The wide design now sits on `examples/md-shared/frame`, as `UNIFY.md` asks:
+The wide design now sits on `examples/md-shared/frame`, as the shared frame spec (`../md-shared/frame.ts`) asks:
 - Stage `STAGE` (960 x 540). The Window has `md-window` (whole at 48, 40, 864 x 460, `--md-shadow-window`). Its own position, size and shadow rules are gone, and so is the bleed off the right.
 - `unframed` is set on the Stage. The shared frame is a whole window with even gutters, which is the developer's call. Without it, film's framing check fails the gate with `floats whole ... 48/48/40/40px of air` (the window covers 77% of the stage, and the check wants 82%).
 - The device column is `md-device-pane` (300 wide). It centers a `DEVICE_PANE.phone` (190) simulator both ways: 399.5 tall, with 11px above and below in the 422 body.

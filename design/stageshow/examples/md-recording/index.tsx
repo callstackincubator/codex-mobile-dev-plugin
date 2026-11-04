@@ -287,7 +287,7 @@ export default function MdRecording() {
       width={STAGE.width}
       height={STAGE.height}
       // The shared md-* frame keeps the window whole in an even 48/40 gutter
-      // (UNIFY.md), so film's floating-window check stands down
+      // (md-shared/frame.ts), so film's floating-window check stands down
       unframed
       compact={{ below: 720, width: 358, height: 578 }}
       initial={initial}

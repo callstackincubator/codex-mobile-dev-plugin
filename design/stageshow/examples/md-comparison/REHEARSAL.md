@@ -58,7 +58,7 @@ Not checked:
 - Pause, resume and Replay in the playground viewer.
 - The demo inside a real landing page host.
 
-## Unify (shared md-* frame, UNIFY.md)
+## Unify (shared md-* frame, the shared frame spec (`../md-shared/frame.ts`))
 
 What changed:
 - Stage is `STAGE` (960 x 540) from `../md-shared/frame`. The Window has `className="md-window mdc-win"`, so it sits whole at x 48, y 40, 864 x 460, with `--md-shadow-window`. I removed the old `.mdc-win` rule (inset 24/24, 760 x 500, off the right and bottom, its own shadow).
@@ -66,7 +66,7 @@ What changed:
 - Chat column: 720 wide, centered in the 864 body (72px each side), the same column md-recording uses, so the two videos match. The thread is still pinned at its foot (402 tall in the 422 body). At the payoff the request bubble's top is 16px under the bar (md-recording's thread top is also 16) and the card ends 20px above the window's foot. The bubble, the answer and the whole card fit the body, and the earlier turns fade out under the 14px top mask.
 - Plot: wide width 562 to 690 (the card's inner width at 720). Height stays 70, because the bubble and the card only just fit.
 - Cursor: `REST.wide` is derived from `WINDOW` (x 876, y 424), in the right margin beside the card. The drag still measures `rect('plot')` and the plot geometry.
-- `unframed` on the Stage: UNIFY.md asks for the window whole in an even gutter, which film's floating-window check otherwise flags as `framing:`. md-logs and md-recording do the same.
+- `unframed` on the Stage: the shared frame spec (`../md-shared/frame.ts`) asks for the window whole in an even gutter, which film's floating-window check otherwise flags as `framing:`. md-logs and md-recording do the same.
 - The white surface moved from `.mdc-body` to the window body (`body={{ className: 'mdc-surface' }}`). Painted on `.mdc-body`, film read the body as a card with a 72px side inset and flagged a 34px bottom as `uneven padding:`. The picture is unchanged.
 - Compact (358 x 520, the bare chat column) is untouched.
 

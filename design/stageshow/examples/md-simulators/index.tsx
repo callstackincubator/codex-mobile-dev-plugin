@@ -239,7 +239,7 @@ export default function MdSimulators() {
     <Stage<S>
       width={STAGE.width}
       height={STAGE.height}
-      // UNIFY.md puts the window whole in the shared 48/40 gutter, so the
+      // The shared frame (md-shared/frame.ts) puts the window whole in the shared 48/40 gutter, so the
       // floating-window check stands down, as in the other md-* previews
       unframed
       compact={{ below: 600, width: 358, height: 336 }}
