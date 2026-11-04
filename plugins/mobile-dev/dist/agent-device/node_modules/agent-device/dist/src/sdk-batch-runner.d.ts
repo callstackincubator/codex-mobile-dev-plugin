@@ -1,11 +1,13 @@
-import { _ as SessionRuntimeHints, a as DaemonRequest, o as DaemonResponse } from "./sdk-contracts.js";
+import { a as DaemonRequest, o as DaemonResponse, v as SessionRuntimeHints } from "./sdk-contracts.js";
 //#region packages/contracts/src/batch-step.d.ts
 /**
  * One step of a daemon batch, as submitted.
  *
- * Declared here rather than in `core/batch.ts` because the public API vocabulary
- * (`contracts/client-replay.ts`) is stated in terms of it, and `core/` sits above contracts. The
- * `runtime` field used to be written as `DaemonRequest['runtime']`, which pulled the whole daemon
+ * Declared here rather than in `@agent-device/command-registry/batch` because the public API
+ * vocabulary (`contracts/client-replay.ts`) is stated in terms of it, and contracts sits below
+ * command-registry.
+ *
+ * The `runtime` field used to be written as `DaemonRequest['runtime']`, which pulled the whole daemon
  * request type in to say `SessionRuntimeHints` — the same type, one zone lower.
  */
 type DaemonBatchStep = {
@@ -16,7 +18,7 @@ type DaemonBatchStep = {
   runtime?: SessionRuntimeHints;
 };
 //#endregion
-//#region src/core/batch.d.ts
+//#region packages/command-registry/src/batch.d.ts
 type BatchFlags = Record<string, unknown> & {
   batchOnError?: 'stop';
   batchMaxSteps?: number;
@@ -25,7 +27,22 @@ type BatchFlags = Record<string, unknown> & {
 type BatchRequest = Omit<DaemonRequest, 'flags'> & {
   flags?: BatchFlags | Record<string, unknown>;
 };
-type BatchInvoke = (req: BatchRequest) => Promise<DaemonResponse>;
+/**
+ * What the batch runner knows about a step's place in its plan. The daemon uses the remaining
+ * commands to derive platform readiness policy; it never reaches the wire.
+ */
+type BatchStepContext = Readonly<{
+  stepNumber: number;
+  totalSteps: number;
+  /** The steps still ahead, in the shape their handlers will read. */
+  remainingSteps: readonly Readonly<{
+    command: string;
+    positionals: readonly string[];
+    flags: Readonly<Record<string, unknown>>;
+    input?: Readonly<Record<string, unknown>>;
+  }>[];
+}>;
+type BatchInvoke = (req: BatchRequest, context: BatchStepContext) => Promise<DaemonResponse>;
 type BatchStepResult = {
   step: number;
   command: string;

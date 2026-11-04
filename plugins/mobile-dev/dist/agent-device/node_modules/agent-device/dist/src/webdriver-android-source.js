@@ -1,0 +1,1 @@
+import{n as e}from"./android-system-chrome.js";import{parseWebDriverSourceFacts as t}from"./webdriver-source.js";function n(n){let{nodes:r}=t(n,`android`);for(let t of r){let n=t.parentIndex===void 0?void 0:r[t.parentIndex],i=e(t.bundleId,t.identifier,n);i&&(t.systemBar=i)}return r}export{n as parseWebDriverAndroidSnapshotNodes};

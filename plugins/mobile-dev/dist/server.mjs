@@ -1,5 +1,5 @@
 
-!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="23fb4847-8f55-5592-a235-0c62c8e8387f")}catch(e){}}();
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="965c8f21-76c4-55d0-affe-a3ce322c980b")}catch(e){}}();
 ;(function(){var g=globalThis.__SENTRY_ORCHESTRION__=globalThis.__SENTRY_ORCHESTRION__||{};g.bundler=g.bundler||new Set();})();import { createRequire as mobileDevBundleRequire } from 'node:module'; const require = mobileDevBundleRequire(import.meta.url);
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -93890,7 +93890,7 @@ var nodeRuntimeMetricsIntegration = defineIntegration((options = {}) => {
 });
 
 // packages/shared/src/version.ts
-var PLUGIN_VERSION = "0.1.175";
+var PLUGIN_VERSION = "0.1.176";
 
 // packages/shared/src/telemetry-identity.ts
 function isAnonymousUserId(value) {
@@ -94014,6 +94014,8 @@ var SENTRY_SERVER_DSN = "https://2ee03a9449e1f1b48e3e7c7606b6f562@o4512180958068
 var SENTRY_NATIVE_DSN = "https://1deeefda39022a67df902c638dcf3c8f@o4512180958068736.ingest.de.sentry.io/4512181036318800";
 var SENTRY_ORIGIN = "https://o4512180958068736.ingest.de.sentry.io";
 var SENTRY_RELEASE = `mobile-dev@${PLUGIN_VERSION}`;
+var MIXPANEL_TOKEN = "780e4817b73c1234479ad8d418d34e89";
+var MIXPANEL_TRACK_URL = "https://api-eu.mixpanel.com/track?ip=0&verbose=1";
 var TELEMETRY_META_KEY = "mobile-dev/telemetry";
 var TELEMETRY_INTERVAL_MS = 3e4;
 var TELEMETRY_HOSTS = ["codex", "claude", "cursor", "mac", "other"];
@@ -104879,6 +104881,10 @@ function recordTraceSiftPayload(kind4, bytes) {
   const attributes = { component: "server", surface: "tracesift", kind: kind4 };
   public_api_exports.gauge("tracesift.explore.payload_bytes", bytes, { unit: "byte", attributes });
 }
+function recordAnalyticsFlush(outcome) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  public_api_exports.count("analytics.flush", 1, { attributes: { component: "server", outcome } });
+}
 function recordAccessibilityBridgeRestart(outcome) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes = { component: "server", device_platform: "ios", device_kind: "simulator", outcome };
@@ -105087,8 +105093,11 @@ var allowedContext = {
   device_kind: ["physical", "simulator", "emulator", "none"],
   host: TELEMETRY_HOSTS
 };
+function serverTelemetryHost(clientName) {
+  return process.env.MOBILE_DEV_HOST === "mac" ? "mac" : telemetryHost(clientName);
+}
 function setServerTelemetryHost(clientName) {
-  const host2 = process.env.MOBILE_DEV_HOST === "mac" ? "mac" : telemetryHost(clientName);
+  const host2 = serverTelemetryHost(clientName);
   setTag("host", host2);
   setAttribute("host", host2);
 }
@@ -105164,6 +105173,96 @@ async function closeServerTelemetry() {
   } finally {
     await closeHttpRuntime();
   }
+}
+
+// packages/core/src/analytics.ts
+import { randomUUID } from "node:crypto";
+var BATCH_SIZE = 50;
+var MAX_QUEUED = 500;
+var disabled = { sessionStarted() {
+}, async close() {
+} };
+function isCallTool(schema2) {
+  return schema2 === CallToolRequestSchema;
+}
+function optedOut() {
+  return process.env.MOBILE_DEV_TELEMETRY === "off" || process.env.MOBILE_DEV_ANALYTICS === "off" || process.env.DO_NOT_TRACK === "1";
+}
+async function deliver(send, batch) {
+  try {
+    const response3 = await send(MIXPANEL_TRACK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(batch),
+      signal: AbortSignal.timeout(5e3)
+    });
+    const reply = await response3.json();
+    return response3.ok && reply.status === 1 ? "success" : "failed";
+  } catch {
+    return "failed";
+  }
+}
+function instrumentProductAnalytics(server, options = {}) {
+  const { token = MIXPANEL_TOKEN, environment = TELEMETRY_ENVIRONMENT, userId = getTelemetryIdentity()?.userId, send = fetch } = options;
+  if (token === "" || environment !== "release" || userId === void 0 || optedOut()) return disabled;
+  const distinctId = userId;
+  const queue = [];
+  let host2 = "other";
+  let sending;
+  async function drain() {
+    while (queue.length > 0) recordAnalyticsFlush(await deliver(send, queue.splice(0, BATCH_SIZE)));
+  }
+  function flush2() {
+    sending ??= drain().finally(() => {
+      sending = void 0;
+    });
+    return sending;
+  }
+  function track(event, properties2 = {}) {
+    if (queue.length >= MAX_QUEUED) return;
+    queue.push({ event, properties: {
+      ...properties2,
+      token,
+      distinct_id: distinctId,
+      time: Date.now(),
+      $insert_id: randomUUID(),
+      host: host2,
+      plugin_version: PLUGIN_VERSION,
+      os: process.platform
+    } });
+    if (queue.length >= BATCH_SIZE) void flush2();
+  }
+  const register = server.server.setRequestHandler.bind(server.server);
+  server.server.setRequestHandler = (schema2, handler) => {
+    if (isCallTool(schema2) === false) return register(schema2, handler);
+    register(schema2, async (request2, extra) => {
+      const { name } = request2.params;
+      if (isFrequentTool(name)) return handler(request2, extra);
+      let result4;
+      try {
+        result4 = await handler(request2, extra);
+      } catch (error113) {
+        track("Tool Called", { tool: name, outcome: "error" });
+        throw error113;
+      }
+      track("Tool Called", { tool: name, outcome: result4.isError === true ? "error" : "success" });
+      return result4;
+    });
+  };
+  const timer = setInterval(() => {
+    void flush2();
+  }, TELEMETRY_INTERVAL_MS);
+  timer.unref();
+  return {
+    sessionStarted(clientName) {
+      host2 = serverTelemetryHost(clientName);
+      track("Session Started");
+    },
+    async close() {
+      clearInterval(timer);
+      await flush2();
+    }
+  };
 }
 
 // node_modules/@modelcontextprotocol/ext-apps/dist/src/server/index.js
@@ -126344,7 +126443,7 @@ function registerCpuTools(server, cpu, simulators, { apps = readDeviceApps, andr
 }
 
 // packages/core/src/performance-recordings.ts
-import { randomUUID } from "node:crypto";
+import { randomUUID as randomUUID2 } from "node:crypto";
 import { mkdir as mkdir2, readFile as readFile6, readdir as readdir5, rename, stat as stat5, writeFile as writeFile5, rm as rm4 } from "node:fs/promises";
 import { homedir as homedir4 } from "node:os";
 import { join as join23 } from "node:path";
@@ -126742,7 +126841,7 @@ var PerformanceRecordings = class {
     if (this.disposed) throw new Error("The plugin server has closed.");
     const recording2 = {
       schemaVersion: 1,
-      id: randomUUID(),
+      id: randomUUID2(),
       title: title2,
       target: target2,
       deviceName,
@@ -127404,7 +127503,7 @@ var traceSiftHandoffSchema = external_exports.object({ apiVersion: external_expo
 
 // packages/core/src/tracesift-client.ts
 import { spawn as spawn8 } from "node:child_process";
-import { createHash as createHash4, randomUUID as randomUUID2 } from "node:crypto";
+import { createHash as createHash4, randomUUID as randomUUID3 } from "node:crypto";
 import { openAsBlob } from "node:fs";
 import { mkdir as mkdir3, readFile as readFileAsync2, realpath as realpath2, rename as rename2, rm as rm5, stat as stat6, writeFile as writeFile6 } from "node:fs/promises";
 import { homedir as homedir5 } from "node:os";
@@ -127554,7 +127653,7 @@ var TraceSiftClient = class {
   }
   async writePrivateJson(file4, value) {
     const directory = join24(this.home, "integrations", "mobile-dev");
-    const temporary = join24(directory, `.analysis-${randomUUID2()}`);
+    const temporary = join24(directory, `.analysis-${randomUUID3()}`);
     try {
       await writeFile6(temporary, `${JSON.stringify(value)}
 `, { flag: "wx", mode: 384 });
@@ -128988,10 +129087,13 @@ async function createPlugin(html, options = {}) {
   const fps = new DisplayFpsSessions();
   const server = new McpServer({ name: "mobile-dev", version: PLUGIN_VERSION }, { instructions: panel?.instructions ?? INSTRUCTIONS });
   instrumentMcpServer(server);
+  const analytics = instrumentProductAnalytics(server);
   addToolIcons(server, { mobile_open_workspace: PHONE_ICONS, mobile_open_simulator: PHONE_ICONS, mobile_choose_devices: PHONE_ICONS });
   const extensions = new OpenAIExtensions(server);
   server.server.oninitialized = () => {
-    setServerTelemetryHost(server.server.getClientVersion()?.name);
+    const clientName = server.server.getClientVersion()?.name;
+    setServerTelemetryHost(clientName);
+    analytics.sessionStarted(clientName);
     const form = panel && deviceChoiceFormSupport(server.server.getClientCapabilities());
     if (form) registerDeviceChoiceTools(server, extensions, {
       simulators: () => simulators.list(),
@@ -129063,6 +129165,7 @@ async function createPlugin(html, options = {}) {
       } finally {
         android2.dispose();
         await server.close();
+        await analytics.close();
       }
     }
   };
@@ -130637,7 +130740,7 @@ import { execFile as execFile19 } from "node:child_process";
 import { promisify as promisify18 } from "node:util";
 
 // packages/core/src/react-native-inspector.ts
-import { randomUUID as randomUUID3 } from "node:crypto";
+import { randomUUID as randomUUID4 } from "node:crypto";
 
 // packages/core/src/react-native-snapshot.js
 function collectReactNativeTree(complete) {
@@ -130892,7 +130995,7 @@ function readSnapshot(url3, signal) {
   return new Promise((resolve5, reject) => {
     const origin = new URL(url3);
     origin.protocol = "http:";
-    const binding = `__mobile_dev_inspection_${randomUUID3().replaceAll("-", "")}`;
+    const binding = `__mobile_dev_inspection_${randomUUID4().replaceAll("-", "")}`;
     const socket = new import_websocket.default(url3, { origin: origin.origin, handshakeTimeout: 3e3, maxPayload: 1024 * 1024, followRedirects: false });
     let settled = false, cleanup;
     const finish = (error113, result4) => {
@@ -131127,7 +131230,7 @@ var deviceSettingSchema = external_exports.discriminatedUnion("setting", [
 ]);
 
 // packages/core/src/network-throttle/proxy.ts
-import { randomUUID as randomUUID4 } from "node:crypto";
+import { randomUUID as randomUUID5 } from "node:crypto";
 import { createServer as createServer5, request as httpRequest } from "node:http";
 import { connect as connect4, isIP as isIP3 } from "node:net";
 var LinkPacer = class {
@@ -131198,7 +131301,7 @@ function isLocalDestination(host2) {
 var hostAddress = (host2) => /^(?:10\.0\.2\.2|localhost)$/i.test(host2) ? "127.0.0.1" : host2.replace(/^\[|\]$/g, "");
 var healthPath = "/mobile-dev-network-throttle";
 var ThrottleProxy = class {
-  token = randomUUID4();
+  token = randomUUID5();
   server;
   sockets = /* @__PURE__ */ new Set();
   link;
@@ -132392,13 +132495,15 @@ var deviceCommands = /* @__PURE__ */ new Set([
   "reinstall",
   "replay",
   "shutdown",
-  "test"
+  "test",
+  "uninstall"
 ]);
 var independentCommands = /* @__PURE__ */ new Set([
   ...deviceCommands,
   "artifacts",
   "debug",
   "events",
+  "help",
   "metro",
   "session"
 ]);
@@ -132412,6 +132517,7 @@ var commandAnnotations = {
   devices: read7,
   events: read7,
   get: read7,
+  help: read7,
   is: read7,
   network: read7,
   screenshot: read7,
@@ -132426,7 +132532,9 @@ var commandAnnotations = {
   fill: write5,
   find: write5,
   focus: write5,
+  fold: write5,
   gesture: write5,
+  "hardware-button": write5,
   home: write5,
   keyboard: write5,
   longpress: write5,
@@ -132440,6 +132548,7 @@ var commandAnnotations = {
   shutdown: write5,
   swipe: write5,
   type: write5,
+  "action-button": destructive,
   batch: destructive,
   clipboard: destructive,
   debug: destructive,
@@ -132450,8 +132559,10 @@ var commandAnnotations = {
   replay: destructive,
   session: destructive,
   test: destructive,
+  telephony: destructive,
   trace: destructive,
   "trigger-app-event": destructive,
+  uninstall: destructive,
   doctor: { ...write5, openWorldHint: true },
   metro: { ...write5, openWorldHint: true }
 };
@@ -133402,12 +133513,19 @@ function readAgentDeviceCatalog(url3 = new URL("./agent-device/tools.json", impo
 }
 function agentDeviceTools(catalog, runtime2 = new AgentDeviceRuntime()) {
   return (server) => {
+    const validator = new AjvJsonSchemaValidator();
     const schemas = /* @__PURE__ */ new Map();
     for (const tool of catalog) {
-      const inputSchema3 = external_exports.fromJSONSchema(tool.inputSchema);
+      const validate3 = validator.getValidator(tool.inputSchema);
+      const objectSchema = external_exports.looseObject({});
+      const checkedSchema = objectSchema.superRefine((input2, context3) => {
+        const result4 = validate3(input2);
+        if (result4.valid) return;
+        context3.addIssue({ code: "custom", message: result4.errorMessage });
+      });
+      const inputSchema3 = checkedSchema.meta(tool.inputSchema);
       schemas.set(tool.name, inputSchema3);
-      server.registerTool(`device_${tool.name}`, { title: tool.title, description: tool.description, inputSchema: inputSchema3, annotations: tool.annotations }, async (input2, extra) => {
-        const args = input2;
+      server.registerTool(`device_${tool.name}`, { title: tool.title, description: tool.description, inputSchema: inputSchema3, annotations: tool.annotations }, async (args, extra) => {
         const issue3 = stepIssue(tool.name, args, schemas);
         if (issue3 !== void 0) return invalid(issue3);
         let backend;
@@ -133490,7 +133608,7 @@ function stepIssue(name, input2, schemas) {
 // apps/codex-plugin/server/plugin-updates.ts
 import { execFile as execFile22 } from "node:child_process";
 import { mkdir as mkdir4, readFile as readFile11, rename as rename3, rm as rm9, writeFile as writeFile9 } from "node:fs/promises";
-import { randomUUID as randomUUID5 } from "node:crypto";
+import { randomUUID as randomUUID6 } from "node:crypto";
 import { homedir as homedir7 } from "node:os";
 import { basename as basename5, dirname as dirname8, isAbsolute as isAbsolute5, join as join30 } from "node:path";
 import { fileURLToPath as fileURLToPath14 } from "node:url";
@@ -133727,7 +133845,7 @@ var PluginUpdates = class {
   }
   async saveCache(cache) {
     const directory = dirname8(this.cachePath);
-    const id2 = randomUUID5();
+    const id2 = randomUUID6();
     const temporary = `${this.cachePath}.${id2}.tmp`;
     try {
       await mkdir4(directory, { recursive: true });
@@ -133935,4 +134053,4 @@ undici/lib/web/websocket/frame.js:
   (*! ws. MIT License. Einar Otto Stangvik <einaros@gmail.com> *)
 */
 
-//# debugId=23fb4847-8f55-5592-a235-0c62c8e8387f
+//# debugId=965c8f21-76c4-55d0-affe-a3ce322c980b

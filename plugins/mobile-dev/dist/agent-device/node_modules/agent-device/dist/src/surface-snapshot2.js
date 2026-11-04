@@ -1,0 +1,1 @@
+import{n as e}from"./snapshot-desktop-projection.js";async function t(t,n){let{snapshotLinux:r}=await import(`./snapshot3.js`),i=await r(t?.surface,n);return e({nodes:i.nodes,truncated:i.truncated,backend:`linux-atspi`,producer:`linux-atspi`},t??{})}export{t as captureLinuxSurfaceSnapshot};

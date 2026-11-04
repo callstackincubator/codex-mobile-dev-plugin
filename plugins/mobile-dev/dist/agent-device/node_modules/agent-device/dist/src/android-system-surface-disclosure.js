@@ -1,0 +1,1 @@
+const e=`A system surface (notification shade, quick settings, or another system overlay) covers the app, so this snapshot shows that surface. Interact with it or dismiss it (press back or swipe up) to reach app content.`;function t(t){return t?.systemSurfaceOnly===!0?e:void 0}export{t as n,e as t};
