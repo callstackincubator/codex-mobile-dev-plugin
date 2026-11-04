@@ -164,6 +164,18 @@ test("the panel's project tools stay out of the model's tool list and keep only 
   assert.deepEqual(clear._meta?.ui?.visibility, ["app"], "clearing stays out of the model's tool budget");
   assert.equal(clear.annotations?.destructiveHint, true);
   assert.deepEqual(clear.inputSchema.required, ["projectPath"]);
+  const replay = (await client.listTools()).tools.find(candidate => candidate.name === "mobile_appflow_manual_replay");
+  assert.ok(replay, "mobile_appflow_manual_replay is registered");
+  assert.deepEqual(replay._meta?.ui?.visibility, ["app", "model"], "saved paths can be opened from chat");
+  assert.match(replay.description ?? "", /agent-device-screens\.json/);
+  assert.match(replay.description ?? "", /mobile_appflow_result/);
+  assert.match(replay.description ?? "", /pathToReach/);
+  const runtimeReplay = (await client.listTools()).tools.find(candidate => candidate.name === "mobile_appflow_runtime_replay");
+  assert.ok(runtimeReplay, "mobile_appflow_runtime_replay is registered");
+  assert.deepEqual(runtimeReplay._meta?.ui?.visibility, ["app", "model"], "runtime-only screens can be opened from chat");
+  assert.match(runtimeReplay.description ?? "", /no saved pathToReach/);
+  assert.match(runtimeReplay.description ?? "", /mobile_appflow_result/);
+  assert.match(runtimeReplay.description ?? "", /App Flow panel/);
   const clearedResult = await client.callTool({ name: "mobile_appflow_clear", arguments: { projectPath: listed } });
   assert.equal(clearedResult.isError, undefined);
   assert.deepEqual(cleared, [listed]);

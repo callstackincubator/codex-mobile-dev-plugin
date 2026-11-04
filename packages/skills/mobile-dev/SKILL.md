@@ -95,6 +95,16 @@ The host needs an Apple Silicon Mac and Xcode 26 or later with an iOS simulator 
 
 Use App Flow to map an Expo Router or React Navigation project. `mobile_appflow_start` is non-blocking. Pass the project folder and either `structure-only` for an unattended route graph or `screen-ui-and-structure` for a simulator sweep with captures and runtime navigation evidence.
 
+When the user asks to use App Flow to open, reach, or navigate to a named screen, use the existing App Flow result rather than starting a new sweep or navigating independently:
+
+1. Call `mobile_appflow_result` with the project folder and resolve the requested name against non-chrome nodes. Prefer a case-insensitive exact `id`, `title`, or `urlPath` match, then a single clear partial match. If several nodes still match, ask which one; never guess.
+2. If the node's capture has `replayable: true`, call `mobile_appflow_manual_replay` with that exact node `id`. This reads the screen's `pathToReach` from `agent-device-screens.json`, runs it, and leaves the app on the destination screen. Do not read or execute the file yourself.
+3. Otherwise call `mobile_appflow_runtime_replay` with the same exact node `id`. Runtime-rendered screens may have no `pathToReach` and no entry in `agent-device-screens.json`; this performs the same navigator dispatch as the App Flow panel's primary **Replay** button. For an older result with no `replayable` field, try manual replay first and use runtime replay only when it reports that no recorded path exists.
+
+When either replay tool returns `ok: true`, stop: the requested task is complete. Do not take a snapshot, verify the destination, open an agent-device session, or perform any additional device action unless the user separately asks for verification or further interaction.
+
+If both replay methods fail, report their reason. Do not fall through to ordinary device navigation unless the user asks for it.
+
 For `screen-ui-and-structure`, keep servicing the same run until it reaches a terminal or human-action state:
 
 1. Call `mobile_appflow_next_decision` with the returned `runId`. A `waiting` result means local build or device work is still progressing; poll again.

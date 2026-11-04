@@ -235,19 +235,20 @@ export function registerAppFlowTools(server: McpServer, host: AppFlowHost, proje
   }, safe(async ({ projectPath }: { projectPath: string }) => dataResult(await host.services.manualCancel(projectPath))));
 
   registerAppTool(server, "mobile_appflow_manual_replay", {
-    title: "Replay an App Flow path",
-    description: "Replay a saved path and leave the app on its destination screen.",
-    inputSchema: { projectPath, nodeId: z.string().min(1).max(256) }, annotations: write, _meta: appVisibility,
+    title: "Open a screen from its App Flow path",
+    description:
+      "Open a named screen by replaying its saved agent-device path from agent-device-screens.json and leave the app there. First call mobile_appflow_result for the project, resolve the user's screen name to one exact node.id, then pass that id as nodeId. This uses pathToReach; mobile_appflow_runtime_replay does not.",
+    inputSchema: { projectPath, nodeId: z.string().min(1).max(256) }, annotations: write, _meta: sharedVisibility,
   }, safe(async ({ projectPath, nodeId }: { projectPath: string; nodeId: string }) => {
     if (!host.services.manualReplay) throw new Error("Manual replay is not available.");
     return dataResult(await host.services.manualReplay(projectPath, nodeId));
   }));
 
   registerAppTool(server, "mobile_appflow_runtime_replay", {
-    title: "Replay an App Flow screen at runtime",
+    title: "Open a screen through its app runtime",
     description:
-      "Navigate to a screen through the running app's own navigator, using its parsed route and the parameter values previous sweeps observed, and leave the app there. Needs no recorded path; needs a reachable development runtime (Metro). Fails with the reason when the runtime cannot be reached or declines the route.",
-    inputSchema: { projectPath, nodeId: z.string().min(1).max(256) }, annotations: write, _meta: appVisibility,
+      "Open an App Flow screen that has no saved pathToReach by dispatching through the running app's own navigator, using its parsed route and parameter values previous sweeps observed, and leave the app there. First call mobile_appflow_result and pass the resolved exact node.id as nodeId. This is the same runtime Replay action the App Flow panel offers; it needs a reachable development runtime (Metro).",
+    inputSchema: { projectPath, nodeId: z.string().min(1).max(256) }, annotations: write, _meta: sharedVisibility,
   }, safe(async ({ projectPath, nodeId }: { projectPath: string; nodeId: string }) => {
     if (!host.services.runtimeReplay) throw new Error("Runtime replay is not available.");
     return dataResult(await host.services.runtimeReplay(projectPath, nodeId));
