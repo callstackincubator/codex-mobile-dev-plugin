@@ -1,5 +1,5 @@
 
-!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="eeffb79d-d7fb-5c53-be4e-5d18e38a913a")}catch(e){}}();
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="9cc3f523-8ecc-5d9d-8d39-40f9bf213c0e")}catch(e){}}();
 import { createRequire as mobileDevBundleRequire } from 'node:module'; import { fileURLToPath as mobileDevFileURLToPath } from 'node:url'; import { dirname as mobileDevPathDirname } from 'node:path'; const require = mobileDevBundleRequire(import.meta.url); const __filename = mobileDevFileURLToPath(import.meta.url); const __dirname = mobileDevPathDirname(__filename);
 import {
   __commonJS,
@@ -62132,7 +62132,7 @@ var nodeRuntimeMetricsIntegration = defineIntegration((options = {}) => {
 });
 
 // packages/shared/src/version.ts
-var PLUGIN_VERSION = "0.1.178";
+var PLUGIN_VERSION = "0.1.180";
 
 // packages/shared/src/device-apps-command-diagnostics.ts
 var foregroundCauses = [
@@ -62557,7 +62557,7 @@ function isMissingFile(error2) {
   const code = error2 !== null && typeof error2 === "object" && "code" in error2 ? error2.code : void 0;
   return code === "ENOENT" || code === "ENOTDIR";
 }
-var labels = { "serve-emu": "Android streaming backend", baguette: "simulator backend" };
+var labels = { "serve-emu": "Android streaming backend", baguette: "simulator backend", "resource-saving": "resource optimization tools" };
 var MissingRuntimeError = class extends Error {
   runtime;
   integrity;
@@ -62642,4 +62642,4 @@ undici/lib/web/websocket/frame.js:
   (*! ws. MIT License. Einar Otto Stangvik <einaros@gmail.com> *)
 */
 
-//# debugId=eeffb79d-d7fb-5c53-be4e-5d18e38a913a
+//# debugId=9cc3f523-8ecc-5d9d-8d39-40f9bf213c0e

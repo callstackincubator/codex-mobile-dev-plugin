@@ -1,5 +1,5 @@
 
-!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="ec680032-9cf6-5149-a3e3-d38fef129210")}catch(e){}}();
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="7a8d402e-6384-5108-9295-a1f7d96eaa9b")}catch(e){}}();
 import { createRequire as mobileDevBundleRequire } from 'node:module'; import { fileURLToPath as mobileDevFileURLToPath } from 'node:url'; import { dirname as mobileDevPathDirname } from 'node:path'; const require = mobileDevBundleRequire(import.meta.url); const __filename = mobileDevFileURLToPath(import.meta.url); const __dirname = mobileDevPathDirname(__filename);
 import {
   ExpectedOperationError,
@@ -27,7 +27,7 @@ import {
   telemetryHost,
   withIsolationScope,
   wrapMcpServerWithSentry
-} from "./chunk-ARJTOIXG.mjs";
+} from "./chunk-WX3WADUR.mjs";
 import {
   external_exports
 } from "./chunk-BNXJFHSV.mjs";
@@ -4353,6 +4353,12 @@ function androidDeviceState(output, serial) {
 }
 
 // packages/core/src/telemetry.ts
+function recordResourceSaving(platform2, enabled, outcome, duration2) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = { component: "server", surface: "simulator", device_platform: platform2, device_kind: platform2 === "ios" ? "simulator" : "emulator", enabled, outcome };
+  public_api_exports.count("resource_saving.apply", 1, { attributes });
+  public_api_exports.distribution("resource_saving.duration", duration2, { unit: "millisecond", attributes });
+}
 function recordBrowserPanelSessions(active) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   public_api_exports.gauge("browser_panel.sessions", active, { attributes: { component: "server" } });
@@ -4718,6 +4724,7 @@ export {
   androidStartupMessageSchema,
   setAndroidStartupDiagnostic,
   androidDeviceState,
+  recordResourceSaving,
   recordBrowserPanelSessions,
   recordBrowserPanelContext,
   recordPanelRuntime,
@@ -4748,4 +4755,4 @@ export {
   import_websocket
 };
 
-//# debugId=ec680032-9cf6-5149-a3e3-d38fef129210
+//# debugId=7a8d402e-6384-5108-9295-a1f7d96eaa9b
