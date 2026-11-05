@@ -48,14 +48,13 @@ The final production domain is undecided. Transfer the project to its eventual o
 - `src/site/content.ts`: links, feature copy, environments, FAQ, and homepage metadata.
 - `src/site/brand.ts`: the Signal blue accent and its derived dark palette.
 - `src/content/docs/docs/`: user guides adapted from the repository documentation.
-- `src/components/home/HeroDemo.astro` and `src/components/home/annotation/`: native HTML annotation and app-edit workflow, responsive layout, and Web Animations playback. The macOS app window sits directly in the page without an extra surrounding box or background.
-- `src/components/site/FeaturePreview.astro`: shared video player for the homepage and the Storage and Performance guides.
-- `public/previews/`: storage and performance recording videos rendered from `feat/feature-previews` with the plugin's dark palette, with still posters and source attribution.
-- `previews/plugin-dark.css` and `scripts/render-feature-previews.mjs`: the source color mapping and repeatable dark-video renderer, using the plugin's theme and host tokens.
+- `src/components/home/HeroDemo.astro` and `src/components/home/annotation/`: native HTML annotation and app-edit workflow, responsive layout, and Web Animations playback. The hero sits directly in the page without a window frame or surrounding fill.
+- `src/components/site/FeaturePreview.astro` and `src/components/site/previews/`: native Storage and Performance animations shared by the homepage and docs, plus the phone and icons shared with the hero.
+- `public/previews/LICENSE`: retained Stageshow source attribution.
 - `src/components/site/dither.ts`: generated pixel scenes, rendered by one OffscreenCanvas worker implementation.
 
 The website, docs, and README banner use a fixed dark palette. The site ignores system colour preferences and former saved theme choices; no theme controls are rendered.
 
-The homepage's storage and performance sections and the corresponding docs guides use the same authored feature-preview videos and player. They play when visible, pause offscreen or in a hidden tab, respect a manual pause, and show still posters for reduced motion. Native video controls support playback and fullscreen viewing. Their source and poster timestamps are recorded in `public/previews/README.md`.
+The homepage's storage and performance sections and corresponding docs guides use the same native HTML/SVG animations in macOS windows, without an extra outer frame or video controls. They play when visible, pause offscreen or in a hidden tab, and show the completed state for reduced motion. Their source and choreography are documented in `src/components/site/previews/README.md`.
 
 Website work does not change the plugin’s Sentry initialization or instrumentation, and the marketing site does not send remote telemetry.

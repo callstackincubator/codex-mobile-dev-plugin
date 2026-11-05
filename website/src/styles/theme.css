@@ -64,10 +64,10 @@
 
 /* ---------- Global ---------- */
 
-/* Square corners everywhere — Starlight has no radius token, so this is the one blunt rule. */
-*,
-*::before,
-*::after {
+/* Docs chrome stays square; embedded product previews retain their own geometry. */
+*:not(:where(.feature-preview, .feature-preview *)),
+*:not(:where(.feature-preview, .feature-preview *))::before,
+*:not(:where(.feature-preview, .feature-preview *))::after {
   border-radius: 0 !important;
 }
 

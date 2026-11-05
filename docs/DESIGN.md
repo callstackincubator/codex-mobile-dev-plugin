@@ -73,7 +73,7 @@ For a 16:9 slide or video, retain the rectangular frame, section-head row, and h
 - **Windows:** neutral solid surfaces, 1px borders, a mono title row, and small square controls. A phone lives inside the ADE frame to show the extended workspace.
 - **Code and transcripts:** neutral foreground; keywords, punctuation, and comments use readable grey; changed text and numeric highlights use `accent-ink`. Human messages have a field fill; agent replies sit directly on the window surface. Show an actual app edit when the story is about coding.
 - **Tabs and controls:** square cells, mono labels, an accent underline or selected region, and explicit accessible state.
-- **Feature previews:** storage and performance use the locally hosted Stageshow renders in `website/public/previews/`, with the plugin's dark theme and host tokens mapped by `website/previews/plugin-dark.css`. Render the dark palette into the source scenes; the phone's app keeps its own colors. The same videos and player appear in the corresponding docs guides. Place homepage previews at the full content width below each section's copy so their details stay readable. Native video controls allow pausing and fullscreen viewing. Show the payoff posters for reduced motion, and pause playback offscreen or while the page is hidden.
+- **Feature previews:** storage and performance are native Astro HTML and inline SVG, adapted from the Stageshow scenes. Keep the plugin's dark palette and the phone app's own colors. Each preview retains its macOS title bar, traffic lights, outline, rounded corners, and dark surface, without a second outer box, border, padding, or background. Share the same components between the homepage and corresponding docs guides. Place homepage previews at the full content width below the copy. Playback is automatic with no media controls; pause offscreen or while hidden, and show the completed state for reduced motion.
 - **Marquee:** mono names in the agreed environment, platform, and framework order, separated by small blue squares.
 - **Icons:** the crisp unit-square bitmaps in `website/src/components/site/icons.ts`; do not mix in a different icon style.
 - **Devices:** a thin stepped outline with solid screen fill, top island, and home indicator. Keep all visible app content inside the screen. Do not use smooth rounded mockup hardware.
@@ -93,13 +93,13 @@ Place text on solid surfaces over the scene. Keep secondary scenes quiet. Do not
 
 ## Motion
 
-The hero renders the annotation workflow as native HTML and inline SVG inside a macOS app window. Keep the window's title bar, traffic lights, surface, outline, and rounded corners. Embed that window directly in the page without an additional surrounding box, border, padding, or background fill. Desktop shows the chat beside the device; below 600px the chat sits beneath the device view inside the same window.
+The hero renders the annotation workflow as native HTML and inline SVG directly in the page, without a macOS title bar, outer outline, rounded frame, padding, or background fill. Desktop shows the chat beside the device; below 600px the chat sits beneath the device view. Performance and Storage retain their macOS windows.
 
 The shared 16-second Web Animations timeline shows the complete edit: select the carrot button, type “Make this an apple,” attach the context, send the request to the chat, show the agent's code change, then replace the carrot with an apple in the running app. Hold the finished result before resetting. Playback is automatic, without play/pause controls, and pauses while hidden or offscreen. Reduced motion shows the sent request, completed code change, and apple. Measure targets after layout and on resize so the pointer, selection, note, and attachment stay aligned with the actual HTML.
 
 Dither motion updates at about 12fps near the viewport and pauses while hidden or offscreen. Its scene uses one OffscreenCanvas worker implementation, bounded repaint work, and cleanup for observers and timers. UI hover transitions are short, around 120–150ms.
 
-Product videos retain their authored movement and reading pauses. Keep the initiating action visible long enough to establish the cause before showing its result.
+Native feature demos retain their authored movement and reading pauses. Keep the initiating action visible long enough to establish the cause before showing its result.
 
 ## Words
 

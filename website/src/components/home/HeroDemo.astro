@@ -1,6 +1,6 @@
 ---
-import HeroIcon from './annotation/HeroIcon.astro';
-import HeroPhone from './annotation/HeroPhone.astro';
+import HeroIcon from '../site/previews/PreviewIcon.astro';
+import HeroPhone from '../site/previews/DemoPhone.astro';
 import './annotation/hero-annotation.css';
 
 const description = 'Select the carrot button, write “Make this an apple,” and send the request to the chat. The agent updates the code, and the running app shows an apple.';
@@ -8,10 +8,6 @@ const description = 'Select the carrot button, write “Make this an apple,” a
 
 <div class="hero-demo" data-annotation-demo>
   <div class="hero-scene" role="img" aria-label={description}>
-    <div class="hero-window-chrome" aria-hidden="true">
-      <span class="hero-window-lights"><span></span><span></span><span></span></span>
-      <span class="hero-window-title">Mobile Dev</span>
-    </div>
     <div class="hero-chat" aria-hidden="true">
       <div class="hero-history">
         <div class="hero-message"><span class="hero-bar" style="width: 9rem"></span></div>
@@ -69,7 +65,7 @@ const description = 'Select the carrot button, write “Make this an apple,” a
         <span class="hero-tool hero-select" data-annotation-target="select"><HeroIcon name="pointer" /></span>
       </div>
       <div class="hero-device-view" data-annotation-target="panel">
-        <HeroPhone />
+        <HeroPhone workflow="annotation" />
       </div>
     </div>
     <div class="hero-highlight" aria-hidden="true"></div>

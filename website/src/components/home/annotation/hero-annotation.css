@@ -16,21 +16,12 @@
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1.7fr) minmax(17rem, 1fr);
-  grid-template-rows: 2.375rem minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   height: clamp(32rem, 46vw, 38rem);
-  border: 1px solid var(--demo-line);
-  border-radius: .75rem;
-  background: var(--demo-window);
   overflow: hidden;
 }
 
-.hero-window-chrome { display: flex; grid-column: 1; grid-row: 1; align-items: center; gap: 1rem; padding-inline: .875rem; border-bottom: 1px solid var(--demo-line); }
-.hero-window-lights { display: flex; gap: .375rem; }
-.hero-window-lights > span { width: .625rem; height: .625rem; border-radius: 50%; background: #ff5f57; }
-.hero-window-lights > :nth-child(2) { background: #febc2e; }
-.hero-window-lights > :nth-child(3) { background: #28c840; }
-.hero-window-title { color: var(--demo-muted); font-size: .75rem; }
-.hero-chat { position: relative; grid-column: 1; grid-row: 2; min-width: 0; }
+.hero-chat { position: relative; grid-column: 1; grid-row: 1; min-width: 0; }
 .hero-history { display: grid; gap: 1.75rem; padding: 1.75rem; opacity: 0; }
 .hero-message { justify-self: end; padding: .75rem 1rem; border-radius: 1.5rem; background: var(--demo-card); }
 .hero-bar { display: block; max-width: 100%; height: 6px; border-radius: 3px; background: rgb(245 245 245 / .25); }
@@ -91,40 +82,7 @@
 .hero-tool { display: grid; flex: none; place-items: center; width: 1.75rem; height: 1.75rem; border-radius: .4375rem; }
 .hero-select { color: var(--demo-muted); }
 .hero-device-view { position: relative; display: grid; flex: 1; place-items: center; min-height: 0; overflow: hidden; }
-.hero-phone {
-  position: relative;
-  width: min(64cqw, 13.5rem);
-  aspect-ratio: 402 / 874;
-  overflow: hidden;
-  border-radius: 16% / 7.36%;
-  background: linear-gradient(180deg, #ffe3ea, #fbc3d2);
-  color: #1c1c1e;
-  font-family: system-ui, sans-serif;
-  container-type: inline-size;
-}
-.phone-status { position: absolute; inset: 2.2% 8% auto; display: flex; align-items: center; justify-content: space-between; height: 3.2%; font-size: 3.7cqw; font-weight: 600; }
-.phone-island { position: absolute; top: 1.6%; left: 38%; width: 24%; height: 4.2%; border-radius: 10cqw; background: #050505; }
-.phone-logo { position: absolute; top: 8.2%; left: 0; display: flex; justify-content: center; width: 100%; font-size: 9cqw; font-weight: 800; line-height: 1.2; letter-spacing: -.12cqw; color: #ec456d; }
-.phone-logo svg { width: 5cqw; height: 5cqw; margin-top: -1cqw; fill: currentColor; stroke-width: 0; rotate: 14deg; }
-.phone-profile { position: absolute; top: 15.1%; right: 3.5%; bottom: 23.1%; left: 3.5%; overflow: hidden; border-radius: 8.5cqw; }
-.phone-photo { position: absolute; inset: 0; background: linear-gradient(0deg, rgb(20 10 6 / .72), transparent 46%), radial-gradient(42% 34% at 52% 34%, #b98259, transparent), radial-gradient(60% 50% at 30% 70%, #5a3624, transparent), linear-gradient(165deg, #8a5a3c, #5b3826 55%, #3a2318); }
-.phone-profile-info { position: absolute; right: 5.5%; bottom: 4.5%; left: 5.5%; color: #fff; }
-.phone-name { display: flex; align-items: center; gap: 2cqw; font-size: 9cqw; font-weight: 800; line-height: 1.2; }
-.phone-name svg { width: 6.5cqw; height: 6.5cqw; fill: #2f8cff; }
-.phone-profile-info p { margin: 1cqw 0 0; font-size: 5.5cqw; font-weight: 500; line-height: 1.3; }
-.phone-tags { display: flex; gap: 2cqw; margin-top: 3.5cqw; }
-.phone-tags span { width: 26%; height: 8cqw; border-radius: 4cqw; background: rgb(255 255 255 / .2); }
-.phone-tags span::after { content: ''; display: block; height: 2cqw; margin: 3cqw; border-radius: 1cqw; background: rgb(255 255 255 / .62); }
-.phone-actions { position: absolute; top: 79.2%; right: 0; left: 0; display: flex; align-items: center; justify-content: center; gap: 8cqw; }
-.phone-action { display: grid; flex: none; place-items: center; width: 22cqw; height: 22cqw; border-radius: 50%; background: #fff; color: #f0447a; }
-.phone-action svg { width: 10cqw; height: 10cqw; stroke-width: 3; }
-.phone-edit-action { position: relative; width: 26cqw; height: 26cqw; }
-.phone-carrot-icon, .phone-apple-icon { position: absolute; display: grid; place-items: center; }
-.phone-carrot-icon { color: #f2691d; opacity: 0; }
-.phone-apple-icon { color: #ec456d; }
-.phone-edit-action svg { width: 13cqw; height: 13cqw; stroke-width: 2; }
-.phone-like svg { fill: currentColor; stroke-width: 0; }
-.phone-home { position: absolute; bottom: 1%; left: 32%; width: 36%; height: .6%; border-radius: 1cqw; background: #1c1c1e; }
+.hero-phone { width: min(64cqw, 13.5rem); }
 .hero-highlight { position: absolute; z-index: 10; top: 0; left: 0; border: 2px solid #6f9dff; background: rgb(111 157 255 / .12); opacity: 0; pointer-events: none; }
 .hero-pin { position: absolute; z-index: 12; right: -.25rem; bottom: -.25rem; display: grid; place-items: center; width: 1.25rem; height: 1.25rem; border: 2px solid #f5f5f5; border-radius: 50%; background: #6f9dff; color: #0d0d0d; font-size: .6875rem; font-weight: 700; line-height: 1; opacity: 0; }
 .hero-note { position: absolute; z-index: 15; display: flex; align-items: center; gap: .25rem; height: 2rem; padding: .1875rem; border: 1px solid var(--demo-line); border-radius: 2rem; background: var(--demo-card); opacity: 0; }
@@ -135,9 +93,8 @@
 .hero-cursor { position: absolute; z-index: 25; top: 0; left: 0; opacity: 0; pointer-events: none; }
 
 @media (max-width: 600px) {
-  .hero-scene { grid-template-columns: minmax(0, 1fr); grid-template-rows: 2.375rem 25rem 20rem; height: auto; }
-  .hero-window-chrome { grid-column: 1; grid-row: 1; }
-  .hero-chat { grid-column: 1; grid-row: 3; }
+  .hero-scene { grid-template-columns: minmax(0, 1fr); grid-template-rows: 25rem 20rem; height: auto; }
+  .hero-chat { grid-column: 1; grid-row: 2; }
   .hero-history { gap: .75rem; padding: .75rem; }
   .hero-history .hero-files { display: none; }
   .hero-history .hero-answer { gap: .5rem; }
@@ -146,7 +103,7 @@
   .hero-sent-message { gap: .25rem; padding: .5rem .75rem; }
   .hero-change-heading { padding: .375rem .625rem; font-size: .6875rem; }
   .hero-change-code { display: flex; gap: 1rem; padding: .5rem .625rem; font-size: .6875rem; }
-  .hero-device { grid-column: 1; grid-row: 2; height: 100%; border-left: 0; }
+  .hero-device { grid-column: 1; grid-row: 1; height: 100%; border-left: 0; }
   .hero-phone { position: absolute; top: -13.8125rem; left: calc(50% - 8.9375rem); width: 16.875rem; }
   .hero-device-view { display: block; }
 }
