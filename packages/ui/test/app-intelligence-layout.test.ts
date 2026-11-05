@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AppIntelSnapshot, IntelEdge } from "@mobile-dev/shared/app-intelligence.ts";
-import { boundariesIn, boundaryOf, buildFlow, buildTrie, clampName, depthHue, depthTint, ellipsize, findNode, heat, heatT, labelOf, leavesOf, maxReach, ownerScreen, pathOf, platformsFor, squarify } from "../src/app-intelligence-layout.ts";
+import { FLOW_METRICS, boundariesIn, boundaryOf, buildFlow, clampName, depthHue, depthTint, ellipsize, flowLink, groupKey, heat, heatT, labelOf, maxReach, openByDefault, pathOf, placeFlow, platformsFor } from "../src/app-intelligence-layout.ts";
 
 function snapshotOf(edges: IntelEdge[], files: Record<string, number>, packages: Record<string, number> = {}): AppIntelSnapshot {
   const indexes: AppIntelSnapshot["indexes"] = { screens: Object.create(null), incoming: Object.create(null), outgoing: Object.create(null) };
@@ -10,58 +10,13 @@ function snapshotOf(edges: IntelEdge[], files: Record<string, number>, packages:
     formatVersion: 1,
     meta: { projectId: "p", generation: "g", analyzedAt: "", analyzerVersion: "t", sourceFingerprint: "f" },
     files: Object.fromEntries(Object.entries(files).map(([path, reach]) => [path, { fingerprint: "x", kind: "source" as const, reach }])),
-    packages: Object.fromEntries(Object.entries(packages).map(([name, reach]) => [name, { name, reach }])),
+    packages: Object.fromEntries(Object.entries(packages).map(([name, reach]) => [name, { name, reach, entry: null }])),
     screens: { home: { title: "Home", route: "/", source: "src/screens/home.tsx", layouts: [] } },
     edges, diagnostics: [], indexes,
   };
 }
 
 const importEdge = (from: string, to: string, platforms: IntelEdge["platforms"] = ["ios", "android"]): IntelEdge => ({ from: from as IntelEdge["from"], to: to as IntelEdge["to"], kind: "import", platforms });
-
-test("squarify tiles its rectangle without gaps or overlap", () => {
-  const items = [40, 25, 15, 12, 8].map((value, index) => ({ name: `n${index}`, path: `n${index}`, value, reach: value, kids: [], leaf: null, parent: null }));
-  const rect = { x: 0, y: 0, width: 600, height: 400 };
-  const placed = squarify(items, rect);
-  assert.equal(placed.length, items.length);
-  const area = placed.reduce((sum, item) => sum + item.rect.width * item.rect.height, 0);
-  assert.ok(Math.abs(area - rect.width * rect.height) < 1, `tiled area ${area} should fill ${rect.width * rect.height}`);
-  for (const { rect: box } of placed) {
-    assert.ok(box.x >= -0.001 && box.y >= -0.001 && box.x + box.width <= rect.width + 0.001 && box.y + box.height <= rect.height + 0.001, "stays inside the rect");
-  }
-  for (let a = 0; a < placed.length; a++) for (let b = a + 1; b < placed.length; b++) {
-    const first = placed[a].rect, second = placed[b].rect;
-    const overlaps = first.x < second.x + second.width - 0.001 && second.x < first.x + first.width - 0.001
-      && first.y < second.y + second.height - 0.001 && second.y < first.y + first.height - 0.001;
-    assert.ok(!overlaps, `${placed[a].node.name} overlaps ${placed[b].node.name}`);
-  }
-});
-
-test("squarify ignores zero-valued items and an empty list", () => {
-  assert.deepEqual(squarify([], { x: 0, y: 0, width: 100, height: 100 }), []);
-  const zero = [{ name: "z", path: "z", value: 0, reach: 0, kids: [], leaf: null, parent: null }];
-  assert.deepEqual(squarify(zero, { x: 0, y: 0, width: 100, height: 100 }), []);
-});
-
-test("the trie rolls counts up and hides packages on request", () => {
-  const snapshot = snapshotOf(
-    [importEdge("file:src/a/one.ts", "package:left-pad")],
-    { "src/a/one.ts": 4, "src/a/two.ts": 2, "src/b/three.ts": 1 },
-    { "left-pad": 4 },
-  );
-  const withPackages = buildTrie(snapshot, { withPackages: true });
-  assert.deepEqual(withPackages.kids.map(kid => kid.name).sort(), ["node_modules", "src"]);
-  const appOnly = buildTrie(snapshot, { withPackages: false });
-  assert.deepEqual(appOnly.kids.map(kid => kid.name), ["src"]);
-  assert.equal(appOnly.value, 3, "three files in the app tree");
-
-  const a = findNode(appOnly, "src/a");
-  assert.ok(a);
-  assert.equal(a.value, 2);
-  assert.equal(a.reach, 3, "value-weighted mean of 4 and 2");
-  assert.equal(leavesOf(appOnly).length, 3);
-  assert.equal(findNode(appOnly, "src/nope"), null);
-  assert.equal(findNode(appOnly, "")?.path, "", "an empty path is the root");
-});
 
 test("a file reached only on one platform reports that platform", () => {
   const snapshot = snapshotOf([
@@ -73,28 +28,8 @@ test("a file reached only on one platform reports that platform", () => {
   assert.equal(platformsFor(snapshot, "file:src/screen.tsx"), "both", "nothing reaches it, so it is not platform-specific");
 });
 
-test("buildFlow layers by hop, caps each level and counts the overflow", () => {
-  const edges = [
-    { from: "screen:home", to: "file:src/screens/home.tsx", kind: "source", platforms: ["ios", "android"] } as IntelEdge,
-    { from: "screen:home", to: "screen:other", kind: "navigation", platforms: ["ios", "android"] } as IntelEdge,
-  ];
-  const files: Record<string, number> = { "src/screens/home.tsx": 1 };
-  for (let index = 0; index < 20; index++) {
-    const path = `src/lib/dep${index}.ts`;
-    files[path] = 20 - index;
-    edges.push(importEdge("file:src/screens/home.tsx", `file:${path}`));
-  }
-  const snapshot = snapshotOf(edges, files);
-  const flow = buildFlow(snapshot, "screen:home", [1, 1, 12, 5]);
-  assert.deepEqual(flow.levels[0], ["screen:home"]);
-  assert.deepEqual(flow.levels[1], ["file:src/screens/home.tsx"]);
-  assert.equal(flow.levels[2].length, 12, "depth 2 is capped");
-  assert.equal(flow.hidden[2], 8, "and the rest are counted, not dropped");
-  assert.ok(!flow.levels.flat().includes("screen:other"), "navigation edges never enter the flow");
-  assert.equal(flow.parent.get("file:src/screens/home.tsx"), "screen:home");
-  for (const ref of flow.levels[2]) assert.equal(flow.parent.get(ref), "file:src/screens/home.tsx");
-  assert.ok(flow.levels[2].every(ref => flow.parent.has(ref)), "capped-out nodes leave no dangling parent");
-});
+const refsIn = (level: ReturnType<typeof buildFlow>["levels"][number]) => level.flatMap(group => group.refs);
+const groupsIn = (level: ReturnType<typeof buildFlow>["levels"][number]) => level.map(group => group.boundary);
 
 test("buildFlow terminates on an import cycle", () => {
   const snapshot = snapshotOf([
@@ -102,8 +37,137 @@ test("buildFlow terminates on an import cycle", () => {
     importEdge("file:b.ts", "file:a.ts"),
   ], { "a.ts": 1, "b.ts": 1 });
   const flow = buildFlow(snapshot, "file:a.ts");
-  assert.deepEqual(flow.levels[1], ["file:b.ts"]);
-  assert.deepEqual(flow.levels[2], [], "a.ts is already visited");
+  assert.deepEqual(refsIn(flow.levels[1]), ["file:b.ts"]);
+  assert.equal(flow.levels[2], undefined, "a.ts is already visited, so the walk stops");
+});
+
+/** One screen reaching a component, a hook and two packages: enough to group, fold and overflow. */
+function groupedSnapshot() {
+  return snapshotOf([
+    { from: "screen:home", to: "file:src/screens/home.tsx", kind: "source", platforms: ["ios", "android"] },
+    importEdge("file:src/screens/home.tsx", "file:src/components/Button.tsx"),
+    importEdge("file:src/screens/home.tsx", "file:src/components/Card.tsx"),
+    importEdge("file:src/screens/home.tsx", "file:src/hooks/useThing.ts"),
+    importEdge("file:src/screens/home.tsx", "package:react"),
+    importEdge("file:src/screens/home.tsx", "package:react-native"),
+    importEdge("file:src/components/Button.tsx", "file:src/util/text.ts"),
+  ], { "src/screens/home.tsx": 1, "src/components/Button.tsx": 1, "src/components/Card.tsx": 1, "src/hooks/useThing.ts": 1, "src/util/text.ts": 1 }, { react: 2, "react-native": 2 });
+}
+
+/**
+ * The keys to toggle so every boundary down to `depth` is open. Opening one hop reveals the next,
+ * so this repeats until the graph stops growing rather than guessing at the key names.
+ */
+function openTo(depth: number) {
+  const toggled = new Set<string>();
+  for (let round = 0; round <= depth; round++) {
+    for (const level of buildFlow(groupedSnapshot(), "screen:home", { toggled }).levels) {
+      for (const group of level) if (group.collapsed && Number(group.key.split(":")[0]) <= depth) toggled.add(group.key);
+    }
+  }
+  return toggled;
+}
+
+test("a hop opens its first boundary and names the rest", () => {
+  assert.equal(openByDefault(1, 3), true, "the screen's own source is always open");
+  assert.equal(openByDefault(2, 0), true, "and so is the first boundary of every hop below it");
+  assert.equal(openByDefault(2, 1), false);
+  const flow = buildFlow(groupedSnapshot(), "screen:home");
+  assert.deepEqual(refsIn(flow.levels[1]), ["file:src/screens/home.tsx"]);
+  assert.deepEqual(flow.levels[2].map(group => [group.boundary, group.collapsed, group.count]), [["hook", false, 1], ["component", true, 2], ["package", true, 2]]);
+  assert.deepEqual(refsIn(flow.levels[2]), ["file:src/hooks/useThing.ts"], "one readable spine, not a wall of cards");
+  assert.equal(flow.levels[3], undefined, "the boundary left open here imports nothing further");
+});
+
+test("buildFlow splits each hop into boundaries, in display order", () => {
+  const flow = buildFlow(groupedSnapshot(), "screen:home", { toggled: openTo(2) });
+  assert.deepEqual(refsIn(flow.levels[1]), ["file:src/screens/home.tsx"]);
+  assert.deepEqual(groupsIn(flow.levels[2]), ["hook", "component", "package"], "boundaries keep the display order, not discovery order");
+  assert.deepEqual(flow.levels[2].find(group => group.boundary === "package")?.refs, ["package:react", "package:react-native"]);
+  assert.deepEqual(refsIn(buildFlow(groupedSnapshot(), "screen:home", { toggled: openTo(3) }).levels[3]), ["file:src/util/text.ts"]);
+  assert.equal(flow.levels[2][0].key, groupKey(2, "hook"));
+});
+
+test("folding a boundary drops its rows and everything they would have pulled in", () => {
+  // openTo flips the folded boundaries open; dropping one key leaves that boundary at its default.
+  const open = openTo(3);
+  open.delete(groupKey(2, "component"));
+  const flow = buildFlow(groupedSnapshot(), "screen:home", { toggled: open });
+  const components = flow.levels[2].find(group => group.boundary === "component");
+  assert.deepEqual(components?.refs, []);
+  assert.equal(components?.collapsed, true);
+  assert.equal(components?.count, 2, "the header still reports what it is hiding");
+  assert.equal(flow.levels[3], undefined, "Button.tsx was the only path to the next hop");
+  assert.deepEqual(refsIn(flow.levels[2]), ["file:src/hooks/useThing.ts", "package:react", "package:react-native"], "the other boundaries are untouched");
+});
+
+test("a boundary past its cap folds the rest into an overflow its key can open", () => {
+  const snapshot = groupedSnapshot();
+  const capped = buildFlow(snapshot, "screen:home", { groupCap: 1, toggled: openTo(3) });
+  const components = capped.levels[2].find(group => group.boundary === "component");
+  assert.deepEqual(components?.refs, ["file:src/components/Button.tsx"]);
+  assert.equal(components?.hidden, 1);
+  assert.deepEqual(refsIn(capped.levels[3]), ["file:src/util/text.ts"], "the row that is drawn still seeds the next hop");
+  const opened = buildFlow(snapshot, "screen:home", { groupCap: 1, toggled: openTo(3), expanded: new Set([groupKey(2, "component")]) });
+  const all = opened.levels[2].find(group => group.boundary === "component");
+  assert.deepEqual(all?.refs, ["file:src/components/Button.tsx", "file:src/components/Card.tsx"]);
+  assert.equal(all?.hidden, 0);
+});
+
+test("placeFlow lays a hop out as a column or as a row, without overlapping its cards", () => {
+  const flow = buildFlow(groupedSnapshot(), "screen:home", { toggled: openTo(3) });
+  for (const orientation of ["columns", "tree"] as const) {
+    const placed = placeFlow(flow, orientation);
+    assert.equal(placed.cards.length, 8, `${orientation} places every drawn row`);
+    assert.equal(placed.headers.length, 5, `${orientation} draws one header per boundary, and none for the root`);
+    assert.ok(placed.cards.every(card => placed.rectOf.get(card.ref) === card.rect));
+    for (let a = 0; a < placed.cards.length; a++) for (let b = a + 1; b < placed.cards.length; b++) {
+      const first = placed.cards[a].rect, second = placed.cards[b].rect;
+      const overlaps = first.x < second.x + second.width - 0.001 && second.x < first.x + first.width - 0.001
+        && first.y < second.y + second.height - 0.001 && second.y < first.y + first.height - 0.001;
+      assert.ok(!overlaps, `${orientation}: ${placed.cards[a].ref} overlaps ${placed.cards[b].ref}`);
+    }
+    for (const card of placed.cards) {
+      assert.ok(card.rect.x >= 0 && card.rect.y >= 0 && card.rect.x + card.rect.width <= placed.width + 0.001 && card.rect.y + card.rect.height <= placed.height + 0.001, `${orientation} keeps every card inside the board`);
+    }
+  }
+});
+
+test("columns advance along x and the tree advances down y", () => {
+  const flow = buildFlow(groupedSnapshot(), "screen:home", { toggled: openTo(3) });
+  const depthOf = (placed: ReturnType<typeof placeFlow>, depth: number) => placed.cards.filter(card => card.depth === depth);
+  const columns = placeFlow(flow, "columns");
+  // Rows under a header are indented past it, which the root card has no header to sit under.
+  assert.equal(columns.headers[0].rect.x - depthOf(columns, 0)[0].rect.x, FLOW_METRICS.column);
+  assert.equal(depthOf(columns, 1)[0].rect.x - depthOf(columns, 0)[0].rect.x, FLOW_METRICS.column + FLOW_METRICS.indent);
+  assert.equal(depthOf(columns, 2).every(card => card.rect.x === depthOf(columns, 1)[0].rect.x + FLOW_METRICS.column), true);
+  // Anchored to the start, not centred: folding one boundary must not move any other level.
+  assert.equal(depthOf(columns, 0)[0].rect.y, FLOW_METRICS.pad);
+  const folded = placeFlow(buildFlow(groupedSnapshot(), "screen:home"), "columns");
+  assert.deepEqual(depthOf(folded, 0)[0].rect, depthOf(columns, 0)[0].rect, "the root sits where it sat before the fold");
+  assert.deepEqual(depthOf(folded, 1)[0].rect, depthOf(columns, 1)[0].rect);
+  const tree = placeFlow(flow, "tree");
+  assert.ok(depthOf(tree, 2)[0].rect.y > depthOf(tree, 1)[0].rect.y, "each hop sits below the one before it");
+  assert.equal(new Set(depthOf(tree, 2).slice(0, 2).map(card => card.rect.y)).size, 1, "rows in one hop share a baseline");
+  assert.ok(tree.height > columns.height, "the tree is the taller reading of the same graph");
+});
+
+test("a folded boundary still records what feeds it, and where its header landed", () => {
+  const folded = buildFlow(groupedSnapshot(), "screen:home");
+  const components = folded.levels[2].find(group => group.boundary === "component");
+  assert.deepEqual(components?.sources, ["file:src/screens/home.tsx"], "the connector has somewhere to come from");
+  const placed = placeFlow(folded, "columns");
+  assert.ok(placed.headerRectOf.get(groupKey(2, "component")), "and somewhere to land");
+  assert.deepEqual(placed.headerRectOf.get(groupKey(2, "component")), placed.headers.find(header => header.key === groupKey(2, "component"))?.rect);
+  // Sources are the cards above, so a boundary fed by two files records both of them once each.
+  const deep = buildFlow(groupedSnapshot(), "screen:home", { toggled: openTo(3) });
+  assert.deepEqual(deep.levels[3].find(group => group.boundary === "util")?.sources, ["file:src/components/Button.tsx"]);
+});
+
+test("a link bends along the axis its orientation reads in", () => {
+  const from = { x: 0, y: 0, width: 100, height: 40 }, to = { x: 200, y: 80, width: 100, height: 40 };
+  assert.ok(flowLink(from, to, "columns").startsWith("M100 20"), "columns leave the right edge");
+  assert.ok(flowLink(from, to, "tree").startsWith("M50 40"), "the tree leaves the bottom edge");
 });
 
 test("the heat scale is log-shaped, monotonic and clamped", () => {
@@ -127,17 +191,6 @@ test("maxReach spans files and packages", () => {
   const snapshot = snapshotOf([], { "a.ts": 3 }, { "left-pad": 11 });
   assert.equal(maxReach(snapshot), 11);
   assert.equal(maxReach(snapshotOf([], {})), 1, "never zero, so the scale cannot divide by it");
-});
-
-test("ownerScreen walks back to a screen that reaches the file", () => {
-  const snapshot = snapshotOf([
-    { from: "screen:home", to: "file:app/index.tsx", kind: "source", platforms: ["ios", "android"] } as IntelEdge,
-    importEdge("file:app/index.tsx", "file:src/shared.ts"),
-    importEdge("file:src/shared.ts", "package:left-pad"),
-  ], { "app/index.tsx": 1, "src/shared.ts": 1, "orphan.ts": 0 }, { "left-pad": 1 });
-  assert.equal(ownerScreen(snapshot, "file:src/shared.ts"), "home", "two hops back to the screen");
-  assert.equal(ownerScreen(snapshot, "package:left-pad"), "home", "packages resolve too");
-  assert.equal(ownerScreen(snapshot, "file:orphan.ts"), null, "nothing reaches an orphan");
 });
 
 test("boundaryOf reads a role off the path", () => {

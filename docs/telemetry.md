@@ -659,13 +659,21 @@ App Intelligence uses the `app-intel` surface. `app_intel.operation.duration` an
 `.samples` measure bounded generation, query, snapshot and folder-picker operations
 by success, failure or cancellation. The UI records generation/load/picker round
 trips, surface readiness, and gauges only the counts of files and screens in the
-displayed snapshot. `ui.app_intel.atlas_layout` and `ui.app_intel.flow_layout`
-time the two view layouts — the directory treemap and the per-screen dependency
-layering — and `ui.app_intel.atlas_cells` and `ui.app_intel.flow_nodes` gauge how
-many nodes each one drew, which is what drives that cost. `ui.app_intel.view_switch`
-and `ui.app_intel.zoom` count navigation between the two views and into a
-directory, and `ui.app_intel.boundary_filter` counts how often the Flow's
-entry-point filter is changed. The filter counts the change only; which
-boundaries were picked is not an attribute. Project paths, source paths, screen and package names, source
+displayed snapshot. `ui.app_intel.flow_layout` times building and placing the
+per-screen dependency graph — the hop layering, its boundary grouping and the
+geometry for the chosen reading direction — and `ui.app_intel.flow_nodes` gauges
+how many cards it drew, which is what drives that cost. The panel no longer has a
+directory treemap, so the Atlas measurements `ui.app_intel.atlas_layout`,
+`ui.app_intel.atlas_cells`, `ui.app_intel.view_switch` and `ui.app_intel.zoom` are
+gone rather than renamed; `flow_layout` and `flow_nodes` keep their meaning and
+units, so their history stays comparable even though they now cover grouping and
+placement as well. `ui.app_intel.orientation_switch` counts switching between the
+column and top-down readings, `ui.app_intel.group_collapse`, `.group_expand` and
+`.group_show_all` count folding a boundary away, bringing it back and opening one
+past its row cap, `ui.app_intel.boundary_highlight` counts lighting one boundary's
+connectors up, `ui.app_intel.project_switch` counts picking a remembered
+project instead of the host folder picker, and `ui.app_intel.boundary_filter`
+counts how often the entry-point filter is changed. All of these count the change
+only; which boundary, project or direction was picked is not an attribute. Project paths, source paths, screen and package names, source
 contents, queries, diagnostics, graph edges and snapshot identifiers remain local
 and are never telemetry attributes.

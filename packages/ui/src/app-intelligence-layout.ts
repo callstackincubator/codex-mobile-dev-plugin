@@ -1,15 +1,12 @@
 import type { AppIntelSnapshot, IntelPlatform, IntelRef } from "@mobile-dev/shared/app-intelligence.ts";
 
 /**
- * Pure geometry and aggregation for the App Intelligence views. Nothing here touches the DOM:
+ * Pure geometry and aggregation for the App Intelligence Flow. Nothing here touches the DOM:
  * the panel measures once and passes width and height in, so every layout stays testable.
  */
 
 export type NodePlatforms = "ios" | "android" | "both";
-export type TrieLeaf = { path: string; kind: "source" | "asset" | "package"; reach: number; platforms: NodePlatforms };
 export type Rect = { x: number; y: number; width: number; height: number };
-export type TrieNode = { name: string; path: string; value: number; reach: number; kids: TrieNode[]; leaf: TrieLeaf | null; parent: TrieNode | null };
-export type PlacedNode = { node: TrieNode; rect: Rect };
 
 const PACKAGE_PREFIX = "node_modules/";
 
@@ -28,167 +25,10 @@ export function maxReach(snapshot: AppIntelSnapshot): number {
   return max;
 }
 
-function emptyNode(name: string, path: string, parent: TrieNode | null): TrieNode {
-  return { name, path, value: 0, reach: 0, kids: [], leaf: null, parent };
-}
-
-function insert(root: TrieNode, path: string, leaf: TrieLeaf) {
-  const parts = path.split("/");
-  let node = root;
-  for (let index = 0; index < parts.length; index++) {
-    const segment = parts[index], full = parts.slice(0, index + 1).join("/");
-    let next = node.kids.find(kid => kid.name === segment);
-    if (!next) { next = emptyNode(segment, full, node); node.kids.push(next); }
-    node = next;
-  }
-  node.leaf = leaf;
-  node.value = leaf.kind === "package" ? Math.max(1, leaf.reach > 0 ? Math.round(Math.log2(leaf.reach + 1)) : 1) : 1;
-  node.reach = leaf.reach;
-}
-
-function roll(node: TrieNode): TrieNode {
-  if (!node.kids.length) return node;
-  let value = 0, weighted = 0;
-  for (const kid of node.kids) { roll(kid); value += kid.value; weighted += kid.reach * kid.value; }
-  node.value = value;
-  node.reach = value ? weighted / value : 0;
-  node.kids.sort((a, b) => b.value - a.value || a.name.localeCompare(b.name));
-  return node;
-}
-
-/**
- * Directory trie over the snapshot. Area comes from file count, colour from reach rolled up as a
- * value-weighted mean, so a directory reads as hot only when its bulk is hot.
- */
-export function buildTrie(snapshot: AppIntelSnapshot, options: { withPackages: boolean }): TrieNode {
-  const root = emptyNode("", "", null);
-  for (const [path, file] of Object.entries(snapshot.files)) {
-    insert(root, path, { path, kind: file.kind, reach: file.reach, platforms: platformsFor(snapshot, `file:${path}`) });
-  }
-  if (options.withPackages) for (const [name, entry] of Object.entries(snapshot.packages)) {
-    insert(root, PACKAGE_PREFIX + name, { path: name, kind: "package", reach: entry.reach, platforms: platformsFor(snapshot, `package:${name}`) });
-  }
-  return roll(root);
-}
-
-export function findNode(root: TrieNode, path: string): TrieNode | null {
-  if (!path) return root;
-  for (const kid of root.kids) {
-    if (kid.path === path) return kid;
-    if (path.startsWith(kid.path + "/")) return findNode(kid, path);
-  }
-  return null;
-}
-
-export function leavesOf(node: TrieNode, into: TrieNode[] = []): TrieNode[] {
-  if (node.leaf) into.push(node);
-  for (const kid of node.kids) leavesOf(kid, into);
-  return into;
-}
-
-export function ancestorsOf(node: TrieNode): TrieNode[] {
-  const chain: TrieNode[] = [];
-  for (let current = node.parent; current && current.path; current = current.parent) chain.unshift(current);
-  return chain;
-}
-
-/**
- * Squarified treemap (Bruls, Huizing & van Wijk): pack rows along the shorter side, closing a row
- * as soon as adding the next item would make its worst aspect ratio worse.
- */
-export function squarify(items: TrieNode[], rect: Rect): PlacedNode[] {
-  const placed: PlacedNode[] = [];
-  const pending = items.filter(item => item.value > 0);
-  let remaining = pending.reduce((sum, item) => sum + item.value, 0);
-  let box = { ...rect };
-  while (pending.length && box.width > 0.5 && box.height > 0.5 && remaining > 0) {
-    const vertical = box.width >= box.height;
-    const side = vertical ? box.height : box.width;
-    const area = box.width * box.height;
-    const row: TrieNode[] = [];
-    let sum = 0, best = Infinity;
-    while (pending.length) {
-      const candidate = pending[0];
-      const next = sum + candidate.value;
-      const thickness = (next * area / remaining) / side;
-      let worst = 0;
-      for (const member of [...row, candidate]) {
-        const length = (member.value * area / remaining) / thickness;
-        worst = Math.max(worst, Math.max(thickness / length, length / thickness));
-      }
-      if (!row.length || worst <= best) { row.push(pending.shift() as TrieNode); sum = next; best = worst; }
-      else break;
-    }
-    const thickness = (sum * area / remaining) / side;
-    let offset = vertical ? box.y : box.x;
-    for (const member of row) {
-      const length = (member.value * area / remaining) / thickness;
-      placed.push({ node: member, rect: vertical ? { x: box.x, y: offset, width: thickness, height: length } : { x: offset, y: box.y, width: length, height: thickness } });
-      offset += length;
-    }
-    if (vertical) { box = { ...box, x: box.x + thickness, width: box.width - thickness }; }
-    else { box = { ...box, y: box.y + thickness, height: box.height - thickness }; }
-    remaining -= sum;
-  }
-  return placed;
-}
-
-export type FlowGraph = { start: IntelRef; levels: IntelRef[][]; hidden: number[]; parent: Map<IntelRef, IntelRef> };
-
-export const FLOW_CAPS = [1, 12, 18, 22];
-
-/**
- * Breadth-first layering of one screen's dependencies, one level per import hop. Levels are capped
- * and the overflow counted rather than dropped, so a crowded depth still reports its real size.
- */
-export function buildFlow(snapshot: AppIntelSnapshot, start: IntelRef, caps: number[] = FLOW_CAPS): FlowGraph {
-  const levels: IntelRef[][] = [[start]];
-  const hidden = [0, 0, 0, 0];
-  const parent = new Map<IntelRef, IntelRef>();
-  const visited = new Set<IntelRef>([start]);
-  for (let depth = 0; depth < caps.length - 1; depth++) {
-    const next: IntelRef[] = [];
-    for (const ref of levels[depth]) for (const index of snapshot.indexes.outgoing[ref] ?? []) {
-      const edge = snapshot.edges[index];
-      if (!edge.to || edge.kind === "navigation" || visited.has(edge.to)) continue;
-      visited.add(edge.to);
-      parent.set(edge.to, ref);
-      next.push(edge.to);
-    }
-    next.sort((a, b) => reachOf(snapshot, b) - reachOf(snapshot, a));
-    const cap = caps[depth + 1];
-    for (const ref of next.slice(cap)) parent.delete(ref);
-    levels[depth + 1] = next.slice(0, cap);
-    hidden[depth + 1] = Math.max(0, next.length - cap);
-    levels[depth + 1].sort((a, b) => groupOf(a) === groupOf(b) ? reachOf(snapshot, b) - reachOf(snapshot, a) : groupOf(a).localeCompare(groupOf(b)));
-  }
-  return { start, levels, hidden, parent };
-}
-
-/** Walks incoming edges back to a screen that reaches this node, for "show me where this is used". */
-export function ownerScreen(snapshot: AppIntelSnapshot, ref: IntelRef): string | null {
-  const queue: IntelRef[] = [ref];
-  const visited = new Set<IntelRef>(queue);
-  for (let cursor = 0; cursor < queue.length; cursor++) for (const index of snapshot.indexes.incoming[queue[cursor]] ?? []) {
-    const from = snapshot.edges[index].from;
-    if (from.startsWith("screen:")) return from.slice(7);
-    if (visited.has(from)) continue;
-    visited.add(from);
-    queue.push(from);
-  }
-  return null;
-}
-
 export function reachOf(snapshot: AppIntelSnapshot, ref: IntelRef): number {
   if (ref.startsWith("file:")) return snapshot.files[ref.slice(5)]?.reach ?? 0;
   if (ref.startsWith("package:")) return snapshot.packages[ref.slice(8)]?.reach ?? 0;
   return 0;
-}
-
-/** Top two path segments, which is what clusters a column by the area of the app it belongs to. */
-export function groupOf(ref: IntelRef): string {
-  const path = ref.replace(/^(?:file|package|screen):/, "");
-  return ref.startsWith("package:") ? PACKAGE_PREFIX : path.split("/").slice(0, 2).join("/");
 }
 
 const INDEX_FILE = /^index\.[cm]?[jt]sx?$/;
@@ -205,10 +45,7 @@ export function labelOf(ref: IntelRef): string {
   return INDEX_FILE.test(name) && parts.length ? parts[parts.length - 1] : name;
 }
 
-/**
- * Where that node lives, in full. `groupOf` keeps two segments because it clusters a column;
- * a label needs the whole path, since several `index.tsx` differ by nothing else.
- */
+/** Where that node lives, in full: several `index.tsx` differ by nothing else. */
 export function pathOf(ref: IntelRef): string {
   if (ref.startsWith("package:")) return PACKAGE_PREFIX;
   const parts = ref.replace(/^(?:file|screen):/, "").split("/");
@@ -231,7 +68,7 @@ const RAMP = ["#1d4a57", "#1f7d82", "#2fa37f", "#79b85a", "#d7c045", "#e09440", 
 
 /**
  * Log-scaled, because most files are reached by a handful of screens: a linear ramp renders the
- * whole map cold and hides the difference between 2 screens and 20.
+ * whole graph cold and hides the difference between 2 screens and 20.
  */
 export function heatT(reach: number, max: number): number {
   if (!(max > 0) || reach <= 0) return 0;
@@ -246,12 +83,6 @@ export function heat(reach: number, max: number): string {
   return `rgb(${from.map((value, slot) => Math.round(value + (to[slot] - value) * fraction)).join(",")})`;
 }
 
-/** Text that stays legible on a heat cell in either theme, since the ramp ignores the theme. */
-export function heatInk(reach: number, max: number): string {
-  const [red, green, blue] = channels(RAMP[Math.round(heatT(reach, max) * (RAMP.length - 1))]);
-  return red * 0.299 + green * 0.587 + blue * 0.114 > 140 ? "#10151a" : "#e9eef3";
-}
-
 export const heatRamp = () => `linear-gradient(90deg, ${RAMP.join(",")})`;
 
 function channels(value: string): [number, number, number] {
@@ -259,8 +90,8 @@ function channels(value: string): [number, number, number] {
 }
 
 /**
- * Nesting tints. The Flow used one muted card for every hop, which read as a grey ladder; one hue
- * per depth makes the hop a node sits at legible at a glance, in either theme.
+ * Nesting tints. One muted card for every hop read as a grey ladder; one hue per depth makes the
+ * hop a node sits at legible at a glance, in either theme.
  */
 const DEPTH_HUES = ["#6366f1", "#0ea5e9", "#10b981", "#f59e0b", "#ec4899"] as const;
 
@@ -355,4 +186,221 @@ export function boundariesIn(values: Iterable<Boundary>): Array<{ boundary: Boun
   const counts = new Map<Boundary, number>();
   for (const value of values) counts.set(value, (counts.get(value) ?? 0) + 1);
   return boundaries.filter(boundary => counts.has(boundary)).map(boundary => ({ boundary, count: counts.get(boundary) as number }));
+}
+
+// ── The Flow graph ────────────────────────────────────────────────────────────────────────────
+
+/** Import hops drawn after the root. */
+export const FLOW_DEPTH = 3;
+/** Rows a boundary shows before the rest fold into one "+N more" that opens them. */
+export const GROUP_CAP = 6;
+
+export type FlowGroup = {
+  key: string; boundary: Boundary; refs: IntelRef[]; count: number; hidden: number; collapsed: boolean;
+  /** The cards at the hop above that import into this boundary — what its connectors come from. */
+  sources: IntelRef[];
+};
+export type FlowGraph = { start: IntelRef; levels: FlowGroup[][]; parent: Map<IntelRef, IntelRef>; total: number };
+export type FlowOptions = { depth?: number; groupCap?: number; toggled?: ReadonlySet<string>; expanded?: ReadonlySet<string> };
+
+/** One key per boundary per hop, because the same boundary recurs at every depth. */
+export const groupKey = (depth: number, boundary: Boundary) => `${depth}:${boundary}`;
+
+/**
+ * A whole app's imports three hops deep is thousands of cards and a thicket of links, so a hop
+ * opens only its first boundary in display order and names the rest. That leaves one readable
+ * spine down the graph to drill along, rather than a wall of cards or a row of bare headers.
+ * `toggled` holds the keys flipped away from this default, in either direction, so one set
+ * covers both folding an open boundary and opening a folded one.
+ */
+export const openByDefault = (depth: number, index: number) => depth <= 1 || index === 0;
+
+/**
+ * Breadth-first layering of one screen's dependencies, one level per import hop, with each level
+ * split into the boundaries its nodes fall into. A boundary is the unit the reader folds away:
+ * collapsing one drops its rows and everything they would have pulled in at the next hop.
+ */
+export function buildFlow(snapshot: AppIntelSnapshot, start: IntelRef, options: FlowOptions = {}): FlowGraph {
+  const limit = options.depth ?? FLOW_DEPTH;
+  const cap = options.groupCap ?? GROUP_CAP;
+  const toggledKeys = options.toggled ?? new Set<string>();
+  const expandedKeys = options.expanded ?? new Set<string>();
+  const parent = new Map<IntelRef, IntelRef>();
+  const visited = new Set<IntelRef>([start]);
+  const rootBoundary = boundaryOf(start);
+  const levels: FlowGroup[][] = [[{ key: groupKey(0, rootBoundary), boundary: rootBoundary, refs: [start], count: 1, hidden: 0, collapsed: false, sources: [] }]];
+  let frontier: IntelRef[] = [start];
+  let total = 1;
+  for (let depth = 1; depth <= limit && frontier.length; depth++) {
+    const next: IntelRef[] = [];
+    for (const ref of frontier) for (const index of snapshot.indexes.outgoing[ref] ?? []) {
+      const edge = snapshot.edges[index];
+      if (!edge.to || edge.kind === "navigation" || visited.has(edge.to)) continue;
+      visited.add(edge.to);
+      parent.set(edge.to, ref);
+      next.push(edge.to);
+    }
+    if (!next.length) break;
+    const byBoundary = new Map<Boundary, IntelRef[]>();
+    const sourcesOf = new Map<Boundary, Set<IntelRef>>();
+    for (const ref of next) {
+      const boundary = boundaryOf(ref);
+      const bucket = byBoundary.get(boundary);
+      if (bucket) bucket.push(ref); else byBoundary.set(boundary, [ref]);
+      // Captured before the fold prunes `parent`, so a folded boundary still knows what feeds it.
+      const from = parent.get(ref);
+      if (from) (sourcesOf.get(boundary) ?? sourcesOf.set(boundary, new Set()).get(boundary) as Set<IntelRef>).add(from);
+    }
+    const level: FlowGroup[] = [];
+    const carry: IntelRef[] = [];
+    for (const boundary of boundaries) {
+      const members = byBoundary.get(boundary);
+      if (!members) continue;
+      const index = level.length;
+      members.sort((a, b) => reachOf(snapshot, b) - reachOf(snapshot, a) || labelOf(a).localeCompare(labelOf(b)));
+      const key = groupKey(depth, boundary);
+      const open = toggledKeys.has(key) ? !openByDefault(depth, index) : openByDefault(depth, index);
+      const collapsed = !open;
+      const shown = collapsed ? [] : members.slice(0, expandedKeys.has(key) ? members.length : cap);
+      const kept = new Set(shown);
+      // A row that is not drawn has no card to trace from, so it seeds no edge and no next hop.
+      for (const ref of members) if (!kept.has(ref)) parent.delete(ref);
+      // A folded group reports its whole size on the header, so it needs no "+N more" as well.
+      level.push({ key, boundary, refs: shown, count: members.length, hidden: collapsed ? 0 : members.length - shown.length, collapsed, sources: [...(sourcesOf.get(boundary) ?? [])] });
+      carry.push(...shown);
+      total += members.length;
+    }
+    levels.push(level);
+    frontier = carry;
+  }
+  return { start, levels, parent, total };
+}
+
+// ── Placing it ────────────────────────────────────────────────────────────────────────────────
+
+export type FlowOrientation = "columns" | "tree";
+export type FlowMetrics = {
+  card: { width: number; height: number }; gap: number; header: number; headerGap: number;
+  groupGap: number; column: number; rowGap: number; pad: number; indent: number; more: number; perRow: number;
+};
+
+/**
+ * `column` and `rowGap` are deliberately wide: the links between hops fan out across the whole
+ * gap, and at the old 52px they crossed each other into a thicket before reaching their cards.
+ */
+export const FLOW_METRICS: FlowMetrics = {
+  card: { width: 226, height: 40 }, gap: 8, header: 22, headerGap: 6,
+  groupGap: 20, column: 376, rowGap: 92, pad: 16, indent: 10, more: 22, perRow: 4,
+};
+
+export type PlacedHeader = { key: string; boundary: Boundary; depth: number; count: number; shown: number; collapsed: boolean; sources: IntelRef[]; rect: Rect };
+export type PlacedCard = { ref: IntelRef; depth: number; rect: Rect };
+export type PlacedMore = { key: string; boundary: Boundary; depth: number; hidden: number; sources: IntelRef[]; rect: Rect };
+export type FlowPlacement = {
+  width: number; height: number;
+  headers: PlacedHeader[]; cards: PlacedCard[]; more: PlacedMore[];
+  rectOf: Map<IntelRef, Rect>;
+  /** Where each boundary header landed, so a folded group can still be drawn a connector. */
+  headerRectOf: Map<string, Rect>;
+};
+
+type Block = { headers: PlacedHeader[]; cards: PlacedCard[]; more: PlacedMore[]; width: number; height: number };
+
+/** A level laid out at the origin: one stack of boundaries, to be shifted into its column. */
+function columnBlock(level: FlowGroup[], depth: number, metrics: FlowMetrics): Block {
+  const { card, gap, header, headerGap, groupGap, indent, more } = metrics;
+  const block: Block = { headers: [], cards: [], more: [], width: card.width, height: 0 };
+  let y = 0;
+  for (const group of level) {
+    block.headers.push({ key: group.key, boundary: group.boundary, depth, count: group.count, shown: group.refs.length, collapsed: group.collapsed, sources: group.sources, rect: { x: 0, y, width: card.width, height: header } });
+    y += header + headerGap;
+    for (const ref of group.refs) {
+      block.cards.push({ ref, depth, rect: { x: indent, y, width: card.width - indent, height: card.height } });
+      y += card.height + gap;
+    }
+    if (group.hidden) {
+      block.more.push({ key: group.key, boundary: group.boundary, depth, hidden: group.hidden, sources: group.sources, rect: { x: indent, y, width: card.width - indent, height: more } });
+      y += more + gap;
+    }
+    y += groupGap - (group.refs.length || group.hidden ? gap : 0);
+  }
+  block.height = Math.max(0, y - groupGap);
+  return block;
+}
+
+/** The same level laid out as a row: boundaries side by side, their rows wrapping under them. */
+function treeBlock(level: FlowGroup[], depth: number, metrics: FlowMetrics): Block {
+  const { card, gap, header, headerGap, groupGap, more, perRow } = metrics;
+  const block: Block = { headers: [], cards: [], more: [], width: 0, height: 0 };
+  let x = 0;
+  for (const group of level) {
+    const across = Math.min(perRow, Math.max(1, group.refs.length));
+    const width = across * (card.width + gap) - gap;
+    block.headers.push({ key: group.key, boundary: group.boundary, depth, count: group.count, shown: group.refs.length, collapsed: group.collapsed, sources: group.sources, rect: { x, y: 0, width, height: header } });
+    const top = header + headerGap;
+    group.refs.forEach((ref, index) => block.cards.push({
+      ref, depth,
+      rect: { x: x + (index % perRow) * (card.width + gap), y: top + Math.floor(index / perRow) * (card.height + gap), width: card.width, height: card.height },
+    }));
+    let bottom = top + Math.ceil(group.refs.length / perRow) * (card.height + gap);
+    if (group.hidden) {
+      block.more.push({ key: group.key, boundary: group.boundary, depth, hidden: group.hidden, sources: group.sources, rect: { x, y: bottom, width: card.width, height: more } });
+      bottom += more + gap;
+    }
+    block.height = Math.max(block.height, bottom - gap);
+    x += width + groupGap;
+  }
+  block.width = Math.max(0, x - groupGap);
+  return block;
+}
+
+function shift(block: Block, dx: number, dy: number) {
+  for (const item of [...block.headers, ...block.cards, ...block.more]) { item.rect.x += dx; item.rect.y += dy; }
+}
+
+/**
+ * Places a built graph for either reading direction. "columns" is one boundary stack per hop,
+ * read left to right; "tree" stacks the hops downwards, each one a row of boundaries. Levels are
+ * centred on the cross axis so the root sits against the middle of what it pulls in.
+ */
+export function placeFlow(graph: FlowGraph, orientation: FlowOrientation, metrics: FlowMetrics = FLOW_METRICS): FlowPlacement {
+  const make = orientation === "columns" ? columnBlock : treeBlock;
+  const blocks = graph.levels.map((level, depth) => depth === 0
+    ? { headers: [], cards: [{ ref: level[0].refs[0], depth: 0, rect: { x: 0, y: 0, width: metrics.card.width, height: metrics.card.height } }], more: [], width: metrics.card.width, height: metrics.card.height } satisfies Block
+    : make(level, depth, metrics));
+  // Every level is anchored to the start of the cross axis rather than centred on it. Centring
+  // reads better on a still graph, but folding one boundary then moves every other level, which
+  // throws away where the reader had panned to. A fixed origin keeps folds local.
+  let width = 0, height = 0;
+  if (orientation === "columns") {
+    blocks.forEach((block, depth) => shift(block, metrics.pad + depth * metrics.column, metrics.pad));
+    width = metrics.pad * 2 + (blocks.length - 1) * metrics.column + metrics.card.width;
+    height = metrics.pad * 2 + Math.max(0, ...blocks.map(block => block.height));
+  } else {
+    let y = metrics.pad;
+    for (const block of blocks) { shift(block, metrics.pad, y); y += block.height + metrics.rowGap; }
+    width = metrics.pad * 2 + Math.max(0, ...blocks.map(block => block.width));
+    height = Math.max(metrics.pad * 2, y - metrics.rowGap + metrics.pad);
+  }
+  const placement: FlowPlacement = { width, height, headers: [], cards: [], more: [], rectOf: new Map(), headerRectOf: new Map() };
+  for (const block of blocks) {
+    placement.headers.push(...block.headers);
+    placement.cards.push(...block.cards);
+    placement.more.push(...block.more);
+    for (const card of block.cards) placement.rectOf.set(card.ref, card.rect);
+    for (const header of block.headers) placement.headerRectOf.set(header.key, header.rect);
+  }
+  return placement;
+}
+
+/** The curve between two placed cards, bent along the axis the orientation reads in. */
+export function flowLink(from: Rect, to: Rect, orientation: FlowOrientation): string {
+  if (orientation === "columns") {
+    const x1 = from.x + from.width, y1 = from.y + from.height / 2, x2 = to.x, y2 = to.y + to.height / 2;
+    const bend = Math.max(8, (x2 - x1) * 0.45);
+    return `M${x1} ${y1} C${x1 + bend} ${y1} ${x2 - bend} ${y2} ${x2} ${y2}`;
+  }
+  const x1 = from.x + from.width / 2, y1 = from.y + from.height, x2 = to.x + to.width / 2, y2 = to.y;
+  const bend = Math.max(8, (y2 - y1) * 0.45);
+  return `M${x1} ${y1} C${x1} ${y1 + bend} ${x2} ${y2 - bend} ${x2} ${y2}`;
 }
