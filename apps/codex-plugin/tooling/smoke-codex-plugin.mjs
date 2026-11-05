@@ -32,6 +32,8 @@ try {
   await writeFile(catalogPath, catalogText);
   const fixtureHome = await createLaunchHome(temporary, process.execPath);
   const env = { ...process.env, CODEX_HOME: profile, HOME: fixtureHome, MOBILE_DEV_TELEMETRY: "off" };
+  // These checks expect the default inline panel, even from a host set up for the browser panel.
+  delete env.MOBILE_DEV_PANEL;
   function codex(args) {
     const output = execFileSync(codexCli, args, { env, encoding: "utf8", timeout: 30000 });
     return JSON.parse(output);
