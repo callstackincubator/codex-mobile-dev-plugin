@@ -1,6 +1,6 @@
 
-!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="8e387299-4238-59ce-bae6-8fa26db83de0")}catch(e){}}();
-;(function(){var g=globalThis.__SENTRY_ORCHESTRION__=globalThis.__SENTRY_ORCHESTRION__||{};g.bundler=g.bundler||new Set();})();import { createRequire as mobileDevBundleRequire } from 'node:module'; const require = mobileDevBundleRequire(import.meta.url);
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="7db26ffe-cb6c-598f-8092-7246af37581d")}catch(e){}}();
+;(function(){var g=globalThis.__SENTRY_ORCHESTRION__=globalThis.__SENTRY_ORCHESTRION__||{};g.bundler=g.bundler||new Set();})();import { createRequire as mobileDevBundleRequire } from 'node:module'; import { fileURLToPath as mobileDevFileURLToPath } from 'node:url'; import { dirname as mobileDevPathDirname } from 'node:path'; const require = mobileDevBundleRequire(import.meta.url); const __filename = mobileDevFileURLToPath(import.meta.url); const __dirname = mobileDevPathDirname(__filename);
 var __create = Object.create;
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
@@ -62157,7 +62157,7 @@ var nodeRuntimeMetricsIntegration = defineIntegration((options = {}) => {
 });
 
 // packages/shared/src/version.ts
-var PLUGIN_VERSION = "0.1.176";
+var PLUGIN_VERSION = "0.1.177";
 
 // packages/shared/src/telemetry-identity.ts
 function isAnonymousUserId(value) {
@@ -62253,6 +62253,9 @@ var frequentTools = /* @__PURE__ */ new Set([
   "mobile_log_sources",
   "mobile_performance_sources",
   "mobile_read_performance_recording",
+  "mobile_appflow_status",
+  "mobile_appflow_next_decision",
+  "mobile_appflow_result",
   "mobile_list_simulators",
   "mobile_list_ios_devices",
   "mobile_list_android_devices",
@@ -82943,4 +82946,4 @@ undici/lib/web/websocket/frame.js:
   (*! ws. MIT License. Einar Otto Stangvik <einaros@gmail.com> *)
 */
 
-//# debugId=8e387299-4238-59ce-bae6-8fa26db83de0
+//# debugId=7db26ffe-cb6c-598f-8092-7246af37581d
