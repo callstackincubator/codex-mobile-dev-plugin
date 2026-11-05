@@ -86,9 +86,36 @@ export function Workspace({ panels, recordingController, banner, displayModeCont
   const workspaceGroupRef = useGroupRef();
   useEffect(() => { if (open) logsRef.current?.expand(); else logsRef.current?.collapse(); }, [open, split, layout]);
   useEffect(() => {
-    if (layout !== "none") simulatorGroupRef.current?.setLayout({ "ios-resizable": layout === "android" ? 0 : layout === "both" ? 50 : 100, "android-resizable": layout === "ios" ? 0 : layout === "both" ? 50 : 100 });
-    workspaceGroupRef.current?.setLayout({ "tools-resizable": layout === "none" ? 100 : split ? 64 : 40, "simulators-resizable": layout === "none" ? 0 : split ? 36 : 60 });
-    if (isOpen() === false) logsRef.current?.collapse();
+    let simulatorsPending = layout !== "none";
+    let workspacePending = true;
+    // Hidden hosts defer group initialization; retain the request until the groups are measurable.
+    const applyLayout = () => {
+      const simulators = simulatorGroupRef.current;
+      if (simulatorsPending && simulators) {
+        const current = simulators.getLayout();
+        const panelIds = Object.keys(current);
+        if (panelIds.length > 0) {
+          simulatorsPending = false;
+          simulators.setLayout({ "ios-resizable": layout === "android" ? 0 : layout === "both" ? 50 : 100, "android-resizable": layout === "ios" ? 0 : layout === "both" ? 50 : 100 });
+        }
+      }
+      const workspace = workspaceGroupRef.current;
+      if (workspacePending && workspace) {
+        const current = workspace.getLayout();
+        const panelIds = Object.keys(current);
+        if (panelIds.length > 0) {
+          workspacePending = false;
+          workspace.setLayout({ "tools-resizable": layout === "none" ? 100 : split ? 64 : 40, "simulators-resizable": layout === "none" ? 0 : split ? 36 : 60 });
+          if (isOpen() === false) logsRef.current?.collapse();
+        }
+      }
+      if (simulatorsPending === false && workspacePending === false) observer.disconnect();
+    };
+    const observer = new ResizeObserver(applyLayout);
+    observer.observe(document.getElementById("simulator-panels")!);
+    observer.observe(document.getElementById("workspace-panels")!);
+    applyLayout();
+    return () => observer.disconnect();
   }, [layout, split, tool]);
   const toolPanel = <ResizablePanel key="tools" id="tools-resizable" panelRef={logsRef} defaultSize={split ? "64%" : "40%"} minSize={split ? "240px" : "25%"} maxSize="100%" collapsible collapsedSize={`${collapsedToolSize}px`} onResize={(size, _id, previous) => {
     if (!previous) return;

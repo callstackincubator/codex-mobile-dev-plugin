@@ -79,6 +79,56 @@ test.describe("MCP Apps hosts", () => {
     await expect(view.locator("#ios-panel, #android-panel").first()).toBeAttached();
     expect(pageErrors).toEqual([]);
   });
+
+  test("an Android panel initialized while hidden shows its device controls and keeps tools collapsed", async ({ openView, page, pageErrors, target }) => {
+    test.skip(target !== "codex", "Codex retains inactive panels before displaying them.");
+    const { view } = await openView("mobile_open_simulator", {
+      arguments: { platform: "android" }, displayMode: "inline", initiallyHidden: true,
+    });
+    await expect(view.locator("#platform-select")).toContainText("Android");
+    await expect(view.locator("#android-panel")).toHaveJSProperty("hidden", false);
+    const frame = page.locator("#view");
+    await frame.evaluate(element => { element.removeAttribute("hidden"); });
+
+    await expect(view.locator("#android-panel")).toBeVisible();
+    await expect(view.getByRole("toolbar", { name: "Android controls" })).toBeVisible();
+    await expect(view.locator("#android-devices")).toBeVisible();
+    const android = await view.locator("#android-resizable").boundingBox();
+    const ios = await view.locator("#ios-resizable").boundingBox();
+    const tools = await view.locator("#tools-resizable").boundingBox();
+    expect(android?.width).toBeGreaterThan(0);
+    expect(ios?.width).toBe(0);
+    expect(tools?.height).toBe(0);
+    await expect(view.locator("#tool-select")).toContainText("Tools");
+
+    const toolSelect = view.locator("#tool-select");
+    await toolSelect.click();
+    const logsOption = view.getByRole("option", { name: "Logs" });
+    await logsOption.click();
+    const toolsPanel = view.locator("#tools-resizable");
+    await expect(toolsPanel).toBeVisible();
+    const initialTools = await toolsPanel.boundingBox();
+    const divider = view.getByRole("separator", { name: "Resize tools and simulators" });
+    const dividerBounds = await divider.boundingBox();
+    if (dividerBounds === null || initialTools === null) throw new Error("The open tools pane has no resize handle.");
+    const dragX = dividerBounds.x + dividerBounds.width / 2;
+    const dragY = dividerBounds.y + dividerBounds.height / 2;
+    await page.mouse.move(dragX, dragY);
+    await page.mouse.down();
+    await page.mouse.move(dragX, dragY + 100, { steps: 5 });
+    await page.mouse.up();
+    const resizedTools = await toolsPanel.boundingBox();
+    expect(resizedTools?.height).toBeLessThan(initialTools.height - 50);
+
+    await frame.evaluate(element => { element.setAttribute("hidden", ""); });
+    await expect(view.locator("#android-panel")).toBeHidden();
+    await frame.evaluate(element => { element.removeAttribute("hidden"); });
+    await expect(view.locator("#android-panel")).toBeVisible();
+    const restoredTools = await toolsPanel.boundingBox();
+    expect(restoredTools?.height).toBeCloseTo(resizedTools!.height, 1);
+    await expect(toolSelect).toContainText("Logs");
+    expect(pageErrors).toEqual([]);
+  });
 });
 
 test.describe("Mac app", { tag: "@mac" }, () => {
