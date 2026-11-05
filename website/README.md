@@ -28,10 +28,9 @@ For a Git-connected project, choose this repository and set **Root Directory** t
 
 Initial hosting uses the **Margelo** team’s `mobile-dev` project temporarily, at https://mobile-dev-snowy.vercel.app. It is connected to `callstackincubator/codex-mobile-dev-plugin` through Vercel's GitHub integration, with **Root Directory** set to `website` and **Include source files outside of the Root Directory** disabled.
 
-Branch pushes create Preview deployments, including branches with draft pull requests. Vercel adds its deployment check and preview link to the pull request. Each branch gets an initial preview; later pushes skip the build when `website/` has not changed since that branch's last successful deployment. Automatic production builds are skipped, preserving manual production publishing. These rules live in the project's **Ignored Build Step** setting:
+Pushes to `main` create Production deployments when `website/` has changed. Other branches create Preview deployments, including branches with draft pull requests. Vercel adds its deployment check and preview link to the pull request. The first deployment builds; later pushes skip the build when `website/` has not changed since the previous successful deployment for that branch and environment. These rules live in the project's **Ignored Build Step** setting:
 
 ```sh
-if [ "$VERCEL_ENV" = "production" ]; then exit 0; fi
 if [ -z "$VERCEL_GIT_PREVIOUS_SHA" ]; then exit 1; fi
 git diff --quiet "$VERCEL_GIT_PREVIOUS_SHA" HEAD -- .
 ```
