@@ -16,8 +16,11 @@ import { execFileSync } from "node:child_process";
  * dynamically become chunks beside it, found the same way.
  */
 export async function buildServerBundles({ entryPoints, outdir, sentryDirectory, splitting = false }) {
+  const serverEntries = entryPoints.server && !entryPoints["app-intelligence-worker"]
+    ? { ...entryPoints, "app-intelligence-worker": "packages/core/src/app-intelligence/worker.ts" }
+    : entryPoints;
   const result = await build({
-    entryPoints, outdir, outExtension: { ".js": ".mjs" }, bundle: true, splitting,
+    entryPoints: serverEntries, outdir, outExtension: { ".js": ".mjs" }, bundle: true, splitting,
     format: "esm", platform: "node", target: "node22", minify: false, legalComments: "eof", metafile: true,
     sourcemap: "external",
     plugins: [sentryEsbuildPlugin({ project: SENTRY_PROJECTS.server, telemetry: false, sourcemaps: { disable: true }, release: { inject: false, create: false, finalize: false } })],

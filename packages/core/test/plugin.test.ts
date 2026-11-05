@@ -19,7 +19,7 @@ import { createTestPlugin, fakeBaguette, fakeSimulatorInput, UDID, PNG } from ".
 import { getTelemetryIdentity } from "../src/telemetry-identity.ts";
 import manifest from "../../../package.json" with { type: "json" };
 
-test("both opening tools accept optional device intent and preserve it in their results", async t => {
+test("opening tools accept optional intent and preserve it in their results", async t => {
   const fake = await fakeBaguette();
   const plugin = await createTestPlugin("<html></html>", { panel: createPanel({ baguette: new Baguette(fake.url), simulatorInput: fakeSimulatorInput() }) });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -36,6 +36,10 @@ test("both opening tools accept optional device intent and preserve it in their 
     const invalid = await client.callTool({ name, arguments: { platform: "android", kind: "simulator" } });
     assert.equal(invalid.isError, true);
   }
+  const appIntel = await client.callTool({ name: "mobile_open_app_intel", arguments: {} });
+  assert.equal(appIntel.isError, undefined);
+  assert.deepEqual(appIntel.structuredContent?.panelTarget, { workspaceTool: "app-intel" });
+  assert.equal(appIntel.structuredContent?.connected, false);
   const boots = fake.requests.filter(request => request.path.endsWith("/boot"));
   assert.equal(boots.length, 0);
 });
@@ -231,7 +235,10 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
   const workspace = tools.tools.find(tool => tool.name === "mobile_open_workspace")!;
   const workspaceMetadata = OpenAIUiToolMetadataSchema.parse(workspace._meta?.["openai/ui"]);
   assert.deepEqual(workspaceMetadata.entrypoints?.map(item => item.type), ["global"]);
-  for (const tool of [open, workspace]) {
+  const appIntel = tools.tools.find(tool => tool.name === "mobile_open_app_intel")!;
+  const appIntelMetadata = OpenAIUiToolMetadataSchema.parse(appIntel._meta?.["openai/ui"]);
+  assert.deepEqual(appIntelMetadata.entrypoints?.map(item => item.type), ["global"]);
+  for (const tool of [open, workspace, appIntel]) {
     // The desktop host rejects unknown openai/ui keys, unlike the SDK parser.
     assert.deepEqual(Object.keys(tool._meta?.["openai/ui"] as object), ["entrypoints"]);
     assert.equal(tool.icons?.[0].mimeType, "image/svg+xml");

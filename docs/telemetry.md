@@ -595,7 +595,7 @@ The plugin servers for Codex, Claude and Cursor serve agent-device's commands as
 | Node responsiveness | Automatic event-loop delay, utilization and process uptime. |
 | UI JavaScript heap | `ui.memory.heap_used`, `ui.memory.heap_total` and `ui.memory.heap_limit` in bytes at startup and every 30 seconds while visible, when Chromium's `performance.memory` is available. `ui.memory.supported` distinguishes unsupported contexts. These estimates do not measure total renderer or GPU memory. |
 | UI responsiveness | Browser tracing captures available web vitals. Custom metrics record visible animation-frame intervals, intervals over 50 ms, Event Timing interaction durations, long tasks and long animation frames where supported. |
-| Product surfaces | Metrics carry `surface=simulator`, `logs`, `performance`, `recording` or `comparison`, plus view, visible device layout and monitoring state. Log filter time, buffered/filtered rows, performance batch processing, canvas draw time and time to first video frame help explain slow surfaces. |
+| Product surfaces | Metrics carry `surface=simulator`, `logs`, `performance`, `storage`, `app-intel`, `tracesift`, `recording` or `comparison`, plus view, visible device layout and monitoring state. Log filter time, buffered/filtered rows, performance batch processing, App Intelligence generation and graph size, canvas draw time and time to first video frame help explain slow surfaces. |
 | Frame capture | `ui.screenshot.capture` measures synchronous canvas PNG encoding and base64 extraction in milliseconds for Select captures and physical iOS screenshots. `ui.screenshot.encode` measures PNG decoding, bounded JPEG encoding, and base64 extraction for chat attachments in milliseconds. Screenshot tools retain sampled MCP traces and report handled capture, attachment, and clipboard failures without image content. |
 | Pasted input | Command-V paste uses the existing ordered device input queue and `ui.device_input.round_trip` timing through MCP acknowledgement. It retains simulator surface/device context and existing input failure reporting. Clipboard content and validation failures are not sent to Sentry. |
 | Storage | Every five minutes, a server with agent-device measures its session state directory and the shared Apple runner cache in bytes, from the runtime's first start. It skips symlinks and sends only the storage kind and size. |
@@ -654,3 +654,18 @@ logs, arbitrary names and credentials remain excluded. Collection uses the
 existing centralized Sentry initialization, environment and telemetry opt-out.
 Native rebuilds retain matching Baguette dSYMs, and release uploads continue to
 upload those symbols with the plugin release.
+
+App Intelligence uses the `app-intel` surface. `app_intel.operation.duration` and
+`.samples` measure bounded generation, query, snapshot and folder-picker operations
+by success, failure or cancellation. The UI records generation/load/picker round
+trips, surface readiness, and gauges only the counts of files and screens in the
+displayed snapshot. `ui.app_intel.atlas_layout` and `ui.app_intel.flow_layout`
+time the two view layouts — the directory treemap and the per-screen dependency
+layering — and `ui.app_intel.atlas_cells` and `ui.app_intel.flow_nodes` gauge how
+many nodes each one drew, which is what drives that cost. `ui.app_intel.view_switch`
+and `ui.app_intel.zoom` count navigation between the two views and into a
+directory, and `ui.app_intel.boundary_filter` counts how often the Flow's
+boundary filter is changed. The filter counts the change only; which boundaries
+were picked is not an attribute. Project paths, source paths, screen and package names, source
+contents, queries, diagnostics, graph edges and snapshot identifiers remain local
+and are never telemetry attributes.

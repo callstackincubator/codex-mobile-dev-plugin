@@ -719,3 +719,45 @@ test("UI telemetry attributes each call to the host that renders the page", asyn
     }
   }
 });
+
+test("App Intelligence layout measurements carry counts only, never paths", async t => {
+  const root = process.cwd();
+  const built = await build({
+    stdin: { contents: 'export * from "./packages/ui/src/telemetry.ts";', resolveDir: root, loader: "ts" },
+    bundle: true, write: false, format: "iife", globalName: "Telemetry", platform: "browser", target: "chrome120",
+    define: { "process.env.NODE_ENV": '"production"' },
+  });
+  const html = `<html data-view="workspace"><head><meta name="mobile-dev-environment" content="development">${identityMeta}</head><body></body></html>`;
+  const dom = new JSDOM(html, { pretendToBeVisual: true, runScripts: "outside-only", url: "https://mobile-dev.test/" });
+  t.after(() => dom.window.close());
+  const window = dom.window;
+  window.Math.random = () => 0;
+  const bodies: string[] = [];
+  window.fetch = async (_url, options) => { bodies.push(String(options?.body ?? "")); return new Response("", { status: 200 }); };
+  Object.defineProperty(window.performance, "getEntriesByType", { value: () => [] });
+  Object.defineProperty(window.performance, "getEntries", { value: () => [] });
+  window.eval(built.outputFiles[0].text);
+  const api = window.Telemetry;
+  api.startUiTelemetry({ async callServerTool() { return { content: [] }; } });
+  api.setUiSurface("app-intel");
+  api.recordUiTiming("ui.app_intel.atlas_layout", 18);
+  api.recordUiTiming("ui.app_intel.flow_layout", 4);
+  api.setUiGauge("ui.app_intel.atlas_cells", 812);
+  api.setUiGauge("ui.app_intel.flow_nodes", 37);
+  api.countUiEvent("ui.app_intel.view_switch");
+  api.countUiEvent("ui.app_intel.zoom");
+  api.countUiEvent("ui.app_intel.boundary_filter");
+  await api.stopUiTelemetry();
+
+  const encoded = bodies.join("\n");
+  contains(encoded, "ui.app_intel.atlas_layout.mean");
+  contains(encoded, "ui.app_intel.flow_layout.mean");
+  contains(encoded, "ui.app_intel.atlas_cells");
+  contains(encoded, "ui.app_intel.flow_nodes");
+  contains(encoded, "ui.app_intel.view_switch");
+  contains(encoded, "ui.app_intel.zoom");
+  contains(encoded, "ui.app_intel.boundary_filter");
+  contains(encoded, "app-intel");
+  contains(encoded, "/Users/", false);
+  contains(encoded, ".tsx", false);
+});

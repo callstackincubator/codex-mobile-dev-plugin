@@ -18,7 +18,7 @@ export type PickedProfile = Picked;
 const APPLESCRIPT = `set chosen to choose file with prompt "Choose a CPU or React profile" of type {"public.json", "json"}
 POSIX path of chosen`;
 
-const APPLESCRIPT_FOLDER = `set chosen to choose folder with prompt "Choose the project this profile belongs to"
+const APPLESCRIPT_FOLDER = `set chosen to choose folder with prompt "Choose a project folder"
 POSIX path of chosen`;
 
 const POWERSHELL = `Add-Type -AssemblyName System.Windows.Forms
@@ -29,7 +29,7 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Ou
 
 const POWERSHELL_FOLDER = `Add-Type -AssemblyName System.Windows.Forms
 $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
-$dialog.Description = 'Choose the project this profile belongs to'
+$dialog.Description = 'Choose a project folder'
 if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dialog.SelectedPath }`;
 
 function command(): { file: string; args: string[] } {
@@ -45,7 +45,7 @@ function folderCommand(): { file: string; args: string[] } {
   switch (platform()) {
     case "darwin": return { file: "osascript", args: ["-e", APPLESCRIPT_FOLDER] };
     case "win32": return { file: "powershell", args: ["-NoProfile", "-STA", "-Command", POWERSHELL_FOLDER] };
-    default: return { file: "zenity", args: ["--file-selection", "--directory", "--title=Choose the project this profile belongs to"] };
+    default: return { file: "zenity", args: ["--file-selection", "--directory", "--title=Choose a project folder"] };
   }
 }
 
