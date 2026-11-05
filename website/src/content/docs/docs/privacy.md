@@ -3,7 +3,7 @@ title: Privacy Policy
 description: Read how Mobile Dev processes local development data, shares results with your host, collects diagnostics, and provides privacy controls.
 ---
 
-Last updated: 3 November 2026
+Last updated: 5 November 2026
 
 ## 1. Who we are and what this policy covers
 
@@ -109,8 +109,13 @@ described above. Frequent polling and input tools are not recorded.
 Analytics events never contain MCP arguments or results, app or device content,
 device names or identifiers, project paths, or account details. They go to
 Mixpanel's EU ingestion endpoint with IP collection turned off, so Mixpanel does
-not store your IP address or derive a location from it. We do not create user
-profiles, combine analytics with other data about you, or use them for advertising.
+not derive a location from your IP address or store it in your analytics records.
+Each connected session also creates or updates a pseudonymous installation profile
+using that same random installation ID, host, plugin version, and operating system
+type. This lets us view the installation's existing events together in Mixpanel.
+Profiles contain no names, email addresses or account details. A persistent ID and
+usage history are not a guarantee of anonymisation. We do not combine these
+analytics with other data about you or use them for advertising.
 
 ### Updates and support
 

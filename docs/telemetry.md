@@ -64,14 +64,25 @@ the server-owned installation ID as `distinct_id`. Tools `isFrequentTool` lists 
 skipped. Events are batched (50 per request, at most 500 queued), sent every 30
 seconds and when the plugin closes; failed batches are dropped. Requests go to
 `api-eu.mixpanel.com/track?ip=0&verbose=1`: Mixpanel neither stores nor geolocates
-the IP, and reports rejected batches in its reply. No user profiles are created.
+the IP, and reports rejected batches in its reply.
+
+Each connected session also queues an installation profile with the same
+`distinct_id`, `host`, `plugin_version` and `os`. Profiles are sent through
+`api-eu.mixpanel.com/engage?ip=0&verbose=1` with `$ip: "0"`, so they appear in
+Mixpanel's Users view without IP-derived location, names or account details.
+Existing events join the profile by installation ID. Profiles are pseudonymous,
+not a guarantee of anonymisation under data protection law. A failed profile
+update stays pending until the next flush; closing makes one final attempt and
+discards any pending update. Profile failures do not prevent event delivery.
 
 Development builds send nothing, and neither does the iOS mirror service. The
 choice is made when the server starts: `MOBILE_DEV_TELEMETRY=off` turns analytics
 off along with Sentry; `MOBILE_DEV_ANALYTICS=off` or `DO_NOT_TRACK=1` turns off only
-analytics. `analytics.flush` counts each Mixpanel request with `component=server`
-and `outcome=success` only when Mixpanel accepted the batch. The panel UI sends
-nothing to Mixpanel, and its CSP is unchanged.
+analytics, including profile updates. `analytics.flush` counts each Mixpanel request
+with `component=server` and `outcome=success` only when Mixpanel accepted the batch.
+The bounded `endpoint` attribute distinguishes `track` event batches from `engage`
+profile updates; before installation profiles, the metric counted only event batches.
+The panel UI sends nothing to Mixpanel, and its CSP is unchanged.
 
 ## Volume policy
 
