@@ -42,18 +42,19 @@ icons, social images, sitemap, and robots.txt share those values. Local dev and
 Vercel builds use their own origin and an empty base. Pages remain `.html` files,
 served at extensionless paths by GitHub Pages, matching Simlock's setup.
 
-## Vercel previews
+## Vercel
 
 The Margelo team's `mobile-dev` project is connected through Vercel's GitHub
 integration, with **Root Directory** set to `website`, **Include source files
 outside of the Root Directory** disabled, Node.js 24, and
 `ENABLE_EXPERIMENTAL_COREPACK=1`. Install/build/output settings are in
 `vercel.json`. Branch pushes, including draft pull requests, receive previews.
+Vercel also continues publishing Production deployments from `main`, alongside
+GitHub Pages.
 
-Vercel's **Ignored Build Step** skips production and unchanged preview builds:
+Vercel's **Ignored Build Step** skips builds when `website/` has not changed:
 
 ```sh
-if [ "$VERCEL_ENV" = "production" ]; then exit 0; fi
 if [ -z "$VERCEL_GIT_PREVIOUS_SHA" ]; then exit 1; fi
 git diff --quiet "$VERCEL_GIT_PREVIOUS_SHA" HEAD -- .
 ```
