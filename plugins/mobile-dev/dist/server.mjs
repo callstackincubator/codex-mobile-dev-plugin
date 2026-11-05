@@ -1,5 +1,5 @@
 
-!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="985ed09d-d715-5027-8510-f9103e76c970")}catch(e){}}();
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="5fa6f1b3-4e8b-5b1e-b6ee-9de657186df8")}catch(e){}}();
 ;(function(){var g=globalThis.__SENTRY_ORCHESTRION__=globalThis.__SENTRY_ORCHESTRION__||{};g.bundler=g.bundler||new Set();})();import { createRequire as mobileDevBundleRequire } from 'node:module'; import { fileURLToPath as mobileDevFileURLToPath } from 'node:url'; import { dirname as mobileDevPathDirname } from 'node:path'; const require = mobileDevBundleRequire(import.meta.url); const __filename = mobileDevFileURLToPath(import.meta.url); const __dirname = mobileDevPathDirname(__filename);
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -9347,7 +9347,7 @@ var require_client_h1 = __commonJS({
       kClosed,
       kUseMilo
     } = require_symbols();
-    var constants5 = require_constants3();
+    var constants6 = require_constants3();
     var { H1Parser, getMiloEnabled } = typeof esbuildDetection === "undefined" ? require_parser_h1() : {};
     var EMPTY_BUF = Buffer.alloc(0);
     var FastBuffer = Buffer[Symbol.species];
@@ -9488,7 +9488,7 @@ var require_client_h1 = __commonJS({
        */
       constructor(client2, socket, { exports: exports2 }) {
         this.llhttp = exports2;
-        this.ptr = this.llhttp.llhttp_alloc(constants5.TYPE.RESPONSE);
+        this.ptr = this.llhttp.llhttp_alloc(constants6.TYPE.RESPONSE);
         this.client = client2;
         this.socket = socket;
         this.timeout = null;
@@ -9588,11 +9588,11 @@ var require_client_h1 = __commonJS({
             currentParser = null;
             currentBufferRef = null;
           }
-          if (ret !== constants5.ERROR.OK) {
+          if (ret !== constants6.ERROR.OK) {
             const data = chunk.subarray(llhttp.llhttp_get_error_pos(this.ptr) - currentBufferPtr);
-            if (ret === constants5.ERROR.PAUSED_UPGRADE) {
+            if (ret === constants6.ERROR.PAUSED_UPGRADE) {
               this.onUpgrade(data);
-            } else if (ret === constants5.ERROR.PAUSED) {
+            } else if (ret === constants6.ERROR.PAUSED) {
               this.paused = true;
               socket.unshift(data);
             } else {
@@ -9627,10 +9627,10 @@ var require_client_h1 = __commonJS({
         } finally {
           currentParser = null;
         }
-        if (ret === constants5.ERROR.OK) {
+        if (ret === constants6.ERROR.OK) {
           return null;
         }
-        if (ret === constants5.ERROR.PAUSED || ret === constants5.ERROR.PAUSED_UPGRADE) {
+        if (ret === constants6.ERROR.PAUSED || ret === constants6.ERROR.PAUSED_UPGRADE) {
           this.paused = true;
           return null;
         }
@@ -9647,7 +9647,7 @@ var require_client_h1 = __commonJS({
           const len = new Uint8Array(llhttp.memory.buffer, ptr).indexOf(0);
           message3 = "Response does not match the HTTP/1.1 protocol (" + Buffer.from(llhttp.memory.buffer, ptr, len).toString() + ")";
         }
-        return new HTTPParserError(message3, constants5.ERROR[ret], data);
+        return new HTTPParserError(message3, constants6.ERROR[ret], data);
       }
       destroy() {
         assert3(currentParser === null);
@@ -9869,7 +9869,7 @@ var require_client_h1 = __commonJS({
           socket[kBlocking] = false;
           client2[kResume]();
         }
-        return pause ? constants5.ERROR.PAUSED : 0;
+        return pause ? constants6.ERROR.PAUSED : 0;
       }
       /**
        * @param {Buffer} buf
@@ -9895,7 +9895,7 @@ var require_client_h1 = __commonJS({
         }
         this.bytesRead += buf.length;
         if (request2.onResponseData(buf) === false) {
-          return constants5.ERROR.PAUSED;
+          return constants6.ERROR.PAUSED;
         }
         return 0;
       }
@@ -9936,13 +9936,13 @@ var require_client_h1 = __commonJS({
         if (socket[kWriting]) {
           assert3(client2[kRunning] === 0);
           util3.destroy(socket, new InformationalError("reset"));
-          return constants5.ERROR.PAUSED;
+          return constants6.ERROR.PAUSED;
         } else if (!shouldKeepAlive) {
           util3.destroy(socket, new InformationalError("reset"));
-          return constants5.ERROR.PAUSED;
+          return constants6.ERROR.PAUSED;
         } else if (socket[kReset] && client2[kRunning] === 0) {
           util3.destroy(socket, new InformationalError("reset"));
-          return constants5.ERROR.PAUSED;
+          return constants6.ERROR.PAUSED;
         } else if (client2[kPipelining] == null || client2[kPipelining] === 1) {
           setImmediate(client2[kResume]);
         } else {
@@ -17508,7 +17508,7 @@ var require_mock_interceptor = __commonJS({
 var require_mock_client = __commonJS({
   "node_modules/undici/lib/mock/mock-client.js"(exports, module2) {
     "use strict";
-    var { promisify: promisify24 } = __require("node:util");
+    var { promisify: promisify25 } = __require("node:util");
     var Client3 = require_client();
     var { buildMockDispatch } = require_mock_utils();
     var {
@@ -17556,7 +17556,7 @@ var require_mock_client = __commonJS({
         this[kDispatches] = [];
       }
       async [kClose]() {
-        await promisify24(this[kOriginalClose])();
+        await promisify25(this[kOriginalClose])();
         this[kConnected] = 0;
         this[kMockAgent][Symbols.kClients].delete(this[kOrigin]);
       }
@@ -17769,7 +17769,7 @@ var require_mock_call_history = __commonJS({
 var require_mock_pool = __commonJS({
   "node_modules/undici/lib/mock/mock-pool.js"(exports, module2) {
     "use strict";
-    var { promisify: promisify24 } = __require("node:util");
+    var { promisify: promisify25 } = __require("node:util");
     var Pool = require_pool();
     var { buildMockDispatch } = require_mock_utils();
     var {
@@ -17817,7 +17817,7 @@ var require_mock_pool = __commonJS({
         this[kDispatches] = [];
       }
       async [kClose]() {
-        await promisify24(this[kOriginalClose])();
+        await promisify25(this[kOriginalClose])();
         this[kConnected] = 0;
         this[kMockAgent][Symbols.kClients].delete(this[kOrigin]);
       }
@@ -18159,8 +18159,8 @@ var require_snapshot_utils = __commonJS({
 var require_snapshot_recorder = __commonJS({
   "node_modules/undici/lib/mock/snapshot-recorder.js"(exports, module2) {
     "use strict";
-    var { writeFile: writeFile15, readFile: readFile21, mkdir: mkdir11 } = __require("node:fs/promises");
-    var { dirname: dirname15, resolve: resolve8 } = __require("node:path");
+    var { writeFile: writeFile16, readFile: readFile22, mkdir: mkdir12 } = __require("node:fs/promises");
+    var { dirname: dirname16, resolve: resolve8 } = __require("node:path");
     var { setTimeout: setTimeout2, clearTimeout: clearTimeout2 } = __require("node:timers");
     var { InvalidArgumentError, UndiciError } = require_errors();
     var { setHeader } = require_util();
@@ -18377,7 +18377,7 @@ var require_snapshot_recorder = __commonJS({
           throw new InvalidArgumentError("Snapshot path is required");
         }
         try {
-          const data = await readFile21(resolve8(path), "utf8");
+          const data = await readFile22(resolve8(path), "utf8");
           const parsed = JSON.parse(data);
           if (Array.isArray(parsed)) {
             this.#snapshots.clear();
@@ -18407,12 +18407,12 @@ var require_snapshot_recorder = __commonJS({
           throw new InvalidArgumentError("Snapshot path is required");
         }
         const resolvedPath = resolve8(path);
-        await mkdir11(dirname15(resolvedPath), { recursive: true });
+        await mkdir12(dirname16(resolvedPath), { recursive: true });
         const data = Array.from(this.#snapshots.entries()).map(([hash4, snapshot2]) => ({
           hash: hash4,
           snapshot: snapshot2
         }));
-        await writeFile15(resolvedPath, JSON.stringify(data, null, 2), { flush: true });
+        await writeFile16(resolvedPath, JSON.stringify(data, null, 2), { flush: true });
       }
       /**
        * Clears all recorded snapshots
@@ -22311,7 +22311,7 @@ var require_cache2 = __commonJS({
 var require_decompress = __commonJS({
   "node_modules/undici/lib/interceptor/decompress.js"(exports, module2) {
     "use strict";
-    var { createInflate, createGunzip, createBrotliDecompress, createZstdDecompress, constants: constants5 } = __require("node:zlib");
+    var { createInflate, createGunzip, createBrotliDecompress, createZstdDecompress, constants: constants6 } = __require("node:zlib");
     var { pipeline, Transform: TransformStream2 } = __require("node:stream");
     var { InvalidArgumentError, ResponseExceededMaxSizeError } = require_errors();
     var DecoratorHandler = require_decorator_handler();
@@ -22377,7 +22377,7 @@ var require_decompress = __commonJS({
       br: createBrotliDecompress,
       deflate: createInflate,
       // https://www.rfc-editor.org/rfc/rfc9659.html#section-3
-      zstd: createZstdDecompress.bind(null, { params: { [constants5.ZSTD_d_windowLogMax]: 23 } })
+      zstd: createZstdDecompress.bind(null, { params: { [constants6.ZSTD_d_windowLogMax]: 23 } })
     };
     var defaultSkipStatusCodes = (
       /** @type {const} */
@@ -64826,9 +64826,9 @@ function dump(code, filename) {
   const path = require$$14;
   const fs = require$$04;
   const base2 = process.env.TRACING_DUMP_DIR ?? os4.tmpdir();
-  const dirname15 = path.dirname(filename);
+  const dirname16 = path.dirname(filename);
   const basename10 = path.basename(filename);
-  const targetDir = path.join(base2, dirname15.slice(path.parse(dirname15).root.length));
+  const targetDir = path.join(base2, dirname16.slice(path.parse(dirname16).root.length));
   const targetFile = path.join(targetDir, basename10);
   debug2("Dumping patched code to: %s", targetFile);
   fs.mkdirSync(targetDir, { recursive: true });
@@ -65804,7 +65804,7 @@ var PLUGIN_VERSION;
 var init_version3 = __esm({
   "packages/shared/src/version.ts"() {
     "use strict";
-    PLUGIN_VERSION = "0.1.178";
+    PLUGIN_VERSION = "0.1.180";
   }
 });
 
@@ -66209,16 +66209,16 @@ function readUserId(path) {
   if (isAnonymousUserId(id3)) return id3;
   throw new Error("The stored Sentry anonymous user ID is invalid.");
 }
-function loadTelemetryIdentity(directory = TELEMETRY_IDENTITY_DIRECTORY) {
-  mkdirSync(directory, { recursive: true, mode: 448 });
-  const path = join8(directory, "anonymous-user-id");
+function loadTelemetryIdentity(directory2 = TELEMETRY_IDENTITY_DIRECTORY) {
+  mkdirSync(directory2, { recursive: true, mode: 448 });
+  const path = join8(directory2, "anonymous-user-id");
   const sessionId5 = generatedId("run");
   try {
     return { userId: readUserId(path), sessionId: sessionId5 };
   } catch (error113) {
     if (error113 instanceof Error && "code" in error113 && error113.code === "ENOENT") {
       const userId = generatedId("anon");
-      const temporary = join8(directory, `${sessionId5}.tmp`);
+      const temporary = join8(directory2, `${sessionId5}.tmp`);
       writeFileSync(temporary, `${userId}
 `, { flag: "wx", mode: 384 });
       try {
@@ -66285,7 +66285,7 @@ var init_install_integrity = __esm({
     "use strict";
     serverFile = fileURLToPath4(import.meta.url);
     loaded = serverFileStats();
-    labels = { "serve-emu": "Android streaming backend", baguette: "simulator backend" };
+    labels = { "serve-emu": "Android streaming backend", baguette: "simulator backend", "resource-saving": "resource optimization tools" };
     MissingRuntimeError = class extends Error {
       runtime;
       integrity;
@@ -87042,11 +87042,11 @@ var require_codegen = __commonJS({
         const rhs = this.rhs === void 0 ? "" : ` = ${this.rhs}`;
         return `${varKind} ${this.name}${rhs};` + _n;
       }
-      optimizeNames(names, constants5) {
+      optimizeNames(names, constants6) {
         if (!names[this.name.str])
           return;
         if (this.rhs)
-          this.rhs = optimizeExpr(this.rhs, names, constants5);
+          this.rhs = optimizeExpr(this.rhs, names, constants6);
         return this;
       }
       get names() {
@@ -87063,10 +87063,10 @@ var require_codegen = __commonJS({
       render({ _n }) {
         return `${this.lhs} = ${this.rhs};` + _n;
       }
-      optimizeNames(names, constants5) {
+      optimizeNames(names, constants6) {
         if (this.lhs instanceof code_1.Name && !names[this.lhs.str] && !this.sideEffects)
           return;
-        this.rhs = optimizeExpr(this.rhs, names, constants5);
+        this.rhs = optimizeExpr(this.rhs, names, constants6);
         return this;
       }
       get names() {
@@ -87127,8 +87127,8 @@ var require_codegen = __commonJS({
       optimizeNodes() {
         return `${this.code}` ? this : void 0;
       }
-      optimizeNames(names, constants5) {
-        this.code = optimizeExpr(this.code, names, constants5);
+      optimizeNames(names, constants6) {
+        this.code = optimizeExpr(this.code, names, constants6);
         return this;
       }
       get names() {
@@ -87157,12 +87157,12 @@ var require_codegen = __commonJS({
         }
         return nodes.length > 0 ? this : void 0;
       }
-      optimizeNames(names, constants5) {
+      optimizeNames(names, constants6) {
         const { nodes } = this;
         let i2 = nodes.length;
         while (i2--) {
           const n2 = nodes[i2];
-          if (n2.optimizeNames(names, constants5))
+          if (n2.optimizeNames(names, constants6))
             continue;
           subtractNames(names, n2.names);
           nodes.splice(i2, 1);
@@ -87215,12 +87215,12 @@ var require_codegen = __commonJS({
           return void 0;
         return this;
       }
-      optimizeNames(names, constants5) {
+      optimizeNames(names, constants6) {
         var _a8;
-        this.else = (_a8 = this.else) === null || _a8 === void 0 ? void 0 : _a8.optimizeNames(names, constants5);
-        if (!(super.optimizeNames(names, constants5) || this.else))
+        this.else = (_a8 = this.else) === null || _a8 === void 0 ? void 0 : _a8.optimizeNames(names, constants6);
+        if (!(super.optimizeNames(names, constants6) || this.else))
           return;
-        this.condition = optimizeExpr(this.condition, names, constants5);
+        this.condition = optimizeExpr(this.condition, names, constants6);
         return this;
       }
       get names() {
@@ -87243,10 +87243,10 @@ var require_codegen = __commonJS({
       render(opts) {
         return `for(${this.iteration})` + super.render(opts);
       }
-      optimizeNames(names, constants5) {
-        if (!super.optimizeNames(names, constants5))
+      optimizeNames(names, constants6) {
+        if (!super.optimizeNames(names, constants6))
           return;
-        this.iteration = optimizeExpr(this.iteration, names, constants5);
+        this.iteration = optimizeExpr(this.iteration, names, constants6);
         return this;
       }
       get names() {
@@ -87282,10 +87282,10 @@ var require_codegen = __commonJS({
       render(opts) {
         return `for(${this.varKind} ${this.name} ${this.loop} ${this.iterable})` + super.render(opts);
       }
-      optimizeNames(names, constants5) {
-        if (!super.optimizeNames(names, constants5))
+      optimizeNames(names, constants6) {
+        if (!super.optimizeNames(names, constants6))
           return;
-        this.iterable = optimizeExpr(this.iterable, names, constants5);
+        this.iterable = optimizeExpr(this.iterable, names, constants6);
         return this;
       }
       get names() {
@@ -87327,11 +87327,11 @@ var require_codegen = __commonJS({
         (_b2 = this.finally) === null || _b2 === void 0 ? void 0 : _b2.optimizeNodes();
         return this;
       }
-      optimizeNames(names, constants5) {
+      optimizeNames(names, constants6) {
         var _a8, _b2;
-        super.optimizeNames(names, constants5);
-        (_a8 = this.catch) === null || _a8 === void 0 ? void 0 : _a8.optimizeNames(names, constants5);
-        (_b2 = this.finally) === null || _b2 === void 0 ? void 0 : _b2.optimizeNames(names, constants5);
+        super.optimizeNames(names, constants6);
+        (_a8 = this.catch) === null || _a8 === void 0 ? void 0 : _a8.optimizeNames(names, constants6);
+        (_b2 = this.finally) === null || _b2 === void 0 ? void 0 : _b2.optimizeNames(names, constants6);
         return this;
       }
       get names() {
@@ -87632,7 +87632,7 @@ var require_codegen = __commonJS({
     function addExprNames(names, from) {
       return from instanceof code_1._CodeOrName ? addNames(names, from.names) : names;
     }
-    function optimizeExpr(expr2, names, constants5) {
+    function optimizeExpr(expr2, names, constants6) {
       if (expr2 instanceof code_1.Name)
         return replaceName(expr2);
       if (!canOptimize(expr2))
@@ -87647,14 +87647,14 @@ var require_codegen = __commonJS({
         return items;
       }, []));
       function replaceName(n2) {
-        const c2 = constants5[n2.str];
+        const c2 = constants6[n2.str];
         if (c2 === void 0 || names[n2.str] !== 1)
           return n2;
         delete names[n2.str];
         return c2;
       }
       function canOptimize(e2) {
-        return e2 instanceof code_1._Code && e2._items.some((c2) => c2 instanceof code_1.Name && names[c2.str] === 1 && constants5[c2.str] !== void 0);
+        return e2 instanceof code_1._Code && e2._items.some((c2) => c2 instanceof code_1.Name && names[c2.str] === 1 && constants6[c2.str] !== void 0);
       }
     }
     function subtractNames(names, from) {
@@ -94478,6 +94478,12 @@ var init_android_startup_diagnostics = __esm({
 
 // packages/core/src/telemetry.ts
 import { AsyncLocalStorage as AsyncLocalStorage3 } from "node:async_hooks";
+function recordResourceSaving(platform7, enabled, outcome, duration6) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes2 = { component: "server", surface: "simulator", device_platform: platform7, device_kind: platform7 === "ios" ? "simulator" : "emulator", enabled, outcome };
+  public_api_exports.count("resource_saving.apply", 1, { attributes: attributes2 });
+  public_api_exports.distribution("resource_saving.duration", duration6, { unit: "millisecond", attributes: attributes2 });
+}
 function recordAppStorageOperation(operation, platform7, outcome, duration6) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes2 = { component: "server", surface: "storage", operation, device_platform: platform7, outcome };
@@ -102944,7 +102950,7 @@ var require_websocket2 = __commonJS({
     var http5 = __require("http");
     var net3 = __require("net");
     var tls2 = __require("tls");
-    var { randomBytes: randomBytes10, createHash: createHash16 } = __require("crypto");
+    var { randomBytes: randomBytes10, createHash: createHash17 } = __require("crypto");
     var { Duplex, Readable: Readable2 } = __require("stream");
     var { URL: URL3 } = __require("url");
     var PerMessageDeflate2 = require_permessage_deflate2();
@@ -103625,7 +103631,7 @@ var require_websocket2 = __commonJS({
           abortHandshake(websocket, socket, "Invalid Upgrade header");
           return;
         }
-        const digest = createHash16("sha1").update(key2 + GUID).digest("base64");
+        const digest = createHash17("sha1").update(key2 + GUID).digest("base64");
         if (res.headers["sec-websocket-accept"] !== digest) {
           abortHandshake(websocket, socket, "Invalid Sec-WebSocket-Accept header");
           return;
@@ -103994,7 +104000,7 @@ var require_websocket_server = __commonJS({
     var EventEmitter4 = __require("events");
     var http5 = __require("http");
     var { Duplex } = __require("stream");
-    var { createHash: createHash16 } = __require("crypto");
+    var { createHash: createHash17 } = __require("crypto");
     var extension2 = require_extension();
     var PerMessageDeflate2 = require_permessage_deflate2();
     var subprotocol2 = require_subprotocol();
@@ -104301,7 +104307,7 @@ var require_websocket_server = __commonJS({
           );
         }
         if (this._state > RUNNING) return abortHandshake(socket, 503);
-        const digest = createHash16("sha1").update(key2 + GUID).digest("base64");
+        const digest = createHash17("sha1").update(key2 + GUID).digest("base64");
         const headers = [
           "HTTP/1.1 101 Switching Protocols",
           "Upgrade: websocket",
@@ -143194,7 +143200,10 @@ function parseAvdName(stdout) {
 }
 async function bootAndroidEmulator(options, launch = spawn) {
   options.signal.throwIfAborted();
-  const child = launch(options.executable, ["-avd", options.name, "-no-window", "-no-boot-anim", "-gpu", "host"], {
+  const args = ["-avd", options.name, "-no-window", "-no-boot-anim", "-gpu", "host"];
+  if (options.resourceSaving !== void 0) args.push("-no-snapshot-load", "-no-snapshot-save");
+  if (options.resourceSaving) args.push("-lowram", "-memory", "1536");
+  const child = launch(options.executable, args, {
     detached: true,
     stdio: "ignore",
     shell: false
@@ -143879,6 +143888,7 @@ function androidDisplaySize(output2, video) {
   return { width, height };
 }
 var ServeEmu = class {
+  resourceSaving;
   avdNames = /* @__PURE__ */ new Map();
   reconnects = /* @__PURE__ */ new Map();
   backends = /* @__PURE__ */ new Map();
@@ -143979,12 +143989,19 @@ var ServeEmu = class {
     if (device2.state === "Booted") return this.list();
     if (device2.kind === "emulator" && device2.state === "unauthorized") return this.awaitRunningEmulator(id3);
     if (!id3.startsWith("avd:")) throw new SimulatorUnavailableError("Reconnect and authorize this Android device through adb.");
-    return bootAndroidEmulator({
+    const target3 = { platform: "android", id: id3, key: device2.name, state: device2.state };
+    const resourceSaving = await this.resourceSaving?.enabled(target3);
+    const status = await bootAndroidEmulator({
       name: device2.name,
       executable: await this.emulatorPath(),
       signal: this.lifetime.signal,
-      ready: () => this.emulatorReady((item) => item.name === device2.name, "boot")
+      ready: () => this.emulatorReady((item) => item.name === device2.name, "boot"),
+      resourceSaving
     });
+    const running = status.devices.find((item) => item.kind === "emulator" && item.name === device2.name && item.state === "Booted");
+    if (running === void 0) throw new Error("The started Android emulator is no longer available.");
+    await this.resourceSaving?.apply({ ...target3, id: running.udid, state: running.state }, this.lifetime.signal, resourceSaving);
+    return status;
   }
   // Ready means adb authorized the emulator and Android finished booting.
   async emulatorReady(matches, trigger) {
@@ -144366,11 +144383,11 @@ async function runAdb(commands2, serial, action2, args, timeout = 15e3) {
   }
 }
 async function withTemporaryDirectory(work) {
-  const directory = await mkdtemp(join14(tmpdir(), "mobile-dev-app-"));
+  const directory2 = await mkdtemp(join14(tmpdir(), "mobile-dev-app-"));
   try {
-    return await work(directory);
+    return await work(directory2);
   } finally {
-    await rm(directory, { recursive: true, force: true });
+    await rm(directory2, { recursive: true, force: true });
   }
 }
 
@@ -144393,8 +144410,8 @@ function requireSupportedPermission(platform7, permission) {
 async function requireArtifact(path, extension2, description) {
   const trimmed = path.replace(/(.)\/+$/, "$1");
   const info3 = isAbsolute3(trimmed) && trimmed.endsWith(extension2) ? await stat2(trimmed).catch(() => void 0) : void 0;
-  const directory = extension2 === ".app";
-  if (info3 === void 0 || info3.isDirectory() !== directory) throw new ExpectedOperationError("invalid_input", `Pass the absolute path of ${description}.`);
+  const directory2 = extension2 === ".app";
+  if (info3 === void 0 || info3.isDirectory() !== directory2) throw new ExpectedOperationError("invalid_input", `Pass the absolute path of ${description}.`);
   return trimmed;
 }
 var sdkScheme = /^fb\d+$|^com\.googleusercontent\.apps\.|auth|^stripe|^link-popup$|^msal|^db-|^twitterkit-|^pdk\d|^vk\d|^tiktok/i;
@@ -144426,8 +144443,8 @@ async function collectDetails(bundleIds, read9) {
   }));
   return results;
 }
-async function pngDataUrl(run5, source, directory) {
-  const output2 = join15(directory, "icon-64.png");
+async function pngDataUrl(run5, source, directory2) {
+  const output2 = join15(directory2, "icon-64.png");
   await run5("sips", ["-s", "format", "png", "-Z", "64", source, "--out", output2], { timeout: 1e4 });
   return `data:image/png;base64,${(await readFile3(output2)).toString("base64")}`;
 }
@@ -144577,8 +144594,8 @@ function parsePhysicalApps(apps, processes2) {
   for (const process5 of running.result.runningProcesses) {
     if (process5.executable === void 0) continue;
     const path = devicePath(process5.executable);
-    const directory = dirname5(path);
-    const bundleId3 = bundles.get(directory);
+    const directory2 = dirname5(path);
+    const bundleId3 = bundles.get(directory2);
     if (bundleId3) result4.push({ bundleId: bundleId3, pid: process5.processIdentifier });
   }
   return result4;
@@ -144750,7 +144767,7 @@ var SimulatorDriver = class {
       const files = (await readdir3(bundlePath)).filter((file4) => file4.endsWith(".png") && names.some((name2) => file4.startsWith(name2)));
       const sized = await Promise.all(files.map(async (file4) => ({ file: file4, size: (await stat3(join16(bundlePath, file4))).size })));
       const largest = sized.sort((a2, b2) => b2.size - a2.size)[0];
-      return largest ? { icon: await withTemporaryDirectory((directory) => pngDataUrl(this.commands.run, join16(bundlePath, largest.file), directory)) } : {};
+      return largest ? { icon: await withTemporaryDirectory((directory2) => pngDataUrl(this.commands.run, join16(bundlePath, largest.file), directory2)) } : {};
     });
   }
   // simctl cannot read privacy decisions, so states are unknown until the panel sets them.
@@ -144813,7 +144830,7 @@ import { basename as basename2, delimiter, dirname as dirname6, isAbsolute as is
 import { promisify as promisify8 } from "node:util";
 var BAGUETTE_RUNTIME_TIMEOUT_MS = 5e3;
 var execute6 = promisify8(execFile9);
-async function baguetteEnvironment(executable3, signal, run5 = execute6) {
+async function baguetteEnvironment(executable4, signal, run5 = execute6) {
   const deadline = AbortSignal.timeout(BAGUETTE_RUNTIME_TIMEOUT_MS);
   const discoverySignal = AbortSignal.any([signal, deadline]);
   discoverySignal.throwIfAborted();
@@ -144836,7 +144853,7 @@ async function baguetteEnvironment(executable3, signal, run5 = execute6) {
   const environment = { ...process.env, DEVELOPER_DIR: developer };
   delete environment.DYLD_LIBRARY_PATH;
   try {
-    const commands2 = await run5("/usr/bin/otool", ["-l", executable3], {
+    const commands2 = await run5("/usr/bin/otool", ["-l", executable4], {
       env: environment,
       signal: discoverySignal,
       encoding: "utf8",
@@ -144855,7 +144872,7 @@ async function baguetteEnvironment(executable3, signal, run5 = execute6) {
       "swift-stdlib-tool",
       "--print",
       "--scan-executable",
-      executable3,
+      executable4,
       "--platform",
       "macosx"
     ], { env: environment, signal: discoverySignal, encoding: "utf8", maxBuffer: 64 * 1024 });
@@ -144869,10 +144886,10 @@ async function baguetteEnvironment(executable3, signal, run5 = execute6) {
       if (isAbsolute4(library) === false || location2.startsWith("Toolchains/") === false) {
         throw new Error("Swift library is outside the selected Xcode toolchain.");
       }
-      const directory = dirname6(library);
-      if (directory.includes(delimiter)) throw new Error("Swift library directory cannot be used as a loader search path.");
+      const directory2 = dirname6(library);
+      if (directory2.includes(delimiter)) throw new Error("Swift library directory cannot be used as a loader search path.");
       await access5(library, constants3.R_OK);
-      directories.add(directory);
+      directories.add(directory2);
       const name2 = basename2(library);
       discovered.add(name2);
     }
@@ -145164,18 +145181,18 @@ var AndroidDriver = class {
     if (!apk || !/^\/[\w./~=+-]+\.apk$/.test(apk)) return {};
     const adb = await this.commands.adb();
     const entry2 = (name2) => this.commands.readBinary(adb, ["-s", this.deviceId, "exec-out", "unzip", "-p", apk, name2], { timeout: 2e4 });
-    return this.cache.get(`android:${this.deviceId}:${apk}`, () => withTemporaryDirectory(async (directory) => {
+    return this.cache.get(`android:${this.deviceId}:${apk}`, () => withTemporaryDirectory(async (directory2) => {
       const parts = ["AndroidManifest.xml", "resources.arsc"];
-      await Promise.all(parts.map(async (part) => writeFile(join18(directory, part), await entry2(part))));
-      const partial3 = join18(directory, "partial.apk");
-      await this.commands.run("zip", ["-q", "-0", "-j", partial3, ...parts.map((part) => join18(directory, part))], { timeout: 1e4 });
+      await Promise.all(parts.map(async (part) => writeFile(join18(directory2, part), await entry2(part))));
+      const partial3 = join18(directory2, "partial.apk");
+      await this.commands.run("zip", ["-q", "-0", "-j", partial3, ...parts.map((part) => join18(directory2, part))], { timeout: 1e4 });
       const badging = parseAndroidBadging(await this.commands.run(aapt22, ["dump", "badging", partial3], { timeout: 15e3 }));
       const name2 = badging.label ?? void 0;
       const file4 = badging.icon && pickAndroidIconFile(await this.commands.run(aapt22, ["dump", "resources", partial3], { timeout: 15e3, maxBuffer: 64 * 1024 * 1024 }), badging.icon);
       if (!file4) return { name: name2 };
-      const source = join18(directory, `icon${file4.slice(file4.lastIndexOf("."))}`);
+      const source = join18(directory2, `icon${file4.slice(file4.lastIndexOf("."))}`);
       await writeFile(source, await entry2(file4));
-      return { name: name2, icon: await pngDataUrl(this.commands.run, source, directory) };
+      return { name: name2, icon: await pngDataUrl(this.commands.run, source, directory2) };
     }));
   }
   async permissions(bundleId3) {
@@ -145503,11 +145520,11 @@ var SimulatorContainer = class _SimulatorContainer {
   }
   async list() {
     const files = [];
-    const walk3 = async (root, prefix3, directory) => {
-      const entries = await readdir4(directory, { withFileTypes: true }).catch(() => []);
+    const walk3 = async (root, prefix3, directory2) => {
+      const entries = await readdir4(directory2, { withFileTypes: true }).catch(() => []);
       for (const entry2 of entries) {
         if (files.length >= maxContainerFiles) return;
-        const path = join19(directory, entry2.name);
+        const path = join19(directory2, entry2.name);
         if (entry2.isDirectory()) await walk3(root, prefix3, path);
         else if (entry2.isFile()) {
           const info3 = await stat4(path).catch(() => void 0);
@@ -145543,11 +145560,11 @@ var SimulatorContainer = class _SimulatorContainer {
   }
   async reset() {
     for (const file4 of await this.list()) if (preferencesPlist.test(file4.path)) await this.forgetPreferences(file4.path);
-    for (const directory of ["Documents", "Library", "tmp"]) {
-      const entries = await readdir4(join19(this.root, directory)).catch(() => []);
-      await Promise.all(entries.map((entry2) => rm2(join19(this.root, directory, entry2), { recursive: true, force: true })));
+    for (const directory2 of ["Documents", "Library", "tmp"]) {
+      const entries = await readdir4(join19(this.root, directory2)).catch(() => []);
+      await Promise.all(entries.map((entry2) => rm2(join19(this.root, directory2, entry2), { recursive: true, force: true })));
     }
-    for (const directory of ["Documents", "Library/Caches", "Library/Preferences", "tmp"]) await mkdir(join19(this.root, directory), { recursive: true });
+    for (const directory2 of ["Documents", "Library/Caches", "Library/Preferences", "tmp"]) await mkdir(join19(this.root, directory2), { recursive: true });
     for (const root of this.groups.values()) {
       const entries = await readdir4(root).catch(() => []);
       await Promise.all(entries.filter((entry2) => entry2 !== containerMetadata).map((entry2) => rm2(join19(root, entry2), { recursive: true, force: true })));
@@ -145885,20 +145902,20 @@ function classifyFiles(paths, platform7) {
   const stores = [];
   for (const path of paths) {
     const name2 = basename3(path);
-    const directory = dirname7(path);
+    const directory2 = dirname7(path);
     if (name2.endsWith(".crc") && all.has(path.slice(0, -4))) {
       stores.push({ kind: "mmkv", name: name2.slice(0, -4), path: path.slice(0, -4), files: [path.slice(0, -4), path] });
       continue;
     }
-    if (platform7 === "ios" && /(?:^|\/)Library\/Preferences$/.test(directory) && name2.endsWith(".plist")) {
+    if (platform7 === "ios" && /(?:^|\/)Library\/Preferences$/.test(directory2) && name2.endsWith(".plist")) {
       stores.push({ kind: "user-defaults", name: name2.slice(0, -6), path, files: [path] });
       continue;
     }
-    if (name2 === "manifest.json" && /^RCTAsyncLocalStorage/.test(basename3(directory))) {
-      stores.push({ kind: "async-storage", name: directory.includes("ExponentExperienceData/") ? directory.split("/").at(-2) ?? "default" : "default", path, files: paths.filter((file4) => dirname7(file4) === directory) });
+    if (name2 === "manifest.json" && /^RCTAsyncLocalStorage/.test(basename3(directory2))) {
+      stores.push({ kind: "async-storage", name: directory2.includes("ExponentExperienceData/") ? directory2.split("/").at(-2) ?? "default" : "default", path, files: paths.filter((file4) => dirname7(file4) === directory2) });
       continue;
     }
-    if (directory.endsWith("shared_prefs") && name2.endsWith(".xml")) {
+    if (directory2.endsWith("shared_prefs") && name2.endsWith(".xml")) {
       stores.push({ kind: "shared-preferences", name: name2.slice(0, -4), path, files: [path, ...all.has(`${path}.bak`) ? [`${path}.bak`] : []] });
       continue;
     }
@@ -145906,7 +145923,7 @@ function classifyFiles(paths, platform7) {
       stores.push({ kind: "datastore", name: name2.slice(0, -".preferences_pb".length), path, files: [path] });
       continue;
     }
-    if (name2.endsWith(".pb") && basename3(directory) === "datastore") {
+    if (name2.endsWith(".pb") && basename3(directory2) === "datastore") {
       stores.push({ kind: "proto-datastore", name: name2.slice(0, -3), path, files: [path] });
       continue;
     }
@@ -145915,7 +145932,7 @@ function classifyFiles(paths, platform7) {
       stores.push({ kind: "realm", name: name2.slice(0, -6), path, files: [path, ...related] });
       continue;
     }
-    const sqlite2 = !sqliteSuffix.test(name2) && ((platform7 === "android" ? directory === "databases" && !name2.endsWith(".bak") || /\.(?:db|sqlite3?)$/i.test(name2) : /\.(?:db|sqlite3?|sql|store)$/i.test(name2)) || all.has(`${path}-wal`) || all.has(`${path}-shm`));
+    const sqlite2 = !sqliteSuffix.test(name2) && ((platform7 === "android" ? directory2 === "databases" && !name2.endsWith(".bak") || /\.(?:db|sqlite3?)$/i.test(name2) : /\.(?:db|sqlite3?|sql|store)$/i.test(name2)) || all.has(`${path}-wal`) || all.has(`${path}-shm`));
     if (sqlite2 && !systemPaths.test(path)) {
       stores.push({ kind: "sqlite", name: name2, path, files: [path, ...["-wal", "-shm", "-journal"].map((suffix) => path + suffix).filter((file4) => all.has(file4))] });
     }
@@ -146076,9 +146093,9 @@ async function describeTables(run5, file4) {
   return tables;
 }
 function withDatabase(container, candidate, work) {
-  return withTemporaryDirectory(async (directory) => {
-    await Promise.all(candidate.files.map(async (path) => writeFile2(join20(directory, basename3(path)), await container.read(path))));
-    return work(join20(directory, candidate.name));
+  return withTemporaryDirectory(async (directory2) => {
+    await Promise.all(candidate.files.map(async (path) => writeFile2(join20(directory2, basename3(path)), await container.read(path))));
+    return work(join20(directory2, candidate.name));
   });
 }
 async function readSqlite(container, candidate, run5) {
@@ -146103,9 +146120,9 @@ async function readSqlite(container, candidate, run5) {
 async function readAsyncManifest(container, candidate) {
   const manifest = JSON.parse((await container.read(candidate.path)).toString("utf8"));
   if (typeof manifest !== "object" || manifest === null) return { status: "unreadable", note: "The AsyncStorage manifest is not an object.", entries: [] };
-  const directory = candidate.path.slice(0, candidate.path.lastIndexOf("/"));
+  const directory2 = candidate.path.slice(0, candidate.path.lastIndexOf("/"));
   const entries = await Promise.all(Object.entries(manifest).map(async ([key2, stored]) => {
-    const value = typeof stored === "string" ? stored : await container.read(`${directory}/${createHash2("md5").update(key2).digest("hex")}`).then((buffer) => buffer.toString("utf8"), () => null);
+    const value = typeof stored === "string" ? stored : await container.read(`${directory2}/${createHash2("md5").update(key2).digest("hex")}`).then((buffer) => buffer.toString("utf8"), () => null);
     return value === null ? nullEntry(key2) : textEntry(key2, value);
   }));
   return { status: "ok", entries };
@@ -146285,8 +146302,8 @@ async function plistJson(bytes, run5) {
   const binary2 = bytes.subarray(0, 6).toString("latin1") === "bplist";
   if (binary2 && process.platform !== "darwin") return void 0;
   try {
-    const xml = binary2 ? await withTemporaryDirectory(async (directory) => {
-      const file4 = join21(directory, "preview.plist");
+    const xml = binary2 ? await withTemporaryDirectory(async (directory2) => {
+      const file4 = join21(directory2, "preview.plist");
       await writeFile3(file4, bytes);
       return run5("plutil", ["-convert", "xml1", "-o", "-", file4], { timeout: 1e4, maxBuffer: 64 * 1024 * 1024 });
     }) : bytes.toString("utf8");
@@ -147281,8 +147298,8 @@ var AppFlowProjectChoices = class _AppFlowProjectChoices {
   // model's process writes the engine registry into the same folder. Reads therefore have to see
   // this process's own writes, and every write starts from the newest list rather than a snapshot.
   updates = Promise.resolve();
-  constructor(directory, pick4 = chooseProjectFolder) {
-    this.directory = directory;
+  constructor(directory2, pick4 = chooseProjectFolder) {
+    this.directory = directory2;
     this.pick = pick4;
   }
   get path() {
@@ -148603,8 +148620,8 @@ async function openSimulatorDebugserver(signal) {
   if (process.platform !== "darwin") throw new Error("iOS simulator CPU monitoring requires macOS.");
   const discoverySignal = AbortSignal.any([signal, AbortSignal.timeout(5e3)]);
   const selection = await execute9("xcode-select", ["--print-path"], { signal: discoverySignal });
-  const directory = selection.stdout.trim();
-  const binary2 = resolve7(directory, "../SharedFrameworks/LLDB.framework/Resources/debugserver");
+  const directory2 = selection.stdout.trim();
+  const binary2 = resolve7(directory2, "../SharedFrameworks/LLDB.framework/Resources/debugserver");
   try {
     await access6(binary2);
   } catch {
@@ -149157,8 +149174,8 @@ async function deployAndroidCollector(adb, deviceId4, signal, collector, run5 = 
   const temporary = `${remote}-${tokenText}`;
   const hostTemporary = tmpdir2();
   const prefix3 = join37(hostTemporary, "mobile-dev-cpu-");
-  const directory = await mkdtemp2(prefix3);
-  const localPath = join37(directory, "mobile-dev-cpu");
+  const directory2 = await mkdtemp2(prefix3);
+  const localPath = join37(directory2, "mobile-dev-cpu");
   try {
     await writeFile9(localPath, binary2.bytes, { mode: 384 });
     signal.throwIfAborted();
@@ -149169,7 +149186,7 @@ async function deployAndroidCollector(adb, deviceId4, signal, collector, run5 = 
     });
     throw error113;
   } finally {
-    await rm4(directory, { recursive: true, force: true });
+    await rm4(directory2, { recursive: true, force: true });
   }
   return remote;
 }
@@ -149927,8 +149944,8 @@ init_telemetry2();
 var RECORDINGS_DIRECTORY = join38(homedir6(), "Library/Application Support/mobile-dev/recordings");
 var RecordingStore = class {
   directory;
-  constructor(directory = RECORDINGS_DIRECTORY) {
-    this.directory = directory;
+  constructor(directory2 = RECORDINGS_DIRECTORY) {
+    this.directory = directory2;
   }
   async save(recording2) {
     const validated = recordingSchema.parse(recording2);
@@ -150746,9 +150763,9 @@ var TraceSiftClient = class {
   child;
   home;
   command;
-  constructor(command3 = process.env.TRACE_SIFT_COMMAND ?? "tracesift", home2) {
+  constructor(command3 = process.env.TRACE_SIFT_COMMAND ?? "tracesift", home3) {
     this.command = command3;
-    this.home = home2 ?? process.env.TRACE_SIFT_HOME ?? join39(homedir7(), ".tracesift");
+    this.home = home3 ?? process.env.TRACE_SIFT_HOME ?? join39(homedir7(), ".tracesift");
   }
   async existing(signal) {
     const descriptor = await parseDescriptor(join39(this.home, "service.json"));
@@ -150816,8 +150833,8 @@ var TraceSiftClient = class {
     return join39(this.home, "integrations", "mobile-dev", `input-${key2}.json`);
   }
   async writePrivateJson(file4, value) {
-    const directory = join39(this.home, "integrations", "mobile-dev");
-    const temporary = join39(directory, `.analysis-${randomUUID9()}`);
+    const directory2 = join39(this.home, "integrations", "mobile-dev");
+    const temporary = join39(directory2, `.analysis-${randomUUID9()}`);
     try {
       await writeFile11(temporary, `${JSON.stringify(value)}
 `, { flag: "wx", mode: 384 });
@@ -150827,20 +150844,20 @@ var TraceSiftClient = class {
     }
   }
   async persistAnalysis(analysis) {
-    const directory = join39(this.home, "integrations", "mobile-dev");
-    await mkdir9(directory, { recursive: true, mode: 448 });
+    const directory2 = join39(this.home, "integrations", "mobile-dev");
+    await mkdir9(directory2, { recursive: true, mode: 448 });
     await this.writePrivateJson(this.analysisPath(analysis.analysisId), analysis);
   }
   async remember(viewId, analysisId) {
     const analysis = await stat10(this.analysisPath(analysisId)).catch(() => void 0);
     if (!analysis?.isFile()) throw new TraceSiftError("This TraceSift analysis is no longer available. Run it again.", "request");
-    const directory = join39(this.home, "integrations", "mobile-dev");
-    await mkdir9(directory, { recursive: true, mode: 448 });
+    const directory2 = join39(this.home, "integrations", "mobile-dev");
+    await mkdir9(directory2, { recursive: true, mode: 448 });
     await this.writePrivateJson(this.viewPath(viewId), { apiVersion: 1, analysisId });
   }
   async rememberInput(path, profileType, analysisId) {
-    const directory = join39(this.home, "integrations", "mobile-dev");
-    await mkdir9(directory, { recursive: true, mode: 448 });
+    const directory2 = join39(this.home, "integrations", "mobile-dev");
+    await mkdir9(directory2, { recursive: true, mode: 448 });
     await this.writePrivateJson(this.inputPath(path, profileType), { apiVersion: 1, analysisId });
   }
   // The investigation's source folder: the plugin's choice, not TraceSift's, stored beside the analyses to inherit their 0700 directory.
@@ -150857,12 +150874,12 @@ var TraceSiftClient = class {
     }
     const path = typeof stored === "object" && stored !== null && "path" in stored && typeof stored.path === "string" ? stored.path : void 0;
     if (!path) throw new TraceSiftError("The saved project is invalid. Choose it again.", "request");
-    const directory = await stat10(path).catch(() => void 0);
-    return directory?.isDirectory() ? path : void 0;
+    const directory2 = await stat10(path).catch(() => void 0);
+    return directory2?.isDirectory() ? path : void 0;
   }
   async writeProject(path) {
-    const directory = await stat10(path).catch(() => void 0);
-    if (!directory?.isDirectory()) throw new TraceSiftError("That project folder does not exist.", "request");
+    const directory2 = await stat10(path).catch(() => void 0);
+    if (!directory2?.isDirectory()) throw new TraceSiftError("That project folder does not exist.", "request");
     const resolved = await realpath2(path);
     await mkdir9(join39(this.home, "integrations", "mobile-dev"), { recursive: true, mode: 448 });
     await this.writePrivateJson(this.projectPath(), { apiVersion: 1, path: resolved });
@@ -151421,17 +151438,17 @@ function registerTraceSiftTools(server, client2) {
 init_esm5();
 import { readdir as readdir12, stat as stat11 } from "node:fs/promises";
 import { join as join40 } from "node:path";
-async function directoryBytes(directory) {
+async function directoryBytes(directory2) {
   let entries;
   try {
-    entries = await readdir12(directory, { withFileTypes: true });
+    entries = await readdir12(directory2, { withFileTypes: true });
   } catch (error113) {
     if (error113 instanceof Error && "code" in error113 && error113.code === "ENOENT") return 0;
     throw error113;
   }
   let bytes = 0;
   for (const entry2 of entries) {
-    const path = join40(directory, entry2.name);
+    const path = join40(directory2, entry2.name);
     if (entry2.isDirectory()) bytes += await directoryBytes(path);
     else if (entry2.isFile()) {
       try {
@@ -151452,8 +151469,8 @@ function startStorageMetrics(directories) {
     if (collecting || stopped) return;
     collecting = true;
     try {
-      for (const [kind4, directory] of Object.entries(directories)) {
-        const bytes = await directoryBytes(directory);
+      for (const [kind4, directory2] of Object.entries(directories)) {
+        const bytes = await directoryBytes(directory2);
         if (stopped) return;
         public_api_exports.gauge("storage.bytes", bytes, { unit: "byte", attributes: { kind: kind4 } });
       }
@@ -151632,8 +151649,8 @@ async function deployFpsHelper(adb, deviceId4, signal, root) {
   const remote = `/data/local/tmp/mobile-dev-fps-${sha256}`;
   const temporaryRoot = tmpdir3();
   const temporaryPrefix = join41(temporaryRoot, "mobile-dev-fps-");
-  const directory = await mkdtemp3(temporaryPrefix);
-  const local = join41(directory, "mobile-dev-fps");
+  const directory2 = await mkdtemp3(temporaryPrefix);
+  const local = join41(directory2, "mobile-dev-fps");
   const token = randomBytes5(8);
   const id3 = token.toString("hex");
   const temporary = `${remote}-${id3}`;
@@ -151646,7 +151663,7 @@ async function deployFpsHelper(adb, deviceId4, signal, root) {
     });
     throw error113;
   } finally {
-    await rm7(directory, { recursive: true, force: true });
+    await rm7(directory2, { recursive: true, force: true });
   }
   return remote;
 }
@@ -152695,9 +152712,9 @@ async function launchBundledBaguette(host2, port2, signal) {
   if (process.platform !== "darwin" || process.arch !== "arm64") {
     throw new ExpectedOperationError("unsupported_platform", "Starting Baguette requires an Apple Silicon Mac with Xcode 26 or later.");
   }
-  const executable3 = await bundledExecutable();
-  const environment = await baguetteEnvironment(executable3, signal);
-  return spawn12(executable3, ["serve", "--host", host2, "--port", port2, "--no-plugins"], {
+  const executable4 = await bundledExecutable();
+  const environment = await baguetteEnvironment(executable4, signal);
+  return spawn12(executable4, ["serve", "--host", host2, "--port", port2, "--no-plugins"], {
     stdio: ["ignore", "pipe", "pipe"],
     shell: false,
     env: environment
@@ -152723,6 +152740,7 @@ var definitionSchema = external_exports.object({
   })
 });
 var Baguette = class {
+  resourceSaving;
   baseUrl;
   child;
   starting;
@@ -152957,7 +152975,7 @@ var Baguette = class {
       throw error113;
     }
   }
-  async changeDeviceState(udid, action2, timeout = 12e4) {
+  async changeDeviceState(udid, action2, timeout = 24e4) {
     udidSchema.parse(udid);
     const previous = this.deviceChanges.get(udid);
     const change = (async () => {
@@ -152977,7 +152995,15 @@ var Baguette = class {
           if (!status.connected) throw listError(status);
           const current = status.devices.find((item) => item.udid === udid);
           if (!current) throw new SimulatorUnavailableError("This simulator is no longer available. Refresh the device list.");
-          if (current.state === expected) return status;
+          if (current.state === expected) {
+            const target3 = { platform: "ios", id: udid, key: udid, state: current.state };
+            if (action2 === "boot") {
+              await this.resourceSaving?.apply(target3, signal);
+              return this.status(signal);
+            }
+            this.resourceSaving?.forget(target3);
+            return status;
+          }
           await delay7(250, void 0, { signal });
         }
       } catch (error113) {
@@ -152995,10 +153021,10 @@ var Baguette = class {
   }
   async repairInput(udid) {
     await this.device(udid, true);
-    const executable3 = await bundledExecutable();
-    const environment = await baguetteEnvironment(executable3, this.lifecycle.signal);
-    const execute19 = promisify17(execFile18);
-    const { stdout, stderr } = await execute19(executable3, ["heal", "--udid", udid], {
+    const executable4 = await bundledExecutable();
+    const environment = await baguetteEnvironment(executable4, this.lifecycle.signal);
+    const execute20 = promisify17(execFile18);
+    const { stdout, stderr } = await execute20(executable4, ["heal", "--udid", udid], {
       timeout: 45e3,
       maxBuffer: 1024 * 1024,
       encoding: "utf8",
@@ -153770,15 +153796,15 @@ function pngDataUri(bytes) {
 }
 async function readMask(identifier3, run5) {
   const prefix3 = join42(tmpdir4(), "mobile-dev-device-mask-");
-  const directory = await mkdtemp4(prefix3);
+  const directory2 = await mkdtemp4(prefix3);
   try {
     const input2 = `/Library/Developer/DeviceKit/FramebufferMasks/${identifier3}.pdf`;
-    const output2 = join42(directory, "mask.png");
+    const output2 = join42(directory2, "mask.png");
     await run5("/usr/bin/sips", ["-s", "format", "png", input2, "--out", output2], commandOptions);
     const bytes = await readFile18(output2);
     return pngDataUri(bytes);
   } finally {
-    await rm8(directory, { recursive: true, force: true });
+    await rm8(directory2, { recursive: true, force: true });
   }
 }
 async function renderBezel(device2, run5, runtime2) {
@@ -153809,16 +153835,16 @@ async function renderBezel(device2, run5, runtime2) {
   const { type, profile } = selected;
   const root = import.meta.url.endsWith(".mjs") ? "./baguette/" : "../../native/vendor/baguette/";
   const url3 = new URL(`${root}Baguette`, import.meta.url);
-  const executable3 = fileURLToPath13(url3);
+  const executable4 = fileURLToPath13(url3);
   const signal = AbortSignal.timeout(commandOptions.timeout);
-  const environment = await runtime2(executable3, signal);
+  const environment = await runtime2(executable4, signal);
   const renderOptions = { ...commandOptions, env: environment };
-  const layoutOutput = await run5(executable3, ["chrome", "layout", "--device-name", type.name], renderOptions);
+  const layoutOutput = await run5(executable4, ["chrome", "layout", "--device-name", type.name], renderOptions);
   const layoutJson = layoutOutput.stdout.toString("utf8");
   const layoutPayload = JSON.parse(layoutJson);
   const layout = layoutSchema.parse(layoutPayload);
   const geometry = bezelGeometrySchema.parse({ rect: layout.screen, viewport: layout.composite, clipRadius: layout.innerCornerRadius });
-  const imageOutput = await run5(executable3, ["chrome", "composite", "--device-name", type.name], renderOptions);
+  const imageOutput = await run5(executable4, ["chrome", "composite", "--device-name", type.name], renderOptions);
   const image = pngDataUri(imageOutput.stdout);
   const bezel = { ...geometry, image };
   if (profile.framebufferMask !== void 0) bezel.mask = await readMask(profile.framebufferMask, run5);
@@ -153853,15 +153879,15 @@ import { join as join43 } from "node:path";
 import { promisify as promisify19 } from "node:util";
 var execute15 = promisify19(execFile20);
 async function copyPNGToClipboard(bytes) {
-  const directory = await mkdtemp5(join43(tmpdir5(), "mobile-dev-screenshot-"));
+  const directory2 = await mkdtemp5(join43(tmpdir5(), "mobile-dev-screenshot-"));
   try {
-    const path = join43(directory, "screenshot.png");
+    const path = join43(directory2, "screenshot.png");
     await writeFile13(path, bytes, { mode: 384 });
     await execute15("/usr/bin/osascript", ["-e", `on run argv
 set the clipboard to (read (POSIX file (item 1 of argv)) as \xABclass PNGf\xBB)
 end run`, path], { timeout: 5e3, maxBuffer: 64 * 1024 });
   } finally {
-    await rm9(directory, { recursive: true, force: true });
+    await rm9(directory2, { recursive: true, force: true });
   }
 }
 
@@ -155037,6 +155063,249 @@ function registerDeviceSettingsTools(server, baguette, android2) {
   };
 }
 
+// packages/core/src/resource-saving-tools.ts
+init_zod();
+init_error_reporting();
+init_protocol();
+
+// packages/core/src/resource-saving.ts
+init_zod();
+import { execFile as execFile22 } from "node:child_process";
+import { createHash as createHash16, randomUUID as randomUUID12 } from "node:crypto";
+import { access as access10, mkdir as mkdir10, readFile as readFile19, rename as rename7, rm as rm10, writeFile as writeFile14 } from "node:fs/promises";
+import { constants as constants5 } from "node:fs";
+import { homedir as homedir8 } from "node:os";
+import { dirname as dirname14, isAbsolute as isAbsolute11, join as join44 } from "node:path";
+import { promisify as promisify21 } from "node:util";
+init_install_integrity();
+init_telemetry2();
+var execute17 = promisify21(execFile22);
+var home2 = homedir8();
+var directory = join44(home2, "Library/Application Support/mobile-dev/resource-saving");
+var preferenceSchema = external_exports.object({ enabled: external_exports.boolean() });
+var androidStateSchema = external_exports.object({ disabled_packages: external_exports.array(external_exports.string()), settings: external_exports.record(external_exports.string(), external_exports.string().nullable()) });
+var IOS_RESOURCE_SAVING_EXCEPT = "store,web,pim,photos,connectivity,telemetry";
+var ANDROID_RESOURCE_SAVING_SKIP = "animations,bglimit,sync,location,setup,bluetooth";
+var androidKeep = [
+  "com.android.traceur",
+  "com.google.android.apps.photos",
+  "com.android.gallery3d",
+  "com.google.android.apps.maps",
+  "com.android.camera2",
+  "com.android.cameraextensions",
+  "com.google.android.contacts",
+  "com.android.contacts",
+  "com.google.android.marvin.talkback",
+  "com.google.android.apps.accessibility.voiceaccess",
+  "com.google.android.tts"
+];
+async function executable3(platform7) {
+  const name2 = platform7 === "ios" ? "simslim" : "avdslim";
+  const path = await panelRuntimePath(`resource-saving/${name2}`);
+  try {
+    await access10(path, constants5.X_OK);
+  } catch (error113) {
+    if (isMissingFile(error113)) throw new MissingRuntimeError("resource-saving");
+    throw error113;
+  }
+  return path;
+}
+var ResourceSaving = class {
+  directory;
+  run;
+  locate;
+  adb;
+  applied = /* @__PURE__ */ new Map();
+  pending = /* @__PURE__ */ new Map();
+  constructor(options = {}) {
+    this.directory = options.directory ?? directory;
+    this.run = options.run ?? execute17;
+    this.locate = options.executable ?? executable3;
+    this.adb = options.adb ?? adbPath;
+  }
+  filename(device2) {
+    const hash4 = createHash16("sha256");
+    hash4.update(`${device2.platform}:${device2.key}`);
+    const key2 = hash4.digest("hex");
+    return join44(this.directory, `${key2}.json`);
+  }
+  async enabled(device2) {
+    const path = this.filename(device2);
+    let text7;
+    try {
+      text7 = await readFile19(path, "utf8");
+    } catch (error113) {
+      if (isMissingFile(error113)) return true;
+      throw error113;
+    }
+    const parsed = JSON.parse(text7);
+    const preference = preferenceSchema.parse(parsed);
+    return preference.enabled;
+  }
+  async state(device2) {
+    const enabled = await this.enabled(device2);
+    const key2 = this.filename(device2);
+    const running = device2.state === "Booted";
+    return { enabled, running, restartRequired: running && this.applied.get(key2) !== enabled };
+  }
+  async set(device2, enabled) {
+    await mkdir10(this.directory, { recursive: true, mode: 448 });
+    const path = this.filename(device2);
+    const suffix = randomUUID12();
+    const temporary = `${path}.${suffix}.tmp`;
+    const text7 = JSON.stringify({ enabled });
+    try {
+      await writeFile14(temporary, text7, { mode: 384 });
+      await rename7(temporary, path);
+    } finally {
+      await rm10(temporary, { force: true });
+    }
+    return this.state(device2);
+  }
+  forget(device2) {
+    const key2 = this.filename(device2);
+    this.applied.delete(key2);
+  }
+  async apply(device2, signal, mode) {
+    const key2 = this.filename(device2);
+    const previous = this.pending.get(key2);
+    const operation = this.applyAfter(previous, device2, signal, mode);
+    this.pending.set(key2, operation);
+    try {
+      await operation;
+    } finally {
+      if (this.pending.get(key2) === operation) this.pending.delete(key2);
+    }
+  }
+  async applyAfter(previous, device2, signal, mode) {
+    await previous?.catch(() => {
+    });
+    const enabled = mode ?? await this.enabled(device2);
+    const startedAt = performance.now();
+    try {
+      signal?.throwIfAborted();
+      const file4 = await this.locate(device2.platform);
+      if (device2.platform === "ios") await this.applyIos(file4, device2.id, enabled, signal);
+      else await this.applyAndroid(file4, device2.id, enabled, signal);
+      const key2 = this.filename(device2);
+      this.applied.set(key2, enabled);
+      const duration6 = performance.now() - startedAt;
+      recordResourceSaving(device2.platform, enabled, "success", duration6);
+    } catch (error113) {
+      const duration6 = performance.now() - startedAt;
+      recordResourceSaving(device2.platform, enabled, "failed", duration6);
+      captureServerError(error113, "resource_saving.apply", { reportAs: new Error("Device resource optimization failed."), tags: { device_platform: device2.platform }, signal });
+      throw error113;
+    }
+  }
+  async applyIos(file4, id3, enabled, signal) {
+    const options = { timeout: 18e4, maxBuffer: 1024 * 1024, encoding: "utf8", signal };
+    if (enabled) {
+      await this.run(file4, ["on", id3, "--no-reboot", "--except", IOS_RESOURCE_SAVING_EXCEPT], options);
+      await this.run(file4, ["verify", id3, "--except", IOS_RESOURCE_SAVING_EXCEPT, "--json"], options);
+      return;
+    }
+    const status = await this.run(file4, ["status", id3, "--json"], options);
+    const parsed = JSON.parse(status.stdout);
+    const reading3 = external_exports.object({ managedDisabled: external_exports.number().int().nonnegative() }).parse(parsed);
+    if (reading3.managedDisabled > 0) await this.run(file4, ["off", id3], options);
+  }
+  async applyAndroid(file4, id3, enabled, signal) {
+    const adb = await this.adb();
+    const adbDirectory = dirname14(adb);
+    const sdk = dirname14(adbDirectory);
+    const cliHome = join44(this.directory, "avdslim-home");
+    await mkdir10(cliHome, { recursive: true, mode: 448 });
+    const androidHome = process.env.ANDROID_USER_HOME ?? join44(home2, ".android");
+    const adbKeys = process.env.ADB_VENDOR_KEYS ?? join44(androidHome, "adbkey");
+    const env2 = { ...process.env, HOME: cliHome, ANDROID_USER_HOME: androidHome, ADB_VENDOR_KEYS: adbKeys };
+    if (isAbsolute11(adb)) {
+      env2.ANDROID_HOME = sdk;
+      env2.ANDROID_SDK_ROOT = sdk;
+      env2.PATH = `${adbDirectory}:${process.env.PATH ?? ""}`;
+    }
+    const options = { timeout: 12e4, maxBuffer: 1024 * 1024, encoding: "utf8", env: env2, signal };
+    const readState = async () => {
+      const result5 = await this.run(adb, ["-s", id3, "shell", "if [ -f /data/local/tmp/avdslim_state.json ]; then cat /data/local/tmp/avdslim_state.json; else echo null; fi"], options);
+      const parsed = JSON.parse(result5.stdout);
+      return parsed === null ? null : androidStateSchema.parse(parsed);
+    };
+    const before = await readState();
+    if (enabled === false) {
+      if (before !== null) await this.run(file4, ["off", id3], options);
+      const after2 = await readState();
+      if (after2 !== null) throw new Error("Android resource settings could not be restored.");
+      return;
+    }
+    const disabled2 = await this.run(adb, ["-s", id3, "shell", "pm", "list", "packages", "-d"], options);
+    const disabledLines = disabled2.stdout.split(/\r?\n/);
+    const alreadyDisabled = disabledLines.filter((line) => line.startsWith("package:"));
+    const keep = new Set(androidKeep);
+    for (const line of alreadyDisabled) {
+      const name2 = line.slice("package:".length).trim();
+      if (before?.disabled_packages.includes(name2) !== true) keep.add(name2);
+    }
+    const args = ["on", id3, `--skip=${ANDROID_RESOURCE_SAVING_SKIP}`];
+    for (const name2 of keep) args.push(`--keep=${name2}`);
+    await this.run(file4, args, options);
+    const after = await readState();
+    if (after === null) throw new Error("Android did not retain its resource optimization record.");
+    const result4 = await this.run(adb, ["-s", id3, "shell", "pm", "list", "packages", "-d"], options);
+    const lines = result4.stdout.split(/\r?\n/);
+    const normalized2 = lines.map((line) => line.trim());
+    const actual = new Set(normalized2);
+    for (const name2 of after.disabled_packages) {
+      if (actual.has(`package:${name2}`) === false) throw new Error("Android did not apply every requested resource optimization.");
+    }
+  }
+};
+
+// packages/core/src/resource-saving-tools.ts
+init_telemetry2();
+var targetSchema2 = external_exports.discriminatedUnion("platform", [
+  external_exports.object({ platform: external_exports.literal("ios"), id: udidSchema }).strict(),
+  external_exports.object({ platform: external_exports.literal("android"), id: androidIdSchema }).strict()
+]);
+function registerResourceSavingTools(server, baguette, android2, saving = new ResourceSaving()) {
+  baguette.resourceSaving = saving;
+  android2.resourceSaving = saving;
+  const device2 = async (target3) => {
+    const found = target3.platform === "ios" ? await baguette.device(target3.id) : await android2.device(target3.id);
+    if (found.kind === "physical") throw new ExpectedOperationError("invalid_input", "Resource saving is available only for simulators and emulators.");
+    return { platform: target3.platform, id: target3.id, key: target3.platform === "ios" ? target3.id : found.name, state: found.state };
+  };
+  const guarded3 = (operation, handler) => async (input2) => {
+    try {
+      const state2 = await handler(input2.target, input2.enabled);
+      const text7 = JSON.stringify(state2);
+      return { content: [{ type: "text", text: text7 }], structuredContent: { state: state2 } };
+    } catch (error113) {
+      captureServerError(error113, `resource_saving.${operation}`, { reportAs: new Error("Resource saving preference failed."), tags: { device_platform: input2.target.platform } });
+      return { isError: true, content: [{ type: "text", text: errorMessage(error113) }] };
+    }
+  };
+  K3(server, "mobile_resource_saving", {
+    title: "Read resource saving",
+    description: "Read the selected virtual device's saved resource-saving preference. Enabled by default. Does not boot or optimize the device.",
+    inputSchema: { target: targetSchema2 },
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    _meta: { ui: { visibility: ["app"] } }
+  }, guarded3("read", async (target3) => {
+    const selected = await device2(target3);
+    return saving.state(selected);
+  }));
+  K3(server, "mobile_set_resource_saving", {
+    title: "Set resource saving",
+    description: "Save resource saving for one existing simulator or emulator. The preference applies on the next start; it never restarts a running device.",
+    inputSchema: { target: targetSchema2, enabled: external_exports.boolean() },
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    _meta: { ui: { visibility: ["app"] } }
+  }, guarded3("set", async (target3, enabled) => {
+    const selected = await device2(target3);
+    return saving.set(selected, enabled);
+  }));
+}
+
 // packages/core/src/stream-sessions.ts
 init_error_reporting();
 init_wrapper();
@@ -155328,12 +155597,12 @@ var StreamSessions = class {
 
 // packages/core/src/simulator-input.ts
 init_protocol();
-import { execFile as execFile22 } from "node:child_process";
-import { promisify as promisify21 } from "node:util";
-var execute17 = promisify21(execFile22);
+import { execFile as execFile23 } from "node:child_process";
+import { promisify as promisify22 } from "node:util";
+var execute18 = promisify22(execFile23);
 var deviceHubKey = "com.apple.coredevice.dtuhidd.active";
 async function readDeviceHubState(udid) {
-  const { stdout } = await execute17("/usr/bin/xcrun", ["simctl", "spawn", udid, "notifyutil", "-g", deviceHubKey], {
+  const { stdout } = await execute18("/usr/bin/xcrun", ["simctl", "spawn", udid, "notifyutil", "-g", deviceHubKey], {
     timeout: 5e3,
     maxBuffer: 1024 * 1024,
     encoding: "utf8"
@@ -155440,19 +155709,20 @@ function guarded2(handler) {
   };
 }
 var INSTRUCTIONS2 = "For mobile app development, open mobile_open_simulator before the first device launch, or reuse the open view. Use selected device IDs. Control apps with the device_* tools when the server has them. When the user asks to see their devices, open or reuse the view, whose device menu lists them. If a task has ambiguous device targets, ask the user with mobile_choose_devices when it is available, otherwise in chat; proceed only after they choose. For a local CPU or React profile path, use mobile_analyze_profile to show TraceSift findings, then wait for the user to choose Investigate. See the Mobile Dev skill, when installed, for device control, logs, profiles, and performance workflows.";
-function createPanel({ baguette = new Baguette(), simulatorInput, copyScreenshot = copyPNGToClipboard, inline = true } = {}) {
+function createPanel({ baguette = new Baguette(), simulatorInput, copyScreenshot = copyPNGToClipboard, resourceSaving = new ResourceSaving(), inline = true } = {}) {
   return {
     instructions: INSTRUCTIONS2,
     simulatorForeground: foregroundSimulatorPid,
     register: (server, shared) => registerPanel(server, shared, {
       baguette,
       copyScreenshot,
+      resourceSaving,
       inline,
       simulatorInput: simulatorInput ?? new SimulatorInputService((udid) => baguette.repairInput(udid))
     })
   };
 }
-function registerPanel(server, { android: android2, cpu, fps, drivers, page, showRecording, opened }, { baguette, simulatorInput, copyScreenshot, inline }) {
+function registerPanel(server, { android: android2, cpu, fps, drivers, page, showRecording, opened }, { baguette, simulatorInput, copyScreenshot, resourceSaving, inline }) {
   const streams = new StreamSessions(baguette);
   const closeIosMirror = registerIosMirrorTools(server, APP_URI);
   const closeInspection = registerInspectionTools(server, baguette, android2);
@@ -155462,6 +155732,7 @@ function registerPanel(server, { android: android2, cpu, fps, drivers, page, sho
     await Promise.all([closeCpu, closeFps]);
   });
   const closeDeviceSettings = registerDeviceSettingsTools(server, baguette, android2);
+  registerResourceSavingTools(server, baguette, android2, resourceSaving);
   registerPanelAppControlTools(server, drivers);
   if (inline) registerOpenRecordingTool(server, showRecording, WORKSPACE_URI);
   const readApp = async (uri2) => {
@@ -155741,7 +156012,7 @@ function registerPanel(server, { android: android2, cpu, fps, drivers, page, sho
 // packages/core/src/agent-device-tools.ts
 init_zod();
 import { readFileSync as readFileSync9 } from "node:fs";
-import { readFile as readFile19 } from "node:fs/promises";
+import { readFile as readFile20 } from "node:fs/promises";
 
 // packages/core/src/agent-device-catalog.ts
 var deviceCommands = /* @__PURE__ */ new Set([
@@ -156673,14 +156944,14 @@ var StdioClientTransport = class {
 
 // packages/core/src/agent-device-runtime.ts
 init_esm5();
-import { execFile as execFile23 } from "node:child_process";
+import { execFile as execFile24 } from "node:child_process";
 import { mkdtemp as mkdtemp6 } from "node:fs/promises";
-import { homedir as homedir8, tmpdir as tmpdir6 } from "node:os";
-import { join as join44 } from "node:path";
+import { homedir as homedir9, tmpdir as tmpdir6 } from "node:os";
+import { join as join45 } from "node:path";
 import { fileURLToPath as fileURLToPath14 } from "node:url";
-import { promisify as promisify22 } from "node:util";
+import { promisify as promisify23 } from "node:util";
 init_telemetry2();
-var run4 = promisify22(execFile23);
+var run4 = promisify23(execFile24);
 var AgentDeviceRuntime = class {
   cli;
   config;
@@ -156690,9 +156961,9 @@ var AgentDeviceRuntime = class {
   client;
   closing = false;
   constructor(root = new URL("./agent-device/", import.meta.url)) {
-    const directory = fileURLToPath14(root);
-    this.cli = join44(directory, "node_modules/agent-device/bin/agent-device.mjs");
-    this.config = join44(directory, "config.json");
+    const directory2 = fileURLToPath14(root);
+    this.cli = join45(directory2, "node_modules/agent-device/bin/agent-device.mjs");
+    this.config = join45(directory2, "config.json");
   }
   /** Starts the runtime if it is not running. Callers report a failed start. */
   async connect() {
@@ -156711,27 +156982,27 @@ var AgentDeviceRuntime = class {
       }
     };
   }
-  environment(directory) {
+  environment(directory2) {
     const env2 = {};
     for (const [key2, value] of Object.entries(process.env)) {
       if (key2.startsWith("AGENT_DEVICE_") === false && value !== void 0) env2[key2] = value;
     }
     env2.AGENT_DEVICE_CONFIG = this.config;
-    env2.AGENT_DEVICE_STATE_DIR = directory;
+    env2.AGENT_DEVICE_STATE_DIR = directory2;
     env2.AGENT_DEVICE_NO_UPDATE_NOTIFIER = "1";
     return env2;
   }
   async createState() {
-    const directory = await mkdtemp6(join44(tmpdir6(), "mobile-dev-agent-device-"));
-    console.error(`[mobile-dev] agent-device state directory: ${directory}`);
-    const stopStorageMetrics = startStorageMetrics({ agent_device_state: directory, apple_runner_cache: join44(homedir8(), ".agent-device/apple-runner") });
-    return { directory, stopStorageMetrics };
+    const directory2 = await mkdtemp6(join45(tmpdir6(), "mobile-dev-agent-device-"));
+    console.error(`[mobile-dev] agent-device state directory: ${directory2}`);
+    const stopStorageMetrics = startStorageMetrics({ agent_device_state: directory2, apple_runner_cache: join45(homedir9(), ".agent-device/apple-runner") });
+    return { directory: directory2, stopStorageMetrics };
   }
   async start() {
     const startedAt = performance.now();
-    const { directory } = await (this.state ??= this.createState());
+    const { directory: directory2 } = await (this.state ??= this.createState());
     const client2 = new Client2({ name: "mobile-dev-agent-device", version: "1" });
-    const transport2 = new StdioClientTransport({ command: process.execPath, args: [this.cli, "mcp"], cwd: directory, env: this.environment(directory), stderr: "inherit" });
+    const transport2 = new StdioClientTransport({ command: process.execPath, args: [this.cli, "mcp"], cwd: directory2, env: this.environment(directory2), stderr: "inherit" });
     client2.onclose = () => {
       if (this.closing || this.client !== client2) return;
       this.client = void 0;
@@ -156754,11 +157025,11 @@ var AgentDeviceRuntime = class {
       if (state2) await this.stopDaemon(state2.directory);
     }
   }
-  async stopDaemon(directory) {
+  async stopDaemon(directory2) {
     try {
-      await run4(process.execPath, [this.cli, "daemon", "stop", "--state-dir", directory, "--clean"], {
-        cwd: directory,
-        env: this.environment(directory),
+      await run4(process.execPath, [this.cli, "daemon", "stop", "--state-dir", directory2, "--clean"], {
+        cwd: directory2,
+        env: this.environment(directory2),
         timeout: 1e4,
         killSignal: "SIGKILL",
         maxBuffer: 1024 * 1024
@@ -156843,7 +157114,7 @@ async function withScreenshot(result4) {
   if (result4.isError || typeof path !== "string") return result4;
   let bytes;
   try {
-    bytes = await readFile19(path);
+    bytes = await readFile20(path);
   } catch (error113) {
     console.error("[mobile-dev] Agent Device screenshot could not be read:", error113);
     captureServerError(new Error("Agent Device screenshot could not be read."), "agent_device.screenshot");
@@ -156871,13 +157142,13 @@ function stepIssue(name2, input2, schemas) {
 }
 
 // apps/codex-plugin/server/plugin-updates.ts
-import { execFile as execFile24 } from "node:child_process";
-import { mkdir as mkdir10, readFile as readFile20, rename as rename7, rm as rm10, writeFile as writeFile14 } from "node:fs/promises";
-import { randomUUID as randomUUID12 } from "node:crypto";
-import { homedir as homedir9 } from "node:os";
-import { basename as basename9, dirname as dirname14, isAbsolute as isAbsolute11, join as join45 } from "node:path";
+import { execFile as execFile25 } from "node:child_process";
+import { mkdir as mkdir11, readFile as readFile21, rename as rename8, rm as rm11, writeFile as writeFile15 } from "node:fs/promises";
+import { randomUUID as randomUUID13 } from "node:crypto";
+import { homedir as homedir10 } from "node:os";
+import { basename as basename9, dirname as dirname15, isAbsolute as isAbsolute12, join as join46 } from "node:path";
 import { fileURLToPath as fileURLToPath15 } from "node:url";
-import { promisify as promisify23 } from "node:util";
+import { promisify as promisify24 } from "node:util";
 init_zod();
 init_esm5();
 
@@ -156922,7 +157193,7 @@ function recordPluginUpdate(operation, outcome, duration6, failure4) {
   public_api_exports.count("plugin.update.operations", 1, { attributes: attributes2 });
   public_api_exports.gauge("plugin.update.duration", duration6, { unit: "millisecond", attributes: attributes2 });
 }
-var execute18 = promisify23(execFile24);
+var execute19 = promisify24(execFile25);
 var RELEASE_REPOSITORY_ID = 1398055406;
 var storeMarketplace = "openai-curated-remote";
 var githubPlugin = "mobile-dev@mobile-dev";
@@ -156987,11 +157258,11 @@ function updateFailure(error113) {
   if (error113 instanceof external_exports.ZodError) return "invalid-response";
   return "unknown";
 }
-async function resolveCodexCli(parentPid = process.ppid, cwd = homedir9()) {
+async function resolveCodexCli(parentPid = process.ppid, cwd = homedir10()) {
   const pid3 = String(parentPid);
-  const result4 = await execute18("/bin/ps", ["-p", pid3, "-o", "comm="], { cwd, timeout: 5e3, maxBuffer: 4096 });
+  const result4 = await execute19("/bin/ps", ["-p", pid3, "-o", "comm="], { cwd, timeout: 5e3, maxBuffer: 4096 });
   const path = result4.stdout.trim();
-  const absolute = isAbsolute11(path);
+  const absolute = isAbsolute12(path);
   const name2 = basename9(path);
   if (absolute === false || name2 !== "codex") throw new PluginUpdateError("Could not locate the Codex executable that launched Mobile Dev.", "codex-not-found");
   return path;
@@ -157003,7 +157274,7 @@ function createCodexRunner(cwd, options = {}) {
     const path = options.path ?? await resolveCodexCli(process.ppid, cwd);
     let stdout;
     try {
-      const result4 = await execute18(path, args, { cwd, timeout: 12e4, maxBuffer: 1024 * 1024, env: env2, signal: options.signal });
+      const result4 = await execute19(path, args, { cwd, timeout: 12e4, maxBuffer: 1024 * 1024, env: env2, signal: options.signal });
       stdout = result4.stdout;
     } catch {
       throw new PluginUpdateError("Codex could not complete the Mobile Dev update command. Try again.", "command-failed");
@@ -157110,16 +157381,16 @@ var PluginUpdates = class {
   constructor(options = {}) {
     this.enabled = options.enabled ?? resolveTelemetryEnvironment() === "release";
     this.currentVersion = options.currentVersion ?? PLUGIN_VERSION;
-    const home2 = homedir9();
-    const defaultProfile = join45(home2, ".codex");
+    const home3 = homedir10();
+    const defaultProfile = join46(home3, ".codex");
     this.profile = options.profile ?? process.env.CODEX_HOME ?? defaultProfile;
     const modulePath = fileURLToPath15(import.meta.url);
-    const moduleDirectory = dirname14(modulePath);
-    const pluginRoot = options.pluginRoot ?? dirname14(moduleDirectory);
-    const pluginParent = dirname14(pluginRoot);
-    const githubCache = join45("plugins", "cache", "mobile-dev", "mobile-dev");
+    const moduleDirectory = dirname15(modulePath);
+    const pluginRoot = options.pluginRoot ?? dirname15(moduleDirectory);
+    const pluginParent = dirname15(pluginRoot);
+    const githubCache = join46("plugins", "cache", "mobile-dev", "mobile-dev");
     this.runningGithub = pluginParent.endsWith(githubCache);
-    this.cachePath = join45(this.profile, "mobile-dev", "updates.json");
+    this.cachePath = join46(this.profile, "mobile-dev", "updates.json");
     this.run = options.run ?? createCodexRunner(this.profile, { signal: this.abort.signal });
     this.readStore = options.readStore ?? (() => readPluginStore({ signal: this.abort.signal }));
     this.readRepository = options.readRepository ?? ((source) => isReleaseRepository(source, { signal: this.abort.signal }));
@@ -157143,7 +157414,7 @@ var PluginUpdates = class {
   }
   async readCache() {
     try {
-      const text7 = await readFile20(this.cachePath, "utf8");
+      const text7 = await readFile21(this.cachePath, "utf8");
       const data = JSON.parse(text7);
       return cacheSchema.parse(data);
     } catch {
@@ -157151,18 +157422,18 @@ var PluginUpdates = class {
     }
   }
   async saveCache(cache) {
-    const directory = dirname14(this.cachePath);
-    const id3 = randomUUID12();
+    const directory2 = dirname15(this.cachePath);
+    const id3 = randomUUID13();
     const temporary = `${this.cachePath}.${id3}.tmp`;
     try {
-      await mkdir10(directory, { recursive: true });
+      await mkdir11(directory2, { recursive: true });
       const text7 = JSON.stringify(cache);
-      await writeFile14(temporary, text7, { mode: 384 });
-      await rename7(temporary, this.cachePath);
+      await writeFile15(temporary, text7, { mode: 384 });
+      await rename8(temporary, this.cachePath);
     } catch {
       throw new PluginUpdateError("Could not save the update status. Check free disk space and try again.", "cache-write");
     } finally {
-      await rm10(temporary, { force: true });
+      await rm11(temporary, { force: true });
     }
   }
   async catalog() {
@@ -157196,9 +157467,9 @@ var PluginUpdates = class {
     const version5 = entry2.localVersion;
     if (entry2.installed === false || entry2.enabled === false || version5 === null) return false;
     if (compareReleaseVersions(version5, STORE_MIGRATION_VERSION) < 0 || compareReleaseVersions(version5, this.currentVersion) < 0) return false;
-    const path = join45(this.profile, "plugins/cache", storeMarketplace, "mobile-dev", version5, ".codex-plugin/plugin.json");
+    const path = join46(this.profile, "plugins/cache", storeMarketplace, "mobile-dev", version5, ".codex-plugin/plugin.json");
     try {
-      const text7 = await readFile20(path, "utf8");
+      const text7 = await readFile21(path, "utf8");
       const data = JSON.parse(text7);
       const manifest = manifestSchema.parse(data);
       return manifest.version === version5;
@@ -157370,4 +157641,4 @@ undici/lib/web/websocket/frame.js:
   (*! ws. MIT License. Einar Otto Stangvik <einaros@gmail.com> *)
 */
 
-//# debugId=985ed09d-d715-5027-8510-f9103e76c970
+//# debugId=5fa6f1b3-4e8b-5b1e-b6ee-9de657186df8

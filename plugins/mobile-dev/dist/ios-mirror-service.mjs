@@ -1,5 +1,5 @@
 
-!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="5e267b7a-6100-5f9e-a1bf-12f16ca06b84")}catch(e){}}();
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="22240480-5ff6-5d4b-9632-ad031d221b47")}catch(e){}}();
 ;(function(){var g=globalThis.__SENTRY_ORCHESTRION__=globalThis.__SENTRY_ORCHESTRION__||{};g.bundler=g.bundler||new Set();})();import { createRequire as mobileDevBundleRequire } from 'node:module'; import { fileURLToPath as mobileDevFileURLToPath } from 'node:url'; import { dirname as mobileDevPathDirname } from 'node:path'; const require = mobileDevBundleRequire(import.meta.url); const __filename = mobileDevFileURLToPath(import.meta.url); const __dirname = mobileDevPathDirname(__filename);
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -62157,7 +62157,7 @@ var nodeRuntimeMetricsIntegration = defineIntegration((options = {}) => {
 });
 
 // packages/shared/src/version.ts
-var PLUGIN_VERSION = "0.1.178";
+var PLUGIN_VERSION = "0.1.180";
 
 // packages/shared/src/telemetry-identity.ts
 function isAnonymousUserId(value) {
@@ -62473,7 +62473,7 @@ function installIntegrity() {
   if (loaded === void 0 || current.ino === loaded.ino && current.mtimeMs === loaded.mtimeMs) return "intact";
   return "replaced";
 }
-var labels = { "serve-emu": "Android streaming backend", baguette: "simulator backend" };
+var labels = { "serve-emu": "Android streaming backend", baguette: "simulator backend", "resource-saving": "resource optimization tools" };
 var MissingRuntimeError = class extends Error {
   runtime;
   integrity;
@@ -82946,4 +82946,4 @@ undici/lib/web/websocket/frame.js:
   (*! ws. MIT License. Einar Otto Stangvik <einaros@gmail.com> *)
 */
 
-//# debugId=5e267b7a-6100-5f9e-a1bf-12f16ca06b84
+//# debugId=22240480-5ff6-5d4b-9632-ad031d221b47

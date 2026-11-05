@@ -7,6 +7,15 @@ description: Use when building, running, changing, or debugging local iOS, Andro
 
 Use the Mobile Dev MCP tools for local iOS and Android work. The plugin includes Baguette and starts it when you open the panel or list devices. Do not ask the user to install Baguette or run a separate server.
 
+Start stopped virtual devices through `mobile_boot_simulator` or
+`mobile_boot_android_emulator` before using agent-device. These start paths apply
+the device's saved resource-saving mode, enabled by default. The leaf control
+beside device settings can opt a device out, including while it is stopped.
+Changing the mode saves it for the next start; only the user's explicit
+**Restart to apply** action closes running apps. Keep the saved mode when
+restarting a device, and report an optimization failure instead of bypassing it
+with a direct `simctl` or `emulator` launch.
+
 Before device work, resolve the Mobile Dev tools through the host's tool discovery
 when available and confirm `mobile_open_simulator` and the relevant device-list
 tools are callable. If they are missing, tell the user: "Mobile Dev could not
