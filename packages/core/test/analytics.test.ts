@@ -123,11 +123,18 @@ test("product analytics batches at Mixpanel's limit and counts batches Mixpanel 
     transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
   });
   t.after(async () => { await Sentry.close(); });
-  const { send, requests } = mixpanel(0);
+  const { send: record, requests } = mixpanel(0);
+  const delivery = Promise.withResolvers<void>();
+  const send = async (url: string, init: RequestInit) => {
+    await delivery.promise;
+    return record(url, init);
+  };
   const { client, analytics } = await connect({ send });
   for (let index = 0; index < 120; index += 1) await client.callTool({ name: "mobile_logs_session", arguments: {} });
   await client.close();
-  await analytics.close();
+  const closing = analytics.close();
+  delivery.resolve();
+  await closing;
   const eventRequests = requests.filter(request => request.url === MIXPANEL_TRACK_URL);
   const batchSizes = eventRequests.map(request => {
     const batch: SentEvent[] = JSON.parse(request.body);
