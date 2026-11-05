@@ -22,12 +22,35 @@ async function atomicWrite(path: string, content: string) {
   await rename(temporary, path);
 }
 
-export async function readRememberedProject(): Promise<string | null> {
-  try { const value = JSON.parse(await readFile(preferencePath, "utf8")); return typeof value.projectPath === "string" ? value.projectPath : null; }
-  catch { return null; }
+/** How many projects the picker offers. Enough to switch between apps, short enough to scan. */
+const RECENT_LIMIT = 8;
+export type AppIntelPreferences = { projectPath: string | null; recents: string[] };
+
+export async function readPreferences(): Promise<AppIntelPreferences> {
+  try {
+    const value = JSON.parse(await readFile(preferencePath, "utf8"));
+    const projectPath = typeof value.projectPath === "string" ? value.projectPath : null;
+    const stored = Array.isArray(value.recents) ? value.recents.filter((entry: unknown): entry is string => typeof entry === "string") : [];
+    // An older preferences file holds one path and no list, so the chosen project seeds the list.
+    const recents = [...new Set([...(projectPath ? [projectPath] : []), ...stored])].slice(0, RECENT_LIMIT);
+    return { projectPath, recents };
+  } catch { return { projectPath: null, recents: [] }; }
 }
 
-export async function rememberProject(projectPath: string) { await atomicWrite(preferencePath, JSON.stringify({ projectPath })); }
+export async function readRememberedProject(): Promise<string | null> {
+  return (await readPreferences()).projectPath;
+}
+
+export async function readRecentProjects(): Promise<string[]> {
+  return (await readPreferences()).recents;
+}
+
+/** Most recent first, deduplicated, so the picker reflects the order projects were last opened. */
+export async function rememberProject(projectPath: string) {
+  const { recents } = await readPreferences();
+  const next = [projectPath, ...recents.filter(entry => entry !== projectPath)].slice(0, RECENT_LIMIT);
+  await atomicWrite(preferencePath, JSON.stringify({ projectPath, recents: next }));
+}
 export const snapshotPath = (projectPath: string) => join(APP_INTEL_DIRECTORY, `${projectKey(projectPath)}.json`);
 
 export async function readAppIntel(projectPath: string): Promise<AppIntelSnapshot | null> {

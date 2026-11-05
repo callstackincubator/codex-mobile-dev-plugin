@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readFile, readdir, realpath } from "node:fs/promises";
-import { dirname, extname, join, relative, resolve, sep } from "node:path";
+import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { parse } from "@babel/parser";
 import enhancedResolve from "enhanced-resolve";
 import type { AppIntelSnapshot, IntelDiagnostic, IntelEdge, IntelPlatform, IntelRef } from "@mobile-dev/shared/app-intelligence.ts";
@@ -15,7 +15,8 @@ const portable = (root: string, path: string) => relative(root, path).split(sep)
 const inside = (root: string, path: string) => { const rel = relative(root, path); return rel !== ".." && !rel.startsWith(`..${sep}`) && !rel.startsWith("/"); };
 const packageName = (specifier: string) => specifier.startsWith("@") ? specifier.split("/").slice(0, 2).join("/") : specifier.split("/")[0];
 
-type ParsedSource = { path: string; code: string; imports: Array<{ specifier: string; typeOnly: boolean; dynamic: boolean; local?: string }>; navigation: string[]; registrations: Array<{ name: string; local?: string }> };
+type Registration = { name: string; local?: string; specifier?: string };
+type ParsedSource = { path: string; code: string; imports: Array<{ specifier: string; typeOnly: boolean; dynamic: boolean; local?: string }>; navigation: string[]; registrations: Registration[]; declared: Set<string> };
 
 function walkAst(node: unknown, visit: (node: Record<string, any>) => void) {
   if (!node || typeof node !== "object") return;
@@ -28,8 +29,29 @@ function walkAst(node: unknown, visit: (node: Record<string, any>) => void) {
   }
 }
 
+const isModuleCall = (node: Record<string, any>) =>
+  (node.type === "CallExpression" || node.type === "OptionalCallExpression") &&
+  node.arguments?.[0]?.type === "StringLiteral" &&
+  (node.callee?.type === "Import" || node.callee?.name === "require");
+
+/**
+ * The component a `<Stack.Screen>` renders, however it was written: `component={Screen}`,
+ * `getComponent={() => Screen}`, `component={lazy(() => import('…'))}` and
+ * `getComponent={() => require('…').Screen}` all name the same file. A specifier beats a local
+ * name because `require('…').Screen` carries both and only the specifier names the module.
+ */
+function componentRef(expression: unknown): Pick<Registration, "local" | "specifier"> {
+  let local: string | undefined, specifier: string | undefined;
+  walkAst(expression, node => {
+    if (specifier) return;
+    if (isModuleCall(node)) specifier = node.arguments[0].value;
+    else if (!local && node.type === "Identifier" && node.name !== "require") local = node.name;
+  });
+  return specifier ? { specifier } : { local };
+}
+
 function parseSource(path: string, code: string, diagnostics: IntelDiagnostic[]): ParsedSource {
-  const found: ParsedSource = { path, code, imports: [], navigation: [], registrations: [] };
+  const found: ParsedSource = { path, code, imports: [], navigation: [], registrations: [], declared: new Set() };
   try {
     const ast = parse(code, { sourceType: "unambiguous", errorRecovery: true, plugins: ["jsx", "typescript", "decorators-legacy"] });
     walkAst(ast, node => {
@@ -38,23 +60,110 @@ function parseSource(path: string, code: string, diagnostics: IntelDiagnostic[])
       } else if ((node.type === "ExportNamedDeclaration" || node.type === "ExportAllDeclaration") && typeof node.source?.value === "string") {
         found.imports.push({ specifier: node.source.value, typeOnly: node.exportKind === "type", dynamic: false });
       } else if ((node.type === "CallExpression" || node.type === "OptionalCallExpression") && node.arguments?.[0]?.type === "StringLiteral") {
-        const callee = node.callee;
-        if (callee?.type === "Import") found.imports.push({ specifier: node.arguments[0].value, typeOnly: false, dynamic: true });
-        const method = callee?.property?.name ?? callee?.name;
+        // `require` counts: React Navigation registers plenty of screens through one.
+        if (isModuleCall(node)) found.imports.push({ specifier: node.arguments[0].value, typeOnly: false, dynamic: true });
+        const method = node.callee?.property?.name ?? node.callee?.name;
         if (["navigate", "push", "replace"].includes(method)) found.navigation.push(node.arguments[0].value);
+      } else if (node.type === "FunctionDeclaration" || node.type === "ClassDeclaration") {
+        if (typeof node.id?.name === "string") found.declared.add(node.id.name);
+      } else if (node.type === "VariableDeclarator" && typeof node.id?.name === "string") {
+        found.declared.add(node.id.name);
       } else if (node.type === "JSXOpeningElement") {
         const name = node.name?.type === "JSXMemberExpression" ? node.name.property?.name : node.name?.name;
         if (name !== "Screen") return;
         const attrs = new Map((node.attributes ?? []).filter((item: any) => item.type === "JSXAttribute").map((item: any) => [item.name?.name, item.value]));
         const screenName = (attrs.get("name") as any)?.value;
-        const component = (attrs.get("component") as any)?.expression?.name;
-        if (typeof screenName === "string") found.registrations.push({ name: screenName, local: component });
+        const component = (attrs.get("component") ?? attrs.get("getComponent")) as any;
+        if (typeof screenName === "string") found.registrations.push({ name: screenName, ...componentRef(component?.expression) });
       }
     });
   } catch (error) {
     diagnostics.push({ code: "parse-error", file: path, message: error instanceof Error ? error.message.split("\n")[0] : String(error) });
   }
   return found;
+}
+
+/** tsconfig.json is JSONC: comments and trailing commas are legal there and fatal to `JSON.parse`. */
+export function parseJsonc(text: string): any {
+  let out = "", inString = false, escaped = false, inLine = false, inBlock = false;
+  for (let index = 0; index < text.length; index++) {
+    const char = text[index], next = text[index + 1];
+    if (inLine) { if (char === "\n") { inLine = false; out += char; } continue; }
+    if (inBlock) { if (char === "*" && next === "/") { inBlock = false; index++; } continue; }
+    if (inString) {
+      out += char;
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === "/" && next === "/") { inLine = true; continue; }
+    if (char === "/" && next === "*") { inBlock = true; index++; continue; }
+    if (char === '"') inString = true;
+    out += char;
+  }
+  return JSON.parse(out.replace(/,(\s*[}\]])/g, "$1"));
+}
+
+/** `extends` targets are a relative path or a package, with `.json` and `/tsconfig.json` implied. */
+async function resolveExtends(from: string, target: string): Promise<string | null> {
+  const candidates: string[] = [];
+  const add = (base: string) => {
+    candidates.push(base);
+    if (!extname(base)) candidates.push(`${base}.json`, join(base, "tsconfig.json"));
+  };
+  if (target.startsWith(".") || isAbsolute(target)) add(resolve(from, target));
+  else for (let directory = from; ; directory = dirname(directory)) {
+    add(join(directory, "node_modules", target));
+    if (dirname(directory) === directory) break;
+  }
+  for (const candidate of candidates) try { return await realpath(candidate); } catch { /* try the next shape */ }
+  return null;
+}
+
+type Alias = { prefix: string; suffix: string; targets: string[] };
+
+/**
+ * Path aliases from the tsconfig chain. The nearest config that declares `paths` wins, and its
+ * relative targets resolve against its own directory (or its `baseUrl`), as TypeScript does.
+ */
+async function readAliases(root: string, diagnostics: IntelDiagnostic[]): Promise<Alias[]> {
+  const aliases: Alias[] = [];
+  const seen = new Set<string>();
+  let file: string | null = join(root, "tsconfig.json");
+  for (let depth = 0; file && depth < 10; depth++) {
+    if (seen.has(file)) break;
+    seen.add(file);
+    let config: any;
+    try {
+      config = parseJsonc(await readFile(file, "utf8"));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") diagnostics.push({ code: "tsconfig", file: portable(root, file), message: "Could not read tsconfig path aliases; normal module resolution was used." });
+      return aliases;
+    }
+    const paths = config.compilerOptions?.paths;
+    if (paths && typeof paths === "object") {
+      const base = resolve(dirname(file), config.compilerOptions?.baseUrl ?? ".");
+      for (const [pattern, targets] of Object.entries(paths)) {
+        if (!Array.isArray(targets)) continue;
+        const star = pattern.indexOf("*");
+        aliases.push({ prefix: star < 0 ? pattern : pattern.slice(0, star), suffix: star < 0 ? "" : pattern.slice(star + 1), targets: targets.filter((value): value is string => typeof value === "string").map(value => resolve(base, value)) });
+      }
+      return aliases;
+    }
+    const parent = Array.isArray(config.extends) ? config.extends.at(-1) : config.extends;
+    file = typeof parent === "string" ? await resolveExtends(dirname(file), parent) : null;
+  }
+  return aliases;
+}
+
+/** The package a resolved path belongs to, from the last `node_modules` segment it sits under. */
+function packageFrom(path: string, specifier: string): string {
+  const segments = path.split(sep);
+  const marker = segments.lastIndexOf("node_modules");
+  if (marker < 0 || !segments[marker + 1]) return packageName(specifier);
+  const first = segments[marker + 1];
+  return first.startsWith("@") && segments[marker + 2] ? `${first}/${segments[marker + 2]}` : first;
 }
 
 function expoRoute(root: string, path: string): { id: string; title: string; route: string } | null {
@@ -96,18 +205,7 @@ export async function analyzeApp(projectPath: string, options: { signal?: AbortS
     if (sourcePattern.test(path)) parsed.set(rel, parseSource(rel, content.toString("utf8"), diagnostics));
     if (index > 0 && index % 100 === 0) options.onProgress?.(`Parsed ${index} of ${paths.length} files`);
   }
-  const aliases: Array<{ prefix: string; suffix: string; targets: string[] }> = [];
-  try {
-    const tsconfig = JSON.parse((await readFile(join(root, "tsconfig.json"), "utf8")).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, ""));
-    const base = resolve(root, tsconfig.compilerOptions?.baseUrl ?? ".");
-    for (const [pattern, targets] of Object.entries(tsconfig.compilerOptions?.paths ?? {})) {
-      if (!Array.isArray(targets)) continue;
-      const star = pattern.indexOf("*");
-      aliases.push({ prefix: star < 0 ? pattern : pattern.slice(0, star), suffix: star < 0 ? "" : pattern.slice(star + 1), targets: targets.filter((value): value is string => typeof value === "string").map(value => resolve(base, value)) });
-    }
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") diagnostics.push({ code: "tsconfig", file: "tsconfig.json", message: "Could not read tsconfig path aliases; normal module resolution was used." });
-  }
+  const aliases = await readAliases(root, diagnostics);
   const requestsFor = (specifier: string) => {
     const requests = [specifier];
     for (const alias of aliases) if (specifier.startsWith(alias.prefix) && specifier.endsWith(alias.suffix)) {
@@ -118,33 +216,59 @@ export async function analyzeApp(projectPath: string, options: { signal?: AbortS
   };
   const resolveFor = new Map<IntelPlatform, (context: string, request: string) => string | false>();
   for (const platform of ["ios", "android"] as const) resolveFor.set(platform, enhancedResolve.create.sync({ extensions: extensions(platform), mainFields: ["react-native", "module", "main"], conditionNames: ["react-native", platform, "import", "require", "default"], symlinks: false }));
+  const realCache = new Map<string, string>();
+  const realOf = async (path: string) => {
+    const cached = realCache.get(path);
+    if (cached) return cached;
+    let real = path;
+    try { real = await realpath(path); } catch { /* a virtual or missing target keeps its own path */ }
+    realCache.set(path, real);
+    return real;
+  };
   const edges: IntelEdge[] = [];
   const packages: AppIntelSnapshot["packages"] = Object.create(null);
-  const importTargets = new Map<string, Map<string, string>>();
+  const localTargets = new Map<string, Map<string, string>>();
+  const specifierTargets = new Map<string, Map<string, string>>();
   for (const source of parsed.values()) {
     const locals = new Map<string, string>();
+    const specifiers = new Map<string, string>();
     for (const item of source.imports) {
       check();
       const resolved = new Map<string, IntelPlatform[]>();
       for (const platform of ["ios", "android"] as const) {
-        for (const request of requestsFor(item.specifier)) try {
-          const result = resolveFor.get(platform)!(resolve(root, dirname(source.path)), request);
-          if (!result || !inside(root, result)) continue;
-          const target = portable(root, result);
+        for (const request of requestsFor(item.specifier)) {
+          let result: string | false;
+          try { result = resolveFor.get(platform)!(resolve(root, dirname(source.path)), request); }
+          catch { continue; /* try the next alias, or report it as a diagnostic below */ }
+          if (!result) continue;
+          // A workspace package is symlinked into node_modules but its real path is app code, so
+          // the real path decides, and everything else collapses to one leaf for its package.
+          const real = await realOf(result);
+          const appCode = inside(root, real) && !relative(root, real).split(sep).includes("node_modules");
+          if (!appCode) {
+            const name = packageFrom(result, item.specifier);
+            packages[name] ??= { name, reach: 0, entry: inside(root, result) ? portable(root, result) : null };
+            const key = packageRef(name);
+            resolved.set(key, [...(resolved.get(key) ?? []), platform]);
+            break;
+          }
+          const target = portable(root, real);
           const key = fileRef(target);
           resolved.set(key, [...(resolved.get(key) ?? []), platform]);
           if (item.local) locals.set(item.local, target);
+          specifiers.set(item.specifier, target);
           break;
-        } catch { /* try the next alias or represent it with a diagnostic below */ }
+        }
       }
-      if (resolved.size === 0 && !item.specifier.startsWith(".") && !item.specifier.startsWith("/")) {
-        const name = packageName(item.specifier); packages[name] ??= { name, reach: 0 };
+      if (resolved.size === 0 && !item.specifier.startsWith(".") && !item.specifier.startsWith("/") && !item.specifier.startsWith("#")) {
+        const name = packageName(item.specifier); packages[name] ??= { name, reach: 0, entry: null };
         resolved.set(packageRef(name), ["ios", "android"]);
       }
       if (resolved.size === 0) diagnostics.push({ code: "unresolved-import", file: source.path, message: `Could not resolve ${item.specifier} for iOS or Android.` });
       for (const [to, platforms] of resolved) edges.push({ from: fileRef(source.path), to: to as any, kind: "import", specifier: item.specifier, platforms, dynamic: item.dynamic || undefined, typeOnly: item.typeOnly || undefined });
     }
-    importTargets.set(source.path, locals);
+    localTargets.set(source.path, locals);
+    specifierTargets.set(source.path, specifiers);
   }
   const screens: AppIntelSnapshot["screens"] = Object.create(null);
   const screenByName = new Map<string, string>();
@@ -156,8 +280,15 @@ export async function analyzeApp(projectPath: string, options: { signal?: AbortS
     }
     for (const registration of source.registrations) {
       const id = `navigation:${registration.name}`;
-      const target = registration.local ? importTargets.get(path)?.get(registration.local) ?? path : path;
-      screens[id] = { title: registration.name, route: null, source: target, layouts: [] };
+      const target = registration.specifier ? specifierTargets.get(path)?.get(registration.specifier)
+        : registration.local ? localTargets.get(path)?.get(registration.local) : undefined;
+      // Falling back to the registering file would give every screen that file's whole import
+      // graph, so an unresolved component is reported rather than papered over.
+      // A nested navigator declared in this very file really does live here; only a component
+      // this file neither declares nor imports is a gap worth reporting.
+      const own = registration.local ? source.declared.has(registration.local) : false;
+      if (!target && !own) diagnostics.push({ code: "unresolved-screen", file: path, message: `Could not tell which file renders ${registration.name}; it is mapped to its navigator.` });
+      screens[id] = { title: registration.name, route: null, source: target ?? path, layouts: [] };
       screenByName.set(registration.name.toLowerCase(), id);
     }
   }
@@ -192,11 +323,11 @@ export async function analyzeApp(projectPath: string, options: { signal?: AbortS
       if (!edge.to || edge.kind === "navigation" || visited.has(edge.to)) continue;
       visited.add(edge.to);
       if (edge.to.startsWith("file:")) { const file = files[edge.to.slice(5)]; if (file) file.reach++; }
-      else if (edge.to.startsWith("package:")) { const pkg = packages[edge.to.slice(8)]; if (pkg) pkg.reach++; }
+      // A package is a leaf: its own internals belong to its author, not to this app's hierarchy.
+      else if (edge.to.startsWith("package:")) { const pkg = packages[edge.to.slice(8)]; if (pkg) pkg.reach++; continue; }
       queue.push(edge.to);
     }
   }
   const sourceFingerprint = fingerprint(Object.entries(files).map(([path, file]) => `${path}:${file.fingerprint}`).join("\n"));
   return { formatVersion: 1, meta: { projectId, generation, analyzedAt: new Date().toISOString(), analyzerVersion: "mobile-dev-1", sourceFingerprint }, files, packages, screens, edges: unique, diagnostics, indexes };
 }
-

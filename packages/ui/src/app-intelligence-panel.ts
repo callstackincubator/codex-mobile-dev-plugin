@@ -6,6 +6,8 @@ export type AppIntelligenceState = {
   open: boolean; available: boolean; projectPath: string; snapshot: AppIntelSnapshot | null;
   run: AppIntelStatus["run"]; busy: "loading" | "picking" | "generating" | "cancelling" | null;
   error: string; selectedScreen: string | null;
+  /** Projects the panel remembers, most recent first, so switching needs no folder picker. */
+  recents: string[];
   view: "atlas" | "flow"; atlasPath: string; showPackages: boolean; flowRoot: string | null;
   /** Boundaries the Flow may draw. null means every boundary, which is what a fresh graph shows. */
   boundaries: string[] | null;
@@ -17,7 +19,7 @@ function resultError(result: Awaited<ReturnType<HostBridge["callServerTool"]>>) 
 
 export class AppIntelligencePanel {
   private listeners = new Set<() => void>();
-  private state: AppIntelligenceState = { open: false, available: false, projectPath: "", snapshot: null, run: null, busy: null, error: "", selectedScreen: null, view: "atlas", atlasPath: "", showPackages: false, flowRoot: null, boundaries: null };
+  private state: AppIntelligenceState = { open: false, available: false, projectPath: "", snapshot: null, run: null, busy: null, error: "", selectedScreen: null, recents: [], view: "atlas", atlasPath: "", showPackages: false, flowRoot: null, boundaries: null };
   private app: HostBridge;
   constructor(app: HostBridge) { this.app = app; }
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => this.listeners.delete(listener); };
@@ -27,7 +29,7 @@ export class AppIntelligencePanel {
   show() { this.update({ open: true }); if (this.state.available) void this.load(); }
   hide() { this.update({ open: false }); }
   dispose() { this.listeners.clear(); }
-  selectScreen(selectedScreen: string | null) { this.update({ selectedScreen, flowRoot: null, view: "flow", boundaries: null }); }
+  selectScreen(selectedScreen: string | null) { this.update({ selectedScreen, flowRoot: null, view: "flow" }); }
   setView(view: AppIntelligenceState["view"]) { if (view !== this.state.view) { countUiEvent("ui.app_intel.view_switch"); this.update({ view }); } }
   zoomTo(atlasPath: string) { if (atlasPath !== this.state.atlasPath) { countUiEvent("ui.app_intel.zoom"); this.update({ atlasPath }); } }
   setPackages(showPackages: boolean) { this.update({ showPackages }); }
@@ -44,14 +46,15 @@ export class AppIntelligencePanel {
     this.update({ busy: "loading", error: "" });
     try {
       const result = await measureUiOperation("ui.app_intel.load", "ui.app_intel.load_failed", () => this.app.callServerTool({ name: "mobile_app_intel_snapshot", arguments: projectPath ? { projectPath } : {} }));
-      if (result.isError) throw new Error(resultError(result));
-      const value = result.structuredContent as { projectPath: string; snapshot: AppIntelSnapshot | null };
+      // Even a failed read carries the remembered projects, so the picker still has them to offer.
+      if (result.isError) { this.update({ recents: (result.structuredContent as { recents?: string[] } | undefined)?.recents ?? this.state.recents }); throw new Error(resultError(result)); }
+      const value = result.structuredContent as { projectPath: string; snapshot: AppIntelSnapshot | null; recents?: string[] };
       setUiGauge("ui.app_intel.files", Object.keys(value.snapshot?.files ?? {}).length);
       setUiGauge("ui.app_intel.screens", Object.keys(value.snapshot?.screens ?? {}).length);
       const screen = value.snapshot && this.state.selectedScreen && value.snapshot.screens[this.state.selectedScreen] ? this.state.selectedScreen : null;
       const flowRoot = value.snapshot && this.state.flowRoot && value.snapshot.files[this.state.flowRoot] ? this.state.flowRoot : null;
       const atlasPath = value.snapshot && this.state.atlasPath && Object.keys(value.snapshot.files).some(path => path === this.state.atlasPath || path.startsWith(this.state.atlasPath + "/")) ? this.state.atlasPath : "";
-      this.update({ projectPath: value.projectPath, snapshot: value.snapshot, busy: null, selectedScreen: screen, flowRoot, atlasPath });
+      this.update({ projectPath: value.projectPath, snapshot: value.snapshot, recents: value.recents ?? this.state.recents, busy: null, selectedScreen: screen, flowRoot, atlasPath });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.update({ busy: null, error: /No project selected/.test(message) ? "" : message, projectPath: /No project selected/.test(message) ? "" : this.state.projectPath });
@@ -69,6 +72,19 @@ export class AppIntelligencePanel {
       this.update({ projectPath: value.projectPath ?? "", busy: null, snapshot: null, selectedScreen: null, flowRoot: null, atlasPath: "", view: "atlas", boundaries: null });
       await this.load(value.projectPath);
     } catch (error) { this.update({ busy: null, error: error instanceof Error ? error.message : String(error) }); captureUiError(error, "app_intel.pick"); }
+  }
+
+  /** Switches to a remembered project without reopening the host folder picker. */
+  async selectProject(projectPath: string) {
+    if (!this.state.available || projectPath === this.state.projectPath) return;
+    this.update({ busy: "picking", error: "", snapshot: null, selectedScreen: null, flowRoot: null, atlasPath: "", view: "atlas", boundaries: null });
+    try {
+      const result = await this.app.callServerTool({ name: "mobile_select_app_intel_project", arguments: { projectPath } });
+      if (result.isError) throw new Error(resultError(result));
+      const value = result.structuredContent as { projectPath: string; snapshot: AppIntelSnapshot | null; recents?: string[] };
+      countUiEvent("ui.app_intel.project_switch");
+      this.update({ projectPath: value.projectPath, snapshot: value.snapshot, recents: value.recents ?? this.state.recents, busy: null });
+    } catch (error) { this.update({ busy: null, error: error instanceof Error ? error.message : String(error) }); captureUiError(error, "app_intel.select"); }
   }
 
   async generate() {

@@ -55,13 +55,26 @@ export function registerAppIntelligenceTools(server: McpServer, service: AppInte
     } catch (error) { recordAppIntelOperation("pick", "failed", performance.now() - startedAt); return failure(error); }
   });
 
+  registerAppTool(server, "mobile_select_app_intel_project", {
+    title: "Switch App Intelligence project", description: "Switch App Intelligence to a project the panel already knows, and remember it as the current one.",
+    inputSchema: { projectPath: z.string().min(1).max(4096) }, annotations: write, _meta: { ui: { visibility: ["app"] } },
+  }, async input => {
+    const startedAt = performance.now();
+    try { const result = text(await service.snapshot(input.projectPath, true)); recordAppIntelOperation("pick", "success", performance.now() - startedAt); return result; }
+    catch (error) { recordAppIntelOperation("pick", "failed", performance.now() - startedAt); return failure(error); }
+  });
+
   registerAppTool(server, "mobile_app_intel_snapshot", {
     title: "Read App Intelligence snapshot", description: "Read the selected App Intelligence snapshot for the shared visualization.",
     inputSchema: generateAppIntelInput.shape, annotations: read, _meta: { ui: { visibility: ["app"] } },
   }, async input => {
     const startedAt = performance.now();
     try { const result = text(await service.snapshot(input.projectPath)); recordAppIntelOperation("snapshot", "success", performance.now() - startedAt); return result; }
-    catch (error) { recordAppIntelOperation("snapshot", "failed", performance.now() - startedAt); return failure(error); }
+    catch (error) {
+      recordAppIntelOperation("snapshot", "failed", performance.now() - startedAt);
+      const recents = await service.recents().catch(() => []);
+      return recents.length ? { ...failure(error), structuredContent: { recents } } : failure(error);
+    }
   });
 
   registerAppTool(server, "mobile_app_intel_status", {

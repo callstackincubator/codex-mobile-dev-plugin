@@ -141,7 +141,7 @@ export const FLOW_CAPS = [1, 12, 18, 22];
  * Breadth-first layering of one screen's dependencies, one level per import hop. Levels are capped
  * and the overflow counted rather than dropped, so a crowded depth still reports its real size.
  */
-export function buildFlow(snapshot: AppIntelSnapshot, start: IntelRef, caps: number[] = FLOW_CAPS, allow?: ReadonlySet<string>): FlowGraph {
+export function buildFlow(snapshot: AppIntelSnapshot, start: IntelRef, caps: number[] = FLOW_CAPS): FlowGraph {
   const levels: IntelRef[][] = [[start]];
   const hidden = [0, 0, 0, 0];
   const parent = new Map<IntelRef, IntelRef>();
@@ -151,8 +151,6 @@ export function buildFlow(snapshot: AppIntelSnapshot, start: IntelRef, caps: num
     for (const ref of levels[depth]) for (const index of snapshot.indexes.outgoing[ref] ?? []) {
       const edge = snapshot.edges[index];
       if (!edge.to || edge.kind === "navigation" || visited.has(edge.to)) continue;
-      // A filtered-out boundary prunes its subtree: its imports belong to it, not to the screen.
-      if (allow && !allow.has(boundaryOf(edge.to))) continue;
       visited.add(edge.to);
       parent.set(edge.to, ref);
       next.push(edge.to);
@@ -193,9 +191,40 @@ export function groupOf(ref: IntelRef): string {
   return ref.startsWith("package:") ? PACKAGE_PREFIX : path.split("/").slice(0, 2).join("/");
 }
 
+const INDEX_FILE = /^index\.[cm]?[jt]sx?$/;
+
+/**
+ * What to call a node. `index.tsx` names nothing, so a barrel file is named for the folder it
+ * indexes: `src/components/forms/Toggle/index.tsx` reads as "Toggle", the way the import does.
+ */
 export function labelOf(ref: IntelRef): string {
   const path = ref.replace(/^(?:file|package|screen):/, "");
-  return ref.startsWith("package:") ? path : path.split("/").pop() ?? path;
+  if (ref.startsWith("package:")) return path;
+  const parts = path.split("/");
+  const name = parts.pop() ?? path;
+  return INDEX_FILE.test(name) && parts.length ? parts[parts.length - 1] : name;
+}
+
+/**
+ * Where that node lives, in full. `groupOf` keeps two segments because it clusters a column;
+ * a label needs the whole path, since several `index.tsx` differ by nothing else.
+ */
+export function pathOf(ref: IntelRef): string {
+  if (ref.startsWith("package:")) return PACKAGE_PREFIX;
+  const parts = ref.replace(/^(?:file|screen):/, "").split("/");
+  const name = parts.pop() ?? "";
+  if (INDEX_FILE.test(name) && parts.length) parts.pop();
+  return parts.join("/");
+}
+
+/** Truncates a path from the left: the tail is what tells two of them apart. */
+export function ellipsize(text: string, max: number): string {
+  return text.length <= max ? text : `…${text.slice(text.length - max + 1)}`;
+}
+
+/** Truncates a name from the right, where the distinguishing part comes first. */
+export function clampName(text: string, max: number): string {
+  return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
 }
 
 const RAMP = ["#1d4a57", "#1f7d82", "#2fa37f", "#79b85a", "#d7c045", "#e09440", "#dc5440"] as const;
@@ -248,17 +277,20 @@ export function depthTint(depth: number, alpha: number): string {
  * Which ones exist is a property of the app being mapped, so the Flow filter is built from the
  * boundaries actually present in a graph rather than from this list.
  */
-export const boundaries = ["screen", "navigation", "hook", "component", "state", "api", "model", "native", "asset", "util", "package"] as const;
+export const boundaries = ["entry", "navigation", "hook", "component", "state", "api", "model", "native", "asset", "util", "package", "other"] as const;
 export type Boundary = typeof boundaries[number];
 
+/** "entry" rather than "screen": the analyzer's roots include lexicons and routes that render nothing. */
 export const boundaryLabel: Record<Boundary, string> = {
-  screen: "Screens", navigation: "Navigation", hook: "Hooks", component: "Components", state: "State",
-  api: "API & data", model: "Types & models", native: "Native", asset: "Assets", util: "Utilities", package: "Packages",
+  entry: "Entry points", navigation: "Navigation", hook: "Hooks", component: "Components", state: "State",
+  api: "API & data", model: "Types & schemas", native: "Native", asset: "Assets", util: "Utilities",
+  package: "Packages", other: "Other source",
 };
 
 const BOUNDARY_COLOR: Record<Boundary, string> = {
-  screen: "#8b5cf6", navigation: "#6366f1", hook: "#0ea5e9", component: "#14b8a6", state: "#f97316",
-  api: "#ef4444", model: "#a855f7", native: "#eab308", asset: "#84cc16", util: "#64748b", package: "#94a3b8",
+  entry: "#8b5cf6", navigation: "#6366f1", hook: "#0ea5e9", component: "#14b8a6", state: "#f97316",
+  api: "#ef4444", model: "#a855f7", native: "#eab308", asset: "#84cc16", util: "#64748b",
+  package: "#94a3b8", other: "#78839b",
 };
 
 export const boundaryColor = (boundary: Boundary): string => BOUNDARY_COLOR[boundary];
@@ -272,8 +304,8 @@ const FOLDER_ROLES: ReadonlyArray<readonly [Boundary, readonly string[]]> = [
   ["navigation", ["navigation", "navigator", "router", "route", "routing"]],
   ["api", ["api", "service", "client", "network", "query", "mutation", "graphql", "endpoint", "request", "repository", "fetcher"]],
   ["state", ["store", "state", "redux", "context", "atom", "reducer", "slice", "provider"]],
-  ["model", ["type", "model", "schema", "entity", "dto"]],
-  ["screen", ["screen", "page", "view", "scene", "route-group"]],
+  ["model", ["type", "model", "schema", "entity", "dto", "lexicon", "def", "generated", "proto", "graphql-generated"]],
+  ["entry", ["screen", "page", "scene", "view"]],
   ["component", ["component", "ui", "widget", "element", "layout", "primitive"]],
   ["asset", ["asset", "image", "img", "font", "media", "icon"]],
   ["util", ["util", "helper", "lib", "shared", "common"]],
@@ -297,9 +329,12 @@ const FILE_ROLES: ReadonlyArray<readonly [Boundary, RegExp]> = [
 
 /** Classifies one node by its path. Deliberately ordered: the first rule that matches wins. */
 export function boundaryOf(ref: IntelRef): Boundary {
-  if (ref.startsWith("screen:")) return "screen";
+  if (ref.startsWith("screen:")) return "entry";
   if (ref.startsWith("package:")) return "package";
   const path = ref.slice(5);
+  // A dependency inside node_modules is a package however the analyzer recorded it, and its own
+  // folder names describe its author's layout, not this app's, so no other rule may read them.
+  if (path === "node_modules" || path.includes("node_modules/")) return "package";
   const name = path.split("/").pop() ?? path;
   const base = name.replace(/\.[^.]+$/, "").replace(/\.(?:ios|android|native|web)$/i, "");
   if (NATIVE_EXTENSIONS.test(name)) return "native";
@@ -312,34 +347,12 @@ export function boundaryOf(ref: IntelRef): Boundary {
     if (role) return role;
   }
   for (const [boundary, pattern] of FILE_ROLES) if (pattern.test(base)) return boundary;
-  return /^[A-Z]/.test(base) ? "component" : "util";
+  return /^[A-Z]/.test(base) ? "component" : "other";
 }
 
-/** The boundaries a graph actually contains, in display order, with how many nodes each holds. */
-export function boundariesIn(refs: Iterable<IntelRef>): Array<{ boundary: Boundary; count: number }> {
+/** The boundaries a set of nodes falls into, in display order, with how many nodes each holds. */
+export function boundariesIn(values: Iterable<Boundary>): Array<{ boundary: Boundary; count: number }> {
   const counts = new Map<Boundary, number>();
-  for (const ref of refs) counts.set(boundaryOf(ref), (counts.get(boundaryOf(ref)) ?? 0) + 1);
+  for (const value of values) counts.set(value, (counts.get(value) ?? 0) + 1);
   return boundaries.filter(boundary => counts.has(boundary)).map(boundary => ({ boundary, count: counts.get(boundary) as number }));
-}
-
-/**
- * Every boundary reachable from a start within the Flow's hop budget, ignoring the per-level caps,
- * so the filter offers the app's real boundaries instead of only those that fit on screen.
- */
-export function flowBoundaries(snapshot: AppIntelSnapshot, start: IntelRef, hops = FLOW_CAPS.length - 1): Array<{ boundary: Boundary; count: number }> {
-  const seen = new Set<IntelRef>([start]);
-  let frontier: IntelRef[] = [start];
-  const found: IntelRef[] = [];
-  for (let depth = 0; depth < hops; depth++) {
-    const next: IntelRef[] = [];
-    for (const ref of frontier) for (const index of snapshot.indexes.outgoing[ref] ?? []) {
-      const edge = snapshot.edges[index];
-      if (!edge.to || edge.kind === "navigation" || seen.has(edge.to)) continue;
-      seen.add(edge.to);
-      next.push(edge.to);
-      found.push(edge.to);
-    }
-    frontier = next;
-  }
-  return boundariesIn(found);
 }

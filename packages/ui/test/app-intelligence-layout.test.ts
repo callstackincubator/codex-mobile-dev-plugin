@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AppIntelSnapshot, IntelEdge } from "@mobile-dev/shared/app-intelligence.ts";
-import { boundaryOf, buildFlow, buildTrie, depthHue, depthTint, findNode, flowBoundaries, heat, heatT, leavesOf, maxReach, ownerScreen, platformsFor, squarify } from "../src/app-intelligence-layout.ts";
+import { boundariesIn, boundaryOf, buildFlow, buildTrie, clampName, depthHue, depthTint, ellipsize, findNode, heat, heatT, labelOf, leavesOf, maxReach, ownerScreen, pathOf, platformsFor, squarify } from "../src/app-intelligence-layout.ts";
 
 function snapshotOf(edges: IntelEdge[], files: Record<string, number>, packages: Record<string, number> = {}): AppIntelSnapshot {
   const indexes: AppIntelSnapshot["indexes"] = { screens: Object.create(null), incoming: Object.create(null), outgoing: Object.create(null) };
@@ -141,7 +141,7 @@ test("ownerScreen walks back to a screen that reaches the file", () => {
 });
 
 test("boundaryOf reads a role off the path", () => {
-  assert.equal(boundaryOf("screen:home"), "screen");
+  assert.equal(boundaryOf("screen:home"), "entry", "an analyzer root is an entry point, not necessarily a screen");
   assert.equal(boundaryOf("package:left-pad"), "package");
   assert.equal(boundaryOf("file:src/state/usePostThread.ts"), "hook", "a use-prefixed file is a hook wherever it lives");
   assert.equal(boundaryOf("file:src/hooks/session.ts"), "hook");
@@ -150,43 +150,43 @@ test("boundaryOf reads a role off the path", () => {
   assert.equal(boundaryOf("file:src/store/index.ts"), "state");
   assert.equal(boundaryOf("file:src/navigation/Root.tsx"), "navigation");
   assert.equal(boundaryOf("file:src/components/Button.tsx"), "component");
-  assert.equal(boundaryOf("file:src/view/shell/index.tsx"), "screen");
+  assert.equal(boundaryOf("file:src/view/shell/index.tsx"), "entry");
   assert.equal(boundaryOf("file:src/types/post.d.ts"), "model");
   assert.equal(boundaryOf("file:ios/AppDelegate.swift"), "native");
   assert.equal(boundaryOf("file:assets/icon.png"), "asset");
   assert.equal(boundaryOf("file:src/lib/strings.ts"), "util");
+  assert.equal(boundaryOf("file:src/lexicons/getProfile.ts"), "model", "generated schema definitions are not utilities");
+  assert.equal(boundaryOf("file:src/weird/thing.ts"), "other", "an unrecognised path says so rather than claiming a role");
+  assert.equal(boundaryOf("file:node_modules/@atproto/api/dist/index.js"), "package", "a dependency is a package however the analyzer recorded it");
+  assert.equal(boundaryOf("file:node_modules/react-native/Libraries/Image/Image.ios.js"), "package", "a dependency's own folder names never classify it");
 });
 
-test("the Flow filter prunes a boundary and everything only it reached", () => {
-  const snapshot = snapshotOf([
-    importEdge("screen:home", "file:src/screens/home.tsx"),
-    importEdge("file:src/screens/home.tsx", "file:src/hooks/usePosts.ts"),
-    importEdge("file:src/screens/home.tsx", "file:src/components/Avatar.tsx"),
-    importEdge("file:src/hooks/usePosts.ts", "file:src/api/feed.ts"),
-  ], { "src/screens/home.tsx": 1, "src/hooks/usePosts.ts": 1, "src/components/Avatar.tsx": 1, "src/api/feed.ts": 1 });
-
-  assert.deepEqual(flowBoundaries(snapshot, "screen:home").map(entry => entry.boundary).sort(), ["api", "component", "hook", "screen"]);
-  const all = buildFlow(snapshot, "screen:home").levels.flat();
-  assert.ok(all.includes("file:src/api/feed.ts"), "the hook's own import is reached without a filter");
-
-  const filtered = buildFlow(snapshot, "screen:home", undefined, new Set(["screen", "component"])).levels.flat();
-  assert.ok(!filtered.includes("file:src/hooks/usePosts.ts"), "the dropped boundary is gone");
-  assert.ok(!filtered.includes("file:src/api/feed.ts"), "and so is the subtree only it reached");
-  assert.ok(filtered.includes("file:src/components/Avatar.tsx"), "a kept boundary still draws");
-  assert.equal(filtered[0], "screen:home", "the root always survives its own filter");
-});
-
-test("flowBoundaries counts only what the graph contains", () => {
-  const snapshot = snapshotOf([
-    importEdge("screen:home", "file:src/hooks/useA.ts"),
-    importEdge("screen:home", "file:src/hooks/useB.ts"),
-    importEdge("screen:home", "file:src/lib/strings.ts"),
-  ], { "src/hooks/useA.ts": 1, "src/hooks/useB.ts": 1, "src/lib/strings.ts": 1 });
-  assert.deepEqual(flowBoundaries(snapshot, "screen:home"), [{ boundary: "hook", count: 2 }, { boundary: "util", count: 1 }]);
+test("boundariesIn counts in display order and lists only what it was given", () => {
+  assert.deepEqual(boundariesIn(["hook", "entry", "hook", "model"]), [
+    { boundary: "entry", count: 1 }, { boundary: "hook", count: 2 }, { boundary: "model", count: 1 },
+  ]);
+  assert.deepEqual(boundariesIn([]), []);
 });
 
 test("depth tints differ per hop and settle at the last one", () => {
   assert.notEqual(depthHue(0), depthHue(1));
   assert.equal(depthHue(40), depthHue(4));
   assert.match(depthTint(0, 0.2), /^rgba\(\d+,\d+,\d+,0\.2\)$/);
+});
+
+test("a barrel file is named for the folder it indexes, and keeps its whole path", () => {
+  assert.equal(labelOf("file:src/components/forms/Toggle/index.tsx"), "Toggle");
+  assert.equal(pathOf("file:src/components/forms/Toggle/index.tsx"), "src/components/forms");
+  assert.equal(labelOf("file:src/components/Typography.tsx"), "Typography.tsx");
+  assert.equal(pathOf("file:src/components/Typography.tsx"), "src/components");
+  assert.equal(labelOf("file:index.ts"), "index.ts", "a barrel at the root has no folder to borrow");
+  assert.equal(labelOf("package:react-native-screens"), "react-native-screens");
+  assert.equal(pathOf("package:react-native-screens"), "node_modules/");
+});
+
+test("a long path truncates from the left and a long name from the right", () => {
+  assert.equal(ellipsize("src/screens/Settings/components", 14), "…gs/components");
+  assert.equal(ellipsize("src/alf", 14), "src/alf");
+  assert.equal(clampName("ModerationInboxSettings.tsx", 12), "ModerationI…");
+  assert.equal(clampName("Toggle", 12), "Toggle");
 });

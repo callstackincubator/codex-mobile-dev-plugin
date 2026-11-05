@@ -20,7 +20,8 @@ export type AppIntelSnapshot = {
   formatVersion: 1;
   meta: { projectId: string; generation: string; analyzedAt: string; analyzerVersion: string; sourceFingerprint: string };
   files: Record<string, IntelFile>;
-  packages: Record<string, { name: string; reach: number }>;
+  /** Third-party dependencies, kept as leaves: `entry` is the file that resolved, not a subtree. */
+  packages: Record<string, { name: string; reach: number; entry: string | null }>;
   screens: Record<string, IntelScreen>;
   edges: IntelEdge[];
   diagnostics: IntelDiagnostic[];

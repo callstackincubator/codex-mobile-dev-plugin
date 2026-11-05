@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Worker } from "node:worker_threads";
 import type { AppIntelSnapshot, AppIntelStatus } from "@mobile-dev/shared/app-intelligence.ts";
-import { readAppIntel, readRememberedProject, rememberProject, validateProjectPath, writeAppIntel } from "./storage.ts";
+import { readAppIntel, readRecentProjects, readRememberedProject, rememberProject, validateProjectPath, writeAppIntel } from "./storage.ts";
 
 type Run = NonNullable<AppIntelStatus["run"]> & { controller: AbortController; worker?: Worker };
 
@@ -32,9 +32,13 @@ export class AppIntelligenceService {
     return { projectPath, run: run ? { runId: run.runId, phase: run.phase, message: run.message } : null, snapshot: snapshot ? { analyzedAt: snapshot.meta.analyzedAt, generation: snapshot.meta.generation } : null };
   }
 
-  async snapshot(path?: string): Promise<{ projectPath: string; snapshot: AppIntelSnapshot | null }> {
-    const projectPath = await this.project(path); return { projectPath, snapshot: await readAppIntel(projectPath) };
+  async snapshot(path?: string, remember = false): Promise<{ projectPath: string; snapshot: AppIntelSnapshot | null; recents: string[] }> {
+    const projectPath = await this.project(path, remember);
+    return { projectPath, snapshot: await readAppIntel(projectPath), recents: await readRecentProjects() };
   }
+
+  /** The projects offered when nothing is selected yet, so the picker is never empty on a cold start. */
+  async recents(): Promise<string[]> { return await readRecentProjects(); }
 
   async generate(path?: string, signal?: AbortSignal): Promise<{ projectPath: string; snapshot: AppIntelSnapshot }> {
     const projectPath = await this.project(path, true);

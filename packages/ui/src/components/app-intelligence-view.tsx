@@ -5,11 +5,34 @@ import type { AppIntelligencePanel } from "../app-intelligence-panel.ts";
 import type { AppIntelSnapshot, IntelRef } from "@mobile-dev/shared/app-intelligence.ts";
 import { fileRef, screenRef } from "@mobile-dev/shared/app-intelligence.ts";
 import type { Boundary, NodePlatforms, Rect, TrieNode } from "../app-intelligence-layout.ts";
-import { FLOW_CAPS, boundaryColor, boundaryLabel, boundaryOf, buildFlow, buildTrie, depthHue, depthTint, findNode, flowBoundaries, groupOf, heat, heatInk, heatRamp, heatT, labelOf, leavesOf, ancestorsOf, maxReach, ownerScreen, platformsFor, reachOf, squarify } from "../app-intelligence-layout.ts";
+import { boundariesIn, boundaryColor, boundaryLabel, boundaryOf, buildFlow, buildTrie, clampName, depthHue, depthTint, ellipsize, findNode, heat, heatInk, heatRamp, heatT, labelOf, leavesOf, ancestorsOf, maxReach, ownerScreen, pathOf, platformsFor, reachOf, squarify } from "../app-intelligence-layout.ts";
 import { recordUiTiming, setUiGauge } from "../telemetry.ts";
 import { Alert, AlertDescription } from "./ui/alert.tsx";
 import { Button } from "./ui/button.tsx";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "./ui/input-group.tsx";
+import { NativeSelect, NativeSelectOption } from "./ui/native-select.tsx";
+
+const BROWSE = "\u0000browse";
+
+/**
+ * The project picker. It remembers what has been opened, so switching between apps is a dropdown
+ * rather than a trip through the host folder picker; the last entry still opens that picker.
+ */
+function ProjectPicker({ projectPath, recents, disabled, onSelect, onBrowse }: {
+  projectPath: string; recents: readonly string[]; disabled: boolean;
+  onSelect: (path: string) => void; onBrowse: () => void;
+}) {
+  const options = [...new Set([...(projectPath ? [projectPath] : []), ...recents])];
+  if (!options.length) return <Button variant="outline" size="sm" data-project-picker disabled={disabled} onClick={onBrowse}><FolderOpenIcon />Choose project</Button>;
+  return <div className="flex min-w-0 shrink-0 items-center gap-1">
+    <FolderOpenIcon className="size-4 shrink-0 text-muted-foreground" />
+    <NativeSelect size="sm" className="max-w-52" data-project-picker aria-label="App Intelligence project" disabled={disabled}
+      value={projectPath} onChange={event => event.target.value === BROWSE ? onBrowse() : onSelect(event.target.value)}>
+      {options.map(path => <NativeSelectOption key={path} value={path} title={path}>{path.split("/").at(-1) || path}</NativeSelectOption>)}
+      <NativeSelectOption value={BROWSE}>Choose another project…</NativeSelectOption>
+    </NativeSelect>
+  </div>;
+}
 
 const platformEdge: Record<NodePlatforms, string> = { ios: "bg-sky-500", android: "bg-lime-500", both: "bg-transparent" };
 const platformFill: Record<NodePlatforms, string> = { ios: "fill-sky-500", android: "fill-lime-500", both: "fill-transparent" };
@@ -35,18 +58,24 @@ function useMeasured() {
 }
 
 /**
- * Drag-to-pan for a scrolling box. A drag that actually moves swallows the click that follows it,
- * so panning across the Flow never re-roots the graph on whatever card was under the pointer.
+ * Drag-to-pan and wheel-pan for the Flow. The board usually fits its pane, so moving scrollLeft
+ * did nothing; this translates the canvas instead, which pans whatever its size. A drag that
+ * actually moves swallows the click that follows it, so panning never re-roots the graph.
  */
-function useDragPan(element: HTMLElement | null) {
+function usePanCanvas(element: HTMLElement | null, resetKey: string) {
   useEffect(() => {
     if (!element) return;
-    let origin: { x: number; y: number; left: number; top: number } | null = null;
+    const canvas = element.firstElementChild as HTMLElement | null;
+    if (!canvas) return;
+    let x = 0, y = 0;
+    const draw = () => { canvas.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`; };
+    draw();
+    let origin: { x: number; y: number; panX: number; panY: number } | null = null;
     let moved = false;
     const swallow = (event: Event) => { event.preventDefault(); event.stopPropagation(); };
     const down = (event: PointerEvent) => {
       if (event.button !== 0) return;
-      origin = { x: event.clientX, y: event.clientY, left: element.scrollLeft, top: element.scrollTop };
+      origin = { x: event.clientX, y: event.clientY, panX: x, panY: y };
       moved = false;
     };
     const move = (event: PointerEvent) => {
@@ -55,8 +84,9 @@ function useDragPan(element: HTMLElement | null) {
       if (!moved && Math.abs(dx) < 4 && Math.abs(dy) < 4) return;
       moved = true;
       element.dataset.panning = "true";
-      element.scrollLeft = origin.left - dx;
-      element.scrollTop = origin.top - dy;
+      x = origin.panX + dx;
+      y = origin.panY + dy;
+      draw();
     };
     const up = () => {
       if (moved) element.addEventListener("click", swallow, { capture: true, once: true });
@@ -64,17 +94,28 @@ function useDragPan(element: HTMLElement | null) {
       moved = false;
       delete element.dataset.panning;
     };
+    const wheel = (event: WheelEvent) => {
+      event.preventDefault();
+      x -= event.deltaX;
+      y -= event.deltaY;
+      draw();
+    };
+    const recenter = () => { x = 0; y = 0; draw(); };
     element.addEventListener("pointerdown", down);
+    element.addEventListener("wheel", wheel, { passive: false });
+    element.addEventListener("dblclick", recenter);
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
     window.addEventListener("pointercancel", up);
     return () => {
       element.removeEventListener("pointerdown", down);
+      element.removeEventListener("wheel", wheel);
+      element.removeEventListener("dblclick", recenter);
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", up);
     };
-  }, [element]);
+  }, [element, resetKey]);
 }
 
 type Hover = { title: string; detail: string; x: number; y: number } | null;
@@ -125,19 +166,22 @@ function atlasCells(node: TrieNode, rect: Rect, depth: number, context: {
   }
 }
 
-const CARD = { width: 184, height: 40, column: 236, padX: 16, padY: 32, gap: 8 };
+const CARD = { width: 226, height: 40, column: 278, padX: 16, padY: 14, gap: 8 };
+const NAME_CHARS = 24;
+/** Characters the subtitle can take, once the boundary tag beside it has had its share. */
+const pathChars = (boundary: string) => Math.max(8, Math.floor((CARD.width - 30 - boundary.length * 5.4) / 5.05));
 
-function FlowView({ snapshot, start, max, height, allow, onRoot, onHover }: {
-  snapshot: AppIntelSnapshot; start: IntelRef; max: number; height: number; allow: ReadonlySet<string> | null;
+function FlowView({ snapshot, start, max, height, onRoot, onHover }: {
+  snapshot: AppIntelSnapshot; start: IntelRef; max: number; height: number;
   onRoot: (ref: IntelRef) => void; onHover: (hover: Hover) => void;
 }) {
   const [lit, setLit] = useState<IntelRef | null>(null);
   const graph = useMemo(() => {
     const startedAt = performance.now();
-    const built = buildFlow(snapshot, start, FLOW_CAPS, allow ?? undefined);
+    const built = buildFlow(snapshot, start);
     recordUiTiming("ui.app_intel.flow_layout", performance.now() - startedAt);
     return built;
-  }, [snapshot, start, allow]);
+  }, [snapshot, start]);
   const counts = graph.levels.map((level, depth) => level.length + (graph.hidden[depth] ? 1 : 0));
   const rows = Math.max(1, ...counts);
   const innerHeight = Math.max(height - CARD.padY - 16, rows * (CARD.height + CARD.gap) - CARD.gap);
@@ -157,9 +201,6 @@ function FlowView({ snapshot, start, max, height, allow, onRoot, onHover }: {
   for (let cursor = lit; cursor; cursor = graph.parent.get(cursor) ?? null) path.add(cursor);
 
   return <svg width={board.width} height={Math.max(board.height, height)} viewBox={`0 0 ${board.width} ${board.height}`} role="group" aria-label="Dependency flow" className="block select-none">
-    {graph.levels.map((level, depth) => level.length > 0 && <text key={`head:${depth}`} x={CARD.padX + depth * CARD.column} y={CARD.padY - 13} fill={depthHue(depth)} className="font-mono text-[9.5px] font-semibold tracking-wider">
-      {depth === 0 ? "ROOT" : `HOP ${depth}`}
-    </text>)}
     {[...spots].map(([ref, spot]) => {
       const from = graph.parent.get(ref);
       const origin = from && spots.get(from);
@@ -172,14 +213,14 @@ function FlowView({ snapshot, start, max, height, allow, onRoot, onHover }: {
     })}
     {overflow.map(spot => <g key={`more:${spot.depth}`}>
       <rect x={spot.x} y={spot.y} width={CARD.width} height={CARD.height} rx={7} fill="none" stroke={depthHue(spot.depth)} strokeOpacity={0.45} strokeDasharray="3 3" />
-      <text x={spot.x + 11} y={spot.y + 24} className="fill-muted-foreground font-mono text-[9px]">+{spot.hidden} more at this hop</text>
+      <text x={spot.x + 11} y={spot.y + 24} className="fill-muted-foreground font-mono text-[9px]">+{spot.hidden} more</text>
     </g>)}
     {[...spots].map(([ref, spot]) => {
       const reach = reachOf(snapshot, ref);
       const screen = ref.startsWith("screen:") ? snapshot.screens[ref.slice(7)] : null;
       const platforms = screen ? "both" as NodePlatforms : platformsFor(snapshot, ref);
       const boundary = boundaryOf(ref);
-      const detail = `${boundaryLabel[boundary]} · hop ${spot.depth}${screen ? ` · ${screen.route ?? ref.slice(7)}` : ` · reach ${reach}`}${platforms === "both" ? "" : ` · ${platformLabel(platforms)}`}`;
+      const detail = `${boundaryLabel[boundary]}${screen ? ` · ${screen.route ?? ref.slice(7)}` : ` · reach ${reach}`}${platforms === "both" ? "" : ` · ${platformLabel(platforms)}`}`;
       const barWidth = Math.max(3, 44 * heatT(reach, max));
       const on = path.has(ref);
       return <g key={`card:${ref}`} className="cursor-pointer" data-flow-node={ref} data-flow-boundary={boundary} role="button" tabIndex={0}
@@ -193,9 +234,9 @@ function FlowView({ snapshot, start, max, height, allow, onRoot, onHover }: {
           fill={depthTint(spot.depth, on ? 0.3 : 0.16)} stroke={depthHue(spot.depth)} strokeOpacity={on ? 1 : 0.5} strokeWidth={on ? 1.6 : 1} />
         <rect x={spot.x + 1} y={spot.y + 1} width={3.5} height={CARD.height - 2} rx={1.75} fill={boundaryColor(boundary)} />
         {platforms !== "both" && <rect x={spot.x + CARD.width - 4.5} y={spot.y + 1} width={3.5} height={CARD.height - 2} rx={1.75} className={platformFill[platforms]} />}
-        <text x={spot.x + 12} y={spot.y + 16} className="fill-foreground font-mono text-[10.5px] font-medium">{labelOf(ref).slice(0, 20)}</text>
+        <text x={spot.x + 12} y={spot.y + 16} className="fill-foreground font-mono text-[10.5px] font-medium">{clampName(labelOf(ref), NAME_CHARS)}</text>
         <text x={spot.x + 12} y={spot.y + 29} fill={boundaryColor(boundary)} className="font-mono text-[8px] font-semibold uppercase tracking-wider">{boundary}</text>
-        <text x={spot.x + 16 + boundary.length * 5.4} y={spot.y + 29} className="fill-muted-foreground font-mono text-[9px]">{(screen ? screen.route ?? "" : groupOf(ref)).slice(0, 24 - boundary.length)}</text>
+        <text x={spot.x + 16 + boundary.length * 5.4} y={spot.y + 29} className="fill-muted-foreground font-mono text-[9px]">{ellipsize(screen ? screen.route ?? "" : pathOf(ref), pathChars(boundary))}</text>
         {!screen && <>
           <text x={spot.x + CARD.width - 11} y={spot.y + 16} textAnchor="end" className="fill-muted-foreground font-mono text-[9px] tabular-nums">{reach}</text>
           <rect x={spot.x + CARD.width - 11 - barWidth} y={spot.y + CARD.height - 8} width={barWidth} height={3} rx={1.5} fill={heat(reach, max)} />
@@ -205,14 +246,14 @@ function FlowView({ snapshot, start, max, height, allow, onRoot, onHover }: {
   </svg>;
 }
 
-/** The Flow's boundary filter: one chip per boundary the traced graph actually contains. */
+/** The Flow's boundary filter: one chip per boundary the app's entry points fall into. */
 function BoundaryFilter({ available, selected, onToggle, onAll }: {
   available: Array<{ boundary: Boundary; count: number }>; selected: ReadonlySet<string>;
   onToggle: (boundary: Boundary) => void; onAll: () => void;
 }) {
-  if (available.length < 2) return null;
+  if (!available.length) return null;
   const all = available.every(entry => selected.has(entry.boundary));
-  return <div className="flex shrink-0 flex-wrap items-center gap-1 border-b px-3 py-1.5" role="group" aria-label="Filter boundaries" data-flow-filter>
+  return <div className="flex shrink-0 flex-wrap items-center gap-1 border-b px-3 py-1.5" role="group" aria-label="Filter entry points" data-flow-filter>
     <ListFilterIcon className="size-3 shrink-0 text-muted-foreground" />
     <button type="button" data-boundary="all" aria-pressed={all} onClick={onAll}
       className={`rounded-full border px-2 py-0.5 text-[10.5px] ${all ? "border-primary text-primary" : "text-muted-foreground"}`}>All</button>
@@ -236,7 +277,6 @@ export const AppIntelligenceView = memo(function AppIntelligenceView({ panel }: 
   const [hover, setHover] = useState<Hover>(null);
   const [atlasRef, atlasSize] = useMeasured();
   const [flowRef, flowSize, flowBox] = useMeasured();
-  useDragPan(flowBox);
   const snapshot = state.snapshot;
   const search = query.trim().toLowerCase();
 
@@ -277,12 +317,16 @@ export const AppIntelligenceView = memo(function AppIntelligenceView({ panel }: 
 
   const selected = state.selectedScreen && snapshot?.screens[state.selectedScreen] ? state.selectedScreen : null;
   const flowStart: IntelRef | null = state.flowRoot ? fileRef(state.flowRoot) : selected ? screenRef(selected) : null;
-  const available = useMemo(() => snapshot && flowStart ? flowBoundaries(snapshot, flowStart) : [], [snapshot, flowStart]);
+  // An entry point is classified by the file it renders: the ids are routes, which say nothing.
+  const entries = useMemo(() => Object.entries(snapshot?.screens ?? {})
+    .map(([id, screen]) => ({ id, screen, boundary: screen.source ? boundaryOf(fileRef(screen.source)) : "entry" as Boundary })), [snapshot]);
+  const available = useMemo(() => boundariesIn(entries.map(entry => entry.boundary)), [entries]);
   const selectedBoundaries = useMemo(() => new Set<string>(state.boundaries ?? available.map(entry => entry.boundary)), [state.boundaries, available]);
-  // null means "every boundary", so an unfiltered graph skips the allow-set and its pruning entirely.
-  const allow = useMemo(() => state.boundaries ? selectedBoundaries : null, [state.boundaries, selectedBoundaries]);
   const toggleBoundary = useCallback((boundary: Boundary) => panel.toggleBoundary(boundary, available.map(entry => entry.boundary)), [panel, available]);
-  const screens = useMemo(() => Object.entries(snapshot?.screens ?? {}).filter(([id, screen]) => !search || `${id} ${screen.title} ${screen.route ?? ""} ${screen.source ?? ""}`.toLowerCase().includes(search)), [snapshot, search]);
+  // Re-centre the canvas whenever the graph it holds changes, so a new trace is never panned away.
+  usePanCanvas(flowBox, flowStart ?? "");
+  const screens = useMemo(() => entries.filter(({ id, screen, boundary }) => selectedBoundaries.has(boundary)
+    && (!search || `${id} ${screen.title} ${screen.route ?? ""} ${screen.source ?? ""}`.toLowerCase().includes(search))), [entries, selectedBoundaries, search]);
   const hottest = useMemo(() => zoomed ? leavesOf(zoomed).filter(node => !search || node.path.toLowerCase().includes(search)).sort((a, b) => b.reach - a.reach).slice(0, 60) : [], [zoomed, search]);
 
   return <section id="app-intelligence-panel" className="@container flex h-full min-h-0 min-w-0 flex-col" role="tabpanel" aria-label="App Intelligence"
@@ -293,7 +337,8 @@ export const AppIntelligenceView = memo(function AppIntelligenceView({ panel }: 
       if (state.view === "flow" && state.flowRoot) panel.setFlowRoot(null);
     }}>
     <header className="panel-toolbar flex h-[49px] shrink-0 items-center gap-2 border-b px-2">
-      <Button variant="outline" size="sm" disabled={!state.available || state.busy !== null} onClick={() => void panel.pickProject()}><FolderOpenIcon />{state.projectPath ? <span className="max-w-52 truncate">{state.projectPath.split("/").at(-1)}</span> : "Choose project"}</Button>
+      <ProjectPicker projectPath={state.projectPath} recents={state.recents} disabled={!state.available || state.busy !== null}
+        onSelect={path => void panel.selectProject(path)} onBrowse={() => void panel.pickProject()} />
       {snapshot && <div role="tablist" aria-label="App Intelligence view" className="flex overflow-hidden rounded-md border">
         {(["atlas", "flow"] as const).map(view => <button key={view} type="button" role="tab" aria-selected={state.view === view} data-view={view}
           className={`h-7 px-3 text-xs capitalize ${state.view === view ? "bg-muted text-foreground shadow-[inset_0_-2px_0_var(--primary)]" : "text-muted-foreground"}`}
@@ -324,15 +369,17 @@ export const AppIntelligenceView = memo(function AppIntelligenceView({ panel }: 
             <p className="shrink-0 border-t px-3 py-2 text-[11px] text-muted-foreground">Area is files, colour is reach — how many entry points pull it in. Click a directory to zoom in, Esc to go back, click a file to trace it.</p>
           </> : <>
             <div className="flex shrink-0 items-center gap-2 border-b px-3 py-1.5 text-xs">
-              <span className="truncate font-medium">{state.flowRoot ? `Re-rooted on ${state.flowRoot.split("/").pop()}` : snapshot.screens[selected ?? ""]?.title ?? "Choose a screen"}</span>
+              <span className="truncate font-medium">{state.flowRoot ? `Re-rooted on ${labelOf(fileRef(state.flowRoot))}` : snapshot.screens[selected ?? ""]?.title ?? "Choose a screen"}</span>
               {state.flowRoot && <button type="button" className="ml-auto text-primary" onClick={() => panel.setFlowRoot(null)}>Back to screen</button>}
             </div>
-            {flowStart && <BoundaryFilter available={available} selected={selectedBoundaries} onToggle={toggleBoundary} onAll={() => panel.setBoundaries(null)} />}
-            <div ref={flowRef} className="min-h-0 flex-1 cursor-grab overflow-auto [&[data-panning]]:cursor-grabbing">
-              {flowStart ? <FlowView snapshot={snapshot} start={flowStart} max={max} height={flowSize.height} allow={allow} onRoot={ref => { if (ref.startsWith("file:")) panel.setFlowRoot(ref.slice(5)); }} onHover={setHover} />
-                : <div className="grid h-full place-items-center p-6 text-center text-sm text-muted-foreground">Choose a screen to trace its dependencies.</div>}
+            <BoundaryFilter available={available} selected={selectedBoundaries} onToggle={toggleBoundary} onAll={() => panel.setBoundaries(null)} />
+            <div ref={flowRef} data-flow-canvas className="min-h-0 flex-1 cursor-grab touch-none overflow-auto [&[data-panning]]:cursor-grabbing">
+              <div className="w-max will-change-transform">
+                {flowStart ? <FlowView snapshot={snapshot} start={flowStart} max={max} height={flowSize.height} onRoot={ref => { if (ref.startsWith("file:")) panel.setFlowRoot(ref.slice(5)); }} onHover={setHover} />
+                  : <div className="grid place-items-center p-6 text-center text-sm text-muted-foreground" style={{ width: flowSize.width, height: flowSize.height }}>Choose an entry point to trace its dependencies.</div>}
+              </div>
             </div>
-            <p className="shrink-0 border-t px-3 py-2 text-[11px] text-muted-foreground">One column per import hop, tinted by depth. Drag to pan, hover lights the path back, click re-roots, Esc returns.</p>
+            <p className="shrink-0 border-t px-3 py-2 text-[11px] text-muted-foreground">Each column goes one import deeper, tinted by depth. Drag or scroll to pan, double-click to recentre, click a card to re-root, Esc returns.</p>
           </>}
         </main>
         <aside className="flex min-h-0 min-w-0 flex-col">
@@ -344,12 +391,13 @@ export const AppIntelligenceView = memo(function AppIntelligenceView({ panel }: 
               <span className="block truncate font-mono text-[10.5px] text-muted-foreground">{node.path}</span>
               <span className="mt-1 flex items-center gap-1.5"><span className="h-1 rounded" style={{ width: `${Math.max(4, 90 * heatT(node.reach, max))}px`, background: heat(node.reach, max) }} /><span className="text-[10px] tabular-nums text-muted-foreground">{node.reach}</span></span>
             </button>)
-              : screens.map(([id, screen]) => <button key={id} type="button" aria-current={selected === id && !state.flowRoot} className={`block w-full border-b px-3 py-2 text-left hover:bg-muted/50 ${selected === id && !state.flowRoot ? "bg-muted shadow-[inset_2px_0_0_var(--primary)]" : ""}`}
-                onClick={() => panel.selectScreen(id)}>
-                <span className="block truncate text-xs font-medium">{screen.title}</span>
-                <span className="block truncate font-mono text-[10.5px] text-muted-foreground">{screen.route ?? id}</span>
-                <span className="block truncate font-mono text-[10px] text-muted-foreground">{screen.source ?? "Source unresolved"}</span>
-              </button>)}
+              : screens.length === 0 ? <p className="px-3 py-3 text-[11px] text-muted-foreground">No entry point matches the filter.</p>
+                : screens.map(({ id, screen, boundary }) => <button key={id} type="button" data-entry={id} data-entry-boundary={boundary} aria-current={selected === id && !state.flowRoot} className={`block w-full border-b px-3 py-2 text-left hover:bg-muted/50 ${selected === id && !state.flowRoot ? "bg-muted shadow-[inset_2px_0_0_var(--primary)]" : ""}`}
+                  onClick={() => panel.selectScreen(id)}>
+                  <span className="flex items-center gap-1.5"><span className="size-1.5 shrink-0 rounded-full" style={{ background: boundaryColor(boundary) }} /><span className="truncate text-xs font-medium">{screen.title}</span></span>
+                  <span className="block truncate font-mono text-[10.5px] text-muted-foreground">{screen.route ?? id}</span>
+                  <span className="block truncate font-mono text-[10px] text-muted-foreground">{screen.source ?? "Source unresolved"}</span>
+                </button>)}
           </div>
         </aside>
       </div>}

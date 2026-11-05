@@ -665,7 +665,7 @@ layering — and `ui.app_intel.atlas_cells` and `ui.app_intel.flow_nodes` gauge 
 many nodes each one drew, which is what drives that cost. `ui.app_intel.view_switch`
 and `ui.app_intel.zoom` count navigation between the two views and into a
 directory, and `ui.app_intel.boundary_filter` counts how often the Flow's
-boundary filter is changed. The filter counts the change only; which boundaries
-were picked is not an attribute. Project paths, source paths, screen and package names, source
+entry-point filter is changed. The filter counts the change only; which
+boundaries were picked is not an attribute. Project paths, source paths, screen and package names, source
 contents, queries, diagnostics, graph edges and snapshot identifiers remain local
 and are never telemetry attributes.

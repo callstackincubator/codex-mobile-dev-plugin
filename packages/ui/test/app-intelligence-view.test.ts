@@ -27,7 +27,7 @@ function fixture(): AppIntelSnapshot {
     formatVersion: 1,
     meta: { projectId: "p", generation: "g", analyzedAt: "2026-11-04T00:00:00Z", analyzerVersion: "t", sourceFingerprint: "f" },
     files: { "app/index.tsx": file(1), "app/profile.tsx": file(1), "src/shared.ts": file(2), "src/only.ios.ts": file(1) },
-    packages: { "left-pad": { name: "left-pad", reach: 2 } },
+    packages: { "left-pad": { name: "left-pad", reach: 2, entry: "node_modules/left-pad/index.js" } },
     screens: {
       home: { title: "Home", route: "/", source: "app/index.tsx", layouts: [] },
       profile: { title: "Profile", route: "/profile", source: "app/profile.tsx", layouts: [] },
@@ -79,8 +79,12 @@ test("App Intelligence renders the Atlas, hides packages by default and traces a
   const { createRoot } = await import("react-dom/client");
 
   const snapshot = fixture();
-  const app = { async callServerTool({ name }: { name: string }) {
-    if (name === "mobile_app_intel_snapshot") return { content: [], structuredContent: { projectPath: "/tmp/social-app", snapshot } };
+  const calls: Array<{ name: string; arguments?: Record<string, unknown> }> = [];
+  const recents = ["/tmp/social-app", "/tmp/other-app"];
+  const app = { async callServerTool({ name, arguments: args }: { name: string; arguments?: Record<string, unknown> }) {
+    calls.push({ name, arguments: args });
+    if (name === "mobile_app_intel_snapshot") return { content: [], structuredContent: { projectPath: "/tmp/social-app", snapshot, recents } };
+    if (name === "mobile_select_app_intel_project") return { content: [], structuredContent: { projectPath: args?.projectPath, snapshot, recents } };
     return { content: [], structuredContent: {} };
   } };
   const panel = new AppIntelligencePanel(app as unknown as App);
@@ -109,6 +113,7 @@ test("App Intelligence renders the Atlas, hides packages by default and traces a
 
   await act(async () => { (dom.window.document.querySelector('[data-view="flow"]') as HTMLButtonElement).click(); });
   assert.equal(query("[data-flow-node]").length, 0, "no screen is selected yet");
+  assert.ok(query("[data-flow-filter]").length === 1, "the entry-point filter is there before anything is traced");
   const screenButton = [...rail.querySelectorAll("button")].find(button => button.textContent?.includes("Profile"));
   assert.ok(screenButton, "the rail lists screens in the Flow view");
   await act(async () => { screenButton.click(); });
@@ -117,20 +122,57 @@ test("App Intelligence renders the Atlas, hides packages by default and traces a
   assert.ok(nodes.includes("file:src/shared.ts") && nodes.includes("file:src/only.ios.ts"), "both imports appear at the next hop");
   assert.ok(!nodes.includes("screen:home"), "the other screen is not part of this flow");
 
+  assert.ok(!/\bHOP\b|\bROOT\b/.test(dom.window.document.querySelector("[data-flow-canvas]")?.textContent ?? ""), "the depth tint carries the hop, with no column headings");
+
   // The Flow tints each hop rather than drawing one muted ladder.
   const hops = [...query("[data-flow-node]")].map(node => (node.querySelector("rect") as SVGRectElement).getAttribute("fill"));
   assert.equal(new Set(hops).size > 1, true, "cards differ in colour by depth");
 
-  // Every boundary the graph holds gets a chip, and clearing one prunes it and its subtree.
+  // The filter is the entry-point rail's filter: its chips come from what the entry points are,
+  // and unticking one takes those entries out of the rail without touching the traced graph.
   const chips = () => [...query("[data-flow-filter] [data-boundary]")].map(chip => chip.getAttribute("data-boundary"));
-  assert.deepEqual(chips(), ["all", "util", "package"], "the filter offers only the boundaries this graph reaches");
-  const util = dom.window.document.querySelector('[data-flow-filter] [data-boundary="util"]') as HTMLButtonElement;
-  await act(async () => { util.click(); });
-  assert.equal(util.getAttribute("aria-pressed"), "false");
-  const afterFilter = [...query("[data-flow-node]")].map(node => node.getAttribute("data-flow-node"));
-  assert.deepEqual(afterFilter, ["screen:profile"], "unticking a boundary drops it and the subtree only it reached");
+  const railEntries = () => [...query("aside [data-entry]")].map(entry => entry.getAttribute("data-entry"));
+  assert.deepEqual(chips(), ["all", "other"], "both fixture entries render plain source files");
+  assert.deepEqual(railEntries().sort(), ["home", "profile"]);
+  const other = dom.window.document.querySelector('[data-flow-filter] [data-boundary="other"]') as HTMLButtonElement;
+  await act(async () => { other.click(); });
+  assert.equal(other.getAttribute("aria-pressed"), "false");
+  assert.deepEqual(railEntries(), [], "unticking the only boundary empties the rail");
+  assert.match((dom.window.document.querySelector("aside") as HTMLElement).textContent ?? "", /0 entry points/, "the header counts what the rail shows");
+  assert.ok([...query("[data-flow-node]")].length > 0, "the filter is the rail's, so the traced graph still draws in full");
   await act(async () => { (dom.window.document.querySelector('[data-flow-filter] [data-boundary="all"]') as HTMLButtonElement).click(); });
-  assert.ok([...query("[data-flow-node]")].some(node => node.getAttribute("data-flow-node") === "file:src/shared.ts"), "All brings it back");
+  assert.deepEqual(railEntries().sort(), ["home", "profile"], "All brings them back");
+
+  // Dragging pans the board itself, which is what the old scroll-based pan failed to do when the
+  // graph already fitted its pane. The drag must not re-root the graph on the card underneath.
+  const canvas = dom.window.document.querySelector("[data-flow-canvas]") as HTMLElement;
+  const board = canvas.firstElementChild as HTMLElement;
+  const pointer = (type: string, x: number, y: number, target: EventTarget) =>
+    target.dispatchEvent(new dom.window.MouseEvent(type, { clientX: x, clientY: y, bubbles: true, button: 0 }));
+  assert.equal(board.style.transform, "translate(0px, 0px)");
+  const rooted = panel.getSnapshot().flowRoot;
+  await act(async () => {
+    pointer("pointerdown", 300, 200, canvas);
+    pointer("pointermove", 220, 170, dom.window);
+    pointer("pointerup", 220, 170, dom.window);
+  });
+  assert.equal(board.style.transform, "translate(-80px, -30px)", "the board follows the pointer");
+  await act(async () => { (dom.window.document.querySelector("[data-flow-node]") as Element).dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true })); });
+  assert.equal(panel.getSnapshot().flowRoot, rooted, "the click that ends a drag is swallowed");
+  await act(async () => { canvas.dispatchEvent(new dom.window.MouseEvent("dblclick", { bubbles: true })); });
+  assert.equal(board.style.transform, "translate(0px, 0px)", "double-click recentres");
+
+  // The picker is a dropdown over the remembered projects, so switching needs no folder picker.
+  const picker = dom.window.document.querySelector("[data-project-picker]") as HTMLSelectElement;
+  assert.equal(picker.tagName, "SELECT");
+  assert.deepEqual([...picker.options].map(option => option.textContent), ["social-app", "other-app", "Choose another project…"]);
+  assert.equal(picker.value, "/tmp/social-app", "the current project is the one shown");
+  await act(async () => {
+    picker.value = "/tmp/other-app";
+    picker.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+  });
+  assert.deepEqual(calls.at(-1), { name: "mobile_select_app_intel_project", arguments: { projectPath: "/tmp/other-app" } });
+  assert.equal(panel.getSnapshot().projectPath, "/tmp/other-app");
 
   // A directory in the Atlas is clickable in its own right, not only through its children.
   await act(async () => { (dom.window.document.querySelector('[data-view="atlas"]') as HTMLButtonElement).click(); });
