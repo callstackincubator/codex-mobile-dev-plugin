@@ -83,9 +83,9 @@ export function recordTraceSiftPayload(kind: "task" | "react", bytes: number) {
 }
 
 /** Counts each batch sent to Mixpanel by whether Mixpanel accepted it. */
-export function recordAnalyticsFlush(outcome: "success" | "failed") {
+export function recordAnalyticsFlush(outcome: "success" | "failed", endpoint: "track" | "engage") {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
-  Sentry.metrics.count("analytics.flush", 1, { attributes: { component: "server", outcome } });
+  Sentry.metrics.count("analytics.flush", 1, { attributes: { component: "server", outcome, endpoint } });
 }
 
 export function recordAccessibilityBridgeRestart(outcome: "recovered" | "unavailable" | "failed") {

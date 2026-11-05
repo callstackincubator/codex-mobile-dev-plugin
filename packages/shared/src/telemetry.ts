@@ -15,6 +15,7 @@ export const MIXPANEL_TOKEN = "780e4817b73c1234479ad8d418d34e89";
  * `verbose=1` makes rejected batches say so, since Mixpanel answers them with HTTP 200 too.
  */
 export const MIXPANEL_TRACK_URL = "https://api-eu.mixpanel.com/track?ip=0&verbose=1";
+export const MIXPANEL_ENGAGE_URL = "https://api-eu.mixpanel.com/engage?ip=0&verbose=1";
 export const TELEMETRY_META_KEY = "mobile-dev/telemetry";
 export const TELEMETRY_INTERVAL_MS = 30_000;
 export const TELEMETRY_HOSTS = ["codex", "claude", "cursor", "mac", "other"] as const;
