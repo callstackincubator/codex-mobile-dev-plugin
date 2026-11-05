@@ -331,7 +331,10 @@ test("a browser tab's model context reaches the agent and leaves with the tab", 
   assert.equal((await putContext(endpoint, first, "not json")).status, 400);
   assert.equal((await putContext(endpoint, first, JSON.stringify({ content: [{ type: "image", data: "x", mimeType: "text/html" }] }))).status, 400);
   assert.equal((await fetch(endpoint, { method: "PUT", body: "{}", headers: { "content-type": "application/json", "mcp-session-id": first, origin: "https://attacker.example" } })).status, 403);
-  assert.equal((await fetch(endpoint, { headers: { "mcp-session-id": first } })).status, 405);
+  assert.equal((await fetch(endpoint, { method: "POST", headers: { "mcp-session-id": first } })).status, 405);
+  assert.equal((await fetch(endpoint)).status, 404);
+  const clears = async (id: string) => (await (await fetch(endpoint, { headers: { "mcp-session-id": id } })).json() as { clears: number }).clears;
+  assert.equal(await clears(first), 0);
 
   const device = "Active iOS simulator: iPhone 17. Device ID: 11111111-1111-1111-1111-111111111111.";
   const stored = await putContext(endpoint, first, JSON.stringify({ content: [{ type: "text", text: device, annotations: { audience: ["assistant"] } }] }));
@@ -354,6 +357,47 @@ test("a browser tab's model context reaches the agent and leaves with the tab", 
   assert.match((await read())[0].text!, /No Mobile Dev browser panel/);
   await tabs[0].terminateSession();
   for (const client of clients) await client.close();
+});
+
+test("the agent clears a browser tab's context and the tab learns of it", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "browser-panel-"));
+  const page = join(directory, "browser-panel.html");
+  await writeFile(page, "<html></html>");
+  const fake = await fakeBaguette();
+  const [hostSide, serverSide] = InMemoryTransport.createLinkedPair();
+  const shared = new SharedTransport(serverSide);
+  const plugin = await createTestPlugin("<html></html>", { panel: createPanel({ baguette: new Baguette(fake.url), simulatorInput: fakeSimulatorInput() }), features: [browserPanel({ template: pathToFileURL(page) })], connections: shared });
+  const host = new Client({ name: "claude-code", version: "1" });
+  await plugin.server.connect(shared);
+  await host.connect(hostSide);
+  t.after(async () => { await host.close(); await plugin.close(); await fake.close(); await rm(directory, { recursive: true, force: true }); });
+  const text = async (name: string) => ((await host.callTool({ name, arguments: {} })).content as Array<{ text: string }>)[0].text;
+
+  assert.match(await text("mobile_clear_panel_context"), /No Mobile Dev browser panel/);
+  const opened = await host.callTool({ name: "mobile_open_simulator", arguments: {} });
+  const link = new URL((opened.content as Array<{ text: string }>)[1].text.match(/http:\/\/127\.0\.0\.1:\d+\/[\w-]+\/\?\S+/)![0]);
+  const endpoint = new URL("context", link);
+  const tab = new StreamableHTTPClientTransport(new URL("mcp", link));
+  const client = new Client({ name: "tab", version: "1" });
+  await client.connect(tab);
+  const id = tab.sessionId!;
+  const clears = async () => (await (await fetch(endpoint, { headers: { "mcp-session-id": id } })).json() as { clears: number }).clears;
+
+  const note = "Note on the login screen.";
+  assert.equal((await putContext(endpoint, id, JSON.stringify({ content: [{ type: "text", text: note }] }))).status, 204);
+  assert.equal(await clears(), 0);
+  assert.match(await text("mobile_clear_panel_context"), /Cleared the shared context of 1 Mobile Dev browser tab\./);
+  assert.match(await text("mobile_read_panel_context"), /No Mobile Dev browser panel/);
+  assert.equal(await clears(), 1);
+  // A tab that stored nothing is told as well: its page may still show notes.
+  await text("mobile_clear_panel_context");
+  assert.equal(await clears(), 2);
+  // Notes added after a clear are kept.
+  assert.equal((await putContext(endpoint, id, JSON.stringify({ content: [{ type: "text", text: note }] }))).status, 204);
+  assert.equal(await clears(), 2);
+  assert.equal((await host.callTool({ name: "mobile_read_panel_context", arguments: {} })).content!.length, 2);
+  await tab.terminateSession();
+  await client.close();
 });
 
 test("an oversized browser context update is refused without storing it", async t => {

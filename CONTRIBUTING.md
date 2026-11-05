@@ -410,7 +410,12 @@ sends each `ui/update-model-context` to its own session's `context` endpoint, wh
 replaces that tab's text and images (up to 16 MiB) and drops them when the tab's
 session closes. The agent reads them with `mobile_read_panel_context`, most recent
 tab first, so it sees the user's devices and the logs, screenshots and notes they
-add to chat. The opening tool's result points the agent there. Chat messages stay
+add to chat. The opening tool's result points the agent there. Once it has acted on
+them, the agent calls `mobile_clear_panel_context`: the server forgets them and
+counts the clear, the page polls that count from its `context` endpoint every two
+seconds (the server keeps no idle stream to push on) and hands it to the panel in the
+host context under `mobile-dev/contextClears`, where `PanelContext.hostChanged` drops
+the notes the panel still shows. Chat messages stay
 hidden until the host provides a supported bridge. MCP request/response
 traffic is bidirectional, but sampling requests an LLM completion rather than
 appending a user message to the current conversation. Sampling is also

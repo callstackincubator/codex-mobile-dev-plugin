@@ -3,9 +3,10 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport, StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { PLUGIN_VERSION } from "@mobile-dev/shared/version.ts";
-import { PANEL_PAGE_META } from "@mobile-dev/shared/panel-target.ts";
+import { CONTEXT_CLEARS, PANEL_PAGE_META } from "@mobile-dev/shared/panel-target.ts";
 
 const dark = matchMedia("(prefers-color-scheme: dark)");
+const CLEARS_POLL_MS = 2000;
 const DISCONNECTED = "Mobile Dev disconnected from its chat session. Ask the agent to open Mobile Dev again.";
 const EXPIRED = "Mobile Dev's browser connection expired. Reload this page to reconnect.";
 
@@ -35,15 +36,20 @@ async function open() {
   });
   let bridge: AppBridge | undefined;
   let heartbeat: ReturnType<typeof setInterval> | undefined;
+  let clearsPoll: ReturnType<typeof setInterval> | undefined;
+  let polling = false;
   let startup: ReturnType<typeof setTimeout> | undefined;
   let disposed = false;
   let checking = false;
   let contextChanged = () => {};
+  // How many times the agent has cleared this tab's context, as the server counts them.
+  let clears = 0;
 
   function dispose() {
     if (disposed) return;
     disposed = true;
     clearInterval(heartbeat);
+    clearInterval(clearsPoll);
     clearTimeout(startup);
     dark.removeEventListener("change", contextChanged);
     removeEventListener("pagehide", hide);
@@ -70,6 +76,22 @@ async function open() {
       stopped(expired ? EXPIRED : DISCONNECTED);
     } finally { checking = false; }
   }
+  // The server cannot push to the page (it keeps no idle stream), so the page asks whether the
+  // agent cleared the context it read. A failed poll is left to the heartbeat to report.
+  async function pollClears() {
+    const sessionId = transport.sessionId;
+    if (disposed || polling || sessionId === undefined) return;
+    polling = true;
+    try {
+      const response = await fetch(new URL("context", location.href), { headers: { "mcp-session-id": sessionId } });
+      if (response.status === 404) return stopped(EXPIRED);
+      if (response.ok === false) return;
+      const body: unknown = await response.json();
+      const count = typeof body === "object" && body !== null && "clears" in body ? body.clears : undefined;
+      if (typeof count === "number" && count !== clears) { clears = count; contextChanged(); }
+    } catch { /* the heartbeat reports a stopped server */ }
+    finally { polling = false; }
+  }
   client.onerror = error => {
     if (error instanceof TypeError) stopped(DISCONNECTED);
     if (error instanceof StreamableHTTPError && error.code === 404) stopped(EXPIRED);
@@ -79,6 +101,7 @@ async function open() {
   try {
     await client.connect(transport);
     heartbeat = setInterval(() => { void check(); }, 30_000);
+    clearsPoll = setInterval(() => { void pollClears(); }, CLEARS_POLL_MS);
     const { tools } = await client.listTools();
     const tool = tools.find(candidate => candidate.name === toolName);
     // A panel that does not render in the chat names its page under its own key.
@@ -101,7 +124,10 @@ async function open() {
     const host = document.documentElement.dataset.telemetryHost ?? "other";
     // Advertise only capabilities this browser can fulfill. Chat messages need a
     // host-owned bridge; model context goes to the server, where the agent reads it.
-    const hostContext = context();
+    // Passed to the panel with every host context, so a view can tell a clear from the agent
+    // from its own state and drop the notes it still shows.
+    const withClears = (hostContext: McpUiHostContext): McpUiHostContext => ({ ...hostContext, [CONTEXT_CLEARS]: clears });
+    const hostContext = withClears(context());
     const capabilities = { serverTools: {}, serverResources: {}, openLinks: {}, updateModelContext: { text: {}, image: {} } };
     bridge = new AppBridge(client, { name: host, version: PLUGIN_VERSION }, capabilities, { hostContext });
     bridge.onupdatemodelcontext = async ({ content }) => {
@@ -125,7 +151,7 @@ async function open() {
     };
     bridge.onrequestdisplaymode = async () => ({ mode: "inline" });
     contextChanged = () => {
-      const updated = context();
+      const updated = withClears(context());
       bridge?.setHostContext(updated);
     };
     dark.addEventListener("change", contextChanged);

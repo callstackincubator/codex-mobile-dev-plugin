@@ -1,5 +1,6 @@
 import { chatMessage } from "./chat-message.ts";
 import type { HostAttachmentsSource, HostBridge } from "./host-bridge.ts";
+import { CONTEXT_CLEARS } from "@mobile-dev/shared/panel-target.ts";
 import type { SimulatorDevice } from "@mobile-dev/shared/protocol.ts";
 import type { StackedLog } from "@mobile-dev/shared/logs.ts";
 import { formatLogContext, logKey } from "@mobile-dev/shared/logs.ts";
@@ -42,6 +43,7 @@ export class PanelContext {
   private pendingAnnotations = new Set<string>();
   private resuming?: Promise<void>;
   private selectionKey?: string;
+  private seenClears?: number;
   private readonly app: HostBridge;
   private readonly attachments: HostAttachmentsSource;
   private contextReady = false;
@@ -215,6 +217,17 @@ export class PanelContext {
 
   hostChanged() {
     if (!this.usesHostAttachments) {
+      // The agent cleared what it read: drop the same here, so the panel and the server agree.
+      const clears = this.app.getHostContext()?.[CONTEXT_CLEARS];
+      if (typeof clears === "number" && clears !== this.seenClears) {
+        const first = this.seenClears === undefined;
+        this.seenClears = clears;
+        // The first value is the state the panel opened in, not a clear made while it was open.
+        if (!first && this.attachmentCount) {
+          this.attached = undefined; this.screenshots = []; this.annotations = []; this.pendingAnnotations.clear();
+          this.revision++; this.changed();
+        }
+      }
       const ready = this.canAttach;
       if (ready && !this.contextReady) void this.publish().catch(() => {});
       this.contextReady = ready;

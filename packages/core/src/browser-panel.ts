@@ -19,8 +19,8 @@ export const BROWSER_CONTEXT_MAX_BYTES = 16 * 1024 * 1024;
 const NO_CONTEXT = "No Mobile Dev browser panel has shared context. Open Mobile Dev, or ask the user to select a device in the panel.";
 
 type PanelContent = TextContent | ImageContent;
-type BrowserSession = { transport: StreamableHTTPServerTransport; touched: number; requests: number; context?: { content: PanelContent[]; updated: number } };
-type PanelPage = { url(tool: string, target: PanelTarget): string; context(): PanelContent[]; close(): Promise<void> };
+type BrowserSession = { transport: StreamableHTTPServerTransport; touched: number; requests: number; clears: number; context?: { content: PanelContent[]; updated: number } };
+type PanelPage = { url(tool: string, target: PanelTarget): string; context(): PanelContent[]; clear(): number; close(): Promise<void> };
 
 // What a panel would otherwise give an MCP Apps host's model context. Hosts mark
 // audience and other annotations; the agent reads only text and images.
@@ -64,6 +64,17 @@ export function browserPanel({ template = PAGE, always = false }: BrowserPanelOp
       const opened = await page?.catch(() => undefined);
       const content = opened?.context() ?? [];
       return { content: content.length ? content : [{ type: "text", text: NO_CONTEXT }] };
+    });
+    // The agent cannot reach into the page, so it asks the server to forget what it read.
+    // The page learns of it by polling the server's count of clears.
+    server.registerTool("mobile_clear_panel_context", {
+      title: "Clear Mobile Dev panel context",
+      description: "Clear the logs, screenshots and screen notes the user added to chat in a Mobile Dev panel opened in a browser, and remove them from the panel. Call it once you have acted on them, so they are not read again. It leaves the user's selected devices alone.",
+      inputSchema: {}, annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    }, async () => {
+      const opened = await page?.catch(() => undefined);
+      const cleared = opened?.clear() ?? 0;
+      return { content: [{ type: "text", text: cleared ? `Cleared the shared context of ${cleared} Mobile Dev browser tab${cleared === 1 ? "" : "s"}.` : NO_CONTEXT }] };
     });
     return async () => {
       const opened = await page?.catch(() => undefined);
@@ -123,12 +134,19 @@ export async function startPanelPage(connections: SharedTransport, host: Telemet
     reply(response, 404);
   }
 
-  // The page replaces its tab's context, as ui/update-model-context does in a chat host.
+  // The page replaces its tab's context, as ui/update-model-context does in a chat host,
+  // and reads how many times the agent has cleared it, so it can drop what it still shows.
   async function context(request: IncomingMessage, response: ServerResponse) {
-    if (request.method !== "PUT") return reply(response, 405, { allow: "PUT" });
+    if (request.method !== "PUT" && request.method !== "GET") return reply(response, 405, { allow: "GET, PUT" });
     const sessionId = request.headers["mcp-session-id"];
     const session = typeof sessionId === "string" ? sessions.get(sessionId) : undefined;
     if (session === undefined) return reply(response, 404);
+    if (request.method === "GET") {
+      session.touched = Date.now();
+      response.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+      response.end(JSON.stringify({ clears: session.clears }));
+      return;
+    }
     if (request.headers["content-type"]?.startsWith("application/json") !== true) return reply(response, 415);
     const body = await readBody(request, BROWSER_CONTEXT_MAX_BYTES);
     if (body === undefined) {
@@ -164,7 +182,7 @@ export async function startPanelPage(connections: SharedTransport, host: Telemet
       // Per-request SSE supports associated server requests and releases completed streams.
       sessionIdGenerator: randomUUID,
       onsessioninitialized: id => {
-        sessions.set(id, { transport, touched: Date.now(), requests: 0 });
+        sessions.set(id, { transport, touched: Date.now(), requests: 0, clears: 0 });
         recordBrowserPanelSessions(sessions.size);
       },
     });
@@ -198,6 +216,17 @@ export async function startPanelPage(connections: SharedTransport, host: Telemet
         const heading: PanelContent = { type: "text", text: shared.length > 1 ? `Mobile Dev browser tab ${index + 1} of ${shared.length}, most recent first.` : "Mobile Dev browser panel." };
         return [heading, ...context.content];
       });
+    },
+    clear() {
+      // A clear also counts for a tab with nothing stored: its page may hold notes the
+      // server never received, and drops them all the same.
+      let cleared = 0;
+      for (const session of sessions.values()) {
+        session.context = undefined;
+        session.clears++;
+        cleared++;
+      }
+      return cleared;
     },
     async close() {
       closing = true;

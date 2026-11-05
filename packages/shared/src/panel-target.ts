@@ -23,3 +23,9 @@ export function panelTargetPlatform(target: PanelTarget): "ios" | "android" | un
  * `{ resourceUri }` that MCP Apps hosts ignore and the browser panel reads.
  */
 export const PANEL_PAGE_META = "mobile-dev/panel";
+
+/**
+ * The host context key under which a browser panel reports how many times the agent has
+ * cleared its context, so the view can drop the notes it still shows.
+ */
+export const CONTEXT_CLEARS = "mobile-dev/contextClears";
