@@ -8,8 +8,8 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as Sentry from "@sentry/node";
 import type { Envelope, Metric } from "@sentry/core";
-import { createCodexRunner, PluginUpdates, registerPluginUpdateTools, resolveCodexCli, readPluginStore } from "../server/plugin-updates.ts";
-import type { ReadStore, RunCodex } from "../server/plugin-updates.ts";
+import { createCodexRunner, PluginUpdates, registerPluginUpdateTools, resolveCodexCli, readPluginStore, isReleaseRepository, RELEASE_REPOSITORY_ID } from "../server/plugin-updates.ts";
+import type { ReadRepository, ReadStore, RunCodex } from "../server/plugin-updates.ts";
 import { scrubErrorEvent, scrubMetric } from "@mobile-dev/shared/telemetry.ts";
 import { compareReleaseVersions, PLUGIN_STORE_ID, pluginUpdateSchema } from "../shared/plugin-updates.ts";
 
@@ -36,6 +36,7 @@ type FixtureOptions = {
   github?: boolean; storeVersion?: string; installedVersion?: string; storeInstalled?: boolean;
   storeEnabled?: boolean; storeId?: string; source?: string; keepGithub?: boolean;
   removeFails?: boolean; marketplaceRemoveFails?: boolean; manifestVersion?: string;
+  repositoryId?: number; repositoryStatus?: number;
 };
 
 function cliFixture(directory: string, calls: string[][], options: FixtureOptions = {}) {
@@ -77,7 +78,15 @@ function cliFixture(directory: string, calls: string[][], options: FixtureOption
   const readStore: ReadStore = async () => ({
     remotePluginId: options.storeId ?? PLUGIN_STORE_ID, name: "mobile-dev", version: options.storeVersion ?? "0.1.167",
   });
-  return { run, readStore };
+  const readRepository: ReadRepository = source => {
+    const request: typeof fetch = async () => {
+      const foreign = source === "https://github.com/other/repo";
+      const id = options.repositoryId ?? (foreign ? 1 : RELEASE_REPOSITORY_ID);
+      return Response.json({ id }, { status: options.repositoryStatus ?? 200 });
+    };
+    return isReleaseRepository(source, { fetch: request });
+  };
+  return { run, readStore, readRepository };
 }
 
 function githubRoot(directory: string) {
@@ -98,8 +107,9 @@ test("the store catalog is the sole update source and checks are shared across c
   const calls: string[][] = [];
   const fixture = { github: false, storeVersion: "0.1.167", storeInstalled: true, installedVersion: "0.1.166" };
   const { run, readStore } = cliFixture(directory, calls, fixture);
+  const readRepository: ReadRepository = async () => { assert.fail("Store installations must not depend on GitHub"); };
   let now = 1000000;
-  const options = { enabled: true, currentVersion: "0.1.166", profile: directory, run, readStore, now: () => now };
+  const options = { enabled: true, currentVersion: "0.1.166", profile: directory, run, readStore, readRepository, now: () => now };
   const updates = new PluginUpdates(options);
   const pending = [updates.check(), updates.check()];
   const initial = await Promise.all(pending);
@@ -120,8 +130,8 @@ test("pending review and a newer GitHub build never offer an older store migrati
   for (const version of ["0.1.163", "0.1.167"]) {
     const directory = await profile(t);
     const calls: string[][] = [];
-    const { run, readStore } = cliFixture(directory, calls, { storeVersion: version, storeInstalled: true });
-    const updates = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.168", run, readStore });
+    const { run, readStore, readRepository } = cliFixture(directory, calls, { storeVersion: version, storeInstalled: true });
+    const updates = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.168", run, readStore, readRepository });
     const status = await updates.check();
     assert.equal(status.status, "current");
     const migration = updates.migrate();
@@ -130,8 +140,8 @@ test("pending review and a newer GitHub build never offer an older store migrati
   }
   const directory = await profile(t);
   const calls: string[][] = [];
-  const { run, readStore } = cliFixture(directory, calls, { storeVersion: "0.1.163" });
-  const updates = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.166", run, readStore });
+  const { run, readStore, readRepository } = cliFixture(directory, calls, { storeVersion: "0.1.163" });
+  const updates = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.166", run, readStore, readRepository });
   const status = await updates.check();
   assert.equal(status.status, "current");
 });
@@ -144,8 +154,8 @@ test("legacy GitHub update caches cannot advertise unpublished store versions", 
   const text = JSON.stringify({ checkedAt: Date.now(), latestVersion: "9.9.9", installedVersion: "9.9.9" });
   await writeFile(path, text);
   const calls: string[][] = [];
-  const { run, readStore } = cliFixture(directory, calls, { github: false, storeVersion: "0.1.167" });
-  const updates = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.167", run, readStore });
+  const { run, readStore, readRepository } = cliFixture(directory, calls, { github: false, storeVersion: "0.1.167" });
+  const updates = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.167", run, readStore, readRepository });
   const status = await updates.check();
   assert.equal(status.status, "current");
   assert.equal(status.latestVersion, "0.1.167");
@@ -156,8 +166,8 @@ test("unavailable catalogs, wrong identities and invalid versions stay quiet; de
   for (const fixture of [{ storeId: "another-plugin" }, { storeVersion: "../bad" }, { storeInstalled: true, installedVersion: "invalid" }]) {
     const directory = await profile(t);
     const calls: string[][] = [];
-    const { run, readStore } = cliFixture(directory, calls, fixture);
-    const updates = new PluginUpdates({ enabled: true, profile: directory, run, readStore });
+    const { run, readStore, readRepository } = cliFixture(directory, calls, fixture);
+    const updates = new PluginUpdates({ enabled: true, profile: directory, run, readStore, readRepository });
     const status = await updates.check();
     assert.equal(status.status, "unavailable");
   }
@@ -185,8 +195,8 @@ test("migration is offered for the same version and verifies the store before an
   for (const fixture of [{}, { storeInstalled: true, installedVersion: "0.1.163" }, { storeInstalled: true, storeEnabled: false }]) {
     const directory = await profile(t);
     const calls: string[][] = [];
-    const { run, readStore } = cliFixture(directory, calls, fixture);
-    const updates = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.167", run, readStore });
+    const { run, readStore, readRepository } = cliFixture(directory, calls, fixture);
+    const updates = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.167", run, readStore, readRepository });
     const notice = await updates.check();
     assert.equal(notice.status, "migration");
     assert.equal(notice.storeInstalled, false);
@@ -199,9 +209,9 @@ test("migration is offered for the same version and verifies the store before an
 test("migration removes only GitHub, preserves data, deduplicates clicks and persists the restart notice", async t => {
   const directory = await profile(t);
   const calls: string[][] = [];
-  const { run, readStore } = cliFixture(directory, calls, { storeInstalled: true });
+  const { run, readStore, readRepository } = cliFixture(directory, calls, { storeInstalled: true });
   const pluginRoot = githubRoot(directory);
-  const options = { enabled: true, profile: directory, pluginRoot, currentVersion: "0.1.167", run, readStore };
+  const options = { enabled: true, profile: directory, pluginRoot, currentVersion: "0.1.167", run, readStore, readRepository };
   const dataPath = join(directory, "recording.json");
   await writeFile(dataPath, "saved recording");
   const updates = new PluginUpdates(options);
@@ -236,11 +246,16 @@ test("migration removes only GitHub, preserves data, deduplicates clicks and per
 });
 
 test("wrong marketplaces, failed deletion and unremoved GitHub installations never report success", async t => {
-  for (const fixture of [{ source: "https://github.com/other/repo" }, { removeFails: true }, { keepGithub: true }]) {
+  for (const fixture of [
+    { source: "https://github.com/other/repo" },
+    { source: "https://github.com/callstackincubator/codex-mobile-dev-plugin.git", repositoryId: 1 },
+    { source: "https://github.com/callstackincubator/mobile-dev-plugin.git", repositoryStatus: 503 },
+    { removeFails: true }, { keepGithub: true },
+  ]) {
     const directory = await profile(t);
     const calls: string[][] = [];
-    const { run, readStore } = cliFixture(directory, calls, { ...fixture, storeInstalled: true });
-    const updates = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.167", run, readStore });
+    const { run, readStore, readRepository } = cliFixture(directory, calls, { ...fixture, storeInstalled: true });
+    const updates = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.167", run, readStore, readRepository });
     const migration = updates.migrate();
     await assert.rejects(migration);
     if (fixture.source !== undefined) assert.equal(calls.some(call => call[1] === "remove"), false);
@@ -262,6 +277,7 @@ test("migration failures report the failed step and cause without CLI output", a
   });
   const cases = [
     { fixture: { source: "https://github.com/other/repo" }, step: "remove-marketplace", failure: "foreign-marketplace" },
+    { fixture: { repositoryStatus: 503 }, step: "catalog", failure: "repository-unavailable" },
     { fixture: { keepGithub: true }, step: "verify", failure: "not-verified" },
     { fixture: {}, failRemoval: true, step: "remove-plugin", failure: "command-failed" },
     { fixture: {}, invalidStore: true, step: "catalog", failure: "invalid-response" },
@@ -275,7 +291,7 @@ test("migration failures report the failed step and cause without CLI output", a
     const failing = createCodexRunner(directory, { path: "/usr/bin/false" });
     const run: RunCodex = args => failRemoval && args[1] === "remove" ? failing(args) : cli.run(args);
     const readStore: ReadStore = invalidStore ? async () => ({ name: "mobile-dev" }) : cli.readStore;
-    const updates = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.167", run, readStore });
+    const updates = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.167", run, readStore, readRepository: cli.readRepository });
     await assert.rejects(updates.migrate());
     await Sentry.flush();
     const sent = JSON.stringify(envelopes);
@@ -290,11 +306,11 @@ test("cleanup can resume when plugin removal succeeded but marketplace removal f
   const directory = await profile(t);
   const calls: string[][] = [];
   const fixture = { storeInstalled: true, marketplaceRemoveFails: true };
-  const { run, readStore } = cliFixture(directory, calls, fixture);
-  const updates = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.167", run, readStore });
+  const { run, readStore, readRepository } = cliFixture(directory, calls, fixture);
+  const updates = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.167", run, readStore, readRepository });
   const migration = updates.migrate();
   await assert.rejects(migration);
-  const anotherChat = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.167", run, readStore });
+  const anotherChat = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.167", run, readStore, readRepository });
   const notice = await anotherChat.check();
   assert.equal(notice.status, "migration");
   fixture.marketplaceRemoveFails = false;
@@ -394,25 +410,29 @@ test("anonymous check failures preserve timing, classify the cause and exclude p
     else process.env.MOBILE_DEV_TELEMETRY = previous;
     await Sentry.close();
   });
-  const directory = await profile(t);
-  const calls: string[][] = [];
-  const cli = cliFixture(directory, calls);
-  const request: typeof fetch = async () => new Response("PRIVATE_CATALOG_ERROR", { status: 503 });
-  const readStore = () => readPluginStore({ fetch: request });
-  const updates = new PluginUpdates({ enabled: true, profile: directory, run: cli.run, readStore });
-  const result = await updates.check();
-  assert.equal(result.status, "unavailable");
-  const count = metrics.find(metric => metric.name === "plugin.update.operations");
-  assert.equal(count?.attributes?.outcome, "unavailable");
-  assert.equal(count?.attributes?.failure, "store-unavailable");
-  const duration = metrics.find(metric => metric.name === "plugin.update.duration");
-  assert.equal(duration?.unit, "millisecond");
-  const recorded = metrics.length;
-  await updates.check();
-  assert.equal(metrics.length, recorded);
-  const text = JSON.stringify(metrics);
-  const leaked = text.includes("PRIVATE_CATALOG_ERROR") || text.includes(directory);
-  assert.equal(leaked, false);
+  for (const backend of ["store", "repository"]) {
+    metrics.length = 0;
+    const directory = await profile(t);
+    const calls: string[][] = [];
+    const cli = cliFixture(directory, calls);
+    const request: typeof fetch = async () => new Response("PRIVATE_CATALOG_ERROR", { status: 503 });
+    const readStore = backend === "store" ? () => readPluginStore({ fetch: request }) : cli.readStore;
+    const readRepository: ReadRepository = backend === "repository" ? source => isReleaseRepository(source, { fetch: request }) : cli.readRepository;
+    const updates = new PluginUpdates({ enabled: true, profile: directory, run: cli.run, readStore, readRepository });
+    const result = await updates.check();
+    assert.equal(result.status, "unavailable");
+    const count = metrics.find(metric => metric.name === "plugin.update.operations");
+    assert.equal(count?.attributes?.outcome, "unavailable");
+    assert.equal(count?.attributes?.failure, `${backend}-unavailable`);
+    const duration = metrics.find(metric => metric.name === "plugin.update.duration");
+    assert.equal(duration?.unit, "millisecond");
+    const recorded = metrics.length;
+    await updates.check();
+    assert.equal(metrics.length, recorded);
+    const text = JSON.stringify(metrics);
+    const leaked = text.includes("PRIVATE_CATALOG_ERROR") || text.includes(directory) || text.includes("github.com");
+    assert.equal(leaked, false);
+  }
 });
 
 test("store requests stop when the caller cancels or the deadline expires", async t => {
@@ -449,7 +469,7 @@ test("migration verifies the local installed identity, version, enabled state an
     const calls: string[][] = [];
     const cli = cliFixture(directory, calls, fixture);
     const readStore = async () => ({ remotePluginId: PLUGIN_STORE_ID, name: "mobile-dev", version: "0.1.167", installed: true, enabled: true, localVersion: "0.1.167" });
-    const updates = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.167", run: cli.run, readStore });
+    const updates = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.167", run: cli.run, readStore, readRepository: cli.readRepository });
     const notice = await updates.check();
     assert.equal(notice.status, "migration");
     assert.equal(notice.storeInstalled, false);
@@ -460,15 +480,121 @@ test("migration verifies the local installed identity, version, enabled state an
   }
 });
 
-test("migration recognizes the renamed official GitHub repository", async t => {
+test("migration recognizes the official repository across renames and transfers", async t => {
+  for (const repository of ["callstackincubator/codex-mobile-dev-plugin", "callstackincubator/mobile-dev", "callstackincubator/mobile-dev-plugin", "new-owner/future-name"]) {
+    const directory = await profile(t);
+    const calls: string[][] = [];
+    const source = `https://github.com/${repository}.git`;
+    const { run, readStore, readRepository } = cliFixture(directory, calls, { storeInstalled: true, source });
+    const updates = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.167", run, readStore, readRepository });
+    const notice = await updates.check();
+    assert.equal(notice.status, "migration", repository);
+    const migrated = await updates.migrate();
+    assert.equal(migrated.status, "migrated", repository);
+    const removed = calls.some(call => call[1] === "remove" && call[2] === "mobile-dev@mobile-dev");
+    assert.equal(removed, true, repository);
+  }
+});
+
+test("repository verification uses the immutable ID and follows redirects without credentials", async () => {
+  for (const source of [
+    "https://github.com/callstackincubator/mobile-dev-plugin",
+    "https://github.com/callstackincubator/mobile-dev-plugin.git",
+    "git@github.com:callstackincubator/mobile-dev-plugin.git",
+    "ssh://git@github.com/callstackincubator/mobile-dev-plugin.git",
+  ]) {
+    const request: typeof fetch = async (url, options) => {
+      assert.equal(url, "https://api.github.com/repos/callstackincubator/mobile-dev-plugin");
+      assert.equal(options?.redirect, "follow");
+      assert.equal(options?.credentials, "omit");
+      assert.deepEqual(options?.headers, { Accept: "application/vnd.github+json" });
+      assert.ok(options?.signal);
+      return Response.json({ id: RELEASE_REPOSITORY_ID, full_name: "new-owner/future-name" });
+    };
+    const verified = await isReleaseRepository(source, { fetch: request });
+    assert.equal(verified, true, source);
+  }
+});
+
+test("foreign repositories and unsupported clone URLs cannot pass identity verification", async () => {
+  const source = "https://github.com/callstackincubator/mobile-dev.git";
+  for (const request of [
+    async () => Response.json({ id: 1, full_name: "callstackincubator/mobile-dev" }),
+    async () => new Response(null, { status: 404 }),
+  ]) {
+    const verified = await isReleaseRepository(source, { fetch: request });
+    assert.equal(verified, false);
+  }
+  const request: typeof fetch = async () => { assert.fail("Unsupported URLs must not make a request"); };
+  for (const unsupported of [
+    "https://example.com/callstackincubator/mobile-dev.git",
+    "https://github.com.example.com/callstackincubator/mobile-dev.git",
+    "https://github.com/callstackincubator/mobile-dev/extra",
+    "https://github.com/callstackincubator/mobile-dev?token=private",
+    "/local/mobile-dev",
+  ]) {
+    const verified = await isReleaseRepository(unsupported, { fetch: request });
+    assert.equal(verified, false, unsupported);
+  }
+});
+
+test("unavailable and malformed repository responses use fixed errors", async () => {
+  const source = "https://github.com/callstackincubator/mobile-dev.git";
+  for (const status of [403, 429, 503]) {
+    const request: typeof fetch = async () => new Response("PRIVATE_REPOSITORY_ERROR", { status });
+    const reading = isReleaseRepository(source, { fetch: request });
+    await assert.rejects(reading, { message: "Could not verify the Mobile Dev GitHub repository." });
+  }
+  for (const body of ["PRIVATE_REPOSITORY_ERROR", '{"id":"1398055406"}', "{}"]) {
+    const request: typeof fetch = async () => new Response(body);
+    const reading = isReleaseRepository(source, { fetch: request });
+    await assert.rejects(reading, { message: "GitHub returned an invalid repository response." });
+  }
+});
+
+test("repository requests stop when the caller cancels or the deadline expires", async t => {
+  for (const cause of ["caller", "deadline"]) {
+    await t.test(cause, async t => {
+      const caller = new AbortController();
+      const deadline = new AbortController();
+      t.mock.method(AbortSignal, "timeout", () => deadline.signal);
+      const request: typeof fetch = async (_url, options) => {
+        const signal = options?.signal;
+        assert.ok(signal);
+        const error = new Error("PRIVATE_REPOSITORY_ERROR");
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(error), { once: true });
+        });
+      };
+      const reading = isReleaseRepository("https://github.com/callstackincubator/mobile-dev.git", { fetch: request, signal: caller.signal });
+      const controller = cause === "caller" ? caller : deadline;
+      controller.abort();
+      await assert.rejects(reading, { message: "Could not verify the Mobile Dev GitHub repository." });
+    });
+  }
+});
+
+test("closing the updater aborts pending repository verification", async t => {
   const directory = await profile(t);
   const calls: string[][] = [];
-  const { run, readStore } = cliFixture(directory, calls, { storeInstalled: true, source: "https://github.com/callstackincubator/mobile-dev.git" });
-  const updates = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.167", run, readStore });
-  const notice = await updates.check();
-  assert.equal(notice.status, "migration");
-  const migrated = await updates.migrate();
-  assert.equal(migrated.status, "migrated");
-  const removed = calls.some(call => call[1] === "remove" && call[2] === "mobile-dev@mobile-dev");
-  assert.equal(removed, true);
+  const { run, readStore } = cliFixture(directory, calls);
+  const requested = new Promise<void>(resolve => {
+    t.mock.method(globalThis, "fetch", async (_url: unknown, options?: RequestInit) => {
+      const signal = options?.signal;
+      assert.ok(signal);
+      resolve();
+      const error = new Error("PRIVATE_REPOSITORY_ERROR");
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(error), { once: true });
+      });
+    });
+  });
+  const updates = new PluginUpdates({ enabled: true, profile: directory, run, readStore });
+  const checking = updates.check();
+  await requested;
+  updates.close();
+  const result = await checking;
+  assert.equal(result.status, "unavailable");
+  const removals = calls.filter(call => call[1] === "remove" || call[1] === "marketplace");
+  assert.equal(removals.length, 0);
 });

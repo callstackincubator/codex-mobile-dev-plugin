@@ -241,6 +241,14 @@ units, cache-hit exclusions, opt-out and migration-step error coverage are
 preserved. No endpoint response, authentication data or raw error is recorded.
 Closing the updater aborts its HTTP and CLI requests.
 
+Since 0.1.178, those update and migration measurements also cover GitHub repository
+identity verification for the legacy marketplace. The existing names, units,
+cache-hit exclusions and migration-step tags remain unchanged. API failures use
+the bounded `repository-unavailable` failure category; malformed metadata uses
+`invalid-response`. Repository names, URLs, IDs and response bodies are never
+added to telemetry. Store installations without the legacy marketplace do not
+perform this verification.
+
 Since 0.1.129, discovery command failures retain bounded `discovery_command`, `discovery_cause`,
 `discovery_termination`, and optional `discovery_signal` tags. Failed exception
 contexts contain only numeric `elapsed_ms`, `deadline_ms`, and an optional exit
