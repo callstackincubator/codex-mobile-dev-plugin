@@ -1,6 +1,6 @@
 <p align="center">
-  <a href="https://mobile-dev-snowy.vercel.app/">
-    <img src="https://mobile-dev-snowy.vercel.app/banner.jpg" alt="Mobile Dev by Callstack. Mobile development in your ADE. Supports Codex, Claude, Cursor, and more." width="100%" />
+  <a href="https://incubator.callstack.com/codex-mobile-dev-plugin/">
+    <img src="https://incubator.callstack.com/codex-mobile-dev-plugin/banner.jpg" alt="Mobile Dev by Callstack. Mobile development in your ADE. Supports Codex, Claude, Cursor, and more." width="100%" />
   </a>
 </p>
 

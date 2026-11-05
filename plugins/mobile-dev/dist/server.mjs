@@ -1,5 +1,5 @@
 
-!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="b45895dd-9f51-5d0b-ae4f-3e52e7e0dc8d")}catch(e){}}();
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="985ed09d-d715-5027-8510-f9103e76c970")}catch(e){}}();
 ;(function(){var g=globalThis.__SENTRY_ORCHESTRION__=globalThis.__SENTRY_ORCHESTRION__||{};g.bundler=g.bundler||new Set();})();import { createRequire as mobileDevBundleRequire } from 'node:module'; import { fileURLToPath as mobileDevFileURLToPath } from 'node:url'; import { dirname as mobileDevPathDirname } from 'node:path'; const require = mobileDevBundleRequire(import.meta.url); const __filename = mobileDevFileURLToPath(import.meta.url); const __dirname = mobileDevPathDirname(__filename);
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -65804,7 +65804,7 @@ var PLUGIN_VERSION;
 var init_version3 = __esm({
   "packages/shared/src/version.ts"() {
     "use strict";
-    PLUGIN_VERSION = "0.1.177";
+    PLUGIN_VERSION = "0.1.178";
   }
 });
 
@@ -156923,7 +156923,7 @@ function recordPluginUpdate(operation, outcome, duration6, failure4) {
   public_api_exports.gauge("plugin.update.duration", duration6, { unit: "millisecond", attributes: attributes2 });
 }
 var execute18 = promisify23(execFile24);
-var repositories = ["callstackincubator/codex-mobile-dev-plugin", "callstackincubator/mobile-dev"];
+var RELEASE_REPOSITORY_ID = 1398055406;
 var storeMarketplace = "openai-curated-remote";
 var githubPlugin = "mobile-dev@mobile-dev";
 var storePlugin = "mobile-dev@openai-curated-remote";
@@ -157045,20 +157045,53 @@ async function readPluginStore(options = {}) {
     throw new PluginUpdateError("The plugin store returned an invalid update response.", "invalid-response");
   }
 }
-function isReleaseRepository(source) {
-  return repositories.some((repository) => source === `https://github.com/${repository}` || source === `https://github.com/${repository}.git` || source === `git@github.com:${repository}.git` || source === `ssh://git@github.com/${repository}.git`);
+var integerSchema = numberSchema.int();
+var repositoryIdSchema = integerSchema.positive();
+var repositorySchema = external_exports.object({ id: repositoryIdSchema });
+async function isReleaseRepository(source, options = {}) {
+  const match2 = /^(?:https:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([a-z\d-]+\/[\w.-]+?)(?:\.git)?\/?$/i.exec(source);
+  if (match2 === null) return false;
+  const request2 = options.fetch ?? globalThis.fetch;
+  const timeout = AbortSignal.timeout(2e4);
+  const signals = [timeout];
+  if (options.signal !== void 0) signals.push(options.signal);
+  const signal = AbortSignal.any(signals);
+  const url3 = `https://api.github.com/repos/${match2[1]}`;
+  let response3;
+  try {
+    response3 = await request2(url3, {
+      headers: { Accept: "application/vnd.github+json" },
+      credentials: "omit",
+      redirect: "follow",
+      signal
+    });
+  } catch {
+    throw new PluginUpdateError("Could not verify the Mobile Dev GitHub repository.", "repository-unavailable");
+  }
+  if (response3.ok === false) {
+    await response3.body?.cancel();
+    if (response3.status === 404) return false;
+    throw new PluginUpdateError("Could not verify the Mobile Dev GitHub repository.", "repository-unavailable");
+  }
+  try {
+    const data = await response3.json();
+    const repository = repositorySchema.parse(data);
+    return repository.id === RELEASE_REPOSITORY_ID;
+  } catch {
+    throw new PluginUpdateError("GitHub returned an invalid repository response.", "invalid-response");
+  }
 }
 function githubInstalled(catalog) {
   return catalog.installed.some((plugin) => {
     const source = plugin.marketplaceSource;
-    return plugin.pluginId === githubPlugin && plugin.installed && source?.sourceType === "git" && isReleaseRepository(source.source);
+    return plugin.pluginId === githubPlugin && plugin.installed && source?.sourceType === "git" && catalog.releaseRepositories.has(source.source);
   });
 }
 function githubConfigured(catalog) {
   const plugins = [...catalog.installed, ...catalog.available];
   return plugins.some((plugin) => {
     const source = plugin.marketplaceSource;
-    return plugin.pluginId === githubPlugin && source?.sourceType === "git" && isReleaseRepository(source.source);
+    return plugin.pluginId === githubPlugin && source?.sourceType === "git" && catalog.releaseRepositories.has(source.source);
   });
 }
 var PluginUpdates = class {
@@ -157069,6 +157102,7 @@ var PluginUpdates = class {
   cachePath;
   run;
   readStore;
+  readRepository;
   now;
   checking;
   migrating;
@@ -157088,6 +157122,7 @@ var PluginUpdates = class {
     this.cachePath = join45(this.profile, "mobile-dev", "updates.json");
     this.run = options.run ?? createCodexRunner(this.profile, { signal: this.abort.signal });
     this.readStore = options.readStore ?? (() => readPluginStore({ signal: this.abort.signal }));
+    this.readRepository = options.readRepository ?? ((source) => isReleaseRepository(source, { signal: this.abort.signal }));
     this.now = options.now ?? Date.now;
   }
   emptyCache() {
@@ -157141,8 +157176,18 @@ var PluginUpdates = class {
     const entry2 = local.installed.find((plugin) => plugin.pluginId === storePlugin && plugin.name === "mobile-dev" && plugin.marketplaceName === storeMarketplace && plugin.source.source === "remote" && plugin.source.id === PLUGIN_STORE_ID);
     const localVersion = entry2?.version ?? null;
     if (localVersion !== null) releaseVersionSchema.parse(localVersion);
+    const sources = /* @__PURE__ */ new Set();
+    for (const plugin of [...catalog.installed, ...catalog.available]) {
+      const source = plugin.marketplaceSource;
+      if (plugin.pluginId === githubPlugin && source?.sourceType === "git") sources.add(source.source);
+    }
+    const releaseRepositories = /* @__PURE__ */ new Set();
+    for (const source of sources) {
+      if (await this.readRepository(source)) releaseRepositories.add(source);
+    }
     return {
       ...catalog,
+      releaseRepositories,
       store: { ...summary, localVersion, installed: entry2?.installed ?? false, enabled: entry2?.enabled ?? false }
     };
   }
@@ -157238,7 +157283,7 @@ var PluginUpdates = class {
       const marketplace = marketplaceResult.marketplaces.find((item) => item.name === "mobile-dev");
       if (marketplace !== void 0) {
         const source = marketplace.marketplaceSource;
-        if (source?.sourceType !== "git" || isReleaseRepository(source.source) === false) {
+        if (source?.sourceType !== "git" || await this.readRepository(source.source) === false) {
           throw new PluginUpdateError("The mobile-dev marketplace belongs to another source and cannot be removed here.", "foreign-marketplace");
         }
         const result4 = await this.run(["plugin", "marketplace", "remove", "mobile-dev", "--json"]);
@@ -157325,4 +157370,4 @@ undici/lib/web/websocket/frame.js:
   (*! ws. MIT License. Einar Otto Stangvik <einaros@gmail.com> *)
 */
 
-//# debugId=b45895dd-9f51-5d0b-ae4f-3e52e7e0dc8d
+//# debugId=985ed09d-d715-5027-8510-f9103e76c970
