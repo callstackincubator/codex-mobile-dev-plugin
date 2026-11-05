@@ -68,7 +68,7 @@ function guarded<T>(handler: (input: T, context: ServerRequestContext) => Promis
   };
 }
 
-const INSTRUCTIONS = "For mobile app development, open mobile_open_simulator before the first device launch, or reuse the open view. Use selected device IDs. Control apps with the device_* tools when the server has them. Use mobile_open_app_intel when the user asks to see the app's screen/dependency map, mobile_generate_app_intel to create it, and mobile_app_intel for screen or file dependency questions. When the user asks to see their devices, open or reuse the view, whose device menu lists them. If a task has ambiguous device targets, ask the user with mobile_choose_devices when it is available, otherwise in chat; proceed only after they choose. For a local CPU or React profile path, use mobile_analyze_profile to show TraceSift findings, then wait for the user to choose Investigate. See the Mobile Dev skill, when installed, for device control, logs, profiles, App Intelligence, and performance workflows.";
+const INSTRUCTIONS = "For mobile app development, open mobile_open_simulator before the first device launch, or reuse the open view. Use selected device IDs. Control apps with the device_* tools when the server has them. Use mobile_generate_app_intel to create the app's screen/dependency map, then mobile_open_app_intel to show it in chat. For a specific screen's dependencies, look its ID up with mobile_app_intel and pass it as mobile_open_app_intel's appIntelScreen to render that screen's graph; use mobile_app_intel alone, without opening the panel, for a file's importers/imports or when the user wants the answer as text, not a view. When the user asks to see their devices, open or reuse the view, whose device menu lists them. If a task has ambiguous device targets, ask the user with mobile_choose_devices when it is available, otherwise in chat; proceed only after they choose. For a local CPU or React profile path, use mobile_analyze_profile to show TraceSift findings, then wait for the user to choose Investigate. See the Mobile Dev skill, when installed, for device control, logs, profiles, App Intelligence, and performance workflows.";
 
 /** Mobile Dev's own device views, which a host adds to the server it runs (see createPanel). */
 export type Panel = {
@@ -258,7 +258,7 @@ function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, sh
   });
 
   openingTool("mobile_open_app_intel", {
-    description: "Open App Intelligence when the user asks to see or visualize the selected React Native app's screen and dependency graph. This does not launch a device or generate a new snapshot.",
+    description: "Open App Intelligence when the user asks to see or visualize the selected React Native app's screen and dependency graph, or a specific screen's dependencies. Pass appIntelScreen with a screen ID from mobile_app_intel (use operation=search first if only given a name) to focus the graph on that screen. This does not launch a device or generate a new snapshot.",
     resourceUri: WORKSPACE_URI, entrypoint: "global", defaults: { workspaceTool: "app-intel" }, startBackend: false,
   });
 

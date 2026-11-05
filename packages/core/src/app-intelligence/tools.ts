@@ -16,7 +16,7 @@ const failure = (error: unknown) => ({ isError: true as const, content: [{ type:
 export function registerAppIntelligenceTools(server: McpServer, service: AppIntelligenceService) {
   server.registerTool("mobile_generate_app_intel", {
     title: "Generate App Intelligence",
-    description: "Analyze a React Native project's Expo Router and React Navigation screens plus its static import graph for iOS and Android. App Intelligence discovers screens itself; App Flow does not need to run first. Pass projectPath to override the folder remembered by the panel.",
+    description: "Analyze a React Native project's Expo Router and React Navigation screens plus its static import graph for iOS and Android. App Intelligence discovers screens itself; App Flow does not need to run first. Pass projectPath to override the folder remembered by the panel. When the user asked to create or see the app's map, follow this with mobile_open_app_intel to render it in chat.",
     inputSchema: generateAppIntelInput.shape, annotations: write,
   }, async (input, context) => {
     const startedAt = performance.now();
@@ -29,7 +29,7 @@ export function registerAppIntelligenceTools(server: McpServer, service: AppInte
 
   server.registerTool("mobile_app_intel", {
     title: "Query App Intelligence",
-    description: "Query a saved React Native App Intelligence graph. Use operation=screen for a screen's dependencies, file for importers/imports, and search when the exact screen ID or project-relative file is unknown. direction=incoming finds consumers; outgoing finds dependencies. Read the compact summary first and paginate only when nextOffset is present. Pass projectPath to override the folder remembered by the panel.",
+    description: "Query a saved React Native App Intelligence graph. Use operation=screen for a screen's dependencies, file for importers/imports, and search when the exact screen ID or project-relative file is unknown. direction=incoming finds consumers; outgoing finds dependencies. Read the compact summary first and paginate only when nextOffset is present. Pass projectPath to override the folder remembered by the panel. When the user asked about a screen by name and wants it shown, not just answered, search here for its ID, then call mobile_open_app_intel with that screen ID to render its dependency graph in chat.",
     inputSchema: appIntelQueryInput.shape, annotations: read,
   }, async raw => {
     const startedAt = performance.now();
