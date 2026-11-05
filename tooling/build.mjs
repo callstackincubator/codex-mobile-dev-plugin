@@ -7,6 +7,7 @@ import { telemetryBuildEnvironment } from "./telemetry-build.mjs";
 import { buildServeEmu } from "./build-serve-emu.mjs";
 import { buildHostPage, buildUIPage } from "./ui-page.mjs";
 import { buildServerBundles } from "./server-bundle.mjs";
+import { verifyResourceSaving } from "./vendor-resource-saving.mjs";
 import { access, copyFile, cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { dirname, resolve } from "node:path";
@@ -15,6 +16,8 @@ const telemetryEnvironment = telemetryBuildEnvironment();
 // A fresh dist/, so packages never carry outputs an earlier build or branch left behind.
 await rm("dist", { recursive: true, force: true });
 await mkdir("dist", { recursive: true });
+await verifyResourceSaving();
+await cp("packages/native/vendor/resource-saving", "dist/resource-saving", { recursive: true });
 await access("packages/native/vendor/baguette/Baguette");
 await access("packages/native/vendor/baguette/Baguette_Baguette.bundle");
 const baguetteReleaseText = await readFile("packages/native/vendor/baguette/release.json", "utf8");

@@ -116,6 +116,7 @@ then build and verify the package:
 ```sh
 npm ci
 npm run vendor:baguette
+npm run vendor:resource-saving
 npm run vendor:agent-device
 npm run vendor:serve-emu
 npm run rebuild:ios-fps

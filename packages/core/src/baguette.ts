@@ -18,6 +18,7 @@ import { errorReportSignature } from "@mobile-dev/shared/telemetry.ts";
 import { baguetteEnvironment } from "./baguette-runtime.ts";
 import { panelRuntimePath } from "./panel-runtime.ts";
 import { captureServerError, recordAccessibilityBridgeRestart } from "./telemetry.ts";
+import type { ResourceSaving } from "./resource-saving.ts";
 
 type DescribedUi = { tree?: { label?: unknown } };
 const NO_ACCESSIBILITY_DATA = "no accessibility data";
@@ -74,6 +75,7 @@ export const definitionSchema = z.object({
 });
 
 export class Baguette {
+  resourceSaving?: ResourceSaving;
   readonly baseUrl: URL;
   private child?: ChildProcess;
   private starting?: Promise<Status>;
@@ -312,7 +314,7 @@ export class Baguette {
     }
   }
 
-  async changeDeviceState(udid: string, action: "boot" | "shutdown", timeout = 120000): Promise<Status> {
+  async changeDeviceState(udid: string, action: "boot" | "shutdown", timeout = 240000): Promise<Status> {
     udidSchema.parse(udid);
     const previous = this.deviceChanges.get(udid);
     const change = (async () => {
@@ -332,7 +334,15 @@ export class Baguette {
           if (!status.connected) throw listError(status);
           const current = status.devices.find(item => item.udid === udid);
           if (!current) throw new SimulatorUnavailableError("This simulator is no longer available. Refresh the device list.");
-          if (current.state === expected) return status;
+          if (current.state === expected) {
+            const target = { platform: "ios" as const, id: udid, key: udid, state: current.state };
+            if (action === "boot") {
+              await this.resourceSaving?.apply(target, signal);
+              return this.status(signal);
+            }
+            this.resourceSaving?.forget(target);
+            return status;
+          }
           await delay(250, undefined, { signal });
         }
       } catch (error) {

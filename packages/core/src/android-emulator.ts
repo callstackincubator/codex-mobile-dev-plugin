@@ -13,11 +13,15 @@ type BootOptions = {
   executable: string;
   signal: AbortSignal;
   ready: () => Promise<Status | undefined>;
+  resourceSaving?: boolean;
 };
 
 export async function bootAndroidEmulator(options: BootOptions, launch: typeof spawn = spawn): Promise<Status> {
   options.signal.throwIfAborted();
-  const child = launch(options.executable, ["-avd", options.name, "-no-window", "-no-boot-anim", "-gpu", "host"], {
+  const args = ["-avd", options.name, "-no-window", "-no-boot-anim", "-gpu", "host"];
+  if (options.resourceSaving !== undefined) args.push("-no-snapshot-load", "-no-snapshot-save");
+  if (options.resourceSaving) args.push("-lowram", "-memory", "1536");
+  const child = launch(options.executable, args, {
     detached: true, stdio: "ignore", shell: false,
   });
   // The failure promise stays resolved after an early exit, including during an adb read.

@@ -14,6 +14,13 @@ import { androidStartupDiagnosticTags } from "@mobile-dev/shared/android-startup
 import { installIntegrityTags } from "./install-integrity.ts";
 import type { AndroidStartupSummary, AndroidStartupContext, AndroidStartupFailure, AndroidDeviceState } from "@mobile-dev/shared/android-startup-diagnostics.ts";
 
+export function recordResourceSaving(platform: "ios" | "android", enabled: boolean, outcome: "success" | "failed", duration: number) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = { component: "server", surface: "simulator", device_platform: platform, device_kind: platform === "ios" ? "simulator" : "emulator", enabled, outcome };
+  Sentry.metrics.count("resource_saving.apply", 1, { attributes });
+  Sentry.metrics.distribution("resource_saving.duration", duration, { unit: "millisecond", attributes });
+}
+
 export function recordBrowserPanelSessions(active: number) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   Sentry.metrics.gauge("browser_panel.sessions", active, { attributes: { component: "server" } });

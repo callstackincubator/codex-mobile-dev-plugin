@@ -1,6 +1,6 @@
 {
   "name": "mobile-dev",
-  "version": "0.1.178",
+  "version": "0.1.179",
   "private": true,
   "workspaces": [
     "packages/shared",
@@ -23,6 +23,7 @@
     "build:mac": "node apps/mac/tooling/build.mjs",
     "public-release": "node tooling/public-release.mjs",
     "vendor:baguette": "node tooling/vendor-baguette.mjs",
+    "vendor:resource-saving": "node tooling/vendor-resource-saving.mjs",
     "vendor:agent-device": "npm ci --prefix packages/runtimes/agent-device --ignore-scripts --no-audit --no-fund",
     "catalog:agent-device": "node tooling/agent-device-catalog.mjs",
     "rebuild:baguette": "node tooling/rebuild-baguette.mjs",

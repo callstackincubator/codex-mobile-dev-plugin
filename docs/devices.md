@@ -49,3 +49,41 @@ For tool use, call `mobile_list_android_devices`. It returns serials for connect
 `vendor:serve-emu` installs the source fork’s pinned Node.js dependencies with package scripts disabled and checks the bundled scrcpy 4.0 server's SHA-256. `build` compiles the checked-in CLI for Node.js, copies the runtime, and records package integrity, lockfile hash, CLI hash, and scrcpy hash in `dist/serve-emu/release.json`. Starting Android requires no npm install or runtime download.
 
 Click the camera button in either simulator toolbar to add a PNG to the chat input and copy it to the macOS clipboard. Each click adds another screenshot and keeps any attached log. Remove screenshots from the chat input to clear them. The button works while the selected simulator runs, including when the stream is paused. Physical iOS captures the displayed mirrored frame and requires a ready stream. It does not send a message.
+
+## Resource saving
+
+The leaf button beside device settings controls **Save resources** for the selected
+iOS simulator or Android emulator. It is enabled by default and is available while
+the device is stopped, so a device can opt out before its first optimized start.
+Preferences are stored on this Mac by simulator UDID or AVD name, across plugin
+updates and Android serial changes. Physical devices have no resource-saving control.
+
+Changing the switch saves the preference without interrupting running apps. A
+running device shows **Restart to apply** when the saved mode has not been applied
+by this server. Clicking it stops the selected virtual device and starts it with
+the saved mode. Existing virtual devices and their app data are retained.
+
+The plugin bundles pinned simslim 0.14.0 and avdslim 1.0.16 binaries for its macOS
+arm64 host. iOS starts apply and verify a simslim profile that preserves StoreKit,
+push, web/universal-link services, personal-information and photo pickers,
+connectivity, and diagnostics. Android starts retain hardware GPU acceleration,
+use 1536 MiB of guest RAM and low-RAM mode, then apply avdslim's package pruning.
+Android animations, process-limit settings, sync, location, Bluetooth, and setup
+state are retained; camera, photo, contact, map, accessibility, speech, and tracing
+packages are kept. Android cold boots bypass snapshots in both modes so an old
+snapshot cannot override the saved mode. Turning saving off restores the recorded
+guest changes and uses the AVD's normal configured RAM on its next start.
+
+These profiles reduce background capabilities, including Siri/Intelligence,
+indexing and widgets on iOS, and selected consumer and assistant packages on
+Android. Disable saving on devices used to test those capabilities. A failed
+optimizer or profile verification fails the start operation visibly.
+
+Build preparation uses `npm run vendor:resource-saving`; the normal build checks
+both executable hashes before packaging them with their licenses. There is no
+Homebrew requirement for plugin users. avdslim's own preferences are isolated;
+the existing Android SDK, ADB configuration and device authorizations are retained.
+
+`tooling/benchmark-resource-saving.ts` measures the same adapters and profiles on
+explicitly selected devices. It saves per-process host physical-footprint and
+interval CPU-time readings, rather than Android guest free RAM or app-only CPU.

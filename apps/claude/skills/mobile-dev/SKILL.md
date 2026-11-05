@@ -9,6 +9,14 @@ Use the Mobile Dev MCP tools for local iOS and Android work. Mobile Dev's device
 opens in a browser beside the chat, and its tools add device control, logs, app
 inspection, and performance recordings with their charts.
 
+Start stopped virtual devices through `mobile_boot_simulator` or
+`mobile_boot_android_emulator` before using agent-device. These start paths apply
+the device's saved resource-saving mode, enabled by default. The leaf control
+beside device settings can opt a device out. A changed mode applies at the next
+start; **Restart to apply** explicitly closes running apps. Preserve the saved
+mode, and report an optimization failure instead of bypassing the plugin's start
+path with a direct `simctl` or `emulator` launch.
+
 If the Mobile Dev tools are missing, tell the user "Mobile Dev could not start." and
 follow [missing-tools recovery](references/missing-tools.md): check which Node.js the
 plugin's launcher finds and that the plugin is enabled, and offer to install Node.js

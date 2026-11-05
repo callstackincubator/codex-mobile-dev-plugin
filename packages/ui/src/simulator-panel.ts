@@ -2,6 +2,8 @@ import { androidNinePatchSkin } from "./android-nine-patch.ts";
 import { androidFrameGeometry, androidChromeScale } from "./android-frame-geometry.ts";
 import { getDevicePicker } from "./device-picker.ts";
 import { getDeviceSettings } from "./device-settings.ts";
+import { getResourceSaving } from "./resource-saving.ts";
+import type { ResourceSavingState } from "@mobile-dev/shared/resource-saving.ts";
 import { getAppTools } from "./app-tools.ts";
 import type { DeviceSettings } from "@mobile-dev/shared/device-settings.ts";
 import { bezelGeometrySchema } from "@mobile-dev/shared/bezel.ts";
@@ -44,6 +46,7 @@ export function createSimulatorPanel(
   const devicePickerElement = element("devices");
   const devices = getDevicePicker(devicePickerElement);
   const settings = getDeviceSettings(element("settings"));
+  const resourceSaving = getResourceSaving(element("settings"));
   const appTools = getAppTools(element("settings"));
   const canvas = element<HTMLCanvasElement>("screen");
   const context = canvas.getContext("2d")!;
@@ -99,6 +102,8 @@ export function createSimulatorPanel(
     const deviceToolsUnavailable = busy || !toolsAvailable || selected?.state !== "Booted" || disposed;
     settings.configure(selected?.udid ?? "", deviceToolsUnavailable);
     settings.prefetch();
+    const resourceDeviceId = selected?.kind === "emulator" ? `avd:${selected.name}` : selected?.udid ?? "";
+    resourceSaving.configure(resourceDeviceId, selected !== undefined && selected.kind !== "physical", busy || !toolsAvailable || disposed);
     // App tools use simctl and adb, which do not reach paired iPhones.
     appTools.configure(platform, selected?.udid ?? "", deviceToolsUnavailable || selected?.kind === "physical" && platform === "ios");
     element<HTMLButtonElement>("start-device").disabled = busy || !toolsAvailable || !selected || selected.kind === "physical" || selected.state === "Booted" || disposed;
@@ -293,6 +298,27 @@ export function createSimulatorPanel(
     return (result.structuredContent as { settings: Partial<DeviceSettings> }).settings;
   };
   settings.setFrame = visible => { showFrame = visible; setBezel(sourceBezel); fitScreen(); };
+  resourceSaving.request = async enabled => {
+    if (selected === undefined || selected.kind === "physical" || disposed) throw new Error("Select a simulator or emulator first.");
+    const target = { platform, id: selected.udid };
+    const args = enabled === undefined ? { target } : { target, enabled };
+    const name = enabled === undefined ? "mobile_resource_saving" : "mobile_set_resource_saving";
+    const result = await call(name, args, { timeout: 10000 });
+    const content = result.structuredContent as { state: ResourceSavingState };
+    return content.state;
+  };
+  resourceSaving.restart = async () => {
+    if (selected === undefined || selected.kind === "physical" || disposed) throw new Error("Select a simulator or emulator first.");
+    const id = selected.udid;
+    const stop = devices.stop;
+    if (stop === undefined) throw new Error("Device controls are not available.");
+    await stop(id);
+    busy = true;
+    controls();
+    notice();
+    try { await start(); }
+    finally { busy = false; controls(); }
+  };
   appTools.call = async (name, args) => {
     if (!selected || disposed) throw new Error("Select a running device first.");
     return (await call(name, args, { timeout: 60000 })).structuredContent;
@@ -797,7 +823,7 @@ export function createSimulatorPanel(
       empty("Starting simulator…", "The screen will appear when the device is ready.");
       const before = selected;
       const result = await call(platform === "android" ? "mobile_boot_android_emulator" : "mobile_boot_simulator",
-        platform === "android" ? { deviceId: before.udid } : { udid: before.udid }, { timeout: 150000 });
+        platform === "android" ? { deviceId: before.udid } : { udid: before.udid }, { timeout: 300000 });
       renderStatus(result.structuredContent as Status);
       if (platform === "android") {
         const booted = status?.devices.find(device => device.kind !== "physical" && device.name === before.name && device.state === "Booted");
@@ -1001,6 +1027,7 @@ export function createSimulatorPanel(
       devices.stop = undefined;
       devices.refresh = undefined;
       settings.dispose();
+      resourceSaving.dispose();
       appTools.dispose();
       stopObservingAnnotations();
       annotations.dispose();

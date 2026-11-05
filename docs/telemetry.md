@@ -748,3 +748,21 @@ attached to any of them, matching the parameter store's own refusal to log
 values; the route and the reason a dispatch was refused appear only in the local
 console line and in the error shown on the node, neither of which leaves the
 machine. No new data is collected.
+
+## Resource-saving operations
+
+Since 0.1.179, `resource_saving.apply` counts successful and failed applications of
+the selected virtual-device profile, and `resource_saving.duration` records the
+whole operation in milliseconds, including iOS verification or Android package
+readback. Attributes are limited to `component=server`, `surface=simulator`,
+`device_platform`, virtual `device_kind`, `enabled`, and `outcome`. Failures use a
+fixed-message `resource_saving.apply` error report. Preferences have separate
+fixed-message `resource_saving.read` and `resource_saving.set` reports.
+
+The UI records `ui.resource_saving.change` duration and
+`ui.resource_saving.failure` through the existing UI operation helper. All paths
+use the existing sampling, scrubbing and telemetry opt-out. No device IDs, AVD
+names, packages, service lists, paths, command arguments, CLI output or preference
+contents are attached. There are no background samplers or per-frame spans for
+this feature. Benchmark process measurements are local report artifacts and are
+not submitted to Sentry. Existing startup, stream and input coverage is retained.

@@ -19,6 +19,7 @@ import { androidStartupMessageSchema, androidDeviceState, setAndroidStartupDiagn
 import type { AndroidStartupContext, AndroidStartupFailure, AndroidStartupSummary } from "@mobile-dev/shared/android-startup-diagnostics.ts";
 import { androidSdkRoots } from "./android-sdk.ts";
 import { panelRuntimePath } from "./panel-runtime.ts";
+import type { ResourceSaving } from "./resource-saving.ts";
 
 const execute = promisify(execFile);
 export const androidIdSchema = z.string().min(1).max(256).regex(/^[A-Za-z0-9_.:\[\]%-]+$/);
@@ -38,6 +39,7 @@ export function androidDisplaySize(output: string, video: { width: number; heigh
 }
 
 export class ServeEmu {
+  resourceSaving?: ResourceSaving;
   private readonly avdNames = new Map<string, string>();
   private readonly reconnects = new Map<string, number>();
   private readonly backends = new Map<string, Backend>();
@@ -142,10 +144,17 @@ export class ServeEmu {
     if (device.kind === "emulator" && device.state === "unauthorized") return this.awaitRunningEmulator(id);
     if (!id.startsWith("avd:")) throw new SimulatorUnavailableError("Reconnect and authorize this Android device through adb.");
     // Launch separately from serve-emu so closing the panel never stops the AVD.
-    return bootAndroidEmulator({
+    const target = { platform: "android" as const, id, key: device.name, state: device.state };
+    const resourceSaving = await this.resourceSaving?.enabled(target);
+    const status = await bootAndroidEmulator({
       name: device.name, executable: await this.emulatorPath(), signal: this.lifetime.signal,
       ready: () => this.emulatorReady(item => item.name === device.name, "boot"),
+      resourceSaving,
     });
+    const running = status.devices.find(item => item.kind === "emulator" && item.name === device.name && item.state === "Booted");
+    if (running === undefined) throw new Error("The started Android emulator is no longer available.");
+    await this.resourceSaving?.apply({ ...target, id: running.udid, state: running.state }, this.lifetime.signal, resourceSaving);
+    return status;
   }
 
   // Ready means adb authorized the emulator and Android finished booting.

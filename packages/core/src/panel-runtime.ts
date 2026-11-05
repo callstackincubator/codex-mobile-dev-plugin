@@ -13,8 +13,8 @@ import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 import { captureServerError, recordPanelRuntime } from "./telemetry.ts";
 
 /** The panel's native parts, as the runtime archive and dist/ lay them out (tooling's PANEL_PARTS). */
-export const PANEL_RUNTIME_PARTS = ["baguette", "serve-emu", "ios-mirror", "ios-mirror-service.mjs"] as const;
-export type PanelRuntimeFile = "baguette/Baguette" | "serve-emu/src/cli.mjs" | "ios-mirror-service.mjs";
+export const PANEL_RUNTIME_PARTS = ["baguette", "serve-emu", "ios-mirror", "ios-mirror-service.mjs", "resource-saving"] as const;
+export type PanelRuntimeFile = "baguette/Baguette" | "serve-emu/src/cli.mjs" | "ios-mirror-service.mjs" | "resource-saving/simslim" | "resource-saving/avdslim";
 
 // Bundled, this module is server.mjs or a chunk in dist/, beside the parts.
 let locate: () => Promise<string> = async () => fileURLToPath(new URL("./", import.meta.url));
@@ -121,6 +121,10 @@ async function complete(target: string, release: PanelRuntimeRelease) {
     const marker: unknown = JSON.parse(await readFile(join(target, "panel-runtime.json"), "utf8"));
     if (typeof marker !== "object" || marker === null || ("sha256" in marker && marker.sha256 === release.sha256) === false) return false;
     await access(join(target, "baguette/Baguette"), constants.X_OK);
+    for (const name of ["simslim", "avdslim"]) {
+      const executable = join(target, "resource-saving", name);
+      await access(executable, constants.X_OK);
+    }
     return true;
   } catch { return false; }
 }
@@ -175,6 +179,10 @@ async function extract(archive: string, staging: string) {
   await access(join(staging, "baguette/Baguette"), constants.X_OK).catch(() => {
     throw new RuntimeFailure("archive", "the simulator backend in the archive is not executable.");
   });
+  for (const name of ["simslim", "avdslim"]) {
+    const executable = join(staging, "resource-saving", name);
+    await access(executable, constants.X_OK).catch(() => { throw new RuntimeFailure("archive", "a resource optimizer in the archive is not executable."); });
+  }
 }
 
 // The parts have no links; anything but files and folders did not come from a release.
