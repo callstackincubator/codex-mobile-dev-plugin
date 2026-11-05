@@ -742,24 +742,24 @@ test("App Intelligence layout measurements carry counts only, never paths", asyn
   api.setUiSurface("app-intel");
   api.recordUiTiming("ui.app_intel.flow_layout", 4);
   api.setUiGauge("ui.app_intel.flow_nodes", 37);
-  api.countUiEvent("ui.app_intel.orientation_switch");
   api.countUiEvent("ui.app_intel.group_collapse");
   api.countUiEvent("ui.app_intel.group_expand");
   api.countUiEvent("ui.app_intel.group_show_all");
   api.countUiEvent("ui.app_intel.boundary_highlight");
   api.countUiEvent("ui.app_intel.project_switch");
+  api.countUiEvent("ui.app_intel.clear");
   api.countUiEvent("ui.app_intel.boundary_filter");
   await api.stopUiTelemetry();
 
   const encoded = bodies.join("\n");
   contains(encoded, "ui.app_intel.flow_layout.mean");
   contains(encoded, "ui.app_intel.flow_nodes");
-  contains(encoded, "ui.app_intel.orientation_switch");
   contains(encoded, "ui.app_intel.group_collapse");
   contains(encoded, "ui.app_intel.group_expand");
   contains(encoded, "ui.app_intel.group_show_all");
   contains(encoded, "ui.app_intel.boundary_highlight");
   contains(encoded, "ui.app_intel.project_switch");
+  contains(encoded, "ui.app_intel.clear");
   contains(encoded, "ui.app_intel.boundary_filter");
   contains(encoded, "app-intel");
   contains(encoded, "/Users/", false);

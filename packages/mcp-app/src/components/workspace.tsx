@@ -26,7 +26,7 @@ const tools = {
   logs: { id: "tool-logs", label: "Logs", icon: TerminalIcon },
   performance: { id: "tool-performance", label: "Performance", icon: ActivityIcon },
   storage: { id: "tool-storage", label: "Storage", icon: DatabaseIcon },
-  "app-intel": { id: "tool-app-intel", label: "App Intelligence", icon: NetworkIcon },
+  "app-intel": { id: "tool-app-intel", label: "App Intel", icon: NetworkIcon },
   tracesift: { id: "tool-tracesift", label: "TraceSift", icon: ChartNoAxesCombinedIcon },
 };
 type Tool = keyof typeof tools;

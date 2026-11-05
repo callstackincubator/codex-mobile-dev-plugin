@@ -13,7 +13,7 @@ enum Tool: String, CaseIterable, Identifiable {
     case .logs: "Logs"
     case .performance: "Performance"
     case .storage: "Storage"
-    case .appIntel: "App Intelligence"
+    case .appIntel: "App Intel"
     case .tracesift: "TraceSift"
     }
   }

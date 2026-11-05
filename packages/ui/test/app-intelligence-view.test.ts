@@ -46,6 +46,11 @@ test("App Intelligence traces a screen, groups each hop by boundary and folds a 
   const globals = {
     window: dom.window, document: dom.window.document, navigator: dom.window.navigator,
     HTMLElement: dom.window.HTMLElement, Node: dom.window.Node, Element: dom.window.Element, Event: dom.window.Event,
+    // The confirmation popover is a Radix layer: it walks the tree and dispatches its own events,
+    // and every constructor it touches has to be this window's, not Node's.
+    ...Object.fromEntries(["CustomEvent", "KeyboardEvent", "MouseEvent", "PointerEvent", "FocusEvent", "DocumentFragment",
+      "NodeFilter", "DOMRect", "HTMLButtonElement", "HTMLInputElement", "HTMLSelectElement", "HTMLTextAreaElement", "SVGElement",
+    ].map(name => [name, (dom.window as unknown as Record<string, unknown>)[name]])),
     getComputedStyle: dom.window.getComputedStyle.bind(dom.window),
     requestAnimationFrame: dom.window.requestAnimationFrame.bind(dom.window),
     cancelAnimationFrame: dom.window.cancelAnimationFrame.bind(dom.window),
@@ -89,6 +94,7 @@ test("App Intelligence traces a screen, groups each hop by boundary and folds a 
     calls.push({ name, arguments: args });
     if (name === "mobile_app_intel_snapshot") return { content: [], structuredContent: { projectPath: "/tmp/social-app", snapshot, recents } };
     if (name === "mobile_select_app_intel_project") return { content: [], structuredContent: { projectPath: args?.projectPath, snapshot, recents } };
+    if (name === "mobile_clear_app_intel") return { content: [], structuredContent: { projectPath: args?.projectPath, snapshot: null, recents } };
     return { content: [], structuredContent: {} };
   } };
   const panel = new AppIntelligencePanel(app as unknown as App);
@@ -104,16 +110,15 @@ test("App Intelligence traces a screen, groups each hop by boundary and folds a 
   const groups = () => [...query("[data-flow-group]")].map(node => node.getAttribute("data-flow-group"));
   assert.ok(dom.window.document.getElementById("app-intelligence-panel"), "the panel keeps the id the package smoke test asserts");
 
-  // The picker is a dropdown over the remembered projects, so switching needs no folder picker.
-  const picker = dom.window.document.querySelector("[data-project-picker]") as HTMLSelectElement;
-  assert.equal(picker.tagName, "SELECT");
-  assert.deepEqual([...picker.options].map(option => option.textContent), ["social-app", "other-app", "Choose another project…"]);
-  await act(async () => {
-    picker.value = "/tmp/other-app";
-    picker.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
-  });
+  // The picker is the workspace's own Select, showing the project by folder name. Its menu is a
+  // popup the panel opens, so the switch itself is driven through the panel the trigger calls.
+  const picker = () => dom.window.document.querySelector("[data-project-picker]") as HTMLElement;
+  assert.equal(picker().getAttribute("data-slot"), "select-trigger");
+  assert.match(picker().textContent ?? "", /social-app/);
+  await act(async () => { await panel.selectProject("/tmp/other-app"); });
   assert.deepEqual(calls.at(-1), { name: "mobile_select_app_intel_project", arguments: { projectPath: "/tmp/other-app" } });
   assert.equal(panel.getSnapshot().projectPath, "/tmp/other-app");
+  assert.match(picker().textContent ?? "", /other-app/, "and the trigger follows the choice");
 
   // The Flow is the only view now: the rail lists entry points from the moment a snapshot loads.
   const rail = dom.window.document.querySelector("aside .overflow-auto") as HTMLElement;
@@ -163,15 +168,6 @@ test("App Intelligence traces a screen, groups each hop by boundary and folds a 
   // An overflow is a control, not a label: clicking it opens the rest of that boundary.
   await act(async () => { panel.showAllIn("2:component"); });
   assert.deepEqual(panel.getSnapshot().expanded, ["2:component"]);
-
-  // The orientation toggle re-reads the same graph downwards instead of across.
-  const svg = () => dom.window.document.querySelector("[data-flow-orientation]") as SVGElement;
-  assert.equal(svg().getAttribute("data-flow-orientation"), "columns");
-  const before = refs();
-  await act(async () => { (dom.window.document.querySelector('[data-orientation="tree"]') as HTMLButtonElement).click(); });
-  assert.equal(svg().getAttribute("data-flow-orientation"), "tree");
-  assert.deepEqual(refs(), before, "the toggle changes the reading direction, not the graph");
-  assert.equal(panel.getSnapshot().orientation, "tree");
 
   // The filter is the entry-point rail's filter: unticking a boundary takes those entries out of
   // the rail without touching the traced graph.
@@ -235,4 +231,19 @@ test("App Intelligence traces a screen, groups each hop by boundary and folds a 
   assert.equal(refs()[0], "screen:home");
   assert.deepEqual(panel.getSnapshot().toggled, [], "the folds belonged to the old screen");
   assert.deepEqual(panel.getSnapshot().expanded, []);
+
+  // Clear asks first, then throws the saved graph away but keeps the project selected.
+  const clear = () => dom.window.document.getElementById("app-intel-clear") as HTMLButtonElement | null;
+  assert.ok(clear(), "Clear sits beside Regenerate while there is a graph");
+  const before = calls.length;
+  await act(async () => { clear()?.click(); });
+  assert.equal(calls.length, before, "pressing it only opens the confirmation");
+  const confirm = dom.window.document.querySelector("[data-confirm]") as HTMLButtonElement;
+  assert.ok(confirm, "which offers Cancel and Clear");
+  await act(async () => { confirm.click(); });
+  assert.deepEqual(calls.at(-1), { name: "mobile_clear_app_intel", arguments: { projectPath: "/tmp/other-app" } });
+  assert.equal(panel.getSnapshot().snapshot, null);
+  assert.equal(panel.getSnapshot().projectPath, "/tmp/other-app", "the project stays selected");
+  assert.equal(clear(), null, "and there is nothing left to clear");
+  assert.match(dom.window.document.querySelector("header")?.textContent ?? "", /Generate/);
 });

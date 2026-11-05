@@ -1,21 +1,24 @@
-import { ColumnsIcon, FolderOpenIcon, ListFilterIcon, MaximizeIcon, MinusIcon, NetworkIcon, PlusIcon, RefreshCwIcon, RowsIcon, SearchIcon, SquareIcon } from "lucide-react";
+import { EraserIcon, FolderOpenIcon, ListFilterIcon, MaximizeIcon, MinusIcon, NetworkIcon, PlusIcon, RefreshCwIcon, SearchIcon, SquareIcon } from "lucide-react";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { AppIntelligencePanel } from "../app-intelligence-panel.ts";
 import type { AppIntelSnapshot, IntelRef } from "@mobile-dev/shared/app-intelligence.ts";
 import { fileRef, screenRef } from "@mobile-dev/shared/app-intelligence.ts";
-import type { Boundary, FlowOrientation, NodePlatforms } from "../app-intelligence-layout.ts";
-import { boundariesIn, boundaryColor, boundaryLabel, boundaryOf, buildFlow, clampName, depthHue, depthTint, ellipsize, flowLink, heat, heatRamp, heatT, labelOf, maxReach, pathOf, placeFlow, platformsFor, reachOf, FLOW_METRICS } from "../app-intelligence-layout.ts";
+import type { Boundary, NodePlatforms } from "../app-intelligence-layout.ts";
+import { boundariesIn, boundaryColor, boundaryLabel, boundaryOf, buildFlow, clampName, depthHue, depthTint, ellipsize, flowLink, labelOf, pathOf, placeFlow, platformsFor, reachOf, FLOW_METRICS } from "../app-intelligence-layout.ts";
 import { recordUiTiming, setUiGauge } from "../telemetry.ts";
 import { Alert, AlertDescription } from "./ui/alert.tsx";
 import { Button } from "./ui/button.tsx";
+import { ConfirmButton } from "./confirm-button.tsx";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "./ui/input-group.tsx";
-import { NativeSelect, NativeSelectOption } from "./ui/native-select.tsx";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "./ui/base-select.tsx";
 
 const BROWSE = "\u0000browse";
+const folderName = (path: string) => path.split("/").at(-1) || path;
 
 /**
- * The project picker. It remembers what has been opened, so switching between apps is a dropdown
- * rather than a trip through the host folder picker; the last entry still opens that picker.
+ * The project picker, on the same Select as the workspace's tool and platform menus. It remembers
+ * what has been opened, so switching between apps is a menu rather than a trip through the host
+ * folder picker; the last entry still opens that picker.
  */
 function ProjectPicker({ projectPath, recents, disabled, onSelect, onBrowse }: {
   projectPath: string; recents: readonly string[]; disabled: boolean;
@@ -23,14 +26,23 @@ function ProjectPicker({ projectPath, recents, disabled, onSelect, onBrowse }: {
 }) {
   const options = [...new Set([...(projectPath ? [projectPath] : []), ...recents])];
   if (!options.length) return <Button variant="outline" size="sm" data-project-picker disabled={disabled} onClick={onBrowse}><FolderOpenIcon />Choose project</Button>;
-  return <div className="flex min-w-0 shrink-0 items-center gap-1">
-    <FolderOpenIcon className="size-4 shrink-0 text-muted-foreground" />
-    <NativeSelect size="sm" className="max-w-52" data-project-picker aria-label="App Intelligence project" disabled={disabled}
-      value={projectPath} onChange={event => event.target.value === BROWSE ? onBrowse() : onSelect(event.target.value)}>
-      {options.map(path => <NativeSelectOption key={path} value={path} title={path}>{path.split("/").at(-1) || path}</NativeSelectOption>)}
-      <NativeSelectOption value={BROWSE}>Choose another project…</NativeSelectOption>
-    </NativeSelect>
-  </div>;
+  return <Select items={[...options.map(path => ({ value: path, label: folderName(path) })), { value: BROWSE, label: "Choose another project…" }]}
+    value={projectPath || null} disabled={disabled}
+    onValueChange={value => { if (value === BROWSE) onBrowse(); else if (value) onSelect(value); }}>
+    <SelectTrigger id="app-intel-project" data-project-picker size="sm" aria-label="App Intelligence project" className="w-52 min-w-28 shrink">
+      <SelectValue>{(value: string | null) => <><FolderOpenIcon /><span className="truncate">{value ? folderName(value) : "Choose project"}</span></>}</SelectValue>
+    </SelectTrigger>
+    <SelectContent align="start" alignItemWithTrigger={false} className="w-auto max-w-[min(30rem,calc(100vw-16px))] min-w-(--anchor-width)"><SelectGroup>
+      {options.map(path => <SelectItem key={path} value={path} className="py-1.5">
+        <span className="flex min-w-0 flex-col">
+          <span className="truncate leading-5">{folderName(path)}</span>
+          <span className="truncate text-xs leading-4 text-muted-foreground">{path}</span>
+        </span>
+      </SelectItem>)}
+      <SelectSeparator />
+      <SelectItem value={BROWSE}><FolderOpenIcon />Choose another project…</SelectItem>
+    </SelectGroup></SelectContent>
+  </Select>;
 }
 
 const platformEdge: Record<NodePlatforms, string> = { ios: "bg-sky-500", android: "bg-lime-500", both: "bg-transparent" };
@@ -166,8 +178,8 @@ const pathChars = (boundary: string) => Math.max(8, Math.floor((FLOW_METRICS.car
 /** The three weights a connector is drawn at: dim by default, warmer on hover, full when lit. */
 const LINK = { dim: 0.2, hovered: 0.6, lit: 1 } as const;
 
-function FlowView({ snapshot, start, max, orientation, toggled, expanded, litBoundary, height, onToggleGroup, onLight, onShowAll, onHover }: {
-  snapshot: AppIntelSnapshot; start: IntelRef; max: number; orientation: FlowOrientation;
+function FlowView({ snapshot, start, toggled, expanded, litBoundary, height, onToggleGroup, onLight, onShowAll, onHover }: {
+  snapshot: AppIntelSnapshot; start: IntelRef;
   toggled: ReadonlySet<string>; expanded: ReadonlySet<string>; litBoundary: string | null; height: number;
   onToggleGroup: (key: string, open: boolean) => void; onLight: (key: string) => void;
   onShowAll: (key: string) => void; onHover: (hover: Hover) => void;
@@ -176,10 +188,10 @@ function FlowView({ snapshot, start, max, orientation, toggled, expanded, litBou
   const { graph, placement } = useMemo(() => {
     const startedAt = performance.now();
     const built = buildFlow(snapshot, start, { toggled, expanded });
-    const placed = placeFlow(built, orientation);
+    const placed = placeFlow(built);
     recordUiTiming("ui.app_intel.flow_layout", performance.now() - startedAt);
     return { graph: built, placement: placed };
-  }, [snapshot, start, orientation, toggled, expanded]);
+  }, [snapshot, start, toggled, expanded]);
   useEffect(() => { setUiGauge("ui.app_intel.flow_nodes", placement.cards.length); }, [placement]);
 
   const path = new Set<IntelRef>();
@@ -190,13 +202,13 @@ function FlowView({ snapshot, start, max, orientation, toggled, expanded, litBou
     isLit(boundary, depth) ? LINK.lit : hovered ? LINK.hovered : LINK.dim;
 
   return <svg width={placement.width} height={Math.max(placement.height, height)} viewBox={`0 0 ${placement.width} ${placement.height}`}
-    role="group" aria-label="Dependency flow" data-flow-orientation={orientation} className="block select-none">
+    role="group" aria-label="Dependency flow" className="block select-none">
     {placement.cards.map(({ ref, depth, rect }) => {
       const from = graph.parent.get(ref);
       const origin = from && placement.rectOf.get(from);
       if (!origin) return null;
       const opacity = weight(boundaryOf(ref), depth, path.has(ref));
-      return <path key={`link:${ref}`} d={flowLink(origin, rect, orientation)} fill="none" data-flow-link={ref}
+      return <path key={`link:${ref}`} d={flowLink(origin, rect)} fill="none" data-flow-link={ref}
         stroke={depthHue(depth)} strokeOpacity={opacity} strokeWidth={opacity === LINK.lit ? 2 : 1.2} />;
     })}
     {/* A folded boundary keeps its connectors: they land on the header instead of on its rows,
@@ -207,7 +219,7 @@ function FlowView({ snapshot, start, max, orientation, toggled, expanded, litBou
         const origin = placement.rectOf.get(source);
         if (!origin) return null;
         const opacity = weight(entry.boundary, entry.depth, false);
-        return <path key={`folded:${entry.kind}:${entry.key}:${source}`} d={flowLink(origin, entry.target, orientation)} fill="none"
+        return <path key={`folded:${entry.kind}:${entry.key}:${source}`} d={flowLink(origin, entry.target)} fill="none"
           data-flow-folded-link={entry.key} stroke={depthHue(entry.depth)} strokeOpacity={opacity}
           strokeWidth={opacity === LINK.lit ? 2 : 1.2} strokeDasharray={entry.kind === "more" ? "4 3" : undefined} />;
       }))}
@@ -247,7 +259,6 @@ function FlowView({ snapshot, start, max, orientation, toggled, expanded, litBou
       const platforms = screen ? "both" as NodePlatforms : platformsFor(snapshot, ref);
       const boundary = boundaryOf(ref);
       const detail = `${boundaryLabel[boundary]}${screen ? ` · ${screen.route ?? ref.slice(7)}` : ` · reach ${reach}`}${platforms === "both" ? "" : ` · ${platformLabel(platforms)}`}`;
-      const barWidth = Math.max(3, 44 * heatT(reach, max));
       const on = path.has(ref);
       return <g key={`card:${ref}`} data-flow-node={ref} data-flow-boundary={boundary} role="img" aria-label={`${labelOf(ref)}, ${detail}`}
         onPointerMove={event => { setLit(ref); onHover({ title: ref.replace(/^(?:file|package|screen):/, ""), detail, x: event.clientX, y: event.clientY }); }}
@@ -260,10 +271,7 @@ function FlowView({ snapshot, start, max, orientation, toggled, expanded, litBou
         <text x={rect.x + 12} y={rect.y + 16} className="fill-foreground font-mono text-[10.5px] font-medium">{clampName(labelOf(ref), NAME_CHARS)}</text>
         <text x={rect.x + 12} y={rect.y + 29} fill={boundaryColor(boundary)} className="font-mono text-[8px] font-semibold uppercase tracking-wider">{boundary}</text>
         <text x={rect.x + 16 + boundary.length * 5.4} y={rect.y + 29} className="fill-muted-foreground font-mono text-[9px]">{ellipsize(screen ? screen.route ?? "" : pathOf(ref), pathChars(boundary))}</text>
-        {!screen && <>
-          <text x={rect.x + rect.width - 11} y={rect.y + 16} textAnchor="end" className="fill-muted-foreground font-mono text-[9px] tabular-nums">{reach}</text>
-          <rect x={rect.x + rect.width - 11 - barWidth} y={rect.y + rect.height - 8} width={barWidth} height={3} rx={1.5} fill={heat(reach, max)} />
-        </>}
+        {!screen && <text x={rect.x + rect.width - 11} y={rect.y + 16} textAnchor="end" className="fill-muted-foreground font-mono text-[9px] tabular-nums">{reach}</text>}
       </g>;
     })}
   </svg>;
@@ -299,8 +307,6 @@ function BoundaryFilter({ available, selected, lit, onToggle, onLight, onAll }: 
   </div>;
 }
 
-const ORIENTATIONS = [["columns", "Columns", ColumnsIcon], ["tree", "Top-down", RowsIcon]] as const;
-
 export const AppIntelligenceView = memo(function AppIntelligenceView({ panel }: { panel: AppIntelligencePanel }) {
   const state = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
   const [query, setQuery] = useState("");
@@ -309,7 +315,6 @@ export const AppIntelligenceView = memo(function AppIntelligenceView({ panel }: 
   const snapshot = state.snapshot;
   const search = query.trim().toLowerCase();
 
-  const max = useMemo(() => snapshot ? maxReach(snapshot) : 1, [snapshot]);
   // The rail is what roots the graph. A card is a place in that screen's tree, not a tree of its
   // own: re-rooting on a click meant any stray click threw away where the reader had got to.
   const selected = state.selectedScreen && snapshot?.screens[state.selectedScreen] ? state.selectedScreen : null;
@@ -324,7 +329,7 @@ export const AppIntelligenceView = memo(function AppIntelligenceView({ panel }: 
   const selectedBoundaries = useMemo(() => new Set<string>(state.boundaries ?? available.map(entry => entry.boundary)), [state.boundaries, available]);
   const toggleBoundary = useCallback((boundary: Boundary) => panel.toggleBoundary(boundary, available.map(entry => entry.boundary)), [panel, available]);
   // Re-centre the canvas whenever the graph it holds changes, so a new trace is never panned away.
-  const { zoom, zoomIn, zoomOut, reset } = usePanZoom(flowBox, `${flowStart ?? ""}:${state.orientation}`);
+  const { zoom, zoomIn, zoomOut, reset } = usePanZoom(flowBox, flowStart ?? "");
   const screens = useMemo(() => entries.filter(({ id, screen, boundary }) => selectedBoundaries.has(boundary)
     && (!search || `${id} ${screen.title} ${screen.route ?? ""} ${screen.source ?? ""}`.toLowerCase().includes(search))), [entries, selectedBoundaries, search]);
 
@@ -332,13 +337,16 @@ export const AppIntelligenceView = memo(function AppIntelligenceView({ panel }: 
     <header className="panel-toolbar flex h-[49px] shrink-0 items-center gap-2 border-b px-2">
       <ProjectPicker projectPath={state.projectPath} recents={state.recents} disabled={!state.available || state.busy !== null}
         onSelect={path => void panel.selectProject(path)} onBrowse={() => void panel.pickProject()} />
-      {snapshot && <div role="group" aria-label="Flow direction" className="flex overflow-hidden rounded-md border">
-        {ORIENTATIONS.map(([value, label, Icon]) => <button key={value} type="button" aria-pressed={state.orientation === value} data-orientation={value} title={label}
-          className={`flex h-7 items-center gap-1 px-2 text-xs ${state.orientation === value ? "bg-muted text-foreground shadow-[inset_0_-2px_0_var(--primary)]" : "text-muted-foreground"}`}
-          onClick={() => panel.setOrientation(value)}><Icon className="size-3.5" />{label}</button>)}
-      </div>}
       <InputGroup size="sm" className="min-w-28 flex-1"><InputGroupInput type="search" aria-label="Search the graph" placeholder="Search screens…" value={query} onChange={event => setQuery(event.target.value)} /><InputGroupAddon><SearchIcon /></InputGroupAddon></InputGroup>
-      {state.busy === "generating" || state.busy === "cancelling" ? <Button variant="outline" size="sm" disabled={state.busy === "cancelling"} onClick={() => void panel.cancel()}><SquareIcon />Cancel</Button> : <Button size="sm" disabled={!state.available || !state.projectPath || state.busy !== null} onClick={() => void panel.generate()}><RefreshCwIcon />{snapshot ? "Regenerate" : "Generate"}</Button>}
+      {state.busy === "generating" || state.busy === "cancelling"
+        ? <Button variant="outline" size="sm" disabled={state.busy === "cancelling"} onClick={() => void panel.cancel()}><SquareIcon />Cancel</Button>
+        : <>
+          <Button size="sm" disabled={!state.available || !state.projectPath || state.busy !== null} onClick={() => void panel.generate()}><RefreshCwIcon />{snapshot ? "Regenerate" : "Generate"}</Button>
+          {snapshot && <ConfirmButton id="app-intel-clear" variant="outline" size="sm" title="Clear the graph"
+            description={`Deletes the saved graph for ${state.projectPath.split("/").at(-1)}. The project stays selected, so it can be analyzed again.`}
+            action="Clear" disabled={state.busy !== null} onConfirm={() => void panel.clear()}
+            className="text-destructive hover:bg-destructive/10 hover:text-destructive"><EraserIcon />Clear</ConfirmButton>}
+        </>}
     </header>
     {state.error && <Alert variant="destructive" className="shrink-0 rounded-none border-x-0 border-t-0"><AlertDescription className="text-xs">{state.error}</AlertDescription></Alert>}
     {state.run && <div className="shrink-0 border-b px-3 py-2 text-xs text-muted-foreground" role="status">{state.run.message}</div>}
@@ -348,8 +356,7 @@ export const AppIntelligenceView = memo(function AppIntelligenceView({ panel }: 
         <main className="flex min-h-0 min-w-0 flex-col border-r max-[720px]:border-b max-[720px]:border-r-0">
           <div className="flex shrink-0 items-center gap-2 border-b px-3 py-1.5 text-xs">
             <span className="truncate font-medium">{snapshot.screens[selected ?? ""]?.title ?? "Choose a screen"}</span>
-            <div className="ml-auto flex shrink-0 items-center gap-1.5 text-[10.5px] text-muted-foreground"><span>reach</span><span className="h-[7px] w-[70px] rounded" style={{ background: heatRamp() }} /><span className="tabular-nums">{max}</span></div>
-            <div className="flex shrink-0 items-center gap-0.5 rounded-md border" role="group" aria-label="Zoom">
+            <div className="ml-auto flex shrink-0 items-center gap-0.5 rounded-md border" role="group" aria-label="Zoom">
               <button type="button" data-zoom="out" aria-label="Zoom out" title="Zoom out" className="grid size-6 place-items-center text-muted-foreground hover:text-foreground" onClick={zoomOut}><MinusIcon className="size-3" /></button>
               <span data-zoom-level className="w-9 text-center text-[10.5px] tabular-nums text-muted-foreground">{Math.round(zoom * 100)}%</span>
               <button type="button" data-zoom="in" aria-label="Zoom in" title="Zoom in" className="grid size-6 place-items-center text-muted-foreground hover:text-foreground" onClick={zoomIn}><PlusIcon className="size-3" /></button>
@@ -359,7 +366,7 @@ export const AppIntelligenceView = memo(function AppIntelligenceView({ panel }: 
           <BoundaryFilter available={available} selected={selectedBoundaries} lit={state.litBoundary} onToggle={toggleBoundary} onLight={boundary => panel.litBoundaryTo(`*:${boundary}`)} onAll={() => panel.setBoundaries(null)} />
           <div ref={flowRef} data-flow-canvas className="min-h-0 flex-1 cursor-grab touch-none overflow-auto [&[data-panning]]:cursor-grabbing">
             <div className="w-max will-change-transform">
-              {flowStart ? <FlowView snapshot={snapshot} start={flowStart} max={max} orientation={state.orientation} toggled={toggled} expanded={expanded} litBoundary={state.litBoundary} height={flowSize.height}
+              {flowStart ? <FlowView snapshot={snapshot} start={flowStart} toggled={toggled} expanded={expanded} litBoundary={state.litBoundary} height={flowSize.height}
                 onToggleGroup={(key, open) => panel.toggleGroup(key, open)} onLight={key => panel.litBoundaryTo(key)} onShowAll={key => panel.showAllIn(key)} onHover={setHover} />
                 : <div className="grid place-items-center p-6 text-center text-sm text-muted-foreground" style={{ width: flowSize.width, height: flowSize.height }}>Choose an entry point to trace its dependencies.</div>}
             </div>

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, realpath, rename, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { AppIntelSnapshot } from "@mobile-dev/shared/app-intelligence.ts";
@@ -63,5 +63,10 @@ export async function readAppIntel(projectPath: string): Promise<AppIntelSnapsho
 
 export async function writeAppIntel(projectPath: string, snapshot: AppIntelSnapshot) {
   await atomicWrite(snapshotPath(projectPath), JSON.stringify(snapshot));
+}
+
+/** Drops one project's saved graph. The project stays remembered, so it can be generated again. */
+export async function clearAppIntel(projectPath: string) {
+  await rm(snapshotPath(projectPath), { force: true });
 }
 

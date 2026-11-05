@@ -85,6 +85,15 @@ export function registerAppIntelligenceTools(server: McpServer, service: AppInte
     catch (error) { return failure(error); }
   });
 
+  registerAppTool(server, "mobile_clear_app_intel", {
+    title: "Clear the App Intelligence graph", description: "Delete the saved App Intelligence graph for the selected project. The project stays selected and can be analyzed again.",
+    inputSchema: generateAppIntelInput.shape, annotations: write, _meta: { ui: { visibility: ["app"] } },
+  }, async input => {
+    const startedAt = performance.now();
+    try { const result = text(await service.clear(input.projectPath)); recordAppIntelOperation("clear", "success", performance.now() - startedAt); return result; }
+    catch (error) { recordAppIntelOperation("clear", "failed", performance.now() - startedAt); return failure(error); }
+  });
+
   registerAppTool(server, "mobile_cancel_app_intel", {
     title: "Cancel App Intelligence generation", description: "Cancel App Intelligence generation before its atomic save.",
     inputSchema: generateAppIntelInput.shape, annotations: write, _meta: { ui: { visibility: ["app"] } },

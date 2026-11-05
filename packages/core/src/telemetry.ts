@@ -53,7 +53,7 @@ export function recordAppStorageOperation(operation: AppStorageOperation, platfo
   Sentry.metrics.gauge("app_storage.operation.duration", duration, { unit: "millisecond", attributes });
 }
 
-export function recordAppIntelOperation(operation: "generate" | "query" | "snapshot" | "pick", outcome: "success" | "failed" | "cancelled", duration: number) {
+export function recordAppIntelOperation(operation: "generate" | "query" | "snapshot" | "pick" | "clear", outcome: "success" | "failed" | "cancelled", duration: number) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes = { component: "server", surface: "app-intel", operation, outcome };
   Sentry.metrics.count("app_intel.operation.samples", 1, { attributes });

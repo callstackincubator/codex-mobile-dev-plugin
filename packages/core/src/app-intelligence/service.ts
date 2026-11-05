@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Worker } from "node:worker_threads";
 import type { AppIntelSnapshot, AppIntelStatus } from "@mobile-dev/shared/app-intelligence.ts";
-import { readAppIntel, readRecentProjects, readRememberedProject, rememberProject, validateProjectPath, writeAppIntel } from "./storage.ts";
+import { clearAppIntel, readAppIntel, readRecentProjects, readRememberedProject, rememberProject, validateProjectPath, writeAppIntel } from "./storage.ts";
 
 type Run = NonNullable<AppIntelStatus["run"]> & { controller: AbortController; worker?: Worker };
 
@@ -85,6 +85,13 @@ export class AppIntelligenceService {
       await writeAppIntel(projectPath, snapshot);
       return { projectPath, snapshot };
     } finally { signal?.removeEventListener("abort", abort); this.runs.delete(projectPath); }
+  }
+
+  async clear(path?: string): Promise<{ projectPath: string; snapshot: null; recents: string[] }> {
+    const projectPath = await this.project(path);
+    if (this.runs.has(projectPath)) throw new Error("App Intelligence is still generating for this project. Cancel it first.");
+    await clearAppIntel(projectPath);
+    return { projectPath, snapshot: null, recents: await readRecentProjects() };
   }
 
   async cancel(path?: string) {

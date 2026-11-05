@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AppIntelSnapshot, IntelEdge } from "@mobile-dev/shared/app-intelligence.ts";
-import { FLOW_METRICS, boundariesIn, boundaryOf, buildFlow, clampName, depthHue, depthTint, ellipsize, flowLink, groupKey, heat, heatT, labelOf, maxReach, openByDefault, pathOf, placeFlow, platformsFor } from "../src/app-intelligence-layout.ts";
+import { FLOW_METRICS, boundariesIn, boundaryOf, buildFlow, clampName, depthHue, depthTint, ellipsize, flowLink, groupKey, labelOf, openByDefault, pathOf, placeFlow, platformsFor } from "../src/app-intelligence-layout.ts";
 
 function snapshotOf(edges: IntelEdge[], files: Record<string, number>, packages: Record<string, number> = {}): AppIntelSnapshot {
   const indexes: AppIntelSnapshot["indexes"] = { screens: Object.create(null), incoming: Object.create(null), outgoing: Object.create(null) };
@@ -114,49 +114,41 @@ test("a boundary past its cap folds the rest into an overflow its key can open",
   assert.equal(all?.hidden, 0);
 });
 
-test("placeFlow lays a hop out as a column or as a row, without overlapping its cards", () => {
-  const flow = buildFlow(groupedSnapshot(), "screen:home", { toggled: openTo(3) });
-  for (const orientation of ["columns", "tree"] as const) {
-    const placed = placeFlow(flow, orientation);
-    assert.equal(placed.cards.length, 8, `${orientation} places every drawn row`);
-    assert.equal(placed.headers.length, 5, `${orientation} draws one header per boundary, and none for the root`);
-    assert.ok(placed.cards.every(card => placed.rectOf.get(card.ref) === card.rect));
-    for (let a = 0; a < placed.cards.length; a++) for (let b = a + 1; b < placed.cards.length; b++) {
-      const first = placed.cards[a].rect, second = placed.cards[b].rect;
-      const overlaps = first.x < second.x + second.width - 0.001 && second.x < first.x + first.width - 0.001
-        && first.y < second.y + second.height - 0.001 && second.y < first.y + first.height - 0.001;
-      assert.ok(!overlaps, `${orientation}: ${placed.cards[a].ref} overlaps ${placed.cards[b].ref}`);
-    }
-    for (const card of placed.cards) {
-      assert.ok(card.rect.x >= 0 && card.rect.y >= 0 && card.rect.x + card.rect.width <= placed.width + 0.001 && card.rect.y + card.rect.height <= placed.height + 0.001, `${orientation} keeps every card inside the board`);
-    }
+test("placeFlow stacks a hop into a column without overlapping its cards", () => {
+  const placed = placeFlow(buildFlow(groupedSnapshot(), "screen:home", { toggled: openTo(3) }));
+  assert.equal(placed.cards.length, 8, "it places every drawn row");
+  assert.equal(placed.headers.length, 5, "one header per boundary, and none for the root");
+  assert.ok(placed.cards.every(card => placed.rectOf.get(card.ref) === card.rect));
+  for (let a = 0; a < placed.cards.length; a++) for (let b = a + 1; b < placed.cards.length; b++) {
+    const first = placed.cards[a].rect, second = placed.cards[b].rect;
+    const overlaps = first.x < second.x + second.width - 0.001 && second.x < first.x + first.width - 0.001
+      && first.y < second.y + second.height - 0.001 && second.y < first.y + first.height - 0.001;
+    assert.ok(!overlaps, `${placed.cards[a].ref} overlaps ${placed.cards[b].ref}`);
+  }
+  for (const card of placed.cards) {
+    assert.ok(card.rect.x >= 0 && card.rect.y >= 0 && card.rect.x + card.rect.width <= placed.width + 0.001 && card.rect.y + card.rect.height <= placed.height + 0.001, "every card stays inside the board");
   }
 });
 
-test("columns advance along x and the tree advances down y", () => {
+test("each hop steps one column along, anchored so a fold moves nothing before it", () => {
   const flow = buildFlow(groupedSnapshot(), "screen:home", { toggled: openTo(3) });
+  const columns = placeFlow(flow);
   const depthOf = (placed: ReturnType<typeof placeFlow>, depth: number) => placed.cards.filter(card => card.depth === depth);
-  const columns = placeFlow(flow, "columns");
   // Rows under a header are indented past it, which the root card has no header to sit under.
   assert.equal(columns.headers[0].rect.x - depthOf(columns, 0)[0].rect.x, FLOW_METRICS.column);
   assert.equal(depthOf(columns, 1)[0].rect.x - depthOf(columns, 0)[0].rect.x, FLOW_METRICS.column + FLOW_METRICS.indent);
   assert.equal(depthOf(columns, 2).every(card => card.rect.x === depthOf(columns, 1)[0].rect.x + FLOW_METRICS.column), true);
-  // Anchored to the start, not centred: folding one boundary must not move any other level.
   assert.equal(depthOf(columns, 0)[0].rect.y, FLOW_METRICS.pad);
-  const folded = placeFlow(buildFlow(groupedSnapshot(), "screen:home"), "columns");
+  const folded = placeFlow(buildFlow(groupedSnapshot(), "screen:home"));
   assert.deepEqual(depthOf(folded, 0)[0].rect, depthOf(columns, 0)[0].rect, "the root sits where it sat before the fold");
   assert.deepEqual(depthOf(folded, 1)[0].rect, depthOf(columns, 1)[0].rect);
-  const tree = placeFlow(flow, "tree");
-  assert.ok(depthOf(tree, 2)[0].rect.y > depthOf(tree, 1)[0].rect.y, "each hop sits below the one before it");
-  assert.equal(new Set(depthOf(tree, 2).slice(0, 2).map(card => card.rect.y)).size, 1, "rows in one hop share a baseline");
-  assert.ok(tree.height > columns.height, "the tree is the taller reading of the same graph");
 });
 
 test("a folded boundary still records what feeds it, and where its header landed", () => {
   const folded = buildFlow(groupedSnapshot(), "screen:home");
   const components = folded.levels[2].find(group => group.boundary === "component");
   assert.deepEqual(components?.sources, ["file:src/screens/home.tsx"], "the connector has somewhere to come from");
-  const placed = placeFlow(folded, "columns");
+  const placed = placeFlow(folded);
   assert.ok(placed.headerRectOf.get(groupKey(2, "component")), "and somewhere to land");
   assert.deepEqual(placed.headerRectOf.get(groupKey(2, "component")), placed.headers.find(header => header.key === groupKey(2, "component"))?.rect);
   // Sources are the cards above, so a boundary fed by two files records both of them once each.
@@ -164,33 +156,9 @@ test("a folded boundary still records what feeds it, and where its header landed
   assert.deepEqual(deep.levels[3].find(group => group.boundary === "util")?.sources, ["file:src/components/Button.tsx"]);
 });
 
-test("a link bends along the axis its orientation reads in", () => {
+test("a link leaves the right edge and lands on the left", () => {
   const from = { x: 0, y: 0, width: 100, height: 40 }, to = { x: 200, y: 80, width: 100, height: 40 };
-  assert.ok(flowLink(from, to, "columns").startsWith("M100 20"), "columns leave the right edge");
-  assert.ok(flowLink(from, to, "tree").startsWith("M50 40"), "the tree leaves the bottom edge");
-});
-
-test("the heat scale is log-shaped, monotonic and clamped", () => {
-  assert.equal(heatT(0, 100), 0);
-  assert.equal(heatT(100, 100), 1);
-  assert.equal(heatT(500, 100), 1, "clamps above the max");
-  assert.equal(heatT(5, 0), 0, "an empty snapshot is cold, not NaN");
-  let previous = -1;
-  for (const reach of [0, 1, 2, 5, 10, 50, 100]) {
-    const value = heatT(reach, 100);
-    assert.ok(value > previous || (reach === 0 && value === 0), `heat rises at ${reach}`);
-    previous = value;
-  }
-  assert.ok(heatT(10, 100) > 0.5, "log scale lifts small counts clear of the floor");
-  assert.match(heat(50, 100), /^rgb\(\d+,\d+,\d+\)$/);
-  assert.match(heat(0, 100), /^rgb\(\d+,\d+,\d+\)$/);
-  assert.match(heat(100, 100), /^rgb\(\d+,\d+,\d+\)$/);
-});
-
-test("maxReach spans files and packages", () => {
-  const snapshot = snapshotOf([], { "a.ts": 3 }, { "left-pad": 11 });
-  assert.equal(maxReach(snapshot), 11);
-  assert.equal(maxReach(snapshotOf([], {})), 1, "never zero, so the scale cannot divide by it");
+  assert.equal(flowLink(from, to), "M100 20 C145 20 155 100 200 100");
 });
 
 test("boundaryOf reads a role off the path", () => {

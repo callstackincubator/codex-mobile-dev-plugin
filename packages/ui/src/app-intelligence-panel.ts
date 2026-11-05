@@ -4,12 +4,10 @@ import { captureUiError, countUiEvent, measureUiOperation, recordUiTiming, setUi
 
 export type AppIntelligenceState = {
   open: boolean; available: boolean; projectPath: string; snapshot: AppIntelSnapshot | null;
-  run: AppIntelStatus["run"]; busy: "loading" | "picking" | "generating" | "cancelling" | null;
+  run: AppIntelStatus["run"]; busy: "loading" | "picking" | "generating" | "cancelling" | "clearing" | null;
   error: string; selectedScreen: string | null;
   /** Projects the panel remembers, most recent first, so switching needs no folder picker. */
   recents: string[];
-  /** Which way the Flow reads: one boundary stack per hop, or the hops stacked downwards. */
-  orientation: "columns" | "tree";
   /**
    * Boundary groups flipped away from their default fold (only the first hop opens by itself),
    * and those opened past their row cap. Both are keyed "<hop>:<boundary>".
@@ -30,7 +28,7 @@ function resultError(result: Awaited<ReturnType<HostBridge["callServerTool"]>>) 
 
 export class AppIntelligencePanel {
   private listeners = new Set<() => void>();
-  private state: AppIntelligenceState = { open: false, available: false, projectPath: "", snapshot: null, run: null, busy: null, error: "", selectedScreen: null, recents: [], orientation: "columns", toggled: [], expanded: [], litBoundary: null, boundaries: null };
+  private state: AppIntelligenceState = { open: false, available: false, projectPath: "", snapshot: null, run: null, busy: null, error: "", selectedScreen: null, recents: [], toggled: [], expanded: [], litBoundary: null, boundaries: null };
   private app: HostBridge;
   constructor(app: HostBridge) { this.app = app; }
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => this.listeners.delete(listener); };
@@ -42,7 +40,6 @@ export class AppIntelligencePanel {
   dispose() { this.listeners.clear(); }
   // A new root means new hops, so the folds from the old one would land on unrelated boundaries.
   selectScreen(selectedScreen: string | null) { this.update({ selectedScreen, toggled: [], expanded: [], litBoundary: null }); }
-  setOrientation(orientation: AppIntelligenceState["orientation"]) { if (orientation !== this.state.orientation) { countUiEvent("ui.app_intel.orientation_switch"); this.update({ orientation }); } }
   /** `open` is what the click is asking for; the state stores only the flip from the default. */
   toggleGroup(key: string, open: boolean) {
     countUiEvent(open ? "ui.app_intel.group_expand" : "ui.app_intel.group_collapse");
@@ -130,6 +127,18 @@ export class AppIntelligencePanel {
     } finally {
       recordUiTiming("ui.app_intel.generate", performance.now() - startedAt);
     }
+  }
+
+  /** Throws the saved graph away and leaves the project selected, ready to generate again. */
+  async clear() {
+    if (!this.state.available || !this.state.projectPath || this.state.busy !== null) return;
+    this.update({ busy: "clearing", error: "" });
+    try {
+      const result = await this.app.callServerTool({ name: "mobile_clear_app_intel", arguments: { projectPath: this.state.projectPath } });
+      if (result.isError) throw new Error(resultError(result));
+      countUiEvent("ui.app_intel.clear");
+      this.update({ busy: null, snapshot: null, selectedScreen: null, toggled: [], expanded: [], litBoundary: null, boundaries: null });
+    } catch (error) { this.update({ busy: null, error: error instanceof Error ? error.message : String(error) }); captureUiError(error, "app_intel.clear"); }
   }
 
   async cancel() {

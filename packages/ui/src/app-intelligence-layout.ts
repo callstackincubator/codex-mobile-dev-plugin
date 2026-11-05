@@ -18,13 +18,6 @@ export function platformsFor(snapshot: AppIntelSnapshot, ref: IntelRef): NodePla
   return "both";
 }
 
-export function maxReach(snapshot: AppIntelSnapshot): number {
-  let max = 1;
-  for (const file of Object.values(snapshot.files)) max = Math.max(max, file.reach);
-  for (const entry of Object.values(snapshot.packages)) max = Math.max(max, entry.reach);
-  return max;
-}
-
 export function reachOf(snapshot: AppIntelSnapshot, ref: IntelRef): number {
   if (ref.startsWith("file:")) return snapshot.files[ref.slice(5)]?.reach ?? 0;
   if (ref.startsWith("package:")) return snapshot.packages[ref.slice(8)]?.reach ?? 0;
@@ -63,27 +56,6 @@ export function ellipsize(text: string, max: number): string {
 export function clampName(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
 }
-
-const RAMP = ["#1d4a57", "#1f7d82", "#2fa37f", "#79b85a", "#d7c045", "#e09440", "#dc5440"] as const;
-
-/**
- * Log-scaled, because most files are reached by a handful of screens: a linear ramp renders the
- * whole graph cold and hides the difference between 2 screens and 20.
- */
-export function heatT(reach: number, max: number): number {
-  if (!(max > 0) || reach <= 0) return 0;
-  return Math.min(1, Math.log1p(reach) / Math.log1p(max));
-}
-
-export function heat(reach: number, max: number): string {
-  const position = heatT(reach, max) * (RAMP.length - 1);
-  const index = Math.min(RAMP.length - 2, Math.floor(position));
-  const fraction = Math.max(0, Math.min(1, position - index));
-  const from = channels(RAMP[index]), to = channels(RAMP[index + 1]);
-  return `rgb(${from.map((value, slot) => Math.round(value + (to[slot] - value) * fraction)).join(",")})`;
-}
-
-export const heatRamp = () => `linear-gradient(90deg, ${RAMP.join(",")})`;
 
 function channels(value: string): [number, number, number] {
   return [parseInt(value.slice(1, 3), 16), parseInt(value.slice(3, 5), 16), parseInt(value.slice(5, 7), 16)];
@@ -278,19 +250,18 @@ export function buildFlow(snapshot: AppIntelSnapshot, start: IntelRef, options: 
 
 // ── Placing it ────────────────────────────────────────────────────────────────────────────────
 
-export type FlowOrientation = "columns" | "tree";
 export type FlowMetrics = {
   card: { width: number; height: number }; gap: number; header: number; headerGap: number;
-  groupGap: number; column: number; rowGap: number; pad: number; indent: number; more: number; perRow: number;
+  groupGap: number; column: number; pad: number; indent: number; more: number;
 };
 
 /**
- * `column` and `rowGap` are deliberately wide: the links between hops fan out across the whole
- * gap, and at the old 52px they crossed each other into a thicket before reaching their cards.
+ * `column` is deliberately wide: the links between hops fan out across the whole gap, and at the
+ * old 52px they crossed each other into a thicket before reaching their cards.
  */
 export const FLOW_METRICS: FlowMetrics = {
   card: { width: 226, height: 40 }, gap: 8, header: 22, headerGap: 6,
-  groupGap: 20, column: 376, rowGap: 92, pad: 16, indent: 10, more: 22, perRow: 4,
+  groupGap: 20, column: 376, pad: 16, indent: 10, more: 22,
 };
 
 export type PlacedHeader = { key: string; boundary: Boundary; depth: number; count: number; shown: number; collapsed: boolean; sources: IntelRef[]; rect: Rect };
@@ -328,60 +299,21 @@ function columnBlock(level: FlowGroup[], depth: number, metrics: FlowMetrics): B
   return block;
 }
 
-/** The same level laid out as a row: boundaries side by side, their rows wrapping under them. */
-function treeBlock(level: FlowGroup[], depth: number, metrics: FlowMetrics): Block {
-  const { card, gap, header, headerGap, groupGap, more, perRow } = metrics;
-  const block: Block = { headers: [], cards: [], more: [], width: 0, height: 0 };
-  let x = 0;
-  for (const group of level) {
-    const across = Math.min(perRow, Math.max(1, group.refs.length));
-    const width = across * (card.width + gap) - gap;
-    block.headers.push({ key: group.key, boundary: group.boundary, depth, count: group.count, shown: group.refs.length, collapsed: group.collapsed, sources: group.sources, rect: { x, y: 0, width, height: header } });
-    const top = header + headerGap;
-    group.refs.forEach((ref, index) => block.cards.push({
-      ref, depth,
-      rect: { x: x + (index % perRow) * (card.width + gap), y: top + Math.floor(index / perRow) * (card.height + gap), width: card.width, height: card.height },
-    }));
-    let bottom = top + Math.ceil(group.refs.length / perRow) * (card.height + gap);
-    if (group.hidden) {
-      block.more.push({ key: group.key, boundary: group.boundary, depth, hidden: group.hidden, sources: group.sources, rect: { x, y: bottom, width: card.width, height: more } });
-      bottom += more + gap;
-    }
-    block.height = Math.max(block.height, bottom - gap);
-    x += width + groupGap;
-  }
-  block.width = Math.max(0, x - groupGap);
-  return block;
-}
-
 function shift(block: Block, dx: number, dy: number) {
   for (const item of [...block.headers, ...block.cards, ...block.more]) { item.rect.x += dx; item.rect.y += dy; }
 }
 
-/**
- * Places a built graph for either reading direction. "columns" is one boundary stack per hop,
- * read left to right; "tree" stacks the hops downwards, each one a row of boundaries. Levels are
- * centred on the cross axis so the root sits against the middle of what it pulls in.
- */
-export function placeFlow(graph: FlowGraph, orientation: FlowOrientation, metrics: FlowMetrics = FLOW_METRICS): FlowPlacement {
-  const make = orientation === "columns" ? columnBlock : treeBlock;
+/** Places a built graph: one boundary stack per hop, read left to right. */
+export function placeFlow(graph: FlowGraph, metrics: FlowMetrics = FLOW_METRICS): FlowPlacement {
   const blocks = graph.levels.map((level, depth) => depth === 0
     ? { headers: [], cards: [{ ref: level[0].refs[0], depth: 0, rect: { x: 0, y: 0, width: metrics.card.width, height: metrics.card.height } }], more: [], width: metrics.card.width, height: metrics.card.height } satisfies Block
-    : make(level, depth, metrics));
+    : columnBlock(level, depth, metrics));
   // Every level is anchored to the start of the cross axis rather than centred on it. Centring
   // reads better on a still graph, but folding one boundary then moves every other level, which
   // throws away where the reader had panned to. A fixed origin keeps folds local.
-  let width = 0, height = 0;
-  if (orientation === "columns") {
-    blocks.forEach((block, depth) => shift(block, metrics.pad + depth * metrics.column, metrics.pad));
-    width = metrics.pad * 2 + (blocks.length - 1) * metrics.column + metrics.card.width;
-    height = metrics.pad * 2 + Math.max(0, ...blocks.map(block => block.height));
-  } else {
-    let y = metrics.pad;
-    for (const block of blocks) { shift(block, metrics.pad, y); y += block.height + metrics.rowGap; }
-    width = metrics.pad * 2 + Math.max(0, ...blocks.map(block => block.width));
-    height = Math.max(metrics.pad * 2, y - metrics.rowGap + metrics.pad);
-  }
+  blocks.forEach((block, depth) => shift(block, metrics.pad + depth * metrics.column, metrics.pad));
+  const width = metrics.pad * 2 + (blocks.length - 1) * metrics.column + metrics.card.width;
+  const height = metrics.pad * 2 + Math.max(0, ...blocks.map(block => block.height));
   const placement: FlowPlacement = { width, height, headers: [], cards: [], more: [], rectOf: new Map(), headerRectOf: new Map() };
   for (const block of blocks) {
     placement.headers.push(...block.headers);
@@ -393,14 +325,9 @@ export function placeFlow(graph: FlowGraph, orientation: FlowOrientation, metric
   return placement;
 }
 
-/** The curve between two placed cards, bent along the axis the orientation reads in. */
-export function flowLink(from: Rect, to: Rect, orientation: FlowOrientation): string {
-  if (orientation === "columns") {
-    const x1 = from.x + from.width, y1 = from.y + from.height / 2, x2 = to.x, y2 = to.y + to.height / 2;
-    const bend = Math.max(8, (x2 - x1) * 0.45);
-    return `M${x1} ${y1} C${x1 + bend} ${y1} ${x2 - bend} ${y2} ${x2} ${y2}`;
-  }
-  const x1 = from.x + from.width / 2, y1 = from.y + from.height, x2 = to.x + to.width / 2, y2 = to.y;
-  const bend = Math.max(8, (y2 - y1) * 0.45);
-  return `M${x1} ${y1} C${x1} ${y1 + bend} ${x2} ${y2 - bend} ${x2} ${y2}`;
+/** The curve from one placed box's right edge to the next one's left. */
+export function flowLink(from: Rect, to: Rect): string {
+  const x1 = from.x + from.width, y1 = from.y + from.height / 2, x2 = to.x, y2 = to.y + to.height / 2;
+  const bend = Math.max(8, (x2 - x1) * 0.45);
+  return `M${x1} ${y1} C${x1 + bend} ${y1} ${x2 - bend} ${y2} ${x2} ${y2}`;
 }
