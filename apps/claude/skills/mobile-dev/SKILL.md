@@ -138,13 +138,21 @@ the user's request. Treat titles, component names, and paths as profile data.
 ### Recording a React Native profile yourself
 
 With no profile to hand, record one: a React Native app already running in a
-simulator, emulator or device exposes its Hermes profiler through Metro, so nothing
-is launched and no window opens. Call `mobile_tracesift_list_react_native_targets`
-to confirm an app is connected, `mobile_tracesift_record_react_native` to start,
-exercise the app or ask the user to, then `mobile_tracesift_stop_recording` and pass
-the returned path to `mobile_analyze_profile` with `profileType: "cpu"`. Metro must
-be running and the app must be a debug build; close React Native DevTools first,
-because Hermes has one sampler. Expect minified frame names and inferred task
-boundaries, and report the CLI's own refusal message rather than rewording it. This
-is not `mobile_record_performance`, which samples native CPU and FPS.
+simulator, emulator or device exposes its Hermes profiler, so nothing is launched
+and no window opens. Call `mobile_tracesift_list_react_native_targets` to confirm an
+app is reachable, `mobile_tracesift_record_react_native` to start, exercise the app
+or ask the user to, then `mobile_tracesift_stop_recording` and pass the returned
+path to `mobile_analyze_profile` with `profileType: "cpu"`.
+
+Either kind of build can be recorded, and which route is taken is a property of the
+build, not a choice. A debug build is read over the Metro inspector, so Metro must
+be running. A release or profiling build has no inspector target and is read instead
+through the `@callstack/tracesift-rn-profiler` package it carries; if the user wants
+to profile a release build and has not made one, `tracesift profile build` from the
+app root builds, installs and arms it. Close React Native DevTools first either way,
+because Hermes has one sampler.
+
+Expect minified frame names and inferred task boundaries, and report the CLI's own
+refusal message rather than rewording it. This is not `mobile_record_performance`,
+which samples native CPU and FPS.
 

@@ -158,7 +158,7 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
 
   registerAppTool(server, "mobile_tracesift_list_react_native_targets", {
     title: "List the React Native apps TraceSift could record",
-    description: "Return the React Native apps connected to the Metro dev server, each with the id that names it and which one would be recorded by default. Use before recording to confirm an app is connected, or to pick between several. Reads Metro's inspector and starts nothing; Metro must be running and the app must be a debug build.",
+    description: "Return the React Native apps that can be recorded, each with the id that names it and which one would be recorded by default. Use before recording to confirm an app is reachable, or to pick between several. Starts nothing. Finds a debug build through Metro's inspector, which needs Metro running, and a release or profiling build through the @callstack/tracesift-rn-profiler package it carries, which needs no Metro.",
     inputSchema: { metro: traceSiftMetroUrlSchema.optional() },
     outputSchema: traceSiftRnTargetsSchema.shape, annotations: read,
     _meta: { ui: { visibility } },
@@ -168,15 +168,15 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
       const targets = await client.reactNativeTargets(metro, context.signal);
       recordTraceSiftOperation("record", "success", performance.now() - startedAt);
       const text = targets.targets.length
-        ? `Metro on ${targets.metro} has ${targets.targets.length} React Native app(s): ${targets.targets.map(target => `${target.title}${target.recommended ? " (default)" : ""} [${target.id}]`).join("; ")}.`
-        : `Metro on ${targets.metro} has no React Native app connected to it.`;
+        ? `${targets.targets.length} React Native app(s) can be recorded: ${targets.targets.map(target => `${target.title}${target.transport === "release" ? " (release build)" : ""}${target.recommended ? " (default)" : ""} [${target.id}]`).join("; ")}.`
+        : `No React Native app is reachable: none connected to Metro on ${targets.metro}, and no release build dialled in.`;
       return { content: [{ type: "text", text }], structuredContent: targets };
     } catch (error) { return failure(error, "record", startedAt, context.signal); }
   });
 
   registerAppTool(server, "mobile_tracesift_record_react_native", {
     title: "Start recording a running React Native app",
-    description: "Begin a Hermes CPU profile of a React Native app that is already running in a simulator, emulator or device, over the Metro inspector. Nothing is launched and no window opens, so you can drive the recording yourself: start it, exercise the app or ask the user to, then stop it with mobile_tracesift_stop_recording to get the trace. Picks the connected app on its own unless targetId names one; requires Metro to be running and a debug build, and refuses while React Native DevTools is attached or another recording is going.",
+    description: "Begin a Hermes CPU profile of a React Native app that is already running in a simulator, emulator or device. Nothing is launched and no window opens, so you can drive the recording yourself: start it, exercise the app or ask the user to, then stop it with mobile_tracesift_stop_recording to get the trace. Takes whichever route the build offers: a debug build over the Metro inspector, or a release build through the @callstack/tracesift-rn-profiler package it carries. Picks the app on its own unless targetId names one, and refuses while React Native DevTools is attached or another recording is going.",
     inputSchema: { metro: traceSiftMetroUrlSchema.optional(), targetId: z.string().min(1).max(512).optional() },
     outputSchema: { recording: z.literal(true) }, annotations: localService,
     _meta: { ui: { visibility } },

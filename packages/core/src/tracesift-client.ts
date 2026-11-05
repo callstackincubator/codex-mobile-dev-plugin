@@ -17,8 +17,12 @@ const RECORD_START_TIMEOUT_MS = 60_000;
 /** Chrome writes the whole trace through the protocol before `record stop` returns. */
 const RECORD_STOP_TIMEOUT_MS = 4 * 60_000;
 const RECORD_CLOSE_TIMEOUT_MS = 30_000;
-/** Listing React Native targets is one `/json/list` fetch behind a 5s timeout of its own. */
-const RECORD_TARGETS_TIMEOUT_MS = 15_000;
+/**
+ * Listing React Native targets is one `/json/list` fetch behind a 5s timeout
+ * of its own, and then — only when Metro showed nothing — a short window held
+ * open for a release build to dial in. Both have to fit inside this.
+ */
+const RECORD_TARGETS_TIMEOUT_MS = 30_000;
 /** A target list is a handful of short strings; anything larger is not one. */
 const MAX_CLI_STDOUT_BYTES = 1024 * 1024;
 /** Health only proves integration API v1, which predates the Explore endpoints. */
@@ -543,7 +547,9 @@ export class TraceSiftClient {
   }
 
   /**
-   * The React Native apps connected to Metro that a recording could attach to.
+   * The React Native apps a recording could attach to, over either route: a
+   * debug build on Metro, or a release build that dials the CLI from the
+   * profiler package it carries.
    *
    * Asked of the CLI rather than fetched from `/json/list` here, even though
    * `metroTargets` would answer: `recommended` is the target `record start`
@@ -556,7 +562,7 @@ export class TraceSiftClient {
       ...(metro ? ["--metro", metro] : [])], {
       timeoutMs: RECORD_TARGETS_TIMEOUT_MS, signal,
       cancelled: "Listing the React Native apps was cancelled.",
-      timedOut: "Metro did not answer within 15 seconds.",
+      timedOut: "No React Native app answered within 30 seconds.",
       missing: "TraceSift is not installed or could not run `tracesift record`.",
       failed: code => `TraceSift could not list the React Native apps (exit code ${code}).`,
     });

@@ -216,7 +216,7 @@ test("listing React Native targets names the default app, and recording one pass
   assert.deepEqual(calls, [{ targets: undefined }, { start: { metro: undefined, targetId: "device-1" } }]);
 });
 
-test("an empty Metro says so rather than returning an empty list without comment", async t => {
+test("neither route answering says so rather than returning an empty list without comment", async t => {
   const { mcp, close } = await connect({
     async reactNativeTargets() {
       return { apiVersion: 1 as const, platform: "rn" as const, metro: "http://127.0.0.1:8081", targets: [] };
@@ -224,7 +224,12 @@ test("an empty Metro says so rather than returning an empty list without comment
   });
   t.after(close);
   const listed = await mcp.callTool({ name: "mobile_tracesift_list_react_native_targets", arguments: {} });
-  assert.match((listed.content as { text: string }[])[0]!.text, /no React Native app connected/);
+  const text = (listed.content as { text: string }[])[0]!.text;
+  // Both routes are named, so the agent does not conclude that starting Metro
+  // is the only thing that could make an app appear.
+  assert.match(text, /No React Native app is reachable/);
+  assert.match(text, /none connected to Metro/);
+  assert.match(text, /no release build dialled in/);
 });
 
 test("a recording the app refuses reports the CLI's own sentence to the agent", async t => {

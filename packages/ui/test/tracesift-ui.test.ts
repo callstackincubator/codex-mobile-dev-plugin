@@ -913,6 +913,37 @@ test("a React Native capture records the app that is already running and analyze
   assert.equal(controller.getSnapshot().analysis?.analysisId, "private-analysis");
 });
 
+test("a release build with no Metro is offered for recording like any other target", async () => {
+  // The panel hides Start when the target list is empty, so a release build
+  // that the CLI can record but does not list would be unreachable from here.
+  const { app, calls } = captureApp({
+    mobile_tracesift_list_react_native_targets: {
+      content: [],
+      structuredContent: {
+        apiVersion: 1, platform: "rn", metro: "http://127.0.0.1:8081", profilerPort: 8089,
+        targets: [{
+          id: "release", title: "com.example.spike (Android, release)", appId: "com.example.spike",
+          transport: "release", port: 8089, supportsMultipleDebuggers: false, recommended: true,
+        }],
+      },
+    },
+    mobile_tracesift_record_react_native: { content: [], structuredContent: { recording: true } },
+  });
+  const controller = new TraceSiftController(app as never);
+  controller.hostChanged();
+  await controller.loadReactNativeTargets();
+
+  const { capture } = controller.getSnapshot();
+  assert.equal(capture.targets.length, 1);
+  assert.equal(capture.targets[0]!.transport, "release");
+  assert.equal(capture.targetId, "release", "it is preselected, so Start is live");
+  assert.equal(capture.targetsError, "");
+
+  await controller.startReactNativeCapture();
+  assert.equal(controller.getSnapshot().capture.step, "recording");
+  assert.deepEqual(calls.at(-1)!.arguments, { targetId: "release" });
+});
+
 test("a React Native capture with no app connected refuses to start and says the app is not there", async () => {
   const { app, calls } = captureApp({
     mobile_tracesift_list_react_native_targets: {
@@ -926,7 +957,7 @@ test("a React Native capture with no app connected refuses to start and says the
   await controller.startReactNativeCapture();
   // Starting would have attached to nothing, so no recording was claimed.
   assert.equal(controller.getSnapshot().capture.step, "idle");
-  assert.match(controller.getSnapshot().capture.error, /No React Native app is connected/);
+  assert.match(controller.getSnapshot().capture.error, /No React Native app found, over Metro or from a profiling build/);
   assert.deepEqual(calls.map(call => call.name), ["mobile_tracesift_list_react_native_targets"]);
 });
 

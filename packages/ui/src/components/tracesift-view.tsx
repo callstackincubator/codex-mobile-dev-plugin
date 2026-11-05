@@ -65,6 +65,15 @@ function targetLabel(target: TraceSiftRnTarget) {
 }
 
 /**
+ * Where a target was found, which is not a detail: it tells the person which
+ * build they are about to profile, and the two answers behave differently.
+ */
+function targetWhere(target: TraceSiftRnTarget | undefined, metro: string) {
+  if (target?.transport === "release") return target.port ? ` · release build on port ${target.port}` : " · release build";
+  return metro ? ` · Metro on ${metro}` : "";
+}
+
+/**
  * Record the React Native app that is already running.
  *
  * One press, not the browser's two: nothing is launched and no window opens,
@@ -94,8 +103,8 @@ function ReactNativePane({ controller, capture, busy }: { controller: TraceSiftC
     return <div className="capture-row">
       <p className="capture-status" role="status">
         {targetsError || (loadingTargets
-          ? `Looking for apps on ${where}…`
-          : `No React Native app is connected to ${where}. Start the app, then refresh.`)}
+          ? `Looking for apps on ${where} and for a release build…`
+          : `No React Native app found. Start a debug build so it connects to ${where}, or a profiling build made with \`tracesift profile build\`, then refresh.`)}
       </p>
       <button type="button" className="capture-close" disabled={busy || loadingTargets} onClick={() => void controller.loadReactNativeTargets()}>
         {loadingTargets ? "Looking…" : "Refresh"}
@@ -114,7 +123,7 @@ function ReactNativePane({ controller, capture, busy }: { controller: TraceSiftC
       >
         {targets.map(target => <option key={target.id} value={target.id}>{targetLabel(target)}</option>)}
       </select>
-      : <p className="capture-status">{selected ? targetLabel(selected) : ""}<small>{metro ? ` · Metro on ${metro}` : ""}</small></p>}
+      : <p className="capture-status">{selected ? targetLabel(selected) : ""}<small>{targetWhere(selected, metro)}</small></p>}
     <button type="button" className="capture-button" disabled={busy || working} onClick={() => void controller.startReactNativeCapture()}>
       {step === "starting" ? "Starting…" : "Start profile"}
     </button>

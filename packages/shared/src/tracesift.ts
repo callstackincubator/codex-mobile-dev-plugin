@@ -35,12 +35,21 @@ export const traceSiftMetroUrlSchema = z.string().trim().min(1).max(2048).refine
   } catch { return false; }
 }, "Enter a Metro address such as http://127.0.0.1:8081.");
 
-/** One React Native app connected to Metro, as `record targets --platform rn --json` reports it. */
+/** One recordable React Native app, as `record targets --platform rn --json` reports it. */
 export const traceSiftRnTargetSchema = z.object({
   id: z.string(), title: z.string(),
   appId: z.string().optional(), deviceName: z.string().optional(), deviceId: z.string().optional(),
   /** Absent on React Natives that do not name their engine; present ones say `Hermes`. */
   vm: z.string().optional(),
+  /**
+   * Which of the two routes reaches this app. A debug build registers an
+   * inspector target with Metro; a release build has none and instead dials
+   * the CLI from the profiler package it carries. Older CLIs report neither
+   * field, and everything they do report is a Metro target.
+   */
+  transport: z.enum(["metro", "release"]).default("metro"),
+  /** The loopback port a release build dialled in on. */
+  port: z.number().optional(),
   supportsMultipleDebuggers: z.boolean().default(false),
   /** The one `record start --platform rn` would pick on its own. */
   recommended: z.boolean().default(false),
@@ -49,6 +58,8 @@ export type TraceSiftRnTarget = z.infer<typeof traceSiftRnTargetSchema>;
 
 export const traceSiftRnTargetsSchema = z.object({
   apiVersion: z.literal(1), platform: z.literal("rn"), metro: z.string(),
+  /** The loopback port a release build would have dialled; absent on older CLIs. */
+  profilerPort: z.number().optional(),
   targets: z.array(traceSiftRnTargetSchema),
 });
 export type TraceSiftRnTargets = z.infer<typeof traceSiftRnTargetsSchema>;

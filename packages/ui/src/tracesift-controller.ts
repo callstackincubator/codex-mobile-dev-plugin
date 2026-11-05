@@ -643,7 +643,7 @@ export class TraceSiftController {
     this.captureUpdate({ source, error: "" });
   };
 
-  /** The React Native apps connected to Metro, and which of them Start would record. */
+  /** The React Native apps that can be recorded, over either route, and which of them Start would record. */
   loadReactNativeTargets = async () => {
     if (this.disposed || this.state.capture.loadingTargets) return;
     this.captureUpdate({ loadingTargets: true, targetsError: "" });
@@ -677,7 +677,7 @@ export class TraceSiftController {
   startReactNativeCapture = async () => {
     if (this.disposed || this.state.capture.step !== "idle" || this.state.capture.source !== "rn") return;
     if (!this.state.capture.targets.length) {
-      this.captureUpdate({ error: "No React Native app is connected to Metro. Start the app, then refresh." });
+      this.captureUpdate({ error: "No React Native app found, over Metro or from a profiling build. Start the app, then refresh." });
       return;
     }
     const { targetId } = this.state.capture;
