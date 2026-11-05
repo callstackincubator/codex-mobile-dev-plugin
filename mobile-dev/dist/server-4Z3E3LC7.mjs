@@ -50,7 +50,7 @@ import {
   touchInputSchema,
   udidSchema,
   withDeviceAppsDiagnostic
-} from "./chunk-623U4AS5.mjs";
+} from "./chunk-OAHZZC5B.mjs";
 import {
   ExpectedOperationError,
   FailureEpisodes,
@@ -78,7 +78,7 @@ import {
   resolveTelemetryEnvironment,
   setDiscoveryCommandDiagnostic,
   telemetryHost
-} from "./chunk-WBFUED6K.mjs";
+} from "./chunk-ARJTOIXG.mjs";
 import {
   $ZodObject,
   $ZodType,
@@ -37747,8 +37747,8 @@ async function loadVendoredAgentDevice() {
 }
 async function createAppFlowHost(options = {}) {
   const [{ createAppFlowService }, { createManualRecordingService }] = await Promise.all([
-    import("./app-flow-MCPPLIJI.mjs"),
-    import("./manual-5CPWNLVR.mjs")
+    import("./app-flow-LEBHUJV3.mjs"),
+    import("./manual-2BEUC6RT.mjs")
   ]);
   const listeners = /* @__PURE__ */ new Set();
   const runs = /* @__PURE__ */ new Map();
