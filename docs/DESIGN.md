@@ -115,7 +115,7 @@ The social card is `website/public/og-image.jpg`, 1200×630, dark only. It shows
 
 Run `pnpm --dir website og` to regenerate the card and icons. To select local Google Chrome, use `PLAYWRIGHT_CHANNEL=chrome pnpm --dir website og`. The source is `website/og/og.html`; content, accent, and scene data come from the same modules as the website.
 
-The README banner uses copy on the left and the large dithered workspace-and-phone scene on the right, without an outer frame. It omits the miniature chat UI: the illustration provides the texture, and the headline carries the message at GitHub sizes. `pnpm --dir website og --banner` renders the dark JPEG at 1660×512. The root README uses this banner in every colour scheme. The initial site address is `https://mobile-dev-snowy.vercel.app/`; update the website and banner URLs there when the final domain is attached.
+The README banner uses copy on the left and the large dithered workspace-and-phone scene on the right, without an outer frame. It omits the miniature chat UI: the illustration provides the texture, and the headline carries the message at GitHub sizes. `pnpm --dir website og --banner` renders the dark JPEG at 1660×512. The root README uses this banner in every colour scheme. The production site and README banner live at `https://incubator.callstack.com/codex-mobile-dev-plugin/` through GitHub Pages.
 
 ## Website
 
@@ -126,6 +126,6 @@ The README banner uses copy on the left and the large dithered workspace-and-pho
 - `website/src/content/docs/docs/`: Starlight guides for installation, devices, controls, logs, performance, profiles, storage, privacy, and terms.
 - `website/src/styles/theme.css` and `docs.css`: the dark docs palette, shared fonts, square controls, readable code, hairline sections, and navigation. `website/src/components/starlight/Head.astro` preloads the four fonts used above the fold to avoid a late font swap shifting the page.
 - `website/src/components/site/dither.ts`, `dither-host.ts`, and `dither.worker.ts`: scene geometry, visibility, sizing, and the worker renderer.
-- `website/vercel.json`: static `dist` hosting with clean URLs and no trailing slash. Set `SITE_URL` to the production origin when deploying so canonical URLs, the sitemap, robots, and social metadata share that origin.
+- `.github/workflows/website.yml`: GitHub Pages builds and production publishing. `SITE_URL` sets the origin and `SITE_BASE` sets the repository path for navigation, Markdown, assets, and metadata. `website/vercel.json` hosts the same static output for previews.
 
 The marketing site sends no remote telemetry. Website work keeps the plugin’s existing Sentry collection separate and preserves its instrumentation and data boundaries.

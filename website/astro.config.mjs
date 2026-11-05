@@ -1,18 +1,22 @@
 // @ts-check
 import sitemap from '@astrojs/sitemap';
+import { satteri } from '@astrojs/markdown-satteri';
 import starlight from '@astrojs/starlight';
 import { defineConfig } from 'astro/config';
 import starlightLlmsTxt from 'starlight-llms-txt';
 
 import { brandCss } from './src/site/brand.ts';
-import { site as meta, noindexPaths } from './src/site/content.ts';
+import { at, BASE, site as meta, noindexPaths } from './src/site/content.ts';
 import { TITLE_DELIMITER } from './src/site/meta.ts';
+import { baseLinks } from './src/site/markdown.ts';
 
 const site = meta.url;
+const origin = `${site}${BASE}`;
 const repo = meta.repo;
 const description = meta.description;
 // Where this site lives inside the repo, for the docs' "Edit page" links.
 const siteDir = 'website';
+const markdownProcessor = satteri({ mdastPlugins: [baseLinks] });
 
 const sidebar = [
   { label: 'Introduction', slug: 'docs/introduction' },
@@ -60,16 +64,16 @@ const docsIntegration = starlight({
     ThemeSelect: './src/components/starlight/DarkTheme.astro',
   },
   social: [{ icon: 'github', label: 'GitHub', href: repo }],
-  editLink: { baseUrl: `${repo}/edit/main/${siteDir}/src/content/docs/` },
+  editLink: { baseUrl: `${repo}/edit/main/${siteDir}/` },
   head: [
     // The accent as CSS variables (src/site/brand.ts), read by theme.css and docs.css.
     { tag: 'style', content: brandCss },
     // Starlight sets og:title, og:description and a large Twitter card, but no image.
-    { tag: 'meta', attrs: { property: 'og:image', content: `${site}/og-image.jpg` } },
+    { tag: 'meta', attrs: { property: 'og:image', content: `${origin}/og-image.jpg` } },
     { tag: 'meta', attrs: { property: 'og:image:width', content: '1200' } },
     { tag: 'meta', attrs: { property: 'og:image:height', content: '630' } },
     { tag: 'meta', attrs: { property: 'og:image:alt', content: meta.ogAlt } },
-    { tag: 'meta', attrs: { name: 'twitter:image', content: `${site}/og-image.jpg` } },
+    { tag: 'meta', attrs: { name: 'twitter:image', content: `${origin}/og-image.jpg` } },
     { tag: 'meta', attrs: { name: 'twitter:image:alt', content: meta.ogAlt } },
     { tag: 'meta', attrs: { name: 'color-scheme', content: 'dark' } },
     {
@@ -78,12 +82,12 @@ const docsIntegration = starlight({
     },
     {
       tag: 'link',
-      attrs: { rel: 'icon', href: '/favicon-32.png', type: 'image/png', sizes: '32x32' },
+      attrs: { rel: 'icon', href: at('/favicon-32.png'), type: 'image/png', sizes: '32x32' },
     },
-    { tag: 'link', attrs: { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' } },
+    { tag: 'link', attrs: { rel: 'apple-touch-icon', href: at('/apple-touch-icon.png') } },
     {
       tag: 'link',
-      attrs: { rel: 'alternate', type: 'text/plain', title: 'llms.txt', href: '/llms.txt' },
+      attrs: { rel: 'alternate', type: 'text/plain', title: 'llms.txt', href: at('/llms.txt') },
     },
   ],
   sidebar,
@@ -92,8 +96,10 @@ const docsIntegration = starlight({
 
 export default defineConfig({
   site,
+  base: BASE,
+  markdown: { processor: markdownProcessor },
   // Pages are files (`docs/introduction.html`, `404.html`) served without `.html` or a trailing
-  // slash (`cleanUrls` and `trailingSlash: false` in vercel.json).
+  // slash, matching GitHub Pages and Vercel's clean URLs.
   trailingSlash: 'never',
   build: { format: 'file' },
   // Responsive images: Markdown screenshots get a srcset, so phones don't download huge files.

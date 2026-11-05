@@ -22,24 +22,47 @@ pnpm --dir website preview
 
 The social-card script needs Playwright Chromium (`pnpm --dir website exec playwright-core install chromium`). To select an installed Google Chrome instead, run `PLAYWRIGHT_CHANNEL=chrome pnpm --dir website og`. Generated social cards and icons are committed under `public/`, so deployment does not require a browser. Add `--banner` to the `og` command when creating the optional README banner.
 
-## Vercel
+## GitHub Pages
 
-For a Git-connected project, choose this repository and set **Root Directory** to `website`, **Node.js** to 24, install command to `pnpm install --frozen-lockfile`, build command to `pnpm build`, and output directory to `dist` (also declared in `vercel.json`). Add the project environment variable `ENABLE_EXPERIMENTAL_COREPACK=1` to use the pinned pnpm version. Vercel builds use their generated deployment URL. Set `SITE_URL` to the chosen production origin when publishing on a custom domain so canonical URLs, social metadata, robots, and sitemaps use that origin. Local builds use `http://localhost:4321`.
+Production is published at https://incubator.callstack.com/codex-mobile-dev-plugin/.
+The organization owns `incubator.callstack.com`; this repository inherits that
+host and uses its repository name as the path. Leave the repository's **Custom
+domain** field empty and set **Settings → Pages → Source** to **GitHub Actions**.
+The suggested Jekyll and Static HTML templates are unnecessary.
 
-Initial hosting uses the **Margelo** team’s `mobile-dev` project temporarily, at https://mobile-dev-snowy.vercel.app. It is connected to `callstackincubator/codex-mobile-dev-plugin` through Vercel's GitHub integration, with **Root Directory** set to `website` and **Include source files outside of the Root Directory** disabled.
+`.github/workflows/website.yml` checks and builds the independent `website/`
+project with Node.js 24 and the pinned pnpm version. Pushes to `main` affecting
+`website/**` or that workflow upload `website/dist` and deploy through the
+`github-pages` environment. Pull requests run the same checks and build without
+publishing. The workflow can also be run manually on `main`.
 
-Pushes to `main` create Production deployments when `website/` has changed. Other branches create Preview deployments, including branches with draft pull requests. Vercel adds its deployment check and preview link to the pull request. The first deployment builds; later pushes skip the build when `website/` has not changed since the previous successful deployment for that branch and environment. These rules live in the project's **Ignored Build Step** setting:
+The build sets `SITE_URL=https://incubator.callstack.com` and
+`SITE_BASE=/codex-mobile-dev-plugin`. Astro's base, navigation, Markdown links,
+icons, social images, sitemap, and robots.txt share those values. Local dev and
+Vercel builds use their own origin and an empty base. Pages remain `.html` files,
+served at extensionless paths by GitHub Pages, matching Simlock's setup.
+
+## Vercel previews
+
+The Margelo team's `mobile-dev` project is connected through Vercel's GitHub
+integration, with **Root Directory** set to `website`, **Include source files
+outside of the Root Directory** disabled, Node.js 24, and
+`ENABLE_EXPERIMENTAL_COREPACK=1`. Install/build/output settings are in
+`vercel.json`. Branch pushes, including draft pull requests, receive previews.
+
+Vercel's **Ignored Build Step** skips production and unchanged preview builds:
 
 ```sh
+if [ "$VERCEL_ENV" = "production" ]; then exit 0; fi
 if [ -z "$VERCEL_GIT_PREVIOUS_SHA" ]; then exit 1; fi
 git diff --quiet "$VERCEL_GIT_PREVIOUS_SHA" HEAD -- .
 ```
 
-Vercel interprets exit code `0` as skip and `1` as build. The command runs inside `website/`. Preview deployments retain the project's Vercel Authentication protection; use Vercel's sharing controls when inviting reviewers who are not on the team. The native Git integration handles deployment, so no GitHub Actions deployment workflow or repository token is needed.
-
-The production environment pins `SITE_URL` to that temporary public origin. Preview builds use their generated deployment URL. `.vercelignore` excludes local QA reports, screenshots, and generated Astro/build output from CLI uploads.
-
-The final production domain is undecided. Transfer the project to its eventual owner later, attach that domain, and update `SITE_URL` and the root README’s website/banner URLs. Then verify the sitemap and register the final origin in Search Console. Configure a redirect from the unused www or apex hostname to the chosen canonical hostname when attaching DNS.
+Exit code `0` skips and `1` builds; the command runs inside `website/`. Preview
+builds use their deployment URL, retain Vercel Authentication, and are linked
+from the pull request. Use Vercel's sharing controls for external reviewers.
+`.vercelignore` excludes local QA reports and generated build output from CLI
+uploads. No GitHub Actions deployment token is needed for Vercel previews.
 
 ## Content and design
 
