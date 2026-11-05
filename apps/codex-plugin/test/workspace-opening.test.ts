@@ -175,6 +175,9 @@ test("mobile_open_app_intel's appIntelScreen selects that screen in the workspac
   window.eval(built.outputFiles[0].text);
   await until(() => initialized);
   send({ method: "ui/notifications/tool-result", params: { content: [], structuredContent: { panelTarget: { workspaceTool: "app-intel", appIntelScreen: "profile" } } } });
+  // The entry-point rail starts collapsed; open it to see the selected screen.
+  await until(() => window.document.querySelector('button[aria-controls="app-intel-entries"]') !== null);
+  (window.document.querySelector('button[aria-controls="app-intel-entries"]') as HTMLButtonElement).click();
   await until(() => window.document.querySelector('[data-entry="profile"]') !== null);
   await setTimeout(10);
   const selected = window.document.querySelector('[data-entry="profile"]');

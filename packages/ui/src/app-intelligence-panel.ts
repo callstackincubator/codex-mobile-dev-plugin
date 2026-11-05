@@ -34,8 +34,10 @@ export class AppIntelligencePanel {
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => this.listeners.delete(listener); };
   getSnapshot = () => this.state;
   private update(patch: Partial<AppIntelligenceState>) { this.state = { ...this.state, ...patch }; for (const listener of this.listeners) listener(); }
-  setAvailable(available: boolean) { this.update({ available }); if (available && this.state.open) void this.load(); }
-  show() { this.update({ open: true }); if (this.state.available) void this.load(); }
+  // A panel that already has a cached graph reloads quietly: flipping to busy:"loading" on every
+  // reopen disabled the controls and reset nothing useful, since the cached graph is still valid.
+  setAvailable(available: boolean) { this.update({ available }); if (available && this.state.open) void this.load(undefined, { silent: Boolean(this.state.snapshot) }); }
+  show() { this.update({ open: true }); if (this.state.available) void this.load(undefined, { silent: Boolean(this.state.snapshot) }); }
   hide() { this.update({ open: false }); }
   dispose() { this.listeners.clear(); }
   // A new root means new hops, so the folds from the old one would land on unrelated boundaries.
@@ -66,9 +68,9 @@ export class AppIntelligencePanel {
     this.setBoundaries(next.length === available.length && available.every(entry => next.includes(entry)) ? null : next);
   }
 
-  async load(projectPath?: string) {
+  async load(projectPath?: string, { silent = false }: { silent?: boolean } = {}) {
     if (!this.state.available || this.state.busy === "generating") return;
-    this.update({ busy: "loading", error: "" });
+    this.update(silent ? { error: "" } : { busy: "loading", error: "" });
     try {
       const result = await measureUiOperation("ui.app_intel.load", "ui.app_intel.load_failed", () => this.app.callServerTool({ name: "mobile_app_intel_snapshot", arguments: projectPath ? { projectPath } : {} }));
       // Even a failed read carries the remembered projects, so the picker still has them to offer.

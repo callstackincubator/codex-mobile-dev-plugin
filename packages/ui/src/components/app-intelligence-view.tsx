@@ -1,4 +1,4 @@
-import { EraserIcon, FolderOpenIcon, ListFilterIcon, MaximizeIcon, MinusIcon, NetworkIcon, PlusIcon, RefreshCwIcon, SearchIcon, SquareIcon } from "lucide-react";
+import { ChevronRightIcon, EraserIcon, FolderOpenIcon, ListFilterIcon, MaximizeIcon, MinusIcon, NetworkIcon, PanelRightCloseIcon, PanelRightOpenIcon, PlusIcon, RefreshCwIcon, SearchIcon, SquareIcon } from "lucide-react";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { AppIntelligencePanel } from "../app-intelligence-panel.ts";
 import type { AppIntelSnapshot, IntelRef } from "@mobile-dev/shared/app-intelligence.ts";
@@ -11,6 +11,7 @@ import { Button } from "./ui/button.tsx";
 import { ConfirmButton } from "./confirm-button.tsx";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "./ui/input-group.tsx";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "./ui/base-select.tsx";
+import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover.tsx";
 
 const BROWSE = "\u0000browse";
 const folderName = (path: string) => path.split("/").at(-1) || path;
@@ -277,39 +278,59 @@ function FlowView({ snapshot, start, toggled, expanded, litBoundary, height, onT
   </svg>;
 }
 
-/** The Flow's boundary filter: one chip per boundary the app's entry points fall into. */
-function BoundaryFilter({ available, selected, lit, onToggle, onLight, onAll }: {
+/**
+ * The entry-point filter: a search field plus one checkbox per boundary, in a dropdown so the
+ * list beside it keeps the width for names and paths.
+ */
+function BoundaryFilter({ available, selected, lit, query, onQueryChange, onToggle, onLight, onAll }: {
   available: Array<{ boundary: Boundary; count: number }>; selected: ReadonlySet<string>; lit: string | null;
+  query: string; onQueryChange: (value: string) => void;
   onToggle: (boundary: Boundary) => void; onLight: (boundary: Boundary) => void; onAll: () => void;
 }) {
-  if (!available.length) return null;
-  const all = available.every(entry => selected.has(entry.boundary));
-  return <div className="flex shrink-0 flex-wrap items-center gap-1 border-b px-3 py-1.5" role="group" aria-label="Filter entry points" data-flow-filter>
-    <ListFilterIcon className="size-3 shrink-0 text-muted-foreground" />
-    <button type="button" data-boundary="all" aria-pressed={all} onClick={onAll}
-      className={`rounded-full border px-2 py-0.5 text-[10.5px] ${all ? "border-primary text-primary" : "text-muted-foreground"}`}>All</button>
-    {available.map(({ boundary, count }) => {
-      const on = selected.has(boundary);
-      const highlighted = lit === `*:${boundary}`;
-      return <span key={boundary} className={`flex items-center gap-1 rounded-full border px-1 py-0.5 text-[10.5px] ${on ? "text-foreground" : "text-muted-foreground opacity-55"}`}
-        style={{ borderColor: highlighted ? boundaryColor(boundary) : on ? boundaryColor(boundary) : undefined, borderWidth: highlighted ? 1.5 : undefined, background: on ? `color-mix(in oklab, ${boundaryColor(boundary)} ${highlighted ? 28 : 14}%, transparent)` : undefined }}>
-        {/* The dot lights this boundary's connectors at every hop; the label still filters. */}
-        <button type="button" data-boundary-light={boundary} aria-pressed={highlighted} title={`Highlight the ${boundaryLabel[boundary]} connectors`}
-          onClick={() => onLight(boundary)} className="grid size-3 place-items-center rounded-full">
-          <span className="size-2 rounded-full" style={{ background: boundaryColor(boundary), outline: highlighted ? `1.5px solid ${boundaryColor(boundary)}` : undefined, outlineOffset: "1px" }} />
-        </button>
-        <button type="button" data-boundary={boundary} aria-pressed={on} title={boundaryLabel[boundary]} onClick={() => onToggle(boundary)} className="flex items-center gap-1 pr-1">
-          {boundaryLabel[boundary]}
-          <span className="tabular-nums opacity-70">{count}</span>
-        </button>
-      </span>;
-    })}
-  </div>;
+  const all = available.length > 0 && available.every(entry => selected.has(entry.boundary));
+  const activeCount = available.filter(entry => selected.has(entry.boundary)).length;
+  return <Popover>
+    <PopoverTrigger asChild>
+      <Button variant="outline" size="sm" className="shrink-0 gap-1.5 px-2" aria-label="Filter and search entry points" data-flow-filter-trigger>
+        <ListFilterIcon className="size-3.5" />
+        {!all && available.length > 0 && <span className="rounded-full bg-muted px-1.5 text-[10px] tabular-nums">{activeCount}</span>}
+      </Button>
+    </PopoverTrigger>
+    <PopoverContent align="end" className="w-64 p-2" aria-label="Filter and search entry points" data-flow-filter>
+      <InputGroup size="sm"><InputGroupInput type="search" aria-label="Search the graph" placeholder="Search screens…" value={query} onChange={event => onQueryChange(event.target.value)} /><InputGroupAddon><SearchIcon /></InputGroupAddon></InputGroup>
+      {available.length > 0 && <>
+        <label className="mt-2 flex items-center gap-2 rounded-md px-1.5 py-1 text-xs font-medium hover:bg-muted/50">
+          <input type="checkbox" data-boundary="all" checked={all} onChange={onAll} />All
+        </label>
+        <div className="flex flex-col gap-0.5" role="group" aria-label="Boundaries">
+          {available.map(({ boundary, count }) => {
+            const on = selected.has(boundary);
+            const highlighted = lit === `*:${boundary}`;
+            return <div key={boundary} className="flex items-center gap-1 rounded-md px-1.5 py-1 text-xs hover:bg-muted/50">
+              <label className="flex min-w-0 flex-1 items-center gap-2">
+                <input type="checkbox" data-boundary={boundary} checked={on} onChange={() => onToggle(boundary)} />
+                <span className="size-2 shrink-0 rounded-full" style={{ background: boundaryColor(boundary) }} />
+                <span className="truncate">{boundaryLabel[boundary]}</span>
+                <span className="ml-auto shrink-0 pl-1 tabular-nums text-muted-foreground">{count}</span>
+              </label>
+              {/* Lights this boundary's connectors at every hop; the checkbox still controls visibility. */}
+              <button type="button" data-boundary-light={boundary} aria-pressed={highlighted} title={`Highlight the ${boundaryLabel[boundary]} connectors`}
+                onClick={() => onLight(boundary)} className="grid size-5 shrink-0 place-items-center rounded-full">
+                <span className="size-2.5 rounded-full border" style={{ borderColor: boundaryColor(boundary), background: highlighted ? boundaryColor(boundary) : "transparent" }} />
+              </button>
+            </div>;
+          })}
+        </div>
+      </>}
+    </PopoverContent>
+  </Popover>;
 }
 
 export const AppIntelligenceView = memo(function AppIntelligenceView({ panel }: { panel: AppIntelligencePanel }) {
   const state = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
   const [query, setQuery] = useState("");
+  const [railOpen, setRailOpen] = useState(false);
+  const [asideOpen, setAsideOpen] = useState(true);
   const [hover, setHover] = useState<Hover>(null);
   const [flowRef, flowSize, flowBox] = useMeasured();
   const snapshot = state.snapshot;
@@ -337,7 +358,7 @@ export const AppIntelligenceView = memo(function AppIntelligenceView({ panel }: 
     <header className="panel-toolbar flex h-[49px] shrink-0 items-center gap-2 border-b px-2">
       <ProjectPicker projectPath={state.projectPath} recents={state.recents} disabled={!state.available || state.busy !== null}
         onSelect={path => void panel.selectProject(path)} onBrowse={() => void panel.pickProject()} />
-      <InputGroup size="sm" className="min-w-28 flex-1"><InputGroupInput type="search" aria-label="Search the graph" placeholder="Search screens…" value={query} onChange={event => setQuery(event.target.value)} /><InputGroupAddon><SearchIcon /></InputGroupAddon></InputGroup>
+      <div className="flex-1" />
       {state.busy === "generating" || state.busy === "cancelling"
         ? <Button variant="outline" size="sm" disabled={state.busy === "cancelling"} onClick={() => void panel.cancel()}><SquareIcon />Cancel</Button>
         : <>
@@ -350,20 +371,28 @@ export const AppIntelligenceView = memo(function AppIntelligenceView({ panel }: 
     </header>
     {state.error && <Alert variant="destructive" className="shrink-0 rounded-none border-x-0 border-t-0"><AlertDescription className="text-xs">{state.error}</AlertDescription></Alert>}
     {state.run && <div className="shrink-0 border-b px-3 py-2 text-xs text-muted-foreground" role="status">{state.run.message}</div>}
-    {!state.projectPath ? <div className="grid flex-1 place-items-center p-8 text-center"><div><NetworkIcon className="mx-auto mb-3 size-8 text-muted-foreground" /><h2 className="font-medium">Map a React Native app</h2><p className="mt-1 max-w-md text-sm text-muted-foreground">Choose a project to discover Expo Router and React Navigation screens, then trace their native dependencies.</p></div></div>
+    {/* A reopened panel starts blank and reloads what it remembered: showing the empty states
+        while that load is in flight would flash the wrong screen before the real one lands. */}
+    {state.busy === "loading" && !snapshot ? <div className="grid flex-1 place-items-center p-8 text-center"><p className="text-sm text-muted-foreground">Loading App Intelligence…</p></div>
+      : !state.projectPath ? <div className="grid flex-1 place-items-center p-8 text-center"><div><NetworkIcon className="mx-auto mb-3 size-8 text-muted-foreground" /><h2 className="font-medium">Map a React Native app</h2><p className="mt-1 max-w-md text-sm text-muted-foreground">Choose a project to discover Expo Router and React Navigation screens, then trace their native dependencies.</p></div></div>
       : !snapshot ? <div className="grid flex-1 place-items-center p-8 text-center"><div><h2 className="font-medium">No App Intelligence yet</h2><p className="mt-1 text-sm text-muted-foreground">Generate a static iOS + Android screen and dependency graph.</p></div></div>
-      : <div className="grid min-h-0 flex-1 grid-cols-[minmax(20rem,1fr)_minmax(13rem,15rem)] max-[720px]:grid-cols-1 max-[720px]:grid-rows-[minmax(0,1.6fr)_minmax(0,1fr)]">
+      : <div className={`grid min-h-0 flex-1 ${asideOpen ? "grid-cols-[minmax(20rem,1fr)_minmax(13rem,15rem)]" : "grid-cols-[1fr]"} max-[720px]:grid-cols-1 max-[720px]:grid-rows-[minmax(0,1.6fr)_minmax(0,1fr)]`}>
         <main className="flex min-h-0 min-w-0 flex-col border-r max-[720px]:border-b max-[720px]:border-r-0">
           <div className="flex shrink-0 items-center gap-2 border-b px-3 py-1.5 text-xs">
             <span className="truncate font-medium">{snapshot.screens[selected ?? ""]?.title ?? "Choose a screen"}</span>
-            <div className="ml-auto flex shrink-0 items-center gap-0.5 rounded-md border" role="group" aria-label="Zoom">
-              <button type="button" data-zoom="out" aria-label="Zoom out" title="Zoom out" className="grid size-6 place-items-center text-muted-foreground hover:text-foreground" onClick={zoomOut}><MinusIcon className="size-3" /></button>
-              <span data-zoom-level className="w-9 text-center text-[10.5px] tabular-nums text-muted-foreground">{Math.round(zoom * 100)}%</span>
-              <button type="button" data-zoom="in" aria-label="Zoom in" title="Zoom in" className="grid size-6 place-items-center text-muted-foreground hover:text-foreground" onClick={zoomIn}><PlusIcon className="size-3" /></button>
-              <button type="button" data-zoom="reset" aria-label="Reset the view" title="Reset the view" className="grid size-6 place-items-center text-muted-foreground hover:text-foreground" onClick={reset}><MaximizeIcon className="size-3" /></button>
+            <div className="ml-auto flex shrink-0 items-center gap-2">
+              <div className="flex shrink-0 items-center gap-0.5 rounded-md border" role="group" aria-label="Zoom">
+                <button type="button" data-zoom="out" aria-label="Zoom out" title="Zoom out" className="grid size-6 place-items-center text-muted-foreground hover:text-foreground" onClick={zoomOut}><MinusIcon className="size-3" /></button>
+                <span data-zoom-level className="w-9 text-center text-[10.5px] tabular-nums text-muted-foreground">{Math.round(zoom * 100)}%</span>
+                <button type="button" data-zoom="in" aria-label="Zoom in" title="Zoom in" className="grid size-6 place-items-center text-muted-foreground hover:text-foreground" onClick={zoomIn}><PlusIcon className="size-3" /></button>
+                <button type="button" data-zoom="reset" aria-label="Reset the view" title="Reset the view" className="grid size-6 place-items-center text-muted-foreground hover:text-foreground" onClick={reset}><MaximizeIcon className="size-3" /></button>
+              </div>
+              <button type="button" data-aside-toggle aria-pressed={asideOpen} title={asideOpen ? "Hide entry points panel" : "Show entry points panel"}
+                onClick={() => setAsideOpen(open => !open)} className="grid size-6 shrink-0 place-items-center rounded-md border text-muted-foreground hover:text-foreground">
+                {asideOpen ? <PanelRightCloseIcon className="size-3.5" /> : <PanelRightOpenIcon className="size-3.5" />}
+              </button>
             </div>
           </div>
-          <BoundaryFilter available={available} selected={selectedBoundaries} lit={state.litBoundary} onToggle={toggleBoundary} onLight={boundary => panel.litBoundaryTo(`*:${boundary}`)} onAll={() => panel.setBoundaries(null)} />
           <div ref={flowRef} data-flow-canvas className="min-h-0 flex-1 cursor-grab touch-none overflow-auto [&[data-panning]]:cursor-grabbing">
             <div className="w-max will-change-transform">
               {flowStart ? <FlowView snapshot={snapshot} start={flowStart} toggled={toggled} expanded={expanded} litBoundary={state.litBoundary} height={flowSize.height}
@@ -373,9 +402,17 @@ export const AppIntelligenceView = memo(function AppIntelligenceView({ panel }: 
           </div>
           <p className="shrink-0 border-t px-3 py-2 text-[11px] text-muted-foreground">Each hop groups its imports by boundary and opens the first of them — click another to drill in, or its dot to light up its connectors. Drag or scroll to pan, ⌘/Ctrl-scroll or the buttons to zoom, double-click to reset.</p>
         </main>
-        <aside className="flex min-h-0 min-w-0 flex-col">
-          <h2 className="shrink-0 border-b px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{screens.length} entry points</h2>
-          <div className="min-h-0 flex-1 overflow-auto">
+        {asideOpen && <aside className="flex min-h-0 min-w-0 flex-col">
+          <div className="flex shrink-0 items-center gap-1 border-b px-2 py-2">
+            <button type="button" aria-expanded={railOpen} aria-controls="app-intel-entries" title={railOpen ? "Hide entry points" : "Show entry points"}
+              onClick={() => setRailOpen(open => !open)} className="flex min-w-0 flex-1 items-center gap-1 rounded py-0.5 text-left hover:bg-muted/50">
+              <ChevronRightIcon className={`size-3.5 shrink-0 text-muted-foreground transition-transform ${railOpen ? "rotate-90" : ""}`} />
+              <h2 className="min-w-0 flex-1 truncate text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{screens.length} entry points</h2>
+            </button>
+            <BoundaryFilter available={available} selected={selectedBoundaries} lit={state.litBoundary} query={query} onQueryChange={setQuery}
+              onToggle={toggleBoundary} onLight={boundary => panel.litBoundaryTo(`*:${boundary}`)} onAll={() => panel.setBoundaries(null)} />
+          </div>
+          {railOpen && <div id="app-intel-entries" className="min-h-0 flex-1 overflow-auto">
             {screens.length === 0 ? <p className="px-3 py-3 text-[11px] text-muted-foreground">No entry point matches the filter.</p>
               : screens.map(({ id, screen, boundary }) => <button key={id} type="button" data-entry={id} data-entry-boundary={boundary} aria-current={selected === id} className={`block w-full border-b px-3 py-2 text-left hover:bg-muted/50 ${selected === id ? "bg-muted shadow-[inset_2px_0_0_var(--primary)]" : ""}`}
                 onClick={() => panel.selectScreen(id)}>
@@ -383,8 +420,8 @@ export const AppIntelligenceView = memo(function AppIntelligenceView({ panel }: 
                 <span className="block truncate font-mono text-[10.5px] text-muted-foreground">{screen.route ?? id}</span>
                 <span className="block truncate font-mono text-[10px] text-muted-foreground">{screen.source ?? "Source unresolved"}</span>
               </button>)}
-          </div>
-        </aside>
+          </div>}
+        </aside>}
       </div>}
     {hover && <div role="presentation" className="pointer-events-none fixed z-50 max-w-[330px] rounded-md border bg-popover px-2 py-1.5 shadow-lg"
       style={{ left: Math.min(hover.x + 12, (typeof window === "undefined" ? 0 : window.innerWidth) - 340), top: Math.max(6, hover.y - 64) }}>

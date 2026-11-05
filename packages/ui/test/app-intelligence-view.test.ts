@@ -1,4 +1,5 @@
 import test from "node:test";
+import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { build } from "esbuild";
 import { JSDOM } from "jsdom";
@@ -40,7 +41,8 @@ function fixture(): AppIntelSnapshot {
   };
 }
 
-test("App Intelligence traces a screen, groups each hop by boundary and folds a group away", async t => {
+/** Boots a JSDOM environment and the real AppIntelligenceView bundle, with `app` as its host. */
+async function mount(t: TestContext, app: Pick<App, "callServerTool">) {
   const dom = new JSDOM('<html><body><div id="root"></div></body></html>', { pretendToBeVisual: true, url: "http://localhost" });
   const previous = new Map<string, PropertyDescriptor | undefined>();
   const globals = {
@@ -87,6 +89,14 @@ test("App Intelligence traces a screen, groups each hop by boundary and folds a 
   const { act, createElement } = await import("react");
   const { createRoot } = await import("react-dom/client");
 
+  const panel = new AppIntelligencePanel(app as unknown as App);
+  const root = createRoot(dom.window.document.getElementById("root")!);
+  unmount = async () => { await act(async () => { root.unmount(); }); };
+  await act(async () => { root.render(createElement(AppIntelligenceView, { panel })); });
+  return { dom, act, panel };
+}
+
+test("App Intelligence traces a screen, groups each hop by boundary and folds a group away", async t => {
   const snapshot = fixture();
   const calls: Array<{ name: string; arguments?: Record<string, unknown> }> = [];
   const recents = ["/tmp/social-app", "/tmp/other-app"];
@@ -97,10 +107,7 @@ test("App Intelligence traces a screen, groups each hop by boundary and folds a 
     if (name === "mobile_clear_app_intel") return { content: [], structuredContent: { projectPath: args?.projectPath, snapshot: null, recents } };
     return { content: [], structuredContent: {} };
   } };
-  const panel = new AppIntelligencePanel(app as unknown as App);
-  const root = createRoot(dom.window.document.getElementById("root")!);
-  unmount = async () => { await act(async () => { root.unmount(); }); };
-  await act(async () => { root.render(createElement(AppIntelligenceView, { panel })); });
+  const { dom, act, panel } = await mount(t, app);
   await act(async () => { panel.setAvailable(true); panel.show(); });
   await act(async () => { await new Promise(done => setTimeout(done, 0)); });
 
@@ -120,10 +127,18 @@ test("App Intelligence traces a screen, groups each hop by boundary and folds a 
   assert.equal(panel.getSnapshot().projectPath, "/tmp/other-app");
   assert.match(picker().textContent ?? "", /other-app/, "and the trigger follows the choice");
 
-  // The Flow is the only view now: the rail lists entry points from the moment a snapshot loads.
-  const rail = dom.window.document.querySelector("aside .overflow-auto") as HTMLElement;
+  // The rail lists entry points, but starts collapsed so the Flow gets the width.
   assert.equal(refs().length, 0, "no screen is selected yet");
-  assert.ok(query("[data-flow-filter]").length === 1, "the entry-point filter is there before anything is traced");
+  assert.equal(dom.window.document.getElementById("app-intel-entries"), null, "the rail is collapsed by default");
+  const railToggle = dom.window.document.querySelector('aside button[aria-controls="app-intel-entries"]') as HTMLButtonElement;
+  assert.equal(railToggle.getAttribute("aria-expanded"), "false");
+  await act(async () => { railToggle.click(); });
+  assert.equal(railToggle.getAttribute("aria-expanded"), "true");
+  const rail = dom.window.document.querySelector("#app-intel-entries") as HTMLElement;
+  assert.ok(query("[data-flow-filter-trigger]").length === 1, "the entry-point filter is there before anything is traced");
+  // The checkboxes live in the filter's dropdown, closed by default; open it once for the rest.
+  await act(async () => { (dom.window.document.querySelector("[data-flow-filter-trigger]") as HTMLButtonElement).click(); });
+  assert.ok(query("[data-flow-filter]").length === 1, "opening the trigger mounts the dropdown");
   const screenButton = [...rail.querySelectorAll("button")].find(button => button.textContent?.includes("Profile"));
   assert.ok(screenButton, "the rail lists screens");
   await act(async () => { screenButton.click(); });
@@ -158,6 +173,7 @@ test("App Intelligence traces a screen, groups each hop by boundary and folds a 
   assert.equal(panel.getSnapshot().litBoundary, null, "clicking the pin again dims it again");
   assert.deepEqual(litOpacity("2:component"), ["0.2"]);
   const chipDot = dom.window.document.querySelector('[data-boundary-light="other"]') as HTMLButtonElement;
+  assert.ok(chipDot, "the highlight dot lives in the open dropdown");
   await act(async () => { chipDot.click(); });
   assert.equal(panel.getSnapshot().litBoundary, "*:other");
   assert.equal(chipDot.getAttribute("aria-pressed"), "true");
@@ -174,11 +190,11 @@ test("App Intelligence traces a screen, groups each hop by boundary and folds a 
   const chips = () => [...query("[data-flow-filter] [data-boundary]")].map(chip => chip.getAttribute("data-boundary"));
   assert.deepEqual(chips(), ["all", "other"], "both fixture entries render plain source files");
   assert.deepEqual(railEntries().sort(), ["home", "profile"]);
-  const other = dom.window.document.querySelector('[data-flow-filter] [data-boundary="other"]') as HTMLButtonElement;
+  const other = dom.window.document.querySelector('[data-flow-filter] [data-boundary="other"]') as HTMLInputElement;
   await act(async () => { other.click(); });
   assert.deepEqual(railEntries(), [], "unticking the only boundary empties the rail");
   assert.ok(refs().length > 0, "the filter is the rail's, so the traced graph still draws in full");
-  await act(async () => { (dom.window.document.querySelector('[data-flow-filter] [data-boundary="all"]') as HTMLButtonElement).click(); });
+  await act(async () => { (dom.window.document.querySelector('[data-flow-filter] [data-boundary="all"]') as HTMLInputElement).click(); });
   assert.deepEqual(railEntries().sort(), ["home", "profile"], "All brings them back");
 
   // Dragging pans the board itself, which is what a scroll-based pan failed to do when the graph
@@ -232,6 +248,15 @@ test("App Intelligence traces a screen, groups each hop by boundary and folds a 
   assert.deepEqual(panel.getSnapshot().toggled, [], "the folds belonged to the old screen");
   assert.deepEqual(panel.getSnapshot().expanded, []);
 
+  // The whole right bar can be hidden too, giving the Flow the full width back.
+  const asideToggle = dom.window.document.querySelector("[data-aside-toggle]") as HTMLButtonElement;
+  assert.equal(asideToggle.getAttribute("aria-pressed"), "true");
+  await act(async () => { asideToggle.click(); });
+  assert.equal(dom.window.document.querySelector("aside"), null, "hiding it removes the whole bar, not just its list");
+  assert.equal(asideToggle.getAttribute("aria-pressed"), "false");
+  await act(async () => { asideToggle.click(); });
+  assert.ok(dom.window.document.querySelector("aside"), "and it comes back");
+
   // Clear asks first, then throws the saved graph away but keeps the project selected.
   const clear = () => dom.window.document.getElementById("app-intel-clear") as HTMLButtonElement | null;
   assert.ok(clear(), "Clear sits beside Regenerate while there is a graph");
@@ -246,4 +271,62 @@ test("App Intelligence traces a screen, groups each hop by boundary and folds a 
   assert.equal(panel.getSnapshot().projectPath, "/tmp/other-app", "the project stays selected");
   assert.equal(clear(), null, "and there is nothing left to clear");
   assert.match(dom.window.document.querySelector("header")?.textContent ?? "", /Generate/);
+});
+
+test("reopening the panel shows a loading state instead of flashing the empty project picker", async t => {
+  const snapshot = fixture();
+  // A reopened panel is a fresh instance: it remembers nothing until this call resolves, so a
+  // real delay is needed to observe the in-between state the way a slow host round trip would.
+  const app = { async callServerTool({ name }: { name: string }) {
+    if (name === "mobile_app_intel_snapshot") {
+      await new Promise(done => setTimeout(done, 20));
+      return { content: [], structuredContent: { projectPath: "/tmp/social-app", snapshot, recents: ["/tmp/social-app"] } };
+    }
+    return { content: [], structuredContent: {} };
+  } };
+  const { dom, act, panel } = await mount(t, app);
+  const text = () => dom.window.document.getElementById("app-intelligence-panel")?.textContent ?? "";
+
+  await act(async () => { panel.setAvailable(true); panel.show(); });
+  assert.equal(panel.getSnapshot().busy, "loading", "the load just started");
+  assert.match(text(), /Loading/, "a neutral loading state shows while a remembered project reloads");
+  assert.doesNotMatch(text(), /Map a React Native app/, "not the empty state, as if nothing had ever been chosen");
+
+  await act(async () => { await new Promise(done => setTimeout(done, 30)); });
+  assert.equal(panel.getSnapshot().busy, null);
+  assert.match(text(), /social-app/, "the remembered project's graph lands once the load resolves");
+});
+
+test("re-showing a panel that already has a graph reloads quietly, with no disabled flash", async t => {
+  const snapshot = fixture();
+  let calls = 0;
+  const app = { async callServerTool({ name }: { name: string }) {
+    if (name === "mobile_app_intel_snapshot") {
+      calls++;
+      await new Promise(done => setTimeout(done, 20));
+      return { content: [], structuredContent: { projectPath: "/tmp/social-app", snapshot, recents: ["/tmp/social-app"] } };
+    }
+    return { content: [], structuredContent: {} };
+  } };
+  const { dom, act, panel } = await mount(t, app);
+  const generateButton = () => [...dom.window.document.querySelectorAll("header button")].find(button => /Generate|Regenerate/.test(button.textContent ?? "")) as HTMLButtonElement | undefined;
+  const generate = () => generateButton()?.textContent ?? "";
+  const generateDisabled = () => generateButton()?.disabled;
+
+  // The first open has nothing cached, so it is the one case that still shows a loading state.
+  await act(async () => { panel.setAvailable(true); panel.show(); });
+  await act(async () => { await new Promise(done => setTimeout(done, 30)); });
+  assert.equal(calls, 1);
+  assert.match(generate(), /Regenerate/, "a graph is already loaded");
+
+  // Simulating a tool-switch away and back: the view remounts and calls show() again, but this
+  // time a graph is already cached, so it must not flash "Loading" or disable the controls.
+  await act(async () => { panel.hide(); });
+  await act(async () => { panel.show(); });
+  assert.equal(panel.getSnapshot().busy, null, "no disabled-controls flash while the cached graph is still shown");
+  assert.equal(generateDisabled(), false, "Regenerate stays clickable during the quiet reload");
+  assert.doesNotMatch(dom.window.document.getElementById("app-intelligence-panel")?.textContent ?? "", /Loading App Intelligence/);
+  await act(async () => { await new Promise(done => setTimeout(done, 30)); });
+  assert.equal(calls, 2, "the graph is still refreshed in the background");
+  assert.equal(panel.getSnapshot().busy, null);
 });
