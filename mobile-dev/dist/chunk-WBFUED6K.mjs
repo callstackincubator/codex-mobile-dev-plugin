@@ -1,12 +1,12 @@
 
-!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="2f4d422f-a40e-5751-a05e-b8ceffff4db7")}catch(e){}}();
-import { createRequire as mobileDevBundleRequire } from 'node:module'; const require = mobileDevBundleRequire(import.meta.url);
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="28ab3cce-4e36-5b98-bab7-51d82062ffb8")}catch(e){}}();
+import { createRequire as mobileDevBundleRequire } from 'node:module'; import { fileURLToPath as mobileDevFileURLToPath } from 'node:url'; import { dirname as mobileDevPathDirname } from 'node:path'; const require = mobileDevBundleRequire(import.meta.url); const __filename = mobileDevFileURLToPath(import.meta.url); const __dirname = mobileDevPathDirname(__filename);
 import {
   __commonJS,
   __export,
   __require,
   __toESM
-} from "./chunk-HEGITGOM.mjs";
+} from "./chunk-WNUFIJT5.mjs";
 
 // node_modules/undici/lib/core/symbols.js
 var require_symbols = __commonJS({
@@ -62132,7 +62132,7 @@ var nodeRuntimeMetricsIntegration = defineIntegration((options = {}) => {
 });
 
 // packages/shared/src/version.ts
-var PLUGIN_VERSION = "0.1.176";
+var PLUGIN_VERSION = "0.1.177";
 
 // packages/shared/src/device-apps-command-diagnostics.ts
 var foregroundCauses = [
@@ -62258,6 +62258,7 @@ var SENTRY_ORIGIN = "https://o4512180958068736.ingest.de.sentry.io";
 var SENTRY_RELEASE = `mobile-dev@${PLUGIN_VERSION}`;
 var MIXPANEL_TOKEN = "780e4817b73c1234479ad8d418d34e89";
 var MIXPANEL_TRACK_URL = "https://api-eu.mixpanel.com/track?ip=0&verbose=1";
+var MIXPANEL_ENGAGE_URL = "https://api-eu.mixpanel.com/engage?ip=0&verbose=1";
 var TELEMETRY_META_KEY = "mobile-dev/telemetry";
 var TELEMETRY_INTERVAL_MS = 3e4;
 var TELEMETRY_HOSTS = ["codex", "claude", "cursor", "mac", "other"];
@@ -62285,6 +62286,9 @@ var frequentTools = /* @__PURE__ */ new Set([
   "mobile_log_sources",
   "mobile_performance_sources",
   "mobile_read_performance_recording",
+  "mobile_appflow_status",
+  "mobile_appflow_next_decision",
+  "mobile_appflow_result",
   "mobile_list_simulators",
   "mobile_list_ios_devices",
   "mobile_list_android_devices",
@@ -62609,6 +62613,7 @@ export {
   SENTRY_RELEASE,
   MIXPANEL_TOKEN,
   MIXPANEL_TRACK_URL,
+  MIXPANEL_ENGAGE_URL,
   TELEMETRY_META_KEY,
   TELEMETRY_INTERVAL_MS,
   TELEMETRY_HOSTS,
@@ -62637,4 +62642,4 @@ undici/lib/web/websocket/frame.js:
   (*! ws. MIT License. Einar Otto Stangvik <einaros@gmail.com> *)
 */
 
-//# debugId=2f4d422f-a40e-5751-a05e-b8ceffff4db7
+//# debugId=28ab3cce-4e36-5b98-bab7-51d82062ffb8

@@ -1,6 +1,6 @@
 
 !function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="2273c02e-4ed0-581a-b757-57804fe1dd20")}catch(e){}}();
-;(function(){var g=globalThis.__SENTRY_ORCHESTRION__=globalThis.__SENTRY_ORCHESTRION__||{};g.bundler=g.bundler||new Set();})();import { createRequire as mobileDevBundleRequire } from 'node:module'; const require = mobileDevBundleRequire(import.meta.url);
+;(function(){var g=globalThis.__SENTRY_ORCHESTRION__=globalThis.__SENTRY_ORCHESTRION__||{};g.bundler=g.bundler||new Set();})();import { createRequire as mobileDevBundleRequire } from 'node:module'; import { fileURLToPath as mobileDevFileURLToPath } from 'node:url'; import { dirname as mobileDevPathDirname } from 'node:path'; const require = mobileDevBundleRequire(import.meta.url); const __filename = mobileDevFileURLToPath(import.meta.url); const __dirname = mobileDevPathDirname(__filename);
 import {
   SENTRY_RELEASE,
   SENTRY_SERVER_DSN,
@@ -16,8 +16,8 @@ import {
   setAttribute,
   setTag,
   tagInstallIntegrity
-} from "./chunk-EZEVWY6P.mjs";
-import "./chunk-HEGITGOM.mjs";
+} from "./chunk-WBFUED6K.mjs";
+import "./chunk-WNUFIJT5.mjs";
 
 // packages/core/src/instrument.ts
 import { mkdirSync } from "node:fs";
@@ -74,6 +74,6 @@ client?.on("spanStart", (span) => {
 });
 
 // apps/claude/server/index.ts
-await import("./server-547BDLCB.mjs");
+await import("./server-FSDFHPSK.mjs");
 
 //# debugId=2273c02e-4ed0-581a-b757-57804fe1dd20

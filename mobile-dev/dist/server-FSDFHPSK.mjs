@@ -1,50 +1,84 @@
 
-!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="85756418-9ad6-5be1-b7d4-2aec5a973860")}catch(e){}}();
-import { createRequire as mobileDevBundleRequire } from 'node:module'; const require = mobileDevBundleRequire(import.meta.url);
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="6f0f4229-6caf-5a18-a258-46a4f667dd8b")}catch(e){}}();
+import { createRequire as mobileDevBundleRequire } from 'node:module'; import { fileURLToPath as mobileDevFileURLToPath } from 'node:url'; import { dirname as mobileDevPathDirname } from 'node:path'; const require = mobileDevBundleRequire(import.meta.url); const __filename = mobileDevFileURLToPath(import.meta.url); const __dirname = mobileDevPathDirname(__filename);
+import "./chunk-E4FKOFXD.mjs";
+import {
+  DEVICE_APPS_DIAGNOSTIC_META,
+  IOSLogProcessingTelemetry,
+  NativeTelemetryRelay,
+  androidDeviceState,
+  androidStartupMessageSchema,
+  annotateDeviceAppsError,
+  captureServerError,
+  closeServerTelemetry,
+  definitionDeviceState,
+  deviceAppsDiagnosticTags,
+  errorMessage,
+  getDefinitionDiagnostic,
+  getDeviceAppsDiagnostic,
+  import_websocket,
+  inputSchema,
+  installTracePropagation,
+  instrumentMcpServer,
+  nativeCollectorCommand,
+  normalizeDevices,
+  parseBaseUrl,
+  parseDefinitionDiagnostic,
+  recordAccessibilityBridgeRestart,
+  recordAnalyticsFlush,
+  recordAndroidBackendStartup,
+  recordAndroidBackendStop,
+  recordAndroidBootWait,
+  recordAndroidEmulatorReconnect,
+  recordAndroidStartupContext,
+  recordAndroidStartupDeviceState,
+  recordAndroidStartupStages,
+  recordAppStorageOperation,
+  recordBrowserPanelContext,
+  recordBrowserPanelSessions,
+  recordPanelRuntime,
+  recordProjectDialog,
+  recordTraceSiftOperation,
+  recordTraceSiftPayload,
+  registerRequestSessionResponse,
+  requiresDecisionProvider,
+  serverTelemetryHost,
+  setAndroidStartupDiagnostic,
+  setDefinitionDiagnostic,
+  setServerTelemetryHost,
+  streamMessageSchema,
+  touchInputSchema,
+  udidSchema,
+  withDeviceAppsDiagnostic
+} from "./chunk-623U4AS5.mjs";
 import {
   ExpectedOperationError,
   FailureEpisodes,
+  MIXPANEL_ENGAGE_URL,
   MIXPANEL_TOKEN,
   MIXPANEL_TRACK_URL,
-  MeasurementWindow,
   MissingRuntimeError,
   PLUGIN_VERSION,
-  SENTRY_NATIVE_DSN,
   SENTRY_ORIGIN,
-  SENTRY_RELEASE,
   TELEMETRY_ENVIRONMENT,
-  TELEMETRY_HOSTS,
   TELEMETRY_INTERVAL_MS,
-  TELEMETRY_META_KEY,
   captureException,
-  close,
-  closeHttpRuntime,
   commandSignals,
-  continueTrace,
   deferEpisodeReport,
-  discoveryCommandTags,
   errorCategory,
   errorReportSignature,
   expectedOutcome,
   foregroundCauses,
-  getDiscoveryCommandDiagnostic,
   getTelemetryIdentity,
-  installIntegrityTags,
   isFrequentTool,
   isMissingFile,
-  isRepeatedFailure,
-  makeNodeTransport,
   mcpServerIntegration,
   orchestrionModuleInjected,
   public_api_exports,
   resolveTelemetryEnvironment,
-  setAttribute,
   setDiscoveryCommandDiagnostic,
-  setTag,
-  telemetryHost,
-  withIsolationScope,
-  wrapMcpServerWithSentry
-} from "./chunk-EZEVWY6P.mjs";
+  telemetryHost
+} from "./chunk-WBFUED6K.mjs";
 import {
   $ZodObject,
   $ZodType,
@@ -78,13 +112,13 @@ import {
   toJSONSchema,
   union,
   unknown
-} from "./chunk-CUHDMZZL.mjs";
+} from "./chunk-BNXJFHSV.mjs";
 import {
   __commonJS,
   __export,
   __require,
   __toESM
-} from "./chunk-HEGITGOM.mjs";
+} from "./chunk-WNUFIJT5.mjs";
 
 // node_modules/ajv/dist/compile/codegen/code.js
 var require_code = __commonJS({
@@ -272,26 +306,26 @@ var require_scope = __commonJS({
       toName(nameOrPrefix) {
         return nameOrPrefix instanceof code_1.Name ? nameOrPrefix : this.name(nameOrPrefix);
       }
-      name(prefix3) {
-        return new code_1.Name(this._newName(prefix3));
+      name(prefix2) {
+        return new code_1.Name(this._newName(prefix2));
       }
-      _newName(prefix3) {
-        const ng = this._names[prefix3] || this._nameGroup(prefix3);
-        return `${prefix3}${ng.index++}`;
+      _newName(prefix2) {
+        const ng = this._names[prefix2] || this._nameGroup(prefix2);
+        return `${prefix2}${ng.index++}`;
       }
-      _nameGroup(prefix3) {
+      _nameGroup(prefix2) {
         var _a3, _b;
-        if (((_b = (_a3 = this._parent) === null || _a3 === void 0 ? void 0 : _a3._prefixes) === null || _b === void 0 ? void 0 : _b.has(prefix3)) || this._prefixes && !this._prefixes.has(prefix3)) {
-          throw new Error(`CodeGen: prefix "${prefix3}" is not allowed in this scope`);
+        if (((_b = (_a3 = this._parent) === null || _a3 === void 0 ? void 0 : _a3._prefixes) === null || _b === void 0 ? void 0 : _b.has(prefix2)) || this._prefixes && !this._prefixes.has(prefix2)) {
+          throw new Error(`CodeGen: prefix "${prefix2}" is not allowed in this scope`);
         }
-        return this._names[prefix3] = { prefix: prefix3, index: 0 };
+        return this._names[prefix2] = { prefix: prefix2, index: 0 };
       }
     };
     exports.Scope = Scope;
     var ValueScopeName = class extends code_1.Name {
-      constructor(prefix3, nameStr) {
+      constructor(prefix2, nameStr) {
         super(nameStr);
-        this.prefix = prefix3;
+        this.prefix = prefix2;
       }
       setValue(value, { property, itemIndex }) {
         this.value = value;
@@ -310,33 +344,33 @@ var require_scope = __commonJS({
       get() {
         return this._scope;
       }
-      name(prefix3) {
-        return new ValueScopeName(prefix3, this._newName(prefix3));
+      name(prefix2) {
+        return new ValueScopeName(prefix2, this._newName(prefix2));
       }
       value(nameOrPrefix, value) {
         var _a3;
         if (value.ref === void 0)
           throw new Error("CodeGen: ref must be passed in value");
         const name = this.toName(nameOrPrefix);
-        const { prefix: prefix3 } = name;
+        const { prefix: prefix2 } = name;
         const valueKey = (_a3 = value.key) !== null && _a3 !== void 0 ? _a3 : value.ref;
-        let vs = this._values[prefix3];
+        let vs = this._values[prefix2];
         if (vs) {
           const _name = vs.get(valueKey);
           if (_name)
             return _name;
         } else {
-          vs = this._values[prefix3] = /* @__PURE__ */ new Map();
+          vs = this._values[prefix2] = /* @__PURE__ */ new Map();
         }
         vs.set(valueKey, name);
-        const s = this._scope[prefix3] || (this._scope[prefix3] = []);
+        const s = this._scope[prefix2] || (this._scope[prefix2] = []);
         const itemIndex = s.length;
         s[itemIndex] = value.ref;
-        name.setValue(value, { property: prefix3, itemIndex });
+        name.setValue(value, { property: prefix2, itemIndex });
         return name;
       }
-      getValue(prefix3, keyOrRef) {
-        const vs = this._values[prefix3];
+      getValue(prefix2, keyOrRef) {
+        const vs = this._values[prefix2];
         if (!vs)
           return;
         return vs.get(keyOrRef);
@@ -357,11 +391,11 @@ var require_scope = __commonJS({
       }
       _reduceValues(values, valueCode, usedValues = {}, getCode) {
         let code = code_1.nil;
-        for (const prefix3 in values) {
-          const vs = values[prefix3];
+        for (const prefix2 in values) {
+          const vs = values[prefix2];
           if (!vs)
             continue;
-          const nameSet = usedValues[prefix3] = usedValues[prefix3] || /* @__PURE__ */ new Map();
+          const nameSet = usedValues[prefix2] = usedValues[prefix2] || /* @__PURE__ */ new Map();
           vs.forEach((name) => {
             if (nameSet.has(name))
               return;
@@ -794,12 +828,12 @@ var require_codegen = __commonJS({
         return this._root.render(this.opts);
       }
       // returns unique name in the internal scope
-      name(prefix3) {
-        return this._scope.name(prefix3);
+      name(prefix2) {
+        return this._scope.name(prefix2);
       }
       // reserves unique name in the external scope
-      scopeName(prefix3) {
-        return this._extScope.name(prefix3);
+      scopeName(prefix2) {
+        return this._extScope.name(prefix2);
       }
       // reserves unique name in the external scope and assigns value to it
       scopeValue(prefixOrName, value) {
@@ -808,8 +842,8 @@ var require_codegen = __commonJS({
         vs.add(name);
         return name;
       }
-      getScopeValue(prefix3, keyOrRef) {
-        return this._extScope.getValue(prefix3, keyOrRef);
+      getScopeValue(prefix2, keyOrRef) {
+        return this._extScope.getValue(prefix2, keyOrRef);
       }
       // return code that assigns values in the external scope to the names that are used internally
       // (same names that were returned by gen.scopeName or gen.scopeValue)
@@ -2273,23 +2307,23 @@ var require_resolve = __commonJS({
       return false;
     }
     function countKeys(schema2) {
-      let count3 = 0;
+      let count2 = 0;
       for (const key in schema2) {
         if (key === "$ref")
           return Infinity;
-        count3++;
+        count2++;
         if (SIMPLE_INLINED.has(key))
           continue;
         if (typeof schema2[key] == "object") {
-          (0, util_1.eachItem)(schema2[key], (sch) => count3 += countKeys(sch));
+          (0, util_1.eachItem)(schema2[key], (sch) => count2 += countKeys(sch));
         }
-        if (count3 === Infinity)
+        if (count2 === Infinity)
           return Infinity;
       }
-      return count3;
+      return count2;
     }
-    function getFullPath(resolver, id2 = "", normalize) {
-      if (normalize !== false)
+    function getFullPath(resolver, id2 = "", normalize2) {
+      if (normalize2 !== false)
         id2 = normalizeId(id2);
       const p2 = resolver.parse(id2);
       return _getFullPath(resolver, p2);
@@ -3037,7 +3071,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve3.call(this, root, ref);
+      let _sch = resolve4.call(this, root, ref);
       if (_sch === void 0) {
         const schema2 = (_a3 = root.localRefs) === null || _a3 === void 0 ? void 0 : _a3[ref];
         const { schemaId } = this.opts;
@@ -3064,7 +3098,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve3(root, ref) {
+    function resolve4(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -3884,7 +3918,7 @@ var require_fast_uri = __commonJS({
       }
       return decodedScheme;
     }
-    function normalize(uri2, options) {
+    function normalize2(uri2, options) {
       if (typeof uri2 === "string") {
         uri2 = /** @type {T} */
         normalizeString(uri2, options);
@@ -3894,7 +3928,7 @@ var require_fast_uri = __commonJS({
       }
       return uri2;
     }
-    function resolve3(baseURI, relativeURI, options) {
+    function resolve4(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const {
         parsed: baseParsed,
@@ -3927,49 +3961,49 @@ var require_fast_uri = __commonJS({
       schemelessOptions.skipEscape = true;
       return serialize(resolved, schemelessOptions);
     }
-    function resolveComponent(base2, relative3, options, skipNormalization) {
+    function resolveComponent(base2, relative4, options, skipNormalization) {
       const target2 = {};
       if (!skipNormalization) {
         base2 = parse4(serialize(base2, options), options);
-        relative3 = parse4(serialize(relative3, options), options);
+        relative4 = parse4(serialize(relative4, options), options);
       }
       options = options || {};
-      if (!options.tolerant && relative3.scheme) {
-        target2.scheme = relative3.scheme;
-        target2.userinfo = relative3.userinfo;
-        target2.host = relative3.host;
-        target2.port = relative3.port;
-        target2.path = removeDotSegments(relative3.path || "");
-        target2.query = relative3.query;
+      if (!options.tolerant && relative4.scheme) {
+        target2.scheme = relative4.scheme;
+        target2.userinfo = relative4.userinfo;
+        target2.host = relative4.host;
+        target2.port = relative4.port;
+        target2.path = removeDotSegments(relative4.path || "");
+        target2.query = relative4.query;
       } else {
-        if (relative3.userinfo !== void 0 || relative3.host !== void 0 || relative3.port !== void 0) {
-          target2.userinfo = relative3.userinfo;
-          target2.host = relative3.host;
-          target2.port = relative3.port;
-          target2.path = removeDotSegments(relative3.path || "");
-          target2.query = relative3.query;
+        if (relative4.userinfo !== void 0 || relative4.host !== void 0 || relative4.port !== void 0) {
+          target2.userinfo = relative4.userinfo;
+          target2.host = relative4.host;
+          target2.port = relative4.port;
+          target2.path = removeDotSegments(relative4.path || "");
+          target2.query = relative4.query;
         } else {
-          if (!relative3.path) {
+          if (!relative4.path) {
             target2.path = base2.path;
-            if (relative3.query !== void 0) {
-              target2.query = relative3.query;
+            if (relative4.query !== void 0) {
+              target2.query = relative4.query;
             } else {
               target2.query = base2.query;
             }
           } else {
-            if (relative3.path[0] === "/") {
-              target2.path = removeDotSegments(relative3.path);
+            if (relative4.path[0] === "/") {
+              target2.path = removeDotSegments(relative4.path);
             } else {
               if ((base2.userinfo !== void 0 || base2.host !== void 0 || base2.port !== void 0) && !base2.path) {
-                target2.path = "/" + relative3.path;
+                target2.path = "/" + relative4.path;
               } else if (!base2.path) {
-                target2.path = relative3.path;
+                target2.path = relative4.path;
               } else {
-                target2.path = base2.path.slice(0, base2.path.lastIndexOf("/") + 1) + relative3.path;
+                target2.path = base2.path.slice(0, base2.path.lastIndexOf("/") + 1) + relative4.path;
               }
               target2.path = removeDotSegments(target2.path);
             }
-            target2.query = relative3.query;
+            target2.query = relative4.query;
           }
           target2.userinfo = base2.userinfo;
           target2.host = base2.host;
@@ -3977,7 +4011,7 @@ var require_fast_uri = __commonJS({
         }
         target2.scheme = base2.scheme;
       }
-      target2.fragment = relative3.fragment;
+      target2.fragment = relative4.fragment;
       return target2;
     }
     function equal(uriA, uriB, options) {
@@ -4262,8 +4296,8 @@ var require_fast_uri = __commonJS({
     }
     var fastUri = {
       SCHEMES,
-      normalize,
-      resolve: resolve3,
+      normalize: normalize2,
+      resolve: resolve4,
       resolveComponent,
       equal,
       serialize,
@@ -5768,8 +5802,8 @@ var require_contains = __commonJS({
         cxt.result(valid, () => cxt.reset());
         function validateItemsWithCount() {
           const schValid = gen.name("_valid");
-          const count3 = gen.let("count", 0);
-          validateItems(schValid, () => gen.if(schValid, () => checkLimits(count3)));
+          const count2 = gen.let("count", 0);
+          validateItems(schValid, () => gen.if(schValid, () => checkLimits(count2)));
         }
         function validateItems(_valid, block) {
           gen.forRange("i", 0, len, (i) => {
@@ -5782,16 +5816,16 @@ var require_contains = __commonJS({
             block();
           });
         }
-        function checkLimits(count3) {
-          gen.code((0, codegen_1._)`${count3}++`);
+        function checkLimits(count2) {
+          gen.code((0, codegen_1._)`${count2}++`);
           if (max === void 0) {
-            gen.if((0, codegen_1._)`${count3} >= ${min}`, () => gen.assign(valid, true).break());
+            gen.if((0, codegen_1._)`${count2} >= ${min}`, () => gen.assign(valid, true).break());
           } else {
-            gen.if((0, codegen_1._)`${count3} > ${max}`, () => gen.assign(valid, false).break());
+            gen.if((0, codegen_1._)`${count2} > ${max}`, () => gen.assign(valid, false).break());
             if (min === 1)
               gen.assign(valid, true);
             else
-              gen.if((0, codegen_1._)`${count3} >= ${min}`, () => gen.assign(valid, true));
+              gen.if((0, codegen_1._)`${count2} >= ${min}`, () => gen.assign(valid, true));
           }
         }
       }
@@ -7252,3689 +7286,6 @@ var require_dist = __commonJS({
   }
 });
 
-// node_modules/ws/lib/constants.js
-var require_constants = __commonJS({
-  "node_modules/ws/lib/constants.js"(exports, module) {
-    "use strict";
-    var BINARY_TYPES = ["nodebuffer", "arraybuffer", "fragments"];
-    var hasBlob = typeof Blob !== "undefined";
-    if (hasBlob) BINARY_TYPES.push("blob");
-    module.exports = {
-      BINARY_TYPES,
-      CLOSE_TIMEOUT: 3e4,
-      EMPTY_BUFFER: Buffer.alloc(0),
-      GUID: "258EAFA5-E914-47DA-95CA-C5AB0DC85B11",
-      hasBlob,
-      kForOnEventAttribute: /* @__PURE__ */ Symbol("kIsForOnEventAttribute"),
-      kListener: /* @__PURE__ */ Symbol("kListener"),
-      kStatusCode: /* @__PURE__ */ Symbol("status-code"),
-      kWebSocket: /* @__PURE__ */ Symbol("websocket"),
-      NOOP: () => {
-      }
-    };
-  }
-});
-
-// node_modules/ws/lib/buffer-util.js
-var require_buffer_util = __commonJS({
-  "node_modules/ws/lib/buffer-util.js"(exports, module) {
-    "use strict";
-    var { EMPTY_BUFFER } = require_constants();
-    var FastBuffer = Buffer[Symbol.species];
-    function concat(list, totalLength) {
-      if (list.length === 0) return EMPTY_BUFFER;
-      if (list.length === 1) return list[0];
-      const target2 = Buffer.allocUnsafe(totalLength);
-      let offset = 0;
-      for (let i = 0; i < list.length; i++) {
-        const buf = list[i];
-        target2.set(buf, offset);
-        offset += buf.length;
-      }
-      if (offset < totalLength) {
-        return new FastBuffer(target2.buffer, target2.byteOffset, offset);
-      }
-      return target2;
-    }
-    function _mask(source, mask, output, offset, length) {
-      for (let i = 0; i < length; i++) {
-        output[offset + i] = source[i] ^ mask[i & 3];
-      }
-    }
-    function _unmask(buffer, mask) {
-      for (let i = 0; i < buffer.length; i++) {
-        buffer[i] ^= mask[i & 3];
-      }
-    }
-    function toArrayBuffer2(buf) {
-      if (buf.length === buf.buffer.byteLength) {
-        return buf.buffer;
-      }
-      return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.length);
-    }
-    function toBuffer(data) {
-      toBuffer.readOnly = true;
-      if (Buffer.isBuffer(data)) return data;
-      let buf;
-      if (data instanceof ArrayBuffer) {
-        buf = new FastBuffer(data);
-      } else if (ArrayBuffer.isView(data)) {
-        buf = new FastBuffer(data.buffer, data.byteOffset, data.byteLength);
-      } else {
-        buf = Buffer.from(data);
-        toBuffer.readOnly = false;
-      }
-      return buf;
-    }
-    module.exports = {
-      concat,
-      mask: _mask,
-      toArrayBuffer: toArrayBuffer2,
-      toBuffer,
-      unmask: _unmask
-    };
-    if (!process.env.WS_NO_BUFFER_UTIL) {
-      try {
-        const bufferUtil = __require("bufferutil");
-        module.exports.mask = function(source, mask, output, offset, length) {
-          if (length < 48) _mask(source, mask, output, offset, length);
-          else bufferUtil.mask(source, mask, output, offset, length);
-        };
-        module.exports.unmask = function(buffer, mask) {
-          if (buffer.length < 32) _unmask(buffer, mask);
-          else bufferUtil.unmask(buffer, mask);
-        };
-      } catch (e) {
-      }
-    }
-  }
-});
-
-// node_modules/ws/lib/limiter.js
-var require_limiter = __commonJS({
-  "node_modules/ws/lib/limiter.js"(exports, module) {
-    "use strict";
-    var kDone = /* @__PURE__ */ Symbol("kDone");
-    var kRun = /* @__PURE__ */ Symbol("kRun");
-    var Limiter = class {
-      /**
-       * Creates a new `Limiter`.
-       *
-       * @param {Number} [concurrency=Infinity] The maximum number of jobs allowed
-       *     to run concurrently
-       */
-      constructor(concurrency) {
-        this[kDone] = () => {
-          this.pending--;
-          this[kRun]();
-        };
-        this.concurrency = concurrency || Infinity;
-        this.jobs = [];
-        this.pending = 0;
-      }
-      /**
-       * Adds a job to the queue.
-       *
-       * @param {Function} job The job to run
-       * @public
-       */
-      add(job) {
-        this.jobs.push(job);
-        this[kRun]();
-      }
-      /**
-       * Removes a job from the queue and runs it if possible.
-       *
-       * @private
-       */
-      [kRun]() {
-        if (this.pending === this.concurrency) return;
-        if (this.jobs.length) {
-          const job = this.jobs.shift();
-          this.pending++;
-          job(this[kDone]);
-        }
-      }
-    };
-    module.exports = Limiter;
-  }
-});
-
-// node_modules/ws/lib/permessage-deflate.js
-var require_permessage_deflate = __commonJS({
-  "node_modules/ws/lib/permessage-deflate.js"(exports, module) {
-    "use strict";
-    var zlib = __require("zlib");
-    var bufferUtil = require_buffer_util();
-    var Limiter = require_limiter();
-    var { kStatusCode } = require_constants();
-    var FastBuffer = Buffer[Symbol.species];
-    var TRAILER = Buffer.from([0, 0, 255, 255]);
-    var kPerMessageDeflate = /* @__PURE__ */ Symbol("permessage-deflate");
-    var kTotalLength = /* @__PURE__ */ Symbol("total-length");
-    var kCallback = /* @__PURE__ */ Symbol("callback");
-    var kBuffers = /* @__PURE__ */ Symbol("buffers");
-    var kError = /* @__PURE__ */ Symbol("error");
-    var zlibLimiter;
-    var PerMessageDeflate2 = class {
-      /**
-       * Creates a PerMessageDeflate instance.
-       *
-       * @param {Object} [options] Configuration options
-       * @param {(Boolean|Number)} [options.clientMaxWindowBits] Advertise support
-       *     for, or request, a custom client window size
-       * @param {Boolean} [options.clientNoContextTakeover=false] Advertise/
-       *     acknowledge disabling of client context takeover
-       * @param {Number} [options.concurrencyLimit=10] The number of concurrent
-       *     calls to zlib
-       * @param {Boolean} [options.isServer=false] Create the instance in either
-       *     server or client mode
-       * @param {Number} [options.maxPayload=0] The maximum allowed message length
-       * @param {(Boolean|Number)} [options.serverMaxWindowBits] Request/confirm the
-       *     use of a custom server window size
-       * @param {Boolean} [options.serverNoContextTakeover=false] Request/accept
-       *     disabling of server context takeover
-       * @param {Number} [options.threshold=1024] Size (in bytes) below which
-       *     messages should not be compressed if context takeover is disabled
-       * @param {Object} [options.zlibDeflateOptions] Options to pass to zlib on
-       *     deflate
-       * @param {Object} [options.zlibInflateOptions] Options to pass to zlib on
-       *     inflate
-       */
-      constructor(options) {
-        this._options = options || {};
-        this._threshold = this._options.threshold !== void 0 ? this._options.threshold : 1024;
-        this._maxPayload = this._options.maxPayload | 0;
-        this._isServer = !!this._options.isServer;
-        this._deflate = null;
-        this._inflate = null;
-        this.params = null;
-        if (!zlibLimiter) {
-          const concurrency = this._options.concurrencyLimit !== void 0 ? this._options.concurrencyLimit : 10;
-          zlibLimiter = new Limiter(concurrency);
-        }
-      }
-      /**
-       * @type {String}
-       */
-      static get extensionName() {
-        return "permessage-deflate";
-      }
-      /**
-       * Create an extension negotiation offer.
-       *
-       * @return {Object} Extension parameters
-       * @public
-       */
-      offer() {
-        const params = {};
-        if (this._options.serverNoContextTakeover) {
-          params.server_no_context_takeover = true;
-        }
-        if (this._options.clientNoContextTakeover) {
-          params.client_no_context_takeover = true;
-        }
-        if (this._options.serverMaxWindowBits) {
-          params.server_max_window_bits = this._options.serverMaxWindowBits;
-        }
-        if (this._options.clientMaxWindowBits) {
-          params.client_max_window_bits = this._options.clientMaxWindowBits;
-        } else if (this._options.clientMaxWindowBits == null) {
-          params.client_max_window_bits = true;
-        }
-        return params;
-      }
-      /**
-       * Accept an extension negotiation offer/response.
-       *
-       * @param {Array} configurations The extension negotiation offers/reponse
-       * @return {Object} Accepted configuration
-       * @public
-       */
-      accept(configurations) {
-        configurations = this.normalizeParams(configurations);
-        this.params = this._isServer ? this.acceptAsServer(configurations) : this.acceptAsClient(configurations);
-        return this.params;
-      }
-      /**
-       * Releases all resources used by the extension.
-       *
-       * @public
-       */
-      cleanup() {
-        if (this._inflate) {
-          this._inflate.close();
-          this._inflate = null;
-        }
-        if (this._deflate) {
-          const callback = this._deflate[kCallback];
-          this._deflate.close();
-          this._deflate = null;
-          if (callback) {
-            callback(
-              new Error(
-                "The deflate stream was closed while data was being processed"
-              )
-            );
-          }
-        }
-      }
-      /**
-       *  Accept an extension negotiation offer.
-       *
-       * @param {Array} offers The extension negotiation offers
-       * @return {Object} Accepted configuration
-       * @private
-       */
-      acceptAsServer(offers) {
-        const opts = this._options;
-        const accepted = offers.find((params) => {
-          if (opts.serverNoContextTakeover === false && params.server_no_context_takeover || params.server_max_window_bits && (opts.serverMaxWindowBits === false || typeof opts.serverMaxWindowBits === "number" && opts.serverMaxWindowBits > params.server_max_window_bits) || typeof opts.clientMaxWindowBits === "number" && (typeof params.client_max_window_bits === "number" ? opts.clientMaxWindowBits > params.client_max_window_bits : !params.client_max_window_bits)) {
-            return false;
-          }
-          return true;
-        });
-        if (!accepted) {
-          throw new Error("None of the extension offers can be accepted");
-        }
-        if (opts.serverNoContextTakeover) {
-          accepted.server_no_context_takeover = true;
-        }
-        if (opts.clientNoContextTakeover) {
-          accepted.client_no_context_takeover = true;
-        }
-        if (typeof opts.serverMaxWindowBits === "number") {
-          accepted.server_max_window_bits = opts.serverMaxWindowBits;
-        }
-        if (typeof opts.clientMaxWindowBits === "number") {
-          accepted.client_max_window_bits = opts.clientMaxWindowBits;
-        } else if (accepted.client_max_window_bits === true || opts.clientMaxWindowBits === false) {
-          delete accepted.client_max_window_bits;
-        }
-        return accepted;
-      }
-      /**
-       * Accept the extension negotiation response.
-       *
-       * @param {Array} response The extension negotiation response
-       * @return {Object} Accepted configuration
-       * @private
-       */
-      acceptAsClient(response3) {
-        const params = response3[0];
-        if (this._options.clientNoContextTakeover === false && params.client_no_context_takeover) {
-          throw new Error('Unexpected parameter "client_no_context_takeover"');
-        }
-        if (!params.client_max_window_bits) {
-          if (typeof this._options.clientMaxWindowBits === "number") {
-            params.client_max_window_bits = this._options.clientMaxWindowBits;
-          }
-        } else if (this._options.clientMaxWindowBits === false || typeof this._options.clientMaxWindowBits === "number" && params.client_max_window_bits > this._options.clientMaxWindowBits) {
-          throw new Error(
-            'Unexpected or invalid parameter "client_max_window_bits"'
-          );
-        }
-        return params;
-      }
-      /**
-       * Normalize parameters.
-       *
-       * @param {Array} configurations The extension negotiation offers/reponse
-       * @return {Array} The offers/response with normalized parameters
-       * @private
-       */
-      normalizeParams(configurations) {
-        configurations.forEach((params) => {
-          Object.keys(params).forEach((key) => {
-            let value = params[key];
-            if (value.length > 1) {
-              throw new Error(`Parameter "${key}" must have only a single value`);
-            }
-            value = value[0];
-            if (key === "client_max_window_bits") {
-              if (value !== true) {
-                const num = +value;
-                if (!Number.isInteger(num) || num < 8 || num > 15) {
-                  throw new TypeError(
-                    `Invalid value for parameter "${key}": ${value}`
-                  );
-                }
-                value = num;
-              } else if (!this._isServer) {
-                throw new TypeError(
-                  `Invalid value for parameter "${key}": ${value}`
-                );
-              }
-            } else if (key === "server_max_window_bits") {
-              const num = +value;
-              if (!Number.isInteger(num) || num < 8 || num > 15) {
-                throw new TypeError(
-                  `Invalid value for parameter "${key}": ${value}`
-                );
-              }
-              value = num;
-            } else if (key === "client_no_context_takeover" || key === "server_no_context_takeover") {
-              if (value !== true) {
-                throw new TypeError(
-                  `Invalid value for parameter "${key}": ${value}`
-                );
-              }
-            } else {
-              throw new Error(`Unknown parameter "${key}"`);
-            }
-            params[key] = value;
-          });
-        });
-        return configurations;
-      }
-      /**
-       * Decompress data. Concurrency limited.
-       *
-       * @param {Buffer} data Compressed data
-       * @param {Boolean} fin Specifies whether or not this is the last fragment
-       * @param {Function} callback Callback
-       * @public
-       */
-      decompress(data, fin, callback) {
-        zlibLimiter.add((done) => {
-          this._decompress(data, fin, (err, result4) => {
-            done();
-            callback(err, result4);
-          });
-        });
-      }
-      /**
-       * Compress data. Concurrency limited.
-       *
-       * @param {(Buffer|String)} data Data to compress
-       * @param {Boolean} fin Specifies whether or not this is the last fragment
-       * @param {Function} callback Callback
-       * @public
-       */
-      compress(data, fin, callback) {
-        zlibLimiter.add((done) => {
-          this._compress(data, fin, (err, result4) => {
-            done();
-            callback(err, result4);
-          });
-        });
-      }
-      /**
-       * Decompress data.
-       *
-       * @param {Buffer} data Compressed data
-       * @param {Boolean} fin Specifies whether or not this is the last fragment
-       * @param {Function} callback Callback
-       * @private
-       */
-      _decompress(data, fin, callback) {
-        const endpoint = this._isServer ? "client" : "server";
-        if (!this._inflate) {
-          const key = `${endpoint}_max_window_bits`;
-          const windowBits = typeof this.params[key] !== "number" ? zlib.Z_DEFAULT_WINDOWBITS : this.params[key];
-          this._inflate = zlib.createInflateRaw({
-            ...this._options.zlibInflateOptions,
-            windowBits
-          });
-          this._inflate[kPerMessageDeflate] = this;
-          this._inflate[kTotalLength] = 0;
-          this._inflate[kBuffers] = [];
-          this._inflate.on("error", inflateOnError);
-          this._inflate.on("data", inflateOnData);
-        }
-        this._inflate[kCallback] = callback;
-        this._inflate.write(data);
-        if (fin) this._inflate.write(TRAILER);
-        this._inflate.flush(() => {
-          const err = this._inflate[kError];
-          if (err) {
-            this._inflate.close();
-            this._inflate = null;
-            callback(err);
-            return;
-          }
-          const data2 = bufferUtil.concat(
-            this._inflate[kBuffers],
-            this._inflate[kTotalLength]
-          );
-          if (this._inflate._readableState.endEmitted) {
-            this._inflate.close();
-            this._inflate = null;
-          } else {
-            this._inflate[kTotalLength] = 0;
-            this._inflate[kBuffers] = [];
-            if (fin && this.params[`${endpoint}_no_context_takeover`]) {
-              this._inflate.reset();
-            }
-          }
-          callback(null, data2);
-        });
-      }
-      /**
-       * Compress data.
-       *
-       * @param {(Buffer|String)} data Data to compress
-       * @param {Boolean} fin Specifies whether or not this is the last fragment
-       * @param {Function} callback Callback
-       * @private
-       */
-      _compress(data, fin, callback) {
-        const endpoint = this._isServer ? "server" : "client";
-        if (!this._deflate) {
-          const key = `${endpoint}_max_window_bits`;
-          const windowBits = typeof this.params[key] !== "number" ? zlib.Z_DEFAULT_WINDOWBITS : this.params[key];
-          this._deflate = zlib.createDeflateRaw({
-            ...this._options.zlibDeflateOptions,
-            windowBits
-          });
-          this._deflate[kTotalLength] = 0;
-          this._deflate[kBuffers] = [];
-          this._deflate.on("data", deflateOnData);
-        }
-        this._deflate[kCallback] = callback;
-        this._deflate.write(data);
-        this._deflate.flush(zlib.Z_SYNC_FLUSH, () => {
-          if (!this._deflate) {
-            return;
-          }
-          let data2 = bufferUtil.concat(
-            this._deflate[kBuffers],
-            this._deflate[kTotalLength]
-          );
-          if (fin) {
-            data2 = new FastBuffer(data2.buffer, data2.byteOffset, data2.length - 4);
-          }
-          this._deflate[kCallback] = null;
-          this._deflate[kTotalLength] = 0;
-          this._deflate[kBuffers] = [];
-          if (fin && this.params[`${endpoint}_no_context_takeover`]) {
-            this._deflate.reset();
-          }
-          callback(null, data2);
-        });
-      }
-    };
-    module.exports = PerMessageDeflate2;
-    function deflateOnData(chunk) {
-      this[kBuffers].push(chunk);
-      this[kTotalLength] += chunk.length;
-    }
-    function inflateOnData(chunk) {
-      this[kTotalLength] += chunk.length;
-      if (this[kPerMessageDeflate]._maxPayload < 1 || this[kTotalLength] <= this[kPerMessageDeflate]._maxPayload) {
-        this[kBuffers].push(chunk);
-        return;
-      }
-      this[kError] = new RangeError("Max payload size exceeded");
-      this[kError].code = "WS_ERR_UNSUPPORTED_MESSAGE_LENGTH";
-      this[kError][kStatusCode] = 1009;
-      this.removeListener("data", inflateOnData);
-      this.reset();
-    }
-    function inflateOnError(err) {
-      this[kPerMessageDeflate]._inflate = null;
-      if (this[kError]) {
-        this[kCallback](this[kError]);
-        return;
-      }
-      err[kStatusCode] = 1007;
-      this[kCallback](err);
-    }
-  }
-});
-
-// node_modules/ws/lib/validation.js
-var require_validation2 = __commonJS({
-  "node_modules/ws/lib/validation.js"(exports, module) {
-    "use strict";
-    var { isUtf8 } = __require("buffer");
-    var { hasBlob } = require_constants();
-    var tokenChars = [
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      // 0 - 15
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      // 16 - 31
-      0,
-      1,
-      0,
-      1,
-      1,
-      1,
-      1,
-      1,
-      0,
-      0,
-      1,
-      1,
-      0,
-      1,
-      1,
-      0,
-      // 32 - 47
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      // 48 - 63
-      0,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      // 64 - 79
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      0,
-      0,
-      0,
-      1,
-      1,
-      // 80 - 95
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      // 96 - 111
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      0,
-      1,
-      0,
-      1,
-      0
-      // 112 - 127
-    ];
-    function isValidStatusCode(code) {
-      return code >= 1e3 && code <= 1014 && code !== 1004 && code !== 1005 && code !== 1006 || code >= 3e3 && code <= 4999;
-    }
-    function _isValidUTF8(buf) {
-      const len = buf.length;
-      let i = 0;
-      while (i < len) {
-        if ((buf[i] & 128) === 0) {
-          i++;
-        } else if ((buf[i] & 224) === 192) {
-          if (i + 1 === len || (buf[i + 1] & 192) !== 128 || (buf[i] & 254) === 192) {
-            return false;
-          }
-          i += 2;
-        } else if ((buf[i] & 240) === 224) {
-          if (i + 2 >= len || (buf[i + 1] & 192) !== 128 || (buf[i + 2] & 192) !== 128 || buf[i] === 224 && (buf[i + 1] & 224) === 128 || // Overlong
-          buf[i] === 237 && (buf[i + 1] & 224) === 160) {
-            return false;
-          }
-          i += 3;
-        } else if ((buf[i] & 248) === 240) {
-          if (i + 3 >= len || (buf[i + 1] & 192) !== 128 || (buf[i + 2] & 192) !== 128 || (buf[i + 3] & 192) !== 128 || buf[i] === 240 && (buf[i + 1] & 240) === 128 || // Overlong
-          buf[i] === 244 && buf[i + 1] > 143 || buf[i] > 244) {
-            return false;
-          }
-          i += 4;
-        } else {
-          return false;
-        }
-      }
-      return true;
-    }
-    function isBlob(value) {
-      return hasBlob && typeof value === "object" && typeof value.arrayBuffer === "function" && typeof value.type === "string" && typeof value.stream === "function" && (value[Symbol.toStringTag] === "Blob" || value[Symbol.toStringTag] === "File");
-    }
-    module.exports = {
-      isBlob,
-      isValidStatusCode,
-      isValidUTF8: _isValidUTF8,
-      tokenChars
-    };
-    if (isUtf8) {
-      module.exports.isValidUTF8 = function(buf) {
-        return buf.length < 24 ? _isValidUTF8(buf) : isUtf8(buf);
-      };
-    } else if (!process.env.WS_NO_UTF_8_VALIDATE) {
-      try {
-        const isValidUTF8 = __require("utf-8-validate");
-        module.exports.isValidUTF8 = function(buf) {
-          return buf.length < 32 ? _isValidUTF8(buf) : isValidUTF8(buf);
-        };
-      } catch (e) {
-      }
-    }
-  }
-});
-
-// node_modules/ws/lib/receiver.js
-var require_receiver = __commonJS({
-  "node_modules/ws/lib/receiver.js"(exports, module) {
-    "use strict";
-    var { Writable } = __require("stream");
-    var PerMessageDeflate2 = require_permessage_deflate();
-    var {
-      BINARY_TYPES,
-      EMPTY_BUFFER,
-      kStatusCode,
-      kWebSocket
-    } = require_constants();
-    var { concat, toArrayBuffer: toArrayBuffer2, unmask } = require_buffer_util();
-    var { isValidStatusCode, isValidUTF8 } = require_validation2();
-    var FastBuffer = Buffer[Symbol.species];
-    var GET_INFO = 0;
-    var GET_PAYLOAD_LENGTH_16 = 1;
-    var GET_PAYLOAD_LENGTH_64 = 2;
-    var GET_MASK = 3;
-    var GET_DATA = 4;
-    var INFLATING = 5;
-    var DEFER_EVENT = 6;
-    var Receiver2 = class extends Writable {
-      /**
-       * Creates a Receiver instance.
-       *
-       * @param {Object} [options] Options object
-       * @param {Boolean} [options.allowSynchronousEvents=true] Specifies whether
-       *     any of the `'message'`, `'ping'`, and `'pong'` events can be emitted
-       *     multiple times in the same tick
-       * @param {String} [options.binaryType=nodebuffer] The type for binary data
-       * @param {Object} [options.extensions] An object containing the negotiated
-       *     extensions
-       * @param {Boolean} [options.isServer=false] Specifies whether to operate in
-       *     client or server mode
-       * @param {Number} [options.maxBufferedChunks=0] The maximum number of
-       *     buffered data chunks
-       * @param {Number} [options.maxFragments=0] The maximum number of message
-       *     fragments
-       * @param {Number} [options.maxPayload=0] The maximum allowed message length
-       * @param {Boolean} [options.skipUTF8Validation=false] Specifies whether or
-       *     not to skip UTF-8 validation for text and close messages
-       */
-      constructor(options = {}) {
-        super();
-        this._allowSynchronousEvents = options.allowSynchronousEvents !== void 0 ? options.allowSynchronousEvents : true;
-        this._binaryType = options.binaryType || BINARY_TYPES[0];
-        this._extensions = options.extensions || {};
-        this._isServer = !!options.isServer;
-        this._maxBufferedChunks = options.maxBufferedChunks | 0;
-        this._maxFragments = options.maxFragments | 0;
-        this._maxPayload = options.maxPayload | 0;
-        this._skipUTF8Validation = !!options.skipUTF8Validation;
-        this[kWebSocket] = void 0;
-        this._bufferedBytes = 0;
-        this._buffers = [];
-        this._compressed = false;
-        this._payloadLength = 0;
-        this._mask = void 0;
-        this._fragmented = 0;
-        this._masked = false;
-        this._fin = false;
-        this._opcode = 0;
-        this._totalPayloadLength = 0;
-        this._messageLength = 0;
-        this._numFragments = 0;
-        this._fragments = [];
-        this._errored = false;
-        this._loop = false;
-        this._state = GET_INFO;
-      }
-      /**
-       * Implements `Writable.prototype._write()`.
-       *
-       * @param {Buffer} chunk The chunk of data to write
-       * @param {String} encoding The character encoding of `chunk`
-       * @param {Function} cb Callback
-       * @private
-       */
-      _write(chunk, encoding, cb) {
-        if (this._opcode === 8 && this._state == GET_INFO) return cb();
-        if (this._maxBufferedChunks > 0 && this._buffers.length >= this._maxBufferedChunks) {
-          cb(
-            this.createError(
-              RangeError,
-              "Too many buffered chunks",
-              false,
-              1008,
-              "WS_ERR_TOO_MANY_BUFFERED_PARTS"
-            )
-          );
-          return;
-        }
-        this._bufferedBytes += chunk.length;
-        this._buffers.push(chunk);
-        this.startLoop(cb);
-      }
-      /**
-       * Consumes `n` bytes from the buffered data.
-       *
-       * @param {Number} n The number of bytes to consume
-       * @return {Buffer} The consumed bytes
-       * @private
-       */
-      consume(n) {
-        this._bufferedBytes -= n;
-        if (n === this._buffers[0].length) return this._buffers.shift();
-        if (n < this._buffers[0].length) {
-          const buf = this._buffers[0];
-          this._buffers[0] = new FastBuffer(
-            buf.buffer,
-            buf.byteOffset + n,
-            buf.length - n
-          );
-          return new FastBuffer(buf.buffer, buf.byteOffset, n);
-        }
-        const dst = Buffer.allocUnsafe(n);
-        do {
-          const buf = this._buffers[0];
-          const offset = dst.length - n;
-          if (n >= buf.length) {
-            dst.set(this._buffers.shift(), offset);
-          } else {
-            dst.set(new Uint8Array(buf.buffer, buf.byteOffset, n), offset);
-            this._buffers[0] = new FastBuffer(
-              buf.buffer,
-              buf.byteOffset + n,
-              buf.length - n
-            );
-          }
-          n -= buf.length;
-        } while (n > 0);
-        return dst;
-      }
-      /**
-       * Starts the parsing loop.
-       *
-       * @param {Function} cb Callback
-       * @private
-       */
-      startLoop(cb) {
-        this._loop = true;
-        do {
-          switch (this._state) {
-            case GET_INFO:
-              this.getInfo(cb);
-              break;
-            case GET_PAYLOAD_LENGTH_16:
-              this.getPayloadLength16(cb);
-              break;
-            case GET_PAYLOAD_LENGTH_64:
-              this.getPayloadLength64(cb);
-              break;
-            case GET_MASK:
-              this.getMask();
-              break;
-            case GET_DATA:
-              this.getData(cb);
-              break;
-            case INFLATING:
-            case DEFER_EVENT:
-              this._loop = false;
-              return;
-          }
-        } while (this._loop);
-        if (!this._errored) cb();
-      }
-      /**
-       * Reads the first two bytes of a frame.
-       *
-       * @param {Function} cb Callback
-       * @private
-       */
-      getInfo(cb) {
-        if (this._bufferedBytes < 2) {
-          this._loop = false;
-          return;
-        }
-        const buf = this.consume(2);
-        if ((buf[0] & 48) !== 0) {
-          const error51 = this.createError(
-            RangeError,
-            "RSV2 and RSV3 must be clear",
-            true,
-            1002,
-            "WS_ERR_UNEXPECTED_RSV_2_3"
-          );
-          cb(error51);
-          return;
-        }
-        const compressed = (buf[0] & 64) === 64;
-        if (compressed && !this._extensions[PerMessageDeflate2.extensionName]) {
-          const error51 = this.createError(
-            RangeError,
-            "RSV1 must be clear",
-            true,
-            1002,
-            "WS_ERR_UNEXPECTED_RSV_1"
-          );
-          cb(error51);
-          return;
-        }
-        this._fin = (buf[0] & 128) === 128;
-        this._opcode = buf[0] & 15;
-        this._payloadLength = buf[1] & 127;
-        if (this._opcode === 0) {
-          if (compressed) {
-            const error51 = this.createError(
-              RangeError,
-              "RSV1 must be clear",
-              true,
-              1002,
-              "WS_ERR_UNEXPECTED_RSV_1"
-            );
-            cb(error51);
-            return;
-          }
-          if (!this._fragmented) {
-            const error51 = this.createError(
-              RangeError,
-              "invalid opcode 0",
-              true,
-              1002,
-              "WS_ERR_INVALID_OPCODE"
-            );
-            cb(error51);
-            return;
-          }
-          this._opcode = this._fragmented;
-        } else if (this._opcode === 1 || this._opcode === 2) {
-          if (this._fragmented) {
-            const error51 = this.createError(
-              RangeError,
-              `invalid opcode ${this._opcode}`,
-              true,
-              1002,
-              "WS_ERR_INVALID_OPCODE"
-            );
-            cb(error51);
-            return;
-          }
-          this._compressed = compressed;
-        } else if (this._opcode > 7 && this._opcode < 11) {
-          if (!this._fin) {
-            const error51 = this.createError(
-              RangeError,
-              "FIN must be set",
-              true,
-              1002,
-              "WS_ERR_EXPECTED_FIN"
-            );
-            cb(error51);
-            return;
-          }
-          if (compressed) {
-            const error51 = this.createError(
-              RangeError,
-              "RSV1 must be clear",
-              true,
-              1002,
-              "WS_ERR_UNEXPECTED_RSV_1"
-            );
-            cb(error51);
-            return;
-          }
-          if (this._payloadLength > 125 || this._opcode === 8 && this._payloadLength === 1) {
-            const error51 = this.createError(
-              RangeError,
-              `invalid payload length ${this._payloadLength}`,
-              true,
-              1002,
-              "WS_ERR_INVALID_CONTROL_PAYLOAD_LENGTH"
-            );
-            cb(error51);
-            return;
-          }
-        } else {
-          const error51 = this.createError(
-            RangeError,
-            `invalid opcode ${this._opcode}`,
-            true,
-            1002,
-            "WS_ERR_INVALID_OPCODE"
-          );
-          cb(error51);
-          return;
-        }
-        if (!this._fin && !this._fragmented) this._fragmented = this._opcode;
-        this._masked = (buf[1] & 128) === 128;
-        if (this._isServer) {
-          if (!this._masked) {
-            const error51 = this.createError(
-              RangeError,
-              "MASK must be set",
-              true,
-              1002,
-              "WS_ERR_EXPECTED_MASK"
-            );
-            cb(error51);
-            return;
-          }
-        } else if (this._masked) {
-          const error51 = this.createError(
-            RangeError,
-            "MASK must be clear",
-            true,
-            1002,
-            "WS_ERR_UNEXPECTED_MASK"
-          );
-          cb(error51);
-          return;
-        }
-        if (this._payloadLength === 126) this._state = GET_PAYLOAD_LENGTH_16;
-        else if (this._payloadLength === 127) this._state = GET_PAYLOAD_LENGTH_64;
-        else this.haveLength(cb);
-      }
-      /**
-       * Gets extended payload length (7+16).
-       *
-       * @param {Function} cb Callback
-       * @private
-       */
-      getPayloadLength16(cb) {
-        if (this._bufferedBytes < 2) {
-          this._loop = false;
-          return;
-        }
-        this._payloadLength = this.consume(2).readUInt16BE(0);
-        this.haveLength(cb);
-      }
-      /**
-       * Gets extended payload length (7+64).
-       *
-       * @param {Function} cb Callback
-       * @private
-       */
-      getPayloadLength64(cb) {
-        if (this._bufferedBytes < 8) {
-          this._loop = false;
-          return;
-        }
-        const buf = this.consume(8);
-        const num = buf.readUInt32BE(0);
-        if (num > Math.pow(2, 53 - 32) - 1) {
-          const error51 = this.createError(
-            RangeError,
-            "Unsupported WebSocket frame: payload length > 2^53 - 1",
-            false,
-            1009,
-            "WS_ERR_UNSUPPORTED_DATA_PAYLOAD_LENGTH"
-          );
-          cb(error51);
-          return;
-        }
-        this._payloadLength = num * Math.pow(2, 32) + buf.readUInt32BE(4);
-        this.haveLength(cb);
-      }
-      /**
-       * Payload length has been read.
-       *
-       * @param {Function} cb Callback
-       * @private
-       */
-      haveLength(cb) {
-        if (this._payloadLength && this._opcode < 8) {
-          this._totalPayloadLength += this._payloadLength;
-          if (this._totalPayloadLength > this._maxPayload && this._maxPayload > 0) {
-            const error51 = this.createError(
-              RangeError,
-              "Max payload size exceeded",
-              false,
-              1009,
-              "WS_ERR_UNSUPPORTED_MESSAGE_LENGTH"
-            );
-            cb(error51);
-            return;
-          }
-        }
-        if (this._masked) this._state = GET_MASK;
-        else this._state = GET_DATA;
-      }
-      /**
-       * Reads mask bytes.
-       *
-       * @private
-       */
-      getMask() {
-        if (this._bufferedBytes < 4) {
-          this._loop = false;
-          return;
-        }
-        this._mask = this.consume(4);
-        this._state = GET_DATA;
-      }
-      /**
-       * Reads data bytes.
-       *
-       * @param {Function} cb Callback
-       * @private
-       */
-      getData(cb) {
-        let data = EMPTY_BUFFER;
-        if (this._payloadLength) {
-          if (this._bufferedBytes < this._payloadLength) {
-            this._loop = false;
-            return;
-          }
-          data = this.consume(this._payloadLength);
-          if (this._masked && (this._mask[0] | this._mask[1] | this._mask[2] | this._mask[3]) !== 0) {
-            unmask(data, this._mask);
-          }
-        }
-        if (this._opcode > 7) {
-          this.controlMessage(data, cb);
-          return;
-        }
-        if (this._maxFragments > 0 && ++this._numFragments > this._maxFragments) {
-          const error51 = this.createError(
-            RangeError,
-            "Too many message fragments",
-            false,
-            1008,
-            "WS_ERR_TOO_MANY_BUFFERED_PARTS"
-          );
-          cb(error51);
-          return;
-        }
-        if (this._compressed) {
-          this._state = INFLATING;
-          this.decompress(data, cb);
-          return;
-        }
-        if (data.length) {
-          this._messageLength = this._totalPayloadLength;
-          this._fragments.push(data);
-        }
-        this.dataMessage(cb);
-      }
-      /**
-       * Decompresses data.
-       *
-       * @param {Buffer} data Compressed data
-       * @param {Function} cb Callback
-       * @private
-       */
-      decompress(data, cb) {
-        const perMessageDeflate = this._extensions[PerMessageDeflate2.extensionName];
-        perMessageDeflate.decompress(data, this._fin, (err, buf) => {
-          if (err) return cb(err);
-          if (buf.length) {
-            this._messageLength += buf.length;
-            if (this._messageLength > this._maxPayload && this._maxPayload > 0) {
-              const error51 = this.createError(
-                RangeError,
-                "Max payload size exceeded",
-                false,
-                1009,
-                "WS_ERR_UNSUPPORTED_MESSAGE_LENGTH"
-              );
-              cb(error51);
-              return;
-            }
-            this._fragments.push(buf);
-          }
-          this.dataMessage(cb);
-          if (this._state === GET_INFO) this.startLoop(cb);
-        });
-      }
-      /**
-       * Handles a data message.
-       *
-       * @param {Function} cb Callback
-       * @private
-       */
-      dataMessage(cb) {
-        if (!this._fin) {
-          this._state = GET_INFO;
-          return;
-        }
-        const messageLength = this._messageLength;
-        const fragments = this._fragments;
-        this._totalPayloadLength = 0;
-        this._messageLength = 0;
-        this._fragmented = 0;
-        this._numFragments = 0;
-        this._fragments = [];
-        if (this._opcode === 2) {
-          let data;
-          if (this._binaryType === "nodebuffer") {
-            data = concat(fragments, messageLength);
-          } else if (this._binaryType === "arraybuffer") {
-            data = toArrayBuffer2(concat(fragments, messageLength));
-          } else if (this._binaryType === "blob") {
-            data = new Blob(fragments);
-          } else {
-            data = fragments;
-          }
-          if (this._allowSynchronousEvents) {
-            this.emit("message", data, true);
-            this._state = GET_INFO;
-          } else {
-            this._state = DEFER_EVENT;
-            setImmediate(() => {
-              this.emit("message", data, true);
-              this._state = GET_INFO;
-              this.startLoop(cb);
-            });
-          }
-        } else {
-          const buf = concat(fragments, messageLength);
-          if (!this._skipUTF8Validation && !isValidUTF8(buf)) {
-            const error51 = this.createError(
-              Error,
-              "invalid UTF-8 sequence",
-              true,
-              1007,
-              "WS_ERR_INVALID_UTF8"
-            );
-            cb(error51);
-            return;
-          }
-          if (this._state === INFLATING || this._allowSynchronousEvents) {
-            this.emit("message", buf, false);
-            this._state = GET_INFO;
-          } else {
-            this._state = DEFER_EVENT;
-            setImmediate(() => {
-              this.emit("message", buf, false);
-              this._state = GET_INFO;
-              this.startLoop(cb);
-            });
-          }
-        }
-      }
-      /**
-       * Handles a control message.
-       *
-       * @param {Buffer} data Data to handle
-       * @return {(Error|RangeError|undefined)} A possible error
-       * @private
-       */
-      controlMessage(data, cb) {
-        if (this._opcode === 8) {
-          if (data.length === 0) {
-            this._loop = false;
-            this.emit("conclude", 1005, EMPTY_BUFFER);
-            this.end();
-          } else {
-            const code = data.readUInt16BE(0);
-            if (!isValidStatusCode(code)) {
-              const error51 = this.createError(
-                RangeError,
-                `invalid status code ${code}`,
-                true,
-                1002,
-                "WS_ERR_INVALID_CLOSE_CODE"
-              );
-              cb(error51);
-              return;
-            }
-            const buf = new FastBuffer(
-              data.buffer,
-              data.byteOffset + 2,
-              data.length - 2
-            );
-            if (!this._skipUTF8Validation && !isValidUTF8(buf)) {
-              const error51 = this.createError(
-                Error,
-                "invalid UTF-8 sequence",
-                true,
-                1007,
-                "WS_ERR_INVALID_UTF8"
-              );
-              cb(error51);
-              return;
-            }
-            this._loop = false;
-            this.emit("conclude", code, buf);
-            this.end();
-          }
-          this._state = GET_INFO;
-          return;
-        }
-        if (this._allowSynchronousEvents) {
-          this.emit(this._opcode === 9 ? "ping" : "pong", data);
-          this._state = GET_INFO;
-        } else {
-          this._state = DEFER_EVENT;
-          setImmediate(() => {
-            this.emit(this._opcode === 9 ? "ping" : "pong", data);
-            this._state = GET_INFO;
-            this.startLoop(cb);
-          });
-        }
-      }
-      /**
-       * Builds an error object.
-       *
-       * @param {function(new:Error|RangeError)} ErrorCtor The error constructor
-       * @param {String} message The error message
-       * @param {Boolean} prefix Specifies whether or not to add a default prefix to
-       *     `message`
-       * @param {Number} statusCode The status code
-       * @param {String} errorCode The exposed error code
-       * @return {(Error|RangeError)} The error
-       * @private
-       */
-      createError(ErrorCtor, message3, prefix3, statusCode, errorCode) {
-        this._loop = false;
-        this._errored = true;
-        const err = new ErrorCtor(
-          prefix3 ? `Invalid WebSocket frame: ${message3}` : message3
-        );
-        Error.captureStackTrace(err, this.createError);
-        err.code = errorCode;
-        err[kStatusCode] = statusCode;
-        return err;
-      }
-    };
-    module.exports = Receiver2;
-  }
-});
-
-// node_modules/ws/lib/sender.js
-var require_sender = __commonJS({
-  "node_modules/ws/lib/sender.js"(exports, module) {
-    "use strict";
-    var { Duplex } = __require("stream");
-    var { randomFillSync } = __require("crypto");
-    var {
-      types: { isUint8Array }
-    } = __require("util");
-    var PerMessageDeflate2 = require_permessage_deflate();
-    var { EMPTY_BUFFER, kWebSocket, NOOP } = require_constants();
-    var { isBlob, isValidStatusCode } = require_validation2();
-    var { mask: applyMask, toBuffer } = require_buffer_util();
-    var kByteLength = /* @__PURE__ */ Symbol("kByteLength");
-    var maskBuffer = Buffer.alloc(4);
-    var RANDOM_POOL_SIZE = 8 * 1024;
-    var randomPool;
-    var randomPoolPointer = RANDOM_POOL_SIZE;
-    var DEFAULT = 0;
-    var DEFLATING = 1;
-    var GET_BLOB_DATA = 2;
-    var Sender2 = class _Sender {
-      /**
-       * Creates a Sender instance.
-       *
-       * @param {Duplex} socket The connection socket
-       * @param {Object} [extensions] An object containing the negotiated extensions
-       * @param {Function} [generateMask] The function used to generate the masking
-       *     key
-       */
-      constructor(socket, extensions, generateMask) {
-        this._extensions = extensions || {};
-        if (generateMask) {
-          this._generateMask = generateMask;
-          this._maskBuffer = Buffer.alloc(4);
-        }
-        this._socket = socket;
-        this._firstFragment = true;
-        this._compress = false;
-        this._bufferedBytes = 0;
-        this._queue = [];
-        this._state = DEFAULT;
-        this.onerror = NOOP;
-        this[kWebSocket] = void 0;
-      }
-      /**
-       * Frames a piece of data according to the HyBi WebSocket protocol.
-       *
-       * @param {(Buffer|String)} data The data to frame
-       * @param {Object} options Options object
-       * @param {Boolean} [options.fin=false] Specifies whether or not to set the
-       *     FIN bit
-       * @param {Function} [options.generateMask] The function used to generate the
-       *     masking key
-       * @param {Boolean} [options.mask=false] Specifies whether or not to mask
-       *     `data`
-       * @param {Buffer} [options.maskBuffer] The buffer used to store the masking
-       *     key
-       * @param {Number} options.opcode The opcode
-       * @param {Boolean} [options.readOnly=false] Specifies whether `data` can be
-       *     modified
-       * @param {Boolean} [options.rsv1=false] Specifies whether or not to set the
-       *     RSV1 bit
-       * @return {(Buffer|String)[]} The framed data
-       * @public
-       */
-      static frame(data, options) {
-        let mask;
-        let merge3 = false;
-        let offset = 2;
-        let skipMasking = false;
-        if (options.mask) {
-          mask = options.maskBuffer || maskBuffer;
-          if (options.generateMask) {
-            options.generateMask(mask);
-          } else {
-            if (randomPoolPointer === RANDOM_POOL_SIZE) {
-              if (randomPool === void 0) {
-                randomPool = Buffer.alloc(RANDOM_POOL_SIZE);
-              }
-              randomFillSync(randomPool, 0, RANDOM_POOL_SIZE);
-              randomPoolPointer = 0;
-            }
-            mask[0] = randomPool[randomPoolPointer++];
-            mask[1] = randomPool[randomPoolPointer++];
-            mask[2] = randomPool[randomPoolPointer++];
-            mask[3] = randomPool[randomPoolPointer++];
-          }
-          skipMasking = (mask[0] | mask[1] | mask[2] | mask[3]) === 0;
-          offset = 6;
-        }
-        let dataLength;
-        if (typeof data === "string") {
-          if ((!options.mask || skipMasking) && options[kByteLength] !== void 0) {
-            dataLength = options[kByteLength];
-          } else {
-            data = Buffer.from(data);
-            dataLength = data.length;
-          }
-        } else {
-          dataLength = data.length;
-          merge3 = options.mask && options.readOnly && !skipMasking;
-        }
-        let payloadLength = dataLength;
-        if (dataLength >= 65536) {
-          offset += 8;
-          payloadLength = 127;
-        } else if (dataLength > 125) {
-          offset += 2;
-          payloadLength = 126;
-        }
-        const target2 = Buffer.allocUnsafe(merge3 ? dataLength + offset : offset);
-        target2[0] = options.fin ? options.opcode | 128 : options.opcode;
-        if (options.rsv1) target2[0] |= 64;
-        target2[1] = payloadLength;
-        if (payloadLength === 126) {
-          target2.writeUInt16BE(dataLength, 2);
-        } else if (payloadLength === 127) {
-          target2[2] = target2[3] = 0;
-          target2.writeUIntBE(dataLength, 4, 6);
-        }
-        if (!options.mask) return [target2, data];
-        target2[1] |= 128;
-        target2[offset - 4] = mask[0];
-        target2[offset - 3] = mask[1];
-        target2[offset - 2] = mask[2];
-        target2[offset - 1] = mask[3];
-        if (skipMasking) return [target2, data];
-        if (merge3) {
-          applyMask(data, mask, target2, offset, dataLength);
-          return [target2];
-        }
-        applyMask(data, mask, data, 0, dataLength);
-        return [target2, data];
-      }
-      /**
-       * Sends a close message to the other peer.
-       *
-       * @param {Number} [code] The status code component of the body
-       * @param {(String|Buffer)} [data] The message component of the body
-       * @param {Boolean} [mask=false] Specifies whether or not to mask the message
-       * @param {Function} [cb] Callback
-       * @public
-       */
-      close(code, data, mask, cb) {
-        let buf;
-        if (code === void 0) {
-          buf = EMPTY_BUFFER;
-        } else if (typeof code !== "number" || !isValidStatusCode(code)) {
-          throw new TypeError("First argument must be a valid error code number");
-        } else if (data === void 0 || !data.length) {
-          buf = Buffer.allocUnsafe(2);
-          buf.writeUInt16BE(code, 0);
-        } else {
-          const length = Buffer.byteLength(data);
-          if (length > 123) {
-            throw new RangeError("The message must not be greater than 123 bytes");
-          }
-          buf = Buffer.allocUnsafe(2 + length);
-          buf.writeUInt16BE(code, 0);
-          if (typeof data === "string") {
-            buf.write(data, 2);
-          } else if (isUint8Array(data)) {
-            buf.set(data, 2);
-          } else {
-            throw new TypeError("Second argument must be a string or a Uint8Array");
-          }
-        }
-        const options = {
-          [kByteLength]: buf.length,
-          fin: true,
-          generateMask: this._generateMask,
-          mask,
-          maskBuffer: this._maskBuffer,
-          opcode: 8,
-          readOnly: false,
-          rsv1: false
-        };
-        if (this._state !== DEFAULT) {
-          this.enqueue([this.dispatch, buf, false, options, cb]);
-        } else {
-          this.sendFrame(_Sender.frame(buf, options), cb);
-        }
-      }
-      /**
-       * Sends a ping message to the other peer.
-       *
-       * @param {*} data The message to send
-       * @param {Boolean} [mask=false] Specifies whether or not to mask `data`
-       * @param {Function} [cb] Callback
-       * @public
-       */
-      ping(data, mask, cb) {
-        let byteLength;
-        let readOnly2;
-        if (typeof data === "string") {
-          byteLength = Buffer.byteLength(data);
-          readOnly2 = false;
-        } else if (isBlob(data)) {
-          byteLength = data.size;
-          readOnly2 = false;
-        } else {
-          data = toBuffer(data);
-          byteLength = data.length;
-          readOnly2 = toBuffer.readOnly;
-        }
-        if (byteLength > 125) {
-          throw new RangeError("The data size must not be greater than 125 bytes");
-        }
-        const options = {
-          [kByteLength]: byteLength,
-          fin: true,
-          generateMask: this._generateMask,
-          mask,
-          maskBuffer: this._maskBuffer,
-          opcode: 9,
-          readOnly: readOnly2,
-          rsv1: false
-        };
-        if (isBlob(data)) {
-          if (this._state !== DEFAULT) {
-            this.enqueue([this.getBlobData, data, false, options, cb]);
-          } else {
-            this.getBlobData(data, false, options, cb);
-          }
-        } else if (this._state !== DEFAULT) {
-          this.enqueue([this.dispatch, data, false, options, cb]);
-        } else {
-          this.sendFrame(_Sender.frame(data, options), cb);
-        }
-      }
-      /**
-       * Sends a pong message to the other peer.
-       *
-       * @param {*} data The message to send
-       * @param {Boolean} [mask=false] Specifies whether or not to mask `data`
-       * @param {Function} [cb] Callback
-       * @public
-       */
-      pong(data, mask, cb) {
-        let byteLength;
-        let readOnly2;
-        if (typeof data === "string") {
-          byteLength = Buffer.byteLength(data);
-          readOnly2 = false;
-        } else if (isBlob(data)) {
-          byteLength = data.size;
-          readOnly2 = false;
-        } else {
-          data = toBuffer(data);
-          byteLength = data.length;
-          readOnly2 = toBuffer.readOnly;
-        }
-        if (byteLength > 125) {
-          throw new RangeError("The data size must not be greater than 125 bytes");
-        }
-        const options = {
-          [kByteLength]: byteLength,
-          fin: true,
-          generateMask: this._generateMask,
-          mask,
-          maskBuffer: this._maskBuffer,
-          opcode: 10,
-          readOnly: readOnly2,
-          rsv1: false
-        };
-        if (isBlob(data)) {
-          if (this._state !== DEFAULT) {
-            this.enqueue([this.getBlobData, data, false, options, cb]);
-          } else {
-            this.getBlobData(data, false, options, cb);
-          }
-        } else if (this._state !== DEFAULT) {
-          this.enqueue([this.dispatch, data, false, options, cb]);
-        } else {
-          this.sendFrame(_Sender.frame(data, options), cb);
-        }
-      }
-      /**
-       * Sends a data message to the other peer.
-       *
-       * @param {*} data The message to send
-       * @param {Object} options Options object
-       * @param {Boolean} [options.binary=false] Specifies whether `data` is binary
-       *     or text
-       * @param {Boolean} [options.compress=false] Specifies whether or not to
-       *     compress `data`
-       * @param {Boolean} [options.fin=false] Specifies whether the fragment is the
-       *     last one
-       * @param {Boolean} [options.mask=false] Specifies whether or not to mask
-       *     `data`
-       * @param {Function} [cb] Callback
-       * @public
-       */
-      send(data, options, cb) {
-        const perMessageDeflate = this._extensions[PerMessageDeflate2.extensionName];
-        let opcode = options.binary ? 2 : 1;
-        let rsv1 = options.compress;
-        let byteLength;
-        let readOnly2;
-        if (typeof data === "string") {
-          byteLength = Buffer.byteLength(data);
-          readOnly2 = false;
-        } else if (isBlob(data)) {
-          byteLength = data.size;
-          readOnly2 = false;
-        } else {
-          data = toBuffer(data);
-          byteLength = data.length;
-          readOnly2 = toBuffer.readOnly;
-        }
-        if (this._firstFragment) {
-          this._firstFragment = false;
-          if (rsv1 && perMessageDeflate && perMessageDeflate.params[perMessageDeflate._isServer ? "server_no_context_takeover" : "client_no_context_takeover"]) {
-            rsv1 = byteLength >= perMessageDeflate._threshold;
-          }
-          this._compress = rsv1;
-        } else {
-          rsv1 = false;
-          opcode = 0;
-        }
-        if (options.fin) this._firstFragment = true;
-        const opts = {
-          [kByteLength]: byteLength,
-          fin: options.fin,
-          generateMask: this._generateMask,
-          mask: options.mask,
-          maskBuffer: this._maskBuffer,
-          opcode,
-          readOnly: readOnly2,
-          rsv1
-        };
-        if (isBlob(data)) {
-          if (this._state !== DEFAULT) {
-            this.enqueue([this.getBlobData, data, this._compress, opts, cb]);
-          } else {
-            this.getBlobData(data, this._compress, opts, cb);
-          }
-        } else if (this._state !== DEFAULT) {
-          this.enqueue([this.dispatch, data, this._compress, opts, cb]);
-        } else {
-          this.dispatch(data, this._compress, opts, cb);
-        }
-      }
-      /**
-       * Gets the contents of a blob as binary data.
-       *
-       * @param {Blob} blob The blob
-       * @param {Boolean} [compress=false] Specifies whether or not to compress
-       *     the data
-       * @param {Object} options Options object
-       * @param {Boolean} [options.fin=false] Specifies whether or not to set the
-       *     FIN bit
-       * @param {Function} [options.generateMask] The function used to generate the
-       *     masking key
-       * @param {Boolean} [options.mask=false] Specifies whether or not to mask
-       *     `data`
-       * @param {Buffer} [options.maskBuffer] The buffer used to store the masking
-       *     key
-       * @param {Number} options.opcode The opcode
-       * @param {Boolean} [options.readOnly=false] Specifies whether `data` can be
-       *     modified
-       * @param {Boolean} [options.rsv1=false] Specifies whether or not to set the
-       *     RSV1 bit
-       * @param {Function} [cb] Callback
-       * @private
-       */
-      getBlobData(blob, compress, options, cb) {
-        this._bufferedBytes += options[kByteLength];
-        this._state = GET_BLOB_DATA;
-        blob.arrayBuffer().then((arrayBuffer) => {
-          if (this._socket.destroyed) {
-            const err = new Error(
-              "The socket was closed while the blob was being read"
-            );
-            process.nextTick(callCallbacks, this, err, cb);
-            return;
-          }
-          this._bufferedBytes -= options[kByteLength];
-          const data = toBuffer(arrayBuffer);
-          if (!compress) {
-            this._state = DEFAULT;
-            this.sendFrame(_Sender.frame(data, options), cb);
-            this.dequeue();
-          } else {
-            this.dispatch(data, compress, options, cb);
-          }
-        }).catch((err) => {
-          process.nextTick(onError, this, err, cb);
-        });
-      }
-      /**
-       * Dispatches a message.
-       *
-       * @param {(Buffer|String)} data The message to send
-       * @param {Boolean} [compress=false] Specifies whether or not to compress
-       *     `data`
-       * @param {Object} options Options object
-       * @param {Boolean} [options.fin=false] Specifies whether or not to set the
-       *     FIN bit
-       * @param {Function} [options.generateMask] The function used to generate the
-       *     masking key
-       * @param {Boolean} [options.mask=false] Specifies whether or not to mask
-       *     `data`
-       * @param {Buffer} [options.maskBuffer] The buffer used to store the masking
-       *     key
-       * @param {Number} options.opcode The opcode
-       * @param {Boolean} [options.readOnly=false] Specifies whether `data` can be
-       *     modified
-       * @param {Boolean} [options.rsv1=false] Specifies whether or not to set the
-       *     RSV1 bit
-       * @param {Function} [cb] Callback
-       * @private
-       */
-      dispatch(data, compress, options, cb) {
-        if (!compress) {
-          this.sendFrame(_Sender.frame(data, options), cb);
-          return;
-        }
-        const perMessageDeflate = this._extensions[PerMessageDeflate2.extensionName];
-        this._bufferedBytes += options[kByteLength];
-        this._state = DEFLATING;
-        perMessageDeflate.compress(data, options.fin, (_2, buf) => {
-          if (this._socket.destroyed) {
-            const err = new Error(
-              "The socket was closed while data was being compressed"
-            );
-            callCallbacks(this, err, cb);
-            return;
-          }
-          this._bufferedBytes -= options[kByteLength];
-          this._state = DEFAULT;
-          options.readOnly = false;
-          this.sendFrame(_Sender.frame(buf, options), cb);
-          this.dequeue();
-        });
-      }
-      /**
-       * Executes queued send operations.
-       *
-       * @private
-       */
-      dequeue() {
-        while (this._state === DEFAULT && this._queue.length) {
-          const params = this._queue.shift();
-          this._bufferedBytes -= params[3][kByteLength];
-          Reflect.apply(params[0], this, params.slice(1));
-        }
-      }
-      /**
-       * Enqueues a send operation.
-       *
-       * @param {Array} params Send operation parameters.
-       * @private
-       */
-      enqueue(params) {
-        this._bufferedBytes += params[3][kByteLength];
-        this._queue.push(params);
-      }
-      /**
-       * Sends a frame.
-       *
-       * @param {(Buffer | String)[]} list The frame to send
-       * @param {Function} [cb] Callback
-       * @private
-       */
-      sendFrame(list, cb) {
-        if (list.length === 2) {
-          this._socket.cork();
-          this._socket.write(list[0]);
-          this._socket.write(list[1], cb);
-          this._socket.uncork();
-        } else {
-          this._socket.write(list[0], cb);
-        }
-      }
-    };
-    module.exports = Sender2;
-    function callCallbacks(sender, err, cb) {
-      if (typeof cb === "function") cb(err);
-      for (let i = 0; i < sender._queue.length; i++) {
-        const params = sender._queue[i];
-        const callback = params[params.length - 1];
-        if (typeof callback === "function") callback(err);
-      }
-    }
-    function onError(sender, err, cb) {
-      callCallbacks(sender, err, cb);
-      sender.onerror(err);
-    }
-  }
-});
-
-// node_modules/ws/lib/event-target.js
-var require_event_target = __commonJS({
-  "node_modules/ws/lib/event-target.js"(exports, module) {
-    "use strict";
-    var { kForOnEventAttribute, kListener } = require_constants();
-    var kCode = /* @__PURE__ */ Symbol("kCode");
-    var kData = /* @__PURE__ */ Symbol("kData");
-    var kError = /* @__PURE__ */ Symbol("kError");
-    var kMessage = /* @__PURE__ */ Symbol("kMessage");
-    var kReason = /* @__PURE__ */ Symbol("kReason");
-    var kTarget = /* @__PURE__ */ Symbol("kTarget");
-    var kType = /* @__PURE__ */ Symbol("kType");
-    var kWasClean = /* @__PURE__ */ Symbol("kWasClean");
-    var Event2 = class {
-      /**
-       * Create a new `Event`.
-       *
-       * @param {String} type The name of the event
-       * @throws {TypeError} If the `type` argument is not specified
-       */
-      constructor(type) {
-        this[kTarget] = null;
-        this[kType] = type;
-      }
-      /**
-       * @type {*}
-       */
-      get target() {
-        return this[kTarget];
-      }
-      /**
-       * @type {String}
-       */
-      get type() {
-        return this[kType];
-      }
-    };
-    Object.defineProperty(Event2.prototype, "target", { enumerable: true });
-    Object.defineProperty(Event2.prototype, "type", { enumerable: true });
-    var CloseEvent2 = class extends Event2 {
-      /**
-       * Create a new `CloseEvent`.
-       *
-       * @param {String} type The name of the event
-       * @param {Object} [options] A dictionary object that allows for setting
-       *     attributes via object members of the same name
-       * @param {Number} [options.code=0] The status code explaining why the
-       *     connection was closed
-       * @param {String} [options.reason=''] A human-readable string explaining why
-       *     the connection was closed
-       * @param {Boolean} [options.wasClean=false] Indicates whether or not the
-       *     connection was cleanly closed
-       */
-      constructor(type, options = {}) {
-        super(type);
-        this[kCode] = options.code === void 0 ? 0 : options.code;
-        this[kReason] = options.reason === void 0 ? "" : options.reason;
-        this[kWasClean] = options.wasClean === void 0 ? false : options.wasClean;
-      }
-      /**
-       * @type {Number}
-       */
-      get code() {
-        return this[kCode];
-      }
-      /**
-       * @type {String}
-       */
-      get reason() {
-        return this[kReason];
-      }
-      /**
-       * @type {Boolean}
-       */
-      get wasClean() {
-        return this[kWasClean];
-      }
-    };
-    Object.defineProperty(CloseEvent2.prototype, "code", { enumerable: true });
-    Object.defineProperty(CloseEvent2.prototype, "reason", { enumerable: true });
-    Object.defineProperty(CloseEvent2.prototype, "wasClean", { enumerable: true });
-    var ErrorEvent2 = class extends Event2 {
-      /**
-       * Create a new `ErrorEvent`.
-       *
-       * @param {String} type The name of the event
-       * @param {Object} [options] A dictionary object that allows for setting
-       *     attributes via object members of the same name
-       * @param {*} [options.error=null] The error that generated this event
-       * @param {String} [options.message=''] The error message
-       */
-      constructor(type, options = {}) {
-        super(type);
-        this[kError] = options.error === void 0 ? null : options.error;
-        this[kMessage] = options.message === void 0 ? "" : options.message;
-      }
-      /**
-       * @type {*}
-       */
-      get error() {
-        return this[kError];
-      }
-      /**
-       * @type {String}
-       */
-      get message() {
-        return this[kMessage];
-      }
-    };
-    Object.defineProperty(ErrorEvent2.prototype, "error", { enumerable: true });
-    Object.defineProperty(ErrorEvent2.prototype, "message", { enumerable: true });
-    var MessageEvent2 = class extends Event2 {
-      /**
-       * Create a new `MessageEvent`.
-       *
-       * @param {String} type The name of the event
-       * @param {Object} [options] A dictionary object that allows for setting
-       *     attributes via object members of the same name
-       * @param {*} [options.data=null] The message content
-       */
-      constructor(type, options = {}) {
-        super(type);
-        this[kData] = options.data === void 0 ? null : options.data;
-      }
-      /**
-       * @type {*}
-       */
-      get data() {
-        return this[kData];
-      }
-    };
-    Object.defineProperty(MessageEvent2.prototype, "data", { enumerable: true });
-    var EventTarget = {
-      /**
-       * Register an event listener.
-       *
-       * @param {String} type A string representing the event type to listen for
-       * @param {(Function|Object)} handler The listener to add
-       * @param {Object} [options] An options object specifies characteristics about
-       *     the event listener
-       * @param {Boolean} [options.once=false] A `Boolean` indicating that the
-       *     listener should be invoked at most once after being added. If `true`,
-       *     the listener would be automatically removed when invoked.
-       * @public
-       */
-      addEventListener(type, handler, options = {}) {
-        for (const listener of this.listeners(type)) {
-          if (!options[kForOnEventAttribute] && listener[kListener] === handler && !listener[kForOnEventAttribute]) {
-            return;
-          }
-        }
-        let wrapper;
-        if (type === "message") {
-          wrapper = function onMessage(data, isBinary) {
-            const event = new MessageEvent2("message", {
-              data: isBinary ? data : data.toString()
-            });
-            event[kTarget] = this;
-            callListener(handler, this, event);
-          };
-        } else if (type === "close") {
-          wrapper = function onClose(code, message3) {
-            const event = new CloseEvent2("close", {
-              code,
-              reason: message3.toString(),
-              wasClean: this._closeFrameReceived && this._closeFrameSent
-            });
-            event[kTarget] = this;
-            callListener(handler, this, event);
-          };
-        } else if (type === "error") {
-          wrapper = function onError(error51) {
-            const event = new ErrorEvent2("error", {
-              error: error51,
-              message: error51.message
-            });
-            event[kTarget] = this;
-            callListener(handler, this, event);
-          };
-        } else if (type === "open") {
-          wrapper = function onOpen() {
-            const event = new Event2("open");
-            event[kTarget] = this;
-            callListener(handler, this, event);
-          };
-        } else {
-          return;
-        }
-        wrapper[kForOnEventAttribute] = !!options[kForOnEventAttribute];
-        wrapper[kListener] = handler;
-        if (options.once) {
-          this.once(type, wrapper);
-        } else {
-          this.on(type, wrapper);
-        }
-      },
-      /**
-       * Remove an event listener.
-       *
-       * @param {String} type A string representing the event type to remove
-       * @param {(Function|Object)} handler The listener to remove
-       * @public
-       */
-      removeEventListener(type, handler) {
-        for (const listener of this.listeners(type)) {
-          if (listener[kListener] === handler && !listener[kForOnEventAttribute]) {
-            this.removeListener(type, listener);
-            break;
-          }
-        }
-      }
-    };
-    module.exports = {
-      CloseEvent: CloseEvent2,
-      ErrorEvent: ErrorEvent2,
-      Event: Event2,
-      EventTarget,
-      MessageEvent: MessageEvent2
-    };
-    function callListener(listener, thisArg, event) {
-      if (typeof listener === "object" && listener.handleEvent) {
-        listener.handleEvent.call(listener, event);
-      } else {
-        listener.call(thisArg, event);
-      }
-    }
-  }
-});
-
-// node_modules/ws/lib/extension.js
-var require_extension = __commonJS({
-  "node_modules/ws/lib/extension.js"(exports, module) {
-    "use strict";
-    var { tokenChars } = require_validation2();
-    function push(dest, name, elem) {
-      if (dest[name] === void 0) dest[name] = [elem];
-      else dest[name].push(elem);
-    }
-    function parse4(header) {
-      const offers = /* @__PURE__ */ Object.create(null);
-      let params = /* @__PURE__ */ Object.create(null);
-      let mustUnescape = false;
-      let isEscaping = false;
-      let inQuotes = false;
-      let extensionName;
-      let paramName;
-      let start = -1;
-      let code = -1;
-      let end = -1;
-      let i = 0;
-      for (; i < header.length; i++) {
-        code = header.charCodeAt(i);
-        if (extensionName === void 0) {
-          if (end === -1 && tokenChars[code] === 1) {
-            if (start === -1) start = i;
-          } else if (i !== 0 && (code === 32 || code === 9)) {
-            if (end === -1 && start !== -1) end = i;
-          } else if (code === 59 || code === 44) {
-            if (start === -1) {
-              throw new SyntaxError(`Unexpected character at index ${i}`);
-            }
-            if (end === -1) end = i;
-            const name = header.slice(start, end);
-            if (code === 44) {
-              push(offers, name, params);
-              params = /* @__PURE__ */ Object.create(null);
-            } else {
-              extensionName = name;
-            }
-            start = end = -1;
-          } else {
-            throw new SyntaxError(`Unexpected character at index ${i}`);
-          }
-        } else if (paramName === void 0) {
-          if (end === -1 && tokenChars[code] === 1) {
-            if (start === -1) start = i;
-          } else if (code === 32 || code === 9) {
-            if (end === -1 && start !== -1) end = i;
-          } else if (code === 59 || code === 44) {
-            if (start === -1) {
-              throw new SyntaxError(`Unexpected character at index ${i}`);
-            }
-            if (end === -1) end = i;
-            push(params, header.slice(start, end), true);
-            if (code === 44) {
-              push(offers, extensionName, params);
-              params = /* @__PURE__ */ Object.create(null);
-              extensionName = void 0;
-            }
-            start = end = -1;
-          } else if (code === 61 && start !== -1 && end === -1) {
-            paramName = header.slice(start, i);
-            start = end = -1;
-          } else {
-            throw new SyntaxError(`Unexpected character at index ${i}`);
-          }
-        } else {
-          if (isEscaping) {
-            if (tokenChars[code] !== 1) {
-              throw new SyntaxError(`Unexpected character at index ${i}`);
-            }
-            if (start === -1) start = i;
-            else if (!mustUnescape) mustUnescape = true;
-            isEscaping = false;
-          } else if (inQuotes) {
-            if (tokenChars[code] === 1) {
-              if (start === -1) start = i;
-            } else if (code === 34 && start !== -1) {
-              inQuotes = false;
-              end = i;
-            } else if (code === 92) {
-              isEscaping = true;
-            } else {
-              throw new SyntaxError(`Unexpected character at index ${i}`);
-            }
-          } else if (code === 34 && header.charCodeAt(i - 1) === 61) {
-            inQuotes = true;
-          } else if (end === -1 && tokenChars[code] === 1) {
-            if (start === -1) start = i;
-          } else if (start !== -1 && (code === 32 || code === 9)) {
-            if (end === -1) end = i;
-          } else if (code === 59 || code === 44) {
-            if (start === -1) {
-              throw new SyntaxError(`Unexpected character at index ${i}`);
-            }
-            if (end === -1) end = i;
-            let value = header.slice(start, end);
-            if (mustUnescape) {
-              value = value.replace(/\\/g, "");
-              mustUnescape = false;
-            }
-            push(params, paramName, value);
-            if (code === 44) {
-              push(offers, extensionName, params);
-              params = /* @__PURE__ */ Object.create(null);
-              extensionName = void 0;
-            }
-            paramName = void 0;
-            start = end = -1;
-          } else {
-            throw new SyntaxError(`Unexpected character at index ${i}`);
-          }
-        }
-      }
-      if (start === -1 || inQuotes || code === 32 || code === 9) {
-        throw new SyntaxError("Unexpected end of input");
-      }
-      if (end === -1) end = i;
-      const token = header.slice(start, end);
-      if (extensionName === void 0) {
-        push(offers, token, params);
-      } else {
-        if (paramName === void 0) {
-          push(params, token, true);
-        } else if (mustUnescape) {
-          push(params, paramName, token.replace(/\\/g, ""));
-        } else {
-          push(params, paramName, token);
-        }
-        push(offers, extensionName, params);
-      }
-      return offers;
-    }
-    function format2(extensions) {
-      return Object.keys(extensions).map((extension2) => {
-        let configurations = extensions[extension2];
-        if (!Array.isArray(configurations)) configurations = [configurations];
-        return configurations.map((params) => {
-          return [extension2].concat(
-            Object.keys(params).map((k2) => {
-              let values = params[k2];
-              if (!Array.isArray(values)) values = [values];
-              return values.map((v2) => v2 === true ? k2 : `${k2}=${v2}`).join("; ");
-            })
-          ).join("; ");
-        }).join(", ");
-      }).join(", ");
-    }
-    module.exports = { format: format2, parse: parse4 };
-  }
-});
-
-// node_modules/ws/lib/websocket.js
-var require_websocket = __commonJS({
-  "node_modules/ws/lib/websocket.js"(exports, module) {
-    "use strict";
-    var EventEmitter = __require("events");
-    var https = __require("https");
-    var http = __require("http");
-    var net = __require("net");
-    var tls = __require("tls");
-    var { randomBytes: randomBytes11, createHash: createHash7 } = __require("crypto");
-    var { Duplex, Readable: Readable3 } = __require("stream");
-    var { URL: URL2 } = __require("url");
-    var PerMessageDeflate2 = require_permessage_deflate();
-    var Receiver2 = require_receiver();
-    var Sender2 = require_sender();
-    var { isBlob } = require_validation2();
-    var {
-      BINARY_TYPES,
-      CLOSE_TIMEOUT,
-      EMPTY_BUFFER,
-      GUID,
-      kForOnEventAttribute,
-      kListener,
-      kStatusCode,
-      kWebSocket,
-      NOOP
-    } = require_constants();
-    var {
-      EventTarget: { addEventListener, removeEventListener }
-    } = require_event_target();
-    var { format: format2, parse: parse4 } = require_extension();
-    var { toBuffer } = require_buffer_util();
-    var kAborted = /* @__PURE__ */ Symbol("kAborted");
-    var protocolVersions = [8, 13];
-    var readyStates = ["CONNECTING", "OPEN", "CLOSING", "CLOSED"];
-    var subprotocolRegex = /^[!#$%&'*+\-.0-9A-Z^_`|a-z~]+$/;
-    var WebSocket2 = class _WebSocket extends EventEmitter {
-      /**
-       * Create a new `WebSocket`.
-       *
-       * @param {(String|URL)} address The URL to which to connect
-       * @param {(String|String[])} [protocols] The subprotocols
-       * @param {Object} [options] Connection options
-       */
-      constructor(address2, protocols, options) {
-        super();
-        this._binaryType = BINARY_TYPES[0];
-        this._closeCode = 1006;
-        this._closeFrameReceived = false;
-        this._closeFrameSent = false;
-        this._closeMessage = EMPTY_BUFFER;
-        this._closeTimer = null;
-        this._errorEmitted = false;
-        this._extensions = {};
-        this._paused = false;
-        this._protocol = "";
-        this._readyState = _WebSocket.CONNECTING;
-        this._receiver = null;
-        this._sender = null;
-        this._socket = null;
-        if (address2 !== null) {
-          this._bufferedAmount = 0;
-          this._isServer = false;
-          this._redirects = 0;
-          if (protocols === void 0) {
-            if (!options || options.protocols === void 0) {
-              protocols = [];
-            } else if (Array.isArray(options.protocols)) {
-              protocols = options.protocols;
-            } else {
-              protocols = [options.protocols];
-            }
-          } else if (!Array.isArray(protocols)) {
-            if (typeof protocols === "object" && protocols !== null) {
-              options = protocols;
-              if (options.protocols === void 0) {
-                protocols = [];
-              } else if (Array.isArray(options.protocols)) {
-                protocols = options.protocols;
-              } else {
-                protocols = [options.protocols];
-              }
-            } else {
-              protocols = [protocols];
-            }
-          }
-          initAsClient(this, address2, protocols, options);
-        } else {
-          this._autoPong = options.autoPong;
-          this._closeTimeout = options.closeTimeout;
-          this._isServer = true;
-        }
-      }
-      /**
-       * For historical reasons, the custom "nodebuffer" type is used by the default
-       * instead of "blob".
-       *
-       * @type {String}
-       */
-      get binaryType() {
-        return this._binaryType;
-      }
-      set binaryType(type) {
-        if (!BINARY_TYPES.includes(type)) return;
-        this._binaryType = type;
-        if (this._receiver) this._receiver._binaryType = type;
-      }
-      /**
-       * @type {Number}
-       */
-      get bufferedAmount() {
-        if (!this._socket) return this._bufferedAmount;
-        return this._socket._writableState.length + this._sender._bufferedBytes;
-      }
-      /**
-       * @type {String}
-       */
-      get extensions() {
-        return Object.keys(this._extensions).join();
-      }
-      /**
-       * @type {Boolean}
-       */
-      get isPaused() {
-        return this._paused;
-      }
-      /**
-       * @type {Function}
-       */
-      /* istanbul ignore next */
-      get onclose() {
-        return null;
-      }
-      /**
-       * @type {Function}
-       */
-      /* istanbul ignore next */
-      get onerror() {
-        return null;
-      }
-      /**
-       * @type {Function}
-       */
-      /* istanbul ignore next */
-      get onopen() {
-        return null;
-      }
-      /**
-       * @type {Function}
-       */
-      /* istanbul ignore next */
-      get onmessage() {
-        return null;
-      }
-      /**
-       * @type {String}
-       */
-      get protocol() {
-        return this._protocol;
-      }
-      /**
-       * @type {Number}
-       */
-      get readyState() {
-        return this._readyState;
-      }
-      /**
-       * @type {String}
-       */
-      get url() {
-        return this._url;
-      }
-      /**
-       * Set up the socket and the internal resources.
-       *
-       * @param {Duplex} socket The network socket between the server and client
-       * @param {Buffer} head The first packet of the upgraded stream
-       * @param {Object} options Options object
-       * @param {Boolean} [options.allowSynchronousEvents=false] Specifies whether
-       *     any of the `'message'`, `'ping'`, and `'pong'` events can be emitted
-       *     multiple times in the same tick
-       * @param {Function} [options.generateMask] The function used to generate the
-       *     masking key
-       * @param {Number} [options.maxBufferedChunks=0] The maximum number of
-       *     buffered data chunks
-       * @param {Number} [options.maxFragments=0] The maximum number of message
-       *     fragments
-       * @param {Number} [options.maxPayload=0] The maximum allowed message size
-       * @param {Boolean} [options.skipUTF8Validation=false] Specifies whether or
-       *     not to skip UTF-8 validation for text and close messages
-       * @private
-       */
-      setSocket(socket, head, options) {
-        const receiver = new Receiver2({
-          allowSynchronousEvents: options.allowSynchronousEvents,
-          binaryType: this.binaryType,
-          extensions: this._extensions,
-          isServer: this._isServer,
-          maxBufferedChunks: options.maxBufferedChunks,
-          maxFragments: options.maxFragments,
-          maxPayload: options.maxPayload,
-          skipUTF8Validation: options.skipUTF8Validation
-        });
-        const sender = new Sender2(socket, this._extensions, options.generateMask);
-        this._receiver = receiver;
-        this._sender = sender;
-        this._socket = socket;
-        receiver[kWebSocket] = this;
-        sender[kWebSocket] = this;
-        socket[kWebSocket] = this;
-        receiver.on("conclude", receiverOnConclude);
-        receiver.on("drain", receiverOnDrain);
-        receiver.on("error", receiverOnError);
-        receiver.on("message", receiverOnMessage);
-        receiver.on("ping", receiverOnPing);
-        receiver.on("pong", receiverOnPong);
-        sender.onerror = senderOnError;
-        if (socket.setTimeout) socket.setTimeout(0);
-        if (socket.setNoDelay) socket.setNoDelay();
-        if (head.length > 0) socket.unshift(head);
-        socket.on("close", socketOnClose);
-        socket.on("data", socketOnData);
-        socket.on("end", socketOnEnd);
-        socket.on("error", socketOnError);
-        this._readyState = _WebSocket.OPEN;
-        this.emit("open");
-      }
-      /**
-       * Emit the `'close'` event.
-       *
-       * @private
-       */
-      emitClose() {
-        if (!this._socket) {
-          this._readyState = _WebSocket.CLOSED;
-          this.emit("close", this._closeCode, this._closeMessage);
-          return;
-        }
-        if (this._extensions[PerMessageDeflate2.extensionName]) {
-          this._extensions[PerMessageDeflate2.extensionName].cleanup();
-        }
-        this._receiver.removeAllListeners();
-        this._readyState = _WebSocket.CLOSED;
-        this.emit("close", this._closeCode, this._closeMessage);
-      }
-      /**
-       * Start a closing handshake.
-       *
-       *          +----------+   +-----------+   +----------+
-       *     - - -|ws.close()|-->|close frame|-->|ws.close()|- - -
-       *    |     +----------+   +-----------+   +----------+     |
-       *          +----------+   +-----------+         |
-       * CLOSING  |ws.close()|<--|close frame|<--+-----+       CLOSING
-       *          +----------+   +-----------+   |
-       *    |           |                        |   +---+        |
-       *                +------------------------+-->|fin| - - - -
-       *    |         +---+                      |   +---+
-       *     - - - - -|fin|<---------------------+
-       *              +---+
-       *
-       * @param {Number} [code] Status code explaining why the connection is closing
-       * @param {(String|Buffer)} [data] The reason why the connection is
-       *     closing
-       * @public
-       */
-      close(code, data) {
-        if (this.readyState === _WebSocket.CLOSED) return;
-        if (this.readyState === _WebSocket.CONNECTING) {
-          const msg = "WebSocket was closed before the connection was established";
-          abortHandshake(this, this._req, msg);
-          return;
-        }
-        if (this.readyState === _WebSocket.CLOSING) {
-          if (this._closeFrameSent && (this._closeFrameReceived || this._receiver._writableState.errorEmitted)) {
-            this._socket.end();
-          }
-          return;
-        }
-        this._sender.close(code, data, !this._isServer, (err) => {
-          if (err) return;
-          this._closeFrameSent = true;
-          if (this._closeFrameReceived || this._receiver._writableState.errorEmitted) {
-            this._socket.end();
-          }
-        });
-        this._readyState = _WebSocket.CLOSING;
-        setCloseTimer(this);
-      }
-      /**
-       * Pause the socket.
-       *
-       * @public
-       */
-      pause() {
-        if (this.readyState === _WebSocket.CONNECTING || this.readyState === _WebSocket.CLOSED) {
-          return;
-        }
-        this._paused = true;
-        this._socket.pause();
-      }
-      /**
-       * Send a ping.
-       *
-       * @param {*} [data] The data to send
-       * @param {Boolean} [mask] Indicates whether or not to mask `data`
-       * @param {Function} [cb] Callback which is executed when the ping is sent
-       * @public
-       */
-      ping(data, mask, cb) {
-        if (this.readyState === _WebSocket.CONNECTING) {
-          throw new Error("WebSocket is not open: readyState 0 (CONNECTING)");
-        }
-        if (typeof data === "function") {
-          cb = data;
-          data = mask = void 0;
-        } else if (typeof mask === "function") {
-          cb = mask;
-          mask = void 0;
-        }
-        if (typeof data === "number") data = data.toString();
-        if (this.readyState !== _WebSocket.OPEN) {
-          sendAfterClose(this, data, cb);
-          return;
-        }
-        if (mask === void 0) mask = !this._isServer;
-        this._sender.ping(data || EMPTY_BUFFER, mask, cb);
-      }
-      /**
-       * Send a pong.
-       *
-       * @param {*} [data] The data to send
-       * @param {Boolean} [mask] Indicates whether or not to mask `data`
-       * @param {Function} [cb] Callback which is executed when the pong is sent
-       * @public
-       */
-      pong(data, mask, cb) {
-        if (this.readyState === _WebSocket.CONNECTING) {
-          throw new Error("WebSocket is not open: readyState 0 (CONNECTING)");
-        }
-        if (typeof data === "function") {
-          cb = data;
-          data = mask = void 0;
-        } else if (typeof mask === "function") {
-          cb = mask;
-          mask = void 0;
-        }
-        if (typeof data === "number") data = data.toString();
-        if (this.readyState !== _WebSocket.OPEN) {
-          sendAfterClose(this, data, cb);
-          return;
-        }
-        if (mask === void 0) mask = !this._isServer;
-        this._sender.pong(data || EMPTY_BUFFER, mask, cb);
-      }
-      /**
-       * Resume the socket.
-       *
-       * @public
-       */
-      resume() {
-        if (this.readyState === _WebSocket.CONNECTING || this.readyState === _WebSocket.CLOSED) {
-          return;
-        }
-        this._paused = false;
-        if (!this._receiver._writableState.needDrain) this._socket.resume();
-      }
-      /**
-       * Send a data message.
-       *
-       * @param {*} data The message to send
-       * @param {Object} [options] Options object
-       * @param {Boolean} [options.binary] Specifies whether `data` is binary or
-       *     text
-       * @param {Boolean} [options.compress] Specifies whether or not to compress
-       *     `data`
-       * @param {Boolean} [options.fin=true] Specifies whether the fragment is the
-       *     last one
-       * @param {Boolean} [options.mask] Specifies whether or not to mask `data`
-       * @param {Function} [cb] Callback which is executed when data is written out
-       * @public
-       */
-      send(data, options, cb) {
-        if (this.readyState === _WebSocket.CONNECTING) {
-          throw new Error("WebSocket is not open: readyState 0 (CONNECTING)");
-        }
-        if (typeof options === "function") {
-          cb = options;
-          options = {};
-        }
-        if (typeof data === "number") data = data.toString();
-        if (this.readyState !== _WebSocket.OPEN) {
-          sendAfterClose(this, data, cb);
-          return;
-        }
-        const opts = {
-          binary: typeof data !== "string",
-          mask: !this._isServer,
-          compress: true,
-          fin: true,
-          ...options
-        };
-        if (!this._extensions[PerMessageDeflate2.extensionName]) {
-          opts.compress = false;
-        }
-        this._sender.send(data || EMPTY_BUFFER, opts, cb);
-      }
-      /**
-       * Forcibly close the connection.
-       *
-       * @public
-       */
-      terminate() {
-        if (this.readyState === _WebSocket.CLOSED) return;
-        if (this.readyState === _WebSocket.CONNECTING) {
-          const msg = "WebSocket was closed before the connection was established";
-          abortHandshake(this, this._req, msg);
-          return;
-        }
-        if (this._socket) {
-          this._readyState = _WebSocket.CLOSING;
-          this._socket.destroy();
-        }
-      }
-    };
-    Object.defineProperty(WebSocket2, "CONNECTING", {
-      enumerable: true,
-      value: readyStates.indexOf("CONNECTING")
-    });
-    Object.defineProperty(WebSocket2.prototype, "CONNECTING", {
-      enumerable: true,
-      value: readyStates.indexOf("CONNECTING")
-    });
-    Object.defineProperty(WebSocket2, "OPEN", {
-      enumerable: true,
-      value: readyStates.indexOf("OPEN")
-    });
-    Object.defineProperty(WebSocket2.prototype, "OPEN", {
-      enumerable: true,
-      value: readyStates.indexOf("OPEN")
-    });
-    Object.defineProperty(WebSocket2, "CLOSING", {
-      enumerable: true,
-      value: readyStates.indexOf("CLOSING")
-    });
-    Object.defineProperty(WebSocket2.prototype, "CLOSING", {
-      enumerable: true,
-      value: readyStates.indexOf("CLOSING")
-    });
-    Object.defineProperty(WebSocket2, "CLOSED", {
-      enumerable: true,
-      value: readyStates.indexOf("CLOSED")
-    });
-    Object.defineProperty(WebSocket2.prototype, "CLOSED", {
-      enumerable: true,
-      value: readyStates.indexOf("CLOSED")
-    });
-    [
-      "binaryType",
-      "bufferedAmount",
-      "extensions",
-      "isPaused",
-      "protocol",
-      "readyState",
-      "url"
-    ].forEach((property) => {
-      Object.defineProperty(WebSocket2.prototype, property, { enumerable: true });
-    });
-    ["open", "error", "close", "message"].forEach((method) => {
-      Object.defineProperty(WebSocket2.prototype, `on${method}`, {
-        enumerable: true,
-        get() {
-          for (const listener of this.listeners(method)) {
-            if (listener[kForOnEventAttribute]) return listener[kListener];
-          }
-          return null;
-        },
-        set(handler) {
-          for (const listener of this.listeners(method)) {
-            if (listener[kForOnEventAttribute]) {
-              this.removeListener(method, listener);
-              break;
-            }
-          }
-          if (typeof handler !== "function") return;
-          this.addEventListener(method, handler, {
-            [kForOnEventAttribute]: true
-          });
-        }
-      });
-    });
-    WebSocket2.prototype.addEventListener = addEventListener;
-    WebSocket2.prototype.removeEventListener = removeEventListener;
-    module.exports = WebSocket2;
-    function initAsClient(websocket, address2, protocols, options) {
-      const opts = {
-        allowSynchronousEvents: true,
-        autoPong: true,
-        closeTimeout: CLOSE_TIMEOUT,
-        protocolVersion: protocolVersions[1],
-        maxBufferedChunks: 256 * 1024,
-        maxFragments: 16 * 1024,
-        maxPayload: 100 * 1024 * 1024,
-        skipUTF8Validation: false,
-        perMessageDeflate: true,
-        followRedirects: false,
-        maxRedirects: 10,
-        ...options,
-        socketPath: void 0,
-        hostname: void 0,
-        protocol: void 0,
-        protocols: void 0,
-        timeout: void 0,
-        method: "GET",
-        host: void 0,
-        path: void 0,
-        port: void 0
-      };
-      websocket._autoPong = opts.autoPong;
-      websocket._closeTimeout = opts.closeTimeout;
-      if (!protocolVersions.includes(opts.protocolVersion)) {
-        throw new RangeError(
-          `Unsupported protocol version: ${opts.protocolVersion} (supported versions: ${protocolVersions.join(", ")})`
-        );
-      }
-      let parsedUrl;
-      if (address2 instanceof URL2) {
-        parsedUrl = address2;
-      } else {
-        try {
-          parsedUrl = new URL2(address2);
-        } catch {
-          throw new SyntaxError(`Invalid URL: ${address2}`);
-        }
-      }
-      if (parsedUrl.protocol === "http:") {
-        parsedUrl.protocol = "ws:";
-      } else if (parsedUrl.protocol === "https:") {
-        parsedUrl.protocol = "wss:";
-      }
-      websocket._url = parsedUrl.href;
-      const isSecure = parsedUrl.protocol === "wss:";
-      const isIpcUrl = parsedUrl.protocol === "ws+unix:";
-      let invalidUrlMessage;
-      if (parsedUrl.protocol !== "ws:" && !isSecure && !isIpcUrl) {
-        invalidUrlMessage = `The URL's protocol must be one of "ws:", "wss:", "http:", "https:", or "ws+unix:"`;
-      } else if (isIpcUrl && !parsedUrl.pathname) {
-        invalidUrlMessage = "The URL's pathname is empty";
-      } else if (parsedUrl.hash) {
-        invalidUrlMessage = "The URL contains a fragment identifier";
-      }
-      if (invalidUrlMessage) {
-        const err = new SyntaxError(invalidUrlMessage);
-        if (websocket._redirects === 0) {
-          throw err;
-        } else {
-          emitErrorAndClose(websocket, err);
-          return;
-        }
-      }
-      const defaultPort = isSecure ? 443 : 80;
-      const key = randomBytes11(16).toString("base64");
-      const request = isSecure ? https.request : http.request;
-      const protocolSet = /* @__PURE__ */ new Set();
-      let perMessageDeflate;
-      opts.createConnection = opts.createConnection || (isSecure ? tlsConnect : netConnect);
-      opts.defaultPort = opts.defaultPort || defaultPort;
-      opts.port = parsedUrl.port || defaultPort;
-      opts.host = parsedUrl.hostname.startsWith("[") ? parsedUrl.hostname.slice(1, -1) : parsedUrl.hostname;
-      opts.headers = {
-        ...opts.headers,
-        "Sec-WebSocket-Version": opts.protocolVersion,
-        "Sec-WebSocket-Key": key,
-        Connection: "Upgrade",
-        Upgrade: "websocket"
-      };
-      opts.path = parsedUrl.pathname + parsedUrl.search;
-      opts.timeout = opts.handshakeTimeout;
-      if (opts.perMessageDeflate) {
-        perMessageDeflate = new PerMessageDeflate2({
-          ...opts.perMessageDeflate,
-          isServer: false,
-          maxPayload: opts.maxPayload
-        });
-        opts.headers["Sec-WebSocket-Extensions"] = format2({
-          [PerMessageDeflate2.extensionName]: perMessageDeflate.offer()
-        });
-      }
-      if (protocols.length) {
-        for (const protocol of protocols) {
-          if (typeof protocol !== "string" || !subprotocolRegex.test(protocol) || protocolSet.has(protocol)) {
-            throw new SyntaxError(
-              "An invalid or duplicated subprotocol was specified"
-            );
-          }
-          protocolSet.add(protocol);
-        }
-        opts.headers["Sec-WebSocket-Protocol"] = protocols.join(",");
-      }
-      if (opts.origin) {
-        if (opts.protocolVersion < 13) {
-          opts.headers["Sec-WebSocket-Origin"] = opts.origin;
-        } else {
-          opts.headers.Origin = opts.origin;
-        }
-      }
-      if (parsedUrl.username || parsedUrl.password) {
-        opts.auth = `${parsedUrl.username}:${parsedUrl.password}`;
-      }
-      if (isIpcUrl) {
-        const parts = opts.path.split(":");
-        opts.socketPath = parts[0];
-        opts.path = parts[1];
-      }
-      let req;
-      if (opts.followRedirects) {
-        if (websocket._redirects === 0) {
-          websocket._originalIpc = isIpcUrl;
-          websocket._originalSecure = isSecure;
-          websocket._originalHostOrSocketPath = isIpcUrl ? opts.socketPath : parsedUrl.host;
-          const headers = options && options.headers;
-          options = { ...options, headers: {} };
-          if (headers) {
-            for (const [key2, value] of Object.entries(headers)) {
-              options.headers[key2.toLowerCase()] = value;
-            }
-          }
-        } else if (websocket.listenerCount("redirect") === 0) {
-          const isSameHost = isIpcUrl ? websocket._originalIpc ? opts.socketPath === websocket._originalHostOrSocketPath : false : websocket._originalIpc ? false : parsedUrl.host === websocket._originalHostOrSocketPath;
-          if (!isSameHost || websocket._originalSecure && !isSecure) {
-            delete opts.headers.authorization;
-            delete opts.headers.cookie;
-            if (!isSameHost) delete opts.headers.host;
-            opts.auth = void 0;
-          }
-        }
-        if (opts.auth && !options.headers.authorization) {
-          options.headers.authorization = "Basic " + Buffer.from(opts.auth).toString("base64");
-        }
-        req = websocket._req = request(opts);
-        if (websocket._redirects) {
-          websocket.emit("redirect", websocket.url, req);
-        }
-      } else {
-        req = websocket._req = request(opts);
-      }
-      if (opts.timeout) {
-        req.on("timeout", () => {
-          abortHandshake(websocket, req, "Opening handshake has timed out");
-        });
-      }
-      req.on("error", (err) => {
-        if (req === null || req[kAborted]) return;
-        req = websocket._req = null;
-        emitErrorAndClose(websocket, err);
-      });
-      req.on("response", (res) => {
-        const location2 = res.headers.location;
-        const statusCode = res.statusCode;
-        if (location2 && opts.followRedirects && statusCode >= 300 && statusCode < 400) {
-          if (++websocket._redirects > opts.maxRedirects) {
-            abortHandshake(websocket, req, "Maximum redirects exceeded");
-            return;
-          }
-          req.abort();
-          let addr;
-          try {
-            addr = new URL2(location2, address2);
-          } catch (e) {
-            const err = new SyntaxError(`Invalid URL: ${location2}`);
-            emitErrorAndClose(websocket, err);
-            return;
-          }
-          initAsClient(websocket, addr, protocols, options);
-        } else if (!websocket.emit("unexpected-response", req, res)) {
-          abortHandshake(
-            websocket,
-            req,
-            `Unexpected server response: ${res.statusCode}`
-          );
-        }
-      });
-      req.on("upgrade", (res, socket, head) => {
-        websocket.emit("upgrade", res);
-        if (websocket.readyState !== WebSocket2.CONNECTING) return;
-        req = websocket._req = null;
-        const upgrade = res.headers.upgrade;
-        if (upgrade === void 0 || upgrade.toLowerCase() !== "websocket") {
-          abortHandshake(websocket, socket, "Invalid Upgrade header");
-          return;
-        }
-        const digest = createHash7("sha1").update(key + GUID).digest("base64");
-        if (res.headers["sec-websocket-accept"] !== digest) {
-          abortHandshake(websocket, socket, "Invalid Sec-WebSocket-Accept header");
-          return;
-        }
-        const serverProt = res.headers["sec-websocket-protocol"];
-        let protError;
-        if (serverProt !== void 0) {
-          if (!protocolSet.size) {
-            protError = "Server sent a subprotocol but none was requested";
-          } else if (!protocolSet.has(serverProt)) {
-            protError = "Server sent an invalid subprotocol";
-          }
-        } else if (protocolSet.size) {
-          protError = "Server sent no subprotocol";
-        }
-        if (protError) {
-          abortHandshake(websocket, socket, protError);
-          return;
-        }
-        if (serverProt) websocket._protocol = serverProt;
-        const secWebSocketExtensions = res.headers["sec-websocket-extensions"];
-        if (secWebSocketExtensions !== void 0) {
-          if (!perMessageDeflate) {
-            const message3 = "Server sent a Sec-WebSocket-Extensions header but no extension was requested";
-            abortHandshake(websocket, socket, message3);
-            return;
-          }
-          let extensions;
-          try {
-            extensions = parse4(secWebSocketExtensions);
-          } catch (err) {
-            const message3 = "Invalid Sec-WebSocket-Extensions header";
-            abortHandshake(websocket, socket, message3);
-            return;
-          }
-          const extensionNames = Object.keys(extensions);
-          if (extensionNames.length !== 1 || extensionNames[0] !== PerMessageDeflate2.extensionName) {
-            const message3 = "Server indicated an extension that was not requested";
-            abortHandshake(websocket, socket, message3);
-            return;
-          }
-          try {
-            perMessageDeflate.accept(extensions[PerMessageDeflate2.extensionName]);
-          } catch (err) {
-            const message3 = "Invalid Sec-WebSocket-Extensions header";
-            abortHandshake(websocket, socket, message3);
-            return;
-          }
-          websocket._extensions[PerMessageDeflate2.extensionName] = perMessageDeflate;
-        }
-        websocket.setSocket(socket, head, {
-          allowSynchronousEvents: opts.allowSynchronousEvents,
-          generateMask: opts.generateMask,
-          maxBufferedChunks: opts.maxBufferedChunks,
-          maxFragments: opts.maxFragments,
-          maxPayload: opts.maxPayload,
-          skipUTF8Validation: opts.skipUTF8Validation
-        });
-      });
-      if (opts.finishRequest) {
-        opts.finishRequest(req, websocket);
-      } else {
-        req.end();
-      }
-    }
-    function emitErrorAndClose(websocket, err) {
-      websocket._readyState = WebSocket2.CLOSING;
-      websocket._errorEmitted = true;
-      websocket.emit("error", err);
-      websocket.emitClose();
-    }
-    function netConnect(options) {
-      options.path = options.socketPath;
-      return net.connect(options);
-    }
-    function tlsConnect(options) {
-      options.path = void 0;
-      if (!options.servername && options.servername !== "") {
-        options.servername = net.isIP(options.host) ? "" : options.host;
-      }
-      return tls.connect(options);
-    }
-    function abortHandshake(websocket, stream, message3) {
-      websocket._readyState = WebSocket2.CLOSING;
-      const err = new Error(message3);
-      Error.captureStackTrace(err, abortHandshake);
-      if (stream.setHeader) {
-        stream[kAborted] = true;
-        stream.abort();
-        if (stream.socket && !stream.socket.destroyed) {
-          stream.socket.destroy();
-        }
-        process.nextTick(emitErrorAndClose, websocket, err);
-      } else {
-        stream.destroy(err);
-        stream.once("error", websocket.emit.bind(websocket, "error"));
-        stream.once("close", websocket.emitClose.bind(websocket));
-      }
-    }
-    function sendAfterClose(websocket, data, cb) {
-      if (data) {
-        const length = isBlob(data) ? data.size : toBuffer(data).length;
-        if (websocket._socket) websocket._sender._bufferedBytes += length;
-        else websocket._bufferedAmount += length;
-      }
-      if (cb) {
-        const err = new Error(
-          `WebSocket is not open: readyState ${websocket.readyState} (${readyStates[websocket.readyState]})`
-        );
-        process.nextTick(cb, err);
-      }
-    }
-    function receiverOnConclude(code, reason) {
-      const websocket = this[kWebSocket];
-      websocket._closeFrameReceived = true;
-      websocket._closeMessage = reason;
-      websocket._closeCode = code;
-      if (websocket._socket[kWebSocket] === void 0) return;
-      websocket._socket.removeListener("data", socketOnData);
-      process.nextTick(resume, websocket._socket);
-      if (code === 1005) websocket.close();
-      else websocket.close(code, reason);
-    }
-    function receiverOnDrain() {
-      const websocket = this[kWebSocket];
-      if (!websocket.isPaused) websocket._socket.resume();
-    }
-    function receiverOnError(err) {
-      const websocket = this[kWebSocket];
-      if (websocket._socket[kWebSocket] !== void 0) {
-        websocket._socket.removeListener("data", socketOnData);
-        process.nextTick(resume, websocket._socket);
-        websocket.close(err[kStatusCode]);
-      }
-      if (!websocket._errorEmitted) {
-        websocket._errorEmitted = true;
-        websocket.emit("error", err);
-      }
-    }
-    function receiverOnFinish() {
-      this[kWebSocket].emitClose();
-    }
-    function receiverOnMessage(data, isBinary) {
-      this[kWebSocket].emit("message", data, isBinary);
-    }
-    function receiverOnPing(data) {
-      const websocket = this[kWebSocket];
-      if (websocket._autoPong) websocket.pong(data, !this._isServer, NOOP);
-      websocket.emit("ping", data);
-    }
-    function receiverOnPong(data) {
-      this[kWebSocket].emit("pong", data);
-    }
-    function resume(stream) {
-      stream.resume();
-    }
-    function senderOnError(err) {
-      const websocket = this[kWebSocket];
-      if (websocket.readyState === WebSocket2.CLOSED) return;
-      if (websocket.readyState === WebSocket2.OPEN) {
-        websocket._readyState = WebSocket2.CLOSING;
-        setCloseTimer(websocket);
-      }
-      this._socket.end();
-      if (!websocket._errorEmitted) {
-        websocket._errorEmitted = true;
-        websocket.emit("error", err);
-      }
-    }
-    function setCloseTimer(websocket) {
-      websocket._closeTimer = setTimeout(
-        websocket._socket.destroy.bind(websocket._socket),
-        websocket._closeTimeout
-      );
-    }
-    function socketOnClose() {
-      const websocket = this[kWebSocket];
-      this.removeListener("close", socketOnClose);
-      this.removeListener("data", socketOnData);
-      this.removeListener("end", socketOnEnd);
-      websocket._readyState = WebSocket2.CLOSING;
-      if (!this._readableState.endEmitted && !websocket._closeFrameReceived && !websocket._receiver._writableState.errorEmitted && this._readableState.length !== 0) {
-        const chunk = this.read(this._readableState.length);
-        websocket._receiver.write(chunk);
-      }
-      websocket._receiver.end();
-      this[kWebSocket] = void 0;
-      clearTimeout(websocket._closeTimer);
-      if (websocket._receiver._writableState.finished || websocket._receiver._writableState.errorEmitted) {
-        websocket.emitClose();
-      } else {
-        websocket._receiver.on("error", receiverOnFinish);
-        websocket._receiver.on("finish", receiverOnFinish);
-      }
-    }
-    function socketOnData(chunk) {
-      if (!this[kWebSocket]._receiver.write(chunk)) {
-        this.pause();
-      }
-    }
-    function socketOnEnd() {
-      const websocket = this[kWebSocket];
-      websocket._readyState = WebSocket2.CLOSING;
-      websocket._receiver.end();
-      this.end();
-    }
-    function socketOnError() {
-      const websocket = this[kWebSocket];
-      this.removeListener("error", socketOnError);
-      this.on("error", NOOP);
-      if (websocket) {
-        websocket._readyState = WebSocket2.CLOSING;
-        this.destroy();
-      }
-    }
-  }
-});
-
-// node_modules/ws/lib/stream.js
-var require_stream = __commonJS({
-  "node_modules/ws/lib/stream.js"(exports, module) {
-    "use strict";
-    var WebSocket2 = require_websocket();
-    var { Duplex } = __require("stream");
-    function emitClose(stream) {
-      stream.emit("close");
-    }
-    function duplexOnEnd() {
-      if (!this.destroyed && this._writableState.finished) {
-        this.destroy();
-      }
-    }
-    function duplexOnError(err) {
-      this.removeListener("error", duplexOnError);
-      this.destroy();
-      if (this.listenerCount("error") === 0) {
-        this.emit("error", err);
-      }
-    }
-    function createWebSocketStream2(ws, options) {
-      let terminateOnDestroy = true;
-      const duplex = new Duplex({
-        ...options,
-        autoDestroy: false,
-        emitClose: false,
-        objectMode: false,
-        writableObjectMode: false
-      });
-      ws.on("message", function message3(msg, isBinary) {
-        const data = !isBinary && duplex._readableState.objectMode ? msg.toString() : msg;
-        if (!duplex.push(data)) ws.pause();
-      });
-      ws.once("error", function error51(err) {
-        if (duplex.destroyed) return;
-        terminateOnDestroy = false;
-        duplex.destroy(err);
-      });
-      ws.once("close", function close2() {
-        if (duplex.destroyed) return;
-        duplex.push(null);
-      });
-      duplex._destroy = function(err, callback) {
-        if (ws.readyState === ws.CLOSED) {
-          callback(err);
-          process.nextTick(emitClose, duplex);
-          return;
-        }
-        let called = false;
-        ws.once("error", function error51(err2) {
-          called = true;
-          callback(err2);
-        });
-        ws.once("close", function close2() {
-          if (!called) callback(err);
-          process.nextTick(emitClose, duplex);
-        });
-        if (terminateOnDestroy) ws.terminate();
-      };
-      duplex._final = function(callback) {
-        if (ws.readyState === ws.CONNECTING) {
-          ws.once("open", function open() {
-            duplex._final(callback);
-          });
-          return;
-        }
-        if (ws._socket === null) return;
-        if (ws._socket._writableState.finished) {
-          callback();
-          if (duplex._readableState.endEmitted) duplex.destroy();
-        } else {
-          ws._socket.once("finish", function finish() {
-            callback();
-          });
-          ws.close();
-        }
-      };
-      duplex._read = function() {
-        if (ws.isPaused) ws.resume();
-      };
-      duplex._write = function(chunk, encoding, callback) {
-        if (ws.readyState === ws.CONNECTING) {
-          ws.once("open", function open() {
-            duplex._write(chunk, encoding, callback);
-          });
-          return;
-        }
-        ws.send(chunk, callback);
-      };
-      duplex.on("end", duplexOnEnd);
-      duplex.on("error", duplexOnError);
-      return duplex;
-    }
-    module.exports = createWebSocketStream2;
-  }
-});
-
-// node_modules/ws/lib/subprotocol.js
-var require_subprotocol = __commonJS({
-  "node_modules/ws/lib/subprotocol.js"(exports, module) {
-    "use strict";
-    var { tokenChars } = require_validation2();
-    function parse4(header) {
-      const protocols = /* @__PURE__ */ new Set();
-      let start = -1;
-      let end = -1;
-      let i = 0;
-      for (i; i < header.length; i++) {
-        const code = header.charCodeAt(i);
-        if (end === -1 && tokenChars[code] === 1) {
-          if (start === -1) start = i;
-        } else if (i !== 0 && (code === 32 || code === 9)) {
-          if (end === -1 && start !== -1) end = i;
-        } else if (code === 44) {
-          if (start === -1) {
-            throw new SyntaxError(`Unexpected character at index ${i}`);
-          }
-          if (end === -1) end = i;
-          const protocol2 = header.slice(start, end);
-          if (protocols.has(protocol2)) {
-            throw new SyntaxError(`The "${protocol2}" subprotocol is duplicated`);
-          }
-          protocols.add(protocol2);
-          start = end = -1;
-        } else {
-          throw new SyntaxError(`Unexpected character at index ${i}`);
-        }
-      }
-      if (start === -1 || end !== -1) {
-        throw new SyntaxError("Unexpected end of input");
-      }
-      const protocol = header.slice(start, i);
-      if (protocols.has(protocol)) {
-        throw new SyntaxError(`The "${protocol}" subprotocol is duplicated`);
-      }
-      protocols.add(protocol);
-      return protocols;
-    }
-    module.exports = { parse: parse4 };
-  }
-});
-
-// node_modules/ws/lib/websocket-server.js
-var require_websocket_server = __commonJS({
-  "node_modules/ws/lib/websocket-server.js"(exports, module) {
-    "use strict";
-    var EventEmitter = __require("events");
-    var http = __require("http");
-    var { Duplex } = __require("stream");
-    var { createHash: createHash7 } = __require("crypto");
-    var extension2 = require_extension();
-    var PerMessageDeflate2 = require_permessage_deflate();
-    var subprotocol2 = require_subprotocol();
-    var WebSocket2 = require_websocket();
-    var { CLOSE_TIMEOUT, GUID, kWebSocket } = require_constants();
-    var keyRegex = /^[+/0-9A-Za-z]{22}==$/;
-    var RUNNING = 0;
-    var CLOSING = 1;
-    var CLOSED = 2;
-    var WebSocketServer2 = class extends EventEmitter {
-      /**
-       * Create a `WebSocketServer` instance.
-       *
-       * @param {Object} options Configuration options
-       * @param {Boolean} [options.allowSynchronousEvents=true] Specifies whether
-       *     any of the `'message'`, `'ping'`, and `'pong'` events can be emitted
-       *     multiple times in the same tick
-       * @param {Boolean} [options.autoPong=true] Specifies whether or not to
-       *     automatically send a pong in response to a ping
-       * @param {Number} [options.backlog=511] The maximum length of the queue of
-       *     pending connections
-       * @param {Boolean} [options.clientTracking=true] Specifies whether or not to
-       *     track clients
-       * @param {Number} [options.closeTimeout=30000] Duration in milliseconds to
-       *     wait for the closing handshake to finish after `websocket.close()` is
-       *     called
-       * @param {Function} [options.handleProtocols] A hook to handle protocols
-       * @param {String} [options.host] The hostname where to bind the server
-       * @param {Number} [options.maxBufferedChunks=262144] The maximum number of
-       *     buffered data chunks
-       * @param {Number} [options.maxFragments=16384] The maximum number of message
-       *     fragments
-       * @param {Number} [options.maxPayload=104857600] The maximum allowed message
-       *     size
-       * @param {Boolean} [options.noServer=false] Enable no server mode
-       * @param {String} [options.path] Accept only connections matching this path
-       * @param {(Boolean|Object)} [options.perMessageDeflate=false] Enable/disable
-       *     permessage-deflate
-       * @param {Number} [options.port] The port where to bind the server
-       * @param {(http.Server|https.Server)} [options.server] A pre-created HTTP/S
-       *     server to use
-       * @param {Boolean} [options.skipUTF8Validation=false] Specifies whether or
-       *     not to skip UTF-8 validation for text and close messages
-       * @param {Function} [options.verifyClient] A hook to reject connections
-       * @param {Function} [options.WebSocket=WebSocket] Specifies the `WebSocket`
-       *     class to use. It must be the `WebSocket` class or class that extends it
-       * @param {Function} [callback] A listener for the `listening` event
-       */
-      constructor(options, callback) {
-        super();
-        options = {
-          allowSynchronousEvents: true,
-          autoPong: true,
-          maxBufferedChunks: 256 * 1024,
-          maxFragments: 16 * 1024,
-          maxPayload: 100 * 1024 * 1024,
-          skipUTF8Validation: false,
-          perMessageDeflate: false,
-          handleProtocols: null,
-          clientTracking: true,
-          closeTimeout: CLOSE_TIMEOUT,
-          verifyClient: null,
-          noServer: false,
-          backlog: null,
-          // use default (511 as implemented in net.js)
-          server: null,
-          host: null,
-          path: null,
-          port: null,
-          WebSocket: WebSocket2,
-          ...options
-        };
-        if (options.port == null && !options.server && !options.noServer || options.port != null && (options.server || options.noServer) || options.server && options.noServer) {
-          throw new TypeError(
-            'One and only one of the "port", "server", or "noServer" options must be specified'
-          );
-        }
-        if (options.port != null) {
-          this._server = http.createServer((req, res) => {
-            const body = http.STATUS_CODES[426];
-            res.writeHead(426, {
-              "Content-Length": body.length,
-              "Content-Type": "text/plain"
-            });
-            res.end(body);
-          });
-          this._server.listen(
-            options.port,
-            options.host,
-            options.backlog,
-            callback
-          );
-        } else if (options.server) {
-          this._server = options.server;
-        }
-        if (this._server) {
-          const emitConnection = this.emit.bind(this, "connection");
-          this._removeListeners = addListeners(this._server, {
-            listening: this.emit.bind(this, "listening"),
-            error: this.emit.bind(this, "error"),
-            upgrade: (req, socket, head) => {
-              this.handleUpgrade(req, socket, head, emitConnection);
-            }
-          });
-        }
-        if (options.perMessageDeflate === true) options.perMessageDeflate = {};
-        if (options.clientTracking) {
-          this.clients = /* @__PURE__ */ new Set();
-          this._shouldEmitClose = false;
-        }
-        this.options = options;
-        this._state = RUNNING;
-      }
-      /**
-       * Returns the bound address, the address family name, and port of the server
-       * as reported by the operating system if listening on an IP socket.
-       * If the server is listening on a pipe or UNIX domain socket, the name is
-       * returned as a string.
-       *
-       * @return {(Object|String|null)} The address of the server
-       * @public
-       */
-      address() {
-        if (this.options.noServer) {
-          throw new Error('The server is operating in "noServer" mode');
-        }
-        if (!this._server) return null;
-        return this._server.address();
-      }
-      /**
-       * Stop the server from accepting new connections and emit the `'close'` event
-       * when all existing connections are closed.
-       *
-       * @param {Function} [cb] A one-time listener for the `'close'` event
-       * @public
-       */
-      close(cb) {
-        if (this._state === CLOSED) {
-          if (cb) {
-            this.once("close", () => {
-              cb(new Error("The server is not running"));
-            });
-          }
-          process.nextTick(emitClose, this);
-          return;
-        }
-        if (cb) this.once("close", cb);
-        if (this._state === CLOSING) return;
-        this._state = CLOSING;
-        if (this.options.noServer || this.options.server) {
-          if (this._server) {
-            this._removeListeners();
-            this._removeListeners = this._server = null;
-          }
-          if (this.clients) {
-            if (!this.clients.size) {
-              process.nextTick(emitClose, this);
-            } else {
-              this._shouldEmitClose = true;
-            }
-          } else {
-            process.nextTick(emitClose, this);
-          }
-        } else {
-          const server = this._server;
-          this._removeListeners();
-          this._removeListeners = this._server = null;
-          server.close(() => {
-            emitClose(this);
-          });
-        }
-      }
-      /**
-       * See if a given request should be handled by this server instance.
-       *
-       * @param {http.IncomingMessage} req Request object to inspect
-       * @return {Boolean} `true` if the request is valid, else `false`
-       * @public
-       */
-      shouldHandle(req) {
-        if (this.options.path) {
-          const index = req.url.indexOf("?");
-          const pathname = index !== -1 ? req.url.slice(0, index) : req.url;
-          if (pathname !== this.options.path) return false;
-        }
-        return true;
-      }
-      /**
-       * Handle a HTTP Upgrade request.
-       *
-       * @param {http.IncomingMessage} req The request object
-       * @param {Duplex} socket The network socket between the server and client
-       * @param {Buffer} head The first packet of the upgraded stream
-       * @param {Function} cb Callback
-       * @public
-       */
-      handleUpgrade(req, socket, head, cb) {
-        socket.on("error", socketOnError);
-        const key = req.headers["sec-websocket-key"];
-        const upgrade = req.headers.upgrade;
-        const version4 = +req.headers["sec-websocket-version"];
-        if (req.method !== "GET") {
-          const message3 = "Invalid HTTP method";
-          abortHandshakeOrEmitwsClientError(this, req, socket, 405, message3);
-          return;
-        }
-        if (upgrade === void 0 || upgrade.toLowerCase() !== "websocket") {
-          const message3 = "Invalid Upgrade header";
-          abortHandshakeOrEmitwsClientError(this, req, socket, 400, message3);
-          return;
-        }
-        if (key === void 0 || !keyRegex.test(key)) {
-          const message3 = "Missing or invalid Sec-WebSocket-Key header";
-          abortHandshakeOrEmitwsClientError(this, req, socket, 400, message3);
-          return;
-        }
-        if (version4 !== 13 && version4 !== 8) {
-          const message3 = "Missing or invalid Sec-WebSocket-Version header";
-          abortHandshakeOrEmitwsClientError(this, req, socket, 400, message3, {
-            "Sec-WebSocket-Version": "13, 8"
-          });
-          return;
-        }
-        if (!this.shouldHandle(req)) {
-          abortHandshake(socket, 400);
-          return;
-        }
-        const secWebSocketProtocol = req.headers["sec-websocket-protocol"];
-        let protocols = /* @__PURE__ */ new Set();
-        if (secWebSocketProtocol !== void 0) {
-          try {
-            protocols = subprotocol2.parse(secWebSocketProtocol);
-          } catch (err) {
-            const message3 = "Invalid Sec-WebSocket-Protocol header";
-            abortHandshakeOrEmitwsClientError(this, req, socket, 400, message3);
-            return;
-          }
-        }
-        const secWebSocketExtensions = req.headers["sec-websocket-extensions"];
-        const extensions = {};
-        if (this.options.perMessageDeflate && secWebSocketExtensions !== void 0) {
-          const perMessageDeflate = new PerMessageDeflate2({
-            ...this.options.perMessageDeflate,
-            isServer: true,
-            maxPayload: this.options.maxPayload
-          });
-          try {
-            const offers = extension2.parse(secWebSocketExtensions);
-            if (offers[PerMessageDeflate2.extensionName]) {
-              perMessageDeflate.accept(offers[PerMessageDeflate2.extensionName]);
-              extensions[PerMessageDeflate2.extensionName] = perMessageDeflate;
-            }
-          } catch (err) {
-            const message3 = "Invalid or unacceptable Sec-WebSocket-Extensions header";
-            abortHandshakeOrEmitwsClientError(this, req, socket, 400, message3);
-            return;
-          }
-        }
-        if (this.options.verifyClient) {
-          const info3 = {
-            origin: req.headers[`${version4 === 8 ? "sec-websocket-origin" : "origin"}`],
-            secure: !!(req.socket.authorized || req.socket.encrypted),
-            req
-          };
-          if (this.options.verifyClient.length === 2) {
-            this.options.verifyClient(info3, (verified, code, message3, headers) => {
-              if (!verified) {
-                return abortHandshake(socket, code || 401, message3, headers);
-              }
-              this.completeUpgrade(
-                extensions,
-                key,
-                protocols,
-                req,
-                socket,
-                head,
-                cb
-              );
-            });
-            return;
-          }
-          if (!this.options.verifyClient(info3)) return abortHandshake(socket, 401);
-        }
-        this.completeUpgrade(extensions, key, protocols, req, socket, head, cb);
-      }
-      /**
-       * Upgrade the connection to WebSocket.
-       *
-       * @param {Object} extensions The accepted extensions
-       * @param {String} key The value of the `Sec-WebSocket-Key` header
-       * @param {Set} protocols The subprotocols
-       * @param {http.IncomingMessage} req The request object
-       * @param {Duplex} socket The network socket between the server and client
-       * @param {Buffer} head The first packet of the upgraded stream
-       * @param {Function} cb Callback
-       * @throws {Error} If called more than once with the same socket
-       * @private
-       */
-      completeUpgrade(extensions, key, protocols, req, socket, head, cb) {
-        if (!socket.readable || !socket.writable) return socket.destroy();
-        if (socket[kWebSocket]) {
-          throw new Error(
-            "server.handleUpgrade() was called more than once with the same socket, possibly due to a misconfiguration"
-          );
-        }
-        if (this._state > RUNNING) return abortHandshake(socket, 503);
-        const digest = createHash7("sha1").update(key + GUID).digest("base64");
-        const headers = [
-          "HTTP/1.1 101 Switching Protocols",
-          "Upgrade: websocket",
-          "Connection: Upgrade",
-          `Sec-WebSocket-Accept: ${digest}`
-        ];
-        const ws = new this.options.WebSocket(null, void 0, this.options);
-        if (protocols.size) {
-          const protocol = this.options.handleProtocols ? this.options.handleProtocols(protocols, req) : protocols.values().next().value;
-          if (protocol) {
-            headers.push(`Sec-WebSocket-Protocol: ${protocol}`);
-            ws._protocol = protocol;
-          }
-        }
-        if (extensions[PerMessageDeflate2.extensionName]) {
-          const params = extensions[PerMessageDeflate2.extensionName].params;
-          const value = extension2.format({
-            [PerMessageDeflate2.extensionName]: [params]
-          });
-          headers.push(`Sec-WebSocket-Extensions: ${value}`);
-          ws._extensions = extensions;
-        }
-        this.emit("headers", headers, req);
-        socket.write(headers.concat("\r\n").join("\r\n"));
-        socket.removeListener("error", socketOnError);
-        ws.setSocket(socket, head, {
-          allowSynchronousEvents: this.options.allowSynchronousEvents,
-          maxBufferedChunks: this.options.maxBufferedChunks,
-          maxFragments: this.options.maxFragments,
-          maxPayload: this.options.maxPayload,
-          skipUTF8Validation: this.options.skipUTF8Validation
-        });
-        if (this.clients) {
-          this.clients.add(ws);
-          ws.on("close", () => {
-            this.clients.delete(ws);
-            if (this._shouldEmitClose && !this.clients.size) {
-              process.nextTick(emitClose, this);
-            }
-          });
-        }
-        cb(ws, req);
-      }
-    };
-    module.exports = WebSocketServer2;
-    function addListeners(server, map2) {
-      for (const event of Object.keys(map2)) server.on(event, map2[event]);
-      return function removeListeners() {
-        for (const event of Object.keys(map2)) {
-          server.removeListener(event, map2[event]);
-        }
-      };
-    }
-    function emitClose(server) {
-      server._state = CLOSED;
-      server.emit("close");
-    }
-    function socketOnError() {
-      this.destroy();
-    }
-    function abortHandshake(socket, code, message3, headers) {
-      message3 = message3 || http.STATUS_CODES[code];
-      headers = {
-        Connection: "close",
-        "Content-Type": "text/html",
-        "Content-Length": Buffer.byteLength(message3),
-        ...headers
-      };
-      socket.once("finish", socket.destroy);
-      socket.end(
-        `HTTP/1.1 ${code} ${http.STATUS_CODES[code]}\r
-` + Object.keys(headers).map((h2) => `${h2}: ${headers[h2]}`).join("\r\n") + "\r\n\r\n" + message3
-      );
-    }
-    function abortHandshakeOrEmitwsClientError(server, req, socket, code, message3, headers) {
-      if (server.listenerCount("wsClientError")) {
-        const err = new Error(message3);
-        Error.captureStackTrace(err, abortHandshakeOrEmitwsClientError);
-        server.emit("wsClientError", err, socket, req);
-      } else {
-        abortHandshake(socket, code, message3, headers);
-      }
-    }
-  }
-});
-
 // node_modules/isexe/windows.js
 var require_windows = __commonJS({
   "node_modules/isexe/windows.js"(exports, module) {
@@ -10958,15 +7309,15 @@ var require_windows = __commonJS({
       }
       return false;
     }
-    function checkStat(stat9, path, options) {
-      if (!stat9.isSymbolicLink() && !stat9.isFile()) {
+    function checkStat(stat11, path, options) {
+      if (!stat11.isSymbolicLink() && !stat11.isFile()) {
         return false;
       }
       return checkPathExt(path, options);
     }
     function isexe(path, options, cb) {
-      fs.stat(path, function(er, stat9) {
-        cb(er, er ? false : checkStat(stat9, path, options));
+      fs.stat(path, function(er, stat11) {
+        cb(er, er ? false : checkStat(stat11, path, options));
       });
     }
     function sync(path, options) {
@@ -10982,20 +7333,20 @@ var require_mode = __commonJS({
     isexe.sync = sync;
     var fs = __require("fs");
     function isexe(path, options, cb) {
-      fs.stat(path, function(er, stat9) {
-        cb(er, er ? false : checkStat(stat9, options));
+      fs.stat(path, function(er, stat11) {
+        cb(er, er ? false : checkStat(stat11, options));
       });
     }
     function sync(path, options) {
       return checkStat(fs.statSync(path), options);
     }
-    function checkStat(stat9, options) {
-      return stat9.isFile() && checkMode(stat9, options);
+    function checkStat(stat11, options) {
+      return stat11.isFile() && checkMode(stat11, options);
     }
-    function checkMode(stat9, options) {
-      var mod = stat9.mode;
-      var uid2 = stat9.uid;
-      var gid = stat9.gid;
+    function checkMode(stat11, options) {
+      var mod = stat11.mode;
+      var uid2 = stat11.uid;
+      var gid = stat11.gid;
       var myUid = options.uid !== void 0 ? options.uid : process.getuid && process.getuid();
       var myGid = options.gid !== void 0 ? options.gid : process.getgid && process.getgid();
       var u2 = parseInt("100", 8);
@@ -11029,12 +7380,12 @@ var require_isexe = __commonJS({
         if (typeof Promise !== "function") {
           throw new TypeError("callback not provided");
         }
-        return new Promise(function(resolve3, reject) {
+        return new Promise(function(resolve4, reject) {
           isexe(path, options || {}, function(er, is) {
             if (er) {
               reject(er);
             } else {
-              resolve3(is);
+              resolve4(is);
             }
           });
         });
@@ -11100,27 +7451,27 @@ var require_which = __commonJS({
         opt = {};
       const { pathEnv, pathExt, pathExtExe } = getPathInfo(cmd, opt);
       const found = [];
-      const step = (i) => new Promise((resolve3, reject) => {
+      const step = (i) => new Promise((resolve4, reject) => {
         if (i === pathEnv.length)
-          return opt.all && found.length ? resolve3(found) : reject(getNotFoundError(cmd));
+          return opt.all && found.length ? resolve4(found) : reject(getNotFoundError(cmd));
         const ppRaw = pathEnv[i];
         const pathPart = /^".*"$/.test(ppRaw) ? ppRaw.slice(1, -1) : ppRaw;
         const pCmd = path.join(pathPart, cmd);
         const p2 = !pathPart && /^\.[\\\/]/.test(cmd) ? cmd.slice(0, 2) + pCmd : pCmd;
-        resolve3(subStep(p2, i, 0));
+        resolve4(subStep(p2, i, 0));
       });
-      const subStep = (p2, i, ii) => new Promise((resolve3, reject) => {
+      const subStep = (p2, i, ii) => new Promise((resolve4, reject) => {
         if (ii === pathExt.length)
-          return resolve3(step(i + 1));
+          return resolve4(step(i + 1));
         const ext = pathExt[ii];
         isexe(p2 + ext, { pathExt: pathExtExe }, (er, is) => {
           if (!er && is) {
             if (opt.all)
               found.push(p2 + ext);
             else
-              return resolve3(p2 + ext);
+              return resolve4(p2 + ext);
           }
-          return resolve3(subStep(p2, i, ii + 1));
+          return resolve4(subStep(p2, i, ii + 1));
         });
       });
       return cb ? step(0).then((res) => cb(null, res), cb) : step(0);
@@ -11165,8 +7516,8 @@ var require_path_key = __commonJS({
     "use strict";
     var pathKey = (options = {}) => {
       const environment = options.env || process.env;
-      const platform6 = options.platform || process.platform;
-      if (platform6 !== "win32") {
+      const platform5 = options.platform || process.platform;
+      if (platform5 !== "win32") {
         return "PATH";
       }
       return Object.keys(environment).reverse().find((key) => key.toUpperCase() === "PATH") || "Path";
@@ -11278,12 +7629,12 @@ var require_readShebang = __commonJS({
     var fs = __require("fs");
     var shebangCommand = require_shebang_command();
     function readShebang(command3) {
-      const size2 = 150;
-      const buffer = Buffer.alloc(size2);
+      const size = 150;
+      const buffer = Buffer.alloc(size);
       let fd;
       try {
         fd = fs.openSync(command3, "r");
-        fs.readSync(fd, buffer, 0, size2, 0);
+        fs.readSync(fd, buffer, 0, size, 0);
         fs.closeSync(fd);
       } catch (e) {
       }
@@ -11537,10 +7888,10 @@ var require_content_type = __commonJS({
 });
 
 // apps/claude/server/server.ts
-import { readFile as readFile12 } from "node:fs/promises";
+import { readFile as readFile15 } from "node:fs/promises";
 
 // packages/core/src/stdio-server.ts
-import { readFile as readFile8 } from "node:fs/promises";
+import { readFile as readFile11 } from "node:fs/promises";
 
 // node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js
 import process2 from "node:process";
@@ -13172,12 +9523,12 @@ var StdioServerTransport = class {
     this.onclose?.();
   }
   send(message3) {
-    return new Promise((resolve3) => {
+    return new Promise((resolve4) => {
       const json3 = serializeMessage(message3);
       if (this._stdout.write(json3)) {
-        resolve3();
+        resolve4();
       } else {
-        this._stdout.once("drain", resolve3);
+        this._stdout.once("drain", resolve4);
       }
     });
   }
@@ -14096,11 +10447,11 @@ function datetimeRegex(args) {
   regex2 = `${regex2}(${opts.join("|")})`;
   return new RegExp(`^${regex2}$`);
 }
-function isValidIP(ip, version4) {
-  if ((version4 === "v4" || !version4) && ipv4Regex.test(ip)) {
+function isValidIP(ip, version3) {
+  if ((version3 === "v4" || !version3) && ipv4Regex.test(ip)) {
     return true;
   }
-  if ((version4 === "v6" || !version4) && ipv6Regex.test(ip)) {
+  if ((version3 === "v6" || !version3) && ipv6Regex.test(ip)) {
     return true;
   }
   return false;
@@ -14127,11 +10478,11 @@ function isValidJWT(jwt2, alg) {
     return false;
   }
 }
-function isValidCidr(ip, version4) {
-  if ((version4 === "v4" || !version4) && ipv4CidrRegex.test(ip)) {
+function isValidCidr(ip, version3) {
+  if ((version3 === "v4" || !version3) && ipv4CidrRegex.test(ip)) {
     return true;
   }
-  if ((version4 === "v6" || !version4) && ipv6CidrRegex.test(ip)) {
+  if ((version3 === "v6" || !version3) && ipv6CidrRegex.test(ip)) {
     return true;
   }
   return false;
@@ -14790,13 +11141,13 @@ var ZodNumber = class _ZodNumber extends ZodType {
   lt(value, message3) {
     return this.setLimit("max", value, false, errorUtil.toString(message3));
   }
-  setLimit(kind4, value, inclusive, message3) {
+  setLimit(kind3, value, inclusive, message3) {
     return new _ZodNumber({
       ...this._def,
       checks: [
         ...this._def.checks,
         {
-          kind: kind4,
+          kind: kind3,
           value,
           inclusive,
           message: errorUtil.toString(message3)
@@ -15006,13 +11357,13 @@ var ZodBigInt = class _ZodBigInt extends ZodType {
   lt(value, message3) {
     return this.setLimit("max", value, false, errorUtil.toString(message3));
   }
-  setLimit(kind4, value, inclusive, message3) {
+  setLimit(kind3, value, inclusive, message3) {
     return new _ZodBigInt({
       ...this._def,
       checks: [
         ...this._def.checks,
         {
-          kind: kind4,
+          kind: kind3,
           value,
           inclusive,
           message: errorUtil.toString(message3)
@@ -16372,8 +12723,8 @@ var ZodSet = class _ZodSet extends ZodType {
       maxSize: { value: maxSize, message: errorUtil.toString(message3) }
     });
   }
-  size(size2, message3) {
-    return this.min(size2, message3).max(size2, message3);
+  size(size, message3) {
+    return this.min(size, message3).max(size, message3);
   }
   nonempty(message3) {
     return this.min(1, message3);
@@ -18851,11 +15202,11 @@ var Protocol = class {
    *
    * The Protocol object assumes ownership of the Transport, replacing any callbacks that have already been set, and expects that it is the only user of the Transport instance going forward.
    */
-  async connect(transport2) {
+  async connect(transport) {
     if (this._transport) {
       throw new Error("Already connected to a transport. Call close() before connecting to a new transport, or use a separate Protocol instance per connection.");
     }
-    this._transport = transport2;
+    this._transport = transport;
     const _onclose = this.transport?.onclose;
     this._transport.onclose = () => {
       _onclose?.();
@@ -19175,7 +15526,7 @@ var Protocol = class {
           return;
         }
         const pollInterval = task2.pollInterval ?? this._options?.defaultTaskPollInterval ?? 1e3;
-        await new Promise((resolve3) => setTimeout(resolve3, pollInterval));
+        await new Promise((resolve4) => setTimeout(resolve4, pollInterval));
         options?.signal?.throwIfAborted();
       }
     } catch (error51) {
@@ -19192,7 +15543,7 @@ var Protocol = class {
    */
   request(request, resultSchema, options) {
     const { relatedRequestId, resumptionToken, onresumptiontoken, task, relatedTask } = options ?? {};
-    return new Promise((resolve3, reject) => {
+    return new Promise((resolve4, reject) => {
       const earlyReject = (error51) => {
         reject(error51);
       };
@@ -19270,7 +15621,7 @@ var Protocol = class {
           if (!parseResult.success) {
             reject(parseResult.error);
           } else {
-            resolve3(parseResult.data);
+            resolve4(parseResult.data);
           }
         } catch (error51) {
           reject(error51);
@@ -19531,12 +15882,12 @@ var Protocol = class {
       }
     } catch {
     }
-    return new Promise((resolve3, reject) => {
+    return new Promise((resolve4, reject) => {
       if (signal.aborted) {
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
         return;
       }
-      const timeoutId = setTimeout(resolve3, interval);
+      const timeoutId = setTimeout(resolve4, interval);
       signal.addEventListener("abort", () => {
         clearTimeout(timeoutId);
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
@@ -20486,9 +16837,9 @@ var UriTemplate = class _UriTemplate {
     if (part.operator === "?" || part.operator === "&") {
       for (let i = 0; i < part.names.length; i++) {
         const name2 = part.names[i];
-        const prefix3 = i === 0 ? "\\" + part.operator : "&";
+        const prefix2 = i === 0 ? "\\" + part.operator : "&";
         patterns.push({
-          pattern: prefix3 + this.escapeRegExp(name2) + "=([^&]+)",
+          pattern: prefix2 + this.escapeRegExp(name2) + "=([^&]+)",
           name: name2
         });
       }
@@ -20674,8 +17025,8 @@ var McpServer = class {
     }
     return this._experimental;
   }
-  async connect(transport2) {
-    return await this.server.connect(transport2);
+  async connect(transport) {
+    return await this.server.connect(transport);
   }
   async close() {
     await this.server.close();
@@ -20845,7 +17196,7 @@ var McpServer = class {
     let task = createTaskResult.task;
     const pollInterval = task.pollInterval ?? 5e3;
     while (task.status !== "completed" && task.status !== "failed" && task.status !== "cancelled") {
-      await new Promise((resolve3) => setTimeout(resolve3, pollInterval));
+      await new Promise((resolve4) => setTimeout(resolve4, pollInterval));
       const updatedTask = await extra.taskStore.getTask(taskId);
       if (!updatedTask) {
         throw new McpError(ErrorCode.InternalError, `Task ${taskId} not found during polling`);
@@ -21402,934 +17753,6 @@ var EMPTY_COMPLETION_RESULT = {
   }
 };
 
-// packages/core/src/telemetry.ts
-import { AsyncLocalStorage } from "node:async_hooks";
-
-// packages/core/src/native-telemetry.ts
-var prefix = "[mobile-dev:sentry-envelope]";
-var maximumLine = 35e4;
-var transport;
-function parseNativeEnvelope(encoded2) {
-  if (encoded2.length === 0 || encoded2.length > maximumLine || /^[A-Za-z0-9+/]*={0,2}$/.test(encoded2) === false) {
-    throw new Error("Invalid native Sentry envelope encoding.");
-  }
-  const bytes = Buffer.from(encoded2, "base64");
-  if (bytes.length > 256 * 1024) throw new Error("Native Sentry envelope exceeded its size limit.");
-  let offset = 0;
-  const readHeader = () => {
-    const end = bytes.indexOf(10, offset);
-    if (end < 0) throw new Error("Incomplete native Sentry envelope header.");
-    const line = bytes.subarray(offset, end);
-    const text6 = line.toString("utf8");
-    const value = JSON.parse(text6);
-    offset = end + 1;
-    if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid native Sentry envelope header.");
-    return value;
-  };
-  const header = readHeader();
-  if (header.dsn !== SENTRY_NATIVE_DSN) throw new Error("Native Sentry envelope targets another project.");
-  const envelopes = [];
-  while (offset < bytes.length) {
-    const item = readHeader();
-    if (item.type !== "event" && item.type !== "trace_metric" && item.type !== "client_report") {
-      throw new Error("Native Sentry envelope contains an unsupported item.");
-    }
-    if (typeof item.length !== "number" || Number.isSafeInteger(item.length) === false || item.length < 0) {
-      throw new Error("Invalid native Sentry envelope item size.");
-    }
-    const end = offset + item.length;
-    if (end > bytes.length) throw new Error("Incomplete native Sentry envelope item.");
-    const payload = bytes.subarray(offset, end);
-    const text6 = payload.toString("utf8");
-    if (item.type === "event") {
-      const event = JSON.parse(text6);
-      if (event === null || typeof event !== "object" || event.platform !== "native") throw new Error("Invalid native Sentry event.");
-      if (typeof event.event_id !== "string") throw new Error("Native Sentry event has no event ID.");
-      const now = /* @__PURE__ */ new Date();
-      const sentAt = now.toISOString();
-      const eventHeader = { dsn: SENTRY_NATIVE_DSN, event_id: event.event_id, sent_at: sentAt };
-      envelopes.push([eventHeader, [[{ type: "event" }, event]]]);
-    } else if (item.type === "trace_metric") {
-      const metrics = JSON.parse(text6);
-      if (metrics === null || typeof metrics !== "object" || Array.isArray(metrics.items) === false) throw new Error("Invalid native Sentry metrics.");
-      const count3 = metrics.items.length;
-      envelopes.push([header, [[{ type: "trace_metric", item_count: count3, content_type: "application/vnd.sentry.items.trace-metric+json" }, metrics]]]);
-    } else {
-      const report = JSON.parse(text6);
-      if (report === null || typeof report !== "object" || Array.isArray(report.discarded_events) === false) throw new Error("Invalid native Sentry client report.");
-      envelopes.push([header, [[{ type: "client_report" }, report]]]);
-    }
-    offset = end;
-    if (offset < bytes.length && bytes[offset] === 10) offset++;
-  }
-  return envelopes;
-}
-function sendEnvelope(encoded2) {
-  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
-  const envelopes = parseNativeEnvelope(encoded2);
-  if (transport === void 0) {
-    const dsn = new URL(SENTRY_NATIVE_DSN);
-    const project = dsn.pathname.slice(1);
-    const url2 = `https://${dsn.hostname}/api/${project}/envelope/?sentry_key=${dsn.username}&sentry_version=7`;
-    transport = makeNodeTransport({ url: url2, bufferSize: 16, recordDroppedEvent() {
-    } });
-  }
-  for (const envelope of envelopes) {
-    const sending = transport.send(envelope);
-    const promise2 = Promise.resolve(sending);
-    void promise2.catch(() => {
-    });
-  }
-}
-var NativeTelemetryRelay = class {
-  pending = "";
-  discarding = false;
-  diagnostic;
-  send;
-  constructor(diagnostic, send = sendEnvelope) {
-    this.diagnostic = diagnostic;
-    this.send = send;
-  }
-  write(chunk) {
-    const text6 = chunk.toString("utf8");
-    const parts = text6.split("\n");
-    for (let index = 0; index < parts.length; index++) {
-      if (this.discarding === false) this.pending += parts[index];
-      if (this.pending.length > maximumLine + prefix.length) {
-        this.pending = "";
-        this.discarding = true;
-      }
-      if (index === parts.length - 1) continue;
-      if (this.discarding === false) this.consume(this.pending + "\n");
-      this.pending = "";
-      this.discarding = false;
-    }
-  }
-  end() {
-    if (this.discarding === false && this.pending.length > 0) this.consume(this.pending);
-    this.pending = "";
-  }
-  consume(line) {
-    if (line.startsWith(prefix)) {
-      const payload = line.slice(prefix.length);
-      const encoded2 = payload.trimEnd();
-      try {
-        this.send(encoded2);
-      } catch {
-        this.diagnostic("Native Sentry report was invalid and discarded.\n");
-      }
-    } else this.diagnostic(line);
-  }
-};
-function shellQuote(value) {
-  const quoted = value.replaceAll("'", "'\\''");
-  return `'${quoted}'`;
-}
-function nativeCollectorCommand(binary2, args = []) {
-  const release = shellQuote(SENTRY_RELEASE);
-  const environment = shellQuote(TELEMETRY_ENVIRONMENT);
-  const enabled = process.env.MOBILE_DEV_TELEMETRY === "off" ? "off" : "on";
-  const command3 = shellQuote(binary2);
-  const quotedArguments = args.map(shellQuote);
-  const argumentsText = quotedArguments.join(" ");
-  const identity = getTelemetryIdentity();
-  let identityEnvironment = "";
-  if (identity) {
-    const userId = shellQuote(identity.userId);
-    const sessionId5 = shellQuote(identity.sessionId);
-    identityEnvironment = ` MOBILE_DEV_NATIVE_USER_ID=${userId} MOBILE_DEV_NATIVE_SESSION_ID=${sessionId5}`;
-  }
-  return `MOBILE_DEV_NATIVE_RELEASE=${release} MOBILE_DEV_NATIVE_ENVIRONMENT=${environment} MOBILE_DEV_TELEMETRY=${enabled}${identityEnvironment} exec ${command3} ${argumentsText}`;
-}
-async function closeNativeTelemetry() {
-  if (transport !== void 0) await transport.flush(2e3);
-}
-
-// packages/shared/src/simulator-definition-diagnostics.ts
-var BAGUETTE_PIN = { version: "0.2.1", sourceCommit: "db17446e25059247879dba7941e4de641c2f31e2" };
-var stages = external_exports.enum([
-  "simulator_lookup",
-  "profile_read",
-  "profile_parse",
-  "profile_chrome_identifier",
-  "panel_lookup",
-  "chrome_lookup",
-  "chrome_read",
-  "chrome_parse",
-  "composite_read",
-  "composite_layout",
-  "composite_rasterize",
-  "screen_geometry",
-  "slice_read",
-  "slice_rasterize",
-  "assembly",
-  "response"
-]);
-var failures = external_exports.enum(["missing", "permission_denied", "unreadable", "invalid", "unsupported", "failed", "unavailable", "unclassified"]);
-var states = external_exports.enum(["Creating", "Shutdown", "Booting", "Booted", "ShuttingDown", "missing", "unreachable", "unknown"]);
-var version = /^\d{1,2}(?:\.\d{1,2}){0,2}$/;
-var runtime = /^(iOS|tvOS|watchOS|visionOS) \d{1,2}\.\d{1,2}(?:\.\d{1,2})?$/;
-var modelNames = /* @__PURE__ */ new Set([
-  "Apple TV",
-  "Apple TV 4K",
-  "Apple TV 4K (2nd generation)",
-  "Apple TV 4K (2nd generation) (at 1080p)",
-  "Apple TV 4K (3rd generation)",
-  "Apple TV 4K (3rd generation) (at 1080p)",
-  "Apple TV 4K (at 1080p)",
-  "Apple Vision Pro",
-  "Apple Vision Pro (at 2732x2048)",
-  "Apple Watch SE (40mm)",
-  "Apple Watch SE (40mm) (2nd generation)",
-  "Apple Watch SE (44mm)",
-  "Apple Watch SE (44mm) (2nd generation)",
-  "Apple Watch SE 3 (40mm)",
-  "Apple Watch SE 3 (44mm)",
-  "Apple Watch Series 10 (42mm)",
-  "Apple Watch Series 10 (46mm)",
-  "Apple Watch Series 11 (42mm)",
-  "Apple Watch Series 11 (46mm)",
-  "Apple Watch Series 12 (42mm)",
-  "Apple Watch Series 12 (46mm)",
-  "Apple Watch Series 2 (38mm)",
-  "Apple Watch Series 2 (42mm)",
-  "Apple Watch Series 3 (38mm)",
-  "Apple Watch Series 3 (42mm)",
-  "Apple Watch Series 4 (40mm)",
-  "Apple Watch Series 4 (44mm)",
-  "Apple Watch Series 5 (40mm)",
-  "Apple Watch Series 5 (44mm)",
-  "Apple Watch Series 6 (40mm)",
-  "Apple Watch Series 6 (44mm)",
-  "Apple Watch Series 7 (41mm)",
-  "Apple Watch Series 7 (45mm)",
-  "Apple Watch Series 8 (41mm)",
-  "Apple Watch Series 8 (45mm)",
-  "Apple Watch Series 9 (41mm)",
-  "Apple Watch Series 9 (45mm)",
-  "Apple Watch Ultra (49mm)",
-  "Apple Watch Ultra 2 (49mm)",
-  "Apple Watch Ultra 3 (49mm)",
-  "Apple Watch Ultra 4 (49mm)",
-  "iPad (10th generation)",
-  "iPad (5th generation)",
-  "iPad (6th generation)",
-  "iPad (7th generation)",
-  "iPad (8th generation)",
-  "iPad (9th generation)",
-  "iPad (A16)",
-  "iPad Air (3rd generation)",
-  "iPad Air (4th generation)",
-  "iPad Air (5th generation)",
-  "iPad Air 11-inch (M2)",
-  "iPad Air 11-inch (M3)",
-  "iPad Air 11-inch (M4)",
-  "iPad Air 13-inch (M2)",
-  "iPad Air 13-inch (M3)",
-  "iPad Air 13-inch (M4)",
-  "iPad Air 2",
-  "iPad Pro (10.5-inch)",
-  "iPad Pro (11-inch) (1st generation)",
-  "iPad Pro (11-inch) (2nd generation)",
-  "iPad Pro (11-inch) (3rd generation)",
-  "iPad Pro (11-inch) (4th generation)",
-  "iPad Pro (11-inch) (4th generation) (16GB)",
-  "iPad Pro (12.9-inch) (1st generation)",
-  "iPad Pro (12.9-inch) (2nd generation)",
-  "iPad Pro (12.9-inch) (3rd generation)",
-  "iPad Pro (12.9-inch) (4th generation)",
-  "iPad Pro (12.9-inch) (5th generation)",
-  "iPad Pro (12.9-inch) (6th generation)",
-  "iPad Pro (12.9-inch) (6th generation) (16GB)",
-  "iPad Pro (9.7-inch)",
-  "iPad Pro 11-inch (M4)",
-  "iPad Pro 11-inch (M4) (16GB)",
-  "iPad Pro 11-inch (M5)",
-  "iPad Pro 11-inch (M5) (16GB)",
-  "iPad Pro 13-inch (M4)",
-  "iPad Pro 13-inch (M4) (16GB)",
-  "iPad Pro 13-inch (M5)",
-  "iPad Pro 13-inch (M5) (16GB)",
-  "iPad mini (5th generation)",
-  "iPad mini (6th generation)",
-  "iPad mini (A17 Pro)",
-  "iPad mini 4",
-  "iPhone 11",
-  "iPhone 11 Pro",
-  "iPhone 11 Pro Max",
-  "iPhone 12",
-  "iPhone 12 Pro",
-  "iPhone 12 Pro Max",
-  "iPhone 12 mini",
-  "iPhone 13",
-  "iPhone 13 Pro",
-  "iPhone 13 Pro Max",
-  "iPhone 13 mini",
-  "iPhone 14",
-  "iPhone 14 Plus",
-  "iPhone 14 Pro",
-  "iPhone 14 Pro Max",
-  "iPhone 15",
-  "iPhone 15 Plus",
-  "iPhone 15 Pro",
-  "iPhone 15 Pro Max",
-  "iPhone 16",
-  "iPhone 16 Plus",
-  "iPhone 16 Pro",
-  "iPhone 16 Pro Max",
-  "iPhone 16e",
-  "iPhone 17",
-  "iPhone 17 Pro",
-  "iPhone 17 Pro Max",
-  "iPhone 17e",
-  "iPhone 18 Pro",
-  "iPhone 18 Pro Max",
-  "iPhone 6s",
-  "iPhone 6s Plus",
-  "iPhone 7",
-  "iPhone 7 Plus",
-  "iPhone 8",
-  "iPhone 8 Plus",
-  "iPhone Air",
-  "iPhone SE (1st generation)",
-  "iPhone SE (2nd generation)",
-  "iPhone SE (3rd generation)",
-  "iPhone X",
-  "iPhone Xs",
-  "iPhone Xs Max",
-  "iPhone X\u0280",
-  "iPod touch (7th generation)",
-  "iPhone Duo"
-]);
-function publicModel(value) {
-  if (typeof value === "string" && modelNames.has(value)) return value;
-  return "unknown";
-}
-function numericVersion(value) {
-  if (typeof value === "string" && version.test(value)) return value;
-  return "unknown";
-}
-var diagnostics = /* @__PURE__ */ new WeakMap();
-function parseDefinitionDiagnostic(payload) {
-  const diagnostic = {
-    stage: "response",
-    failure: "unclassified",
-    model: "unknown",
-    runtime: "unknown",
-    state: "unknown",
-    panel: "unknown",
-    xcodeVersion: "unknown",
-    backendVersion: "unknown",
-    backendSource: "unknown",
-    deviceBefore: "unknown",
-    deviceAfter: "unknown",
-    backendMode: "external",
-    cachedFailure: "unknown"
-  };
-  if (payload === null || typeof payload !== "object" || !("definition_diagnostic" in payload)) return diagnostic;
-  const candidate = payload.definition_diagnostic;
-  if (candidate === null || typeof candidate !== "object" || !("schema" in candidate) || candidate.schema !== "1") return diagnostic;
-  if ("stage" in candidate) {
-    const parsed = stages.safeParse(candidate.stage);
-    if (parsed.success) diagnostic.stage = parsed.data;
-  }
-  if ("failure" in candidate) {
-    const parsed = failures.safeParse(candidate.failure);
-    if (parsed.success) diagnostic.failure = parsed.data;
-  }
-  if ("cached_failure" in candidate && (candidate.cached_failure === "true" || candidate.cached_failure === "false")) diagnostic.cachedFailure = candidate.cached_failure;
-  if ("model" in candidate) diagnostic.model = publicModel(candidate.model);
-  if ("runtime" in candidate && typeof candidate.runtime === "string" && runtime.test(candidate.runtime)) diagnostic.runtime = candidate.runtime;
-  if ("state" in candidate) {
-    const parsed = states.safeParse(candidate.state);
-    if (parsed.success) diagnostic.state = parsed.data;
-  }
-  if ("panel" in candidate && (candidate.panel === "primary" || candidate.panel === "secondary")) diagnostic.panel = candidate.panel;
-  if ("xcode_version" in candidate) diagnostic.xcodeVersion = numericVersion(candidate.xcode_version);
-  if ("backend_version" in candidate && candidate.backend_version === BAGUETTE_PIN.version) diagnostic.backendVersion = BAGUETTE_PIN.version;
-  if ("backend_source" in candidate && candidate.backend_source === BAGUETTE_PIN.sourceCommit) diagnostic.backendSource = "pinned";
-  return diagnostic;
-}
-function definitionDeviceState(value) {
-  const parsed = states.safeParse(value);
-  return parsed.success ? parsed.data : "unknown";
-}
-function setDefinitionDiagnostic(error51, diagnostic) {
-  diagnostics.set(error51, diagnostic);
-}
-function getDefinitionDiagnostic(error51) {
-  if (error51 === null || typeof error51 !== "object") return;
-  return diagnostics.get(error51);
-}
-function definitionDiagnosticTags(error51) {
-  const diagnostic = getDefinitionDiagnostic(error51);
-  if (diagnostic === void 0) return {};
-  return {
-    definition_stage: diagnostic.stage,
-    definition_failure: diagnostic.failure,
-    definition_model: diagnostic.model,
-    definition_runtime: diagnostic.runtime,
-    definition_device_state: diagnostic.state,
-    definition_device_before: diagnostic.deviceBefore,
-    definition_device_after: diagnostic.deviceAfter,
-    definition_panel: diagnostic.panel,
-    definition_xcode_version: diagnostic.xcodeVersion,
-    definition_backend_version: diagnostic.backendVersion,
-    definition_backend_source: diagnostic.backendSource,
-    definition_backend_mode: diagnostic.backendMode,
-    definition_cached_failure: diagnostic.cachedFailure
-  };
-}
-
-// packages/shared/src/protocol.ts
-var udidSchema = external_exports.uuid();
-var point = external_exports.number().finite().min(0).max(1e4);
-var size = external_exports.number().finite().positive().max(1e4);
-var duration = external_exports.number().finite().min(0).max(5);
-var dimensions = { width: size, height: size };
-var edge = external_exports.enum(["left", "top", "right", "bottom"]).optional();
-var touchInputSchema = external_exports.object({
-  type: external_exports.enum(["touch1-down", "touch1-move", "touch1-up"]),
-  x: point,
-  y: point,
-  ...dimensions,
-  edge
-}).strict();
-var inputSchema = external_exports.discriminatedUnion("type", [
-  external_exports.object({ type: external_exports.literal("tap"), x: point, y: point, ...dimensions, duration: duration.optional() }).strict(),
-  external_exports.object({ type: external_exports.literal("swipe"), startX: point, startY: point, endX: point, endY: point, ...dimensions, duration: duration.optional() }).strict(),
-  touchInputSchema,
-  external_exports.object({
-    type: external_exports.literal("button"),
-    button: external_exports.enum(["home", "back", "power", "lock", "volume-up", "volume-down", "action", "app-switcher"]),
-    duration: duration.optional()
-  }).strict(),
-  external_exports.object({ type: external_exports.literal("type"), text: external_exports.string().max(4096).regex(/^[\x20-\x7e]*$/, "Use printable US-ASCII text.") }).strict(),
-  external_exports.object({
-    type: external_exports.literal("key"),
-    code: external_exports.string().regex(/^(Key[A-Z]|Digit[0-9]|Enter|Escape|Backspace|Tab|Space|Arrow(Up|Down|Left|Right))$/),
-    modifiers: external_exports.array(external_exports.enum(["shift", "control", "option", "command"])).max(4).optional()
-  }).strict()
-]);
-var streamMessageSchema = external_exports.union([
-  inputSchema,
-  external_exports.object({ type: external_exports.literal("set_fps"), fps: external_exports.number().int().min(1).max(60) }).strict(),
-  external_exports.object({ type: external_exports.literal("set_scale"), scale: external_exports.number().int().min(1).max(4) }).strict()
-]);
-function normalizeDevices(payload) {
-  const parsed = external_exports.object({ running: external_exports.array(external_exports.unknown()), available: external_exports.array(external_exports.unknown()) }).parse(payload);
-  const devices3 = /* @__PURE__ */ new Map();
-  for (const [list, fallback] of [[parsed.available, "Shutdown"], [parsed.running, "Booted"]]) {
-    for (const item of list) {
-      const device2 = external_exports.object({ udid: udidSchema, name: external_exports.string(), state: external_exports.string().optional(), runtime: external_exports.string().optional() }).parse(item);
-      devices3.set(device2.udid, { ...device2, state: device2.state ?? fallback, runtime: device2.runtime ?? "" });
-    }
-  }
-  return [...devices3.values()].sort((a, b) => Number(b.state === "Booted") - Number(a.state === "Booted") || a.name.localeCompare(b.name));
-}
-function parseBaseUrl(value, label = "BAGUETTE_URL") {
-  let url2;
-  try {
-    url2 = new URL(value);
-  } catch {
-    throw new ExpectedOperationError("invalid_input", `${label} must be a valid HTTP origin.`);
-  }
-  if (url2.protocol !== "http:" || !["127.0.0.1", "localhost", "[::1]"].includes(url2.hostname) || url2.username || url2.password || url2.pathname !== "/" || url2.search || url2.hash) {
-    throw new ExpectedOperationError("invalid_input", `${label} must be a loopback HTTP origin, such as http://127.0.0.1:8421.`);
-  }
-  return url2;
-}
-function errorMessage(error51) {
-  return error51 instanceof Error ? error51.message : String(error51);
-}
-
-// packages/shared/src/device-apps-diagnostics.ts
-var DEVICE_APPS_DIAGNOSTIC_META = "mobile-dev/device-apps-diagnostic";
-var stage = external_exports.enum(["device_validation", "running_apps", "foreground", "discovery", "transport", "response"]);
-var failure = external_exports.enum(["missing_executable", "timeout", "command_failed", "invalid_response", "cancelled", "unknown"]);
-var platform = external_exports.enum(["ios", "android"]);
-var kind = external_exports.enum(["physical", "simulator", "unknown"]);
-var diagnosticObject = external_exports.object({ stage, failure, platform, kind });
-var deviceAppsDiagnosticSchema = diagnosticObject.strict();
-var diagnostics2 = /* @__PURE__ */ new WeakMap();
-function classifyFailure(error51) {
-  if (error51 === null || typeof error51 !== "object") return "unknown";
-  const command3 = getDiscoveryCommandDiagnostic(error51);
-  if (command3?.cause === "cancelled") return "cancelled";
-  if (command3?.termination === "deadline" || command3?.cause.endsWith("_timeout")) return "timeout";
-  if (command3?.termination === "output_limit") return "command_failed";
-  if ("name" in error51 && error51.name === "AbortError") return "cancelled";
-  if ("code" in error51 && error51.code === "ENOENT") return "missing_executable";
-  if ("code" in error51 && (error51.code === "ETIMEDOUT" || error51.code === -32001)) return "timeout";
-  if ("name" in error51 && error51.name === "TimeoutError") return "timeout";
-  if ("killed" in error51 && error51.killed === true) return "timeout";
-  if ("name" in error51 && (error51.name === "ZodError" || error51.name === "SyntaxError")) return "invalid_response";
-  if ("code" in error51 && typeof error51.code === "number" && error51.code > 0) return "command_failed";
-  if ("signal" in error51 && typeof error51.signal === "string") return "command_failed";
-  return "unknown";
-}
-function deviceAppsDiagnostic(error51, stage2, platform6, kind4) {
-  const failure3 = classifyFailure(error51);
-  let deviceKind2 = "unknown";
-  if (platform6 === "ios") deviceKind2 = kind4 === "physical" ? "physical" : "simulator";
-  return { stage: stage2, failure: failure3, platform: platform6, kind: deviceKind2 };
-}
-function setDeviceAppsDiagnostic(error51, diagnostic) {
-  diagnostics2.set(error51, diagnostic);
-}
-function getDeviceAppsDiagnostic(error51) {
-  if (error51 === null || typeof error51 !== "object") return;
-  return diagnostics2.get(error51);
-}
-function deviceAppsDiagnosticTags(error51) {
-  const diagnostic = getDeviceAppsDiagnostic(error51);
-  const commandTags = discoveryCommandTags(error51);
-  if (diagnostic === void 0) return commandTags;
-  return {
-    ...commandTags,
-    discovery_stage: diagnostic.stage,
-    discovery_failure: diagnostic.failure,
-    device_platform: diagnostic.platform,
-    device_kind: diagnostic.kind
-  };
-}
-function annotateDeviceAppsError(error51, stage2, platform6, kind4) {
-  const previous = getDeviceAppsDiagnostic(error51);
-  if (previous) return error51;
-  let annotated;
-  if (error51 !== null && typeof error51 === "object") annotated = error51;
-  else {
-    const message3 = errorMessage(error51);
-    annotated = new Error(message3);
-  }
-  const diagnostic = deviceAppsDiagnostic(error51, stage2, platform6, kind4);
-  setDeviceAppsDiagnostic(annotated, diagnostic);
-  return annotated;
-}
-async function withDeviceAppsDiagnostic(operation, stage2, platform6, kind4) {
-  try {
-    return await operation();
-  } catch (error51) {
-    const annotated = annotateDeviceAppsError(error51, stage2, platform6, kind4);
-    throw annotated;
-  }
-}
-
-// packages/shared/src/android-startup-diagnostics.ts
-var startupStages = [
-  "locate-server",
-  "hash-server",
-  "cache-probe",
-  "push-server",
-  "publish-cache",
-  "copy-server",
-  "forward-socket",
-  "launch-server",
-  "socket-ready",
-  "socket-poll",
-  "connect-video",
-  "connect-control",
-  "video-preamble",
-  "cleanup",
-  "cleanup-forward",
-  "cleanup-jars"
-];
-var startupOutcomes = ["ok", "nonzero", "timeout", "aborted", "offline", "unauthorized", "missing", "closed", "spawn-error", "error"];
-var stageSchema = external_exports.enum(startupStages);
-var outcomeSchema = external_exports.enum(startupOutcomes);
-var measurement = external_exports.number().finite().min(0).max(6e7);
-var count = external_exports.number().int().min(0).max(1e4);
-var stageSummary = external_exports.object({
-  stage: stageSchema,
-  samples: count,
-  totalMs: measurement,
-  maxMs: measurement,
-  timedSamples: count,
-  spawnedSamples: count,
-  queueMs: measurement,
-  executionMs: measurement,
-  outcomes: external_exports.partialRecord(outcomeSchema, count)
-}).strict().refine((value) => {
-  const outcomes = Object.values(value.outcomes);
-  let samples = 0;
-  for (const count3 of outcomes) samples += count3 ?? 0;
-  return samples === value.samples && value.timedSamples <= value.samples && value.spawnedSamples <= value.timedSamples && value.maxMs <= value.totalMs;
-});
-var androidStartupMessageSchema = external_exports.discriminatedUnion("type", [
-  external_exports.object({ type: external_exports.literal("mobile-dev/android-startup"), stage: stageSchema }).strict(),
-  external_exports.object({ type: external_exports.literal("mobile-dev/android-startup-failure"), stage: stageSchema, outcome: outcomeSchema }).strict(),
-  external_exports.object({
-    type: external_exports.literal("mobile-dev/android-startup-complete"),
-    outcome: external_exports.enum(["ready", "failed"]),
-    failedStage: stageSchema.optional(),
-    failure: outcomeSchema.optional(),
-    stages: external_exports.array(stageSummary).max(startupStages.length).refine((values) => {
-      const names = values.map((value) => value.stage);
-      const stages2 = new Set(names);
-      return stages2.size === values.length;
-    })
-  }).strict()
-]);
-var startupErrors = /* @__PURE__ */ new WeakMap();
-function setAndroidStartupDiagnostic(error51, startup, context2) {
-  if (error51 instanceof Error) startupErrors.set(error51, { startup, context: context2 });
-}
-function androidStartupDiagnosticTags(error51) {
-  if (error51 instanceof Error === false) return {};
-  const diagnostic = startupErrors.get(error51);
-  if (diagnostic === void 0) return {};
-  const { startup, context: context2 } = diagnostic;
-  return {
-    android_startup_stage: startup.stage,
-    android_startup_outcome: startup.outcome,
-    android_device_state_before: context2.stateBefore,
-    device_platform: "android",
-    device_kind: context2.deviceKind,
-    android_transport: context2.transport,
-    android_cleanup_overlap: context2.stoppingBackends > 0 ? "yes" : "no"
-  };
-}
-function androidDeviceState(output, serial) {
-  const lines = output.split(/\r?\n/);
-  for (const line of lines) {
-    const trimmed = line.trim();
-    const columns = trimmed.split(/\s+/);
-    if (columns[0] !== serial) continue;
-    if (columns[1] === "device") return "online";
-    if (columns[1] === "offline" || columns[1] === "unauthorized") return columns[1];
-    return "unknown";
-  }
-  return "missing";
-}
-
-// packages/core/src/telemetry.ts
-function recordBrowserPanelSessions(active) {
-  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
-  public_api_exports.gauge("browser_panel.sessions", active, { attributes: { component: "server" } });
-}
-function recordBrowserPanelContext(outcome, bytes) {
-  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
-  const attributes = { component: "server", outcome };
-  public_api_exports.count("browser_panel.context_update", 1, { attributes });
-  if (bytes !== void 0) public_api_exports.distribution("browser_panel.context_bytes", bytes, { attributes: { component: "server" }, unit: "byte" });
-}
-function recordPanelRuntime(outcome, duration4, bytes, reason) {
-  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
-  const attributes = { component: "server", outcome, ...reason ? { reason } : {} };
-  public_api_exports.distribution("panel_runtime.ready", duration4, { attributes, unit: "millisecond" });
-  if (bytes !== void 0) public_api_exports.distribution("panel_runtime.download_bytes", bytes, { attributes: { component: "server" }, unit: "byte" });
-}
-function recordAppStorageOperation(operation, platform6, outcome, duration4) {
-  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
-  const attributes = { component: "server", surface: "storage", operation, device_platform: platform6, outcome };
-  public_api_exports.count("app_storage.operation.samples", 1, { attributes });
-  public_api_exports.gauge("app_storage.operation.duration", duration4, { unit: "millisecond", attributes });
-}
-function recordTraceSiftOperation(operation, outcome, duration4) {
-  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
-  const attributes = { component: "server", surface: "tracesift", operation, outcome };
-  public_api_exports.count("tracesift.operation.samples", 1, { attributes });
-  public_api_exports.gauge("tracesift.operation.duration", duration4, { unit: "millisecond", attributes });
-}
-function recordTraceSiftPayload(kind4, bytes) {
-  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
-  const attributes = { component: "server", surface: "tracesift", kind: kind4 };
-  public_api_exports.gauge("tracesift.explore.payload_bytes", bytes, { unit: "byte", attributes });
-}
-function recordAnalyticsFlush(outcome) {
-  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
-  public_api_exports.count("analytics.flush", 1, { attributes: { component: "server", outcome } });
-}
-function recordAccessibilityBridgeRestart(outcome) {
-  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
-  const attributes = { component: "server", device_platform: "ios", device_kind: "simulator", outcome };
-  public_api_exports.count("ios.accessibility_bridge.restarts", 1, { attributes });
-}
-function recordAndroidEmulatorReconnect(trigger) {
-  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
-  const attributes = { component: "server", surface: "simulator", device_platform: "android", device_kind: "emulator", trigger };
-  public_api_exports.count("android.emulator.adb_reconnects", 1, { attributes });
-}
-function recordAndroidBootWait(duration4, outcome) {
-  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
-  const attributes = { component: "server", surface: "simulator", device_platform: "android", outcome };
-  public_api_exports.count("android.backend.boot_wait.samples", 1, { attributes });
-  public_api_exports.gauge("android.backend.boot_wait.duration", duration4, { unit: "millisecond", attributes });
-}
-function recordAndroidBackendStartup(duration4, outcome) {
-  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
-  const attributes = { component: "server", surface: "simulator", device_platform: "android", outcome };
-  public_api_exports.count("android.backend.startup.samples", 1, { attributes });
-  public_api_exports.gauge("android.backend.startup.duration", duration4, { unit: "millisecond", attributes });
-}
-function androidStartupAttributes(context2) {
-  return {
-    component: "server",
-    surface: "simulator",
-    device_platform: "android",
-    device_kind: context2.deviceKind,
-    android_transport: context2.transport,
-    android_device_state_before: context2.stateBefore
-  };
-}
-function recordAndroidStartupStages(summary, context2) {
-  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
-  const product = androidStartupAttributes(context2);
-  for (const stage2 of summary.stages) {
-    if (stage2.samples === 0) continue;
-    const attributes = { ...product, stage: stage2.stage, outcome: summary.outcome };
-    const mean = stage2.totalMs / stage2.samples;
-    public_api_exports.count("android.backend.startup.stage.samples", stage2.samples, { attributes });
-    public_api_exports.gauge("android.backend.startup.stage.mean", mean, { unit: "millisecond", attributes });
-    public_api_exports.gauge("android.backend.startup.stage.max", stage2.maxMs, { unit: "millisecond", attributes });
-    for (const [commandOutcome, samples] of Object.entries(stage2.outcomes)) {
-      if (samples === void 0 || samples === 0) continue;
-      const outcomeAttributes = { ...attributes, command_outcome: commandOutcome };
-      public_api_exports.count("android.backend.startup.stage.outcomes", samples, { attributes: outcomeAttributes });
-    }
-    if (stage2.timedSamples > 0) {
-      public_api_exports.count("android.backend.startup.execution.spawned", stage2.spawnedSamples, { attributes });
-      const queueMean = stage2.queueMs / stage2.timedSamples;
-      const executionMean = stage2.executionMs / stage2.timedSamples;
-      public_api_exports.gauge("android.backend.startup.queue.mean", queueMean, { unit: "millisecond", attributes });
-      public_api_exports.gauge("android.backend.startup.execution.mean", executionMean, { unit: "millisecond", attributes });
-    }
-  }
-}
-function recordAndroidStartupContext(context2) {
-  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
-  const attributes = androidStartupAttributes(context2);
-  public_api_exports.gauge("android.backend.startup.active_backends", context2.activeBackends, { attributes });
-  public_api_exports.gauge("android.backend.startup.stopping_backends", context2.stoppingBackends, { attributes });
-  public_api_exports.gauge("android.backend.startup.in_flight", context2.startingBackends, { attributes });
-}
-function recordAndroidStartupDeviceState(state2, duration4, context2, failure3) {
-  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
-  const product = androidStartupAttributes(context2);
-  const attributes = { ...product, android_device_state_after: state2, stage: failure3.stage, command_outcome: failure3.outcome };
-  public_api_exports.count("android.backend.startup.device_state.samples", 1, { attributes });
-  public_api_exports.gauge("android.backend.startup.device_state.duration", duration4, { unit: "millisecond", attributes });
-}
-function recordAndroidBackendStop(duration4, context2) {
-  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
-  const attributes = androidStartupAttributes(context2);
-  public_api_exports.gauge("android.backend.process_shutdown.duration", duration4, { unit: "millisecond", attributes });
-}
-var IOSLogProcessingTelemetry = class {
-  window = new MeasurementWindow();
-  attributes;
-  timer;
-  closed = false;
-  constructor(kind4) {
-    this.attributes = { surface: "logs", device_platform: "ios", device_kind: kind4 };
-    if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
-    this.timer = setInterval(() => this.flush(), TELEMETRY_INTERVAL_MS);
-    this.timer.unref();
-  }
-  record(duration4) {
-    if (this.closed || process.env.MOBILE_DEV_TELEMETRY === "off") return;
-    this.window.record(duration4);
-  }
-  flush() {
-    const summary = this.window.take();
-    if (summary === void 0 || process.env.MOBILE_DEV_TELEMETRY === "off") return;
-    const attributes = this.attributes;
-    public_api_exports.count("logs.ios.parse.samples", summary.count, { attributes });
-    public_api_exports.gauge("logs.ios.parse.mean", summary.mean, { unit: "millisecond", attributes });
-    public_api_exports.gauge("logs.ios.parse.p95", summary.p95, { unit: "millisecond", attributes });
-    public_api_exports.gauge("logs.ios.parse.max", summary.max, { unit: "millisecond", attributes });
-  }
-  close() {
-    if (this.closed) return;
-    this.closed = true;
-    clearInterval(this.timer);
-    this.flush();
-  }
-};
-function captureServerError(error51, operation, options) {
-  const outcome = options?.signal?.aborted ? "cancelled" : expectedOutcome(error51);
-  const diagnosticTags = { ...deviceAppsDiagnosticTags(error51), ...options?.tags };
-  const definitionTags = definitionDiagnosticTags(error51);
-  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
-  public_api_exports.count("server.error.outcome", 1, { attributes: { operation, outcome: outcome ?? "unexpected", ...diagnosticTags } });
-  if (outcome !== void 0) return;
-  if (options?.report === false || isRepeatedFailure(error51)) {
-    public_api_exports.count("server.error.repeated", 1, { attributes: { operation, ...diagnosticTags } });
-    return;
-  }
-  const androidTags = androidStartupDiagnosticTags(error51);
-  const installTags = installIntegrityTags(error51);
-  const command3 = getDiscoveryCommandDiagnostic(error51);
-  const contexts = command3 ? { device_apps_command: {
-    elapsed_ms: command3.elapsed_ms,
-    deadline_ms: command3.deadline_ms,
-    exit_status: command3.exit_status
-  } } : void 0;
-  captureException(options?.reportAs ?? error51, { tags: { ...diagnosticTags, ...definitionTags, ...androidTags, ...installTags, operation }, contexts });
-}
-var requestReporting = new AsyncLocalStorage();
-function registerRequestSessionResponse(release, close2) {
-  const reporting = requestReporting.getStore();
-  if (reporting) reporting.sessionResponse = { release, close: close2 };
-}
-function recordResourceFailure(error51, signal) {
-  let normalized2;
-  if (signal.aborted) normalized2 = new ExpectedOperationError("cancelled", "Resource read cancelled.");
-  else if (error51 instanceof Error) normalized2 = error51;
-  else {
-    const message3 = String(error51);
-    normalized2 = new Error(message3);
-  }
-  const reporting = requestReporting.getStore();
-  if (reporting) reporting.accounted = true;
-  if (process.env.MOBILE_DEV_TELEMETRY !== "off") {
-    const outcome = expectedOutcome(normalized2) ?? "unexpected";
-    public_api_exports.count("server.error.outcome", 1, { attributes: { operation: "resources.read", outcome } });
-  }
-  return normalized2;
-}
-function instrumentMcpServer(server) {
-  const register = server.server.setRequestHandler.bind(server.server);
-  server.server.setRequestHandler = (schema2, handler) => {
-    register(schema2, async (request, extra) => {
-      const reporting = requestReporting.getStore();
-      try {
-        return await handler(request, extra);
-      } catch (error51) {
-        const accounted = reporting?.accounted === true;
-        if (reporting) {
-          reporting.accounted = true;
-        }
-        if (accounted === false && extra.signal.aborted === false) captureServerError(error51, "mcp.request");
-        throw error51;
-      }
-    });
-  };
-  wrapMcpServerWithSentry(server, { recordInputs: false, recordOutputs: false });
-  const registerResource = server.registerResource.bind(server);
-  function resource(name, uri2, metadata4, handler) {
-    if (typeof uri2 === "string") {
-      const read9 = handler;
-      const wrapped2 = async (url2, extra) => {
-        try {
-          return await read9(url2, extra);
-        } catch (error51) {
-          throw recordResourceFailure(error51, extra.signal);
-        }
-      };
-      return registerResource(name, uri2, metadata4, wrapped2);
-    }
-    const read8 = handler;
-    const wrapped = async (url2, variables, extra) => {
-      try {
-        return await read8(url2, variables, extra);
-      } catch (error51) {
-        throw recordResourceFailure(error51, extra.signal);
-      }
-    };
-    return registerResource(name, uri2, metadata4, wrapped);
-  }
-  server.registerResource = resource;
-}
-var resourceKinds = {
-  "logs:": "logs",
-  "cpu:": "cpu",
-  "display-fps:": "display_fps",
-  "mobile-frame:": "simulator_video",
-  "android-stream:": "android_video",
-  "ios-video:": "ios_video",
-  "ui:": "ui"
-};
-var allowedContext = {
-  surface: ["logs", "performance", "storage", "simulator", "recording", "comparison", "tracesift"],
-  view: ["panel", "workspace", "recording", "comparison", "tracesift"],
-  layout: ["ios", "android", "both", "none"],
-  device_platform: ["ios", "android", "mixed"],
-  device_kind: ["physical", "simulator", "emulator", "none"],
-  host: TELEMETRY_HOSTS
-};
-function serverTelemetryHost(clientName) {
-  return process.env.MOBILE_DEV_HOST === "mac" ? "mac" : telemetryHost(clientName);
-}
-function setServerTelemetryHost(clientName) {
-  const host = serverTelemetryHost(clientName);
-  setTag("host", host);
-  setAttribute("host", host);
-}
-function installTracePropagation(transport2) {
-  const send = transport2.send.bind(transport2);
-  transport2.send = async (message3, options) => {
-    const reporting = requestReporting.getStore();
-    const session = reporting?.sessionResponse;
-    const response3 = "result" in message3 || "error" in message3;
-    if (response3 && session) {
-      reporting.sessionResponse = void 0;
-      session.release();
-      try {
-        await send(message3, options);
-      } catch (error51) {
-        await session.close();
-        throw error51;
-      }
-      return;
-    }
-    await send(message3, options);
-  };
-  const start = transport2.start.bind(transport2);
-  transport2.start = async () => {
-    const receive = transport2.onmessage;
-    transport2.onmessage = (message3, extra) => {
-      if ("method" in message3) {
-        const meta4 = message3.params?._meta ?? {};
-        const sentryTrace = typeof meta4["sentry-trace"] === "string" ? meta4["sentry-trace"] : void 0;
-        const baggage = typeof meta4.baggage === "string" ? meta4.baggage : void 0;
-        continueTrace({ sentryTrace, baggage }, () => {
-          withIsolationScope((scope) => {
-            const reporting = { accounted: false };
-            scope.addEventProcessor((event) => {
-              const mechanisms = event.exception?.values ?? [];
-              const automatic = mechanisms.find((value) => value.mechanism?.type === "auto.ai.mcp_server");
-              const errorType = automatic?.mechanism?.data?.error_type;
-              if (errorType === "protocol" && reporting.accounted) return null;
-              return event;
-            });
-            const context2 = meta4[TELEMETRY_META_KEY];
-            const attributes = {};
-            if (context2 !== null && typeof context2 === "object") {
-              for (const [key, value] of Object.entries(context2)) {
-                if (typeof value === "string" && allowedContext[key]?.includes(value)) attributes[key] = value;
-              }
-            }
-            scope.setAttributes(attributes);
-            scope.setTags(attributes);
-            if (message3.method === "resources/read") {
-              scope.setTag("operation", "resources.read");
-              const uri2 = message3.params?.uri;
-              if (typeof uri2 === "string") {
-                const prefix3 = uri2.split(":", 1)[0];
-                const kind4 = resourceKinds[`${prefix3}:`] ?? "unknown";
-                scope.setTag("resource_kind", kind4);
-              }
-            }
-            requestReporting.run(reporting, () => receive?.(message3, extra));
-          });
-        });
-        return;
-      }
-      receive?.(message3, extra);
-    };
-    await start();
-  };
-}
-async function closeServerTelemetry() {
-  try {
-    await closeNativeTelemetry();
-    await close(2e3);
-  } finally {
-    await closeHttpRuntime();
-  }
-}
-
 // packages/core/src/analytics.ts
 import { randomUUID } from "node:crypto";
 var BATCH_SIZE = 50;
@@ -22343,13 +17766,15 @@ function isCallTool(schema2) {
 function optedOut() {
   return process.env.MOBILE_DEV_TELEMETRY === "off" || process.env.MOBILE_DEV_ANALYTICS === "off" || process.env.DO_NOT_TRACK === "1";
 }
-async function deliver(send, batch) {
+async function deliver(send, url2, batch) {
   try {
-    const response3 = await send(MIXPANEL_TRACK_URL, {
+    const body = JSON.stringify(batch);
+    const signal = AbortSignal.timeout(5e3);
+    const response3 = await send(url2, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify(batch),
-      signal: AbortSignal.timeout(5e3)
+      body,
+      signal
     });
     const reply2 = await response3.json();
     return response3.ok && reply2.status === 1 ? "success" : "failed";
@@ -22363,9 +17788,21 @@ function instrumentProductAnalytics(server, options = {}) {
   const distinctId = userId;
   const queue = [];
   let host = "other";
+  let pendingProfile;
   let sending;
+  let closed = false;
   async function drain() {
-    while (queue.length > 0) recordAnalyticsFlush(await deliver(send, queue.splice(0, BATCH_SIZE)));
+    const profile = pendingProfile;
+    if (profile !== void 0) {
+      const outcome = await deliver(send, MIXPANEL_ENGAGE_URL, [profile]);
+      recordAnalyticsFlush(outcome, "engage");
+      if (outcome === "success" && pendingProfile === profile) pendingProfile = void 0;
+    }
+    while (queue.length > 0) {
+      const batch = queue.splice(0, BATCH_SIZE);
+      const outcome = await deliver(send, MIXPANEL_TRACK_URL, batch);
+      recordAnalyticsFlush(outcome, "track");
+    }
   }
   function flush() {
     sending ??= drain().finally(() => {
@@ -22374,7 +17811,7 @@ function instrumentProductAnalytics(server, options = {}) {
     return sending;
   }
   function track(event, properties2 = {}) {
-    if (queue.length >= MAX_QUEUED) return;
+    if (closed || queue.length >= MAX_QUEUED) return;
     queue.push({ event, properties: {
       ...properties2,
       token,
@@ -22410,12 +17847,22 @@ function instrumentProductAnalytics(server, options = {}) {
   timer.unref();
   return {
     sessionStarted(clientName) {
+      if (closed) return;
       host = serverTelemetryHost(clientName);
+      pendingProfile = {
+        $token: token,
+        $distinct_id: distinctId,
+        $ip: "0",
+        $set: { host, plugin_version: PLUGIN_VERSION, os: process.platform }
+      };
       track("Session Started");
     },
     async close() {
+      if (closed) return sending;
+      closed = true;
       clearInterval(timer);
       await flush();
+      pendingProfile = void 0;
     }
   };
 }
@@ -23038,7 +18485,7 @@ __export(core_exports3, {
   toJSONSchema: () => toJSONSchema2,
   treeifyError: () => treeifyError,
   util: () => util_exports2,
-  version: () => version2
+  version: () => version
 });
 
 // node_modules/@openai/mcp-extensions/node_modules/zod/v4/core/core.js
@@ -24056,7 +19503,7 @@ __export(regexes_exports2, {
   date: () => date,
   datetime: () => datetime,
   domain: () => domain,
-  duration: () => duration2,
+  duration: () => duration,
   e164: () => e164,
   email: () => email,
   emoji: () => emoji,
@@ -24110,13 +19557,13 @@ var ulid = /^[0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{26}$/;
 var xid = /^[0-9a-vA-V]{20}$/;
 var ksuid = /^[A-Za-z0-9]{27}$/;
 var nanoid = /^[a-zA-Z0-9_-]{21}$/;
-var duration2 = /^P(?:(\d+W)|(?!.*W)(?=\d|T\d)(\d+Y)?(\d+M)?(\d+D)?(T(?=\d)(\d+H)?(\d+M)?(\d+([.,]\d+)?S)?)?)$/;
+var duration = /^P(?:(\d+W)|(?!.*W)(?=\d|T\d)(\d+Y)?(\d+M)?(\d+D)?(T(?=\d)(\d+H)?(\d+M)?(\d+([.,]\d+)?S)?)?)$/;
 var extendedDuration = /^[-+]?P(?!$)(?:(?:[-+]?\d+Y)|(?:[-+]?\d+[.,]\d+Y$))?(?:(?:[-+]?\d+M)|(?:[-+]?\d+[.,]\d+M$))?(?:(?:[-+]?\d+W)|(?:[-+]?\d+[.,]\d+W$))?(?:(?:[-+]?\d+D)|(?:[-+]?\d+[.,]\d+D$))?(?:T(?=[\d+-])(?:(?:[-+]?\d+H)|(?:[-+]?\d+[.,]\d+H$))?(?:(?:[-+]?\d+M)|(?:[-+]?\d+[.,]\d+M$))?(?:[-+]?\d+(?:[.,]\d+)?S)?)??$/;
 var guid = /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$/;
-var uuid = (version4) => {
-  if (!version4)
+var uuid = (version3) => {
+  if (!version3)
     return /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/;
-  return new RegExp(`^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-${version4}[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$`);
+  return new RegExp(`^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-${version3}[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$`);
 };
 var uuid4 = /* @__PURE__ */ uuid(4);
 var uuid6 = /* @__PURE__ */ uuid(6);
@@ -24418,8 +19865,8 @@ var $ZodCheckMaxSize = /* @__PURE__ */ $constructor2("$ZodCheckMaxSize", (inst, 
   });
   inst._zod.check = (payload) => {
     const input = payload.value;
-    const size2 = input.size;
-    if (size2 <= def.maximum)
+    const size = input.size;
+    if (size <= def.maximum)
       return;
     payload.issues.push({
       origin: getSizableOrigin(input),
@@ -24446,8 +19893,8 @@ var $ZodCheckMinSize = /* @__PURE__ */ $constructor2("$ZodCheckMinSize", (inst, 
   });
   inst._zod.check = (payload) => {
     const input = payload.value;
-    const size2 = input.size;
-    if (size2 >= def.minimum)
+    const size = input.size;
+    if (size >= def.minimum)
       return;
     payload.issues.push({
       origin: getSizableOrigin(input),
@@ -24475,10 +19922,10 @@ var $ZodCheckSizeEquals = /* @__PURE__ */ $constructor2("$ZodCheckSizeEquals", (
   });
   inst._zod.check = (payload) => {
     const input = payload.value;
-    const size2 = input.size;
-    if (size2 === def.size)
+    const size = input.size;
+    if (size === def.size)
       return;
-    const tooBig = size2 > def.size;
+    const tooBig = size > def.size;
     payload.issues.push({
       origin: getSizableOrigin(input),
       ...tooBig ? { code: "too_big", maximum: def.size } : { code: "too_small", minimum: def.size },
@@ -24785,7 +20232,7 @@ var Doc = class {
 };
 
 // node_modules/@openai/mcp-extensions/node_modules/zod/v4/core/versions.js
-var version2 = {
+var version = {
   major: 4,
   minor: 4,
   patch: 3
@@ -24797,7 +20244,7 @@ var $ZodType2 = /* @__PURE__ */ $constructor2("$ZodType", (inst, def) => {
   inst ?? (inst = {});
   inst._zod.def = def;
   inst._zod.bag = inst._zod.bag || {};
-  inst._zod.version = version2;
+  inst._zod.version = version;
   const checks = [...inst._zod.def.checks ?? []];
   if (inst._zod.traits.has("$ZodCheck")) {
     checks.unshift(inst);
@@ -25060,7 +20507,7 @@ var $ZodISOTime = /* @__PURE__ */ $constructor2("$ZodISOTime", (inst, def) => {
   $ZodStringFormat2.init(inst, def);
 });
 var $ZodISODuration = /* @__PURE__ */ $constructor2("$ZodISODuration", (inst, def) => {
-  def.pattern ?? (def.pattern = duration2);
+  def.pattern ?? (def.pattern = duration);
   $ZodStringFormat2.init(inst, def);
 });
 var $ZodIPv42 = /* @__PURE__ */ $constructor2("$ZodIPv4", (inst, def) => {
@@ -25103,11 +20550,11 @@ var $ZodCIDRv62 = /* @__PURE__ */ $constructor2("$ZodCIDRv6", (inst, def) => {
     try {
       if (parts.length !== 2)
         throw new Error();
-      const [address2, prefix3] = parts;
-      if (!prefix3)
+      const [address2, prefix2] = parts;
+      if (!prefix2)
         throw new Error();
-      const prefixNum = Number(prefix3);
-      if (`${prefixNum}` !== prefix3)
+      const prefixNum = Number(prefix2);
+      if (`${prefixNum}` !== prefix2)
         throw new Error();
       if (prefixNum < 0 || prefixNum > 128)
         throw new Error();
@@ -27155,8 +22602,8 @@ function az_default() {
 }
 
 // node_modules/@openai/mcp-extensions/node_modules/zod/v4/locales/be.js
-function getBelarusianPlural(count3, one, few, many) {
-  const absCount = Math.abs(count3);
+function getBelarusianPlural(count2, one, few, many) {
+  const absCount = Math.abs(count2);
   const lastDigit = absCount % 10;
   const lastTwoDigits = absCount % 100;
   if (lastTwoDigits >= 11 && lastTwoDigits <= 19) {
@@ -29234,8 +24681,8 @@ function hu_default() {
 }
 
 // node_modules/@openai/mcp-extensions/node_modules/zod/v4/locales/hy.js
-function getArmenianPlural(count3, one, many) {
-  return Math.abs(count3) === 1 ? one : many;
+function getArmenianPlural(count2, one, many) {
+  return Math.abs(count2) === 1 ? one : many;
 }
 function withDefiniteArticle(word) {
   if (!word)
@@ -31363,8 +26810,8 @@ function ro_default() {
 }
 
 // node_modules/@openai/mcp-extensions/node_modules/zod/v4/locales/ru.js
-function getRussianPlural(count3, one, few, many) {
-  const absCount = Math.abs(count3);
+function getRussianPlural(count2, one, few, many) {
+  const absCount = Math.abs(count2);
   const lastDigit = absCount % 10;
   const lastTwoDigits = absCount % 100;
   if (lastTwoDigits >= 11 && lastTwoDigits <= 19) {
@@ -33448,11 +28895,11 @@ function _minSize(minimum, params) {
   });
 }
 // @__NO_SIDE_EFFECTS__
-function _size(size2, params) {
+function _size(size, params) {
   return new $ZodCheckSizeEquals({
     check: "size_equals",
     ...normalizeParams2(params),
-    size: size2
+    size
   });
 }
 // @__NO_SIDE_EFFECTS__
@@ -33515,12 +28962,12 @@ function _includes(includes, params) {
   });
 }
 // @__NO_SIDE_EFFECTS__
-function _startsWith(prefix3, params) {
+function _startsWith(prefix2, params) {
   return new $ZodCheckStartsWith({
     check: "string_format",
     format: "starts_with",
     ...normalizeParams2(params),
-    prefix: prefix3
+    prefix: prefix2
   });
 }
 // @__NO_SIDE_EFFECTS__
@@ -35123,7 +30570,7 @@ __export(iso_exports3, {
   ZodISOTime: () => ZodISOTime,
   date: () => date2,
   datetime: () => datetime2,
-  duration: () => duration3,
+  duration: () => duration2,
   time: () => time2
 });
 var ZodISODateTime = /* @__PURE__ */ $constructor2("ZodISODateTime", (inst, def) => {
@@ -35151,7 +30598,7 @@ var ZodISODuration = /* @__PURE__ */ $constructor2("ZodISODuration", (inst, def)
   $ZodISODuration.init(inst, def);
   ZodStringFormat.init(inst, def);
 });
-function duration3(params) {
+function duration2(params) {
   return _isoDuration(ZodISODuration, params);
 }
 
@@ -35461,7 +30908,7 @@ var ZodString2 = /* @__PURE__ */ $constructor2("ZodString", (inst, def) => {
   inst.datetime = (params) => inst.check(datetime2(params));
   inst.date = (params) => inst.check(date2(params));
   inst.time = (params) => inst.check(time2(params));
-  inst.duration = (params) => inst.check(duration3(params));
+  inst.duration = (params) => inst.check(duration2(params));
 });
 function string3(params) {
   return _string2(ZodString2, params);
@@ -36168,8 +31615,8 @@ var ZodFile = /* @__PURE__ */ $constructor2("ZodFile", (inst, def) => {
   $ZodFile2.init(inst, def);
   ZodType2.init(inst, def);
   inst._zod.processJSONSchema = (ctx, json3, params) => fileProcessor(inst, ctx, json3, params);
-  inst.min = (size2, params) => inst.check(_minSize(size2, params));
-  inst.max = (size2, params) => inst.check(_maxSize(size2, params));
+  inst.min = (size, params) => inst.check(_minSize(size, params));
+  inst.max = (size, params) => inst.check(_maxSize(size, params));
   inst.mime = (types, params) => inst.check(_mime(Array.isArray(types) ? types : [types], params));
 });
 function file(params) {
@@ -36992,10 +32439,10 @@ function fromJSONSchema(schema2, params) {
   } catch {
     throw new Error("fromJSONSchema input is not valid JSON (possibly cyclic); use $defs/$ref for recursive schemas");
   }
-  const version4 = detectVersion(normalized2, params?.defaultTarget);
+  const version3 = detectVersion(normalized2, params?.defaultTarget);
   const defs = normalized2.$defs || normalized2.definitions || {};
   const ctx = {
-    version: version4,
+    version: version3,
     defs,
     refs: /* @__PURE__ */ new Map(),
     processing: /* @__PURE__ */ new Set(),
@@ -37126,32 +32573,32 @@ var ignoredKeyword = {
   minProperties: true
 };
 var initialBaseURI = typeof self !== "undefined" && self.location && self.location.origin !== "null" ? new URL(self.location.origin + self.location.pathname + location.search) : new URL("https://github.com/cfworker");
-function dereference(schema2, lookup = /* @__PURE__ */ Object.create(null), baseURI = initialBaseURI, basePointer = "") {
+function dereference(schema2, lookup2 = /* @__PURE__ */ Object.create(null), baseURI = initialBaseURI, basePointer = "") {
   if (schema2 && typeof schema2 === "object" && !Array.isArray(schema2)) {
     const id2 = schema2.$id || schema2.id;
     if (id2) {
       const url2 = new URL(id2, baseURI.href);
       if (url2.hash.length > 1) {
-        lookup[url2.href] = schema2;
+        lookup2[url2.href] = schema2;
       } else {
         url2.hash = "";
         if (basePointer === "") {
           baseURI = url2;
         } else {
-          dereference(schema2, lookup, baseURI);
+          dereference(schema2, lookup2, baseURI);
         }
       }
     }
   } else if (schema2 !== true && schema2 !== false) {
-    return lookup;
+    return lookup2;
   }
   const schemaURI = baseURI.href + (basePointer ? "#" + basePointer : "");
-  if (lookup[schemaURI] !== void 0) {
+  if (lookup2[schemaURI] !== void 0) {
     throw new Error(`Duplicate schema URI "${schemaURI}".`);
   }
-  lookup[schemaURI] = schema2;
+  lookup2[schemaURI] = schema2;
   if (schema2 === true || schema2 === false) {
-    return lookup;
+    return lookup2;
   }
   if (schema2.__absolute_uri__ === void 0) {
     Object.defineProperty(schema2, "__absolute_uri__", {
@@ -37177,7 +32624,7 @@ function dereference(schema2, lookup = /* @__PURE__ */ Object.create(null), base
   }
   if (schema2.$anchor) {
     const url2 = new URL("#" + schema2.$anchor, baseURI.href);
-    lookup[url2.href] = schema2;
+    lookup2[url2.href] = schema2;
   }
   for (let key in schema2) {
     if (ignoredKeyword[key]) {
@@ -37189,18 +32636,18 @@ function dereference(schema2, lookup = /* @__PURE__ */ Object.create(null), base
       if (schemaArrayKeyword[key]) {
         const length = subSchema.length;
         for (let i = 0; i < length; i++) {
-          dereference(subSchema[i], lookup, baseURI, `${keyBase}/${i}`);
+          dereference(subSchema[i], lookup2, baseURI, `${keyBase}/${i}`);
         }
       }
     } else if (schemaMapKeyword[key]) {
       for (let subKey in subSchema) {
-        dereference(subSchema[subKey], lookup, baseURI, `${keyBase}/${encodePointer(subKey)}`);
+        dereference(subSchema[subKey], lookup2, baseURI, `${keyBase}/${encodePointer(subKey)}`);
       }
     } else {
-      dereference(subSchema, lookup, baseURI, keyBase);
+      dereference(subSchema, lookup2, baseURI, keyBase);
     }
   }
-  return lookup;
+  return lookup2;
 }
 
 // node_modules/@cfworker/json-schema/dist/esm/format.js
@@ -37324,7 +32771,7 @@ function ucs2length(s) {
 }
 
 // node_modules/@cfworker/json-schema/dist/esm/validate.js
-function validate2(instance, schema2, draft = "2019-09", lookup = dereference(schema2), shortCircuit = true, recursiveAnchor = null, instanceLocation = "#", schemaLocation = "#", evaluated = /* @__PURE__ */ Object.create(null)) {
+function validate2(instance, schema2, draft = "2019-09", lookup2 = dereference(schema2), shortCircuit = true, recursiveAnchor = null, instanceLocation = "#", schemaLocation = "#", evaluated = /* @__PURE__ */ Object.create(null)) {
   if (schema2 === true) {
     return { valid: true, errors: [] };
   }
@@ -37367,9 +32814,9 @@ function validate2(instance, schema2, draft = "2019-09", lookup = dereference(sc
     recursiveAnchor = schema2;
   }
   if ($recursiveRef === "#") {
-    const refSchema = recursiveAnchor === null ? lookup[__absolute_recursive_ref__] : recursiveAnchor;
+    const refSchema = recursiveAnchor === null ? lookup2[__absolute_recursive_ref__] : recursiveAnchor;
     const keywordLocation = `${schemaLocation}/$recursiveRef`;
-    const result4 = validate2(instance, recursiveAnchor === null ? schema2 : recursiveAnchor, draft, lookup, shortCircuit, refSchema, instanceLocation, keywordLocation, evaluated);
+    const result4 = validate2(instance, recursiveAnchor === null ? schema2 : recursiveAnchor, draft, lookup2, shortCircuit, refSchema, instanceLocation, keywordLocation, evaluated);
     if (!result4.valid) {
       errors.push({
         instanceLocation,
@@ -37381,7 +32828,7 @@ function validate2(instance, schema2, draft = "2019-09", lookup = dereference(sc
   }
   if ($ref !== void 0) {
     const uri2 = __absolute_ref__ || $ref;
-    const refSchema = lookup[uri2];
+    const refSchema = lookup2[uri2];
     if (refSchema === void 0) {
       let message3 = `Unresolved $ref "${$ref}".`;
       if (__absolute_ref__ && __absolute_ref__ !== $ref) {
@@ -37389,11 +32836,11 @@ function validate2(instance, schema2, draft = "2019-09", lookup = dereference(sc
       }
       message3 += `
 Known schemas:
-- ${Object.keys(lookup).join("\n- ")}`;
+- ${Object.keys(lookup2).join("\n- ")}`;
       throw new Error(message3);
     }
     const keywordLocation = `${schemaLocation}/$ref`;
-    const result4 = validate2(instance, refSchema, draft, lookup, shortCircuit, recursiveAnchor, instanceLocation, keywordLocation, evaluated);
+    const result4 = validate2(instance, refSchema, draft, lookup2, shortCircuit, recursiveAnchor, instanceLocation, keywordLocation, evaluated);
     if (!result4.valid) {
       errors.push({
         instanceLocation,
@@ -37480,7 +32927,7 @@ Known schemas:
   }
   if ($not !== void 0) {
     const keywordLocation = `${schemaLocation}/not`;
-    const result4 = validate2(instance, $not, draft, lookup, shortCircuit, recursiveAnchor, instanceLocation, keywordLocation);
+    const result4 = validate2(instance, $not, draft, lookup2, shortCircuit, recursiveAnchor, instanceLocation, keywordLocation);
     if (result4.valid) {
       errors.push({
         instanceLocation,
@@ -37498,7 +32945,7 @@ Known schemas:
     for (let i = 0; i < $anyOf.length; i++) {
       const subSchema = $anyOf[i];
       const subEvaluated = Object.create(evaluated);
-      const result4 = validate2(instance, subSchema, draft, lookup, shortCircuit, $recursiveAnchor === true ? recursiveAnchor : null, instanceLocation, `${keywordLocation}/${i}`, subEvaluated);
+      const result4 = validate2(instance, subSchema, draft, lookup2, shortCircuit, $recursiveAnchor === true ? recursiveAnchor : null, instanceLocation, `${keywordLocation}/${i}`, subEvaluated);
       errors.push(...result4.errors);
       anyValid = anyValid || result4.valid;
       if (result4.valid) {
@@ -37523,7 +32970,7 @@ Known schemas:
     for (let i = 0; i < $allOf.length; i++) {
       const subSchema = $allOf[i];
       const subEvaluated = Object.create(evaluated);
-      const result4 = validate2(instance, subSchema, draft, lookup, shortCircuit, $recursiveAnchor === true ? recursiveAnchor : null, instanceLocation, `${keywordLocation}/${i}`, subEvaluated);
+      const result4 = validate2(instance, subSchema, draft, lookup2, shortCircuit, $recursiveAnchor === true ? recursiveAnchor : null, instanceLocation, `${keywordLocation}/${i}`, subEvaluated);
       errors.push(...result4.errors);
       allValid = allValid && result4.valid;
       if (result4.valid) {
@@ -37546,7 +32993,7 @@ Known schemas:
     const errorsLength = errors.length;
     const matches = $oneOf.filter((subSchema, i) => {
       const subEvaluated = Object.create(evaluated);
-      const result4 = validate2(instance, subSchema, draft, lookup, shortCircuit, $recursiveAnchor === true ? recursiveAnchor : null, instanceLocation, `${keywordLocation}/${i}`, subEvaluated);
+      const result4 = validate2(instance, subSchema, draft, lookup2, shortCircuit, $recursiveAnchor === true ? recursiveAnchor : null, instanceLocation, `${keywordLocation}/${i}`, subEvaluated);
       errors.push(...result4.errors);
       if (result4.valid) {
         subEvaluateds.push(subEvaluated);
@@ -37569,10 +33016,10 @@ Known schemas:
   }
   if ($if !== void 0) {
     const keywordLocation = `${schemaLocation}/if`;
-    const conditionResult = validate2(instance, $if, draft, lookup, shortCircuit, recursiveAnchor, instanceLocation, keywordLocation, evaluated).valid;
+    const conditionResult = validate2(instance, $if, draft, lookup2, shortCircuit, recursiveAnchor, instanceLocation, keywordLocation, evaluated).valid;
     if (conditionResult) {
       if ($then !== void 0) {
-        const thenResult = validate2(instance, $then, draft, lookup, shortCircuit, recursiveAnchor, instanceLocation, `${schemaLocation}/then`, evaluated);
+        const thenResult = validate2(instance, $then, draft, lookup2, shortCircuit, recursiveAnchor, instanceLocation, `${schemaLocation}/then`, evaluated);
         if (!thenResult.valid) {
           errors.push({
             instanceLocation,
@@ -37583,7 +33030,7 @@ Known schemas:
         }
       }
     } else if ($else !== void 0) {
-      const elseResult = validate2(instance, $else, draft, lookup, shortCircuit, recursiveAnchor, instanceLocation, `${schemaLocation}/else`, evaluated);
+      const elseResult = validate2(instance, $else, draft, lookup2, shortCircuit, recursiveAnchor, instanceLocation, `${schemaLocation}/else`, evaluated);
       if (!elseResult.valid) {
         errors.push({
           instanceLocation,
@@ -37628,7 +33075,7 @@ Known schemas:
       const keywordLocation = `${schemaLocation}/propertyNames`;
       for (const key in instance) {
         const subInstancePointer = `${instanceLocation}/${encodePointer(key)}`;
-        const result4 = validate2(key, $propertyNames, draft, lookup, shortCircuit, recursiveAnchor, subInstancePointer, keywordLocation);
+        const result4 = validate2(key, $propertyNames, draft, lookup2, shortCircuit, recursiveAnchor, subInstancePointer, keywordLocation);
         if (!result4.valid) {
           errors.push({
             instanceLocation,
@@ -37661,7 +33108,7 @@ Known schemas:
       for (const key in $dependentSchemas) {
         const keywordLocation = `${schemaLocation}/dependentSchemas`;
         if (key in instance) {
-          const result4 = validate2(instance, $dependentSchemas[key], draft, lookup, shortCircuit, recursiveAnchor, instanceLocation, `${keywordLocation}/${encodePointer(key)}`, evaluated);
+          const result4 = validate2(instance, $dependentSchemas[key], draft, lookup2, shortCircuit, recursiveAnchor, instanceLocation, `${keywordLocation}/${encodePointer(key)}`, evaluated);
           if (!result4.valid) {
             errors.push({
               instanceLocation,
@@ -37690,7 +33137,7 @@ Known schemas:
               }
             }
           } else {
-            const result4 = validate2(instance, propsOrSchema, draft, lookup, shortCircuit, recursiveAnchor, instanceLocation, `${keywordLocation}/${encodePointer(key)}`);
+            const result4 = validate2(instance, propsOrSchema, draft, lookup2, shortCircuit, recursiveAnchor, instanceLocation, `${keywordLocation}/${encodePointer(key)}`);
             if (!result4.valid) {
               errors.push({
                 instanceLocation,
@@ -37712,7 +33159,7 @@ Known schemas:
           continue;
         }
         const subInstancePointer = `${instanceLocation}/${encodePointer(key)}`;
-        const result4 = validate2(instance[key], $properties[key], draft, lookup, shortCircuit, recursiveAnchor, subInstancePointer, `${keywordLocation}/${encodePointer(key)}`);
+        const result4 = validate2(instance[key], $properties[key], draft, lookup2, shortCircuit, recursiveAnchor, subInstancePointer, `${keywordLocation}/${encodePointer(key)}`);
         if (result4.valid) {
           evaluated[key] = thisEvaluated[key] = true;
         } else {
@@ -37738,7 +33185,7 @@ Known schemas:
             continue;
           }
           const subInstancePointer = `${instanceLocation}/${encodePointer(key)}`;
-          const result4 = validate2(instance[key], subSchema, draft, lookup, shortCircuit, recursiveAnchor, subInstancePointer, `${keywordLocation}/${encodePointer(pattern)}`);
+          const result4 = validate2(instance[key], subSchema, draft, lookup2, shortCircuit, recursiveAnchor, subInstancePointer, `${keywordLocation}/${encodePointer(pattern)}`);
           if (result4.valid) {
             evaluated[key] = thisEvaluated[key] = true;
           } else {
@@ -37760,7 +33207,7 @@ Known schemas:
           continue;
         }
         const subInstancePointer = `${instanceLocation}/${encodePointer(key)}`;
-        const result4 = validate2(instance[key], $additionalProperties, draft, lookup, shortCircuit, recursiveAnchor, subInstancePointer, keywordLocation);
+        const result4 = validate2(instance[key], $additionalProperties, draft, lookup2, shortCircuit, recursiveAnchor, subInstancePointer, keywordLocation);
         if (result4.valid) {
           evaluated[key] = true;
         } else {
@@ -37778,7 +33225,7 @@ Known schemas:
       for (const key in instance) {
         if (!evaluated[key]) {
           const subInstancePointer = `${instanceLocation}/${encodePointer(key)}`;
-          const result4 = validate2(instance[key], $unevaluatedProperties, draft, lookup, shortCircuit, recursiveAnchor, subInstancePointer, keywordLocation);
+          const result4 = validate2(instance[key], $unevaluatedProperties, draft, lookup2, shortCircuit, recursiveAnchor, subInstancePointer, keywordLocation);
           if (result4.valid) {
             evaluated[key] = true;
           } else {
@@ -37816,7 +33263,7 @@ Known schemas:
       const keywordLocation = `${schemaLocation}/prefixItems`;
       const length2 = Math.min($prefixItems.length, length);
       for (; i < length2; i++) {
-        const result4 = validate2(instance[i], $prefixItems[i], draft, lookup, shortCircuit, recursiveAnchor, `${instanceLocation}/${i}`, `${keywordLocation}/${i}`);
+        const result4 = validate2(instance[i], $prefixItems[i], draft, lookup2, shortCircuit, recursiveAnchor, `${instanceLocation}/${i}`, `${keywordLocation}/${i}`);
         evaluated[i] = true;
         if (!result4.valid) {
           stop = shortCircuit;
@@ -37836,7 +33283,7 @@ Known schemas:
       if (Array.isArray($items)) {
         const length2 = Math.min($items.length, length);
         for (; i < length2; i++) {
-          const result4 = validate2(instance[i], $items[i], draft, lookup, shortCircuit, recursiveAnchor, `${instanceLocation}/${i}`, `${keywordLocation}/${i}`);
+          const result4 = validate2(instance[i], $items[i], draft, lookup2, shortCircuit, recursiveAnchor, `${instanceLocation}/${i}`, `${keywordLocation}/${i}`);
           evaluated[i] = true;
           if (!result4.valid) {
             stop = shortCircuit;
@@ -37852,7 +33299,7 @@ Known schemas:
         }
       } else {
         for (; i < length; i++) {
-          const result4 = validate2(instance[i], $items, draft, lookup, shortCircuit, recursiveAnchor, `${instanceLocation}/${i}`, keywordLocation);
+          const result4 = validate2(instance[i], $items, draft, lookup2, shortCircuit, recursiveAnchor, `${instanceLocation}/${i}`, keywordLocation);
           evaluated[i] = true;
           if (!result4.valid) {
             stop = shortCircuit;
@@ -37870,7 +33317,7 @@ Known schemas:
       if (!stop && $additionalItems !== void 0) {
         const keywordLocation2 = `${schemaLocation}/additionalItems`;
         for (; i < length; i++) {
-          const result4 = validate2(instance[i], $additionalItems, draft, lookup, shortCircuit, recursiveAnchor, `${instanceLocation}/${i}`, keywordLocation2);
+          const result4 = validate2(instance[i], $additionalItems, draft, lookup2, shortCircuit, recursiveAnchor, `${instanceLocation}/${i}`, keywordLocation2);
           evaluated[i] = true;
           if (!result4.valid) {
             stop = shortCircuit;
@@ -37904,7 +33351,7 @@ Known schemas:
         const errorsLength = errors.length;
         let contained = 0;
         for (let j2 = 0; j2 < length; j2++) {
-          const result4 = validate2(instance[j2], $contains, draft, lookup, shortCircuit, recursiveAnchor, `${instanceLocation}/${j2}`, keywordLocation);
+          const result4 = validate2(instance[j2], $contains, draft, lookup2, shortCircuit, recursiveAnchor, `${instanceLocation}/${j2}`, keywordLocation);
           if (result4.valid) {
             evaluated[j2] = true;
             contained++;
@@ -37945,7 +33392,7 @@ Known schemas:
         if (evaluated[i]) {
           continue;
         }
-        const result4 = validate2(instance[i], $unevaluatedItems, draft, lookup, shortCircuit, recursiveAnchor, `${instanceLocation}/${i}`, keywordLocation);
+        const result4 = validate2(instance[i], $unevaluatedItems, draft, lookup2, shortCircuit, recursiveAnchor, `${instanceLocation}/${i}`, keywordLocation);
         evaluated[i] = true;
         if (!result4.valid) {
           errors.push({
@@ -38542,17 +33989,17 @@ async function bootAndroidEmulator(options, launch = spawn) {
     stdio: "ignore",
     shell: false
   });
-  const failed = new Promise((resolve3) => {
-    child.once("error", (error51) => resolve3(new Error(`Cannot start Android emulator ${options.name}. ${error51.message}`)));
-    child.once("exit", (code, signal2) => resolve3(new Error(`Android emulator ${options.name} exited before booting. code=${code ?? "none"} signal=${signal2 ?? "none"}. Start this AVD in Android Studio to read its error.`)));
+  const failed = new Promise((resolve4) => {
+    child.once("error", (error51) => resolve4(new Error(`Cannot start Android emulator ${options.name}. ${error51.message}`)));
+    child.once("exit", (code, signal2) => resolve4(new Error(`Android emulator ${options.name} exited before booting. code=${code ?? "none"} signal=${signal2 ?? "none"}. Start this AVD in Android Studio to read its error.`)));
   });
-  const launched = new Promise((resolve3) => child.once("spawn", resolve3));
+  const launched = new Promise((resolve4) => child.once("spawn", resolve4));
   const controller = new AbortController();
   const signal = AbortSignal.any([options.signal, controller.signal]);
   const stoppedError = () => new Error(options.signal.aborted ? "The plugin server closed while the Android emulator was starting." : "The Android emulator did not finish booting within two minutes. Refresh its status.");
   let stop;
-  const stopped = new Promise((resolve3) => {
-    stop = () => resolve3(stoppedError());
+  const stopped = new Promise((resolve4) => {
+    stop = () => resolve4(stoppedError());
     signal.addEventListener("abort", stop, { once: true });
     if (signal.aborted) stop();
   });
@@ -38790,8 +34237,8 @@ import { promisify } from "node:util";
 // packages/shared/src/ios-devices.ts
 var text = external_exports.string();
 var identifier = external_exports.uuid();
-var platform2 = external_exports.literal("ios");
-var kind2 = external_exports.literal("physical");
+var platform = external_exports.literal("ios");
+var kind = external_exports.literal("physical");
 var transportType = text.optional();
 var physicalIosDeviceSchema = external_exports.object({
   udid: text,
@@ -38801,8 +34248,8 @@ var physicalIosDeviceSchema = external_exports.object({
   productType: text,
   state: text,
   runtime: text,
-  platform: platform2,
-  kind: kind2,
+  platform,
+  kind,
   transportType,
   pairingState: text
 });
@@ -38872,7 +34319,7 @@ async function listIosDevices(signal, run5 = execute) {
 }
 function registerIosDeviceTools(server, discover = listIosDevices) {
   const physicalDevices = external_exports.array(physicalIosDeviceSchema);
-  const failures2 = new FailureEpisodes();
+  const failures = new FailureEpisodes();
   server.registerTool("mobile_list_ios_devices", {
     title: "List physical iOS devices",
     description: "Discover physical iPhones and iPads through Xcode 27 devicectl. Returns USB or Wi-Fi transport, connection and pairing state, UDID, and CoreDevice ID. Remembered disconnected or unavailable devices retain their state; transport is omitted when not reported. This does not open a screen stream or change device state.",
@@ -38883,11 +34330,11 @@ function registerIosDeviceTools(server, discover = listIosDevices) {
     try {
       const physicalDevices2 = await discover();
       const text6 = JSON.stringify(physicalDevices2);
-      failures2.recover("physical_ios");
+      failures.recover("physical_ios");
       return { content: [{ type: "text", text: text6 }], structuredContent: { physicalDevices: physicalDevices2 } };
     } catch (error51) {
       const category = errorCategory(error51);
-      const report = failures2.shouldReport("physical_ios", category);
+      const report = failures.shouldReport("physical_ios", category);
       captureServerError(error51, "ios.devices.discovery", { report });
       const text6 = errorMessage(error51);
       return { isError: true, content: [{ type: "text", text: text6 }] };
@@ -38916,8 +34363,8 @@ async function physicalIosLogCommand(target2, signal, discover = listIosDevices,
     throw new Error("The bundled physical iOS log reader is missing. Rebuild and package the plugin.");
   }
   signal?.throwIfAborted();
-  const transport2 = device2.transportType === "localNetwork" ? "network" : "usb";
-  const args = ["--device", device2.udid, transport2];
+  const transport = device2.transportType === "localNetwork" ? "network" : "usb";
+  const args = ["--device", device2.udid, transport];
   if (target2.process) args.push(target2.process);
   return { command: command3, args };
 }
@@ -38944,12 +34391,12 @@ async function listAndroidLogDevices() {
 }
 function runLogProcess(command3, args, parse4, sink, signal, readyLine) {
   if (signal.aborted) return Promise.resolve();
-  return new Promise((resolve3, reject) => {
+  return new Promise((resolve4, reject) => {
     const child = spawn2(command3, args, { stdio: ["ignore", "pipe", "pipe"], shell: false });
     const decoder = new StringDecoder("utf8");
     let pending = "";
     let discarding = false;
-    let diagnostics3 = "";
+    let diagnostics = "";
     let stopping = false;
     let ready = readyLine === void 0;
     let killTimer;
@@ -38961,7 +34408,7 @@ function runLogProcess(command3, args, parse4, sink, signal, readyLine) {
       killTimer.unref();
     };
     const startupTimer = readyLine === void 0 ? void 0 : setTimeout(() => {
-      diagnostics3 = "The iPhone did not accept log streaming within 15 seconds. Unlock it and check the connection.";
+      diagnostics = "The iPhone did not accept log streaming within 15 seconds. Unlock it and check the connection.";
       stop();
     }, 15e3);
     signal.addEventListener("abort", stop, { once: true });
@@ -38996,7 +34443,7 @@ function runLogProcess(command3, args, parse4, sink, signal, readyLine) {
       }
     });
     child.stderr.on("data", (chunk) => {
-      diagnostics3 = (diagnostics3 + chunk.toString()).slice(-2048);
+      diagnostics = (diagnostics + chunk.toString()).slice(-2048);
     });
     const cleanup = () => {
       signal.removeEventListener("abort", stop);
@@ -39005,12 +34452,12 @@ function runLogProcess(command3, args, parse4, sink, signal, readyLine) {
     };
     child.once("error", (error51) => {
       cleanup();
-      signal.aborted ? resolve3() : reject(error51);
+      signal.aborted ? resolve4() : reject(error51);
     });
     child.once("close", (code, exitSignal) => {
       cleanup();
-      if (signal.aborted) resolve3();
-      else reject(new Error(diagnostics3.trim() || `Log reader exited: ${code ?? exitSignal}.`));
+      if (signal.aborted) resolve4();
+      else reject(new Error(diagnostics.trim() || `Log reader exited: ${code ?? exitSignal}.`));
     });
   });
 }
@@ -39022,8 +34469,8 @@ function startNativeLogs(target2, sink, physicalCommand = physicalIosLogCommand)
   const parseIOS = (line) => {
     const started = performance.now();
     const record4 = parseIOSLog(line, hideSystemLogs2);
-    const duration4 = performance.now() - started;
-    telemetry?.record(duration4);
+    const duration3 = performance.now() - started;
+    telemetry?.record(duration3);
     return record4;
   };
   const scopedSink = { status: sink.status, log: (log) => {
@@ -39034,9 +34481,9 @@ function startNativeLogs(target2, sink, physicalCommand = physicalIosLogCommand)
   } };
   const running = (async () => {
     const adb = target2.platform === "android" ? await adbPath() : "";
-    let failures2 = 0;
+    let failures = 0;
     while (!signal.aborted) {
-      sink.status({ source: "native", state: failures2 ? "reconnecting" : "connecting" });
+      sink.status({ source: "native", state: failures ? "reconnecting" : "connecting" });
       try {
         if (target2.platform === "ios") {
           if (process.platform !== "darwin") throw new Error("iOS logs require macOS and Xcode.");
@@ -39066,9 +34513,9 @@ function startNativeLogs(target2, sink, physicalCommand = physicalIosLogCommand)
       } catch (error51) {
         if (signal.aborted) break;
         sink.status({ source: "native", state: "reconnecting", message: errorMessage(error51) });
-        failures2++;
+        failures++;
       }
-      await delay2(Math.min(500 * 2 ** Math.min(failures2, 4), 1e4), void 0, { signal }).catch(() => {
+      await delay2(Math.min(500 * 2 ** Math.min(failures, 4), 1e4), void 0, { signal }).catch(() => {
       });
     }
   })().catch((error51) => {
@@ -39083,10 +34530,10 @@ async function streamAndroidPackage(adb, target2, sink, signal) {
   let currentPid = "";
   let reader;
   let reading3;
-  let failure3;
+  let failure2;
   try {
     while (!signal.aborted) {
-      if (failure3) throw failure3;
+      if (failure2) throw failure2;
       const { stdout } = await execute2(adb, ["-s", target2.deviceId, "shell", "pidof", target2.packageName], { timeout: 4e3, signal }).catch((error51) => {
         if (error51.code === 1) return { stdout: "" };
         throw error51;
@@ -39100,7 +34547,7 @@ async function streamAndroidPackage(adb, target2, sink, signal) {
         if (pid3) {
           reader = new AbortController();
           reading3 = runLogProcess(adb, ["-s", target2.deviceId, "logcat", "-v", "threadtime", "-T", "1", `--pid=${pid3}`, "*:V"], parseLogcat, sink, AbortSignal.any([signal, reader.signal])).catch((error51) => {
-            failure3 = error51;
+            failure2 = error51;
           });
         }
       }
@@ -39133,8 +34580,8 @@ function classifyCommandFailure(error51) {
   if (name === "TypeError" && typeof cause2 === "string") return { failure: "connection_failed" };
   return { failure: "unknown" };
 }
-function annotateDeviceCommand(error51, command3, failure3 = classifyCommandFailure(error51)) {
-  if (error51 !== null && typeof error51 === "object" && !commands.has(error51)) commands.set(error51, { command: command3, ...failure3 });
+function annotateDeviceCommand(error51, command3, failure2 = classifyCommandFailure(error51)) {
+  if (error51 !== null && typeof error51 === "object" && !commands.has(error51)) commands.set(error51, { command: command3, ...failure2 });
   return error51;
 }
 function inheritDeviceCommand(error51, from) {
@@ -39148,8 +34595,8 @@ function backendCommand(backend, path) {
 }
 function deviceCommandTags(error51) {
   const named = error51 !== null && typeof error51 === "object" ? commands.get(error51) : void 0;
-  const { failure: failure3, status, signal } = named ?? classifyCommandFailure(error51);
-  const tags = { device_command_failure: failure3 };
+  const { failure: failure2, status, signal } = named ?? classifyCommandFailure(error51);
+  const tags = { device_command_failure: failure2 };
   if (named) tags.device_command = labelPattern.test(named.command) ? named.command : "other";
   if (status !== void 0) tags.device_command_status = String(status);
   if (signal !== void 0) tags.device_command_signal = signal;
@@ -39230,10 +34677,10 @@ async function prepare(release, directory, target2) {
   try {
     await install(release, directory, target2);
   } catch (error51) {
-    const failure3 = error51 instanceof RuntimeFailure ? error51 : new RuntimeFailure("filesystem", errorText(error51));
-    recordPanelRuntime("failed", performance.now() - startedAt, void 0, failure3.reason);
-    if (failure3.reason !== "network" && failure3.reason !== "http") captureServerError(failure3, "panel_runtime.prepare", { tags: { panel_runtime_failure: failure3.reason } });
-    throw new PanelRuntimeUnavailableError(failure3.message);
+    const failure2 = error51 instanceof RuntimeFailure ? error51 : new RuntimeFailure("filesystem", errorText(error51));
+    recordPanelRuntime("failed", performance.now() - startedAt, void 0, failure2.reason);
+    if (failure2.reason !== "network" && failure2.reason !== "http") captureServerError(failure2, "panel_runtime.prepare", { tags: { panel_runtime_failure: failure2.reason } });
+    throw new PanelRuntimeUnavailableError(failure2.message);
   }
   recordPanelRuntime("downloaded", performance.now() - startedAt, release.bytes);
   void removeOtherVersions(directory, target2).catch(() => {
@@ -39283,11 +34730,11 @@ async function download(url2, destination, release) {
     body = Readable.fromWeb(response3.body);
   }
   const hash2 = createHash2("sha256");
-  let size2 = 0;
+  let size = 0;
   const measure = new Transform({
     transform(chunk, _encoding, callback) {
-      size2 += chunk.byteLength;
-      if (size2 > release.bytes) return callback(new RuntimeFailure("checksum", "the archive is larger than the release it pins."));
+      size += chunk.byteLength;
+      if (size > release.bytes) return callback(new RuntimeFailure("checksum", "the archive is larger than the release it pins."));
       hash2.update(chunk);
       callback(null, chunk);
     }
@@ -39298,7 +34745,7 @@ async function download(url2, destination, release) {
     if (error51 instanceof RuntimeFailure) throw error51;
     throw new RuntimeFailure(url2.protocol === "file:" ? "filesystem" : "network", `the download did not complete (${errorText(error51)}).`);
   }
-  if (size2 !== release.bytes || hash2.digest("hex") !== release.sha256) throw new RuntimeFailure("checksum", "the archive does not match the release it pins.");
+  if (size !== release.bytes || hash2.digest("hex") !== release.sha256) throw new RuntimeFailure("checksum", "the archive does not match the release it pins.");
 }
 async function extract(archive, staging) {
   const { stdout } = await run("/usr/bin/tar", ["-tzf", archive], { maxBuffer: 16 * 1024 * 1024 }).catch((error51) => {
@@ -39616,12 +35063,12 @@ var ServeEmu = class {
       throw new Error("Mobile Dev cannot read its bundled Android streaming backend. Reinstall Mobile Dev, then restart the app running it.");
     });
     const listener = createServer();
-    await new Promise((resolve3, reject) => {
+    await new Promise((resolve4, reject) => {
       listener.once("error", reject);
-      listener.listen(0, "127.0.0.1", resolve3);
+      listener.listen(0, "127.0.0.1", resolve4);
     });
     const address2 = listener.address();
-    await new Promise((resolve3) => listener.close(() => resolve3()));
+    await new Promise((resolve4) => listener.close(() => resolve4()));
     if (!address2 || typeof address2 === "string") throw new Error("Cannot allocate an Android stream port.");
     if (this.disposed) throw new Error("The plugin server has closed.");
     const url2 = new URL(`http://127.0.0.1:${address2.port}`);
@@ -39643,7 +35090,7 @@ var ServeEmu = class {
       env: { ...process.env, PATH: `${dirname(adb)}:${process.env.PATH ?? ""}`, SERVE_EMU_UPDATE_CHECK: "0" }
     });
     this.backendContexts.set(child, context2);
-    let stage2 = "process-launch";
+    let stage = "process-launch";
     let summary;
     let observedFailure;
     let parentOutcome = "unknown";
@@ -39651,11 +35098,11 @@ var ServeEmu = class {
       if (process.env.MOBILE_DEV_TELEMETRY === "off" || summary) return;
       const parsed = androidStartupMessageSchema.safeParse(message3);
       if (parsed.success === false) return;
-      if (parsed.data.type === "mobile-dev/android-startup") stage2 = parsed.data.stage;
+      if (parsed.data.type === "mobile-dev/android-startup") stage = parsed.data.stage;
       else if (parsed.data.type === "mobile-dev/android-startup-failure") observedFailure = { stage: parsed.data.stage, outcome: parsed.data.outcome };
       else {
         summary = parsed.data;
-        if (summary.outcome === "ready") stage2 = "health-readiness";
+        if (summary.outcome === "ready") stage = "health-readiness";
         recordAndroidStartupStages(summary, context2);
         child.off("message", onDiagnostic);
       }
@@ -39665,7 +35112,7 @@ var ServeEmu = class {
     const backend = { url: url2, child };
     this.backends.set(id2, backend);
     let launchError;
-    let diagnostics3 = "";
+    let diagnostics = "";
     child.on("error", (error51) => {
       launchError = error51;
     });
@@ -39673,7 +35120,7 @@ var ServeEmu = class {
       if (this.backends.get(id2) === backend) this.backends.delete(id2);
     });
     for (const output of [child.stdout, child.stderr]) output?.on("data", (chunk) => {
-      diagnostics3 = (diagnostics3 + chunk).slice(-4e3);
+      diagnostics = (diagnostics + chunk).slice(-4e3);
       process.stderr.write(chunk);
     });
     try {
@@ -39685,13 +35132,13 @@ var ServeEmu = class {
         }
         if (child.exitCode !== null || child.signalCode !== null) {
           parentOutcome = "error";
-          throw new Error(`serve-emu exited before it became ready. ${diagnostics3.trim()}`);
+          throw new Error(`serve-emu exited before it became ready. ${diagnostics.trim()}`);
         }
         try {
           const health2 = await this.health(url2);
           if (health2.serial === id2) {
-            const duration4 = performance.now() - startedAt;
-            recordAndroidBackendStartup(duration4, "ready");
+            const duration3 = performance.now() - startedAt;
+            recordAndroidBackendStartup(duration3, "ready");
             return backend;
           }
         } catch {
@@ -39699,15 +35146,15 @@ var ServeEmu = class {
         await delay3(250);
       }
       parentOutcome = this.disposed ? "aborted" : "timeout";
-      throw new Error(`serve-emu did not become ready within 30 seconds. ${diagnostics3.trim()}`);
+      throw new Error(`serve-emu did not become ready within 30 seconds. ${diagnostics.trim()}`);
     } catch (error51) {
-      const duration4 = performance.now() - startedAt;
-      recordAndroidBackendStartup(duration4, "failed");
-      const failure3 = {
-        stage: summary?.failedStage ?? observedFailure?.stage ?? stage2,
+      const duration3 = performance.now() - startedAt;
+      recordAndroidBackendStartup(duration3, "failed");
+      const failure2 = {
+        stage: summary?.failedStage ?? observedFailure?.stage ?? stage,
         outcome: summary?.failure ?? observedFailure?.outcome ?? parentOutcome
       };
-      setAndroidStartupDiagnostic(error51, failure3, context2);
+      setAndroidStartupDiagnostic(error51, failure2, context2);
       this.stopBackend(backend);
       this.backends.delete(id2);
       if (this.disposed === false && process.env.MOBILE_DEV_TELEMETRY !== "off") {
@@ -39715,10 +35162,10 @@ var ServeEmu = class {
         void execute3(adb, ["devices"], { timeout: 2e3, maxBuffer: 1024 * 1024, signal: this.lifetime.signal }).then((response3) => {
           const state2 = androidDeviceState(response3.stdout, id2);
           const elapsed = performance.now() - checkedAt;
-          recordAndroidStartupDeviceState(state2, elapsed, context2, failure3);
+          recordAndroidStartupDeviceState(state2, elapsed, context2, failure2);
         }, () => {
           const elapsed = performance.now() - checkedAt;
-          recordAndroidStartupDeviceState("unknown", elapsed, context2, failure3);
+          recordAndroidStartupDeviceState("unknown", elapsed, context2, failure2);
         });
       }
       throw error51;
@@ -39754,8 +35201,8 @@ var ServeEmu = class {
       const started = performance.now();
       child.once("exit", () => {
         this.stopping.delete(child);
-        const duration4 = performance.now() - started;
-        recordAndroidBackendStop(duration4, context2);
+        const duration3 = performance.now() - started;
+        recordAndroidBackendStop(duration3, context2);
       });
     }
     child.kill("SIGTERM");
@@ -39791,17 +35238,17 @@ import { execFile as execFile5 } from "node:child_process";
 import { access as access5, mkdtemp, readdir as readdir2, rm as rm2 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join as join5 } from "node:path";
-var run2 = (file3, args, { timeout, input, maxBuffer = 8 * 1024 * 1024 }) => new Promise((resolve3, reject) => {
+var run2 = (file3, args, { timeout, input, maxBuffer = 8 * 1024 * 1024 }) => new Promise((resolve4, reject) => {
   const child = execFile5(file3, args, { encoding: "utf8", timeout, maxBuffer }, (error51, stdout, stderr) => {
     if (error51) reject(Object.assign(error51, { stdout, stderr }));
-    else resolve3(stdout);
+    else resolve4(stdout);
   });
   if (input !== void 0) child.stdin?.end(input);
 });
-var readBinary = (file3, args, { timeout }) => new Promise((resolve3, reject) => {
+var readBinary = (file3, args, { timeout }) => new Promise((resolve4, reject) => {
   execFile5(file3, args, { encoding: "buffer", timeout, maxBuffer: 64 * 1024 * 1024 }, (error51, stdout) => {
     if (error51) reject(error51);
-    else resolve3(stdout);
+    else resolve4(stdout);
   });
 });
 var aapt2;
@@ -39810,8 +35257,8 @@ async function findAapt2() {
   for (const root of androidSdkRoots()) {
     const versions = await readdir2(join5(root, "build-tools")).catch(() => []);
     versions.sort((a, b) => b.localeCompare(a, void 0, { numeric: true }));
-    for (const version4 of versions) {
-      const path = join5(root, "build-tools", version4, "aapt2");
+    for (const version3 of versions) {
+      const path = join5(root, "build-tools", version3, "aapt2");
       if (await access5(path).then(() => true, () => false)) return aapt2 = path;
     }
   }
@@ -39827,21 +35274,21 @@ ${stdout}`.trim();
 }
 var unavailable = /current state: (?:Shutdown|Shutting Down)|not booted|Invalid device|Unable to find device|No device found|device offline|device unauthorized|device (?:'.*' )?not found|no devices\/emulators found/i;
 var commandLabel = (program, command3) => `${program}_${command3.split(" ", 1)[0].replaceAll("-", "_")}`;
-function commandError(error51, action, command3) {
+function commandError(error51, action2, command3) {
   if (expectedOutcome(error51) !== void 0) return error51;
   const output = commandOutput(error51);
   const message3 = output.split("\n").map((line) => line.trim()).filter((line) => line && !/^Underlying error|^An error was encountered/.test(line)).slice(0, 3).join(" ");
-  const text6 = `${action} failed${message3 ? `: ${message3}` : "."}`;
+  const text6 = `${action2} failed${message3 ? `: ${message3}` : "."}`;
   if (unavailable.test(output)) return new ExpectedOperationError("device_unavailable", text6);
-  if (error51 !== null && typeof error51 === "object" && "code" in error51 && error51.code === "ENOENT") return new ExpectedOperationError("unsupported_platform", `${action} needs ${process.platform === "darwin" ? "Xcode or the Android SDK" : "macOS and Xcode"}.`);
-  const failure3 = new Error(text6, { cause: error51 });
-  return command3 === void 0 ? failure3 : annotateDeviceCommand(failure3, command3, classifyCommandFailure(error51));
+  if (error51 !== null && typeof error51 === "object" && "code" in error51 && error51.code === "ENOENT") return new ExpectedOperationError("unsupported_platform", `${action2} needs ${process.platform === "darwin" ? "Xcode or the Android SDK" : "macOS and Xcode"}.`);
+  const failure2 = new Error(text6, { cause: error51 });
+  return command3 === void 0 ? failure2 : annotateDeviceCommand(failure2, command3, classifyCommandFailure(error51));
 }
-async function runAdb(commands2, serial, action, args, timeout = 15e3) {
+async function runAdb(commands2, serial, action2, args, timeout = 15e3) {
   try {
     return await commands2.run(await commands2.adb(), ["-s", serial, ...args], { timeout });
   } catch (error51) {
-    throw commandError(error51, action, commandLabel("adb", args[0]));
+    throw commandError(error51, action2, commandLabel("adb", args[0]));
   }
 }
 async function withTemporaryDirectory(work) {
@@ -39864,14 +35311,14 @@ async function listApps(driver) {
   const runningBundleIds = [.../* @__PURE__ */ new Set([...foregroundBundleId ? [foregroundBundleId] : [], ...newest])].filter((bundleId3) => installed2.has(bundleId3));
   return { apps, foregroundBundleId, runningBundleIds };
 }
-function requireSupportedPermission(platform6, permission) {
-  if (permission === "all" || platformPermissions[platform6].includes(permission)) return;
-  throw new ExpectedOperationError("invalid_input", `${platform6 === "ios" ? "iOS simulators do" : "Android does"} not support the ${permission} permission here.`);
+function requireSupportedPermission(platform5, permission) {
+  if (permission === "all" || platformPermissions[platform5].includes(permission)) return;
+  throw new ExpectedOperationError("invalid_input", `${platform5 === "ios" ? "iOS simulators do" : "Android does"} not support the ${permission} permission here.`);
 }
-async function requireArtifact(path, extension2, description) {
+async function requireArtifact(path, extension, description) {
   const trimmed = path.replace(/(.)\/+$/, "$1");
-  const info3 = isAbsolute2(trimmed) && trimmed.endsWith(extension2) ? await stat3(trimmed).catch(() => void 0) : void 0;
-  const directory = extension2 === ".app";
+  const info3 = isAbsolute2(trimmed) && trimmed.endsWith(extension) ? await stat3(trimmed).catch(() => void 0) : void 0;
+  const directory = extension === ".app";
   if (info3 === void 0 || info3.isDirectory() !== directory) throw new ExpectedOperationError("invalid_input", `Pass the absolute path of ${description}.`);
   return trimmed;
 }
@@ -39883,22 +35330,22 @@ function rankAppLinks(links) {
 }
 var AppDetailsCache = class {
   entries = /* @__PURE__ */ new Map();
-  async get(key, read8) {
+  async get(key, read9) {
     const hit = this.entries.get(key);
     if (hit) return hit;
-    const details = await read8();
+    const details = await read9();
     if (this.entries.size >= 200) this.entries.delete(this.entries.keys().next().value);
     this.entries.set(key, details);
     return details;
   }
 };
-async function collectDetails(bundleIds, read8) {
+async function collectDetails(bundleIds, read9) {
   const results = {};
   let next = 0;
   await Promise.all(Array.from({ length: Math.min(3, bundleIds.length) }, async () => {
     while (next < bundleIds.length) {
       const bundleId3 = bundleIds[next++];
-      const details = await read8(bundleId3).catch(() => ({}));
+      const details = await read9(bundleId3).catch(() => ({}));
       if (details.icon || details.name) results[bundleId3] = details;
     }
   }));
@@ -39924,17 +35371,17 @@ import { fileURLToPath as fileURLToPath3 } from "node:url";
 import { execFile as execFile6 } from "node:child_process";
 import { promisify as promisify5 } from "node:util";
 var execute4 = promisify5(execFile6);
-var version3 = external_exports.literal(1);
+var version2 = external_exports.literal(1);
 var cause = external_exports.enum(foregroundCauses);
-var diagnosticObject2 = external_exports.object({ version: version3, cause });
-var helperDiagnostic = diagnosticObject2.strict();
-var prefix2 = "mobile-dev-foreground-error:";
+var diagnosticObject = external_exports.object({ version: version2, cause });
+var helperDiagnostic = diagnosticObject.strict();
+var prefix = "mobile-dev-foreground-error:";
 var signalSchema = external_exports.enum(commandSignals);
 function foregroundCause(stderr) {
   for (const line of stderr.split("\n")) {
-    if (line.startsWith(prefix2) === false) continue;
+    if (line.startsWith(prefix) === false) continue;
     try {
-      const text6 = line.slice(prefix2.length);
+      const text6 = line.slice(prefix.length);
       const payload = JSON.parse(text6);
       const parsed = helperDiagnostic.safeParse(payload);
       if (parsed.success) return parsed.data.cause;
@@ -40057,11 +35504,11 @@ function parsePhysicalApps(apps, processes2) {
   return result4;
 }
 async function runningPhysicalApps(deviceId4, signal, run5 = execute5) {
-  const prefix3 = ["devicectl", "device", "info"];
+  const prefix2 = ["devicectl", "device", "info"];
   const options = ["--device", deviceId4, "--quiet", "--timeout", "10", "--omit-deprecated-fields-in-json", "--json-output", "-"];
   const settings = { encoding: "utf8", timeout: 15e3, maxBuffer: 4 * 1024 * 1024, signal };
-  const installed2 = runDiscoveryCommand("ios_physical_apps", "/usr/bin/xcrun", [...prefix3, "apps", "--no-include-default-apps", ...options], settings, run5);
-  const running = runDiscoveryCommand("ios_physical_processes", "/usr/bin/xcrun", [...prefix3, "processes", ...options], settings, run5);
+  const installed2 = runDiscoveryCommand("ios_physical_apps", "/usr/bin/xcrun", [...prefix2, "apps", "--no-include-default-apps", ...options], settings, run5);
+  const running = runDiscoveryCommand("ios_physical_processes", "/usr/bin/xcrun", [...prefix2, "processes", ...options], settings, run5);
   const results = await Promise.all([installed2, running]);
   return parsePhysicalApps(results[0].stdout, results[1].stdout);
 }
@@ -40096,9 +35543,9 @@ function parseAndroidApps(packages, processes2) {
   return apps;
 }
 var packageLists = /* @__PURE__ */ new Map();
-async function runningDeviceApps(deviceId4, signal, platform6 = "ios", kind4) {
-  if (platform6 === "ios" && kind4 === "physical") return runningPhysicalApps(deviceId4, signal);
-  if (platform6 === "ios") return runningSimulatorApps(deviceId4, signal);
+async function runningDeviceApps(deviceId4, signal, platform5 = "ios", kind3) {
+  if (platform5 === "ios" && kind3 === "physical") return runningPhysicalApps(deviceId4, signal);
+  if (platform5 === "ios") return runningSimulatorApps(deviceId4, signal);
   const adb = await adbPath();
   let packages = packageLists.get(deviceId4);
   if (packages === void 0 || packages.expires < Date.now()) {
@@ -40148,15 +35595,15 @@ var SimulatorDriver = class {
     this.cache = cache;
     this.foreground = foreground;
   }
-  async simctl(action, args, { timeout = 3e4, input, known = [], tolerate } = {}) {
+  async simctl(action2, args, { timeout = 3e4, input, known = [], tolerate } = {}) {
     try {
       return await this.commands.run("xcrun", ["simctl", ...args], { timeout, input });
     } catch (error51) {
       const output = commandOutput(error51);
       if (tolerate?.test(output)) return "";
-      const failure3 = commandError(error51, action, commandLabel("simctl", args[0]));
-      const match = expectedOutcome(failure3) === void 0 ? known.find(([pattern]) => pattern.test(output)) : void 0;
-      throw match ? new ExpectedOperationError("invalid_input", match[1]) : failure3;
+      const failure2 = commandError(error51, action2, commandLabel("simctl", args[0]));
+      const match = expectedOutcome(failure2) === void 0 ? known.find(([pattern]) => pattern.test(output)) : void 0;
+      throw match ? new ExpectedOperationError("invalid_input", match[1]) : failure2;
     }
   }
   plutil(args, input) {
@@ -40231,8 +35678,8 @@ var SimulatorDriver = class {
   }
   async setPermission(bundleId3, permission, state2) {
     requireSupportedPermission("ios", permission);
-    const action = { allow: "grant", deny: "revoke", ask: "reset" }[state2];
-    await this.simctl("Changing the permission", ["privacy", this.deviceId, action, permission, bundleId3]);
+    const action2 = { allow: "grant", deny: "revoke", ask: "reset" }[state2];
+    await this.simctl("Changing the permission", ["privacy", this.deviceId, action2, permission, bundleId3]);
     return platformPermissions.ios.map((entry2) => ({ permission: entry2, state: permission === "all" || permission === entry2 ? state2 : null }));
   }
   async preferences(bundleId3) {
@@ -40244,8 +35691,8 @@ var SimulatorDriver = class {
     return join7(container.trim(), "Library/Preferences", bundleId3);
   }
   // A missing key or domain means the app follows the device language.
-  defaults(action, args) {
-    return this.simctl(action, ["spawn", this.deviceId, "defaults", ...args], { tolerate: /Domain '[^']*' not found|Could not find key/ });
+  defaults(action2, args) {
+    return this.simctl(action2, ["spawn", this.deviceId, "defaults", ...args], { tolerate: /Domain '[^']*' not found|Could not find key/ });
   }
   async language(bundleId3) {
     const languages = parseDefaultsArray(await this.defaults("Reading the app language", ["read", await this.preferences(bundleId3), "AppleLanguages"]));
@@ -40378,13 +35825,13 @@ async function foregroundPhysicalPid(deviceId4, signal, helper = new URL("./ios-
   return foreground.pid;
 }
 var unknownSimulatorForeground = async () => null;
-async function foregroundSimulatorPid(deviceId4, signal, helper = new URL("./baguette/Baguette", import.meta.url), runtime2 = baguetteEnvironment) {
+async function foregroundSimulatorPid(deviceId4, signal, helper = new URL("./baguette/Baguette", import.meta.url), runtime = baguetteEnvironment) {
   const path = fileURLToPath4(helper);
   const cancellation = signal ?? AbortSignal.timeout(1e4);
   const startedAt = performance.now();
   let environment;
   try {
-    environment = await runtime2(path, cancellation);
+    environment = await runtime(path, cancellation);
   } catch (error51) {
     const elapsed = performance.now() - startedAt;
     const annotated = annotateDiscoveryCommand(error51, "ios_simulator_runtime", elapsed, { encoding: "utf8", timeout: BAGUETTE_RUNTIME_TIMEOUT_MS, maxBuffer: 4096, signal: cancellation });
@@ -40480,12 +35927,12 @@ function parseAndroidAppLinks(output, bundleId3) {
     }
     const field = current && /^\s+(Action|Category|Scheme|Authority|Path): "([^"]*)"/.exec(line);
     if (!current || !field) continue;
-    const [, kind4, value] = field;
-    if (kind4 === "Action") current.view ||= value === "android.intent.action.VIEW";
-    else if (kind4 === "Category") current.browsable ||= value === "android.intent.category.BROWSABLE";
-    else if (kind4 === "Scheme") current.schemes.push(value);
-    else if (kind4 === "Authority" && /^[A-Za-z0-9.-]+$/.test(value)) current.hosts.push(value);
-    else if (kind4 === "Path") {
+    const [, kind3, value] = field;
+    if (kind3 === "Action") current.view ||= value === "android.intent.action.VIEW";
+    else if (kind3 === "Category") current.browsable ||= value === "android.intent.category.BROWSABLE";
+    else if (kind3 === "Scheme") current.schemes.push(value);
+    else if (kind3 === "Authority" && /^[A-Za-z0-9.-]+$/.test(value)) current.hosts.push(value);
+    else if (kind3 === "Path") {
       const path = /^PatternMatcher\{(?:LITERAL|PREFIX): (\/[^}*]*)\}$/.exec(value)?.[1];
       if (path && path !== "/") current.paths.push(path);
     }
@@ -40525,11 +35972,11 @@ var permissionGroups = {
   motion: []
 };
 var runtimeNames = (permission) => permissionGroups[permission].map((name) => `android.permission.${name}`);
-function androidPermissionStates(runtime2) {
+function androidPermissionStates(runtime) {
   return platformPermissions.android.flatMap((permission) => {
-    const states2 = runtimeNames(permission).flatMap((name) => runtime2.get(name) ?? []);
-    if (states2.length === 0) return [];
-    const state2 = states2.some((entry2) => entry2.granted) ? "allow" : states2.some((entry2) => entry2.userFixed) ? "deny" : "ask";
+    const states = runtimeNames(permission).flatMap((name) => runtime.get(name) ?? []);
+    if (states.length === 0) return [];
+    const state2 = states.some((entry2) => entry2.granted) ? "allow" : states.some((entry2) => entry2.userFixed) ? "deny" : "ask";
     return [{ permission, state: state2 }];
   });
 }
@@ -40562,7 +36009,7 @@ function parseAndroidAppLocales(output) {
   if (!list) throw annotateDeviceCommand(new Error("Reading the app language failed: unexpected cmd locale output."), "adb_shell_cmd", { failure: "unexpected_output" });
   return list[1].split(",").map((entry2) => entry2.trim()).find(Boolean) ?? null;
 }
-var shellQuote2 = (value) => `'${value.replaceAll("'", "'\\''")}'`;
+var shellQuote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
 var AndroidDriver = class {
   deviceId;
   commands;
@@ -40574,10 +36021,10 @@ var AndroidDriver = class {
   }
   // am and pm report rejected intents and permissions on stdout, sometimes with exit status 0.
   // Output matching `tolerate` is returned even when the command fails, for callers that parse it.
-  async shell(action, command3, timeout = 15e3, tolerate) {
+  async shell(action2, command3, timeout = 15e3, tolerate) {
     const rejected = (output2) => {
-      const failure4 = /^(?:Error: |Exception occurred while executing)[^\n]*/m.exec(output2) ?? /^Error[^\n]*/m.exec(output2);
-      return failure4 ? new ExpectedOperationError("invalid_input", `${action} failed: ${failure4[0]}`) : void 0;
+      const failure3 = /^(?:Error: |Exception occurred while executing)[^\n]*/m.exec(output2) ?? /^Error[^\n]*/m.exec(output2);
+      return failure3 ? new ExpectedOperationError("invalid_input", `${action2} failed: ${failure3[0]}`) : void 0;
     };
     let output;
     try {
@@ -40585,10 +36032,10 @@ var AndroidDriver = class {
     } catch (error51) {
       const failed = commandOutput(error51);
       if (tolerate?.test(failed)) return failed;
-      throw rejected(failed) ?? commandError(error51, action, commandLabel("adb_shell", command3));
+      throw rejected(failed) ?? commandError(error51, action2, commandLabel("adb_shell", command3));
     }
-    const failure3 = rejected(output);
-    if (failure3) throw failure3;
+    const failure2 = rejected(output);
+    if (failure2) throw failure2;
     return output;
   }
   async runtime(bundleId3) {
@@ -40605,7 +36052,7 @@ var AndroidDriver = class {
     const resolved = await this.shell("Finding the launch activity", `cmd package resolve-activity --brief --query-flags 0x000C0000 -a android.intent.action.MAIN -c android.intent.category.LAUNCHER ${bundleId3}`);
     const component = parseLauncherActivity(resolved, bundleId3);
     if (component === null) throw new ExpectedOperationError("invalid_input", `${bundleId3} is not installed or has no launcher activity.`);
-    await this.shell("Launching the app", `am force-stop ${bundleId3} && am start -W -n ${shellQuote2(component)}`, 3e4);
+    await this.shell("Launching the app", `am force-stop ${bundleId3} && am start -W -n ${shellQuote(component)}`, 3e4);
   }
   async stop(bundleId3) {
     await this.shell("Stopping the app", `am force-stop ${bundleId3}`);
@@ -40616,7 +36063,7 @@ var AndroidDriver = class {
     return {};
   }
   async openUrl(url2) {
-    await this.shell("Opening the URL", `am start -W -a android.intent.action.VIEW -d ${shellQuote2(url2)}`, 3e4);
+    await this.shell("Opening the URL", `am start -W -a android.intent.action.VIEW -d ${shellQuote(url2)}`, 3e4);
   }
   async links(bundleId3) {
     return parseAndroidAppLinks(await this.shell("Reading app links", `dumpsys package ${bundleId3}`), bundleId3);
@@ -40652,8 +36099,8 @@ var AndroidDriver = class {
   }
   async setPermission(bundleId3, permission, state2) {
     requireSupportedPermission("android", permission);
-    const runtime2 = await this.runtime(bundleId3);
-    const names = (permission === "all" ? platformPermissions.android : [permission]).flatMap(runtimeNames).filter((name) => runtime2.has(name));
+    const runtime = await this.runtime(bundleId3);
+    const names = (permission === "all" ? platformPermissions.android : [permission]).flatMap(runtimeNames).filter((name) => runtime.has(name));
     if (names.length === 0) throw new ExpectedOperationError("invalid_input", permission === "all" ? "The app does not request any supported runtime permissions." : `The app does not request the ${permission} permission.`);
     const commands2 = names.flatMap((name) => state2 === "allow" ? [`pm clear-permission-flags ${bundleId3} ${name} user-set user-fixed`, `pm grant ${bundleId3} ${name}`] : [`pm revoke ${bundleId3} ${name}`, `pm ${state2 === "deny" ? "set" : "clear"}-permission-flags ${bundleId3} ${name} user-set user-fixed`]);
     await this.shell("Changing the permission", commands2.join(" && "));
@@ -40675,8 +36122,8 @@ var AndroidDriver = class {
 // packages/core/src/app-control/tools.ts
 function createDrivers(commands2 = systemCommands, simulatorForeground = foregroundSimulatorPid) {
   const cache = new AppDetailsCache();
-  return ({ platform: platform6, deviceId: deviceId4 }) => {
-    if (platform6 === "android") {
+  return ({ platform: platform5, deviceId: deviceId4 }) => {
+    if (platform5 === "android") {
       if (!androidIdSchema.safeParse(deviceId4).success || deviceId4.startsWith("avd:")) throw new ExpectedOperationError("invalid_input", "Choose a running Android device serial.");
       return new AndroidDriver(deviceId4, commands2, cache);
     }
@@ -40688,7 +36135,7 @@ function createDrivers(commands2 = systemCommands, simulatorForeground = foregro
 var bundleId = bundleIdSchema.describe("App bundle ID or Android package name.");
 var payloadSchema = external_exports.record(external_exports.string(), external_exports.unknown()).refine((value) => typeof value.aps === "object" && value.aps !== null, "Payload needs an aps object.");
 function appTools(server, driverFor, visibility4) {
-  return function tool(name, action, config2, handler) {
+  return function tool(name, action2, config2, handler) {
     const inputSchema3 = { ...appTargetShape, ...config2.inputSchema };
     K3(server, name, {
       title: config2.title,
@@ -40702,8 +36149,8 @@ function appTools(server, driverFor, visibility4) {
         const result4 = await handler(driverFor(parsed), parsed);
         return { content: [{ type: "text", text: JSON.stringify(result4) }], structuredContent: result4 };
       } catch (error51) {
-        captureServerError(error51, `app_control.${action}`, {
-          reportAs: new Error(`App ${action} command failed.`),
+        captureServerError(error51, `app_control.${action2}`, {
+          reportAs: new Error(`App ${action2} command failed.`),
           tags: { device_platform: parsed.platform, ...deviceCommandTags(error51) }
         });
         return { isError: true, content: [{ type: "text", text: errorMessage(error51) }] };
@@ -40919,7 +36366,7 @@ var appleDate = (seconds) => new Date((seconds + 978307200) * 1e3).toISOString()
 import { mkdir as mkdir2, readdir as readdir4, readFile as readFile4, rm as rm3, stat as stat5 } from "node:fs/promises";
 import { join as join10, relative as relative2, sep } from "node:path";
 var maxContainerFiles = 2e4;
-var shellQuote3 = (value) => `'${value.replaceAll("'", "'\\''")}'`;
+var shellQuote2 = (value) => `'${value.replaceAll("'", "'\\''")}'`;
 function safePath(path) {
   if (path === "" || path.startsWith("/") || path.split("/").some((part) => part === ".." || part === "")) throw new ExpectedOperationError("invalid_input", "The storage path is outside the app's data.");
   return path;
@@ -40965,15 +36412,15 @@ var SimulatorContainer = class _SimulatorContainer {
   }
   async list() {
     const files = [];
-    const walk = async (root, prefix3, directory) => {
+    const walk = async (root, prefix2, directory) => {
       const entries = await readdir4(directory, { withFileTypes: true }).catch(() => []);
       for (const entry2 of entries) {
         if (files.length >= maxContainerFiles) return;
         const path = join10(directory, entry2.name);
-        if (entry2.isDirectory()) await walk(root, prefix3, path);
+        if (entry2.isDirectory()) await walk(root, prefix2, path);
         else if (entry2.isFile()) {
           const info3 = await stat5(path).catch(() => void 0);
-          if (info3) files.push({ path: prefix3 + relative2(root, path).split(sep).join("/"), bytes: info3.size });
+          if (info3) files.push({ path: prefix2 + relative2(root, path).split(sep).join("/"), bytes: info3.size });
         }
       }
     };
@@ -41027,11 +36474,11 @@ var AndroidContainer = class {
     this.commands = commands2;
   }
   // run-as starts in the app's data directory with the app's user, so it only works for debuggable builds.
-  async runAs(action, command3, timeout = 2e4) {
+  async runAs(action2, command3, timeout = 2e4) {
     try {
-      return await this.commands.run(await this.commands.adb(), ["-s", this.serial, "shell", `run-as ${this.bundleId} sh -c ${shellQuote3(command3)}`], { timeout, maxBuffer: 32 * 1024 * 1024 });
+      return await this.commands.run(await this.commands.adb(), ["-s", this.serial, "shell", `run-as ${this.bundleId} sh -c ${shellQuote2(command3)}`], { timeout, maxBuffer: 32 * 1024 * 1024 });
     } catch (error51) {
-      throw runAsError(error51, action, this.bundleId);
+      throw runAsError(error51, action2, this.bundleId);
     }
   }
   async list() {
@@ -41045,14 +36492,14 @@ var AndroidContainer = class {
   async read(path) {
     const adb = await this.commands.adb();
     try {
-      return await this.commands.readBinary(adb, ["-s", this.serial, "exec-out", `run-as ${this.bundleId} cat ${shellQuote3(safePath(path))}`], { timeout: 3e4 });
+      return await this.commands.readBinary(adb, ["-s", this.serial, "exec-out", `run-as ${this.bundleId} cat ${shellQuote2(safePath(path))}`], { timeout: 3e4 });
     } catch (error51) {
       throw runAsError(error51, "Reading app data", this.bundleId);
     }
   }
   async remove(paths) {
     if (paths.length === 0) return;
-    await this.runAs("Clearing app data", `rm -rf -- ${paths.map((path) => shellQuote3(safePath(path))).join(" ")}`);
+    await this.runAs("Clearing app data", `rm -rf -- ${paths.map((path) => shellQuote2(safePath(path))).join(" ")}`);
   }
   // pm clear also stops the app and works for release builds.
   async reset() {
@@ -41065,11 +36512,11 @@ var AndroidContainer = class {
     if (!/Success/.test(output)) throw new ExpectedOperationError("invalid_input", `Clearing app data failed: ${output.trim().split("\n")[0] || "pm clear did not succeed."}`);
   }
 };
-function runAsError(error51, action, bundleId3) {
+function runAsError(error51, action2, bundleId3) {
   const output = commandOutput(error51);
   if (/not debuggable/.test(output)) return new ExpectedOperationError("unsupported_platform", `${bundleId3} is a release build. Android only allows reading app data of debuggable builds; Reset app data still works.`);
   if (/unknown package|Unknown package|is unknown/.test(output)) return new ExpectedOperationError("invalid_input", `${bundleId3} is not installed on this device.`);
-  return commandError(error51, action);
+  return commandError(error51, action2);
 }
 
 // packages/core/src/app-storage/reader.ts
@@ -41269,10 +36716,10 @@ function fields(buffer) {
       result4.push({ number: number10, wire, bytes: buffer.subarray(length.next, end) });
       offset = end;
     } else if (wire === 5 || wire === 1) {
-      const size2 = wire === 5 ? 4 : 8;
-      if (offset + size2 > buffer.length) throw new Error("Truncated protobuf fixed field.");
-      result4.push({ number: number10, wire, bytes: buffer.subarray(offset, offset + size2) });
-      offset += size2;
+      const size = wire === 5 ? 4 : 8;
+      if (offset + size > buffer.length) throw new Error("Truncated protobuf fixed field.");
+      result4.push({ number: number10, wire, bytes: buffer.subarray(offset, offset + size) });
+      offset += size;
     } else throw new Error(`Unsupported protobuf wire type ${wire}.`);
   }
   return result4;
@@ -41318,14 +36765,14 @@ var message = (bytes) => {
     return void 0;
   }
 };
-function protobufEntries(buffer, prefix3 = "") {
+function protobufEntries(buffer, prefix2 = "") {
   const counts = /* @__PURE__ */ new Map();
   for (const field of fields(buffer)) counts.set(field.number, (counts.get(field.number) ?? 0) + 1);
   const seen = /* @__PURE__ */ new Map();
   return fields(buffer).flatMap((field) => {
     const index = seen.get(field.number) ?? 0;
     seen.set(field.number, index + 1);
-    const key = `${prefix3}${field.number}${(counts.get(field.number) ?? 0) > 1 ? `[${index}]` : ""}`;
+    const key = `${prefix2}${field.number}${(counts.get(field.number) ?? 0) > 1 ? `[${index}]` : ""}`;
     const entry2 = (type, value, bytes2) => [{ key, type, value, bytes: bytes2, guessed: true }];
     if (field.varint !== void 0) return entry2("integer", BigInt.asIntN(64, field.varint).toString(), 8);
     const bytes = field.bytes;
@@ -41341,7 +36788,7 @@ var systemPaths = /^(?:Library\/(?:Caches|HTTPStorages|WebKit|Cookies|SplashBoar
 var sqliteSuffix = /-(?:wal|shm|journal)$/;
 var basename2 = (path) => path.slice(path.lastIndexOf("/") + 1);
 var dirname4 = (path) => path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
-function classifyFiles(paths, platform6) {
+function classifyFiles(paths, platform5) {
   const all = new Set(paths);
   const stores = [];
   for (const path of paths) {
@@ -41351,7 +36798,7 @@ function classifyFiles(paths, platform6) {
       stores.push({ kind: "mmkv", name: name.slice(0, -4), path: path.slice(0, -4), files: [path.slice(0, -4), path] });
       continue;
     }
-    if (platform6 === "ios" && /(?:^|\/)Library\/Preferences$/.test(directory) && name.endsWith(".plist")) {
+    if (platform5 === "ios" && /(?:^|\/)Library\/Preferences$/.test(directory) && name.endsWith(".plist")) {
       stores.push({ kind: "user-defaults", name: name.slice(0, -6), path, files: [path] });
       continue;
     }
@@ -41376,7 +36823,7 @@ function classifyFiles(paths, platform6) {
       stores.push({ kind: "realm", name: name.slice(0, -6), path, files: [path, ...related] });
       continue;
     }
-    const sqlite2 = !sqliteSuffix.test(name) && ((platform6 === "android" ? directory === "databases" && !name.endsWith(".bak") || /\.(?:db|sqlite3?)$/i.test(name) : /\.(?:db|sqlite3?|sql|store)$/i.test(name)) || all.has(`${path}-wal`) || all.has(`${path}-shm`));
+    const sqlite2 = !sqliteSuffix.test(name) && ((platform5 === "android" ? directory === "databases" && !name.endsWith(".bak") || /\.(?:db|sqlite3?)$/i.test(name) : /\.(?:db|sqlite3?|sql|store)$/i.test(name)) || all.has(`${path}-wal`) || all.has(`${path}-shm`));
     if (sqlite2 && !systemPaths.test(path)) {
       stores.push({ kind: "sqlite", name, path, files: [path, ...["-wal", "-shm", "-journal"].map((suffix) => path + suffix).filter((file3) => all.has(file3))] });
     }
@@ -41401,14 +36848,14 @@ function lengthDelimited(buffer, offset) {
   return { bytes: buffer.subarray(length.next, end), next: end };
 }
 function decodeMmkv(data, meta4) {
-  const version4 = meta4 && meta4.length >= 8 ? meta4.readUInt32LE(4) : 0;
-  if (meta4 && meta4.length >= 28 && version4 >= versionRandomIv && meta4.subarray(12, 28).some((byte) => byte !== 0)) return { status: "encrypted" };
+  const version3 = meta4 && meta4.length >= 8 ? meta4.readUInt32LE(4) : 0;
+  if (meta4 && meta4.length >= 28 && version3 >= versionRandomIv && meta4.subarray(12, 28).some((byte) => byte !== 0)) return { status: "encrypted" };
   if (data.length < 4) return { status: "ok", records: [], crcValid: void 0 };
-  const size2 = meta4 && meta4.length >= 32 && version4 >= versionActualSize ? meta4.readUInt32LE(28) : data.readUInt32LE(0);
-  if (size2 + 4 > data.length) return { status: "unreadable", reason: "The file is shorter than its recorded size." };
-  const body = data.subarray(4, 4 + size2);
+  const size = meta4 && meta4.length >= 32 && version3 >= versionActualSize ? meta4.readUInt32LE(28) : data.readUInt32LE(0);
+  if (size + 4 > data.length) return { status: "unreadable", reason: "The file is shorter than its recorded size." };
+  const body = data.subarray(4, 4 + size);
   const crcValid = meta4 && meta4.length >= 4 ? crc32(body) === meta4.readUInt32LE(0) : void 0;
-  const expiring = meta4 !== void 0 && meta4.length >= 112 && version4 >= versionFlag && (meta4.readBigUInt64LE(104) & flagKeyExpire) !== 0n;
+  const expiring = meta4 !== void 0 && meta4.length >= 112 && version3 >= versionFlag && (meta4.readBigUInt64LE(104) & flagKeyExpire) !== 0n;
   const now = Math.floor(Date.now() / 1e3);
   const records = /* @__PURE__ */ new Map();
   try {
@@ -41443,9 +36890,9 @@ function decodeMmkv(data, meta4) {
   return { status: "ok", records: [...records].map(([key, value]) => ({ key, value })), crcValid };
 }
 function guessMmkvValue(bytes) {
-  const prefix3 = readVarint(bytes, 0, 5);
-  if (bytes.length > 1 && prefix3 && prefix3.next + Number(prefix3.value) === bytes.length) {
-    const payload = bytes.subarray(prefix3.next);
+  const prefix2 = readVarint(bytes, 0, 5);
+  if (bytes.length > 1 && prefix2 && prefix2.next + Number(prefix2.value) === bytes.length) {
+    const payload = bytes.subarray(prefix2.next);
     const string5 = utf8Text(payload);
     if (string5 !== void 0) return { type: jsonType(string5) ?? "string", value: string5 };
     return { type: "data", value: payload.toString("hex") };
@@ -41495,8 +36942,8 @@ function redactStorageValue(name, value, binary2 = false) {
         } catch {
           return REDACTED;
         }
-        const safe5 = visit(parsed, depth + 1);
-        return typeof safe5 === "string" ? safe5 : JSON.stringify(safe5);
+        const safe6 = visit(parsed, depth + 1);
+        return typeof safe6 === "string" ? safe6 : JSON.stringify(safe6);
       }
       return sensitiveStorageText(value2) ? REDACTED : value2;
     }
@@ -41508,8 +36955,8 @@ function redactStorageValue(name, value, binary2 = false) {
     return REDACTED;
   }
   try {
-    const safe5 = visit(value, 0);
-    return typeof safe5 === "object" && safe5 !== null ? JSON.stringify(safe5) : safe5;
+    const safe6 = visit(value, 0);
+    return typeof safe6 === "object" && safe6 !== null ? JSON.stringify(safe6) : safe6;
   } catch {
     return REDACTED;
   }
@@ -41665,9 +37112,9 @@ async function readStorage(container, { entries: entryLimit, valueLength, bundle
     totalBytes: scopedFiles.reduce((total, file3) => total + file3.bytes, 0)
   };
 }
-async function findStore(container, id2, kind4) {
+async function findStore(container, id2, kind3) {
   const files = await container.list();
-  const candidate = classifyFiles(files.map((file3) => file3.path), container.platform).find((store2) => storeId(store2) === id2 && (kind4 === void 0 || store2.kind === kind4));
+  const candidate = classifyFiles(files.map((file3) => file3.path), container.platform).find((store2) => storeId(store2) === id2 && (kind3 === void 0 || store2.kind === kind3));
   if (candidate === void 0) throw new ExpectedOperationError("invalid_input", "That storage no longer exists. Refresh and try again.");
   return candidate;
 }
@@ -41684,7 +37131,7 @@ async function readTable(container, id2, table, { offset, limit, valueLength, ru
     const described = (await describeTables(run5, file3)).get(table);
     if (described === void 0) throw new ExpectedOperationError("invalid_input", "That table no longer exists. Refresh and try again.");
     const name = quoteIdentifier(table);
-    const [count3] = await sqlite(run5, file3, `SELECT count(*) AS total FROM ${name}`);
+    const [count2] = await sqlite(run5, file3, `SELECT count(*) AS total FROM ${name}`);
     const allColumns = described.filter((column) => !sensitiveStorageText(column.name) && !sensitiveStorageText(column.type));
     if (requestedColumns?.some((name2) => !allColumns.some((column) => column.name === name2))) {
       throw new ExpectedOperationError("invalid_input", "A requested column no longer exists. Refresh and try again.");
@@ -41702,7 +37149,7 @@ async function readTable(container, id2, table, { offset, limit, valueLength, ru
       table,
       columns,
       offset,
-      total: Number(count3?.total ?? 0),
+      total: Number(count2?.total ?? 0),
       rows: rows.map((row) => columns.map((column, index) => {
         const sensitiveRow = labels.some((_2, label) => sensitiveStorageName(String(row[`k${label}`] ?? "")));
         const cell = sensitiveRow ? REDACTED : redactStorageValue(`${table}.${column.name}`, row[`c${index}`]);
@@ -41721,25 +37168,25 @@ var isRecord = (value) => typeof value === "object" && value !== null && !Array.
 var uid = (value) => isRecord(value) && Object.keys(value).length === 1 && typeof value["CF$UID"] === "number" ? value["CF$UID"] : void 0;
 function unarchive(archive) {
   const objects = Array.isArray(archive.$objects) ? archive.$objects : [];
-  const resolve3 = (value, path) => {
+  const resolve4 = (value, path) => {
     const index = uid(value);
     if (index !== void 0) {
       if (path.has(index)) return "<cycle>";
       const target2 = objects[index];
-      return target2 === "$null" ? null : resolve3(target2, new Set(path).add(index));
+      return target2 === "$null" ? null : resolve4(target2, new Set(path).add(index));
     }
-    if (Array.isArray(value)) return value.map((item) => resolve3(item, path));
+    if (Array.isArray(value)) return value.map((item) => resolve4(item, path));
     if (!isRecord(value)) return value;
     const { "NS.keys": keys, "NS.objects": values, "NS.string": string5, "NS.time": time4, "NS.data": data } = value;
-    if (Array.isArray(keys) && Array.isArray(values)) return Object.fromEntries(keys.map((key, index2) => [String(resolve3(key, path)), resolve3(values[index2], path)]));
-    if (Array.isArray(values)) return resolve3(values, path);
+    if (Array.isArray(keys) && Array.isArray(values)) return Object.fromEntries(keys.map((key, index2) => [String(resolve4(key, path)), resolve4(values[index2], path)]));
+    if (Array.isArray(values)) return resolve4(values, path);
     if (typeof string5 === "string") return string5;
     if (typeof time4 === "number") return appleDate(time4);
     if (data !== void 0) return data;
-    return Object.fromEntries(Object.entries(value).filter(([key]) => key !== "$class").map(([key, child]) => [key, resolve3(child, path)]));
+    return Object.fromEntries(Object.entries(value).filter(([key]) => key !== "$class").map(([key, child]) => [key, resolve4(child, path)]));
   };
   const top = isRecord(archive.$top) ? archive.$top : {};
-  return resolve3("root" in top ? top.root : top, /* @__PURE__ */ new Set());
+  return resolve4("root" in top ? top.root : top, /* @__PURE__ */ new Set());
 }
 async function plistJson(bytes, run5) {
   const binary2 = bytes.subarray(0, 6).toString("latin1") === "bplist";
@@ -41756,8 +37203,8 @@ async function plistJson(bytes, run5) {
   }
 }
 function filtered(name, value) {
-  const safe5 = redactStorageValue(name, value);
-  return typeof value === "object" && value !== null && safe5 !== REDACTED ? JSON.parse(String(safe5)) : safe5;
+  const safe6 = redactStorageValue(name, value);
+  return typeof value === "object" && value !== null && safe6 !== REDACTED ? JSON.parse(String(safe6)) : safe6;
 }
 async function previewFile(container, path, { maxBytes, maxLength, run: run5 }) {
   const file3 = sensitiveStoragePath(path) ? void 0 : (await container.list()).find((item) => item.path === path);
@@ -41783,7 +37230,7 @@ async function previewFile(container, path, { maxBytes, maxLength, run: run5 }) 
 
 // packages/core/src/app-storage/tools.ts
 function createContainers(commands2 = systemCommands) {
-  return async ({ platform: platform6, deviceId: deviceId4 }, bundleId3) => platform6 === "android" ? new AndroidContainer(deviceId4, bundleId3, commands2) : SimulatorContainer.open(deviceId4, bundleId3, commands2);
+  return async ({ platform: platform5, deviceId: deviceId4 }, bundleId3) => platform5 === "android" ? new AndroidContainer(deviceId4, bundleId3, commands2) : SimulatorContainer.open(deviceId4, bundleId3, commands2);
 }
 var bundleId2 = bundleIdSchema.describe("App bundle ID or Android package name.");
 var storeIdSchema = external_exports.string().max(4096);
@@ -41803,15 +37250,15 @@ function safeStorageError(error51) {
 }
 var readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 function registerAppStorageTools(server, commands2 = systemCommands, driverFor = createDrivers(commands2), containerFor = createContainers(commands2)) {
-  async function run5(operation, { platform: platform6, deviceId: deviceId4, bundleId: bundleId3 }, work) {
+  async function run5(operation, { platform: platform5, deviceId: deviceId4, bundleId: bundleId3 }, work) {
     const startedAt = performance.now();
     try {
-      const driver = driverFor({ platform: platform6, deviceId: deviceId4 });
-      const result4 = await work(await containerFor({ platform: platform6, deviceId: deviceId4 }, bundleId3), driver);
-      recordAppStorageOperation(operation, platform6, "success", performance.now() - startedAt);
+      const driver = driverFor({ platform: platform5, deviceId: deviceId4 });
+      const result4 = await work(await containerFor({ platform: platform5, deviceId: deviceId4 }, bundleId3), driver);
+      recordAppStorageOperation(operation, platform5, "success", performance.now() - startedAt);
       return { content: [{ type: "text", text: JSON.stringify(result4) }], structuredContent: result4 };
     } catch (error51) {
-      recordAppStorageOperation(operation, platform6, "failed", performance.now() - startedAt);
+      recordAppStorageOperation(operation, platform5, "failed", performance.now() - startedAt);
       captureServerError(expectedOutcome(error51) === void 0 ? new Error(`App storage ${operation} failed.`) : error51, `app_storage.${operation}`);
       return { isError: true, content: [{ type: "text", text: safeStorageError(error51) }] };
     }
@@ -41880,6 +37327,1243 @@ function registerAppStorageTools(server, commands2 = systemCommands, driverFor =
     await clearStore(container, input.store);
     return { cleared: "store", stopped: true };
   }));
+}
+
+// packages/core/src/app-flow-host.ts
+import { createHash as createHash5, randomUUID as randomUUID3 } from "node:crypto";
+import { existsSync } from "node:fs";
+import { readFile as readFile6 } from "node:fs/promises";
+import { homedir as homedir3 } from "node:os";
+import { dirname as dirname6, isAbsolute as isAbsolute4, join as join14, relative as relative3, resolve as resolve2 } from "node:path";
+import { fileURLToPath as fileURLToPath5, pathToFileURL } from "node:url";
+
+// packages/core/src/app-flow-run-store.ts
+import { createHash as createHash4, randomUUID as randomUUID2 } from "node:crypto";
+import { mkdir as mkdir3, readFile as readFile5, rename as rename2, unlink, writeFile as writeFile5 } from "node:fs/promises";
+import { dirname as dirname5, join as join13 } from "node:path";
+function projectId(projectPath2) {
+  return createHash4("sha256").update(projectPath2).digest("hex").slice(0, 16);
+}
+async function readJson(path) {
+  try {
+    const value = JSON.parse(await readFile5(path, "utf8"));
+    return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+async function writeJson(path, value) {
+  await mkdir3(dirname5(path), { recursive: true });
+  const temporary = `${path}.${process.pid}.${randomUUID2()}.tmp`;
+  await writeFile5(temporary, JSON.stringify(value), "utf8");
+  await rename2(temporary, path);
+}
+var AppFlowRunStore = class {
+  dataDir;
+  constructor(dataDir) {
+    this.dataDir = dataDir;
+  }
+  directory(projectPath2) {
+    return join13(this.dataDir, "app-flows", projectId(projectPath2));
+  }
+  runPath(projectPath2) {
+    return join13(this.directory(projectPath2), "active-run.json");
+  }
+  resolutionPath(projectPath2) {
+    return join13(this.directory(projectPath2), "prompt-resolution.json");
+  }
+  async writeRun(run5) {
+    const previous = await readJson(this.runPath(run5.projectPath));
+    const previousSeq = typeof previous?.seq === "number" && Number.isFinite(previous.seq) ? previous.seq : 0;
+    await writeJson(this.runPath(run5.projectPath), {
+      ...run5,
+      updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      seq: previousSeq + 1
+    });
+  }
+  async readRun(projectPath2) {
+    const value = await readJson(this.runPath(projectPath2));
+    if (!value || typeof value.runId !== "string" || value.projectPath !== projectPath2 || typeof value.state !== "string" || typeof value.ownerPid !== "number" || typeof value.updatedAt !== "string") return null;
+    return value;
+  }
+  /**
+   * Replays the latest durable event through the panel's ordinary event-poll contract. This is
+   * the compatibility channel for a panel document whose JavaScript predates status-event
+   * hydration: it may discover a remote run from status, then continue polling by run ID.
+   */
+  async readEvent(projectPath2, runId2, since) {
+    const run5 = await this.readRun(projectPath2);
+    if (!run5 || run5.runId !== runId2 || !run5.event) return null;
+    const seq = typeof run5.seq === "number" && Number.isFinite(run5.seq) ? run5.seq : 1;
+    return seq > since ? { seq, runId: runId2, event: run5.event } : null;
+  }
+  async requestResolution(projectPath2, resolution2) {
+    await writeJson(this.resolutionPath(projectPath2), resolution2);
+  }
+  async takeResolution(projectPath2, runId2, promptId) {
+    const path = this.resolutionPath(projectPath2);
+    const value = await readJson(path);
+    if (!value || value.runId !== runId2 || value.promptId !== promptId || value.resolution !== "continue" && value.resolution !== "stop" && value.resolution !== "override") return null;
+    await unlink(path).catch(() => void 0);
+    return value.resolution;
+  }
+};
+
+// packages/core/src/app-flow-host.ts
+var DEFAULT_INACTIVITY_MS = 15 * 6e4;
+var MAX_HISTORY_ITEMS = 6;
+var DecisionSuspendedError = class extends Error {
+  constructor(message3 = "Codex did not answer for 15 minutes. The run was suspended and can be resumed.") {
+    super(message3);
+    this.name = "DecisionSuspendedError";
+  }
+};
+function recordDecisionWait(startedAt, outcome) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = { component: "server", surface: "app-flow", outcome };
+  public_api_exports.count("app_flow.decision_wait.samples", 1, { attributes });
+  public_api_exports.distribution("app_flow.decision_wait.duration", Math.max(0, Date.now() - startedAt), {
+    unit: "millisecond",
+    attributes
+  });
+}
+function emptyResult(text6) {
+  return {
+    text: text6,
+    toolCalls: [],
+    timedOut: false,
+    filesChanged: [],
+    tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, total: 0, cost: 0 },
+    diagnostics: []
+  };
+}
+function trimSessionHistory(history, keepRecentUserTurns) {
+  const recent = Math.max(1, keepRecentUserTurns ?? MAX_HISTORY_ITEMS - 1);
+  const limit = recent + 1;
+  if (history.length > limit) history.splice(1, history.length - limit);
+}
+function capabilitiesFor(tools) {
+  const requested = new Set(tools ?? []);
+  const capabilities = [];
+  if (requested.has("ls") || requested.has("find")) capabilities.push("list-files");
+  if (requested.has("read")) capabilities.push("read-file");
+  if (requested.has("grep")) capabilities.push("search");
+  if (requested.has("edit") || requested.has("write") || requested.has("apply_patch")) capabilities.push("apply-patch");
+  if (requested.has("bash")) capabilities.push("run-command");
+  return capabilities;
+}
+function locator(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const candidate = value;
+  return ["text", "label", "id"].includes(String(candidate.by)) && typeof candidate.value === "string" && candidate.value.trim().length > 0;
+}
+function action(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const candidate = value;
+  if (!["tap", "swipe", "input", "wait"].includes(String(candidate.type))) return false;
+  if ((candidate.type === "tap" || candidate.type === "input") && !locator(candidate.locator)) return false;
+  if (candidate.type === "input" && typeof candidate.value !== "string") return false;
+  if (candidate.type === "swipe" && candidate.direction !== void 0 && !["up", "down", "left", "right"].includes(String(candidate.direction))) return false;
+  return candidate.duration === void 0 || typeof candidate.duration === "number";
+}
+function validResponse(object4, role) {
+  if (role.startsWith("auth-gate")) {
+    return ["auth", "clear", "uncertain"].includes(String(object4.verdict)) && typeof object4.reason === "string";
+  }
+  if (role.startsWith("arrival")) {
+    return ["match", "mismatch", "uncertain"].includes(String(object4.verdict)) && (object4.status === null || ["ok", "empty-state", "not-found"].includes(String(object4.status))) && typeof object4.reason === "string" && (object4.key === void 0 || typeof object4.key === "string") && (object4.info === void 0 || typeof object4.info === "string");
+  }
+  if (role.startsWith("navigate")) {
+    if (object4.decision === "arrived" || object4.decision === "blocked") return typeof object4.reason === "string";
+    return object4.decision === "act" && action(object4.action);
+  }
+  if (role.startsWith("runtime-screen")) {
+    return typeof object4.distinct === "boolean" && (!object4.distinct || typeof object4.key === "string" && typeof object4.info === "string");
+  }
+  return true;
+}
+function validateAppFlowDecisionResponse(value, role) {
+  let parsed;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new Error("Decision response must be a valid JSON object.");
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Decision response must be a JSON object.");
+  }
+  if (!validResponse(parsed, role)) {
+    throw new Error(`Decision response does not match the expected schema for ${role}.`);
+  }
+}
+var CodexAppFlowDecisionProvider = class {
+  runId;
+  supportsConcurrentRequests = false;
+  hedgeAfterMs = Number.POSITIVE_INFINITY;
+  inactivityMs;
+  onSuspended;
+  projectPath;
+  pending = null;
+  completed = null;
+  waiters = /* @__PURE__ */ new Set();
+  state = "active";
+  history = [];
+  excludedWaitMs = 0;
+  constructor(runId2, projectPath2, options = {}) {
+    this.runId = runId2;
+    this.projectPath = projectPath2;
+    this.inactivityMs = options.inactivityMs ?? DEFAULT_INACTIVITY_MS;
+    this.onSuspended = options.onSuspended;
+  }
+  activeNow() {
+    const pendingWait = this.pending ? Date.now() - this.pending.startedAt : 0;
+    return Date.now() - this.excludedWaitMs - pendingWait;
+  }
+  run(options, label) {
+    return this.enqueue(options.systemPrompt, options, label, [], options.tools, options.cwd);
+  }
+  async createSession(options) {
+    const history = [];
+    return {
+      prompt: async (callOptions, label) => {
+        const response3 = await this.enqueue(
+          options.systemPrompt,
+          callOptions,
+          label,
+          history,
+          options.tools,
+          options.cwd
+        );
+        history.push({
+          role: label,
+          request: history.length === 0 ? callOptions.userPrompt : callOptions.userPrompt.slice(0, 1500),
+          response: response3.text.slice(0, 1500)
+        });
+        trimSessionHistory(history, options.compactHistory?.keepRecentUserTurns);
+        return response3;
+      },
+      historyLength: () => history.length * 2,
+      dispose: () => void 0
+    };
+  }
+  async next(waitMs = 0) {
+    if (this.pending) return { state: "pending", request: this.pending.request };
+    if (this.state === "suspended") return { state: "suspended" };
+    if (this.state === "cancelled") return { state: "cancelled" };
+    if (waitMs <= 0) return { state: "waiting" };
+    await new Promise((resolve4) => {
+      const done = () => {
+        clearTimeout(timer);
+        this.waiters.delete(done);
+        resolve4();
+      };
+      const timer = setTimeout(done, Math.min(waitMs, 2e4));
+      this.waiters.add(done);
+    });
+    return this.next(0);
+  }
+  submit(requestId, response3) {
+    if (this.completed?.requestId === requestId) {
+      if (this.completed.response !== response3) throw new Error("That decision was already submitted with a different response.");
+      return { accepted: true, duplicate: true };
+    }
+    if (!this.pending || this.pending.request.requestId !== requestId) {
+      throw new Error("That decision request is stale or does not belong to the active run.");
+    }
+    validateAppFlowDecisionResponse(response3, this.pending.request.role);
+    const pending = this.pending;
+    clearTimeout(pending.timer);
+    this.excludedWaitMs += Date.now() - pending.startedAt;
+    this.pending = null;
+    this.completed = { requestId, response: response3 };
+    recordDecisionWait(pending.startedAt, "answered");
+    this.history.push({
+      role: pending.request.role,
+      request: pending.request.userPrompt.slice(0, 1500),
+      response: response3.slice(0, 1500)
+    });
+    if (this.history.length > MAX_HISTORY_ITEMS) this.history.splice(1, 1);
+    pending.resolve(emptyResult(response3));
+    this.notify();
+    return { accepted: true, duplicate: false };
+  }
+  suspend(reason) {
+    if (this.state !== "active") return;
+    this.state = "suspended";
+    this.rejectPending(new DecisionSuspendedError(reason));
+  }
+  resume() {
+    if (this.state === "suspended") {
+      this.state = "active";
+      this.notify();
+    }
+  }
+  cancel() {
+    this.state = "cancelled";
+    this.rejectPending(new Error("Cancelled"));
+  }
+  async enqueue(systemPrompt, options, label, sessionHistory, tools, cwd) {
+    this.assertActive();
+    if (this.pending) throw new Error("A Codex decision is already pending for this run.");
+    const screenshot = options.imagePath ? { mimeType: "image/png", data: (await readFile6(options.imagePath)).toString("base64") } : null;
+    this.assertActive();
+    if (this.pending) throw new Error("A Codex decision is already pending for this run.");
+    const request = {
+      runId: this.runId,
+      requestId: randomUUID3(),
+      feature: "app-flow",
+      capabilities: capabilitiesFor(tools),
+      projectPath: this.projectPath || cwd,
+      role: label,
+      systemPrompt,
+      userPrompt: options.userPrompt,
+      expectedResponse: "Return one strict JSON object that follows the schema and rules in systemPrompt.",
+      history: (sessionHistory.length ? sessionHistory : this.history).slice(-MAX_HISTORY_ITEMS),
+      screenshot,
+      createdAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    return new Promise((resolve4, reject) => {
+      const timer = setTimeout(() => {
+        if (this.pending?.request.requestId !== request.requestId) return;
+        this.state = "suspended";
+        this.excludedWaitMs += Date.now() - this.pending.startedAt;
+        recordDecisionWait(this.pending.startedAt, "suspended");
+        this.pending = null;
+        const error51 = new DecisionSuspendedError();
+        reject(error51);
+        this.onSuspended?.(error51);
+        this.notify();
+      }, this.inactivityMs);
+      this.pending = { request, resolve: resolve4, reject, timer, startedAt: Date.now() };
+      this.notify();
+    });
+  }
+  rejectPending(error51) {
+    const pending = this.pending;
+    if (pending) {
+      clearTimeout(pending.timer);
+      this.excludedWaitMs += Date.now() - pending.startedAt;
+      recordDecisionWait(pending.startedAt, error51 instanceof DecisionSuspendedError ? "suspended" : "cancelled");
+      this.pending = null;
+      pending.reject(error51);
+    }
+    this.notify();
+  }
+  notify() {
+    for (const waiter of [...this.waiters]) waiter();
+  }
+  assertActive() {
+    if (this.state === "suspended") throw new DecisionSuspendedError();
+    if (this.state === "cancelled") throw new Error("Cancelled");
+  }
+};
+var AppFlowHost = class {
+  providers = /* @__PURE__ */ new Map();
+  services;
+  constructor(services) {
+    this.services = services;
+  }
+  async start(input) {
+    const projectPath2 = String(input.projectPath ?? "");
+    const mode = input.mode === "screen-ui-and-structure" ? "screen-ui-and-structure" : "structure-only";
+    const runId2 = randomUUID3();
+    const explorationMode = typeof input.explorationMode === "string" ? input.explorationMode : void 0;
+    const decisions = requiresDecisionProvider(mode, explorationMode, input.judgeUnclearScreens === true) ? new CodexAppFlowDecisionProvider(runId2, projectPath2, {
+      onSuspended: () => {
+        void this.services.pause(runId2);
+      }
+    }) : void 0;
+    if (decisions) this.providers.set(runId2, decisions);
+    try {
+      await this.services.start({ ...input, mode }, { runId: runId2, decisions });
+    } catch (error51) {
+      decisions?.cancel();
+      this.providers.delete(runId2);
+      throw error51;
+    }
+    return {
+      runId: runId2,
+      state: "running",
+      ...decisions ? {
+        instructions: "Call mobile_appflow_next_decision until the run completes, suspends, or needs user action. Submit each response as one strict JSON object."
+      } : {}
+    };
+  }
+  provider(runId2) {
+    const provider = this.providers.get(runId2);
+    if (!provider) throw new Error("That decision run is not active or does not use agent decisions.");
+    return provider;
+  }
+  async nextDecision(runId2, waitMs = 0) {
+    const provider = this.providers.get(runId2);
+    if (provider) {
+      const polled = await provider.next(waitMs);
+      if (polled.state !== "waiting") return polled;
+    }
+    const status = await this.services.status({ runId: runId2 });
+    if (status.state === "running") return { state: "waiting" };
+    if (status.state === "needs-user-action" || status.state === "suspended" || status.state === "cancelled") {
+      return { state: status.state };
+    }
+    this.providers.delete(runId2);
+    return status;
+  }
+  async submitDecision(runId2, requestId, response3) {
+    this.provider(runId2).submit(requestId, response3);
+    return this.nextDecision(runId2, 15e3);
+  }
+  /** Starts an explore-UI pass and returns its run id, for the same poll/cancel loop as a sweep. */
+  async exploreUi(projectPath2, options) {
+    const runId2 = randomUUID3();
+    await this.services.exploreUi(projectPath2, options, { runId: runId2 });
+    return { runId: runId2, state: "running" };
+  }
+  async cancel(runId2) {
+    this.providers.get(runId2)?.cancel();
+    this.providers.delete(runId2);
+    return this.services.cancel(runId2);
+  }
+  async close() {
+    for (const provider of this.providers.values()) provider.cancel();
+    this.providers.clear();
+    await this.services.close?.();
+  }
+};
+var APP_FLOW_DIRECTORY = join14(homedir3(), "Library/Application Support/mobile-dev/app-flow");
+function vendoredAgentDeviceRoot() {
+  const roots = [
+    join14(dirname6(fileURLToPath5(import.meta.url)), "agent-device/node_modules/agent-device"),
+    resolve2(process.cwd(), "runtimes/agent-device/node_modules/agent-device"),
+    resolve2(process.cwd(), "../ai-harness/node_modules/agent-device")
+  ];
+  return roots.find((root) => existsSync(join14(root, "dist/src/index.js")));
+}
+async function loadVendoredAgentDevice() {
+  const root = vendoredAgentDeviceRoot();
+  const entry2 = root ? join14(root, "dist/src/index.js") : void 0;
+  if (!entry2) throw new Error("The bundled agent-device runtime is unavailable. Reinstall or rebuild Mobile Dev.");
+  const dynamicImport = new Function("specifier", "return import(specifier)");
+  return dynamicImport(pathToFileURL(entry2).href);
+}
+async function createAppFlowHost(options = {}) {
+  const [{ createAppFlowService }, { createManualRecordingService }] = await Promise.all([
+    import("./app-flow-MCPPLIJI.mjs"),
+    import("./manual-5CPWNLVR.mjs")
+  ]);
+  const listeners = /* @__PURE__ */ new Set();
+  const runs = /* @__PURE__ */ new Map();
+  const MAX_BUFFERED_EVENTS = 64;
+  const recentEvents = /* @__PURE__ */ new Map();
+  const dataDir = options.dataDir ?? APP_FLOW_DIRECTORY;
+  const runStore = new AppFlowRunStore(dataDir);
+  const remoteRunProjects = /* @__PURE__ */ new Map();
+  const promptRelays = /* @__PURE__ */ new Map();
+  const runWrites = /* @__PURE__ */ new Map();
+  let eventSeq = 0;
+  const bufferEvent = (key, runId2, event) => {
+    const seq = ++eventSeq;
+    const buffered = recentEvents.get(key) ?? [];
+    buffered.push({ seq, ...runId2 ? { runId: runId2 } : {}, event });
+    if (buffered.length > MAX_BUFFERED_EVENTS) buffered.splice(0, buffered.length - MAX_BUFFERED_EVENTS);
+    recentEvents.set(key, buffered);
+    return seq;
+  };
+  let activeDecisions;
+  let flow;
+  const sharedRun = (run5) => ({ ...run5, ownerPid: process.pid });
+  const persistRun = (run5) => {
+    const snapshot2 = sharedRun(run5);
+    const previous = runWrites.get(run5.runId) ?? Promise.resolve();
+    const pending = previous.then(() => runStore.writeRun(snapshot2)).catch((error51) => {
+      captureServerError(error51, "app_flow.run_store");
+    });
+    runWrites.set(run5.runId, pending);
+    void pending.finally(() => {
+      if (runWrites.get(run5.runId) === pending) runWrites.delete(run5.runId);
+    });
+  };
+  const stopPromptRelay = (runId2) => {
+    const timer = promptRelays.get(runId2);
+    if (timer) clearInterval(timer);
+    promptRelays.delete(runId2);
+  };
+  const startPromptRelay = (run5, promptId) => {
+    stopPromptRelay(run5.runId);
+    let checking = false;
+    const timer = setInterval(() => {
+      if (checking || run5.state !== "needs-user-action") return;
+      checking = true;
+      void runStore.takeResolution(run5.projectPath, run5.runId, promptId).then(async (resolution2) => {
+        if (!resolution2) return;
+        const result4 = await flow.resolvePrompt(run5.projectPath, resolution2, promptId);
+        if (!result4.resolved) return;
+        run5.state = resolution2 === "stop" ? "completed" : "running";
+        persistRun(run5);
+        stopPromptRelay(run5.runId);
+      }).catch((error51) => captureServerError(error51, "app_flow.prompt_relay")).finally(() => {
+        checking = false;
+      });
+    }, 100);
+    timer.unref?.();
+    promptRelays.set(run5.runId, timer);
+  };
+  const agentDeviceRoot = vendoredAgentDeviceRoot();
+  const agentDeviceCli = agentDeviceRoot ? `${JSON.stringify(process.execPath)} ${JSON.stringify(join14(agentDeviceRoot, "bin/agent-device.mjs"))}` : void 0;
+  const getProjectId = (selectedProjectPath) => createHash5("sha256").update(selectedProjectPath).digest("hex").slice(0, 16);
+  const getProjectDir = (selectedProjectId) => join14(dataDir, "app-flows", selectedProjectId);
+  const ports = {
+    dataDir,
+    get decisions() {
+      return activeDecisions;
+    },
+    emit(event) {
+      const eventProjectId = "projectId" in event ? event.projectId : void 0;
+      const run5 = [...runs.values()].find((candidate) => candidate.state === "running" && (!eventProjectId || getProjectId(candidate.projectPath) === eventProjectId));
+      if (run5) {
+        run5.event = event;
+        if (event.type === "prompt") {
+          run5.state = "needs-user-action";
+          if (event.prompt?.id) startPromptRelay(run5, event.prompt.id);
+        } else if (event.type === "error") {
+          run5.state = "failed";
+          run5.error = event.message;
+          stopPromptRelay(run5.runId);
+        } else if (event.type === "complete") run5.state = "completed";
+        else if (run5.state === "needs-user-action") run5.state = "running";
+        persistRun(run5);
+      }
+      const runId2 = run5?.runId;
+      const key = "nodeId" in event ? `manual:${event.projectId}` : runId2 ?? `project:${eventProjectId ?? "unknown"}`;
+      const seq = bufferEvent(key, runId2, event);
+      for (const listener of listeners) listener({ ...runId2 ? { runId: runId2 } : {}, seq, event });
+    },
+    loadAgentDevice: options.loadAgentDevice ?? loadVendoredAgentDevice,
+    agentDeviceCli,
+    screenshotUri(project, slug) {
+      return `appflow-image://mobile-dev/${project}/${Buffer.from(slug).toString("base64url")}`;
+    }
+  };
+  flow = createAppFlowService(ports);
+  const manual = createManualRecordingService(ports);
+  const projectFor = (query) => {
+    if (query.projectPath) return query.projectPath;
+    const run5 = query.runId ? runs.get(query.runId) : void 0;
+    if (!run5) throw new Error("That App Flow run does not exist.");
+    return run5.projectPath;
+  };
+  const services = {
+    async start(input, context2) {
+      if ([...runs.values()].some((run6) => run6.state === "running" || run6.state === "needs-user-action")) {
+        throw new Error("Another App Flow run is already active.");
+      }
+      const selectedProjectPath = String(input.projectPath ?? "");
+      if (manual.isActive(selectedProjectPath)) {
+        throw new ExpectedOperationError("invalid_input", "Stop the active App Flow recording first.");
+      }
+      const run5 = { runId: context2.runId, projectPath: selectedProjectPath, state: "running" };
+      runs.set(run5.runId, run5);
+      persistRun(run5);
+      recentEvents.delete(`project:${getProjectId(selectedProjectPath)}`);
+      recentEvents.delete(`manual:${getProjectId(selectedProjectPath)}`);
+      try {
+        await manual.releaseDevices(selectedProjectPath);
+        activeDecisions = context2.decisions;
+        const started = await flow.start(input);
+        if (!started.ok) {
+          run5.state = "failed";
+          run5.error = started.error;
+          persistRun(run5);
+          runs.delete(run5.runId);
+          activeDecisions = void 0;
+          throw new Error(started.error);
+        }
+        return started;
+      } catch (error51) {
+        if (run5.state === "running") {
+          run5.state = "failed";
+          run5.error = error51 instanceof Error ? error51.message : String(error51);
+          persistRun(run5);
+          runs.delete(run5.runId);
+        }
+        activeDecisions = void 0;
+        throw error51;
+      }
+    },
+    async status(query) {
+      if (query.runId) {
+        const run5 = runs.get(query.runId);
+        if (!run5) throw new Error("That App Flow run does not exist.");
+        return { ...run5, appLaunched: await flow.isAppLaunched(run5.projectPath) };
+      }
+      const selectedProjectPath = projectFor(query);
+      const appLaunched = await flow.isAppLaunched(selectedProjectPath);
+      const active = [...runs.values()].find((run5) => run5.projectPath === selectedProjectPath && (run5.state === "running" || run5.state === "needs-user-action" || run5.state === "suspended"));
+      const saved = await flow.getStatus(selectedProjectPath);
+      if (active) {
+        return {
+          ...active,
+          appLaunched,
+          exists: saved.exists,
+          projectId: saved.projectId,
+          ...saved.manifest === void 0 ? {} : { manifest: saved.manifest }
+        };
+      }
+      const shared = await runStore.readRun(selectedProjectPath);
+      if (shared && (shared.state === "running" || shared.state === "needs-user-action" || shared.state === "suspended")) {
+        remoteRunProjects.set(shared.runId, selectedProjectPath);
+        const { ownerPid: _ownerPid, updatedAt: _updatedAt, ...snapshot2 } = shared;
+        if (shared.state === "suspended" || ownerAlive(shared.ownerPid)) {
+          return {
+            ...snapshot2,
+            appLaunched,
+            exists: saved.exists,
+            projectId: saved.projectId,
+            ...saved.manifest === void 0 ? {} : { manifest: saved.manifest }
+          };
+        }
+        const error51 = "App Flow stopped because its Codex worker exited. Start the project again to resume from the saved checkpoint.";
+        const event = { type: "error", phase: "capture", message: error51 };
+        const failed = { ...snapshot2, state: "failed", error: error51, event };
+        await runStore.writeRun({ ...failed, ownerPid: shared.ownerPid }).catch((cause2) => {
+          captureServerError(cause2, "app_flow.run_store");
+        });
+        return {
+          ...failed,
+          appLaunched,
+          exists: saved.exists,
+          projectId: saved.projectId,
+          ...saved.manifest === void 0 ? {} : { manifest: saved.manifest }
+        };
+      }
+      return {
+        projectPath: selectedProjectPath,
+        state: saved.exists ? "completed" : "idle",
+        appLaunched,
+        exists: saved.exists,
+        projectId: saved.projectId,
+        ...saved.manifest === void 0 ? {} : { manifest: saved.manifest }
+      };
+    },
+    async result(query) {
+      const selectedProjectPath = projectFor(query);
+      return {
+        ...query.runId ? { runId: query.runId } : {},
+        projectPath: selectedProjectPath,
+        projectId: getProjectId(selectedProjectPath),
+        result: await flow.getResult(selectedProjectPath)
+      };
+    },
+    async clear(selectedProjectPath) {
+      const liveStates = ["running", "needs-user-action", "suspended"];
+      const projectRuns = [...runs.values()].filter((run5) => run5.projectPath === selectedProjectPath);
+      const local = projectRuns.find((run5) => run5.projectPath === selectedProjectPath && liveStates.includes(run5.state));
+      if (local) throw new Error("Stop the active App Flow run before clearing its saved data.");
+      const shared = await runStore.readRun(selectedProjectPath);
+      const sharedIsLive = shared && liveStates.includes(shared.state) && (shared.state === "suspended" || ownerAlive(shared.ownerPid));
+      if (sharedIsLive) throw new Error("Stop the active App Flow run before clearing its saved data.");
+      if (manual.isActive(selectedProjectPath)) {
+        throw new Error("Stop the active App Flow recording before clearing its saved data.");
+      }
+      await Promise.all(projectRuns.map((run5) => runWrites.get(run5.runId)).filter(
+        (pending) => pending !== void 0
+      ));
+      const cleared = await flow.clear(selectedProjectPath);
+      for (const [runId2, run5] of runs) {
+        if (run5.projectPath === selectedProjectPath) {
+          stopPromptRelay(runId2);
+          runs.delete(runId2);
+          runWrites.delete(runId2);
+        }
+      }
+      for (const [runId2, projectPath2] of remoteRunProjects) {
+        if (projectPath2 === selectedProjectPath) remoteRunProjects.delete(runId2);
+      }
+      recentEvents.delete(`project:${cleared.projectId}`);
+      recentEvents.delete(`manual:${cleared.projectId}`);
+      return cleared;
+    },
+    async pause(selectedRunId) {
+      const run5 = runs.get(selectedRunId);
+      if (!run5) throw new Error("That App Flow run does not exist.");
+      const result4 = await flow.pause(run5.projectPath);
+      if (result4.paused) run5.state = "suspended";
+      if (result4.paused) persistRun(run5);
+      activeDecisions?.suspend("App Flow was paused and can be resumed.");
+      return result4;
+    },
+    async cancel(selectedRunId) {
+      const run5 = runs.get(selectedRunId);
+      if (!run5) throw new Error("That App Flow run does not exist.");
+      const result4 = await flow.cancel(run5.projectPath);
+      run5.state = "cancelled";
+      stopPromptRelay(run5.runId);
+      persistRun(run5);
+      activeDecisions = void 0;
+      return result4;
+    },
+    // Raise a failed launch the same way `start` does, and for the same reason: the panel decides
+    // whether a call failed from the tool result's `isError`, which only a throw through `safe()`
+    // sets. Returned as a value, every failure after the device boots — the scheme prompt, a Metro
+    // cold start, an install race — reached the user as a successful launch of an app that never
+    // came up, which is indistinguishable from "it only booted the simulator".
+    async exploreUi(selectedProjectPath, exploreOptions, context2) {
+      if ([...runs.values()].some((run6) => run6.state === "running" || run6.state === "needs-user-action")) {
+        throw new Error("Another App Flow run is already active.");
+      }
+      if (manual.isActive(selectedProjectPath)) {
+        throw new ExpectedOperationError("invalid_input", "Stop the active App Flow recording first.");
+      }
+      const run5 = { runId: context2.runId, projectPath: selectedProjectPath, state: "running" };
+      runs.set(run5.runId, run5);
+      persistRun(run5);
+      recentEvents.delete(`project:${getProjectId(selectedProjectPath)}`);
+      try {
+        await manual.releaseDevices(selectedProjectPath);
+        const started = await flow.exploreUi(selectedProjectPath, exploreOptions);
+        if (!started.ok) {
+          run5.state = "failed";
+          run5.error = started.error;
+          persistRun(run5);
+          runs.delete(run5.runId);
+          if (started.expected) throw new ExpectedOperationError("invalid_input", started.error);
+          throw new Error(started.error);
+        }
+        return started;
+      } catch (error51) {
+        if (run5.state === "running") {
+          run5.state = "failed";
+          run5.error = error51 instanceof Error ? error51.message : String(error51);
+          persistRun(run5);
+          runs.delete(run5.runId);
+        }
+        throw error51;
+      }
+    },
+    async launchApp(selectedProjectPath) {
+      if (manual.isActive(selectedProjectPath)) {
+        throw new ExpectedOperationError("invalid_input", "Stop the active App Flow recording first.");
+      }
+      await manual.releaseDevices(selectedProjectPath);
+      const launched = await flow.launchApp(selectedProjectPath);
+      if (launched.ok) return launched;
+      if (launched.expected) throw new ExpectedOperationError("invalid_input", launched.error);
+      throw new Error(launched.error);
+    },
+    async resolvePrompt(selectedRunId, selectedResolution, promptId, selectedProjectPath) {
+      const run5 = runs.get(selectedRunId);
+      if (!run5) {
+        if (!selectedProjectPath || !promptId) throw new Error("That App Flow run does not exist.");
+        const shared = await runStore.readRun(selectedProjectPath);
+        const sharedPrompt = shared?.event && typeof shared.event === "object" && "prompt" in shared.event ? shared.event.prompt : void 0;
+        if (!shared || shared.runId !== selectedRunId || shared.state !== "needs-user-action" || sharedPrompt?.id !== promptId || !ownerAlive(shared.ownerPid)) {
+          throw new Error("That App Flow prompt is no longer active.");
+        }
+        await runStore.requestResolution(selectedProjectPath, { runId: selectedRunId, promptId, resolution: selectedResolution });
+        for (let attempt = 0; attempt < 40; attempt += 1) {
+          await new Promise((resolve4) => setTimeout(resolve4, 50));
+          const updated = await runStore.readRun(selectedProjectPath);
+          if (!updated || updated.runId !== selectedRunId || updated.state !== "needs-user-action") return { resolved: true, relayed: true };
+        }
+        return { resolved: true, relayed: true };
+      }
+      const result4 = await flow.resolvePrompt(run5.projectPath, selectedResolution, promptId);
+      if (result4.resolved && selectedResolution !== "stop") run5.state = "running";
+      if (result4.resolved && selectedResolution === "stop") run5.state = "completed";
+      if (result4.resolved) {
+        stopPromptRelay(run5.runId);
+        persistRun(run5);
+      }
+      return result4;
+    },
+    manualStart: (selectedProjectPath, nodeId) => {
+      recentEvents.delete(`manual:${getProjectId(selectedProjectPath)}`);
+      return manual.start(selectedProjectPath, nodeId);
+    },
+    manualAct: (selectedProjectPath, selectedAction) => manual.act(selectedProjectPath, selectedAction),
+    manualStop: (selectedProjectPath) => manual.stop(selectedProjectPath),
+    manualCancel: (selectedProjectPath) => manual.cancel(selectedProjectPath),
+    manualReplay: (selectedProjectPath, nodeId) => manual.replay(selectedProjectPath, nodeId),
+    runtimeReplay: (selectedProjectPath, nodeId) => manual.replayRuntime(selectedProjectPath, nodeId),
+    async poll(query, since) {
+      const key = query.runId ? query.runId : `manual:${getProjectId(projectFor(query))}`;
+      const buffered = recentEvents.get(key) ?? [];
+      const pending = buffered.filter((entry2) => entry2.seq > since);
+      if (pending.length || !query.runId) return pending;
+      const remoteProjectPath = remoteRunProjects.get(query.runId);
+      if (!remoteProjectPath) return pending;
+      const durable = await runStore.readEvent(remoteProjectPath, query.runId, since);
+      return durable ? [durable] : pending;
+    },
+    async screenshot(selectedProjectId, encodedPath) {
+      let decoded = Buffer.from(encodedPath, "base64url").toString("utf8");
+      decoded = decoded.split("?")[0] ?? decoded;
+      if (!decoded || isAbsolute4(decoded)) throw new Error("Invalid App Flow screenshot path.");
+      const root = getProjectDir(selectedProjectId);
+      const candidate = resolve2(root, decoded);
+      const local = relative3(root, candidate);
+      if (local.startsWith("..") || isAbsolute4(local)) throw new Error("App Flow screenshot path escapes its project.");
+      return readFile6(candidate);
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    }
+  };
+  return new AppFlowHost(services);
+}
+function ownerAlive(pid3) {
+  try {
+    process.kill(pid3, 0);
+    return true;
+  } catch (error51) {
+    return error51.code === "EPERM";
+  }
+}
+
+// packages/core/src/app-flow-projects.ts
+import { randomUUID as randomUUID4 } from "node:crypto";
+import { mkdir as mkdir4, readFile as readFile7, rename as rename3, stat as stat7, unlink as unlink2, writeFile as writeFile6 } from "node:fs/promises";
+import { basename as basename3, isAbsolute as isAbsolute6, join as join15 } from "node:path";
+
+// packages/core/src/project-folder-dialog.ts
+import { execFile as execFile9 } from "node:child_process";
+import { stat as stat6 } from "node:fs/promises";
+import { isAbsolute as isAbsolute5 } from "node:path";
+import { promisify as promisify8 } from "node:util";
+var execute7 = promisify8(execFile9);
+var PROMPT = "Choose your React Native project folder";
+async function chooseProjectFolder() {
+  if (process.platform !== "darwin") throw new Error("Choosing a folder needs macOS.");
+  const { stdout } = await execute7("/usr/bin/osascript", ["-e", `on run argv
+  try
+    tell application "System Events" to activate
+  end try
+  try
+    return POSIX path of (choose folder with prompt (item 1 of argv))
+  on error number -128
+    return ""
+  end try
+end run`, PROMPT], { timeout: 3e5, maxBuffer: 8192 });
+  const raw = stdout.trim();
+  const path = raw.length > 1 ? raw.replace(/\/+$/, "") : raw;
+  if (!path) return void 0;
+  if (!isAbsolute5(path)) throw new Error("The folder picker returned an unusable path.");
+  if (!await stat6(path).then((entry2) => entry2.isDirectory(), () => false)) throw new Error("The chosen folder is unavailable.");
+  return path;
+}
+
+// packages/core/src/app-flow-projects.ts
+var REGISTRY_FILE = "projects.json";
+var MAX_PROJECTS = 12;
+function normalize(projectPath2) {
+  const trimmed = projectPath2.length > 1 ? projectPath2.replace(/\/+$/, "") : projectPath2;
+  return trimmed.normalize("NFC");
+}
+function same(left, right) {
+  return normalize(left).localeCompare(normalize(right), "en", { sensitivity: "base" }) === 0;
+}
+async function isDirectory(path) {
+  return await stat7(path).then((entry2) => entry2.isDirectory(), () => false);
+}
+async function readJson2(path) {
+  try {
+    return JSON.parse(await readFile7(path, "utf-8"));
+  } catch {
+    return null;
+  }
+}
+function timestamp2(value) {
+  return typeof value === "string" && !Number.isNaN(Date.parse(value)) ? value : "";
+}
+var AppFlowProjectChoices = class _AppFlowProjectChoices {
+  directory;
+  /** The system folder picker, injectable so a test never opens a dialog. */
+  pick;
+  // The panel opens its selector, chooses a project and starts a build in quick succession, and the
+  // model's process writes the engine registry into the same folder. Reads therefore have to see
+  // this process's own writes, and every write starts from the newest list rather than a snapshot.
+  updates = Promise.resolve();
+  constructor(directory, pick4 = chooseProjectFolder) {
+    this.directory = directory;
+    this.pick = pick4;
+  }
+  get path() {
+    return join15(this.directory, REGISTRY_FILE);
+  }
+  get enginePath() {
+    return join15(this.directory, "app-flows", REGISTRY_FILE);
+  }
+  /** Folders this picker recorded, newest first. */
+  async read() {
+    const saved = await readJson2(this.path);
+    const entries = Array.isArray(saved?.projects) ? saved.projects : [];
+    return entries.filter((entry2) => typeof entry2?.path === "string").map((entry2) => ({ path: entry2.path, lastPickedAt: timestamp2(entry2.lastPickedAt) }));
+  }
+  /** Folders a map was built for, which the engine records even for a run started from chat. */
+  async readEngine() {
+    const saved = await readJson2(this.enginePath);
+    const entries = Array.isArray(saved) ? saved : [];
+    return entries.filter((entry2) => typeof entry2?.path === "string").map((entry2) => ({ path: entry2.path, lastPickedAt: timestamp2(entry2.lastOpenedAt) }));
+  }
+  /** Newest first, once per folder, and short enough that the selector stays scannable. */
+  static clean(projects) {
+    const seen = /* @__PURE__ */ new Set();
+    const unique = [];
+    for (const entry2 of [...projects].sort((left, right) => right.lastPickedAt.localeCompare(left.lastPickedAt))) {
+      if (!isAbsolute6(entry2.path)) continue;
+      const path = normalize(entry2.path);
+      if (seen.has(path)) continue;
+      seen.add(path);
+      unique.push({ path, name: basename3(path) || path, lastPickedAt: entry2.lastPickedAt });
+    }
+    return unique.slice(0, MAX_PROJECTS);
+  }
+  /** Only this picker's own folders are stored; the engine registry is re-read every time. */
+  async write(projects) {
+    const registry2 = { version: 1, projects: projects.map((entry2) => ({ path: normalize(entry2.path), lastPickedAt: entry2.lastPickedAt })) };
+    await mkdir4(this.directory, { recursive: true, mode: 448 });
+    const temporary = `${this.path}.${process.pid}.${randomUUID4()}.tmp`;
+    try {
+      await writeFile6(temporary, JSON.stringify(registry2, null, 2), "utf-8");
+      await rename3(temporary, this.path);
+    } finally {
+      await unlink2(temporary).catch(() => void 0);
+    }
+  }
+  async change(changed) {
+    const next = this.updates.catch(() => void 0).then(async () => {
+      const known = _AppFlowProjectChoices.clean(changed(await this.read())).map((entry2) => ({ path: entry2.path, lastPickedAt: entry2.lastPickedAt }));
+      await this.write(known);
+      return _AppFlowProjectChoices.clean([...known, ...await this.readEngine()]);
+    });
+    this.updates = next;
+    return await next;
+  }
+  /** Available project folders, newest first, with folders that no longer exist left out. */
+  async list() {
+    const projects = _AppFlowProjectChoices.clean([...await this.read(), ...await this.readEngine()]);
+    const available = await Promise.all(projects.map(async (entry2) => await isDirectory(entry2.path) ? entry2 : null));
+    return available.filter((entry2) => entry2 !== null);
+  }
+  /**
+   * Records the folder the user picked. The panel offers no way to type a path, so one App Flow
+   * could not open is refused here rather than reaching a run and failing there.
+   */
+  async record(projectPath2) {
+    const path = normalize(projectPath2.trim());
+    if (!isAbsolute6(path)) throw new Error("Choose the app's project folder.");
+    if (!await isDirectory(path)) throw new Error("That project folder no longer exists.");
+    const stamp = (/* @__PURE__ */ new Date()).toISOString();
+    const projects = await this.change((known) => [{ path, lastPickedAt: stamp }, ...known.filter((entry2) => !same(entry2.path, path))]);
+    const recorded = projects.find((entry2) => same(entry2.path, path));
+    if (!recorded) throw new Error("That project folder no longer exists.");
+    return recorded;
+  }
+  /** Opens the system folder picker and records what it returns. Undefined means the user cancelled. */
+  async choose() {
+    const startedAt = Date.now();
+    try {
+      const path = await this.pick();
+      if (!path) {
+        recordProjectDialog("cancelled", Date.now() - startedAt);
+        return void 0;
+      }
+      const project = await this.record(path);
+      recordProjectDialog("chosen", Date.now() - startedAt);
+      return project;
+    } catch (error51) {
+      recordProjectDialog("failed", Date.now() - startedAt);
+      throw error51;
+    }
+  }
+};
+
+// packages/core/src/app-flow-tools.ts
+var read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
+var write = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
+var destructive = { readOnlyHint: false, destructiveHint: true, openWorldHint: false };
+var appVisibility = { ui: { visibility: ["app"] } };
+var modelVisibility = { ui: { visibility: ["model"] } };
+var sharedVisibility = { ui: { visibility: ["app", "model"] } };
+var projectPath = external_exports.string().min(1).max(4096);
+var runId = external_exports.string().uuid();
+var projectId2 = external_exports.string().min(1).max(128).regex(/^[a-zA-Z0-9_-]+$/);
+var screenshotId = external_exports.string().min(1).max(512).regex(/^[a-zA-Z0-9_.~-]+$/);
+function safe(handler) {
+  return async (input) => {
+    try {
+      return await handler(input);
+    } catch (error51) {
+      captureServerError(error51, "app_flow.tool");
+      return { isError: true, content: [{ type: "text", text: errorMessage(error51) }] };
+    }
+  };
+}
+function dataResult(data, message3) {
+  const structuredContent = data && typeof data === "object" && !Array.isArray(data) ? data : { result: data };
+  return {
+    content: [{ type: "text", text: message3 ?? JSON.stringify(structuredContent) }],
+    structuredContent
+  };
+}
+function decisionResult(polled) {
+  const request = "request" in polled ? polled.request : void 0;
+  if (!request) return dataResult(polled);
+  const metadata4 = {
+    runId: request.runId,
+    requestId: request.requestId,
+    role: request.role,
+    feature: request.feature,
+    capabilities: request.capabilities,
+    projectPath: request.projectPath,
+    systemPrompt: request.systemPrompt,
+    userPrompt: request.userPrompt,
+    expectedResponse: request.expectedResponse,
+    history: request.history,
+    createdAt: request.createdAt
+  };
+  return {
+    content: [
+      {
+        type: "text",
+        text: `App Flow decision request:
+${JSON.stringify(metadata4)}
+Use only the listed capabilities. Answer from the role instructions, history, and image, then call mobile_appflow_submit_decision with one strict JSON object. The submit result may contain the next request.`
+      },
+      ...request.screenshot ? [{ type: "image", ...request.screenshot }] : []
+    ]
+  };
+}
+function lookup(input) {
+  if (Boolean(input.runId) === Boolean(input.projectPath)) {
+    throw new Error("Pass exactly one of runId or projectPath.");
+  }
+  return input;
+}
+var lookupSchema = { runId: runId.optional(), projectPath: projectPath.optional(), since: external_exports.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional() };
+var resolution = external_exports.enum(["stop", "override", "continue"]);
+var locator2 = external_exports.object({
+  ref: external_exports.string(),
+  role: external_exports.string().optional(),
+  type: external_exports.string().optional(),
+  label: external_exports.string().optional(),
+  value: external_exports.string().optional(),
+  identifier: external_exports.string().optional(),
+  rect: external_exports.object({ x: external_exports.number(), y: external_exports.number(), width: external_exports.number(), height: external_exports.number() }).optional()
+});
+var manualAction = external_exports.discriminatedUnion("type", [
+  external_exports.object({ type: external_exports.literal("tap"), target: locator2 }),
+  external_exports.object({ type: external_exports.literal("fill"), target: locator2, value: external_exports.string() }),
+  external_exports.object({ type: external_exports.literal("scroll"), direction: external_exports.enum(["up", "down", "left", "right"]) })
+]);
+function registerAppFlowTools(server, host, projects) {
+  K3(server, "mobile_appflow_start", {
+    title: "Start App Flow",
+    description: "Start a non-blocking App Flow build. Adaptive capture runs deterministically (runtime navigation, deep-link fallback, then verified replay). Use ai only as a continuation for unresolved screens; when the result carries instructions, immediately service mobile_appflow_next_decision and mobile_appflow_submit_decision until completion, suspension, cancellation, or a human-action gate.",
+    inputSchema: {
+      projectPath,
+      mode: external_exports.enum(["structure-only", "screen-ui-and-structure"]).default("structure-only"),
+      screenLimit: external_exports.number().int().min(0).max(1e3).optional(),
+      explorationMode: external_exports.enum(["adaptive", "ai", "auto", "fast", "thorough"]).default("adaptive"),
+      deepLinkJudgeMode: external_exports.enum(["on", "off", "never"]).optional(),
+      captureUiStates: external_exports.boolean().optional(),
+      judgeUnclearScreens: external_exports.boolean().optional(),
+      screenIds: external_exports.array(external_exports.string().min(1).max(1024)).max(1e3).optional()
+    },
+    annotations: write,
+    _meta: sharedVisibility
+  }, safe(async (input) => {
+    const started = await host.start(input);
+    return dataResult(started, started.instructions ?? `Started App Flow run ${started.runId}.`);
+  }));
+  K3(server, "mobile_appflow_status", {
+    title: "Read App Flow status",
+    description: "Read an active run by runId or reopen persisted App Flow status by projectPath.",
+    inputSchema: lookupSchema,
+    annotations: read,
+    _meta: sharedVisibility
+  }, safe(async (input) => dataResult(await host.services.status(lookup(input)))));
+  K3(server, "mobile_appflow_result", {
+    title: "Read App Flow result",
+    description: "Read the current or persisted App Flow graph by runId or projectPath.",
+    inputSchema: lookupSchema,
+    annotations: read,
+    _meta: sharedVisibility
+  }, safe(async (input) => dataResult(await host.services.result(lookup(input)))));
+  K3(server, "mobile_appflow_clear", {
+    title: "Clear App Flow",
+    description: "Delete the saved App Flow graph, captures, and resumable progress for one project. The project remains available in the picker.",
+    inputSchema: { projectPath },
+    annotations: destructive,
+    _meta: appVisibility
+  }, safe(async ({ projectPath: projectPath2 }) => dataResult(await host.services.clear(projectPath2))));
+  K3(server, "mobile_appflow_pause", {
+    title: "Pause App Flow",
+    description: "Pause an active App Flow run at its next safe boundary.",
+    inputSchema: { runId },
+    annotations: write,
+    _meta: appVisibility
+  }, safe(async ({ runId: runId2 }) => dataResult(await host.services.pause(runId2))));
+  K3(server, "mobile_appflow_cancel", {
+    title: "Cancel App Flow",
+    description: "Cancel an active App Flow run and reject any parked agent decision.",
+    inputSchema: { runId },
+    annotations: write,
+    _meta: sharedVisibility
+  }, safe(async ({ runId: runId2 }) => dataResult(await host.cancel(runId2))));
+  K3(server, "mobile_appflow_launch_app", {
+    title: "Launch app for App Flow",
+    description: "Boot the App Flow device and launch the selected project without starting a sweep.",
+    inputSchema: { projectPath },
+    annotations: write,
+    _meta: appVisibility
+  }, safe(async ({ projectPath: projectPath2 }) => dataResult(await host.services.launchApp(projectPath2))));
+  K3(server, "mobile_appflow_explore_ui", {
+    title: "Explore UI states",
+    description: "Open and photograph the UI states (modals, sheets, dialogs) of the screen the already-launched app is on, by calling the app's own setters and controllers. Non-blocking: poll mobile_appflow_status and mobile_appflow_events, and stop it with mobile_appflow_cancel. The app must already be launched; nothing is tapped and no screen is navigated to.",
+    inputSchema: {
+      projectPath,
+      limit: external_exports.number().int().positive().max(1e3).optional()
+    },
+    annotations: write,
+    _meta: sharedVisibility
+  }, safe(async ({ projectPath: selectedProjectPath, limit }) => {
+    const started = await host.exploreUi(selectedProjectPath, limit === void 0 ? {} : { limit });
+    return dataResult(started, `Started UI explore ${started.runId}.`);
+  }));
+  K3(server, "mobile_appflow_resolve_prompt", {
+    title: "Resolve App Flow prompt",
+    description: "Resolve a human-action gate after the user has reviewed or logged into the app. The agent must not claim a human action happened or resolve an authentication gate autonomously.",
+    inputSchema: { runId, resolution, promptId: external_exports.string().optional(), projectPath: projectPath.optional() },
+    annotations: write,
+    _meta: appVisibility
+  }, safe(async ({ runId: runId2, resolution: resolution2, promptId, projectPath: projectPath2 }) => dataResult(await host.services.resolvePrompt(runId2, resolution2, promptId, projectPath2))));
+  K3(server, "mobile_appflow_projects", {
+    title: "List App Flow projects",
+    description: "List the React Native project folders App Flow can open, most recent first.",
+    inputSchema: {},
+    annotations: read,
+    _meta: appVisibility
+  }, safe(async () => dataResult({ projects: await projects.list() })));
+  K3(server, "mobile_appflow_choose_project", {
+    title: "Choose an App Flow project",
+    description: "Choose an App Flow project: pass projectPath to select one the panel already lists, or nothing to open the system folder picker. The choice persists across sessions.",
+    inputSchema: { projectPath: projectPath.optional() },
+    annotations: write,
+    _meta: appVisibility
+  }, safe(async ({ projectPath: selected }) => {
+    const project = selected === void 0 ? await projects.choose() : await projects.record(selected);
+    return dataResult(project ? { project } : {}, project ? void 0 : "No project was chosen.");
+  }));
+  K3(server, "mobile_appflow_manual_start", {
+    title: "Start recording an App Flow path",
+    description: "Start a manual path recording for one saved App Flow screen.",
+    inputSchema: { projectPath, nodeId: external_exports.string().min(1).max(256) },
+    annotations: write,
+    _meta: appVisibility
+  }, safe(async ({ projectPath: projectPath2, nodeId }) => dataResult(await host.services.manualStart(projectPath2, nodeId))));
+  K3(server, "mobile_appflow_manual_act", {
+    title: "Record an App Flow interaction",
+    description: "Perform and record one tap, fill, or scroll in the active manual recording.",
+    inputSchema: { projectPath, action: manualAction },
+    annotations: write,
+    _meta: appVisibility
+  }, safe(async ({ projectPath: projectPath2, action: action2 }) => dataResult(await host.services.manualAct(projectPath2, action2))));
+  K3(server, "mobile_appflow_manual_stop", {
+    title: "Save an App Flow path",
+    description: "Stop and save the active manual path recording.",
+    inputSchema: { projectPath },
+    annotations: write,
+    _meta: appVisibility
+  }, safe(async ({ projectPath: projectPath2 }) => dataResult(await host.services.manualStop(projectPath2))));
+  K3(server, "mobile_appflow_manual_cancel", {
+    title: "Cancel App Flow path recording",
+    description: "Cancel the active manual path recording without saving it.",
+    inputSchema: { projectPath },
+    annotations: write,
+    _meta: appVisibility
+  }, safe(async ({ projectPath: projectPath2 }) => dataResult(await host.services.manualCancel(projectPath2))));
+  K3(server, "mobile_appflow_manual_replay", {
+    title: "Open a screen from its App Flow path",
+    description: "Open a named screen by replaying its saved agent-device path from agent-device-screens.json and leave the app there. First call mobile_appflow_result for the project, resolve the user's screen name to one exact node.id, then pass that id as nodeId. This uses pathToReach; mobile_appflow_runtime_replay does not.",
+    inputSchema: { projectPath, nodeId: external_exports.string().min(1).max(256) },
+    annotations: write,
+    _meta: sharedVisibility
+  }, safe(async ({ projectPath: projectPath2, nodeId }) => {
+    if (!host.services.manualReplay) throw new Error("Manual replay is not available.");
+    return dataResult(await host.services.manualReplay(projectPath2, nodeId));
+  }));
+  K3(server, "mobile_appflow_runtime_replay", {
+    title: "Open a screen through its app runtime",
+    description: "Open an App Flow screen that has no saved pathToReach by dispatching through the running app's own navigator, using its parsed route and parameter values previous sweeps observed, and leave the app there. First call mobile_appflow_result and pass the resolved exact node.id as nodeId. This is the same runtime Replay action the App Flow panel offers; it needs a reachable development runtime (Metro).",
+    inputSchema: { projectPath, nodeId: external_exports.string().min(1).max(256) },
+    annotations: write,
+    _meta: sharedVisibility
+  }, safe(async ({ projectPath: projectPath2, nodeId }) => {
+    if (!host.services.runtimeReplay) throw new Error("Runtime replay is not available.");
+    return dataResult(await host.services.runtimeReplay(projectPath2, nodeId));
+  }));
+  K3(server, "mobile_appflow_events", {
+    title: "Poll App Flow events",
+    description: "Read buffered App Flow progress or manual-recording events newer than a sequence cursor. App Flow panels poll this because hosts may not forward server logging notifications.",
+    inputSchema: lookupSchema,
+    annotations: read,
+    _meta: appVisibility
+  }, safe(async (input) => dataResult(await host.services.poll(lookup(input), input.since ?? 0))));
+  K3(server, "mobile_appflow_next_decision", {
+    title: "Get next App Flow decision",
+    description: "Long-poll for the next agent decision. A waiting result means local work is still progressing; poll again until a request, terminal state, suspension, or needs-user-action is returned.",
+    inputSchema: { runId, waitMs: external_exports.number().int().min(0).max(2e4).default(15e3) },
+    annotations: read,
+    _meta: modelVisibility
+  }, safe(async ({ runId: runId2, waitMs }) => decisionResult(await host.nextDecision(runId2, waitMs))));
+  K3(server, "mobile_appflow_submit_decision", {
+    title: "Submit App Flow decision",
+    description: "Submit one strict JSON response for the pending decision. Exact duplicate submissions are idempotent; stale IDs and conflicting duplicates are rejected. Waits briefly for and may return the next request.",
+    inputSchema: { runId, requestId: external_exports.string().uuid(), response: external_exports.string().min(2).max(128e3) },
+    annotations: write,
+    _meta: modelVisibility
+  }, safe(async ({ runId: runId2, requestId, response: response3 }) => decisionResult(await host.submitDecision(runId2, requestId, response3))));
+  K3(server, "mobile_appflow_screenshot", {
+    title: "Read App Flow screenshot",
+    description: "Read one authorized App Flow screenshot as inline PNG content.",
+    inputSchema: { projectId: projectId2, path: screenshotId },
+    annotations: read,
+    _meta: appVisibility
+  }, safe(async ({ projectId: projectId3, path }) => ({
+    content: [{
+      type: "image",
+      mimeType: "image/png",
+      data: (await host.services.screenshot(projectId3, path)).toString("base64")
+    }]
+  })));
+  server.registerResource(
+    "app-flow-image",
+    new ResourceTemplate("appflow-image://mobile-dev/{projectId}/{screenshotId}", { list: void 0 }),
+    { mimeType: "image/png", description: "Read a screenshot produced by an App Flow run." },
+    async (uri2, variables) => {
+      const id2 = projectId2.parse(variables.projectId);
+      const image = screenshotId.parse(variables.screenshotId);
+      return {
+        contents: [{
+          uri: uri2.href,
+          mimeType: "image/png",
+          blob: (await host.services.screenshot(id2, image)).toString("base64")
+        }]
+      };
+    }
+  );
+  const unsubscribe = host.services.subscribe?.(({ runId: runId2, seq, event }) => {
+    void server.sendLoggingMessage({
+      level: "info",
+      logger: "app-flow",
+      data: { source: "app-flow", ...runId2 ? { runId: runId2 } : {}, ...seq !== void 0 ? { seq } : {}, event }
+    }).catch(() => void 0);
+  });
+  return async () => {
+    unsubscribe?.();
+    await host.close();
+  };
 }
 
 // packages/shared/src/device-choice.ts
@@ -41952,10 +38636,10 @@ var deviceChoiceThumbnails = {
 // packages/core/src/device-choice-tools.ts
 var FORM_OPTION_LIMIT = 20;
 function deviceDetails(device2) {
-  const platform6 = device2.platform === "ios" ? "iOS" : "Android";
-  const kind4 = device2.kind === "physical" ? "device" : device2.kind;
-  const details = [`${platform6} ${kind4}`];
-  if (device2.runtime && device2.runtime !== platform6) details.push(device2.runtime);
+  const platform5 = device2.platform === "ios" ? "iOS" : "Android";
+  const kind3 = device2.kind === "physical" ? "device" : device2.kind;
+  const details = [`${platform5} ${kind3}`];
+  if (device2.runtime && device2.runtime !== platform5) details.push(device2.runtime);
   if (device2.appName) details.push(device2.appName);
   if (device2.state === "Shutdown") details.push("Stopped");
   return details.join(" \xB7 ");
@@ -41980,8 +38664,8 @@ function mcpDeviceChoiceForm(input, devices3) {
     { device: "Device", devices: "Devices" }
   );
 }
-async function statusDevices(read8) {
-  const status = await read8();
+async function statusDevices(read9) {
+  const status = await read9();
   if (status.connected === false) throw new SimulatorUnavailableError(status.error ?? "Device discovery is unavailable.");
   return status;
 }
@@ -42016,9 +38700,9 @@ async function discoverDeviceChoices(sources) {
   ]);
   const devices3 = [];
   const errors = [];
-  for (const read8 of reads) {
-    if (read8.status === "fulfilled") devices3.push(...read8.value);
-    else errors.push(errorMessage(read8.reason));
+  for (const read9 of reads) {
+    if (read9.status === "fulfilled") devices3.push(...read9.value);
+    else errors.push(errorMessage(read9.reason));
   }
   return { devices: devices3, errors };
 }
@@ -42035,7 +38719,7 @@ function registerDeviceChoiceTools(server, extensions, sources, form) {
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
   }, async (input, extra) => {
     const attributes = { selection_mode: input.selectionMode, form };
-    let stage2 = "prepare";
+    let stage = "prepare";
     try {
       const startedAt = performance.now();
       let devices3;
@@ -42047,20 +38731,20 @@ function registerDeviceChoiceTools(server, extensions, sources, form) {
           if (devices3.length === 0 && discovered.errors.length > 0) throw new SimulatorUnavailableError(discovered.errors.join(" "));
         }
       } finally {
-        const duration4 = performance.now() - startedAt;
-        public_api_exports.distribution("device_picker.prepare", duration4, { unit: "millisecond", attributes });
+        const duration3 = performance.now() - startedAt;
+        public_api_exports.distribution("device_picker.prepare", duration3, { unit: "millisecond", attributes });
       }
       extra.signal.throwIfAborted();
       if (devices3.length === 0) throw new SimulatorUnavailableError("No device can be selected. Boot, connect or pair a device first.");
-      const references = devices3.map(({ platform: platform6, kind: kind4, deviceId: deviceId4, appName: appName2 }) => ({ platform: platform6, kind: kind4, deviceId: deviceId4, ...appName2 ? { appName: appName2 } : {} }));
-      stage2 = "request";
+      const references = devices3.map(({ platform: platform5, kind: kind3, deviceId: deviceId4, appName: appName2 }) => ({ platform: platform5, kind: kind3, deviceId: deviceId4, ...appName2 ? { appName: appName2 } : {} }));
+      stage = "request";
       const options = { signal: extra.signal, timeout: 6e5 };
       const answer = form === "openai" ? await extensions.elicitInput({ mode: "form", message: input.message, requestedSchema: deviceChoiceForm(input, devices3) }, options) : await server.server.elicitInput({ message: input.message, requestedSchema: mcpDeviceChoiceForm(input, devices3) }, options);
       if (answer.action !== "accept") {
         public_api_exports.count("device_picker.result", 1, { attributes: { ...attributes, outcome: answer.action } });
         return { content: [{ type: "text", text: "Device selection cancelled. Do not start the pending task." }], structuredContent: { action: answer.action, devices: [] } };
       }
-      stage2 = "validate";
+      stage = "validate";
       const submitted = input.selectionMode === "multiple" ? answer.content?.devices : [answer.content?.device];
       if (Array.isArray(submitted) === false || submitted.length === 0 || submitted.length > devices3.length) throw new SimulatorUnavailableError("The device selection is invalid. Request a new selection.");
       const selected = [];
@@ -42081,7 +38765,7 @@ function registerDeviceChoiceTools(server, extensions, sources, form) {
     } catch (error51) {
       public_api_exports.count("device_picker.result", 1, { attributes: { ...attributes, outcome: extra.signal.aborted ? "cancel" : "failed" } });
       if (extra.signal.aborted === false && error51 instanceof SimulatorUnavailableError === false) {
-        const report = new Error(`Device picker ${stage2} failed.`);
+        const report = new Error(`Device picker ${stage} failed.`);
         captureServerError(report, "device_picker.tool");
       }
       return { isError: true, content: [{ type: "text", text: errorMessage(error51) }] };
@@ -42131,10 +38815,10 @@ var LogBuffer = class {
   push(record4) {
     if (this.closed) return;
     const entry2 = { ...record4, message: record4.message.slice(0, 16384), stack: record4.stack?.slice(0, 16384), sequence: ++this.sequence };
-    const size2 = JSON.stringify(entry2).length * 2;
+    const size = JSON.stringify(entry2).length * 2;
     this.entries.push(entry2);
-    this.sizes.set(entry2.sequence, size2);
-    this.bytes += size2;
+    this.sizes.set(entry2.sequence, size);
+    this.bytes += size;
     while (this.entries.length > this.limit || this.bytes > this.byteLimit) {
       const old = this.entries.shift();
       this.bytes -= this.sizes.get(old.sequence) ?? 0;
@@ -42149,30 +38833,30 @@ var LogBuffer = class {
     }
   }
   notify() {
-    for (const resolve3 of this.waiters) resolve3();
+    for (const resolve4 of this.waiters) resolve4();
     this.waiters.clear();
   }
   close() {
     this.closed = true;
     this.notify();
-    for (const resolve3 of this.batches) resolve3();
+    for (const resolve4 of this.batches) resolve4();
     this.batches.clear();
   }
   async read(after, waitMs = 1e3) {
-    if (!this.closed && after >= this.sequence && waitMs > 0) await new Promise((resolve3) => {
+    if (!this.closed && after >= this.sequence && waitMs > 0) await new Promise((resolve4) => {
       const done = () => {
         clearTimeout(timer);
         this.waiters.delete(done);
-        resolve3();
+        resolve4();
       };
       const timer = setTimeout(done, waitMs);
       this.waiters.add(done);
     });
-    if (!this.closed && waitMs > 0 && after < this.sequence) await new Promise((resolve3) => {
+    if (!this.closed && waitMs > 0 && after < this.sequence) await new Promise((resolve4) => {
       const done = () => {
         clearTimeout(timer);
         this.batches.delete(done);
-        resolve3();
+        resolve4();
       };
       const timer = setTimeout(done, 75);
       this.batches.add(done);
@@ -42182,16 +38866,6 @@ var LogBuffer = class {
     return { entries, cursor: entries.at(-1)?.sequence ?? Math.max(after, this.sequence), dropped: Math.max(0, first - after - 1), statuses: [...this.statuses.values()] };
   }
 };
-
-// node_modules/ws/wrapper.mjs
-var import_stream = __toESM(require_stream(), 1);
-var import_extension = __toESM(require_extension(), 1);
-var import_permessage_deflate = __toESM(require_permessage_deflate(), 1);
-var import_receiver = __toESM(require_receiver(), 1);
-var import_sender = __toESM(require_sender(), 1);
-var import_subprotocol = __toESM(require_subprotocol(), 1);
-var import_websocket = __toESM(require_websocket(), 1);
-var import_websocket_server = __toESM(require_websocket_server(), 1);
 
 // packages/core/src/metro-logs.ts
 import { setTimeout as delay4 } from "node:timers/promises";
@@ -42224,9 +38898,9 @@ function startMetroLogs(target2, sink) {
   const controller = new AbortController();
   const signal = controller.signal;
   const running = (async () => {
-    let failures2 = 0;
+    let failures = 0;
     while (!signal.aborted) {
-      sink.status({ source: "metro", state: failures2 ? "reconnecting" : "connecting" });
+      sink.status({ source: "metro", state: failures ? "reconnecting" : "connecting" });
       try {
         const targets = await metroTargets(target2.url, signal);
         const selected = targets.find((item) => item.id === target2.targetId);
@@ -42235,9 +38909,9 @@ function startMetroLogs(target2, sink) {
       } catch (error51) {
         if (signal.aborted) break;
         sink.status({ source: "metro", state: "reconnecting", message: errorMessage(error51) });
-        failures2++;
+        failures++;
       }
-      await delay4(Math.min(500 * 2 ** Math.min(failures2, 4), 1e4), void 0, { signal }).catch(() => {
+      await delay4(Math.min(500 * 2 ** Math.min(failures, 4), 1e4), void 0, { signal }).catch(() => {
       });
     }
   })();
@@ -42248,7 +38922,7 @@ function startMetroLogs(target2, sink) {
 }
 function receiveMetro(target2, sink, signal) {
   if (signal.aborted) return Promise.resolve();
-  return new Promise((resolve3, reject) => {
+  return new Promise((resolve4, reject) => {
     const url2 = new URL(target2.webSocketDebuggerUrl);
     const origin = new URL(url2);
     origin.protocol = "http:";
@@ -42263,7 +38937,7 @@ function receiveMetro(target2, sink, signal) {
       clearInterval(heartbeat);
       signal.removeEventListener("abort", stop);
       socket.terminate();
-      signal.aborted || !error51 ? resolve3() : reject(error51);
+      signal.aborted || !error51 ? resolve4() : reject(error51);
     };
     const stop = () => finish();
     const timeout = setTimeout(() => finish(new Error("Metro did not enable console events.")), 1e4);
@@ -42373,12 +39047,12 @@ var LogSessions = class {
 };
 
 // packages/core/src/request-session.ts
-async function openRequestSession(signal, open, close2) {
+async function openRequestSession(signal, open, close) {
   signal.throwIfAborted();
   const id2 = await open();
   async function closeCancelledSession() {
     try {
-      await close2(id2);
+      await close(id2);
     } catch (error51) {
       captureServerError(error51, "stream.cancel_cleanup");
     }
@@ -42415,7 +39089,7 @@ var sessionId = external_exports.string().regex(/^[a-f0-9]{64}$/);
 var sequence = external_exports.coerce.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 var annotations = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 var metadata = { ui: { visibility: ["app", "model"] } };
-function safe(handler) {
+function safe2(handler) {
   return async (input, context2) => {
     try {
       return await handler(input, context2);
@@ -42442,7 +39116,7 @@ function registerLogTools(server, logs, simulators, discoverIosDevices = listIos
     inputSchema: { metroUrl: external_exports.string().max(2048).optional() },
     annotations,
     _meta: metadata
-  }, safe(async ({ metroUrl }) => {
+  }, safe2(async ({ metroUrl }) => {
     const errors = [];
     const android2 = await listAndroidLogDevices().catch((error51) => {
       errors.push(`Android: ${errorMessage(error51)}`);
@@ -42461,7 +39135,7 @@ function registerLogTools(server, logs, simulators, discoverIosDevices = listIos
     inputSchema: { options: logOptionsSchema },
     annotations,
     _meta: metadata
-  }, safe(async ({ options }, context2) => {
+  }, safe2(async ({ options }, context2) => {
     if (options.native?.platform === "ios") {
       if (options.native.kind === "physical") await physicalIosLogDevice(options.native.deviceId, discoverIosDevices);
       else await simulators.device(options.native.deviceId, true);
@@ -42480,7 +39154,7 @@ function registerLogTools(server, logs, simulators, discoverIosDevices = listIos
     inputSchema: { sessionId, after: external_exports.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(0) },
     annotations,
     _meta: metadata
-  }, safe(async ({ sessionId: id2, after }) => {
+  }, safe2(async ({ sessionId: id2, after }) => {
     const batch = await logs.read(id2, after, 0);
     return { content: [{ type: "text", text: JSON.stringify(batch) }], structuredContent: { ...batch } };
   }));
@@ -42490,7 +39164,7 @@ function registerLogTools(server, logs, simulators, discoverIosDevices = listIos
     inputSchema: { sessionId },
     annotations,
     _meta: { ui: { visibility: ["app"] } }
-  }, safe(async ({ sessionId: id2 }) => {
+  }, safe2(async ({ sessionId: id2 }) => {
     logs.keepAlive(id2);
     return { content: [], structuredContent: {} };
   }));
@@ -42500,7 +39174,7 @@ function registerLogTools(server, logs, simulators, discoverIosDevices = listIos
     inputSchema: { sessionId },
     annotations,
     _meta: metadata
-  }, safe(async ({ sessionId: id2 }) => {
+  }, safe2(async ({ sessionId: id2 }) => {
     await logs.closeSession(id2);
     return { content: [{ type: "text", text: "Log stream stopped." }], structuredContent: {} };
   }));
@@ -42577,11 +39251,11 @@ var CpuBuffer = class {
   }
   async read(after, waitMs = 1e3) {
     if (this.closed === false && after >= this.revision && waitMs > 0) {
-      await new Promise((resolve3) => {
+      await new Promise((resolve4) => {
         const done = () => {
           clearTimeout(timer);
           this.waiters.delete(done);
-          resolve3();
+          resolve4();
         };
         const timer = setTimeout(done, waitMs);
         this.waiters.add(done);
@@ -42673,8 +39347,8 @@ var GdbConnection = class {
   lastPacket = null;
   retransmits = 0;
   finishClosed;
-  closed = new Promise((resolve3) => {
-    this.finishClosed = resolve3;
+  closed = new Promise((resolve4) => {
+    this.finishClosed = resolve4;
   });
   onProfile = () => {
   };
@@ -42687,8 +39361,8 @@ var GdbConnection = class {
         const packets = this.decoder.push(chunk);
         for (const packet of packets) this.receive(packet);
       } catch (error51) {
-        const failure3 = error51 instanceof Error ? error51 : new Error("Invalid debugger response.");
-        socket.destroy(failure3);
+        const failure2 = error51 instanceof Error ? error51 : new Error("Invalid debugger response.");
+        socket.destroy(failure2);
       }
     });
     socket.on("error", (error51) => this.fail(error51));
@@ -42740,14 +39414,14 @@ var GdbConnection = class {
       const error51 = new Error(message3);
       return Promise.reject(error51);
     }
-    return new Promise((resolve3, reject) => {
+    return new Promise((resolve4, reject) => {
       const timer = setTimeout(() => {
         const name = command3.split(";")[0];
         const error51 = new Error(`Debugserver timed out during ${name}.`);
         this.socket.destroy(error51);
       }, timeoutMs);
       const expectsStop = command3.startsWith("vAttach");
-      this.pending = { resolve: resolve3, reject, timer, expectsStop };
+      this.pending = { resolve: resolve4, reject, timer, expectsStop };
       this.send(command3);
     });
   }
@@ -42775,12 +39449,12 @@ var GdbConnection = class {
       const error51 = new Error(message3);
       return Promise.reject(error51);
     }
-    return new Promise((resolve3, reject) => {
+    return new Promise((resolve4, reject) => {
       const timer = setTimeout(() => {
         const error51 = new Error("Debugserver did not stop for detach.");
         this.socket.destroy(error51);
       }, 5e3);
-      this.pending = { resolve: resolve3, reject, timer, expectsStop: true };
+      this.pending = { resolve: resolve4, reject, timer, expectsStop: true };
       const interrupt = Buffer.from([3]);
       this.socket.write(interrupt);
     });
@@ -42791,18 +39465,18 @@ var GdbConnection = class {
 };
 
 // packages/core/src/cpu/simulator.ts
-import { execFile as execFile9, spawn as spawn4 } from "node:child_process";
+import { execFile as execFile10, spawn as spawn4 } from "node:child_process";
 import { access as access7 } from "node:fs/promises";
 import { createServer as createServer2 } from "node:net";
-import { resolve as resolve2 } from "node:path";
-import { promisify as promisify8 } from "node:util";
-var execute7 = promisify8(execFile9);
+import { resolve as resolve3 } from "node:path";
+import { promisify as promisify9 } from "node:util";
+var execute8 = promisify9(execFile10);
 async function openSimulatorDebugserver(signal) {
   if (process.platform !== "darwin") throw new Error("iOS simulator CPU monitoring requires macOS.");
   const discoverySignal = AbortSignal.any([signal, AbortSignal.timeout(5e3)]);
-  const selection = await execute7("xcode-select", ["--print-path"], { signal: discoverySignal });
+  const selection = await execute8("xcode-select", ["--print-path"], { signal: discoverySignal });
   const directory = selection.stdout.trim();
-  const binary2 = resolve2(directory, "../SharedFrameworks/LLDB.framework/Resources/debugserver");
+  const binary2 = resolve3(directory, "../SharedFrameworks/LLDB.framework/Resources/debugserver");
   try {
     await access7(binary2);
   } catch {
@@ -42817,8 +39491,8 @@ async function launchLocalDebugserver(binary2, signal) {
   let child;
   let exited;
   let closing;
-  let diagnostics3 = "";
-  const close2 = () => {
+  let diagnostics = "";
+  const close = () => {
     if (closing) return closing;
     closing = (async () => {
       listener.close();
@@ -42838,7 +39512,7 @@ async function launchLocalDebugserver(binary2, signal) {
   };
   const startupSignal = AbortSignal.any([signal, AbortSignal.timeout(1e4)]);
   const abort = () => {
-    void close2();
+    void close();
   };
   startupSignal.addEventListener("abort", abort, { once: true });
   let failAbort;
@@ -42867,7 +39541,7 @@ async function launchLocalDebugserver(binary2, signal) {
     child = spawn4(binary2, ["--native-regs", "--setsid", "--reverse-connect", destination], { stdio: ["ignore", "pipe", "pipe"] });
     const drain = (chunk) => {
       const text6 = chunk.toString();
-      diagnostics3 = (diagnostics3 + text6).slice(-4e3);
+      diagnostics = (diagnostics + text6).slice(-4e3);
     };
     child.stdout?.on("data", drain);
     child.stderr?.on("data", drain);
@@ -42876,7 +39550,7 @@ async function launchLocalDebugserver(binary2, signal) {
       child.once("close", done);
     });
     const prematureExit = exited.then((code) => {
-      const details = diagnostics3.trim();
+      const details = diagnostics.trim();
       throw new Error(`Simulator debugserver exited before connecting (${code}). ${details}`);
     });
     const aborted2 = new Promise((_2, reject) => {
@@ -42889,9 +39563,9 @@ async function launchLocalDebugserver(binary2, signal) {
     const disconnect = () => connection2.destroy();
     signal.addEventListener("abort", disconnect, { once: true });
     connection2.once("close", () => signal.removeEventListener("abort", disconnect));
-    return { socket: connection2, close: close2, exited };
+    return { socket: connection2, close, exited };
   } catch (error51) {
-    await close2().catch(() => {
+    await close().catch(() => {
     });
     throw error51;
   } finally {
@@ -43016,14 +39690,14 @@ function profilingSignalResume(packet) {
 }
 async function startIosCpuMonitor(options, openTransport = openSimulatorDebugserver) {
   if (!Number.isSafeInteger(options.pid) || options.pid <= 0) throw new Error("The selected iOS app is not running.");
-  const transport2 = await openTransport(options.signal);
+  const transport = await openTransport(options.signal);
   let debuggerConnection;
   let attached = false;
   let running = false;
   let stopping;
   let end;
-  const closed = new Promise((resolve3) => {
-    end = resolve3;
+  const closed = new Promise((resolve4) => {
+    end = resolve4;
   });
   const stop = () => {
     if (stopping) return stopping;
@@ -43049,18 +39723,18 @@ async function startIosCpuMonitor(options, openTransport = openSimulatorDebugser
         }
       } finally {
         debuggerConnection?.close();
-        await transport2.close();
+        await transport.close();
       }
     })();
     return stopping;
   };
   try {
-    const gdb = new GdbConnection(transport2.socket);
+    const gdb = new GdbConnection(transport.socket);
     debuggerConnection = gdb;
     void gdb.closed.then((error51) => {
       end(error51);
     });
-    void transport2.exited.then(() => {
+    void transport.exited.then(() => {
       if (stopping) return;
       gdb.close();
       const error51 = new Error("The iOS CPU monitor connection closed.");
@@ -43082,8 +39756,8 @@ async function startIosCpuMonitor(options, openTransport = openSimulatorDebugser
     };
     const sampler = new CpuCounterSampler();
     let firstSample;
-    const ready = new Promise((resolve3) => {
-      firstSample = resolve3;
+    const ready = new Promise((resolve4) => {
+      firstSample = resolve4;
     });
     gdb.onProfile = (profile) => {
       const counters = parseCpuCounters(profile);
@@ -43134,7 +39808,7 @@ async function startIosCpuMonitor(options, openTransport = openSimulatorDebugser
 import { spawn as spawn5 } from "node:child_process";
 import { access as access8 } from "node:fs/promises";
 import { createConnection } from "node:net";
-import { fileURLToPath as fileURLToPath5 } from "node:url";
+import { fileURLToPath as fileURLToPath6 } from "node:url";
 var number8 = external_exports.number();
 var integer4 = number8.int();
 var positive2 = integer4.min(1);
@@ -43144,30 +39818,30 @@ var readySchema = address.strict();
 async function openPhysicalDebugserver(deviceId4, signal, helper = new URL("./ios-fps/mobile-dev-ios-fps", import.meta.url)) {
   signal.throwIfAborted();
   if (process.platform !== "darwin") throw new Error("Physical iOS CPU monitoring requires macOS.");
-  const path = fileURLToPath5(helper);
+  const path = fileURLToPath6(helper);
   await access8(path);
   signal.throwIfAborted();
   const child = spawn5(path, ["debugserver", deviceId4], { stdio: "pipe", shell: false });
   let socket;
   let closing;
-  let diagnostics3 = "";
+  let diagnostics = "";
   let pending = "";
   let accept;
   let fail;
-  const ready = new Promise((resolve3, reject) => {
-    accept = resolve3;
+  const ready = new Promise((resolve4, reject) => {
+    accept = resolve4;
     fail = reject;
   });
-  const exited = new Promise((resolve3) => {
+  const exited = new Promise((resolve4) => {
     child.once("close", (code, exitSignal) => {
-      const message3 = diagnostics3.trim() || `The iPhone debugserver helper exited (${code ?? exitSignal}).`;
+      const message3 = diagnostics.trim() || `The iPhone debugserver helper exited (${code ?? exitSignal}).`;
       const error51 = new Error(message3);
       fail(error51);
       if (closing === void 0) socket?.destroy(error51);
-      resolve3(code);
+      resolve4(code);
     });
   });
-  const close2 = () => {
+  const close = () => {
     if (closing) return closing;
     closing = (async () => {
       socket?.destroy();
@@ -43185,7 +39859,7 @@ async function openPhysicalDebugserver(deviceId4, signal, helper = new URL("./io
   };
   const abort = () => {
     fail(signal.reason);
-    void close2();
+    void close();
   };
   signal.addEventListener("abort", abort, { once: true });
   child.stdin.on("error", () => {
@@ -43193,7 +39867,7 @@ async function openPhysicalDebugserver(deviceId4, signal, helper = new URL("./io
   child.once("error", fail);
   child.stderr.on("data", (chunk) => {
     const text6 = chunk.toString("utf8");
-    diagnostics3 = (diagnostics3 + text6).slice(-4096);
+    diagnostics = (diagnostics + text6).slice(-4096);
   });
   child.stdout.on("data", (chunk) => {
     if (closing || socket) return;
@@ -43207,8 +39881,8 @@ async function openPhysicalDebugserver(deviceId4, signal, helper = new URL("./io
       const ready2 = readySchema.parse(decoded);
       accept(ready2.port);
     } catch (error51) {
-      const failure3 = error51 instanceof Error ? error51 : new Error("Invalid iPhone debugserver address.");
-      fail(failure3);
+      const failure2 = error51 instanceof Error ? error51 : new Error("Invalid iPhone debugserver address.");
+      fail(failure2);
     }
   });
   const timeout = setTimeout(() => {
@@ -43219,9 +39893,9 @@ async function openPhysicalDebugserver(deviceId4, signal, helper = new URL("./io
   try {
     const port2 = await ready;
     signal.throwIfAborted();
-    const connected = new Promise((resolve3, reject) => {
+    const connected = new Promise((resolve4, reject) => {
       socket = createConnection({ host: "127.0.0.1", port: port2 });
-      socket.once("connect", resolve3);
+      socket.once("connect", resolve4);
       socket.once("error", reject);
       socket.once("close", () => {
         const error51 = new Error("The iPhone debugserver connection closed before connecting.");
@@ -43235,9 +39909,9 @@ async function openPhysicalDebugserver(deviceId4, signal, helper = new URL("./io
     signal.throwIfAborted();
     if (socket === void 0) throw new Error("The iPhone debugserver did not connect.");
     socket.once("close", () => signal.removeEventListener("abort", abort));
-    return { socket, close: close2, exited };
+    return { socket, close, exited };
   } catch (error51) {
-    await close2();
+    await close();
     signal.removeEventListener("abort", abort);
     throw error51;
   } finally {
@@ -43246,12 +39920,12 @@ async function openPhysicalDebugserver(deviceId4, signal, helper = new URL("./io
 }
 
 // packages/core/src/cpu/android.ts
-import { execFile as execFile10 } from "node:child_process";
-import { promisify as promisify9 } from "node:util";
-import { createHash as createHash4, randomBytes as randomBytes3 } from "node:crypto";
-import { mkdtemp as mkdtemp2, readFile as readFile5, rm as rm4, writeFile as writeFile5 } from "node:fs/promises";
+import { execFile as execFile11 } from "node:child_process";
+import { promisify as promisify10 } from "node:util";
+import { createHash as createHash6, randomBytes as randomBytes3 } from "node:crypto";
+import { mkdtemp as mkdtemp2, readFile as readFile8, rm as rm4, writeFile as writeFile7 } from "node:fs/promises";
 import { tmpdir as tmpdir2 } from "node:os";
-import { join as join13 } from "node:path";
+import { join as join16 } from "node:path";
 import { StringDecoder as StringDecoder2 } from "node:string_decoder";
 
 // packages/core/src/cpu/android-counters.ts
@@ -43313,23 +39987,23 @@ var AndroidCpuSampler = class {
 };
 
 // packages/core/src/cpu/android.ts
-var execute8 = promisify9(execFile10);
+var execute9 = promisify10(execFile11);
 var abiSchema = external_exports.enum(["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]);
 var releaseSchema = external_exports.object({ binaries: external_exports.record(abiSchema, external_exports.object({ sha256: external_exports.string().regex(/^[a-f0-9]{64}$/) })) });
 var command = async (adb, args, signal) => {
-  const result4 = await execute8(adb, args, { signal, timeout: 1e4, maxBuffer: 1024 * 1024 });
+  const result4 = await execute9(adb, args, { signal, timeout: 1e4, maxBuffer: 1024 * 1024 });
   return result4.stdout;
 };
 async function loadAndroidCollector(root) {
   const manifest = new URL("release.json", root);
-  const releaseText = await readFile5(manifest, "utf8");
+  const releaseText = await readFile8(manifest, "utf8");
   const releaseJson = JSON.parse(releaseText);
   const release = releaseSchema.parse(releaseJson);
   const collector = /* @__PURE__ */ new Map();
   for (const abi of abiSchema.options) {
     const local = new URL(`${abi}/mobile-dev-cpu`, root);
-    const bytes = await readFile5(local);
-    const hash2 = createHash4("sha256");
+    const bytes = await readFile8(local);
+    const hash2 = createHash6("sha256");
     hash2.update(bytes);
     const sha256 = hash2.digest("hex");
     if (sha256 !== release.binaries[abi].sha256) throw new Error(`The bundled Android CPU collector failed its integrity check for ${abi}.`);
@@ -43349,11 +40023,11 @@ async function deployAndroidCollector(adb, deviceId4, signal, collector, run5 = 
   const tokenText = token.toString("hex");
   const temporary = `${remote}-${tokenText}`;
   const hostTemporary = tmpdir2();
-  const prefix3 = join13(hostTemporary, "mobile-dev-cpu-");
-  const directory = await mkdtemp2(prefix3);
-  const localPath = join13(directory, "mobile-dev-cpu");
+  const prefix2 = join16(hostTemporary, "mobile-dev-cpu-");
+  const directory = await mkdtemp2(prefix2);
+  const localPath = join16(directory, "mobile-dev-cpu");
   try {
-    await writeFile5(localPath, binary2.bytes, { mode: 384 });
+    await writeFile7(localPath, binary2.bytes, { mode: 384 });
     signal.throwIfAborted();
     await run5(adb, ["-s", deviceId4, "push", localPath, temporary], signal);
     await run5(adb, ["-s", deviceId4, "shell", `chmod 700 ${temporary} && mv ${temporary} ${remote}`], signal);
@@ -43378,24 +40052,24 @@ async function startAndroidCpuMonitor(options, dependencies) {
     shell: false
   });
   let finish;
-  const closed = new Promise((resolve3) => {
-    finish = resolve3;
+  const closed = new Promise((resolve4) => {
+    finish = resolve4;
   });
   let accept;
-  const ready = new Promise((resolve3) => {
-    accept = resolve3;
+  const ready = new Promise((resolve4) => {
+    accept = resolve4;
   });
   let exited;
-  const exit = new Promise((resolve3) => {
-    exited = resolve3;
+  const exit = new Promise((resolve4) => {
+    exited = resolve4;
   });
   let sampler;
   let stopping;
-  let diagnostics3 = "";
+  let diagnostics = "";
   let pending = "";
   const decoder = new StringDecoder2("utf8");
   const telemetry = new NativeTelemetryRelay((text6) => {
-    diagnostics3 = (diagnostics3 + text6).slice(-4096);
+    diagnostics = (diagnostics + text6).slice(-4096);
   });
   let watchdog;
   const deadline = () => {
@@ -43436,7 +40110,7 @@ async function startAndroidCpuMonitor(options, dependencies) {
     exited();
     clearTimeout(watchdog);
     options.signal.removeEventListener("abort", abort);
-    finish(new Error(diagnostics3.trim() || `Android CPU collector exited (${code ?? signal}). The app may have stopped.`));
+    finish(new Error(diagnostics.trim() || `Android CPU collector exited (${code ?? signal}). The app may have stopped.`));
   });
   child.stderr?.on("data", (chunk) => {
     telemetry.write(chunk);
@@ -43627,16 +40301,16 @@ var deviceAppSources = {
   simulator: foregroundSimulatorPid,
   android: foregroundAndroidApp
 };
-async function readDeviceApps(deviceId4, signal, platform6 = "ios", kind4, sources = deviceAppSources) {
-  const running = withDeviceAppsDiagnostic(() => sources.apps(deviceId4, signal, platform6, kind4), "running_apps", platform6, kind4);
-  if (platform6 === "android") {
-    const detection2 = withDeviceAppsDiagnostic(() => sources.android(deviceId4, signal), "foreground", platform6, kind4);
+async function readDeviceApps(deviceId4, signal, platform5 = "ios", kind3, sources = deviceAppSources) {
+  const running = withDeviceAppsDiagnostic(() => sources.apps(deviceId4, signal, platform5, kind3), "running_apps", platform5, kind3);
+  if (platform5 === "android") {
+    const detection2 = withDeviceAppsDiagnostic(() => sources.android(deviceId4, signal), "foreground", platform5, kind3);
     const [apps2, foregroundApp2] = await Promise.all([running, detection2]);
     const marked2 = apps2.map((candidate) => ({ ...candidate, foreground: candidate.pid === foregroundApp2?.pid }));
     return { apps: marked2, foregroundApp: foregroundApp2 };
   }
-  const detect = () => kind4 === "physical" ? sources.physical(deviceId4, signal) : sources.simulator(deviceId4, signal);
-  const detection = withDeviceAppsDiagnostic(detect, "foreground", platform6, kind4);
+  const detect = () => kind3 === "physical" ? sources.physical(deviceId4, signal) : sources.simulator(deviceId4, signal);
+  const detection = withDeviceAppsDiagnostic(detect, "foreground", platform5, kind3);
   const [apps, pid3] = await Promise.all([running, detection]);
   const app = apps.find((candidate) => candidate.pid === pid3);
   const foregroundApp = pid3 === null ? null : { bundleId: app?.bundleId ?? null, pid: pid3 };
@@ -43683,9 +40357,9 @@ function registerDeviceAppsTool(server, discover) {
 var sessionId2 = external_exports.string().regex(/^[a-f0-9]{64}$/);
 var sequence2 = external_exports.coerce.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 var metadata2 = { ui: { visibility: ["app", "model"] } };
-var read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
-var write = { ...read, readOnlyHint: false };
-function safe2(handler) {
+var read2 = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
+var write2 = { ...read2, readOnlyHint: false };
+function safe3(handler) {
   return async (input, context2) => {
     try {
       return await handler(input, context2);
@@ -43733,9 +40407,9 @@ function registerCpuTools(server, cpu, simulators, { apps = readDeviceApps, andr
     title: "Monitor native app CPU and memory",
     description: "Monitor process and per-thread CPU plus main-process memory once per second without an app SDK, app launch or restart. Returns sessionId and cpuUri in the tool result. Poll mobile_read_cpu with sessionId and the previous cursor as after; close with mobile_cpu_close when finished. Android uses a small external native /proc collector over ADB, without root or debugger attachment; the device must permit ADB shell to read app counters. iOS uses debugserver and requires a development-signed build with get-task-allow and no existing Xcode/LLDB attachment. Physical iOS 17.4+ also requires pairing, Developer Mode and a mounted developer disk image; pass target.kind: physical and the hardware UDID from mobile_list_ios_devices. Attach and detach briefly pause the app. 100% is one occupied device CPU core. Memory is RSS on Android and physical footprint on iOS, reported in bytes. Idle sessions expire after five minutes.",
     inputSchema: { target: cpuTargetSchema },
-    annotations: write,
+    annotations: write2,
     _meta: metadata2
-  }, safe2(async ({ target: target2 }, context2) => {
+  }, safe3(async ({ target: target2 }, context2) => {
     await validateDevice(target2);
     const id2 = await openRequestSession(context2.signal, async () => cpu.open(target2), (id3) => cpu.closeSession(id3));
     const data = { target: target2, sessionId: id2, cpuUri: `cpu://mobile-dev/${id2}/batch?after=0` };
@@ -43746,9 +40420,9 @@ function registerCpuTools(server, cpu, simulators, { apps = readDeviceApps, andr
     title: "Read native CPU and memory usage",
     description: "Read buffered CPU and memory samples and connection status using sessionId returned by mobile_cpu_session. Pass the previous result's cursor as after to read only new samples. Each sample includes process CPU, per-thread CPU and memoryBytes for the main process. The batch memoryMetric is rss on Android or physical-footprint on iOS; 100% CPU is one core. Startup can return connecting or an initial null CPU baseline before a full sampling interval has elapsed. Memory is an absolute byte reading available from the first sample.",
     inputSchema: { sessionId: sessionId2, after: external_exports.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(0) },
-    annotations: read,
+    annotations: read2,
     _meta: metadata2
-  }, safe2(async ({ sessionId: id2, after }) => {
+  }, safe3(async ({ sessionId: id2, after }) => {
     const batch = await cpu.read(id2, after, 0);
     const text6 = JSON.stringify(batch);
     return { content: [{ type: "text", text: text6 }], structuredContent: { ...batch } };
@@ -43757,9 +40431,9 @@ function registerCpuTools(server, cpu, simulators, { apps = readDeviceApps, andr
     title: "Stop native CPU and memory monitor",
     description: "Stop the external CPU collector or detach the iOS CPU debugger, leaving the app running.",
     inputSchema: { sessionId: sessionId2 },
-    annotations: write,
+    annotations: write2,
     _meta: metadata2
-  }, safe2(async ({ sessionId: id2 }) => {
+  }, safe3(async ({ sessionId: id2 }) => {
     await cpu.closeSession(id2);
     return { content: [{ type: "text", text: "CPU and memory monitor stopped." }], structuredContent: {} };
   }));
@@ -43767,10 +40441,10 @@ function registerCpuTools(server, cpu, simulators, { apps = readDeviceApps, andr
 }
 
 // packages/core/src/performance-recordings.ts
-import { randomUUID as randomUUID2 } from "node:crypto";
-import { mkdir as mkdir3, readFile as readFile6, readdir as readdir5, rename as rename2, stat as stat6, writeFile as writeFile6, rm as rm5 } from "node:fs/promises";
-import { homedir as homedir3 } from "node:os";
-import { join as join14 } from "node:path";
+import { randomUUID as randomUUID5 } from "node:crypto";
+import { mkdir as mkdir5, readFile as readFile9, readdir as readdir5, rename as rename4, stat as stat8, writeFile as writeFile8, rm as rm5 } from "node:fs/promises";
+import { homedir as homedir4 } from "node:os";
+import { join as join17 } from "node:path";
 
 // packages/shared/src/display-fps.ts
 var MAX_DISPLAY_FRAMES_PER_INTERVAL = 4096;
@@ -43810,34 +40484,34 @@ function displayFrameTime(frame2, intervalEndNs, intervalEndTime) {
   const elapsed = Number(elapsedNs) / 1e9;
   return intervalEndTime + elapsed;
 }
-var platform3 = external_exports.enum(["ios", "android"]);
+var platform2 = external_exports.enum(["ios", "android"]);
 var deviceString = external_exports.string();
 var nonemptyDevice = deviceString.min(1);
 var boundedDevice = nonemptyDevice.max(256);
 var deviceId2 = boundedDevice.regex(/^[a-zA-Z0-9_.:-]+$/);
-var target = external_exports.object({ platform: platform3, deviceId: deviceId2 });
+var target = external_exports.object({ platform: platform2, deviceId: deviceId2 });
 var displayFpsTargetSchema = target.strict();
 
 // packages/shared/src/frame-statistics.ts
 var number9 = external_exports.number();
 var finite = number9.finite();
 var nonnegative = finite.nonnegative();
-var count2 = nonnegative.int();
+var count = nonnegative.int();
 var reading = nonnegative.nullable();
 var percentage2 = nonnegative.max(100);
 var nullablePercentage = percentage2.nullable();
 var displayFrameStatsSchema = external_exports.object({
-  frameCount: count2,
-  presentedFrameCount: count2,
-  droppedFrameCount: count2,
-  unknownPresentationFrameCount: count2,
-  classifiedPresentedFrameCount: count2,
-  unclassifiedPresentedFrameCount: count2,
-  jankyPresentedFrameCount: count2,
+  frameCount: count,
+  presentedFrameCount: count,
+  droppedFrameCount: count,
+  unknownPresentationFrameCount: count,
+  classifiedPresentedFrameCount: count,
+  unclassifiedPresentedFrameCount: count,
+  jankyPresentedFrameCount: count,
   jankRatePercent: nullablePercentage,
   classificationCoveragePercent: nullablePercentage,
   droppedFrameRatePercent: nullablePercentage,
-  frameIntervalCount: count2,
+  frameIntervalCount: count,
   averageFrameIntervalMs: reading,
   p50FrameIntervalMs: reading,
   p95FrameIntervalMs: reading,
@@ -43852,10 +40526,10 @@ function percentile(sorted, fraction) {
   const rank = Math.ceil(sorted.length * fraction);
   return sorted[rank - 1];
 }
-function summarizeDisplayFrames(samples, duration4, range) {
+function summarizeDisplayFrames(samples, duration3, range) {
   const start = range?.start ?? 0;
-  const end = range?.end ?? duration4;
-  if (end > duration4) throw new Error("The selected range exceeds this recording's duration.");
+  const end = range?.end ?? duration3;
+  if (end > duration3) throw new Error("The selected range exceeds this recording's duration.");
   const stats = {
     frameCount: 0,
     presentedFrameCount: 0,
@@ -44094,7 +40768,7 @@ function summarizeRecording(recording, range) {
 }
 
 // packages/core/src/performance-recordings.ts
-var RECORDINGS_DIRECTORY = join14(homedir3(), "Library/Application Support/mobile-dev/recordings");
+var RECORDINGS_DIRECTORY = join17(homedir4(), "Library/Application Support/mobile-dev/recordings");
 var RecordingStore = class {
   directory;
   constructor(directory = RECORDINGS_DIRECTORY) {
@@ -44102,21 +40776,21 @@ var RecordingStore = class {
   }
   async save(recording) {
     const validated = recordingSchema.parse(recording);
-    await mkdir3(this.directory, { recursive: true, mode: 448 });
-    const filename = join14(this.directory, `${validated.id}.json`);
+    await mkdir5(this.directory, { recursive: true, mode: 448 });
+    const filename = join17(this.directory, `${validated.id}.json`);
     const temporary = `${filename}.tmp`;
     const text6 = JSON.stringify(validated);
     try {
-      await writeFile6(temporary, text6, { mode: 384 });
-      await rename2(temporary, filename);
+      await writeFile8(temporary, text6, { mode: 384 });
+      await rename4(temporary, filename);
     } finally {
       await rm5(temporary, { force: true });
     }
   }
   async read(id2) {
     const validated = recordingIdSchema.parse(id2);
-    const filename = join14(this.directory, `${validated}.json`);
-    const text6 = await readFile6(filename, "utf8");
+    const filename = join17(this.directory, `${validated}.json`);
+    const text6 = await readFile9(filename, "utf8");
     const parsed = JSON.parse(text6);
     const recording = recordingSchema.parse(parsed);
     if (recording.id !== validated) throw new Error("The saved recording ID does not match.");
@@ -44136,8 +40810,8 @@ var RecordingStore = class {
       const id2 = entry2.name.slice(0, -5);
       const parsed = recordingIdSchema.safeParse(id2);
       if (parsed.success === false) continue;
-      const filename = join14(this.directory, entry2.name);
-      const metadata4 = await stat6(filename);
+      const filename = join17(this.directory, entry2.name);
+      const metadata4 = await stat8(filename);
       candidates.push({ id: id2, modified: metadata4.mtimeMs });
     }
     candidates.sort((left, right) => right.modified - left.modified);
@@ -44165,7 +40839,7 @@ var PerformanceRecordings = class {
     if (this.disposed) throw new Error("The plugin server has closed.");
     const recording = {
       schemaVersion: 1,
-      id: randomUUID2(),
+      id: randomUUID5(),
       title: title2,
       target: target2,
       deviceName,
@@ -44437,15 +41111,15 @@ var comparisonSchema = comparisonObject.superRefine((comparison, context2) => {
   const ids2 = comparison.recordings.map((recording) => recording.id);
   const distinct = comparisonIdsSchema.safeParse(ids2);
   if (distinct.success === false) context2.addIssue({ code: "custom", message: "Choose distinct recording IDs." });
-  const duration4 = comparisonDuration(comparison.recordings);
-  if (comparison.range !== void 0 && comparison.range.end > duration4) {
+  const duration3 = comparisonDuration(comparison.recordings);
+  if (comparison.range !== void 0 && comparison.range.end > duration3) {
     context2.addIssue({ code: "custom", message: "The selected range exceeds the comparison's duration." });
   }
 });
 function comparisonDuration(recordings) {
-  let duration4 = 0;
-  for (const recording of recordings) duration4 = Math.max(duration4, recording.durationSeconds);
-  return duration4;
+  let duration3 = 0;
+  for (const recording of recordings) duration3 = Math.max(duration3, recording.durationSeconds);
+  return duration3;
 }
 function summarizeComparison(recordings, range) {
   return recordings.map((recording) => {
@@ -44459,7 +41133,7 @@ function summarizeComparison(recordings, range) {
 }
 
 // packages/core/src/recording-tools.ts
-var read2 = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
+var read3 = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 var visibility = ["app", "model"];
 var inputSchema2 = { recordingId: recordingIdSchema, range: recordingRangeSchema.optional() };
 var summarySchema = external_exports.object({
@@ -44526,7 +41200,7 @@ var recordingDisplayFramePage = recordingDisplayFrames.max(1e3);
 var framePageAvailable = external_exports.boolean();
 var framePageClock = external_exports.literal("boottime");
 var optionalFrameCursor = boundedCursor.optional();
-function safe3(handler) {
+function safe4(handler) {
   return async (input) => {
     try {
       return await handler(input);
@@ -44542,15 +41216,15 @@ function registerRecordingTools(server, recordings, validateDevice) {
     description: "Always record native process/thread CPU, memory, and device-wide Display FPS together, even when the user asks about only one metric. Returns immediately with recording.id and status connecting; wait for status recording before asking the user to perform the interaction. Recording stops automatically after durationSeconds of sampling, detaches both collectors, and saves original samples locally after a brief finishing phase for delayed FPS readings. Uses the same target and device/development prerequisites as mobile_cpu_session; stop any existing CPU monitor for this app and FPS monitor for this device first. FPS requires Android 12+ or physical iOS 17.4+; unsupported or failed FPS is omitted from the chart while CPU and memory still save. Device-wide FPS cannot attribute a slowdown to one app. Use mobile_read_performance_recording to check readiness and completion, then mobile_render_performance_recording to show the interactive chart in chat. 100% CPU is one core. Android memory is RSS; iOS memory is physical footprint.",
     inputSchema: { target: cpuTargetSchema, title: external_exports.string().min(1).max(160), durationSeconds: external_exports.number().int().min(1).max(300).default(30) },
     outputSchema,
-    annotations: { ...read2, readOnlyHint: false },
+    annotations: { ...read3, readOnlyHint: false },
     _meta: { ui: { visibility } }
-  }, safe3(async ({ target: target2, title: title2, durationSeconds }) => {
+  }, safe4(async ({ target: target2, title: title2, durationSeconds }) => {
     const deviceName = await validateDevice(target2);
     const recording = recordings.start(target2, title2, durationSeconds, deviceName);
     const summary = summarizeRecording(recording);
     return { content: [{ type: "text", text: "Connecting the CPU, memory, and FPS collectors. Check recording status before starting the interaction." }], structuredContent: { recording, summary } };
   }));
-  const readRecording = safe3(async ({ recordingId, range }) => {
+  const readRecording = safe4(async ({ recordingId, range }) => {
     const recording = await recordings.read(recordingId);
     const summary = summarizeRecording(recording, range);
     const structuredContent = { recording, summary, ...range ? { range } : {} };
@@ -44562,10 +41236,10 @@ function registerRecordingTools(server, recordings, validateDevice) {
     description: "Read original CPU, memory, FPS and thread samples, status, and summary for a recording ID. Android summary.frameStats includes jankRatePercent over classified presented display frames, classification coverage, separate dropped-frame count/rate, and frame-interval P50/P95/P99 in ms. Unknown jank classifications are excluded from the jank denominator; null means unavailable. Stats cover the entire requested range, not a frame page. Optional range uses recording-relative seconds; CPU/FPS/thread averages weight interval overlap. Android intervals retain exact frameTimeline data; mobile_read_performance_frames provides bounded frame pages. Show mobile_render_performance_recording when reporting jank so the user sees the chart. Device-wide frames cannot attribute a slowdown to one app. Works after plugin restarts.",
     inputSchema: inputSchema2,
     outputSchema,
-    annotations: read2,
+    annotations: read3,
     _meta: { ui: { visibility } }
   }, readRecording);
-  const readFrames = safe3(async ({ recordingId, range, after, limit }) => {
+  const readFrames = safe4(async ({ recordingId, range, after, limit }) => {
     const recording = await recordings.read(recordingId);
     const data = readRecordingFrames(recording, range, after, limit);
     const text6 = JSON.stringify(data);
@@ -44584,10 +41258,10 @@ function registerRecordingTools(server, recordings, validateDevice) {
       frameStats: nullableDisplayFrameStatsSchema,
       nextCursor: optionalFrameCursor
     },
-    annotations: read2,
+    annotations: read3,
     _meta: { ui: { visibility } }
   }, readFrames);
-  const showRecording = safe3(async ({ recordingId, range }) => {
+  const showRecording = safe4(async ({ recordingId, range }) => {
     const recording = await recordings.read(recordingId);
     const summary = summarizeRecording(recording, range);
     const structuredContent = {
@@ -44606,7 +41280,7 @@ function registerRecordingTools(server, recordings, validateDevice) {
     description: "Show a saved CPU/memory/FPS recording as an inline interactive chart with shared drag selection, thread breakdown and Ask. Android frame data adds jank rate, classification coverage, dropped frames and frame-interval P50/P95/P99, updating with the selected range. Call this when reporting scrolling FPS/jank or comparing implementations so the user sees the chart alongside the analysis. The full timeline stays visible; automatic change highlights do not select or limit a range. Omit range unless the user requested a selection. Pass recording.id from mobile_record_performance or mobile_list_performance_recordings. Active runs update until finished. Data tools return measurements without rendering a chart. Returns the recording ID and summary numbers; the chart reads the samples itself, so use mobile_read_performance_recording for sample-level detail.",
     inputSchema: inputSchema2,
     outputSchema: referenceOutputSchema,
-    annotations: read2,
+    annotations: read3,
     _meta: { ui: { resourceUri: RECORDING_URI, visibility } }
   }, showRecording);
   const comparisonTitle = comparisonTitleSchema.default("Performance comparison");
@@ -44625,9 +41299,9 @@ function registerRecordingTools(server, recordings, validateDevice) {
     description: "Overlay 2\u20136 distinct completed CPU, memory and FPS recordings in chat, aligned at recording start in elapsed seconds. Pass recordingIds from mobile_list_performance_recordings, an optional title and shared range. Finish active runs first. The interactive card has a color per run, visibility toggles, shared range selection and per-run summaries. Different durations retain their original time scale; missing data stays gaps. Android RSS and iOS physical footprint use separate memory tracks. Device-wide FPS cannot attribute changes to one app. Returns original recordings and interval-weighted summaries, clipped to each run's duration; a run outside the range has a null summary. Use this tool when comparing runs or implementations so the user sees their timelines together. Returns per-run summaries and recording IDs; the chart reads the samples itself.",
     inputSchema: comparisonInput,
     outputSchema: { ...comparisonReferenceSchema.shape, summaries: comparisonSummaries },
-    annotations: read2,
+    annotations: read3,
     _meta: { ui: { resourceUri: COMPARISON_URI, visibility } }
-  }, safe3(async ({ recordingIds, title: title2, range }) => {
+  }, safe4(async ({ recordingIds, title: title2, range }) => {
     const reads = recordingIds.map((id2) => {
       const recording = recordings.read(id2);
       return recording;
@@ -44653,9 +41327,9 @@ function registerRecordingTools(server, recordings, validateDevice) {
     description: "Stop the recording and save its CPU, memory, and FPS samples after delayed FPS readback finishes. Leaves the monitored app running. Timed recordings finish automatically; use this to stop early.",
     inputSchema: { recordingId: recordingIdSchema },
     outputSchema,
-    annotations: { ...read2, readOnlyHint: false },
+    annotations: { ...read3, readOnlyHint: false },
     _meta: { ui: { visibility } }
-  }, safe3(async ({ recordingId }) => {
+  }, safe4(async ({ recordingId }) => {
     const recording = await recordings.finish(recordingId);
     const summary = summarizeRecording(recording);
     return { content: [{ type: "text", text: `Recording ${recording.status}.` }], structuredContent: { recording, summary } };
@@ -44664,9 +41338,9 @@ function registerRecordingTools(server, recordings, validateDevice) {
     title: "List saved performance recordings",
     description: "List recent local saved and active CPU/memory/FPS runs without returning samples. Use their IDs to read, render, or open a recording.",
     inputSchema: { limit: external_exports.number().int().min(1).max(50).default(20) },
-    annotations: read2,
+    annotations: read3,
     _meta: { ui: { visibility } }
-  }, safe3(async ({ limit }) => {
+  }, safe4(async ({ limit }) => {
     const recordingsList = await recordings.list(limit);
     const items = recordingsList.map(({ samples, fps, ...metadata4 }) => ({
       ...metadata4,
@@ -44684,7 +41358,7 @@ function registerOpenRecordingTool(server, showRecording, workspaceUri) {
     description: "Open the saved recording and selected time range in the Mobile Dev workspace. Does not start a live performance collector or boot a device.",
     inputSchema: inputSchema2,
     outputSchema: referenceOutputSchema,
-    annotations: read2,
+    annotations: read3,
     _meta: { ui: { resourceUri: workspaceUri, visibility } }
   }, showRecording);
 }
@@ -44827,11 +41501,11 @@ var traceSiftHandoffSchema = external_exports.object({ apiVersion: external_expo
 
 // packages/core/src/tracesift-client.ts
 import { spawn as spawn8 } from "node:child_process";
-import { createHash as createHash5, randomUUID as randomUUID3 } from "node:crypto";
+import { createHash as createHash7, randomUUID as randomUUID6 } from "node:crypto";
 import { openAsBlob } from "node:fs";
-import { mkdir as mkdir4, readFile as readFileAsync, realpath as realpath2, rename as rename3, rm as rm6, stat as stat7, writeFile as writeFile7 } from "node:fs/promises";
-import { homedir as homedir4 } from "node:os";
-import { basename as basename3, join as join15 } from "node:path";
+import { mkdir as mkdir6, readFile as readFileAsync, realpath as realpath2, rename as rename5, rm as rm6, stat as stat9, writeFile as writeFile9 } from "node:fs/promises";
+import { homedir as homedir5 } from "node:os";
+import { basename as basename4, join as join18 } from "node:path";
 import { createServer as createServer3 } from "node:net";
 import { setTimeout as delay5 } from "node:timers/promises";
 var STARTUP_TIMEOUT_MS = 6e4;
@@ -44840,9 +41514,9 @@ var EXPLORE_TIMEOUT_MS = 15e3;
 var EXPLORE_UNSUPPORTED = "This TraceSift service cannot open findings in the panel. Update TraceSift and restart it, or use Open in browser.";
 var TraceSiftError = class extends ExpectedOperationError {
   kind;
-  constructor(message3, kind4) {
+  constructor(message3, kind3) {
     super("invalid_input", message3);
-    this.kind = kind4;
+    this.kind = kind3;
   }
 };
 function processAlive(pid3) {
@@ -44857,7 +41531,7 @@ function processAlive(pid3) {
 async function parseDescriptor(path) {
   let raw;
   try {
-    const metadata4 = await stat7(path);
+    const metadata4 = await stat9(path);
     if ((metadata4.mode & 63) !== 0) throw new TraceSiftError("TraceSift service.json permissions are unsafe. Restart TraceSift so it recreates the file with mode 0600.", "setup");
     raw = JSON.parse(await readFileAsync(path, "utf8"));
   } catch (error51) {
@@ -44872,13 +41546,13 @@ async function parseDescriptor(path) {
   return value;
 }
 async function freePort() {
-  return new Promise((resolve3, reject) => {
+  return new Promise((resolve4, reject) => {
     const server = createServer3();
     server.once("error", reject);
     server.listen(0, "127.0.0.1", () => {
       const address2 = server.address();
       const port2 = typeof address2 === "object" && address2 ? address2.port : 0;
-      server.close((error51) => error51 ? reject(error51) : resolve3(port2));
+      server.close((error51) => error51 ? reject(error51) : resolve4(port2));
     });
   });
 }
@@ -44908,10 +41582,10 @@ var TraceSiftClient = class {
   command;
   constructor(command3 = process.env.TRACE_SIFT_COMMAND ?? "tracesift", home) {
     this.command = command3;
-    this.home = home ?? process.env.TRACE_SIFT_HOME ?? join15(homedir4(), ".tracesift");
+    this.home = home ?? process.env.TRACE_SIFT_HOME ?? join18(homedir5(), ".tracesift");
   }
   async existing(signal) {
-    const descriptor = await parseDescriptor(join15(this.home, "service.json"));
+    const descriptor = await parseDescriptor(join18(this.home, "service.json"));
     return descriptor && await health(descriptor, signal) ? descriptor : void 0;
   }
   async start(signal) {
@@ -44930,7 +41604,7 @@ var TraceSiftClient = class {
     this.child = child;
     let spawnError;
     let exited = false;
-    let diagnostics3 = "";
+    let diagnostics = "";
     child.once("error", (error51) => {
       spawnError = error51;
     });
@@ -44939,7 +41613,7 @@ var TraceSiftClient = class {
     });
     child.stderr?.setEncoding("utf8");
     child.stderr?.on("data", (chunk) => {
-      if (diagnostics3.length < 16384) diagnostics3 += String(chunk).slice(0, 16384 - diagnostics3.length);
+      if (diagnostics.length < 16384) diagnostics += String(chunk).slice(0, 16384 - diagnostics.length);
     });
     const deadline = Date.now() + STARTUP_TIMEOUT_MS;
     while (Date.now() < deadline) {
@@ -44947,8 +41621,8 @@ var TraceSiftClient = class {
       if (spawnError) throw new TraceSiftError("TraceSift could not start. Install @callstack/tracesift, run `tracesift init`, and retry.", "setup");
       const descriptor = await this.existing(signal);
       if (descriptor) return descriptor;
-      if (exited && /another tracesift operation/i.test(diagnostics3) === false) {
-        if (/node\.js|unsupported|platform|architecture/i.test(diagnostics3)) throw new TraceSiftError("This TraceSift installation does not support the current Node.js version or platform. Update Node and TraceSift, then retry.", "version");
+      if (exited && /another tracesift operation/i.test(diagnostics) === false) {
+        if (/node\.js|unsupported|platform|architecture/i.test(diagnostics)) throw new TraceSiftError("This TraceSift installation does not support the current Node.js version or platform. Update Node and TraceSift, then retry.", "version");
         throw new TraceSiftError("TraceSift could not start. Run `tracesift init`, then retry or start `tracesift start --no-open` manually.", "setup");
       }
       await delay5(200, void 0, { signal });
@@ -44965,47 +41639,47 @@ var TraceSiftClient = class {
     await this.service(signal);
   }
   analysisPath(analysisId) {
-    return join15(this.home, "integrations", "mobile-dev", `${createHash5("sha256").update(analysisId).digest("hex")}.json`);
+    return join18(this.home, "integrations", "mobile-dev", `${createHash7("sha256").update(analysisId).digest("hex")}.json`);
   }
   viewPath(viewId) {
-    const key = createHash5("sha256").update(JSON.stringify(viewId)).digest("hex");
-    return join15(this.home, "integrations", "mobile-dev", `view-${key}.json`);
+    const key = createHash7("sha256").update(JSON.stringify(viewId)).digest("hex");
+    return join18(this.home, "integrations", "mobile-dev", `view-${key}.json`);
   }
   inputPath(path, profileType) {
-    const key = createHash5("sha256").update(JSON.stringify({ path, profileType })).digest("hex");
-    return join15(this.home, "integrations", "mobile-dev", `input-${key}.json`);
+    const key = createHash7("sha256").update(JSON.stringify({ path, profileType })).digest("hex");
+    return join18(this.home, "integrations", "mobile-dev", `input-${key}.json`);
   }
   async writePrivateJson(file3, value) {
-    const directory = join15(this.home, "integrations", "mobile-dev");
-    const temporary = join15(directory, `.analysis-${randomUUID3()}`);
+    const directory = join18(this.home, "integrations", "mobile-dev");
+    const temporary = join18(directory, `.analysis-${randomUUID6()}`);
     try {
-      await writeFile7(temporary, `${JSON.stringify(value)}
+      await writeFile9(temporary, `${JSON.stringify(value)}
 `, { flag: "wx", mode: 384 });
-      await rename3(temporary, file3);
+      await rename5(temporary, file3);
     } finally {
       await rm6(temporary, { force: true });
     }
   }
   async persistAnalysis(analysis) {
-    const directory = join15(this.home, "integrations", "mobile-dev");
-    await mkdir4(directory, { recursive: true, mode: 448 });
+    const directory = join18(this.home, "integrations", "mobile-dev");
+    await mkdir6(directory, { recursive: true, mode: 448 });
     await this.writePrivateJson(this.analysisPath(analysis.analysisId), analysis);
   }
   async remember(viewId, analysisId) {
-    const analysis = await stat7(this.analysisPath(analysisId)).catch(() => void 0);
+    const analysis = await stat9(this.analysisPath(analysisId)).catch(() => void 0);
     if (!analysis?.isFile()) throw new TraceSiftError("This TraceSift analysis is no longer available. Run it again.", "request");
-    const directory = join15(this.home, "integrations", "mobile-dev");
-    await mkdir4(directory, { recursive: true, mode: 448 });
+    const directory = join18(this.home, "integrations", "mobile-dev");
+    await mkdir6(directory, { recursive: true, mode: 448 });
     await this.writePrivateJson(this.viewPath(viewId), { apiVersion: 1, analysisId });
   }
   async rememberInput(path, profileType, analysisId) {
-    const directory = join15(this.home, "integrations", "mobile-dev");
-    await mkdir4(directory, { recursive: true, mode: 448 });
+    const directory = join18(this.home, "integrations", "mobile-dev");
+    await mkdir6(directory, { recursive: true, mode: 448 });
     await this.writePrivateJson(this.inputPath(path, profileType), { apiVersion: 1, analysisId });
   }
   // The investigation's source folder: the plugin's choice, not TraceSift's, stored beside the analyses to inherit their 0700 directory.
   projectPath() {
-    return join15(this.home, "integrations", "mobile-dev", "project.json");
+    return join18(this.home, "integrations", "mobile-dev", "project.json");
   }
   async readProject() {
     let stored;
@@ -45017,14 +41691,14 @@ var TraceSiftClient = class {
     }
     const path = typeof stored === "object" && stored !== null && "path" in stored && typeof stored.path === "string" ? stored.path : void 0;
     if (!path) throw new TraceSiftError("The saved project is invalid. Choose it again.", "request");
-    const directory = await stat7(path).catch(() => void 0);
+    const directory = await stat9(path).catch(() => void 0);
     return directory?.isDirectory() ? path : void 0;
   }
   async writeProject(path) {
-    const directory = await stat7(path).catch(() => void 0);
+    const directory = await stat9(path).catch(() => void 0);
     if (!directory?.isDirectory()) throw new TraceSiftError("That project folder does not exist.", "request");
     const resolved = await realpath2(path);
-    await mkdir4(join15(this.home, "integrations", "mobile-dev"), { recursive: true, mode: 448 });
+    await mkdir6(join18(this.home, "integrations", "mobile-dev"), { recursive: true, mode: 448 });
     await this.writePrivateJson(this.projectPath(), { apiVersion: 1, path: resolved });
     return resolved;
   }
@@ -45099,7 +41773,7 @@ var TraceSiftClient = class {
     const resolved = await realpath2(path).catch(() => {
       throw new TraceSiftError("The profile path does not exist or is not readable.", "setup");
     });
-    const metadata4 = await stat7(resolved).catch(() => {
+    const metadata4 = await stat9(resolved).catch(() => {
       throw new TraceSiftError("The profile path does not exist or is not readable.", "setup");
     });
     if (!metadata4.isFile()) throw new TraceSiftError("The profile path must point to a regular file.", "setup");
@@ -45107,7 +41781,7 @@ var TraceSiftClient = class {
     try {
       const file3 = await openAsBlob(resolved);
       form = new FormData();
-      form.set("profile", file3, basename3(resolved));
+      form.set("profile", file3, basename4(resolved));
       form.set("profileType", profileType);
     } catch {
       throw new TraceSiftError("The profile could not be opened for upload. Check its permissions and retry.", "setup");
@@ -45130,7 +41804,7 @@ var TraceSiftClient = class {
   async openExplore(analysisId, taskIndex, focus, signal) {
     await this.service(signal);
     const analysisPath = this.analysisPath(analysisId);
-    const analysisFile = await stat7(analysisPath).catch(() => void 0);
+    const analysisFile = await stat9(analysisPath).catch(() => void 0);
     if (!analysisFile?.isFile()) throw new TraceSiftError("This analysis is no longer available to Explore. Run it again.", "request");
     const args = ["explore", analysisPath, "--task", String(taskIndex), ...focus ? ["--focus", focus] : []];
     await this.launchExplore(args, signal);
@@ -45138,13 +41812,13 @@ var TraceSiftClient = class {
   async openReactExplore(analysisId, rootId, commitIndex, signal) {
     await this.service(signal);
     const analysisPath = this.analysisPath(analysisId);
-    const analysisFile = await stat7(analysisPath).catch(() => void 0);
+    const analysisFile = await stat9(analysisPath).catch(() => void 0);
     if (!analysisFile?.isFile()) throw new TraceSiftError("This analysis is no longer available to Explore. Run it again.", "request");
     await this.launchExplore(["explore", analysisPath, "--commit", `${rootId}.${commitIndex}`], signal);
   }
   async launchExplore(args, signal) {
-    await new Promise((resolve3, reject) => {
-      let diagnostics3 = "";
+    await new Promise((resolve4, reject) => {
+      let diagnostics = "";
       let settled = false;
       const child = spawn8(this.command, args, {
         stdio: ["ignore", "ignore", "pipe"],
@@ -45152,7 +41826,7 @@ var TraceSiftClient = class {
       });
       child.stderr?.setEncoding("utf8");
       child.stderr?.on("data", (chunk) => {
-        if (diagnostics3.length < 16384) diagnostics3 += String(chunk).slice(0, 16384 - diagnostics3.length);
+        if (diagnostics.length < 16384) diagnostics += String(chunk).slice(0, 16384 - diagnostics.length);
       });
       const finish = (error51) => {
         if (settled) return;
@@ -45160,7 +41834,7 @@ var TraceSiftClient = class {
         clearTimeout(timeout);
         signal?.removeEventListener("abort", abort);
         if (error51) reject(error51);
-        else resolve3();
+        else resolve4();
       };
       const abort = () => {
         child.kill("SIGTERM");
@@ -45171,7 +41845,7 @@ var TraceSiftClient = class {
         finish(new Error("TraceSift Explore did not open within 15 seconds."));
       }, EXPLORE_TIMEOUT_MS);
       child.once("error", () => finish(new TraceSiftError("TraceSift is not installed or could not run `tracesift explore`.", "setup")));
-      child.once("exit", (code) => finish(code === 0 ? void 0 : new Error(diagnostics3.trim() || `TraceSift Explore exited with code ${code}.`)));
+      child.once("exit", (code) => finish(code === 0 ? void 0 : new Error(diagnostics.trim() || `TraceSift Explore exited with code ${code}.`)));
       if (signal?.aborted) abort();
       else signal?.addEventListener("abort", abort, { once: true });
     });
@@ -45208,7 +41882,7 @@ var TraceSiftClient = class {
     this.child = void 0;
     this.ready = void 0;
     if (!child || child.exitCode !== null || child.signalCode !== null) return;
-    const exited = new Promise((resolve3) => child.once("exit", () => resolve3()));
+    const exited = new Promise((resolve4) => child.once("exit", () => resolve4()));
     child.kill("SIGTERM");
     await Promise.race([exited, delay5(3e3, void 0, { ref: false })]);
   }
@@ -45216,7 +41890,7 @@ var TraceSiftClient = class {
 
 // packages/core/src/tracesift-tools.ts
 import { gzip as gzipCallback } from "node:zlib";
-import { promisify as promisify10 } from "node:util";
+import { promisify as promisify11 } from "node:util";
 
 // packages/shared/src/tracesift-explore.ts
 var traceSiftExploreEnvelopeSchema = external_exports.object({
@@ -45244,8 +41918,8 @@ function traceSiftPayloadTooDeep(value, maxDepth2 = TRACE_SIFT_PAYLOAD_MAX_DEPTH
 }
 
 // packages/core/src/profile-picker.ts
-import { execFile as execFile11 } from "node:child_process";
-import { platform as platform4 } from "node:os";
+import { execFile as execFile12 } from "node:child_process";
+import { platform as platform3 } from "node:os";
 var PICKER_TIMEOUT_MS = 5 * 60 * 1e3;
 var ProfilePickerError = class extends Error {
   constructor(message3) {
@@ -45267,7 +41941,7 @@ $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
 $dialog.Description = 'Choose the project this profile belongs to'
 if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dialog.SelectedPath }`;
 function command2() {
-  switch (platform4()) {
+  switch (platform3()) {
     case "darwin":
       return { file: "osascript", args: ["-e", APPLESCRIPT] };
     case "win32":
@@ -45278,7 +41952,7 @@ function command2() {
   }
 }
 function folderCommand() {
-  switch (platform4()) {
+  switch (platform3()) {
     case "darwin":
       return { file: "osascript", args: ["-e", APPLESCRIPT_FOLDER] };
     case "win32":
@@ -45288,14 +41962,14 @@ function folderCommand() {
   }
 }
 function run3(file3, args) {
-  return new Promise((resolve3, reject) => {
-    execFile11(file3, args, { timeout: PICKER_TIMEOUT_MS, maxBuffer: 64 * 1024 }, (error51, stdout, stderr) => {
+  return new Promise((resolve4, reject) => {
+    execFile12(file3, args, { timeout: PICKER_TIMEOUT_MS, maxBuffer: 64 * 1024 }, (error51, stdout, stderr) => {
       const code = error51 && typeof error51 === "object" && "code" in error51 ? error51.code : 0;
       if (typeof code === "string") {
         reject(error51);
         return;
       }
-      resolve3({ code: typeof code === "number" ? code : 0, stdout, stderr });
+      resolve4({ code: typeof code === "number" ? code : 0, stdout, stderr });
     });
   });
 }
@@ -45305,7 +41979,7 @@ async function pick3(chooser, fallback) {
   try {
     result4 = await run3(file3, args);
   } catch (error51) {
-    if (platform4() === "linux" && error51 instanceof Error && "code" in error51 && error51.code === "ENOENT") {
+    if (platform3() === "linux" && error51 instanceof Error && "code" in error51 && error51.code === "ENOENT") {
       try {
         result4 = await run3("kdialog", fallback);
       } catch {
@@ -45323,8 +41997,8 @@ var pickProfileFile = () => pick3(command2, ["--getopenfilename", ".", "*.json *
 var pickProjectFolder = () => pick3(folderCommand, ["--getexistingdirectory", "."]);
 
 // packages/core/src/tracesift-tools.ts
-var gzip = promisify10(gzipCallback);
-var read3 = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
+var gzip = promisify11(gzipCallback);
+var read4 = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 var persist = { readOnlyHint: false, destructiveHint: true, openWorldHint: false };
 var localService = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
 var visibility2 = ["app", "model"];
@@ -45336,7 +42010,7 @@ var analysisOutput = {
   summary: external_exports.record(external_exports.string(), external_exports.unknown()),
   cards: external_exports.array(external_exports.union([traceSiftTaskCardSchema, traceSiftReactCardSchema]))
 };
-function failure2(error51, operation, startedAt, signal) {
+function failure(error51, operation, startedAt, signal) {
   recordTraceSiftOperation(operation, "failed", performance.now() - startedAt);
   captureServerError(error51, `tracesift.${operation}`, { signal });
   return { isError: true, content: [{ type: "text", text: errorMessage(error51) }] };
@@ -45356,14 +42030,14 @@ function registerTraceSiftTools(server, client) {
         path,
         profileType,
         context2.signal,
-        (outcome, duration4) => recordTraceSiftOperation("ready", outcome, duration4)
+        (outcome, duration3) => recordTraceSiftOperation("ready", outcome, duration3)
       );
       recordTraceSiftOperation("analyze", "success", performance.now() - startedAt);
-      const kind4 = analysis.profileType === "cpu" ? "task" : "React commit";
+      const kind3 = analysis.profileType === "cpu" ? "task" : "React commit";
       const cards = analysis.cards.map((card, index) => `#${index + 1} (card ${card.id}, ${Math.round(card.durationMs)} ms): ${card.headline}`).join("; ");
-      return { content: [{ type: "text", text: `TraceSift found ${analysis.cards.length} ${kind4} cards in analysis ${analysis.analysisId}: ${cards}. Show the inline cards and wait for the user to choose Investigate.` }], structuredContent: analysis };
+      return { content: [{ type: "text", text: `TraceSift found ${analysis.cards.length} ${kind3} cards in analysis ${analysis.analysisId}: ${cards}. Show the inline cards and wait for the user to choose Investigate.` }], structuredContent: analysis };
     } catch (error51) {
-      return failure2(error51, "analyze", startedAt, context2.signal);
+      return failure(error51, "analyze", startedAt, context2.signal);
     }
   });
   K3(server, "mobile_pick_profile_file", {
@@ -45383,7 +42057,7 @@ function registerTraceSiftTools(server, client) {
         structuredContent: chosen.picked ? { picked: true, path: chosen.path } : { picked: false }
       };
     } catch (error51) {
-      return failure2(error51, "pick", startedAt, context2.signal);
+      return failure(error51, "pick", startedAt, context2.signal);
     }
   });
   K3(server, "mobile_get_tracesift_project", {
@@ -45391,7 +42065,7 @@ function registerTraceSiftTools(server, client) {
     description: "Return the source folder a TraceSift investigation should land in, as the panel last chose it. Returns none when nothing is chosen or the saved folder no longer exists.",
     inputSchema: {},
     outputSchema: { path: external_exports.string().optional() },
-    annotations: read3,
+    annotations: read4,
     _meta: { ui: { visibility: ["app"] } }
   }, async (_input, context2) => {
     const startedAt = performance.now();
@@ -45403,7 +42077,7 @@ function registerTraceSiftTools(server, client) {
         structuredContent: path ? { path } : {}
       };
     } catch (error51) {
-      return failure2(error51, "project", startedAt, context2.signal);
+      return failure(error51, "project", startedAt, context2.signal);
     }
   });
   K3(server, "mobile_pick_tracesift_project", {
@@ -45424,7 +42098,7 @@ function registerTraceSiftTools(server, client) {
         structuredContent: path ? { picked: true, path } : { picked: false }
       };
     } catch (error51) {
-      return failure2(error51, "project", startedAt, context2.signal);
+      return failure(error51, "project", startedAt, context2.signal);
     }
   });
   K3(server, "mobile_remember_tracesift_analysis", {
@@ -45441,7 +42115,7 @@ function registerTraceSiftTools(server, client) {
       recordTraceSiftOperation("remember", "success", performance.now() - startedAt);
       return { content: [{ type: "text", text: "TraceSift analysis remembered for this card." }], structuredContent: { remembered: true } };
     } catch (error51) {
-      return failure2(error51, "remember", startedAt, context2.signal);
+      return failure(error51, "remember", startedAt, context2.signal);
     }
   });
   K3(server, "mobile_restore_tracesift_analysis", {
@@ -45449,7 +42123,7 @@ function registerTraceSiftTools(server, client) {
     description: "Reload the compact saved analysis for an existing inline TraceSift card after its host view is recreated.",
     inputSchema: { viewId: external_exports.union([external_exports.string(), external_exports.number()]) },
     outputSchema: { apiVersion: external_exports.literal(1), restored: external_exports.boolean(), analysis: traceSiftAnalysisSchema.optional() },
-    annotations: read3,
+    annotations: read4,
     _meta: { ui: { visibility: ["app"] } }
   }, async ({ viewId }, context2) => {
     const startedAt = performance.now();
@@ -45459,7 +42133,7 @@ function registerTraceSiftTools(server, client) {
       const structuredContent = { apiVersion: 1, restored: analysis !== void 0, ...analysis ? { analysis } : {} };
       return { content: [{ type: "text", text: analysis ? "TraceSift analysis restored." : "No saved TraceSift analysis was found." }], structuredContent };
     } catch (error51) {
-      return failure2(error51, "restore", startedAt, context2.signal);
+      return failure(error51, "restore", startedAt, context2.signal);
     }
   });
   K3(server, "mobile_restore_tracesift_analysis_by_input", {
@@ -45467,7 +42141,7 @@ function registerTraceSiftTools(server, client) {
     description: "Reload the latest compact saved analysis for the profile input replayed by a recreated inline TraceSift card.",
     inputSchema: traceSiftProfileInputSchema.shape,
     outputSchema: { apiVersion: external_exports.literal(1), restored: external_exports.boolean(), analysis: traceSiftAnalysisSchema.optional() },
-    annotations: read3,
+    annotations: read4,
     _meta: { ui: { visibility: ["app"] } }
   }, async ({ path, profileType }, context2) => {
     const startedAt = performance.now();
@@ -45477,7 +42151,7 @@ function registerTraceSiftTools(server, client) {
       const structuredContent = { apiVersion: 1, restored: analysis !== void 0, ...analysis ? { analysis } : {} };
       return { content: [{ type: "text", text: analysis ? "TraceSift analysis restored." : "No saved TraceSift analysis was found." }], structuredContent };
     } catch (error51) {
-      return failure2(error51, "restore", startedAt, context2.signal);
+      return failure(error51, "restore", startedAt, context2.signal);
     }
   });
   K3(server, "mobile_open_tracesift_explore", {
@@ -45506,7 +42180,7 @@ function registerTraceSiftTools(server, client) {
       recordTraceSiftOperation("task", "success", performance.now() - startedAt);
       return { content: [{ type: "text", text: "TraceSift Explore opened." }], structuredContent: { opened: true } };
     } catch (error51) {
-      return failure2(error51, "task", startedAt, context2.signal);
+      return failure(error51, "task", startedAt, context2.signal);
     }
   });
   K3(server, "mobile_tracesift_explore_payload", {
@@ -45548,7 +42222,7 @@ function registerTraceSiftTools(server, client) {
       recordTraceSiftPayload(result4.structuredContent.kind, result4.structuredContent.payloadBytes);
       return result4;
     } catch (error51) {
-      return failure2(error51, "payload", startedAt, context2.signal);
+      return failure(error51, "payload", startedAt, context2.signal);
     }
   });
   K3(server, "mobile_get_tracesift_handoff", {
@@ -45566,14 +42240,14 @@ function registerTraceSiftTools(server, client) {
       const structuredContent = { apiVersion: 1, handoff };
       return { content: [{ type: "text", text: handoff }], structuredContent };
     } catch (error51) {
-      return failure2(error51, "handoff", startedAt, context2.signal);
+      return failure(error51, "handoff", startedAt, context2.signal);
     }
   });
 }
 
 // packages/core/src/storage-metrics.ts
-import { readdir as readdir6, stat as stat8 } from "node:fs/promises";
-import { join as join16 } from "node:path";
+import { readdir as readdir6, stat as stat10 } from "node:fs/promises";
+import { join as join19 } from "node:path";
 async function directoryBytes(directory) {
   let entries;
   try {
@@ -45584,11 +42258,11 @@ async function directoryBytes(directory) {
   }
   let bytes = 0;
   for (const entry2 of entries) {
-    const path = join16(directory, entry2.name);
+    const path = join19(directory, entry2.name);
     if (entry2.isDirectory()) bytes += await directoryBytes(path);
     else if (entry2.isFile()) {
       try {
-        const metadata4 = await stat8(path);
+        const metadata4 = await stat10(path);
         bytes += metadata4.size;
       } catch (error51) {
         if (error51 instanceof Error && "code" in error51 && error51.code === "ENOENT") continue;
@@ -45605,10 +42279,10 @@ function startStorageMetrics(directories) {
     if (collecting || stopped) return;
     collecting = true;
     try {
-      for (const [kind4, directory] of Object.entries(directories)) {
+      for (const [kind3, directory] of Object.entries(directories)) {
         const bytes = await directoryBytes(directory);
         if (stopped) return;
-        public_api_exports.gauge("storage.bytes", bytes, { unit: "byte", attributes: { kind: kind4 } });
+        public_api_exports.gauge("storage.bytes", bytes, { unit: "byte", attributes: { kind: kind3 } });
       }
     } catch (error51) {
       captureException(error51, { tags: { operation: "storage.measure" } });
@@ -45631,32 +42305,32 @@ function startStorageMetrics(directories) {
 import { randomBytes as randomBytes6 } from "node:crypto";
 
 // packages/core/src/fps/source.ts
-import { execFile as execFile13 } from "node:child_process";
-import { promisify as promisify12 } from "node:util";
+import { execFile as execFile14 } from "node:child_process";
+import { promisify as promisify13 } from "node:util";
 import { access as access9 } from "node:fs/promises";
-import { fileURLToPath as fileURLToPath6 } from "node:url";
+import { fileURLToPath as fileURLToPath7 } from "node:url";
 
 // packages/core/src/fps/process.ts
 import { spawn as spawn9 } from "node:child_process";
 async function collectorProcess(command3, args, options) {
   options.signal.throwIfAborted();
   const child = spawn9(command3, args, { stdio: "pipe", shell: false });
-  let diagnostics3 = "";
-  let failure3;
+  let diagnostics = "";
+  let failure2;
   let stopping;
   let end;
   let exited;
   let ready;
   let watchdog;
   let startedSuccessfully = false;
-  const closed = new Promise((resolve3) => {
-    end = resolve3;
+  const closed = new Promise((resolve4) => {
+    end = resolve4;
   });
-  const exit = new Promise((resolve3) => {
-    exited = resolve3;
+  const exit = new Promise((resolve4) => {
+    exited = resolve4;
   });
-  const started = new Promise((resolve3) => {
-    ready = resolve3;
+  const started = new Promise((resolve4) => {
+    ready = resolve4;
   });
   const stop = () => {
     if (stopping) return stopping;
@@ -45679,14 +42353,14 @@ async function collectorProcess(command3, args, options) {
   };
   options.signal.addEventListener("abort", abort, { once: true });
   const telemetry = new NativeTelemetryRelay((text6) => {
-    diagnostics3 = (diagnostics3 + text6).slice(-4096);
+    diagnostics = (diagnostics + text6).slice(-4096);
     options.diagnostic?.(text6);
   });
   child.stderr.on("data", (chunk) => {
     telemetry.write(chunk);
   });
   child.stdout.on("data", (chunk) => {
-    if (stopping || failure3) return;
+    if (stopping || failure2) return;
     const accept = () => {
       startedSuccessfully = true;
       ready();
@@ -45696,19 +42370,19 @@ async function collectorProcess(command3, args, options) {
       if (startedSuccessfully) {
         clearTimeout(watchdog);
         watchdog = setTimeout(() => {
-          failure3 = new Error("The device stopped sending Display FPS data. Reconnect and retry.");
-          end(failure3);
+          failure2 = new Error("The device stopped sending Display FPS data. Reconnect and retry.");
+          end(failure2);
           void stop().catch(() => {
           });
         }, 6e3);
       }
     } catch (error51) {
-      if (error51 instanceof Error) failure3 = error51;
+      if (error51 instanceof Error) failure2 = error51;
       else {
         const message3 = String(error51);
-        failure3 = new Error(message3);
+        failure2 = new Error(message3);
       }
-      end(failure3);
+      end(failure2);
       void stop().catch(() => {
       });
     }
@@ -45716,7 +42390,7 @@ async function collectorProcess(command3, args, options) {
   child.stdin.on("error", () => {
   });
   child.once("error", (error51) => {
-    failure3 = error51;
+    failure2 = error51;
     end(error51);
   });
   child.once("close", (code, signal) => {
@@ -45724,8 +42398,8 @@ async function collectorProcess(command3, args, options) {
     options.signal.removeEventListener("abort", abort);
     clearTimeout(watchdog);
     exited();
-    const message3 = diagnostics3.trim() || `Display FPS collector exited (${code ?? signal}).`;
-    const error51 = failure3 ?? new Error(message3);
+    const message3 = diagnostics.trim() || `Display FPS collector exited (${code ?? signal}).`;
+    const error51 = failure2 ?? new Error(message3);
     end(error51);
   });
   let timer;
@@ -45748,13 +42422,13 @@ async function collectorProcess(command3, args, options) {
 }
 
 // packages/core/src/fps/android-helper.ts
-import { createHash as createHash6, randomBytes as randomBytes5 } from "node:crypto";
-import { execFile as execFile12 } from "node:child_process";
-import { promisify as promisify11 } from "node:util";
-import { mkdtemp as mkdtemp3, readFile as readFile7, rm as rm7, writeFile as writeFile8 } from "node:fs/promises";
+import { createHash as createHash8, randomBytes as randomBytes5 } from "node:crypto";
+import { execFile as execFile13 } from "node:child_process";
+import { promisify as promisify12 } from "node:util";
+import { mkdtemp as mkdtemp3, readFile as readFile10, rm as rm7, writeFile as writeFile10 } from "node:fs/promises";
 import { tmpdir as tmpdir3 } from "node:os";
-import { join as join17 } from "node:path";
-var execute9 = promisify11(execFile12);
+import { join as join20 } from "node:path";
+var execute10 = promisify12(execFile13);
 var abiSchema2 = external_exports.enum(["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]);
 var checksumString = external_exports.string();
 var checksum = checksumString.regex(/^[a-f0-9]{64}$/);
@@ -45763,34 +42437,34 @@ var binaries = external_exports.record(abiSchema2, binary);
 var releaseSchema2 = external_exports.object({ binaries });
 async function deployFpsHelper(adb, deviceId4, signal, root) {
   const settings = { signal, timeout: 1e4, maxBuffer: 1024 * 1024 };
-  const prefix3 = ["-s", deviceId4];
-  const raw = await execute9(adb, [...prefix3, "shell", "getprop", "ro.product.cpu.abi"], settings);
+  const prefix2 = ["-s", deviceId4];
+  const raw = await execute10(adb, [...prefix2, "shell", "getprop", "ro.product.cpu.abi"], settings);
   const name = raw.stdout.trim();
   const abi = abiSchema2.parse(name);
   const manifest = new URL("release.json", root);
-  const text6 = await readFile7(manifest, "utf8");
+  const text6 = await readFile10(manifest, "utf8");
   const decoded = JSON.parse(text6);
   const release = releaseSchema2.parse(decoded);
   const path = new URL(`${abi}/mobile-dev-fps`, root);
-  const bytes = await readFile7(path);
-  const hash2 = createHash6("sha256");
+  const bytes = await readFile10(path);
+  const hash2 = createHash8("sha256");
   hash2.update(bytes);
   const sha256 = hash2.digest("hex");
   if (sha256 !== release.binaries[abi].sha256) throw new Error("The bundled Android FPS helper failed its integrity check.");
   const remote = `/data/local/tmp/mobile-dev-fps-${sha256}`;
   const temporaryRoot = tmpdir3();
-  const temporaryPrefix = join17(temporaryRoot, "mobile-dev-fps-");
+  const temporaryPrefix = join20(temporaryRoot, "mobile-dev-fps-");
   const directory = await mkdtemp3(temporaryPrefix);
-  const local = join17(directory, "mobile-dev-fps");
+  const local = join20(directory, "mobile-dev-fps");
   const token = randomBytes5(8);
   const id2 = token.toString("hex");
   const temporary = `${remote}-${id2}`;
   try {
-    await writeFile8(local, bytes);
-    await execute9(adb, [...prefix3, "push", local, temporary], settings);
-    await execute9(adb, [...prefix3, "shell", `chmod 700 ${temporary} && mv ${temporary} ${remote}`], settings);
+    await writeFile10(local, bytes);
+    await execute10(adb, [...prefix2, "push", local, temporary], settings);
+    await execute10(adb, [...prefix2, "shell", `chmod 700 ${temporary} && mv ${temporary} ${remote}`], settings);
   } catch (error51) {
-    await execute9(adb, [...prefix3, "shell", "rm", "-f", temporary], { timeout: 3e3 }).catch(() => {
+    await execute10(adb, [...prefix2, "shell", "rm", "-f", temporary], { timeout: 3e3 }).catch(() => {
     });
     throw error51;
   } finally {
@@ -45829,8 +42503,8 @@ function* fields2(bytes) {
     } else if (wire === 2) {
       const length = varint(bytes, offset);
       if (length === void 0) throw new Error("Truncated Perfetto length.");
-      const size2 = Number(length.value);
-      const end = length.next + size2;
+      const size = Number(length.value);
+      const end = length.next + size;
       if (end > bytes.length) throw new Error("Truncated Perfetto message.");
       const data = bytes.subarray(length.next, end);
       offset = end;
@@ -45854,9 +42528,9 @@ var TraceStream = class {
       if (bytes[offset] !== 10) throw new Error("Invalid Perfetto trace stream.");
       const length = varint(bytes, offset + 1);
       if (length === void 0) break;
-      const size2 = Number(length.value);
-      if (size2 > 1024 * 1024) throw new Error("Perfetto packet exceeds the streaming limit.");
-      const end = length.next + size2;
+      const size = Number(length.value);
+      if (size > 1024 * 1024) throw new Error("Perfetto packet exceeds the streaming limit.");
+      const end = length.next + size;
       if (end > bytes.length) break;
       const packet = bytes.subarray(length.next, end);
       this.packet(packet);
@@ -45893,7 +42567,7 @@ var FrameTimeline = class {
     this.stream.push(chunk);
   }
   packet(packet) {
-    let timestamp2;
+    let timestamp3;
     let timeline;
     let service;
     let sequence4;
@@ -45902,7 +42576,7 @@ var FrameTimeline = class {
     let clockSnapshot;
     let defaults;
     for (const field of fields2(packet)) {
-      if (field.id === 8) timestamp2 = field.integer;
+      if (field.id === 8) timestamp3 = field.integer;
       else if (field.id === 76) timeline = field.bytes;
       else if (field.id === 69) service = field.bytes;
       else if (field.id === 6) clockSnapshot = field.bytes;
@@ -45923,7 +42597,7 @@ var FrameTimeline = class {
         this.defaults.set(sequence4, clockId2);
       }
     }
-    if (timestamp2 === void 0) return;
+    if (timestamp3 === void 0) return;
     if (service === void 0 && timeline === void 0) return;
     const defaultClock = sequence4 === void 0 ? void 0 : this.defaults.get(sequence4);
     const clockId = clock ?? defaultClock ?? 6;
@@ -45931,19 +42605,19 @@ var FrameTimeline = class {
       if (this.clocks.length === 0) throw new Error("FrameTimeline omitted the Android clock synchronization.");
       let offset = this.clocks[0].offset;
       for (const snapshot2 of this.clocks) {
-        if (snapshot2.monotonic > timestamp2) break;
+        if (snapshot2.monotonic > timestamp3) break;
         offset = snapshot2.offset;
       }
-      timestamp2 += offset;
+      timestamp3 += offset;
     } else if (clockId !== 6) throw new Error("FrameTimeline uses an unsupported clock.");
     if (service) {
       for (const field of fields2(service)) {
-        if (field.id === 1 && field.integer === 1n) this.start = timestamp2;
-        if (field.id === 4 && field.integer === 1n) this.complete(timestamp2);
+        if (field.id === 1 && field.integer === 1n) this.start = timestamp3;
+        if (field.id === 4 && field.integer === 1n) this.complete(timestamp3);
         if (field.id === 6 && field.integer === 1n) throw new Error("Another tool took the FPS trace for a bug report.");
       }
     }
-    if (timeline) this.frame(timeline, timestamp2);
+    if (timeline) this.frame(timeline, timestamp3);
   }
   synchronize(snapshot2) {
     let monotonic;
@@ -45963,7 +42637,7 @@ var FrameTimeline = class {
     this.clocks.push({ monotonic, offset: boot - monotonic });
     this.clocks = this.clocks.slice(-600);
   }
-  frame(event, timestamp2) {
+  frame(event, timestamp3) {
     for (const field of fields2(event)) {
       if (field.bytes === void 0 || field.id !== 2 && field.id !== 5) continue;
       let cookie;
@@ -45983,20 +42657,20 @@ var FrameTimeline = class {
       if (cookie === void 0) throw new Error("FrameTimeline omitted a frame identity.");
       if (field.id === 2) {
         if (token === void 0) throw new Error("FrameTimeline omitted a display token.");
-        this.pending.set(cookie, { token, presentType: present, startTimeNs: timestamp2, ...metadata4 });
+        this.pending.set(cookie, { token, presentType: present, startTimeNs: timestamp3, ...metadata4 });
         if (this.pending.size > 4096) throw new Error("FrameTimeline did not finish its display frames.");
       } else {
         const frame2 = this.pending.get(cookie);
         if (frame2 === void 0) continue;
         this.pending.delete(cookie);
-        if (this.start === void 0 || timestamp2 < this.start) continue;
-        const index = (timestamp2 - this.start) / SECOND;
+        if (this.start === void 0 || timestamp3 < this.start) continue;
+        const index = (timestamp3 - this.start) / SECOND;
         if (index + 150n < this.window) continue;
         if (this.tokens.has(frame2.token)) continue;
-        this.tokens.set(frame2.token, timestamp2);
+        this.tokens.set(frame2.token, timestamp3);
         const frames = this.frames.get(index) ?? [];
         if (frames.length >= MAX_DISPLAY_FRAMES_PER_INTERVAL) throw new Error("FrameTimeline exceeded its display frame limit.");
-        const endTimeNs = timestamp2.toString();
+        const endTimeNs = timestamp3.toString();
         const startTimeNs = frame2.startTimeNs.toString();
         const token2 = frame2.token.toString();
         frames.push({ ...frame2, token: token2, startTimeNs, endTimeNs });
@@ -46018,22 +42692,22 @@ var FrameTimeline = class {
       if (leftTime === rightTime) return 0;
       return leftTime < rightTime ? -1 : 1;
     });
-    let count3 = 0;
+    let count2 = 0;
     let invalid2 = false;
     for (const frame2 of ordered) {
-      if (PRESENTED.has(frame2.presentType)) count3++;
+      if (PRESENTED.has(frame2.presentType)) count2++;
       else if (frame2.presentType !== 4) invalid2 = true;
     }
-    const fps = invalid2 ? null : count3;
+    const fps = invalid2 ? null : count2;
     const intervalEndNs = end.toString();
     this.sample({ fps, interval: 1, recordedAt, frameTimeline: { clock: "boottime", intervalEndNs, frames: ordered } });
   }
-  complete(timestamp2) {
+  complete(timestamp3) {
     if (this.start === void 0) return;
-    if (this.anchor === void 0) this.anchor = { device: timestamp2, host: this.now() };
-    if (timestamp2 <= this.watermark) return;
-    this.watermark = timestamp2;
-    const until = timestamp2 - 2n * SECOND;
+    if (this.anchor === void 0) this.anchor = { device: timestamp3, host: this.now() };
+    if (timestamp3 <= this.watermark) return;
+    this.watermark = timestamp3;
+    const until = timestamp3 - 2n * SECOND;
     while (this.start + (this.window + 1n) * SECOND <= until) {
       this.publish(this.window);
       this.window++;
@@ -46044,7 +42718,7 @@ var FrameTimeline = class {
 };
 
 // packages/core/src/fps/source.ts
-var execute10 = promisify12(execFile13);
+var execute11 = promisify13(execFile14);
 var fpsNumber = external_exports.number();
 var finiteFps = fpsNumber.finite();
 var nonnegativeFps = finiteFps.min(0);
@@ -46055,7 +42729,7 @@ var readingSchema = readingObject.strict();
 async function startDisplayFpsMonitor(options, iosHelper = new URL("./ios-fps/mobile-dev-ios-fps", import.meta.url), androidRoot = new URL("./android-fps/", import.meta.url)) {
   if (options.target.platform === "android") return startAndroid(options, androidRoot);
   if (process.platform !== "darwin") throw new Error("iPhone Display FPS requires macOS.");
-  const path = fileURLToPath6(iosHelper);
+  const path = fileURLToPath7(iosHelper);
   await access9(path);
   let pending = "";
   let previous;
@@ -46080,13 +42754,13 @@ async function startDisplayFpsMonitor(options, iosHelper = new URL("./ios-fps/mo
 }
 async function startAndroid(options, root) {
   const adb = await adbPath();
-  const prefix3 = ["-s", options.target.deviceId];
+  const prefix2 = ["-s", options.target.deviceId];
   const settings = { timeout: 5e3, maxBuffer: 1024 * 1024, signal: options.signal };
-  const version4 = await execute10(adb, [...prefix3, "shell", "getprop", "ro.build.version.sdk"], settings);
-  const versionText = version4.stdout.trim();
+  const version3 = await execute11(adb, [...prefix2, "shell", "getprop", "ro.build.version.sdk"], settings);
+  const versionText = version3.stdout.trim();
   const sdk = Number(versionText);
   if (Number.isInteger(sdk) === false || sdk < 31) throw new Error("Display FPS requires Android 12 or newer (FrameTimeline).");
-  const sources = await execute10(adb, [...prefix3, "shell", "perfetto", "--query"], settings);
+  const sources = await execute11(adb, [...prefix2, "shell", "perfetto", "--query"], settings);
   if (sources.stdout.includes("android.surfaceflinger.frametimeline") === false) {
     throw new Error("This Android device does not expose the Perfetto FrameTimeline source.");
   }
@@ -46097,7 +42771,7 @@ async function startAndroid(options, root) {
     firstReady?.();
   });
   const command3 = nativeCollectorCommand(remote);
-  return collectorProcess(adb, [...prefix3, "shell", "-T", command3], {
+  return collectorProcess(adb, [...prefix2, "shell", "-T", command3], {
     signal: options.signal,
     data(chunk, ready) {
       firstReady = ready;
@@ -46191,11 +42865,11 @@ var DisplayFpsSessions = class {
     if (session === void 0) throw new ExpectedOperationError("session_expired", "This Display FPS session expired or closed.");
     session.expires = Date.now() + 3e5;
     if (after >= session.revision && waitMs > 0 && session.stopping === void 0) {
-      await new Promise((resolve3) => {
+      await new Promise((resolve4) => {
         const done = () => {
           clearTimeout(timer);
           session.waiters.delete(done);
-          resolve3();
+          resolve4();
         };
         const timer = setTimeout(done, waitMs);
         session.waiters.add(done);
@@ -46258,9 +42932,9 @@ var boundedAfter = nonnegativeAfter.max(Number.MAX_SAFE_INTEGER);
 var afterSchema = boundedAfter.default(0);
 var visibility3 = ["app", "model"];
 var metadata3 = { ui: { visibility: visibility3 } };
-var read4 = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
-var write2 = { ...read4, readOnlyHint: false };
-function safe4(handler) {
+var read5 = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
+var write3 = { ...read5, readOnlyHint: false };
+function safe5(handler) {
   return async (input, context2) => {
     try {
       return await handler(input, context2);
@@ -46293,7 +42967,7 @@ function registerDisplayFpsTools(server, sessions, sources = { ios: listIosDevic
     const text6 = JSON.stringify(batch);
     return { contents: [{ uri: uri2.href, mimeType: "application/json", text: text6 }] };
   });
-  const startSession = safe4(async ({ target: target2 }, context2) => {
+  const startSession = safe5(async ({ target: target2 }, context2) => {
     await validate3(target2);
     const id2 = await openRequestSession(context2.signal, async () => sessions.open(target2), (id3) => sessions.closeSession(id3));
     const timeOrigin = performance.now() / 1e3;
@@ -46305,10 +42979,10 @@ function registerDisplayFpsTools(server, sessions, sources = { ios: listIosDevic
     title: "Monitor Display FPS",
     description: "Record device-wide display updates independently of an app. Android 12+ uses Perfetto FrameTimeline actual display frames, excluding dropped frames. Physical iOS 17.4+ paired devices use the Instruments CoreAnimationFramesPerSecond counter through a bundled native helper. Requires pairing and Developer Mode; no app SDK, debugger attachment or Instruments GUI. A quiet screen can report zero. This is not the display refresh rate and cannot attribute a drop to one app. Samples use the server monotonic clock in seconds; Android readback is delayed by about three seconds. Returns sessionId, timeOrigin and fpsUri. Read with mobile_read_display_fps or fpsUri, and close with mobile_display_fps_close. Sessions expire after five minutes without reads.",
     inputSchema: { target: displayFpsTargetSchema },
-    annotations: write2,
+    annotations: write3,
     _meta: metadata3
   }, startSession);
-  const readSession = safe4(async ({ sessionId: id2, after }) => {
+  const readSession = safe5(async ({ sessionId: id2, after }) => {
     const batch = await sessions.read(id2, after, 0);
     const text6 = JSON.stringify(batch);
     return { content: [{ type: "text", text: text6 }], structuredContent: { ...batch } };
@@ -46317,10 +42991,10 @@ function registerDisplayFpsTools(server, sessions, sources = { ios: listIosDevic
     title: "Read Display FPS",
     description: "Read complete device-wide FPS sampling intervals. Android intervals include frameTimeline with exact CLOCK_BOOTTIME start/end nanoseconds and tokens as decimal strings, presentation status, and available jank/composition metadata. Dropped frames are retained in frameTimeline but excluded from FPS. Pass the previous cursor as after; revisions replace the entire original interval, including its frames. Zero is a valid idle reading; null means no complete measurement. Startup returns connecting until the first measurement.",
     inputSchema: { sessionId: sessionId3, after: afterSchema },
-    annotations: read4,
+    annotations: read5,
     _meta: metadata3
   }, readSession);
-  const closeSession = safe4(async ({ sessionId: id2 }) => {
+  const closeSession = safe5(async ({ sessionId: id2 }) => {
     await sessions.closeSession(id2);
     return { content: [{ type: "text", text: "Display FPS monitor stopped." }], structuredContent: {} };
   });
@@ -46328,25 +43002,25 @@ function registerDisplayFpsTools(server, sessions, sources = { ios: listIosDevic
     title: "Stop Display FPS",
     description: "Stop this device's FPS collector and release its tracing connection, leaving apps running.",
     inputSchema: { sessionId: sessionId3 },
-    annotations: write2,
+    annotations: write3,
     _meta: metadata3
   }, closeSession);
 }
 
 // packages/core/src/earlier-releases.ts
 var releaseSegment = /^(?:\d+\.\d+\.\d+|v[1-6])$/;
-function registerEarlierReleases(server, name, page, read8) {
+function registerEarlierReleases(server, name, page, read9) {
   const template = new ResourceTemplate(`ui://mobile-dev/{release}/${page}.html`, { list: void 0 });
   server.registerResource(name, template, { mimeType: p }, (uri2, { release }) => {
     if (typeof release !== "string" || !releaseSegment.test(release)) throw new McpError(ErrorCode.InvalidParams, `Resource ${uri2} not found`);
-    return read8(uri2);
+    return read9(uri2);
   });
 }
 
 // packages/core/src/simctl.ts
-import { execFile as execFile14 } from "node:child_process";
-import { promisify as promisify13 } from "node:util";
-var execute11 = promisify13(execFile14);
+import { execFile as execFile15 } from "node:child_process";
+import { promisify as promisify14 } from "node:util";
+var execute12 = promisify14(execFile15);
 var listing = external_exports.object({
   devices: external_exports.record(external_exports.string(), external_exports.array(external_exports.object({
     udid: external_exports.string(),
@@ -46363,17 +43037,17 @@ function simulatorRuntimeName(identifier3) {
 function parseSimulatorList(output) {
   const { devices: devices3 } = listing.parse(JSON.parse(output));
   const simulators = [];
-  for (const [runtime2, entries] of Object.entries(devices3)) {
+  for (const [runtime, entries] of Object.entries(devices3)) {
     for (const entry2 of entries) {
       if (entry2.isAvailable === false || udidSchema.safeParse(entry2.udid).success === false) continue;
-      simulators.push({ udid: entry2.udid, name: entry2.name, state: entry2.state, runtime: simulatorRuntimeName(runtime2) });
+      simulators.push({ udid: entry2.udid, name: entry2.name, state: entry2.state, runtime: simulatorRuntimeName(runtime) });
     }
   }
   return simulators.sort((a, b) => Number(b.state === "Booted") - Number(a.state === "Booted") || a.name.localeCompare(b.name));
 }
 var Simctl = class {
   run;
-  constructor(run5 = async (args) => (await execute11("xcrun", args, { timeout: 15e3, maxBuffer: 8 * 1024 * 1024 })).stdout) {
+  constructor(run5 = async (args) => (await execute12("xcrun", args, { timeout: 15e3, maxBuffer: 8 * 1024 * 1024 })).stdout) {
     this.run = run5;
   }
   async list() {
@@ -46409,7 +43083,12 @@ async function createPlugin(html, options = {}) {
   const { panel, simulators = new Simctl(), logs = new LogSessions(), android: android2 = new ServeEmu(), features = [] } = options;
   const cpu = options.cpu ?? await createCpuSessions();
   const fps = new DisplayFpsSessions();
-  const server = new McpServer({ name: "mobile-dev", version: PLUGIN_VERSION }, { instructions: panel?.instructions ?? INSTRUCTIONS });
+  const server = new McpServer({ name: "mobile-dev", version: PLUGIN_VERSION }, {
+    instructions: panel?.instructions ?? INSTRUCTIONS,
+    // App Flow progress arrives as logging notifications. Without this capability the SDK rejects
+    // every sendLoggingMessage, so the app-flow event channel would fail silently.
+    capabilities: { logging: {} }
+  });
   instrumentMcpServer(server);
   const analytics = instrumentProductAnalytics(server);
   addToolIcons(server, { mobile_open_workspace: PHONE_ICONS, mobile_open_simulator: PHONE_ICONS, mobile_choose_devices: PHONE_ICONS });
@@ -46430,7 +43109,7 @@ async function createPlugin(html, options = {}) {
   registerIosDeviceTools(server);
   registerLogTools(server, logs, simulators);
   const validateCpuDevice = registerCpuTools(server, cpu, simulators, {
-    apps: (deviceId4, signal, platform6, kind4) => readDeviceApps(deviceId4, signal, platform6, kind4, { ...deviceAppSources, simulator: simulatorForeground })
+    apps: (deviceId4, signal, platform5, kind3) => readDeviceApps(deviceId4, signal, platform5, kind3, { ...deviceAppSources, simulator: simulatorForeground })
   });
   const recordings = new PerformanceRecordings(cpu, fps);
   const showRecording = registerRecordingTools(server, recordings, validateCpuDevice);
@@ -46440,6 +43119,8 @@ async function createPlugin(html, options = {}) {
   registerDisplayFpsTools(server, fps);
   registerAppControlTools(server, drivers);
   registerAppStorageTools(server);
+  const appFlow = await createAppFlowHost();
+  const closeAppFlow = registerAppFlowTools(server, appFlow, new AppFlowProjectChoices(APP_FLOW_DIRECTORY));
   const resource = async () => typeof html === "string" ? { html } : await html();
   const page = async () => configureUI((await resource()).html);
   server.registerResource("mobile-dev-live", new ResourceTemplate(`${LIVE_UI_URI}?after={revision}`, { list: void 0 }), {
@@ -46485,7 +43166,7 @@ async function createPlugin(html, options = {}) {
       stopRecordingStorageMetrics();
       await recordings.close();
       try {
-        await Promise.all([logs.close(), cpu.close(), fps.close(), traceSift.close(), closePanel?.()]);
+        await Promise.all([logs.close(), cpu.close(), fps.close(), traceSift.close(), closeAppFlow(), closePanel?.()]);
       } finally {
         android2.dispose();
         await server.close();
@@ -46498,9 +43179,9 @@ async function createPlugin(html, options = {}) {
 // packages/core/src/schema-dialect.ts
 var DRAFT_07 = "http://json-schema.org/draft-07/schema#";
 var JSON_SCHEMA_2020_12 = "https://json-schema.org/draft/2020-12/schema";
-function declareSchemaDialect(transport2) {
-  const send = transport2.send.bind(transport2);
-  transport2.send = (message3, options) => {
+function declareSchemaDialect(transport) {
+  const send = transport.send.bind(transport);
+  transport.send = (message3, options) => {
     const tools = "result" in message3 ? message3.result.tools : void 0;
     if (Array.isArray(tools)) {
       for (const tool of tools) {
@@ -46530,7 +43211,7 @@ var SharedTransport = class {
   get sessionId() {
     return this.host.sessionId;
   }
-  setProtocolVersion = (version4) => this.host.setProtocolVersion?.(version4);
+  setProtocolVersion = (version3) => this.host.setProtocolVersion?.(version3);
   async start() {
     this.host.onmessage = (message3, extra) => this.receive(this.host, message3, extra);
     this.host.onerror = (error51) => this.onerror?.(error51);
@@ -46664,13 +43345,13 @@ var SharedTransport = class {
 
 // packages/core/src/stdio-server.ts
 async function runStdioServer({ panel, features } = {}) {
-  const html = await readFile8(new URL("./app.html", import.meta.url), "utf8");
-  const transport2 = new SharedTransport(new StdioServerTransport());
-  const plugin = await createPlugin(() => loadUIResource(html, new URL("../ui-dev.json", import.meta.url)), { panel, features, connections: transport2 });
-  installTracePropagation(transport2);
-  declareSchemaDialect(transport2);
+  const html = await readFile11(new URL("./app.html", import.meta.url), "utf8");
+  const transport = new SharedTransport(new StdioServerTransport());
+  const plugin = await createPlugin(() => loadUIResource(html, new URL("../ui-dev.json", import.meta.url)), { panel, features, connections: transport });
+  installTracePropagation(transport);
+  declareSchemaDialect(transport);
   let closing = false;
-  async function close2() {
+  async function close() {
     if (closing) return;
     closing = true;
     try {
@@ -46679,36 +43360,36 @@ async function runStdioServer({ panel, features } = {}) {
       await closeServerTelemetry();
     }
   }
-  transport2.onclose = () => {
-    void close2();
+  transport.onclose = () => {
+    void close();
   };
   process.stdin.on("end", () => {
-    void close2();
+    void close();
   });
   process.on("SIGINT", () => {
-    void close2();
+    void close();
   });
   process.on("SIGTERM", () => {
-    void close2();
+    void close();
   });
   process.on("uncaughtException", (error51) => {
     console.error(error51);
-    void close2().finally(() => {
+    void close().finally(() => {
       process.exitCode = 1;
     });
   });
   process.on("unhandledRejection", (error51) => {
     console.error(error51);
-    void close2().finally(() => {
+    void close().finally(() => {
       process.exitCode = 1;
     });
   });
-  await plugin.server.connect(transport2);
+  await plugin.server.connect(transport);
 }
 
 // packages/core/src/agent-device-tools.ts
 import { readFileSync } from "node:fs";
-import { readFile as readFile9 } from "node:fs/promises";
+import { readFile as readFile12 } from "node:fs/promises";
 
 // packages/core/src/agent-device-catalog.ts
 var deviceCommands = /* @__PURE__ */ new Set([
@@ -46736,64 +43417,64 @@ var independentCommands = /* @__PURE__ */ new Set([
   "metro",
   "session"
 ]);
-var read5 = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
-var write3 = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
-var destructive = { ...write3, destructiveHint: true };
+var read6 = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
+var write4 = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
+var destructive2 = { ...write4, destructiveHint: true };
 var commandAnnotations = {
-  apps: read5,
-  appstate: read5,
-  capabilities: read5,
-  devices: read5,
-  events: read5,
-  get: read5,
-  help: read5,
-  is: read5,
-  network: read5,
-  screenshot: read5,
-  snapshot: read5,
-  wait: read5,
-  alert: write3,
-  "app-switcher": write3,
-  back: write3,
-  boot: write3,
-  click: write3,
-  close: write3,
-  fill: write3,
-  find: write3,
-  focus: write3,
-  fold: write3,
-  gesture: write3,
-  "hardware-button": write3,
-  home: write3,
-  keyboard: write3,
-  longpress: write3,
-  open: write3,
-  orientation: write3,
-  press: write3,
-  push: write3,
-  "react-native": write3,
-  scroll: write3,
-  settings: write3,
-  shutdown: write3,
-  swipe: write3,
-  type: write3,
-  "action-button": destructive,
-  batch: destructive,
-  clipboard: destructive,
-  debug: destructive,
-  diff: destructive,
-  install: destructive,
-  record: destructive,
-  reinstall: destructive,
-  replay: destructive,
-  session: destructive,
-  test: destructive,
-  telephony: destructive,
-  trace: destructive,
-  "trigger-app-event": destructive,
-  uninstall: destructive,
-  doctor: { ...write3, openWorldHint: true },
-  metro: { ...write3, openWorldHint: true }
+  apps: read6,
+  appstate: read6,
+  capabilities: read6,
+  devices: read6,
+  events: read6,
+  get: read6,
+  help: read6,
+  is: read6,
+  network: read6,
+  screenshot: read6,
+  snapshot: read6,
+  wait: read6,
+  alert: write4,
+  "app-switcher": write4,
+  back: write4,
+  boot: write4,
+  click: write4,
+  close: write4,
+  fill: write4,
+  find: write4,
+  focus: write4,
+  fold: write4,
+  gesture: write4,
+  "hardware-button": write4,
+  home: write4,
+  keyboard: write4,
+  longpress: write4,
+  open: write4,
+  orientation: write4,
+  press: write4,
+  push: write4,
+  "react-native": write4,
+  scroll: write4,
+  settings: write4,
+  shutdown: write4,
+  swipe: write4,
+  type: write4,
+  "action-button": destructive2,
+  batch: destructive2,
+  clipboard: destructive2,
+  debug: destructive2,
+  diff: destructive2,
+  install: destructive2,
+  record: destructive2,
+  reinstall: destructive2,
+  replay: destructive2,
+  session: destructive2,
+  test: destructive2,
+  telephony: destructive2,
+  trace: destructive2,
+  "trigger-app-event": destructive2,
+  uninstall: destructive2,
+  doctor: { ...write4, openWorldHint: true },
+  metro: { ...write4, openWorldHint: true }
 };
 function isObject2(value) {
   return value !== null && typeof value === "object" && Array.isArray(value) === false;
@@ -47157,9 +43838,9 @@ var Client = class extends Protocol {
       throw new Error(`Server does not support ${capability} (required for ${method})`);
     }
   }
-  async connect(transport2, options) {
-    await super.connect(transport2);
-    if (transport2.sessionId !== void 0) {
+  async connect(transport, options) {
+    await super.connect(transport);
+    if (transport.sessionId !== void 0) {
       return;
     }
     try {
@@ -47179,8 +43860,8 @@ var Client = class extends Protocol {
       }
       this._serverCapabilities = result4.capabilities;
       this._serverVersion = result4.serverInfo;
-      if (transport2.setProtocolVersion) {
-        transport2.setProtocolVersion(result4.protocolVersion);
+      if (transport.setProtocolVersion) {
+        transport.setProtocolVersion(result4.protocolVersion);
       }
       this._instructions = result4.instructions;
       await this.notification({
@@ -47515,7 +44196,7 @@ var StdioClientTransport = class {
     if (this._process) {
       throw new Error("StdioClientTransport already started! If using Client class, note that connect() calls start() automatically.");
     }
-    return new Promise((resolve3, reject) => {
+    return new Promise((resolve4, reject) => {
       this._process = (0, import_cross_spawn.default)(this._serverParams.command, this._serverParams.args ?? [], {
         // merge default env with server env because mcp server needs some env vars
         env: {
@@ -47532,7 +44213,7 @@ var StdioClientTransport = class {
         this.onerror?.(error51);
       });
       this._process.on("spawn", () => {
-        resolve3();
+        resolve4();
       });
       this._process.on("close", (_code) => {
         this._process = void 0;
@@ -47597,22 +44278,22 @@ var StdioClientTransport = class {
     if (this._process) {
       const processToClose = this._process;
       this._process = void 0;
-      const closePromise = new Promise((resolve3) => {
+      const closePromise = new Promise((resolve4) => {
         processToClose.once("close", () => {
-          resolve3();
+          resolve4();
         });
       });
       try {
         processToClose.stdin?.end();
       } catch {
       }
-      await Promise.race([closePromise, new Promise((resolve3) => setTimeout(resolve3, 2e3).unref())]);
+      await Promise.race([closePromise, new Promise((resolve4) => setTimeout(resolve4, 2e3).unref())]);
       if (processToClose.exitCode === null) {
         try {
           processToClose.kill("SIGTERM");
         } catch {
         }
-        await Promise.race([closePromise, new Promise((resolve3) => setTimeout(resolve3, 2e3).unref())]);
+        await Promise.race([closePromise, new Promise((resolve4) => setTimeout(resolve4, 2e3).unref())]);
       }
       if (processToClose.exitCode === null) {
         try {
@@ -47624,28 +44305,28 @@ var StdioClientTransport = class {
     this._readBuffer.clear();
   }
   send(message3) {
-    return new Promise((resolve3) => {
+    return new Promise((resolve4) => {
       if (!this._process?.stdin) {
         throw new Error("Not connected");
       }
       const json3 = serializeMessage(message3);
       if (this._process.stdin.write(json3)) {
-        resolve3();
+        resolve4();
       } else {
-        this._process.stdin.once("drain", resolve3);
+        this._process.stdin.once("drain", resolve4);
       }
     });
   }
 };
 
 // packages/core/src/agent-device-runtime.ts
-import { execFile as execFile15 } from "node:child_process";
+import { execFile as execFile16 } from "node:child_process";
 import { mkdtemp as mkdtemp4 } from "node:fs/promises";
-import { homedir as homedir5, tmpdir as tmpdir4 } from "node:os";
-import { join as join18 } from "node:path";
-import { fileURLToPath as fileURLToPath7 } from "node:url";
-import { promisify as promisify14 } from "node:util";
-var run4 = promisify14(execFile15);
+import { homedir as homedir6, tmpdir as tmpdir4 } from "node:os";
+import { join as join21 } from "node:path";
+import { fileURLToPath as fileURLToPath8 } from "node:url";
+import { promisify as promisify15 } from "node:util";
+var run4 = promisify15(execFile16);
 var AgentDeviceRuntime = class {
   cli;
   config;
@@ -47655,9 +44336,9 @@ var AgentDeviceRuntime = class {
   client;
   closing = false;
   constructor(root = new URL("./agent-device/", import.meta.url)) {
-    const directory = fileURLToPath7(root);
-    this.cli = join18(directory, "node_modules/agent-device/bin/agent-device.mjs");
-    this.config = join18(directory, "config.json");
+    const directory = fileURLToPath8(root);
+    this.cli = join21(directory, "node_modules/agent-device/bin/agent-device.mjs");
+    this.config = join21(directory, "config.json");
   }
   /** Starts the runtime if it is not running. Callers report a failed start. */
   async connect() {
@@ -47687,23 +44368,23 @@ var AgentDeviceRuntime = class {
     return env;
   }
   async createState() {
-    const directory = await mkdtemp4(join18(tmpdir4(), "mobile-dev-agent-device-"));
+    const directory = await mkdtemp4(join21(tmpdir4(), "mobile-dev-agent-device-"));
     console.error(`[mobile-dev] agent-device state directory: ${directory}`);
-    const stopStorageMetrics = startStorageMetrics({ agent_device_state: directory, apple_runner_cache: join18(homedir5(), ".agent-device/apple-runner") });
+    const stopStorageMetrics = startStorageMetrics({ agent_device_state: directory, apple_runner_cache: join21(homedir6(), ".agent-device/apple-runner") });
     return { directory, stopStorageMetrics };
   }
   async start() {
     const startedAt = performance.now();
     const { directory } = await (this.state ??= this.createState());
     const client = new Client({ name: "mobile-dev-agent-device", version: "1" });
-    const transport2 = new StdioClientTransport({ command: process.execPath, args: [this.cli, "mcp"], cwd: directory, env: this.environment(directory), stderr: "inherit" });
+    const transport = new StdioClientTransport({ command: process.execPath, args: [this.cli, "mcp"], cwd: directory, env: this.environment(directory), stderr: "inherit" });
     client.onclose = () => {
       if (this.closing || this.client !== client) return;
       this.client = void 0;
       this.starting = void 0;
       captureServerError(new Error("Agent Device runtime disconnected unexpectedly."), "agent_device.exit");
     };
-    await client.connect(transport2);
+    await client.connect(transport);
     this.client = client;
     public_api_exports.distribution("agent_device.runtime.ready", performance.now() - startedAt, { unit: "millisecond" });
     return client;
@@ -47740,7 +44421,7 @@ var AgentDeviceRuntime = class {
 function readAgentDeviceCatalog(url2 = new URL("./agent-device/tools.json", import.meta.url)) {
   return JSON.parse(readFileSync(url2, "utf8"));
 }
-function agentDeviceTools(catalog, runtime2 = new AgentDeviceRuntime()) {
+function agentDeviceTools(catalog, runtime = new AgentDeviceRuntime()) {
   return (server) => {
     const validator = new AjvJsonSchemaValidator();
     const schemas = /* @__PURE__ */ new Map();
@@ -47759,7 +44440,7 @@ function agentDeviceTools(catalog, runtime2 = new AgentDeviceRuntime()) {
         if (issue2 !== void 0) return invalid(issue2);
         let backend;
         try {
-          backend = await runtime2.connect();
+          backend = await runtime.connect();
         } catch (error51) {
           console.error("[mobile-dev] agent-device failed to start:", error51);
           captureServerError(new Error("Agent Device failed to start."), "agent_device.start");
@@ -47768,7 +44449,7 @@ function agentDeviceTools(catalog, runtime2 = new AgentDeviceRuntime()) {
         return forward(backend, { name: tool.name, arguments: args, _meta: extra._meta }, extra);
       });
     }
-    return () => runtime2.close();
+    return () => runtime.close();
   };
 }
 function invalid(message3) {
@@ -47807,7 +44488,7 @@ async function withScreenshot(result4) {
   if (result4.isError || typeof path !== "string") return result4;
   let bytes;
   try {
-    bytes = await readFile9(path);
+    bytes = await readFile12(path);
   } catch (error51) {
     console.error("[mobile-dev] Agent Device screenshot could not be read:", error51);
     captureServerError(new Error("Agent Device screenshot could not be read."), "agent_device.screenshot");
@@ -47835,10 +44516,10 @@ function stepIssue(name, input, schemas) {
 }
 
 // packages/shared/src/panel-target.ts
-var platform5 = external_exports.enum(["ios", "android"]).optional().describe("The task's established platform. Omit when undecided.");
-var kind3 = external_exports.enum(["simulator", "emulator", "physical"]).optional().describe("The requested device kind. Omit when undecided.");
+var platform4 = external_exports.enum(["ios", "android"]).optional().describe("The task's established platform. Omit when undecided.");
+var kind2 = external_exports.enum(["simulator", "emulator", "physical"]).optional().describe("The requested device kind. Omit when undecided.");
 var deviceId3 = external_exports.string().min(1).max(256).regex(/^[A-Za-z0-9_.:\[\]%-]+$/).optional().describe("An exact device ID from device discovery. Omit to select a matching device automatically.");
-var panelTargetSchema = external_exports.object({ platform: platform5, kind: kind3, deviceId: deviceId3 }).strict().superRefine((target2, context2) => {
+var panelTargetSchema = external_exports.object({ platform: platform4, kind: kind2, deviceId: deviceId3 }).strict().superRefine((target2, context2) => {
   if (target2.platform === "ios" && target2.kind === "emulator" || target2.platform === "android" && target2.kind === "simulator") {
     context2.addIssue({ code: "custom", path: ["kind"], message: "Use simulator for iOS or emulator for Android." });
   }
@@ -47878,13 +44559,13 @@ async function png(baguette, udid, path) {
   if (!response3.ok || !response3.body) throw new Error("Bezel image unavailable");
   const reader = response3.body.getReader();
   const chunks = [];
-  let size2 = 0;
+  let size = 0;
   try {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      size2 += value.length;
-      if (size2 > 8 * 1024 * 1024) throw new Error("Bezel image too large");
+      size += value.length;
+      if (size > 8 * 1024 * 1024) throw new Error("Bezel image too large");
       chunks.push(value);
     }
   } finally {
@@ -47908,8 +44589,8 @@ async function readBezel(baguette, udid, screen) {
 }
 
 // packages/core/src/baguette.ts
-import { execFile as execFile16, spawn as spawn11 } from "node:child_process";
-import { promisify as promisify15 } from "node:util";
+import { execFile as execFile17, spawn as spawn11 } from "node:child_process";
+import { promisify as promisify16 } from "node:util";
 import { access as access10 } from "node:fs/promises";
 import { constants as constants5 } from "node:fs";
 import { createServer as createServer4 } from "node:net";
@@ -47945,7 +44626,7 @@ async function launchBundledBaguette(host, port2, signal) {
   });
 }
 async function kickstartAccessibilityBridge(udid, signal) {
-  await promisify15(execFile16)("/usr/bin/xcrun", ["simctl", "spawn", udid, "launchctl", "kickstart", "-k", "user/foreground/com.apple.CoreSimulator.bridge"], {
+  await promisify16(execFile17)("/usr/bin/xcrun", ["simctl", "spawn", udid, "launchctl", "kickstart", "-k", "user/foreground/com.apple.CoreSimulator.bridge"], {
     timeout: 1e4,
     maxBuffer: 64 * 1024,
     encoding: "utf8",
@@ -48077,13 +44758,13 @@ var Baguette = class {
   }
   async allocatePort() {
     const socket = createServer4();
-    await new Promise((resolve3, reject) => {
+    await new Promise((resolve4, reject) => {
       socket.once("error", reject);
-      socket.listen(0, "127.0.0.1", resolve3);
+      socket.listen(0, "127.0.0.1", resolve4);
     });
     const address2 = socket.address();
     if (!address2 || typeof address2 === "string") throw new Error("Could not allocate a port for the bundled simulator backend.");
-    await new Promise((resolve3) => socket.close(() => resolve3()));
+    await new Promise((resolve4) => socket.close(() => resolve4()));
     return address2.port;
   }
   async ensureStarted() {
@@ -48114,7 +44795,7 @@ var Baguette = class {
     }
   }
   async launch() {
-    let diagnostics3 = "";
+    let diagnostics = "";
     const host = this.baseUrl.hostname.replace(/^\[|\]$/g, "");
     const child = await this.launchBackend(host, this.baseUrl.port || "80", this.lifecycle.signal);
     if (this.disposed) {
@@ -48135,7 +44816,7 @@ var Baguette = class {
     });
     for (const output of [child.stdout, child.stderr]) {
       output?.on("data", (chunk) => {
-        diagnostics3 = (diagnostics3 + chunk.toString()).slice(-4e3);
+        diagnostics = (diagnostics + chunk.toString()).slice(-4e3);
         process.stderr.write(chunk);
       });
     }
@@ -48150,7 +44831,7 @@ var Baguette = class {
           throw annotateDeviceCommand(launchError, "baguette_serve");
         }
         if (child.exitCode !== null || child.signalCode !== null) {
-          const error52 = new Error(`Baguette exited before it became ready. ${diagnostics3.trim()}`);
+          const error52 = new Error(`Baguette exited before it became ready. ${diagnostics.trim()}`);
           const status2 = child.exitCode ?? void 0;
           throw annotateDeviceCommand(error52, "baguette_serve", child.signalCode === null ? { failure: "exit", status: status2 } : { failure: "signal" });
         }
@@ -48158,7 +44839,7 @@ var Baguette = class {
         if (status.connected) return status;
         await delay6(250);
       }
-      const error51 = new Error(`Baguette did not become ready within 20 seconds. ${diagnostics3.trim()}`);
+      const error51 = new Error(`Baguette did not become ready within 20 seconds. ${diagnostics.trim()}`);
       throw annotateDeviceCommand(error51, "baguette_serve", { failure: "deadline" });
     } catch (error51) {
       child.kill("SIGTERM");
@@ -48198,19 +44879,19 @@ var Baguette = class {
       throw error51;
     }
   }
-  async changeDeviceState(udid, action, timeout = 12e4) {
+  async changeDeviceState(udid, action2, timeout = 12e4) {
     udidSchema.parse(udid);
     const previous = this.deviceChanges.get(udid);
     const change = (async () => {
       await previous?.catch(() => {
       });
       const device2 = await this.device(udid);
-      const expected = action === "boot" ? "Booted" : "Shutdown";
+      const expected = action2 === "boot" ? "Booted" : "Shutdown";
       if (device2.state === expected) return this.status();
       const signal = AbortSignal.any([this.lifecycle.signal, AbortSignal.timeout(timeout)]);
       try {
-        const inProgress = device2.state === (action === "boot" ? "Booting" : "ShuttingDown");
-        if (!inProgress) await this.json(`/simulators/${udid}/${action}`, { method: "POST", signal }, timeout);
+        const inProgress = device2.state === (action2 === "boot" ? "Booting" : "ShuttingDown");
+        if (!inProgress) await this.json(`/simulators/${udid}/${action2}`, { method: "POST", signal }, timeout);
         while (true) {
           signal.throwIfAborted();
           const status = await this.status(signal);
@@ -48223,7 +44904,7 @@ var Baguette = class {
         }
       } catch (error51) {
         if (this.disposed) throw new Error("The plugin server has closed.");
-        if (signal.aborted) throw new Error(`The simulator did not finish ${action === "boot" ? "booting" : "shutting down"} within ${timeout / 1e3} seconds. Refresh the device list before trying again.`);
+        if (signal.aborted) throw new Error(`The simulator did not finish ${action2 === "boot" ? "booting" : "shutting down"} within ${timeout / 1e3} seconds. Refresh the device list before trying again.`);
         throw error51;
       }
     })();
@@ -48238,8 +44919,8 @@ var Baguette = class {
     await this.device(udid, true);
     const executable2 = await bundledExecutable();
     const environment = await baguetteEnvironment(executable2, this.lifecycle.signal);
-    const execute16 = promisify15(execFile16);
-    const { stdout, stderr } = await execute16(executable2, ["heal", "--udid", udid], {
+    const execute17 = promisify16(execFile17);
+    const { stdout, stderr } = await execute17(executable2, ["heal", "--udid", udid], {
       timeout: 45e3,
       maxBuffer: 1024 * 1024,
       encoding: "utf8",
@@ -48259,13 +44940,13 @@ async function readDefinitionFailure(response3) {
   const reader = response3.body?.getReader();
   if (reader === void 0) return;
   const chunks = [];
-  let size2 = 0;
+  let size = 0;
   try {
     while (true) {
       const chunk = await reader.read();
       if (chunk.done) break;
-      size2 += chunk.value.byteLength;
-      if (size2 > 4096) return;
+      size += chunk.value.byteLength;
+      if (size > 4096) return;
       chunks.push(chunk.value);
     }
     const bytes = Buffer.concat(chunks);
@@ -48286,15 +44967,15 @@ import { randomBytes as randomBytes7 } from "node:crypto";
 
 // packages/shared/src/android-video.ts
 function videoPacket(bytes) {
-  let timestamp2;
+  let timestamp3;
   if (bytes.length >= 4 && new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(0) === 1397050709) {
     if (bytes.length < 16) throw new Error("Invalid Android video header.");
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    const version4 = view.getUint8(4);
-    const length = version4 === 2 ? 24 : version4 === 1 ? 16 : 0;
+    const version3 = view.getUint8(4);
+    const length = version3 === 2 ? 24 : version3 === 1 ? 16 : 0;
     if (!length || bytes.length <= length) throw new Error("Invalid Android video header.");
     const pts = view.getBigUint64(8);
-    if (pts <= BigInt(Number.MAX_SAFE_INTEGER)) timestamp2 = Number(pts);
+    if (pts <= BigInt(Number.MAX_SAFE_INTEGER)) timestamp3 = Number(pts);
     bytes = bytes.subarray(length);
   }
   let key = false;
@@ -48308,13 +44989,13 @@ function videoPacket(bytes) {
     if (type === 7 && start + 3 < bytes.length) codec2 = `avc1.${[bytes[start + 1], bytes[start + 2], bytes[start + 3]].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
     i = start;
   }
-  return { bytes, timestamp: timestamp2, key, codec: codec2 };
+  return { bytes, timestamp: timestamp3, key, codec: codec2 };
 }
 
 // packages/core/src/android-streams.ts
 function androidInput(value) {
   const input = inputSchema.parse(value);
-  const unit = (coordinate, size2) => Math.max(0, Math.min(1, coordinate / size2));
+  const unit = (coordinate, size) => Math.max(0, Math.min(1, coordinate / size));
   switch (input.type) {
     case "tap":
       return { type: "tap", x: unit(input.x, input.width), y: unit(input.y, input.height) };
@@ -48412,7 +45093,7 @@ var AndroidStreams = class {
       this.notify(session);
     });
     try {
-      await new Promise((resolve3, reject) => {
+      await new Promise((resolve4, reject) => {
         const cleanup = () => {
           socket.off("open", opened);
           socket.off("error", failed);
@@ -48420,7 +45101,7 @@ var AndroidStreams = class {
         };
         const opened = () => {
           cleanup();
-          resolve3();
+          resolve4();
         };
         const failed = (error51) => {
           cleanup();
@@ -48475,11 +45156,11 @@ var AndroidStreams = class {
     const session = this.session(id2);
     await this.backend.assertDevice(session.deviceId, session.url);
     if (!session.error && !session.packets.some((packet) => packet.sequence > after)) {
-      await new Promise((resolve3) => {
+      await new Promise((resolve4) => {
         const done = () => {
           clearTimeout(timer);
           session.waiters.delete(done);
-          resolve3();
+          resolve4();
         };
         const timer = setTimeout(done, 1e3);
         session.waiters.add(done);
@@ -48526,8 +45207,8 @@ var AndroidStreams = class {
 // packages/core/src/android-tools.ts
 var sessionIdSchema = external_exports.string().regex(/^[a-f0-9]{64}$/);
 var deviceInput = { deviceId: androidIdSchema.describe("An Android serial or avd: name returned by mobile_list_android_devices.") };
-var write4 = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
-var read6 = { ...write4, readOnlyHint: true };
+var write5 = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
+var read7 = { ...write5, readOnlyHint: true };
 function result2(data, text6) {
   return { content: [{ type: "text", text: text6 }], structuredContent: { ...data } };
 }
@@ -48547,29 +45228,29 @@ function registerAndroidTools(server, android2, appUri, copyScreenshot, closeCpu
     title: "List Android devices",
     description: "Discover physical Android devices over USB or Wi-Fi and list running emulators and installed AVDs through ADB. Returns device kind, serial, model when available, transport for physical devices, and device/offline/unauthorized state (authorized devices use Booted). Listing does not boot, pair, authorize, or stream a device.",
     inputSchema: {},
-    annotations: read6
+    annotations: read7
   }, guarded(async () => {
     const status = await android2.list();
     return result2(status, status.connected ? JSON.stringify(status.devices) : status.error);
   }));
-  for (const action of ["boot", "shutdown"]) server.registerTool(`mobile_${action}_android_emulator`, {
-    title: action === "boot" ? "Boot Android emulator" : "Shut down Android emulator",
-    description: action === "boot" ? "Boot an installed Android AVD chosen for the app task. Follow the user's choice or choose a suitable AVD from the list when none runs. Reuse a suitable running device. Use the returned running serial for later calls." : "Shut down the selected Android emulator from the device list.",
+  for (const action2 of ["boot", "shutdown"]) server.registerTool(`mobile_${action2}_android_emulator`, {
+    title: action2 === "boot" ? "Boot Android emulator" : "Shut down Android emulator",
+    description: action2 === "boot" ? "Boot an installed Android AVD chosen for the app task. Follow the user's choice or choose a suitable AVD from the list when none runs. Reuse a suitable running device. Use the returned running serial for later calls." : "Shut down the selected Android emulator from the device list.",
     inputSchema: deviceInput,
-    annotations: { ...write4, destructiveHint: action === "shutdown" }
+    annotations: { ...write5, destructiveHint: action2 === "shutdown" }
   }, guarded(async ({ deviceId: deviceId4 }) => {
-    if (action === "shutdown") {
+    if (action2 === "shutdown") {
       await closeCpu(deviceId4);
       streams.closeDevice(deviceId4);
     }
-    const status = await android2[action](deviceId4);
-    return result2(status, `${action === "boot" ? "Booted" : "Shut down"} ${deviceId4}.`);
+    const status = await android2[action2](deviceId4);
+    return result2(status, `${action2 === "boot" ? "Booted" : "Shut down"} ${deviceId4}.`);
   }));
   K3(server, "mobile_android_describe_ui", {
     title: "Read Android UI",
     description: "Read the selected running Android device's accessibility tree. Bounds use full-resolution display pixels; screen gives the active display width and height.",
     inputSchema: deviceInput,
-    annotations: read6,
+    annotations: read7,
     _meta: { ui: { visibility: ["app"] } }
   }, guarded(async ({ deviceId: deviceId4 }) => {
     const { tree, screen } = await android2.accessibility(deviceId4);
@@ -48587,7 +45268,7 @@ function registerAndroidTools(server, android2, appUri, copyScreenshot, closeCpu
     title: "Android screenshot to chat and clipboard",
     description: "Capture the selected Android screen as a PNG and copy it to the clipboard. Return the image for the panel to attach to chat.",
     inputSchema: deviceInput,
-    annotations: write4,
+    annotations: write5,
     _meta: { ui: { resourceUri: appUri, visibility: ["app"] } }
   }, guarded(async ({ deviceId: deviceId4 }) => {
     const bytes = await captureScreenshot(deviceId4);
@@ -48615,7 +45296,7 @@ function registerAndroidTools(server, android2, appUri, copyScreenshot, closeCpu
     title: "Connect Android stream",
     description: "Start bundled serve-emu for the selected running device and relay H.264 through MCP.",
     inputSchema: deviceInput,
-    annotations: write4,
+    annotations: write5,
     _meta: { ui: { resourceUri: appUri, visibility: ["app"] } }
   }, guarded(async ({ deviceId: deviceId4 }, context2) => {
     context2.signal.throwIfAborted();
@@ -48627,14 +45308,14 @@ function registerAndroidTools(server, android2, appUri, copyScreenshot, closeCpu
     title: "Send Android panel input",
     description: "Send validated input to an authorized Android panel stream.",
     inputSchema: { sessionId: sessionIdSchema, messages: external_exports.array(inputSchema).min(1).max(64) },
-    annotations: write4,
+    annotations: write5,
     _meta: { ui: { visibility: ["app"] } }
   }, guarded(async ({ sessionId: sessionId5, messages }) => result2({ accepted: await streams.input(sessionId5, messages) }, "Input sent to Android.")));
   K3(server, "mobile_android_stream_reset", {
     title: "Recover Android video",
     description: "Request a fresh H.264 keyframe for an authorized panel stream without restarting the device or replaying input.",
     inputSchema: { sessionId: sessionIdSchema },
-    annotations: write4,
+    annotations: write5,
     _meta: { ui: { visibility: ["app"] } }
   }, guarded(async ({ sessionId: sessionId5 }) => {
     await streams.reset(sessionId5);
@@ -48644,7 +45325,7 @@ function registerAndroidTools(server, android2, appUri, copyScreenshot, closeCpu
     title: "Close Android panel stream",
     description: "Close one panel stream and leave its Android device running.",
     inputSchema: { sessionId: sessionIdSchema },
-    annotations: write4,
+    annotations: write5,
     _meta: { ui: { visibility: ["app"] } }
   }, guarded(async ({ sessionId: sessionId5 }) => {
     streams.closeSession(sessionId5);
@@ -48668,7 +45349,7 @@ import { randomBytes as randomBytes8 } from "node:crypto";
 // packages/core/src/ios-mirror-client.ts
 import { createConnection as createConnection2 } from "node:net";
 import { spawn as spawn12 } from "node:child_process";
-import { fileURLToPath as fileURLToPath8 } from "node:url";
+import { fileURLToPath as fileURLToPath9 } from "node:url";
 import { setTimeout as delay7 } from "node:timers/promises";
 
 // packages/shared/src/ios-video.ts
@@ -48708,7 +45389,7 @@ var maximumReplyBytes = 16 * 1024 * 1024;
 
 // packages/core/src/ios-mirror-client.ts
 async function connect(path) {
-  return new Promise((resolve3, reject) => {
+  return new Promise((resolve4, reject) => {
     const socket = createConnection2(path);
     const timer = setTimeout(() => {
       const error51 = new Error("Shared iOS capture connection timed out.");
@@ -48718,7 +45399,7 @@ async function connect(path) {
     socket.once("connect", () => {
       clearTimeout(timer);
       socket.removeListener("error", reject);
-      resolve3(socket);
+      resolve4(socket);
     });
     socket.once("close", () => clearTimeout(timer));
   });
@@ -48728,16 +45409,16 @@ async function startService() {
   if (starting) return starting;
   starting = (async () => {
     const bundled = import.meta.url.endsWith(".mjs");
-    const path = bundled ? await panelRuntimePath("ios-mirror-service.mjs") : fileURLToPath8(new URL("./ios-mirror-service.ts", import.meta.url));
+    const path = bundled ? await panelRuntimePath("ios-mirror-service.mjs") : fileURLToPath9(new URL("./ios-mirror-service.ts", import.meta.url));
     const child = spawn12(process.execPath, [path], { detached: true, stdio: "ignore", env: process.env });
-    let failure3;
+    let failure2;
     child.on("error", (error51) => {
-      failure3 = error51;
+      failure2 = error51;
     });
     child.unref();
     const deadline = Date.now() + 15e3;
     while (Date.now() < deadline) {
-      if (failure3) throw failure3;
+      if (failure2) throw failure2;
       try {
         const socket = await connect(mirrorSocketPath);
         socket.destroy();
@@ -48814,9 +45495,9 @@ async function connectIosCapture(path, udid) {
       return Promise.reject(error51);
     }
     const id2 = ++sequence4;
-    return new Promise((resolve3, reject) => {
+    return new Promise((resolve4, reject) => {
       const timer = setTimeout(() => disconnect("Shared iOS capture request timed out."), 3e4);
-      pending.set(id2, { resolve: resolve3, reject, timer });
+      pending.set(id2, { resolve: resolve4, reject, timer });
       const encoded2 = JSON.stringify({ ...command3, id: id2 });
       socket.write(encoded2 + "\n");
     });
@@ -48956,13 +45637,13 @@ var IosMirrorSessions = class {
 };
 
 // packages/core/src/physical-ios-bezel.ts
-import { execFile as execFile17 } from "node:child_process";
-import { mkdtemp as mkdtemp5, readFile as readFile10, rm as rm8 } from "node:fs/promises";
+import { execFile as execFile18 } from "node:child_process";
+import { mkdtemp as mkdtemp5, readFile as readFile13, rm as rm8 } from "node:fs/promises";
 import { tmpdir as tmpdir5 } from "node:os";
-import { join as join19 } from "node:path";
-import { fileURLToPath as fileURLToPath9 } from "node:url";
-import { promisify as promisify16 } from "node:util";
-var execute12 = promisify16(execFile17);
+import { join as join22 } from "node:path";
+import { fileURLToPath as fileURLToPath10 } from "node:url";
+import { promisify as promisify17 } from "node:util";
+var execute13 = promisify17(execFile18);
 var text4 = external_exports.string();
 var deviceTypeSchema = external_exports.object({ name: text4, modelIdentifier: text4, bundlePath: text4 });
 var deviceTypes = external_exports.array(deviceTypeSchema);
@@ -48985,19 +45666,19 @@ function pngDataUri(bytes) {
   return `data:image/png;base64,${encoded2}`;
 }
 async function readMask(identifier3, run5) {
-  const prefix3 = join19(tmpdir5(), "mobile-dev-device-mask-");
-  const directory = await mkdtemp5(prefix3);
+  const prefix2 = join22(tmpdir5(), "mobile-dev-device-mask-");
+  const directory = await mkdtemp5(prefix2);
   try {
     const input = `/Library/Developer/DeviceKit/FramebufferMasks/${identifier3}.pdf`;
-    const output = join19(directory, "mask.png");
+    const output = join22(directory, "mask.png");
     await run5("/usr/bin/sips", ["-s", "format", "png", input, "--out", output], commandOptions);
-    const bytes = await readFile10(output);
+    const bytes = await readFile13(output);
     return pngDataUri(bytes);
   } finally {
     await rm8(directory, { recursive: true, force: true });
   }
 }
-async function renderBezel(device2, run5, runtime2) {
+async function renderBezel(device2, run5, runtime) {
   const typesOutput = await run5("/usr/bin/xcrun", ["simctl", "list", "devicetypes", "--json"], commandOptions);
   const typesJson = typesOutput.stdout.toString("utf8");
   const typesPayload = JSON.parse(typesJson);
@@ -49011,7 +45692,7 @@ async function renderBezel(device2, run5, runtime2) {
   });
   let selected;
   for (const type2 of candidates) {
-    const profilePath = join19(type2.bundlePath, "Contents", "Resources", "profile.plist");
+    const profilePath = join22(type2.bundlePath, "Contents", "Resources", "profile.plist");
     const profileOutput = await run5("/usr/bin/plutil", ["-convert", "json", "-o", "-", profilePath], commandOptions);
     const profileJson = profileOutput.stdout.toString("utf8");
     const profilePayload = JSON.parse(profileJson);
@@ -49025,9 +45706,9 @@ async function renderBezel(device2, run5, runtime2) {
   const { type, profile } = selected;
   const root = import.meta.url.endsWith(".mjs") ? "./baguette/" : "../../native/vendor/baguette/";
   const url2 = new URL(`${root}Baguette`, import.meta.url);
-  const executable2 = fileURLToPath9(url2);
+  const executable2 = fileURLToPath10(url2);
   const signal = AbortSignal.timeout(commandOptions.timeout);
-  const environment = await runtime2(executable2, signal);
+  const environment = await runtime(executable2, signal);
   const renderOptions = { ...commandOptions, env: environment };
   const layoutOutput = await run5(executable2, ["chrome", "layout", "--device-name", type.name], renderOptions);
   const layoutJson = layoutOutput.stdout.toString("utf8");
@@ -49040,11 +45721,11 @@ async function renderBezel(device2, run5, runtime2) {
   if (profile.framebufferMask !== void 0) bezel.mask = await readMask(profile.framebufferMask, run5);
   return bezel;
 }
-function createPhysicalIosBezelReader(run5 = execute12, runtime2 = baguetteEnvironment) {
+function createPhysicalIosBezelReader(run5 = execute13, runtime = baguetteEnvironment) {
   const cache = /* @__PURE__ */ new Map();
-  async function read8(device2) {
+  async function read9(device2) {
     try {
-      return await renderBezel(device2, run5, runtime2);
+      return await renderBezel(device2, run5, runtime);
     } catch (error51) {
       captureServerError(error51, "ios-mirror.bezel");
     }
@@ -49054,7 +45735,7 @@ function createPhysicalIosBezelReader(run5 = execute12, runtime2 = baguetteEnvir
   return (device2) => {
     const cached2 = cache.get(device2.productType);
     if (cached2 !== void 0) return cached2;
-    const bezel = read8(device2);
+    const bezel = read9(device2);
     cache.set(device2.productType, bezel);
     return bezel;
   };
@@ -49062,18 +45743,18 @@ function createPhysicalIosBezelReader(run5 = execute12, runtime2 = baguetteEnvir
 var readPhysicalIosBezel = createPhysicalIosBezelReader();
 
 // packages/core/src/clipboard.ts
-import { execFile as execFile18 } from "node:child_process";
-import { mkdtemp as mkdtemp6, writeFile as writeFile9, rm as rm9 } from "node:fs/promises";
+import { execFile as execFile19 } from "node:child_process";
+import { mkdtemp as mkdtemp6, writeFile as writeFile11, rm as rm9 } from "node:fs/promises";
 import { tmpdir as tmpdir6 } from "node:os";
-import { join as join20 } from "node:path";
-import { promisify as promisify17 } from "node:util";
-var execute13 = promisify17(execFile18);
+import { join as join23 } from "node:path";
+import { promisify as promisify18 } from "node:util";
+var execute14 = promisify18(execFile19);
 async function copyPNGToClipboard(bytes) {
-  const directory = await mkdtemp6(join20(tmpdir6(), "mobile-dev-screenshot-"));
+  const directory = await mkdtemp6(join23(tmpdir6(), "mobile-dev-screenshot-"));
   try {
-    const path = join20(directory, "screenshot.png");
-    await writeFile9(path, bytes, { mode: 384 });
-    await execute13("/usr/bin/osascript", ["-e", `on run argv
+    const path = join23(directory, "screenshot.png");
+    await writeFile11(path, bytes, { mode: 384 });
+    await execute14("/usr/bin/osascript", ["-e", `on run argv
 set the clipboard to (read (POSIX file (item 1 of argv)) as \xABclass PNGf\xBB)
 end run`, path], { timeout: 5e3, maxBuffer: 64 * 1024 });
   } finally {
@@ -49188,11 +45869,11 @@ function registerIosMirrorTools(server, appUri, sessions = new IosMirrorSessions
 }
 
 // packages/core/src/inspection-tools.ts
-import { execFile as execFile19 } from "node:child_process";
-import { promisify as promisify18 } from "node:util";
+import { execFile as execFile20 } from "node:child_process";
+import { promisify as promisify19 } from "node:util";
 
 // packages/core/src/react-native-inspector.ts
-import { randomUUID as randomUUID4 } from "node:crypto";
+import { randomUUID as randomUUID7 } from "node:crypto";
 
 // packages/core/src/react-native-snapshot.js
 function collectReactNativeTree(complete2) {
@@ -49418,10 +46099,10 @@ async function inspectReactNative(request, signal) {
   if (!target2.supportsMultipleDebuggers) return { available: false, reason: "exclusive-debugger" };
   const raw = await readSnapshot(target2.webSocketDebuggerUrl, signal);
   const stack = [{ value: raw, depth: 0 }];
-  let count3 = 0;
+  let count2 = 0;
   while (stack.length) {
     const { value, depth } = stack.pop();
-    if (++count3 > 2e4 || depth > 330) throw new Error("React Native returned an oversized component tree.");
+    if (++count2 > 2e4 || depth > 330) throw new Error("React Native returned an oversized component tree.");
     if (value && typeof value === "object") {
       for (const child of Object.values(value)) if (child && typeof child === "object") stack.push({ value: child, depth: depth + 1 });
     }
@@ -49444,10 +46125,10 @@ async function inspectReactNative(request, signal) {
 }
 function readSnapshot(url2, signal) {
   if (signal?.aborted) return Promise.reject(new Error("Component inspection cancelled."));
-  return new Promise((resolve3, reject) => {
+  return new Promise((resolve4, reject) => {
     const origin = new URL(url2);
     origin.protocol = "http:";
-    const binding = `__mobile_dev_inspection_${randomUUID4().replaceAll("-", "")}`;
+    const binding = `__mobile_dev_inspection_${randomUUID7().replaceAll("-", "")}`;
     const socket = new import_websocket.default(url2, { origin: origin.origin, handshakeTimeout: 3e3, maxPayload: 1024 * 1024, followRedirects: false });
     let settled = false, cleanup;
     const finish = (error51, result4) => {
@@ -49463,7 +46144,7 @@ function readSnapshot(url2, signal) {
         if (socket.readyState === import_websocket.default.OPEN) socket.close();
         else socket.terminate();
         if (error51) reject(error51);
-        else resolve3(result4);
+        else resolve4(result4);
       };
       if (socket.readyState !== import_websocket.default.OPEN) {
         cleanup();
@@ -49555,7 +46236,7 @@ function bounds(value) {
     return { x, y, width, height };
 }
 function screenSize(value) {
-  const size2 = record3(value), width = size2?.width, height = size2?.height;
+  const size = record3(value), width = size?.width, height = size?.height;
   if (typeof width === "number" && typeof height === "number" && Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) return { width, height };
 }
 function accessibilityScreen(tree) {
@@ -49595,7 +46276,7 @@ function screenComponents(tree, scale = 1) {
 }
 
 // packages/core/src/inspection-tools.ts
-var execute14 = promisify18(execFile19);
+var execute15 = promisify19(execFile20);
 async function iosSnapshot(baguette, deviceId4, signal) {
   const udid = udidSchema.parse(deviceId4);
   const device2 = await baguette.device(udid, true);
@@ -49621,7 +46302,7 @@ async function androidSnapshot(android2, deviceId4, deviceName, screenWidth) {
 async function androidAliases(deviceId4) {
   try {
     const adb = await adbPath();
-    const properties2 = await Promise.all(["ro.product.model", "ro.build.version.release", "ro.build.version.sdk"].map((property) => execute14(adb, ["-s", deviceId4, "shell", "getprop", property], { timeout: 3e3, maxBuffer: 4096 }).then((result4) => result4.stdout.trim())));
+    const properties2 = await Promise.all(["ro.product.model", "ro.build.version.release", "ro.build.version.sdk"].map((property) => execute15(adb, ["-s", deviceId4, "shell", "getprop", property], { timeout: 3e3, maxBuffer: 4096 }).then((result4) => result4.stdout.trim())));
     return properties2.every(Boolean) ? [properties2[0], `${properties2[0]} - ${properties2[1]} - API ${properties2[2]}`] : [];
   } catch {
     return [];
@@ -49642,16 +46323,16 @@ function registerInspectionTools(server, baguette, android2) {
     },
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     _meta: { ui: { visibility: ["app", "model"] } }
-  }, async ({ platform: platform6, deviceId: deviceId4, deviceName, screenWidth, metroUrl, targetId }) => {
+  }, async ({ platform: platform5, deviceId: deviceId4, deviceName, screenWidth, metroUrl, targetId }) => {
     try {
-      const { native, app, screen } = platform6 === "ios" ? await iosSnapshot(baguette, deviceId4, controller.signal) : await androidSnapshot(android2, deviceId4, deviceName, screenWidth);
-      let runtime2;
+      const { native, app, screen } = platform5 === "ios" ? await iosSnapshot(baguette, deviceId4, controller.signal) : await androidSnapshot(android2, deviceId4, deviceName, screenWidth);
+      let runtime;
       try {
-        runtime2 = await inspectReactNative({ ...app, url: metroUrl, targetId, platform: platform6, screenWidth }, controller.signal);
+        runtime = await inspectReactNative({ ...app, url: metroUrl, targetId, platform: platform5, screenWidth }, controller.signal);
       } catch {
-        runtime2 = { available: false, reason: "inspector-unavailable" };
+        runtime = { available: false, reason: "inspector-unavailable" };
       }
-      const data = { tree: screenComponents(runtime2.available ? [runtime2.tree, native] : native), runtime: { available: runtime2.available, truncated: runtime2.available ? runtime2.truncated : false }, ...screen && { screen } };
+      const data = { tree: screenComponents(runtime.available ? [runtime.tree, native] : native), runtime: { available: runtime.available, truncated: runtime.available ? runtime.truncated : false }, ...screen && { screen } };
       return { content: [{ type: "text", text: JSON.stringify(data) }], structuredContent: data };
     } catch (error51) {
       captureServerError(error51, "inspection.tool");
@@ -49682,7 +46363,7 @@ var deviceSettingSchema = external_exports.discriminatedUnion("setting", [
 ]);
 
 // packages/core/src/network-throttle/proxy.ts
-import { randomUUID as randomUUID5 } from "node:crypto";
+import { randomUUID as randomUUID8 } from "node:crypto";
 import { createServer as createServer5, request as httpRequest } from "node:http";
 import { connect as connect2, isIP } from "node:net";
 var LinkPacer = class {
@@ -49753,7 +46434,7 @@ function isLocalDestination(host) {
 var hostAddress = (host) => /^(?:10\.0\.2\.2|localhost)$/i.test(host) ? "127.0.0.1" : host.replace(/^\[|\]$/g, "");
 var healthPath = "/mobile-dev-network-throttle";
 var ThrottleProxy = class {
-  token = randomUUID5();
+  token = randomUUID8();
   server;
   sockets = /* @__PURE__ */ new Set();
   link;
@@ -49773,9 +46454,9 @@ var ThrottleProxy = class {
     this.link.up.profile = profile;
   }
   listen() {
-    return new Promise((resolve3, reject) => {
+    return new Promise((resolve4, reject) => {
       this.server.once("error", reject);
-      this.server.listen(0, "127.0.0.1", () => resolve3(this.server.address().port));
+      this.server.listen(0, "127.0.0.1", () => resolve4(this.server.address().port));
     });
   }
   // Local destinations get no pacers, so they pass through at full speed.
@@ -49849,7 +46530,7 @@ var ThrottleProxy = class {
   }
   close() {
     for (const socket of this.sockets) socket.destroy();
-    return new Promise((resolve3) => this.server.close(() => resolve3()));
+    return new Promise((resolve4) => this.server.close(() => resolve4()));
   }
 };
 async function proxyToken(port2) {
@@ -49886,14 +46567,14 @@ var AndroidNetworkThrottle = class {
     this.queue = run5.catch(() => void 0);
     return run5;
   }
-  shell(serial, action, command3) {
-    return runAdb(this.commands, serial, action, ["shell", command3], 1e4);
+  shell(serial, action2, command3) {
+    return runAdb(this.commands, serial, action2, ["shell", command3], 1e4);
   }
   // Phones reach the Mac's proxy through adb reverse; emulators reach it at 10.0.2.2.
-  async reverse(serial, action, args) {
+  async reverse(serial, action2, args) {
     if (emulatorSerial.test(serial)) return;
     try {
-      await runAdb(this.commands, serial, action, ["reverse", ...args], 1e4);
+      await runAdb(this.commands, serial, action2, ["reverse", ...args], 1e4);
     } catch (error51) {
       if (!/not found/i.test(errorMessage(error51))) throw error51;
     }
@@ -49995,7 +46676,7 @@ var unsupported = (backend) => new ExpectedOperationError("invalid_input", `${ba
 var post = (body) => ({ method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 async function collect(settings, reads) {
   const labels = Object.keys(reads);
-  const results = await Promise.allSettled(Object.values(reads).map((read8) => read8()));
+  const results = await Promise.allSettled(Object.values(reads).map((read9) => read9()));
   const errors = results.flatMap((result4, index) => {
     if (result4.status === "fulfilled") {
       Object.assign(settings, result4.value);
@@ -50019,11 +46700,11 @@ var contrast = external_exports.enum(["enabled", "disabled"]);
 function iosInterface(value) {
   const data = iosInterfaceSchema.parse(value);
   const mode = appearance.safeParse(data.appearance);
-  const size2 = external_exports.enum(contentSizes).safeParse(data.contentSize);
+  const size = external_exports.enum(contentSizes).safeParse(data.contentSize);
   const highContrast = contrast.safeParse(data.increaseContrast);
   return {
     ...mode.success && { appearance: mode.data },
-    ...size2.success && { contentSize: size2.data },
+    ...size.success && { contentSize: size.data },
     ...highContrast.success && { increaseContrast: highContrast.data === "enabled" }
   };
 }
@@ -50173,20 +46854,20 @@ var DeviceSettingsService = class {
     this.platforms = { ios: new IosSettings(baguette), android: new AndroidSettings(android2, throttle) };
   }
   read(target2) {
-    return this.checked(target2, (platform6) => platform6.read(target2.id));
+    return this.checked(target2, (platform5) => platform5.read(target2.id));
   }
   update(target2, change) {
-    return this.checked(target2, (platform6) => platform6.update(target2.id, change));
+    return this.checked(target2, (platform5) => platform5.update(target2.id, change));
   }
   // A request that failed because the device stopped or went away is an expected outcome, not a backend
   // failure. A device list that cannot be read says nothing about the device, so the original failure stands.
   async checked(target2, work) {
-    const platform6 = this.platforms[target2.platform];
+    const platform5 = this.platforms[target2.platform];
     try {
-      return await work(platform6);
+      return await work(platform5);
     } catch (error51) {
       if (expectedOutcome(error51) !== void 0) throw error51;
-      const gone = await platform6.listed(target2.id).then(() => void 0, (lookup) => lookup);
+      const gone = await platform5.listed(target2.id).then(() => void 0, (lookup2) => lookup2);
       throw expectedOutcome(gone) === void 0 ? error51 : gone;
     }
   }
@@ -50194,12 +46875,12 @@ var DeviceSettingsService = class {
 function registerDeviceSettingsTools(server, baguette, android2) {
   const service = new DeviceSettingsService(baguette, android2);
   const annotations3 = { destructiveHint: false, openWorldHint: false };
-  const guarded3 = (action, handler) => async (input) => {
+  const guarded3 = (action2, handler) => async (input) => {
     try {
       const settings = await handler(input);
       return { content: [{ type: "text", text: JSON.stringify(settings) }], structuredContent: { settings } };
     } catch (error51) {
-      captureServerError(error51, `device_settings.${action(input)}`, {
+      captureServerError(error51, `device_settings.${action2(input)}`, {
         reportAs: new Error("Device setting command failed."),
         tags: { device_platform: input.target.platform, ...deviceCommandTags(error51) }
       });
@@ -50271,7 +46952,7 @@ var StreamSessions = class {
     this.expiry.unref();
   }
   notify(session) {
-    for (const resolve3 of session.waiters) resolve3();
+    for (const resolve4 of session.waiters) resolve4();
     session.waiters.clear();
   }
   async open(udid, fps) {
@@ -50345,10 +47026,10 @@ var StreamSessions = class {
       this.notify(session);
     });
     try {
-      await new Promise((resolve3, reject) => {
+      await new Promise((resolve4, reject) => {
         const opened = () => {
           cleanup();
-          resolve3();
+          resolve4();
         };
         const failed = (error51) => {
           cleanup();
@@ -50441,12 +47122,12 @@ var StreamSessions = class {
     if (session.error) throw new Error(session.error);
     this.reconnect(session);
     if (!session.error && (!session.frame || session.frame.sequence <= after)) {
-      await new Promise((resolve3) => {
+      await new Promise((resolve4) => {
         const done = () => {
           clearTimeout(timer);
           signal?.removeEventListener("abort", done);
           session.waiters.delete(done);
-          resolve3();
+          resolve4();
         };
         const timer = setTimeout(done, 1e3);
         session.waiters.add(done);
@@ -50519,12 +47200,12 @@ var StreamSessions = class {
 };
 
 // packages/core/src/simulator-input.ts
-import { execFile as execFile20 } from "node:child_process";
-import { promisify as promisify19 } from "node:util";
-var execute15 = promisify19(execFile20);
+import { execFile as execFile21 } from "node:child_process";
+import { promisify as promisify20 } from "node:util";
+var execute16 = promisify20(execFile21);
 var deviceHubKey = "com.apple.coredevice.dtuhidd.active";
 async function readDeviceHubState(udid) {
-  const { stdout } = await execute15("/usr/bin/xcrun", ["simctl", "spawn", udid, "notifyutil", "-g", deviceHubKey], {
+  const { stdout } = await execute16("/usr/bin/xcrun", ["simctl", "spawn", udid, "notifyutil", "-g", deviceHubKey], {
     timeout: 5e3,
     maxBuffer: 1024 * 1024,
     encoding: "utf8"
@@ -50605,8 +47286,8 @@ var WORKSPACE_URI = `ui://mobile-dev/${PLUGIN_VERSION}/workspace.html`;
 var unversionedAppUris = ["ui://mobile-dev/simulator.html", "ui://mobile-dev/0.1.24/mcp-stream/simulator.html"];
 var unversionedWorkspaceUris = ["ui://mobile-dev/workspace.html", "ui://mobile-dev/0.1.24/mcp-stream/workspace.html"];
 var sessionIdSchema2 = external_exports.string().regex(/^[a-f0-9]{64}$/);
-var read7 = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
-var write5 = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
+var read8 = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
+var write6 = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
 var deviceInput2 = { udid: udidSchema.describe("A simulator UDID returned by mobile_list_simulators.") };
 var deviceSchema = external_exports.object({ udid: udidSchema, name: external_exports.string(), state: external_exports.string(), runtime: external_exports.string() });
 var browserPanelOutput = external_exports.object({ url: external_exports.string(), instructions: external_exports.string() }).optional().describe("Present when the panel is not shown in the chat: the page to open beside it, and how. Follow its instructions.");
@@ -50711,10 +47392,10 @@ function registerPanel(server, { android: android2, cpu, fps, drivers, page, sho
     const cursorSchema = external_exports.coerce.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
     const after = parseResourceInput(cursorSchema, cursor);
     try {
-      const read8 = await streams.frame(sessionId5, after, extra.signal);
-      const timings = { serverWaitMs: read8.serverWaitMs, serverStartedAt: read8.serverStartedAt, serverPreparedAt: read8.serverPreparedAt };
-      if (read8.frame) {
-        const { data, ...metadata4 } = read8.frame;
+      const read9 = await streams.frame(sessionId5, after, extra.signal);
+      const timings = { serverWaitMs: read9.serverWaitMs, serverStartedAt: read9.serverStartedAt, serverPreparedAt: read9.serverPreparedAt };
+      if (read9.frame) {
+        const { data, ...metadata4 } = read9.frame;
         return { contents: [{ uri: uri2.href, mimeType: "image/jpeg", blob: data, _meta: { ...metadata4, ...timings } }] };
       }
       const text6 = JSON.stringify({ state: "waiting", connectionState: streams.connectionState(sessionId5), ...timings });
@@ -50743,7 +47424,7 @@ function registerPanel(server, { android: android2, cpu, fps, drivers, page, sho
       description: config2.description,
       inputSchema: panelTargetSchema,
       outputSchema: { ...statusOutput, panelTarget: panelTargetSchema, browserPanel: browserPanelOutput },
-      annotations: write5
+      annotations: write6
     };
     if (inline === false) {
       server.registerTool(name, { ...definition, _meta: { [PANEL_PAGE_META]: { resourceUri: config2.resourceUri } } }, openPanel(name));
@@ -50772,7 +47453,7 @@ function registerPanel(server, { android: android2, cpu, fps, drivers, page, sho
     description: "Start the plugin's bundled backend if needed and list available and booted simulators.",
     inputSchema: {},
     outputSchema: statusOutput,
-    annotations: write5
+    annotations: write6
   }, guarded2(async () => {
     const status = await baguette.start();
     return result3(status, status.connected ? JSON.stringify(status.devices) : status.error ?? "Baguette is offline.");
@@ -50782,30 +47463,30 @@ function registerPanel(server, { android: android2, cpu, fps, drivers, page, sho
     description: "Start or reconnect the Baguette backend bundled inside this plugin. Requires an Apple Silicon Mac with Xcode 26 or later. No separate Baguette install is needed.",
     inputSchema: {},
     outputSchema: statusOutput,
-    annotations: write5
+    annotations: write6
   }, guarded2(async () => {
     const status = await baguette.start();
     return result3(status, status.managed ? "Baguette is running." : "Connected to the existing Baguette server.");
   }));
-  for (const action of ["boot", "shutdown"]) {
-    server.registerTool(`mobile_${action}_simulator`, {
-      title: action === "boot" ? "Boot iOS simulator" : "Shut down iOS simulator",
-      description: action === "boot" ? "Boot an installed iOS simulator chosen for the app task. Follow the user's choice or choose a suitable device from the list when none runs. Reuse a suitable running device. Use a UDID from the device list." : "Shut down the selected simulator. Use a UDID from the device list.",
+  for (const action2 of ["boot", "shutdown"]) {
+    server.registerTool(`mobile_${action2}_simulator`, {
+      title: action2 === "boot" ? "Boot iOS simulator" : "Shut down iOS simulator",
+      description: action2 === "boot" ? "Boot an installed iOS simulator chosen for the app task. Follow the user's choice or choose a suitable device from the list when none runs. Reuse a suitable running device. Use a UDID from the device list." : "Shut down the selected simulator. Use a UDID from the device list.",
       inputSchema: deviceInput2,
       outputSchema: statusOutput,
-      annotations: { ...write5, destructiveHint: action === "shutdown" }
+      annotations: { ...write6, destructiveHint: action2 === "shutdown" }
     }, guarded2(async ({ udid }) => {
-      if (action === "shutdown") await cpu.closeDevice(udid);
-      const status = await baguette.changeDeviceState(udid, action);
-      if (action === "shutdown") streams.closeDevice(udid);
-      return result3(status, `${action === "boot" ? "Booted" : "Shut down"} ${udid}.`);
+      if (action2 === "shutdown") await cpu.closeDevice(udid);
+      const status = await baguette.changeDeviceState(udid, action2);
+      if (action2 === "shutdown") streams.closeDevice(udid);
+      return result3(status, `${action2 === "boot" ? "Booted" : "Shut down"} ${udid}.`);
     }));
   }
   K3(server, "mobile_describe_ui", {
     title: "Read simulator UI",
     description: "Read the selected booted simulator's accessibility tree and frames in device points.",
     inputSchema: deviceInput2,
-    annotations: read7,
+    annotations: read8,
     _meta: { ui: { visibility: ["app"] } }
   }, guarded2(async ({ udid }) => {
     await baguette.device(udid, true);
@@ -50816,7 +47497,7 @@ function registerPanel(server, { android: android2, cpu, fps, drivers, page, sho
     title: "Repair simulator input",
     description: "Reclaim input blocked by Xcode 27 Device Hub. Restarts backboardd and SpringBoard and closes running simulator apps. Use when the user asks to fix blocked input or when the panel detects blocked input.",
     inputSchema: deviceInput2,
-    annotations: { ...write5, destructiveHint: true },
+    annotations: { ...write6, destructiveHint: true },
     _meta: { ui: { visibility: ["app", "model"] } }
   }, guarded2(async ({ udid }) => {
     await baguette.device(udid, true);
@@ -50841,7 +47522,7 @@ function registerPanel(server, { android: android2, cpu, fps, drivers, page, sho
     title: "Screenshot to chat and clipboard",
     description: "Capture the selected booted simulator as a PNG and copy it to the macOS clipboard. Returns the same image for the panel to attach to the chat input.",
     inputSchema: deviceInput2,
-    annotations: write5,
+    annotations: write6,
     _meta: { ui: { resourceUri: APP_URI, visibility: ["app"] } }
   }, guarded2(async ({ udid }) => {
     const bytes = await captureScreenshot(udid);
@@ -50862,7 +47543,7 @@ function registerPanel(server, { android: android2, cpu, fps, drivers, page, sho
     title: "Connect simulator stream",
     description: "Open the bundled Baguette's MJPEG capture for the panel. Frames and input use the host's MCP bridge; no browser network access is needed.",
     inputSchema: { ...deviceInput2, fps: external_exports.number().int().min(1).max(60).default(60) },
-    annotations: write5,
+    annotations: write6,
     _meta: { ui: { resourceUri: APP_URI, visibility: ["app"] } }
   }, guarded2(async ({ udid, fps: fps2 }, context2) => {
     context2.signal.throwIfAborted();
@@ -50879,7 +47560,7 @@ function registerPanel(server, { android: android2, cpu, fps, drivers, page, sho
     title: "Send panel input",
     description: "Send a batch of validated gestures, keys, or buttons to an authorized panel stream.",
     inputSchema: { sessionId: sessionIdSchema2, messages: external_exports.array(streamMessageSchema).min(1).max(64) },
-    annotations: write5,
+    annotations: write6,
     _meta: { ui: { visibility: ["app"] } }
   }, guarded2(async ({ sessionId: sessionId5, messages }) => {
     if (streams.connectionState(sessionId5) === "reconnecting") return {
@@ -50900,7 +47581,7 @@ function registerPanel(server, { android: android2, cpu, fps, drivers, page, sho
     title: "Close panel stream",
     description: "Stop one panel's simulator capture without shutting down its device.",
     inputSchema: { sessionId: sessionIdSchema2 },
-    annotations: write5,
+    annotations: write6,
     _meta: { ui: { visibility: ["app"] } }
   }, guarded2(async ({ sessionId: sessionId5 }) => {
     streams.closeSession(sessionId5);
@@ -50910,7 +47591,7 @@ function registerPanel(server, { android: android2, cpu, fps, drivers, page, sho
     title: "Recover iOS panel video",
     description: "Restart one panel's MJPEG capture after a decode error, keeping its session and frame sequence. Does not boot a device or repair input.",
     inputSchema: { sessionId: sessionIdSchema2 },
-    annotations: write5,
+    annotations: write6,
     _meta: { ui: { visibility: ["app"] } }
   }, guarded2(async ({ sessionId: sessionId5 }) => {
     streams.reset(sessionId5);
@@ -50930,8 +47611,8 @@ function registerPanel(server, { android: android2, cpu, fps, drivers, page, sho
 }
 
 // packages/core/src/browser-panel.ts
-import { randomBytes as randomBytes10, randomUUID as randomUUID6 } from "node:crypto";
-import { readFile as readFile11 } from "node:fs/promises";
+import { randomBytes as randomBytes10, randomUUID as randomUUID9 } from "node:crypto";
+import { readFile as readFile14 } from "node:fs/promises";
 import { createServer as createServer7 } from "node:http";
 
 // node_modules/@hono/node-server/dist/constants-BLSFu_RU.mjs
@@ -51352,7 +48033,7 @@ var readBodyDirect = (request) => {
     request[bodyBufferKey] = buffered;
     return Promise.resolve(buffered);
   }
-  const promise2 = new Promise((resolve3, reject) => {
+  const promise2 = new Promise((resolve4, reject) => {
     const chunks = [];
     let settled = false;
     const finish = (callback) => {
@@ -51370,7 +48051,7 @@ var readBodyDirect = (request) => {
         else if (recovered === void 0) reject(error51 ?? normalizeAbortError(request, incoming));
         else {
           request[bodyBufferKey] = recovered;
-          resolve3(recovered);
+          resolve4(recovered);
         }
       });
       return true;
@@ -51382,7 +48063,7 @@ var readBodyDirect = (request) => {
       finish(() => {
         const buffer = chunks.length === 1 ? chunks[0] : Buffer.concat(chunks);
         request[bodyBufferKey] = buffer;
-        resolve3(buffer);
+        resolve4(buffer);
       });
     };
     const onError = (error51) => {
@@ -51929,7 +48610,7 @@ var responseViaResponseObject = async (res, outgoing, options = {}) => {
         });
         if (!chunk) {
           if (i === 1) {
-            await new Promise((resolve3) => setTimeout(resolve3));
+            await new Promise((resolve4) => setTimeout(resolve4));
             maxReadCount = 3;
             continue;
           }
@@ -52664,9 +49345,9 @@ data:
       const initRequest = messages.find((m2) => isInitializeRequest(m2));
       const clientProtocolVersion = initRequest ? initRequest.params.protocolVersion : req.headers.get("mcp-protocol-version") ?? DEFAULT_NEGOTIATED_PROTOCOL_VERSION;
       if (this._enableJsonResponse) {
-        return new Promise((resolve3) => {
+        return new Promise((resolve4) => {
           this._streamMapping.set(streamId, {
-            resolveJson: resolve3,
+            resolveJson: resolve4,
             cleanup: () => {
               this._streamMapping.delete(streamId);
             }
@@ -53096,7 +49777,7 @@ function browserPanel({ template = PAGE, always = false } = {}) {
   };
 }
 async function startPanelPage(connections, host, page = PAGE) {
-  const template = await readFile11(page, "utf8");
+  const template = await readFile14(page, "utf8");
   const html = template.replace("<html", `<html data-telemetry-host="${host}"`);
   const entropy = randomBytes10(24);
   const token = entropy.toString("base64url");
@@ -53110,11 +49791,11 @@ async function startPanelPage(connections, host, page = PAGE) {
       else reply(response3, 500);
     });
   });
-  await new Promise((resolve3, reject) => {
+  await new Promise((resolve4, reject) => {
     http.once("error", reject);
     http.listen(0, "127.0.0.1", () => {
       http.off("error", reject);
-      resolve3();
+      resolve4();
     });
   });
   const { port: port2 } = http.address();
@@ -53190,23 +49871,23 @@ async function startPanelPage(connections, host, page = PAGE) {
       }
       return;
     }
-    const transport2 = new StreamableHTTPServerTransport({
+    const transport = new StreamableHTTPServerTransport({
       // Per-request SSE supports associated server requests and releases completed streams.
-      sessionIdGenerator: randomUUID6,
+      sessionIdGenerator: randomUUID9,
       onsessioninitialized: (id2) => {
-        sessions.set(id2, { transport: transport2, touched: Date.now(), requests: 0 });
+        sessions.set(id2, { transport, touched: Date.now(), requests: 0 });
         recordBrowserPanelSessions(sessions.size);
       }
     });
-    transport2.onclose = () => {
-      if (transport2.sessionId === void 0) return;
-      if (sessions.delete(transport2.sessionId)) recordBrowserPanelSessions(sessions.size);
+    transport.onclose = () => {
+      if (transport.sessionId === void 0) return;
+      if (sessions.delete(transport.sessionId)) recordBrowserPanelSessions(sessions.size);
     };
-    await connections.attach(transport2);
+    await connections.attach(transport);
     try {
-      await transport2.handleRequest(request, response3);
+      await transport.handleRequest(request, response3);
     } finally {
-      if (transport2.sessionId === void 0) await transport2.close();
+      if (transport.sessionId === void 0) await transport.close();
     }
   }
   return {
@@ -53230,7 +49911,7 @@ async function startPanelPage(connections, host, page = PAGE) {
     async close() {
       closing = true;
       clearInterval(expiry);
-      const stopped = new Promise((resolve3) => http.close(() => resolve3()));
+      const stopped = new Promise((resolve4) => http.close(() => resolve4()));
       const connectionsClosing = Array.from(sessions.values(), (session) => session.transport.close());
       await Promise.allSettled(connectionsClosing);
       http.closeAllConnections();
@@ -53240,10 +49921,10 @@ async function startPanelPage(connections, host, page = PAGE) {
 }
 async function readBody(request, limit) {
   const chunks = [];
-  let size2 = 0;
+  let size = 0;
   for await (const chunk of request) {
-    size2 += chunk.byteLength;
-    if (size2 > limit) return void 0;
+    size += chunk.byteLength;
+    if (size > limit) return void 0;
     chunks.push(chunk);
   }
   return Buffer.concat(chunks);
@@ -53254,7 +49935,7 @@ function reply(response3, status, headers = {}) {
 }
 
 // apps/claude/server/server.ts
-var pinned = await readFile12(new URL("./panel-runtime.json", import.meta.url), "utf8").catch(() => void 0);
+var pinned = await readFile15(new URL("./panel-runtime.json", import.meta.url), "utf8").catch(() => void 0);
 if (pinned !== void 0) usePanelRuntime(downloadedPanelRuntime(panelRuntimeReleaseSchema.parse(JSON.parse(pinned))));
 await runStdioServer({ panel: createPanel({ inline: false }), features: [agentDeviceTools(readAgentDeviceCatalog()), browserPanel({ always: true })] });
 /*! Bundled license information:
@@ -53267,4 +49948,4 @@ content-type/index.js:
    *)
 */
 
-//# debugId=85756418-9ad6-5be1-b7d4-2aec5a973860
+//# debugId=6f0f4229-6caf-5a18-a258-46a4f667dd8b
