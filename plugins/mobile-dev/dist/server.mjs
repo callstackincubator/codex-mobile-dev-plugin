@@ -1,5 +1,5 @@
 
-!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="5fa6f1b3-4e8b-5b1e-b6ee-9de657186df8")}catch(e){}}();
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="6bbb041b-85ed-5d2d-8741-cc655002aa17")}catch(e){}}();
 ;(function(){var g=globalThis.__SENTRY_ORCHESTRION__=globalThis.__SENTRY_ORCHESTRION__||{};g.bundler=g.bundler||new Set();})();import { createRequire as mobileDevBundleRequire } from 'node:module'; import { fileURLToPath as mobileDevFileURLToPath } from 'node:url'; import { dirname as mobileDevPathDirname } from 'node:path'; const require = mobileDevBundleRequire(import.meta.url); const __filename = mobileDevFileURLToPath(import.meta.url); const __dirname = mobileDevPathDirname(__filename);
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -2321,7 +2321,7 @@ var require_constants2 = __commonJS({
       /** @type {const} */
       ["omit", "same-origin", "include"]
     );
-    var requestCache = (
+    var requestCache2 = (
       /** @type {const} */
       [
         "default",
@@ -2383,7 +2383,7 @@ var require_constants2 = __commonJS({
       requestRedirect,
       requestMode,
       requestCredentials,
-      requestCache,
+      requestCache: requestCache2,
       redirectStatus,
       corsSafeListedMethods,
       nullBodyStatus,
@@ -2441,7 +2441,7 @@ var require_global = __commonJS({
 var require_encoding = __commonJS({
   "node_modules/undici/lib/encoding/index.js"(exports, module2) {
     "use strict";
-    var textDecoder2 = new TextDecoder();
+    var textDecoder3 = new TextDecoder();
     function utf8DecodeBytes(buffer) {
       if (buffer.length === 0) {
         return "";
@@ -2449,7 +2449,7 @@ var require_encoding = __commonJS({
       if (buffer[0] === 239 && buffer[1] === 187 && buffer[2] === 191) {
         buffer = buffer.subarray(3);
       }
-      const output2 = textDecoder2.decode(buffer);
+      const output2 = textDecoder3.decode(buffer);
       return output2;
     }
     module2.exports = {
@@ -5943,11 +5943,11 @@ var require_simd = __commonJS({
       )
     );
     var textEncoder = new TextEncoder();
-    var textDecoder2 = new TextDecoder();
+    var textDecoder3 = new TextDecoder();
     function log6(logger, raw) {
       const len = Number(BigInt.asUintN(32, raw));
       const ptr = Number(raw >> 32n);
-      logger(textDecoder2.decode(new Uint8Array(this.memory.buffer, ptr, len)));
+      logger(textDecoder3.decode(new Uint8Array(this.memory.buffer, ptr, len)));
     }
     function alloc(len) {
       return this.alloc(len) >>> 0;
@@ -6478,7 +6478,7 @@ var require_simd = __commonJS({
       const raw = this.get_error_description_raw(parser);
       const len = Number(BigInt.asUintN(32, raw));
       const ptr = Number(raw >> 32n);
-      return textDecoder2.decode(new Uint8Array(this.memory.buffer, ptr, len));
+      return textDecoder3.decode(new Uint8Array(this.memory.buffer, ptr, len));
     }
     function setShouldAutodetect(parser, value) {
       this.set_should_autodetect(parser, value);
@@ -6875,11 +6875,11 @@ var require_no_simd = __commonJS({
       )
     );
     var textEncoder = new TextEncoder();
-    var textDecoder2 = new TextDecoder();
+    var textDecoder3 = new TextDecoder();
     function log6(logger, raw) {
       const len = Number(BigInt.asUintN(32, raw));
       const ptr = Number(raw >> 32n);
-      logger(textDecoder2.decode(new Uint8Array(this.memory.buffer, ptr, len)));
+      logger(textDecoder3.decode(new Uint8Array(this.memory.buffer, ptr, len)));
     }
     function alloc(len) {
       return this.alloc(len) >>> 0;
@@ -7410,7 +7410,7 @@ var require_no_simd = __commonJS({
       const raw = this.get_error_description_raw(parser);
       const len = Number(BigInt.asUintN(32, raw));
       const ptr = Number(raw >> 32n);
-      return textDecoder2.decode(new Uint8Array(this.memory.buffer, ptr, len));
+      return textDecoder3.decode(new Uint8Array(this.memory.buffer, ptr, len));
     }
     function setShouldAutodetect(parser, value) {
       this.set_should_autodetect(parser, value);
@@ -8707,7 +8707,7 @@ var require_formdata_parser = __commonJS({
         }
         position.position += 2;
         const result4 = parseMultipartFormDataHeaders(input2, position);
-        let { name: name2, filename, contentType, encoding } = result4;
+        let { name: name2, filename, contentType: contentType3, encoding } = result4;
         position.position += 2;
         let body;
         {
@@ -8728,11 +8728,11 @@ var require_formdata_parser = __commonJS({
         }
         let value;
         if (filename !== null) {
-          contentType ??= "text/plain";
-          if (!isAsciiString(contentType)) {
-            contentType = "";
+          contentType3 ??= "text/plain";
+          if (!isAsciiString(contentType3)) {
+            contentType3 = "";
           }
-          value = new File([body], filename, { type: contentType });
+          value = new File([body], filename, { type: contentType3 });
         } else {
           value = decoderIgnoreBOM.decode(Buffer.from(body));
         }
@@ -8821,14 +8821,14 @@ var require_formdata_parser = __commonJS({
     function parseMultipartFormDataHeaders(input2, position) {
       let name2 = null;
       let filename = null;
-      let contentType = null;
+      let contentType3 = null;
       let encoding = null;
       while (true) {
         if (input2[position.position] === 13 && input2[position.position + 1] === 10) {
           if (name2 === null) {
             throw parsingError("header name is null");
           }
-          return { name: name2, filename, contentType, encoding };
+          return { name: name2, filename, contentType: contentType3, encoding };
         }
         let headerName = collectASequenceOfBytes(
           (char) => char !== 10 && char !== 13 && char !== 58,
@@ -8888,7 +8888,7 @@ var require_formdata_parser = __commonJS({
               position
             );
             headerValue = removeChars(headerValue, false, true, (char) => char === 9 || char === 32);
-            contentType = isomorphicDecode(headerValue);
+            contentType3 = isomorphicDecode(headerValue);
             break;
           }
           case "content-transfer-encoding": {
@@ -9347,7 +9347,7 @@ var require_client_h1 = __commonJS({
       kClosed,
       kUseMilo
     } = require_symbols();
-    var constants6 = require_constants3();
+    var constants7 = require_constants3();
     var { H1Parser, getMiloEnabled } = typeof esbuildDetection === "undefined" ? require_parser_h1() : {};
     var EMPTY_BUF = Buffer.alloc(0);
     var FastBuffer = Buffer[Symbol.species];
@@ -9488,7 +9488,7 @@ var require_client_h1 = __commonJS({
        */
       constructor(client2, socket, { exports: exports2 }) {
         this.llhttp = exports2;
-        this.ptr = this.llhttp.llhttp_alloc(constants6.TYPE.RESPONSE);
+        this.ptr = this.llhttp.llhttp_alloc(constants7.TYPE.RESPONSE);
         this.client = client2;
         this.socket = socket;
         this.timeout = null;
@@ -9588,11 +9588,11 @@ var require_client_h1 = __commonJS({
             currentParser = null;
             currentBufferRef = null;
           }
-          if (ret !== constants6.ERROR.OK) {
+          if (ret !== constants7.ERROR.OK) {
             const data = chunk.subarray(llhttp.llhttp_get_error_pos(this.ptr) - currentBufferPtr);
-            if (ret === constants6.ERROR.PAUSED_UPGRADE) {
+            if (ret === constants7.ERROR.PAUSED_UPGRADE) {
               this.onUpgrade(data);
-            } else if (ret === constants6.ERROR.PAUSED) {
+            } else if (ret === constants7.ERROR.PAUSED) {
               this.paused = true;
               socket.unshift(data);
             } else {
@@ -9627,10 +9627,10 @@ var require_client_h1 = __commonJS({
         } finally {
           currentParser = null;
         }
-        if (ret === constants6.ERROR.OK) {
+        if (ret === constants7.ERROR.OK) {
           return null;
         }
-        if (ret === constants6.ERROR.PAUSED || ret === constants6.ERROR.PAUSED_UPGRADE) {
+        if (ret === constants7.ERROR.PAUSED || ret === constants7.ERROR.PAUSED_UPGRADE) {
           this.paused = true;
           return null;
         }
@@ -9647,7 +9647,7 @@ var require_client_h1 = __commonJS({
           const len = new Uint8Array(llhttp.memory.buffer, ptr).indexOf(0);
           message3 = "Response does not match the HTTP/1.1 protocol (" + Buffer.from(llhttp.memory.buffer, ptr, len).toString() + ")";
         }
-        return new HTTPParserError(message3, constants6.ERROR[ret], data);
+        return new HTTPParserError(message3, constants7.ERROR[ret], data);
       }
       destroy() {
         assert3(currentParser === null);
@@ -9869,7 +9869,7 @@ var require_client_h1 = __commonJS({
           socket[kBlocking] = false;
           client2[kResume]();
         }
-        return pause ? constants6.ERROR.PAUSED : 0;
+        return pause ? constants7.ERROR.PAUSED : 0;
       }
       /**
        * @param {Buffer} buf
@@ -9895,7 +9895,7 @@ var require_client_h1 = __commonJS({
         }
         this.bytesRead += buf.length;
         if (request2.onResponseData(buf) === false) {
-          return constants6.ERROR.PAUSED;
+          return constants7.ERROR.PAUSED;
         }
         return 0;
       }
@@ -9936,13 +9936,13 @@ var require_client_h1 = __commonJS({
         if (socket[kWriting]) {
           assert3(client2[kRunning] === 0);
           util3.destroy(socket, new InformationalError("reset"));
-          return constants6.ERROR.PAUSED;
+          return constants7.ERROR.PAUSED;
         } else if (!shouldKeepAlive) {
           util3.destroy(socket, new InformationalError("reset"));
-          return constants6.ERROR.PAUSED;
+          return constants7.ERROR.PAUSED;
         } else if (socket[kReset] && client2[kRunning] === 0) {
           util3.destroy(socket, new InformationalError("reset"));
-          return constants6.ERROR.PAUSED;
+          return constants7.ERROR.PAUSED;
         } else if (client2[kPipelining] == null || client2[kPipelining] === 1) {
           setImmediate(client2[kResume]);
         } else {
@@ -10202,16 +10202,16 @@ var require_client_h1 = __commonJS({
         if (!extractBody) {
           extractBody = require_body().extractBody;
         }
-        const [bodyStream, contentType] = extractBody(body);
+        const [bodyStream, contentType3] = extractBody(body);
         if (request2.contentType == null) {
-          headers.push("content-type", contentType);
+          headers.push("content-type", contentType3);
         }
         body = bodyStream.stream;
         contentLength = bodyStream.length;
       } else if (util3.isBlobLike(body) && request2.contentType == null) {
-        const contentType = body.type;
-        if (contentType) {
-          const contentTypeValue = `${contentType}`;
+        const contentType3 = body.type;
+        if (contentType3) {
+          const contentTypeValue = `${contentType3}`;
           if (!util3.isValidHeaderValue(contentTypeValue)) {
             util3.errorRequest(client2, request2, new InvalidArgumentError("invalid content-type header"));
             return false;
@@ -11490,8 +11490,8 @@ var require_client_h2 = __commonJS({
       let contentLength = util3.bodyLength(body);
       if (util3.isFormDataLike(body)) {
         extractBody ??= require_body().extractBody;
-        const [bodyStream, contentType] = extractBody(body);
-        headers["content-type"] = contentType;
+        const [bodyStream, contentType3] = extractBody(body);
+        headers["content-type"] = contentType3;
         body = bodyStream.stream;
         contentLength = bodyStream.length;
       }
@@ -13990,7 +13990,7 @@ var require_socks5_client = __commonJS({
           return;
         }
         const version5 = this.buffer[0];
-        const reply = this.buffer[1];
+        const reply2 = this.buffer[1];
         const addressType = this.buffer[3];
         if (version5 !== SOCKS_VERSION) {
           throw new Socks5ProxyError(`Invalid SOCKS version in reply: ${version5}`, "UND_ERR_SOCKS5_REPLY_VERSION");
@@ -14011,9 +14011,9 @@ var require_socks5_client = __commonJS({
         if (this.buffer.length < responseLength) {
           return;
         }
-        if (reply !== REPLY_CODES.SUCCEEDED) {
-          const errorMessage2 = this.getReplyErrorMessage(reply);
-          throw new Socks5ProxyError(`SOCKS5 connection failed: ${errorMessage2}`, `UND_ERR_SOCKS5_REPLY_${reply}`);
+        if (reply2 !== REPLY_CODES.SUCCEEDED) {
+          const errorMessage2 = this.getReplyErrorMessage(reply2);
+          throw new Socks5ProxyError(`SOCKS5 connection failed: ${errorMessage2}`, `UND_ERR_SOCKS5_REPLY_${reply2}`);
         }
         let boundAddress;
         let offset = 4;
@@ -14044,8 +14044,8 @@ var require_socks5_client = __commonJS({
       /**
        * Get human-readable error message for reply code
        */
-      getReplyErrorMessage(reply) {
-        switch (reply) {
+      getReplyErrorMessage(reply2) {
+        switch (reply2) {
           case REPLY_CODES.GENERAL_FAILURE:
             return "General SOCKS server failure";
           case REPLY_CODES.CONNECTION_NOT_ALLOWED:
@@ -14063,7 +14063,7 @@ var require_socks5_client = __commonJS({
           case REPLY_CODES.ADDRESS_TYPE_NOT_SUPPORTED:
             return "Address type not supported";
           default:
-            return `Unknown error code: ${reply}`;
+            return `Unknown error code: ${reply2}`;
         }
       }
     };
@@ -15435,7 +15435,7 @@ var require_readable = __commonJS({
     "use strict";
     var assert3 = __require("node:assert");
     var { addAbortListener } = __require("node:events");
-    var { Readable: Readable2 } = __require("node:stream");
+    var { Readable: Readable3 } = __require("node:stream");
     var { RequestAbortedError, NotSupportedError, InvalidArgumentError, AbortError } = require_errors();
     var util3 = require_util();
     var kConsume = /* @__PURE__ */ Symbol("kConsume");
@@ -15448,7 +15448,7 @@ var require_readable = __commonJS({
     var kBytesRead = /* @__PURE__ */ Symbol("kBytesRead");
     var noop = () => {
     };
-    var BodyReadable = class extends Readable2 {
+    var BodyReadable = class extends Readable3 {
       /**
        * @param {object} opts
        * @param {(this: Readable, size: number) => void} opts.resume
@@ -15460,7 +15460,7 @@ var require_readable = __commonJS({
       constructor({
         resume: resume2,
         abort,
-        contentType = "",
+        contentType: contentType3 = "",
         contentLength,
         highWaterMark = 64 * 1024
         // Same as nodejs fs streams.
@@ -15476,7 +15476,7 @@ var require_readable = __commonJS({
         this[kBytesRead] = 0;
         this[kBody] = null;
         this[kUsed] = false;
-        this[kContentType] = contentType;
+        this[kContentType] = contentType3;
         this[kContentLength] = Number.isFinite(contentLength) ? contentLength : null;
         this[kReading] = false;
       }
@@ -15847,7 +15847,7 @@ var require_api_request = __commonJS({
     "use strict";
     var assert3 = __require("node:assert");
     var { AsyncResource } = __require("node:async_hooks");
-    var { Readable: Readable2 } = require_readable();
+    var { Readable: Readable3 } = require_readable();
     var { InvalidArgumentError, RequestAbortedError } = require_errors();
     var util3 = require_util();
     function noop() {
@@ -15931,12 +15931,12 @@ var require_api_request = __commonJS({
           return;
         }
         const parsedHeaders = headers;
-        const contentType = parsedHeaders?.["content-type"];
+        const contentType3 = parsedHeaders?.["content-type"];
         const contentLength = parsedHeaders?.["content-length"];
-        const res = new Readable2({
+        const res = new Readable3({
           resume: () => controller.resume(),
           abort: (reason) => controller.abort(reason),
-          contentType,
+          contentType: contentType3,
           contentLength: this.method !== "HEAD" && contentLength ? Number(contentLength) : null,
           highWaterMark
         });
@@ -16309,7 +16309,7 @@ var require_api_pipeline = __commonJS({
   "node_modules/undici/lib/api/api-pipeline.js"(exports, module2) {
     "use strict";
     var {
-      Readable: Readable2,
+      Readable: Readable3,
       Duplex,
       PassThrough: PassThrough2
     } = __require("node:stream");
@@ -16326,7 +16326,7 @@ var require_api_pipeline = __commonJS({
     function noop() {
     }
     var kResume = /* @__PURE__ */ Symbol("resume");
-    var PipelineRequest = class extends Readable2 {
+    var PipelineRequest = class extends Readable3 {
       constructor() {
         super({ autoDestroy: true });
         this[kResume] = null;
@@ -16344,7 +16344,7 @@ var require_api_pipeline = __commonJS({
         callback(err);
       }
     };
-    var PipelineResponse = class extends Readable2 {
+    var PipelineResponse = class extends Readable3 {
       constructor(resume2) {
         super({ autoDestroy: true });
         this[kResume] = resume2;
@@ -16792,10 +16792,10 @@ var require_mock_utils = __commonJS({
       kTotalDispatchCount
     } = require_mock_symbols();
     var { serializePathWithQuery, parseHeaders } = require_util();
-    var { STATUS_CODES } = __require("node:http");
+    var { STATUS_CODES: STATUS_CODES2 } = __require("node:http");
     var {
       types: {
-        isPromise: isPromise2
+        isPromise: isPromise3
       }
     } = __require("node:util");
     var { InvalidArgumentError } = require_errors();
@@ -17006,7 +17006,7 @@ var require_mock_utils = __commonJS({
       return result4;
     }
     function getStatusText(statusCode) {
-      return STATUS_CODES[statusCode] || "unknown";
+      return STATUS_CODES2[statusCode] || "unknown";
     }
     async function getResponse(body) {
       const buffers = [];
@@ -17027,7 +17027,7 @@ var require_mock_utils = __commonJS({
       if (mockDispatch2.data.callback && (!hasBodyHooks || opts.body == null)) {
         const { callback, ...responseDefaults } = mockDispatch2.data;
         const callbackResult = callback(opts);
-        if (isPromise2(callbackResult)) {
+        if (isPromise3(callbackResult)) {
           callbackResult.then(
             (resolvedData) => {
               if (resolvedData == null || typeof resolvedData !== "object") {
@@ -17088,7 +17088,7 @@ var require_mock_utils = __commonJS({
         return true;
       }
       const requestBody = dispatchRequestBody(opts.body, handler, controller, () => aborted4);
-      if (isPromise2(requestBody)) {
+      if (isPromise3(requestBody)) {
         requestBody.then((body) => {
           if (body === requestAborted) {
             return;
@@ -17118,7 +17118,7 @@ var require_mock_utils = __commonJS({
             handler.onResponseError(null, err);
             return;
           }
-          if (isPromise2(callbackResult)) {
+          if (isPromise3(callbackResult)) {
             callbackResult.then(
               (resolvedData) => {
                 if (resolvedData == null || typeof resolvedData !== "object") {
@@ -17155,7 +17155,7 @@ var require_mock_utils = __commonJS({
         const { statusCode, data, headers, trailers } = _response;
         const optsHeaders = Array.isArray(opts.headers) ? buildHeadersFromArray(opts.headers) : opts.headers;
         const body = typeof data === "function" ? data({ ...replyOpts, headers: optsHeaders }) : data;
-        if (isPromise2(body)) {
+        if (isPromise3(body)) {
           return body.then((newData) => handleReply(mockDispatches2, { ..._response, data: newData }));
         }
         if (aborted4) {
@@ -17347,7 +17347,7 @@ var require_mock_interceptor = __commonJS({
     var { serializePathWithQuery } = require_util();
     var {
       types: {
-        isPromise: isPromise2
+        isPromise: isPromise3
       }
     } = __require("node:util");
     var MockScope = class {
@@ -17443,7 +17443,7 @@ var require_mock_interceptor = __commonJS({
           };
           const wrappedDefaultsCallback = (opts) => {
             const resolvedData = replyOptionsCallbackOrStatusCode(opts);
-            if (isPromise2(resolvedData)) {
+            if (isPromise3(resolvedData)) {
               return resolvedData.then(resolveReplyCallbackData);
             }
             return resolveReplyCallbackData(resolvedData);
@@ -18083,8 +18083,8 @@ var require_snapshot_utils = __commonJS({
         match: new Set(matchHeaders.map((header) => caseSensitive ? header : header.toLowerCase()))
       };
     }
-    var crypto = runtimeFeatures.has("crypto") ? __require("node:crypto") : null;
-    var hashId = crypto?.hash ? (value) => crypto.hash("sha256", value, "base64url") : (value) => Buffer.from(value).toString("base64url");
+    var crypto2 = runtimeFeatures.has("crypto") ? __require("node:crypto") : null;
+    var hashId = crypto2?.hash ? (value) => crypto2.hash("sha256", value, "base64url") : (value) => Buffer.from(value).toString("base64url");
     function isUndiciHeaders(headers) {
       return Array.isArray(headers) && (headers.length & 1) === 0;
     }
@@ -18159,7 +18159,7 @@ var require_snapshot_utils = __commonJS({
 var require_snapshot_recorder = __commonJS({
   "node_modules/undici/lib/mock/snapshot-recorder.js"(exports, module2) {
     "use strict";
-    var { writeFile: writeFile16, readFile: readFile22, mkdir: mkdir12 } = __require("node:fs/promises");
+    var { writeFile: writeFile16, readFile: readFile23, mkdir: mkdir12 } = __require("node:fs/promises");
     var { dirname: dirname16, resolve: resolve8 } = __require("node:path");
     var { setTimeout: setTimeout2, clearTimeout: clearTimeout2 } = __require("node:timers");
     var { InvalidArgumentError, UndiciError } = require_errors();
@@ -18377,7 +18377,7 @@ var require_snapshot_recorder = __commonJS({
           throw new InvalidArgumentError("Snapshot path is required");
         }
         try {
-          const data = await readFile22(resolve8(path), "utf8");
+          const data = await readFile23(resolve8(path), "utf8");
           const parsed = JSON.parse(data);
           if (Array.isArray(parsed)) {
             this.#snapshots.clear();
@@ -19191,8 +19191,8 @@ var require_response_error = __commonJS({
         super(handler);
         this.#maxSize = maxSize;
       }
-      #checkContentType(contentType) {
-        return (this.#contentType ?? "").indexOf(contentType) === 0;
+      #checkContentType(contentType3) {
+        return (this.#contentType ?? "").indexOf(contentType3) === 0;
       }
       onRequestStart(controller, context3) {
         this.#statusCode = 0;
@@ -20357,18 +20357,18 @@ var require_cache = __commonJS({
         }
       }
     }
-    function makeDeduplicationKey(cacheKey, excludeHeaders) {
+    function makeDeduplicationKey(cacheKey2, excludeHeaders) {
       const headers = {};
-      if (cacheKey.headers) {
-        const sortedHeaders = Object.keys(cacheKey.headers).sort();
+      if (cacheKey2.headers) {
+        const sortedHeaders = Object.keys(cacheKey2.headers).sort();
         for (const header of sortedHeaders) {
           if (excludeHeaders?.has(header.toLowerCase())) {
             continue;
           }
-          setHeader(headers, header, cacheKey.headers[header]);
+          setHeader(headers, header, cacheKey2.headers[header]);
         }
       }
-      return JSON.stringify([cacheKey.origin, cacheKey.method, cacheKey.path, headers]);
+      return JSON.stringify([cacheKey2.origin, cacheKey2.method, cacheKey2.path, headers]);
     }
     module2.exports = {
       getInterceptorOrigin,
@@ -20995,7 +20995,7 @@ var require_cache_handler = __commonJS({
         }
       }
     }
-    function getSameOriginPath(cacheKey, location2) {
+    function getSameOriginPath(cacheKey2, location2) {
       if (typeof location2 !== "string") {
         return void 0;
       }
@@ -21003,8 +21003,8 @@ var require_cache_handler = __commonJS({
       let requestUrl;
       let locationUrl;
       try {
-        originUrl = new URL(cacheKey.origin);
-        requestUrl = new URL(cacheKey.path, originUrl);
+        originUrl = new URL(cacheKey2.origin);
+        requestUrl = new URL(cacheKey2.path, originUrl);
         locationUrl = new URL(location2, requestUrl);
       } catch {
         return void 0;
@@ -21014,38 +21014,38 @@ var require_cache_handler = __commonJS({
       }
       return locationUrl.pathname + locationUrl.search;
     }
-    function deleteCachedUri(store2, cacheKey, path) {
+    function deleteCachedUri(store2, cacheKey2, path) {
       deleteCachedValue(store2, {
-        ...cacheKey,
+        ...cacheKey2,
         path
       });
       for (let i2 = 0; i2 < util3.safeHTTPMethods.length; i2++) {
         const method2 = util3.safeHTTPMethods[i2];
-        if (method2 !== cacheKey.method) {
+        if (method2 !== cacheKey2.method) {
           deleteCachedValue(store2, {
-            ...cacheKey,
+            ...cacheKey2,
             method: method2,
             path
           });
         }
       }
     }
-    function deleteLocationTargets(store2, cacheKey, headerValue) {
+    function deleteLocationTargets(store2, cacheKey2, headerValue) {
       if (headerValue === void 0) {
         return;
       }
       const values = Array.isArray(headerValue) ? headerValue : [headerValue];
       for (let i2 = 0; i2 < values.length; i2++) {
-        const path = getSameOriginPath(cacheKey, values[i2]);
+        const path = getSameOriginPath(cacheKey2, values[i2]);
         if (path !== void 0) {
-          deleteCachedUri(store2, cacheKey, path);
+          deleteCachedUri(store2, cacheKey2, path);
         }
       }
     }
-    function invalidateUnsafeRequest(store2, cacheKey, resHeaders) {
-      deleteCachedUri(store2, cacheKey, cacheKey.path);
-      deleteLocationTargets(store2, cacheKey, resHeaders.location);
-      deleteLocationTargets(store2, cacheKey, resHeaders["content-location"]);
+    function invalidateUnsafeRequest(store2, cacheKey2, resHeaders) {
+      deleteCachedUri(store2, cacheKey2, cacheKey2.path);
+      deleteLocationTargets(store2, cacheKey2, resHeaders.location);
+      deleteLocationTargets(store2, cacheKey2, resHeaders["content-location"]);
     }
     var CacheHandler = class {
       /**
@@ -21081,11 +21081,11 @@ var require_cache_handler = __commonJS({
        * @param {import('../../types/cache-interceptor.d.ts').default.CacheKey} cacheKey
        * @param {import('../../types/dispatcher.d.ts').default.DispatchHandler} handler
        */
-      constructor({ store: store2, type, cacheByDefault }, cacheKey, handler) {
+      constructor({ store: store2, type, cacheByDefault }, cacheKey2, handler) {
         this.#store = store2;
         this.#cacheType = type;
         this.#cacheByDefault = cacheByDefault;
-        this.#cacheKey = cacheKey;
+        this.#cacheKey = cacheKey2;
         this.#handler = handler;
       }
       onRequestStart(controller, context3) {
@@ -21312,15 +21312,15 @@ var require_cache_handler = __commonJS({
         this.#handler.onResponseError?.(this.#downstreamController, err);
       }
     };
-    function deleteCachedValue(store2, cacheKey) {
+    function deleteCachedValue(store2, cacheKey2) {
       try {
-        store2.delete(cacheKey)?.catch?.(noop);
+        store2.delete(cacheKey2)?.catch?.(noop);
       } catch {
       }
     }
-    function deleteCachedValueIfNotModified(statusCode, store2, cacheKey) {
+    function deleteCachedValueIfNotModified(statusCode, store2, cacheKey2) {
       if (statusCode === 304) {
-        deleteCachedValue(store2, cacheKey);
+        deleteCachedValue(store2, cacheKey2);
       }
     }
     function revalidationResponseDisallowsCachedReuse(cacheType, resHeaders, cacheControlDirectives) {
@@ -21850,7 +21850,7 @@ var require_cache2 = __commonJS({
   "node_modules/undici/lib/interceptor/cache.js"(exports, module2) {
     "use strict";
     var assert3 = __require("node:assert");
-    var { Readable: Readable2 } = __require("node:stream");
+    var { Readable: Readable3 } = __require("node:stream");
     var util3 = require_util();
     var CacheHandler = require_cache_handler();
     var MemoryCacheStore = require_memory_cache_store();
@@ -21954,9 +21954,9 @@ var require_cache2 = __commonJS({
       }
       return false;
     }
-    function deleteCachedValue(store2, cacheKey) {
+    function deleteCachedValue(store2, cacheKey2) {
       try {
-        store2.delete(cacheKey)?.catch?.(nop);
+        store2.delete(cacheKey2)?.catch?.(nop);
       } catch {
       }
     }
@@ -22008,7 +22008,7 @@ var require_cache2 = __commonJS({
       const staleWhileRevalidateExpiry = result4.staleAt + staleWhileRevalidate * 1e3;
       return now <= staleWhileRevalidateExpiry;
     }
-    function handleUncachedResponse(dispatch, globalOpts, cacheKey, handler, opts, reqCacheControl) {
+    function handleUncachedResponse(dispatch, globalOpts, cacheKey2, handler, opts, reqCacheControl) {
       if (reqCacheControl?.["only-if-cached"]) {
         let aborted4 = false;
         const controller = {
@@ -22043,10 +22043,10 @@ var require_cache2 = __commonJS({
         }
         return true;
       }
-      return dispatch(opts, new CacheHandler(globalOpts, cacheKey, handler));
+      return dispatch(opts, new CacheHandler(globalOpts, cacheKey2, handler));
     }
     function sendCachedValue(handler, opts, result4, age, context3, isStale2) {
-      const stream = util3.isStream(result4.body) ? result4.body : Readable2.from(result4.body ?? []);
+      const stream = util3.isStream(result4.body) ? result4.body : Readable3.from(result4.body ?? []);
       assert3(!stream.destroyed, "stream should not be destroyed");
       assert3(!stream.readableDidRead, "stream should not be readableDidRead");
       let aborted4 = false;
@@ -22109,20 +22109,20 @@ var require_cache2 = __commonJS({
         });
       }
     }
-    function handleResult2(dispatch, globalOpts, cacheKey, handler, opts, reqCacheControl, result4) {
+    function handleResult2(dispatch, globalOpts, cacheKey2, handler, opts, reqCacheControl, result4) {
       if (!result4) {
-        return handleUncachedResponse(dispatch, globalOpts, cacheKey, handler, opts, reqCacheControl);
+        return handleUncachedResponse(dispatch, globalOpts, cacheKey2, handler, opts, reqCacheControl);
       }
       if (globalOpts.type === "shared" && Object.hasOwn(result4.headers, "set-cookie")) {
         if (util3.isStream(result4.body)) {
           result4.body.on("error", nop).destroy();
         }
-        deleteCachedValue(globalOpts.store, cacheKey);
-        return handleUncachedResponse(dispatch, globalOpts, cacheKey, handler, opts, reqCacheControl);
+        deleteCachedValue(globalOpts.store, cacheKey2);
+        return handleUncachedResponse(dispatch, globalOpts, cacheKey2, handler, opts, reqCacheControl);
       }
       const now = Date.now();
       if (now > result4.deleteAt) {
-        return dispatch(opts, new CacheHandler(globalOpts, cacheKey, handler));
+        return dispatch(opts, new CacheHandler(globalOpts, cacheKey2, handler));
       }
       const age = Math.round((now - result4.cachedAt) / 1e3);
       const requestMaxAgeExpired = reqCacheControl?.["max-age"] !== void 0 && age >= reqCacheControl["max-age"];
@@ -22130,7 +22130,7 @@ var require_cache2 = __commonJS({
       const revalidate = requestMaxAgeExpired || needsRevalidation(result4, reqCacheControl, opts);
       if (stale || revalidate) {
         if (util3.isStream(opts.body) && util3.bodyLength(opts.body) !== 0) {
-          return dispatch(opts, new CacheHandler(globalOpts, cacheKey, handler));
+          return dispatch(opts, new CacheHandler(globalOpts, cacheKey2, handler));
         }
         if (!revalidate && withinStaleWhileRevalidateWindow(result4, globalOpts.type)) {
           sendCachedValue(handler, opts, result4, age, null, true);
@@ -22141,7 +22141,7 @@ var require_cache2 = __commonJS({
                 ...opts,
                 headers: headers2
               },
-              new CacheHandler(globalOpts, cacheKey, {
+              new CacheHandler(globalOpts, cacheKey2, {
                 // Silent handler that just updates the cache
                 onRequestStart() {
                 },
@@ -22181,17 +22181,17 @@ var require_cache2 = __commonJS({
                     if (util3.isStream(result4.body)) {
                       result4.body.on("error", nop).destroy();
                     }
-                    deleteCachedValue(globalOpts.store, cacheKey);
-                    return dispatch(opts, new CacheHandler(globalOpts, cacheKey, handler));
+                    deleteCachedValue(globalOpts.store, cacheKey2);
+                    return dispatch(opts, new CacheHandler(globalOpts, cacheKey2, handler));
                   }
                   if (revalidationResponseUpdatesCacheControl(headers2)) {
-                    deleteCachedValue(globalOpts.store, cacheKey);
+                    deleteCachedValue(globalOpts.store, cacheKey2);
                   } else if (revalidationResponseAddsVary(result4, headers2.vary ? parseVaryHeader(headers2.vary, opts.headers) : void 0)) {
                     if (util3.isStream(result4.body)) {
                       result4.body.on("error", nop).destroy();
                     }
-                    deleteCachedValue(globalOpts.store, cacheKey);
-                    return dispatch(opts, new CacheHandler(globalOpts, cacheKey, handler));
+                    deleteCachedValue(globalOpts.store, cacheKey2);
+                    return dispatch(opts, new CacheHandler(globalOpts, cacheKey2, handler));
                   }
                 }
                 sendCachedValue(handler, opts, result4, age, context3, stale);
@@ -22199,7 +22199,7 @@ var require_cache2 = __commonJS({
                 result4.body.on("error", nop).destroy();
               }
             },
-            new CacheHandler(globalOpts, cacheKey, handler),
+            new CacheHandler(globalOpts, cacheKey2, handler),
             withinStaleIfErrorThreshold
           )
         );
@@ -22275,16 +22275,16 @@ var require_cache2 = __commonJS({
           if (reqCacheControl?.["no-store"]) {
             return dispatch(opts2, handler);
           }
-          const cacheKey = makeCacheKey(opts2, requestOrigin);
+          const cacheKey2 = makeCacheKey(opts2, requestOrigin);
           if (!arrayIncludes(util3.safeHTTPMethods, opts2.method)) {
-            return dispatch(opts2, new CacheHandler(globalOpts, cacheKey, handler));
+            return dispatch(opts2, new CacheHandler(globalOpts, cacheKey2, handler));
           }
-          const result4 = store2.get(cacheKey);
+          const result4 = store2.get(cacheKey2);
           if (result4 && typeof result4.then === "function") {
             return result4.then((result5) => handleResult2(
               dispatch,
               globalOpts,
-              cacheKey,
+              cacheKey2,
               handler,
               opts2,
               reqCacheControl,
@@ -22294,7 +22294,7 @@ var require_cache2 = __commonJS({
             return handleResult2(
               dispatch,
               globalOpts,
-              cacheKey,
+              cacheKey2,
               handler,
               opts2,
               reqCacheControl,
@@ -22311,7 +22311,7 @@ var require_cache2 = __commonJS({
 var require_decompress = __commonJS({
   "node_modules/undici/lib/interceptor/decompress.js"(exports, module2) {
     "use strict";
-    var { createInflate, createGunzip, createBrotliDecompress, createZstdDecompress, constants: constants6 } = __require("node:zlib");
+    var { createInflate, createGunzip, createBrotliDecompress, createZstdDecompress, constants: constants7 } = __require("node:zlib");
     var { pipeline, Transform: TransformStream2 } = __require("node:stream");
     var { InvalidArgumentError, ResponseExceededMaxSizeError } = require_errors();
     var DecoratorHandler = require_decorator_handler();
@@ -22377,7 +22377,7 @@ var require_decompress = __commonJS({
       br: createBrotliDecompress,
       deflate: createInflate,
       // https://www.rfc-editor.org/rfc/rfc9659.html#section-3
-      zstd: createZstdDecompress.bind(null, { params: { [constants6.ZSTD_d_windowLogMax]: 23 } })
+      zstd: createZstdDecompress.bind(null, { params: { [constants7.ZSTD_d_windowLogMax]: 23 } })
     };
     var defaultSkipStatusCodes = (
       /** @type {const} */
@@ -23217,8 +23217,8 @@ var require_deduplicate = __commonJS({
               }
             }
           }
-          const cacheKey = makeCacheKey(opts2, requestOrigin);
-          const dedupeKey = makeDeduplicationKey(cacheKey, excludeHeaderNamesSet);
+          const cacheKey2 = makeCacheKey(opts2, requestOrigin);
+          const dedupeKey = makeDeduplicationKey(cacheKey2, excludeHeaderNamesSet);
           const pendingHandler = pendingRequests.get(dedupeKey);
           if (pendingHandler) {
             if (pendingHandler.addWaitingHandler(handler)) {
@@ -23647,11 +23647,11 @@ var require_sqlite_cache_store = __commonJS({
       }
       return void 0;
     }
-    function isCompressibleContentType(contentType) {
-      if (contentType == null) {
+    function isCompressibleContentType(contentType3) {
+      if (contentType3 == null) {
         return false;
       }
-      const type = contentType.toLowerCase();
+      const type = contentType3.toLowerCase();
       return /^text\//.test(type) || /^application\/(json|xml|javascript|x-www-form-urlencoded|graphql)(\s|;|$)/.test(type) || /\+(json|xml)(\s|;|$)/.test(type);
     }
   }
@@ -23926,7 +23926,7 @@ var require_headers = __commonJS({
     var setHeadersGuard;
     var getHeadersList;
     var setHeadersList;
-    var Headers = class {
+    var Headers2 = class {
       #guard;
       /**
        * @type {HeadersList}
@@ -24061,8 +24061,8 @@ var require_headers = __commonJS({
         };
       }
     };
-    iteratorMixin("Headers", Headers, headersListSortAndCombine, 0, 1, webidl.is.Headers);
-    Object.defineProperties(Headers.prototype, {
+    iteratorMixin("Headers", Headers2, headersListSortAndCombine, 0, 1, webidl.is.Headers);
+    Object.defineProperties(Headers2.prototype, {
       append: kEnumerableProperty,
       delete: kEnumerableProperty,
       get: kEnumerableProperty,
@@ -24080,7 +24080,7 @@ var require_headers = __commonJS({
     webidl.converters.HeadersInit = function(V, prefix3, argument) {
       if (webidl.util.Type(V) === webidl.util.Types.OBJECT) {
         const iterator = Reflect.get(V, Symbol.iterator);
-        if (!util3.types.isProxy(V) && iterator === Headers.prototype.entries) {
+        if (!util3.types.isProxy(V) && iterator === Headers2.prototype.entries) {
           try {
             return getHeadersList(V).entriesList;
           } catch {
@@ -24101,7 +24101,7 @@ var require_headers = __commonJS({
       fill: fill2,
       // for test.
       compareHeaderName,
-      Headers,
+      Headers: Headers2,
       HeadersList,
       getHeadersGuard,
       setHeadersGuard,
@@ -24115,7 +24115,7 @@ var require_headers = __commonJS({
 var require_response = __commonJS({
   "node_modules/undici/lib/web/fetch/response.js"(exports, module2) {
     "use strict";
-    var { Headers, HeadersList, fill: fill2, getHeadersGuard, setHeadersGuard, setHeadersList } = require_headers();
+    var { Headers: Headers2, HeadersList, fill: fill2, getHeadersGuard, setHeadersGuard, setHeadersList } = require_headers();
     var { extractBody, cloneBody, mixinBody, streamRegistry, bodyUnusable } = require_body();
     var util3 = require_util();
     var nodeUtil = __require("node:util");
@@ -24193,7 +24193,7 @@ var require_response = __commonJS({
         }
         init2 = webidl.converters.ResponseInit(init2);
         this.#state = makeResponse({});
-        this.#headers = new Headers(kConstruct);
+        this.#headers = new Headers2(kConstruct);
         setHeadersGuard(this.#headers, "response");
         setHeadersList(this.#headers, this.#state.headersList);
         let bodyWithType = null;
@@ -24454,7 +24454,7 @@ var require_response = __commonJS({
     function fromInnerResponse(innerResponse, guard) {
       const response3 = new Response2(kConstruct);
       setResponseState(response3, innerResponse);
-      const headers = new Headers(kConstruct);
+      const headers = new Headers2(kConstruct);
       setResponseHeaders(response3, headers);
       setHeadersList(headers, innerResponse.headersList);
       setHeadersGuard(headers, guard);
@@ -24525,7 +24525,7 @@ var require_request2 = __commonJS({
   "node_modules/undici/lib/web/fetch/request.js"(exports, module2) {
     "use strict";
     var { extractBody, mixinBody, cloneBody, bodyUnusable } = require_body();
-    var { Headers, fill: fillHeaders, HeadersList, setHeadersGuard, getHeadersGuard, setHeadersList, getHeadersList } = require_headers();
+    var { Headers: Headers2, fill: fillHeaders, HeadersList, setHeadersGuard, getHeadersGuard, setHeadersList, getHeadersList } = require_headers();
     var util3 = require_util();
     var nodeUtil = __require("node:util");
     var {
@@ -24540,7 +24540,7 @@ var require_request2 = __commonJS({
       requestRedirect,
       requestMode,
       requestCredentials,
-      requestCache,
+      requestCache: requestCache2,
       requestDuplex
     } = require_constants2();
     var { kEnumerableProperty, normalizedMethodRecordsBase, normalizedMethodRecords } = util3;
@@ -24812,7 +24812,7 @@ var require_request2 = __commonJS({
             };
           }
         }
-        this.#headers = new Headers(kConstruct);
+        this.#headers = new Headers2(kConstruct);
         setHeadersList(this.#headers, request2.headersList);
         setHeadersGuard(this.#headers, "request");
         if (mode === "no-cors") {
@@ -24842,13 +24842,13 @@ var require_request2 = __commonJS({
         }
         let initBody = null;
         if (init2.body != null) {
-          const [extractedBody, contentType] = extractBody(
+          const [extractedBody, contentType3] = extractBody(
             init2.body,
             request2.keepalive
           );
           initBody = extractedBody;
-          if (contentType && !getHeadersList(this.#headers).contains("content-type", true)) {
-            this.#headers.append("content-type", contentType, true);
+          if (contentType3 && !getHeadersList(this.#headers).contains("content-type", true)) {
+            this.#headers.append("content-type", contentType3, true);
           }
         }
         const inputOrInitBody = initBody ?? inputBody;
@@ -25121,18 +25121,18 @@ var require_request2 = __commonJS({
       };
     }
     function cloneRequest(request2) {
-      const newRequest = makeRequest({ ...request2, body: null });
+      const newRequest2 = makeRequest({ ...request2, body: null });
       if (request2.body != null) {
-        newRequest.body = cloneBody(request2.body);
+        newRequest2.body = cloneBody(request2.body);
       }
-      return newRequest;
+      return newRequest2;
     }
     function fromInnerRequest(innerRequest, dispatcher2, signal, guard) {
       const request2 = new Request2(kConstruct);
       setRequestState(request2, innerRequest);
       setRequestDispatcher(request2, dispatcher2);
       setRequestSignal(request2, signal);
-      const headers = new Headers(kConstruct);
+      const headers = new Headers2(kConstruct);
       setRequestHeaders(request2, headers);
       setHeadersList(headers, innerRequest.headersList);
       setHeadersGuard(headers, guard);
@@ -25214,7 +25214,7 @@ var require_request2 = __commonJS({
         key: "cache",
         converter: webidl.converters.DOMString,
         // https://fetch.spec.whatwg.org/#requestcache
-        allowedValues: requestCache
+        allowedValues: requestCache2
       },
       {
         key: "redirect",
@@ -25279,10 +25279,10 @@ var require_subresource_integrity = __commonJS({
     var assert3 = __require("node:assert");
     var { runtimeFeatures } = require_runtime_features();
     var validSRIHashAlgorithmTokenSet = /* @__PURE__ */ new Map([["sha256", 0], ["sha384", 1], ["sha512", 2]]);
-    var crypto;
+    var crypto2;
     if (runtimeFeatures.has("crypto")) {
-      crypto = __require("node:crypto");
-      const cryptoHashes = crypto.getHashes();
+      crypto2 = __require("node:crypto");
+      const cryptoHashes = crypto2.getHashes();
       if (cryptoHashes.length === 0) {
         validSRIHashAlgorithmTokenSet.clear();
       }
@@ -25372,7 +25372,7 @@ var require_subresource_integrity = __commonJS({
       return result4;
     }
     var applyAlgorithmToBytes = (algorithm, bytes) => {
-      return crypto.hash(algorithm, bytes, "base64");
+      return crypto2.hash(algorithm, bytes, "base64");
     };
     function caseSensitiveMatch(actualValue, expectedValue) {
       let actualValueLength = actualValue.length;
@@ -25470,13 +25470,13 @@ var require_fetch = __commonJS({
       subresourceSet
     } = require_constants2();
     var EE = __require("node:events");
-    var { Readable: Readable2, pipeline, finished, isErrored, isReadable } = __require("node:stream");
+    var { Readable: Readable3, pipeline, finished, isErrored, isReadable } = __require("node:stream");
     var { addAbortListener, bufferToLowerCasedHeaderName } = require_util();
     var { SocketError } = require_errors();
     var { dataURLProcessor, serializeAMimeType, minimizeSupportedMimeType } = require_data_url();
     var { getGlobalDispatcher } = require_global2();
     var { webidl } = require_webidl();
-    var { STATUS_CODES } = __require("node:http");
+    var { STATUS_CODES: STATUS_CODES2 } = __require("node:http");
     var { bytesMatch } = require_subresource_integrity();
     var { isomorphicEncode } = require_infra();
     var GET_OR_HEAD = ["GET", "HEAD"];
@@ -26454,7 +26454,7 @@ var require_fetch = __commonJS({
                 const headersList = new HeadersList();
                 appendHeadersListFromResponseHeaders(headersList, headers, rawHeaders);
                 const location2 = headersList.get("location", true);
-                this.body = new Readable2({ read: () => controller.resume() });
+                this.body = new Readable3({ read: () => controller.resume() });
                 const willFollow = location2 && request2.redirect === "follow" && redirectStatusSet.has(status);
                 const decoders = [];
                 if (request2.method !== "HEAD" && request2.method !== "CONNECT" && !nullBodyStatus.includes(status) && !willFollow) {
@@ -26556,7 +26556,7 @@ var require_fetch = __commonJS({
                 appendHeadersListFromResponseHeaders(headersList, headers, rawHeaders);
                 resolve8({
                   status,
-                  statusText: STATUS_CODES[status],
+                  statusText: STATUS_CODES2[status],
                   headersList,
                   socket
                 });
@@ -27794,7 +27794,7 @@ var require_events = __commonJS({
     var { kEnumerableProperty } = require_util();
     var { kConstruct } = require_symbols();
     var createFastMessageEvent;
-    var MessageEvent = class _MessageEvent extends Event {
+    var MessageEvent2 = class _MessageEvent extends Event {
       #eventInit;
       constructor(type, eventInitDict = {}) {
         if (type === kConstruct) {
@@ -27862,7 +27862,7 @@ var require_events = __commonJS({
         };
       }
     };
-    var CloseEvent = class extends Event {
+    var CloseEvent2 = class extends Event {
       #eventInit;
       constructor(type, eventInitDict = {}) {
         const prefix3 = "CloseEvent constructor";
@@ -27891,7 +27891,7 @@ var require_events = __commonJS({
         };
       }
     };
-    var ErrorEvent = class extends Event {
+    var ErrorEvent2 = class extends Event {
       #eventInit;
       constructor(type, eventInitDict) {
         const prefix3 = "ErrorEvent constructor";
@@ -27928,7 +27928,7 @@ var require_events = __commonJS({
         };
       }
     };
-    Object.defineProperties(MessageEvent.prototype, {
+    Object.defineProperties(MessageEvent2.prototype, {
       [Symbol.toStringTag]: {
         value: "MessageEvent",
         configurable: true
@@ -27940,7 +27940,7 @@ var require_events = __commonJS({
       ports: kEnumerableProperty,
       initMessageEvent: kEnumerableProperty
     });
-    Object.defineProperties(CloseEvent.prototype, {
+    Object.defineProperties(CloseEvent2.prototype, {
       [Symbol.toStringTag]: {
         value: "CloseEvent",
         configurable: true
@@ -27949,7 +27949,7 @@ var require_events = __commonJS({
       code: kEnumerableProperty,
       wasClean: kEnumerableProperty
     });
-    Object.defineProperties(ErrorEvent.prototype, {
+    Object.defineProperties(ErrorEvent2.prototype, {
       [Symbol.toStringTag]: {
         value: "ErrorEvent",
         configurable: true
@@ -28060,9 +28060,9 @@ var require_events = __commonJS({
       }
     ]);
     module2.exports = {
-      MessageEvent,
-      CloseEvent,
-      ErrorEvent,
+      MessageEvent: MessageEvent2,
+      CloseEvent: CloseEvent2,
+      ErrorEvent: ErrorEvent2,
       createFastMessageEvent
     };
   }
@@ -28151,7 +28151,7 @@ var require_util5 = __commonJS({
     function websocketMessageReceived(handler, type, data) {
       handler.onMessage(type, data);
     }
-    function toArrayBuffer(buffer) {
+    function toArrayBuffer2(buffer) {
       if (buffer.byteLength === buffer.buffer.byteLength) {
         return buffer.buffer;
       }
@@ -28294,7 +28294,7 @@ var require_util5 = __commonJS({
       isValidOpcode,
       parseExtensions,
       isValidClientWindowBits,
-      toArrayBuffer,
+      toArrayBuffer: toArrayBuffer2,
       getURLRecord,
       validateCloseCodeAndReason
     };
@@ -28409,12 +28409,12 @@ var require_connection = __commonJS({
     var { parseExtensions, isClosed, isClosing, isEstablished, isConnecting, validateCloseCodeAndReason } = require_util5();
     var { makeRequest } = require_request2();
     var { fetching } = require_fetch();
-    var { Headers, getHeadersList } = require_headers();
+    var { Headers: Headers2, getHeadersList } = require_headers();
     var { getDecodeSplit } = require_util2();
     var { WebsocketFrameSend } = require_frame();
     var assert3 = __require("node:assert");
     var { runtimeFeatures } = require_runtime_features();
-    var crypto = runtimeFeatures.has("crypto") ? __require("node:crypto") : null;
+    var crypto2 = runtimeFeatures.has("crypto") ? __require("node:crypto") : null;
     var warningEmitted = false;
     function establishWebSocketConnection(url3, protocols, client2, handler, options) {
       const requestURL = url3;
@@ -28431,10 +28431,10 @@ var require_connection = __commonJS({
         useURLCredentials: true
       });
       if (options.headers) {
-        const headersList = getHeadersList(new Headers(options.headers));
+        const headersList = getHeadersList(new Headers2(options.headers));
         request2.headersList = headersList;
       }
-      const keyValue = crypto.randomBytes(16).toString("base64");
+      const keyValue = crypto2.randomBytes(16).toString("base64");
       request2.headersList.append("sec-websocket-key", keyValue, true);
       request2.headersList.append("sec-websocket-version", "13", true);
       for (const protocol of protocols) {
@@ -28475,7 +28475,7 @@ var require_connection = __commonJS({
           }
           if (response3.socket.session == null) {
             const secWSAccept = response3.headersList.get("Sec-WebSocket-Accept");
-            const digest = crypto.hash("sha1", keyValue + uid2, "base64");
+            const digest = crypto2.hash("sha1", keyValue + uid2, "base64");
             if (secWSAccept !== digest) {
               failHandshake(handler, response3, 1002, "Incorrect hash received in Sec-WebSocket-Accept header.");
               return;
@@ -29118,14 +29118,14 @@ var require_websocket = __commonJS({
       isValidSubprotocol,
       fireEvent,
       utf8Decode,
-      toArrayBuffer,
+      toArrayBuffer: toArrayBuffer2,
       getURLRecord
     } = require_util5();
     var { establishWebSocketConnection, closeWebSocketConnection, failWebsocketConnection } = require_connection();
     var { ByteParser } = require_receiver();
     var { kEnumerableProperty } = require_util();
     var { getGlobalDispatcher } = require_global2();
-    var { ErrorEvent, CloseEvent, createFastMessageEvent } = require_events();
+    var { ErrorEvent: ErrorEvent2, CloseEvent: CloseEvent2, createFastMessageEvent } = require_events();
     var { SendQueue } = require_sender();
     var { WebsocketFrameSend } = require_frame();
     var { channels } = require_diagnostics();
@@ -29459,7 +29459,7 @@ var require_websocket = __commonJS({
           if (this.#binaryType === "blob") {
             dataForEvent = new Blob([data]);
           } else {
-            dataForEvent = toArrayBuffer(data);
+            dataForEvent = toArrayBuffer2(data);
           }
         }
         fireEvent("message", this, createFastMessageEvent, {
@@ -29486,11 +29486,11 @@ var require_websocket = __commonJS({
         this.#handler.readyState = states2.CLOSED;
         if (!this.#handler.closeState.has(sentCloseFrameState.RECEIVED)) {
           code = 1006;
-          fireEvent("error", this, (type, init2) => new ErrorEvent(type, init2), {
+          fireEvent("error", this, (type, init2) => new ErrorEvent2(type, init2), {
             error: new TypeError(reason)
           });
         }
-        fireEvent("close", this, (type, init2) => new CloseEvent(type, init2), {
+        fireEvent("close", this, (type, init2) => new CloseEvent2(type, init2), {
           wasClean,
           code,
           reason
@@ -30575,8 +30575,8 @@ var require_eventsource = __commonJS({
               return;
             }
           }
-          const contentType = response3.headersList.get("content-type", true);
-          const mimeType = contentType !== null ? parseMIMEType(contentType) : "failure";
+          const contentType3 = response3.headersList.get("content-type", true);
+          const mimeType = contentType3 !== null ? parseMIMEType(contentType3) : "failure";
           const contentTypeValid = mimeType !== "failure" && mimeType.essence === "text/event-stream";
           if (response3.status !== 200 || contentTypeValid === false) {
             this.close();
@@ -30925,12 +30925,12 @@ ${captureLines}` : capture.stack;
     var { parseMIMEType, serializeAMimeType } = require_data_url();
     module2.exports.parseMIMEType = parseMIMEType;
     module2.exports.serializeAMimeType = serializeAMimeType;
-    var { CloseEvent, ErrorEvent, MessageEvent } = require_events();
+    var { CloseEvent: CloseEvent2, ErrorEvent: ErrorEvent2, MessageEvent: MessageEvent2 } = require_events();
     var { WebSocket: WebSocket2, ping } = require_websocket();
     module2.exports.WebSocket = WebSocket2;
-    module2.exports.CloseEvent = CloseEvent;
-    module2.exports.ErrorEvent = ErrorEvent;
-    module2.exports.MessageEvent = MessageEvent;
+    module2.exports.CloseEvent = CloseEvent2;
+    module2.exports.ErrorEvent = ErrorEvent2;
+    module2.exports.MessageEvent = MessageEvent2;
     module2.exports.ping = ping;
     module2.exports.WebSocketStream = require_websocketstream().WebSocketStream;
     module2.exports.WebSocketError = require_websocketerror().WebSocketError;
@@ -31841,10 +31841,10 @@ function getCrypto() {
 function getRandomByte() {
   return safeMathRandom() * 16;
 }
-function uuid4(crypto = getCrypto()) {
+function uuid4(crypto2 = getCrypto()) {
   try {
-    if (crypto?.randomUUID) {
-      return withRandomSafeContext(() => crypto.randomUUID()).replace(/-/g, "");
+    if (crypto2?.randomUUID) {
+      return withRandomSafeContext(() => crypto2.randomUUID()).replace(/-/g, "");
     }
   } catch {
   }
@@ -49958,8 +49958,8 @@ var init_config = __esm({
 });
 
 // node_modules/@sentry/server-utils/build/esm/integrations/fastify/utils.js
-function defaultShouldHandleError3(_error, _request, reply) {
-  const statusCode = reply.statusCode;
+function defaultShouldHandleError3(_error, _request, reply2) {
+  const statusCode = reply2.statusCode;
   return statusCode >= 500 || statusCode <= 299;
 }
 var INTEGRATION_NAME10;
@@ -49976,16 +49976,16 @@ function getFastifyIntegration() {
 }
 function subscribeToFastifyErrorChannel() {
   subscribe2("tracing:fastify.request.handler:error", (message3) => {
-    const { error: error113, request: request2, reply } = message3;
-    handleFastifyError(request2, reply, error113);
+    const { error: error113, request: request2, reply: reply2 } = message3;
+    handleFastifyError(request2, reply2, error113);
   });
 }
-function handleFastifyError(request2, reply, error113) {
+function handleFastifyError(request2, reply2, error113) {
   if (request2[kErrorCaptured]) {
     return;
   }
   const shouldHandleError = getFastifyIntegration()?.getShouldHandleError() || defaultShouldHandleError3;
-  if (shouldHandleError(error113, request2, reply)) {
+  if (shouldHandleError(error113, request2, reply2)) {
     addNonEnumerableProperty(request2, kErrorCaptured, true);
     captureException(error113, {
       mechanism: {
@@ -50022,8 +50022,8 @@ function instrumentFastifyInstance(instance) {
   instance.addHook("onRoute", onRoute);
   instance.addHook("onRequest", onRequest);
   instance.addHook("onResponse", onResponse);
-  instance.addHook("onError", async (request2, reply, error113) => {
-    handleFastifyError(request2, reply, error113);
+  instance.addHook("onError", async (request2, reply2, error113) => {
+    handleFastifyError(request2, reply2, error113);
   });
   instance.addHook = addHookPatched;
   instance.setNotFoundHandler = setNotFoundHandlerPatched;
@@ -50092,22 +50092,22 @@ function onRequest(request2, _reply, hookDone) {
     hookDone();
   });
 }
-function onResponse(request2, reply, hookDone) {
+function onResponse(request2, reply2, hookDone) {
   const span = request2[kRequestSpan];
   if (span != null) {
-    span.setAttributes({ [Uo]: reply.statusCode });
+    span.setAttributes({ [Uo]: reply2.statusCode });
     span.end();
   }
   request2[kRequestSpan] = null;
   hookDone();
 }
-function finalizeResponseSpanHook(request2, reply, payload, hookDone) {
+function finalizeResponseSpanHook(request2, reply2, payload, hookDone) {
   const span = request2[kRequestSpan];
   if (span != null) {
-    if (reply.statusCode >= 500) {
+    if (reply2.statusCode >= 500) {
       span.setStatus({ code: SPAN_STATUS_ERROR });
     }
-    span.setAttributes({ [Uo]: reply.statusCode });
+    span.setAttributes({ [Uo]: reply2.statusCode });
     span.end();
   }
   request2[kRequestSpan] = null;
@@ -54310,9 +54310,9 @@ function subscribeLegacyRedisCommand(cacheOptions) {
       const span = startCommandSpan(command3.command, command3.args ?? [], attributes2, cacheOptions);
       data._sentrySpan = span;
       const parentSpan = getActiveSpan();
-      command3.callback = function(err, reply) {
+      command3.callback = function(err, reply2) {
         if (!err) {
-          applyCacheResponseAttributes(span, reply);
+          applyCacheResponseAttributes(span, reply2);
         }
         endSpan2(span, err);
         const args = arguments;
@@ -65804,7 +65804,7 @@ var PLUGIN_VERSION;
 var init_version3 = __esm({
   "packages/shared/src/version.ts"() {
     "use strict";
-    PLUGIN_VERSION = "0.1.180";
+    PLUGIN_VERSION = "0.1.181";
   }
 });
 
@@ -81851,13 +81851,13 @@ function initializeContext(params) {
     external: params?.external ?? void 0
   };
 }
-function handleUnrepresentable(schema2, ctx, json3, params, message3) {
+function handleUnrepresentable(schema2, ctx, json4, params, message3) {
   const result4 = typeof ctx.unrepresentable === "function" ? ctx.unrepresentable({ zodSchema: schema2, path: params.path, message: message3 }) : ctx.unrepresentable;
   if (result4 === "any")
     return false;
   if (result4 === void 0 || result4 === "throw")
     throw new Error(message3);
-  Object.assign(json3, result4);
+  Object.assign(json4, result4);
   return true;
 }
 function processSchema(schema2, ctx, _params = { path: [], schemaPath: [] }) {
@@ -82091,12 +82091,12 @@ function foldObjects(members2) {
   }
   return folded;
 }
-function foldIntersection(json3) {
-  const allOf = json3.allOf;
+function foldIntersection(json4) {
+  const allOf = json4.allOf;
   if (!Array.isArray(allOf) || allOf.length < 2)
     return;
   for (const key2 of FOLDABLE_KEYS)
-    if (key2 in json3)
+    if (key2 in json4)
       return;
   const unions = allOf.filter((m5) => UNION_KEYS.some((k2) => Array.isArray(m5[k2])));
   let folded = null;
@@ -82115,8 +82115,8 @@ function foldIntersection(json3) {
   }
   if (!folded)
     return;
-  delete json3.allOf;
-  assignProps(json3, folded);
+  delete json4.allOf;
+  assignProps(json4, folded);
 }
 function finalize(ctx, schema2) {
   const root = ctx.seen.get(schema2);
@@ -82198,20 +82198,20 @@ function finalize(ctx, schema2) {
     if (ctx.intersections.length) {
       const carriers = /* @__PURE__ */ new Map();
       for (const seen of ctx.seen.values()) {
-        for (const json3 of [seen.schema, seen.def]) {
-          const allOf = json3?.allOf;
+        for (const json4 of [seen.schema, seen.def]) {
+          const allOf = json4?.allOf;
           if (!Array.isArray(allOf))
             continue;
           const existing = carriers.get(allOf);
           if (existing)
-            existing.push(json3);
+            existing.push(json4);
           else
-            carriers.set(allOf, [json3]);
+            carriers.set(allOf, [json4]);
         }
       }
       for (const allOf of ctx.intersections) {
-        for (const json3 of carriers.get(allOf) ?? [])
-          foldIntersection(json3);
+        for (const json4 of carriers.get(allOf) ?? [])
+          foldIntersection(json4);
       }
     }
   }
@@ -82391,31 +82391,31 @@ function inputOptin(schema2) {
   }
   return schema2._zod.optin;
 }
-function stringifyKeyNames(bySchema, json3, visited) {
-  if (json3.$ref) {
-    if (visited.has(json3))
-      return json3;
-    visited.add(json3);
-    const def = bySchema.get(json3)?.def;
+function stringifyKeyNames(bySchema, json4, visited) {
+  if (json4.$ref) {
+    if (visited.has(json4))
+      return json4;
+    visited.add(json4);
+    const def = bySchema.get(json4)?.def;
     if (!def)
-      return json3;
+      return json4;
     const inlined = stringifyKeyNames(bySchema, def, visited);
-    return inlined === def ? json3 : inlined;
+    return inlined === def ? json4 : inlined;
   }
   for (const keyword of ["anyOf", "oneOf"]) {
-    const branches = json3[keyword];
+    const branches = json4[keyword];
     if (!Array.isArray(branches))
       continue;
     const mapped = branches.map((branch) => stringifyKeyNames(bySchema, branch, visited));
     if (mapped.some((branch, i2) => branch !== branches[i2]))
-      json3 = { ...json3, [keyword]: mapped };
+      json4 = { ...json4, [keyword]: mapped };
   }
-  const types = Array.isArray(json3.type) ? json3.type : [json3.type];
+  const types = Array.isArray(json4.type) ? json4.type : [json4.type];
   const numericType = !types.includes("string") && types.some((t2) => t2 === "number" || t2 === "integer");
-  const values = json3.enum ?? (json3.const !== void 0 ? [json3.const] : void 0);
+  const values = json4.enum ?? (json4.const !== void 0 ? [json4.const] : void 0);
   if (!numericType && !values?.some((v3) => typeof v3 === "number"))
-    return json3;
-  const { minimum, maximum, exclusiveMinimum, exclusiveMaximum, multipleOf, format: format2, id: id3, ...rest } = json3;
+    return json4;
+  const { minimum, maximum, exclusiveMinimum, exclusiveMaximum, multipleOf, format: format2, id: id3, ...rest } = json4;
   if (rest.enum)
     rest.enum = rest.enum.map((v3) => typeof v3 === "number" ? String(v3) : v3);
   else if (typeof rest.const === "number")
@@ -82453,7 +82453,7 @@ function rewriteKeyNames(ctx) {
     }
   }
 }
-function serializeDefaultValue(value, schema2, ctx, json3, params) {
+function serializeDefaultValue(value, schema2, ctx, json4, params) {
   let unrepresentable = false;
   const serialized = JSON.stringify(value, (_2, val) => {
     if (typeof val !== "bigint")
@@ -82463,7 +82463,7 @@ function serializeDefaultValue(value, schema2, ctx, json3, params) {
   });
   if (!unrepresentable)
     return JSON.parse(serialized);
-  handleUnrepresentable(schema2, ctx, json3, params, "BigInt defaults cannot be represented in JSON Schema");
+  handleUnrepresentable(schema2, ctx, json4, params, "BigInt defaults cannot be represented in JSON Schema");
   return UNREPRESENTABLE_DEFAULT;
 }
 function toJSONSchema(input2, params) {
@@ -82581,29 +82581,29 @@ var init_json_schema_processors = __esm({
     ]);
     exactPattern = (p4) => exactPatterns.get(p4) ?? p4;
     stringProcessor = (schema2, ctx, _json, _params) => {
-      const json3 = _json;
-      json3.type = "string";
+      const json4 = _json;
+      json4.type = "string";
       const { minimum, maximum, format: format2, patterns, contentEncoding, laxFormat } = aggregateChecks(schema2);
       if (typeof minimum === "number")
-        json3.minLength = minimum;
+        json4.minLength = minimum;
       if (typeof maximum === "number")
-        json3.maxLength = maximum;
+        json4.maxLength = maximum;
       if (format2) {
-        json3.format = formatMap[format2] ?? format2;
-        if (json3.format === "")
-          delete json3.format;
+        json4.format = formatMap[format2] ?? format2;
+        if (json4.format === "")
+          delete json4.format;
         if (format2 === "time" || laxFormat) {
-          delete json3.format;
+          delete json4.format;
         }
       }
       if (contentEncoding)
-        json3.contentEncoding = contentEncoding;
+        json4.contentEncoding = contentEncoding;
       if (patterns && patterns.size > 0) {
         const patternList = [...patterns].map(exactPattern);
         if (patternList.length === 1)
-          json3.pattern = patternList[0].source;
+          json4.pattern = patternList[0].source;
         else if (patternList.length > 1) {
-          json3.allOf = [
+          json4.allOf = [
             ...patternList.map((regex2) => ({
               ...ctx.target === "draft-07" || ctx.target === "draft-04" || ctx.target === "openapi-3.0" ? { type: "string" } : {},
               pattern: regex2.source
@@ -82613,31 +82613,31 @@ var init_json_schema_processors = __esm({
       }
     };
     numberProcessor = (schema2, ctx, _json, params) => {
-      const json3 = _json;
+      const json4 = _json;
       const { minimum, maximum, multipleOf, exclusiveMaximum, exclusiveMinimum, isInt } = aggregateChecks(schema2);
-      json3.type = isInt ? "integer" : "number";
+      json4.type = isInt ? "integer" : "number";
       const exMin = typeof exclusiveMinimum === "number" && exclusiveMinimum >= (minimum ?? Number.NEGATIVE_INFINITY);
       const exMax = typeof exclusiveMaximum === "number" && exclusiveMaximum <= (maximum ?? Number.POSITIVE_INFINITY);
       const legacy = ctx.target === "draft-04" || ctx.target === "openapi-3.0";
       if (exMin) {
         if (legacy) {
-          json3.minimum = exclusiveMinimum;
-          json3.exclusiveMinimum = true;
+          json4.minimum = exclusiveMinimum;
+          json4.exclusiveMinimum = true;
         } else {
-          json3.exclusiveMinimum = exclusiveMinimum;
+          json4.exclusiveMinimum = exclusiveMinimum;
         }
       } else if (typeof minimum === "number") {
-        json3.minimum = minimum;
+        json4.minimum = minimum;
       }
       if (exMax) {
         if (legacy) {
-          json3.maximum = exclusiveMaximum;
-          json3.exclusiveMaximum = true;
+          json4.maximum = exclusiveMaximum;
+          json4.exclusiveMaximum = true;
         } else {
-          json3.exclusiveMaximum = exclusiveMaximum;
+          json4.exclusiveMaximum = exclusiveMaximum;
         }
       } else if (typeof maximum === "number") {
-        json3.maximum = maximum;
+        json4.maximum = maximum;
       }
       if (multipleOf) {
         const divisors = /* @__PURE__ */ new Set();
@@ -82645,75 +82645,75 @@ var init_json_schema_processors = __esm({
           if (Number.isFinite(divisor) && divisor !== 0)
             divisors.add(Math.abs(divisor));
           else
-            handleUnrepresentable(schema2, ctx, json3, params, `A multipleOf divisor of ${divisor} cannot be represented in JSON Schema`);
+            handleUnrepresentable(schema2, ctx, json4, params, `A multipleOf divisor of ${divisor} cannot be represented in JSON Schema`);
         }
         const [first, ...rest] = divisors;
         if (first !== void 0)
-          json3.multipleOf = first;
+          json4.multipleOf = first;
         if (rest.length)
-          json3.allOf = [...json3.allOf ?? [], ...rest.map((m5) => ({ multipleOf: m5 }))];
+          json4.allOf = [...json4.allOf ?? [], ...rest.map((m5) => ({ multipleOf: m5 }))];
       }
     };
-    booleanProcessor = (_schema, _ctx, json3, _params) => {
-      json3.type = "boolean";
+    booleanProcessor = (_schema, _ctx, json4, _params) => {
+      json4.type = "boolean";
     };
-    bigintProcessor = (schema2, ctx, json3, params) => {
-      handleUnrepresentable(schema2, ctx, json3, params, "BigInt cannot be represented in JSON Schema");
+    bigintProcessor = (schema2, ctx, json4, params) => {
+      handleUnrepresentable(schema2, ctx, json4, params, "BigInt cannot be represented in JSON Schema");
     };
-    symbolProcessor = (schema2, ctx, json3, params) => {
-      handleUnrepresentable(schema2, ctx, json3, params, "Symbols cannot be represented in JSON Schema");
+    symbolProcessor = (schema2, ctx, json4, params) => {
+      handleUnrepresentable(schema2, ctx, json4, params, "Symbols cannot be represented in JSON Schema");
     };
-    nullProcessor = (_schema, ctx, json3, _params) => {
+    nullProcessor = (_schema, ctx, json4, _params) => {
       if (ctx.target === "openapi-3.0") {
-        json3.type = "string";
-        json3.nullable = true;
-        json3.enum = [null];
+        json4.type = "string";
+        json4.nullable = true;
+        json4.enum = [null];
       } else {
-        json3.type = "null";
+        json4.type = "null";
       }
     };
-    undefinedProcessor = (schema2, ctx, json3, params) => {
-      handleUnrepresentable(schema2, ctx, json3, params, "Undefined cannot be represented in JSON Schema");
+    undefinedProcessor = (schema2, ctx, json4, params) => {
+      handleUnrepresentable(schema2, ctx, json4, params, "Undefined cannot be represented in JSON Schema");
     };
-    voidProcessor = (schema2, ctx, json3, params) => {
-      handleUnrepresentable(schema2, ctx, json3, params, "Void cannot be represented in JSON Schema");
+    voidProcessor = (schema2, ctx, json4, params) => {
+      handleUnrepresentable(schema2, ctx, json4, params, "Void cannot be represented in JSON Schema");
     };
-    neverProcessor = (_schema, _ctx, json3, _params) => {
-      json3.not = {};
+    neverProcessor = (_schema, _ctx, json4, _params) => {
+      json4.not = {};
     };
     anyProcessor = (_schema, _ctx, _json, _params) => {
     };
     unknownProcessor = (_schema, _ctx, _json, _params) => {
     };
-    dateProcessor = (schema2, ctx, json3, params) => {
-      handleUnrepresentable(schema2, ctx, json3, params, "Date cannot be represented in JSON Schema");
+    dateProcessor = (schema2, ctx, json4, params) => {
+      handleUnrepresentable(schema2, ctx, json4, params, "Date cannot be represented in JSON Schema");
     };
-    enumProcessor = (schema2, _ctx, json3, _params) => {
+    enumProcessor = (schema2, _ctx, json4, _params) => {
       const def = schema2._zod.def;
       const values = getEnumValues(def.entries);
       if (values.length === 0) {
-        json3.not = {};
+        json4.not = {};
         return;
       }
       if (values.every((v3) => typeof v3 === "number"))
-        json3.type = "number";
+        json4.type = "number";
       if (values.every((v3) => typeof v3 === "string"))
-        json3.type = "string";
-      json3.enum = values;
+        json4.type = "string";
+      json4.enum = values;
     };
-    literalProcessor = (schema2, ctx, json3, params) => {
+    literalProcessor = (schema2, ctx, json4, params) => {
       const def = schema2._zod.def;
       if (def.values.length === 0) {
-        json3.not = {};
+        json4.not = {};
         return;
       }
       const vals = [];
       for (const val of def.values) {
         if (val === void 0) {
-          if (handleUnrepresentable(schema2, ctx, json3, params, "Literal `undefined` cannot be represented in JSON Schema"))
+          if (handleUnrepresentable(schema2, ctx, json4, params, "Literal `undefined` cannot be represented in JSON Schema"))
             return;
         } else if (typeof val === "bigint") {
-          if (handleUnrepresentable(schema2, ctx, json3, params, "BigInt literals cannot be represented in JSON Schema"))
+          if (handleUnrepresentable(schema2, ctx, json4, params, "BigInt literals cannot be represented in JSON Schema"))
             return;
           vals.push(Number(val));
         } else {
@@ -82723,37 +82723,37 @@ var init_json_schema_processors = __esm({
       if (vals.length === 0) {
       } else if (vals.length === 1) {
         const val = vals[0];
-        json3.type = val === null ? "null" : typeof val;
+        json4.type = val === null ? "null" : typeof val;
         if (ctx.target === "draft-04" || ctx.target === "openapi-3.0") {
-          json3.enum = [val];
+          json4.enum = [val];
         } else {
-          json3.const = val;
+          json4.const = val;
         }
       } else {
         if (vals.every((v3) => typeof v3 === "number"))
-          json3.type = "number";
+          json4.type = "number";
         if (vals.every((v3) => typeof v3 === "string"))
-          json3.type = "string";
+          json4.type = "string";
         if (vals.every((v3) => typeof v3 === "boolean"))
-          json3.type = "boolean";
+          json4.type = "boolean";
         if (vals.every((v3) => v3 === null))
-          json3.type = "null";
-        json3.enum = vals;
+          json4.type = "null";
+        json4.enum = vals;
       }
     };
-    nanProcessor = (schema2, ctx, json3, params) => {
-      handleUnrepresentable(schema2, ctx, json3, params, "NaN cannot be represented in JSON Schema");
+    nanProcessor = (schema2, ctx, json4, params) => {
+      handleUnrepresentable(schema2, ctx, json4, params, "NaN cannot be represented in JSON Schema");
     };
-    templateLiteralProcessor = (schema2, _ctx, json3, _params) => {
-      const _json = json3;
+    templateLiteralProcessor = (schema2, _ctx, json4, _params) => {
+      const _json = json4;
       const pattern = schema2._zod.pattern;
       if (!pattern)
         throw new Error("Pattern not found in template literal");
       _json.type = "string";
       _json.pattern = pattern.source;
     };
-    fileProcessor = (schema2, _ctx, json3, _params) => {
-      const _json = json3;
+    fileProcessor = (schema2, _ctx, json4, _params) => {
+      const _json = json4;
       _json.type = "string";
       _json.format = "binary";
       _json.contentEncoding = "binary";
@@ -82771,50 +82771,50 @@ var init_json_schema_processors = __esm({
       else
         _json.anyOf = mime.map((m5) => ({ contentMediaType: m5 }));
     };
-    successProcessor = (_schema, _ctx, json3, _params) => {
-      json3.type = "boolean";
+    successProcessor = (_schema, _ctx, json4, _params) => {
+      json4.type = "boolean";
     };
-    customProcessor = (schema2, ctx, json3, params) => {
-      handleUnrepresentable(schema2, ctx, json3, params, "Custom types cannot be represented in JSON Schema");
+    customProcessor = (schema2, ctx, json4, params) => {
+      handleUnrepresentable(schema2, ctx, json4, params, "Custom types cannot be represented in JSON Schema");
     };
-    functionProcessor = (schema2, ctx, json3, params) => {
-      handleUnrepresentable(schema2, ctx, json3, params, "Function types cannot be represented in JSON Schema");
+    functionProcessor = (schema2, ctx, json4, params) => {
+      handleUnrepresentable(schema2, ctx, json4, params, "Function types cannot be represented in JSON Schema");
     };
-    transformProcessor = (schema2, ctx, json3, params) => {
-      handleUnrepresentable(schema2, ctx, json3, params, "Transforms cannot be represented in JSON Schema");
+    transformProcessor = (schema2, ctx, json4, params) => {
+      handleUnrepresentable(schema2, ctx, json4, params, "Transforms cannot be represented in JSON Schema");
     };
-    mapProcessor = (schema2, ctx, json3, params) => {
-      handleUnrepresentable(schema2, ctx, json3, params, "Map cannot be represented in JSON Schema");
+    mapProcessor = (schema2, ctx, json4, params) => {
+      handleUnrepresentable(schema2, ctx, json4, params, "Map cannot be represented in JSON Schema");
     };
-    setProcessor = (schema2, ctx, json3, params) => {
-      handleUnrepresentable(schema2, ctx, json3, params, "Set cannot be represented in JSON Schema");
+    setProcessor = (schema2, ctx, json4, params) => {
+      handleUnrepresentable(schema2, ctx, json4, params, "Set cannot be represented in JSON Schema");
     };
     arrayProcessor = (schema2, ctx, _json, params) => {
-      const json3 = _json;
+      const json4 = _json;
       const def = schema2._zod.def;
       const { minimum, maximum } = aggregateChecks(schema2);
       if (typeof minimum === "number")
-        json3.minItems = minimum;
+        json4.minItems = minimum;
       if (typeof maximum === "number")
-        json3.maxItems = maximum;
-      json3.type = "array";
-      json3.items = processSchema(def.element, ctx, {
+        json4.maxItems = maximum;
+      json4.type = "array";
+      json4.items = processSchema(def.element, ctx, {
         ...params,
         path: [...params.path, "items"]
       });
     };
     objectProcessor = (schema2, ctx, _json, params) => {
-      const json3 = _json;
+      const json4 = _json;
       const def = schema2._zod.def;
       const shape = def.shape;
       const symbolKeys = Object.getOwnPropertySymbols(shape);
-      if (symbolKeys.length && handleUnrepresentable(schema2, ctx, json3, params, "Symbol keys cannot be represented in JSON Schema")) {
+      if (symbolKeys.length && handleUnrepresentable(schema2, ctx, json4, params, "Symbol keys cannot be represented in JSON Schema")) {
         return;
       }
-      json3.type = "object";
-      json3.properties = {};
+      json4.type = "object";
+      json4.properties = {};
       for (const key2 in shape) {
-        assignProp(json3.properties, key2, processSchema(shape[key2], ctx, {
+        assignProp(json4.properties, key2, processSchema(shape[key2], ctx, {
           ...params,
           path: [...params.path, "properties", key2]
         }));
@@ -82827,21 +82827,21 @@ var init_json_schema_processors = __esm({
         }
       }
       if (requiredKeys.length > 0) {
-        json3.required = requiredKeys;
+        json4.required = requiredKeys;
       }
       if (def.catchall?._zod.def.type === "never") {
-        json3.additionalProperties = false;
+        json4.additionalProperties = false;
       } else if (!def.catchall) {
         if (ctx.io === "output")
-          json3.additionalProperties = false;
+          json4.additionalProperties = false;
       } else if (def.catchall) {
-        json3.additionalProperties = processSchema(def.catchall, ctx, {
+        json4.additionalProperties = processSchema(def.catchall, ctx, {
           ...params,
           path: [...params.path, "additionalProperties"]
         });
       }
     };
-    unionProcessor = (schema2, ctx, json3, params) => {
+    unionProcessor = (schema2, ctx, json4, params) => {
       const def = schema2._zod.def;
       const isExclusive = def.inclusive === false;
       const options = def.options.map((x2, i2) => processSchema(x2, ctx, {
@@ -82849,12 +82849,12 @@ var init_json_schema_processors = __esm({
         path: [...params.path, isExclusive ? "oneOf" : "anyOf", i2]
       }));
       if (isExclusive) {
-        json3.oneOf = options;
+        json4.oneOf = options;
       } else {
-        json3.anyOf = options;
+        json4.anyOf = options;
       }
     };
-    intersectionProcessor = (schema2, ctx, json3, params) => {
+    intersectionProcessor = (schema2, ctx, json4, params) => {
       const def = schema2._zod.def;
       const a2 = processSchema(def.left, ctx, {
         ...params,
@@ -82869,13 +82869,13 @@ var init_json_schema_processors = __esm({
         ...isSimpleIntersection(a2) ? a2.allOf : [a2],
         ...isSimpleIntersection(b2) ? b2.allOf : [b2]
       ];
-      json3.allOf = allOf;
+      json4.allOf = allOf;
       ctx.intersections.push(allOf);
     };
     tupleProcessor = (schema2, ctx, _json, params) => {
-      const json3 = _json;
+      const json4 = _json;
       const def = schema2._zod.def;
-      json3.type = "array";
+      json4.type = "array";
       const prefixPath = ctx.target === "draft-2020-12" ? "prefixItems" : "items";
       const restPath = ctx.target === "draft-2020-12" ? "items" : ctx.target === "openapi-3.0" ? "items" : "additionalItems";
       const prefixItems = def.items.map((x2, i2) => processSchema(x2, ctx, {
@@ -82897,50 +82897,50 @@ var init_json_schema_processors = __esm({
       const maxItems = def.items.length;
       const isClosed = !def.rest;
       if (ctx.target === "draft-2020-12") {
-        json3.prefixItems = prefixItems;
+        json4.prefixItems = prefixItems;
         if (isClosed) {
-          json3.items = false;
+          json4.items = false;
         } else if (rest) {
-          json3.items = rest;
+          json4.items = rest;
         }
         if (minItems > 0)
-          json3.minItems = minItems;
+          json4.minItems = minItems;
         if (isClosed)
-          json3.maxItems = maxItems;
+          json4.maxItems = maxItems;
       } else if (ctx.target === "openapi-3.0") {
-        json3.items = {
+        json4.items = {
           anyOf: prefixItems
         };
         if (rest) {
-          json3.items.anyOf.push(rest);
+          json4.items.anyOf.push(rest);
         }
         if (minItems > 0)
-          json3.minItems = minItems;
+          json4.minItems = minItems;
         if (isClosed)
-          json3.maxItems = maxItems;
+          json4.maxItems = maxItems;
       } else {
-        json3.items = prefixItems;
+        json4.items = prefixItems;
         if (isClosed) {
-          json3.additionalItems = false;
+          json4.additionalItems = false;
         } else if (rest) {
-          json3.additionalItems = rest;
+          json4.additionalItems = rest;
         }
         if (minItems > 0)
-          json3.minItems = minItems;
+          json4.minItems = minItems;
         if (isClosed)
-          json3.maxItems = maxItems;
+          json4.maxItems = maxItems;
       }
       const { minimum, maximum } = aggregateChecks(schema2);
       if (typeof minimum === "number")
-        json3.minItems = minimum;
+        json4.minItems = minimum;
       if (typeof maximum === "number")
-        json3.maxItems = maximum;
+        json4.maxItems = maximum;
     };
     pendingRecords = /* @__PURE__ */ new WeakMap();
     recordProcessor = (schema2, ctx, _json, params) => {
-      const json3 = _json;
+      const json4 = _json;
       const def = schema2._zod.def;
-      json3.type = "object";
+      json4.type = "object";
       const keyType = def.keyType;
       const patterns = aggregateChecks(keyType).patterns;
       if (def.mode === "loose" && patterns && patterns.size > 0) {
@@ -82948,13 +82948,13 @@ var init_json_schema_processors = __esm({
           ...params,
           path: [...params.path, "patternProperties", "*"]
         });
-        json3.patternProperties = {};
+        json4.patternProperties = {};
         for (const pattern of patterns) {
-          assignProp(json3.patternProperties, exactPattern(pattern).source, valueSchema);
+          assignProp(json4.patternProperties, exactPattern(pattern).source, valueSchema);
         }
       } else {
         if (ctx.target === "draft-07" || ctx.target === "draft-2020-12") {
-          json3.propertyNames = processSchema(def.keyType, ctx, {
+          json4.propertyNames = processSchema(def.keyType, ctx, {
             ...params,
             path: [...params.path, "propertyNames"]
           });
@@ -82966,7 +82966,7 @@ var init_json_schema_processors = __esm({
           }
           pending.push(schema2);
         }
-        json3.additionalProperties = processSchema(def.valueType, ctx, {
+        json4.additionalProperties = processSchema(def.valueType, ctx, {
           ...params,
           path: [...params.path, "additionalProperties"]
         });
@@ -82976,19 +82976,19 @@ var init_json_schema_processors = __esm({
       if (keyValues && !def.partial && !omittableOnInput) {
         const validKeyValues = [...keyValues].filter((v3) => typeof v3 === "string" || typeof v3 === "number");
         if (validKeyValues.length > 0) {
-          json3.required = validKeyValues.map(String);
+          json4.required = validKeyValues.map(String);
         }
       }
     };
-    nullableProcessor = (schema2, ctx, json3, params) => {
+    nullableProcessor = (schema2, ctx, json4, params) => {
       const def = schema2._zod.def;
       const inner = processSchema(def.innerType, ctx, params);
       const seen = ctx.seen.get(schema2);
       if (ctx.target === "openapi-3.0") {
         seen.ref = def.innerType;
-        json3.nullable = true;
+        json4.nullable = true;
       } else {
-        json3.anyOf = [inner, { type: "null" }];
+        json4.anyOf = [inner, { type: "null" }];
       }
     };
     nonoptionalProcessor = (schema2, ctx, _json, params) => {
@@ -82998,27 +82998,27 @@ var init_json_schema_processors = __esm({
       seen.ref = def.innerType;
     };
     UNREPRESENTABLE_DEFAULT = /* @__PURE__ */ Symbol();
-    defaultProcessor = (schema2, ctx, json3, params) => {
+    defaultProcessor = (schema2, ctx, json4, params) => {
       const def = schema2._zod.def;
       processSchema(def.innerType, ctx, params);
       const seen = ctx.seen.get(schema2);
       seen.ref = def.innerType;
-      const value = serializeDefaultValue(def.defaultValue, schema2, ctx, json3, params);
+      const value = serializeDefaultValue(def.defaultValue, schema2, ctx, json4, params);
       if (value !== UNREPRESENTABLE_DEFAULT)
-        json3.default = value;
+        json4.default = value;
     };
-    prefaultProcessor = (schema2, ctx, json3, params) => {
+    prefaultProcessor = (schema2, ctx, json4, params) => {
       const def = schema2._zod.def;
       processSchema(def.innerType, ctx, params);
       const seen = ctx.seen.get(schema2);
       seen.ref = def.innerType;
       if (ctx.io !== "input")
         return;
-      const value = serializeDefaultValue(def.defaultValue, schema2, ctx, json3, params);
+      const value = serializeDefaultValue(def.defaultValue, schema2, ctx, json4, params);
       if (value !== UNREPRESENTABLE_DEFAULT)
-        json3._prefault = value;
+        json4._prefault = value;
     };
-    catchProcessor = (schema2, ctx, json3, params) => {
+    catchProcessor = (schema2, ctx, json4, params) => {
       const def = schema2._zod.def;
       processSchema(def.innerType, ctx, params);
       const seen = ctx.seen.get(schema2);
@@ -83027,10 +83027,10 @@ var init_json_schema_processors = __esm({
       try {
         catchValue = def.catchValue(void 0);
       } catch {
-        handleUnrepresentable(schema2, ctx, json3, params, "Dynamic catch values are not supported in JSON Schema");
+        handleUnrepresentable(schema2, ctx, json4, params, "Dynamic catch values are not supported in JSON Schema");
         return;
       }
-      json3.default = catchValue;
+      json4.default = catchValue;
     };
     pipeProcessor = (schema2, ctx, _json, params) => {
       const def = schema2._zod.def;
@@ -83040,12 +83040,12 @@ var init_json_schema_processors = __esm({
       const seen = ctx.seen.get(schema2);
       seen.ref = innerType;
     };
-    readonlyProcessor = (schema2, ctx, json3, params) => {
+    readonlyProcessor = (schema2, ctx, json4, params) => {
       const def = schema2._zod.def;
       processSchema(def.innerType, ctx, params);
       const seen = ctx.seen.get(schema2);
       seen.ref = def.innerType;
-      json3.readOnly = true;
+      json4.readOnly = true;
     };
     promiseProcessor = (schema2, ctx, _json, params) => {
       const def = schema2._zod.def;
@@ -84520,7 +84520,7 @@ var init_schemas2 = __esm({
       (inst, def) => {
         $ZodString.init(inst, def);
         ZodType.init(inst, def);
-        inst._zod.processJSONSchema = (ctx, json3, params) => stringProcessor(inst, ctx, json3, params);
+        inst._zod.processJSONSchema = (ctx, json4, params) => stringProcessor(inst, ctx, json4, params);
       },
       /* @__PURE__ */ util_exports.derived({
         format: (inst) => aggregateChecks(inst).format ?? null,
@@ -84774,7 +84774,7 @@ var init_schemas2 = __esm({
       (inst, def) => {
         $ZodNumber.init(inst, def);
         ZodType.init(inst, def);
-        inst._zod.processJSONSchema = (ctx, json3, params) => numberProcessor(inst, ctx, json3, params);
+        inst._zod.processJSONSchema = (ctx, json4, params) => numberProcessor(inst, ctx, json4, params);
         inst.isFinite = true;
       },
       /* @__PURE__ */ util_exports.derived({
@@ -84846,14 +84846,14 @@ var init_schemas2 = __esm({
     ZodBoolean = /* @__PURE__ */ $constructor("ZodBoolean", (inst, def) => {
       $ZodBoolean.init(inst, def);
       ZodType.init(inst, def);
-      inst._zod.processJSONSchema = (ctx, json3, params) => booleanProcessor(inst, ctx, json3, params);
+      inst._zod.processJSONSchema = (ctx, json4, params) => booleanProcessor(inst, ctx, json4, params);
     });
     ZodBigInt = /* @__PURE__ */ $constructor(
       "ZodBigInt",
       (inst, def) => {
         $ZodBigInt.init(inst, def);
         ZodType.init(inst, def);
-        inst._zod.processJSONSchema = (ctx, json3, params) => bigintProcessor(inst, ctx, json3, params);
+        inst._zod.processJSONSchema = (ctx, json4, params) => bigintProcessor(inst, ctx, json4, params);
       },
       /* @__PURE__ */ util_exports.derived({
         minValue: (inst) => aggregateChecks(inst).minimum ?? null,
@@ -84902,44 +84902,44 @@ var init_schemas2 = __esm({
     ZodSymbol = /* @__PURE__ */ $constructor("ZodSymbol", (inst, def) => {
       $ZodSymbol.init(inst, def);
       ZodType.init(inst, def);
-      inst._zod.processJSONSchema = (ctx, json3, params) => symbolProcessor(inst, ctx, json3, params);
+      inst._zod.processJSONSchema = (ctx, json4, params) => symbolProcessor(inst, ctx, json4, params);
     });
     ZodUndefined = /* @__PURE__ */ $constructor("ZodUndefined", (inst, def) => {
       $ZodUndefined.init(inst, def);
       ZodType.init(inst, def);
-      inst._zod.processJSONSchema = (ctx, json3, params) => undefinedProcessor(inst, ctx, json3, params);
+      inst._zod.processJSONSchema = (ctx, json4, params) => undefinedProcessor(inst, ctx, json4, params);
     });
     ZodNull = /* @__PURE__ */ $constructor("ZodNull", (inst, def) => {
       $ZodNull.init(inst, def);
       ZodType.init(inst, def);
-      inst._zod.processJSONSchema = (ctx, json3, params) => nullProcessor(inst, ctx, json3, params);
+      inst._zod.processJSONSchema = (ctx, json4, params) => nullProcessor(inst, ctx, json4, params);
     });
     ZodAny = /* @__PURE__ */ $constructor("ZodAny", (inst, def) => {
       $ZodAny.init(inst, def);
       ZodType.init(inst, def);
-      inst._zod.processJSONSchema = (ctx, json3, params) => anyProcessor(inst, ctx, json3, params);
+      inst._zod.processJSONSchema = (ctx, json4, params) => anyProcessor(inst, ctx, json4, params);
     });
     ZodUnknown = /* @__PURE__ */ $constructor("ZodUnknown", (inst, def) => {
       $ZodUnknown.init(inst, def);
       ZodType.init(inst, def);
-      inst._zod.processJSONSchema = (ctx, json3, params) => unknownProcessor(inst, ctx, json3, params);
+      inst._zod.processJSONSchema = (ctx, json4, params) => unknownProcessor(inst, ctx, json4, params);
     });
     ZodNever = /* @__PURE__ */ $constructor("ZodNever", (inst, def) => {
       $ZodNever.init(inst, def);
       ZodType.init(inst, def);
-      inst._zod.processJSONSchema = (ctx, json3, params) => neverProcessor(inst, ctx, json3, params);
+      inst._zod.processJSONSchema = (ctx, json4, params) => neverProcessor(inst, ctx, json4, params);
     });
     ZodVoid = /* @__PURE__ */ $constructor("ZodVoid", (inst, def) => {
       $ZodVoid.init(inst, def);
       ZodType.init(inst, def);
-      inst._zod.processJSONSchema = (ctx, json3, params) => voidProcessor(inst, ctx, json3, params);
+      inst._zod.processJSONSchema = (ctx, json4, params) => voidProcessor(inst, ctx, json4, params);
     });
     ZodDate = /* @__PURE__ */ $constructor(
       "ZodDate",
       (inst, def) => {
         $ZodDate.init(inst, def);
         ZodType.init(inst, def);
-        inst._zod.processJSONSchema = (ctx, json3, params) => dateProcessor(inst, ctx, json3, params);
+        inst._zod.processJSONSchema = (ctx, json4, params) => dateProcessor(inst, ctx, json4, params);
         inst.min = (value, params) => inst.check(_gte(value, params));
         inst.max = (value, params) => inst.check(_lte(value, params));
       },
@@ -84958,7 +84958,7 @@ var init_schemas2 = __esm({
       _ensureDefaultMemoizer();
       $ZodArray.init(inst, def);
       ZodType.init(inst, def);
-      inst._zod.processJSONSchema = (ctx, json3, params) => arrayProcessor(inst, ctx, json3, params);
+      inst._zod.processJSONSchema = (ctx, json4, params) => arrayProcessor(inst, ctx, json4, params);
       inst.element = def.element;
     }, {
       min(n2, params) {
@@ -84981,7 +84981,7 @@ var init_schemas2 = __esm({
       _ensureDefaultMemoizer();
       $ZodObjectJIT.init(inst, def);
       ZodType.init(inst, def);
-      inst._zod.processJSONSchema = (ctx, json3, params) => objectProcessor(inst, ctx, json3, params);
+      inst._zod.processJSONSchema = (ctx, json4, params) => objectProcessor(inst, ctx, json4, params);
       util_exports.installLazyProp(inst, "shape", (self2) => self2._zod.def.shape, false);
     }, {
       keyof() {
@@ -85030,13 +85030,13 @@ var init_schemas2 = __esm({
     ZodUnion = /* @__PURE__ */ $constructor("ZodUnion", (inst, def) => {
       $ZodUnion.init(inst, def);
       ZodType.init(inst, def);
-      inst._zod.processJSONSchema = (ctx, json3, params) => unionProcessor(inst, ctx, json3, params);
+      inst._zod.processJSONSchema = (ctx, json4, params) => unionProcessor(inst, ctx, json4, params);
       inst.options = def.options;
     });
     ZodXor = /* @__PURE__ */ $constructor("ZodXor", (inst, def) => {
       ZodUnion.init(inst, def);
       $ZodXor.init(inst, def);
-      inst._zod.processJSONSchema = (ctx, json3, params) => unionProcessor(inst, ctx, json3, params);
+      inst._zod.processJSONSchema = (ctx, json4, params) => unionProcessor(inst, ctx, json4, params);
       inst.options = def.options;
     });
     ZodDiscriminatedUnion = /* @__PURE__ */ $constructor("ZodDiscriminatedUnion", (inst, def) => {
@@ -85046,13 +85046,13 @@ var init_schemas2 = __esm({
     ZodIntersection = /* @__PURE__ */ $constructor("ZodIntersection", (inst, def) => {
       $ZodIntersection.init(inst, def);
       ZodType.init(inst, def);
-      inst._zod.processJSONSchema = (ctx, json3, params) => intersectionProcessor(inst, ctx, json3, params);
+      inst._zod.processJSONSchema = (ctx, json4, params) => intersectionProcessor(inst, ctx, json4, params);
     });
     ZodTuple = /* @__PURE__ */ $constructor("ZodTuple", (inst, def) => {
       _ensureDefaultMemoizer();
       $ZodTuple.init(inst, def);
       ZodType.init(inst, def);
-      inst._zod.processJSONSchema = (ctx, json3, params) => tupleProcessor(inst, ctx, json3, params);
+      inst._zod.processJSONSchema = (ctx, json4, params) => tupleProcessor(inst, ctx, json4, params);
     }, {
       rest(rest) {
         return this.clone({
@@ -85074,7 +85074,7 @@ var init_schemas2 = __esm({
       _ensureDefaultMemoizer();
       $ZodRecord.init(inst, def);
       ZodType.init(inst, def);
-      inst._zod.processJSONSchema = (ctx, json3, params) => recordProcessor(inst, ctx, json3, params);
+      inst._zod.processJSONSchema = (ctx, json4, params) => recordProcessor(inst, ctx, json4, params);
       inst.keyType = def.keyType;
       inst.valueType = def.valueType;
     });
@@ -85082,7 +85082,7 @@ var init_schemas2 = __esm({
       _ensureDefaultMemoizer();
       $ZodMap.init(inst, def);
       ZodType.init(inst, def);
-      inst._zod.processJSONSchema = (ctx, json3, params) => mapProcessor(inst, ctx, json3, params);
+      inst._zod.processJSONSchema = (ctx, json4, params) => mapProcessor(inst, ctx, json4, params);
       inst.keyType = def.keyType;
       inst.valueType = def.valueType;
       inst.min = (...args) => inst.check(_minSize(...args));
@@ -85094,7 +85094,7 @@ var init_schemas2 = __esm({
       _ensureDefaultMemoizer();
       $ZodSet.init(inst, def);
       ZodType.init(inst, def);
-      inst._zod.processJSONSchema = (ctx, json3, params) => setProcessor(inst, ctx, json3, params);
+      inst._zod.processJSONSchema = (ctx, json4, params) => setProcessor(inst, ctx, json4, params);
       inst.min = (...args) => inst.check(_minSize(...args));
       inst.nonempty = (params) => inst.check(_minSize(1, params));
       inst.max = (...args) => inst.check(_maxSize(...args));
@@ -85103,7 +85103,7 @@ var init_schemas2 = __esm({
     ZodEnum = /* @__PURE__ */ $constructor("ZodEnum", (inst, def) => {
       $ZodEnum.init(inst, def);
       ZodType.init(inst, def);
-      inst._zod.processJSONSchema = (ctx, json3, params) => enumProcessor(inst, ctx, json3, params);
+      inst._zod.processJSONSchema = (ctx, json4, params) => enumProcessor(inst, ctx, json4, params);
       inst.enum = def.entries;
       inst.options = [...inst._zod.values];
       const keys = new Set(Object.keys(def.entries));
@@ -85141,7 +85141,7 @@ var init_schemas2 = __esm({
     ZodLiteral = /* @__PURE__ */ $constructor("ZodLiteral", (inst, def) => {
       $ZodLiteral.init(inst, def);
       ZodType.init(inst, def);
-      inst._zod.processJSONSchema = (ctx, json3, params) => literalProcessor(inst, ctx, json3, params);
+      inst._zod.processJSONSchema = (ctx, json4, params) => literalProcessor(inst, ctx, json4, params);
       inst.values = new Set(def.values);
       Object.defineProperty(inst, "value", {
         get() {
@@ -85155,7 +85155,7 @@ var init_schemas2 = __esm({
     ZodFile = /* @__PURE__ */ $constructor("ZodFile", (inst, def) => {
       $ZodFile.init(inst, def);
       ZodType.init(inst, def);
-      inst._zod.processJSONSchema = (ctx, json3, params) => fileProcessor(inst, ctx, json3, params);
+      inst._zod.processJSONSchema = (ctx, json4, params) => fileProcessor(inst, ctx, json4, params);
       inst.min = (size2, params) => inst.check(_minSize(size2, params));
       inst.max = (size2, params) => inst.check(_maxSize(size2, params));
       inst.mime = (types, params) => inst.check(_mime(Array.isArray(types) ? types : [types], params));
@@ -85164,7 +85164,7 @@ var init_schemas2 = __esm({
       _ensureDefaultMemoizer();
       $ZodTransform.init(inst, def);
       ZodType.init(inst, def);
-      inst._zod.processJSONSchema = (ctx, json3, params) => transformProcessor(inst, ctx, json3, params);
+      inst._zod.processJSONSchema = (ctx, json4, params) => transformProcessor(inst, ctx, json4, params);
       inst._zod.parse = (payload, _ctx) => {
         if (_ctx.direction === "backward") {
           throw new $ZodEncodeError(inst.constructor.name);
@@ -85197,62 +85197,62 @@ var init_schemas2 = __esm({
     ZodOptional = /* @__PURE__ */ $constructor("ZodOptional", (inst, def) => {
       $ZodOptional.init(inst, def);
       ZodType.init(inst, def);
-      inst._zod.processJSONSchema = (ctx, json3, params) => optionalProcessor(inst, ctx, json3, params);
+      inst._zod.processJSONSchema = (ctx, json4, params) => optionalProcessor(inst, ctx, json4, params);
       inst.unwrap = () => inst._zod.def.innerType;
     });
     ZodExactOptional = /* @__PURE__ */ $constructor("ZodExactOptional", (inst, def) => {
       $ZodExactOptional.init(inst, def);
       ZodType.init(inst, def);
-      inst._zod.processJSONSchema = (ctx, json3, params) => optionalProcessor(inst, ctx, json3, params);
+      inst._zod.processJSONSchema = (ctx, json4, params) => optionalProcessor(inst, ctx, json4, params);
       inst.unwrap = () => inst._zod.def.innerType;
     });
     ZodNullable = /* @__PURE__ */ $constructor("ZodNullable", (inst, def) => {
       $ZodNullable.init(inst, def);
       ZodType.init(inst, def);
-      inst._zod.processJSONSchema = (ctx, json3, params) => nullableProcessor(inst, ctx, json3, params);
+      inst._zod.processJSONSchema = (ctx, json4, params) => nullableProcessor(inst, ctx, json4, params);
       inst.unwrap = () => inst._zod.def.innerType;
     });
     ZodDefault = /* @__PURE__ */ $constructor("ZodDefault", (inst, def) => {
       $ZodDefault.init(inst, def);
       ZodType.init(inst, def);
-      inst._zod.processJSONSchema = (ctx, json3, params) => defaultProcessor(inst, ctx, json3, params);
+      inst._zod.processJSONSchema = (ctx, json4, params) => defaultProcessor(inst, ctx, json4, params);
       inst.unwrap = () => inst._zod.def.innerType;
       inst.removeDefault = inst.unwrap;
     });
     ZodPrefault = /* @__PURE__ */ $constructor("ZodPrefault", (inst, def) => {
       $ZodPrefault.init(inst, def);
       ZodType.init(inst, def);
-      inst._zod.processJSONSchema = (ctx, json3, params) => prefaultProcessor(inst, ctx, json3, params);
+      inst._zod.processJSONSchema = (ctx, json4, params) => prefaultProcessor(inst, ctx, json4, params);
       inst.unwrap = () => inst._zod.def.innerType;
     });
     ZodNonOptional = /* @__PURE__ */ $constructor("ZodNonOptional", (inst, def) => {
       $ZodNonOptional.init(inst, def);
       ZodType.init(inst, def);
-      inst._zod.processJSONSchema = (ctx, json3, params) => nonoptionalProcessor(inst, ctx, json3, params);
+      inst._zod.processJSONSchema = (ctx, json4, params) => nonoptionalProcessor(inst, ctx, json4, params);
       inst.unwrap = () => inst._zod.def.innerType;
     });
     ZodSuccess = /* @__PURE__ */ $constructor("ZodSuccess", (inst, def) => {
       $ZodSuccess.init(inst, def);
       ZodType.init(inst, def);
-      inst._zod.processJSONSchema = (ctx, json3, params) => successProcessor(inst, ctx, json3, params);
+      inst._zod.processJSONSchema = (ctx, json4, params) => successProcessor(inst, ctx, json4, params);
       inst.unwrap = () => inst._zod.def.innerType;
     });
     ZodCatch = /* @__PURE__ */ $constructor("ZodCatch", (inst, def) => {
       $ZodCatch.init(inst, def);
       ZodType.init(inst, def);
-      inst._zod.processJSONSchema = (ctx, json3, params) => catchProcessor(inst, ctx, json3, params);
+      inst._zod.processJSONSchema = (ctx, json4, params) => catchProcessor(inst, ctx, json4, params);
       inst.unwrap = () => inst._zod.def.innerType;
       inst.removeCatch = inst.unwrap;
     });
     ZodNaN = /* @__PURE__ */ $constructor("ZodNaN", (inst, def) => {
       $ZodNaN.init(inst, def);
       ZodType.init(inst, def);
-      inst._zod.processJSONSchema = (ctx, json3, params) => nanProcessor(inst, ctx, json3, params);
+      inst._zod.processJSONSchema = (ctx, json4, params) => nanProcessor(inst, ctx, json4, params);
     });
     ZodPipe = /* @__PURE__ */ $constructor("ZodPipe", (inst, def) => {
       $ZodPipe.init(inst, def);
       ZodType.init(inst, def);
-      inst._zod.processJSONSchema = (ctx, json3, params) => pipeProcessor(inst, ctx, json3, params);
+      inst._zod.processJSONSchema = (ctx, json4, params) => pipeProcessor(inst, ctx, json4, params);
       inst.in = def.in;
       inst.out = def.out;
     });
@@ -85267,35 +85267,35 @@ var init_schemas2 = __esm({
     ZodReadonly = /* @__PURE__ */ $constructor("ZodReadonly", (inst, def) => {
       $ZodReadonly.init(inst, def);
       ZodType.init(inst, def);
-      inst._zod.processJSONSchema = (ctx, json3, params) => readonlyProcessor(inst, ctx, json3, params);
+      inst._zod.processJSONSchema = (ctx, json4, params) => readonlyProcessor(inst, ctx, json4, params);
       inst.unwrap = () => inst._zod.def.innerType;
     });
     ZodTemplateLiteral = /* @__PURE__ */ $constructor("ZodTemplateLiteral", (inst, def) => {
       $ZodTemplateLiteral.init(inst, def);
       ZodType.init(inst, def);
-      inst._zod.processJSONSchema = (ctx, json3, params) => templateLiteralProcessor(inst, ctx, json3, params);
+      inst._zod.processJSONSchema = (ctx, json4, params) => templateLiteralProcessor(inst, ctx, json4, params);
     });
     ZodLazy = /* @__PURE__ */ $constructor("ZodLazy", (inst, def) => {
       $ZodLazy.init(inst, def);
       ZodType.init(inst, def);
-      inst._zod.processJSONSchema = (ctx, json3, params) => lazyProcessor(inst, ctx, json3, params);
+      inst._zod.processJSONSchema = (ctx, json4, params) => lazyProcessor(inst, ctx, json4, params);
       inst.unwrap = () => inst._zod.def.getter();
     });
     ZodPromise = /* @__PURE__ */ $constructor("ZodPromise", (inst, def) => {
       $ZodPromise.init(inst, def);
       ZodType.init(inst, def);
-      inst._zod.processJSONSchema = (ctx, json3, params) => promiseProcessor(inst, ctx, json3, params);
+      inst._zod.processJSONSchema = (ctx, json4, params) => promiseProcessor(inst, ctx, json4, params);
       inst.unwrap = () => inst._zod.def.innerType;
     });
     ZodFunction = /* @__PURE__ */ $constructor("ZodFunction", (inst, def) => {
       $ZodFunction.init(inst, def);
       ZodType.init(inst, def);
-      inst._zod.processJSONSchema = (ctx, json3, params) => functionProcessor(inst, ctx, json3, params);
+      inst._zod.processJSONSchema = (ctx, json4, params) => functionProcessor(inst, ctx, json4, params);
     });
     ZodCustom = /* @__PURE__ */ $constructor("ZodCustom", (inst, def) => {
       $ZodCustom.init(inst, def);
       ZodType.init(inst, def);
-      inst._zod.processJSONSchema = (ctx, json3, params) => customProcessor(inst, ctx, json3, params);
+      inst._zod.processJSONSchema = (ctx, json4, params) => customProcessor(inst, ctx, json4, params);
     });
     describe2 = describe;
     meta2 = meta;
@@ -87042,11 +87042,11 @@ var require_codegen = __commonJS({
         const rhs = this.rhs === void 0 ? "" : ` = ${this.rhs}`;
         return `${varKind} ${this.name}${rhs};` + _n;
       }
-      optimizeNames(names, constants6) {
+      optimizeNames(names, constants7) {
         if (!names[this.name.str])
           return;
         if (this.rhs)
-          this.rhs = optimizeExpr(this.rhs, names, constants6);
+          this.rhs = optimizeExpr(this.rhs, names, constants7);
         return this;
       }
       get names() {
@@ -87063,10 +87063,10 @@ var require_codegen = __commonJS({
       render({ _n }) {
         return `${this.lhs} = ${this.rhs};` + _n;
       }
-      optimizeNames(names, constants6) {
+      optimizeNames(names, constants7) {
         if (this.lhs instanceof code_1.Name && !names[this.lhs.str] && !this.sideEffects)
           return;
-        this.rhs = optimizeExpr(this.rhs, names, constants6);
+        this.rhs = optimizeExpr(this.rhs, names, constants7);
         return this;
       }
       get names() {
@@ -87127,8 +87127,8 @@ var require_codegen = __commonJS({
       optimizeNodes() {
         return `${this.code}` ? this : void 0;
       }
-      optimizeNames(names, constants6) {
-        this.code = optimizeExpr(this.code, names, constants6);
+      optimizeNames(names, constants7) {
+        this.code = optimizeExpr(this.code, names, constants7);
         return this;
       }
       get names() {
@@ -87157,12 +87157,12 @@ var require_codegen = __commonJS({
         }
         return nodes.length > 0 ? this : void 0;
       }
-      optimizeNames(names, constants6) {
+      optimizeNames(names, constants7) {
         const { nodes } = this;
         let i2 = nodes.length;
         while (i2--) {
           const n2 = nodes[i2];
-          if (n2.optimizeNames(names, constants6))
+          if (n2.optimizeNames(names, constants7))
             continue;
           subtractNames(names, n2.names);
           nodes.splice(i2, 1);
@@ -87215,12 +87215,12 @@ var require_codegen = __commonJS({
           return void 0;
         return this;
       }
-      optimizeNames(names, constants6) {
+      optimizeNames(names, constants7) {
         var _a8;
-        this.else = (_a8 = this.else) === null || _a8 === void 0 ? void 0 : _a8.optimizeNames(names, constants6);
-        if (!(super.optimizeNames(names, constants6) || this.else))
+        this.else = (_a8 = this.else) === null || _a8 === void 0 ? void 0 : _a8.optimizeNames(names, constants7);
+        if (!(super.optimizeNames(names, constants7) || this.else))
           return;
-        this.condition = optimizeExpr(this.condition, names, constants6);
+        this.condition = optimizeExpr(this.condition, names, constants7);
         return this;
       }
       get names() {
@@ -87243,10 +87243,10 @@ var require_codegen = __commonJS({
       render(opts) {
         return `for(${this.iteration})` + super.render(opts);
       }
-      optimizeNames(names, constants6) {
-        if (!super.optimizeNames(names, constants6))
+      optimizeNames(names, constants7) {
+        if (!super.optimizeNames(names, constants7))
           return;
-        this.iteration = optimizeExpr(this.iteration, names, constants6);
+        this.iteration = optimizeExpr(this.iteration, names, constants7);
         return this;
       }
       get names() {
@@ -87282,10 +87282,10 @@ var require_codegen = __commonJS({
       render(opts) {
         return `for(${this.varKind} ${this.name} ${this.loop} ${this.iterable})` + super.render(opts);
       }
-      optimizeNames(names, constants6) {
-        if (!super.optimizeNames(names, constants6))
+      optimizeNames(names, constants7) {
+        if (!super.optimizeNames(names, constants7))
           return;
-        this.iterable = optimizeExpr(this.iterable, names, constants6);
+        this.iterable = optimizeExpr(this.iterable, names, constants7);
         return this;
       }
       get names() {
@@ -87327,11 +87327,11 @@ var require_codegen = __commonJS({
         (_b2 = this.finally) === null || _b2 === void 0 ? void 0 : _b2.optimizeNodes();
         return this;
       }
-      optimizeNames(names, constants6) {
+      optimizeNames(names, constants7) {
         var _a8, _b2;
-        super.optimizeNames(names, constants6);
-        (_a8 = this.catch) === null || _a8 === void 0 ? void 0 : _a8.optimizeNames(names, constants6);
-        (_b2 = this.finally) === null || _b2 === void 0 ? void 0 : _b2.optimizeNames(names, constants6);
+        super.optimizeNames(names, constants7);
+        (_a8 = this.catch) === null || _a8 === void 0 ? void 0 : _a8.optimizeNames(names, constants7);
+        (_b2 = this.finally) === null || _b2 === void 0 ? void 0 : _b2.optimizeNames(names, constants7);
         return this;
       }
       get names() {
@@ -87632,7 +87632,7 @@ var require_codegen = __commonJS({
     function addExprNames(names, from) {
       return from instanceof code_1._CodeOrName ? addNames(names, from.names) : names;
     }
-    function optimizeExpr(expr2, names, constants6) {
+    function optimizeExpr(expr2, names, constants7) {
       if (expr2 instanceof code_1.Name)
         return replaceName(expr2);
       if (!canOptimize(expr2))
@@ -87647,14 +87647,14 @@ var require_codegen = __commonJS({
         return items;
       }, []));
       function replaceName(n2) {
-        const c2 = constants6[n2.str];
+        const c2 = constants7[n2.str];
         if (c2 === void 0 || names[n2.str] !== 1)
           return n2;
         delete names[n2.str];
         return c2;
       }
       function canOptimize(e2) {
-        return e2 instanceof code_1._Code && e2._items.some((c2) => c2 instanceof code_1.Name && names[c2.str] === 1 && constants6[c2.str] !== void 0);
+        return e2 instanceof code_1._Code && e2._items.some((c2) => c2 instanceof code_1.Name && names[c2.str] === 1 && constants7[c2.str] !== void 0);
       }
     }
     function subtractNames(names, from) {
@@ -91180,8 +91180,8 @@ var require_core = __commonJS({
             return this;
           }
           case "object": {
-            const cacheKey = schemaKeyRef;
-            this._cache.delete(cacheKey);
+            const cacheKey2 = schemaKeyRef;
+            this._cache.delete(cacheKey2);
             let id3 = schemaKeyRef[this.opts.schemaId];
             if (id3) {
               id3 = (0, resolve_1.normalizeId)(id3);
@@ -94484,6 +94484,16 @@ function recordResourceSaving(platform7, enabled, outcome, duration6) {
   public_api_exports.count("resource_saving.apply", 1, { attributes: attributes2 });
   public_api_exports.distribution("resource_saving.duration", duration6, { unit: "millisecond", attributes: attributes2 });
 }
+function recordBrowserPanelSessions(active) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  public_api_exports.gauge("browser_panel.sessions", active, { attributes: { component: "server" } });
+}
+function recordBrowserPanelContext(outcome, bytes) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes2 = { component: "server", outcome };
+  public_api_exports.count("browser_panel.context_update", 1, { attributes: attributes2 });
+  if (bytes !== void 0) public_api_exports.distribution("browser_panel.context_bytes", bytes, { attributes: { component: "server" }, unit: "byte" });
+}
 function recordAppStorageOperation(operation, platform7, outcome, duration6) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes2 = { component: "server", surface: "storage", operation, device_platform: platform7, outcome };
@@ -95514,8 +95524,8 @@ function enclosingHelperFunction(src, index, paramName) {
 function resolveHelperCaller(src, file4, matchIndex, paramName, navigatorTypes, helperCallerCache) {
   const fnName2 = enclosingHelperFunction(src, matchIndex, paramName);
   if (!fnName2) return { key: null, all: [] };
-  const cacheKey = `${file4}::${fnName2}`;
-  let callerKeys = helperCallerCache.get(cacheKey);
+  const cacheKey2 = `${file4}::${fnName2}`;
+  let callerKeys = helperCallerCache.get(cacheKey2);
   if (callerKeys === void 0) {
     callerKeys = [];
     const seen = /* @__PURE__ */ new Set();
@@ -95528,7 +95538,7 @@ function resolveHelperCaller(src, file4, matchIndex, paramName, navigatorTypes, 
       seen.add(key2);
       callerKeys.push(key2);
     }
-    helperCallerCache.set(cacheKey, callerKeys);
+    helperCallerCache.set(cacheKey2, callerKeys);
   }
   return { key: callerKeys[0] ?? null, all: callerKeys };
 }
@@ -100765,7 +100775,7 @@ var require_buffer_util = __commonJS({
         buffer[i2] ^= mask[i2 & 3];
       }
     }
-    function toArrayBuffer(buf) {
+    function toArrayBuffer2(buf) {
       if (buf.length === buf.buffer.byteLength) {
         return buf.buffer;
       }
@@ -100788,7 +100798,7 @@ var require_buffer_util = __commonJS({
     module2.exports = {
       concat,
       mask: _mask,
-      toArrayBuffer,
+      toArrayBuffer: toArrayBuffer2,
       toBuffer,
       unmask: _unmask
     };
@@ -101455,7 +101465,7 @@ var require_receiver2 = __commonJS({
       kStatusCode,
       kWebSocket
     } = require_constants6();
-    var { concat, toArrayBuffer, unmask } = require_buffer_util();
+    var { concat, toArrayBuffer: toArrayBuffer2, unmask } = require_buffer_util();
     var { isValidStatusCode, isValidUTF8 } = require_validation2();
     var FastBuffer = Buffer[Symbol.species];
     var GET_INFO = 0;
@@ -101934,7 +101944,7 @@ var require_receiver2 = __commonJS({
           if (this._binaryType === "nodebuffer") {
             data = concat(fragments, messageLength);
           } else if (this._binaryType === "arraybuffer") {
-            data = toArrayBuffer(concat(fragments, messageLength));
+            data = toArrayBuffer2(concat(fragments, messageLength));
           } else if (this._binaryType === "blob") {
             data = new Blob(fragments);
           } else {
@@ -102598,7 +102608,7 @@ var require_event_target = __commonJS({
     };
     Object.defineProperty(Event2.prototype, "target", { enumerable: true });
     Object.defineProperty(Event2.prototype, "type", { enumerable: true });
-    var CloseEvent = class extends Event2 {
+    var CloseEvent2 = class extends Event2 {
       /**
        * Create a new `CloseEvent`.
        *
@@ -102637,10 +102647,10 @@ var require_event_target = __commonJS({
         return this[kWasClean];
       }
     };
-    Object.defineProperty(CloseEvent.prototype, "code", { enumerable: true });
-    Object.defineProperty(CloseEvent.prototype, "reason", { enumerable: true });
-    Object.defineProperty(CloseEvent.prototype, "wasClean", { enumerable: true });
-    var ErrorEvent = class extends Event2 {
+    Object.defineProperty(CloseEvent2.prototype, "code", { enumerable: true });
+    Object.defineProperty(CloseEvent2.prototype, "reason", { enumerable: true });
+    Object.defineProperty(CloseEvent2.prototype, "wasClean", { enumerable: true });
+    var ErrorEvent2 = class extends Event2 {
       /**
        * Create a new `ErrorEvent`.
        *
@@ -102668,9 +102678,9 @@ var require_event_target = __commonJS({
         return this[kMessage];
       }
     };
-    Object.defineProperty(ErrorEvent.prototype, "error", { enumerable: true });
-    Object.defineProperty(ErrorEvent.prototype, "message", { enumerable: true });
-    var MessageEvent = class extends Event2 {
+    Object.defineProperty(ErrorEvent2.prototype, "error", { enumerable: true });
+    Object.defineProperty(ErrorEvent2.prototype, "message", { enumerable: true });
+    var MessageEvent2 = class extends Event2 {
       /**
        * Create a new `MessageEvent`.
        *
@@ -102690,7 +102700,7 @@ var require_event_target = __commonJS({
         return this[kData];
       }
     };
-    Object.defineProperty(MessageEvent.prototype, "data", { enumerable: true });
+    Object.defineProperty(MessageEvent2.prototype, "data", { enumerable: true });
     var EventTarget2 = {
       /**
        * Register an event listener.
@@ -102713,7 +102723,7 @@ var require_event_target = __commonJS({
         let wrapper;
         if (type === "message") {
           wrapper = function onMessage(data, isBinary) {
-            const event = new MessageEvent("message", {
+            const event = new MessageEvent2("message", {
               data: isBinary ? data : data.toString()
             });
             event[kTarget] = this;
@@ -102721,7 +102731,7 @@ var require_event_target = __commonJS({
           };
         } else if (type === "close") {
           wrapper = function onClose(code, message3) {
-            const event = new CloseEvent("close", {
+            const event = new CloseEvent2("close", {
               code,
               reason: message3.toString(),
               wasClean: this._closeFrameReceived && this._closeFrameSent
@@ -102731,7 +102741,7 @@ var require_event_target = __commonJS({
           };
         } else if (type === "error") {
           wrapper = function onError2(error113) {
-            const event = new ErrorEvent("error", {
+            const event = new ErrorEvent2("error", {
               error: error113,
               message: error113.message
             });
@@ -102772,11 +102782,11 @@ var require_event_target = __commonJS({
       }
     };
     module2.exports = {
-      CloseEvent,
-      ErrorEvent,
+      CloseEvent: CloseEvent2,
+      ErrorEvent: ErrorEvent2,
       Event: Event2,
       EventTarget: EventTarget2,
-      MessageEvent
+      MessageEvent: MessageEvent2
     };
     function callListener(listener, thisArg, event) {
       if (typeof listener === "object" && listener.handleEvent) {
@@ -102950,8 +102960,8 @@ var require_websocket2 = __commonJS({
     var http5 = __require("http");
     var net3 = __require("net");
     var tls2 = __require("tls");
-    var { randomBytes: randomBytes10, createHash: createHash17 } = __require("crypto");
-    var { Duplex, Readable: Readable2 } = __require("stream");
+    var { randomBytes: randomBytes11, createHash: createHash17 } = __require("crypto");
+    var { Duplex, Readable: Readable3 } = __require("stream");
     var { URL: URL3 } = __require("url");
     var PerMessageDeflate2 = require_permessage_deflate2();
     var Receiver2 = require_receiver2();
@@ -103501,7 +103511,7 @@ var require_websocket2 = __commonJS({
         }
       }
       const defaultPort = isSecure ? 443 : 80;
-      const key2 = randomBytes10(16).toString("base64");
+      const key2 = randomBytes11(16).toString("base64");
       const request2 = isSecure ? https2.request : http5.request;
       const protocolSet = /* @__PURE__ */ new Set();
       let perMessageDeflate;
@@ -105143,7 +105153,7 @@ function agentVerdict(snapshot2, signals, painted, now, quietMs, idleMs) {
   out.settled = !!out.found && !out.loading && quiet && painted !== false;
   return out;
 }
-function agentSettle(signals, routeName, expectedParams, limits, quietMs, idleMs, reply) {
+function agentSettle(signals, routeName, expectedParams, limits, quietMs, idleMs, reply2) {
   var root = globalThis;
   var finished = false;
   var timer = null;
@@ -105159,9 +105169,9 @@ function agentSettle(signals, routeName, expectedParams, limits, quietMs, idleMs
     try {
       var now = Date.now();
       var snapshot2 = agentReadiness(routeName, expectedParams, limits);
-      reply(agentVerdict(snapshot2, signals, painted, now, quietMs, idleMs));
+      reply2(agentVerdict(snapshot2, signals, painted, now, quietMs, idleMs));
     } catch (error113) {
-      reply({
+      reply2({
         error: "command-failed",
         detail: String(error113 && error113.message).slice(0, 200)
       });
@@ -106818,13 +106828,13 @@ function agentPresentationRollback(pres, level2, wait2, done) {
   var run5 = function() {
     agentRestorePresentations(pres, level2, wait2, function(error113) {
       pres.rollbackRunning = false;
-      var reply = error113 ? { ok: false, error: error113, checkpoint: pres.undo.length, elapsedMs: Date.now() - started } : { ok: true, checkpoint: pres.undo.length, elapsedMs: Date.now() - started };
+      var reply2 = error113 ? { ok: false, error: error113, checkpoint: pres.undo.length, elapsedMs: Date.now() - started } : { ok: true, checkpoint: pres.undo.length, elapsedMs: Date.now() - started };
       if (pres.lastDismissEvidence) {
-        reply.evidence = pres.lastDismissEvidence;
+        reply2.evidence = pres.lastDismissEvidence;
         pres.lastDismissEvidence = void 0;
       }
       try {
-        done(reply);
+        done(reply2);
       } catch (replyError) {
         pres.rollbackRunning = false;
       }
@@ -107090,13 +107100,13 @@ function agentInstall(key2, leaseMs, limits) {
     }
   }
   agent = {
-    invoke: function(commandJson, reply) {
+    invoke: function(commandJson, reply2) {
       var replied = false;
       var once2 = function(value) {
         if (replied) return;
         replied = true;
         try {
-          reply(value);
+          reply2(value);
         } catch (error113) {
           replied = true;
         }
@@ -107640,15 +107650,15 @@ var init_connection = __esm({
       settleReply(id3, result4) {
         const pending = this.pending.get(id3);
         if (!pending) return;
-        const reply = result4;
-        if (reply && reply.runtimeUnavailable) {
+        const reply2 = result4;
+        if (reply2 && reply2.runtimeUnavailable) {
           this.finish(id3, void 0, new RuntimeUnavailableError(pending.operation));
           this.fail(new CdpConnectionLostError("runtime-unavailable"));
           return;
         }
         this.lastReply = this.now();
         this.heartbeatFailures = 0;
-        if (reply && reply.commandExpired) {
+        if (reply2 && reply2.commandExpired) {
           this.finish(id3, void 0, new CommandExpiredError(pending.operation));
           return;
         }
@@ -107701,8 +107711,8 @@ var init_connection = __esm({
         await this.ready;
         const id3 = -++this.sequence;
         const deadline = this.appClockOffset === void 0 || command3.type === "restore" ? void 0 : this.now() + timeoutMs + this.appClockOffset;
-        const reply = `var reply=function(result){var send=globalThis[${JSON.stringify(this.binding)}];if(typeof send==='function')send(JSON.stringify({id:${id3},result:result===undefined?null:result}))};`;
-        const expression2 = `(function(){var runtime=globalThis[${JSON.stringify(this.key)}];${reply}` + (deadline === void 0 ? "" : `if(${APP_CLOCK_EXPR}>${deadline}){reply({commandExpired:true});return}`) + `if(!runtime||typeof runtime.invoke!=='function'){reply({runtimeUnavailable:true});return}runtime.invoke(${JSON.stringify(JSON.stringify(command3, wellFormed))},reply)})()`;
+        const reply2 = `var reply=function(result){var send=globalThis[${JSON.stringify(this.binding)}];if(typeof send==='function')send(JSON.stringify({id:${id3},result:result===undefined?null:result}))};`;
+        const expression2 = `(function(){var runtime=globalThis[${JSON.stringify(this.key)}];${reply2}` + (deadline === void 0 ? "" : `if(${APP_CLOCK_EXPR}>${deadline}){reply({commandExpired:true});return}`) + `if(!runtime||typeof runtime.invoke!=='function'){reply({runtimeUnavailable:true});return}runtime.invoke(${JSON.stringify(JSON.stringify(command3, wellFormed))},reply)})()`;
         const result4 = await this.send(
           "Runtime.evaluate",
           { expression: expression2, silent: true, returnByValue: true, objectGroup: this.key },
@@ -108029,11 +108039,11 @@ function createAppRuntimeTransport(options) {
     async navState() {
       const started = performance.now();
       try {
-        const reply = await connection2.invoke(
+        const reply2 = await connection2.invoke(
           { type: "nav-state" },
           COMMAND_TIMEOUT_MS
         );
-        return reply?.routes ?? null;
+        return reply2?.routes ?? null;
       } finally {
         timing("app_flow.runtime.command", started, { operation: "nav-state" });
       }
@@ -110328,8 +110338,8 @@ function createExploreUiPorts(options) {
       }
     ),
     focusedRoute: async () => {
-      const reply = await command3({ type: "nav-state" }, LIST_TIMEOUT_MS, "nav-state");
-      const routes = reply?.routes ?? null;
+      const reply2 = await command3({ type: "nav-state" }, LIST_TIMEOUT_MS, "nav-state");
+      const routes = reply2?.routes ?? null;
       return routes?.length ? routes[routes.length - 1].name ?? null : null;
     },
     // The same settle the Fast delivery path waits on — a frame the app has stopped changing,
@@ -113596,11 +113606,11 @@ async function buildAppFlow(options) {
         );
         if (!blocked) return;
         try {
-          const reply = await fastRuntime.invoke(
+          const reply2 = await fastRuntime.invoke(
             { type: "links", max: LINK_CANDIDATE_CAP },
             5e3
           );
-          const links = reply?.links ?? [];
+          const links = reply2?.links ?? [];
           if (!links.length) {
             recordRuntimeCount("app_flow.runtime.links", { outcome: "empty" });
             return;
@@ -113615,7 +113625,7 @@ async function buildAppFlow(options) {
             outcome: usable ? "usable" : "unmatched"
           });
           console.log(
-            `[app-flow] links \u2014 ${links.length} destination(s) on ${from.urlPath ?? from.id}, ${usable} usable, ${unmatched} unmatched${reply.capped ? ", capped" : ""}`
+            `[app-flow] links \u2014 ${links.length} destination(s) on ${from.urlPath ?? from.id}, ${usable} usable, ${unmatched} unmatched${reply2.capped ? ", capped" : ""}`
           );
         } catch (error113) {
           linksUnavailable = true;
@@ -117018,6 +117028,110 @@ var require_cross_spawn = __commonJS({
   }
 });
 
+// node_modules/content-type/index.js
+var require_content_type = __commonJS({
+  "node_modules/content-type/index.js"(exports) {
+    "use strict";
+    var PARAM_REGEXP = /; *([!#$%&'*+.^_`|~0-9A-Za-z-]+) *= *("(?:[\u000b\u0020\u0021\u0023-\u005b\u005d-\u007e\u0080-\u00ff]|\\[\u000b\u0020-\u00ff])*"|[!#$%&'*+.^_`|~0-9A-Za-z-]+) */g;
+    var TEXT_REGEXP = /^[\u000b\u0020-\u007e\u0080-\u00ff]+$/;
+    var TOKEN_REGEXP = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+    var QESC_REGEXP = /\\([\u000b\u0020-\u00ff])/g;
+    var QUOTE_REGEXP = /([\\"])/g;
+    var TYPE_REGEXP = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+\/[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+    exports.format = format2;
+    exports.parse = parse11;
+    function format2(obj) {
+      if (!obj || typeof obj !== "object") {
+        throw new TypeError("argument obj is required");
+      }
+      var parameters = obj.parameters;
+      var type = obj.type;
+      if (!type || !TYPE_REGEXP.test(type)) {
+        throw new TypeError("invalid type");
+      }
+      var string7 = type;
+      if (parameters && typeof parameters === "object") {
+        var param;
+        var params = Object.keys(parameters).sort();
+        for (var i2 = 0; i2 < params.length; i2++) {
+          param = params[i2];
+          if (!TOKEN_REGEXP.test(param)) {
+            throw new TypeError("invalid parameter name");
+          }
+          string7 += "; " + param + "=" + qstring(parameters[param]);
+        }
+      }
+      return string7;
+    }
+    function parse11(string7) {
+      if (!string7) {
+        throw new TypeError("argument string is required");
+      }
+      var header = typeof string7 === "object" ? getcontenttype(string7) : string7;
+      if (typeof header !== "string") {
+        throw new TypeError("argument string is required to be a string");
+      }
+      var index = header.indexOf(";");
+      var type = index !== -1 ? header.slice(0, index).trim() : header.trim();
+      if (!TYPE_REGEXP.test(type)) {
+        throw new TypeError("invalid media type");
+      }
+      var obj = new ContentType(type.toLowerCase());
+      if (index !== -1) {
+        var key2;
+        var match2;
+        var value;
+        PARAM_REGEXP.lastIndex = index;
+        while (match2 = PARAM_REGEXP.exec(header)) {
+          if (match2.index !== index) {
+            throw new TypeError("invalid parameter format");
+          }
+          index += match2[0].length;
+          key2 = match2[1].toLowerCase();
+          value = match2[2];
+          if (value.charCodeAt(0) === 34) {
+            value = value.slice(1, -1);
+            if (value.indexOf("\\") !== -1) {
+              value = value.replace(QESC_REGEXP, "$1");
+            }
+          }
+          obj.parameters[key2] = value;
+        }
+        if (index !== header.length) {
+          throw new TypeError("invalid parameter format");
+        }
+      }
+      return obj;
+    }
+    function getcontenttype(obj) {
+      var header;
+      if (typeof obj.getHeader === "function") {
+        header = obj.getHeader("content-type");
+      } else if (typeof obj.headers === "object") {
+        header = obj.headers && obj.headers["content-type"];
+      }
+      if (typeof header !== "string") {
+        throw new TypeError("content-type header is missing from object");
+      }
+      return header;
+    }
+    function qstring(val) {
+      var str = String(val);
+      if (TOKEN_REGEXP.test(str)) {
+        return str;
+      }
+      if (str.length > 0 && !TEXT_REGEXP.test(str)) {
+        throw new TypeError("invalid parameter value");
+      }
+      return '"' + str.replace(QUOTE_REGEXP, "\\$1") + '"';
+    }
+    function ContentType(type) {
+      this.parameters = /* @__PURE__ */ Object.create(null);
+      this.type = type;
+    }
+  }
+});
+
 // packages/core/src/instrument.ts
 init_http_runtime();
 init_esm5();
@@ -117087,6 +117201,7 @@ import process2 from "node:process";
 // node_modules/@modelcontextprotocol/sdk/dist/esm/types.js
 init_v4();
 var LATEST_PROTOCOL_VERSION = "2025-11-25";
+var DEFAULT_NEGOTIATED_PROTOCOL_VERSION = "2025-03-26";
 var SUPPORTED_PROTOCOL_VERSIONS = [LATEST_PROTOCOL_VERSION, "2025-06-18", "2025-03-26", "2024-11-05", "2024-10-07"];
 var RELATED_TASK_META_KEY = "io.modelcontextprotocol/related-task";
 var JSONRPC_VERSION = "2.0";
@@ -118712,8 +118827,8 @@ var StdioServerTransport = class {
   }
   send(message3) {
     return new Promise((resolve8) => {
-      const json3 = serializeMessage(message3);
-      if (this._stdout.write(json3)) {
+      const json4 = serializeMessage(message3);
+      if (this._stdout.write(json4)) {
         resolve8();
       } else {
         this._stdout.once("drain", resolve8);
@@ -126988,8 +127103,8 @@ async function deliver(send, url3, batch) {
       body,
       signal
     });
-    const reply = await response3.json();
-    return response3.ok && reply.status === 1 ? "success" : "failed";
+    const reply2 = await response3.json();
+    return response3.ok && reply2.status === 1 ? "success" : "failed";
   } catch {
     return "failed";
   }
@@ -127176,6 +127291,11 @@ function K3(Z, $, J, X) {
 }
 function N3(Z, $, J, X, V) {
   return Z.registerResource($, J, { mimeType: p3, ...X }, V);
+}
+var TQ = "io.modelcontextprotocol/ui";
+function Y3(Z) {
+  if (!Z) return;
+  return Z.extensions?.[TQ];
 }
 
 // node_modules/@openai/mcp-extensions/node_modules/zod/v4/classic/external.js
@@ -138956,29 +139076,29 @@ var formatMap2 = {
   // do not set
 };
 var stringProcessor2 = (schema2, ctx, _json, _params) => {
-  const json3 = _json;
-  json3.type = "string";
+  const json4 = _json;
+  json4.type = "string";
   const { minimum, maximum, format: format2, patterns, contentEncoding } = schema2._zod.bag;
   if (typeof minimum === "number")
-    json3.minLength = minimum;
+    json4.minLength = minimum;
   if (typeof maximum === "number")
-    json3.maxLength = maximum;
+    json4.maxLength = maximum;
   if (format2) {
-    json3.format = formatMap2[format2] ?? format2;
-    if (json3.format === "")
-      delete json3.format;
+    json4.format = formatMap2[format2] ?? format2;
+    if (json4.format === "")
+      delete json4.format;
     if (format2 === "time") {
-      delete json3.format;
+      delete json4.format;
     }
   }
   if (contentEncoding)
-    json3.contentEncoding = contentEncoding;
+    json4.contentEncoding = contentEncoding;
   if (patterns && patterns.size > 0) {
     const regexes = [...patterns];
     if (regexes.length === 1)
-      json3.pattern = regexes[0].source;
+      json4.pattern = regexes[0].source;
     else if (regexes.length > 1) {
-      json3.allOf = [
+      json4.allOf = [
         ...regexes.map((regex2) => ({
           ...ctx.target === "draft-07" || ctx.target === "draft-04" || ctx.target === "openapi-3.0" ? { type: "string" } : {},
           pattern: regex2.source
@@ -138988,40 +139108,40 @@ var stringProcessor2 = (schema2, ctx, _json, _params) => {
   }
 };
 var numberProcessor2 = (schema2, ctx, _json, _params) => {
-  const json3 = _json;
+  const json4 = _json;
   const { minimum, maximum, format: format2, multipleOf, exclusiveMaximum, exclusiveMinimum } = schema2._zod.bag;
   if (typeof format2 === "string" && format2.includes("int"))
-    json3.type = "integer";
+    json4.type = "integer";
   else
-    json3.type = "number";
+    json4.type = "number";
   const exMin = typeof exclusiveMinimum === "number" && exclusiveMinimum >= (minimum ?? Number.NEGATIVE_INFINITY);
   const exMax = typeof exclusiveMaximum === "number" && exclusiveMaximum <= (maximum ?? Number.POSITIVE_INFINITY);
   const legacy = ctx.target === "draft-04" || ctx.target === "openapi-3.0";
   if (exMin) {
     if (legacy) {
-      json3.minimum = exclusiveMinimum;
-      json3.exclusiveMinimum = true;
+      json4.minimum = exclusiveMinimum;
+      json4.exclusiveMinimum = true;
     } else {
-      json3.exclusiveMinimum = exclusiveMinimum;
+      json4.exclusiveMinimum = exclusiveMinimum;
     }
   } else if (typeof minimum === "number") {
-    json3.minimum = minimum;
+    json4.minimum = minimum;
   }
   if (exMax) {
     if (legacy) {
-      json3.maximum = exclusiveMaximum;
-      json3.exclusiveMaximum = true;
+      json4.maximum = exclusiveMaximum;
+      json4.exclusiveMaximum = true;
     } else {
-      json3.exclusiveMaximum = exclusiveMaximum;
+      json4.exclusiveMaximum = exclusiveMaximum;
     }
   } else if (typeof maximum === "number") {
-    json3.maximum = maximum;
+    json4.maximum = maximum;
   }
   if (typeof multipleOf === "number")
-    json3.multipleOf = multipleOf;
+    json4.multipleOf = multipleOf;
 };
-var booleanProcessor2 = (_schema, _ctx, json3, _params) => {
-  json3.type = "boolean";
+var booleanProcessor2 = (_schema, _ctx, json4, _params) => {
+  json4.type = "boolean";
 };
 var bigintProcessor2 = (_schema, ctx, _json, _params) => {
   if (ctx.unrepresentable === "throw") {
@@ -139033,13 +139153,13 @@ var symbolProcessor2 = (_schema, ctx, _json, _params) => {
     throw new Error("Symbols cannot be represented in JSON Schema");
   }
 };
-var nullProcessor2 = (_schema, ctx, json3, _params) => {
+var nullProcessor2 = (_schema, ctx, json4, _params) => {
   if (ctx.target === "openapi-3.0") {
-    json3.type = "string";
-    json3.nullable = true;
-    json3.enum = [null];
+    json4.type = "string";
+    json4.nullable = true;
+    json4.enum = [null];
   } else {
-    json3.type = "null";
+    json4.type = "null";
   }
 };
 var undefinedProcessor2 = (_schema, ctx, _json, _params) => {
@@ -139052,8 +139172,8 @@ var voidProcessor2 = (_schema, ctx, _json, _params) => {
     throw new Error("Void cannot be represented in JSON Schema");
   }
 };
-var neverProcessor2 = (_schema, _ctx, json3, _params) => {
-  json3.not = {};
+var neverProcessor2 = (_schema, _ctx, json4, _params) => {
+  json4.not = {};
 };
 var anyProcessor2 = (_schema, _ctx, _json, _params) => {
 };
@@ -139064,16 +139184,16 @@ var dateProcessor2 = (_schema, ctx, _json, _params) => {
     throw new Error("Date cannot be represented in JSON Schema");
   }
 };
-var enumProcessor2 = (schema2, _ctx, json3, _params) => {
+var enumProcessor2 = (schema2, _ctx, json4, _params) => {
   const def = schema2._zod.def;
   const values = getEnumValues2(def.entries);
   if (values.every((v3) => typeof v3 === "number"))
-    json3.type = "number";
+    json4.type = "number";
   if (values.every((v3) => typeof v3 === "string"))
-    json3.type = "string";
-  json3.enum = values;
+    json4.type = "string";
+  json4.enum = values;
 };
-var literalProcessor2 = (schema2, ctx, json3, _params) => {
+var literalProcessor2 = (schema2, ctx, json4, _params) => {
   const def = schema2._zod.def;
   const vals = [];
   for (const val of def.values) {
@@ -139095,22 +139215,22 @@ var literalProcessor2 = (schema2, ctx, json3, _params) => {
   if (vals.length === 0) {
   } else if (vals.length === 1) {
     const val = vals[0];
-    json3.type = val === null ? "null" : typeof val;
+    json4.type = val === null ? "null" : typeof val;
     if (ctx.target === "draft-04" || ctx.target === "openapi-3.0") {
-      json3.enum = [val];
+      json4.enum = [val];
     } else {
-      json3.const = val;
+      json4.const = val;
     }
   } else {
     if (vals.every((v3) => typeof v3 === "number"))
-      json3.type = "number";
+      json4.type = "number";
     if (vals.every((v3) => typeof v3 === "string"))
-      json3.type = "string";
+      json4.type = "string";
     if (vals.every((v3) => typeof v3 === "boolean"))
-      json3.type = "boolean";
+      json4.type = "boolean";
     if (vals.every((v3) => v3 === null))
-      json3.type = "null";
-    json3.enum = vals;
+      json4.type = "null";
+    json4.enum = vals;
   }
 };
 var nanProcessor2 = (_schema, ctx, _json, _params) => {
@@ -139118,16 +139238,16 @@ var nanProcessor2 = (_schema, ctx, _json, _params) => {
     throw new Error("NaN cannot be represented in JSON Schema");
   }
 };
-var templateLiteralProcessor2 = (schema2, _ctx, json3, _params) => {
-  const _json = json3;
+var templateLiteralProcessor2 = (schema2, _ctx, json4, _params) => {
+  const _json = json4;
   const pattern = schema2._zod.pattern;
   if (!pattern)
     throw new Error("Pattern not found in template literal");
   _json.type = "string";
   _json.pattern = pattern.source;
 };
-var fileProcessor2 = (schema2, _ctx, json3, _params) => {
-  const _json = json3;
+var fileProcessor2 = (schema2, _ctx, json4, _params) => {
+  const _json = json4;
   const file4 = {
     type: "string",
     format: "binary",
@@ -139150,8 +139270,8 @@ var fileProcessor2 = (schema2, _ctx, json3, _params) => {
     Object.assign(_json, file4);
   }
 };
-var successProcessor2 = (_schema, _ctx, json3, _params) => {
-  json3.type = "boolean";
+var successProcessor2 = (_schema, _ctx, json4, _params) => {
+  json4.type = "boolean";
 };
 var customProcessor2 = (_schema, ctx, _json, _params) => {
   if (ctx.unrepresentable === "throw") {
@@ -139179,27 +139299,27 @@ var setProcessor2 = (_schema, ctx, _json, _params) => {
   }
 };
 var arrayProcessor2 = (schema2, ctx, _json, params) => {
-  const json3 = _json;
+  const json4 = _json;
   const def = schema2._zod.def;
   const { minimum, maximum } = schema2._zod.bag;
   if (typeof minimum === "number")
-    json3.minItems = minimum;
+    json4.minItems = minimum;
   if (typeof maximum === "number")
-    json3.maxItems = maximum;
-  json3.type = "array";
-  json3.items = process3(def.element, ctx, {
+    json4.maxItems = maximum;
+  json4.type = "array";
+  json4.items = process3(def.element, ctx, {
     ...params,
     path: [...params.path, "items"]
   });
 };
 var objectProcessor2 = (schema2, ctx, _json, params) => {
-  const json3 = _json;
+  const json4 = _json;
   const def = schema2._zod.def;
-  json3.type = "object";
-  json3.properties = {};
+  json4.type = "object";
+  json4.properties = {};
   const shape = def.shape;
   for (const key2 in shape) {
-    json3.properties[key2] = process3(shape[key2], ctx, {
+    json4.properties[key2] = process3(shape[key2], ctx, {
       ...params,
       path: [...params.path, "properties", key2]
     });
@@ -139214,21 +139334,21 @@ var objectProcessor2 = (schema2, ctx, _json, params) => {
     }
   }));
   if (requiredKeys.size > 0) {
-    json3.required = Array.from(requiredKeys);
+    json4.required = Array.from(requiredKeys);
   }
   if (def.catchall?._zod.def.type === "never") {
-    json3.additionalProperties = false;
+    json4.additionalProperties = false;
   } else if (!def.catchall) {
     if (ctx.io === "output")
-      json3.additionalProperties = false;
+      json4.additionalProperties = false;
   } else if (def.catchall) {
-    json3.additionalProperties = process3(def.catchall, ctx, {
+    json4.additionalProperties = process3(def.catchall, ctx, {
       ...params,
       path: [...params.path, "additionalProperties"]
     });
   }
 };
-var unionProcessor2 = (schema2, ctx, json3, params) => {
+var unionProcessor2 = (schema2, ctx, json4, params) => {
   const def = schema2._zod.def;
   const isExclusive = def.inclusive === false;
   const options = def.options.map((x2, i2) => process3(x2, ctx, {
@@ -139236,12 +139356,12 @@ var unionProcessor2 = (schema2, ctx, json3, params) => {
     path: [...params.path, isExclusive ? "oneOf" : "anyOf", i2]
   }));
   if (isExclusive) {
-    json3.oneOf = options;
+    json4.oneOf = options;
   } else {
-    json3.anyOf = options;
+    json4.anyOf = options;
   }
 };
-var intersectionProcessor2 = (schema2, ctx, json3, params) => {
+var intersectionProcessor2 = (schema2, ctx, json4, params) => {
   const def = schema2._zod.def;
   const a2 = process3(def.left, ctx, {
     ...params,
@@ -139256,12 +139376,12 @@ var intersectionProcessor2 = (schema2, ctx, json3, params) => {
     ...isSimpleIntersection(a2) ? a2.allOf : [a2],
     ...isSimpleIntersection(b2) ? b2.allOf : [b2]
   ];
-  json3.allOf = allOf;
+  json4.allOf = allOf;
 };
 var tupleProcessor2 = (schema2, ctx, _json, params) => {
-  const json3 = _json;
+  const json4 = _json;
   const def = schema2._zod.def;
-  json3.type = "array";
+  json4.type = "array";
   const prefixPath = ctx.target === "draft-2020-12" ? "prefixItems" : "items";
   const restPath = ctx.target === "draft-2020-12" ? "items" : ctx.target === "openapi-3.0" ? "items" : "additionalItems";
   const prefixItems = def.items.map((x2, i2) => process3(x2, ctx, {
@@ -139273,37 +139393,37 @@ var tupleProcessor2 = (schema2, ctx, _json, params) => {
     path: [...params.path, restPath, ...ctx.target === "openapi-3.0" ? [def.items.length] : []]
   }) : null;
   if (ctx.target === "draft-2020-12") {
-    json3.prefixItems = prefixItems;
+    json4.prefixItems = prefixItems;
     if (rest) {
-      json3.items = rest;
+      json4.items = rest;
     }
   } else if (ctx.target === "openapi-3.0") {
-    json3.items = {
+    json4.items = {
       anyOf: prefixItems
     };
     if (rest) {
-      json3.items.anyOf.push(rest);
+      json4.items.anyOf.push(rest);
     }
-    json3.minItems = prefixItems.length;
+    json4.minItems = prefixItems.length;
     if (!rest) {
-      json3.maxItems = prefixItems.length;
+      json4.maxItems = prefixItems.length;
     }
   } else {
-    json3.items = prefixItems;
+    json4.items = prefixItems;
     if (rest) {
-      json3.additionalItems = rest;
+      json4.additionalItems = rest;
     }
   }
   const { minimum, maximum } = schema2._zod.bag;
   if (typeof minimum === "number")
-    json3.minItems = minimum;
+    json4.minItems = minimum;
   if (typeof maximum === "number")
-    json3.maxItems = maximum;
+    json4.maxItems = maximum;
 };
 var recordProcessor2 = (schema2, ctx, _json, params) => {
-  const json3 = _json;
+  const json4 = _json;
   const def = schema2._zod.def;
-  json3.type = "object";
+  json4.type = "object";
   const keyType = def.keyType;
   const keyBag = keyType._zod.bag;
   const patterns = keyBag?.patterns;
@@ -139312,18 +139432,18 @@ var recordProcessor2 = (schema2, ctx, _json, params) => {
       ...params,
       path: [...params.path, "patternProperties", "*"]
     });
-    json3.patternProperties = {};
+    json4.patternProperties = {};
     for (const pattern of patterns) {
-      json3.patternProperties[pattern.source] = valueSchema;
+      json4.patternProperties[pattern.source] = valueSchema;
     }
   } else {
     if (ctx.target === "draft-07" || ctx.target === "draft-2020-12") {
-      json3.propertyNames = process3(def.keyType, ctx, {
+      json4.propertyNames = process3(def.keyType, ctx, {
         ...params,
         path: [...params.path, "propertyNames"]
       });
     }
-    json3.additionalProperties = process3(def.valueType, ctx, {
+    json4.additionalProperties = process3(def.valueType, ctx, {
       ...params,
       path: [...params.path, "additionalProperties"]
     });
@@ -139332,19 +139452,19 @@ var recordProcessor2 = (schema2, ctx, _json, params) => {
   if (keyValues) {
     const validKeyValues = [...keyValues].filter((v3) => typeof v3 === "string" || typeof v3 === "number");
     if (validKeyValues.length > 0) {
-      json3.required = validKeyValues;
+      json4.required = validKeyValues;
     }
   }
 };
-var nullableProcessor2 = (schema2, ctx, json3, params) => {
+var nullableProcessor2 = (schema2, ctx, json4, params) => {
   const def = schema2._zod.def;
   const inner = process3(def.innerType, ctx, params);
   const seen = ctx.seen.get(schema2);
   if (ctx.target === "openapi-3.0") {
     seen.ref = def.innerType;
-    json3.nullable = true;
+    json4.nullable = true;
   } else {
-    json3.anyOf = [inner, { type: "null" }];
+    json4.anyOf = [inner, { type: "null" }];
   }
 };
 var nonoptionalProcessor2 = (schema2, ctx, _json, params) => {
@@ -139353,22 +139473,22 @@ var nonoptionalProcessor2 = (schema2, ctx, _json, params) => {
   const seen = ctx.seen.get(schema2);
   seen.ref = def.innerType;
 };
-var defaultProcessor2 = (schema2, ctx, json3, params) => {
+var defaultProcessor2 = (schema2, ctx, json4, params) => {
   const def = schema2._zod.def;
   process3(def.innerType, ctx, params);
   const seen = ctx.seen.get(schema2);
   seen.ref = def.innerType;
-  json3.default = JSON.parse(JSON.stringify(def.defaultValue));
+  json4.default = JSON.parse(JSON.stringify(def.defaultValue));
 };
-var prefaultProcessor2 = (schema2, ctx, json3, params) => {
+var prefaultProcessor2 = (schema2, ctx, json4, params) => {
   const def = schema2._zod.def;
   process3(def.innerType, ctx, params);
   const seen = ctx.seen.get(schema2);
   seen.ref = def.innerType;
   if (ctx.io === "input")
-    json3._prefault = JSON.parse(JSON.stringify(def.defaultValue));
+    json4._prefault = JSON.parse(JSON.stringify(def.defaultValue));
 };
-var catchProcessor2 = (schema2, ctx, json3, params) => {
+var catchProcessor2 = (schema2, ctx, json4, params) => {
   const def = schema2._zod.def;
   process3(def.innerType, ctx, params);
   const seen = ctx.seen.get(schema2);
@@ -139379,7 +139499,7 @@ var catchProcessor2 = (schema2, ctx, json3, params) => {
   } catch {
     throw new Error("Dynamic catch values are not supported in JSON Schema");
   }
-  json3.default = catchValue;
+  json4.default = catchValue;
 };
 var pipeProcessor2 = (schema2, ctx, _json, params) => {
   const def = schema2._zod.def;
@@ -139389,12 +139509,12 @@ var pipeProcessor2 = (schema2, ctx, _json, params) => {
   const seen = ctx.seen.get(schema2);
   seen.ref = innerType;
 };
-var readonlyProcessor2 = (schema2, ctx, json3, params) => {
+var readonlyProcessor2 = (schema2, ctx, json4, params) => {
   const def = schema2._zod.def;
   process3(def.innerType, ctx, params);
   const seen = ctx.seen.get(schema2);
   seen.ref = def.innerType;
-  json3.readOnly = true;
+  json4.readOnly = true;
 };
 var promiseProcessor2 = (schema2, ctx, _json, params) => {
   const def = schema2._zod.def;
@@ -140038,7 +140158,7 @@ var ZodType3 = /* @__PURE__ */ $constructor2("ZodType", (inst, def) => {
 var _ZodString2 = /* @__PURE__ */ $constructor2("_ZodString", (inst, def) => {
   $ZodString2.init(inst, def);
   ZodType3.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json3, params) => stringProcessor2(inst, ctx, json3, params);
+  inst._zod.processJSONSchema = (ctx, json4, params) => stringProcessor2(inst, ctx, json4, params);
   const bag = inst._zod.bag;
   inst.format = bag.format ?? null;
   inst.minLength = bag.minimum ?? null;
@@ -140309,7 +140429,7 @@ function hash2(alg, params) {
 var ZodNumber3 = /* @__PURE__ */ $constructor2("ZodNumber", (inst, def) => {
   $ZodNumber2.init(inst, def);
   ZodType3.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json3, params) => numberProcessor2(inst, ctx, json3, params);
+  inst._zod.processJSONSchema = (ctx, json4, params) => numberProcessor2(inst, ctx, json4, params);
   _installLazyMethods(inst, "ZodNumber", {
     gt(value, params) {
       return this.check(_gt2(value, params));
@@ -140389,7 +140509,7 @@ function uint322(params) {
 var ZodBoolean3 = /* @__PURE__ */ $constructor2("ZodBoolean", (inst, def) => {
   $ZodBoolean2.init(inst, def);
   ZodType3.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json3, params) => booleanProcessor2(inst, ctx, json3, params);
+  inst._zod.processJSONSchema = (ctx, json4, params) => booleanProcessor2(inst, ctx, json4, params);
 });
 function boolean5(params) {
   return _boolean2(ZodBoolean3, params);
@@ -140397,7 +140517,7 @@ function boolean5(params) {
 var ZodBigInt3 = /* @__PURE__ */ $constructor2("ZodBigInt", (inst, def) => {
   $ZodBigInt2.init(inst, def);
   ZodType3.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json3, params) => bigintProcessor2(inst, ctx, json3, params);
+  inst._zod.processJSONSchema = (ctx, json4, params) => bigintProcessor2(inst, ctx, json4, params);
   inst.gte = (value, params) => inst.check(_gte2(value, params));
   inst.min = (value, params) => inst.check(_gte2(value, params));
   inst.gt = (value, params) => inst.check(_gt2(value, params));
@@ -140432,7 +140552,7 @@ function uint642(params) {
 var ZodSymbol3 = /* @__PURE__ */ $constructor2("ZodSymbol", (inst, def) => {
   $ZodSymbol2.init(inst, def);
   ZodType3.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json3, params) => symbolProcessor2(inst, ctx, json3, params);
+  inst._zod.processJSONSchema = (ctx, json4, params) => symbolProcessor2(inst, ctx, json4, params);
 });
 function symbol2(params) {
   return _symbol2(ZodSymbol3, params);
@@ -140440,7 +140560,7 @@ function symbol2(params) {
 var ZodUndefined3 = /* @__PURE__ */ $constructor2("ZodUndefined", (inst, def) => {
   $ZodUndefined2.init(inst, def);
   ZodType3.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json3, params) => undefinedProcessor2(inst, ctx, json3, params);
+  inst._zod.processJSONSchema = (ctx, json4, params) => undefinedProcessor2(inst, ctx, json4, params);
 });
 function _undefined6(params) {
   return _undefined5(ZodUndefined3, params);
@@ -140448,7 +140568,7 @@ function _undefined6(params) {
 var ZodNull3 = /* @__PURE__ */ $constructor2("ZodNull", (inst, def) => {
   $ZodNull2.init(inst, def);
   ZodType3.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json3, params) => nullProcessor2(inst, ctx, json3, params);
+  inst._zod.processJSONSchema = (ctx, json4, params) => nullProcessor2(inst, ctx, json4, params);
 });
 function _null6(params) {
   return _null5(ZodNull3, params);
@@ -140456,7 +140576,7 @@ function _null6(params) {
 var ZodAny3 = /* @__PURE__ */ $constructor2("ZodAny", (inst, def) => {
   $ZodAny2.init(inst, def);
   ZodType3.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json3, params) => anyProcessor2(inst, ctx, json3, params);
+  inst._zod.processJSONSchema = (ctx, json4, params) => anyProcessor2(inst, ctx, json4, params);
 });
 function any2() {
   return _any2(ZodAny3);
@@ -140464,7 +140584,7 @@ function any2() {
 var ZodUnknown3 = /* @__PURE__ */ $constructor2("ZodUnknown", (inst, def) => {
   $ZodUnknown2.init(inst, def);
   ZodType3.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json3, params) => unknownProcessor2(inst, ctx, json3, params);
+  inst._zod.processJSONSchema = (ctx, json4, params) => unknownProcessor2(inst, ctx, json4, params);
 });
 function unknown2() {
   return _unknown2(ZodUnknown3);
@@ -140472,7 +140592,7 @@ function unknown2() {
 var ZodNever3 = /* @__PURE__ */ $constructor2("ZodNever", (inst, def) => {
   $ZodNever2.init(inst, def);
   ZodType3.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json3, params) => neverProcessor2(inst, ctx, json3, params);
+  inst._zod.processJSONSchema = (ctx, json4, params) => neverProcessor2(inst, ctx, json4, params);
 });
 function never2(params) {
   return _never2(ZodNever3, params);
@@ -140480,7 +140600,7 @@ function never2(params) {
 var ZodVoid3 = /* @__PURE__ */ $constructor2("ZodVoid", (inst, def) => {
   $ZodVoid2.init(inst, def);
   ZodType3.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json3, params) => voidProcessor2(inst, ctx, json3, params);
+  inst._zod.processJSONSchema = (ctx, json4, params) => voidProcessor2(inst, ctx, json4, params);
 });
 function _void4(params) {
   return _void3(ZodVoid3, params);
@@ -140488,7 +140608,7 @@ function _void4(params) {
 var ZodDate3 = /* @__PURE__ */ $constructor2("ZodDate", (inst, def) => {
   $ZodDate2.init(inst, def);
   ZodType3.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json3, params) => dateProcessor2(inst, ctx, json3, params);
+  inst._zod.processJSONSchema = (ctx, json4, params) => dateProcessor2(inst, ctx, json4, params);
   inst.min = (value, params) => inst.check(_gte2(value, params));
   inst.max = (value, params) => inst.check(_lte2(value, params));
   const c2 = inst._zod.bag;
@@ -140501,7 +140621,7 @@ function date7(params) {
 var ZodArray3 = /* @__PURE__ */ $constructor2("ZodArray", (inst, def) => {
   $ZodArray2.init(inst, def);
   ZodType3.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json3, params) => arrayProcessor2(inst, ctx, json3, params);
+  inst._zod.processJSONSchema = (ctx, json4, params) => arrayProcessor2(inst, ctx, json4, params);
   inst.element = def.element;
   _installLazyMethods(inst, "ZodArray", {
     min(n2, params) {
@@ -140531,7 +140651,7 @@ function keyof2(schema2) {
 var ZodObject3 = /* @__PURE__ */ $constructor2("ZodObject", (inst, def) => {
   $ZodObjectJIT2.init(inst, def);
   ZodType3.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json3, params) => objectProcessor2(inst, ctx, json3, params);
+  inst._zod.processJSONSchema = (ctx, json4, params) => objectProcessor2(inst, ctx, json4, params);
   util_exports2.defineLazy(inst, "shape", () => {
     return def.shape;
   });
@@ -140604,7 +140724,7 @@ function looseObject2(shape, params) {
 var ZodUnion3 = /* @__PURE__ */ $constructor2("ZodUnion", (inst, def) => {
   $ZodUnion2.init(inst, def);
   ZodType3.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json3, params) => unionProcessor2(inst, ctx, json3, params);
+  inst._zod.processJSONSchema = (ctx, json4, params) => unionProcessor2(inst, ctx, json4, params);
   inst.options = def.options;
 });
 function union2(options, params) {
@@ -140617,7 +140737,7 @@ function union2(options, params) {
 var ZodXor2 = /* @__PURE__ */ $constructor2("ZodXor", (inst, def) => {
   ZodUnion3.init(inst, def);
   $ZodXor2.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json3, params) => unionProcessor2(inst, ctx, json3, params);
+  inst._zod.processJSONSchema = (ctx, json4, params) => unionProcessor2(inst, ctx, json4, params);
   inst.options = def.options;
 });
 function xor2(options, params) {
@@ -140643,7 +140763,7 @@ function discriminatedUnion2(discriminator, options, params) {
 var ZodIntersection3 = /* @__PURE__ */ $constructor2("ZodIntersection", (inst, def) => {
   $ZodIntersection2.init(inst, def);
   ZodType3.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json3, params) => intersectionProcessor2(inst, ctx, json3, params);
+  inst._zod.processJSONSchema = (ctx, json4, params) => intersectionProcessor2(inst, ctx, json4, params);
 });
 function intersection2(left, right) {
   return new ZodIntersection3({
@@ -140655,7 +140775,7 @@ function intersection2(left, right) {
 var ZodTuple3 = /* @__PURE__ */ $constructor2("ZodTuple", (inst, def) => {
   $ZodTuple2.init(inst, def);
   ZodType3.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json3, params) => tupleProcessor2(inst, ctx, json3, params);
+  inst._zod.processJSONSchema = (ctx, json4, params) => tupleProcessor2(inst, ctx, json4, params);
   inst.rest = (rest) => inst.clone({
     ...inst._zod.def,
     rest
@@ -140675,7 +140795,7 @@ function tuple2(items, _paramsOrRest, _params) {
 var ZodRecord3 = /* @__PURE__ */ $constructor2("ZodRecord", (inst, def) => {
   $ZodRecord2.init(inst, def);
   ZodType3.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json3, params) => recordProcessor2(inst, ctx, json3, params);
+  inst._zod.processJSONSchema = (ctx, json4, params) => recordProcessor2(inst, ctx, json4, params);
   inst.keyType = def.keyType;
   inst.valueType = def.valueType;
 });
@@ -140717,7 +140837,7 @@ function looseRecord2(keyType, valueType, params) {
 var ZodMap3 = /* @__PURE__ */ $constructor2("ZodMap", (inst, def) => {
   $ZodMap2.init(inst, def);
   ZodType3.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json3, params) => mapProcessor2(inst, ctx, json3, params);
+  inst._zod.processJSONSchema = (ctx, json4, params) => mapProcessor2(inst, ctx, json4, params);
   inst.keyType = def.keyType;
   inst.valueType = def.valueType;
   inst.min = (...args) => inst.check(_minSize2(...args));
@@ -140736,7 +140856,7 @@ function map2(keyType, valueType, params) {
 var ZodSet3 = /* @__PURE__ */ $constructor2("ZodSet", (inst, def) => {
   $ZodSet2.init(inst, def);
   ZodType3.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json3, params) => setProcessor2(inst, ctx, json3, params);
+  inst._zod.processJSONSchema = (ctx, json4, params) => setProcessor2(inst, ctx, json4, params);
   inst.min = (...args) => inst.check(_minSize2(...args));
   inst.nonempty = (params) => inst.check(_minSize2(1, params));
   inst.max = (...args) => inst.check(_maxSize2(...args));
@@ -140752,7 +140872,7 @@ function set2(valueType, params) {
 var ZodEnum3 = /* @__PURE__ */ $constructor2("ZodEnum", (inst, def) => {
   $ZodEnum2.init(inst, def);
   ZodType3.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json3, params) => enumProcessor2(inst, ctx, json3, params);
+  inst._zod.processJSONSchema = (ctx, json4, params) => enumProcessor2(inst, ctx, json4, params);
   inst.enum = def.entries;
   inst.options = Object.values(def.entries);
   const keys = new Set(Object.keys(def.entries));
@@ -140805,7 +140925,7 @@ function nativeEnum2(entries, params) {
 var ZodLiteral3 = /* @__PURE__ */ $constructor2("ZodLiteral", (inst, def) => {
   $ZodLiteral2.init(inst, def);
   ZodType3.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json3, params) => literalProcessor2(inst, ctx, json3, params);
+  inst._zod.processJSONSchema = (ctx, json4, params) => literalProcessor2(inst, ctx, json4, params);
   inst.values = new Set(def.values);
   Object.defineProperty(inst, "value", {
     get() {
@@ -140826,7 +140946,7 @@ function literal2(value, params) {
 var ZodFile2 = /* @__PURE__ */ $constructor2("ZodFile", (inst, def) => {
   $ZodFile2.init(inst, def);
   ZodType3.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json3, params) => fileProcessor2(inst, ctx, json3, params);
+  inst._zod.processJSONSchema = (ctx, json4, params) => fileProcessor2(inst, ctx, json4, params);
   inst.min = (size2, params) => inst.check(_minSize2(size2, params));
   inst.max = (size2, params) => inst.check(_maxSize2(size2, params));
   inst.mime = (types, params) => inst.check(_mime2(Array.isArray(types) ? types : [types], params));
@@ -140837,7 +140957,7 @@ function file2(params) {
 var ZodTransform2 = /* @__PURE__ */ $constructor2("ZodTransform", (inst, def) => {
   $ZodTransform2.init(inst, def);
   ZodType3.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json3, params) => transformProcessor2(inst, ctx, json3, params);
+  inst._zod.processJSONSchema = (ctx, json4, params) => transformProcessor2(inst, ctx, json4, params);
   inst._zod.parse = (payload, _ctx) => {
     if (_ctx.direction === "backward") {
       throw new $ZodEncodeError2(inst.constructor.name);
@@ -140877,7 +140997,7 @@ function transform2(fn2) {
 var ZodOptional3 = /* @__PURE__ */ $constructor2("ZodOptional", (inst, def) => {
   $ZodOptional2.init(inst, def);
   ZodType3.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json3, params) => optionalProcessor2(inst, ctx, json3, params);
+  inst._zod.processJSONSchema = (ctx, json4, params) => optionalProcessor2(inst, ctx, json4, params);
   inst.unwrap = () => inst._zod.def.innerType;
 });
 function optional2(innerType) {
@@ -140889,7 +141009,7 @@ function optional2(innerType) {
 var ZodExactOptional2 = /* @__PURE__ */ $constructor2("ZodExactOptional", (inst, def) => {
   $ZodExactOptional2.init(inst, def);
   ZodType3.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json3, params) => optionalProcessor2(inst, ctx, json3, params);
+  inst._zod.processJSONSchema = (ctx, json4, params) => optionalProcessor2(inst, ctx, json4, params);
   inst.unwrap = () => inst._zod.def.innerType;
 });
 function exactOptional2(innerType) {
@@ -140901,7 +141021,7 @@ function exactOptional2(innerType) {
 var ZodNullable3 = /* @__PURE__ */ $constructor2("ZodNullable", (inst, def) => {
   $ZodNullable2.init(inst, def);
   ZodType3.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json3, params) => nullableProcessor2(inst, ctx, json3, params);
+  inst._zod.processJSONSchema = (ctx, json4, params) => nullableProcessor2(inst, ctx, json4, params);
   inst.unwrap = () => inst._zod.def.innerType;
 });
 function nullable2(innerType) {
@@ -140916,7 +141036,7 @@ function nullish4(innerType) {
 var ZodDefault3 = /* @__PURE__ */ $constructor2("ZodDefault", (inst, def) => {
   $ZodDefault2.init(inst, def);
   ZodType3.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json3, params) => defaultProcessor2(inst, ctx, json3, params);
+  inst._zod.processJSONSchema = (ctx, json4, params) => defaultProcessor2(inst, ctx, json4, params);
   inst.unwrap = () => inst._zod.def.innerType;
   inst.removeDefault = inst.unwrap;
 });
@@ -140932,7 +141052,7 @@ function _default4(innerType, defaultValue) {
 var ZodPrefault2 = /* @__PURE__ */ $constructor2("ZodPrefault", (inst, def) => {
   $ZodPrefault2.init(inst, def);
   ZodType3.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json3, params) => prefaultProcessor2(inst, ctx, json3, params);
+  inst._zod.processJSONSchema = (ctx, json4, params) => prefaultProcessor2(inst, ctx, json4, params);
   inst.unwrap = () => inst._zod.def.innerType;
 });
 function prefault2(innerType, defaultValue) {
@@ -140947,7 +141067,7 @@ function prefault2(innerType, defaultValue) {
 var ZodNonOptional2 = /* @__PURE__ */ $constructor2("ZodNonOptional", (inst, def) => {
   $ZodNonOptional2.init(inst, def);
   ZodType3.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json3, params) => nonoptionalProcessor2(inst, ctx, json3, params);
+  inst._zod.processJSONSchema = (ctx, json4, params) => nonoptionalProcessor2(inst, ctx, json4, params);
   inst.unwrap = () => inst._zod.def.innerType;
 });
 function nonoptional2(innerType, params) {
@@ -140960,7 +141080,7 @@ function nonoptional2(innerType, params) {
 var ZodSuccess2 = /* @__PURE__ */ $constructor2("ZodSuccess", (inst, def) => {
   $ZodSuccess2.init(inst, def);
   ZodType3.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json3, params) => successProcessor2(inst, ctx, json3, params);
+  inst._zod.processJSONSchema = (ctx, json4, params) => successProcessor2(inst, ctx, json4, params);
   inst.unwrap = () => inst._zod.def.innerType;
 });
 function success2(innerType) {
@@ -140972,7 +141092,7 @@ function success2(innerType) {
 var ZodCatch3 = /* @__PURE__ */ $constructor2("ZodCatch", (inst, def) => {
   $ZodCatch2.init(inst, def);
   ZodType3.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json3, params) => catchProcessor2(inst, ctx, json3, params);
+  inst._zod.processJSONSchema = (ctx, json4, params) => catchProcessor2(inst, ctx, json4, params);
   inst.unwrap = () => inst._zod.def.innerType;
   inst.removeCatch = inst.unwrap;
 });
@@ -140986,7 +141106,7 @@ function _catch4(innerType, catchValue) {
 var ZodNaN3 = /* @__PURE__ */ $constructor2("ZodNaN", (inst, def) => {
   $ZodNaN2.init(inst, def);
   ZodType3.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json3, params) => nanProcessor2(inst, ctx, json3, params);
+  inst._zod.processJSONSchema = (ctx, json4, params) => nanProcessor2(inst, ctx, json4, params);
 });
 function nan2(params) {
   return _nan2(ZodNaN3, params);
@@ -140994,7 +141114,7 @@ function nan2(params) {
 var ZodPipe2 = /* @__PURE__ */ $constructor2("ZodPipe", (inst, def) => {
   $ZodPipe2.init(inst, def);
   ZodType3.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json3, params) => pipeProcessor2(inst, ctx, json3, params);
+  inst._zod.processJSONSchema = (ctx, json4, params) => pipeProcessor2(inst, ctx, json4, params);
   inst.in = def.in;
   inst.out = def.out;
 });
@@ -141036,7 +141156,7 @@ var ZodPreprocess2 = /* @__PURE__ */ $constructor2("ZodPreprocess", (inst, def) 
 var ZodReadonly3 = /* @__PURE__ */ $constructor2("ZodReadonly", (inst, def) => {
   $ZodReadonly2.init(inst, def);
   ZodType3.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json3, params) => readonlyProcessor2(inst, ctx, json3, params);
+  inst._zod.processJSONSchema = (ctx, json4, params) => readonlyProcessor2(inst, ctx, json4, params);
   inst.unwrap = () => inst._zod.def.innerType;
 });
 function readonly2(innerType) {
@@ -141048,7 +141168,7 @@ function readonly2(innerType) {
 var ZodTemplateLiteral2 = /* @__PURE__ */ $constructor2("ZodTemplateLiteral", (inst, def) => {
   $ZodTemplateLiteral2.init(inst, def);
   ZodType3.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json3, params) => templateLiteralProcessor2(inst, ctx, json3, params);
+  inst._zod.processJSONSchema = (ctx, json4, params) => templateLiteralProcessor2(inst, ctx, json4, params);
 });
 function templateLiteral2(parts, params) {
   return new ZodTemplateLiteral2({
@@ -141060,7 +141180,7 @@ function templateLiteral2(parts, params) {
 var ZodLazy3 = /* @__PURE__ */ $constructor2("ZodLazy", (inst, def) => {
   $ZodLazy2.init(inst, def);
   ZodType3.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json3, params) => lazyProcessor2(inst, ctx, json3, params);
+  inst._zod.processJSONSchema = (ctx, json4, params) => lazyProcessor2(inst, ctx, json4, params);
   inst.unwrap = () => inst._zod.def.getter();
 });
 function lazy2(getter) {
@@ -141072,7 +141192,7 @@ function lazy2(getter) {
 var ZodPromise3 = /* @__PURE__ */ $constructor2("ZodPromise", (inst, def) => {
   $ZodPromise2.init(inst, def);
   ZodType3.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json3, params) => promiseProcessor2(inst, ctx, json3, params);
+  inst._zod.processJSONSchema = (ctx, json4, params) => promiseProcessor2(inst, ctx, json4, params);
   inst.unwrap = () => inst._zod.def.innerType;
 });
 function promise2(innerType) {
@@ -141084,7 +141204,7 @@ function promise2(innerType) {
 var ZodFunction3 = /* @__PURE__ */ $constructor2("ZodFunction", (inst, def) => {
   $ZodFunction2.init(inst, def);
   ZodType3.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json3, params) => functionProcessor2(inst, ctx, json3, params);
+  inst._zod.processJSONSchema = (ctx, json4, params) => functionProcessor2(inst, ctx, json4, params);
 });
 function _function2(params) {
   return new ZodFunction3({
@@ -141096,7 +141216,7 @@ function _function2(params) {
 var ZodCustom2 = /* @__PURE__ */ $constructor2("ZodCustom", (inst, def) => {
   $ZodCustom2.init(inst, def);
   ZodType3.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json3, params) => customProcessor2(inst, ctx, json3, params);
+  inst._zod.processJSONSchema = (ctx, json4, params) => customProcessor2(inst, ctx, json4, params);
 });
 function check2(fn2) {
   const ch = new $ZodCheck2({
@@ -144663,17 +144783,17 @@ var listingSchema = external_exports.record(external_exports.string(), external_
   CFBundleName: external_exports.string().optional(),
   Path: external_exports.string().optional()
 }).loose());
-function parseSimulatorApps(json3) {
+function parseSimulatorApps(json4) {
   const apps = [];
-  for (const [key2, app] of Object.entries(listingSchema.parse(JSON.parse(json3)))) {
+  for (const [key2, app] of Object.entries(listingSchema.parse(JSON.parse(json4)))) {
     const bundleId3 = bundleIdSchema.safeParse(app.CFBundleIdentifier ?? key2);
     if (app.ApplicationType !== "User" || !bundleId3.success) continue;
     apps.push({ bundleId: bundleId3.data, name: app.CFBundleDisplayName || app.CFBundleName || bundleId3.data, path: app.Path ?? "" });
   }
   return apps.sort((a2, b2) => a2.name.localeCompare(b2.name));
 }
-function parseIosUrlSchemes(json3) {
-  const types = external_exports.array(external_exports.object({ CFBundleURLSchemes: external_exports.array(external_exports.string()).optional() }).loose()).safeParse(JSON.parse(json3));
+function parseIosUrlSchemes(json4) {
+  const types = external_exports.array(external_exports.object({ CFBundleURLSchemes: external_exports.array(external_exports.string()).optional() }).loose()).safeParse(JSON.parse(json4));
   return rankAppLinks((types.data ?? []).flatMap((type) => type.CFBundleURLSchemes ?? []).filter((scheme) => urlSchemePattern.test(scheme)).map((scheme) => `${scheme}://`));
 }
 function parseDefaultsArray(output2) {
@@ -144808,12 +144928,12 @@ var SimulatorDriver = class {
     await this.defaults("Changing the app language", ["write", domain3, "AppleLocale", "-string", iosLocale(language)]);
   }
   async push(bundleId3, payload) {
-    const json3 = JSON.stringify(payload);
-    if (Buffer.byteLength(json3) > 4096) throw new ExpectedOperationError("invalid_input", "Push payloads must be 4 KB or smaller.");
+    const json4 = JSON.stringify(payload);
+    if (Buffer.byteLength(json4) > 4096) throw new ExpectedOperationError("invalid_input", "Push payloads must be 4 KB or smaller.");
     await this.simctl(
       "Sending the notification",
       ["push", this.deviceId, bundleId3, "-"],
-      { input: json3, known: [[/UNErrorDomain/, `${bundleId3} is not installed or cannot receive notifications.`]] }
+      { input: json4, known: [[/UNErrorDomain/, `${bundleId3} is not installed or cannot receive notifications.`]] }
     );
   }
 };
@@ -144925,8 +145045,8 @@ async function foregroundPhysicalPid(deviceId4, signal, helper = new URL("./ios-
   return foreground.pid;
 }
 var unknownSimulatorForeground = async () => null;
-async function foregroundSimulatorPid(deviceId4, signal, helper = new URL("./baguette/Baguette", import.meta.url), runtime2 = baguetteEnvironment) {
-  const path = fileURLToPath8(helper);
+async function foregroundSimulatorPid(deviceId4, signal, runtime2 = baguetteEnvironment) {
+  const path = await panelRuntimePath("baguette/Baguette");
   const cancellation = signal ?? AbortSignal.timeout(1e4);
   const startedAt = performance.now();
   let environment;
@@ -145778,8 +145898,8 @@ function plistEntries(dict) {
     if (typeof value === "bigint") return { key: key2, type: "integer", value: value.toString(), bytes: 8 };
     if (typeof value === "number") return { key: key2, type: Number.isInteger(value) ? "integer" : "number", value: String(value), bytes: 8 };
     if (typeof value === "string") return textEntry(key2, value);
-    const json3 = JSON.stringify(plainPlist(value));
-    return { key: key2, type: Array.isArray(value) ? "array" : "object", value: json3, bytes: Buffer.byteLength(json3) };
+    const json4 = JSON.stringify(plainPlist(value));
+    return { key: key2, type: Array.isArray(value) ? "array" : "object", value: json4, bytes: Buffer.byteLength(json4) };
   });
 }
 function parseSharedPreferences(xml) {
@@ -145854,8 +145974,8 @@ function parseDataStorePreferences(buffer) {
       case 5:
         return [textEntry(key2, inner.bytes.toString("utf8"), inner.bytes.length)];
       case 6: {
-        const json3 = JSON.stringify(fields(inner.bytes).map((item) => item.bytes?.toString("utf8") ?? ""));
-        return [entry2("array", json3, Buffer.byteLength(json3))];
+        const json4 = JSON.stringify(fields(inner.bytes).map((item) => item.bytes?.toString("utf8") ?? ""));
+        return [entry2("array", json4, Buffer.byteLength(json4))];
       }
       case 7:
         return [entry2("number", String(inner.bytes.readDoubleLE(0)), 8)];
@@ -149277,14 +149397,14 @@ async function startAndroidCpuMonitor(options, dependencies) {
       const line = pending.slice(0, newline);
       pending = pending.slice(newline + 1);
       try {
-        const json3 = JSON.parse(line);
+        const json4 = JSON.parse(line);
         if (sampler === void 0) {
-          const header = androidReadySchema.parse(json3);
+          const header = androidReadySchema.parse(json4);
           if (header.pid !== options.pid) throw new Error("The Android collector selected the wrong process.");
           sampler = new AndroidCpuSampler(header.clockTicks, header.processStart);
           accept();
         } else {
-          const profile = androidSampleSchema.parse(json3);
+          const profile = androidSampleSchema.parse(json4);
           const reading3 = sampler.sample(profile);
           options.onSample(reading3);
         }
@@ -151388,13 +151508,13 @@ function registerTraceSiftTools(server, client2) {
     try {
       const handoff2 = taskIndex === void 0 ? { kind: "react", value: await client2.exploreReact(analysisId, context3.signal) } : { kind: "task", value: await client2.exploreTask(analysisId, taskIndex, context3.signal) };
       if (traceSiftPayloadTooDeep(handoff2.value)) throw new TraceSiftError(TRACE_SIFT_PAYLOAD_TOO_LARGE, "response");
-      let json3;
+      let json4;
       try {
-        json3 = JSON.stringify(handoff2.value);
+        json4 = JSON.stringify(handoff2.value);
       } catch (error113) {
         throw error113 instanceof RangeError ? new TraceSiftError(TRACE_SIFT_PAYLOAD_TOO_LARGE, "response") : error113;
       }
-      const raw = { kind: handoff2.kind, json: json3 };
+      const raw = { kind: handoff2.kind, json: json4 };
       if (raw.json.length > TRACE_SIFT_PAYLOAD_MAX_BYTES) throw new TraceSiftError(TRACE_SIFT_PAYLOAD_TOO_LARGE, "response");
       const compressed = raw.json.length > TRACE_SIFT_PAYLOAD_GZIP_MIN_BYTES;
       const text7 = compressed ? (await gzip(raw.json, { level: 6 })).toString("base64") : raw.json;
@@ -152282,7 +152402,7 @@ function configureUI(content) {
   return content.replace(/<meta name="mobile-dev-environment" content="(?:development|release)">/, metadata4);
 }
 async function createPlugin(html, options = {}) {
-  const { panel, simulators = new Simctl(), logs = new LogSessions(), android: android2 = new ServeEmu(), features = [] } = options;
+  const { panel, simulators = new Simctl(), logs = new LogSessions(), android: android2 = new ServeEmu(), features: features2 = [] } = options;
   const cpu = options.cpu ?? await createCpuSessions();
   const fps = new DisplayFpsSessions();
   const server = new McpServer({ name: "mobile-dev", version: PLUGIN_VERSION }, {
@@ -152336,7 +152456,7 @@ async function createPlugin(html, options = {}) {
     }) }] };
   });
   const readCard = (view) => async (uri2) => {
-    const content = (await page()).replace('data-view="panel"', `data-view="${view}"${panel ? " data-workspace" : ""}`);
+    const content = (await page()).replace('data-view="panel"', `data-view="${view}"${panel?.inline ? " data-workspace" : ""}`);
     return { contents: [{ uri: uri2.href, mimeType: p3, text: content, _meta: {
       ui: { prefersBorder: true, permissions: { clipboardWrite: {} }, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } },
       "openai/ui": { preferredDisplayMode: "inline", availableDisplayModes: ["inline", "fullscreen"] }
@@ -152360,7 +152480,7 @@ async function createPlugin(html, options = {}) {
   const featureContext = { connections: options.connections, onPanelOpen: (opener) => {
     panelOpeners.push(opener);
   } };
-  const featureCleanups = features.flatMap((feature) => feature(server, featureContext) ?? []);
+  const featureCleanups = features2.flatMap((feature) => feature(server, featureContext) ?? []);
   return {
     server,
     async close() {
@@ -152492,8 +152612,8 @@ var SharedTransport = class {
       if (connection2 !== this.host) {
         if (initialize) {
           if (this.initialized) this.ready.add(connection2);
-          const reply = this.initialized ? { jsonrpc: "2.0", id: message3.id, result: this.initialized } : { jsonrpc: "2.0", id: message3.id, error: { code: ErrorCode.InvalidRequest, message: "The host has not connected to Mobile Dev yet." } };
-          void connection2.send(reply).catch((error113) => this.onerror?.(error113));
+          const reply2 = this.initialized ? { jsonrpc: "2.0", id: message3.id, result: this.initialized } : { jsonrpc: "2.0", id: message3.id, error: { code: ErrorCode.InvalidRequest, message: "The host has not connected to Mobile Dev yet." } };
+          void connection2.send(reply2).catch((error113) => this.onerror?.(error113));
           return;
         }
         if (this.ready.has(connection2) === false) return;
@@ -152549,10 +152669,10 @@ var SharedTransport = class {
 };
 
 // packages/core/src/stdio-server.ts
-async function runStdioServer({ panel, features } = {}) {
+async function runStdioServer({ panel, features: features2 } = {}) {
   const html = await readFile17(new URL("./app.html", import.meta.url), "utf8");
   const transport2 = new SharedTransport(new StdioServerTransport());
-  const plugin = await createPlugin(() => loadUIResource(html, new URL("../ui-dev.json", import.meta.url)), { panel, features, connections: transport2 });
+  const plugin = await createPlugin(() => loadUIResource(html, new URL("../ui-dev.json", import.meta.url)), { panel, features: features2, connections: transport2 });
   installTracePropagation(transport2);
   declareSchemaDialect(transport2);
   let closing = false;
@@ -153597,15 +153717,15 @@ async function connectIosCapture(path, udid) {
       incoming = incoming.slice(end + 1);
       try {
         const value = JSON.parse(line);
-        const reply = mirrorReplySchema.parse(value);
-        const request3 = pending.get(reply.id);
+        const reply2 = mirrorReplySchema.parse(value);
+        const request3 = pending.get(reply2.id);
         if (request3) {
           clearTimeout(request3.timer);
-          pending.delete(reply.id);
-          if (reply.error) {
-            const error113 = reply.inputBusy ? new IosMirrorInputBusyError() : new Error(reply.error);
+          pending.delete(reply2.id);
+          if (reply2.error) {
+            const error113 = reply2.inputBusy ? new IosMirrorInputBusyError() : new Error(reply2.error);
             request3.reject(error113);
-          } else request3.resolve(reply);
+          } else request3.resolve(reply2);
         }
       } catch {
         disconnect("Invalid shared iOS capture response.");
@@ -153636,9 +153756,9 @@ async function connectIosCapture(path, udid) {
   }
   return {
     async read() {
-      const reply = await request2({ method: "read" });
-      if (reply.result === void 0 || reply.result === null) throw new Error("Shared iOS capture returned no video batch.");
-      return reply.result;
+      const reply2 = await request2({ method: "read" });
+      if (reply2.result === void 0 || reply2.result === null) throw new Error("Shared iOS capture returned no video batch.");
+      return reply2.result;
     },
     async touch(samples, generation) {
       await request2({ method: "touch", samples, generation });
@@ -154659,11 +154779,11 @@ var ThrottleProxy = class {
     delete headers["proxy-connection"];
     delete headers["proxy-authorization"];
     let replied = false;
-    const upstream = httpRequest({ host: hostAddress(url3.hostname), port: url3.port || 80, path: `${url3.pathname}${url3.search}`, method: request2.method, headers }, (reply) => {
+    const upstream = httpRequest({ host: hostAddress(url3.hostname), port: url3.port || 80, path: `${url3.pathname}${url3.search}`, method: request2.method, headers }, (reply2) => {
       replied = true;
-      response3.writeHead(reply.statusCode ?? 502, reply.headers);
-      reply.on("error", () => response3.destroy());
-      relay(reply, response3, down);
+      response3.writeHead(reply2.statusCode ?? 502, reply2.headers);
+      reply2.on("error", () => response3.destroy());
+      relay(reply2, response3, down);
     });
     upstream.on("error", () => {
       if (replied) response3.destroy();
@@ -155709,20 +155829,21 @@ function guarded2(handler) {
   };
 }
 var INSTRUCTIONS2 = "For mobile app development, open mobile_open_simulator before the first device launch, or reuse the open view. Use selected device IDs. Control apps with the device_* tools when the server has them. When the user asks to see their devices, open or reuse the view, whose device menu lists them. If a task has ambiguous device targets, ask the user with mobile_choose_devices when it is available, otherwise in chat; proceed only after they choose. For a local CPU or React profile path, use mobile_analyze_profile to show TraceSift findings, then wait for the user to choose Investigate. See the Mobile Dev skill, when installed, for device control, logs, profiles, and performance workflows.";
-function createPanel({ baguette = new Baguette(), simulatorInput, copyScreenshot = copyPNGToClipboard, resourceSaving = new ResourceSaving(), inline = true } = {}) {
+function createPanel({ baguette = new Baguette(), simulatorInput, copyScreenshot = copyPNGToClipboard, resourceSaving = new ResourceSaving(), inline: inline2 = true } = {}) {
   return {
+    inline: inline2,
     instructions: INSTRUCTIONS2,
     simulatorForeground: foregroundSimulatorPid,
     register: (server, shared) => registerPanel(server, shared, {
       baguette,
       copyScreenshot,
       resourceSaving,
-      inline,
+      inline: inline2,
       simulatorInput: simulatorInput ?? new SimulatorInputService((udid) => baguette.repairInput(udid))
     })
   };
 }
-function registerPanel(server, { android: android2, cpu, fps, drivers, page, showRecording, opened }, { baguette, simulatorInput, copyScreenshot, resourceSaving, inline }) {
+function registerPanel(server, { android: android2, cpu, fps, drivers, page, showRecording, opened }, { baguette, simulatorInput, copyScreenshot, resourceSaving, inline: inline2 }) {
   const streams = new StreamSessions(baguette);
   const closeIosMirror = registerIosMirrorTools(server, APP_URI);
   const closeInspection = registerInspectionTools(server, baguette, android2);
@@ -155734,7 +155855,7 @@ function registerPanel(server, { android: android2, cpu, fps, drivers, page, sho
   const closeDeviceSettings = registerDeviceSettingsTools(server, baguette, android2);
   registerResourceSavingTools(server, baguette, android2, resourceSaving);
   registerPanelAppControlTools(server, drivers);
-  if (inline) registerOpenRecordingTool(server, showRecording, WORKSPACE_URI);
+  if (inline2) registerOpenRecordingTool(server, showRecording, WORKSPACE_URI);
   const readApp = async (uri2) => {
     const content = await page();
     return { contents: [{
@@ -155825,7 +155946,7 @@ function registerPanel(server, { android: android2, cpu, fps, drivers, page, sho
       outputSchema: { ...statusOutput, panelTarget: panelTargetSchema, browserPanel: browserPanelOutput },
       annotations: write5
     };
-    if (inline === false) {
+    if (inline2 === false) {
       server.registerTool(name2, { ...definition, _meta: { [PANEL_PAGE_META]: { resourceUri: config4.resourceUri } } }, openPanel(name2));
       return;
     }
@@ -156932,8 +157053,8 @@ var StdioClientTransport = class {
       if (!this._process?.stdin) {
         throw new Error("Not connected");
       }
-      const json3 = serializeMessage(message3);
-      if (this._process.stdin.write(json3)) {
+      const json4 = serializeMessage(message3);
+      if (this._process.stdin.write(json4)) {
         resolve8();
       } else {
         this._process.stdin.once("drain", resolve8);
@@ -157141,10 +157262,2345 @@ function stepIssue(name2, input2, schemas) {
   }
 }
 
+// packages/core/src/browser-panel.ts
+import { randomBytes as randomBytes10, randomUUID as randomUUID13 } from "node:crypto";
+import { readFile as readFile21 } from "node:fs/promises";
+import { createServer as createServer8 } from "node:http";
+
+// node_modules/@hono/node-server/dist/constants-BLSFu_RU.mjs
+var X_ALREADY_SENT = "x-hono-already-sent";
+
+// node_modules/@hono/node-server/dist/index.mjs
+import { STATUS_CODES, ServerResponse, createServer as createServer7 } from "node:http";
+import { Http2ServerRequest, constants as constants6 } from "node:http2";
+import { Readable as Readable2 } from "node:stream";
+
+// node_modules/hono/dist/helper/websocket/index.js
+var defineWebSocketHelper = (handler) => {
+  return ((...args) => {
+    if (typeof args[0] === "function") {
+      const [createEvents, options] = args;
+      return async function upgradeWebSocket2(c2, next) {
+        const result4 = await handler(c2, await createEvents(c2), options);
+        if (result4) return result4;
+        await next();
+      };
+    } else {
+      const [c2, events, options] = args;
+      return (async () => {
+        const upgraded = await handler(c2, events, options);
+        if (!upgraded) throw new Error("Failed to upgrade WebSocket");
+        return upgraded;
+      })();
+    }
+  });
+};
+
+// node_modules/@hono/node-server/dist/index.mjs
+var RequestError = class extends Error {
+  constructor(message3, options) {
+    super(message3, options);
+    this.name = "RequestError";
+  }
+};
+var nonJoinedHeaders = /* @__PURE__ */ new Set([
+  "age",
+  "authorization",
+  "content-length",
+  "content-type",
+  "etag",
+  "expires",
+  "from",
+  "host",
+  "if-modified-since",
+  "if-unmodified-since",
+  "last-modified",
+  "location",
+  "max-forwards",
+  "proxy-authorization",
+  "referer",
+  "retry-after",
+  "server",
+  "user-agent"
+]);
+var validHeaderName = /^[!#$%&'*+\-.^_`|~\dA-Za-z]+$/;
+var isHttpWhitespace = (code) => code === 9 || code === 10 || code === 13 || code === 32;
+var normalizeHeaderValue = (value) => {
+  if (!isHttpWhitespace(value.charCodeAt(0)) && !isHttpWhitespace(value.charCodeAt(value.length - 1))) return value;
+  let start = 0;
+  let end = value.length;
+  while (start < end && isHttpWhitespace(value.charCodeAt(start))) start++;
+  while (end > start && isHttpWhitespace(value.charCodeAt(end - 1))) end--;
+  return value.slice(start, end);
+};
+var forbiddenHeaderValue = /[\0\r\n]/;
+var GlobalHeaders = globalThis.Headers;
+var materializeHeaders = (rawHeaders, HeadersCtor = GlobalHeaders) => {
+  const headers = new HeadersCtor();
+  for (let i2 = 0; i2 < rawHeaders.length; i2 += 2) {
+    const name2 = rawHeaders[i2];
+    if (!name2.startsWith(":")) headers.append(name2, rawHeaders[i2 + 1]);
+  }
+  return headers;
+};
+var RequestHeaders = class {
+  #incoming;
+  #rawHeaders;
+  #headers;
+  #invalidValue;
+  constructor(incoming) {
+    this.#incoming = incoming;
+    if (incoming instanceof Http2ServerRequest) this.#rawHeaders = incoming.rawHeaders.slice();
+  }
+  get #lazyRawHeaders() {
+    return this.#rawHeaders ??= this.#incoming.rawHeaders.slice();
+  }
+  get #native() {
+    if (!this.#headers) {
+      this.#headers = materializeHeaders(this.#lazyRawHeaders);
+      this.#rawHeaders = void 0;
+    }
+    return this.#headers;
+  }
+  #normalizedName(name2) {
+    if (typeof name2 !== "string") return;
+    if (!validHeaderName.test(name2)) throw new TypeError(`Invalid header name: ${name2}`);
+    return name2.toLowerCase();
+  }
+  #lookupHttp1(lowerName) {
+    const headers = this.#incoming instanceof Http2ServerRequest ? void 0 : this.#incoming.headers;
+    if (!headers || nonJoinedHeaders.has(lowerName) || lowerName === "set-cookie" || lowerName === "__proto__") return;
+    if (!Object.hasOwn(headers, lowerName)) return null;
+    const rawValue = headers[lowerName];
+    if (typeof rawValue === "string") {
+      const value = normalizeHeaderValue(rawValue);
+      return forbiddenHeaderValue.test(value) ? void 0 : value;
+    }
+  }
+  #lookup(rawHeaders, lowerName) {
+    const separator = lowerName === "cookie" ? "; " : ", ";
+    let value = null;
+    for (let i2 = 0; i2 < rawHeaders.length; i2 += 2) {
+      const rawName = rawHeaders[i2];
+      if (rawName.length === lowerName.length && rawName.toLowerCase() === lowerName) {
+        const rawValue = normalizeHeaderValue(rawHeaders[i2 + 1]);
+        if (forbiddenHeaderValue.test(rawValue)) {
+          this.#invalidValue = true;
+          return;
+        }
+        value = value === null ? rawValue : value + separator + rawValue;
+      }
+    }
+    return value;
+  }
+  append(name2, value) {
+    this.#native.append(name2, value);
+  }
+  delete(name2) {
+    this.#native.delete(name2);
+  }
+  get(name2) {
+    const lowerName = this.#normalizedName(name2);
+    if (lowerName && !this.#headers && !this.#invalidValue) {
+      const http1Value = this.#lookupHttp1(lowerName);
+      if (http1Value !== void 0) return http1Value;
+      const value = this.#lookup(this.#lazyRawHeaders, lowerName);
+      if (value !== void 0) return value;
+    }
+    return this.#native.get(name2);
+  }
+  has(name2) {
+    const lowerName = this.#normalizedName(name2);
+    if (lowerName && !this.#headers && !this.#invalidValue) {
+      const http1Value = this.#lookupHttp1(lowerName);
+      if (http1Value !== void 0) return http1Value !== null;
+      const value = this.#lookup(this.#lazyRawHeaders, lowerName);
+      if (value !== void 0) return value !== null;
+    }
+    return this.#native.has(name2);
+  }
+  set(name2, value) {
+    this.#native.set(name2, value);
+  }
+  getSetCookie() {
+    return this.#native.getSetCookie();
+  }
+  keys() {
+    return this.#native.keys();
+  }
+  values() {
+    return this.#native.values();
+  }
+  entries() {
+    return this.#native.entries();
+  }
+  forEach(callback, thisArg) {
+    this.#native.forEach((value, key2) => {
+      callback.call(thisArg, value, key2, this);
+    });
+  }
+  [Symbol.iterator]() {
+    return this.entries();
+  }
+};
+Object.defineProperty(RequestHeaders.prototype, /* @__PURE__ */ Symbol.for("nodejs.util.inspect.custom"), { value: function(depth, options, inspectFn) {
+  return `Headers (lightweight) ${inspectFn(Object.fromEntries(this), {
+    ...options,
+    depth: depth == null ? null : depth - 1
+  })}`;
+} });
+Object.setPrototypeOf(RequestHeaders.prototype, GlobalHeaders.prototype);
+var newHeadersFromIncoming = (incoming) => globalThis.Headers === GlobalHeaders ? new RequestHeaders(incoming) : materializeHeaders(incoming.rawHeaders, globalThis.Headers);
+var reValidRequestUrl = /^\/[!#$&-;=?-\[\]_a-z~]*$/;
+var reDotSegment = /\/\.\.?(?:[/?#]|$)/;
+var reValidHost = /^[a-z0-9._-]+(?::(?:[1-5]\d{3,4}|[6-9]\d{3}))?$/;
+var buildUrl = (scheme, host2, incomingUrl) => {
+  const url3 = `${scheme}://${host2}${incomingUrl}`;
+  if (!reValidHost.test(host2)) {
+    const urlObj = new URL(url3);
+    if (urlObj.hostname.length !== host2.length && urlObj.hostname !== (host2.includes(":") ? host2.replace(/:\d+$/, "") : host2).toLowerCase()) throw new RequestError("Invalid host header");
+    return urlObj.href;
+  } else if (incomingUrl.length === 0) return url3 + "/";
+  else {
+    if (incomingUrl.charCodeAt(0) !== 47) throw new RequestError("Invalid URL");
+    if (!reValidRequestUrl.test(incomingUrl) || reDotSegment.test(incomingUrl)) return new URL(url3).href;
+    return url3;
+  }
+};
+var toRequestError = (e2) => {
+  if (e2 instanceof RequestError) return e2;
+  return new RequestError(e2.message, { cause: e2 });
+};
+var GlobalRequest = global.Request;
+var Request$1 = class extends GlobalRequest {
+  constructor(input2, options) {
+    if (typeof input2 === "object" && getRequestCache in input2) {
+      const hasReplacementBody = options !== void 0 && "body" in options && options.body != null;
+      if (input2[bodyConsumedDirectlyKey] && !hasReplacementBody) throw new TypeError("Cannot construct a Request with a Request object that has already been used.");
+      input2 = input2[getRequestCache]();
+    }
+    if (typeof options?.body?.getReader !== "undefined") options.duplex ??= "half";
+    super(input2, options);
+  }
+};
+var wrapBodyStream = /* @__PURE__ */ Symbol("wrapBodyStream");
+var byteExactEncodings = /* @__PURE__ */ new Set([
+  "latin1",
+  "binary",
+  "hex",
+  "base64",
+  "base64url"
+]);
+var isByteExactEncoding = (encoding) => encoding === null || byteExactEncodings.has(encoding);
+var bodyBufferedBeforeDisconnectKey = /* @__PURE__ */ Symbol("bodyBufferedBeforeDisconnect");
+var bodyBufferedLengthBeforeDisconnectKey = /* @__PURE__ */ Symbol("bodyBufferedLengthBeforeDisconnect");
+var toBufferChunk = (chunk, encoding) => Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding ?? "utf8");
+var isRecoverableDisconnectedIncoming = (incoming) => !(incoming instanceof Http2ServerRequest) && !!incoming.complete && !!incoming.readableAborted && typeof incoming.read === "function" && isByteExactEncoding(incoming.readableEncoding);
+var recordBodyBufferedBeforeDisconnect = (incoming) => {
+  if (incoming.readableDidRead || !isRecoverableDisconnectedIncoming(incoming)) return;
+  const incomingWithRecovery = incoming;
+  incomingWithRecovery[bodyBufferedLengthBeforeDisconnectKey] ??= incoming.readableLength;
+};
+var readBodyBufferedBeforeDisconnect = (incoming, chunks) => {
+  if (incoming.readableDidRead && !chunks || !isRecoverableDisconnectedIncoming(incoming)) return;
+  const incomingWithRecovery = incoming;
+  if (incomingWithRecovery[bodyBufferedBeforeDisconnectKey] !== void 0) return incomingWithRecovery[bodyBufferedBeforeDisconnectKey];
+  let result4;
+  const errored = incoming.errored;
+  if (errored && errored.code !== "ECONNRESET") result4 = errored;
+  else if (incomingWithRecovery[bodyBufferedLengthBeforeDisconnectKey] !== void 0 && incoming.readableLength !== incomingWithRecovery[bodyBufferedLengthBeforeDisconnectKey]) result4 = newBodyUnusableError();
+  else {
+    const bodyChunks = chunks ?? [];
+    const chunk = incoming.read();
+    if (chunk !== null) bodyChunks.push(toBufferChunk(chunk, incoming.readableEncoding));
+    const buffer = bodyChunks.length === 1 ? bodyChunks[0] : Buffer.concat(bodyChunks);
+    result4 = buffer;
+    const contentLength = incoming.headers["content-length"];
+    if (typeof contentLength === "string" && /^\d+$/.test(contentLength)) {
+      const expectedLength = Number(contentLength);
+      if (Number.isSafeInteger(expectedLength) && buffer.length !== expectedLength) result4 = newBodyUnusableError();
+    }
+  }
+  incomingWithRecovery[bodyBufferedBeforeDisconnectKey] = result4;
+  return result4;
+};
+var enqueueBufferedBody = (controller, buffered) => {
+  if (buffered instanceof Error) {
+    controller.error(buffered);
+    return;
+  }
+  if (buffered.length > 0) controller.enqueue(buffered);
+  controller.close();
+};
+var newRequestFromIncoming = (method2, url3, headers, incoming, abortController) => {
+  const init2 = {
+    method: method2,
+    headers,
+    signal: abortController.signal
+  };
+  if (method2 === "TRACE") {
+    init2.method = "GET";
+    const req = new Request$1(url3, init2);
+    Object.defineProperty(req, "method", { get() {
+      return "TRACE";
+    } });
+    return req;
+  }
+  if (!(method2 === "GET" || method2 === "HEAD")) if ("rawBody" in incoming && incoming.rawBody instanceof Buffer) init2.body = new ReadableStream({ start(controller) {
+    controller.enqueue(incoming.rawBody);
+    controller.close();
+  } });
+  else if (incoming[wrapBodyStream]) {
+    let reader;
+    init2.body = new ReadableStream({ async pull(controller) {
+      try {
+        if (!reader) {
+          const buffered = readBodyBufferedBeforeDisconnect(incoming);
+          if (buffered !== void 0) {
+            enqueueBufferedBody(controller, buffered);
+            return;
+          }
+        }
+        reader ||= Readable2.toWeb(incoming).getReader();
+        const { done, value } = await reader.read();
+        if (done) controller.close();
+        else controller.enqueue(value);
+      } catch (error113) {
+        controller.error(error113);
+      }
+    } });
+  } else {
+    const buffered = readBodyBufferedBeforeDisconnect(incoming);
+    if (buffered !== void 0) init2.body = new ReadableStream({ start(controller) {
+      enqueueBufferedBody(controller, buffered);
+    } });
+    else init2.body = Readable2.toWeb(incoming);
+  }
+  return new Request$1(url3, init2);
+};
+var getRequestCache = /* @__PURE__ */ Symbol("getRequestCache");
+var requestCache = /* @__PURE__ */ Symbol("requestCache");
+var incomingKey = /* @__PURE__ */ Symbol("incomingKey");
+var urlKey = /* @__PURE__ */ Symbol("urlKey");
+var methodKey = /* @__PURE__ */ Symbol("methodKey");
+var headersKey = /* @__PURE__ */ Symbol("headersKey");
+var abortControllerKey = /* @__PURE__ */ Symbol("abortControllerKey");
+var getAbortController = /* @__PURE__ */ Symbol("getAbortController");
+var abortRequest = /* @__PURE__ */ Symbol("abortRequest");
+var bodyBufferKey = /* @__PURE__ */ Symbol("bodyBuffer");
+var bodyReadPromiseKey = /* @__PURE__ */ Symbol("bodyReadPromise");
+var bodyConsumedDirectlyKey = /* @__PURE__ */ Symbol("bodyConsumedDirectly");
+var bodyLockReaderKey = /* @__PURE__ */ Symbol("bodyLockReader");
+var abortReasonKey = /* @__PURE__ */ Symbol("abortReason");
+var newBodyUnusableError = () => {
+  return /* @__PURE__ */ new TypeError("Body is unusable");
+};
+var rejectBodyUnusable = () => {
+  return Promise.reject(newBodyUnusableError());
+};
+var textDecoder2 = new TextDecoder();
+var consumeBodyDirectOnce = (request2) => {
+  if (request2[bodyConsumedDirectlyKey]) return rejectBodyUnusable();
+  request2[bodyConsumedDirectlyKey] = true;
+};
+var toArrayBuffer = (buf) => {
+  return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+};
+var contentType = (request2) => {
+  return (request2[headersKey] ||= newHeadersFromIncoming(request2[incomingKey])).get("content-type") || "";
+};
+var methodTokenRegExp = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+var normalizeIncomingMethod = (method2) => {
+  if (typeof method2 !== "string" || method2.length === 0) return "GET";
+  switch (method2) {
+    case "DELETE":
+    case "GET":
+    case "HEAD":
+    case "OPTIONS":
+    case "PATCH":
+    case "POST":
+    case "PUT":
+    case "QUERY":
+      return method2;
+  }
+  const upper = method2.toUpperCase();
+  switch (upper) {
+    case "DELETE":
+    case "GET":
+    case "HEAD":
+    case "OPTIONS":
+    case "POST":
+    case "PUT":
+      return upper;
+    default:
+      return method2;
+  }
+};
+var validateDirectReadMethod = (method2) => {
+  if (!methodTokenRegExp.test(method2)) return /* @__PURE__ */ new TypeError(`'${method2}' is not a valid HTTP method.`);
+  const normalized2 = method2.toUpperCase();
+  if (normalized2 === "CONNECT" || normalized2 === "TRACK" || normalized2 === "TRACE" && method2 !== "TRACE") return /* @__PURE__ */ new TypeError(`'${method2}' HTTP method is unsupported.`);
+};
+var readBodyWithFastPath = (request2, method2, fromBuffer) => {
+  if (request2[bodyConsumedDirectlyKey]) return rejectBodyUnusable();
+  const methodName = request2.method;
+  if (methodName === "GET" || methodName === "HEAD") return request2[getRequestCache]()[method2]();
+  const methodValidationError = validateDirectReadMethod(methodName);
+  if (methodValidationError) return Promise.reject(methodValidationError);
+  if (request2[requestCache]) {
+    if (methodName !== "TRACE") return request2[requestCache][method2]();
+  }
+  const alreadyUsedError = consumeBodyDirectOnce(request2);
+  if (alreadyUsedError) return alreadyUsedError;
+  const raw = readRawBodyIfAvailable(request2);
+  if (raw) {
+    const result4 = Promise.resolve(fromBuffer(raw, request2));
+    request2[bodyBufferKey] = void 0;
+    return result4;
+  }
+  return readBodyDirect(request2).then((buf) => {
+    const result4 = fromBuffer(buf, request2);
+    request2[bodyBufferKey] = void 0;
+    return result4;
+  });
+};
+var readRawBodyIfAvailable = (request2) => {
+  const incoming = request2[incomingKey];
+  if ("rawBody" in incoming && incoming.rawBody instanceof Buffer) return incoming.rawBody;
+};
+var normalizeAbortError = (request2, incoming) => {
+  if (incoming.errored) return incoming.errored;
+  const reason = request2[abortReasonKey];
+  if (reason !== void 0) return reason instanceof Error ? reason : new Error(String(reason));
+  return /* @__PURE__ */ new Error("Client connection prematurely closed.");
+};
+var readBodyDirect = (request2) => {
+  if (request2[bodyBufferKey]) return Promise.resolve(request2[bodyBufferKey]);
+  if (request2[bodyReadPromiseKey]) return request2[bodyReadPromiseKey];
+  const incoming = request2[incomingKey];
+  if (incoming.readableDidRead) return rejectBodyUnusable();
+  const buffered = readBodyBufferedBeforeDisconnect(incoming);
+  if (buffered !== void 0) {
+    if (buffered instanceof Error) return Promise.reject(buffered);
+    request2[bodyBufferKey] = buffered;
+    return Promise.resolve(buffered);
+  }
+  const promise3 = new Promise((resolve8, reject) => {
+    const chunks = [];
+    let settled = false;
+    const finish2 = (callback) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      callback();
+    };
+    const recoverCompleteBodyAfterDisconnect = (error113) => {
+      const streamError = incoming.errored ?? error113;
+      if (!isRecoverableDisconnectedIncoming(incoming) || streamError && streamError.code !== "ECONNRESET") return false;
+      finish2(() => {
+        const recovered = readBodyBufferedBeforeDisconnect(incoming, chunks);
+        if (recovered instanceof Error) reject(recovered);
+        else if (recovered === void 0) reject(error113 ?? normalizeAbortError(request2, incoming));
+        else {
+          request2[bodyBufferKey] = recovered;
+          resolve8(recovered);
+        }
+      });
+      return true;
+    };
+    const onData = (chunk) => {
+      chunks.push(toBufferChunk(chunk, incoming.readableEncoding));
+    };
+    const onEnd = () => {
+      finish2(() => {
+        const buffer = chunks.length === 1 ? chunks[0] : Buffer.concat(chunks);
+        request2[bodyBufferKey] = buffer;
+        resolve8(buffer);
+      });
+    };
+    const onError2 = (error113) => {
+      if (recoverCompleteBodyAfterDisconnect(error113)) return;
+      finish2(() => {
+        reject(error113);
+      });
+    };
+    const onClose = () => {
+      if (incoming.readableEnded) {
+        onEnd();
+        return;
+      }
+      if (recoverCompleteBodyAfterDisconnect()) return;
+      finish2(() => {
+        reject(normalizeAbortError(request2, incoming));
+      });
+    };
+    const cleanup = () => {
+      incoming.off("data", onData);
+      incoming.off("end", onEnd);
+      incoming.off("error", onError2);
+      incoming.off("close", onClose);
+      request2[bodyReadPromiseKey] = void 0;
+    };
+    incoming.on("data", onData);
+    incoming.on("end", onEnd);
+    incoming.on("error", onError2);
+    incoming.on("close", onClose);
+    queueMicrotask(() => {
+      if (settled) return;
+      if (incoming.readableEnded) onEnd();
+      else if (incoming.errored) onError2(incoming.errored);
+      else if (incoming.destroyed) onClose();
+    });
+  });
+  request2[bodyReadPromiseKey] = promise3;
+  return promise3;
+};
+var requestPrototype = {
+  get method() {
+    return this[methodKey];
+  },
+  get url() {
+    return this[urlKey];
+  },
+  get headers() {
+    return this[headersKey] ||= newHeadersFromIncoming(this[incomingKey]);
+  },
+  [abortRequest](reason) {
+    if (this[abortReasonKey] === void 0) this[abortReasonKey] = reason;
+    const abortController = this[abortControllerKey];
+    if (abortController && !abortController.signal.aborted) abortController.abort(reason);
+  },
+  [getAbortController]() {
+    this[abortControllerKey] ||= new AbortController();
+    if (this[abortReasonKey] !== void 0 && !this[abortControllerKey].signal.aborted) this[abortControllerKey].abort(this[abortReasonKey]);
+    return this[abortControllerKey];
+  },
+  [getRequestCache]() {
+    const abortController = this[getAbortController]();
+    if (this[requestCache]) return this[requestCache];
+    const method2 = this.method;
+    if (this[bodyConsumedDirectlyKey] && !(method2 === "GET" || method2 === "HEAD")) {
+      this[bodyBufferKey] = void 0;
+      const init2 = {
+        method: method2 === "TRACE" ? "GET" : method2,
+        headers: this.headers,
+        signal: abortController.signal
+      };
+      if (method2 !== "TRACE") {
+        init2.body = new ReadableStream({ start(c2) {
+          c2.close();
+        } });
+        init2.duplex = "half";
+      }
+      const req = new Request$1(this[urlKey], init2);
+      if (method2 === "TRACE") Object.defineProperty(req, "method", { get() {
+        return "TRACE";
+      } });
+      return this[requestCache] = req;
+    }
+    return this[requestCache] = newRequestFromIncoming(this.method, this[urlKey], this.headers, this[incomingKey], abortController);
+  },
+  get body() {
+    if (!this[bodyConsumedDirectlyKey]) return this[getRequestCache]().body;
+    const request2 = this[getRequestCache]();
+    if (!this[bodyLockReaderKey] && request2.body) this[bodyLockReaderKey] = request2.body.getReader();
+    return request2.body;
+  },
+  get bodyUsed() {
+    if (this[bodyConsumedDirectlyKey]) return true;
+    if (this[requestCache]) return this[requestCache].bodyUsed;
+    return false;
+  }
+};
+Object.defineProperty(requestPrototype, "signal", { get() {
+  return this[getAbortController]().signal;
+} });
+[
+  "cache",
+  "credentials",
+  "destination",
+  "integrity",
+  "mode",
+  "redirect",
+  "referrer",
+  "referrerPolicy",
+  "keepalive"
+].forEach((k2) => {
+  Object.defineProperty(requestPrototype, k2, { get() {
+    return this[getRequestCache]()[k2];
+  } });
+});
+["clone", "formData"].forEach((k2) => {
+  Object.defineProperty(requestPrototype, k2, { value: function() {
+    if (this[bodyConsumedDirectlyKey]) {
+      if (k2 === "clone") throw newBodyUnusableError();
+      return rejectBodyUnusable();
+    }
+    return this[getRequestCache]()[k2]();
+  } });
+});
+Object.defineProperty(requestPrototype, "text", { value: function() {
+  return readBodyWithFastPath(this, "text", (buf) => textDecoder2.decode(buf));
+} });
+Object.defineProperty(requestPrototype, "arrayBuffer", { value: function() {
+  return readBodyWithFastPath(this, "arrayBuffer", (buf) => toArrayBuffer(buf));
+} });
+Object.defineProperty(requestPrototype, "blob", { value: function() {
+  return readBodyWithFastPath(this, "blob", (buf, request2) => {
+    const type = contentType(request2);
+    const init2 = type ? { headers: { "content-type": type } } : void 0;
+    return new Response(buf, init2).blob();
+  });
+} });
+Object.defineProperty(requestPrototype, "json", { value: function() {
+  if (this[bodyConsumedDirectlyKey]) return rejectBodyUnusable();
+  return this.text().then(JSON.parse);
+} });
+Object.defineProperty(requestPrototype, /* @__PURE__ */ Symbol.for("nodejs.util.inspect.custom"), { value: function(depth, options, inspectFn) {
+  return `Request (lightweight) ${inspectFn({
+    method: this.method,
+    url: this.url,
+    headers: this.headers,
+    nativeRequest: this[requestCache]
+  }, {
+    ...options,
+    depth: depth == null ? null : depth - 1
+  })}`;
+} });
+Object.setPrototypeOf(requestPrototype, Request$1.prototype);
+var newRequest = (incoming, defaultHostname) => {
+  const req = Object.create(requestPrototype);
+  req[incomingKey] = incoming;
+  req[methodKey] = normalizeIncomingMethod(incoming.method);
+  const incomingUrl = incoming.url || "";
+  if (incomingUrl[0] !== "/" && (incomingUrl.startsWith("http://") || incomingUrl.startsWith("https://"))) {
+    if (incoming instanceof Http2ServerRequest) throw new RequestError("Absolute URL for :path is not allowed in HTTP/2");
+    try {
+      req[urlKey] = new URL(incomingUrl).href;
+    } catch (e2) {
+      throw new RequestError("Invalid absolute URL", { cause: e2 });
+    }
+    return req;
+  }
+  const host2 = (incoming instanceof Http2ServerRequest ? incoming.authority : incoming.headers.host) || defaultHostname;
+  if (!host2) throw new RequestError("Missing host header");
+  let scheme;
+  if (incoming instanceof Http2ServerRequest) {
+    scheme = incoming.scheme;
+    if (!(scheme === "http" || scheme === "https")) throw new RequestError("Unsupported scheme");
+  } else scheme = incoming.socket && incoming.socket.encrypted ? "https" : "http";
+  try {
+    req[urlKey] = buildUrl(scheme, host2, incomingUrl);
+  } catch (e2) {
+    if (e2 instanceof RequestError) throw e2;
+    else throw new RequestError("Invalid URL", { cause: e2 });
+  }
+  return req;
+};
+var defaultContentType = "text/plain; charset=UTF-8";
+var responseCache = /* @__PURE__ */ Symbol("responseCache");
+var getResponseCache = /* @__PURE__ */ Symbol("getResponseCache");
+var cacheKey = /* @__PURE__ */ Symbol("cache");
+var GlobalResponse = global.Response;
+var Response$1 = class Response$12 {
+  #body;
+  #init;
+  [getResponseCache]() {
+    const cache = this[cacheKey];
+    const liveHeaders = cache && cache[2] instanceof Headers ? cache[2] : void 0;
+    delete this[cacheKey];
+    return this[responseCache] ||= new GlobalResponse(this.#body, liveHeaders ? {
+      status: this.#init?.status,
+      statusText: this.#init?.statusText,
+      headers: liveHeaders
+    } : this.#init);
+  }
+  constructor(body, init2) {
+    let headers;
+    this.#body = body;
+    if (init2 instanceof GlobalResponse) {
+      const cachedGlobalResponse = init2[responseCache];
+      if (cachedGlobalResponse) {
+        this.#init = cachedGlobalResponse;
+        this[getResponseCache]();
+        return;
+      }
+      this.#init = init2 instanceof Response$12 ? init2.#init : init2;
+      headers = new Headers(init2.headers);
+    } else this.#init = init2;
+    if (body == null || typeof body === "string" || typeof body?.getReader !== "undefined" || body instanceof Blob || body instanceof Uint8Array) this[cacheKey] = [
+      init2?.status || 200,
+      body ?? null,
+      headers || init2?.headers
+    ];
+  }
+  get headers() {
+    const cache = this[cacheKey];
+    if (cache) {
+      if (!(cache[2] instanceof Headers)) cache[2] = new Headers(cache[2] || (cache[1] === null ? void 0 : { "content-type": defaultContentType }));
+      return cache[2];
+    }
+    return this[getResponseCache]().headers;
+  }
+  get status() {
+    return this[cacheKey]?.[0] ?? this[getResponseCache]().status;
+  }
+  get ok() {
+    const status = this.status;
+    return status >= 200 && status < 300;
+  }
+};
+[
+  "body",
+  "bodyUsed",
+  "redirected",
+  "statusText",
+  "trailers",
+  "type",
+  "url"
+].forEach((k2) => {
+  Object.defineProperty(Response$1.prototype, k2, { get() {
+    return this[getResponseCache]()[k2];
+  } });
+});
+[
+  "arrayBuffer",
+  "blob",
+  "clone",
+  "formData",
+  "json",
+  "text"
+].forEach((k2) => {
+  Object.defineProperty(Response$1.prototype, k2, { value: function() {
+    return this[getResponseCache]()[k2]();
+  } });
+});
+Object.defineProperty(Response$1.prototype, /* @__PURE__ */ Symbol.for("nodejs.util.inspect.custom"), { value: function(depth, options, inspectFn) {
+  return `Response (lightweight) ${inspectFn({
+    status: this.status,
+    headers: this.headers,
+    ok: this.ok,
+    nativeResponse: this[responseCache]
+  }, {
+    ...options,
+    depth: depth == null ? null : depth - 1
+  })}`;
+} });
+Object.setPrototypeOf(Response$1, GlobalResponse);
+Object.setPrototypeOf(Response$1.prototype, GlobalResponse.prototype);
+var validRedirectUrl = /^https?:\/\/[!#-;=?-[\]_a-z~A-Z]+$/;
+var parseRedirectUrl = (url3) => {
+  if (url3 instanceof URL) return url3.href;
+  if (validRedirectUrl.test(url3)) return url3;
+  return new URL(url3).href;
+};
+var validRedirectStatuses = /* @__PURE__ */ new Set([
+  301,
+  302,
+  303,
+  307,
+  308
+]);
+Object.defineProperty(Response$1, "redirect", {
+  value: function redirect(url3, status = 302) {
+    if (!validRedirectStatuses.has(status)) throw new RangeError("Invalid status code");
+    return new Response$1(null, {
+      status,
+      headers: { location: parseRedirectUrl(url3) }
+    });
+  },
+  writable: true,
+  configurable: true
+});
+Object.defineProperty(Response$1, "json", {
+  value: function json3(data, init2) {
+    const body = JSON.stringify(data);
+    if (body === void 0) throw new TypeError("The data is not JSON serializable");
+    const initHeaders = init2?.headers;
+    let headers;
+    if (initHeaders) {
+      headers = new Headers(initHeaders);
+      if (!headers.has("content-type")) headers.set("content-type", "application/json");
+    } else headers = { "content-type": "application/json" };
+    return new Response$1(body, {
+      status: init2?.status ?? 200,
+      statusText: init2?.statusText,
+      headers
+    });
+  },
+  writable: true,
+  configurable: true
+});
+async function readWithoutBlocking(readPromise) {
+  return Promise.race([readPromise, Promise.resolve().then(() => Promise.resolve(void 0))]);
+}
+function writeFromReadableStreamDefaultReader(reader, writable, currentReadPromise) {
+  const cancel = (error113) => {
+    reader.cancel(error113).catch(() => {
+    });
+  };
+  writable.on("close", cancel);
+  writable.on("error", cancel);
+  (currentReadPromise ?? reader.read()).then(flow, handleStreamError);
+  return reader.closed.finally(() => {
+    writable.off("close", cancel);
+    writable.off("error", cancel);
+  });
+  function handleStreamError(error113) {
+    if (error113) writable.destroy(error113);
+  }
+  function onDrain() {
+    reader.read().then(flow, handleStreamError);
+  }
+  function flow({ done, value }) {
+    try {
+      if (done) writable.end();
+      else if (!writable.write(value)) writable.once("drain", onDrain);
+      else return reader.read().then(flow, handleStreamError);
+    } catch (e2) {
+      handleStreamError(e2);
+    }
+  }
+}
+function writeFromReadableStream(stream, writable) {
+  if (stream.locked) throw new TypeError("ReadableStream is locked.");
+  else if (writable.destroyed) return;
+  return writeFromReadableStreamDefaultReader(stream.getReader(), writable);
+}
+var buildOutgoingHttpHeaders = (headers, defaultContentType2) => {
+  const res = {};
+  if (!(headers instanceof Headers)) headers = new Headers(headers ?? void 0);
+  if (headers.has("set-cookie")) {
+    const cookies = [];
+    for (const [k2, v3] of headers) if (k2 === "set-cookie") cookies.push(v3);
+    else res[k2] = v3;
+    if (cookies.length > 0) res["set-cookie"] = cookies;
+  } else for (const [k2, v3] of headers) res[k2] = v3;
+  if (defaultContentType2) res["content-type"] ??= defaultContentType2;
+  return res;
+};
+var outgoingEnded = /* @__PURE__ */ Symbol("outgoingEnded");
+var incomingDraining = /* @__PURE__ */ Symbol("incomingDraining");
+var DRAIN_TIMEOUT_MS = 500;
+var MAX_DRAIN_BYTES = 64 * 1024 * 1024;
+var drainIncoming = (incoming) => {
+  const incomingWithDrainState = incoming;
+  if (incoming.destroyed || incomingWithDrainState[incomingDraining]) return;
+  incomingWithDrainState[incomingDraining] = true;
+  if (incoming instanceof Http2ServerRequest) {
+    try {
+      incoming.stream?.close?.(constants6.NGHTTP2_NO_ERROR);
+    } catch {
+    }
+    return;
+  }
+  let bytesRead = 0;
+  const cleanup = () => {
+    clearTimeout(timer);
+    incoming.off("data", onData);
+    incoming.off("end", cleanup);
+    incoming.off("error", cleanup);
+  };
+  const forceClose = () => {
+    cleanup();
+    const socket = incoming.socket;
+    if (socket && !socket.destroyed) {
+      if (typeof socket.destroySoon === "function") socket.destroySoon();
+      else if (typeof socket.destroy === "function") socket.destroy();
+    }
+  };
+  const timer = setTimeout(forceClose, DRAIN_TIMEOUT_MS);
+  timer.unref?.();
+  const onData = (chunk) => {
+    bytesRead += chunk.length;
+    if (bytesRead > MAX_DRAIN_BYTES) forceClose();
+  };
+  incoming.on("data", onData);
+  incoming.on("end", cleanup);
+  incoming.on("error", cleanup);
+  incoming.resume();
+};
+var makeCloseHandler = (req, incoming, outgoing, needsBodyCleanup) => () => {
+  if (incoming.errored) {
+    recordBodyBufferedBeforeDisconnect(incoming);
+    req[abortRequest](incoming.errored.toString());
+  } else if (!outgoing.writableFinished) {
+    recordBodyBufferedBeforeDisconnect(incoming);
+    req[abortRequest]("Client connection prematurely closed.");
+  }
+  if (needsBodyCleanup && !incoming.readableEnded) setTimeout(() => {
+    if (!incoming.readableEnded) setTimeout(() => {
+      drainIncoming(incoming);
+    });
+  });
+};
+var isImmediateCacheableResponse = (res) => {
+  if (!(cacheKey in res)) return false;
+  const body = res[cacheKey][1];
+  return body === null || typeof body === "string" || body instanceof Uint8Array;
+};
+var handleRequestError = () => new Response(null, { status: 400 });
+var handleFetchError = (e2) => new Response(null, { status: e2 instanceof Error && (e2.name === "TimeoutError" || e2.constructor.name === "TimeoutError") ? 504 : 500 });
+var handleResponseError2 = (e2, outgoing) => {
+  const err = e2 instanceof Error ? e2 : new Error("unknown error", { cause: e2 });
+  if (err.code === "ERR_STREAM_PREMATURE_CLOSE") console.info("The user aborted a request.");
+  else {
+    console.error(e2);
+    if (!outgoing.headersSent) {
+      if (outgoing instanceof ServerResponse) outgoing._contentLength = null;
+      outgoing.writeHead(500, { "Content-Type": "text/plain" });
+    }
+    outgoing.end(`Error: ${err.message}`);
+    outgoing.destroy(err);
+  }
+};
+var flushHeaders = (outgoing) => {
+  if ("flushHeaders" in outgoing && outgoing.writable) outgoing.flushHeaders();
+};
+var trySetContentLength = (outgoing, status, length) => {
+  const http1 = outgoing;
+  if (http1._contentLength === null && http1._hasBody && http1.useChunkedEncodingByDefault && !http1._removedContLen && status >= 200 && status !== 204 && status !== 304 && !outgoing.hasHeader("content-length") && !outgoing.hasHeader("transfer-encoding") && !outgoing.hasHeader("trailer")) {
+    http1._contentLength = length;
+    return true;
+  }
+  return false;
+};
+var writeDefaultHeaders = (outgoing, status, length) => {
+  if (trySetContentLength(outgoing, status, length)) outgoing.writeHead(status, { "Content-Type": defaultContentType });
+  else outgoing.writeHead(status, {
+    "Content-Type": defaultContentType,
+    "Content-Length": length
+  });
+};
+var responseViaCache = async (res, outgoing) => {
+  let [status, body, header] = res[cacheKey];
+  if (!header) {
+    if (body === null) {
+      outgoing.writeHead(status);
+      outgoing.end();
+    } else if (typeof body === "string") {
+      writeDefaultHeaders(outgoing, status, Buffer.byteLength(body));
+      outgoing.end(body);
+    } else if (body instanceof Uint8Array) {
+      writeDefaultHeaders(outgoing, status, body.byteLength);
+      outgoing.end(body);
+    } else if (body instanceof Blob) {
+      writeDefaultHeaders(outgoing, status, body.size);
+      outgoing.end(new Uint8Array(await body.arrayBuffer()));
+    } else {
+      outgoing.writeHead(status, { "Content-Type": defaultContentType });
+      flushHeaders(outgoing);
+      await writeFromReadableStream(body, outgoing)?.catch((e2) => handleResponseError2(e2, outgoing));
+    }
+    outgoing[outgoingEnded]?.();
+    return;
+  }
+  let hasContentLength = false;
+  let plainHeaders = false;
+  let canAutoLength = true;
+  if (header instanceof Headers) {
+    hasContentLength = header.has("content-length");
+    header = buildOutgoingHttpHeaders(header, body === null ? void 0 : defaultContentType);
+  } else if (Array.isArray(header)) {
+    const headerObj = new Headers(header);
+    hasContentLength = headerObj.has("content-length");
+    header = buildOutgoingHttpHeaders(headerObj, body === null ? void 0 : defaultContentType);
+  } else {
+    plainHeaders = true;
+    for (const key2 in header) {
+      if (key2.length === 14 && key2.toLowerCase() === "content-length") {
+        hasContentLength = true;
+        break;
+      }
+      if (key2.length === 17 && key2.toLowerCase() === "transfer-encoding" || key2.length === 7 && key2.toLowerCase() === "trailer") canAutoLength = false;
+    }
+  }
+  if (!hasContentLength) {
+    let length;
+    if (typeof body === "string") length = Buffer.byteLength(body);
+    else if (body instanceof Uint8Array) length = body.byteLength;
+    else if (body instanceof Blob) length = body.size;
+    if (length !== void 0 && (!plainHeaders || !canAutoLength || !trySetContentLength(outgoing, status, length))) {
+      if (plainHeaders) header = { ...header };
+      header["Content-Length"] = length;
+    }
+  }
+  outgoing.writeHead(status, header);
+  if (body == null) outgoing.end();
+  else if (typeof body === "string" || body instanceof Uint8Array) outgoing.end(body);
+  else if (body instanceof Blob) outgoing.end(new Uint8Array(await body.arrayBuffer()));
+  else {
+    flushHeaders(outgoing);
+    await writeFromReadableStream(body, outgoing)?.catch((e2) => handleResponseError2(e2, outgoing));
+  }
+  outgoing[outgoingEnded]?.();
+};
+var isPromise2 = (res) => typeof res.then === "function";
+var responseViaResponseObject = async (res, outgoing, options = {}) => {
+  if (isPromise2(res)) if (options.errorHandler) try {
+    res = await res;
+  } catch (err) {
+    const errRes = await options.errorHandler(err);
+    if (!errRes) return;
+    res = errRes;
+  }
+  else res = await res.catch(handleFetchError);
+  if (cacheKey in res) return responseViaCache(res, outgoing);
+  const resHeaderRecord = buildOutgoingHttpHeaders(res.headers, res.body === null ? void 0 : defaultContentType);
+  if (res.body) {
+    const reader = res.body.getReader();
+    const values = [];
+    let done = false;
+    let currentReadPromise = void 0;
+    if (resHeaderRecord["transfer-encoding"] !== "chunked") {
+      let maxReadCount = 2;
+      for (let i2 = 0; i2 < maxReadCount; i2++) {
+        currentReadPromise ||= reader.read();
+        const chunk = await readWithoutBlocking(currentReadPromise).catch((e2) => {
+          console.error(e2);
+          done = true;
+        });
+        if (!chunk) {
+          if (i2 === 1) {
+            await new Promise((resolve8) => setTimeout(resolve8));
+            maxReadCount = 3;
+            continue;
+          }
+          break;
+        }
+        currentReadPromise = void 0;
+        if (chunk.value) values.push(chunk.value);
+        if (chunk.done) {
+          done = true;
+          break;
+        }
+      }
+      if (done && !("content-length" in resHeaderRecord)) resHeaderRecord["content-length"] = values.reduce((acc, value) => acc + value.length, 0);
+    }
+    outgoing.writeHead(res.status, resHeaderRecord);
+    values.forEach((value) => {
+      outgoing.write(value);
+    });
+    if (done) outgoing.end();
+    else {
+      if (values.length === 0) flushHeaders(outgoing);
+      await writeFromReadableStreamDefaultReader(reader, outgoing, currentReadPromise);
+    }
+  } else if (resHeaderRecord[X_ALREADY_SENT]) {
+  } else {
+    outgoing.writeHead(res.status, resHeaderRecord);
+    outgoing.end();
+  }
+  outgoing[outgoingEnded]?.();
+};
+var getRequestListener = (fetchCallback, options = {}) => {
+  const autoCleanupIncoming = options.autoCleanupIncoming ?? true;
+  if (options.overrideGlobalObjects !== false && global.Request !== Request$1) {
+    Object.defineProperty(global, "Request", { value: Request$1 });
+    Object.defineProperty(global, "Response", { value: Response$1 });
+  }
+  return async (incoming, outgoing) => {
+    let res, req;
+    let needsBodyCleanup = false;
+    let closeHandlerAttached = false;
+    const ensureCloseHandler = () => {
+      if (!req || closeHandlerAttached) return;
+      closeHandlerAttached = true;
+      outgoing.on("close", makeCloseHandler(req, incoming, outgoing, needsBodyCleanup));
+    };
+    try {
+      req = newRequest(incoming, options.hostname);
+      needsBodyCleanup = autoCleanupIncoming && !(incoming.method === "GET" || incoming.method === "HEAD");
+      if (needsBodyCleanup) {
+        incoming[wrapBodyStream] = true;
+        if (incoming instanceof Http2ServerRequest) outgoing[outgoingEnded] = () => {
+          if (!incoming.readableEnded) setTimeout(() => {
+            if (!incoming.readableEnded) setTimeout(() => {
+              incoming.destroy();
+              outgoing.destroy();
+            });
+          });
+        };
+      }
+      res = fetchCallback(req, {
+        incoming,
+        outgoing
+      });
+      if (!isPromise2(res) && isImmediateCacheableResponse(res)) {
+        if (needsBodyCleanup && !incoming.readableEnded) outgoing.once("finish", () => {
+          if (!incoming.readableEnded) drainIncoming(incoming);
+        });
+        return responseViaCache(res, outgoing);
+      }
+      ensureCloseHandler();
+    } catch (e2) {
+      if (!res) if (options.errorHandler) {
+        ensureCloseHandler();
+        res = await options.errorHandler(req ? e2 : toRequestError(e2));
+        if (!res) return;
+      } else if (!req) res = handleRequestError();
+      else res = handleFetchError(e2);
+      else return handleResponseError2(e2, outgoing);
+    }
+    try {
+      return await responseViaResponseObject(res, outgoing, options);
+    } catch (e2) {
+      return handleResponseError2(e2, outgoing);
+    }
+  };
+};
+var CloseEvent = globalThis.CloseEvent ?? class extends Event {
+  #eventInitDict;
+  constructor(type, eventInitDict = {}) {
+    super(type, eventInitDict);
+    this.#eventInitDict = eventInitDict;
+  }
+  get wasClean() {
+    return this.#eventInitDict.wasClean ?? false;
+  }
+  get code() {
+    return this.#eventInitDict.code ?? 0;
+  }
+  get reason() {
+    return this.#eventInitDict.reason ?? "";
+  }
+};
+var ErrorEvent = globalThis.ErrorEvent ?? class extends Event {
+  #eventInitDict;
+  constructor(type, eventInitDict = {}) {
+    super(type, eventInitDict);
+    this.#eventInitDict = eventInitDict;
+  }
+  get message() {
+    return this.#eventInitDict.message ?? "";
+  }
+  get filename() {
+    return this.#eventInitDict.filename ?? "";
+  }
+  get lineno() {
+    return this.#eventInitDict.lineno ?? 0;
+  }
+  get colno() {
+    return this.#eventInitDict.colno ?? 0;
+  }
+  get error() {
+    return this.#eventInitDict.error ?? null;
+  }
+};
+var generateConnectionSymbol = () => /* @__PURE__ */ Symbol("connection");
+var CONNECTION_SYMBOL_KEY = /* @__PURE__ */ Symbol("CONNECTION_SYMBOL_KEY");
+var WAIT_FOR_WEBSOCKET_SYMBOL = /* @__PURE__ */ Symbol("WAIT_FOR_WEBSOCKET_SYMBOL");
+var upgradeWebSocket = defineWebSocketHelper(async (c2, events, options) => {
+  if (c2.req.header("upgrade")?.toLowerCase() !== "websocket") return;
+  const env2 = c2.env;
+  const waitForWebSocket = env2[WAIT_FOR_WEBSOCKET_SYMBOL];
+  if (!waitForWebSocket || !env2.incoming) return new Response(null, { status: 500 });
+  const connectionSymbol = generateConnectionSymbol();
+  env2[CONNECTION_SYMBOL_KEY] = connectionSymbol;
+  (async () => {
+    let ws;
+    try {
+      ws = await waitForWebSocket(env2.incoming, connectionSymbol);
+    } catch {
+      return;
+    }
+    const messagesReceivedInStarting = [];
+    const bufferMessage = (data, isBinary) => {
+      messagesReceivedInStarting.push([data, isBinary]);
+    };
+    ws.on("message", bufferMessage);
+    const ctx = {
+      binaryType: "arraybuffer",
+      close(code, reason) {
+        ws.close(code, reason);
+      },
+      protocol: ws.protocol,
+      raw: ws,
+      get readyState() {
+        return ws.readyState;
+      },
+      send(source, opts) {
+        ws.send(source, { compress: opts?.compress });
+      },
+      url: new URL(c2.req.url)
+    };
+    try {
+      events?.onOpen?.(new Event("open"), ctx);
+    } catch (e2) {
+      (options?.onError ?? console.error)(e2);
+    }
+    const handleMessage = (data, isBinary) => {
+      const datas = Array.isArray(data) ? data : [data];
+      for (const data2 of datas) try {
+        events?.onMessage?.(new MessageEvent("message", { data: isBinary ? data2 instanceof ArrayBuffer ? data2 : data2.buffer.slice(data2.byteOffset, data2.byteOffset + data2.byteLength) : typeof data2 === "string" ? data2 : Buffer.from(data2).toString("utf-8") }), ctx);
+      } catch (e2) {
+        (options?.onError ?? console.error)(e2);
+      }
+    };
+    ws.off("message", bufferMessage);
+    for (const message3 of messagesReceivedInStarting) handleMessage(...message3);
+    ws.on("message", (data, isBinary) => {
+      handleMessage(data, isBinary);
+    });
+    ws.on("close", (code, reason) => {
+      try {
+        events?.onClose?.(new CloseEvent("close", {
+          code,
+          reason: reason.toString()
+        }), ctx);
+      } catch (e2) {
+        (options?.onError ?? console.error)(e2);
+      }
+    });
+    ws.on("error", (error113) => {
+      try {
+        events?.onError?.(new ErrorEvent("error", { error: error113 }), ctx);
+      } catch (e2) {
+        (options?.onError ?? console.error)(e2);
+      }
+    });
+  })();
+  return new Response();
+});
+
+// node_modules/@modelcontextprotocol/sdk/dist/esm/shared/mediaType.js
+var import_content_type = __toESM(require_content_type(), 1);
+function mediaTypeEssence(header) {
+  if (!header) {
+    return void 0;
+  }
+  try {
+    return import_content_type.default.parse(header).type;
+  } catch {
+    const essence = (header.split(";", 1)[0] ?? "").trim().toLowerCase();
+    if (essence === "" || header.slice(essence.length).includes(",")) {
+      return void 0;
+    }
+    return essence;
+  }
+}
+function isJsonContentType(header) {
+  if (header === "application/json") {
+    return true;
+  }
+  return mediaTypeEssence(header) === "application/json";
+}
+
+// node_modules/@modelcontextprotocol/sdk/dist/esm/server/requestBody.js
+var DEFAULT_MAX_REQUEST_BODY_SIZE = 4 * 1024 * 1024;
+var MAX_BATCH_SIZE = 100;
+function requestBodyTooLargeMessage(maxBytes) {
+  return `Payload Too Large: Request body must not exceed ${maxBytes} bytes`;
+}
+function resolveMaxRequestBodySize(value) {
+  if (value === void 0) {
+    return DEFAULT_MAX_REQUEST_BODY_SIZE;
+  }
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    throw new RangeError(`maxRequestBodySize must be a positive number of bytes, got ${String(value)}`);
+  }
+  return value;
+}
+async function readRequestBody(request2, maxBytes = DEFAULT_MAX_REQUEST_BODY_SIZE) {
+  if (Number(request2.headers.get("content-length")) > maxBytes) {
+    return { tooLarge: true };
+  }
+  if (request2.body === null) {
+    return { tooLarge: false, text: "" };
+  }
+  const reader = request2.body.getReader();
+  const decoder = new TextDecoder();
+  let received = 0;
+  let text7 = "";
+  try {
+    for (; ; ) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      received += value.byteLength;
+      if (received > maxBytes) {
+        return { tooLarge: true };
+      }
+      text7 += decoder.decode(value, { stream: true });
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return { tooLarge: false, text: text7 + decoder.decode() };
+}
+
+// node_modules/@modelcontextprotocol/sdk/dist/esm/server/sseKeepAlive.js
+var DEFAULT_SSE_KEEP_ALIVE_MS = 15e3;
+var MAX_TIMER_DELAY_MS = 2 ** 31 - 1;
+function armSseKeepAlive(intervalMs, onTick) {
+  if (!Number.isFinite(intervalMs) || intervalMs < 1) {
+    return void 0;
+  }
+  const timer = setInterval(onTick, Math.min(intervalMs, MAX_TIMER_DELAY_MS));
+  timer.unref?.();
+  return timer;
+}
+
+// node_modules/@modelcontextprotocol/sdk/dist/esm/server/webStandardStreamableHttp.js
+var WebStandardStreamableHTTPServerTransport = class {
+  constructor(options = {}) {
+    this._started = false;
+    this._hasHandledRequest = false;
+    this._streamMapping = /* @__PURE__ */ new Map();
+    this._requestToStreamMapping = /* @__PURE__ */ new Map();
+    this._resumableStreams = /* @__PURE__ */ new Set();
+    this._requestResponseMap = /* @__PURE__ */ new Map();
+    this._initialized = false;
+    this._enableJsonResponse = false;
+    this._standaloneSseStreamId = "_GET_stream";
+    this._closed = false;
+    this.sessionIdGenerator = options.sessionIdGenerator;
+    this._enableJsonResponse = options.enableJsonResponse ?? false;
+    this._eventStore = options.eventStore;
+    this._onsessioninitialized = options.onsessioninitialized;
+    this._onsessionclosed = options.onsessionclosed;
+    this._allowedHosts = options.allowedHosts;
+    this._allowedOrigins = options.allowedOrigins;
+    this._enableDnsRebindingProtection = options.enableDnsRebindingProtection ?? false;
+    this._retryInterval = options.retryInterval;
+    this._keepAliveMs = options.keepAliveMs ?? DEFAULT_SSE_KEEP_ALIVE_MS;
+    this._maxRequestBodySize = resolveMaxRequestBodySize(options.maxRequestBodySize);
+  }
+  /**
+   * Arms a keep-alive interval for an SSE stream that periodically writes an SSE
+   * comment frame so intermediaries and idle timeouts don't kill the connection.
+   * The returned timer is owned by the stream it was armed for: the stream's
+   * cancel/cleanup callbacks must clear it. The interval clears itself if a
+   * write fails (stream already closed/cancelled).
+   */
+  startKeepAlive(controller, encoder) {
+    if (this._closed)
+      return void 0;
+    const timer = armSseKeepAlive(this._keepAliveMs, () => {
+      try {
+        controller.enqueue(encoder.encode(": keepalive\n\n"));
+      } catch {
+        if (timer !== void 0)
+          clearInterval(timer);
+      }
+    });
+    return timer;
+  }
+  /**
+   * Starts the transport. This is required by the Transport interface but is a no-op
+   * for the Streamable HTTP transport as connections are managed per-request.
+   */
+  async start() {
+    if (this._started) {
+      throw new Error("Transport already started");
+    }
+    this._started = true;
+  }
+  /**
+   * Helper to create a JSON error response
+   */
+  createJsonErrorResponse(status, code, message3, options) {
+    const error113 = { code, message: message3 };
+    if (options?.data !== void 0) {
+      error113.data = options.data;
+    }
+    return new Response(JSON.stringify({
+      jsonrpc: "2.0",
+      error: error113,
+      id: null
+    }), {
+      status,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers
+      }
+    });
+  }
+  /**
+   * Validates request headers for DNS rebinding protection.
+   * @returns Error response if validation fails, undefined if validation passes.
+   */
+  validateRequestHeaders(req) {
+    if (!this._enableDnsRebindingProtection) {
+      return void 0;
+    }
+    if (this._allowedHosts && this._allowedHosts.length > 0) {
+      const hostHeader = req.headers.get("host");
+      if (!hostHeader || !this._allowedHosts.includes(hostHeader)) {
+        const error113 = `Invalid Host header: ${hostHeader}`;
+        this.onerror?.(new Error(error113));
+        return this.createJsonErrorResponse(403, -32e3, error113);
+      }
+    }
+    if (this._allowedOrigins && this._allowedOrigins.length > 0) {
+      const originHeader = req.headers.get("origin");
+      if (originHeader && !this._allowedOrigins.includes(originHeader)) {
+        const error113 = `Invalid Origin header: ${originHeader}`;
+        this.onerror?.(new Error(error113));
+        return this.createJsonErrorResponse(403, -32e3, error113);
+      }
+    }
+    return void 0;
+  }
+  /**
+   * Handles an incoming HTTP request, whether GET, POST, or DELETE
+   * Returns a Response object (Web Standard)
+   */
+  async handleRequest(req, options) {
+    if (this._closed) {
+      return this.createJsonErrorResponse(404, -32001, "Session not found");
+    }
+    if (!this.sessionIdGenerator && this._hasHandledRequest) {
+      throw new Error("Stateless transport cannot be reused across requests. Create a new transport per request.");
+    }
+    this._hasHandledRequest = true;
+    const validationError = this.validateRequestHeaders(req);
+    if (validationError) {
+      return validationError;
+    }
+    switch (req.method) {
+      case "POST":
+        return this.handlePostRequest(req, options);
+      case "GET":
+        return this.handleGetRequest(req);
+      case "DELETE":
+        return this.handleDeleteRequest(req);
+      default:
+        return this.handleUnsupportedRequest();
+    }
+  }
+  /**
+   * Writes a priming event to establish resumption capability.
+   * Only sends if eventStore is configured (opt-in for resumability) and
+   * the client's protocol version supports empty SSE data (>= 2025-11-25).
+   */
+  async writePrimingEvent(controller, encoder, streamId, protocolVersion) {
+    if (!this._eventStore) {
+      return;
+    }
+    if (protocolVersion < "2025-11-25") {
+      return;
+    }
+    const primingEventId = await this._eventStore.storeEvent(streamId, {});
+    let primingEvent = `id: ${primingEventId}
+data: 
+
+`;
+    if (this._retryInterval !== void 0) {
+      primingEvent = `id: ${primingEventId}
+retry: ${this._retryInterval}
+data: 
+
+`;
+    }
+    controller.enqueue(encoder.encode(primingEvent));
+    this._resumableStreams.add(streamId);
+  }
+  /**
+   * Handles GET requests for SSE stream
+   */
+  async handleGetRequest(req) {
+    const acceptHeader = req.headers.get("accept");
+    if (!acceptHeader?.includes("text/event-stream")) {
+      this.onerror?.(new Error("Not Acceptable: Client must accept text/event-stream"));
+      return this.createJsonErrorResponse(406, -32e3, "Not Acceptable: Client must accept text/event-stream");
+    }
+    const sessionError = this.validateSession(req);
+    if (sessionError) {
+      return sessionError;
+    }
+    const protocolError = this.validateProtocolVersion(req);
+    if (protocolError) {
+      return protocolError;
+    }
+    if (this._eventStore) {
+      const lastEventId2 = req.headers.get("last-event-id");
+      if (lastEventId2) {
+        return this.replayEvents(lastEventId2);
+      }
+    }
+    if (this._streamMapping.get(this._standaloneSseStreamId) !== void 0) {
+      this.onerror?.(new Error("Conflict: Only one SSE stream is allowed per session"));
+      return this.createJsonErrorResponse(409, -32e3, "Conflict: Only one SSE stream is allowed per session");
+    }
+    const encoder = new TextEncoder();
+    let streamController;
+    let keepAliveTimer = void 0;
+    const readable = new ReadableStream({
+      start: (controller) => {
+        streamController = controller;
+      },
+      cancel: () => {
+        if (keepAliveTimer !== void 0) {
+          clearInterval(keepAliveTimer);
+        }
+        if (this._streamMapping.get(this._standaloneSseStreamId)?.controller === streamController) {
+          this._streamMapping.delete(this._standaloneSseStreamId);
+        }
+      }
+    });
+    const headers = {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no"
+    };
+    if (this.sessionId !== void 0) {
+      headers["mcp-session-id"] = this.sessionId;
+    }
+    this._streamMapping.set(this._standaloneSseStreamId, {
+      controller: streamController,
+      encoder,
+      cleanup: () => {
+        if (keepAliveTimer !== void 0) {
+          clearInterval(keepAliveTimer);
+        }
+        this._streamMapping.delete(this._standaloneSseStreamId);
+        try {
+          streamController.close();
+        } catch {
+        }
+      }
+    });
+    keepAliveTimer = this.startKeepAlive(streamController, encoder);
+    return new Response(readable, { headers });
+  }
+  /**
+   * Replays events that would have been sent after the specified event ID
+   * Only used when resumability is enabled
+   */
+  async replayEvents(lastEventId2) {
+    if (!this._eventStore) {
+      this.onerror?.(new Error("Event store not configured"));
+      return this.createJsonErrorResponse(400, -32e3, "Event store not configured");
+    }
+    try {
+      let streamId;
+      if (this._eventStore.getStreamIdForEventId) {
+        streamId = await this._eventStore.getStreamIdForEventId(lastEventId2);
+        if (!streamId) {
+          this.onerror?.(new Error("Invalid event ID format"));
+          return this.createJsonErrorResponse(400, -32e3, "Invalid event ID format");
+        }
+        if (this._streamMapping.get(streamId) !== void 0) {
+          this.onerror?.(new Error("Conflict: Stream already has an active connection"));
+          return this.createJsonErrorResponse(409, -32e3, "Conflict: Stream already has an active connection");
+        }
+      }
+      const headers = {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no"
+      };
+      if (this.sessionId !== void 0) {
+        headers["mcp-session-id"] = this.sessionId;
+      }
+      const encoder = new TextEncoder();
+      let streamController;
+      let keepAliveTimer = void 0;
+      let replayedStreamId = void 0;
+      let cancelled = false;
+      const readable = new ReadableStream({
+        start: (controller) => {
+          streamController = controller;
+        },
+        cancel: () => {
+          cancelled = true;
+          if (keepAliveTimer !== void 0) {
+            clearInterval(keepAliveTimer);
+          }
+          if (replayedStreamId !== void 0 && this._streamMapping.get(replayedStreamId)?.controller === streamController) {
+            this._streamMapping.delete(replayedStreamId);
+          }
+        }
+      });
+      const replayedEventIds = /* @__PURE__ */ new Set();
+      replayedStreamId = await this._eventStore.replayEventsAfter(lastEventId2, {
+        send: async (eventId, message3) => {
+          const success5 = this.writeSSEEvent(streamController, encoder, message3, eventId);
+          if (!success5) {
+            this.onerror?.(new Error("Failed replay events"));
+            try {
+              streamController.close();
+            } catch {
+            }
+          } else {
+            replayedEventIds.add(eventId);
+          }
+        }
+      });
+      if (this._closed || cancelled) {
+        try {
+          streamController.close();
+        } catch {
+        }
+        return this.createJsonErrorResponse(404, -32001, "Session not found");
+      }
+      this._streamMapping.get(replayedStreamId)?.cleanup();
+      this._streamMapping.set(replayedStreamId, {
+        controller: streamController,
+        encoder,
+        replayedEventIds,
+        cleanup: () => {
+          if (keepAliveTimer !== void 0) {
+            clearInterval(keepAliveTimer);
+          }
+          this._streamMapping.delete(replayedStreamId);
+          try {
+            streamController.close();
+          } catch {
+          }
+        }
+      });
+      this._resumableStreams.add(replayedStreamId);
+      keepAliveTimer = this.startKeepAlive(streamController, encoder);
+      return new Response(readable, { headers });
+    } catch (error113) {
+      this.onerror?.(error113);
+      return this.createJsonErrorResponse(500, -32e3, "Error replaying events");
+    }
+  }
+  /**
+   * Writes an event to an SSE stream via controller with proper formatting
+   */
+  writeSSEEvent(controller, encoder, message3, eventId) {
+    try {
+      let eventData = `event: message
+`;
+      if (eventId) {
+        eventData += `id: ${eventId}
+`;
+      }
+      eventData += `data: ${JSON.stringify(message3)}
+
+`;
+      controller.enqueue(encoder.encode(eventData));
+      return true;
+    } catch (error113) {
+      this.onerror?.(error113);
+      return false;
+    }
+  }
+  /**
+   * Handles unsupported requests (PUT, PATCH, etc.)
+   */
+  handleUnsupportedRequest() {
+    this.onerror?.(new Error("Method not allowed."));
+    return new Response(JSON.stringify({
+      jsonrpc: "2.0",
+      error: {
+        code: -32e3,
+        message: "Method not allowed."
+      },
+      id: null
+    }), {
+      status: 405,
+      headers: {
+        Allow: "GET, POST, DELETE",
+        "Content-Type": "application/json"
+      }
+    });
+  }
+  /**
+   * Handles POST requests containing JSON-RPC messages
+   */
+  async handlePostRequest(req, options) {
+    try {
+      const acceptHeader = req.headers.get("accept");
+      if (!acceptHeader?.includes("application/json") || !acceptHeader.includes("text/event-stream")) {
+        this.onerror?.(new Error("Not Acceptable: Client must accept both application/json and text/event-stream"));
+        return this.createJsonErrorResponse(406, -32e3, "Not Acceptable: Client must accept both application/json and text/event-stream");
+      }
+      const ct = req.headers.get("content-type");
+      if (!isJsonContentType(ct)) {
+        this.onerror?.(new Error("Unsupported Media Type: Content-Type must be application/json"));
+        return this.createJsonErrorResponse(415, -32e3, "Unsupported Media Type: Content-Type must be application/json");
+      }
+      const requestInfo = {
+        headers: Object.fromEntries(req.headers.entries()),
+        url: new URL(req.url)
+      };
+      let rawMessage;
+      if (options?.parsedBody !== void 0) {
+        rawMessage = options.parsedBody;
+      } else {
+        try {
+          const body = await readRequestBody(req, this._maxRequestBodySize);
+          if (body.tooLarge) {
+            const message3 = requestBodyTooLargeMessage(this._maxRequestBodySize);
+            this.onerror?.(new Error(message3));
+            return this.createJsonErrorResponse(413, -32e3, message3);
+          }
+          rawMessage = JSON.parse(body.text);
+        } catch {
+          this.onerror?.(new Error("Parse error: Invalid JSON"));
+          return this.createJsonErrorResponse(400, -32700, "Parse error: Invalid JSON");
+        }
+      }
+      if (Array.isArray(rawMessage) && rawMessage.length > MAX_BATCH_SIZE) {
+        this.onerror?.(new Error(`Invalid Request: Batch must not exceed ${MAX_BATCH_SIZE} messages`));
+        return this.createJsonErrorResponse(400, -32600, `Invalid Request: Batch must not exceed ${MAX_BATCH_SIZE} messages`);
+      }
+      let messages2;
+      try {
+        if (Array.isArray(rawMessage)) {
+          messages2 = rawMessage.map((msg) => JSONRPCMessageSchema.parse(msg));
+        } else {
+          messages2 = [JSONRPCMessageSchema.parse(rawMessage)];
+        }
+      } catch {
+        this.onerror?.(new Error("Parse error: Invalid JSON-RPC message"));
+        return this.createJsonErrorResponse(400, -32700, "Parse error: Invalid JSON-RPC message");
+      }
+      if (this._closed) {
+        return this.createJsonErrorResponse(404, -32001, "Session not found");
+      }
+      const isInitializationRequest = messages2.some(isInitializeRequest);
+      if (isInitializationRequest) {
+        if (this._initialized && this.sessionId !== void 0) {
+          this.onerror?.(new Error("Invalid Request: Server already initialized"));
+          return this.createJsonErrorResponse(400, -32600, "Invalid Request: Server already initialized");
+        }
+        if (messages2.length > 1) {
+          this.onerror?.(new Error("Invalid Request: Only one initialization request is allowed"));
+          return this.createJsonErrorResponse(400, -32600, "Invalid Request: Only one initialization request is allowed");
+        }
+        this.sessionId = this.sessionIdGenerator?.();
+        this._initialized = true;
+        if (this.sessionId && this._onsessioninitialized) {
+          await Promise.resolve(this._onsessioninitialized(this.sessionId));
+        }
+      }
+      if (!isInitializationRequest) {
+        const sessionError = this.validateSession(req);
+        if (sessionError) {
+          return sessionError;
+        }
+        const protocolError = this.validateProtocolVersion(req);
+        if (protocolError) {
+          return protocolError;
+        }
+      }
+      if (this._closed) {
+        return this.createJsonErrorResponse(404, -32001, "Session not found");
+      }
+      const hasRequests = messages2.some(isJSONRPCRequest);
+      if (!hasRequests) {
+        for (const message3 of messages2) {
+          this.onmessage?.(message3, { authInfo: options?.authInfo, requestInfo });
+        }
+        return new Response(null, { status: 202 });
+      }
+      const streamId = crypto.randomUUID();
+      const initRequest = messages2.find((m5) => isInitializeRequest(m5));
+      const clientProtocolVersion = initRequest ? initRequest.params.protocolVersion : req.headers.get("mcp-protocol-version") ?? DEFAULT_NEGOTIATED_PROTOCOL_VERSION;
+      if (this._enableJsonResponse) {
+        return new Promise((resolve8) => {
+          this._streamMapping.set(streamId, {
+            resolveJson: resolve8,
+            cleanup: () => {
+              this._streamMapping.delete(streamId);
+            }
+          });
+          for (const message3 of messages2) {
+            if (isJSONRPCRequest(message3)) {
+              this._requestToStreamMapping.set(message3.id, streamId);
+            }
+          }
+          for (const message3 of messages2) {
+            this.onmessage?.(message3, { authInfo: options?.authInfo, requestInfo });
+          }
+        });
+      }
+      const encoder = new TextEncoder();
+      let streamController;
+      let keepAliveTimer = void 0;
+      const readable = new ReadableStream({
+        start: (controller) => {
+          streamController = controller;
+        },
+        cancel: () => {
+          if (keepAliveTimer !== void 0) {
+            clearInterval(keepAliveTimer);
+          }
+          if (this._streamMapping.get(streamId)?.controller === streamController) {
+            this._streamMapping.delete(streamId);
+          }
+        }
+      });
+      const headers = {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no"
+      };
+      if (this.sessionId !== void 0) {
+        headers["mcp-session-id"] = this.sessionId;
+      }
+      for (const message3 of messages2) {
+        if (isJSONRPCRequest(message3)) {
+          this._streamMapping.set(streamId, {
+            controller: streamController,
+            encoder,
+            cleanup: () => {
+              if (keepAliveTimer !== void 0) {
+                clearInterval(keepAliveTimer);
+              }
+              this._streamMapping.delete(streamId);
+              try {
+                streamController.close();
+              } catch {
+              }
+            }
+          });
+          this._requestToStreamMapping.set(message3.id, streamId);
+        }
+      }
+      try {
+        await this.writePrimingEvent(streamController, encoder, streamId, clientProtocolVersion);
+        for (const message3 of messages2) {
+          let closeSSEStream;
+          let closeStandaloneSSEStream;
+          if (isJSONRPCRequest(message3) && this._eventStore && clientProtocolVersion >= "2025-11-25") {
+            closeSSEStream = () => {
+              this.closeSSEStream(message3.id);
+            };
+            closeStandaloneSSEStream = () => {
+              this.closeStandaloneSSEStream();
+            };
+          }
+          this.onmessage?.(message3, { authInfo: options?.authInfo, requestInfo, closeSSEStream, closeStandaloneSSEStream });
+        }
+      } catch (error113) {
+        this._streamMapping.get(streamId)?.cleanup();
+        this._resumableStreams.delete(streamId);
+        for (const message3 of messages2) {
+          if (isJSONRPCRequest(message3)) {
+            this._requestToStreamMapping.delete(message3.id);
+          }
+        }
+        throw error113;
+      }
+      if (this._streamMapping.get(streamId)?.controller === streamController) {
+        keepAliveTimer = this.startKeepAlive(streamController, encoder);
+      }
+      return new Response(readable, { status: 200, headers });
+    } catch (error113) {
+      this.onerror?.(error113);
+      return this.createJsonErrorResponse(400, -32700, "Parse error", { data: String(error113) });
+    }
+  }
+  /**
+   * Handles DELETE requests to terminate sessions
+   */
+  async handleDeleteRequest(req) {
+    const sessionError = this.validateSession(req);
+    if (sessionError) {
+      return sessionError;
+    }
+    const protocolError = this.validateProtocolVersion(req);
+    if (protocolError) {
+      return protocolError;
+    }
+    try {
+      await Promise.resolve(this._onsessionclosed?.(this.sessionId));
+      return new Response(null, { status: 200 });
+    } finally {
+      await this.close();
+    }
+  }
+  /**
+   * Validates session ID for non-initialization requests.
+   * Returns Response error if invalid, undefined otherwise
+   */
+  validateSession(req) {
+    if (this.sessionIdGenerator === void 0) {
+      return void 0;
+    }
+    if (!this._initialized) {
+      this.onerror?.(new Error("Bad Request: Server not initialized"));
+      return this.createJsonErrorResponse(400, -32e3, "Bad Request: Server not initialized");
+    }
+    const sessionId5 = req.headers.get("mcp-session-id");
+    if (!sessionId5) {
+      this.onerror?.(new Error("Bad Request: Mcp-Session-Id header is required"));
+      return this.createJsonErrorResponse(400, -32e3, "Bad Request: Mcp-Session-Id header is required");
+    }
+    if (sessionId5 !== this.sessionId) {
+      this.onerror?.(new Error("Session not found"));
+      return this.createJsonErrorResponse(404, -32001, "Session not found");
+    }
+    return void 0;
+  }
+  /**
+   * Validates the MCP-Protocol-Version header on incoming requests.
+   *
+   * For initialization: Version negotiation handles unknown versions gracefully
+   * (server responds with its supported version).
+   *
+   * For subsequent requests with MCP-Protocol-Version header:
+   * - Accept if in supported list
+   * - 400 if unsupported
+   *
+   * For HTTP requests without the MCP-Protocol-Version header:
+   * - Accept and default to the version negotiated at initialization
+   */
+  validateProtocolVersion(req) {
+    const protocolVersion = req.headers.get("mcp-protocol-version");
+    if (protocolVersion !== null && !SUPPORTED_PROTOCOL_VERSIONS.includes(protocolVersion)) {
+      this.onerror?.(new Error(`Bad Request: Unsupported protocol version: ${protocolVersion} (supported versions: ${SUPPORTED_PROTOCOL_VERSIONS.join(", ")})`));
+      return this.createJsonErrorResponse(400, -32e3, `Bad Request: Unsupported protocol version: ${protocolVersion} (supported versions: ${SUPPORTED_PROTOCOL_VERSIONS.join(", ")})`);
+    }
+    return void 0;
+  }
+  async close() {
+    if (this._closed) {
+      return;
+    }
+    this._closed = true;
+    this._streamMapping.forEach(({ cleanup }) => {
+      cleanup();
+    });
+    this._streamMapping.clear();
+    this._requestResponseMap.clear();
+    this._resumableStreams.clear();
+    this.onclose?.();
+  }
+  /**
+   * Close an SSE stream for a specific request, triggering client reconnection.
+   * Use this to implement polling behavior during long-running operations -
+   * client will reconnect after the retry interval specified in the priming event.
+   */
+  closeSSEStream(requestId) {
+    const streamId = this._requestToStreamMapping.get(requestId);
+    if (!streamId)
+      return;
+    const stream = this._streamMapping.get(streamId);
+    if (stream) {
+      stream.cleanup();
+    }
+  }
+  /**
+   * Close the standalone GET SSE stream, triggering client reconnection.
+   * Use this to implement polling behavior for server-initiated notifications.
+   */
+  closeStandaloneSSEStream() {
+    const stream = this._streamMapping.get(this._standaloneSseStreamId);
+    if (stream) {
+      stream.cleanup();
+    }
+  }
+  async send(message3, options) {
+    let requestId = options?.relatedRequestId;
+    if (isJSONRPCResultResponse(message3) || isJSONRPCErrorResponse(message3)) {
+      requestId = message3.id;
+    }
+    if (requestId === void 0) {
+      if (isJSONRPCResultResponse(message3) || isJSONRPCErrorResponse(message3)) {
+        throw new Error("Cannot send a response on a standalone SSE stream unless resuming a previous client request");
+      }
+      let eventId;
+      if (this._eventStore) {
+        eventId = await this._eventStore.storeEvent(this._standaloneSseStreamId, message3);
+      }
+      const standaloneSse = this._streamMapping.get(this._standaloneSseStreamId);
+      if (standaloneSse === void 0) {
+        return;
+      }
+      if (standaloneSse.controller && standaloneSse.encoder && (eventId === void 0 || !standaloneSse.replayedEventIds?.has(eventId))) {
+        this.writeSSEEvent(standaloneSse.controller, standaloneSse.encoder, message3, eventId);
+      }
+      return;
+    }
+    const streamId = this._requestToStreamMapping.get(requestId);
+    if (!streamId) {
+      throw new Error(`No connection established for request ID: ${String(requestId)}`);
+    }
+    let stream = this._streamMapping.get(streamId);
+    if (!this._enableJsonResponse) {
+      let eventId;
+      if (this._eventStore) {
+        eventId = await this._eventStore.storeEvent(streamId, message3);
+        stream = this._streamMapping.get(streamId);
+      }
+      if (stream?.controller && stream?.encoder && (eventId === void 0 || !stream.replayedEventIds?.has(eventId))) {
+        const written = this.writeSSEEvent(stream.controller, stream.encoder, message3, eventId);
+        if (written && eventId !== void 0) {
+          this._resumableStreams.add(streamId);
+        }
+      }
+    }
+    if (isJSONRPCResultResponse(message3) || isJSONRPCErrorResponse(message3)) {
+      this._requestResponseMap.set(requestId, message3);
+      const relatedIds = Array.from(this._requestToStreamMapping.entries()).filter(([_2, sid]) => sid === streamId).map(([id3]) => id3);
+      const allResponsesReady = relatedIds.every((id3) => this._requestResponseMap.has(id3));
+      if (allResponsesReady) {
+        if (!stream) {
+          if (this._closed) {
+            for (const id3 of relatedIds) {
+              this._requestResponseMap.delete(id3);
+              this._requestToStreamMapping.delete(id3);
+            }
+            return;
+          }
+          if (!this._enableJsonResponse && this._eventStore && this._resumableStreams.has(streamId)) {
+            for (const id3 of relatedIds) {
+              this._requestResponseMap.delete(id3);
+              this._requestToStreamMapping.delete(id3);
+            }
+            this._resumableStreams.delete(streamId);
+            return;
+          }
+          for (const id3 of relatedIds) {
+            this._requestResponseMap.delete(id3);
+            this._requestToStreamMapping.delete(id3);
+          }
+          throw new Error(`No connection established for request ID: ${String(requestId)}`);
+        }
+        if (this._enableJsonResponse && stream.resolveJson) {
+          const headers = {
+            "Content-Type": "application/json"
+          };
+          if (this.sessionId !== void 0) {
+            headers["mcp-session-id"] = this.sessionId;
+          }
+          const responses = relatedIds.map((id3) => this._requestResponseMap.get(id3));
+          if (responses.length === 1) {
+            stream.resolveJson(new Response(JSON.stringify(responses[0]), { status: 200, headers }));
+          } else {
+            stream.resolveJson(new Response(JSON.stringify(responses), { status: 200, headers }));
+          }
+        } else {
+          stream.cleanup();
+        }
+        for (const id3 of relatedIds) {
+          this._requestResponseMap.delete(id3);
+          this._requestToStreamMapping.delete(id3);
+        }
+        this._resumableStreams.delete(streamId);
+      }
+    }
+  }
+};
+
+// node_modules/@modelcontextprotocol/sdk/dist/esm/server/streamableHttp.js
+var StreamableHTTPServerTransport = class {
+  constructor(options = {}) {
+    this._requestContext = /* @__PURE__ */ new WeakMap();
+    this._webStandardTransport = new WebStandardStreamableHTTPServerTransport(options);
+    this._requestListener = getRequestListener(async (webRequest) => {
+      const context3 = this._requestContext.get(webRequest);
+      return this._webStandardTransport.handleRequest(webRequest, {
+        authInfo: context3?.authInfo,
+        parsedBody: context3?.parsedBody
+      });
+    }, { overrideGlobalObjects: false });
+  }
+  /**
+   * Gets the session ID for this transport instance.
+   */
+  get sessionId() {
+    return this._webStandardTransport.sessionId;
+  }
+  /**
+   * Sets callback for when the transport is closed.
+   */
+  set onclose(handler) {
+    this._webStandardTransport.onclose = handler;
+  }
+  get onclose() {
+    return this._webStandardTransport.onclose;
+  }
+  /**
+   * Sets callback for transport errors.
+   */
+  set onerror(handler) {
+    this._webStandardTransport.onerror = handler;
+  }
+  get onerror() {
+    return this._webStandardTransport.onerror;
+  }
+  /**
+   * Sets callback for incoming messages.
+   */
+  set onmessage(handler) {
+    this._webStandardTransport.onmessage = handler;
+  }
+  get onmessage() {
+    return this._webStandardTransport.onmessage;
+  }
+  /**
+   * Starts the transport. This is required by the Transport interface but is a no-op
+   * for the Streamable HTTP transport as connections are managed per-request.
+   */
+  async start() {
+    return this._webStandardTransport.start();
+  }
+  /**
+   * Closes the transport and all active connections.
+   */
+  async close() {
+    return this._webStandardTransport.close();
+  }
+  /**
+   * Sends a JSON-RPC message through the transport.
+   */
+  async send(message3, options) {
+    return this._webStandardTransport.send(message3, options);
+  }
+  /**
+   * Handles an incoming HTTP request, whether GET or POST.
+   *
+   * This method converts Node.js HTTP objects to Web Standard Request/Response
+   * and delegates to the underlying WebStandardStreamableHTTPServerTransport.
+   *
+   * @param req - Node.js IncomingMessage, optionally with auth property from middleware
+   * @param res - Node.js ServerResponse
+   * @param parsedBody - Optional pre-parsed body from body-parser middleware
+   */
+  async handleRequest(req, res, parsedBody) {
+    const authInfo = req.auth;
+    const handler = getRequestListener(async (webRequest) => {
+      return this._webStandardTransport.handleRequest(webRequest, {
+        authInfo,
+        parsedBody
+      });
+    }, { overrideGlobalObjects: false });
+    await handler(req, res);
+  }
+  /**
+   * Close an SSE stream for a specific request, triggering client reconnection.
+   * Use this to implement polling behavior during long-running operations -
+   * client will reconnect after the retry interval specified in the priming event.
+   */
+  closeSSEStream(requestId) {
+    this._webStandardTransport.closeSSEStream(requestId);
+  }
+  /**
+   * Close the standalone GET SSE stream, triggering client reconnection.
+   * Use this to implement polling behavior for server-initiated notifications.
+   */
+  closeStandaloneSSEStream() {
+    this._webStandardTransport.closeStandaloneSSEStream();
+  }
+};
+
+// packages/core/src/browser-panel.ts
+init_zod();
+init_telemetry();
+init_telemetry2();
+var PAGE = new URL("./browser-panel.html", import.meta.url);
+var BROWSER_SESSION_IDLE_MS = 5 * 6e4;
+var BROWSER_CONTEXT_MAX_BYTES = 16 * 1024 * 1024;
+var NO_CONTEXT = "No Mobile Dev browser panel has shared context. Open Mobile Dev, or ask the user to select a device in the panel.";
+var contextSchema = external_exports.object({
+  content: external_exports.array(external_exports.union([
+    external_exports.object({ type: external_exports.literal("text"), text: external_exports.string() }),
+    external_exports.object({ type: external_exports.literal("image"), data: external_exports.string(), mimeType: external_exports.string().regex(/^image\/[\w.+-]+$/) })
+  ])).max(64).default([])
+});
+function browserPanel({ template = PAGE, always = false } = {}) {
+  return (server, { connections, onPanelOpen }) => {
+    let page;
+    onPanelOpen(async ({ tool, target: target3 }) => {
+      const capabilities = server.server.getClientCapabilities();
+      if (connections === void 0 || always === false && Y3(capabilities)) return;
+      const clientInfo = server.server.getClientVersion();
+      const host2 = telemetryHost(clientInfo?.name);
+      page ??= startPanelPage(connections, host2, template);
+      const opened = await page;
+      const url3 = opened.url(tool, target3);
+      const instructions = `Mobile Dev's panel is a page to show beside the chat, not in it, and it is not open yet. Show it to the user now: open ${url3} in your in-app browser or side panel, in the foreground, so the page is visible without another click. This page is how Mobile Dev shows its panel, so opening it is part of opening the panel. Use your host's own browser or preview tool, and load it first if it is deferred. Never open the page with a computer-use tool that drives the screen. Opening a page can leave the browser pane hidden: when your host has a tool that brings its browser or preview pane into view, such as a show_pane tool for its preview pane, load it if needed and call it right after. A host can also show the page as a floating preview and report it as not visible. That still counts as shown, so do not open it again. Leave the tab open after you reply. Reuse a tab that already shows Mobile Dev. Open no other address for it, such as the backend's baseUrl. If you cannot open pages, give the user the link. The page shares the user's devices and what they add to chat through mobile_read_panel_context; read it before device work.`;
+      return { url: url3, instructions };
+    });
+    server.registerTool("mobile_read_panel_context", {
+      title: "Read Mobile Dev panel context",
+      description: "Read what a Mobile Dev panel opened in a browser shares with the chat: the active and visible device IDs, and logs, screenshots and screen notes the user added to chat. Call it before device work and when the user refers to something in the panel. Hosts that render the panel in the chat share this directly.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
+    }, async () => {
+      const opened = await page?.catch(() => void 0);
+      const content = opened?.context() ?? [];
+      return { content: content.length ? content : [{ type: "text", text: NO_CONTEXT }] };
+    });
+    return async () => {
+      const opened = await page?.catch(() => void 0);
+      await opened?.close();
+    };
+  };
+}
+async function startPanelPage(connections, host2, page = PAGE) {
+  const template = await readFile21(page, "utf8");
+  const html = template.replace("<html", `<html data-telemetry-host="${host2}"`);
+  const entropy = randomBytes10(24);
+  const token = entropy.toString("base64url");
+  const base2 = `/${token}/`;
+  const sessions2 = /* @__PURE__ */ new Map();
+  let closing = false;
+  const http5 = createServer8((request2, response3) => {
+    handle(request2, response3).catch((error113) => {
+      captureServerError(error113, "browser_panel.request");
+      if (response3.headersSent) response3.destroy();
+      else reply(response3, 500);
+    });
+  });
+  await new Promise((resolve8, reject) => {
+    http5.once("error", reject);
+    http5.listen(0, "127.0.0.1", () => {
+      http5.off("error", reject);
+      resolve8();
+    });
+  });
+  const { port: port2 } = http5.address();
+  const hosts = [`127.0.0.1:${port2}`, `localhost:${port2}`];
+  const origins2 = hosts.map((host3) => `http://${host3}`);
+  const expiry = setInterval(() => {
+    const cutoff = Date.now() - BROWSER_SESSION_IDLE_MS;
+    for (const session of sessions2.values()) {
+      if (session.requests > 0 || session.touched > cutoff) continue;
+      void session.transport.close().catch((error113) => captureServerError(error113, "browser_panel.close"));
+    }
+  }, 3e4);
+  expiry.unref();
+  async function handle(request2, response3) {
+    if (closing) return reply(response3, 503);
+    const origin2 = request2.headers.origin;
+    if (hosts.includes(request2.headers.host ?? "") === false) return reply(response3, 403);
+    if (origin2 !== void 0 && origins2.includes(origin2) === false) return reply(response3, 403);
+    const path = new URL(request2.url ?? "/", origins2[0]).pathname;
+    if (path === base2 && request2.method === "GET") {
+      response3.writeHead(200, {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-store",
+        "referrer-policy": "no-referrer",
+        "x-content-type-options": "nosniff",
+        "content-security-policy": "frame-ancestors 'none'; base-uri 'none'"
+      });
+      response3.end(html);
+      return;
+    }
+    if (path === `${base2}mcp`) return mcp(request2, response3);
+    if (path === `${base2}context`) return context3(request2, response3);
+    reply(response3, 404);
+  }
+  async function context3(request2, response3) {
+    if (request2.method !== "PUT") return reply(response3, 405, { allow: "PUT" });
+    const sessionId5 = request2.headers["mcp-session-id"];
+    const session = typeof sessionId5 === "string" ? sessions2.get(sessionId5) : void 0;
+    if (session === void 0) return reply(response3, 404);
+    if (request2.headers["content-type"]?.startsWith("application/json") !== true) return reply(response3, 415);
+    const body = await readBody(request2, BROWSER_CONTEXT_MAX_BYTES);
+    if (body === void 0) {
+      recordBrowserPanelContext("too_large");
+      return reply(response3, 413, { connection: "close" });
+    }
+    let parsed;
+    try {
+      parsed = contextSchema.safeParse(JSON.parse(body.toString("utf8")));
+    } catch {
+      parsed = void 0;
+    }
+    if (parsed?.success !== true) {
+      recordBrowserPanelContext("invalid");
+      return reply(response3, 400);
+    }
+    session.context = { content: parsed.data.content, updated: Date.now() };
+    session.touched = Date.now();
+    recordBrowserPanelContext("stored", body.byteLength);
+    reply(response3, 204);
+  }
+  async function mcp(request2, response3) {
+    if (request2.method === "GET") return reply(response3, 405, { allow: "POST, DELETE" });
+    const sessionId5 = request2.headers["mcp-session-id"];
+    if (sessionId5 !== void 0) {
+      const session = typeof sessionId5 === "string" ? sessions2.get(sessionId5) : void 0;
+      if (session === void 0) return reply(response3, 404);
+      session.requests++;
+      try {
+        await session.transport.handleRequest(request2, response3);
+      } finally {
+        session.requests--;
+        session.touched = Date.now();
+      }
+      return;
+    }
+    const transport2 = new StreamableHTTPServerTransport({
+      // Per-request SSE supports associated server requests and releases completed streams.
+      sessionIdGenerator: randomUUID13,
+      onsessioninitialized: (id3) => {
+        sessions2.set(id3, { transport: transport2, touched: Date.now(), requests: 0 });
+        recordBrowserPanelSessions(sessions2.size);
+      }
+    });
+    transport2.onclose = () => {
+      if (transport2.sessionId === void 0) return;
+      if (sessions2.delete(transport2.sessionId)) recordBrowserPanelSessions(sessions2.size);
+    };
+    await connections.attach(transport2);
+    try {
+      await transport2.handleRequest(request2, response3);
+    } finally {
+      if (transport2.sessionId === void 0) await transport2.close();
+    }
+  }
+  return {
+    url(tool, target3) {
+      const query = new URLSearchParams({ tool });
+      const entries = Object.entries(target3);
+      for (const [key2, value] of entries) {
+        if (typeof value === "string") query.set(key2, value);
+      }
+      return `${origins2[0]}${base2}?${query}`;
+    },
+    context() {
+      const shared = Array.from(sessions2.values()).flatMap((session) => session.context ? [session.context] : []);
+      shared.sort((a2, b2) => b2.updated - a2.updated);
+      return shared.flatMap((context4, index) => {
+        if (context4.content.length === 0) return [];
+        const heading = { type: "text", text: shared.length > 1 ? `Mobile Dev browser tab ${index + 1} of ${shared.length}, most recent first.` : "Mobile Dev browser panel." };
+        return [heading, ...context4.content];
+      });
+    },
+    async close() {
+      closing = true;
+      clearInterval(expiry);
+      const stopped = new Promise((resolve8) => http5.close(() => resolve8()));
+      const connectionsClosing = Array.from(sessions2.values(), (session) => session.transport.close());
+      await Promise.allSettled(connectionsClosing);
+      http5.closeAllConnections();
+      await stopped;
+    }
+  };
+}
+async function readBody(request2, limit) {
+  const chunks = [];
+  let size2 = 0;
+  for await (const chunk of request2) {
+    size2 += chunk.byteLength;
+    if (size2 > limit) return void 0;
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
+}
+function reply(response3, status, headers = {}) {
+  response3.writeHead(status, { "cache-control": "no-store", ...headers });
+  response3.end();
+}
+
+// packages/core/src/panel-placement.ts
+function panelPlacement(fallback, env2 = process.env) {
+  const requested = env2.MOBILE_DEV_PANEL?.trim().toLowerCase();
+  if (requested === "inline" || requested === "browser") return requested;
+  if (requested) console.error(`[mobile-dev] Ignoring MOBILE_DEV_PANEL=${JSON.stringify(env2.MOBILE_DEV_PANEL)}; it accepts "inline" or "browser". Using "${fallback}".`);
+  return fallback;
+}
+
 // apps/codex-plugin/server/plugin-updates.ts
 import { execFile as execFile25 } from "node:child_process";
-import { mkdir as mkdir11, readFile as readFile21, rename as rename8, rm as rm11, writeFile as writeFile15 } from "node:fs/promises";
-import { randomUUID as randomUUID13 } from "node:crypto";
+import { mkdir as mkdir11, readFile as readFile22, rename as rename8, rm as rm11, writeFile as writeFile15 } from "node:fs/promises";
+import { randomUUID as randomUUID14 } from "node:crypto";
 import { homedir as homedir10 } from "node:os";
 import { basename as basename9, dirname as dirname15, isAbsolute as isAbsolute12, join as join46 } from "node:path";
 import { fileURLToPath as fileURLToPath15 } from "node:url";
@@ -157414,7 +159870,7 @@ var PluginUpdates = class {
   }
   async readCache() {
     try {
-      const text7 = await readFile21(this.cachePath, "utf8");
+      const text7 = await readFile22(this.cachePath, "utf8");
       const data = JSON.parse(text7);
       return cacheSchema.parse(data);
     } catch {
@@ -157423,7 +159879,7 @@ var PluginUpdates = class {
   }
   async saveCache(cache) {
     const directory2 = dirname15(this.cachePath);
-    const id3 = randomUUID13();
+    const id3 = randomUUID14();
     const temporary = `${this.cachePath}.${id3}.tmp`;
     try {
       await mkdir11(directory2, { recursive: true });
@@ -157469,7 +159925,7 @@ var PluginUpdates = class {
     if (compareReleaseVersions(version5, STORE_MIGRATION_VERSION) < 0 || compareReleaseVersions(version5, this.currentVersion) < 0) return false;
     const path = join46(this.profile, "plugins/cache", storeMarketplace, "mobile-dev", version5, ".codex-plugin/plugin.json");
     try {
-      const text7 = await readFile21(path, "utf8");
+      const text7 = await readFile22(path, "utf8");
       const data = JSON.parse(text7);
       const manifest = manifestSchema.parse(data);
       return manifest.version === version5;
@@ -157631,7 +160087,9 @@ var codexUpdates = (server) => {
 };
 
 // apps/codex-plugin/server/index.ts
-await runStdioServer({ panel: createPanel(), features: [agentDeviceTools(readAgentDeviceCatalog()), codexUpdates] });
+var inline = panelPlacement("inline") === "inline";
+var features = [agentDeviceTools(readAgentDeviceCatalog()), codexUpdates];
+await runStdioServer({ panel: createPanel({ inline }), features: inline ? features : [...features, browserPanel({ always: true })] });
 /*! Bundled license information:
 
 undici/lib/web/fetch/body.js:
@@ -157639,6 +160097,13 @@ undici/lib/web/fetch/body.js:
 
 undici/lib/web/websocket/frame.js:
   (*! ws. MIT License. Einar Otto Stangvik <einaros@gmail.com> *)
+
+content-type/index.js:
+  (*!
+   * content-type
+   * Copyright(c) 2015 Douglas Christopher Wilson
+   * MIT Licensed
+   *)
 */
 
-//# debugId=5fa6f1b3-4e8b-5b1e-b6ee-9de657186df8
+//# debugId=6bbb041b-85ed-5d2d-8741-cc655002aa17

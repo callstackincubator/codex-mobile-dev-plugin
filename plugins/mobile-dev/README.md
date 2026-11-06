@@ -110,6 +110,32 @@ It sends plugin errors and aggregate measurements to Sentry, as described under
 [Privacy and support](#privacy-and-support), and nothing else to Callstack;
 profiles go only to the TraceSift service on your Mac.
 
+### T3 Code
+
+[T3 Code](https://github.com/pingdotgg/t3code) runs Claude Code and Codex, so it loads
+the Mobile Dev plugin that each of them has installed. On the Mac that runs T3 Code,
+install the [Claude Code plugin](#claude-code-and-claude-desktop) for Claude threads
+and the [Codex plugin](#codex) for Codex threads. In both, the panel opens in T3 Code's
+Browser.
+
+Turn off T3 Code's own device integration while you use Mobile Dev. In
+**Settings → Devices**, turn off **Use devices**, which also turns off **Agents can use
+devices**. Otherwise T3 Code gives agents its own `device_*` tools, with the same names
+as Mobile Dev's, and tells them to prefer those tools.
+
+Codex threads need one setting, because T3 Code renders Codex's panel in the chat
+and asks you to confirm each action that the panel takes, such as each tap:
+
+1. Open **Settings → Providers**, then the Codex instance.
+2. Under **Variables**, click **Add variable**. Set `MOBILE_DEV_PANEL` to `browser`.
+3. Start a new thread.
+
+Ask the agent to open Mobile Dev. It opens the panel with T3 Code's `preview_open`
+tool, and T3 Code shows the page as a floating preview. To dock the panel beside the
+chat, click the preview's **Open in right panel** button. The agent reads the devices
+you select in the panel and the screenshots and screen notes you add from it.
+Performance recordings still render as cards in the chat.
+
 ### Cursor: manual installation
 
 On an Apple Silicon Mac with Node.js 22.19 or later on `PATH`, obtain the
