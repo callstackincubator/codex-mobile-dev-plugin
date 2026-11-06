@@ -25,7 +25,11 @@ A host adds to the shared pieces without changing them:
   resource. Claude's entry (`apps/claude/server`) passes the panel with `inline: false`,
   so even MCP Apps hosts such as the desktop app's Code tab render none in the chat, and
   the browser panel feature with `always: true`, which shows it beside the chat in a
-  browser; it adds agent-device's commands. Every host lists simulators for logs, CPU and device choices with
+  browser; it adds agent-device's commands. `MOBILE_DEV_PANEL=browser`
+  (`packages/core/src/panel-placement.ts`) gives the Codex and shared entries Claude's setup,
+  and recording cards then offer no workspace. MCP Apps hosts advertise the same capabilities
+  whether or not an inline panel suits them. T3 Code, for example, asks the user to confirm every
+  panel tool call that is not read-only, so its Codex threads need `browser`. Every host lists simulators for logs, CPU and device choices with
   simctl, without starting Baguette.
 - **Runtime:** a host's `plugin-host.json` can leave out the panel's parts of `dist/`
   (`"panel": false`, see `PANEL_PARTS` in `tooling/host-runtime.mjs`), download them

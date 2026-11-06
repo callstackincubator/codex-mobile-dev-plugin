@@ -255,6 +255,17 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
   const recordingResource = await client.readResource({ uri: RECORDING_URI });
   // Cards from a server with the workspace can open recordings there.
   assert.match(recordingResource.contents[0].text as string, /data-view="recording" data-workspace/);
+  // A panel beside the chat opens no recordings, so its cards offer no workspace.
+  const besideChat = await createTestPlugin('<html data-view="panel"></html>', { panel: createPanel({ inline: false }) });
+  const [besideChatClientTransport, besideChatServerTransport] = InMemoryTransport.createLinkedPair();
+  const besideChatClient = new Client({ name: "browser-panel-host", version: "1" });
+  t.after(async () => { await besideChatClient.close(); await besideChat.close(); });
+  await besideChat.server.connect(besideChatServerTransport);
+  await besideChatClient.connect(besideChatClientTransport);
+  for (const [uri, view] of [[RECORDING_URI, "recording"], [COMPARISON_URI, "comparison"]]) {
+    const card = String((await besideChatClient.readResource({ uri })).contents[0].text);
+    assert.equal(card, `<html data-view="${view}"></html>`);
+  }
   assert.equal(recordingResource.contents[0].mimeType, "text/html;profile=mcp-app");
   assert.deepEqual(recordingResource.contents[0]._meta?.["openai/ui"], { preferredDisplayMode: "inline", availableDisplayModes: ["inline", "fullscreen"] });
   assert.deepEqual(recordingResource.contents[0]._meta?.ui, { prefersBorder: true, permissions: { clipboardWrite: {} }, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } });

@@ -50,6 +50,7 @@ export const installOptions = [
   { name: 'ChatGPT / Codex', detail: 'Open the ChatGPT plugin store.', href: pluginStoreUrl, external: true },
   { name: 'Claude', detail: 'Manual setup for Desktop and Claude Code.', href: `${docs.start}#claude`, external: false },
   { name: 'Cursor', detail: 'Manual setup for the local Cursor plugin.', href: `${docs.start}#cursor`, external: false },
+  { name: 'T3 Code', detail: 'Manual setup for Claude and Codex threads.', href: `${docs.start}#t3-code`, external: false },
 ];
 
 type Link = { text: string; href: string };

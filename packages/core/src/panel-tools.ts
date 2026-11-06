@@ -74,6 +74,8 @@ const INSTRUCTIONS = "For mobile app development, open mobile_open_simulator bef
 
 /** Mobile Dev's own device views, which a host adds to the server it runs (see createPanel). */
 export type Panel = {
+  /** Whether the panel renders in the chat, where it can also open recordings in the workspace. */
+  readonly inline: boolean;
   instructions: string;
   simulatorForeground: SimulatorForeground;
   register(server: McpServer, shared: PanelShared): () => Promise<void>;
@@ -115,6 +117,7 @@ export type PanelOptions = {
  */
 export function createPanel({ baguette = new Baguette(), simulatorInput, copyScreenshot = copyPNGToClipboard, resourceSaving = new ResourceSaving(), inline = true }: PanelOptions = {}): Panel {
   return {
+    inline,
     instructions: INSTRUCTIONS,
     simulatorForeground: foregroundSimulatorPid,
     register: (server, shared) => registerPanel(server, shared, {

@@ -1,6 +1,6 @@
 ---
 title: Getting started
-description: Install Mobile Dev in ChatGPT, Codex, Claude, Cursor, or another compatible MCP environment, then connect an iOS or Android device.
+description: Install Mobile Dev in ChatGPT, Codex, Claude, Cursor, T3 Code, or another compatible MCP environment, then connect an iOS or Android device.
 ---
 
 Install Mobile Dev for your development environment, open a new conversation, and ask **“Open Mobile Dev.”** Choose a device in the panel, then continue with your app project.
@@ -89,6 +89,20 @@ After completing the repository's source-build setup, `npm run package:cursor` w
 Cursor must allow local plugin imports. On managed Enterprise accounts, your admin controls that setting. See [Cursor's local plugin instructions](https://prod.cursor.com/docs/plugins#test-plugins-locally).
 
 For a local MCP connection, run `npm run build` and `npm run cursor:config` from the checkout. Merge the generated `.local-dev/cursor-mcp.json` entry into the `mcpServers` object in your global `~/.cursor/mcp.json`, then reload Cursor. Preserve your other servers and use either the plugin or this local connection.
+
+## T3 Code
+
+[T3 Code](https://github.com/pingdotgg/t3code) runs Claude Code and Codex, so it loads the Mobile Dev plugin that each of them has installed. On the Mac that runs T3 Code, install the [Claude Code](#claude-code) plugin for Claude threads and the [Codex](#codex-cli) plugin for Codex threads. In both, the panel opens in T3 Code's Browser.
+
+Turn off T3 Code's own device integration while you use Mobile Dev. In **Settings → Devices**, turn off **Use devices**, which also turns off **Agents can use devices**. Otherwise T3 Code gives agents its own `device_*` tools, with the same names as Mobile Dev's, and tells them to prefer those tools.
+
+Codex threads need one setting, because T3 Code renders Codex's panel in the chat and asks you to confirm each action that the panel takes, such as each tap:
+
+1. Open **Settings → Providers**, then the Codex instance.
+2. Under **Variables**, click **Add variable**. Set `MOBILE_DEV_PANEL` to `browser`.
+3. Start a new thread.
+
+Ask **“Open Mobile Dev.”** The agent opens the panel with T3 Code's `preview_open` tool, and T3 Code shows the page as a floating preview. To dock the panel beside the chat, click the preview's **Open in right panel** button. Performance recordings still render as cards in the chat.
 
 ## Other environments
 

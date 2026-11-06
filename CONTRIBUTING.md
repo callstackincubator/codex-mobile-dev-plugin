@@ -475,6 +475,31 @@ Remove the `mobile-dev` development entry before installing the plugin to avoid
 duplicate servers. Public releases use `npm run build:release` and
 `npm run package:cursor -- --release`.
 
+### T3 Code local development
+
+T3 Code runs the Claude Code and Codex plugins that its providers have installed.
+To test a local build in T3 Code, package both plugins and install them:
+
+```sh
+npm run build
+npm run package
+npm run package:claude
+codex plugin marketplace add ./release/marketplace
+codex plugin add mobile-dev@mobile-dev-local
+claude plugin marketplace add ./release/claude-plugin
+claude plugin install mobile-dev@mobile-dev-local
+```
+
+Set `MOBILE_DEV_PANEL=browser` on T3 Code's Codex instance, as the
+[installation steps](README.md#t3-code) describe. The Codex manifest forwards that
+variable to the server, which then serves the panel as a browser page like Claude's
+server does: `mobile_open_simulator` has no `ui.resourceUri`, so T3 Code renders no
+inline app, and its result carries the `browserPanel` link that the agent opens with
+`preview_open`. The shared server in `dist/server.mjs` reads the variable too. An
+unknown value logs a warning to the server's stderr and keeps the default placement.
+`npm run test:package` checks both placements of the packaged Codex server. After you
+reinstall a plugin, start a new thread so that T3 Code starts the new copy.
+
 ## Live React UI development
 
 In Codex, run `npm run dev` after installing the plugin. It watches the UI sources and

@@ -123,8 +123,8 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
     }) }] };
   });
   const readCard = (view: string) => async (uri: URL) => {
-    // Cards from a server with the workspace can open recordings there.
-    const content = (await page()).replace('data-view="panel"', `data-view="${view}"${panel ? " data-workspace" : ""}`);
+    // Cards from a server whose panel opens recordings in the workspace can open them there.
+    const content = (await page()).replace('data-view="panel"', `data-view="${view}"${panel?.inline ? " data-workspace" : ""}`);
     return { contents: [{ uri: uri.href, mimeType: RESOURCE_MIME_TYPE, text: content, _meta: {
       ui: { prefersBorder: true, permissions: { clipboardWrite: {} }, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } },
       "openai/ui": { preferredDisplayMode: "inline", availableDisplayModes: ["inline", "fullscreen"] },
