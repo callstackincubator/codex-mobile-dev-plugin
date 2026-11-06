@@ -110,13 +110,74 @@ Priority, first match wins:
 | 1 | `identifier` (testID) | `screen.getByTestId("Submit")` |
 | 2 | `role` + `label` | `screen.getByRole("tab", "Explore")` |
 | 3 | text content (`label`/`value` on a text node) | `screen.getByText("GET STARTED")` |
-| 4 | nothing resolves | `screen.tapAt(x, y)` + a `// TODO: add a testID` comment |
+| 4 | nothing resolves | `screen.tapAt(x, y)`, preceded by a wait, + a `// TODO: add a testID` comment |
 
-The ranks are tried over the **hit chain** — the element under the point and the elements enclosing
-it — not over that element alone, and rank beats depth: an enclosing `Pressable`'s testID is
-preferred to the tapped `Text`'s copy. React Native leaves are routinely unaddressable (an
-unlabelled `RCTText`, a bare `View`), and walking outwards names the thing the user meant instead
-of falling to a coordinate.
+`screen.tapAt` is the only step with nothing to wait on: every locator action waits up to the
+action timeout for its element, but a coordinate is always "ready", so a recorded coordinate tap
+fires into the splash screen and misses. A point step therefore carries an **anchor** — the
+nearest element on the same screen that resolves uniquely — and the emitter puts
+`await expect(<anchor>).toBeVisible()` in front of the tap as the gate the tap cannot express.
+
+An **assertion** that resolves to a point is refused outright rather than recorded: there is
+nothing for `toBeVisible` to name, so the step would emit only comments.
+
+The ranks are tried over the **hit ladder** — every element the point sits inside, ordered by area,
+innermost first — not over one element and not over one tree's branch. The inspection merges two
+trees over the same pixels, React Native fibers and iOS accessibility, and they are not related by
+`parentId`, so following a single branch can lose the half that names the element.
+
+**Only accessibility nodes are named.** The inspection merges React Native fibers with the
+device's accessibility tree, and the two disagree about the same pixels. The runner queries only
+the second, so a selector built from the fibers can describe the screen perfectly and still fail
+with `LOCATOR_NOT_FOUND`. On the stock Expo Explore screen:
+
+| Element | Fibers say | Accessibility says | What the runner resolves |
+|---|---|---|---|
+| Collapsible header | `Pressable` > `Text` "File-based routing" | one element, name "Forward, File-based routing" (the chevron's name folded in) | `getByLabel("Forward, File-based routing")` |
+| Tab bar item | unlabelled `Pressable` | `AXRadioButton` "Explore" | `getByRole("tab", "Explore")` |
+| Paragraph | `RCTText`, nested children | `AXStaticText` with the whole string | `getByText(...)` |
+
+So the ladder is built from accessibility nodes, and the fibers are used only where a point has
+no accessibility node at all (an Android snapshot, a runtime-only tree), where a fiber-named
+selector still beats a coordinate.
+
+`getByText` searches text elements. A control whose accessible *name* merely contains words — a
+row, an icon button, a collapsible header — is reached by that name, which is `getByLabel`; the
+rank is added after text for exactly that case. Names are compared with whitespace collapsed,
+because the runner normalizes and an accessibility label carries the rendered line breaks.
+
+An icon-only control with no name of its own takes the **one** piece of text inside it; two and it
+stays unnamed and the ladder moves outwards, rather than guessing.
+
+**The status bar is not the app.** The device reports its own clock, Dynamic Island and battery in
+the same tree. The runner queries the app and never sees them, so they are dropped — anything
+lying wholly within the top 7% of the screen and carrying no identifier. They were otherwise
+chosen as steps, and as waits: a recorded flow opened with
+`await expect(screen.getByLabel("Dynamic Island, Empty")).toBeVisible()`.
+
+**The stale bridge is repaired, not just reported.** `Baguette.describeUi` already restarts the
+accessibility bridge when the simulator answers "no accessibility data" — but a stale bridge does
+not always fail. It answers `ok`, with the chrome and an unnamed root. The root of a healthy tree
+is the foreground app and it is named, so an unnamed root now triggers the same restart and one
+re-read (`packages/core/src/baguette.ts`). The panel guard below stays as the backstop for when
+the restart does not take.
+
+**When the tree holds only the status bar, recording stops.** It comes back that way sometimes —
+the app's own nodes missing while the simulator's chrome is reported. The fibers are still there
+and still describe the screen, so resolution would quietly fall back to them and emit a selector
+that cannot resolve at run time. `treeHealth` names the three cases — `ok`, `chrome-only`,
+`no-accessibility` — and the recorder refuses a step on `chrome-only` with what to do about it.
+`no-accessibility` is the honest fibers-only case (Android, a runtime-only tree) and still
+records.
+
+**Depth beats rank**: the innermost element that can be named at all wins, and the ranks above
+only order the candidates *within* one element. An enclosing element is reached by pointing at it
+or by walking out, never by quietly outranking what is under the pointer.
+
+**Walking out.** The outline is at a level on the ladder, and the wheel over the mirror moves it:
+out to the enclosing element, back in again, re-resolved from the cached tree at no cost. The label
+reads `3/7`. Pointing at a different element starts again from the innermost. The recorded step is
+whatever the outline shows, so what you see is what is written.
 
 **Roles are translated, not passed through.** The device's vocabulary is not the runner's: iOS
 accessibility reports `AXRadioButton` for a tab bar item, React Native inspection reports the fiber
@@ -197,6 +258,9 @@ deleting a step just re-renders; nothing is ever half-written.
 
 Save behaviour:
 
+- **Record starts a new flow** when the steps on screen are already saved, and continues the
+  existing one when they are not — stopping to scroll and carrying on is still one flow, but a tap
+  landing on the end of a finished test never is.
 - **A successful save stops the recording.** The flow is written; leaving the recorder armed turns
   the next stray tap on the mirror into a step the saved file does not have. The steps stay, so the
   flow can be extended and saved again. A save blocked by an existing file changes nothing.
@@ -214,6 +278,28 @@ recorder where a flow is thirty taps.
 A **Run** button in the panel shells `npx e2e run tests/<file>` in the project root and streams the
 result into the step list, marking the step that failed. This closes the loop: record, run, fix the
 selector, run again.
+
+## Reading the same tree as the runner
+
+The recorder reads the accessibility tree through Baguette, over the macOS accessibility API. The
+runner reads it through the vendored agent-device engine, over XCUITest. They agree about names
+and roles — that was checked element by element against a live app — but not about reliability:
+Baguette's bridge goes stale, and its tree carries the simulator's own chrome, which XCUITest
+never shows.
+
+Closing that for good means reading from agent-device, which this plugin already vendors and
+drives (`packages/core/src/agent-device-runtime.ts`; app-flow's manual recorder takes snapshots
+with node rects through it). It is not free:
+
+| | Baguette `describe-ui` | agent-device `snapshot` |
+|---|---|---|
+| What it costs | one loopback GET, tens of ms | 0.3–1.5 s per read |
+| What it needs | nothing | a session from `open`, which foregrounds or relaunches the app under the user's mirror |
+| What it sees | the app plus the simulator's chrome | exactly what the runner sees |
+
+A tap holds the touch until the read returns, so a second per tap is not a detail. The order is
+therefore: repair the bridge and drop the chrome (done), and move to agent-device if staleness
+survives that — reusing app-flow's manual session rather than opening a second one.
 
 ## Maestro, later
 

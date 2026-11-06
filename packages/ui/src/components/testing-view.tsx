@@ -123,7 +123,7 @@ function TestingRecorder({ panel, recordable, udid }: { panel: TestingPanel; rec
     <div className="flex flex-wrap items-center gap-2">
       {recording
         ? <Button type="button" size="sm" variant="outline" data-testing-stop onClick={() => testRecorder.stop()}><SquareIcon />Stop</Button>
-        : <Button type="button" size="sm" variant="outline" data-testing-record disabled={!recordable} onClick={() => testRecorder.start(udid)}><CircleIcon />Record</Button>}
+        : <Button type="button" size="sm" variant="outline" data-testing-record disabled={!recordable} onClick={() => testRecorder.start(udid, panel.dirty)}><CircleIcon />Record</Button>}
       <Button type="button" size="sm" variant={state.assertMode ? "default" : "ghost"} data-testing-assert disabled={!recording}
         title="The next tap asserts that the element is visible instead of tapping it"
         onClick={() => testRecorder.setAssertMode(!state.assertMode)}><EyeIcon />Assert</Button>
@@ -132,7 +132,10 @@ function TestingRecorder({ panel, recordable, udid }: { panel: TestingPanel; rec
     </div>
 
     {!recordable && !recording && <p className="text-xs text-muted-foreground">Recording needs a booted iOS simulator in the mirror.</p>}
-    {recording && <p className="text-xs text-muted-foreground">{state.assertMode ? "The next tap records an assertion and is not sent to the app." : "Tap the mirror. Each tap becomes a step."}</p>}
+    {recording && <p className="text-xs text-muted-foreground">
+      {state.assertMode ? "The next tap records an assertion and is not sent to the app." : "Tap the mirror. Each tap becomes a step."}
+      {" Scroll over the outline to pick the element around it."}
+    </p>}
 
     {state.error && <Alert variant="destructive">
       <AlertTitle>Recorder</AlertTitle>

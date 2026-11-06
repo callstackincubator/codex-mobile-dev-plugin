@@ -29,6 +29,6 @@ export function TestRecorderOverlay({ store }: { store: ScreenAnnotationsStore }
     <span
       className={`absolute max-w-[min(18rem,100%)] truncate rounded px-1.5 py-0.5 text-[10px] font-medium text-white shadow-sm ${hover.ambiguous ? "bg-amber-600" : "bg-blue-600"}`}
       style={{ left: Math.max(4, Math.min(rect.left, v.stageWidth - 16)), top: Math.max(2, above ? rect.top - 20 : rect.top + 2) }}
-    >{hover.label}</span>
+    >{hover.label}{hover.levels > 1 ? ` · ${hover.level + 1}/${hover.levels}` : ""}</span>
   </div>;
 }

@@ -1,4 +1,4 @@
-import { emitE2eTest, resolveSelector, stepLabel } from "@mobile-dev/shared/test-recording.ts";
+import { anchorSelector, emitE2eTest, hitLadder, resolveSelector, stepLabel, treeHealth } from "@mobile-dev/shared/test-recording.ts";
 import type { RecordedStep, RecordedStepKind } from "@mobile-dev/shared/test-recording.ts";
 import type { ScreenBounds, ScreenComponent, ScreenPoint, ScreenSize } from "@mobile-dev/shared/screen-annotations.ts";
 import { countUiEvent, recordUiTiming } from "./telemetry.ts";
@@ -30,11 +30,20 @@ export type TestRecorderSnapshot = {
    * the element the selector would name, the step it would add, and the screen those bounds are
    * in so the overlay can scale them to the canvas.
    */
-  hover?: { bounds: ScreenBounds; label: string; screen: ScreenSize; ambiguous: boolean };
+  hover?: {
+    bounds: ScreenBounds; label: string; screen: ScreenSize; ambiguous: boolean;
+    /** How far out the user has walked, and how far out they still can. */
+    level: number; levels: number;
+  };
   error: string;
 };
 
 const DEFAULT_TITLE = "a recorded flow";
+/**
+ * The device is describing only its own status bar. Every name a test could use lives in the app's
+ * accessibility tree, so there is nothing to record until it comes back.
+ */
+const CHROME_ONLY = "The simulator is only reporting its status bar, not the app, so a recorded step would name nothing the test runner can find. Bring the Simulator window on screen, then record again.";
 /**
  * How long a tree read stays usable. Any input invalidates it outright; this only bounds the case
  * where the app changed the screen on its own (an animation finishing, data arriving) without the
@@ -57,6 +66,10 @@ export class TestRecorder {
   private pending?: Promise<ScreenComponent[]>;
   /** Only the newest hover may write the outline; earlier reads that land late are dropped. */
   private hoverToken = 0;
+  /** Where the pointer is, how far out of it the user has walked, and what it was last over. */
+  private hoverPoint?: ScreenPoint;
+  private hoverLevel = 0;
+  private hoverInnermost?: string;
   private snapshot: TestRecorderSnapshot = {
     recordingUdid: "", assertMode: false, steps: [], title: DEFAULT_TITLE, revision: 0, resolving: false, error: "",
   };
@@ -92,16 +105,23 @@ export class TestRecorder {
 
   get source() { return emitE2eTest(this.snapshot.steps, { title: this.snapshot.title }); }
 
-  start(udid: string) {
+  /**
+   * Begins recording. A recording that was already saved starts a new flow rather than appending
+   * to the file just written — the saved steps are still on screen, and a tap landing on the end
+   * of a finished test is never what was meant.
+   */
+  start(udid: string, keepSteps = false) {
     if (!udid || !this.reader) return;
     this.invalidate();
-    this.update({ recordingUdid: udid, error: "", assertMode: false, hover: undefined });
+    this.clearHover();
+    this.update({ recordingUdid: udid, error: "", assertMode: false, ...(keepSteps ? {} : { steps: [] }) });
     countUiEvent("ui.testing.record_start");
   }
 
   stop() {
     if (!this.snapshot.recordingUdid) return;
-    this.update({ recordingUdid: "", assertMode: false, resolving: false, hover: undefined });
+    this.clearHover();
+    this.update({ recordingUdid: "", assertMode: false, resolving: false });
     countUiEvent("ui.testing.record_stop");
   }
 
@@ -114,27 +134,69 @@ export class TestRecorder {
    * that is answered locally.
    */
   async hover(point?: ScreenPoint) {
-    if (!this.snapshot.recordingUdid || !point) { if (this.snapshot.hover) this.update({ hover: undefined }); return; }
+    if (!this.snapshot.recordingUdid || !point) { this.clearHover(); return; }
     const token = ++this.hoverToken;
     let components: ScreenComponent[];
     try { components = await this.currentComponents(); }
     catch { return; }
     // The pointer moved on, or recording stopped, while the tree was being read.
     if (token !== this.hoverToken || !this.snapshot.recordingUdid) return;
+    this.hoverPoint = point;
+    // Walking out is anchored to one element: pointing at a different one starts again from it.
+    const innermost = hitLadder(components, point, this.reader?.screen())[0]?.nodeId;
+    if (innermost !== this.hoverInnermost) { this.hoverInnermost = innermost; this.hoverLevel = 0; }
+    this.showHover(components);
+  }
+
+  /**
+   * Walks the outline out to the enclosing element and back in, for when the element under the
+   * pointer is not the one the test should name — a label inside the row, the row inside the card.
+   * It re-resolves from the cached tree, so it costs nothing and stays in step with the tap.
+   */
+  walkHover(outwards: boolean) {
+    if (!this.snapshot.recordingUdid || !this.hoverPoint) return;
+    const next = this.hoverLevel + (outwards ? 1 : -1);
+    const levels = this.snapshot.hover?.levels ?? 1;
+    if (next < 0 || next > levels - 1) return;
+    this.hoverLevel = next;
+    this.showHover(this.components);
+    countUiEvent("ui.testing.hover_walk");
+  }
+
+  private clearHover() {
+    this.hoverPoint = undefined;
+    this.hoverInnermost = undefined;
+    this.hoverLevel = 0;
+    if (this.snapshot.hover) this.update({ hover: undefined });
+  }
+
+  private showHover(components: ScreenComponent[]) {
+    const point = this.hoverPoint;
     const screen = this.reader?.screen();
-    const { selector, ambiguous, component } = resolveSelector(components, point, screen);
-    const bounds = component?.bounds;
-    if (!bounds || !screen) { if (this.snapshot.hover) this.update({ hover: undefined }); return; }
+    if (!point || !screen) return;
+    if (treeHealth(components, screen) === "chrome-only") {
+      if (this.snapshot.error !== CHROME_ONLY) this.update({ error: CHROME_ONLY });
+      if (this.snapshot.hover) this.update({ hover: undefined });
+      return;
+    }
+    const { selector, ambiguous, component, levels } = resolveSelector(components, point, screen, this.hoverLevel);
+    // Nothing under the pointer is still worth drawing: silence reads as a broken recorder, and
+    // the mark is the honest answer — this is the coordinate a tap here would record.
+    const bounds = component?.bounds ?? { x: point.x - 12, y: point.y - 12, width: 24, height: 24 };
     const label = stepLabel(this.snapshot.assertMode ? "assertVisible" : "tap", selector);
+    const hover = { bounds, label, screen, ambiguous, level: this.hoverLevel, levels };
     const previous = this.snapshot.hover;
-    if (previous && previous.label === label && previous.ambiguous === ambiguous
-      && previous.bounds.x === bounds.x && previous.bounds.y === bounds.y
+    if (previous && previous.label === label && previous.ambiguous === ambiguous && previous.level === hover.level
+      && previous.levels === levels && previous.bounds.x === bounds.x && previous.bounds.y === bounds.y
       && previous.bounds.width === bounds.width && previous.bounds.height === bounds.height) return;
-    this.update({ hover: { bounds, label, screen, ambiguous } });
+    this.update({ hover });
   }
 
   // The outline is labelled with the step it would add, so switching mode restates it.
-  setAssertMode(assertMode: boolean) { this.update({ assertMode, hover: undefined }); }
+  setAssertMode(assertMode: boolean) {
+    this.update({ assertMode });
+    if (this.hoverPoint) this.showHover(this.components);
+  }
   setTitle(title: string) { this.update({ title: title.trim() || DEFAULT_TITLE }); }
   removeStep(id: string) { this.update({ steps: this.snapshot.steps.filter(step => step.id !== id) }); }
   clearSteps() { this.update({ steps: [] }); }
@@ -146,7 +208,7 @@ export class TestRecorder {
    */
   invalidate() {
     this.hoverToken++;
-    if (this.snapshot.hover) this.update({ hover: undefined });
+    this.clearHover();
     this.components = [];
     this.componentsReadAt = 0;
     this.pending = undefined;
@@ -187,13 +249,30 @@ export class TestRecorder {
     try {
       const components = await this.currentComponents();
       const screen = this.reader?.screen();
-      const { selector, ambiguous } = resolveSelector(components, point, screen);
+      if (treeHealth(components, screen) === "chrome-only") {
+        // The fibers would still answer, and every selector built from them would name something
+        // the runner cannot find. A refused step is recoverable; a test that cannot run is not.
+        countUiEvent("ui.testing.tree_chrome_only");
+        this.update({ error: CHROME_ONLY });
+        return false;
+      }
+      // The outline the user is looking at is the step they mean, walked-out level and all.
+      const { selector, ambiguous } = resolveSelector(components, point, screen, this.hoverLevel);
+      if (selector.kind === "point" && kind === "assertVisible") {
+        // A coordinate is not a thing to be visible, so the step would emit nothing. Say so instead
+        // of adding a step whose whole body is two comments.
+        countUiEvent("ui.testing.step_unresolved");
+        this.update({ error: "Nothing here can be named, so there is nothing to assert. Scroll the mirror to pick the element around it, or add a testID." });
+        return false;
+      }
       const step: RecordedStep = {
         id: crypto.randomUUID(),
         kind,
         selector,
         label: stepLabel(kind, selector),
         ...(ambiguous ? { ambiguous } : {}),
+        // Only a coordinate tap needs one: every locator action waits for its own element.
+        ...(selector.kind === "point" ? { anchor: anchorSelector(components, point, screen) } : {}),
       };
       this.update({ steps: [...this.snapshot.steps, step] });
       countUiEvent(kind === "tap" ? "ui.testing.step_tap" : "ui.testing.step_assert");

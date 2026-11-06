@@ -956,6 +956,22 @@ export function createSimulatorPanel(
     send({ type: "touch1-move", x: pointer.x, y: pointer.y, ...points, ...(pointer.edge ? { edge: pointer.edge } : {}) });
   });
   canvas.addEventListener("pointerleave", () => { if (annotationPointer === undefined) annotations.hover(); void testRecorder.hover(); });
+  // While recording, the wheel walks the outline out to the enclosing element and back in — the
+  // label inside the row, the row inside the card. The mirror has no other use for the wheel.
+  // A trackpad sends a burst of small deltas per flick, so steps are accumulated rather than
+  // taken per event — otherwise one flick walks straight out to the root.
+  let wheelTravel = 0;
+  const WHEEL_STEP = 60;
+  canvas.addEventListener("wheel", event => {
+    if (!testRecorder.isRecording(selected?.udid) || annotations.getSnapshot().selecting) return;
+    event.preventDefault();
+    if (wheelTravel !== 0 && Math.sign(event.deltaY) !== Math.sign(wheelTravel)) wheelTravel = 0;
+    wheelTravel += event.deltaY;
+    while (Math.abs(wheelTravel) >= WHEEL_STEP) {
+      testRecorder.walkHover(wheelTravel > 0);
+      wheelTravel -= Math.sign(wheelTravel) * WHEEL_STEP;
+    }
+  }, { passive: false });
   canvas.addEventListener("pointerup", event => {
     if (annotationPointer === event.pointerId) {
       annotations.endSelection(mappedPoint(event));

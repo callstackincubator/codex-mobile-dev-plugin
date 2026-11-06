@@ -161,3 +161,98 @@ test("the outline is dropped when the screen it was resolved against is gone", a
   recorder.stop();
   assert.equal(recorder.getSnapshot().hover, undefined);
 });
+
+const CARD: ScreenComponent[] = [
+  { name: "card", label: "Open city", identifier: "city-card", role: "AXButton", depth: 1, source: "accessibility", nodeId: "card", bounds: { x: 0, y: 100, width: 300, height: 80 } },
+  { name: "Paris", label: "Paris", role: "AXStaticText", depth: 2, source: "accessibility", nodeId: "label", parentId: "card", bounds: { x: 10, y: 110, width: 100, height: 20 } },
+];
+
+test("the outline walks out to the enclosing element and records what it shows", async () => {
+  const reads = { count: 0 };
+  const recorder = new TestRecorder();
+  recorder.attach(UDID, reader(CARD, reads));
+  recorder.start(UDID);
+
+  await recorder.hover({ x: 50, y: 120 });
+  assert.equal(recorder.getSnapshot().hover?.label, 'Tap "Paris"');
+  assert.equal(recorder.getSnapshot().hover?.levels, 2);
+
+  recorder.walkHover(true);
+  assert.equal(recorder.getSnapshot().hover?.label, "Tap #city-card");
+  assert.equal(recorder.getSnapshot().hover?.level, 1);
+  assert.equal(reads.count, 1, "walking re-resolves from the cache, it does not re-read the device");
+
+  // The step is what the outline showed, not what the pointer was over.
+  await recorder.record({ x: 50, y: 120 });
+  assert.deepEqual(recorder.getSnapshot().steps.at(-1)?.selector, { kind: "testId", testId: "city-card" });
+
+  // It cannot walk past the outermost element, nor inside the innermost.
+  await recorder.hover({ x: 50, y: 120 });
+  recorder.walkHover(false);
+  assert.equal(recorder.getSnapshot().hover?.level, 0);
+  recorder.walkHover(false);
+  assert.equal(recorder.getSnapshot().hover?.level, 0);
+});
+
+test("an assertion on a point with nothing to name is refused, not recorded as comments", async () => {
+  const reads = { count: 0 };
+  const recorder = new TestRecorder();
+  recorder.attach(UDID, reader([tab("Explore", 800)], reads));
+  recorder.start(UDID);
+  recorder.setAssertMode(true);
+
+  const forward = await recorder.record({ x: 300, y: 200 });
+
+  assert.equal(forward, false, "an assertion never touches the app, refused or not");
+  assert.deepEqual(recorder.getSnapshot().steps, [], "nothing emittable, so nothing recorded");
+  assert.match(recorder.getSnapshot().error, /nothing to assert/);
+  assert.equal(recorder.getSnapshot().assertMode, true, "assert stays armed so the next try is one tap");
+});
+
+test("a coordinate tap carries a wait for the screen it was recorded on", async () => {
+  const reads = { count: 0 };
+  const recorder = new TestRecorder();
+  recorder.attach(UDID, reader([tab("Explore", 800)], reads));
+  recorder.start(UDID);
+
+  await recorder.record({ x: 300, y: 200 });
+
+  const step = recorder.getSnapshot().steps.at(-1);
+  assert.equal(step?.selector.kind, "point");
+  assert.deepEqual(step?.anchor, { kind: "label", label: "Explore" });
+  assert.match(recorder.source, /toBeVisible\(\);\n\s+await screen\.tapAt/);
+});
+
+test("recording again after a save starts a new flow rather than extending the saved one", async () => {
+  const reads = { count: 0 };
+  const recorder = new TestRecorder();
+  recorder.attach(UDID, reader([tab("Explore", 800)], reads));
+  recorder.start(UDID);
+  await recorder.record({ x: 50, y: 820 });
+  recorder.stop();
+  assert.equal(recorder.getSnapshot().steps.length, 1);
+
+  // What the Testing panel passes when the steps on screen are already in a file.
+  recorder.start(UDID);
+  assert.deepEqual(recorder.getSnapshot().steps, []);
+
+  // And what it passes when they are not: stopping to scroll and carrying on keeps the flow.
+  await recorder.record({ x: 50, y: 820 });
+  recorder.stop();
+  recorder.start(UDID, true);
+  assert.equal(recorder.getSnapshot().steps.length, 1);
+});
+
+test("the outline is drawn even where nothing can be named", async () => {
+  const reads = { count: 0 };
+  const recorder = new TestRecorder();
+  recorder.attach(UDID, reader([tab("Explore", 800)], reads));
+  recorder.start(UDID);
+
+  await recorder.hover({ x: 300, y: 200 });
+
+  // Silence reads as a broken recorder; the mark says what a tap here would actually record.
+  const hover = recorder.getSnapshot().hover;
+  assert.match(hover?.label ?? "", /at 300, 200/);
+  assert.deepEqual(hover?.bounds, { x: 288, y: 188, width: 24, height: 24 });
+});

@@ -489,6 +489,40 @@ test("a stale accessibility bridge restarts once before reading the UI again", a
   assert.equal(restarts.length, 1);
 });
 
+test("a stale bridge that answers ok is recovered too, and a healthy read is never retried", async t => {
+  let now = 0;
+  t.mock.method(Date, "now", () => now);
+  let responses: unknown[] = [];
+  const reads: number[] = [];
+  const server = createServer((_request, response) => { reads.push(1); response.end(JSON.stringify(responses.shift() ?? { ok: true, tree: { label: "HorseTinder" } })); });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => server.close());
+  const restarts: string[] = [];
+  const baguette = new Baguette(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, async udid => { restarts.push(udid); });
+  t.after(() => baguette.dispose());
+
+  // The bridge goes stale without failing: it answers with the simulator's chrome under a root
+  // that has no app name. Downstream this looks like an app with nothing accessible in it.
+  responses = [{ ok: true, tree: { label: null } }, { ok: true, tree: { label: "HorseTinder" } }];
+  assert.equal((await baguette.describeUi(UDID)).tree?.label, "HorseTinder");
+  assert.deepEqual(restarts, [UDID]);
+
+  // A healthy read costs one request and never restarts anything.
+  now = 20000;
+  reads.length = 0;
+  responses = [{ ok: true, tree: { label: "HorseTinder" } }];
+  assert.equal((await baguette.describeUi(UDID)).tree?.label, "HorseTinder");
+  assert.equal(reads.length, 1);
+  assert.equal(restarts.length, 1);
+
+  // Still unnamed after a restart, or too soon to restart again: the caller gets what there is
+  // rather than an error, so the panel can say what it sees.
+  now = 40000;
+  responses = [{ ok: true, tree: { label: null } }, { ok: true, tree: { label: null } }];
+  assert.equal((await baguette.describeUi(UDID)).tree?.label, null);
+  assert.equal(restarts.length, 2);
+});
+
 test("panel input reaches the native socket during a pending refresh and blocks after it reports Device Hub", { timeout: 2000 }, async t => {
   let now = 0;
   t.mock.method(Date, "now", () => now);

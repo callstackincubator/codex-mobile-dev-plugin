@@ -12,6 +12,7 @@ export type RecordedSelector =
   | { kind: "testId"; testId: string }
   | { kind: "role"; role: string; name: string }
   | { kind: "text"; text: string }
+  | { kind: "label"; label: string }
   | { kind: "point"; point: ScreenPoint };
 
 export type RecordedStepKind = "tap" | "assertVisible";
@@ -24,6 +25,11 @@ export type RecordedStep = {
   label: string;
   /** Set when every rank matched more than one element, so the panel can flag the step. */
   ambiguous?: boolean;
+  /**
+   * For a coordinate tap only: something on the same screen the test can wait for first. A
+   * coordinate is always actionable, so without this the tap fires before the screen exists.
+   */
+  anchor?: RecordedSelector;
 };
 
 /**
@@ -82,8 +88,19 @@ export function normalizeRole(role: string | undefined): string {
  * screen, so it is not text a test can be pinned to.
  */
 function elementText(component: ScreenComponent): string {
-  const text = (component.label ?? component.value ?? "").trim();
+  // The runner matches text after whitespace normalization, and an accessibility label carries the
+  // line breaks of the rendered copy, so both sides have to be normalized the same way.
+  const text = (component.label ?? component.value ?? "").replace(/\s+/g, " ").trim();
   return text && text !== (component.role ?? "").trim() ? text : "";
+}
+
+/** Whether the runner would see this element as text, i.e. whether `getByText` can find it. */
+function textual(component: ScreenComponent): boolean {
+  return /statictext|text$/i.test((component.role ?? "").replace(/^(AX|XCUIElementType|RCT)/, ""));
+}
+
+function matchesLabel(components: ScreenComponent[], label: string): number {
+  return components.filter(item => elementText(item) === label).length;
 }
 
 function matchesTestId(components: ScreenComponent[], testId: string): number {
@@ -95,10 +112,104 @@ function matchesRole(components: ScreenComponent[], role: string, name: string):
 }
 
 function matchesText(components: ScreenComponent[], text: string): number {
-  return components.filter(item => elementText(item) === text).length;
+  // Counted over text elements only, the same set `getByText` searches: a row whose accessible
+  // name repeats its label is not a second match for the text inside it.
+  return components.filter(item => textual(item) && elementText(item) === text).length;
 }
 
-export type ResolvedSelector = { selector: RecordedSelector; ambiguous: boolean; component?: ScreenComponent };
+/**
+ * The single piece of text inside an element, when there is exactly one.
+ *
+ * More than one and there is nothing to choose between them, so the element stays unnamed and the
+ * ladder moves outwards instead of guessing.
+ */
+function descendantText(components: ScreenComponent[], owner: ScreenComponent): string | undefined {
+  if (!owner.nodeId) return;
+  const inside = new Set([owner.nodeId]);
+  const found = new Set<string>();
+  // One ordered pass: a child always follows its parent in a tree flattened depth-first.
+  for (const item of components) {
+    if (!item.parentId || !inside.has(item.parentId)) continue;
+    if (item.nodeId) inside.add(item.nodeId);
+    const text = elementText(item);
+    if (text) found.add(text);
+    if (found.size > 1) return;
+  }
+  return [...found][0];
+}
+
+export type ResolvedSelector = {
+  selector: RecordedSelector;
+  ambiguous: boolean;
+  component?: ScreenComponent;
+  /** How many elements the point sits inside, so the panel knows how far out it can still walk. */
+  levels: number;
+};
+
+const area = ({ bounds }: ScreenComponent) => bounds.width * bounds.height;
+
+/**
+ * The simulator's own status bar — clock, Dynamic Island, battery — which the device's
+ * accessibility tree reports alongside the app's. The runner never sees it: it queries the app,
+ * not the screen. Naming it produces a step that cannot run, and `Dynamic Island, Empty` is not
+ * what anyone meant to record.
+ */
+function systemChrome(item: ScreenComponent, screen?: ScreenSize): boolean {
+  return Boolean(screen) && !item.identifier && item.bounds.y + item.bounds.height <= screen!.height * 0.07;
+}
+
+/**
+ * Whether the accessibility tree currently describes the app at all.
+ *
+ * It can come back holding only the status bar. The React Native fibers are still there and still
+ * describe the screen, so resolution silently falls back to them — and every selector it produces
+ * names something the runner cannot find. Better to say so than to record a test that cannot run.
+ */
+export type TreeHealth = "ok" | "chrome-only" | "no-accessibility";
+export function treeHealth(components: ScreenComponent[], screen?: ScreenSize): TreeHealth {
+  let chrome = false;
+  for (const item of components) {
+    if (item.source === "react-native") continue;
+    if (!systemChrome(item, screen)) return "ok";
+    chrome = true;
+  }
+  return chrome ? "chrome-only" : "no-accessibility";
+}
+function covers({ bounds }: ScreenComponent, point: ScreenPoint): boolean {
+  return point.x >= bounds.x && point.x < bounds.x + bounds.width && point.y >= bounds.y && point.y < bounds.y + bounds.height;
+}
+
+/**
+ * Every element the point sits inside, innermost first.
+ *
+ * **Accessibility only, when there is any.** The inspection merges two trees over the same pixels:
+ * React Native fibers and the device's accessibility tree. Only the second is what the runner
+ * queries, and the two do not agree — a collapsible header is a `Pressable` holding a `Text`
+ * reading "File-based routing" in the fibers, and a single element whose accessible name is
+ * "Forward, File-based routing" (the chevron's name is folded in) in accessibility. Naming it from
+ * the fibers emits a locator the runner cannot resolve, however well it describes the screen. The
+ * fibers remain the overlay's business; a recorded selector is only ever as good as what the
+ * runner can see.
+ *
+ * `componentsAt` answers with one branch — an element plus its own ancestors — which is too narrow
+ * here, since the point may sit inside siblings' bounds too. The ladder is every hit, ordered by
+ * area, which is also the order "walk out to the parent" means on screen.
+ */
+export function hitLadder(components: ScreenComponent[], point: ScreenPoint, screen?: ScreenSize): ScreenComponent[] {
+  const visible = components.filter(item => covers(item, point)
+    // A root spanning the whole screen names nothing; it is the screen.
+    && (!screen || item.bounds.width < screen.width * .95 || item.bounds.height < screen.height * .95));
+  // The simulator's own status bar is never a step, whichever tree reports it.
+  const app = visible.filter(item => !systemChrome(item, screen));
+  const accessible = app.filter(item => item.source !== "react-native");
+  // With no accessibility node under the point — an Android snapshot, a runtime-only tree — the
+  // fibers are all there is, and a fiber-named selector is better than a coordinate.
+  const hits = (accessible.length ? accessible : app).sort((a, b) => area(a) - area(b) || b.depth - a.depth);
+  // The overlay's own pick leads when it is one of them, so the recorder starts on the element the
+  // mirror highlights.
+  const picked = componentsAt(components, point, screen)[0];
+  return picked && hits.includes(picked) ? [picked, ...hits.filter(item => item !== picked)] : hits;
+}
 
 /**
  * Turns a point on the screen into the selector a test should use.
@@ -109,41 +220,76 @@ export type ResolvedSelector = { selector: RecordedSelector; ambiguous: boolean;
  * the best one is kept and flagged rather than silently emitting a selector that may hit the wrong
  * element.
  */
-export function resolveSelector(components: ScreenComponent[], point: ScreenPoint, screen?: ScreenSize): ResolvedSelector {
-  // The hit chain is the element under the point and the elements enclosing it, innermost first.
+export function resolveSelector(components: ScreenComponent[], point: ScreenPoint, screen?: ScreenSize, level = 0): ResolvedSelector {
   // A React Native leaf often carries nothing addressable — an unlabelled `RCTText`, a bare
-  // `View` — while the Pressable around it holds the testID. Walking outwards names the thing the
-  // user meant rather than giving up on a coordinate.
-  const chain = componentsAt(components, point, screen);
+  // `View` — while the accessibility node or the Pressable over the same pixels holds the label or
+  // the testID. Reading the whole ladder names the thing the user meant rather than giving up on a
+  // coordinate. `level` is the user walking outwards: it drops that many innermost elements.
+  const ladder = hitLadder(components, point, screen);
+  const levels = ladder.length;
+  const chain = ladder.slice(Math.max(0, Math.min(level, levels - 1)));
   const component = chain[0];
-  if (!component) return { selector: { kind: "point", point }, ambiguous: false };
+  if (!component) return { selector: { kind: "point", point }, ambiguous: false, levels };
 
   // Only the named ranks; the point fallback is not a candidate, it is what is left when these fail.
-  // Rank by kind first and only then by depth: a testID is put there on purpose and survives a
-  // copy change, so an enclosing element's testID beats the tapped element's own text.
+  // Depth first, rank within a depth: the innermost element that can be named at all wins, because
+  // that is the thing the user pointed at. An enclosing element is reached by pointing at it, or
+  // by walking out — not by quietly outranking what is under the pointer.
   type Candidate = { selector: Exclude<RecordedSelector, { kind: "point" }>; owner: ScreenComponent };
-  const testIds: Candidate[] = [], roles: Candidate[] = [], texts: Candidate[] = [];
-  for (const owner of chain.slice(0, 6)) {
+  const candidates: Candidate[] = [];
+  for (const owner of chain.slice(0, 8)) {
     const role = normalizeRole(owner.role);
-    const text = elementText(owner);
-    if (owner.identifier) testIds.push({ owner, selector: { kind: "testId", testId: owner.identifier } });
-    if (role && text) roles.push({ owner, selector: { kind: "role", role, name: text } });
-    if (text) texts.push({ owner, selector: { kind: "text", text } });
+    const name = elementText(owner);
+    if (owner.identifier) candidates.push({ owner, selector: { kind: "testId", testId: owner.identifier } });
+    if (role && name) candidates.push({ owner, selector: { kind: "role", role, name } });
+    // `getByText` reads text nodes. A control whose accessible name merely contains words — a
+    // row, a header, an icon button — is reached by that name, which is `getByLabel`.
+    if (name && textual(owner)) candidates.push({ owner, selector: { kind: "text", text: name } });
+    if (name) candidates.push({ owner, selector: { kind: "label", label: name } });
+    // An icon-only control carries nothing itself: a tab bar item is an unlabelled container with
+    // the word "Explore" in a sibling of the icon, below the point that was tapped. The one text
+    // inside it names it, and tapping that text lands inside the same control.
+    if (!owner.identifier && !name) {
+      const inside = descendantText(components, owner);
+      if (inside) candidates.push({ owner, selector: { kind: "label", label: inside } });
+    }
   }
-  const candidates = [...testIds, ...roles, ...texts];
 
   for (const { selector, owner } of candidates) {
     const matches = selector.kind === "testId" ? matchesTestId(components, selector.testId)
       : selector.kind === "role" ? matchesRole(components, selector.role, selector.name)
-        : matchesText(components, selector.text);
-    if (matches === 1) return { selector, ambiguous: false, component: owner };
+        : selector.kind === "label" ? matchesLabel(components, selector.label)
+          : matchesText(components, selector.text);
+    if (matches === 1) return { selector, ambiguous: false, component: owner, levels };
   }
   // Nothing was unique. The best-ranked candidate still describes the element better than a
   // coordinate does, so it is kept and flagged; with no candidate at all, the point is all there is.
   const fallback = candidates[0];
   return fallback
-    ? { selector: fallback.selector, ambiguous: true, component: fallback.owner }
-    : { selector: { kind: "point", point }, ambiguous: false, component };
+    ? { selector: fallback.selector, ambiguous: true, component: fallback.owner, levels }
+    : { selector: { kind: "point", point }, ambiguous: false, component, levels };
+}
+
+/**
+ * Something on this screen a test can wait for, nearest the point first.
+ *
+ * `screen.tapAt` is the one step with nothing to wait on: a locator action waits up to the action
+ * timeout for its element, but a coordinate is always "ready", so a recorded coordinate tap fires
+ * into a splash screen and misses. This picks a neighbour that does resolve uniquely, which the
+ * emitter puts in front of the tap as a gate.
+ */
+export function anchorSelector(components: ScreenComponent[], point: ScreenPoint, screen?: ScreenSize): RecordedSelector | undefined {
+  const distance = (item: ScreenComponent) =>
+    Math.hypot(item.bounds.x + item.bounds.width / 2 - point.x, item.bounds.y + item.bounds.height / 2 - point.y);
+  // The runner only resolves what accessibility exposes, so a gate is built from that too.
+  const accessible = components.filter(item => item.source !== "react-native" && !systemChrome(item, screen));
+  for (const item of (accessible.length ? accessible : components).sort((a, b) => distance(a) - distance(b)).slice(0, 40)) {
+    if (item.identifier && matchesTestId(components, item.identifier) === 1) return { kind: "testId", testId: item.identifier };
+    const text = elementText(item);
+    if (!text) continue;
+    if (textual(item) && matchesText(components, text) === 1) return { kind: "text", text };
+    if (matchesLabel(components, text) === 1) return { kind: "label", label: text };
+  }
 }
 
 const quote = (value: string) => JSON.stringify(value);
@@ -154,6 +300,7 @@ export function selectorSource(selector: RecordedSelector): string {
     case "testId": return `screen.getByTestId(${quote(selector.testId)})`;
     case "role": return `screen.getByRole(${quote(selector.role)}, ${quote(selector.name)})`;
     case "text": return `screen.getByText(${quote(selector.text)})`;
+    case "label": return `screen.getByLabel(${quote(selector.label)})`;
     case "point": return `screen.tapAt({ x: ${Math.round(selector.point.x)}, y: ${Math.round(selector.point.y)} })`;
   }
 }
@@ -165,6 +312,7 @@ export function stepLabel(kind: RecordedStepKind, selector: RecordedSelector): s
     case "testId": return `${verb} #${selector.testId}`;
     case "role": return `${verb} "${selector.name}" (${selector.role})`;
     case "text": return `${verb} "${selector.text}"`;
+    case "label": return `${verb} "${selector.label}"`;
     case "point": return `${verb} at ${Math.round(selector.point.x)}, ${Math.round(selector.point.y)}`;
   }
 }
@@ -180,6 +328,11 @@ function stepSource(step: RecordedStep): string[] {
   if (step.ambiguous) lines.push(`  // TODO: this matched more than one element. Add a testID to pin it.`);
   if (step.selector.kind === "point") {
     lines.push(`  // TODO: nothing resolved here. A coordinate tap breaks on any layout change.`);
+    // A locator action waits for its element; a coordinate does not, so it would fire into a
+    // splash screen. The anchor is the wait the tap itself cannot express.
+    if (step.anchor && step.anchor.kind !== "point") {
+      lines.push(`  await expect(${selectorSource(step.anchor)}).toBeVisible();`);
+    }
     if (step.kind === "tap") { lines.push(`  await ${selectorSource(step.selector)};`); return lines; }
     // There is nothing to assert about a bare coordinate.
     lines.push(`  // Skipped an assertion on a point with no element.`);

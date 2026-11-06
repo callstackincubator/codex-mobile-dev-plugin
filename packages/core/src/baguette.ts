@@ -22,6 +22,13 @@ import type { ResourceSaving } from "./resource-saving.ts";
 
 type DescribedUi = { tree?: { label?: unknown } };
 const NO_ACCESSIBILITY_DATA = "no accessibility data";
+/**
+ * The root of a healthy tree is the foreground app, and it is named. A bridge that has gone stale
+ * answers with an unnamed root carrying only the simulator's chrome, so the name is the signal.
+ */
+function unnamedRoot(described: DescribedUi): boolean {
+  return typeof described.tree?.label !== "string" || described.tree.label.trim() === "";
+}
 const BRIDGE_RESTART_INTERVAL = 10000;
 const PORT_ATTEMPTS = 3;
 // A failed device list keeps its request's error, so errors built from the status say how the request failed.
@@ -119,16 +126,24 @@ export class Baguette {
 
   async describeUi(udid: string): Promise<DescribedUi> {
     const path = `/simulators/${udidSchema.parse(udid)}/describe-ui.json`;
-    try { return await this.json(path) as DescribedUi; }
+    let described: DescribedUi | undefined;
+    try { described = await this.json(path) as DescribedUi; }
     catch (error) {
       if (!(error instanceof Error) || error.message !== NO_ACCESSIBILITY_DATA || !await this.restartAccessibilityBridge(udid)) throw error;
     }
+    // A stale bridge does not always fail outright. It answers `ok`, with the simulator's own
+    // status bar and an unnamed root where the app's hierarchy should be — the same condition the
+    // restart below exists for, reported as success. Callers downstream cannot tell that apart
+    // from an app that genuinely has no accessible content, so it is caught here.
+    if (described && !unnamedRoot(described)) return described;
+    if (described && !await this.restartAccessibilityBridge(udid)) return described;
     try {
       const result = await this.json(path) as DescribedUi;
       recordAccessibilityBridgeRestart("recovered");
       return result;
     } catch (error) {
       recordAccessibilityBridgeRestart("unavailable");
+      if (described) return described;
       throw error;
     }
   }
