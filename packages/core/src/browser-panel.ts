@@ -38,12 +38,20 @@ export type BrowserPanelOptions = {
    * server whose panel does not render inline (see createPanel's `inline`).
    */
   always?: boolean;
+  /** Called with the panel page URL when the server starts or opens the panel. */
+  onPage?: (url: string) => void | Promise<void>;
+  /** Customizes the instructions returned when a tool opens the panel page. */
+  instructions?: (url: string) => string;
 };
 
 /** Hosts without MCP Apps, or every host with `always`, can show the shared panel on a session-owned loopback page. */
-export function browserPanel({ template = PAGE, always = false }: BrowserPanelOptions = {}): ServerFeature {
+export function browserPanel({ template = PAGE, always = false, onPage, instructions: formatInstructions }: BrowserPanelOptions = {}): ServerFeature {
   return (server, { connections, onPanelOpen }) => {
     let page: Promise<PanelPage> | undefined;
+    if (onPage !== undefined && connections !== undefined) {
+      page = startPanelPage(connections, "other", template);
+      void page.then(opened => onPage(opened.url("mobile_open_simulator", {}))).catch(() => {});
+    }
     onPanelOpen(async ({ tool, target }) => {
       const capabilities = server.server.getClientCapabilities();
       if (connections === undefined || (always === false && getUiCapability(capabilities))) return;
@@ -52,7 +60,8 @@ export function browserPanel({ template = PAGE, always = false }: BrowserPanelOp
       page ??= startPanelPage(connections, host, template);
       const opened = await page;
       const url = opened.url(tool, target);
-      const instructions = `Mobile Dev's panel is a page to show beside the chat, not in it, and it is not open yet. Show it to the user now: open ${url} in your in-app browser or side panel, in the foreground, so the page is visible without another click. This page is how Mobile Dev shows its panel, so opening it is part of opening the panel. Use your host's own browser or preview tool, and load it first if it is deferred. Never open the page with a computer-use tool that drives the screen. Opening a page can leave the browser pane hidden: when your host has a tool that brings its browser or preview pane into view, such as a show_pane tool for its preview pane, load it if needed and call it right after. A host can also show the page as a floating preview and report it as not visible. That still counts as shown, so do not open it again. Leave the tab open after you reply. Reuse a tab that already shows Mobile Dev. Open no other address for it, such as the backend's baseUrl. If you cannot open pages, give the user the link. The page shares the user's devices and what they add to chat through mobile_read_panel_context; read it before device work.`;
+      await onPage?.(url);
+      const instructions = formatInstructions?.(url) ?? `Mobile Dev's panel is a page to show beside the chat, not in it, and it is not open yet. Show it to the user now: open ${url} in your in-app browser or side panel, in the foreground, so the page is visible without another click. This page is how Mobile Dev shows its panel, so opening it is part of opening the panel. Use your host's own browser or preview tool, and load it first if it is deferred. Never open the page with a computer-use tool that drives the screen. Opening a page can leave the browser pane hidden: when your host has a tool that brings its browser or preview pane into view, such as a show_pane tool for its preview pane, load it if needed and call it right after. A host can also show the page as a floating preview and report it as not visible. That still counts as shown, so do not open it again. Leave the tab open after you reply. Reuse a tab that already shows Mobile Dev. Open no other address for it, such as the backend's baseUrl. If you cannot open pages, give the user the link. The page shares the user's devices and what they add to chat through mobile_read_panel_context; read it before device work.`;
       return { url, instructions };
     });
     // A browser has no model context of its own, so the agent asks the server for it.
