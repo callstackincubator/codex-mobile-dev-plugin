@@ -142,7 +142,7 @@ test("opening the panel links the browser page only for hosts without MCP Apps",
     const host = new Client({ name: "claude-code", version: "1" }, { capabilities });
     await plugin.server.connect(shared);
     await host.connect(hostSide);
-    for (const name of ["mobile_open_simulator", "mobile_open_workspace"]) {
+    for (const name of ["mobile_open_simulator", "mobile_open_workspace", "mobile_open_app_intel"]) {
       const result = await host.callTool({ name, arguments: { platform: "android" } });
       const texts = (result.content as Array<{ text: string }>).map(item => item.text);
       const structured = result.structuredContent as { browserPanel?: { url: string } };
@@ -175,7 +175,7 @@ test("a panel that never renders inline links the browser page for MCP Apps host
   await host.connect(hostSide);
   t.after(async () => { await host.close(); await plugin.close(); });
   const { tools } = await host.listTools();
-  for (const name of ["mobile_open_simulator", "mobile_open_workspace"]) {
+  for (const name of ["mobile_open_simulator", "mobile_open_workspace", "mobile_open_app_intel"]) {
     const tool = tools.find(candidate => candidate.name === name)!;
     // No UI resource for the host to render, and the page named for the browser panel.
     assert.equal(tool._meta?.ui, undefined);

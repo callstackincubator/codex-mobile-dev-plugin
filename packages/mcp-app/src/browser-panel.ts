@@ -20,11 +20,11 @@ function notice(text: string) {
 async function open() {
   const query = new URLSearchParams(location.search);
   const toolName = query.get("tool") ?? "mobile_open_simulator";
-  if (toolName !== "mobile_open_simulator" && toolName !== "mobile_open_workspace") {
+  if (toolName !== "mobile_open_simulator" && toolName !== "mobile_open_workspace" && toolName !== "mobile_open_app_intel") {
     throw new Error("This link does not open a Mobile Dev panel.");
   }
   const target: Record<string, string> = {};
-  for (const key of ["platform", "kind", "deviceId"]) {
+  for (const key of ["platform", "kind", "deviceId", "workspaceTool"]) {
     const value = query.get(key);
     if (value !== null) target[key] = value;
   }

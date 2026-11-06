@@ -40,9 +40,11 @@ import { registerDisplayFpsTools } from "./fps/tools.ts";
 import { registerEarlierReleases } from "./earlier-releases.ts";
 import { Simctl } from "./simctl.ts";
 import type { Panel } from "./panel-tools.ts";
+import { AppIntelligenceService } from "./app-intelligence/service.ts";
+import { registerAppIntelligenceTools } from "./app-intelligence/tools.ts";
 
 // Servers without the panel serve hosts that show devices themselves, when they can.
-const INSTRUCTIONS = "For mobile app development, read logs, record CPU, memory and FPS, and inspect app storage with these tools; control devices with the device_* tools when the server has them. Mobile Dev shows no device view here: when the user asks to open or see a simulator or emulator, use the host's own simulator view if it has one, such as Claude Code's iOS Simulator or Android Emulator. Use device IDs from tool results; never invent them. If a task has ambiguous device targets, ask the user with your own question tool when you have one, otherwise in chat; proceed only after they choose. Show recordings with mobile_render_performance_recording and comparisons with mobile_compare_performance_recordings. For a local CPU or React profile path, use mobile_analyze_profile to show TraceSift findings. See the Mobile Dev skill, when installed, for logs, profiles, and performance workflows.";
+const INSTRUCTIONS = "For mobile app development, read logs, record CPU, memory and FPS, inspect app storage, and query App Intelligence with these tools; control devices with the device_* tools when the server has them. Use mobile_open_app_intel when the user asks to see the app's screen/dependency map, mobile_generate_app_intel to create it, and mobile_app_intel for screen or file dependency questions. Mobile Dev shows no device view here: when the user asks to open or see a simulator or emulator, use the host's own simulator view if it has one, such as Claude Code's iOS Simulator or Android Emulator. Use device IDs from tool results; never invent them. If a task has ambiguous device targets, ask the user with your own question tool when you have one, otherwise in chat; proceed only after they choose. Show recordings with mobile_render_performance_recording and comparisons with mobile_compare_performance_recordings. For a local CPU or React profile path, use mobile_analyze_profile to show TraceSift findings. See the Mobile Dev skill, when installed, for logs, profiles, App Intelligence, and performance workflows.";
 
 /** Gives a served UI page the server's telemetry environment, opt-out and anonymous identity. */
 export function configureUI(content: string): string {
@@ -80,7 +82,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
   });
   instrumentMcpServer(server);
   const analytics = instrumentProductAnalytics(server);
-  addToolIcons(server, { mobile_open_workspace: PHONE_ICONS, mobile_open_simulator: PHONE_ICONS, mobile_choose_devices: PHONE_ICONS });
+  addToolIcons(server, { mobile_open_workspace: PHONE_ICONS, mobile_open_simulator: PHONE_ICONS, mobile_open_app_intel: PHONE_ICONS, mobile_choose_devices: PHONE_ICONS });
   const extensions = new OpenAIExtensions(server);
   server.server.oninitialized = () => {
     const clientName = server.server.getClientVersion()?.name;
@@ -107,6 +109,8 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
   registerDisplayFpsTools(server, fps);
   registerAppControlTools(server, drivers);
   registerAppStorageTools(server);
+  const appIntelligence = new AppIntelligenceService();
+  registerAppIntelligenceTools(server, appIntelligence);
   const appFlow = await createAppFlowHost();
   const closeAppFlow = registerAppFlowTools(server, appFlow, new AppFlowProjectChoices(APP_FLOW_DIRECTORY));
 

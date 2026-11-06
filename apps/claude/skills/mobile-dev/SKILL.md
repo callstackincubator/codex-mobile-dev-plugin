@@ -52,6 +52,10 @@ can show a simulator or emulator with Claude Code's own simulator pane instead: 
 tool with `action: "attach"`. Otherwise use `device_screenshot` when the user needs
 to see the screen.
 
+## App Intelligence
+
+App Intelligence statically discovers Expo Router and React Navigation screens and combines their source dependencies for iOS and Android; it does not require App Flow or a running device. When the user asks to see the app map, call `mobile_open_app_intel` and open its `browserPanel.url` like the simulator panel. Generate or refresh with `mobile_generate_app_intel`, passing `projectPath` when no project is remembered. For a screen or file dependency question, call `mobile_app_intel` with `operation: "screen"` or `"file"`, start with depth 1, and paginate only when `nextOffset` is present.
+
 ## Choosing a device
 
 Use the task and the app project to choose the platform. Follow the user's device

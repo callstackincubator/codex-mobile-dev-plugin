@@ -477,6 +477,13 @@ test("UI trace context crosses the MCP bridge and handled server errors exclude 
   assert.equal(observedTags?.surface, "tracesift");
   assert.equal(observedTags?.view, "tracesift");
   assert.equal(observedTags?.profilePath, undefined);
+  await client.callTool({ name: "test_action", arguments: { secret: "PRIVATE_APP_INTEL_QUERY" }, _meta: {
+    [TELEMETRY_META_KEY]: { surface: "app-intel", view: "workspace", projectPath: "/Users/alice/private-app", screen: "PRIVATE_SCREEN" },
+  } });
+  assert.equal(observedTags?.surface, "app-intel");
+  assert.equal(observedTags?.view, "workspace");
+  assert.equal(observedTags?.projectPath, undefined);
+  assert.equal(observedTags?.screen, undefined);
   // Every host shares this server, so a known host value survives the allowlist; anything else is dropped.
   await client.callTool({ name: "test_action", arguments: { secret: "PRIVATE_HOST_ARGUMENT" }, _meta: {
     [TELEMETRY_META_KEY]: { surface: "logs", view: "workspace", host: "claude" },
@@ -494,14 +501,15 @@ test("UI trace context crosses the MCP bridge and handled server errors exclude 
   contains(encoded, "Handled tool failed");
   const eventItems = envelopes.flatMap(envelope => envelope[1]);
   const errors = eventItems.filter(item => item[0].type === "event");
-  // One handled failure per tool call above: logs, recording, comparison, App Flow, TraceSift and two host checks.
-  assert.equal(errors.length, 7);
+  // One handled failure per tool call above: logs, recording, comparison, App Flow,
+  // TraceSift, App Intelligence and two host checks.
+  assert.equal(errors.length, 8);
   const unavailable = new SimulatorUnavailableError("Expected stopped simulator");
   captureServerError(unavailable, "expected");
   await Sentry.flush();
   const afterItems = envelopes.flatMap(envelope => envelope[1]);
   const afterErrors = afterItems.filter(item => item[0].type === "event");
-  assert.equal(afterErrors.length, 7);
+  assert.equal(afterErrors.length, 8);
 });
 
 test("error filters retain only generated identity while metrics and spans omit user dimensions", async () => {

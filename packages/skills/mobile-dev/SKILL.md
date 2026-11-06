@@ -36,6 +36,10 @@ device tools.
 4. Build the app with the app project's own tools and the chosen device ID; the project's run command may also install and launch it. To restart an already installed app, use `mobile_launch_app` instead of rebuilding. Follow the project's framework skills where available. Before starting an app dev server, check for an existing server from that project and reuse it. Keep the same device for the panel, build target, and agent control; read the panel's shared IDs before acting and follow later user selections. Leave the panel and app available while continuing app work. Do not launch the app when the user asks only for compilation.
 5. Control the app with the `device_*` tools, the bundled agent-device runtime's commands, and follow [the agent-device skill](../agent-device/SKILL.md) to drive it. In short: open the panel's device with `device_open` and a named session, act on refs from the latest snapshot with `settle: true`, verify the requested result with a named expectation, and close the session without `shutdown` so the device keeps running in the panel. Boot, launch, and app settings stay with the `mobile_*` tools above and below.
 
+### App Intelligence
+
+App Intelligence statically discovers Expo Router and React Navigation screens and combines their source dependencies for iOS and Android; it does not require App Flow or a running device. When the user asks to see the app map, call `mobile_open_app_intel`. Generate or refresh it with `mobile_generate_app_intel`, passing `projectPath` when the panel has not remembered the intended project. For questions such as “what are the dependencies of Screen A?”, call `mobile_app_intel` with `operation: "screen"`, the exact screen ID or title, `direction: "outgoing"`, and depth 1 first. Use `search` only when the exact screen or project-relative file is unknown, and paginate only when `nextOffset` is present.
+
 ### App control
 
 These tools work on iOS simulators and Android devices with `{ platform, deviceId }`, not on physical iPhones. They never build.
