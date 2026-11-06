@@ -1,0 +1,34 @@
+.demo-phone {
+  position: relative;
+  width: min(64cqw, 13.5rem);
+  aspect-ratio: 402 / 874;
+  overflow: hidden;
+  border-radius: 16% / 7.36%;
+  background: linear-gradient(180deg, #ffe3ea, #fbc3d2);
+  color: #1c1c1e;
+  font-family: system-ui, sans-serif;
+  container-type: inline-size;
+}
+.phone-status { position: absolute; inset: 2.2% 8% auto; display: flex; align-items: center; justify-content: space-between; height: 3.2%; font-size: 3.7cqw; font-weight: 600; }
+.phone-island { position: absolute; top: 1.6%; left: 38%; width: 24%; height: 4.2%; border-radius: 10cqw; background: #050505; }
+.phone-logo { position: absolute; top: 8.2%; left: 0; display: flex; justify-content: center; width: 100%; font-size: 9cqw; font-weight: 800; line-height: 1.2; letter-spacing: -.12cqw; color: #ec456d; }
+.phone-logo svg { width: 5cqw; height: 5cqw; margin-top: -1cqw; fill: currentColor; stroke-width: 0; rotate: 14deg; }
+.phone-profile { position: absolute; top: 15.1%; right: 3.5%; bottom: 23.1%; left: 3.5%; overflow: hidden; border-radius: 8.5cqw; }
+.phone-photo { position: absolute; inset: 0; background: linear-gradient(0deg, rgb(20 10 6 / .72), transparent 46%), radial-gradient(42% 34% at 52% 34%, #b98259, transparent), radial-gradient(60% 50% at 30% 70%, #5a3624, transparent), linear-gradient(165deg, #8a5a3c, #5b3826 55%, #3a2318); }
+.phone-profile-info { position: absolute; right: 5.5%; bottom: 4.5%; left: 5.5%; color: #fff; }
+.phone-name { display: flex; align-items: center; gap: 2cqw; font-size: 9cqw; font-weight: 800; line-height: 1.2; }
+.phone-name svg { width: 6.5cqw; height: 6.5cqw; fill: #2f8cff; }
+.phone-profile-info p { margin: 1cqw 0 0; font-size: 5.5cqw; font-weight: 500; line-height: 1.3; }
+.phone-tags { display: flex; gap: 2cqw; margin-top: 3.5cqw; }
+.phone-tags span { width: 26%; height: 8cqw; border-radius: 4cqw; background: rgb(255 255 255 / .2); }
+.phone-tags span::after { content: ''; display: block; height: 2cqw; margin: 3cqw; border-radius: 1cqw; background: rgb(255 255 255 / .62); }
+.phone-actions { position: absolute; top: 79.2%; right: 0; left: 0; display: flex; align-items: center; justify-content: center; gap: 8cqw; }
+.phone-action { display: grid; flex: none; place-items: center; width: 22cqw; height: 22cqw; border-radius: 50%; background: #fff; color: #f0447a; }
+.phone-action svg { width: 10cqw; height: 10cqw; stroke-width: 3; }
+.phone-edit-action { position: relative; width: 26cqw; height: 26cqw; }
+.phone-carrot-icon, .phone-apple-icon { position: absolute; display: grid; place-items: center; }
+.phone-carrot-icon { color: #f2691d; opacity: 0; }
+.phone-apple-icon { color: #ec456d; }
+.phone-edit-action svg { width: 13cqw; height: 13cqw; stroke-width: 2; }
+.phone-like svg { fill: currentColor; stroke-width: 0; }
+.phone-home { position: absolute; bottom: 1%; left: 32%; width: 36%; height: .6%; border-radius: 1cqw; background: #1c1c1e; }

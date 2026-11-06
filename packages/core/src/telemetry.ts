@@ -3,6 +3,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { McpServer, ResourceTemplate, ResourceMetadata, ReadResourceCallback, ReadResourceTemplateCallback, RegisteredResource, RegisteredResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { MeasurementWindow, TELEMETRY_HOSTS, TELEMETRY_INTERVAL_MS, TELEMETRY_META_KEY, telemetryHost } from "@mobile-dev/shared/telemetry.ts";
+import type { TelemetryHost } from "@mobile-dev/shared/telemetry.ts";
 import { ExpectedOperationError, expectedOutcome, isRepeatedFailure } from "@mobile-dev/shared/error-reporting.ts";
 import { closeNativeTelemetry } from "./native-telemetry.ts";
 import { closeHttpRuntime } from "./http-runtime.ts";
@@ -12,6 +13,13 @@ import { getDiscoveryCommandDiagnostic } from "@mobile-dev/shared/device-apps-co
 import { androidStartupDiagnosticTags } from "@mobile-dev/shared/android-startup-diagnostics.ts";
 import { installIntegrityTags } from "./install-integrity.ts";
 import type { AndroidStartupSummary, AndroidStartupContext, AndroidStartupFailure, AndroidDeviceState } from "@mobile-dev/shared/android-startup-diagnostics.ts";
+
+export function recordResourceSaving(platform: "ios" | "android", enabled: boolean, outcome: "success" | "failed", duration: number) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = { component: "server", surface: "simulator", device_platform: platform, device_kind: platform === "ios" ? "simulator" : "emulator", enabled, outcome };
+  Sentry.metrics.count("resource_saving.apply", 1, { attributes });
+  Sentry.metrics.distribution("resource_saving.duration", duration, { unit: "millisecond", attributes });
+}
 
 export function recordBrowserPanelSessions(active: number) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
@@ -60,6 +68,17 @@ export function recordAppIntelOperation(operation: "generate" | "query" | "snaps
   Sentry.metrics.gauge("app_intel.operation.duration", duration, { unit: "millisecond", attributes });
 }
 
+/**
+ * Time the App Flow project dialog stayed open. Like the sweep's decision wait, this is a person
+ * deciding rather than plugin work, so it is reported on its own and never folded into a UI timing.
+ */
+export function recordProjectDialog(outcome: "chosen" | "cancelled" | "failed", duration: number) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = { component: "server", surface: "app-flow", outcome };
+  Sentry.metrics.count("app_flow.project_dialog.samples", 1, { attributes });
+  Sentry.metrics.distribution("app_flow.project_dialog.duration", Math.max(0, duration), { unit: "millisecond", attributes });
+}
+
 export function recordTraceSiftOperation(operation: "ready" | "analyze" | "remember" | "restore" | "handoff" | "task" | "payload" | "pick" | "project", outcome: "success" | "failed", duration: number) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes = { component: "server", surface: "tracesift", operation, outcome };
@@ -75,6 +94,12 @@ export function recordTraceSiftPayload(kind: "task" | "react", bytes: number) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes = { component: "server", surface: "tracesift", kind };
   Sentry.metrics.gauge("tracesift.explore.payload_bytes", bytes, { unit: "byte", attributes });
+}
+
+/** Counts each batch sent to Mixpanel by whether Mixpanel accepted it. */
+export function recordAnalyticsFlush(outcome: "success" | "failed", endpoint: "track" | "engage") {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  Sentry.metrics.count("analytics.flush", 1, { attributes: { component: "server", outcome, endpoint } });
 }
 
 export function recordAccessibilityBridgeRestart(outcome: "recovered" | "unavailable" | "failed") {
@@ -289,13 +314,18 @@ const resourceKinds: Record<string, string> = {
   "android-stream:": "android_video", "ios-video:": "ios_video", "ui:": "ui",
 };
 const allowedContext: Record<string, readonly string[]> = {
-  surface: ["logs", "performance", "storage", "simulator", "recording", "comparison", "tracesift", "app-intel"], view: ["panel", "workspace", "recording", "comparison", "tracesift"], layout: ["ios", "android", "both", "none"],
+  surface: ["app-flow", "logs", "performance", "storage", "simulator", "recording", "comparison", "tracesift", "app-intel"], view: ["panel", "workspace", "recording", "comparison", "tracesift"], layout: ["ios", "android", "both", "none"],
   device_platform: ["ios", "android", "mixed"], device_kind: ["physical", "simulator", "emulator", "none"], host: TELEMETRY_HOSTS,
 };
 
-/** Attributes server telemetry to the host that launched it: the Mac app sets `MOBILE_DEV_HOST`, other hosts are named by their MCP client. */
+/** The host that launched the server: the Mac app sets `MOBILE_DEV_HOST`, other hosts are named by their MCP client. */
+export function serverTelemetryHost(clientName: string | undefined): TelemetryHost {
+  return process.env.MOBILE_DEV_HOST === "mac" ? "mac" : telemetryHost(clientName);
+}
+
+/** Attributes server telemetry to the host that launched it. */
 export function setServerTelemetryHost(clientName: string | undefined) {
-  const host = process.env.MOBILE_DEV_HOST === "mac" ? "mac" : telemetryHost(clientName);
+  const host = serverTelemetryHost(clientName);
   Sentry.setTag("host", host);
   Sentry.setAttribute("host", host);
 }

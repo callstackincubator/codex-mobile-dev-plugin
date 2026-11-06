@@ -1,0 +1,39 @@
+---
+import HeroIcon from './PreviewIcon.astro';
+import './demo-phone.css';
+
+interface Props { workflow: 'annotation' | 'storage'; }
+const { workflow } = Astro.props;
+const annotation = workflow === 'annotation';
+---
+
+<div class:list={["demo-phone", { "hero-phone": annotation }]}>
+  <div class="phone-status"><span>17:44</span><span>▮▮▮ ▰</span></div>
+  <div class="phone-island"></div>
+  <div class="phone-logo">HorseTinder<HeroIcon name="heart" /></div>
+  {annotation === false && <div class="phone-profile phone-next-profile">
+    <div class="phone-photo"></div>
+    <div class="phone-profile-info">
+      <div class="phone-name">Juniper, 5<HeroIcon name="check" /></div>
+      <p>Ready for a little adventure</p>
+      <div class="phone-tags"><span></span><span></span><span></span></div>
+    </div>
+  </div>}
+  <div class="phone-profile" data-annotation-target={annotation ? "card" : undefined} data-feature-target={annotation ? undefined : "profile"}>
+    <div class="phone-photo"></div>
+    <div class="phone-profile-info">
+      <div class="phone-name">Monty, 9<HeroIcon name="check" /></div>
+      <p>A curious friend for every trail</p>
+      <div class="phone-tags"><span></span><span></span><span></span></div>
+    </div>
+  </div>
+  <div class="phone-actions">
+    <span class="phone-action"><HeroIcon name="close" /></span>
+    <span class="phone-action phone-edit-action" data-annotation-target={annotation ? "action" : undefined}>
+      <span class:list={["phone-carrot-icon", { "phone-storage-carrot": annotation === false }]}><HeroIcon name="carrot" /></span>
+      {annotation && <><span class="phone-apple-icon"><HeroIcon name="apple" /></span><span class="hero-pin">1</span></>}
+    </span>
+    <span class="phone-action phone-like" data-feature-target={annotation ? undefined : "like"}><HeroIcon name="heart" /></span>
+  </div>
+  <div class="phone-home"></div>
+</div>

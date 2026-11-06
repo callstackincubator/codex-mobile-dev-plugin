@@ -1,6 +1,7 @@
 import "@fontsource-variable/inter";
 import "@mobile-dev/ui/theme.css";
 import "@mobile-dev/ui/style.css";
+import "@xyflow/react/dist/style.css";
 import { OpenAIExtensions } from "@openai/mcp-extensions/app";
 import { traceSiftProfileInputSchema } from "@mobile-dev/shared/tracesift.ts";
 import { ComparisonController } from "@mobile-dev/ui/comparison-controller.ts";

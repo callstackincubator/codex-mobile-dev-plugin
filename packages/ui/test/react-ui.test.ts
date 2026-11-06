@@ -12,6 +12,7 @@ import { StoragePanel } from "../src/storage-panel.ts";
 import { TraceSiftPanel } from "../src/tracesift-panel.ts";
 import { AppIntelligencePanel } from "../src/app-intelligence-panel.ts";
 import { RecordingController } from "../src/recording-controller.ts";
+import type { AppFlowPanel } from "../src/app-flow-panel.ts";
 import { WorkspaceTools } from "../src/workspace-tools.ts";
 import { recordingFixture } from "../../test-support/recording-fixtures.ts";
 import type { App } from "@modelcontextprotocol/ext-apps";
@@ -60,7 +61,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   });
   const output = resolve(directory, "workspace.mjs");
   await build({ stdin: { contents: 'export { Workspace } from "./packages/mcp-app/src/components/workspace.tsx"; export { getDeviceSettings } from "./packages/ui/src/device-settings.ts"; export { getDevicePicker } from "./packages/ui/src/device-picker.ts"; export { getAppTools } from "./packages/ui/src/app-tools.ts";', resolveDir: process.cwd(), loader: "ts" }, outfile: output, bundle: true, format: "esm", platform: "node", jsx: "automatic",
-    external: ["recharts", "react", "react/*", "react-dom", "react-dom/*", "@legendapp/list/react", "radix-ui", "lucide-react", "@base-ui/react/*", "react-resizable-panels"] });
+    external: ["recharts", "react", "react/*", "react-dom", "react-dom/*", "@legendapp/list/react", "radix-ui", "lucide-react", "@base-ui/react/*", "react-resizable-panels", "@xyflow/react"] });
   const { Workspace, getDeviceSettings, getDevicePicker, getAppTools } = await import(pathToFileURL(output).href);
   const { act, createElement, Profiler } = await import("react");
   const { createRoot } = await import("react-dom/client");
@@ -118,7 +119,14 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   const tracesift = new TraceSiftPanel(storageApp as unknown as App);
   const appIntel = new AppIntelligencePanel(storageApp as unknown as App);
   const recordingController = new RecordingController(performanceApp as unknown as App);
-  const panels = new WorkspaceTools({ context: context as PanelContext, deviceApps, logs: panel, performance, storage, "app-intel": appIntel, tracesift });
+  const appFlowSnapshot = { open: false };
+  const appFlow = {
+    subscribe: () => () => undefined,
+    getSnapshot: () => appFlowSnapshot,
+    show() {},
+    hide() {},
+  };
+  const panels = new WorkspaceTools({ context: context as PanelContext, deviceApps, logs: panel, performance, storage, "app-intel": appIntel, tracesift, "app-flow": appFlow as unknown as AppFlowPanel });
   deviceApps.selectDevice({ udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS" });
   performance.setAvailable(true);
   deviceApps.setAvailable(true);

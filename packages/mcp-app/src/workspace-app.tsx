@@ -4,6 +4,7 @@ import { OpenAIExtensions } from "@openai/mcp-extensions/app";
 import "@fontsource-variable/inter";
 import "@mobile-dev/ui/theme.css";
 import "@mobile-dev/ui/style.css";
+import "@xyflow/react/dist/style.css";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 import { Workspace } from "./components/workspace";

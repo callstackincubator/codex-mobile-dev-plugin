@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import type { Event } from "@sentry/node";
 
 export type InstallIntegrity = "intact" | "removed" | "replaced";
-export type BundledRuntime = "serve-emu" | "baguette";
+export type BundledRuntime = "serve-emu" | "baguette" | "resource-saving";
 
 // Bundled, the server file in dist/ (server.mjs or a chunk) beside the runtimes. Hosts can update or
 // uninstall the plugin while its server runs, removing or replacing it.
@@ -29,7 +29,7 @@ export function isMissingFile(error: unknown): boolean {
   return code === "ENOENT" || code === "ENOTDIR";
 }
 
-const labels: Record<BundledRuntime, string> = { "serve-emu": "Android streaming backend", baguette: "simulator backend" };
+const labels: Record<BundledRuntime, string> = { "serve-emu": "Android streaming backend", baguette: "simulator backend", "resource-saving": "resource optimization tools" };
 
 /**
  * A runtime missing beside the server. Its integrity is the server's, or `incomplete`

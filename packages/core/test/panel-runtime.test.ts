@@ -25,6 +25,13 @@ async function archive(t: test.TestContext, extra?: (root: string) => Promise<st
   await mkdir(join(root, "ios-mirror"));
   await writeFile(join(root, "ios-mirror/darwin-arm64.node"), "addon");
   await writeFile(join(root, "ios-mirror-service.mjs"), "");
+  const optimizers = join(root, "resource-saving");
+  await mkdir(optimizers);
+  for (const name of ["simslim", "avdslim"]) {
+    const executable = join(optimizers, name);
+    await writeFile(executable, "#!/bin/sh\n");
+    await chmod(executable, 0o755);
+  }
   const members = [...PANEL_RUNTIME_PARTS, ...await extra?.(root) ?? []];
   const file = join(directory, "runtime.tar.gz");
   execFileSync("tar", ["-czf", file, "-C", root, ...members], { env: { ...process.env, COPYFILE_DISABLE: "1" } });

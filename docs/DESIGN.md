@@ -72,12 +72,12 @@ For a 16:9 slide or video, retain the rectangular frame, section-head row, and h
 - **Closing:** a blue CTA bar followed by an oversized accent wordmark and a compact mono footer.
 - **Windows:** neutral solid surfaces, 1px borders, a mono title row, and small square controls. A phone lives inside the ADE frame to show the extended workspace.
 - **Code and transcripts:** neutral foreground; keywords, punctuation, and comments use readable grey; changed text and numeric highlights use `accent-ink`. Human messages have a field fill; agent replies sit directly on the window surface. Show an actual app edit when the story is about coding.
-- **Tabs and controls:** square cells, mono labels, an accent underline or selected region, and explicit accessible state. The performance example switches recording ranges; storage switches between before and after values.
+- **Tabs and controls:** square cells, mono labels, an accent underline or selected region, and explicit accessible state.
+- **Feature previews:** storage and performance are native Astro HTML and inline SVG, adapted from the Stageshow scenes. Keep the plugin's dark palette and the phone app's own colors. Each preview retains its macOS title bar, traffic lights, outline, rounded corners, and dark surface, without a second outer box, border, padding, or background. Share the same components between the homepage and corresponding docs guides. Place homepage previews at the full content width below the copy. Playback is automatic with no media controls; pause offscreen or while hidden, and show the completed state for reduced motion.
 - **Marquee:** mono names in the agreed environment, platform, and framework order, separated by small blue squares.
 - **Icons:** the crisp unit-square bitmaps in `website/src/components/site/icons.ts`; do not mix in a different icon style.
 - **Devices:** a thin stepped outline with solid screen fill, top island, and home indicator. Keep all visible app content inside the screen. Do not use smooth rounded mockup hardware.
 - **Product pictures:** factual captures must match the current plugin. Product diagrams use plausible data without personal information. Omit “example,” “illustrative,” and similar labels and notes from the homepage diagrams, ticket preview, and accessibility descriptions.
-- **Ticket preview:** a wavy blue underline on `MOB-142`; a square ticket card opens on hover, keyboard focus, or tap. It is an example ticket, not an issue-tracker integration claim.
 
 Command bars are for a real install command that a visitor can use. The homepage sends visitors to environment-specific installation rather than presenting one environment’s command as universal.
 
@@ -93,13 +93,13 @@ Place text on solid surfaces over the scene. Keep secondary scenes quiet. Do not
 
 ## Motion
 
-Use stepped movement and clean cuts. The hero loops over 12 seconds: the request appears, the ADE grows in 16 width steps, the phone panel appears, the developer requests a title change, an `App.tsx` edit appears, and the phone heading changes from **Trips** to **My trips**. The final reply invites review. Layout reserves room for the largest state.
+The hero renders the annotation workflow as native HTML and inline SVG directly in the page, without a macOS title bar, outer outline, rounded frame, padding, or background fill. Desktop shows the chat beside the device; below 600px the chat sits beneath the device view. Performance and Storage retain their macOS windows.
 
-Text and phone panels appear at full opacity; fades must not lower text contrast. The title change is an immediate before/after cut. Dither and hero motion update at about 12fps, start near the viewport, and pause while hidden or offscreen. The ticket card pauses the demo while open and allows 150ms to move the pointer into it. UI hover transitions are short, around 120–150ms.
+The shared 16-second Web Animations timeline shows the complete edit: select the carrot button, type “Make this an apple,” attach the context, send the request to the chat, show the agent's code change, then replace the carrot with an apple in the running app. Hold the finished result before resetting. Playback is automatic, without play/pause controls, and pauses while hidden or offscreen. Reduced motion shows the sent request, completed code change, and apple. Measure targets after layout and on resize so the pointer, selection, note, and attachment stay aligned with the actual HTML.
 
-Reduced motion shows the meaningful final state at nine seconds, with the integrated phone and updated title. That same state exists in the initial HTML. The scene has one OffscreenCanvas worker implementation, bounded repaint work, and cleanup for observers and timers.
+Dither motion updates at about 12fps near the viewport and pauses while hidden or offscreen. Its scene uses one OffscreenCanvas worker implementation, bounded repaint work, and cleanup for observers and timers. UI hover transitions are short, around 120–150ms.
 
-Video follows the same stepped expansion, readable pauses, and cuts rather than cross-fades. Keep the chat request visible long enough to establish the cause before showing the app change.
+Native feature demos retain their authored movement and reading pauses. Keep the initiating action visible long enough to establish the cause before showing its result.
 
 ## Words
 
@@ -115,17 +115,17 @@ The social card is `website/public/og-image.jpg`, 1200×630, dark only. It shows
 
 Run `pnpm --dir website og` to regenerate the card and icons. To select local Google Chrome, use `PLAYWRIGHT_CHANNEL=chrome pnpm --dir website og`. The source is `website/og/og.html`; content, accent, and scene data come from the same modules as the website.
 
-The README banner uses copy on the left and the large dithered workspace-and-phone scene on the right, without an outer frame. It omits the miniature chat UI: the illustration provides the texture, and the headline carries the message at GitHub sizes. `pnpm --dir website og --banner` renders the dark JPEG at 1660×512. The root README uses this banner in every colour scheme. The initial site address is `https://mobile-dev-snowy.vercel.app/`; update the website and banner URLs there when the final domain is attached.
+The README banner uses copy on the left and the large dithered workspace-and-phone scene on the right, without an outer frame. It omits the miniature chat UI: the illustration provides the texture, and the headline carries the message at GitHub sizes. `pnpm --dir website og --banner` renders the dark JPEG at 1660×512. The root README uses this banner in every colour scheme. The production site and README banner live at `https://incubator.callstack.com/codex-mobile-dev-plugin/` through GitHub Pages.
 
 ## Website
 
 - `website/src/pages/index.astro`: approved split header, direct product description, actions, and tool-guide bar.
-- `website/src/components/home/HeroDemo.astro`, `ticket-motion.ts`, and `ticket-preview.ts`: the expanding ADE, app edit, and ticket preview.
+- `website/src/components/home/HeroDemo.astro` and `annotation/`: the native dark annotation hero and responsive choreography.
 - `website/src/components/home/HomeSections.astro`: mobile tools (“A mobile IDE in your ADE”), environment setup, performance recording, storage inspection, and FAQ, in that order.
 - `website/src/pages/404.astro`: the approved empty-workspace message, requested address, recovery links, and hollow scene.
 - `website/src/content/docs/docs/`: Starlight guides for installation, devices, controls, logs, performance, profiles, storage, privacy, and terms.
 - `website/src/styles/theme.css` and `docs.css`: the dark docs palette, shared fonts, square controls, readable code, hairline sections, and navigation. `website/src/components/starlight/Head.astro` preloads the four fonts used above the fold to avoid a late font swap shifting the page.
 - `website/src/components/site/dither.ts`, `dither-host.ts`, and `dither.worker.ts`: scene geometry, visibility, sizing, and the worker renderer.
-- `website/vercel.json`: static `dist` hosting with clean URLs and no trailing slash. Set `SITE_URL` to the production origin when deploying so canonical URLs, the sitemap, robots, and social metadata share that origin.
+- `.github/workflows/website.yml`: GitHub Pages builds and production publishing. `SITE_URL` sets the origin and `SITE_BASE` sets the repository path for navigation, Markdown, assets, and metadata. `website/vercel.json` hosts the same static output for previews.
 
 The marketing site sends no remote telemetry. Website work keeps the plugin’s existing Sentry collection separate and preserves its instrumentation and data boundaries.

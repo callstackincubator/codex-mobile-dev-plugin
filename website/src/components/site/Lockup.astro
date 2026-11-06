@@ -1,13 +1,13 @@
 ---
 // The lockup: the mark (when the product has one), the accent wordmark block and the
 // BY CALLSTACK chip, which is dropped on phones.
-import { site } from '../../site/content';
+import { at, site } from '../../site/content';
 import Mark from './Mark.astro';
 
 interface Props {
   href?: string;
 }
-const { href = '/' } = Astro.props;
+const { href = at('/') } = Astro.props;
 ---
 
 <a class="lockup" href={href}>

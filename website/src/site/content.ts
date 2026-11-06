@@ -1,5 +1,8 @@
 import type { IconName } from '../components/site/icons';
 
+export const BASE = process.env.SITE_BASE ?? '';
+export const at = (path: string) => `${BASE}${path}`;
+
 const localOrigin = 'http://localhost:4321';
 const isVercelBuild = process.env.VERCEL === '1';
 const buildOrigin = isVercelBuild ? `https://${process.env.VERCEL_URL}` : localOrigin;
@@ -7,7 +10,7 @@ export const site = {
   name: 'Mobile Dev',
   wordmark: 'Mobile Dev',
   url: process.env.SITE_URL ?? buildOrigin,
-  repo: 'https://github.com/callstackincubator/mobile-dev',
+  repo: 'https://github.com/callstackincubator/codex-mobile-dev-plugin',
   subtitle: 'Mobile development in your ADE',
   headline: ['Mobile development.', 'In your ADE.'],
   lede: 'A plugin for mobile development in your ADE. Bring your running app, devices, logs, performance, and storage into Codex, Claude, Cursor, and more.',
@@ -19,7 +22,7 @@ export const site = {
   callstack: 'https://callstack.com/?utm_source=mobile-dev&utm_medium=referral',
   license: {
     name: 'MIT',
-    url: 'https://github.com/callstackincubator/mobile-dev/blob/main/LICENSE',
+    url: 'https://github.com/callstackincubator/codex-mobile-dev-plugin/blob/main/LICENSE',
     spdx: 'https://opensource.org/licenses/MIT',
   },
   platforms: ['iOS', 'Android'],
@@ -28,17 +31,18 @@ export const site = {
 };
 
 export const docs = {
-  intro: '/docs/introduction',
-  start: '/docs/getting-started',
-  devices: '/docs/devices',
-  control: '/docs/app-control',
-  logs: '/docs/logs',
-  performance: '/docs/performance',
-  profiles: '/docs/profiles',
-  storage: '/docs/storage',
-  privacy: '/docs/privacy',
-  terms: '/docs/terms',
-  llms: '/llms.txt',
+  intro: at('/docs/introduction'),
+  start: at('/docs/getting-started'),
+  devices: at('/docs/devices'),
+  control: at('/docs/app-control'),
+  appFlow: at('/docs/app-flow'),
+  logs: at('/docs/logs'),
+  performance: at('/docs/performance'),
+  profiles: at('/docs/profiles'),
+  storage: at('/docs/storage'),
+  privacy: at('/docs/privacy'),
+  terms: at('/docs/terms'),
+  llms: at('/llms.txt'),
 };
 
 export const pluginStoreUrl = 'https://chatgpt.com/plugins/plugins_6ac4c117f76881918d3676e851fa4005';
@@ -46,11 +50,12 @@ export const installOptions = [
   { name: 'ChatGPT / Codex', detail: 'Open the ChatGPT plugin store.', href: pluginStoreUrl, external: true },
   { name: 'Claude', detail: 'Manual setup for Desktop and Claude Code.', href: `${docs.start}#claude`, external: false },
   { name: 'Cursor', detail: 'Manual setup for the local Cursor plugin.', href: `${docs.start}#cursor`, external: false },
+  { name: 'T3 Code', detail: 'Manual setup for Claude and Codex threads.', href: `${docs.start}#t3-code`, external: false },
 ];
 
 type Link = { text: string; href: string };
 export const nav: Link[] = [
-  { text: 'Workflow', href: '/#workflow' },
+  { text: 'Workflow', href: at('/#workflow') },
   { text: 'Docs', href: docs.intro },
   { text: 'GitHub', href: site.repo },
 ];
@@ -62,14 +67,14 @@ export const footer: Link[] = [
   { text: 'Terms', href: docs.terms },
   { text: 'Callstack', href: site.callstack },
 ];
-export const noindexPaths = ['/404'];
+export const noindexPaths = [at('/404')];
 export const marquee = ['Codex', 'Claude', 'Cursor', 'iOS', 'Android', 'Expo', 'React Native', 'SwiftUI'];
 export const notFound = ['This workspace is empty.', 'Your app is one click away.'];
 export const environments = [
   { name: 'Codex', detail: 'Install from the plugin directory.', status: 'Plugin directory', href: pluginStoreUrl },
-  { name: 'Claude', detail: 'A Desktop extension and a Code plugin.', status: 'Manual installation', href: '/docs/getting-started#claude' },
-  { name: 'Cursor', detail: 'A local plugin for your agent workspace.', status: 'Manual installation', href: '/docs/getting-started#cursor' },
-  { name: 'Other ADEs', detail: 'Connect the MCP server in a compatible client.', status: 'MCP connection', href: '/docs/getting-started#other-environments' },
+  { name: 'Claude', detail: 'A Desktop extension and a Code plugin.', status: 'Manual installation', href: `${docs.start}#claude` },
+  { name: 'Cursor', detail: 'A local plugin for your agent workspace.', status: 'Manual installation', href: `${docs.start}#cursor` },
+  { name: 'Other ADEs', detail: 'Connect the MCP server in a compatible client.', status: 'MCP connection', href: `${docs.start}#other-environments` },
 ];
 export const faq = [
   { q: 'Which environments can I use?', a: 'Codex, Claude, and Cursor have host packages. Other compatible MCP clients can connect to the server; embedded device panels require MCP Apps support.' },
@@ -88,6 +93,7 @@ export const features: Feature[] = [
   { icon: 'panel', title: 'Native and app logs', body: 'Follow iOS, Android, and Metro logs, then send the relevant error to your agent.', href: docs.logs },
   { icon: 'gauge', title: 'Performance recordings', body: 'Record CPU, memory, and supported device Display FPS over the interaction you want to understand.', href: docs.performance },
   { icon: 'flame', title: 'Profile analysis', body: 'Explore CPU and React profiles with TraceSift, and investigate selected frames with your agent.', href: docs.profiles },
+  { icon: 'grid', title: 'App Flow', body: 'Map every screen and navigation edge, and capture each screen on a simulator or emulator.', href: docs.appFlow },
   { icon: 'database', title: 'App storage', body: 'Inspect files, databases, and key-value stores. Watch changes while you use your app.', href: docs.storage },
   { icon: 'network', title: 'Your existing stack', body: 'Use your app’s own build tools with Expo, React Native, SwiftUI, and native projects.', href: docs.start },
 ];

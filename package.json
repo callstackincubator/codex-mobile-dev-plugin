@@ -1,6 +1,6 @@
 {
   "name": "mobile-dev",
-  "version": "0.1.176",
+  "version": "0.1.180",
   "private": true,
   "workspaces": [
     "packages/shared",
@@ -23,6 +23,7 @@
     "build:mac": "node apps/mac/tooling/build.mjs",
     "public-release": "node tooling/public-release.mjs",
     "vendor:baguette": "node tooling/vendor-baguette.mjs",
+    "vendor:resource-saving": "node tooling/vendor-resource-saving.mjs",
     "vendor:agent-device": "npm ci --prefix packages/runtimes/agent-device --ignore-scripts --no-audit --no-fund",
     "catalog:agent-device": "node tooling/agent-device-catalog.mjs",
     "rebuild:baguette": "node tooling/rebuild-baguette.mjs",
@@ -82,6 +83,7 @@
     "@rozenite/ui": "2.4.0",
     "@sentry/node": "11.2.0",
     "@sentry/react": "11.2.0",
+    "@xyflow/react": "^12.12.0",
     "ajv": "8.20.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

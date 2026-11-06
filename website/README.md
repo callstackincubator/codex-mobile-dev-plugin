@@ -22,15 +22,48 @@ pnpm --dir website preview
 
 The social-card script needs Playwright Chromium (`pnpm --dir website exec playwright-core install chromium`). To select an installed Google Chrome instead, run `PLAYWRIGHT_CHANNEL=chrome pnpm --dir website og`. Generated social cards and icons are committed under `public/`, so deployment does not require a browser. Add `--banner` to the `og` command when creating the optional README banner.
 
+## GitHub Pages
+
+Production is published at https://incubator.callstack.com/codex-mobile-dev-plugin/.
+The organization owns `incubator.callstack.com`; this repository inherits that
+host and uses its repository name as the path. Leave the repository's **Custom
+domain** field empty and set **Settings → Pages → Source** to **GitHub Actions**.
+The suggested Jekyll and Static HTML templates are unnecessary.
+
+`.github/workflows/website.yml` checks and builds the independent `website/`
+project with Node.js 24 and the pinned pnpm version. Pushes to `main` affecting
+`website/**` or that workflow upload `website/dist` and deploy through the
+`github-pages` environment. Pull requests run the same checks and build without
+publishing. The workflow can also be run manually on `main`.
+
+The build sets `SITE_URL=https://incubator.callstack.com` and
+`SITE_BASE=/codex-mobile-dev-plugin`. Astro's base, navigation, Markdown links,
+icons, social images, sitemap, and robots.txt share those values. Local dev and
+Vercel builds use their own origin and an empty base. Pages remain `.html` files,
+served at extensionless paths by GitHub Pages, matching Simlock's setup.
+
 ## Vercel
 
-For a Git-connected project, choose this repository and set **Root Directory** to `website`, **Node.js** to 24, install command to `pnpm install --frozen-lockfile`, build command to `pnpm build`, and output directory to `dist` (also declared in `vercel.json`). Add the project environment variable `ENABLE_EXPERIMENTAL_COREPACK=1` to use the pinned pnpm version. Vercel builds use their generated deployment URL. Set `SITE_URL` to the chosen production origin when publishing on a custom domain so canonical URLs, social metadata, robots, and sitemaps use that origin. Local builds use `http://localhost:4321`.
+The Margelo team's `mobile-dev` project is connected through Vercel's GitHub
+integration, with **Root Directory** set to `website`, **Include source files
+outside of the Root Directory** disabled, Node.js 24, and
+`ENABLE_EXPERIMENTAL_COREPACK=1`. Install/build/output settings are in
+`vercel.json`. Branch pushes, including draft pull requests, receive previews.
+Vercel also continues publishing Production deployments from `main`, alongside
+GitHub Pages.
 
-Initial hosting uses the **Margelo** team’s `mobile-dev` project temporarily, at https://mobile-dev-snowy.vercel.app. CLI deployments run from `website/` with the project root set to `.`. If connecting the full Git repository, change the Vercel Root Directory to `website` first.
+Vercel's **Ignored Build Step** skips builds when `website/` has not changed:
 
-The production environment pins `SITE_URL` to that temporary public origin. Preview builds use their generated deployment URL. `.vercelignore` excludes local QA reports, screenshots, and generated Astro/build output from CLI uploads.
+```sh
+if [ -z "$VERCEL_GIT_PREVIOUS_SHA" ]; then exit 1; fi
+git diff --quiet "$VERCEL_GIT_PREVIOUS_SHA" HEAD -- .
+```
 
-The final production domain is undecided. Transfer the project to its eventual owner later, attach that domain, and update `SITE_URL` and the root README’s website/banner URLs. Then verify the sitemap and register the final origin in Search Console. Configure a redirect from the unused www or apex hostname to the chosen canonical hostname when attaching DNS.
+Exit code `0` skips and `1` builds; the command runs inside `website/`. Preview
+builds use their deployment URL, retain Vercel Authentication, and are linked
+from the pull request. Use Vercel's sharing controls for external reviewers.
+`.vercelignore` excludes local QA reports and generated build output from CLI
+uploads. No GitHub Actions deployment token is needed for Vercel previews.
 
 ## Content and design
 
@@ -38,9 +71,13 @@ The final production domain is undecided. Transfer the project to its eventual o
 - `src/site/content.ts`: links, feature copy, environments, FAQ, and homepage metadata.
 - `src/site/brand.ts`: the Signal blue accent and its derived dark palette.
 - `src/content/docs/docs/`: user guides adapted from the repository documentation.
-- `src/components/home/HeroDemo.astro`: illustrated coding workflow; this does not imply an issue-tracker integration.
+- `src/components/home/HeroDemo.astro` and `src/components/home/annotation/`: native HTML annotation and app-edit workflow, responsive layout, and Web Animations playback. The hero sits directly in the page without a window frame or surrounding fill.
+- `src/components/site/FeaturePreview.astro` and `src/components/site/previews/`: native Storage and Performance animations shared by the homepage and docs, plus the phone and icons shared with the hero.
+- `public/previews/LICENSE`: retained Stageshow source attribution.
 - `src/components/site/dither.ts`: generated pixel scenes, rendered by one OffscreenCanvas worker implementation.
 
 The website, docs, and README banner use a fixed dark palette. The site ignores system colour preferences and former saved theme choices; no theme controls are rendered.
 
-Performance and storage diagrams use fixed demonstration data. Website work does not change the plugin’s Sentry initialization or instrumentation, and the marketing site does not send remote telemetry.
+The homepage's storage and performance sections and corresponding docs guides use the same native HTML/SVG animations in macOS windows, without an extra outer frame or video controls. They play when visible, pause offscreen or in a hidden tab, and show the completed state for reduced motion. Their source and choreography are documented in `src/components/site/previews/README.md`.
+
+Website work does not change the plugin’s Sentry initialization or instrumentation, and the marketing site does not send remote telemetry.

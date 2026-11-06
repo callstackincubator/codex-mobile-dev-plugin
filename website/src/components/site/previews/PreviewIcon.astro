@@ -1,0 +1,29 @@
+---
+const paths = {
+  braces: '<path d="M8 3H6a2 2 0 0 0-2 2v4a3 3 0 0 1-2 3 3 3 0 0 1 2 3v4a2 2 0 0 0 2 2h2m8-18h2a2 2 0 0 1 2 2v4a3 3 0 0 0 2 3 3 3 0 0 0-2 3v4a2 2 0 0 1-2 2h-2"/>',
+  chat: '<path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l-3 3V11.5a10 10 0 1 1 20 0Z"/>',
+  database: '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 4 18 4 18 0V5M3 12c0 4 18 4 18 0"/>',
+  refresh: '<path d="M20 7v5h-5M4 17v-5h5m-4-5a8 8 0 0 1 13-3l2 3M4 17l2 3a8 8 0 0 0 13-3"/>',
+  reset: '<path d="M3 3v6h6m-5-1a9 9 0 1 1-1 8"/>',
+  search: '<circle cx="10.5" cy="10.5" r="7.5"/><path d="m16 16 5 5"/>',
+  apple: '<path d="M12 7c-1.5-2-5-2.5-7 .2C2.4 10.5 5 20 9 21c1.2.3 2-.5 3-.5s1.8.8 3 .5c4-1 6.6-10.5 4-13.8C17 4.5 13.5 5 12 7Zm0 0c0-3 1.7-5 4-5M12 5c-3 0-4-1-4-3 3 0 4 1 4 3Z"/>',
+  arrow: '<path d="M12 19V5m-7 7 7-7 7 7"/>',
+  camera: '<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3Z"/><circle cx="12" cy="13" r="3"/>',
+  carrot: '<path d="M14 6c3.5-6 6 0 6 0s6 2.5 0 6M2.5 21.5l4.7-12a4 4 0 0 1 6.6-1.4l2.1 2.1a4 4 0 0 1-1.4 6.6l-12 4.7ZM7.5 13.5l3 3M11 9l3 3"/>',
+  check: '<path d="m9 12 2 2 4-4"/><circle cx="12" cy="12" r="10"/>',
+  chevron: '<path d="m6 9 6 6 6-6"/>',
+  close: '<path d="m6 6 12 12M6 18 18 6"/>',
+  file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6Zm0 0v6h6M8 13h8m-8 4h5"/>',
+  heart: '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/>',
+  home: '<path d="m3 10 9-8 9 8v10a1 1 0 0 1-1 1h-5v-8H9v8H4a1 1 0 0 1-1-1V10Z"/>',
+  mic: '<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2m-7 9v3m-4 0h8"/>',
+  phone: '<rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  pointer: '<path d="m4 3 7.1 18 2.5-7.4L21 11 4 3Z"/>',
+};
+
+interface Props { name: keyof typeof paths; }
+const { name } = Astro.props;
+---
+
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" set:html={paths[name]} />

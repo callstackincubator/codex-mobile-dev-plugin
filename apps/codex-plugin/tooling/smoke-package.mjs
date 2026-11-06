@@ -13,6 +13,7 @@ const temporary = await mkdtemp(join(tmpdir(), "mobile-dev-package-test-"));
 const plugin = join(temporary, "mobile-dev");
 let transport;
 let runtimeTransport;
+let browserTransport;
 
 function uiIdentity(text) {
   const user = text.match(/name="mobile-dev-user-id" content="(anon_[a-f0-9]{32})"/);
@@ -43,10 +44,13 @@ try {
   assert.ok(serverConfig.env_vars.includes("TRACE_SIFT_HOME"));
   assert.ok(serverConfig.env_vars.includes("TRACE_SIFT_COMMAND"));
   assert.ok(serverConfig.env_vars.includes("MOBILE_DEV_TELEMETRY"));
+  assert.ok(serverConfig.env_vars.includes("MOBILE_DEV_PANEL"));
   const serverCwd = resolve(plugin, serverConfig.cwd);
   // Supply the Codex runtime cache layout with no Node on MCP PATH.
   const fixtureHome = await createLaunchHome(temporary, process.execPath);
   const serverEnv = { ...process.env, HOME: fixtureHome, PATH: "/usr/bin:/bin:/usr/sbin:/sbin" };
+  // These checks expect the default inline panel, even from a host set up for the browser panel.
+  delete serverEnv.MOBILE_DEV_PANEL;
   const launcher = serverConfig.args[0];
   const nodeVersion = spawnSync(serverConfig.command, [launcher, "--version"], { cwd: serverCwd, env: serverEnv, encoding: "utf8" });
   assert.equal(nodeVersion.error, undefined);
@@ -241,7 +245,29 @@ try {
   }
   assert.equal(stopped, true, "The bundled backend should stop when MCP closes.");
   console.log("MCP shutdown stopped the bundled backend. No simulator was booted or changed.");
+  // T3 Code users set MOBILE_DEV_PANEL=browser, so the panel opens on a loopback page beside the chat.
+  browserTransport = new StdioClientTransport({
+    command: serverConfig.command, args: serverConfig.args, cwd: serverCwd, stderr: "pipe", env: { ...serverEnv, MOBILE_DEV_PANEL: "browser" },
+  });
+  const browser = new Client({ name: "mobile-dev-package-browser", version: "1" });
+  await browser.connect(browserTransport);
+  const browserTools = await browser.listTools();
+  const browserEntrypoint = browserTools.tools.find(tool => tool.name === "mobile_open_simulator");
+  assert.equal(browserEntrypoint._meta.ui?.resourceUri, undefined, "A browser panel must not render in the chat.");
+  assert.equal(browserEntrypoint._meta["ui/resourceUri"], undefined, "A browser panel must not render in the chat.");
+  assert.equal(browserEntrypoint._meta["mobile-dev/panel"].resourceUri, `ui://mobile-dev/${manifest.version}/simulator.html`);
+  assert.ok(browserTools.tools.some(tool => tool.name === "mobile_read_panel_context"));
+  await access(join(plugin, "dist/browser-panel.html"));
+  const browserOpening = await browser.callTool({ name: "mobile_open_simulator", arguments: {} }, undefined, { timeout: 30000 });
+  assert.ok(browserOpening.structuredContent?.browserPanel, JSON.stringify(browserOpening.content));
+  const browserPanelUrl = new URL(browserOpening.structuredContent.browserPanel.url);
+  assert.equal(browserPanelUrl.hostname, "127.0.0.1");
+  const browserPage = await fetch(browserPanelUrl);
+  assert.equal(browserPage.status, 200);
+  await browser.close();
+  console.log("With MOBILE_DEV_PANEL=browser, the packaged server names its panel for the browser and serves the page on loopback.");
 } finally {
+  await browserTransport?.close();
   await runtimeTransport?.close();
   await transport?.close();
   await rm(temporary, { recursive: true, force: true });

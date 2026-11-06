@@ -1,6 +1,6 @@
 <p align="center">
-  <a href="https://mobile-dev-snowy.vercel.app/">
-    <img src="https://mobile-dev-snowy.vercel.app/banner.jpg" alt="Mobile Dev by Callstack. Mobile development in your ADE. Supports Codex, Claude, Cursor, and more." width="100%" />
+  <a href="https://incubator.callstack.com/codex-mobile-dev-plugin/">
+    <img src="https://incubator.callstack.com/codex-mobile-dev-plugin/banner.jpg" alt="Mobile Dev by Callstack. Mobile development in your ADE. Supports Codex, Claude, Cursor, and more." width="100%" />
   </a>
 </p>
 
@@ -21,6 +21,9 @@ Install a built app, launch or stop it, and open a deep link or URL to jump to a
 
 ### Device settings and network conditions
 Change the running device's appearance, text size, rotation, location, and status bar without restarting its stream. Switch the network to LTE, 3G, Edge, or Offline to see how the app behaves on a slow or missing connection, then back to Normal. Available settings depend on the platform and device kind.
+
+### App Flow
+Build a visual map of your app's screens and the navigation between them, for Expo Router and React Navigation projects. **Structure only** reads the navigation out of your source in seconds and needs no device; **Screen UI + Structure** also walks the app on an iOS simulator and photographs every screen it reaches, optionally opening each screen's sheets, modals, and dialogs. The walk runs your project's own `ios` script and reaches each screen through in-app navigation, a deep link, or a path you recorded; record one by hand on the live wireframe for a screen it cannot reach. Explore with AI lists the screens the deterministic pass missed and retries only the ones you pick. Maps, captures, and recorded paths are stored per project under `~/Library/Application Support/mobile-dev/app-flow`.
 
 ### Native and JavaScript logs
 Read iOS unified logs, Android logcat, and Metro console messages together. Follow the foreground app, search and filter logs, and send an error and its stack trace to chat.
@@ -106,6 +109,32 @@ What the Claude version runs on your Mac, besides its Node.js server:
 It sends plugin errors and aggregate measurements to Sentry, as described under
 [Privacy and support](#privacy-and-support), and nothing else to Callstack;
 profiles go only to the TraceSift service on your Mac.
+
+### T3 Code
+
+[T3 Code](https://github.com/pingdotgg/t3code) runs Claude Code and Codex, so it loads
+the Mobile Dev plugin that each of them has installed. On the Mac that runs T3 Code,
+install the [Claude Code plugin](#claude-code-and-claude-desktop) for Claude threads
+and the [Codex plugin](#codex) for Codex threads. In both, the panel opens in T3 Code's
+Browser.
+
+Turn off T3 Code's own device integration while you use Mobile Dev. In
+**Settings → Devices**, turn off **Use devices**, which also turns off **Agents can use
+devices**. Otherwise T3 Code gives agents its own `device_*` tools, with the same names
+as Mobile Dev's, and tells them to prefer those tools.
+
+Codex threads need one setting, because T3 Code renders Codex's panel in the chat
+and asks you to confirm each action that the panel takes, such as each tap:
+
+1. Open **Settings → Providers**, then the Codex instance.
+2. Under **Variables**, click **Add variable**. Set `MOBILE_DEV_PANEL` to `browser`.
+3. Start a new thread.
+
+Ask the agent to open Mobile Dev. It opens the panel with T3 Code's `preview_open`
+tool, and T3 Code shows the page as a floating preview. To dock the panel beside the
+chat, click the preview's **Open in right panel** button. The agent reads the devices
+you select in the panel and the screenshots and screen notes you add from it.
+Performance recordings still render as cards in the chat.
 
 ### Cursor: manual installation
 

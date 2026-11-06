@@ -14,6 +14,7 @@
     "og": "node scripts/og.mjs"
   },
   "dependencies": {
+    "@astrojs/markdown-satteri": "0.4.5",
     "@astrojs/sitemap": "^3.7.4",
     "@astrojs/starlight": "^0.42.2",
     "astro": "^7.3.3",

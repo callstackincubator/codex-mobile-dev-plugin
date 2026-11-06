@@ -18,6 +18,10 @@ import { parseBaseUrl } from "../../shared/src/protocol.ts";
 import { createTestPlugin, fakeBaguette, fakeSimulatorInput, UDID, PNG } from "../../test-support/fixtures.ts";
 import { getTelemetryIdentity } from "../src/telemetry-identity.ts";
 import manifest from "../../../package.json" with { type: "json" };
+import { ResourceSaving } from "../src/resource-saving.ts";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 test("opening tools accept optional intent and preserve it in their results", async t => {
   const fake = await fakeBaguette();
@@ -221,7 +225,13 @@ test("cached side tabs and saved cards load the current UI through old resource 
 
 test("MCP tools expose native entrypoints and complete the simulator workflow", async t => {
   const fake = await fakeBaguette();
-  const plugin = await createTestPlugin('<!doctype html><html data-view="panel" data-layout="stacked"><title>Mobile Dev</title></html>', { panel: createPanel({ baguette: new Baguette(fake.url), simulatorInput: fakeSimulatorInput() }) });
+  const temporaryRoot = tmpdir();
+  const prefix = join(temporaryRoot, "resource-saving-plugin-test-");
+  const directory = await mkdtemp(prefix);
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const optimizationCalls: string[][] = [];
+  const resourceSaving = new ResourceSaving({ directory, executable: async () => "/fake/simslim", run: async (_file, args) => { optimizationCalls.push(args); return { stdout: "{}" }; } });
+  const plugin = await createTestPlugin('<!doctype html><html data-view="panel" data-layout="stacked"><title>Mobile Dev</title></html>', { panel: createPanel({ baguette: new Baguette(fake.url), simulatorInput: fakeSimulatorInput(), resourceSaving }) });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "test", version: "1" });
   t.after(async () => { await client.close(); await plugin.close(); await fake.close(); });
@@ -252,6 +262,17 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
   const recordingResource = await client.readResource({ uri: RECORDING_URI });
   // Cards from a server with the workspace can open recordings there.
   assert.match(recordingResource.contents[0].text as string, /data-view="recording" data-workspace/);
+  // A panel beside the chat opens no recordings, so its cards offer no workspace.
+  const besideChat = await createTestPlugin('<html data-view="panel"></html>', { panel: createPanel({ inline: false }) });
+  const [besideChatClientTransport, besideChatServerTransport] = InMemoryTransport.createLinkedPair();
+  const besideChatClient = new Client({ name: "browser-panel-host", version: "1" });
+  t.after(async () => { await besideChatClient.close(); await besideChat.close(); });
+  await besideChat.server.connect(besideChatServerTransport);
+  await besideChatClient.connect(besideChatClientTransport);
+  for (const [uri, view] of [[RECORDING_URI, "recording"], [COMPARISON_URI, "comparison"]]) {
+    const card = String((await besideChatClient.readResource({ uri })).contents[0].text);
+    assert.equal(card, `<html data-view="${view}"></html>`);
+  }
   assert.equal(recordingResource.contents[0].mimeType, "text/html;profile=mcp-app");
   assert.deepEqual(recordingResource.contents[0]._meta?.["openai/ui"], { preferredDisplayMode: "inline", availableDisplayModes: ["inline", "fullscreen"] });
   assert.deepEqual(recordingResource.contents[0]._meta?.ui, { prefersBorder: true, permissions: { clipboardWrite: {} }, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } });
@@ -346,6 +367,7 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
   assert.equal(noStream.isError, true);
   assert.equal(noStream._meta?.retryable, false);
   const booted = await client.callTool({ name: "mobile_boot_simulator", arguments: { udid: UDID } });
+  assert.deepEqual(optimizationCalls.map(args => args[0]), ["on", "verify"]);
   assert.equal((booted.structuredContent?.devices as { state: string; udid: string }[]).find(item => item.udid === UDID)?.state, "Booted");
   const unknown = await client.callTool({ name: "mobile_boot_simulator", arguments: { udid: "810F8795-62F8-4B9D-A3D2-6AC9FDF585A2" } });
   assert.equal(unknown.isError, true);

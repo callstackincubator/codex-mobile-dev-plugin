@@ -1,0 +1,58 @@
+---
+import Phone from './DemoPhone.astro';
+import Icon from './PreviewIcon.astro';
+const history = [
+  { key: 'megaCarrots', from: '3', to: '2', time: '17:41:52' },
+  { key: 'onboarding.done', from: 'false', to: 'true', time: '17:41:30' },
+  { key: 'search.radiusKm', from: '25', to: '50', time: '17:40:46' },
+  { key: 'profile.city', from: 'London', to: 'Bristol', time: '17:40:12' },
+];
+---
+
+<div class="fp-storage">
+  <div class="fp-storage-panel">
+    <div class="fp-storage-tools">
+      <span class="fp-app-picker"><span class="fp-app-icon"><Icon name="heart" /></span><span>HorseTinder</span><Icon name="chevron" /></span>
+      <span class="fp-tabs">
+        <span class="fp-tab" data-feature-target="browse">Browse<span class="fp-tab-active" data-show="0:5400;14800:17000"></span></span>
+        <span class="fp-tab" data-feature-target="changes">Changes <span class="fp-stack"><span data-show="0:3200;14000:17000">4</span><span data-show="3200:14000" data-poster>5</span></span><span class="fp-tab-active" data-show="5400:14800" data-poster></span></span>
+      </span>
+      <span class="fp-filter"><Icon name="search" /><span>Filter keys and values…</span></span>
+      <span class="fp-storage-action" data-feature-target="refresh"><Icon name="refresh" /></span>
+      <span class="fp-storage-action" data-feature-target="reset"><Icon name="reset" /><span class="fp-reset-label">Reset</span></span>
+    </div>
+    <div class="fp-storage-views">
+      <div class="fp-browse-view" data-show="0:5400;14800:17000">
+        <div class="fp-store-heading"><span class="fp-kind"><Icon name="braces" /></span><div><strong>default</strong><span>AsyncStorage · 9 keys</span></div></div>
+        <div class="fp-storage-row"><span class="fp-type">[]</span><span>likes</span><span class="fp-stack fp-muted"><span data-show="0:3200;14000:17000">[2 items]</span><span data-show="3200:14000" data-poster>[3 items]</span></span><span class="fp-row-wash" data-show="3200:4500"></span></div>
+        <div class="fp-storage-row"><span class="fp-type">#</span><span>megaCarrots</span><span class="fp-number">2</span></div>
+        <div class="fp-storage-row"><span class="fp-type">◉</span><span>onboarding.done</span><span class="fp-bool">true</span></div>
+        {[['search.radiusKm', '50'], ['profile.city', 'Bristol'], ['profile.name', 'Alex']].map(([key, value]) => <div class="fp-storage-row"><span class="fp-type">Aa</span><span>{key}</span><span class="fp-muted">{value}</span></div>)}
+        {[76, 54, 66].map(width => <div class="fp-storage-row fp-filler"><span></span><span style={`width:${width}%`}></span><span style={`width:${100 - width / 2}%`}></span></div>)}
+      </div>
+      <div class="fp-changes-view" data-show="5400:14800" data-poster>
+        <div class="fp-changes-list">
+          <div class="fp-change-row" data-show="3200:14000" data-poster>
+            <span class="fp-change-mark">↔</span><span class="fp-time">17:42:08</span><span class="fp-change-key"><span class="fp-kind"><Icon name="braces" /></span>likes</span><span class="fp-diff"><del>[21,34]</del><span>→</span><ins>[21,34,7]</ins></span>
+            <span class="fp-row-wash" data-show="5400:7000"></span>
+          </div>
+          {history.map(change => <div class="fp-change-row"><span class="fp-change-mark">↔</span><span class="fp-time">{change.time}</span><span class="fp-change-key"><span class="fp-kind"><Icon name="braces" /></span>{change.key}</span><span class="fp-diff"><del>{change.from}</del><span>→</span><ins>{change.to}</ins></span></div>)}
+        </div>
+        <div class="fp-storage-foot"><span class="fp-stack"><span data-show="0:3200;14000:17000">4 changes</span><span data-show="3200:14000" data-poster>5 changes</span></span><span>SDK changes <span class="fp-switch"></span></span><span>Clear</span></div>
+      </div>
+      <div class="fp-reset-confirm" data-show="9500:10900">
+        <strong>Reset app data?</strong>
+        <p>Stops the app and deletes everything in its data container, including UserDefaults. The app stays installed.</p>
+        <div><span>Cancel</span><span class="fp-reset-confirm-action" data-feature-target="confirm">Reset app data</span></div>
+      </div>
+      <div class="fp-storage-status" data-show="10900:13500"><span>Cleared all app data.</span><span data-feature-target="launch">Launch app</span></div>
+    </div>
+  </div>
+  <div class="fp-storage-device">
+    <div class="fp-device-title"><Icon name="phone" />iPhone 17 Pro<Icon name="chevron" /></div>
+    <div class="fp-device-screen">
+      <Phone workflow="storage" />
+      <div class="fp-home-screen" data-show="10900:13500"><span class="fp-home-app"><Icon name="heart" /><span>HorseTinder</span></span></div>
+    </div>
+  </div>
+</div>

@@ -9,7 +9,7 @@ export const RELEASE_DOCUMENTS = ["README.md", "LICENSE", "THIRD_PARTY_NOTICES.m
  * serve-emu for Android, and physical iPhone mirroring with its service. Hosts whose
  * server has no panel leave them out.
  */
-export const PANEL_PARTS = ["baguette", "serve-emu", "ios-mirror", "ios-mirror-service.mjs"];
+export const PANEL_PARTS = ["baguette", "serve-emu", "ios-mirror", "ios-mirror-service.mjs", "resource-saving"];
 
 const RUNTIME_FILES = [
   "server.mjs", "app-intelligence-worker.mjs", "ios-mirror-service.mjs", "app.html", "browser-panel.html", "baguette/Baguette", "baguette/Baguette_Baguette.bundle",
@@ -20,6 +20,7 @@ const RUNTIME_FILES = [
   "android-cpu/LICENSE", "serve-emu/src/cli.mjs", "serve-emu/vendor/scrcpy-server-v4.0",
   "agent-device/node_modules/agent-device/dist/apple/runner/AgentDeviceRunner/AgentDeviceRunner.xcodeproj/project.pbxproj",
   "agent-device/tools.json",
+  "resource-saving/simslim", "resource-saving/avdslim", "resource-saving/simslim-LICENSE", "resource-saving/avdslim-LICENSE", "resource-saving/release.json",
 ];
 
 export async function stageRuntime(directory, { panel = true } = {}) {

@@ -1,0 +1,32 @@
+---
+import PerformancePreview from './previews/PerformancePreview.astro';
+import StoragePreview from './previews/StoragePreview.astro';
+import './previews/feature-previews.css';
+
+interface Props {
+  kind: 'performance' | 'storage';
+  label: string;
+}
+
+const { kind, label } = Astro.props;
+const title = kind === 'performance' ? 'Profile card swipe lag' : 'Mobile Dev · Storage';
+---
+
+<div class="feature-preview not-content" data-feature-preview={kind}>
+  <div class="fp-window" role="img" aria-label={label}>
+    <div class="fp-window-bar" aria-hidden="true">
+      <span class="fp-lights"><span></span><span></span><span></span></span>
+      <span>{title}</span>
+    </div>
+    <div class="fp-scene" aria-hidden="true">
+      {kind === 'performance' ? <PerformancePreview /> : <StoragePreview />}
+      <svg class="fp-cursor" width="24" height="28" viewBox="0 0 24 28">
+        <path d="M3 2v21l5.5-5.2L12 25l4-2-3.6-7.1H20L3 2Z" fill="#0d0d0d" stroke="#f5f5f5" stroke-width="1.5" stroke-linejoin="round" />
+      </svg>
+    </div>
+  </div>
+</div>
+
+<script>
+  import './feature-previews';
+</script>

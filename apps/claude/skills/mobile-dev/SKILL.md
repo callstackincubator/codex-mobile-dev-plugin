@@ -9,6 +9,14 @@ Use the Mobile Dev MCP tools for local iOS and Android work. Mobile Dev's device
 opens in a browser beside the chat, and its tools add device control, logs, app
 inspection, and performance recordings with their charts.
 
+Start stopped virtual devices through `mobile_boot_simulator` or
+`mobile_boot_android_emulator` before using agent-device. These start paths apply
+the device's saved resource-saving mode, enabled by default. The leaf control
+beside device settings can opt a device out. A changed mode applies at the next
+start; **Restart to apply** explicitly closes running apps. Preserve the saved
+mode, and report an optimization failure instead of bypassing the plugin's start
+path with a direct `simctl` or `emulator` launch.
+
 If the Mobile Dev tools are missing, tell the user "Mobile Dev could not start." and
 follow [missing-tools recovery](references/missing-tools.md): check which Node.js the
 plugin's launcher finds and that the plugin is enabled, and offer to install Node.js
@@ -25,7 +33,13 @@ result: open it in your in-app browser in the foreground, and reuse a tab that a
 shows Mobile Dev. Opening a page can leave the Browser pane hidden behind a card in the
 chat, so in the Claude desktop app's Code tab then call `mcp__ccd_view__show_pane` with
 `pane: "preview"` (load it with ToolSearch first if it is deferred), so the panel shows
-beside the chat without the user clicking Open. Open only that link: the `baseUrl` in device results and other
+beside the chat without the user clicking Open. In T3 Code, open it with the
+`t3-code` server's `preview_open` (load it with ToolSearch first if it is deferred). T3
+shows a page an agent opened as a floating preview that the user can dock beside the
+chat, so a result with `visible: false` still counts as shown: do not open it again,
+and leave the tab open.
+T3's own `mcp__t3-code__device_*` tools drive T3's separate Device panel, so use Mobile
+Dev's `device_*` tools for the devices in Mobile Dev's panel. Open only that link: the `baseUrl` in device results and other
 `127.0.0.1` addresses belong to Mobile Dev's backends, not to the panel, so never open
 or show them. Without a browser, give the user the link. Then read
 `mobile_read_panel_context` for the devices the user selected there, and again when

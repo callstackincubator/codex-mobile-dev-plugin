@@ -12,12 +12,15 @@ const { schemaCompactBytes, agentToolBytes, agentTotalBytes } = CODEX_TOOL_LIMIT
 const plugin = resolve(process.argv[2] ?? "release/marketplace/plugins/mobile-dev");
 const manifest = JSON.parse(await readFile(join(plugin, ".mcp.json"), "utf8"));
 const agentPlugin = await access(join(plugin, "plugin.json")).then(() => true, () => false);
+const env = { ...process.env, MOBILE_DEV_TELEMETRY: "off" };
+// Measure the default inline panel, even from a host set up for the browser panel.
+delete env.MOBILE_DEV_PANEL;
 let total = 0;
 let count = 0;
 const oversized = [];
 for (const [name, config] of Object.entries(manifest.mcpServers)) {
   const client = new Client({ name: "mobile-dev-catalog-budget", version: "1" });
-  const transport = new StdioClientTransport({ command: process.execPath, args: [config.args[1]], cwd: plugin, stderr: "pipe", env: { ...process.env, MOBILE_DEV_TELEMETRY: "off" } });
+  const transport = new StdioClientTransport({ command: process.execPath, args: [config.args[1]], cwd: plugin, stderr: "pipe", env });
   try {
     await client.connect(transport);
     const tools = [];
