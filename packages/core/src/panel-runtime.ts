@@ -55,9 +55,10 @@ const STALE_MS = 60 * 60_000;
 const installed = /^\d+\.\d+\.\d+(?:-[\da-zA-Z.-]+)?-[0-9a-f]{12}$/;
 const run = promisify(execFile);
 
-/** The persistent folder for downloaded runtimes: the plugin's data folder in Claude Code, else the user's cache. */
+/** The persistent folder for downloaded runtimes: the plugin's data folder in the host, else the user's cache. */
 export function panelRuntimeDirectory(env: NodeJS.ProcessEnv = process.env) {
-  return env.CLAUDE_PLUGIN_DATA ? join(env.CLAUDE_PLUGIN_DATA, "panel-runtime") : join(homedir(), "Library", "Caches", "mobile-dev", "panel-runtime");
+  const data = env.CLAUDE_PLUGIN_DATA || env.PLUGIN_DATA;
+  return data ? join(data, "panel-runtime") : join(homedir(), "Library", "Caches", "mobile-dev", "panel-runtime");
 }
 
 /**

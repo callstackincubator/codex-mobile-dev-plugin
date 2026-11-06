@@ -10,6 +10,7 @@ import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 import type { Bezel } from "@mobile-dev/shared/bezel.ts";
 import type { PhysicalIosDevice } from "@mobile-dev/shared/ios-devices.ts";
 import { baguetteEnvironment } from "./baguette-runtime.ts";
+import { panelRuntimePath } from "./panel-runtime.ts";
 import { captureServerError } from "./telemetry.ts";
 
 const execute = promisify(execFile);
@@ -81,10 +82,10 @@ async function renderBezel(device: PhysicalIosDevice, run: BezelCommand, runtime
   // Without an installed device type the screen mirrors without a frame.
   if (selected === undefined) throw new ExpectedOperationError("unsupported_platform", "Xcode has no Apple device frame for this model.");
   const { type, profile } = selected;
-  // Bundles, and the chunks they split into, sit in dist/ beside the helpers.
-  const root = import.meta.url.endsWith(".mjs") ? "./baguette/" : "../../native/vendor/baguette/";
-  const url = new URL(`${root}Baguette`, import.meta.url);
-  const executable = fileURLToPath(url);
+  // Bundles, and the chunks they split into, sit in dist/ beside the helpers or in the downloaded panel runtime.
+  const executable = import.meta.url.endsWith(".mjs")
+    ? await panelRuntimePath("baguette/Baguette")
+    : fileURLToPath(new URL("../../native/vendor/baguette/Baguette", import.meta.url));
   const signal = AbortSignal.timeout(commandOptions.timeout);
   const environment = await runtime(executable, signal);
   const renderOptions = { ...commandOptions, env: environment };
