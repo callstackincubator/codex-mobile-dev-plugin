@@ -18,6 +18,7 @@ import { captureUiError, countUiEvent, recordUiTiming } from "./telemetry.ts";
 import type { PanelContext } from "./model-context.ts";
 import { encodeScreenshotAttachment } from "./screenshot-attachment.ts";
 import { getScreenAnnotations } from "./screen-annotations.ts";
+import { testRecorder } from "./test-recorder.ts";
 import type { ScreenAnnotation } from "@mobile-dev/shared/screen-annotations.ts";
 import { accessibilityScreen, screenComponents, screenSize } from "@mobile-dev/shared/screen-annotations.ts";
 import { AndroidVideo } from "./android-video.ts";
@@ -80,6 +81,10 @@ export function createSimulatorPanel(
   let epoch = 0;
   let points = { width: 0, height: 0 };
   let pointer: { id: number; x: number; y: number; edge?: TouchInput["edge"] } | undefined;
+  /** The pointer whose tap is being resolved into a test step before it reaches the device. */
+  let recordingPointer: number | undefined;
+  /** The finger came up while its step was still resolving, so the forwarded tap must end itself. */
+  let recordingReleased = false;
   let seenFrames = 0;
   let pausedFrame: HTMLCanvasElement | undefined;
   let busy = false;
@@ -140,6 +145,9 @@ export function createSimulatorPanel(
 
   function send(message: StreamMessage) {
     if (!ready || !stream || inputBlocked) return;
+    // Every input can change the screen, so a tree read before it no longer describes what the
+    // next tap lands on. Typing and the hardware buttons go through here too, not just touches.
+    if (testRecorder.isRecording(selected?.udid)) testRecorder.invalidate();
     stream.input?.send(message);
   }
 
@@ -278,6 +286,26 @@ export function createSimulatorPanel(
       }
     } finally { recordUiTiming("ui.annotations.inspection", performance.now() - startedAt); }
   };
+  /**
+   * The Testing panel records from the device this panel shows, and this is how it reads it: the
+   * same inspection path the annotation overlay uses, so a recorded selector names the element the
+   * overlay would highlight. Only iOS simulators are wired up — the recorder's selector ranks are
+   * written against the iOS tree, and a physical device has no tree here at all.
+   */
+  const recorderReader = {
+    readComponents: async () => {
+      if (!selected || !annotations.readTree) return [];
+      const { tree } = await annotations.readTree(selected);
+      return screenComponents(tree);
+    },
+    screen: () => points,
+  };
+  function syncRecorder() {
+    const recordable = platform === "ios" && selected?.kind !== "physical" && selected?.state === "Booted";
+    if (recordable && selected) testRecorder.attach(selected.udid, recorderReader);
+    else if (selected) testRecorder.detach(selected.udid);
+  }
+
   const stopObservingAnnotations = annotations.subscribe(() => {
     const state = annotations.getSnapshot();
     canvas.dataset.selecting = String(state.selecting || !!state.draft);
@@ -455,6 +483,7 @@ export function createSimulatorPanel(
     selected = status?.devices.find(device => device.udid === devices.value);
     if (selected === undefined) selected = physicalDevices.find(device => device.udid === devices.value);
     selectionChanged(selected);
+    syncRecorder();
     if (selected?.kind === "physical" && selected.platform === "ios") {
       const connection = physicalConnectionLabel(selected.transportType);
       if (reconnect.active === false) empty(`${selected.name} · ${connection}`, "Opening the physical device screen…");
@@ -889,31 +918,60 @@ export function createSimulatorPanel(
       return;
     }
     if (annotations.getSnapshot().draft) return;
-    if (!ready || inputBlocked || busy || event.button !== 0 || pointer) return;
+    if (!ready || inputBlocked || busy || event.button !== 0 || pointer || recordingPointer !== undefined) return;
     const position = mappedPoint(event);
-    const edge = position.y > points.height - 14 ? "bottom" : position.y < 14 ? "top" : undefined;
+    const edge: TouchInput["edge"] = position.y > points.height - 14 ? "bottom" : position.y < 14 ? "top" : undefined;
+    const touch = { ...position, ...points, ...(edge ? { edge } : {}) };
+    if (testRecorder.isRecording(selected?.udid)) {
+      // The step has to be named from the screen the tap lands on, not the one it opens, so the
+      // touch waits for the recorder. A warm tree answers without a round trip; a cold one costs
+      // one loopback read. Moves during that wait are dropped: this records taps, not drags.
+      event.preventDefault();
+      canvas.focus();
+      recordingPointer = event.pointerId;
+      recordingReleased = false;
+      void testRecorder.record(position).then(forward => {
+        const held = recordingPointer === event.pointerId && !recordingReleased;
+        recordingPointer = undefined;
+        // An assertion reads the screen; acting on it would change what it just asserted.
+        if (!forward || !ready || inputBlocked) return;
+        send({ type: "touch1-down", ...touch });
+        if (!held) { send({ type: "touch1-up", ...touch }); return; }
+        pointer = { id: event.pointerId, ...position, edge };
+        if (canvas.isConnected) canvas.setPointerCapture(event.pointerId);
+      });
+      return;
+    }
     pointer = { id: event.pointerId, ...position, edge };
     canvas.setPointerCapture(event.pointerId); canvas.focus();
-    send({ type: "touch1-down", ...position, ...points, ...(edge ? { edge } : {}) });
+    send({ type: "touch1-down", ...touch });
   });
   canvas.addEventListener("pointermove", event => {
     if (annotations.getSnapshot().selecting) { if (annotationPointer === undefined || annotationPointer === event.pointerId) annotations.hover(mappedPoint(event)); return; }
+    // While recording, the pointer previews what it would record. Not during a drag: the touch is
+    // already going to the device, and the screen under it is no longer the one that was read.
+    if (testRecorder.isRecording(selected?.udid) && !pointer && recordingPointer === undefined) { void testRecorder.hover(mappedPoint(event)); return; }
     if (!pointer || pointer.id !== event.pointerId) return;
     Object.assign(pointer, mappedPoint(event));
     send({ type: "touch1-move", x: pointer.x, y: pointer.y, ...points, ...(pointer.edge ? { edge: pointer.edge } : {}) });
   });
-  canvas.addEventListener("pointerleave", () => { if (annotationPointer === undefined) annotations.hover(); });
+  canvas.addEventListener("pointerleave", () => { if (annotationPointer === undefined) annotations.hover(); void testRecorder.hover(); });
   canvas.addEventListener("pointerup", event => {
     if (annotationPointer === event.pointerId) {
       annotations.endSelection(mappedPoint(event));
       cancelAnnotationPointer();
       return;
     }
+    if (recordingPointer === event.pointerId) { recordingReleased = true; return; }
     if (pointer?.id === event.pointerId) releasePointer();
   });
   canvas.addEventListener("pointercancel", cancelAnnotationPointer);
   canvas.addEventListener("lostpointercapture", cancelAnnotationPointer);
   window.addEventListener("blur", cancelAnnotationPointer);
+  const cancelRecordingPointer = () => { if (recordingPointer !== undefined) recordingReleased = true; };
+  canvas.addEventListener("pointercancel", cancelRecordingPointer);
+  canvas.addEventListener("lostpointercapture", cancelRecordingPointer);
+  window.addEventListener("blur", cancelRecordingPointer);
   canvas.addEventListener("pointercancel", releasePointer);
   canvas.addEventListener("lostpointercapture", releasePointer);
   window.addEventListener("blur", releasePointer);

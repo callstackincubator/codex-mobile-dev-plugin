@@ -1,4 +1,4 @@
-import { ActivityIcon, DatabaseIcon, GitForkIcon, TerminalIcon, PanelsTopLeftIcon, ChartNoAxesCombinedIcon } from "lucide-react";
+import { ActivityIcon, DatabaseIcon, GitForkIcon, TerminalIcon, PanelsTopLeftIcon, ChartNoAxesCombinedIcon, FlaskConicalIcon } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import type { WorkspaceTools } from "@mobile-dev/ui/workspace-tools.ts";
@@ -17,6 +17,7 @@ import { setUiSurface, setUiTelemetryContext } from "@mobile-dev/ui/telemetry.ts
 import type { RecordingController } from "@mobile-dev/ui/recording-controller.ts";
 import { RecordingCard } from "@mobile-dev/ui/components/recording-card.tsx";
 import { AppFlowView } from "@mobile-dev/ui/components/app-flow-view.tsx";
+import { TestingView } from "@mobile-dev/ui/components/testing-view.tsx";
 
 import type { DeviceLayout } from "@mobile-dev/ui/device-layout.ts";
 export type { DeviceLayout } from "@mobile-dev/ui/device-layout.ts";
@@ -28,6 +29,7 @@ const tools = {
   storage: { id: "tool-storage", label: "Storage", icon: DatabaseIcon },
   tracesift: { id: "tool-tracesift", label: "TraceSift", icon: ChartNoAxesCombinedIcon },
   "app-flow": { id: "tool-app-flow", label: "App Flow", icon: GitForkIcon },
+  testing: { id: "tool-testing", label: "Testing", icon: FlaskConicalIcon },
 };
 type Tool = keyof typeof tools;
 const isTool = (value: string): value is Tool => value in tools;
@@ -35,6 +37,7 @@ const isTool = (value: string): value is Tool => value in tools;
 export function Workspace({ panels, recordingController, banner, displayModeControl, contextControl, automaticLayout, onLayout }: { panels: WorkspaceTools; recordingController: RecordingController; banner?: ReactNode; displayModeControl?: ReactNode; contextControl?: ReactNode; automaticLayout?: DeviceLayout; onLayout: (layout: DeviceLayout, manual?: boolean) => void }) {
   const { logs, performance, storage, tracesift } = panels;
   const appFlow = panels["app-flow"];
+  const testing = panels.testing;
   const [tool, setTool] = useState<Tool>("logs");
   const [savedVisible, setSavedVisible] = useState(false);
   const [simulatorsCollapsed, setSimulatorsCollapsed] = useState(false);
@@ -64,8 +67,9 @@ export function Workspace({ panels, recordingController, banner, displayModeCont
   const storageState = useSyncExternalStore(storage.subscribe, storage.getSnapshot);
   const traceSiftState = useSyncExternalStore(tracesift.subscribe, tracesift.getSnapshot);
   const appFlowState = useSyncExternalStore(appFlow.subscribe, appFlow.getSnapshot);
+  const testingState = useSyncExternalStore(testing.subscribe, testing.getSnapshot);
   // A saved recording shows in the performance tool, so it counts as that tool being open.
-  const open = { logs: logState.open, performance: savedVisible || performanceState.open, storage: storageState.open, tracesift: traceSiftState.open, "app-flow": appFlowState.open }[tool];
+  const open = { logs: logState.open, performance: savedVisible || performanceState.open, storage: storageState.open, tracesift: traceSiftState.open, "app-flow": appFlowState.open, testing: testingState.open }[tool];
   useEffect(() => { setUiSurface(open ? savedVisible ? "recording" : tool : "simulator"); }, [tool, open, savedVisible]);
   useEffect(() => {
     setUiTelemetryContext({ logs_open: logState.open, logs_paused: logState.paused, performance_running: performanceState.monitoring || performanceState.fpsMonitoring });
@@ -121,7 +125,7 @@ export function Workspace({ panels, recordingController, banner, displayModeCont
     if (!previous) return;
     if (size.inPixels <= collapsedToolSize + 1 && isOpen()) closeTools();
     else if (size.inPixels > 80 && isOpen() === false) showTool(tool);
-  }}>{tool === "logs" && <LogsView panel={logs} />}{tool === "storage" && <StorageView panel={storage} />}{tool === "tracesift" && <TraceSiftView panel={tracesift} />}{tool === "app-flow" && open && <AppFlowView panel={appFlow} />}{tool === "performance" && open && (savedVisible ? <div className="recording-workspace"><Button variant="outline" size="sm" onClick={() => { setSavedVisible(false); performance.show(); }}>Live performance</Button><RecordingCard controller={recordingController} detailed /></div> : <PerformanceView panel={performance} />)}</ResizablePanel>;
+  }}>{tool === "logs" && <LogsView panel={logs} />}{tool === "storage" && <StorageView panel={storage} />}{tool === "tracesift" && <TraceSiftView panel={tracesift} />}{tool === "app-flow" && open && <AppFlowView panel={appFlow} />}{tool === "testing" && open && <TestingView panel={testing} deviceApps={panels.deviceApps} />}{tool === "performance" && open && (savedVisible ? <div className="recording-workspace"><Button variant="outline" size="sm" onClick={() => { setSavedVisible(false); performance.show(); }}>Live performance</Button><RecordingCard controller={recordingController} detailed /></div> : <PerformanceView panel={performance} />)}</ResizablePanel>;
   // The sidebar keeps these controls under its simulators. Fullscreen, or no visible
   // platform, moves them above the tools.
   const bottomToolbar = !fullscreen && layout !== "none";

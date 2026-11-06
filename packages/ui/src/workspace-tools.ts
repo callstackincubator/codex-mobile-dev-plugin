@@ -6,13 +6,14 @@ import { PanelContext } from "./model-context.ts";
 import { PerformancePanel } from "./performance-panel.ts";
 import { StoragePanel } from "./storage-panel.ts";
 import { markUiSurfaceReady, setUiSurface } from "./telemetry.ts";
+import { TestingPanel } from "./testing-panel.ts";
 import { TraceSiftPanel } from "./tracesift-panel.ts";
 
-export const toolNames = ["logs", "performance", "storage", "tracesift", "app-flow"] as const;
+export const toolNames = ["logs", "performance", "storage", "tracesift", "app-flow", "testing"] as const;
 export type ToolName = typeof toolNames[number];
 export const isToolName = (value: unknown): value is ToolName => toolNames.includes(value as ToolName);
 
-type Panels = { context: PanelContext; deviceApps: DeviceAppsStore; logs: LogsPanel; performance: PerformancePanel; storage: StoragePanel; tracesift: TraceSiftPanel; "app-flow": AppFlowPanel };
+type Panels = { context: PanelContext; deviceApps: DeviceAppsStore; logs: LogsPanel; performance: PerformancePanel; storage: StoragePanel; tracesift: TraceSiftPanel; "app-flow": AppFlowPanel; testing: TestingPanel };
 
 /** The tool panels every host shows beside its devices; hosts only choose the selected tool and draw chrome. */
 export class WorkspaceTools {
@@ -23,6 +24,7 @@ export class WorkspaceTools {
   readonly storage: StoragePanel;
   readonly tracesift: TraceSiftPanel;
   readonly "app-flow": AppFlowPanel;
+  readonly testing: TestingPanel;
 
   /** Builds the panels against one host; `attachments` reads a host's composer attachments, if it has them. */
   static create(host: HostBridge, attachments?: HostAttachmentsSource) {
@@ -35,11 +37,12 @@ export class WorkspaceTools {
       storage: new StoragePanel(host, deviceApps),
       tracesift: new TraceSiftPanel(host, attachments),
       "app-flow": new AppFlowPanel(host),
+      testing: new TestingPanel(host, deviceApps),
     });
   }
 
   constructor(panels: Panels) {
-    ({ context: this.context, deviceApps: this.deviceApps, logs: this.logs, performance: this.performance, storage: this.storage, tracesift: this.tracesift, "app-flow": this["app-flow"] } = panels);
+    ({ context: this.context, deviceApps: this.deviceApps, logs: this.logs, performance: this.performance, storage: this.storage, tracesift: this.tracesift, "app-flow": this["app-flow"], testing: this.testing } = panels);
   }
 
   panel(name: ToolName) { return this[name]; }
@@ -82,6 +85,7 @@ export class WorkspaceTools {
     this.deviceApps.dispose();
     this.storage.dispose();
     this.tracesift.dispose();
+    this.testing.dispose();
     await Promise.allSettled([this.logs.dispose(), this.performance.dispose(), this["app-flow"].dispose()]);
   }
 }

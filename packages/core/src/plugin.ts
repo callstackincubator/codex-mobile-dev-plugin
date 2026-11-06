@@ -18,6 +18,8 @@ import { registerAppStorageTools } from "./app-storage/tools.ts";
 import { APP_FLOW_DIRECTORY, createAppFlowHost } from "./app-flow-host.ts";
 import { AppFlowProjectChoices } from "./app-flow-projects.ts";
 import { registerAppFlowTools } from "./app-flow-tools.ts";
+import { registerTestingTools } from "./testing-tools.ts";
+import { TESTING_DIRECTORY, TestingProjectChoices } from "./testing-projects.ts";
 import { ServeEmu } from "./serve-emu.ts";
 import { listIosDevices, registerIosDeviceTools } from "./ios-devices.ts";
 import { deviceChoiceFormSupport, registerDeviceChoiceTools } from "./device-choice-tools.ts";
@@ -109,6 +111,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
   registerAppStorageTools(server);
   const appFlow = await createAppFlowHost();
   const closeAppFlow = registerAppFlowTools(server, appFlow, new AppFlowProjectChoices(APP_FLOW_DIRECTORY));
+  registerTestingTools(server, new TestingProjectChoices(TESTING_DIRECTORY));
 
   const resource = async () => typeof html === "string" ? { html } : await html();
   const page = async () => configureUI((await resource()).html);
