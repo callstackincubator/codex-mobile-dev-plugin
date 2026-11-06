@@ -278,6 +278,36 @@ function FlowView({ snapshot, start, toggled, expanded, litBoundary, height, onT
   </svg>;
 }
 
+function BoundaryOptions({ available, selected, lit, onToggle, onLight, onAll }: {
+  available: Array<{ boundary: Boundary; count: number }>; selected: ReadonlySet<string>; lit: string | null;
+  onToggle: (boundary: Boundary) => void; onLight?: (boundary: Boundary) => void; onAll: (checked: boolean) => void;
+}) {
+  const all = available.length > 0 && available.every(entry => selected.has(entry.boundary));
+  return <>
+    <label className="flex items-center gap-2 rounded-md px-1.5 py-1 text-xs font-medium hover:bg-muted/50">
+      <input type="checkbox" data-boundary="all" checked={all} onChange={event => onAll(event.target.checked)} />All
+    </label>
+    <div className="flex flex-col gap-0.5" role="group" aria-label="Boundaries">
+      {available.map(({ boundary, count }) => {
+        const on = selected.has(boundary);
+        const highlighted = lit === `*:${boundary}`;
+        return <div key={boundary} className="flex items-center gap-1 rounded-md px-1.5 py-1 text-xs hover:bg-muted/50">
+          <label className="flex min-w-0 flex-1 items-center gap-2">
+            <input type="checkbox" data-boundary={boundary} checked={on} onChange={() => onToggle(boundary)} />
+            <span className="size-2 shrink-0 rounded-full" style={{ background: boundaryColor(boundary) }} />
+            <span className="truncate">{boundaryLabel[boundary]}</span>
+            <span className="ml-auto shrink-0 pl-1 tabular-nums text-muted-foreground">{count}</span>
+          </label>
+          {onLight && <button type="button" data-boundary-light={boundary} aria-pressed={highlighted} title={`Highlight the ${boundaryLabel[boundary]} connectors`}
+            onClick={() => onLight(boundary)} className="grid size-5 shrink-0 place-items-center rounded-full">
+            <span className="size-2.5 rounded-full border" style={{ borderColor: boundaryColor(boundary), background: highlighted ? boundaryColor(boundary) : "transparent" }} />
+          </button>}
+        </div>;
+      })}
+    </div>
+  </>;
+}
+
 /**
  * The entry-point filter: a search field plus one checkbox per boundary, in a dropdown so the
  * list beside it keeps the width for names and paths.
@@ -285,7 +315,7 @@ function FlowView({ snapshot, start, toggled, expanded, litBoundary, height, onT
 function BoundaryFilter({ available, selected, lit, query, onQueryChange, onToggle, onLight, onAll }: {
   available: Array<{ boundary: Boundary; count: number }>; selected: ReadonlySet<string>; lit: string | null;
   query: string; onQueryChange: (value: string) => void;
-  onToggle: (boundary: Boundary) => void; onLight: (boundary: Boundary) => void; onAll: () => void;
+  onToggle: (boundary: Boundary) => void; onLight: (boundary: Boundary) => void; onAll: (checked: boolean) => void;
 }) {
   const all = available.length > 0 && available.every(entry => selected.has(entry.boundary));
   const activeCount = available.filter(entry => selected.has(entry.boundary)).length;
@@ -297,33 +327,59 @@ function BoundaryFilter({ available, selected, lit, query, onQueryChange, onTogg
       </Button>
     </PopoverTrigger>
     <PopoverContent align="end" className="w-64 p-2" aria-label="Filter and search entry points" data-flow-filter>
-      <InputGroup size="sm"><InputGroupInput type="search" aria-label="Search the graph" placeholder="Search screens…" value={query} onChange={event => onQueryChange(event.target.value)} /><InputGroupAddon><SearchIcon /></InputGroupAddon></InputGroup>
-      {available.length > 0 && <>
-        <label className="mt-2 flex items-center gap-2 rounded-md px-1.5 py-1 text-xs font-medium hover:bg-muted/50">
-          <input type="checkbox" data-boundary="all" checked={all} onChange={onAll} />All
-        </label>
-        <div className="flex flex-col gap-0.5" role="group" aria-label="Boundaries">
-          {available.map(({ boundary, count }) => {
-            const on = selected.has(boundary);
-            const highlighted = lit === `*:${boundary}`;
-            return <div key={boundary} className="flex items-center gap-1 rounded-md px-1.5 py-1 text-xs hover:bg-muted/50">
-              <label className="flex min-w-0 flex-1 items-center gap-2">
-                <input type="checkbox" data-boundary={boundary} checked={on} onChange={() => onToggle(boundary)} />
-                <span className="size-2 shrink-0 rounded-full" style={{ background: boundaryColor(boundary) }} />
-                <span className="truncate">{boundaryLabel[boundary]}</span>
-                <span className="ml-auto shrink-0 pl-1 tabular-nums text-muted-foreground">{count}</span>
-              </label>
-              {/* Lights this boundary's connectors at every hop; the checkbox still controls visibility. */}
-              <button type="button" data-boundary-light={boundary} aria-pressed={highlighted} title={`Highlight the ${boundaryLabel[boundary]} connectors`}
-                onClick={() => onLight(boundary)} className="grid size-5 shrink-0 place-items-center rounded-full">
-                <span className="size-2.5 rounded-full border" style={{ borderColor: boundaryColor(boundary), background: highlighted ? boundaryColor(boundary) : "transparent" }} />
-              </button>
-            </div>;
-          })}
-        </div>
-      </>}
+      <InputGroup size="sm"><InputGroupInput type="search" aria-label="Search the graph" placeholder="Search entries…" value={query} onChange={event => onQueryChange(event.target.value)} /><InputGroupAddon><SearchIcon /></InputGroupAddon></InputGroup>
+      {available.length > 0 && <div className="mt-2"><BoundaryOptions available={available} selected={selected} lit={lit}
+        onToggle={onToggle} onLight={onLight} onAll={onAll} /></div>}
     </PopoverContent>
   </Popover>;
+}
+
+/** The generated project's home: its entry-point boundaries arranged around the project. */
+function ProjectOverview({ projectName, available, activeBoundary, onSelect }: {
+  projectName: string; available: Array<{ boundary: Boundary; count: number }>;
+  activeBoundary: string | null; onSelect: (boundary: Boundary) => void;
+}) {
+  const total = available.reduce((sum, entry) => sum + entry.count, 0);
+  const centre = { x: 300, y: 210 };
+  const points = available.map((entry, index) => {
+    const angle = -Math.PI / 2 + index * (Math.PI * 2 / Math.max(available.length, 1));
+    return { ...entry, x: centre.x + Math.cos(angle) * 220, y: centre.y + Math.sin(angle) * 145 };
+  });
+
+  return <div data-project-overview className="relative aspect-[10/7] w-full max-w-[640px] min-w-[300px] cursor-auto" role="group" aria-label={`${projectName} entry-point areas`}>
+    <svg className="pointer-events-none absolute inset-0 size-full overflow-visible" viewBox="0 0 600 420" aria-hidden="true">
+      {[88, 105, 122].map((radius, index) => <circle key={radius} data-project-orbit className="app-intel-project-orbit"
+        cx={centre.x} cy={centre.y} r={radius} fill="none" stroke="currentColor" strokeDasharray={index === 2 ? "3 7" : undefined}
+        style={{ animationDelay: `${index * 0.8}s` }} />)}
+      {points.map(({ boundary, x, y }) => <g key={boundary} data-area-connector={boundary}>
+        <line x1={centre.x} y1={centre.y} x2={x} y2={y} stroke={boundaryColor(boundary)} strokeOpacity="0.38" strokeWidth="1.5" />
+        <circle cx={x} cy={y} r="3" fill={boundaryColor(boundary)} fillOpacity="0.8" />
+      </g>)}
+    </svg>
+    <div data-project-node className="absolute left-1/2 top-1/2 grid size-36 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border bg-background/95 p-4 text-center shadow-[0_10px_35px_rgb(0_0_0/0.12)] backdrop-blur-sm">
+      <div className="min-w-0">
+        <span className="mx-auto mb-2 grid size-8 place-items-center rounded-full bg-primary/10 text-primary"><NetworkIcon className="size-4" /></span>
+        <strong className="block truncate text-sm font-semibold" title={projectName}>{projectName}</strong>
+        <span className="mt-1 block text-[10.5px] tabular-nums text-muted-foreground">{total} {total === 1 ? "entry point" : "entry points"}</span>
+      </div>
+    </div>
+    {points.map(({ boundary, count, x, y }, index) => {
+      const active = activeBoundary === boundary;
+      return <div key={boundary} className="absolute -translate-x-1/2 -translate-y-1/2" style={{ left: `${x / 6}%`, top: `${y / 4.2}%` }}>
+        <button type="button" data-area-node={boundary} aria-pressed={active} onClick={() => onSelect(boundary)}
+          className="app-intel-area-node group flex w-28 items-center gap-2 rounded-xl border bg-background/95 px-3 py-2.5 text-left shadow-sm backdrop-blur-sm transition-[background-color,border-color,box-shadow,transform] duration-200 hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          style={{ animationDelay: `${2 + index * 0.35}s`, borderColor: active ? boundaryColor(boundary) : undefined, background: active ? `color-mix(in oklab, ${boundaryColor(boundary)} 12%, var(--background))` : undefined }}>
+          <span className="size-2.5 shrink-0 rounded-full shadow-[0_0_0_3px_var(--background)]" style={{ background: boundaryColor(boundary) }} />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[11px] font-medium">{boundaryLabel[boundary]}</span>
+            <span className="block text-[10px] tabular-nums text-muted-foreground">{count} {count === 1 ? "entry" : "entries"}</span>
+          </span>
+        </button>
+      </div>;
+    })}
+    {available.length === 0 && <p className="absolute inset-x-0 bottom-8 text-center text-xs text-muted-foreground">No entry points were found in this graph.</p>}
+    {available.length > 0 && <p className="absolute inset-x-0 bottom-1 text-center text-[10.5px] text-muted-foreground">Select an area to browse its entry points</p>}
+  </div>;
 }
 
 export const AppIntelligenceView = memo(function AppIntelligenceView({ panel }: { panel: AppIntelligencePanel }) {
@@ -374,12 +430,12 @@ export const AppIntelligenceView = memo(function AppIntelligenceView({ panel }: 
     {/* A reopened panel starts blank and reloads what it remembered: showing the empty states
         while that load is in flight would flash the wrong screen before the real one lands. */}
     {state.busy === "loading" && !snapshot ? <div className="grid flex-1 place-items-center p-8 text-center"><p className="text-sm text-muted-foreground">Loading App Intelligence…</p></div>
-      : !state.projectPath ? <div className="grid flex-1 place-items-center p-8 text-center"><div><NetworkIcon className="mx-auto mb-3 size-8 text-muted-foreground" /><h2 className="font-medium">Map a React Native app</h2><p className="mt-1 max-w-md text-sm text-muted-foreground">Choose a project to discover Expo Router and React Navigation screens, then trace their native dependencies.</p></div></div>
-      : !snapshot ? <div className="grid flex-1 place-items-center p-8 text-center"><div><h2 className="font-medium">No App Intelligence yet</h2><p className="mt-1 text-sm text-muted-foreground">Generate a static iOS + Android screen and dependency graph.</p></div></div>
+      : !state.projectPath ? <div className="grid flex-1 place-items-center p-8 text-center"><div><NetworkIcon className="mx-auto mb-3 size-8 text-muted-foreground" /><h2 className="font-medium">Map a React Native app</h2><p className="mt-1 max-w-md text-sm text-muted-foreground">Choose a project to discover Expo Router and React Navigation entries, then trace their native dependencies.</p></div></div>
+      : !snapshot ? <div className="grid flex-1 place-items-center p-8 text-center"><div><h2 className="font-medium">No App Intelligence yet</h2><p className="mt-1 text-sm text-muted-foreground">Generate a static iOS + Android entry-point and dependency graph.</p></div></div>
       : <div className={`grid min-h-0 flex-1 ${asideOpen ? "grid-cols-[minmax(20rem,1fr)_minmax(13rem,15rem)]" : "grid-cols-[1fr]"} max-[720px]:grid-cols-1 max-[720px]:grid-rows-[minmax(0,1.6fr)_minmax(0,1fr)]`}>
         <main className="flex min-h-0 min-w-0 flex-col border-r max-[720px]:border-b max-[720px]:border-r-0">
           <div className="flex shrink-0 items-center gap-2 border-b px-3 py-1.5 text-xs">
-            <span className="truncate font-medium">{snapshot.screens[selected ?? ""]?.title ?? "Choose a screen"}</span>
+            <span className="truncate font-medium">{snapshot.screens[selected ?? ""]?.title ?? "Project overview"}</span>
             <div className="ml-auto flex shrink-0 items-center gap-2">
               <div className="flex shrink-0 items-center gap-0.5 rounded-md border" role="group" aria-label="Zoom">
                 <button type="button" data-zoom="out" aria-label="Zoom out" title="Zoom out" className="grid size-6 place-items-center text-muted-foreground hover:text-foreground" onClick={zoomOut}><MinusIcon className="size-3" /></button>
@@ -394,13 +450,17 @@ export const AppIntelligenceView = memo(function AppIntelligenceView({ panel }: 
             </div>
           </div>
           <div ref={flowRef} data-flow-canvas className="min-h-0 flex-1 cursor-grab touch-none overflow-auto [&[data-panning]]:cursor-grabbing">
-            <div className="w-max will-change-transform">
-              {flowStart ? <FlowView snapshot={snapshot} start={flowStart} toggled={toggled} expanded={expanded} litBoundary={state.litBoundary} height={flowSize.height}
-                onToggleGroup={(key, open) => panel.toggleGroup(key, open)} onLight={key => panel.litBoundaryTo(key)} onShowAll={key => panel.showAllIn(key)} onHover={setHover} />
-                : <div className="grid place-items-center p-6 text-center text-sm text-muted-foreground" style={{ width: flowSize.width, height: flowSize.height }}>Choose an entry point to trace its dependencies.</div>}
-            </div>
+            {flowStart ? <div className="w-max will-change-transform"><FlowView snapshot={snapshot} start={flowStart} toggled={toggled} expanded={expanded} litBoundary={state.litBoundary} height={flowSize.height}
+              onToggleGroup={(key, open) => panel.toggleGroup(key, open)} onLight={key => panel.litBoundaryTo(key)} onShowAll={key => panel.showAllIn(key)} onHover={setHover} /></div>
+              : <div data-flow-empty className="grid size-full place-items-center p-6">
+                <ProjectOverview projectName={folderName(state.projectPath)} available={available}
+                  activeBoundary={state.boundaries?.length === 1 ? state.boundaries[0] : null}
+                  onSelect={boundary => { setQuery(""); panel.setBoundaries([boundary]); setAsideOpen(true); setRailOpen(true); }} />
+              </div>}
           </div>
-          <p className="shrink-0 border-t px-3 py-2 text-[11px] text-muted-foreground">Each hop groups its imports by boundary and opens the first of them — click another to drill in, or its dot to light up its connectors. Drag or scroll to pan, ⌘/Ctrl-scroll or the buttons to zoom, double-click to reset.</p>
+          <p className="shrink-0 border-t px-3 py-2 text-[11px] text-muted-foreground">{flowStart
+            ? "Each hop groups its imports by boundary and opens the first of them — click another to drill in, or its dot to light up its connectors. Drag or scroll to pan, ⌘/Ctrl-scroll or the buttons to zoom, double-click to reset."
+            : "Areas group the app's entry points by their source boundary. Choose one to filter and open the matching list."}</p>
         </main>
         {asideOpen && <aside className="flex min-h-0 min-w-0 flex-col">
           <div className="flex shrink-0 items-center gap-1 border-b px-2 py-2">
@@ -410,7 +470,7 @@ export const AppIntelligenceView = memo(function AppIntelligenceView({ panel }: 
               <h2 className="min-w-0 flex-1 truncate text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{screens.length} entry points</h2>
             </button>
             <BoundaryFilter available={available} selected={selectedBoundaries} lit={state.litBoundary} query={query} onQueryChange={setQuery}
-              onToggle={toggleBoundary} onLight={boundary => panel.litBoundaryTo(`*:${boundary}`)} onAll={() => panel.setBoundaries(null)} />
+              onToggle={toggleBoundary} onLight={boundary => panel.litBoundaryTo(`*:${boundary}`)} onAll={checked => panel.setBoundaries(checked ? null : [])} />
           </div>
           {railOpen && <div id="app-intel-entries" className="min-h-0 flex-1 overflow-auto">
             {screens.length === 0 ? <p className="px-3 py-3 text-[11px] text-muted-foreground">No entry point matches the filter.</p>

@@ -96,6 +96,56 @@ async function mount(t: TestContext, app: Pick<App, "callServerTool">) {
   return { dom, act, panel };
 }
 
+test("the project overview filters the right rail from its connected area nodes", async t => {
+  const snapshot = fixture();
+  const source = "src/components/Settings.tsx";
+  snapshot.screens.settings = { title: "Settings", route: "/settings", source, layouts: [] };
+  snapshot.files[source] = { fingerprint: "x", kind: "source", reach: 1 };
+  const edge = snapshot.edges.push({ from: "screen:settings", to: `file:${source}`, kind: "source", platforms: ["ios", "android"] }) - 1;
+  snapshot.indexes.screens.settings = ["settings"];
+  snapshot.indexes.outgoing["screen:settings"] = [edge];
+  snapshot.indexes.incoming[`file:${source}`] = [edge];
+  const app = { async callServerTool({ name }: { name: string }) {
+    if (name === "mobile_app_intel_snapshot") return { content: [], structuredContent: { projectPath: "/tmp/social-app", snapshot } };
+    return { content: [], structuredContent: {} };
+  } };
+  const { dom, act, panel } = await mount(t, app);
+  await act(async () => { panel.setAvailable(true); panel.show(); });
+  await act(async () => { await new Promise(done => setTimeout(done, 0)); });
+
+  const overview = dom.window.document.querySelector("[data-project-overview]") as HTMLElement;
+  assert.ok(overview, "the generated graph starts with the project overview");
+  assert.match((overview.querySelector("[data-project-node]") as HTMLElement).textContent ?? "", /social-app/);
+  assert.match((overview.querySelector("[data-project-node]") as HTMLElement).textContent ?? "", /3 entry points/);
+  const areas = [...overview.querySelectorAll<HTMLButtonElement>("[data-area-node]")];
+  assert.deepEqual(areas.map(area => area.dataset.areaNode), ["component", "other"]);
+  assert.match(areas[0].textContent ?? "", /1 entry/);
+  assert.match(areas[1].textContent ?? "", /2 entries/);
+  assert.doesNotMatch(overview.textContent ?? "", /screens?/i, "the overview consistently calls them entries");
+  assert.equal(areas[0].style.animationDelay, "2s", "the first click prompt waits two seconds");
+  assert.equal(areas[1].style.animationDelay, "2.35s", "the prompts are staggered around the project");
+  assert.equal(overview.querySelectorAll("[data-area-connector]").length, 2, "each area is connected to the project");
+  const orbits = [...overview.querySelectorAll<SVGCircleElement>("[data-project-orbit]")];
+  assert.equal(orbits.length, 3, "concentric pulses surround the project node");
+  assert.deepEqual(orbits.map(orbit => orbit.style.animationDelay), ["0s", "0.8s", "1.6s"], "the rings expand from the centre in sequence");
+
+  await act(async () => { areas[0].click(); });
+  assert.deepEqual(panel.getSnapshot().boundaries, ["component"], "clicking an area applies it as the sole filter");
+  assert.equal(panel.getSnapshot().selectedScreen, null, "filtering leaves screen selection to the right-hand list");
+  assert.equal(dom.window.document.querySelector('[data-area-node="component"]')?.getAttribute("aria-pressed"), "true");
+  const railToggle = dom.window.document.querySelector('aside button[aria-controls="app-intel-entries"]') as HTMLButtonElement;
+  assert.equal(railToggle.getAttribute("aria-expanded"), "true", "the matching list opens automatically");
+  const entries = [...dom.window.document.querySelectorAll<HTMLElement>("aside [data-entry]")];
+  assert.deepEqual(entries.map(entry => entry.dataset.entry), ["settings"]);
+
+  const trigger = dom.window.document.querySelector("[data-flow-filter-trigger]") as HTMLButtonElement;
+  assert.match(trigger.textContent ?? "", /1/, "the applied choice remains visible as an active filter");
+  await act(async () => { trigger.click(); });
+  assert.equal((dom.window.document.querySelector('[data-flow-filter] [data-boundary="component"]') as HTMLInputElement).checked, true);
+  assert.equal((dom.window.document.querySelector('[data-flow-filter] [data-boundary="other"]') as HTMLInputElement).checked, false);
+  await act(async () => { trigger.click(); await new Promise(done => setTimeout(done, 0)); });
+});
+
 test("App Intelligence traces a screen, groups each hop by boundary and folds a group away", async t => {
   const snapshot = fixture();
   const calls: Array<{ name: string; arguments?: Record<string, unknown> }> = [];
@@ -116,6 +166,10 @@ test("App Intelligence traces a screen, groups each hop by boundary and folds a 
   const railEntries = () => [...query("aside [data-entry]")].map(entry => entry.getAttribute("data-entry"));
   const groups = () => [...query("[data-flow-group]")].map(node => node.getAttribute("data-flow-group"));
   assert.ok(dom.window.document.getElementById("app-intelligence-panel"), "the panel keeps the id the package smoke test asserts");
+  const emptyFlow = dom.window.document.querySelector("[data-flow-empty]") as HTMLElement;
+  assert.ok(emptyFlow, "the canvas starts with an empty prompt before an entry point is chosen");
+  assert.equal(emptyFlow.style.width, "", "the empty prompt does not feed a measured width back into its scroll container");
+  assert.equal(emptyFlow.style.height, "", "the empty prompt does not feed a measured height back into its scroll container");
 
   // The picker is the workspace's own Select, showing the project by folder name. Its menu is a
   // popup the panel opens, so the switch itself is driven through the panel the trigger calls.
