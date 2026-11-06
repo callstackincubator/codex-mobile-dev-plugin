@@ -253,7 +253,13 @@ Writing needs a new **app-only** MCP tool in the server process:
 While recording, the panel holds `RecordedStep[]` and renders the emitted source as a **live
 preview** beside the step list, syntax-coloured by a tokenizer written for exactly the file the
 emitter produces (`packages/ui/src/code-highlight.ts`) rather than a highlighting library — the
-panel ships as one HTML file and a grammar would dwarf what it renders. The preview is always a full re-emit from the steps, so editing or
+panel ships as one HTML file and a grammar would dwarf what it renders.
+
+The lines a step adds are **tinted as they arrive** and fade back into the file. The user is
+looking at the mirror when a step is recorded, not at the preview, so the new lines have to be
+findable a second later. The file is re-emitted whole on every change, so "what is new" is
+recovered by matching the previous render from both ends (`changedLines`); the marked lines are
+keyed by a generation so each step animates, not only the first. The preview is always a full re-emit from the steps, so editing or
 deleting a step just re-renders; nothing is ever half-written.
 
 Save behaviour:

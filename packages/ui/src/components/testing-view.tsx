@@ -1,10 +1,10 @@
-import { useState, useSyncExternalStore } from "react";
+import { useRef, useState, useSyncExternalStore } from "react";
 import { CheckIcon, ChevronDownIcon, CircleIcon, EyeIcon, FolderOpenIcon, LoaderCircleIcon, PlayIcon, SaveIcon, SquareIcon, Trash2Icon, XIcon } from "lucide-react";
 import type { DeviceAppsStore } from "../device-apps.ts";
 import type { TestingPanel } from "../testing-panel.ts";
 import { testRecorder } from "../test-recorder.ts";
 import { testFileSlug } from "@mobile-dev/shared/test-recording.ts";
-import { CODE_TOKEN_CLASS, highlightCode } from "../code-highlight.ts";
+import { CODE_TOKEN_CLASS, changedLines, highlightCode } from "../code-highlight.ts";
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert.tsx";
 import { Button } from "./ui/button.tsx";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover.tsx";
@@ -110,6 +110,40 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
 }
 
 /**
+ * The emitted test, with the lines a step just added called out.
+ *
+ * The whole file is re-emitted on every change, so what is new has to be recovered by comparing
+ * with what was shown last. That is held in a ref rather than state: it is derived from the
+ * source and recomputing it during the render that shows the source keeps the two in step, where
+ * an effect would flash the new lines unmarked for a frame. `generation` remounts the marked
+ * lines so their animation runs again for the next step, instead of only on the first.
+ */
+function TestPreview({ source }: { source: string }) {
+  const shown = useRef({ source: "", range: [0, 0] as [number, number], generation: 0 });
+  if (shown.current.source !== source) {
+    const previous = shown.current.source;
+    shown.current = {
+      source,
+      // Nothing was on screen before, so nothing arrived: opening the panel is not a change.
+      range: previous ? changedLines(previous.split("\n"), source.split("\n")) : [0, 0],
+      generation: shown.current.generation + 1,
+    };
+  }
+  const { range: [from, to], generation } = shown.current;
+  return <pre data-testing-preview className="min-h-0 flex-1 overflow-auto rounded-md border bg-muted/40 p-2 font-mono text-[11px] leading-relaxed"><code>
+    {source.split("\n").map((line, index) => {
+      const added = index >= from && index < to;
+      return <span key={added ? `new-${generation}-${index}` : `line-${index}`} className={`testing-preview-line${added ? " is-new" : ""}`}>
+        {highlightCode(line).map((token, position) =>
+          token.kind === "plain"
+            ? token.text
+            : <span key={position} className={CODE_TOKEN_CLASS[token.kind]}>{token.text}</span>)}
+      </span>;
+    })}
+  </code></pre>;
+}
+
+/**
  * The recorder: the steps taken so far and the test they emit. The taps themselves are captured on
  * the mirror canvas by the simulator panel, which holds the device connection; this is the readout
  * and the controls.
@@ -188,12 +222,7 @@ function TestingRecorder({ panel, recordable, udid }: { panel: TestingPanel; rec
 
     <div className="flex min-h-0 flex-1 flex-col gap-1">
       <p className="text-xs text-muted-foreground">Preview</p>
-      <pre data-testing-preview className="min-h-0 flex-1 overflow-auto rounded-md border bg-muted/40 p-2 font-mono text-[11px] leading-relaxed"><code>
-        {highlightCode(testRecorder.source).map((token, index) =>
-          token.kind === "plain"
-            ? token.text
-            : <span key={index} className={CODE_TOKEN_CLASS[token.kind]}>{token.text}</span>)}
-      </code></pre>
+      <TestPreview source={testRecorder.source} />
     </div>
   </div>;
 }

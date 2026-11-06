@@ -64,6 +64,13 @@ const ROLE_ALIASES = new Map(Object.entries({
   imageview: "image", progressindicator: "progressbar", valueindicator: "progressbar",
   popupbutton: "button", menubutton: "button", disclosuretriangle: "button", pressable: "button",
   touchableopacity: "button", touchablehighlight: "button", header: "heading",
+  // `link` is in the runner's union but is not something accessibility can be read off.
+  // iOS derives `AXLink` from the *link trait*, which any view can carry — a `<Text>` inside an
+  // `expo-router` `<Link>` reports `AXLink` exactly as a pressable wrapper does. The runner reads
+  // the XCTest *element type* instead, so the first is `text` to it and only the second is `link`,
+  // and nothing in the accessibility tree tells the two apart. Falling through to the accessible
+  // name resolves both.
+  link: "",
   // Text is not a role in the runner's union: these fall through to `getByText`.
   statictext: "", text: "", textview: "", view: "", scrollview: "", safeareaview: "",
 }));
@@ -99,22 +106,35 @@ function textual(component: ScreenComponent): boolean {
   return /statictext|text$/i.test((component.role ?? "").replace(/^(AX|XCUIElementType|RCT)/, ""));
 }
 
+/**
+ * The elements a count of matches is taken over: the accessibility tree alone, which is what the
+ * runner queries, and everything only when there is no accessibility tree to speak of.
+ *
+ * Without this a fiber lying over the same pixels counts as a second match — a `<Text>` inside a
+ * `<Link>` is one element to the runner and two here — and a selector that resolves uniquely on
+ * the device is emitted flagged as ambiguous.
+ */
+function queryable(components: ScreenComponent[]): ScreenComponent[] {
+  const accessible = components.filter(item => item.source !== "react-native");
+  return accessible.length ? accessible : components;
+}
+
 function matchesLabel(components: ScreenComponent[], label: string): number {
-  return components.filter(item => elementText(item) === label).length;
+  return queryable(components).filter(item => elementText(item) === label).length;
 }
 
 function matchesTestId(components: ScreenComponent[], testId: string): number {
-  return components.filter(item => item.identifier === testId).length;
+  return queryable(components).filter(item => item.identifier === testId).length;
 }
 
 function matchesRole(components: ScreenComponent[], role: string, name: string): number {
-  return components.filter(item => normalizeRole(item.role) === role && elementText(item) === name).length;
+  return queryable(components).filter(item => normalizeRole(item.role) === role && elementText(item) === name).length;
 }
 
 function matchesText(components: ScreenComponent[], text: string): number {
   // Counted over text elements only, the same set `getByText` searches: a row whose accessible
   // name repeats its label is not a second match for the text inside it.
-  return components.filter(item => textual(item) && elementText(item) === text).length;
+  return queryable(components).filter(item => textual(item) && elementText(item) === text).length;
 }
 
 /**

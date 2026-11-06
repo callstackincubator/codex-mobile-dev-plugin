@@ -44,3 +44,20 @@ export const CODE_TOKEN_CLASS: Record<CodeTokenKind, string> = {
   number: "text-amber-600 dark:text-amber-400",
   plain: "",
 };
+
+/**
+ * The lines of `next` that `previous` did not have, as a `[start, end)` range.
+ *
+ * The preview is re-emitted whole on every change, so there is no "the step I just added" to
+ * point at — it has to be recovered by comparing. Matching from both ends finds it without a real
+ * diff: the emitter appends steps in order, so what differs is one contiguous run, and removing a
+ * step or renaming the test narrows to the same kind of range.
+ */
+export function changedLines(previous: readonly string[], next: readonly string[]): [number, number] {
+  let start = 0;
+  while (start < previous.length && start < next.length && previous[start] === next[start]) start++;
+  let end = 0;
+  while (end < previous.length - start && end < next.length - start
+    && previous[previous.length - 1 - end] === next[next.length - 1 - end]) end++;
+  return [start, next.length - end];
+}

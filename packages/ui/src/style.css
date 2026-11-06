@@ -345,3 +345,26 @@ html[data-theme="dark"] .tracesift-explorer { color-scheme: dark; }
 @media (prefers-reduced-motion: reduce) {
   .tracesift-upload .upload-pane { transition: none; }
 }
+
+/*
+ * The recorded test's preview. A step is added by tapping the mirror, where the user is looking —
+ * not at the preview — so the new lines announce themselves: they settle in, hold a tint long
+ * enough to be caught out of the corner of the eye, and fade back into the rest of the file.
+ */
+.testing-preview-line { display: block; min-height: 1em; border-radius: 3px; margin-inline: -2px; padding-inline: 2px; }
+.testing-preview-line.is-new { animation: testing-preview-line-in 1400ms ease-out both; }
+@keyframes testing-preview-line-in {
+  from { background: color-mix(in oklab, var(--primary) 26%, transparent); opacity: 0.4; }
+  18% { background: color-mix(in oklab, var(--primary) 26%, transparent); opacity: 1; }
+  60% { background: color-mix(in oklab, var(--primary) 20%, transparent); }
+  to { background: transparent; opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* No movement, but the line still has to be findable, so the tint is simply held and dropped. */
+  .testing-preview-line.is-new { animation: testing-preview-line-hold 1400ms steps(1, end) both; }
+  @keyframes testing-preview-line-hold {
+    from { background: color-mix(in oklab, var(--primary) 20%, transparent); }
+    to { background: transparent; }
+  }
+}

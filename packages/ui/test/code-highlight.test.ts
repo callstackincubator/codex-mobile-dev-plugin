@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { emitE2eTest } from "../../shared/src/test-recording.ts";
-import { highlightCode } from "../src/code-highlight.ts";
+import { changedLines, highlightCode } from "../src/code-highlight.ts";
 
 test("highlighting never changes the code it renders", () => {
   const source = emitE2eTest([
@@ -28,4 +28,17 @@ test("a comment holding quotes or braces does not run on", () => {
   assert.equal(tokens[0].kind, "comment");
   assert.equal(tokens[0].text, '// TODO: add a testID to "Save"');
   assert.ok(tokens.some(token => token.kind === "keyword" && token.text === "await"));
+});
+
+test("the preview can tell which lines a new step added", () => {
+  const before = ["a", "b", "});"];
+  assert.deepEqual(changedLines(before, ["a", "b", "c", "});"]), [2, 3]);
+  // A step emits a TODO above its call, so a run of lines is as common as one.
+  assert.deepEqual(changedLines(before, ["a", "b", "// TODO", "c", "});"]), [2, 4]);
+  // Nothing moved, nothing is flagged.
+  assert.deepEqual(changedLines(before, before), [3, 3]);
+  // Removing a step flags nothing, since every remaining line was already there.
+  assert.deepEqual(changedLines(["a", "b", "c", "});"], before), [2, 2]);
+  // A changed line in the middle, such as the test title, is the only thing flagged.
+  assert.deepEqual(changedLines(["a", "b", "});"], ["a", "B", "});"]), [1, 2]);
 });

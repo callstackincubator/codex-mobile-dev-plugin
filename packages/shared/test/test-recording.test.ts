@@ -106,6 +106,35 @@ test("a platform role the runner does not have resolves to no role at all", () =
   assert.equal(normalizeRole("AXRadioButton"), "tab");
 });
 
+test("an accessibility link is named by its label, never by getByRole(\"link\")", () => {
+  // `AXLink` comes from the link trait, so an `expo-router` `<Link>` wrapping a `<Text>` reports it
+  // exactly as a pressable wrapper around one does. The runner names elements by XCTest element
+  // type: the first is `text` to it, and `getByRole("link", "Go To Explore List")` failed with
+  // LOCATOR_NOT_FOUND on a recorded flow. Accessibility cannot tell the two apart, so neither does
+  // the recorder.
+  assert.equal(normalizeRole("AXLink"), "");
+  assert.equal(normalizeRole("XCUIElementTypeLink"), "");
+
+  const link = [component({ bounds: { x: 143, y: 374, width: 117, height: 30 }, role: "AXLink", label: "Go To Explore List" })];
+  const { selector, ambiguous } = resolveSelector(link, { x: 200, y: 389 });
+  assert.deepEqual(selector, { kind: "label", label: "Go To Explore List" });
+  assert.equal(ambiguous, false);
+  assert.equal(selectorSource(selector), 'screen.getByLabel("Go To Explore List")');
+});
+
+test("a fiber over the same pixels is not a second match", () => {
+  // The `<Text>` inside the `<Link>` is reported twice: once by accessibility, once as a fiber with
+  // the same label. Counting both flagged a step the runner resolves uniquely as ambiguous, which
+  // put a "matched more than one element" TODO on a line that works.
+  const components = [
+    component({ bounds: { x: 143, y: 374, width: 117, height: 30 }, role: "AXLink", label: "Go To Explore List", nodeId: "ax" }),
+    component({ bounds: { x: 143, y: 374, width: 117, height: 30 }, source: "react-native", role: "RCTText", label: "Go To Explore List", nodeId: "rn" }),
+  ];
+  const { selector, ambiguous } = resolveSelector(components, { x: 200, y: 389 });
+  assert.deepEqual(selector, { kind: "label", label: "Go To Explore List" });
+  assert.equal(ambiguous, false);
+});
+
 test("a text element is named by its text rather than by an invented role", () => {
   const components = [component({ bounds: TAB, source: "react-native", role: "RCTText", label: "File-based routing" })];
   const { selector } = resolveSelector(components, { x: 50, y: 820 });
