@@ -1,5 +1,5 @@
 
-!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="9615435b-73de-5e15-8421-40210eda8ba9")}catch(e){}}();
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="759622e2-224b-5dc4-ae6c-43200f914bbe")}catch(e){}}();
 import { createRequire as mobileDevBundleRequire } from 'node:module'; import { fileURLToPath as mobileDevFileURLToPath } from 'node:url'; import { dirname as mobileDevPathDirname } from 'node:path'; const require = mobileDevBundleRequire(import.meta.url); const __filename = mobileDevFileURLToPath(import.meta.url); const __dirname = mobileDevPathDirname(__filename);
 import "./chunk-E4FKOFXD.mjs";
 import {
@@ -51,7 +51,7 @@ import {
   touchInputSchema,
   udidSchema,
   withDeviceAppsDiagnostic
-} from "./chunk-OPAYWTKC.mjs";
+} from "./chunk-MLGKZJHN.mjs";
 import {
   ExpectedOperationError,
   FailureEpisodes,
@@ -79,7 +79,7 @@ import {
   resolveTelemetryEnvironment,
   setDiscoveryCommandDiagnostic,
   telemetryHost
-} from "./chunk-WX3WADUR.mjs";
+} from "./chunk-LIQAYART.mjs";
 import {
   $ZodObject,
   $ZodType,
@@ -35847,8 +35847,8 @@ async function foregroundPhysicalPid(deviceId4, signal, helper = new URL("./ios-
   return foreground.pid;
 }
 var unknownSimulatorForeground = async () => null;
-async function foregroundSimulatorPid(deviceId4, signal, helper = new URL("./baguette/Baguette", import.meta.url), runtime = baguetteEnvironment) {
-  const path = fileURLToPath4(helper);
+async function foregroundSimulatorPid(deviceId4, signal, runtime = baguetteEnvironment) {
+  const path = await panelRuntimePath("baguette/Baguette");
   const cancellation = signal ?? AbortSignal.timeout(1e4);
   const startedAt = performance.now();
   let environment;
@@ -37769,8 +37769,8 @@ async function loadVendoredAgentDevice() {
 }
 async function createAppFlowHost(options = {}) {
   const [{ createAppFlowService }, { createManualRecordingService }] = await Promise.all([
-    import("./app-flow-64ILVF32.mjs"),
-    import("./manual-TKIWBVYJ.mjs")
+    import("./app-flow-Z2NFOWWQ.mjs"),
+    import("./manual-K2G7JVTF.mjs")
   ]);
   const listeners = /* @__PURE__ */ new Set();
   const runs = /* @__PURE__ */ new Map();
@@ -43156,7 +43156,7 @@ async function createPlugin(html, options = {}) {
     }) }] };
   });
   const readCard = (view) => async (uri2) => {
-    const content = (await page()).replace('data-view="panel"', `data-view="${view}"${panel ? " data-workspace" : ""}`);
+    const content = (await page()).replace('data-view="panel"', `data-view="${view}"${panel?.inline ? " data-workspace" : ""}`);
     return { contents: [{ uri: uri2.href, mimeType: p, text: content, _meta: {
       ui: { prefersBorder: true, permissions: { clipboardWrite: {} }, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } },
       "openai/ui": { preferredDisplayMode: "inline", availableDisplayModes: ["inline", "fullscreen"] }
@@ -47579,6 +47579,7 @@ function guarded2(handler) {
 var INSTRUCTIONS2 = "For mobile app development, open mobile_open_simulator before the first device launch, or reuse the open view. Use selected device IDs. Control apps with the device_* tools when the server has them. When the user asks to see their devices, open or reuse the view, whose device menu lists them. If a task has ambiguous device targets, ask the user with mobile_choose_devices when it is available, otherwise in chat; proceed only after they choose. For a local CPU or React profile path, use mobile_analyze_profile to show TraceSift findings, then wait for the user to choose Investigate. See the Mobile Dev skill, when installed, for device control, logs, profiles, and performance workflows.";
 function createPanel({ baguette = new Baguette(), simulatorInput, copyScreenshot = copyPNGToClipboard, resourceSaving = new ResourceSaving(), inline = true } = {}) {
   return {
+    inline,
     instructions: INSTRUCTIONS2,
     simulatorForeground: foregroundSimulatorPid,
     register: (server, shared) => registerPanel(server, shared, {
@@ -50024,7 +50025,7 @@ function browserPanel({ template = PAGE, always = false } = {}) {
       page ??= startPanelPage(connections, host, template);
       const opened = await page;
       const url2 = opened.url(tool, target2);
-      const instructions = `Mobile Dev's panel is a page to show beside the chat, not in it, and it is not open yet. Show it to the user now: open ${url2} in your in-app browser or side panel, in the foreground, so the page is visible without another click. Opening a page can leave the browser pane hidden: when your host has a tool that brings its browser or preview pane into view, such as a show_pane tool for its preview pane, load it if needed and call it right after. Reuse a tab that already shows Mobile Dev. Open no other address for it, such as the backend's baseUrl. If you cannot open pages, give the user the link. The page shares the user's devices and what they add to chat through mobile_read_panel_context; read it before device work.`;
+      const instructions = `Mobile Dev's panel is a page to show beside the chat, not in it, and it is not open yet. Show it to the user now: open ${url2} in your in-app browser or side panel, in the foreground, so the page is visible without another click. This page is how Mobile Dev shows its panel, so opening it is part of opening the panel. Use your host's own browser or preview tool, and load it first if it is deferred. Never open the page with a computer-use tool that drives the screen. Opening a page can leave the browser pane hidden: when your host has a tool that brings its browser or preview pane into view, such as a show_pane tool for its preview pane, load it if needed and call it right after. A host can also show the page as a floating preview and report it as not visible. That still counts as shown, so do not open it again. Leave the tab open after you reply. Reuse a tab that already shows Mobile Dev. Open no other address for it, such as the backend's baseUrl. If you cannot open pages, give the user the link. The page shares the user's devices and what they add to chat through mobile_read_panel_context; read it before device work.`;
       return { url: url2, instructions };
     });
     server.registerTool("mobile_read_panel_context", {
@@ -50215,4 +50216,4 @@ content-type/index.js:
    *)
 */
 
-//# debugId=9615435b-73de-5e15-8421-40210eda8ba9
+//# debugId=759622e2-224b-5dc4-ae6c-43200f914bbe
