@@ -1,0 +1,25 @@
+{
+  "label": "Antigravity",
+  "manifest": ".antigravity-plugin",
+  "mcpConfig": "mcp_config.json",
+  "hooks": "hooks.json",
+  "root": "PLUGIN_ROOT",
+  "config": {
+    "file": "antigravity-mcp-config.json",
+    "target": "~/.gemini/antigravity/mcp_config.json"
+  },
+  "panelRuntime": "download",
+  "build": "tooling/build.mjs",
+  "skills": [
+    "skills/mobile-dev",
+    "../../packages/skills/agent-device"
+  ],
+  "folders": [
+    "scripts",
+    "sidecars",
+    "mcp_config.json",
+    "hooks.json"
+  ],
+  "readme": "README.md",
+  "maxFileBytes": 5242880
+}

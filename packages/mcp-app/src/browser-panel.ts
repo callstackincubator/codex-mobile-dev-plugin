@@ -19,6 +19,8 @@ function notice(text: string) {
 /** A small MCP Apps host for the same shared panel the chat would otherwise render. */
 async function open() {
   const query = new URLSearchParams(location.search);
+  const sidecarToken = query.get("token");
+  const sidecarHeaders: Record<string, string> = sidecarToken ? { "x-sidecar-token": sidecarToken } : {};
   const toolName = query.get("tool") ?? "mobile_open_simulator";
   if (toolName !== "mobile_open_simulator" && toolName !== "mobile_open_workspace") {
     throw new Error("This link does not open a Mobile Dev panel.");
@@ -31,7 +33,11 @@ async function open() {
   const client = new Client({ name: "mobile-dev-browser-panel", version: PLUGIN_VERSION });
   const endpoint = new URL("mcp", location.href);
   const transport = new StreamableHTTPClientTransport(endpoint, {
-    fetch: (url, options) => fetch(url, { ...options, keepalive: options?.method === "DELETE" }),
+    fetch: (url, options) => fetch(url, {
+      ...options,
+      headers: sidecarToken ? { ...Object.fromEntries(new Headers(options?.headers).entries()), ...sidecarHeaders } : options?.headers,
+      keepalive: options?.method === "DELETE",
+    }),
   });
   let bridge: AppBridge | undefined;
   let heartbeat: ReturnType<typeof setInterval> | undefined;
@@ -53,6 +59,15 @@ async function open() {
   }
   function stopped(message: string) {
     if (disposed) return;
+    if (sidecarToken !== null && message === EXPIRED) {
+      const lastReload = Number(sessionStorage.getItem("mobile-dev-sidecar-reload") ?? "0");
+      if (Date.now() - lastReload > 3000) {
+        sessionStorage.setItem("mobile-dev-sidecar-reload", String(Date.now()));
+        dispose();
+        location.reload();
+        return;
+      }
+    }
     notice(message);
     dispose();
   }
@@ -108,7 +123,7 @@ async function open() {
       const sessionId = transport.sessionId;
       if (sessionId === undefined) throw new Error("Mobile Dev's browser connection is not ready.");
       const response = await fetch(new URL("context", location.href), {
-        method: "PUT", headers: { "content-type": "application/json", "mcp-session-id": sessionId },
+        method: "PUT", headers: { "content-type": "application/json", "mcp-session-id": sessionId, ...sidecarHeaders },
         body: JSON.stringify({ content: content ?? [] }),
       });
       if (response.status === 404) stopped(EXPIRED);

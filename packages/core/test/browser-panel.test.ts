@@ -373,3 +373,33 @@ test("an oversized browser context update is refused without storing it", async 
   assert.deepEqual(page.context(), []);
   await transport.terminateSession();
 });
+
+test("browserPanel notifies onPage on startup and when a panel tool runs, with custom instructions", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "browser-panel-"));
+  const page = join(directory, "browser-panel.html");
+  await writeFile(page, "<html></html>");
+  const fake = await fakeBaguette();
+  const [hostSide, serverSide] = InMemoryTransport.createLinkedPair();
+  const shared = new SharedTransport(serverSide);
+  const seen: string[] = [];
+  const panel = createPanel({ baguette: new Baguette(fake.url), simulatorInput: fakeSimulatorInput(), inline: false });
+  const feature = browserPanel({
+    template: pathToFileURL(page),
+    always: true,
+    onPage: url => { seen.push(url); },
+    instructions: url => `Auxiliary Pane renders ${url} automatically.`,
+  });
+  const plugin = await createTestPlugin("<html></html>", { panel, features: [feature], connections: shared });
+  const host = new Client({ name: "antigravity-client", version: "1" });
+  await plugin.server.connect(shared);
+  await host.connect(hostSide);
+  t.after(async () => { await host.close(); await plugin.close(); await fake.close(); await rm(directory, { recursive: true, force: true }); });
+
+  await t.waitFor(() => assert.equal(seen.length, 1));
+  assert.equal(new URL(seen[0]).searchParams.get("tool"), "mobile_open_simulator");
+  const result = await host.callTool({ name: "mobile_open_workspace", arguments: {} });
+  assert.equal(seen.length, 2);
+  assert.equal(new URL(seen[1]).searchParams.get("tool"), "mobile_open_workspace");
+  const { browserPanel: opening } = result.structuredContent as { browserPanel: { url: string; instructions: string } };
+  assert.equal(opening.instructions, `Auxiliary Pane renders ${opening.url} automatically.`);
+});

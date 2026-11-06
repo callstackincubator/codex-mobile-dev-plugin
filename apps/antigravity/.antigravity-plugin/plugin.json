@@ -1,0 +1,32 @@
+{
+  "name": "mobile-dev",
+  "displayName": "Mobile Dev",
+  "version": "0.1.0",
+  "description": "Stream iOS and Android devices beside your chat while building, running, or debugging mobile apps. Includes device control (agent-device), native and Metro logs, app storage inspection, and CPU, memory, and FPS performance profiling.",
+  "logo": "assets/icon.png",
+  "suggestedPrompts": [
+    "Open the iOS simulator or Android emulator beside this chat",
+    "Read the mobile app logs and help me fix the current error",
+    "Record CPU, memory, and FPS while I interact with the app"
+  ],
+  "author": {
+    "name": "Callstack",
+    "email": "hello@callstack.com",
+    "url": "https://www.callstack.com/"
+  },
+  "homepage": "https://github.com/callstackincubator/codex-mobile-dev-plugin",
+  "repository": "https://github.com/callstackincubator/codex-mobile-dev-plugin",
+  "license": "MIT",
+  "keywords": [
+    "mobile",
+    "ios",
+    "android",
+    "react-native",
+    "expo",
+    "simulator",
+    "emulator",
+    "profiling",
+    "performance",
+    "logs"
+  ]
+}
