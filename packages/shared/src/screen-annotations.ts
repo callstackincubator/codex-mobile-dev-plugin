@@ -4,7 +4,15 @@ export type ScreenPoint = { x: number; y: number };
 export type ScreenSize = { width: number; height: number };
 export type ScreenBounds = ScreenPoint & ScreenSize;
 export type ReactElementContext = { component: string; owners: string[]; key?: string; sourceKind?: "element" | "owner"; source?: { file: string; line: number; column?: number; functionName?: string } };
-export type ScreenComponent = { name: string; bounds: ScreenBounds; role?: string; identifier?: string; label?: string; value?: string; depth: number; source?: "accessibility" | "screen" | "react-native"; nodeId?: string; parentId?: string; react?: ReactElementContext };
+/**
+ * One element over the screen's pixels.
+ *
+ * `role`, `label`, `text`, `value`, `placeholder` and `hidden` are the test runner's own fields,
+ * carried through untouched when the recorder reads the runner's tree: `label` is the accessible
+ * *name* `getByRole`/`getByLabel` match, `text` is what `getByText` also searches, and `hidden`
+ * is the node a role query skips. An inspection that does not report one simply leaves it unset.
+ */
+export type ScreenComponent = { name: string; bounds: ScreenBounds; role?: string; identifier?: string; label?: string; text?: string; value?: string; placeholder?: string; hidden?: boolean; depth: number; source?: "accessibility" | "screen" | "react-native"; nodeId?: string; parentId?: string; react?: ReactElementContext };
 export type ScreenSelectionContext = { ancestors: ScreenComponent[]; siblings: ScreenComponent[]; siblingCount: number; children: ScreenComponent[]; childCount: number; instance?: { index: number; total: number } };
 export type ScreenAnnotation = {
   id: string;

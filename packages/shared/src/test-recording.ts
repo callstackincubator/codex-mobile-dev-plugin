@@ -11,6 +11,7 @@ import type { ScreenComponent, ScreenPoint, ScreenSize } from "./screen-annotati
 export type RecordedSelector =
   | { kind: "testId"; testId: string }
   | { kind: "role"; role: string; name: string }
+  | { kind: "placeholder"; placeholder: string }
   | { kind: "text"; text: string }
   | { kind: "label"; label: string }
   | { kind: "point"; point: ScreenPoint };
@@ -33,11 +34,17 @@ export type RecordedStep = {
 };
 
 /**
- * The roles `screen.getByRole` accepts. The union is closed in the runner, so a role outside it is
- * a type error in the emitted file, not a query that simply misses — which is why an unmapped
- * platform role resolves to no role at all and the step falls through to `getByText`.
+ * The roles `screen.getByRole` accepts, as `e2e`'s own `Role` union declares them.
+ *
+ * This is a *filter*, never a translation. The engine has already decided what each element's role
+ * is — it projected the snapshot the recorder reads, and it will project the one the test runs
+ * against — so nothing here renames a role; `tab` reaches the file because the engine said `tab`.
+ * But the union is closed, so `getByRole("other", …)` or `getByRole("text", …)` is a type error in
+ * the emitted file rather than a query that merely misses, and the engine deliberately keeps an
+ * unmapped element type as its own role. Those fall through to the text and label ranks, which is
+ * how the element gets named instead.
  */
-const E2E_ROLES = new Set([
+const QUERYABLE_ROLES = new Set([
   "button", "link", "textbox", "searchbox", "combobox", "listbox", "option", "checkbox", "radio",
   "radiogroup", "switch", "slider", "spinbutton", "progressbar", "meter", "image", "heading", "tab",
   "tablist", "tabpanel", "menu", "menubar", "menuitem", "menuitemcheckbox", "menuitemradio",
@@ -48,93 +55,76 @@ const E2E_ROLES = new Set([
 ]);
 
 /**
- * What the device calls an element, mapped to what the runner calls it.
- *
- * Two sources feed this. iOS accessibility reports `AXButton`-style roles; React Native inspection
- * reports the fiber's component name, so a `<Text>` arrives as `RCTText`. Neither vocabulary is the
- * runner's, and `rcttext` or `radiobutton` in a test file does not compile.
- *
- * A tab bar item is the one judgement call: iOS accessibility reports it as a radio button, and the
- * runner's role for it is `tab`.
+ * The runner compares text exactly, after collapsing whitespace, so both sides of a count have to
+ * be normalised the same way. An accessibility label carries the line breaks of the rendered copy.
  */
-const ROLE_ALIASES = new Map(Object.entries({
-  radiobutton: "tab", tabbutton: "tab", tabbar: "tablist", segmentedcontrol: "tablist",
-  textfield: "textbox", securetextfield: "textbox", textarea: "textbox", searchfield: "searchbox",
-  singlelinetextinputview: "textbox", multilinetextinputview: "textbox", textinput: "textbox",
-  imageview: "image", progressindicator: "progressbar", valueindicator: "progressbar",
-  popupbutton: "button", menubutton: "button", disclosuretriangle: "button", pressable: "button",
-  touchableopacity: "button", touchablehighlight: "button", header: "heading",
-  // `link` is in the runner's union but is not something accessibility can be read off.
-  // iOS derives `AXLink` from the *link trait*, which any view can carry — a `<Text>` inside an
-  // `expo-router` `<Link>` reports `AXLink` exactly as a pressable wrapper does. The runner reads
-  // the XCTest *element type* instead, so the first is `text` to it and only the second is `link`,
-  // and nothing in the accessibility tree tells the two apart. Falling through to the accessible
-  // name resolves both.
-  link: "",
-  // Text is not a role in the runner's union: these fall through to `getByText`.
-  statictext: "", text: "", textview: "", view: "", scrollview: "", safeareaview: "",
-}));
+const normalize = (value: string | undefined) => (value ?? "").replace(/\s+/g, " ").trim();
 
 /**
- * The role a step should use, or "" when the device's role has no equivalent and the step should be
- * named by its text instead. iOS reports `AXButton`, Android `android.widget.Button`, React Native
- * `RCTText`.
+ * The element's accessible *name*: what `getByRole(role, name)` and `getByLabel` match.
+ *
+ * It is the runner's own `name` field, carried through the read path untouched. A search field
+ * whose only text is its placeholder has no name at all, which is why `getByRole("textbox",
+ * "Search transactions")` used to be emitted and used to match nothing.
  */
-export function normalizeRole(role: string | undefined): string {
-  if (!role) return "";
-  const last = (role.split(".").at(-1) ?? role).replace(/^(AX|XCUIElementType|RCT)/, "").trim().toLowerCase();
-  const aliased = ROLE_ALIASES.get(last) ?? last;
-  return E2E_ROLES.has(aliased) ? aliased : "";
+function accessibleName(component: ScreenComponent): string {
+  return normalize(component.label);
 }
 
-/**
- * The text an element is addressable by: its label, else its value.
- *
- * React Native inspection falls back to the component name when an element has no label, so a
- * `<Text>` with no string child arrives labelled `RCTText`. That is the component, not anything on
- * screen, so it is not text a test can be pinned to.
- */
+/** The element's own text, which `getByText` searches besides the name. */
 function elementText(component: ScreenComponent): string {
-  // The runner matches text after whitespace normalization, and an accessibility label carries the
-  // line breaks of the rendered copy, so both sides have to be normalized the same way.
-  const text = (component.label ?? component.value ?? "").replace(/\s+/g, " ").trim();
-  return text && text !== (component.role ?? "").trim() ? text : "";
+  return normalize(component.text);
 }
 
-/** Whether the runner would see this element as text, i.e. whether `getByText` can find it. */
-function textual(component: ScreenComponent): boolean {
-  return /statictext|text$/i.test((component.role ?? "").replace(/^(AX|XCUIElementType|RCT)/, ""));
+/** Parent links by node id, for the containment the runner's innermost-only rule needs. */
+function ancestry(components: ScreenComponent[]): Map<string, string> {
+  const parents = new Map<string, string>();
+  for (const item of components) if (item.nodeId && item.parentId) parents.set(item.nodeId, item.parentId);
+  return parents;
+}
+
+function isWithin(parents: Map<string, string>, entry: ScreenComponent, ancestor: ScreenComponent): boolean {
+  if (!entry.nodeId || !ancestor.nodeId) return false;
+  for (let id = parents.get(entry.nodeId); id !== undefined; id = parents.get(id)) {
+    if (id === ancestor.nodeId) return true;
+  }
+  return false;
 }
 
 /**
- * The elements a count of matches is taken over: the accessibility tree alone, which is what the
- * runner queries, and everything only when there is no accessibility tree to speak of.
+ * Drops every match that contains another match, which is how the runner answers `getByText` and
+ * `getByLabel`.
  *
- * Without this a fiber lying over the same pixels counts as a second match — a `<Text>` inside a
- * `<Link>` is one element to the runner and two here — and a selector that resolves uniquely on
- * the device is emitted flagged as ambiguous.
+ * A device tree echoes text upwards: iOS reports a React Native `Text` host view and the
+ * `StaticText` inside it with the same label, so without this rule a screen's every piece of text
+ * is "ambiguous" and every step records a TODO. The runner does not see it that way, and a
+ * recorder that disagrees with the runner is the bug.
  */
-function queryable(components: ScreenComponent[]): ScreenComponent[] {
-  const accessible = components.filter(item => item.source !== "react-native");
-  return accessible.length ? accessible : components;
-}
-
-function matchesLabel(components: ScreenComponent[], label: string): number {
-  return queryable(components).filter(item => elementText(item) === label).length;
+function innermostOnly(components: ScreenComponent[], matches: ScreenComponent[]): ScreenComponent[] {
+  if (matches.length < 2) return matches;
+  const parents = ancestry(components);
+  return matches.filter(entry => !matches.some(other => other !== entry && isWithin(parents, other, entry)));
 }
 
 function matchesTestId(components: ScreenComponent[], testId: string): number {
-  return queryable(components).filter(item => item.identifier === testId).length;
+  return components.filter(item => normalize(item.identifier) === normalize(testId)).length;
 }
 
+/** A role query compares the role exactly and skips a hidden node, as the runner does. */
 function matchesRole(components: ScreenComponent[], role: string, name: string): number {
-  return queryable(components).filter(item => normalizeRole(item.role) === role && elementText(item) === name).length;
+  return components.filter(item => (item.role ?? "") === role && accessibleName(item) === name && item.hidden !== true).length;
+}
+
+function matchesPlaceholder(components: ScreenComponent[], placeholder: string): number {
+  return components.filter(item => normalize(item.placeholder) === placeholder).length;
 }
 
 function matchesText(components: ScreenComponent[], text: string): number {
-  // Counted over text elements only, the same set `getByText` searches: a row whose accessible
-  // name repeats its label is not a second match for the text inside it.
-  return queryable(components).filter(item => textual(item) && elementText(item) === text).length;
+  return innermostOnly(components, components.filter(item => accessibleName(item) === text || elementText(item) === text)).length;
+}
+
+function matchesLabel(components: ScreenComponent[], label: string): number {
+  return innermostOnly(components, components.filter(item => accessibleName(item) === label)).length;
 }
 
 /**
@@ -151,7 +141,7 @@ function descendantText(components: ScreenComponent[], owner: ScreenComponent): 
   for (const item of components) {
     if (!item.parentId || !inside.has(item.parentId)) continue;
     if (item.nodeId) inside.add(item.nodeId);
-    const text = elementText(item);
+    const text = accessibleName(item) || elementText(item);
     if (text) found.add(text);
     if (found.size > 1) return;
   }
@@ -169,32 +159,18 @@ export type ResolvedSelector = {
 const area = ({ bounds }: ScreenComponent) => bounds.width * bounds.height;
 
 /**
- * The simulator's own status bar — clock, Dynamic Island, battery — which the device's
- * accessibility tree reports alongside the app's. The runner never sees it: it queries the app,
- * not the screen. Naming it produces a step that cannot run, and `Dynamic Island, Empty` is not
- * what anyone meant to record.
+ * Whether the tree describes the app at all.
+ *
+ * The runner's snapshot is rooted at the application, so the simulator's own chrome — clock,
+ * Dynamic Island, battery — is simply not in it, and there is no "only the status bar" state left
+ * to detect. An empty tree still is one: nothing was attached, or the app has no accessible
+ * content, and either way a recorded step would name nothing.
  */
-function systemChrome(item: ScreenComponent, screen?: ScreenSize): boolean {
-  return Boolean(screen) && !item.identifier && item.bounds.y + item.bounds.height <= screen!.height * 0.07;
+export type TreeHealth = "ok" | "no-accessibility";
+export function treeHealth(components: ScreenComponent[]): TreeHealth {
+  return components.length > 0 ? "ok" : "no-accessibility";
 }
 
-/**
- * Whether the accessibility tree currently describes the app at all.
- *
- * It can come back holding only the status bar. The React Native fibers are still there and still
- * describe the screen, so resolution silently falls back to them — and every selector it produces
- * names something the runner cannot find. Better to say so than to record a test that cannot run.
- */
-export type TreeHealth = "ok" | "chrome-only" | "no-accessibility";
-export function treeHealth(components: ScreenComponent[], screen?: ScreenSize): TreeHealth {
-  let chrome = false;
-  for (const item of components) {
-    if (item.source === "react-native") continue;
-    if (!systemChrome(item, screen)) return "ok";
-    chrome = true;
-  }
-  return chrome ? "chrome-only" : "no-accessibility";
-}
 function covers({ bounds }: ScreenComponent, point: ScreenPoint): boolean {
   return point.x >= bounds.x && point.x < bounds.x + bounds.width && point.y >= bounds.y && point.y < bounds.y + bounds.height;
 }
@@ -202,29 +178,19 @@ function covers({ bounds }: ScreenComponent, point: ScreenPoint): boolean {
 /**
  * Every element the point sits inside, innermost first.
  *
- * **Accessibility only, when there is any.** The inspection merges two trees over the same pixels:
- * React Native fibers and the device's accessibility tree. Only the second is what the runner
- * queries, and the two do not agree — a collapsible header is a `Pressable` holding a `Text`
- * reading "File-based routing" in the fibers, and a single element whose accessible name is
- * "Forward, File-based routing" (the chevron's name is folded in) in accessibility. Naming it from
- * the fibers emits a locator the runner cannot resolve, however well it describes the screen. The
- * fibers remain the overlay's business; a recorded selector is only ever as good as what the
- * runner can see.
+ * The tree is the runner's own, so every element in it is one the runner can address — there is no
+ * second tree of React Native fibers lying over the same pixels to choose between, and no
+ * simulator chrome to filter out, because the snapshot is rooted at the application.
  *
  * `componentsAt` answers with one branch — an element plus its own ancestors — which is too narrow
  * here, since the point may sit inside siblings' bounds too. The ladder is every hit, ordered by
  * area, which is also the order "walk out to the parent" means on screen.
  */
 export function hitLadder(components: ScreenComponent[], point: ScreenPoint, screen?: ScreenSize): ScreenComponent[] {
-  const visible = components.filter(item => covers(item, point)
+  const hits = components.filter(item => covers(item, point)
     // A root spanning the whole screen names nothing; it is the screen.
-    && (!screen || item.bounds.width < screen.width * .95 || item.bounds.height < screen.height * .95));
-  // The simulator's own status bar is never a step, whichever tree reports it.
-  const app = visible.filter(item => !systemChrome(item, screen));
-  const accessible = app.filter(item => item.source !== "react-native");
-  // With no accessibility node under the point — an Android snapshot, a runtime-only tree — the
-  // fibers are all there is, and a fiber-named selector is better than a coordinate.
-  const hits = (accessible.length ? accessible : app).sort((a, b) => area(a) - area(b) || b.depth - a.depth);
+    && (!screen || item.bounds.width < screen.width * .95 || item.bounds.height < screen.height * .95))
+    .sort((a, b) => area(a) - area(b) || b.depth - a.depth);
   // The overlay's own pick leads when it is one of them, so the recorder starts on the element the
   // mirror highlights.
   const picked = componentsAt(components, point, screen)[0];
@@ -241,10 +207,10 @@ export function hitLadder(components: ScreenComponent[], point: ScreenPoint, scr
  * element.
  */
 export function resolveSelector(components: ScreenComponent[], point: ScreenPoint, screen?: ScreenSize, level = 0): ResolvedSelector {
-  // A React Native leaf often carries nothing addressable — an unlabelled `RCTText`, a bare
-  // `View` — while the accessibility node or the Pressable over the same pixels holds the label or
-  // the testID. Reading the whole ladder names the thing the user meant rather than giving up on a
-  // coordinate. `level` is the user walking outwards: it drops that many innermost elements.
+  // The innermost element under the point often carries nothing addressable — an unlabelled view,
+  // a bare container — while something just outside it holds the name or the testID. Reading the
+  // whole ladder names the thing the user meant rather than giving up on a coordinate. `level` is
+  // the user walking outwards: it drops that many innermost elements.
   const ladder = hitLadder(components, point, screen);
   const levels = ladder.length;
   const chain = ladder.slice(Math.max(0, Math.min(level, levels - 1)));
@@ -258,13 +224,19 @@ export function resolveSelector(components: ScreenComponent[], point: ScreenPoin
   type Candidate = { selector: Exclude<RecordedSelector, { kind: "point" }>; owner: ScreenComponent };
   const candidates: Candidate[] = [];
   for (const owner of chain.slice(0, 8)) {
-    const role = normalizeRole(owner.role);
-    const name = elementText(owner);
+    // The role is the runner's own, passed through untouched. Translating it here is what this
+    // path exists to stop: the engine already decided that a tab bar's button is a `tab`.
+    const role = QUERYABLE_ROLES.has(owner.role ?? "") ? owner.role! : "";
+    const name = accessibleName(owner);
+    const placeholder = normalize(owner.placeholder);
+    const text = elementText(owner);
     if (owner.identifier) candidates.push({ owner, selector: { kind: "testId", testId: owner.identifier } });
+    // A role query with no name matches every element of that role, so the pair is the candidate
+    // or there is none — which is exactly the search field whose only text is its placeholder.
     if (role && name) candidates.push({ owner, selector: { kind: "role", role, name } });
-    // `getByText` reads text nodes. A control whose accessible name merely contains words — a
-    // row, a header, an icon button — is reached by that name, which is `getByLabel`.
-    if (name && textual(owner)) candidates.push({ owner, selector: { kind: "text", text: name } });
+    if (placeholder) candidates.push({ owner, selector: { kind: "placeholder", placeholder } });
+    // `getByText` searches the name and the element's own text, innermost match only.
+    if (name || text) candidates.push({ owner, selector: { kind: "text", text: name || text } });
     if (name) candidates.push({ owner, selector: { kind: "label", label: name } });
     // An icon-only control carries nothing itself: a tab bar item is an unlabelled container with
     // the word "Explore" in a sibling of the icon, below the point that was tapped. The one text
@@ -278,8 +250,9 @@ export function resolveSelector(components: ScreenComponent[], point: ScreenPoin
   for (const { selector, owner } of candidates) {
     const matches = selector.kind === "testId" ? matchesTestId(components, selector.testId)
       : selector.kind === "role" ? matchesRole(components, selector.role, selector.name)
-        : selector.kind === "label" ? matchesLabel(components, selector.label)
-          : matchesText(components, selector.text);
+        : selector.kind === "placeholder" ? matchesPlaceholder(components, selector.placeholder)
+          : selector.kind === "label" ? matchesLabel(components, selector.label)
+            : matchesText(components, selector.text);
     if (matches === 1) return { selector, ambiguous: false, component: owner, levels };
   }
   // Nothing was unique. The best-ranked candidate still describes the element better than a
@@ -298,16 +271,16 @@ export function resolveSelector(components: ScreenComponent[], point: ScreenPoin
  * into a splash screen and misses. This picks a neighbour that does resolve uniquely, which the
  * emitter puts in front of the tap as a gate.
  */
-export function anchorSelector(components: ScreenComponent[], point: ScreenPoint, screen?: ScreenSize): RecordedSelector | undefined {
+export function anchorSelector(components: ScreenComponent[], point: ScreenPoint): RecordedSelector | undefined {
   const distance = (item: ScreenComponent) =>
     Math.hypot(item.bounds.x + item.bounds.width / 2 - point.x, item.bounds.y + item.bounds.height / 2 - point.y);
-  // The runner only resolves what accessibility exposes, so a gate is built from that too.
-  const accessible = components.filter(item => item.source !== "react-native" && !systemChrome(item, screen));
-  for (const item of (accessible.length ? accessible : components).sort((a, b) => distance(a) - distance(b)).slice(0, 40)) {
+  for (const item of [...components].sort((a, b) => distance(a) - distance(b)).slice(0, 40)) {
     if (item.identifier && matchesTestId(components, item.identifier) === 1) return { kind: "testId", testId: item.identifier };
-    const text = elementText(item);
+    const placeholder = normalize(item.placeholder);
+    if (placeholder && matchesPlaceholder(components, placeholder) === 1) return { kind: "placeholder", placeholder };
+    const text = accessibleName(item) || elementText(item);
     if (!text) continue;
-    if (textual(item) && matchesText(components, text) === 1) return { kind: "text", text };
+    if (matchesText(components, text) === 1) return { kind: "text", text };
     if (matchesLabel(components, text) === 1) return { kind: "label", label: text };
   }
 }
@@ -319,6 +292,7 @@ export function selectorSource(selector: RecordedSelector): string {
   switch (selector.kind) {
     case "testId": return `screen.getByTestId(${quote(selector.testId)})`;
     case "role": return `screen.getByRole(${quote(selector.role)}, ${quote(selector.name)})`;
+    case "placeholder": return `screen.getByPlaceholder(${quote(selector.placeholder)})`;
     case "text": return `screen.getByText(${quote(selector.text)})`;
     case "label": return `screen.getByLabel(${quote(selector.label)})`;
     case "point": return `screen.tapAt({ x: ${Math.round(selector.point.x)}, y: ${Math.round(selector.point.y)} })`;
@@ -331,6 +305,7 @@ export function stepLabel(kind: RecordedStepKind, selector: RecordedSelector): s
   switch (selector.kind) {
     case "testId": return `${verb} #${selector.testId}`;
     case "role": return `${verb} "${selector.name}" (${selector.role})`;
+    case "placeholder": return `${verb} "${selector.placeholder}"`;
     case "text": return `${verb} "${selector.text}"`;
     case "label": return `${verb} "${selector.label}"`;
     case "point": return `${verb} at ${Math.round(selector.point.x)}, ${Math.round(selector.point.y)}`;

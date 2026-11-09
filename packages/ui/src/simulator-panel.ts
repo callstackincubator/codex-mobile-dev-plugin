@@ -287,18 +287,16 @@ export function createSimulatorPanel(
     } finally { recordUiTiming("ui.annotations.inspection", performance.now() - startedAt); }
   };
   /**
-   * The Testing panel records from the device this panel shows, and this is how it reads it: the
-   * same inspection path the annotation overlay uses, so a recorded selector names the element the
-   * overlay would highlight. Only iOS simulators are wired up — the recorder's selector ranks are
-   * written against the iOS tree, and a physical device has no tree here at all.
+   * The Testing panel records from the device this panel shows, and this is how it reads it: not
+   * the inspection path the annotation overlay uses, but the e2e runner's own element tree, so a
+   * recorded selector resolves to the same element when the test runs. The Testing panel installs
+   * that source — it knows the project and the target — and this supplies the device and the
+   * screen. Only iOS simulators are wired up; a physical device has no tree here at all.
    */
   const recorderReader = {
-    readComponents: async () => {
-      if (!selected || !annotations.readTree) return [];
-      const { tree } = await annotations.readTree(selected);
-      return screenComponents(tree);
-    },
+    readComponents: async () => selected ? testRecorder.readTree(selected.udid) : [],
     screen: () => points,
+    release: () => testRecorder.releaseTree(),
   };
   function syncRecorder() {
     const recordable = platform === "ios" && selected?.kind !== "physical" && selected?.state === "Booted";

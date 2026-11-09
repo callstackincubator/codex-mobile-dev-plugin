@@ -2,6 +2,8 @@ import type { HostBridge } from "./host-bridge.ts";
 import type { DeviceAppsStore } from "./device-apps.ts";
 import { captureUiError, countUiEvent, getUiTelemetryAttributes, recordUiTiming } from "./telemetry.ts";
 import { testRecorder } from "./test-recorder.ts";
+import type { RecorderTreeSource } from "./test-recorder.ts";
+import type { ScreenComponent } from "@mobile-dev/shared/screen-annotations.ts";
 import { testFileSlug } from "@mobile-dev/shared/test-recording.ts";
 
 /** One entry of the project selector. The server owns the list so a pick survives the panel document. */
@@ -63,6 +65,8 @@ export class TestingPanel {
   private restoreRequest?: Promise<void>;
   /** Guards against a slow project load overwriting a newer selection. */
   private loadRevision = 0;
+  /** The project and target the installed tree source reads; "" when there is no source. */
+  private treeSourceKey = "";
   private snapshot: TestingSnapshot = {
     open: false, available: false, projectPath: "", projects: [], targets: [], targetName: "", configPath: "",
     loadingProject: false, pickingProject: false, launching: false, appLaunched: false,
@@ -80,6 +84,37 @@ export class TestingPanel {
   private update(fields: Partial<TestingSnapshot>) {
     this.snapshot = { ...this.snapshot, ...fields };
     for (const listener of this.listeners) listener();
+    this.syncTreeSource();
+  }
+
+  /**
+   * Keeps the recorder's tree source in step with the project and target.
+   *
+   * The source is what reads the e2e runner's own element tree, and reading it needs both: the
+   * project, whose `@e2e-dev/mobile` decides what every element's role is, and the target's bundle
+   * id, to attach to the app the user is already tapping. Without both there is nothing to read,
+   * and the recorder is told so rather than being left pointed at a stale project.
+   */
+  private syncTreeSource() {
+    const projectPath = this.snapshot.projectPath;
+    const bundleId = this.target?.bundleId ?? "";
+    const key = this.disposed || !projectPath || !bundleId ? "" : `${projectPath}\u0000${bundleId}`;
+    if (key === this.treeSourceKey) return;
+    this.treeSourceKey = key;
+    testRecorder.useTreeSource(key ? this.treeSource(projectPath, bundleId) : undefined);
+  }
+
+  private treeSource(projectPath: string, bundleId: string): RecorderTreeSource {
+    return {
+      read: async udid => {
+        const result = await this.call("mobile_testing_read_tree", { udid, projectPath, bundleId }, 20000);
+        const tree = object(result.structuredContent)?.tree;
+        return Array.isArray(tree) ? tree as ScreenComponent[] : [];
+      },
+      // Fire and forget: giving the device back must never hold up stopping a recording, and a
+      // release that fails leaves the session for the next `read` to take over.
+      release: () => { void this.call("mobile_testing_release_device", {}, 10000).catch(() => undefined); },
+    };
   }
 
   private async call(name: string, arguments_: Record<string, unknown>, timeout = 30000) {
@@ -308,5 +343,7 @@ export class TestingPanel {
     this.disposed = true;
     this.update({ open: false });
     this.listeners.clear();
+    // The panel is going; the device it was reading must not go with it. See `RecorderTreeSource`.
+    this.syncTreeSource();
   }
 }

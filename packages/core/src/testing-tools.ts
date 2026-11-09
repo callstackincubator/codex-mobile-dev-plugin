@@ -6,6 +6,8 @@ import { errorMessage } from "@mobile-dev/shared/protocol.ts";
 import { captureServerError } from "./telemetry.ts";
 import type { TestingProjectChoices } from "./testing-projects.ts";
 import { inspectProject, writeTestFile } from "./testing-projects.ts";
+import { TestingDevices } from "./testing-device.ts";
+import { udidSchema } from "@mobile-dev/shared/protocol.ts";
 
 const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 const write = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
@@ -30,8 +32,8 @@ function dataResult(data: Record<string, unknown>, message?: string): CallToolRe
   return { content: [{ type: "text", text: message ?? JSON.stringify(data) }], structuredContent: data };
 }
 
-/** The Testing panel's project selection. Recording and codegen are not wired up yet. */
-export function registerTestingTools(server: McpServer, projects: TestingProjectChoices) {
+/** The Testing panel's project selection, and the device tree its recorder names selectors from. */
+export function registerTestingTools(server: McpServer, projects: TestingProjectChoices, devices = new TestingDevices()) {
   registerAppTool(server, "mobile_testing_projects", {
     title: "List testing projects",
     description: "List the e2e project folders the Testing panel can record against, most recent first.",
@@ -78,4 +80,27 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
     _meta: appVisibility,
   }, safe(async ({ projectPath: selected }: { projectPath: string }) =>
     dataResult({ ...await inspectProject(selected) })));
+
+  registerAppTool(server, "mobile_testing_read_tree", {
+    title: "Read the runner's element tree",
+    description:
+      "Read the element tree the e2e runner queries, for the app the device is already showing. The recorder names selectors from this so role vocabulary and name sources match what the test will run against.",
+    inputSchema: {
+      udid: udidSchema,
+      projectPath,
+      bundleId: z.string().min(1).max(512).describe("The target's bundle id, from the project's e2e config."),
+    },
+    annotations: read,
+    _meta: appVisibility,
+  }, safe(async ({ udid, projectPath: selected, bundleId }: { udid: string; projectPath: string; bundleId: string }) =>
+    dataResult({ ...await devices.read({ udid, projectPath: selected, bundleId }) })));
+
+  registerAppTool(server, "mobile_testing_release_device", {
+    title: "Release the recorder's device",
+    description:
+      "Close the recorder's session on the device. A session left open makes the next `e2e run` fail because the device is already in use, so the panel calls this whenever it stops recording.",
+    inputSchema: {},
+    annotations: write,
+    _meta: appVisibility,
+  }, safe(async () => { await devices.release(); return dataResult({ released: true }, "Released the device."); }));
 }

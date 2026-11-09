@@ -18,6 +18,7 @@
     "node": ">=22.19.0"
   },
   "scripts": {
+    "cod": "npm run build && npm run package && codex plugin marketplace remove mobile-dev-local && codex plugin marketplace add ./release/marketplace && codex plugin add mobile-dev@mobile-dev-local",
     "build": "node tooling/build.mjs",
     "build:release": "node tooling/build.mjs --release",
     "build:mac": "node apps/mac/tooling/build.mjs",

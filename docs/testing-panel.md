@@ -48,8 +48,8 @@ Two things do **not** exist:
 ```mermaid
 flowchart LR
   Canvas[Mirror canvas] -->|pointerdown x,y| Rec[TestingPanel recorder]
-  Rec -->|mobile_describe_ui| Tree[Baguette describe-ui]
-  Tree --> Hit[componentAt]
+  Rec -->|mobile_testing_read_tree| Tree[agent-device snapshot, projected by @e2e-dev/mobile]
+  Tree --> Hit[hit ladder]
   Hit --> Step[RecordedStep]
   Rec -->|mobile_stream_input| Device[Simulator]
   Step --> Emit[E2eEmitter]
@@ -107,10 +107,34 @@ Priority, first match wins:
 
 | Rank | Source | Emitted |
 |---|---|---|
-| 1 | `identifier` (testID) | `screen.getByTestId("Submit")` |
-| 2 | `role` + `label` | `screen.getByRole("tab", "Explore")` |
-| 3 | text content (`label`/`value` on a text node) | `screen.getByText("GET STARTED")` |
-| 4 | nothing resolves | `screen.tapAt(x, y)`, preceded by a wait, + a `// TODO: add a testID` comment |
+| 1 | `testId` | `screen.getByTestId("Submit")` |
+| 2 | `role` + accessible name | `screen.getByRole("tab", "Explore")` |
+| 3 | `placeholder` | `screen.getByPlaceholder("Search transactions")` |
+| 4 | name or text | `screen.getByText("Explore Cities")` |
+| 5 | accessible name | `screen.getByLabel("Forward, File-based routing")` |
+| 6 | nothing resolves | `screen.tapAt(x, y)`, preceded by a wait, + a `// TODO: add a testID` comment |
+
+These are the runner's own query kinds, counted the way `locate.js` counts them, over the runner's
+own tree — see "Reading the runner's tree" below. In particular:
+
+- **A role query needs a name.** `getByRole(role)` alone matches every element of that role, so a
+  role with no accessible name is not a candidate at all. A search field whose only text is its
+  placeholder has no name, which is why rank 3 exists: iOS accessibility offered the placeholder
+  *as* the name, the recorder emitted `getByRole("textbox", "Search transactions")`, and it
+  matched nothing.
+- **The role is never translated.** It is whatever the engine's projection said, passed through.
+  The one thing the recorder knows about roles of its own is which ones `getByRole` *accepts* —
+  `e2e`'s `Role` union is closed, and the engine deliberately keeps an element type it has no role
+  for as the type itself (`other`, `application`). Those fall through to ranks 4 and 5 rather than
+  reaching the file as `getByRole("other", …)`, which would not compile.
+- **`getByText` and `getByLabel` answer with the innermost match only.** A device tree echoes text
+  upwards — iOS reports a React Native `Text` host view and the `StaticText` inside it with the
+  same label — so counting both would flag as ambiguous nearly every piece of text on screen,
+  while the runner resolves it uniquely.
+- **A role query skips a hidden node**, as the runner does, so an off-screen twin is not a second
+  match.
+- Text is compared with whitespace collapsed, because the runner normalizes and an accessibility
+  label carries the rendered line breaks.
 
 `screen.tapAt` is the only step with nothing to wait on: every locator action waits up to the
 action timeout for its element, but a coordinate is always "ready", so a recorded coordinate tap
@@ -122,53 +146,19 @@ An **assertion** that resolves to a point is refused outright rather than record
 nothing for `toBeVisible` to name, so the step would emit only comments.
 
 The ranks are tried over the **hit ladder** — every element the point sits inside, ordered by area,
-innermost first — not over one element and not over one tree's branch. The inspection merges two
-trees over the same pixels, React Native fibers and iOS accessibility, and they are not related by
-`parentId`, so following a single branch can lose the half that names the element.
-
-**Only accessibility nodes are named.** The inspection merges React Native fibers with the
-device's accessibility tree, and the two disagree about the same pixels. The runner queries only
-the second, so a selector built from the fibers can describe the screen perfectly and still fail
-with `LOCATOR_NOT_FOUND`. On the stock Expo Explore screen:
-
-| Element | Fibers say | Accessibility says | What the runner resolves |
-|---|---|---|---|
-| Collapsible header | `Pressable` > `Text` "File-based routing" | one element, name "Forward, File-based routing" (the chevron's name folded in) | `getByLabel("Forward, File-based routing")` |
-| Tab bar item | unlabelled `Pressable` | `AXRadioButton` "Explore" | `getByRole("tab", "Explore")` |
-| Paragraph | `RCTText`, nested children | `AXStaticText` with the whole string | `getByText(...)` |
-
-So the ladder is built from accessibility nodes, and the fibers are used only where a point has
-no accessibility node at all (an Android snapshot, a runtime-only tree), where a fiber-named
-selector still beats a coordinate.
-
-`getByText` searches text elements. A control whose accessible *name* merely contains words — a
-row, an icon button, a collapsible header — is reached by that name, which is `getByLabel`; the
-rank is added after text for exactly that case. Names are compared with whitespace collapsed,
-because the runner normalizes and an accessibility label carries the rendered line breaks.
+innermost first — not over one element. The innermost element often carries nothing addressable
+while something just outside it holds the name or the testID, and the wheel walks the outline out
+and back in when the element under the pointer is not the one the test should name.
 
 An icon-only control with no name of its own takes the **one** piece of text inside it; two and it
 stays unnamed and the ladder moves outwards, rather than guessing.
 
-**The status bar is not the app.** The device reports its own clock, Dynamic Island and battery in
-the same tree. The runner queries the app and never sees them, so they are dropped — anything
-lying wholly within the top 7% of the screen and carrying no identifier. They were otherwise
-chosen as steps, and as waits: a recorded flow opened with
-`await expect(screen.getByLabel("Dynamic Island, Empty")).toBeVisible()`.
-
-**The stale bridge is repaired, not just reported.** `Baguette.describeUi` already restarts the
-accessibility bridge when the simulator answers "no accessibility data" — but a stale bridge does
-not always fail. It answers `ok`, with the chrome and an unnamed root. The root of a healthy tree
-is the foreground app and it is named, so an unnamed root now triggers the same restart and one
-re-read (`packages/core/src/baguette.ts`). The panel guard below stays as the backstop for when
-the restart does not take.
-
-**When the tree holds only the status bar, recording stops.** It comes back that way sometimes —
-the app's own nodes missing while the simulator's chrome is reported. The fibers are still there
-and still describe the screen, so resolution would quietly fall back to them and emit a selector
-that cannot resolve at run time. `treeHealth` names the three cases — `ok`, `chrome-only`,
-`no-accessibility` — and the recorder refuses a step on `chrome-only` with what to do about it.
-`no-accessibility` is the honest fibers-only case (Android, a runtime-only tree) and still
-records.
+**The simulator's chrome is not in the tree.** The clock, the Dynamic Island and the battery used
+to arrive in the same tree as the app's own elements, and were chosen as steps and as waits — a
+recorded flow once opened with
+`await expect(screen.getByLabel("Dynamic Island, Empty")).toBeVisible()`. The runner's snapshot is
+rooted at the application, so there is nothing to filter: `treeHealth` is down to `ok` and
+`no-accessibility`, and the recorder refuses a step only when the tree is empty.
 
 **Depth beats rank**: the innermost element that can be named at all wins, and the ranks above
 only order the candidates *within* one element. An enclosing element is reached by pointing at it
@@ -179,13 +169,11 @@ out to the enclosing element, back in again, re-resolved from the cached tree at
 reads `3/7`. Pointing at a different element starts again from the innermost. The recorded step is
 whatever the outline shows, so what you see is what is written.
 
-**Roles are translated, not passed through.** The device's vocabulary is not the runner's: iOS
-accessibility reports `AXRadioButton` for a tab bar item, React Native inspection reports the fiber
-name, so a `<Text>` arrives as `RCTText`. The runner's role union is *closed*, so an untranslated
-role is a type error in the saved file rather than a query that misses. `normalizeRole` maps what
-it can (`AXRadioButton` → `tab`, `RCTImageView` → `image`) and returns `""` for anything with no
-equivalent, which drops the role rank and names the step by its text. A React Native label that is
-just the component name is not text either, and is ignored.
+**Roles are passed through, never translated.** The engine's projection already mapped the
+platform's element type onto the runner's role vocabulary, and it is the only thing that gets a
+say: a second mapping here is what put `getByRole("link", …)` and `getByRole("rcttext", …)` into
+saved files. The recorder's only knowledge of roles is which ones `getByRole` accepts; see
+"Selector resolution" above.
 
 Uniqueness check: run the candidate selector back over the same tree. If it matches more than one
 node, fall to the next rank, and if all ranks are ambiguous, emit the best one with an index and
@@ -285,27 +273,56 @@ A **Run** button in the panel shells `npx e2e run tests/<file>` in the project r
 result into the step list, marking the step that failed. This closes the loop: record, run, fix the
 selector, run again.
 
-## Reading the same tree as the runner
+## Reading the runner's tree
 
-The recorder reads the accessibility tree through Baguette, over the macOS accessibility API. The
-runner reads it through the vendored agent-device engine, over XCUITest. They agree about names
-and roles — that was checked element by element against a live app — but not about reliability:
-Baguette's bridge goes stale, and its tree carries the simulator's own chrome, which XCUITest
-never shows.
+**The recorder reads the element tree the runner will query, not a second tree over the same
+pixels.** `packages/core/src/testing-device.ts` takes an agent-device snapshot of the device —
+`capture.snapshot({ interactiveOnly: false })`, the same call the runner's own locator path makes
+— and projects it with the **project's own** `@e2e-dev/mobile` build, the one that will run the
+test. The panel reaches it through `mobile_testing_read_tree`.
 
-Closing that for good means reading from agent-device, which this plugin already vendors and
-drives (`packages/core/src/agent-device-runtime.ts`; app-flow's manual recorder takes snapshots
-with node rects through it). It is not free:
+This replaces reading the macOS accessibility API through Baguette and translating its vocabulary
+into the runner's with a table in `test-recording.ts`. That table was the bug, not the fix for it.
+Two trees over the same pixels do not agree, and every way they disagreed reached the user as a
+recorded test that simply did not resolve:
 
-| | Baguette `describe-ui` | agent-device `snapshot` |
+| | What iOS accessibility said | What the runner says |
 |---|---|---|
-| What it costs | one loopback GET, tens of ms | 0.3–1.5 s per read |
-| What it needs | nothing | a session from `open`, which foregrounds or relaunches the app under the user's mirror |
-| What it sees | the app plus the simulator's chrome | exactly what the runner sees |
+| Tab bar item | `AXRadioButton` — a table had to guess `tab` | `tab`, derived from the tab bar around it |
+| `<Text>` inside a `<Link>` | `AXLink`, from the link *trait* that any view can carry | `text`, from the XCUIElement *type* |
+| Search field | name "Search transactions" (its placeholder) | no name; `placeholder` is "Search transactions" |
+| A line of text and its wrapper | two matches, so "ambiguous" | one match, innermost |
 
-A tap holds the touch until the read returns, so a second per tap is not a detail. The order is
-therefore: repair the bridge and drop the chrome (done), and move to agent-device if staleness
-survives that — reusing app-flow's manual session rather than opening a second one.
+Reading one tree makes all four agree **by construction** rather than by a mapping someone has to
+maintain: role vocabulary and name sources are the engine's, and the recorder only chooses which
+query to use. `normalizeRole`, `ROLE_ALIASES` and the fiber-versus-accessibility split are gone
+with it, and so is the simulator-chrome filter — the runner's snapshot is rooted at the
+application, so the clock and the Dynamic Island are not in it to filter.
+
+It costs a snapshot per read (about 0.1 s in practice, measured against a booted iPhone 17 Pro),
+against tens of milliseconds for a Baguette loopback. A tap holds the touch until the read
+returns, and the recorder caches the tree for 1.5 s and invalidates it on every input, so a warm
+tree answers a hover or a walk without a round trip.
+
+### Baguette still owns the mirror
+
+Only the recorder's *read* path moved. Video frames and touch injection are unchanged, and the
+two hold the same simulator at once: with the mirror streaming, a snapshot returns in about a
+tenth of a second, the stream stays open and a frame arrives for the change the snapshot's own tap
+caused.
+
+### The session, and giving it back
+
+Reading holds an agent-device session on the device, and **agent-device allows exactly one session
+per device**. A session left open makes the user's next `npx e2e run` fail with `Device is already
+in use by session …` — a refusal they cannot connect to anything they did, and a worse failure
+than any this path fixes. So the device is released on every path out of recording: stopping,
+detaching, a device that changes under the recorder, and the panel being disposed
+(`RecorderReader.release`, `TestingDevices.release`).
+
+Attaching names the bundle id and passes `relaunch: false`. Never `--foreground`, which refuses
+outright when more than one app is running on the simulator, and never anything that relaunches:
+the recorder exists so the user keeps tapping the screen they are already on.
 
 ## Maestro, later
 

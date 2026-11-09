@@ -8,10 +8,31 @@ import { countUiEvent, recordUiTiming } from "./telemetry.ts";
  * connection, so it supplies this; the recorder never talks to the host itself.
  */
 export type RecorderReader = {
-  /** The accessibility tree as flat components, in the same coordinate space as `screen`. */
+  /** The runner's element tree as flat components, in the same coordinate space as `screen`. */
   readComponents: () => Promise<ScreenComponent[]>;
   /** The screen size the mirror maps pointer events into. */
   screen: () => ScreenSize;
+  /**
+   * Gives the device back to whoever wants it next.
+   *
+   * Reading the runner's tree holds a session on the device, and the runner allows exactly one, so
+   * a session left open here makes the user's next `e2e run` fail with "device is already in use"
+   * — a refusal they cannot connect to anything they did. The recorder calls this on every path
+   * out of recording: stop, detach, and a device that changes under it.
+   */
+  release?: () => void;
+};
+
+/**
+ * Reads the runner's element tree for one device, and owns the session that read needs.
+ *
+ * The Testing panel installs this, because it is the panel that knows which e2e project and which
+ * target the recording is for; the simulator panel knows the device and the screen. The recorder
+ * is the one object both already share, so it is where the two halves meet.
+ */
+export type RecorderTreeSource = {
+  read: (udid: string) => Promise<ScreenComponent[]>;
+  release: () => void;
 };
 
 export type TestRecorderSnapshot = {
@@ -40,10 +61,11 @@ export type TestRecorderSnapshot = {
 
 const DEFAULT_TITLE = "a recorded flow";
 /**
- * The device is describing only its own status bar. Every name a test could use lives in the app's
- * accessibility tree, so there is nothing to record until it comes back.
+ * The runner reported no elements at all, so there is nothing a recorded step could name. It is
+ * the app, not the read path: the snapshot is rooted at the application and never carries the
+ * simulator's own chrome.
  */
-const CHROME_ONLY = "The simulator is only reporting its status bar, not the app, so a recorded step would name nothing the test runner can find. Bring the Simulator window on screen, then record again.";
+const NO_TREE = "The app is not reporting any elements, so a recorded step would name nothing the test runner can find. Bring the app to the foreground, then record again.";
 /**
  * How long a tree read stays usable. Any input invalidates it outright; this only bounds the case
  * where the app changed the screen on its own (an animation finishing, data arriving) without the
@@ -74,8 +96,25 @@ export class TestRecorder {
     recordingUdid: "", assertMode: false, steps: [], title: DEFAULT_TITLE, revision: 0, resolving: false, error: "",
   };
 
+  private treeSource?: RecorderTreeSource;
+
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   getSnapshot = () => this.snapshot;
+
+  /** The Testing panel supplies the tree source; see `RecorderTreeSource`. */
+  useTreeSource(source?: RecorderTreeSource) {
+    if (this.treeSource === source) return;
+    this.treeSource?.release();
+    this.treeSource = source;
+    this.invalidate();
+  }
+
+  /** What a panel's `readComponents` forwards to. Without a source there is nothing to record from. */
+  readTree(udid: string): Promise<ScreenComponent[]> {
+    return this.treeSource ? this.treeSource.read(udid) : Promise.resolve([]);
+  }
+
+  releaseTree() { this.treeSource?.release(); }
 
   private update(fields: Partial<TestRecorderSnapshot>) {
     // Anything that changes the emitted source is a new revision; the controls are not.
@@ -87,6 +126,8 @@ export class TestRecorder {
   /** The simulator panel hands the recorder its way of reading the device it shows. */
   attach(udid: string, reader: RecorderReader) {
     if (this.snapshot.recordingUdid && this.snapshot.recordingUdid !== udid) return;
+    // A reader being replaced held a session on whatever it was reading; hand that back first.
+    if (this.reader && this.reader !== reader) this.reader.release?.();
     this.reader = reader;
     this.invalidate();
   }
@@ -94,9 +135,13 @@ export class TestRecorder {
   /** The panel's device went away, so nothing can be recorded from it any more. */
   detach(udid: string) {
     if (this.snapshot.recordingUdid && this.snapshot.recordingUdid !== udid) return;
+    const reader = this.reader;
     this.reader = undefined;
     this.invalidate();
-    if (this.snapshot.recordingUdid) this.stop();
+    // `stop` releases through the reader, which is why the reader outlives this assignment until
+    // after it; with nothing recording there is still a session to give back.
+    if (this.snapshot.recordingUdid) { this.reader = reader; this.stop(); this.reader = undefined; }
+    else reader?.release?.();
   }
 
   isRecording(udid?: string) {
@@ -122,6 +167,8 @@ export class TestRecorder {
     if (!this.snapshot.recordingUdid) return;
     this.clearHover();
     this.update({ recordingUdid: "", assertMode: false, resolving: false });
+    // The steps stay; the device does not. See `RecorderReader.release`.
+    this.reader?.release?.();
     countUiEvent("ui.testing.record_stop");
   }
 
@@ -174,8 +221,8 @@ export class TestRecorder {
     const point = this.hoverPoint;
     const screen = this.reader?.screen();
     if (!point || !screen) return;
-    if (treeHealth(components, screen) === "chrome-only") {
-      if (this.snapshot.error !== CHROME_ONLY) this.update({ error: CHROME_ONLY });
+    if (treeHealth(components) === "no-accessibility") {
+      if (this.snapshot.error !== NO_TREE) this.update({ error: NO_TREE });
       if (this.snapshot.hover) this.update({ hover: undefined });
       return;
     }
@@ -249,11 +296,10 @@ export class TestRecorder {
     try {
       const components = await this.currentComponents();
       const screen = this.reader?.screen();
-      if (treeHealth(components, screen) === "chrome-only") {
-        // The fibers would still answer, and every selector built from them would name something
-        // the runner cannot find. A refused step is recoverable; a test that cannot run is not.
-        countUiEvent("ui.testing.tree_chrome_only");
-        this.update({ error: CHROME_ONLY });
+      if (treeHealth(components) === "no-accessibility") {
+        // A refused step is recoverable; a test that cannot run is not.
+        countUiEvent("ui.testing.tree_empty");
+        this.update({ error: NO_TREE });
         return false;
       }
       // The outline the user is looking at is the step they mean, walked-out level and all.
@@ -272,7 +318,7 @@ export class TestRecorder {
         label: stepLabel(kind, selector),
         ...(ambiguous ? { ambiguous } : {}),
         // Only a coordinate tap needs one: every locator action waits for its own element.
-        ...(selector.kind === "point" ? { anchor: anchorSelector(components, point, screen) } : {}),
+        ...(selector.kind === "point" ? { anchor: anchorSelector(components, point) } : {}),
       };
       this.update({ steps: [...this.snapshot.steps, step] });
       countUiEvent(kind === "tap" ? "ui.testing.step_tap" : "ui.testing.step_assert");

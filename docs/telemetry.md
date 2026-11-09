@@ -537,6 +537,23 @@ it does not confirm user submission or a model response. Notes remain until the
 user clears them. Message/context construction timings, surface attribution, and
 content scrubbing are preserved; no note text or selection evidence enters telemetry.
 
+The Testing panel's recorder measures `ui.testing.tree_read`, the read that resolves a tap into a
+selector, and counts `ui.testing.record_start`/`record_stop`, `ui.testing.step_tap`,
+`ui.testing.step_assert`, `ui.testing.step_unresolved` and `ui.testing.hover_walk`. **The timing's
+meaning changed when the recorder moved to the test runner's own element tree**: it now measures an
+agent-device snapshot of the device projected by the project's `@e2e-dev/mobile` (around a tenth of
+a second against a booted iPhone 17 Pro), where it previously measured a Baguette `describe-ui`
+loopback of tens of milliseconds. It is the same boundary — the wait a tap pays before its step is
+named — so the measurement stays comparable in purpose, but not in magnitude; read a step across
+that release as a change of read path, not a regression. The recorder caches the tree for 1.5 s and
+invalidates it on every input, so a warm hover or wheel walk is answered locally and not measured.
+`ui.testing.tree_chrome_only` is gone with the Baguette path, since the runner's snapshot is rooted
+at the application and cannot report only the simulator's chrome; `ui.testing.tree_empty` replaces
+it and counts a tree with no elements at all. Handled failures of the read and of releasing the
+device go through `captureServerError` as `testing.tool` and `testing.release`. No element names,
+labels, placeholders, testIDs, roles, bounds, bundle ids, project paths, device identifiers or
+emitted test source are attached to any of these.
+
 Since 0.1.99, `ui.logs.foreground_change` counts automatic app-filter changes applied while Logs is active, including selected-device and process-lifetime changes. From 0.1.103, these changes update the visible query and local process identity mapping instead of restarting a scoped collector. `ui.logs.app_identity` measures batch insertion with native PID-to-app joins and discovery updates in milliseconds, using bounded aggregate windows. Hidden or closed log views defer row processing until reopened. Shared `ui.device_apps.discovery` timing and handled discovery-error coverage remain in place, including Android's foreground PID lookup; native session operations retain MCP tracing, Node runtime coverage, and `logs.ios.parse` timings. No app IDs, PIDs, package names, device IDs, or query text are attached to these measurements. Native helper telemetry and symbols are unchanged.
 
 Since 0.1.99, `ui.logs.query_parse` measures query compilation in milliseconds once per edit, including automatic app-clause edits from 0.1.103. Existing `ui.logs.filter`, buffered/filtered row gauges, and search counts cover keyword filtering and visible age refreshes; filtering time still covers snapshot derivation and grouping. Query text, field values, regex patterns, and validation messages remain local. Age refresh timers stop when Logs closes, unmounts, or the document becomes hidden.

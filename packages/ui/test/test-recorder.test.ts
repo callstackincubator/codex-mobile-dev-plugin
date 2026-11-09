@@ -6,15 +6,17 @@ import { TestRecorder } from "../src/test-recorder.ts";
 const UDID = "11111111-2222-3333-4444-555555555555";
 const SCREEN = { width: 402, height: 874 };
 
-function reader(components: ScreenComponent[], reads: { count: number }) {
+function reader(components: ScreenComponent[], reads: { count: number; released?: number }) {
   return {
     readComponents: async () => { reads.count++; return components; },
     screen: () => SCREEN,
+    release: () => { reads.released = (reads.released ?? 0) + 1; },
   };
 }
 
+/** One element as the e2e runner reports it: its own role, and its accessible name in `label`. */
 const tab = (label: string, y: number): ScreenComponent => ({
-  name: label, label, role: "AXButton", depth: 1, source: "accessibility", nodeId: label,
+  name: label, label, text: label, role: "button", depth: 1, source: "accessibility", nodeId: label,
   bounds: { x: 0, y, width: 100, height: 40 },
 });
 
@@ -163,8 +165,8 @@ test("the outline is dropped when the screen it was resolved against is gone", a
 });
 
 const CARD: ScreenComponent[] = [
-  { name: "card", label: "Open city", identifier: "city-card", role: "AXButton", depth: 1, source: "accessibility", nodeId: "card", bounds: { x: 0, y: 100, width: 300, height: 80 } },
-  { name: "Paris", label: "Paris", role: "AXStaticText", depth: 2, source: "accessibility", nodeId: "label", parentId: "card", bounds: { x: 10, y: 110, width: 100, height: 20 } },
+  { name: "card", label: "Open city", identifier: "city-card", role: "button", depth: 1, source: "accessibility", nodeId: "card", bounds: { x: 0, y: 100, width: 300, height: 80 } },
+  { name: "Paris", label: "Paris", text: "Paris", role: "text", depth: 2, source: "accessibility", nodeId: "label", parentId: "card", bounds: { x: 10, y: 110, width: 100, height: 20 } },
 ];
 
 test("the outline walks out to the enclosing element and records what it shows", async () => {
@@ -219,7 +221,7 @@ test("a coordinate tap carries a wait for the screen it was recorded on", async 
 
   const step = recorder.getSnapshot().steps.at(-1);
   assert.equal(step?.selector.kind, "point");
-  assert.deepEqual(step?.anchor, { kind: "label", label: "Explore" });
+  assert.deepEqual(step?.anchor, { kind: "text", text: "Explore" });
   assert.match(recorder.source, /toBeVisible\(\);\n\s+await screen\.tapAt/);
 });
 
@@ -255,4 +257,43 @@ test("the outline is drawn even where nothing can be named", async () => {
   const hover = recorder.getSnapshot().hover;
   assert.match(hover?.label ?? "", /at 300, 200/);
   assert.deepEqual(hover?.bounds, { x: 288, y: 188, width: 24, height: 24 });
+});
+
+test("the device is given back on every path out of recording", async () => {
+  // Reading the runner's tree holds a session, and the runner allows one per device, so a session
+  // left open here makes the user's next `e2e run` fail with "device is already in use".
+  const reads = { count: 0, released: 0 };
+  const recorder = new TestRecorder();
+  recorder.attach(UDID, reader([tab("Explore", 800)], reads));
+  recorder.start(UDID);
+  await recorder.record({ x: 50, y: 820 });
+
+  recorder.stop();
+  assert.equal(reads.released, 1, "stopping releases");
+
+  // Detaching with nothing recording still has a session to hand back.
+  recorder.detach(UDID);
+  assert.equal(reads.released, 2, "detaching releases");
+});
+
+test("detaching mid-recording stops and releases", async () => {
+  const reads = { count: 0, released: 0 };
+  const recorder = new TestRecorder();
+  recorder.attach(UDID, reader([tab("Explore", 800)], reads));
+  recorder.start(UDID);
+
+  recorder.detach(UDID);
+
+  assert.equal(recorder.isRecording(UDID), false);
+  assert.equal(reads.released, 1, "the device must not be held by a recording that no longer exists");
+});
+
+test("replacing the reader hands the old device back first", async () => {
+  const first = { count: 0, released: 0 };
+  const second = { count: 0, released: 0 };
+  const recorder = new TestRecorder();
+  recorder.attach(UDID, reader([tab("Explore", 800)], first));
+  recorder.attach(UDID, reader([tab("Explore", 800)], second));
+  assert.equal(first.released, 1, "the reader being replaced was holding a session");
+  assert.equal(second.released, 0);
 });
