@@ -7,12 +7,13 @@ import { PerformancePanel } from "./performance-panel.ts";
 import { StoragePanel } from "./storage-panel.ts";
 import { markUiSurfaceReady, setUiSurface } from "./telemetry.ts";
 import { TraceSiftPanel } from "./tracesift-panel.ts";
+import { AppIntelligencePanel } from "./app-intelligence-panel.ts";
 
-export const toolNames = ["logs", "performance", "storage", "tracesift", "app-flow"] as const;
+export const toolNames = ["logs", "performance", "storage", "app-intel", "tracesift", "app-flow"] as const;
 export type ToolName = typeof toolNames[number];
 export const isToolName = (value: unknown): value is ToolName => toolNames.includes(value as ToolName);
 
-type Panels = { context: PanelContext; deviceApps: DeviceAppsStore; logs: LogsPanel; performance: PerformancePanel; storage: StoragePanel; tracesift: TraceSiftPanel; "app-flow": AppFlowPanel };
+type Panels = { context: PanelContext; deviceApps: DeviceAppsStore; logs: LogsPanel; performance: PerformancePanel; storage: StoragePanel; "app-intel": AppIntelligencePanel; tracesift: TraceSiftPanel; "app-flow": AppFlowPanel };
 
 /** The tool panels every host shows beside its devices; hosts only choose the selected tool and draw chrome. */
 export class WorkspaceTools {
@@ -21,6 +22,7 @@ export class WorkspaceTools {
   readonly logs: LogsPanel;
   readonly performance: PerformancePanel;
   readonly storage: StoragePanel;
+  readonly "app-intel": AppIntelligencePanel;
   readonly tracesift: TraceSiftPanel;
   readonly "app-flow": AppFlowPanel;
 
@@ -33,13 +35,14 @@ export class WorkspaceTools {
       logs: new LogsPanel(host, context, deviceApps),
       performance: new PerformancePanel(host, deviceApps),
       storage: new StoragePanel(host, deviceApps),
+      "app-intel": new AppIntelligencePanel(host),
       tracesift: new TraceSiftPanel(host, attachments),
       "app-flow": new AppFlowPanel(host),
     });
   }
 
   constructor(panels: Panels) {
-    ({ context: this.context, deviceApps: this.deviceApps, logs: this.logs, performance: this.performance, storage: this.storage, tracesift: this.tracesift, "app-flow": this["app-flow"] } = panels);
+    ({ context: this.context, deviceApps: this.deviceApps, logs: this.logs, performance: this.performance, storage: this.storage, "app-intel": this["app-intel"], tracesift: this.tracesift, "app-flow": this["app-flow"] } = panels);
   }
 
   panel(name: ToolName) { return this[name]; }
@@ -82,6 +85,7 @@ export class WorkspaceTools {
     this.deviceApps.dispose();
     this.storage.dispose();
     this.tracesift.dispose();
+    this["app-intel"].dispose();
     await Promise.allSettled([this.logs.dispose(), this.performance.dispose(), this["app-flow"].dispose()]);
   }
 }

@@ -10,6 +10,7 @@ import { createDeviceApps } from "../../test-support/device-apps-fixtures.ts";
 import { PerformancePanel } from "../src/performance-panel.ts";
 import { StoragePanel } from "../src/storage-panel.ts";
 import { TraceSiftPanel } from "../src/tracesift-panel.ts";
+import { AppIntelligencePanel } from "../src/app-intelligence-panel.ts";
 import { RecordingController } from "../src/recording-controller.ts";
 import type { AppFlowPanel } from "../src/app-flow-panel.ts";
 import { WorkspaceTools } from "../src/workspace-tools.ts";
@@ -116,6 +117,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   const storage = new StoragePanel(storageApp as unknown as App, deviceApps);
   storage.setAvailable(true);
   const tracesift = new TraceSiftPanel(storageApp as unknown as App);
+  const appIntel = new AppIntelligencePanel(storageApp as unknown as App);
   const recordingController = new RecordingController(performanceApp as unknown as App);
   const appFlowSnapshot = { open: false };
   const appFlow = {
@@ -124,7 +126,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
     show() {},
     hide() {},
   };
-  const panels = new WorkspaceTools({ context: context as PanelContext, deviceApps, logs: panel, performance, storage, tracesift, "app-flow": appFlow as unknown as AppFlowPanel });
+  const panels = new WorkspaceTools({ context: context as PanelContext, deviceApps, logs: panel, performance, storage, "app-intel": appIntel, tracesift, "app-flow": appFlow as unknown as AppFlowPanel });
   deviceApps.selectDevice({ udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS" });
   performance.setAvailable(true);
   deviceApps.setAvailable(true);

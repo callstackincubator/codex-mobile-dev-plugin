@@ -61,6 +61,13 @@ export function recordAppStorageOperation(operation: AppStorageOperation, platfo
   Sentry.metrics.gauge("app_storage.operation.duration", duration, { unit: "millisecond", attributes });
 }
 
+export function recordAppIntelOperation(operation: "generate" | "query" | "snapshot" | "pick" | "clear", outcome: "success" | "failed" | "cancelled", duration: number) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = { component: "server", surface: "app-intel", operation, outcome };
+  Sentry.metrics.count("app_intel.operation.samples", 1, { attributes });
+  Sentry.metrics.gauge("app_intel.operation.duration", duration, { unit: "millisecond", attributes });
+}
+
 /**
  * Time the App Flow project dialog stayed open. Like the sweep's decision wait, this is a person
  * deciding rather than plugin work, so it is reported on its own and never folded into a UI timing.
@@ -307,7 +314,7 @@ const resourceKinds: Record<string, string> = {
   "android-stream:": "android_video", "ios-video:": "ios_video", "ui:": "ui",
 };
 const allowedContext: Record<string, readonly string[]> = {
-  surface: ["app-flow", "logs", "performance", "storage", "simulator", "recording", "comparison", "tracesift"], view: ["panel", "workspace", "recording", "comparison", "tracesift"], layout: ["ios", "android", "both", "none"],
+  surface: ["app-flow", "logs", "performance", "storage", "simulator", "recording", "comparison", "tracesift", "app-intel"], view: ["panel", "workspace", "recording", "comparison", "tracesift"], layout: ["ios", "android", "both", "none"],
   device_platform: ["ios", "android", "mixed"], device_kind: ["physical", "simulator", "emulator", "none"], host: TELEMETRY_HOSTS,
 };
 

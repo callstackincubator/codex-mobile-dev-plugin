@@ -14,6 +14,7 @@ import type { DeviceLayout } from "@mobile-dev/ui/device-layout.ts";
 import { panelTargetSchema } from "@mobile-dev/shared/panel-target.ts";
 import { DeviceWorkspace } from "@mobile-dev/ui/device-workspace.ts";
 import { WorkspaceTools } from "@mobile-dev/ui/workspace-tools.ts";
+import type { ToolName } from "@mobile-dev/ui/workspace-tools.ts";
 import { startLiveReload } from "./live-reload.ts";
 import { ErrorBoundary, captureUiError, startUiTelemetry, stopUiTelemetry } from "@mobile-dev/ui/telemetry.ts";
 import { PLUGIN_VERSION } from "@mobile-dev/shared/version.ts";
@@ -32,9 +33,11 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
   const recordingController = new RecordingController(app, { attachments, workspace: true });
   const extension = options.extension?.(app);
   const reactRoot = createRoot(document.getElementById("root")!);
+  let automaticTool: ToolName | undefined;
+  let automaticToolRevision = 0;
   function renderWorkspace(automaticLayout?: DeviceLayout) {
     const workspace = <ErrorBoundary fallback={<p role="alert">Mobile Dev could not render. Reopen the panel to try again.</p>}>
-      <Workspace panels={panels} recordingController={recordingController} banner={extension?.banner} displayModeControl={options.displayModeControl === false ? undefined : <DisplayModeButton app={app} />} contextControl={<ContextAttachments context={panels.context} />} automaticLayout={automaticLayout} onLayout={changeLayout} />
+      <Workspace panels={panels} recordingController={recordingController} banner={extension?.banner} displayModeControl={options.displayModeControl === false ? undefined : <DisplayModeButton app={app} />} contextControl={<ContextAttachments context={panels.context} />} automaticLayout={automaticLayout} automaticTool={automaticTool} automaticToolRevision={automaticToolRevision} onLayout={changeLayout} />
     </ErrorBoundary>;
     reactRoot.render(workspace);
   }
@@ -112,6 +115,9 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
       connectionFailed(error);
       return;
     }
+    if (target.data.workspaceTool) { automaticTool = target.data.workspaceTool; automaticToolRevision++; renderWorkspace(); }
+    if (target.data.workspaceTool === "app-intel" && target.data.appIntelScreen) panels["app-intel"].selectScreen(target.data.appIntelScreen);
+    if (target.data.workspaceTool === "app-intel") return;
     void devices.open(target.data).catch(connectionFailed);
   }
   app.ontoolinput = input => {

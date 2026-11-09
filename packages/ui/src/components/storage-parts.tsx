@@ -2,9 +2,7 @@ import { BracesIcon, DatabaseIcon, FolderIcon, LayersIcon } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import type { StoreKind } from "@mobile-dev/shared/app-storage.ts";
-import { Button } from "./ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "./ui/empty";
-import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from "./ui/popover";
 
 // Class names stay literal so Tailwind finds them. A ring of the same hue keeps a chip's edge visible on grey rows.
 const chipColors = {
@@ -50,20 +48,6 @@ export function SidebarRow({ icon, title, subtitle, trailing, selected, tooltip,
     <span className="min-w-0 flex-1"><span className="block truncate font-medium">{title}</span><span className="block truncate text-[11px] text-muted-foreground tabular-nums">{subtitle}</span></span>
     <span className="flex self-center text-muted-foreground tabular-nums">{trailing}</span>
   </button>;
-}
-
-export function ConfirmButton({ children, title, description, action, disabled, onConfirm, className, variant = "ghost", size = "xs" }: { children: ReactNode; title: string; description: string; action: string; disabled?: boolean; onConfirm: () => void; className?: string; variant?: "ghost" | "outline"; size?: "xs" | "sm" }) {
-  return <Popover>
-    <PopoverTrigger asChild><Button variant={variant} size={size} aria-label={title} title={title} disabled={disabled} className={className}>{children}</Button></PopoverTrigger>
-    <PopoverContent align="end" className="w-[min(300px,calc(100vw-24px))] p-3 text-xs">
-      <p className="mb-1 font-medium">{title}?</p>
-      <p className="mb-3 text-muted-foreground">{description}</p>
-      <div className="flex justify-end gap-2">
-        <PopoverClose asChild><Button variant="ghost" size="xs">Cancel</Button></PopoverClose>
-        <PopoverClose asChild><Button variant="destructive" size="xs" onClick={onConfirm}>{action}</Button></PopoverClose>
-      </div>
-    </PopoverContent>
-  </Popover>;
 }
 
 export function StorageEmpty({ title, description }: { title: string; description: string }) {

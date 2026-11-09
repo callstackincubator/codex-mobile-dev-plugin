@@ -647,7 +647,7 @@ The plugin servers for Codex, Claude and Cursor serve agent-device's commands as
 | Node responsiveness | Automatic event-loop delay, utilization and process uptime. |
 | UI JavaScript heap | `ui.memory.heap_used`, `ui.memory.heap_total` and `ui.memory.heap_limit` in bytes at startup and every 30 seconds while visible, when Chromium's `performance.memory` is available. `ui.memory.supported` distinguishes unsupported contexts. These estimates do not measure total renderer or GPU memory. |
 | UI responsiveness | Browser tracing captures available web vitals. Custom metrics record visible animation-frame intervals, intervals over 50 ms, Event Timing interaction durations, long tasks and long animation frames where supported. |
-| Product surfaces | Metrics carry `surface=app-flow`, `simulator`, `logs`, `performance`, `recording` or `comparison`, plus view, visible device layout and monitoring state. App Flow readiness/graph work, log filter time, buffered/filtered rows, performance batch processing, canvas draw time and time to first video frame help explain slow surfaces. |
+| Product surfaces | Metrics carry `surface=app-flow`, `simulator`, `logs`, `performance`, `storage`, `app-intel`, `tracesift`, `recording` or `comparison`, plus view, visible device layout and monitoring state. App Flow readiness/graph work, log filter time, buffered/filtered rows, performance batch processing, App Intelligence generation and graph size, canvas draw time and time to first video frame help explain slow surfaces. |
 | Frame capture | `ui.screenshot.capture` measures synchronous canvas PNG encoding and base64 extraction in milliseconds for Select captures and physical iOS screenshots. `ui.screenshot.encode` measures PNG decoding, bounded JPEG encoding, and base64 extraction for chat attachments in milliseconds. Screenshot tools retain sampled MCP traces and report handled capture, attachment, and clipboard failures without image content. |
 | Pasted input | Command-V paste uses the existing ordered device input queue and `ui.device_input.round_trip` timing through MCP acknowledgement. It retains simulator surface/device context and existing input failure reporting. Clipboard content and validation failures are not sent to Sentry. |
 | Storage | Every five minutes, a server with agent-device measures its session state directory and the shared Apple runner cache in bytes, from the runtime's first start. It skips symlinks and sends only the storage kind and size. |
@@ -706,6 +706,29 @@ logs, arbitrary names and credentials remain excluded. Collection uses the
 existing centralized Sentry initialization, environment and telemetry opt-out.
 Native rebuilds retain matching Baguette dSYMs, and release uploads continue to
 upload those symbols with the plugin release.
+
+App Intelligence uses the `app-intel` surface. `app_intel.operation.duration` and
+`.samples` measure bounded generation, query, snapshot, clear and folder-picker
+operations by success, failure or cancellation. The UI records generation/load/picker round
+trips, surface readiness, and gauges only the counts of files and screens in the
+displayed snapshot. `ui.app_intel.flow_layout` times building and placing the
+per-screen dependency graph — the hop layering, its boundary grouping and the
+geometry for the chosen reading direction — and `ui.app_intel.flow_nodes` gauges
+how many cards it drew, which is what drives that cost. The panel no longer has a
+directory treemap, so the Atlas measurements `ui.app_intel.atlas_layout`,
+`ui.app_intel.atlas_cells`, `ui.app_intel.view_switch` and `ui.app_intel.zoom` are
+gone rather than renamed; `flow_layout` and `flow_nodes` keep their meaning and
+units, so their history stays comparable even though they now cover grouping and
+placement as well. `ui.app_intel.group_collapse`, `.group_expand` and
+`.group_show_all` count folding a boundary away, bringing it back and opening one
+past its row cap, `ui.app_intel.boundary_highlight` counts lighting one boundary's
+connectors up, `ui.app_intel.project_switch` counts picking a remembered
+project instead of the host folder picker, `ui.app_intel.clear` counts throwing a
+saved graph away, and `ui.app_intel.boundary_filter`
+counts how often the entry-point filter is changed. All of these count the change
+only; which boundary, project or direction was picked is not an attribute. Project paths, source paths, screen and package names, source
+contents, queries, diagnostics, graph edges and snapshot identifiers remain local
+and are never telemetry attributes.
 
 A Fast screen sweep now runs with no decision provider unless the panel's per-project "Judge unclear screens with AI" switch is on, so the judge path described above is reachable in Fast only when that switch asked for it; with it off, a screen whose runtime evidence is incomplete is recorded unreached instead of being sent to the judge, and `app_flow.runtime.verify` emits no `judge` arrivals for that run. The series, its unit and its attributes are unchanged — the runtime/judge split simply shifts further towards `runtime` for Fast runs started with the switch off. The panel adds one UI count beside `ui.app_flow.capture_ui_states_start` and with the same shape, `ui.app_flow.judge_unclear_screens_start`, once per user-started run that has the switch on, so how often Fast pays for the decision loop is visible; it carries nothing beyond the shared surface attributes — no project path, screen, route or verdict. A Fast run with the switch off is also started straight from the panel rather than through a chat message, so it records `ui.app_flow.start` where a chat-started sweep records none; that is the existing split between the two start paths, not a new measurement.
 
