@@ -1,19 +1,19 @@
 {
   "name": "mobile-dev-ios-logs",
   "target": "darwin-arm64",
-  "sourceSHA256": "7b7448ec15a6b9636a98e6551e7e40b45b3f4fcecdde423a246612dbd507e870",
+  "sourceSHA256": "34f0dadff2e1269ab5626ddd953cc99ab0a4681de94aa966270c2f1363ba28fb",
   "sources": [
     {
       "name": "libplist",
-      "version": "2.8.0",
-      "url": "https://github.com/libimobiledevice/libplist/releases/download/2.8.0/libplist-2.8.0.tar.bz2",
-      "sha256": "b1f59f7634c58b2481325a23ff4e3bf51574a42d868cbe466d2b39b04550752a"
+      "version": "2.8.1",
+      "url": "https://github.com/libimobiledevice/libplist/releases/download/2.8.1/libplist-2.8.1.tar.bz2",
+      "sha256": "2a1792e5820e1657c173735fde75baeebd6dd967d2ac47be1e3891ddc64ebefa"
     },
     {
       "name": "libimobiledevice-glue",
-      "version": "1.3.2",
-      "url": "https://github.com/libimobiledevice/libimobiledevice-glue/releases/download/1.3.2/libimobiledevice-glue-1.3.2.tar.bz2",
-      "sha256": "6489a3411b874ecd81c87815d863603f518b264a976319725e0ed59935546774"
+      "version": "1.3.3",
+      "url": "https://github.com/libimobiledevice/libimobiledevice-glue/releases/download/1.3.3/libimobiledevice-glue-1.3.3.tar.bz2",
+      "sha256": "920ce01382a32695f49b23292b4979a03f0afd16c58e8755d8b7f41804acc1a9"
     },
     {
       "name": "libusbmuxd",
@@ -23,9 +23,9 @@
     },
     {
       "name": "libtatsu",
-      "version": "1.0.5",
-      "url": "https://github.com/libimobiledevice/libtatsu/releases/download/1.0.5/libtatsu-1.0.5.tar.bz2",
-      "sha256": "536fa228b14f156258e801a7f4d25a3a9dd91bb936bf6344e23171403c57e440"
+      "version": "1.1.0",
+      "url": "https://github.com/libimobiledevice/libtatsu/releases/download/1.1.0/libtatsu-1.1.0.tar.bz2",
+      "sha256": "96c8abd97552a4a0c487c701aba9a65d590c338dd331058ffb38304290b696c7"
     },
     {
       "name": "libimobiledevice",
@@ -37,27 +37,27 @@
   "openssl": "OpenSSL 3.5.9 29 Sep 2026 (Library: OpenSSL 3.5.9 29 Sep 2026)",
   "binaries": {
     "mobile-dev-ios-logs": {
-      "sha256": "e355b40b9ac673de4f012ef7c3356e75a1f4e5dc08d0272db8cda5bc92971bfd",
+      "sha256": "7a5ddf3c9eac9d91f7bbfd095c0fa40a44d7848c2a21d2984eff955ed569a59e",
       "bytes": 385488
     },
     "libimobiledevice-1.0.6.dylib": {
-      "sha256": "c4f146f584707e73c0e57e3009efcbcf3dc6ef01485f17190017f59e758f515b",
+      "sha256": "5d33b1b044275e27d1143b7d0c1dd3311e46322606891907f4a8c734ef1d0a0b",
       "bytes": 278608
     },
     "libimobiledevice-glue-1.0.0.dylib": {
-      "sha256": "b47e51feb17740d3cb16d11dee9056b58dc166d9f2160cbd984a0f9e9251c943",
+      "sha256": "a6abd5ecad2b8a3d50f4542b737f143e2fe0106dbe72276fa36433db9831b913",
       "bytes": 79568
     },
     "libplist-2.0.12.dylib": {
-      "sha256": "59929d71156878d2fefbef477d8c40b6d403ef1305bc2c0e487525efe830bc6c",
-      "bytes": 114976
+      "sha256": "3fa2335e6810093390a724532efe3cbf9ff972c9e7ad765fc536d39c42dc2390",
+      "bytes": 114800
     },
     "libtatsu.0.dylib": {
-      "sha256": "5abfcafc49353fb1de37a9a5dc7dfcb8541810a3cddc7721fc950e711bb94944",
-      "bytes": 55408
+      "sha256": "be44cf7f4680f5914e7aaaa2abd8a1882826476911dd95e7eca507e294e40125",
+      "bytes": 55552
     },
     "libusbmuxd-2.0.7.dylib": {
-      "sha256": "eed054740bf53c52165988b9f779e9144cfdb4668ed9cf867a05eb664c6e7d92",
+      "sha256": "79d4b7d28bb456227b211b1bf32670414b730e804c6dcd4b5f3e1480b9e3d4bc",
       "bytes": 71984
     },
     "libssl.3.dylib": {
