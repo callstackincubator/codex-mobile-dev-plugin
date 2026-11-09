@@ -1,19 +1,19 @@
 {
   "name": "mobile-dev-ios-logs",
   "target": "darwin-arm64",
-  "sourceSHA256": "013d00837b1356638a17ccc6a0839c52b9676ae4b62c261f0c118a6580826787",
+  "sourceSHA256": "34f0dadff2e1269ab5626ddd953cc99ab0a4681de94aa966270c2f1363ba28fb",
   "sources": [
     {
       "name": "libplist",
-      "version": "2.8.0",
-      "url": "https://github.com/libimobiledevice/libplist/releases/download/2.8.0/libplist-2.8.0.tar.bz2",
-      "sha256": "b1f59f7634c58b2481325a23ff4e3bf51574a42d868cbe466d2b39b04550752a"
+      "version": "2.8.1",
+      "url": "https://github.com/libimobiledevice/libplist/releases/download/2.8.1/libplist-2.8.1.tar.bz2",
+      "sha256": "2a1792e5820e1657c173735fde75baeebd6dd967d2ac47be1e3891ddc64ebefa"
     },
     {
       "name": "libimobiledevice-glue",
-      "version": "1.3.2",
-      "url": "https://github.com/libimobiledevice/libimobiledevice-glue/releases/download/1.3.2/libimobiledevice-glue-1.3.2.tar.bz2",
-      "sha256": "6489a3411b874ecd81c87815d863603f518b264a976319725e0ed59935546774"
+      "version": "1.3.3",
+      "url": "https://github.com/libimobiledevice/libimobiledevice-glue/releases/download/1.3.3/libimobiledevice-glue-1.3.3.tar.bz2",
+      "sha256": "920ce01382a32695f49b23292b4979a03f0afd16c58e8755d8b7f41804acc1a9"
     },
     {
       "name": "libusbmuxd",
@@ -23,9 +23,9 @@
     },
     {
       "name": "libtatsu",
-      "version": "1.0.5",
-      "url": "https://github.com/libimobiledevice/libtatsu/releases/download/1.0.5/libtatsu-1.0.5.tar.bz2",
-      "sha256": "536fa228b14f156258e801a7f4d25a3a9dd91bb936bf6344e23171403c57e440"
+      "version": "1.1.0",
+      "url": "https://github.com/libimobiledevice/libtatsu/releases/download/1.1.0/libtatsu-1.1.0.tar.bz2",
+      "sha256": "96c8abd97552a4a0c487c701aba9a65d590c338dd331058ffb38304290b696c7"
     },
     {
       "name": "libimobiledevice",
@@ -34,39 +34,39 @@
       "sha256": "23cc0077e221c7d991bd0eb02150a0d49199bcca1ddf059edccee9ffd914939d"
     }
   ],
-  "openssl": "OpenSSL 3.6.2 7 Apr 2026 (Library: OpenSSL 3.6.2 7 Apr 2026)",
+  "openssl": "OpenSSL 3.5.9 29 Sep 2026 (Library: OpenSSL 3.5.9 29 Sep 2026)",
   "binaries": {
     "mobile-dev-ios-logs": {
-      "sha256": "1a78a7b6782c5c0fb9c606db89416a1181484cdba1c836980b508b31b2b43e46",
-      "bytes": 385024
+      "sha256": "7a5ddf3c9eac9d91f7bbfd095c0fa40a44d7848c2a21d2984eff955ed569a59e",
+      "bytes": 385488
     },
     "libimobiledevice-1.0.6.dylib": {
-      "sha256": "229bb457ff0b3b701045ed124e3fdbce0e2115daf01b163735dcfba69c765927",
+      "sha256": "5d33b1b044275e27d1143b7d0c1dd3311e46322606891907f4a8c734ef1d0a0b",
       "bytes": 278608
     },
     "libimobiledevice-glue-1.0.0.dylib": {
-      "sha256": "e2fa173219ed5b6352d76232556b499cdac255cf28b0e277a8867e6b7a1615b8",
+      "sha256": "a6abd5ecad2b8a3d50f4542b737f143e2fe0106dbe72276fa36433db9831b913",
       "bytes": 79568
     },
     "libplist-2.0.12.dylib": {
-      "sha256": "205279316a58b20e84495fdfdb8d9f860e5197e1602bfd7e80f75a7bcced1ee6",
-      "bytes": 114976
+      "sha256": "3fa2335e6810093390a724532efe3cbf9ff972c9e7ad765fc536d39c42dc2390",
+      "bytes": 114800
     },
     "libtatsu.0.dylib": {
-      "sha256": "3a85f550bca667dc9ff46ccb72fe716b33b9f13126d34dfb0bc88f6176fd2a1f",
-      "bytes": 55408
+      "sha256": "be44cf7f4680f5914e7aaaa2abd8a1882826476911dd95e7eca507e294e40125",
+      "bytes": 55552
     },
     "libusbmuxd-2.0.7.dylib": {
-      "sha256": "fad3c8ea428fe603b894133d64610921ddd573e7951a9670b11ea54b03fd584b",
+      "sha256": "79d4b7d28bb456227b211b1bf32670414b730e804c6dcd4b5f3e1480b9e3d4bc",
       "bytes": 71984
     },
     "libssl.3.dylib": {
-      "sha256": "11291c1d6f0527e20448dc06d5bc93f839f33f22a552cf24d6edbd0d1160d158",
-      "bytes": 866576
+      "sha256": "aa5592da518730e26b5a1a7a7a258af138512d82d0ad345fd56df2437febb982",
+      "bytes": 883184
     },
     "libcrypto.3.dylib": {
-      "sha256": "fe33b1fe402dc6f540edb1b10e5619f9ddc3dfa90d0ae977c0e0843019495eba",
-      "bytes": 4827728
+      "sha256": "a04e19cf8931e6fbdb620d36c70966526cfe5442a99e1550af57370a1dcf4337",
+      "bytes": 4692784
     }
   }
 }
