@@ -25,6 +25,9 @@ Change the running device's appearance, text size, rotation, location, and statu
 ### App Flow
 Build a visual map of your app's screens and the navigation between them, for Expo Router and React Navigation projects. **Structure only** reads the navigation out of your source in seconds and needs no device; **Screen UI + Structure** also walks the app on an iOS simulator and photographs every screen it reaches, optionally opening each screen's sheets, modals, and dialogs. The walk runs your project's own `ios` script and reaches each screen through in-app navigation, a deep link, or a path you recorded; record one by hand on the live wireframe for a screen it cannot reach. Explore with AI lists the screens the deterministic pass missed and retries only the ones you pick. Maps, captures, and recorded paths are stored per project under `~/Library/Application Support/mobile-dev/app-flow`.
 
+### App Intelligence
+Trace each Expo Router or React Navigation screen through the source files, assets, and packages it depends on, without building or running the app. Choose a project and generate its static iOS and Android graph, then browse entry points by area, fold or highlight dependency groups, and see which dependencies are platform-specific. Ask your agent what a screen depends on, which screens reach a file, or to show one screen's graph. Saved snapshots live under `~/Library/Application Support/mobile-dev/app-intelligence`; project paths and graph contents are excluded from Sentry telemetry.
+
 ### Native and JavaScript logs
 Read iOS unified logs, Android logcat, and Metro console messages together. Follow the foreground app, search and filter logs, and send an error and its stack trace to chat.
 
@@ -214,8 +217,9 @@ Ask your agent to work with your app, for example:
 - “Read the app logs and help me fix this error.”
 - “Record CPU and memory for 30 seconds while I scroll checkout.”
 - “Compare these two performance recordings.”
+- “Show me the App Intelligence for this project.”
 
-Open Logs, Performance, Storage, or TraceSift to inspect the selected device. Use Screenshot to attach
+Open App Intelligence, Logs, Performance, Storage, or TraceSift. App Intelligence analyzes a project without a device; the other tools inspect the selected device. Use Screenshot to attach
 an image to your next message, or Select to annotate an element or region with an
 instruction. Physical iOS supports taps and drags; keyboard and hardware-button
 controls are unavailable.
@@ -226,6 +230,7 @@ Detailed guides are available for
 [devices](https://github.com/callstackincubator/mobile-dev/blob/main/docs/devices.md),
 [logs](https://github.com/callstackincubator/mobile-dev/blob/main/docs/logs.md),
 [performance](https://github.com/callstackincubator/mobile-dev/blob/main/docs/performance.md),
+[App Intelligence](https://incubator.callstack.com/codex-mobile-dev-plugin/docs/app-intelligence),
 and [MCP tools](https://github.com/callstackincubator/mobile-dev/blob/main/docs/mcp-tools.md).
 [Architecture](https://github.com/callstackincubator/mobile-dev/blob/main/docs/architecture.md) explains how the hosts share the server
 and panel.
