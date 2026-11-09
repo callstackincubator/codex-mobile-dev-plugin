@@ -25,6 +25,8 @@ function browser() {
   return { context, updates, host(clears?: number) { hostContext = clears === undefined ? {} : { [CONTEXT_CLEARS]: clears }; context.hostChanged(); } };
 }
 
+const flush = () => new Promise(resolve => setTimeout(resolve));
+
 test("a clear from the agent drops the notes a browser panel still shows", async () => {
   const f = browser();
   f.host(0);
@@ -35,6 +37,23 @@ test("a clear from the agent drops the notes a browser panel still shows", async
   f.host(1);
   assert.equal(f.context.attachmentCount, 0);
   assert.equal(f.context.screenAnnotations.length, 0);
+  // The drop replaces this tab's cleared server context, so the devices survive the clear.
+  await flush();
+  const last = JSON.stringify(f.updates.at(-1)!.content);
+  assert.match(last, /Mobile Dev has no selected simulator/);
+  assert.doesNotMatch(last, /Make this smaller/);
+});
+
+test("a clear with no notes still shares the devices again", async () => {
+  const f = browser();
+  f.host(0);
+  f.context.selectSimulator(annotation.simulator);
+  await flush();
+  const published = f.updates.length;
+  f.host(1);
+  await flush();
+  assert.equal(f.updates.length, published + 1);
+  assert.match(JSON.stringify(f.updates.at(-1)!.content), /test-device/);
 });
 
 test("the count a panel opens with is not a clear", async () => {

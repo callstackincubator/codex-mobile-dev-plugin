@@ -35,6 +35,7 @@ async function open() {
     fetch: (url, options) => fetch(url, { ...options, keepalive: options?.method === "DELETE" }),
   });
   let bridge: AppBridge | undefined;
+  let bridgeReady = false;
   let heartbeat: ReturnType<typeof setInterval> | undefined;
   let clearsPoll: ReturnType<typeof setInterval> | undefined;
   let polling = false;
@@ -44,6 +45,9 @@ async function open() {
   let contextChanged = () => {};
   // How many times the agent has cleared this tab's context, as the server counts them.
   let clears = 0;
+  // The count this tab's current content was stored under. A clear the server made before
+  // the store cannot have dropped that content, so the poll ignores counts up to it.
+  let storedClears = 0;
 
   function dispose() {
     if (disposed) return;
@@ -88,9 +92,19 @@ async function open() {
       if (response.ok === false) return;
       const body: unknown = await response.json();
       const count = typeof body === "object" && body !== null && "clears" in body ? body.clears : undefined;
-      if (typeof count === "number" && count !== clears) { clears = count; contextChanged(); }
+      if (typeof count === "number" && count > storedClears && count !== clears) { clears = count; contextChanged(); }
     } catch { /* the heartbeat reports a stopped server */ }
     finally { polling = false; }
+  }
+  // The agent can only clear content the server holds, so the page polls only while this
+  // tab has stored some (the server keeps no idle stream to push on).
+  function watchClears(shared: boolean) {
+    if (disposed || shared === false) {
+      clearInterval(clearsPoll);
+      clearsPoll = undefined;
+      return;
+    }
+    clearsPoll ??= setInterval(() => { void pollClears(); }, CLEARS_POLL_MS);
   }
   client.onerror = error => {
     if (error instanceof TypeError) stopped(DISCONNECTED);
@@ -101,7 +115,6 @@ async function open() {
   try {
     await client.connect(transport);
     heartbeat = setInterval(() => { void check(); }, 30_000);
-    clearsPoll = setInterval(() => { void pollClears(); }, CLEARS_POLL_MS);
     const { tools } = await client.listTools();
     const tool = tools.find(candidate => candidate.name === toolName);
     // A panel that does not render in the chat names its page under its own key.
@@ -139,6 +152,10 @@ async function open() {
       });
       if (response.status === 404) stopped(EXPIRED);
       if (response.ok === false) throw new Error(`Mobile Dev could not share this with the chat (${response.status}).`);
+      const body: unknown = await response.json().catch(() => undefined);
+      const count = typeof body === "object" && body !== null && "clears" in body ? body.clears : undefined;
+      if (typeof count === "number" && count > storedClears) storedClears = count;
+      watchClears((content ?? []).length > 0);
       return {};
     };
     bridge.onopenlink = async ({ url }) => {
@@ -151,8 +168,9 @@ async function open() {
     };
     bridge.onrequestdisplaymode = async () => ({ mode: "inline" });
     contextChanged = () => {
-      const updated = withClears(context());
-      bridge?.setHostContext(updated);
+      // setHostContext notifies over the bridge, which must be connected first.
+      if (bridgeReady === false || disposed) return;
+      bridge?.setHostContext(withClears(context()));
     };
     dark.addEventListener("change", contextChanged);
     const initialized = new Promise<void>((resolve, reject) => {
@@ -165,6 +183,7 @@ async function open() {
     const frameWindow = frame.contentWindow!;
     const frameTransport = new PostMessageTransport(frameWindow, frameWindow);
     await bridge.connect(frameTransport);
+    bridgeReady = true;
     frame.srcdoc = content.text;
     await initialized;
     await bridge.sendToolInput({ arguments: target });

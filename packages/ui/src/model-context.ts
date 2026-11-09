@@ -223,9 +223,15 @@ export class PanelContext {
         const first = this.seenClears === undefined;
         this.seenClears = clears;
         // The first value is the state the panel opened in, not a clear made while it was open.
-        if (!first && this.attachmentCount) {
-          this.attached = undefined; this.screenshots = []; this.annotations = []; this.pendingAnnotations.clear();
-          this.revision++; this.changed();
+        if (!first) {
+          countUiEvent("ui.context.agent_clear");
+          if (this.attachmentCount) {
+            this.attached = undefined; this.screenshots = []; this.annotations = []; this.pendingAnnotations.clear();
+            this.revision++; this.changed();
+          }
+          // The clear wiped this tab's whole stored context; share the devices again so
+          // the selection it promises to leave alone survives it.
+          void this.publish().catch(() => {});
         }
       }
       const ready = this.canAttach;

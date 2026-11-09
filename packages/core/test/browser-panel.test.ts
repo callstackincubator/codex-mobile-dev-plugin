@@ -338,12 +338,14 @@ test("a browser tab's model context reaches the agent and leaves with the tab", 
 
   const device = "Active iOS simulator: iPhone 17. Device ID: 11111111-1111-1111-1111-111111111111.";
   const stored = await putContext(endpoint, first, JSON.stringify({ content: [{ type: "text", text: device, annotations: { audience: ["assistant"] } }] }));
-  assert.equal(stored.status, 204);
+  assert.equal(stored.status, 200);
+  // The response tells the page which count its content was stored under.
+  assert.deepEqual(await stored.json(), { clears: 0 });
   assert.deepEqual(await read(), [{ type: "text", text: "Mobile Dev browser panel." }, { type: "text", text: device }]);
 
   await new Promise(resolve => setTimeout(resolve, 5));
   const screenshot = { type: "image", data: "aGVsbG8=", mimeType: "image/png" };
-  assert.equal((await putContext(endpoint, second, JSON.stringify({ content: [screenshot] }))).status, 204);
+  assert.equal((await putContext(endpoint, second, JSON.stringify({ content: [screenshot] }))).status, 200);
   const both = await read();
   assert.equal(both.length, 4);
   assert.match(both[0].text!, /tab 1 of 2/);
@@ -353,7 +355,7 @@ test("a browser tab's model context reaches the agent and leaves with the tab", 
   // Closing a tab removes what it shared; an empty update clears without closing.
   await tabs[1].terminateSession();
   assert.deepEqual((await read()).map(item => item.text), ["Mobile Dev browser panel.", device]);
-  assert.equal((await putContext(endpoint, first, JSON.stringify({ content: [] }))).status, 204);
+  assert.equal((await putContext(endpoint, first, JSON.stringify({ content: [] }))).status, 200);
   assert.match((await read())[0].text!, /No Mobile Dev browser panel/);
   await tabs[0].terminateSession();
   for (const client of clients) await client.close();
@@ -372,8 +374,9 @@ test("the agent clears a browser tab's context and the tab learns of it", async 
   await host.connect(hostSide);
   t.after(async () => { await host.close(); await plugin.close(); await fake.close(); await rm(directory, { recursive: true, force: true }); });
   const text = async (name: string) => ((await host.callTool({ name, arguments: {} })).content as Array<{ text: string }>)[0].text;
+  const read = async () => ((await host.callTool({ name: "mobile_read_panel_context", arguments: {} })).content as Array<{ text?: string }>).map(item => item.text ?? "").join("\n");
 
-  assert.match(await text("mobile_clear_panel_context"), /No Mobile Dev browser panel/);
+  assert.match(await text("mobile_clear_panel_context"), /nothing to clear/);
   const opened = await host.callTool({ name: "mobile_open_simulator", arguments: {} });
   const link = new URL((opened.content as Array<{ text: string }>)[1].text.match(/http:\/\/127\.0\.0\.1:\d+\/[\w-]+\/\?\S+/)![0]);
   const endpoint = new URL("context", link);
@@ -381,21 +384,52 @@ test("the agent clears a browser tab's context and the tab learns of it", async 
   const client = new Client({ name: "tab", version: "1" });
   await client.connect(tab);
   const id = tab.sessionId!;
-  const clears = async () => (await (await fetch(endpoint, { headers: { "mcp-session-id": id } })).json() as { clears: number }).clears;
+  const count = async (session: string) => (await (await fetch(endpoint, { headers: { "mcp-session-id": session } })).json() as { clears: number }).clears;
+  const clears = () => count(id);
+  const put = (session: string, text: string) => putContext(endpoint, session, JSON.stringify({ content: [{ type: "text", text }] }));
 
   const note = "Note on the login screen.";
-  assert.equal((await putContext(endpoint, id, JSON.stringify({ content: [{ type: "text", text: note }] }))).status, 204);
+  assert.equal((await put(id, note)).status, 200);
   assert.equal(await clears(), 0);
+  // Unread notes stay: the tool clears only what mobile_read_panel_context returned.
+  assert.match(await text("mobile_clear_panel_context"), /Nothing cleared/);
+  assert.equal(await clears(), 0);
+  assert.match(await read(), /login screen/);
   assert.match(await text("mobile_clear_panel_context"), /Cleared the shared context of 1 Mobile Dev browser tab\./);
-  assert.match(await text("mobile_read_panel_context"), /No Mobile Dev browser panel/);
+  assert.match(await read(), /No Mobile Dev browser panel/);
   assert.equal(await clears(), 1);
-  // A tab that stored nothing is told as well: its page may still show notes.
-  await text("mobile_clear_panel_context");
+  // With nothing stored there is nothing to clear, and the tab is not told to drop anything.
+  assert.match(await text("mobile_clear_panel_context"), /nothing to clear/);
+  assert.equal(await clears(), 1);
+  // A note changed after the last read is kept; reading again makes it clearable.
+  assert.equal((await put(id, note)).status, 200);
+  await read();
+  const stored = await put(id, "A newer note.");
+  assert.equal(stored.status, 200);
+  assert.deepEqual(await stored.json(), { clears: 1 });
+  assert.match(await text("mobile_clear_panel_context"), /Nothing cleared/);
+  assert.equal(await clears(), 1);
+  assert.match(await read(), /newer note/);
+  assert.match(await text("mobile_clear_panel_context"), /Cleared the shared context of 1/);
   assert.equal(await clears(), 2);
-  // Notes added after a clear are kept.
-  assert.equal((await putContext(endpoint, id, JSON.stringify({ content: [{ type: "text", text: note }] }))).status, 204);
-  assert.equal(await clears(), 2);
-  assert.equal((await host.callTool({ name: "mobile_read_panel_context", arguments: {} })).content!.length, 2);
+  // A tab whose notes changed since the read is kept while the read one clears.
+  const tab2 = new StreamableHTTPClientTransport(new URL("mcp", link));
+  const client2 = new Client({ name: "tab-2", version: "1" });
+  await client2.connect(tab2);
+  const id2 = tab2.sessionId!;
+  assert.equal((await put(id, note)).status, 200);
+  assert.equal((await put(id2, "Second tab note.")).status, 200);
+  await read();
+  assert.equal((await put(id2, "Second tab, changed.")).status, 200);
+  assert.match(await text("mobile_clear_panel_context"), /Cleared the shared context of 1 Mobile Dev browser tab\. Kept 1 Mobile Dev browser tab whose notes changed since your last read/);
+  assert.equal(await clears(), 3);
+  assert.equal(await count(id2), 0, "the kept tab is not told to drop anything");
+  assert.match(await read(), /Second tab, changed/);
+  // A repeat can drop notes added in between, so the tool must not advertise idempotence.
+  const { tools } = await host.listTools();
+  assert.equal(tools.find(tool => tool.name === "mobile_clear_panel_context")?.annotations?.idempotentHint, false);
+  await tab2.terminateSession();
+  await client2.close();
   await tab.terminateSession();
   await client.close();
 });

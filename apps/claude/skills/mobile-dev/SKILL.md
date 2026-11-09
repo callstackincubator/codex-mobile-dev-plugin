@@ -38,7 +38,8 @@ beside the chat without the user clicking Open. Open only that link: the `baseUr
 or show them. Without a browser, give the user the link. Then read
 `mobile_read_panel_context` for the devices the user selected there, and again when
 they refer to something they added from the panel. Once you have acted on what they added,
-call `mobile_clear_panel_context` so it is not read again; it leaves their device
+call `mobile_clear_panel_context` so it is not read again; it only forgets what you
+have read — notes added since your last read stay — and leaves their device
 selection alone.
 
 The first open downloads the panel's runtime once, which can take a minute. If it
