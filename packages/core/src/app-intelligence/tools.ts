@@ -10,6 +10,7 @@ import { recordAppIntelOperation } from "../telemetry.ts";
 
 const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 const write = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
+const destructive = { readOnlyHint: false, destructiveHint: true, openWorldHint: false };
 const text = (value: unknown) => ({ content: [{ type: "text" as const, text: typeof value === "string" ? value : JSON.stringify(value) }], structuredContent: typeof value === "object" && value !== null ? value as Record<string, unknown> : undefined });
 const failure = (error: unknown) => ({ isError: true as const, content: [{ type: "text" as const, text: errorMessage(error) }] });
 
@@ -87,7 +88,7 @@ export function registerAppIntelligenceTools(server: McpServer, service: AppInte
 
   registerAppTool(server, "mobile_clear_app_intel", {
     title: "Clear the App Intelligence graph", description: "Delete the saved App Intelligence graph for the selected project. The project stays selected and can be analyzed again.",
-    inputSchema: generateAppIntelInput.shape, annotations: write, _meta: { ui: { visibility: ["app"] } },
+    inputSchema: generateAppIntelInput.shape, annotations: destructive, _meta: { ui: { visibility: ["app"] } },
   }, async input => {
     const startedAt = performance.now();
     try { const result = text(await service.clear(input.projectPath)); recordAppIntelOperation("clear", "success", performance.now() - startedAt); return result; }

@@ -95,7 +95,7 @@ test("App Intelligence reads JSONC path aliases and gives each screen its own co
     await writeFile(join(root, "package.json"), JSON.stringify({ name: "alias-fixture" }));
     // Comments and trailing commas are legal in tsconfig.json, and the aliases live one `extends` up.
     await writeFile(join(root, "node_modules", "@react-native", "typescript-config", "tsconfig.json"),
-      '{\n  "compilerOptions": {\n    // the app aliases its own source\n    "baseUrl": "../../..",\n    "paths": {"#/*": ["./src/*"],},\n  },\n}\n');
+      '{\n  "compilerOptions": {\n    // the app aliases its own source\n    "baseUrl": "../../..",\n    "paths": {"#/*": ["./src/*"], "@repeat/*": ["./src/*/nested/*"],},\n  },\n}\n');
     await writeFile(join(root, "tsconfig.json"), '{\n  /* inherited */\n  "extends": "@react-native/typescript-config/tsconfig.json",\n}\n');
     await writeFile(join(root, "node_modules", "react-native-screens", "package.json"), JSON.stringify({ name: "react-native-screens", main: "lib/index.js" }));
     await writeFile(join(root, "node_modules", "react-native-screens", "lib", "index.js"), "require('./deep'); module.exports = {}\n");
@@ -103,11 +103,14 @@ test("App Intelligence reads JSONC path aliases and gives each screen its own co
     await writeFile(join(root, "src", "screens", "Settings.tsx"), "import { helper } from '#/util/helper'; export function SettingsScreen(){ return helper }\n");
     await writeFile(join(root, "src", "screens", "Profile.tsx"), "export function ProfileScreen(){ return null }\n");
     await mkdir(join(root, "src", "util"), { recursive: true });
+    await mkdir(join(root, "src", "shared", "nested"), { recursive: true });
     await writeFile(join(root, "src", "util", "helper.ts"), "export const helper = 1\n");
+    await writeFile(join(root, "src", "shared", "nested", "shared.ts"), "export const repeated = 1\n");
     await writeFile(join(root, "src", "Navigation.tsx"), [
       "import 'react-native-screens'",
+      "import { repeated } from '@repeat/shared'",
       "import { SettingsScreen } from '#/screens/Settings'",
-      "function TabsNavigator(){ return null }",
+      "function TabsNavigator(){ return repeated }",
       "export default () => <><Stack.Screen name='Settings' getComponent={() => SettingsScreen} />",
       "<Stack.Screen name='Profile' getComponent={() => require('#/screens/Profile').ProfileScreen} />",
       "<Stack.Screen name='Tabs' getComponent={() => TabsNavigator} /></>",
@@ -120,6 +123,7 @@ test("App Intelligence reads JSONC path aliases and gives each screen its own co
     assert.deepEqual(snapshot.diagnostics.filter(entry => entry.code === "unresolved-screen"), []);
     assert.ok(!("#" in snapshot.packages), "an aliased '#/' import is app code, not a package named '#'");
     assert.equal(snapshot.files["src/util/helper.ts"].reach, 2, "the alias is followed into the app's own source, from Settings and from the navigator");
+    assert.ok(snapshot.edges.some(edge => edge.from === "file:src/Navigation.tsx" && edge.to === "file:src/shared/nested/shared.ts"), "every wildcard in an alias target is substituted");
     // A dependency is one leaf: its entry file is recorded, its internals never enter the graph.
     assert.equal(snapshot.packages["react-native-screens"].entry, "node_modules/react-native-screens/lib/index.js");
     assert.deepEqual(Object.keys(snapshot.files).filter(path => path.includes("node_modules/")), []);

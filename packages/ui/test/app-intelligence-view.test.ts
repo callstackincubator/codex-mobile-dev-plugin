@@ -384,3 +384,32 @@ test("re-showing a panel that already has a graph reloads quietly, with no disab
   assert.equal(calls, 2, "the graph is still refreshed in the background");
   assert.equal(panel.getSnapshot().busy, null);
 });
+
+test("a quiet reload cannot overwrite a newer project selection", async t => {
+  const snapshot = fixture();
+  let snapshotCalls = 0;
+  let releaseStale!: () => void;
+  const stale = new Promise<void>(resolve => { releaseStale = resolve; });
+  const app = { async callServerTool({ name, arguments: args }: { name: string; arguments?: Record<string, unknown> }) {
+    if (name === "mobile_app_intel_snapshot") {
+      snapshotCalls++;
+      if (snapshotCalls === 2) await stale;
+      return { content: [], structuredContent: { projectPath: "/tmp/social-app", snapshot, recents: ["/tmp/social-app", "/tmp/other-app"] } };
+    }
+    if (name === "mobile_select_app_intel_project") {
+      return { content: [], structuredContent: { projectPath: args?.projectPath, snapshot, recents: ["/tmp/other-app", "/tmp/social-app"] } };
+    }
+    return { content: [], structuredContent: {} };
+  } };
+  const { act, panel } = await mount(t, app);
+
+  await act(async () => { panel.setAvailable(true); panel.show(); await new Promise(done => setTimeout(done, 0)); });
+  assert.equal(panel.getSnapshot().projectPath, "/tmp/social-app");
+  await act(async () => { panel.hide(); panel.show(); });
+  await act(async () => { await panel.selectProject("/tmp/other-app"); });
+  assert.equal(panel.getSnapshot().projectPath, "/tmp/other-app");
+
+  releaseStale();
+  await act(async () => { await stale; await new Promise(done => setTimeout(done, 0)); });
+  assert.equal(panel.getSnapshot().projectPath, "/tmp/other-app", "the late response from the previous project is ignored");
+});

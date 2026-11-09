@@ -248,6 +248,7 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
   const appIntel = tools.tools.find(tool => tool.name === "mobile_open_app_intel")!;
   const appIntelMetadata = OpenAIUiToolMetadataSchema.parse(appIntel._meta?.["openai/ui"]);
   assert.deepEqual(appIntelMetadata.entrypoints?.map(item => item.type), ["global"]);
+  assert.deepEqual(tools.tools.find(tool => tool.name === "mobile_clear_app_intel")?.annotations, { readOnlyHint: false, destructiveHint: true, openWorldHint: false });
   for (const tool of [open, workspace, appIntel]) {
     // The desktop host rejects unknown openai/ui keys, unlike the SDK parser.
     assert.deepEqual(Object.keys(tool._meta?.["openai/ui"] as object), ["entrypoints"]);

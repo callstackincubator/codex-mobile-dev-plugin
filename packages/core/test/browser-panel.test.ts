@@ -143,7 +143,7 @@ test("opening the panel links the browser page only for hosts without MCP Apps",
     await plugin.server.connect(shared);
     await host.connect(hostSide);
     for (const name of ["mobile_open_simulator", "mobile_open_workspace", "mobile_open_app_intel"]) {
-      const result = await host.callTool({ name, arguments: { platform: "android" } });
+      const result = await host.callTool({ name, arguments: { platform: "android", ...(name === "mobile_open_app_intel" ? { appIntelScreen: "navigation:Profile" } : {}) } });
       const texts = (result.content as Array<{ text: string }>).map(item => item.text);
       const structured = result.structuredContent as { browserPanel?: { url: string } };
       if (ui) { assert.equal(texts.length, 1); assert.equal(structured.browserPanel, undefined); continue; }
@@ -152,6 +152,7 @@ test("opening the panel links the browser page only for hosts without MCP Apps",
       const link = new URL(texts[1].match(/http:\/\/127\.0\.0\.1:\d+\/[\w-]+\/\?\S+/)![0]);
       assert.equal(link.searchParams.get("tool"), name);
       assert.equal(link.searchParams.get("platform"), "android");
+      assert.equal(link.searchParams.get("appIntelScreen"), name === "mobile_open_app_intel" ? "navigation:Profile" : null);
     }
     await host.close();
     await plugin.close();

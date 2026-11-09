@@ -24,7 +24,7 @@ async function open() {
     throw new Error("This link does not open a Mobile Dev panel.");
   }
   const target: Record<string, string> = {};
-  for (const key of ["platform", "kind", "deviceId", "workspaceTool"]) {
+  for (const key of ["platform", "kind", "deviceId", "workspaceTool", "appIntelScreen"]) {
     const value = query.get(key);
     if (value !== null) target[key] = value;
   }

@@ -210,7 +210,7 @@ export async function analyzeApp(projectPath: string, options: { signal?: AbortS
     const requests = [specifier];
     for (const alias of aliases) if (specifier.startsWith(alias.prefix) && specifier.endsWith(alias.suffix)) {
       const middle = specifier.slice(alias.prefix.length, alias.suffix ? -alias.suffix.length : undefined);
-      for (const target of alias.targets) requests.unshift(target.replace("*", middle));
+      for (const target of alias.targets) requests.unshift(target.replaceAll("*", () => middle));
     }
     return requests;
   };

@@ -144,6 +144,7 @@ test("mobile_open_app_intel's appIntelScreen selects that screen in the workspac
   }
   function result(id: number | string, value: object) { send({ id, result: value }); }
   let initialized = false;
+  const calls: string[] = [];
   window.postMessage = message => {
     if (message.method === "ui/initialize") {
       result(message.id, { protocolVersion: "2026-01-26", hostInfo: { name: "test", version: "1" }, hostCapabilities: { serverTools: {}, serverResources: {} }, hostContext: {} });
@@ -151,6 +152,7 @@ test("mobile_open_app_intel's appIntelScreen selects that screen in the workspac
       initialized = true;
     } else if (message.method === "tools/call") {
       const name = message.params.name;
+      calls.push(name);
       if (name === "mobile_app_intel_snapshot") result(message.id, { content: [], structuredContent: { projectPath: "/app", snapshot, recents: ["/app"] } });
       else if (name === "mobile_list_simulators") result(message.id, { content: [], structuredContent: { connected: true, managed: false, baseUrl: "", devices: [] } });
       else result(message.id, { content: [] });
@@ -184,4 +186,5 @@ test("mobile_open_app_intel's appIntelScreen selects that screen in the workspac
   assert.equal(selected?.getAttribute("aria-current"), "true");
   const home = window.document.querySelector('[data-entry="home"]');
   assert.equal(home?.getAttribute("aria-current"), "false");
+  assert.deepEqual(calls.filter(name => name.startsWith("mobile_list_")), [], "App Intelligence does not start device discovery");
 });

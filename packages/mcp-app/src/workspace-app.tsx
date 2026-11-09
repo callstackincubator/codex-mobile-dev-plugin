@@ -117,6 +117,7 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
     }
     if (target.data.workspaceTool) { automaticTool = target.data.workspaceTool; automaticToolRevision++; renderWorkspace(); }
     if (target.data.workspaceTool === "app-intel" && target.data.appIntelScreen) panels["app-intel"].selectScreen(target.data.appIntelScreen);
+    if (target.data.workspaceTool === "app-intel") return;
     void devices.open(target.data).catch(connectionFailed);
   }
   app.ontoolinput = input => {

@@ -29,6 +29,7 @@ function resultError(result: Awaited<ReturnType<HostBridge["callServerTool"]>>) 
 export class AppIntelligencePanel {
   private listeners = new Set<() => void>();
   private state: AppIntelligenceState = { open: false, available: false, projectPath: "", snapshot: null, run: null, busy: null, error: "", selectedScreen: null, recents: [], toggled: [], expanded: [], litBoundary: null, boundaries: null };
+  private loadRevision = 0;
   private app: HostBridge;
   constructor(app: HostBridge) { this.app = app; }
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => this.listeners.delete(listener); };
@@ -39,7 +40,7 @@ export class AppIntelligencePanel {
   setAvailable(available: boolean) { this.update({ available }); if (available && this.state.open) void this.load(undefined, { silent: Boolean(this.state.snapshot) }); }
   show() { this.update({ open: true }); if (this.state.available) void this.load(undefined, { silent: Boolean(this.state.snapshot) }); }
   hide() { this.update({ open: false }); }
-  dispose() { this.listeners.clear(); }
+  dispose() { this.loadRevision++; this.listeners.clear(); }
   // A new root means new hops, so the folds from the old one would land on unrelated boundaries.
   selectScreen(selectedScreen: string | null) { this.update({ selectedScreen, toggled: [], expanded: [], litBoundary: null }); }
   /** `open` is what the click is asking for; the state stores only the flip from the default. */
@@ -70,9 +71,11 @@ export class AppIntelligencePanel {
 
   async load(projectPath?: string, { silent = false }: { silent?: boolean } = {}) {
     if (!this.state.available || this.state.busy === "generating") return;
+    const revision = ++this.loadRevision;
     this.update(silent ? { error: "" } : { busy: "loading", error: "" });
     try {
       const result = await measureUiOperation("ui.app_intel.load", "ui.app_intel.load_failed", () => this.app.callServerTool({ name: "mobile_app_intel_snapshot", arguments: projectPath ? { projectPath } : {} }));
+      if (revision !== this.loadRevision) return;
       // Even a failed read carries the remembered projects, so the picker still has them to offer.
       if (result.isError) { this.update({ recents: (result.structuredContent as { recents?: string[] } | undefined)?.recents ?? this.state.recents }); throw new Error(resultError(result)); }
       const value = result.structuredContent as { projectPath: string; snapshot: AppIntelSnapshot | null; recents?: string[] };
@@ -81,6 +84,7 @@ export class AppIntelligencePanel {
       const screen = value.snapshot && this.state.selectedScreen && value.snapshot.screens[this.state.selectedScreen] ? this.state.selectedScreen : null;
       this.update({ projectPath: value.projectPath, snapshot: value.snapshot, recents: value.recents ?? this.state.recents, busy: null, selectedScreen: screen });
     } catch (error) {
+      if (revision !== this.loadRevision) return;
       const message = error instanceof Error ? error.message : String(error);
       this.update({ busy: null, error: /No project selected/.test(message) ? "" : message, projectPath: /No project selected/.test(message) ? "" : this.state.projectPath });
     }
@@ -88,6 +92,7 @@ export class AppIntelligencePanel {
 
   async pickProject() {
     if (!this.state.available) return;
+    this.loadRevision++;
     this.update({ busy: "picking", error: "" });
     try {
       const result = await measureUiOperation("ui.app_intel.pick", "ui.app_intel.pick_failed", () => this.app.callServerTool({ name: "mobile_pick_app_intel_project", arguments: {} }));
@@ -102,6 +107,7 @@ export class AppIntelligencePanel {
   /** Switches to a remembered project without reopening the host folder picker. */
   async selectProject(projectPath: string) {
     if (!this.state.available || projectPath === this.state.projectPath) return;
+    this.loadRevision++;
     this.update({ busy: "picking", error: "", snapshot: null, selectedScreen: null, toggled: [], expanded: [], litBoundary: null, boundaries: null });
     try {
       const result = await this.app.callServerTool({ name: "mobile_select_app_intel_project", arguments: { projectPath } });
@@ -114,6 +120,7 @@ export class AppIntelligencePanel {
 
   async generate() {
     if (!this.state.available || !this.state.projectPath) return;
+    this.loadRevision++;
     this.update({ busy: "generating", error: "", run: { runId: "ui", phase: "analyzing", message: "Discovering screens and dependencies" } });
     const startedAt = performance.now();
     try {
@@ -134,6 +141,7 @@ export class AppIntelligencePanel {
   /** Throws the saved graph away and leaves the project selected, ready to generate again. */
   async clear() {
     if (!this.state.available || !this.state.projectPath || this.state.busy !== null) return;
+    this.loadRevision++;
     this.update({ busy: "clearing", error: "" });
     try {
       const result = await this.app.callServerTool({ name: "mobile_clear_app_intel", arguments: { projectPath: this.state.projectPath } });
