@@ -7,6 +7,8 @@ import { captureServerError } from "./telemetry.ts";
 import type { TestingProjectChoices } from "./testing-projects.ts";
 import { inspectProject, writeTestFile } from "./testing-projects.ts";
 import { TestingDevices } from "./testing-device.ts";
+import { runRecordedTest } from "./testing-run.ts";
+import type { TestRunProgress } from "./testing-run.ts";
 import { udidSchema } from "@mobile-dev/shared/protocol.ts";
 
 const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
@@ -33,7 +35,18 @@ function dataResult(data: Record<string, unknown>, message?: string): CallToolRe
 }
 
 /** The Testing panel's project selection, and the device tree its recorder names selectors from. */
-export function registerTestingTools(server: McpServer, projects: TestingProjectChoices, devices = new TestingDevices()) {
+/** Returns the shutdown the plugin has to run: the recorder's device session, handed back. */
+export function registerTestingTools(server: McpServer, projects: TestingProjectChoices, devices = new TestingDevices()): () => Promise<void> {
+  /**
+   * The live progress of the run in flight.
+   *
+   * A tool call is one request and one response, so the run's own call cannot report as it goes.
+   * The panel polls this one instead, which is a few hundred bytes a second against a local server
+   * for as long as a run takes — cheaper than holding a notification channel open for a feature
+   * whose whole output is a spinner moving down a dozen lines.
+   */
+  let progress: TestRunProgress[] = [];
+  let running = false;
   registerAppTool(server, "mobile_testing_projects", {
     title: "List testing projects",
     description: "List the e2e project folders the Testing panel can record against, most recent first.",
@@ -95,6 +108,43 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
   }, safe(async ({ udid, projectPath: selected, bundleId }: { udid: string; projectPath: string; bundleId: string }) =>
     dataResult({ ...await devices.read({ udid, projectPath: selected, bundleId }) })));
 
+  registerAppTool(server, "mobile_testing_run_test", {
+    title: "Run a recorded test",
+    description:
+      "Run one saved test with the project's own e2e CLI and report each step with the line it came from. The recorder's device session is released first: the runner allows one session per device, so a run started while the recorder holds it fails with \"Device is already in use\".",
+    inputSchema: {
+      projectPath,
+      relativePath: z.string().min(1).max(512).describe("The test to run, relative to the project, e.g. tests/a-recorded-flow.e2e.ts."),
+      configPath: z.string().min(1).max(4096).optional().describe("The project's e2e config, so the run can report live per-step progress."),
+      timeoutMs: z.number().int().min(10_000).max(30 * 60_000).optional(),
+    },
+    // A test run drives the app on the device: it taps, types and changes the app's own state.
+    annotations: destructive,
+    _meta: appVisibility,
+  }, safe(async ({ projectPath: selected, relativePath, configPath, timeoutMs }: { projectPath: string; relativePath: string; configPath?: string; timeoutMs?: number }) => {
+    // The release is a dependency of the run, not a step the caller is trusted to have taken: see
+    // `TestRunDeps`. The panel releases too, but a caller who forgets must not break the run.
+    progress = [];
+    running = true;
+    try {
+      const result = await runRecordedTest(
+        { projectPath: selected, relativePath, ...(configPath ? { configPath } : {}), ...(timeoutMs === undefined ? {} : { timeoutMs }) },
+        { release: () => devices.release(), onProgress: entry => { progress.push(entry); } });
+      return dataResult({ ...result }, `${relativePath} ${result.status}.`);
+    } finally {
+      running = false;
+    }
+  }));
+
+  registerAppTool(server, "mobile_testing_run_progress", {
+    title: "Read a run's progress",
+    description:
+      "Read the steps the run in flight has started and finished so far, as the runner's own event spine reports them. Each entry carries the step's index within its test, which is its position among the file's awaited calls.",
+    inputSchema: {},
+    annotations: read,
+    _meta: appVisibility,
+  }, safe(async () => dataResult({ running, progress: [...progress] })));
+
   registerAppTool(server, "mobile_testing_release_device", {
     title: "Release the recorder's device",
     description:
@@ -103,4 +153,12 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
     annotations: write,
     _meta: appVisibility,
   }, safe(async () => { await devices.release(); return dataResult({ released: true }, "Released the device."); }));
+
+  /**
+   * A server that goes away without releasing leaves the claim behind, and the daemon that holds it
+   * outlives the server. The user then sees their own `e2e run` refuse to boot the device — "has an
+   * ownership claim that could not be verified" — with nothing on screen connecting it to a panel
+   * they closed. Every ordinary path already releases; this is the one that is not ordinary.
+   */
+  return () => devices.release();
 }

@@ -37,6 +37,10 @@ export type TestingSnapshot = {
   /** The recorder revision that was written, so the panel can tell saved from dirty. */
   savedRevision: number;
   savedPath: string;
+  /** A run is in flight. The recorder holds the per-line marks; this is just the button's state. */
+  running: boolean;
+  /** Run asked to replace an existing file and is waiting on the answer. */
+  pendingRun: boolean;
   error: string | null;
 };
 
@@ -70,7 +74,7 @@ export class TestingPanel {
   private snapshot: TestingSnapshot = {
     open: false, available: false, projectPath: "", projects: [], targets: [], targetName: "", configPath: "",
     loadingProject: false, pickingProject: false, launching: false, appLaunched: false,
-    fileName: "", saving: false, overwritePath: "", savedRevision: -1, savedPath: "", error: null,
+    fileName: "", saving: false, overwritePath: "", savedRevision: -1, savedPath: "", running: false, pendingRun: false, error: null,
   };
 
   constructor(app: HostBridge, deviceApps: DeviceAppsStore) {
@@ -319,11 +323,14 @@ export class TestingPanel {
       }, 60_000);
       const data = object(response.structuredContent) ?? {};
       if (data.written === true) {
-        this.update({ savedRevision: recorder.revision, savedPath: text(data.path), overwritePath: "" });
+        const resume = this.snapshot.pendingRun;
+        this.update({ savedRevision: recorder.revision, savedPath: text(data.path), overwritePath: "", pendingRun: false });
         // The flow is written, so the recording is over: leaving it armed turns the next stray tap
         // on the mirror into a step the saved file does not have.
         testRecorder.stop();
         countUiEvent("ui.testing.save");
+        // Replacing the file was the answer Run was waiting for, so one click finishes what it began.
+        if (resume) { this.update({ saving: false }); void this.runTest(); }
         return;
       }
       // The file is already there and the user has not said to replace it.
@@ -335,7 +342,106 @@ export class TestingPanel {
     }
   }
 
-  cancelOverwrite() { this.update({ overwritePath: "" }); }
+  cancelOverwrite() { this.update({ overwritePath: "", pendingRun: false }); }
+
+  /**
+   * One poll of the run's live progress. Failures are silent: the run is still going, the report
+   * will say what happened, and a progress read that missed is not worth an error banner.
+   */
+  private async pollRunProgress() {
+    try {
+      const response = await this.call("mobile_testing_run_progress", {}, 5_000);
+      const data = object(response.structuredContent) ?? {};
+      const entries = (Array.isArray(data.progress) ? data.progress : []).map(item => object(item))
+        .filter((item): item is Record<string, unknown> => item !== null)
+        .filter(item => typeof item.stepIndex === "number" && (item.phase === "start" || item.phase === "end"))
+        .map(item => ({
+          stepIndex: item.stepIndex as number,
+          phase: item.phase as "start" | "end",
+          ...(text(item.status) ? { status: text(item.status) } : {}),
+          ...(text(item.error) ? { error: text(item.error) } : {}),
+        }));
+      testRecorder.applyRunProgress(entries);
+    } catch {
+      // See above.
+    }
+  }
+
+  /** Whether Run has something to run: a project, steps, and no run or save already in flight. */
+  get canRun(): boolean {
+    return Boolean(this.snapshot.available && this.snapshot.projectPath
+      && testRecorder.getSnapshot().steps.length > 0 && !this.snapshot.running && !this.snapshot.saving);
+  }
+
+  /**
+   * Runs the recorded test against the device, and marks the preview with what the runner reports.
+   *
+   * **Run saves.** The runner runs a file, so there has to be one; running a copy in a temporary
+   * path would run a test whose failures point at lines of a file the user cannot open. It saves
+   * through the same path the Save button uses, which means an existing file is still never
+   * replaced without being asked about — the overwrite question stops the run and resumes it from
+   * the answer.
+   *
+   * **Run releases the device first.** The recorder holds the one agent-device session the device
+   * allows, so a run started while it is held fails with `Device is already in use by session
+   * "mobile-dev-recorder"` — a refusal the user cannot connect to anything they did. Recording
+   * stops, the session is given back and *waited for*, and only then is the runner spawned. The
+   * server tool releases again on its own account, because a release the caller forgot is the
+   * same failure.
+   */
+  async runTest() {
+    if (!this.canRun) return;
+    if (this.dirty || !this.snapshot.savedPath) {
+      await this.saveTest();
+      // The file is already there and the user has not answered yet; `saveTest(true)` resumes.
+      if (this.snapshot.overwritePath) { this.update({ pendingRun: true }); return; }
+      if (this.dirty) return;
+    }
+    const relativePath = this.relativePath;
+    this.update({ running: true, error: null, pendingRun: false });
+    testRecorder.clearRun();
+    // A recording left armed would read the tree mid-run and take the session straight back.
+    testRecorder.stop();
+    try {
+      await this.call("mobile_testing_release_device", {}, 30_000);
+    } catch {
+      // A release that fails is still worth running through: the tool releases again before it
+      // spawns, and the runner's own "device is already in use" is a clearer report than ours.
+    }
+    testRecorder.beginRun();
+    const startedAt = performance.now(), telemetryContext = getUiTelemetryAttributes();
+    // The run's own tool call is one request and one response, so progress comes from polling a
+    // second tool while it is in flight. See `mobile_testing_run_progress`.
+    const poll = setInterval(() => { void this.pollRunProgress(); }, 400);
+    try {
+      const response = await this.call("mobile_testing_run_test", {
+        projectPath: this.snapshot.projectPath, relativePath,
+        ...(this.snapshot.configPath ? { configPath: this.snapshot.configPath } : {}),
+      }, 15 * 60_000);
+      const data = object(response.structuredContent) ?? {};
+      const steps = (Array.isArray(data.steps) ? data.steps : []).map(entry => object(entry))
+        .filter((entry): entry is Record<string, unknown> => entry !== null)
+        .map(entry => ({
+          line: typeof entry.line === "number" ? entry.line : 0,
+          status: text(entry.status),
+          ...(text(entry.error) ? { error: text(entry.error) } : {}),
+        }))
+        .filter(step => step.line > 0);
+      testRecorder.finishRun({ status: text(data.status) || "failed", steps, ...(text(data.output) ? { output: text(data.output) } : {}) });
+      countUiEvent(text(data.status) === "passed" ? "ui.testing.run_passed" : "ui.testing.run_failed");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      testRecorder.failRun(message);
+      this.update({ error: message });
+      captureUiError(error, "testing.run", telemetryContext);
+    } finally {
+      clearInterval(poll);
+      if (getUiTelemetryAttributes() === telemetryContext) recordUiTiming("ui.testing.run", performance.now() - startedAt);
+      this.update({ running: false });
+      // The run drove the app, so whatever the recorder cached describes a screen that has gone.
+      testRecorder.invalidate();
+    }
+  }
 
   dismissError() { this.update({ error: null }); }
 

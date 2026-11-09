@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { ScreenComponent } from "../src/screen-annotations.ts";
-import { anchorSelector, emitE2eTest, treeHealth, resolveSelector, selectorSource, stepLabel, testFileSlug } from "../src/test-recording.ts";
+import { anchorSelector, emitE2eTest, emitE2eTestLines, treeHealth, resolveSelector, selectorSource, stepLabel, stepOffers, testFileSlug } from "../src/test-recording.ts";
 
 /**
  * One element as the recorder reads it: the e2e runner's own projected node, where `role` is the
@@ -51,16 +51,30 @@ test("a role getByRole does not accept falls through to the text rank, never ren
   }
 });
 
-test("a selector matching two elements falls through to the next rank", () => {
-  // Two buttons named "Open": the role selector would match both, the name is the same, so the
-  // step is kept but flagged rather than emitted as a silent coin flip.
+test("a selector matching two elements is narrowed to the one that was pointed at", () => {
+  // Two buttons named "Open": the role selector matches both, and so does every other candidate.
+  // A bare selector here is a step that fails with LOCATOR_AMBIGUOUS, so it is narrowed by
+  // position instead — the first one, because that is the one under the pointer.
   const components = [
     component({ bounds: TAB, role: "button", label: "Open", nodeId: "a" }),
     component({ bounds: { x: 0, y: 900, width: 100, height: 40 }, role: "button", label: "Open", nodeId: "b" }),
   ];
-  const { selector, ambiguous } = resolveSelector(components, { x: 50, y: 820 });
-  assert.deepEqual(selector, { kind: "role", role: "button", name: "Open" });
-  assert.equal(ambiguous, true);
+  const { selector, ambiguous, matches } = resolveSelector(components, { x: 50, y: 820 });
+  assert.deepEqual(selector, { kind: "nth", inner: { kind: "role", role: "button", name: "Open" }, index: 0, matches: 2 });
+  assert.equal(ambiguous, true, "positional is still less durable than a name, and the panel says so");
+  assert.equal(matches, 2);
+  assert.equal(selectorSource(selector), 'screen.getByRole("button", "Open").nth(0)');
+});
+
+test("the index is the pointed-at element's own, not the first match", () => {
+  // The element under the pointer is the *second* match. Assuming the first would record a step
+  // that runs and does the wrong thing, which is worse than one that fails.
+  const components = [
+    component({ bounds: TAB, role: "button", label: "Open", nodeId: "a" }),
+    component({ bounds: { x: 0, y: 900, width: 100, height: 40 }, role: "button", label: "Open", nodeId: "b" }),
+  ];
+  const { selector } = resolveSelector(components, { x: 50, y: 920 });
+  assert.deepEqual(selector, { kind: "nth", inner: { kind: "role", role: "button", name: "Open" }, index: 1, matches: 2 });
 });
 
 test("a tap on nothing records a coordinate", () => {
@@ -121,14 +135,17 @@ test("text echoed by a parent onto its child is one match, not two", () => {
   assert.equal(selectorSource(selector), 'screen.getByText("Explore Cities")');
 });
 
-test("two separate elements with the same text are still ambiguous", () => {
-  // Innermost-only drops a match that *contains* another. Siblings contain nothing, so the count
-  // stands and the step is flagged, which is the honest answer.
+test("two separate elements with the same text are narrowed, not left ambiguous", () => {
+  // Innermost-only drops a match that *contains* another. Siblings contain nothing, so both stand
+  // and the step is narrowed to the one that was pointed at.
   const components = [
     component({ bounds: TAB, role: "text", label: "Paris", nodeId: "a" }),
     component({ bounds: { x: 0, y: 900, width: 100, height: 40 }, role: "text", label: "Paris", nodeId: "b" }),
   ];
-  assert.equal(resolveSelector(components, { x: 50, y: 820 }).ambiguous, true);
+  const resolved = resolveSelector(components, { x: 50, y: 820 });
+  assert.equal(resolved.ambiguous, true);
+  assert.equal(resolved.matches, 2);
+  assert.equal(selectorSource(resolved.selector), 'screen.getByText("Paris").nth(0)');
 });
 
 test("the emitted test is deterministic and imports the e2e API", () => {
@@ -328,4 +345,129 @@ test("an empty tree is reported rather than worked around", () => {
   // in it and there is no "only the chrome" state left to detect. Nothing at all still is one.
   assert.equal(treeHealth(EXPLORE_LIST_SCREEN), "ok");
   assert.equal(treeHealth([]), "no-accessibility");
+});
+
+test("the emitter says which lines each step produced, comments and gates included", () => {
+  const { source, spans } = emitE2eTestLines([
+    { id: "1", kind: "tap", selector: { kind: "role", role: "tab", name: "Explore" }, label: "" },
+    { id: "2", kind: "tap", selector: { kind: "text", text: "Open" }, label: "", ambiguous: true },
+    { id: "3", kind: "tap", selector: { kind: "point", point: { x: 40, y: 90 } }, label: "", anchor: { kind: "text", text: "Explore Cities" } },
+  ], { title: "spans" });
+  const lines = source.split("\n");
+  // 1-based, as a file's own line numbers are, which is what the runner's report uses.
+  for (const span of spans) for (const line of span.calls) assert.match(lines[line - 1], /^  await /);
+  assert.deepEqual(spans.map(span => [span.from, span.to]), [[8, 8], [9, 10], [11, 13]]);
+  // An ambiguous step is a TODO plus a call; a coordinate tap is a TODO, a wait and a call.
+  assert.deepEqual(spans.map(span => span.calls), [[8], [10], [12, 13]]);
+  assert.equal(source, emitE2eTest([
+    { id: "1", kind: "tap", selector: { kind: "role", role: "tab", name: "Explore" }, label: "" },
+    { id: "2", kind: "tap", selector: { kind: "text", text: "Open" }, label: "", ambiguous: true },
+    { id: "3", kind: "tap", selector: { kind: "point", point: { x: 40, y: 90 } }, label: "", anchor: { kind: "text", text: "Explore Cities" } },
+  ], { title: "spans" }), "one emitter, so the preview and the spans can never describe different files");
+});
+
+test("the emitter writes every new step kind as the runner's own API", () => {
+  const source = emitE2eTest([
+    { id: "1", kind: "longPress", selector: { kind: "text", text: "Paris" }, label: "" },
+    { id: "2", kind: "fill", selector: { kind: "placeholder", placeholder: "Search transactions" }, label: "", value: "Paris" },
+    { id: "3", kind: "assertText", selector: { kind: "testId", testId: "total" }, label: "", value: "42" },
+    { id: "4", kind: "scrollUntilVisible", selector: { kind: "text", text: "Images" }, label: "" },
+  ], { title: "every kind" });
+  assert.match(source, /await screen\.getByText\("Paris"\)\.longPress\(\);/);
+  assert.match(source, /await screen\.getByPlaceholder\("Search transactions"\)\.fill\("Paris"\);/);
+  assert.match(source, /await expect\(screen\.getByTestId\("total"\)\)\.toHaveText\("42"\);/);
+  assert.match(source, /await screen\.scrollUntilVisible\(screen\.getByText\("Images"\)\);/);
+});
+
+test("the element menu offers only what the runner can do with that element", () => {
+  const button = component({ bounds: TAB, role: "button", label: "Go To Explore List", text: "Go To Explore List" });
+  const rows = stepOffers({ kind: "text", text: "Go To Explore List" }, button);
+  // One row per kind of thing to do. Enumerating `longPress` beside `tap`, and `toHaveText` beside
+  // `toBeVisible`, made the menu a list of near-duplicates of one selector.
+  assert.deepEqual(rows.map(row => row.source), [
+    'screen.getByText("Go To Explore List").tap()',
+    'expect(screen.getByText("Go To Explore List")).toBeVisible()',
+    'screen.scrollUntilVisible(screen.getByText("Go To Explore List"))',
+  ]);
+  // A button takes no typed text, so there is no `fill` row to get wrong.
+  assert.equal(rows.some(row => row.kind === "fill"), false);
+  assert.deepEqual(rows.filter(row => row.needsValue).map(row => row.kind), []);
+});
+
+test("a text field is offered typing, and a coordinate is offered nothing but the tap", () => {
+  const field = component({ bounds: TAB, role: "textbox", placeholder: "Search transactions", value: "Paris" });
+  const rows = stepOffers({ kind: "placeholder", placeholder: "Search transactions" }, field);
+  const fill = rows.find(row => row.kind === "fill");
+  assert.equal(fill?.source, 'screen.getByPlaceholder("Search transactions").fill("Paris")');
+  assert.equal(fill?.needsValue, true, "the panel asks for the text rather than typing a guess");
+  assert.equal(fill?.suggestedValue, "Paris");
+  // A coordinate has no element to be visible, to hold text or to be scrolled to.
+  assert.deepEqual(stepOffers({ kind: "point", point: { x: 10, y: 20 } }).map(row => row.kind), ["tap"]);
+});
+
+test("new step kinds read back to the user with the value they carry", () => {
+  assert.equal(stepLabel("fill", { kind: "placeholder", placeholder: "Search" }, "Paris"), 'Type into "Search" → "Paris"');
+  assert.equal(stepLabel("longPress", { kind: "text", text: "Paris" }), 'Long press "Paris"');
+  assert.equal(stepLabel("scrollUntilVisible", { kind: "text", text: "Images" }), 'Scroll to "Images"');
+});
+
+test("a unique candidate beats an ambiguous preferred one, for this element or an enclosing one", () => {
+  // The tab bar's Settings tab, as the runner reports it: a `tab` role with a name, inside a
+  // tablist, beside a heading that carries the same text. Captured from the live screen.
+  const heading = component({ bounds: { x: 140, y: 188, width: 121, height: 44 }, role: "text", label: "Settings", text: "Settings", nodeId: "n3" });
+  const echoed = { ...heading, nodeId: "n4", parentId: "n3" };
+  const tab = component({ bounds: { x: 240, y: 795, width: 94, height: 54 }, role: "tab", label: "Settings", text: "Settings", nodeId: "n13", parentId: "n10" });
+  const components = [heading, echoed, tab];
+
+  // On the tab, `getByText("Settings")` matches two and `getByRole("tab", "Settings")` matches one.
+  // Role is the earlier rank *and* the unique one, so the ambiguity never reaches the file.
+  const onTab = resolveSelector(components, { x: 287, y: 820 }, SCREEN);
+  assert.deepEqual(onTab.selector, { kind: "role", role: "tab", name: "Settings" });
+  assert.equal(onTab.ambiguous, false);
+  assert.equal(onTab.matches, 1);
+});
+
+test("an element the runner cannot name uniquely is flagged with the count, not a verdict", () => {
+  // The same screen's heading. Its role is `text`, which `getByRole` does not accept, and the only
+  // thing left — its text — is shared with the tab. The tree gives the two no distinguishing
+  // ancestor either, so there is no scoped selector to fall back to: a testID is the way out.
+  const heading = component({ bounds: { x: 140, y: 188, width: 121, height: 44 }, role: "text", label: "Settings", text: "Settings", nodeId: "n3", parentId: "n2" });
+  const echoed = { ...heading, nodeId: "n4", parentId: "n3" };
+  const tab = component({ bounds: { x: 240, y: 795, width: 94, height: 54 }, role: "tab", label: "Settings", text: "Settings", nodeId: "n13", parentId: "n10" });
+
+  const resolved = resolveSelector([heading, echoed, tab], { x: 200, y: 210 }, SCREEN);
+
+  // `getByText("Settings")` matches the heading and the tab, in that order, and the heading is the
+  // one that was pointed at. `.nth(0)` runs on the device where the bare selector fails with
+  // LOCATOR_AMBIGUOUS, which is the difference between a recorded test and a recorded chore.
+  assert.deepEqual(resolved.selector, { kind: "nth", inner: { kind: "text", text: "Settings" }, index: 0, matches: 2 });
+  assert.equal(resolved.ambiguous, true);
+  assert.equal(resolved.matches, 2, "the count is what a user can act on");
+  assert.equal(selectorSource(resolved.selector), 'screen.getByText("Settings").nth(0)');
+
+  // The tab, the second match, records the second index — from the resolved node, not an assumption.
+  const onTab = resolveSelector([heading, echoed, tab], { x: 287, y: 820 }, SCREEN);
+  assert.deepEqual(onTab.selector, { kind: "role", role: "tab", name: "Settings" }, "the tab has a unique name of its own");
+});
+
+test("a narrowed step emits a note that it runs, and names the durable fix", () => {
+  const source = emitE2eTest([
+    { id: "1", kind: "assertVisible", label: "", ambiguous: true,
+      selector: { kind: "nth", inner: { kind: "text", text: "Settings" }, index: 0, matches: 2 } },
+  ], { title: "narrowed" });
+  assert.match(source, /await expect\(screen\.getByText\("Settings"\)\.nth\(0\)\)\.toBeVisible\(\);/);
+  // A note, not a TODO: nothing has to be edited for the test to work.
+  assert.match(source, /\/\/ 2 elements match this selector; this is the one that was recorded\. A testID would pin it by name\./);
+  assert.doesNotMatch(source, /TODO/);
+});
+
+test("a narrowed selector still reads back, and still supports every step", () => {
+  const selector = { kind: "nth" as const, inner: { kind: "text" as const, text: "Settings" }, index: 1, matches: 2 };
+  assert.equal(stepLabel("tap", selector), 'Tap "Settings" (2 of 2)');
+  // The narrowing is on the locator, so every action and matcher chains after it.
+  assert.deepEqual(stepOffers(selector, component({ bounds: TAB, role: "text", label: "Settings", text: "Settings" })).map(row => row.source), [
+    'screen.getByText("Settings").nth(1).tap()',
+    'expect(screen.getByText("Settings").nth(1)).toBeVisible()',
+    'screen.scrollUntilVisible(screen.getByText("Settings").nth(1))',
+  ]);
 });

@@ -47,15 +47,30 @@ Two things do **not** exist:
 
 ```mermaid
 flowchart LR
-  Canvas[Mirror canvas] -->|pointerdown x,y| Rec[TestingPanel recorder]
+  Canvas[Mirror canvas] -->|pointerdown / contextmenu| Rec[TestingPanel recorder]
   Rec -->|mobile_testing_read_tree| Tree[agent-device snapshot, projected by @e2e-dev/mobile]
   Tree --> Hit[hit ladder]
   Hit --> Step[RecordedStep]
   Rec -->|mobile_stream_input| Device[Simulator]
-  Step --> Emit[E2eEmitter]
+  Step --> Emit[emitE2eTestLines]
   Emit -->|mobile_testing_write_file| File[project tests/*.e2e.ts]
-  Step --> View[Step list beside the mirror]
+  Emit --> Spans[per-step line spans]
+  File -->|mobile_testing_run_test| Run[e2e run --reporter json]
+  Run --> Spans
+  Spans --> View[Preview, marked per line]
 ```
+
+### Where the mirror sits
+
+In the Testing panel the mirror is on the **left** and the step list and preview on the right;
+every other tool keeps the simulator on the right. Recording is done by tapping the mirror and read
+back in the preview beside it, so the mirror leads in the same direction the panel is read. It is
+one flag in `packages/mcp-app/src/components/workspace.tsx` that reverses the resizable group's
+children, and only when the workspace is side by side — stacked, "left" is the top panel, which the
+simulator already is. The hover outline is unaffected: `TestRecorderOverlay` positions it from the
+annotation store's viewport, which is measured **inside the stage**, so moving the stage within the
+workspace does not move the rectangle, and the stage's own `ResizeObserver` re-measures when the
+swap changes its width.
 
 ### 1. The tab
 
@@ -186,22 +201,136 @@ handle at the adapter, not in the emitter.)
 
 ### 5. Gestures beyond tap
 
-- **Swipe**: `pointerdown`→`move`→`up` with distance over a threshold → `screen.swipe(...)`,
-  anchored on the component under the start point when one resolves.
-- **Typing**: key messages already flow through `stream-input`. Coalesce a run of keystrokes into
-  one `.fill("…")` on the focused field; `type_secret`-style values must never be written to the
-  file — emit a placeholder and a comment.
-- **Long press**: `pointerdown`/`up` delta over ~500 ms.
+Typing, long press and scroll-to are recorded, but **not by watching the gesture** — by asking for
+them on the element, through the menu in the next section. A recorder that infers a `fill` from a
+run of keystrokes has to guess where the run ends and which field had focus; a row that says
+`screen.getByPlaceholder("Search transactions").fill("Paris")` guesses nothing. Secrets never reach
+the file either, because the user types the value into the menu, not into the app.
 
-### 6. Assertions
+Still missing:
 
-A recorder that only taps produces worthless tests. Two affordances:
+- **Swipe**: a drag on the mirror records nothing. `pointerdown`→`move`→`up` over a threshold would
+  become `screen.swipe({ direction })`, or `locator.swipe(...)` when the start point resolves.
+- **Typed-as-you-go**: key messages flow through `stream-input` and are not recorded at all, so a
+  flow where the user types into the app has to add the `fill` from the menu afterwards.
 
-- An **Assert** mode button: the next click on the mirror does not forward input; it picks the
-  component under the cursor and emits `await expect(<selector>).toBeVisible()` (or
-  `.toBeSelected()` for a selected tab, `.toHaveText(...)` when the node has text).
-- Auto-insert `await expect(<selector>).toBeVisible()` before each tap, behind a toggle. This is
-  what makes a recorded flow fail at the right step instead of three steps later.
+### 6. The element menu: assertions and everything else
+
+A recorder that only taps produces worthless tests. The panel used to carry a global **Assert**
+toggle, which armed the next tap to assert instead of acting. That is gone, and so are its tests:
+one mode flag could express one extra step, and the moment typing, long-pressing and scrolling were
+worth recording it would have needed one flag each.
+
+**A left click only drives the app.** It records nothing, recording or not. Tapping to find the
+next screen used to add a step for every tap on the way, which the user then deleted, and it made
+"drive the app" and "record a step" the same gesture. Steps come from the menu alone.
+
+**A row records the step and takes it.** A step recorded but never taken leaves the app on the
+screen before it, so the next row would be resolved against a screen the test will not reach. `tap`
+taps the element's own centre — where the runner's locator action lands, not the pixel that was
+right-clicked — and `fill` taps the field and types. One gap: the runner's `fill` *replaces* a
+field's contents and the mirror can only append, with no input message that clears a field, so a
+`fill` into a field that already has text leaves the screen showing something the test will not
+produce. The step is right; the screen behind it is not. `toBeVisible` and `scrollUntilVisible` do
+nothing, because they change nothing: an assertion reads, and `scrollUntilVisible` is only offered
+for an element the user just pointed at, which is on screen already.
+
+In its place is Maestro Studio's model. **Right-click an element on the mirror and the panel offers
+what the runner can do with it**, each row showing the code the step would add:
+
+```
+screen.getByText("Go To Explore List").tap()
+expect(screen.getByText("Go To Explore List")).toBeVisible()
+screen.scrollUntilVisible(screen.getByText("Go To Explore List"))
+```
+
+**One row per kind of thing to do, not one per variant.** An earlier pass listed `longPress` beside
+`tap` and `toHaveText` beside `toBeVisible`, which made the menu five near-duplicates of one
+selector — harder to read than the three choices it was actually offering. `longPress` and
+`assertText` are still emitted and read back correctly; they are reachable by editing the file the
+panel wrote, not from the menu.
+
+Each row is the code in its own inset card with the chevron outside it, because a selector is long
+and a line of truncated text is the one thing a menu of code must not be. The code wraps.
+
+The rows are TypeScript because the file is; a row and the line it adds are the same text, produced
+by the same `stepExpression`. Choosing a row records the step and sends **nothing** to the device,
+which is what an assertion needs — acting on the element would change the thing just asserted.
+
+What is offered comes from the element's role and what it carries, never from the app:
+
+| Row | Offered when |
+| --- | --- |
+| `.tap()` | any element a selector names |
+| `.fill("…")` | the role is `textbox`, `searchbox`, `combobox` or `spinbutton`, or the element has a placeholder — which only a text field does |
+| `expect(…).toBeVisible()` | any element a selector names |
+| `screen.scrollUntilVisible(…)` | any element a selector names |
+
+The `fill` row needs a value, so it asks for one in the menu rather than emitting an empty string
+literal; the field starts from the element's current value.
+
+Only actions the runner can really perform on a device are offered. `secondaryTap`,
+`selectOption`, `setInputFiles`, `scrollIntoView` and tap `modifiers` all exist in the runner's
+typings and all fail on a device with `UNSUPPORTED_CAPABILITY`, so they are not rows.
+`check()`/`uncheck()` are left out for now: the runner declares them and the mobile reference does
+not say they work on a device, and a row that emits an unrunnable step is worse than a missing row
+— the tap is there instead.
+
+One thing the menu needed fixing for: the recorder re-attaches its reader whenever the simulator
+panel refreshes its device list, which is every few seconds, and `attach` used to invalidate the
+cached tree every time. Through `clearHover` that took the outline — and any open menu — away about
+a second after it appeared, which is exactly long enough to look like a flicker rather than a bug.
+Only a reader that has actually changed invalidates now.
+
+The menu is anchored to the **element**, not to the pointer, so the wheel-driven parent walk still
+applies: walk the outline out to the enclosing element and the menu re-asks what can be done with
+the element it walked to, rectangle and rows together.
+
+It carries that rectangle itself rather than borrowing the hover outline's. The outline is dropped
+by anything that invalidates the tree — an input, a frame, a read that is slow or fails, all of
+which are ordinary while recording — and a menu the user asked for explicitly must not be taken
+away with one. The menu's concurrency is its own too (`menuToken`): only another right-click or a
+dismissal cancels it, never a hover that happens to land during its read.
+A coordinate is offered the tap and nothing else. There is nothing about a point to be visible, to
+hold text or to scroll to, which is the refusal the recorder already made for a point assertion.
+The menu says so in a line above the row: three rows missing with no explanation reads as a broken
+menu rather than as an answer.
+
+#### When nothing names the element uniquely
+
+The ranking prefers a unique candidate over an ambiguous one — depth first, rank within a depth,
+and the first candidate that resolves to exactly one element wins whatever its rank, for the element
+under the pointer or for one enclosing it. So reaching the ambiguous case means *every* candidate
+was ambiguous, which happens for real:
+
+| element | role | unique selector |
+| --- | --- | --- |
+| the Settings **tab** | `tab` | `getByRole("tab", "Settings")` — matches 1 |
+| the Settings **heading** | `text` | none |
+
+`getByRole` does not accept `text`, so the heading has only its own text to go on, and the tab
+carries the same text. Nothing narrows it either: `filter({ hasText })` is a substring of the same
+text, `filter({ has })` has no distinguishing child to point at, and there is no ancestor to scope
+under — on this app every content node's parent is the application root.
+
+**So the step is narrowed by position.** `screen.getByText("Settings").nth(0)` runs on the device;
+the bare selector fails with `LOCATOR_AMBIGUOUS: locator matched 2 nodes`. The index is the
+position of the element the user actually pointed at among that selector's matches — the recorder
+resolved that node, so it is recorded rather than guessed, and pointing at the *second* match
+records `.nth(1)`. The match order is the snapshot's own: the projection flattens the tree depth
+first and the panel passes it through untouched, so the panel's index and the runner's index are
+the same index.
+
+The honesty stays where it belongs. A position is more brittle than a name, so:
+
+- the emitted line carries a note — not a TODO — saying how many elements match and that a testID
+  would pin it by name. Nothing has to be edited for the test to work;
+- the step list reads `Expect visible "Settings" (1 of 2)` and still flags it `ambiguous`, and the
+  menu says how many match and that the step is pinned by position;
+- the selector is still `ambiguous` as far as the panel is concerned, because it is.
+
+The alternative was a step that fails and a note asking the user to go and edit it. A recorded test
+that runs, with the user told exactly what is weak about it, is the better of the two.
 
 ### 7. Emitting and writing
 
@@ -235,8 +364,16 @@ Writing needs a new **app-only** MCP tool in the server process:
 - `mobile_testing_write_file({ projectRoot, relativePath, contents })`
 - Annotated as a write so the host prompts; the panel must not be able to write anywhere by
   accident. Constrain `relativePath` to `tests/` under the chosen root, reject `..`, refuse symlinks.
-- **It fires only when the user clicks Save.** One tool call, one host prompt, per save — not per
-  tap. This is what makes the permission story tolerable.
+- **It fires only when the user clicks Save, or when Run saves for them.** One tool call, one host
+  prompt, per save — not per tap. This is what makes the permission story tolerable.
+
+Running needs a second one, `mobile_testing_run_test({ projectPath, relativePath, timeoutMs? })`,
+annotated destructive because a run drives the app and changes its state — so a host that prompts
+on destructive tools prompts once per Run, which is the right granularity: a run is an explicit act,
+not something that happens as you tap. It releases the recorder's
+device session, spawns the **project's own** `node_modules/.bin/e2e` (never `npx`, which would go
+to the network for a package that is not installed), and returns `{ status, exitCode, steps[] }`
+with each step's `line`, `status` and first line of error.
 
 While recording, the panel holds `RecordedStep[]` and renders the emitted source as a **live
 preview** beside the step list, syntax-coloured by a tokenizer written for exactly the file the
@@ -269,9 +406,118 @@ recorder where a flow is thirty taps.
 
 ### 8. Replay
 
-A **Run** button in the panel shells `npx e2e run tests/<file>` in the project root and streams the
-result into the step list, marking the step that failed. This closes the loop: record, run, fix the
-selector, run again.
+**Run test** saves the flow, hands the device back, runs the file with the project's own `e2e` CLI,
+and marks each line of the preview with what the runner reports for it.
+
+```mermaid
+sequenceDiagram
+  participant P as Panel
+  participant S as Server
+  participant R as e2e CLI
+  P->>S: mobile_testing_write_file (asks before replacing)
+  P->>S: mobile_testing_release_device
+  P->>S: mobile_testing_run_test
+  S->>S: devices.release() again
+  S->>R: node_modules/.bin/e2e run <file> --reporter json
+  R-->>S: the whole report, at the end
+  S-->>P: steps[] with source.line and status
+  P->>P: marks per line, held then faded on a pass
+```
+
+**Run saves.** The runner runs a file, so there has to be one, and running a copy in a temporary
+path would run a test whose failures point at lines of a file the user cannot open. It saves
+through the same path the Save button uses, so an existing file is still never replaced without
+being asked about: the overwrite question stops the run, and answering it resumes the run rather
+than making the user press Run twice.
+
+**Run releases the device first, and waits.** agent-device allows exactly one session per device
+and the recorder holds it, so a run spawned while it is held fails with `Device is already in use
+by session "mobile-dev-recorder"` — a refusal the user cannot connect to anything they did. The
+panel stops recording, awaits `mobile_testing_release_device`, and only then runs; the server tool
+releases again on its own account, because a caller who forgets produces exactly that failure.
+The release is a dependency of the run (`TestRunDeps` in `packages/core/src/testing-run.ts`), not a
+step a caller is trusted to have taken, and it happens only after the runner binary resolves — a
+project with no runner installed must not cost the user their recording session.
+
+#### Where live per-step progress comes from
+
+None of the CLI's four reporters gives it:
+
+| Source | What it gives |
+| --- | --- |
+| `--reporter list`, TTY | deterministic steps appear only inside a live window it repaints |
+| `--reporter list`, no TTY | a permanent line per **agent** step; a `locator.tap` or an `expect` never prints |
+| `--reporter json` | the whole report document once, at the end |
+| `.e2e/report.json` | written from `onRunFinished`; it does not exist mid-run |
+
+But the runner's **event spine** does, and it is reachable without changing the runner:
+`e2e.config.ts` accepts reporter *objects*, and a reporter's `onEvent` receives every `step` event
+live, in the runner process, with `phase: "start" | "end"`. `--reporter` replaces only the built-in
+reporters, so a configured object still runs beside `json`.
+
+So a run is given a **generated config** that spreads the project's own and appends one reporter:
+
+```mermaid
+flowchart LR
+  Panel -->|mobile_testing_run_test| Server
+  Server -->|writes| Cfg[".e2e/mobile-dev-progress.config.mts"]
+  Server -->|e2e run --config| Runner
+  Cfg -.->|spreads| Base["the project's e2e.config.ts"]
+  Runner -->|onEvent, tagged line on stderr| Server
+  Panel -->|mobile_testing_run_progress, polled| Server
+```
+
+- The config is written **beside the project's own**, at the project root, and removed when the run
+  ends — including on a timeout or a spawn failure. Not in `.e2e/`, tidy as that would be: the
+  runner takes the project root from the config file's own directory, so a config one level down
+  ends the run in `NO_TESTS: no test file matched "tests/**" under <project>/.e2e`.
+- It spreads the project's config, resolving a config that exports a function, and puts its own
+  reporters first. It adds a reporter and changes nothing else.
+- Reporter **construction** has no side effects, because workers load the config too. Every write
+  happens inside `onEvent`, wrapped in `try`, since a reporter that throws is quarantined for the
+  rest of the run.
+- Events come back as `@@mobile-dev-step <json>` lines on the child's stderr. No socket, no second
+  temp file, and the runner's own stderr passes through untouched.
+- A tool call is one request and one response, so the panel polls `mobile_testing_run_progress`
+  every 400 ms while the run is in flight.
+- If the runner refuses the generated config — an extension its loader will not take, a project
+  config that does not survive being spread — the run is retried exactly as it was before live
+  progress existed. A spinner is worth having and is not worth losing a run over.
+
+**Mapping an event to a line.** A `step` event carries no source position — only the finished
+report does — but it carries `identity.stepIndex`, and the runner reports one step per awaited call
+in order. `EmittedTest.calls` is every awaited line in file order, `await app.open()` first, so the
+index *is* the position in that list. The report reconciles it at the end, where each step carries
+its own `source.line`, so a mismatch corrects itself rather than persisting.
+
+The states are then:
+
+- **nothing marked** until the runner says where it is. A spinner on every line would claim more
+  than is known.
+- **one line spinning** — the step that has started and not ended.
+- **a mark behind it** for each step that has ended, with its own status.
+- a pass holds its checkmarks for 2.5s and fades them; a failure's mark stays until the next run.
+  Both respect `prefers-reduced-motion`, which drops the transition and keeps the mark.
+
+The gutter is a **grid column**, not a character at the front of the line: each preview line is
+`grid-template-columns: 1.35em minmax(0, 1fr)` with the mark and the code as siblings, and the mark
+is exactly `1lh` tall so it centres on its line. That is what keeps the code from shifting when a
+run starts and keeps a mark level with the first row of a line that wraps — and a long locator does
+wrap.
+
+If a run produces no report at all — the runner refused before it reached the test — there is no
+line to mark, so the panel shows the runner's own output instead of going quiet.
+
+#### Line spans
+
+Attributing a report to a line needs to know which lines a step produced, and a step is not one
+line: an ambiguous step carries a TODO above its call, and a coordinate tap carries a TODO *and* an
+anchor gate, which the runner reports as a step of its own. `emitE2eTestLines` returns
+`{ source, spans }`, where each span is `{ stepId, from, to, calls }` in 1-based file lines and
+`calls` are the lines the runner will report a step for. `emitE2eTest` is that function's `source`,
+so the preview, the saved file and the spans can never describe different files. The preview's
+new-line animation still uses `changedLines` — good enough to flash a line, far too weak to decide
+a pass or a failure.
 
 ## Reading the runner's tree
 
@@ -317,8 +563,30 @@ Reading holds an agent-device session on the device, and **agent-device allows e
 per device**. A session left open makes the user's next `npx e2e run` fail with `Device is already
 in use by session …` — a refusal they cannot connect to anything they did, and a worse failure
 than any this path fixes. So the device is released on every path out of recording: stopping,
-detaching, a device that changes under the recorder, and the panel being disposed
-(`RecorderReader.release`, `TestingDevices.release`).
+detaching, a device that changes under the recorder, the panel being disposed, and **Run**, which
+waits for the release before it spawns anything (`RecorderReader.release`,
+`TestingDevices.release`).
+
+A session is also released when the **server shuts down**, which is the path none of those cover.
+The claim record agent-device writes names the daemon that holds it, and that daemon outlives the
+server process. A server that dies without releasing therefore leaves a claim behind on a daemon
+nobody is talking to any more, and the user's own `e2e run` then refuses to boot the device:
+
+```
+ERROR  infrastructure error ENGINE_FAILURE (launch)
+boot failed: iPhone 17 Pro has an ownership claim that could not be verified.
+```
+
+This is the same leak as `Device is already in use`, wearing a worse message, and the user has even
+less to connect it to — the panel they closed is gone. `registerTestingTools` returns the release as
+the plugin's shutdown for that feature, and `plugin.close()` awaits it beside the other collectors.
+When it does happen (a hard kill releases nothing), the way out is the CLI the daemon was started
+by, on the same state directory:
+
+```bash
+AGENT_DEVICE_STATE_DIR="$HOME/Library/Application Support/mobile-dev/app-flow/agent-device" \
+  <plugin>/dist/agent-device/node_modules/.bin/agent-device close --session mobile-dev-recorder
+```
 
 Attaching names the bundle id and passes `relaunch: false`. Never `--foreground`, which refuses
 outright when more than one app is running on the simulator, and never anything that relaunches:
@@ -364,12 +632,23 @@ None blocking.
    Done: `TestRecorder` (`packages/ui/src/test-recorder.ts`) with the pure selector and emitter
    logic in `packages/shared/src/test-recording.ts`, taps intercepted on the mirror canvas in
    `packages/ui/src/simulator-panel.ts`, and the step list and preview in `TestingView`.
-   The Assert button records `toBeVisible()` without forwarding the touch.
+   Right-click on the mirror opens the element menu (step 5), which records the steps a tap
+   cannot express without forwarding a touch.
 4. ~~`mobile_testing_write_file` + the Save button and overwrite confirmation.~~ Done:
    `writeTestFile` and `resolveTestPath` (`packages/core/src/testing-projects.ts`) confine the
    write to the project's `tests/`, refuse `..`, a non-`.e2e.ts` name and a symlinked folder or
    file, and report an existing file back instead of replacing it; `TestingPanel.saveTest`
    asks before overwriting and tracks saved-versus-dirty against the recorder's revision.
-5. Assertions, swipe, typing.
-6. Run button.
-7. Maestro emitter.
+5. ~~Assertions, typing, long press, scroll — through the element menu.~~ Done: `stepOffers` and
+   `stepExpression` (`packages/shared/src/test-recording.ts`) derive the rows from the element's
+   role and state; `TestRecorder.openMenu`/`chooseOffer` resolve and record them at the outline's
+   walked-out level; `ElementMenu` (`packages/ui/src/components/test-recorder-overlay.tsx`) draws
+   them over the mirror from the `contextmenu` wired in `packages/ui/src/simulator-panel.ts`. The
+   global Assert toggle and its tests are gone.
+6. ~~Run button.~~ Done: `mobile_testing_run_test` and `runRecordedTest`
+   (`packages/core/src/testing-tools.ts`, `packages/core/src/testing-run.ts`) release the device as
+   a dependency of the run and turn the report into per-line status;
+   `TestingPanel.runTest` saves first and resumes from the overwrite answer; the marks are
+   `TestRunView` on the recorder and the gutter in `TestPreview`.
+7. Swipe recording (a drag on the mirror, which currently records nothing).
+8. Maestro emitter.

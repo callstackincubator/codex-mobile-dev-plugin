@@ -20,32 +20,49 @@ const tab = (label: string, y: number): ScreenComponent => ({
   bounds: { x: 0, y, width: 100, height: 40 },
 });
 
-test("a tap is recorded as a step and forwarded to the device", async () => {
+/**
+ * Records a step the way the panel does now: right-click the element, then pick a row. A left click
+ * records nothing at all, so there is no other way in.
+ */
+async function pick(recorder: TestRecorder, point: { x: number; y: number }, kind = "tap", value?: string) {
+  await recorder.openMenu(point);
+  await (recorder as unknown as { chooseOffer(kind: string, value?: string): Promise<void> }).chooseOffer(kind, value);
+}
+
+test("a tap row records the step and takes it on the device", async () => {
   const reads = { count: 0 };
   const recorder = new TestRecorder();
-  recorder.attach(UDID, reader([tab("Explore", 800)], reads));
+  const done: unknown[] = [];
+  recorder.attach(UDID, { ...reader([tab("Explore", 800)], reads), perform: action => { done.push(action); } });
   recorder.start(UDID);
 
-  const forward = await recorder.record({ x: 50, y: 820 });
+  await pick(recorder, { x: 50, y: 820 });
 
-  assert.equal(forward, true, "the app must still receive the tap");
   const [step] = recorder.getSnapshot().steps;
   assert.equal(step.kind, "tap");
   assert.deepEqual(step.selector, { kind: "role", role: "button", name: "Explore" });
+  // A step that is recorded but never taken leaves the flow on the screen before it, so the row
+  // acts too — at the element's own centre, where the runner's locator action lands.
+  assert.deepEqual(done, [{ kind: "tap", point: { x: 50, y: 820 } }]);
 });
 
-test("an assertion is recorded without touching the app", async () => {
+test("an assertion is recorded from the element menu without touching the app", async () => {
   const reads = { count: 0 };
   const recorder = new TestRecorder();
   recorder.attach(UDID, reader([tab("Explore", 800)], reads));
   recorder.start(UDID);
-  recorder.setAssertMode(true);
 
-  const forward = await recorder.record({ x: 50, y: 820 });
+  await recorder.openMenu({ x: 50, y: 820 });
+  const offers = recorder.getSnapshot().menu?.offers ?? [];
+  // One row per kind of thing to do, not one per variant of the same selector.
+  assert.deepEqual(offers.map(offer => offer.kind), ["tap", "assertVisible", "scrollUntilVisible"]);
+  assert.equal(offers.find(offer => offer.kind === "assertVisible")?.source,
+    'expect(screen.getByRole("button", "Explore")).toBeVisible()');
+  await recorder.chooseOffer("assertVisible");
 
-  assert.equal(forward, false, "asserting must not act on the screen it asserts");
+  assert.equal(recorder.getSnapshot().menu, undefined, "choosing a row closes the menu");
   assert.equal(recorder.getSnapshot().steps[0].kind, "assertVisible");
-  assert.equal(recorder.getSnapshot().assertMode, false, "assert mode is one shot");
+  assert.equal(reads.count, 1, "the menu and the step it records share one read");
 });
 
 test("the tree is re-read after a tap but not after an assertion", async () => {
@@ -54,19 +71,19 @@ test("the tree is re-read after a tap but not after an assertion", async () => {
   recorder.attach(UDID, reader([tab("Explore", 800)], reads));
   recorder.start(UDID);
 
-  recorder.setAssertMode(true);
-  await recorder.record({ x: 50, y: 820 });
+  await recorder.openMenu({ x: 50, y: 820 });
+  await recorder.chooseOffer("assertVisible");
   assert.equal(reads.count, 1);
 
   // An assertion left the screen alone, so the cached tree still describes it.
-  recorder.setAssertMode(true);
-  await recorder.record({ x: 50, y: 820 });
+  await recorder.openMenu({ x: 50, y: 820 });
+  await recorder.chooseOffer("assertVisible");
   assert.equal(reads.count, 1);
 
   // A tap can navigate, so the next step must be named from a fresh read.
-  await recorder.record({ x: 50, y: 820 });
+  await pick(recorder, { x: 50, y: 820 });
   assert.equal(reads.count, 1, "the tap itself is named from the screen it landed on");
-  await recorder.record({ x: 50, y: 820 });
+  await pick(recorder, { x: 50, y: 820 });
   assert.equal(reads.count, 2, "the step after a tap re-reads the screen");
 });
 
@@ -75,21 +92,19 @@ test("nothing is recorded when no recording is running", async () => {
   const recorder = new TestRecorder();
   recorder.attach(UDID, reader([tab("Explore", 800)], reads));
 
-  const forward = await recorder.record({ x: 50, y: 820 });
+  await pick(recorder, { x: 50, y: 820 });
 
-  assert.equal(forward, true);
   assert.equal(recorder.getSnapshot().steps.length, 0);
-  assert.equal(reads.count, 0);
+  assert.equal(reads.count, 0, "nothing is recording, so nothing is even read");
 });
 
-test("a failed screen read drops the step and still lets the tap through", async () => {
+test("a failed screen read drops the step and says why", async () => {
   const recorder = new TestRecorder();
   recorder.attach(UDID, { readComponents: async () => { throw new Error("device is gone"); }, screen: () => SCREEN });
   recorder.start(UDID);
 
-  const forward = await recorder.record({ x: 50, y: 820 });
+  await pick(recorder, { x: 50, y: 820 });
 
-  assert.equal(forward, true, "a broken recorder must not freeze the mirror");
   assert.equal(recorder.getSnapshot().steps.length, 0);
   assert.match(recorder.getSnapshot().error, /device is gone/);
 });
@@ -101,8 +116,8 @@ test("steps can be removed and the source re-emits from what is left", async () 
   recorder.start(UDID);
   recorder.setTitle("two taps");
 
-  await recorder.record({ x: 50, y: 820 });
-  await recorder.record({ x: 50, y: 920 });
+  await pick(recorder, { x: 50, y: 820 });
+  await pick(recorder, { x: 50, y: 920 });
   assert.match(recorder.source, /Explore/);
   assert.match(recorder.source, /Home/);
 
@@ -155,7 +170,7 @@ test("the outline is dropped when the screen it was resolved against is gone", a
   await recorder.hover({ x: 50, y: 820 });
   assert.ok(recorder.getSnapshot().hover);
 
-  await recorder.record({ x: 50, y: 820 });
+  await pick(recorder, { x: 50, y: 820 });
   assert.equal(recorder.getSnapshot().hover, undefined, "a tap changes the screen under the pointer");
 
   await recorder.hover({ x: 50, y: 820 });
@@ -185,7 +200,7 @@ test("the outline walks out to the enclosing element and records what it shows",
   assert.equal(reads.count, 1, "walking re-resolves from the cache, it does not re-read the device");
 
   // The step is what the outline showed, not what the pointer was over.
-  await recorder.record({ x: 50, y: 120 });
+  await pick(recorder, { x: 50, y: 120 });
   assert.deepEqual(recorder.getSnapshot().steps.at(-1)?.selector, { kind: "testId", testId: "city-card" });
 
   // It cannot walk past the outermost element, nor inside the innermost.
@@ -201,14 +216,14 @@ test("an assertion on a point with nothing to name is refused, not recorded as c
   const recorder = new TestRecorder();
   recorder.attach(UDID, reader([tab("Explore", 800)], reads));
   recorder.start(UDID);
-  recorder.setAssertMode(true);
 
-  const forward = await recorder.record({ x: 300, y: 200 });
+  await recorder.openMenu({ x: 300, y: 200 });
+  // A coordinate has nothing to be visible, so the menu offers the tap alone.
+  assert.deepEqual(recorder.getSnapshot().menu?.offers.map(offer => offer.kind), ["tap"]);
+  await recorder.chooseOffer("assertVisible");
 
-  assert.equal(forward, false, "an assertion never touches the app, refused or not");
   assert.deepEqual(recorder.getSnapshot().steps, [], "nothing emittable, so nothing recorded");
-  assert.match(recorder.getSnapshot().error, /nothing to assert/);
-  assert.equal(recorder.getSnapshot().assertMode, true, "assert stays armed so the next try is one tap");
+  assert.match(recorder.getSnapshot().error, /nothing to act on but the coordinate/);
 });
 
 test("a coordinate tap carries a wait for the screen it was recorded on", async () => {
@@ -217,7 +232,7 @@ test("a coordinate tap carries a wait for the screen it was recorded on", async 
   recorder.attach(UDID, reader([tab("Explore", 800)], reads));
   recorder.start(UDID);
 
-  await recorder.record({ x: 300, y: 200 });
+  await pick(recorder, { x: 300, y: 200 });
 
   const step = recorder.getSnapshot().steps.at(-1);
   assert.equal(step?.selector.kind, "point");
@@ -230,7 +245,7 @@ test("recording again after a save starts a new flow rather than extending the s
   const recorder = new TestRecorder();
   recorder.attach(UDID, reader([tab("Explore", 800)], reads));
   recorder.start(UDID);
-  await recorder.record({ x: 50, y: 820 });
+  await pick(recorder, { x: 50, y: 820 });
   recorder.stop();
   assert.equal(recorder.getSnapshot().steps.length, 1);
 
@@ -239,7 +254,7 @@ test("recording again after a save starts a new flow rather than extending the s
   assert.deepEqual(recorder.getSnapshot().steps, []);
 
   // And what it passes when they are not: stopping to scroll and carrying on keeps the flow.
-  await recorder.record({ x: 50, y: 820 });
+  await pick(recorder, { x: 50, y: 820 });
   recorder.stop();
   recorder.start(UDID, true);
   assert.equal(recorder.getSnapshot().steps.length, 1);
@@ -266,7 +281,7 @@ test("the device is given back on every path out of recording", async () => {
   const recorder = new TestRecorder();
   recorder.attach(UDID, reader([tab("Explore", 800)], reads));
   recorder.start(UDID);
-  await recorder.record({ x: 50, y: 820 });
+  await pick(recorder, { x: 50, y: 820 });
 
   recorder.stop();
   assert.equal(reads.released, 1, "stopping releases");
@@ -296,4 +311,151 @@ test("replacing the reader hands the old device back first", async () => {
   recorder.attach(UDID, reader([tab("Explore", 800)], second));
   assert.equal(first.released, 1, "the reader being replaced was holding a session");
   assert.equal(second.released, 0);
+});
+
+test("a pointer move during the menu's own read does not drop the menu", async () => {
+  const reads = { count: 0 };
+  const recorder = new TestRecorder();
+  let release = () => {};
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  recorder.attach(UDID, {
+    readComponents: async () => { reads.count++; await pending; return [tab("Explore", 800)]; },
+    screen: () => SCREEN,
+    release: () => undefined,
+  });
+  recorder.start(UDID);
+
+  const opening = recorder.openMenu({ x: 50, y: 820 });
+  // A browser sends a pointermove after the right-click. It used to bump the recorder's token and
+  // the menu, resolved against a token that no longer matched, was silently dropped.
+  await recorder.hover({ x: 51, y: 821 });
+  release();
+  await opening;
+
+  assert.ok(recorder.getSnapshot().menu, "the menu survived the move that landed during its read");
+  assert.equal(recorder.getSnapshot().menu?.offers[0]?.kind, "tap");
+  recorder.detach(UDID);
+});
+
+test("a passing run holds its marks, then lets them go; a failing one keeps them", async () => {
+  const recorder = new TestRecorder();
+  recorder.attach(UDID, reader([tab("Explore", 800)], { count: 0 }));
+  recorder.start(UDID);
+  await pick(recorder, { x: 50, y: 820 });
+
+  recorder.beginRun();
+  // A run starts with nothing marked: the runner says which step it is on, so nothing is guessed.
+  assert.deepEqual(recorder.getSnapshot().run?.lines, {});
+  recorder.applyRunProgress([{ stepIndex: 1, phase: "start" }]);
+  assert.deepEqual(recorder.getSnapshot().run?.lines, { 8: "running" });
+  recorder.finishRun({ status: "passed", steps: [{ line: 8, status: "passed" }] });
+  assert.equal(recorder.getSnapshot().run?.fading, undefined, "the checkmark is held first, so it can be caught");
+
+  // The preview is the test, not a scoreboard, so a pass gives the lines back.
+  await new Promise(resolve => setTimeout(resolve, 2_700));
+  assert.equal(recorder.getSnapshot().run?.fading, true);
+  await new Promise(resolve => setTimeout(resolve, 800));
+  assert.equal(recorder.getSnapshot().run, undefined);
+
+  recorder.beginRun();
+  recorder.finishRun({ status: "failed", steps: [{ line: 8, status: "failed", error: "Timed out" }] });
+  await new Promise(resolve => setTimeout(resolve, 3_500));
+  assert.deepEqual(recorder.getSnapshot().run?.lines, { 8: "failed" }, "a failure stays until the next run");
+  recorder.clearRun();
+  recorder.detach(UDID);
+});
+
+test("walking the outline out re-asks the menu about the element it walked to", async () => {
+  const reads = { count: 0 };
+  const recorder = new TestRecorder();
+  const row = {
+    name: "Paris", label: "Paris", text: "Paris", role: "text", depth: 2, source: "accessibility" as const,
+    nodeId: "label", parentId: "card", bounds: { x: 20, y: 100, width: 80, height: 20 },
+  };
+  const card = {
+    name: "Open Paris", label: "Open Paris", role: "button", depth: 1, source: "accessibility" as const,
+    nodeId: "card", bounds: { x: 10, y: 90, width: 200, height: 60 },
+  };
+  recorder.attach(UDID, reader([card, row], reads));
+  recorder.start(UDID);
+
+  await recorder.openMenu({ x: 50, y: 110 });
+  assert.match(recorder.getSnapshot().menu!.offers[0].source, /getByText\("Paris"\)/, "the menu starts on the element under the pointer");
+
+  recorder.walkHover(true);
+
+  assert.match(recorder.getSnapshot().menu!.offers[0].source, /getByRole\("button", "Open Paris"\)/, "and follows the outline out to the card");
+  assert.deepEqual(recorder.getSnapshot().menu!.bounds, card.bounds, "including the rectangle it is anchored to");
+  recorder.detach(UDID);
+});
+
+test("re-attaching the same reader leaves the outline and the menu where they are", async () => {
+  const reads = { count: 0 };
+  const recorder = new TestRecorder();
+  // The simulator panel re-attaches on every device-list refresh, with the same reader object.
+  // Treating that as a change threw away the cached tree and, through `clearHover`, took the
+  // outline and any open menu with it about a second after the user saw them.
+  const source = reader([tab("Explore", 800)], reads);
+  recorder.attach(UDID, source);
+  recorder.start(UDID);
+  await recorder.openMenu({ x: 50, y: 820 });
+  assert.ok(recorder.getSnapshot().menu);
+  assert.equal(reads.count, 1);
+
+  recorder.attach(UDID, source);
+
+  assert.ok(recorder.getSnapshot().menu, "a refresh is not a reason to close the menu");
+  assert.ok(recorder.getSnapshot().hover, "nor to drop the outline");
+  await recorder.hover({ x: 50, y: 821 });
+  assert.equal(reads.count, 1, "nor to read the screen again");
+  recorder.detach(UDID);
+});
+
+test("live step events mark the line the step is on, by index not by guess", async () => {
+  const recorder = new TestRecorder();
+  recorder.attach(UDID, reader([tab("Explore", 800), tab("Home", 900)], { count: 0 }));
+  recorder.start(UDID);
+  await pick(recorder, { x: 50, y: 820 });
+  await pick(recorder, { x: 50, y: 920 });
+
+  // `await app.open()` is a step the runner reports too, so index 0 is the header's line.
+  assert.deepEqual(recorder.emitted.calls, [6, 8, 9]);
+
+  recorder.beginRun();
+  assert.deepEqual(recorder.getSnapshot().run?.lines, {}, "nothing has started, so nothing is marked");
+
+  recorder.applyRunProgress([
+    { stepIndex: 0, phase: "start" }, { stepIndex: 0, phase: "end", status: "passed" },
+    { stepIndex: 1, phase: "start" },
+  ]);
+  assert.deepEqual(recorder.getSnapshot().run?.lines, { 6: "passed", 8: "running" },
+    "the line the runner is on spins while the ones behind it are done");
+
+  recorder.applyRunProgress([
+    { stepIndex: 0, phase: "start" }, { stepIndex: 0, phase: "end", status: "passed" },
+    { stepIndex: 1, phase: "start" }, { stepIndex: 1, phase: "end", status: "failed", error: "Timed out" },
+  ]);
+  assert.deepEqual(recorder.getSnapshot().run?.lines, { 6: "passed", 8: "failed" });
+  assert.equal(recorder.getSnapshot().run?.error, "Timed out");
+
+  // An index past the file's awaited calls names no line rather than marking the wrong one.
+  recorder.applyRunProgress([{ stepIndex: 9, phase: "start" }]);
+  assert.deepEqual(recorder.getSnapshot().run?.lines, {});
+  recorder.clearRun();
+  recorder.detach(UDID);
+});
+
+test("progress from a finished run is ignored, so the report has the last word", async () => {
+  const recorder = new TestRecorder();
+  recorder.attach(UDID, reader([tab("Explore", 800)], { count: 0 }));
+  recorder.start(UDID);
+  await pick(recorder, { x: 50, y: 820 });
+
+  recorder.beginRun();
+  recorder.finishRun({ status: "passed", steps: [{ line: 8, status: "passed" }] });
+  recorder.applyRunProgress([{ stepIndex: 1, phase: "start" }]);
+
+  assert.deepEqual(recorder.getSnapshot().run?.lines, { 8: "passed" }, "a late poll cannot restart a finished run");
+  recorder.clearRun();
+  recorder.detach(UDID);
 });

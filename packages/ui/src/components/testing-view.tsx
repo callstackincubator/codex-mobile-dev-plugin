@@ -1,8 +1,9 @@
 import { useRef, useState, useSyncExternalStore } from "react";
-import { CheckIcon, ChevronDownIcon, CircleIcon, EyeIcon, FolderOpenIcon, LoaderCircleIcon, PlayIcon, SaveIcon, SquareIcon, Trash2Icon, XIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, CircleIcon, CircleXIcon, FlaskConicalIcon, FolderOpenIcon, LoaderCircleIcon, PlayIcon, SaveIcon, SquareIcon, Trash2Icon, XIcon } from "lucide-react";
 import type { DeviceAppsStore } from "../device-apps.ts";
 import type { TestingPanel } from "../testing-panel.ts";
 import { testRecorder } from "../test-recorder.ts";
+import type { TestRunView } from "../test-recorder.ts";
 import { testFileSlug } from "@mobile-dev/shared/test-recording.ts";
 import { CODE_TOKEN_CLASS, changedLines, highlightCode } from "../code-highlight.ts";
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert.tsx";
@@ -118,7 +119,7 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
  * an effect would flash the new lines unmarked for a frame. `generation` remounts the marked
  * lines so their animation runs again for the next step, instead of only on the first.
  */
-function TestPreview({ source }: { source: string }) {
+function TestPreview({ source, run }: { source: string; run?: TestRunView }) {
   const shown = useRef({ source: "", range: [0, 0] as [number, number], generation: 0 });
   if (shown.current.source !== source) {
     const previous = shown.current.source;
@@ -133,11 +134,25 @@ function TestPreview({ source }: { source: string }) {
   return <pre data-testing-preview className="min-h-0 flex-1 overflow-auto rounded-md border bg-muted/40 p-2 font-mono text-[11px] leading-relaxed"><code>
     {source.split("\n").map((line, index) => {
       const added = index >= from && index < to;
+      // The report's lines are 1-based, as the file's own line numbers are.
+      const mark = run?.lines[index + 1];
       return <span key={added ? `new-${generation}-${index}` : `line-${index}`} className={`testing-preview-line${added ? " is-new" : ""}`}>
-        {highlightCode(line).map((token, position) =>
-          token.kind === "plain"
-            ? token.text
-            : <span key={position} className={CODE_TOKEN_CLASS[token.kind]}>{token.text}</span>)}
+        {/* Two columns: a fixed gutter and the code. That is why the code does not move when a run
+            starts, and why a mark stays level with the first row of a line that wraps — the mark is
+            a sibling of the whole line, not a character at the front of it.
+            The run's own state is announced once, above the preview; a mark per line would read the
+            whole file out. So the gutter is decoration, and `aria-hidden` throughout. */}
+        <span className={`testing-run-mark${mark ? ` is-${mark}` : ""}${run?.fading ? " is-fading" : ""}`} aria-hidden>
+          {mark === "running" ? <LoaderCircleIcon className="size-3 animate-spin" />
+            : mark === "passed" ? <CheckIcon className="size-3" />
+              : mark === "failed" ? <CircleXIcon className="size-3" /> : null}
+        </span>
+        <span className="testing-preview-code">
+          {highlightCode(line).map((token, position) =>
+            token.kind === "plain"
+              ? <span key={position}>{token.text}</span>
+              : <span key={position} className={CODE_TOKEN_CLASS[token.kind]}>{token.text}</span>)}
+        </span>
       </span>;
     })}
   </code></pre>;
@@ -158,17 +173,19 @@ function TestingRecorder({ panel, recordable, udid }: { panel: TestingPanel; rec
       {recording
         ? <Button type="button" size="sm" variant="outline" data-testing-stop onClick={() => testRecorder.stop()}><SquareIcon />Stop</Button>
         : <Button type="button" size="sm" variant="outline" data-testing-record disabled={!recordable} onClick={() => testRecorder.start(udid, panel.dirty)}><CircleIcon />Record</Button>}
-      <Button type="button" size="sm" variant={state.assertMode ? "default" : "ghost"} data-testing-assert disabled={!recording}
-        title="The next tap asserts that the element is visible instead of tapping it"
-        onClick={() => testRecorder.setAssertMode(!state.assertMode)}><EyeIcon />Assert</Button>
       <Button type="button" size="sm" variant="ghost" data-testing-clear disabled={state.steps.length === 0} onClick={() => testRecorder.clearSteps()}><Trash2Icon />Clear</Button>
+      <Button type="button" size="sm" variant="outline" data-testing-run disabled={!panel.canRun}
+        title="Save the test, then run it against this device. Recording stops: the runner needs the device to itself."
+        onClick={() => void panel.runTest()}>
+        {panelState.running ? <LoaderCircleIcon className="animate-spin" /> : <FlaskConicalIcon />}Run test
+      </Button>
       {state.resolving && <span className="flex items-center gap-1 text-xs text-muted-foreground" role="status"><LoaderCircleIcon className="animate-spin" />Reading the screen…</span>}
     </div>
 
     {!recordable && !recording && <p className="text-xs text-muted-foreground">Recording needs a booted iOS simulator in the mirror.</p>}
     {recording && <p className="text-xs text-muted-foreground">
-      {state.assertMode ? "The next tap records an assertion and is not sent to the app." : "Tap the mirror. Each tap becomes a step."}
-      {" Scroll over the outline to pick the element around it."}
+      Click the mirror to drive the app; nothing is recorded. Right-click an element for the steps it
+      supports, and scroll over the outline to pick the element around it.
     </p>}
 
     {state.error && <Alert variant="destructive">
@@ -221,8 +238,18 @@ function TestingRecorder({ panel, recordable, udid }: { panel: TestingPanel; rec
     {panelState.savedPath && panel.dirty && <p className="text-xs text-amber-600" role="status">Unsaved steps since {panelState.savedPath} was written.</p>}
 
     <div className="flex min-h-0 flex-1 flex-col gap-1">
-      <p className="text-xs text-muted-foreground">Preview</p>
-      <TestPreview source={testRecorder.source} />
+      <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        <span>Preview</span>
+        {state.run?.state === "running" && <span className="flex items-center gap-1" role="status">
+          <LoaderCircleIcon className="size-3 animate-spin" />Running
+        </span>}
+        {state.run?.state === "passed" && <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400" role="status"><CheckIcon className="size-3" />Passed</span>}
+        {state.run?.state === "failed" && <span className="flex min-w-0 items-center gap-1 break-words text-red-600 dark:text-red-400" role="status">
+          <CircleXIcon className="size-3 shrink-0" />{state.run.error ?? "Failed"}
+        </span>}
+      </p>
+      {state.run?.output && <pre className="max-h-32 overflow-auto rounded-md border bg-muted/40 p-2 font-mono text-[10px] whitespace-pre-wrap">{state.run.output}</pre>}
+      <TestPreview source={testRecorder.source} run={state.run} />
     </div>
   </div>;
 }

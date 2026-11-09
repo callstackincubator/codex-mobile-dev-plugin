@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { TestingDevices, projectedComponents } from "../src/testing-device.ts";
+import { registerTestingTools } from "../src/testing-tools.ts";
 
 /**
  * Stands in for `@e2e-dev/mobile`'s `projectSnapshot`. The real projection is the project's own
@@ -149,4 +150,28 @@ test("a project without the mobile engine says so instead of guessing at roles",
     devices.read({ ...target, projectPath: "/does/not/exist" }),
     /@e2e-dev\/mobile/,
   );
+});
+
+test("shutting the plugin down gives the recorder's device back", async () => {
+  // A server that goes away without releasing leaves the claim behind, and the agent-device daemon
+  // that holds it outlives the server. The user's own `e2e run` then refuses to boot the device
+  // with "has an ownership claim that could not be verified", which points at nothing they did.
+  const closed: unknown[] = [];
+  const devices = new TestingDevices(async () => ({
+    createAgentDeviceClient: () => ({
+      apps: { open: async () => undefined },
+      capture: { snapshot: async () => ({ nodes: [] }) },
+      sessions: { close: async (options?: unknown) => { closed.push(options); } },
+    }),
+  }) as never);
+  const server = { registerTool: () => undefined, registerResource: () => undefined } as never;
+  const projects = { list: async () => [], choose: async () => undefined, record: async () => undefined } as never;
+  const shutdown = registerTestingTools(server, projects, devices);
+  // Nothing is attached, so there is nothing to give back and nothing is called.
+  await shutdown();
+  assert.deepEqual(closed, []);
+  (devices as unknown as { attached?: string; client?: unknown }).attached = "udid";
+  (devices as unknown as { client?: unknown }).client = (await (devices as unknown as { connect(): Promise<unknown> }).connect());
+  await shutdown();
+  assert.deepEqual(closed, [{ session: "mobile-dev-recorder" }]);
 });

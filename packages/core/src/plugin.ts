@@ -111,7 +111,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
   registerAppStorageTools(server);
   const appFlow = await createAppFlowHost();
   const closeAppFlow = registerAppFlowTools(server, appFlow, new AppFlowProjectChoices(APP_FLOW_DIRECTORY));
-  registerTestingTools(server, new TestingProjectChoices(TESTING_DIRECTORY));
+  const closeTestingDevices = registerTestingTools(server, new TestingProjectChoices(TESTING_DIRECTORY));
 
   const resource = async () => typeof html === "string" ? { html } : await html();
   const page = async () => configureUI((await resource()).html);
@@ -160,7 +160,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
       stopRecordingStorageMetrics();
       // Recordings finish while the collectors they read are still open.
       await recordings.close();
-      try { await Promise.all([logs.close(), cpu.close(), fps.close(), traceSift.close(), closeAppFlow(), closePanel?.()]); }
+      try { await Promise.all([logs.close(), cpu.close(), fps.close(), traceSift.close(), closeAppFlow(), closePanel?.(), closeTestingDevices()]); }
       finally { android.dispose(); await server.close(); await analytics.close(); }
     },
   };

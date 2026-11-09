@@ -81,10 +81,6 @@ export function createSimulatorPanel(
   let epoch = 0;
   let points = { width: 0, height: 0 };
   let pointer: { id: number; x: number; y: number; edge?: TouchInput["edge"] } | undefined;
-  /** The pointer whose tap is being resolved into a test step before it reaches the device. */
-  let recordingPointer: number | undefined;
-  /** The finger came up while its step was still resolving, so the forwarded tap must end itself. */
-  let recordingReleased = false;
   let seenFrames = 0;
   let pausedFrame: HTMLCanvasElement | undefined;
   let busy = false;
@@ -297,6 +293,17 @@ export function createSimulatorPanel(
     readComponents: async () => selected ? testRecorder.readTree(selected.udid) : [],
     screen: () => points,
     release: () => testRecorder.releaseTree(),
+    // Taking the step the menu recorded. `tap` and `type` are the panel's own input messages, so
+    // the app advances exactly as a user's own tap would, and the next step is resolved against
+    // the screen the test will be on.
+    perform: (action: { kind: "tap"; point: { x: number; y: number } } | { kind: "type"; text: string }) => {
+      if (action.kind === "tap") send({ type: "tap", x: action.point.x, y: action.point.y, ...points });
+      // The runner's `fill` replaces the field's contents; typing on the mirror appends to them, and
+      // there is no input message that clears a field. So a `fill` recorded into a field that
+      // already has text leaves the app showing something the test will not produce — the step is
+      // still right, the screen behind it is not. Non-ASCII is refused by the input schema.
+      else if (action.text) send({ type: "type", text: action.text });
+    },
   };
   function syncRecorder() {
     const recordable = platform === "ios" && selected?.kind !== "physical" && selected?.state === "Booted";
@@ -916,30 +923,16 @@ export function createSimulatorPanel(
       return;
     }
     if (annotations.getSnapshot().draft) return;
-    if (!ready || inputBlocked || busy || event.button !== 0 || pointer || recordingPointer !== undefined) return;
+    // A click outside the element menu dismisses it rather than recording through it; the menu
+    // stops its own pointer events from reaching the canvas at all.
+    if (testRecorder.getSnapshot().menu) { testRecorder.closeMenu(); return; }
+    if (!ready || inputBlocked || busy || event.button !== 0 || pointer) return;
     const position = mappedPoint(event);
     const edge: TouchInput["edge"] = position.y > points.height - 14 ? "bottom" : position.y < 14 ? "top" : undefined;
     const touch = { ...position, ...points, ...(edge ? { edge } : {}) };
-    if (testRecorder.isRecording(selected?.udid)) {
-      // The step has to be named from the screen the tap lands on, not the one it opens, so the
-      // touch waits for the recorder. A warm tree answers without a round trip; a cold one costs
-      // one loopback read. Moves during that wait are dropped: this records taps, not drags.
-      event.preventDefault();
-      canvas.focus();
-      recordingPointer = event.pointerId;
-      recordingReleased = false;
-      void testRecorder.record(position).then(forward => {
-        const held = recordingPointer === event.pointerId && !recordingReleased;
-        recordingPointer = undefined;
-        // An assertion reads the screen; acting on it would change what it just asserted.
-        if (!forward || !ready || inputBlocked) return;
-        send({ type: "touch1-down", ...touch });
-        if (!held) { send({ type: "touch1-up", ...touch }); return; }
-        pointer = { id: event.pointerId, ...position, edge };
-        if (canvas.isConnected) canvas.setPointerCapture(event.pointerId);
-      });
-      return;
-    }
+    // A left click only drives the app, recording or not. Recording a step from it meant every
+    // stray tap while finding the next screen became a step the user then had to delete, and it
+    // made "tap to drive" and "tap to record" the same gesture. Steps come from the element menu.
     pointer = { id: event.pointerId, ...position, edge };
     canvas.setPointerCapture(event.pointerId); canvas.focus();
     send({ type: "touch1-down", ...touch });
@@ -948,12 +941,28 @@ export function createSimulatorPanel(
     if (annotations.getSnapshot().selecting) { if (annotationPointer === undefined || annotationPointer === event.pointerId) annotations.hover(mappedPoint(event)); return; }
     // While recording, the pointer previews what it would record. Not during a drag: the touch is
     // already going to the device, and the screen under it is no longer the one that was read.
-    if (testRecorder.isRecording(selected?.udid) && !pointer && recordingPointer === undefined) { void testRecorder.hover(mappedPoint(event)); return; }
+    if (testRecorder.isRecording(selected?.udid) && !pointer) { void testRecorder.hover(mappedPoint(event)); return; }
     if (!pointer || pointer.id !== event.pointerId) return;
     Object.assign(pointer, mappedPoint(event));
     send({ type: "touch1-move", x: pointer.x, y: pointer.y, ...points, ...(pointer.edge ? { edge: pointer.edge } : {}) });
   });
   canvas.addEventListener("pointerleave", () => { if (annotationPointer === undefined) annotations.hover(); void testRecorder.hover(); });
+  // Right-click asks what can be done with the element the outline is on, instead of the browser's
+  // own menu over a canvas that has nothing in it to copy. The menu itself is drawn by the
+  // recorder overlay, which already has the outline's rectangle to anchor to.
+  // Escape closes the element menu. On the window and in the capture phase, so it beats the
+  // canvas's own key handling, which would otherwise forward the key to the device.
+  window.addEventListener("keydown", event => {
+    if (disposed || event.key !== "Escape" || !testRecorder.getSnapshot().menu) return;
+    event.preventDefault();
+    event.stopPropagation();
+    testRecorder.closeMenu();
+  }, { capture: true });
+  canvas.addEventListener("contextmenu", event => {
+    if (!testRecorder.isRecording(selected?.udid) || annotations.getSnapshot().selecting) return;
+    event.preventDefault();
+    void testRecorder.openMenu(mappedPoint(event));
+  });
   // While recording, the wheel walks the outline out to the enclosing element and back in — the
   // label inside the row, the row inside the card. The mirror has no other use for the wheel.
   // A trackpad sends a burst of small deltas per flick, so steps are accumulated rather than
@@ -976,16 +985,11 @@ export function createSimulatorPanel(
       cancelAnnotationPointer();
       return;
     }
-    if (recordingPointer === event.pointerId) { recordingReleased = true; return; }
     if (pointer?.id === event.pointerId) releasePointer();
   });
   canvas.addEventListener("pointercancel", cancelAnnotationPointer);
   canvas.addEventListener("lostpointercapture", cancelAnnotationPointer);
   window.addEventListener("blur", cancelAnnotationPointer);
-  const cancelRecordingPointer = () => { if (recordingPointer !== undefined) recordingReleased = true; };
-  canvas.addEventListener("pointercancel", cancelRecordingPointer);
-  canvas.addEventListener("lostpointercapture", cancelRecordingPointer);
-  window.addEventListener("blur", cancelRecordingPointer);
   canvas.addEventListener("pointercancel", releasePointer);
   canvas.addEventListener("lostpointercapture", releasePointer);
   window.addEventListener("blur", releasePointer);

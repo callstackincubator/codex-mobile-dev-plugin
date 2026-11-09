@@ -29,7 +29,9 @@ function host(responses: Record<string, unknown>, calls: { name: string; argumen
 async function recordOneStep(panel: TestingPanel) {
   testRecorder.attach(UDID, { readComponents: async () => [tab], screen: () => ({ width: 402, height: 874 }) });
   testRecorder.start(UDID);
-  await testRecorder.record({ x: 50, y: 820 });
+  // A left click records nothing now; a step comes from the element menu.
+  await testRecorder.openMenu({ x: 50, y: 820 });
+  await testRecorder.chooseOffer("tap");
   assert.equal(testRecorder.getSnapshot().steps.length, 1);
   assert.equal(panel.dirty, true);
 }
@@ -65,6 +67,83 @@ test("a save blocked by an existing file leaves the recording running", async ()
   assert.equal(panel.getSnapshot().overwritePath, `${PROJECT}/tests/flow.e2e.ts`);
   assert.equal(testRecorder.getSnapshot().recordingUdid, UDID, "nothing was written, so nothing is finished");
   testRecorder.stop();
+  testRecorder.clearSteps();
+  testRecorder.detach(UDID);
+});
+
+test("Run saves, hands the device back, and only then runs", async () => {
+  const calls: { name: string; arguments: Record<string, unknown> }[] = [];
+  const panel = new TestingPanel(host({
+    mobile_testing_write_file: { written: true, existed: false, path: `${PROJECT}/tests/flow.e2e.ts` },
+    mobile_testing_run_test: { status: "passed", exitCode: 0, steps: [{ line: 8, status: "passed" }] },
+  }, calls), deviceApps);
+  panel.setAvailable(true);
+  (panel as unknown as { update(fields: Record<string, unknown>): void }).update({ projectPath: PROJECT, fileName: "flow" });
+  await recordOneStep(panel);
+
+  await panel.runTest();
+
+  // The order is the feature: the recorder holds the one agent-device session the device allows,
+  // so a run spawned while it is held fails with "Device is already in use".
+  assert.deepEqual(calls.map(call => call.name),
+    ["mobile_testing_write_file", "mobile_testing_release_device", "mobile_testing_run_test"]);
+  assert.equal(testRecorder.getSnapshot().recordingUdid, "", "a recording left armed would take the session straight back");
+  assert.deepEqual(calls.at(-1)?.arguments, { projectPath: PROJECT, relativePath: "tests/flow.e2e.ts" });
+  assert.equal(panel.getSnapshot().running, false);
+  assert.equal(testRecorder.getSnapshot().run?.state, "passed");
+  assert.deepEqual(testRecorder.getSnapshot().run?.lines, { 8: "passed" });
+  testRecorder.clearRun();
+  testRecorder.clearSteps();
+  testRecorder.detach(UDID);
+});
+
+test("Run never replaces a file without being asked, and resumes from the answer", async () => {
+  const calls: { name: string; arguments: Record<string, unknown> }[] = [];
+  const responses: Record<string, unknown> = {
+    mobile_testing_write_file: { written: false, existed: true, path: `${PROJECT}/tests/flow.e2e.ts` },
+    mobile_testing_run_test: { status: "passed", exitCode: 0, steps: [{ line: 8, status: "passed" }] },
+  };
+  const panel = new TestingPanel(host(responses, calls), deviceApps);
+  panel.setAvailable(true);
+  (panel as unknown as { update(fields: Record<string, unknown>): void }).update({ projectPath: PROJECT, fileName: "flow" });
+  await recordOneStep(panel);
+
+  await panel.runTest();
+
+  assert.equal(panel.getSnapshot().overwritePath, `${PROJECT}/tests/flow.e2e.ts`);
+  assert.deepEqual(calls.map(call => call.name), ["mobile_testing_write_file"], "nothing ran over a file the user has not agreed to replace");
+
+  responses.mobile_testing_write_file = { written: true, existed: true, path: `${PROJECT}/tests/flow.e2e.ts` };
+  await panel.saveTest(true);
+  // Saving does not block on a run that may take minutes, so the resumed run lands after it.
+  await new Promise(resolve => setTimeout(resolve, 0));
+  await new Promise(resolve => setTimeout(resolve, 0));
+  // The answer finishes what Run began, so the user does not press Run twice.
+  assert.deepEqual(calls.map(call => call.name),
+    ["mobile_testing_write_file", "mobile_testing_write_file", "mobile_testing_release_device", "mobile_testing_run_test"]);
+  testRecorder.clearRun();
+  testRecorder.clearSteps();
+  testRecorder.detach(UDID);
+});
+
+test("a failing run keeps its mark on the line the report blames", async () => {
+  const calls: { name: string; arguments: Record<string, unknown> }[] = [];
+  const panel = new TestingPanel(host({
+    mobile_testing_write_file: { written: true, existed: false, path: `${PROJECT}/tests/flow.e2e.ts` },
+    mobile_testing_run_test: { status: "failed", exitCode: 1, steps: [{ line: 8, status: "passed" }, { line: 9, status: "failed", error: "Timed out" }] },
+  }, calls), deviceApps);
+  panel.setAvailable(true);
+  (panel as unknown as { update(fields: Record<string, unknown>): void }).update({ projectPath: PROJECT, fileName: "flow" });
+  await recordOneStep(panel);
+
+  await panel.runTest();
+
+  const run = testRecorder.getSnapshot().run;
+  assert.equal(run?.state, "failed");
+  assert.deepEqual(run?.lines, { 8: "passed", 9: "failed" });
+  assert.equal(run?.error, "Timed out");
+  assert.equal(run?.fading, undefined, "a failure stays put until the next run");
+  testRecorder.clearRun();
   testRecorder.clearSteps();
   testRecorder.detach(UDID);
 });

@@ -14,9 +14,42 @@ export type RecordedSelector =
   | { kind: "placeholder"; placeholder: string }
   | { kind: "text"; text: string }
   | { kind: "label"; label: string }
-  | { kind: "point"; point: ScreenPoint };
+  | { kind: "point"; point: ScreenPoint }
+  /**
+   * A named selector narrowed to one of its matches by position.
+   *
+   * The last resort before a coordinate, and far better than one: when nothing on the screen names
+   * the element uniquely — the same text on a heading and on a tab, with no distinguishing ancestor
+   * to scope under and nothing to `filter({ hasText })` on — a bare selector matching two is a step
+   * that fails with `LOCATOR_AMBIGUOUS`, while the same selector at `.nth(i)` is a step that runs.
+   * `index` is the position of the element the user actually pointed at, so it is recorded, not
+   * guessed. It is still positional, so the emitter says so and names the durable fix.
+   */
+  | { kind: "nth"; inner: NamedSelector; index: number; matches: number };
 
-export type RecordedStepKind = "tap" | "assertVisible";
+/** Every selector that names something, as opposed to a coordinate or a position among names. */
+export type NamedSelector = Exclude<RecordedSelector, { kind: "point" } | { kind: "nth" }>;
+
+/**
+ * What a recorded step does to the element it named.
+ *
+ * Every one of these is an action or matcher the `e2e` runner actually has, which is the whole
+ * constraint: the element menu offers rows from this list, so a row the runner cannot express is
+ * a row that does not exist. `secondaryTap`, `selectOption`, `setInputFiles` and `scrollIntoView`
+ * are deliberately absent — the runner declares them, and a device refuses them with
+ * `UNSUPPORTED_CAPABILITY`.
+ *
+ * Not every kind is offered by the element menu. `longPress` and `assertText` are emitted and read
+ * back correctly, but the menu shows one row per *kind of thing to do*, not one per variant, so
+ * they are reachable only by editing the file the panel wrote. See `stepOffers`.
+ */
+export type RecordedStepKind =
+  | "tap"
+  | "longPress"
+  | "fill"
+  | "assertVisible"
+  | "assertText"
+  | "scrollUntilVisible";
 
 export type RecordedStep = {
   id: string;
@@ -24,6 +57,8 @@ export type RecordedStep = {
   selector: RecordedSelector;
   /** What the step reads as in the panel's list, e.g. `Tap "Explore" (tab)`. */
   label: string;
+  /** The text a `fill` types. Only a `fill` has one. */
+  value?: string;
   /** Set when every rank matched more than one element, so the panel can flag the step. */
   ambiguous?: boolean;
   /**
@@ -106,25 +141,33 @@ function innermostOnly(components: ScreenComponent[], matches: ScreenComponent[]
   return matches.filter(entry => !matches.some(other => other !== entry && isWithin(parents, other, entry)));
 }
 
-function matchesTestId(components: ScreenComponent[], testId: string): number {
-  return components.filter(item => normalize(item.identifier) === normalize(testId)).length;
+/**
+ * The elements a selector matches, in the order the runner enumerates them.
+ *
+ * Ordered, not counted, because `.nth(i)` needs the position of one particular element among them —
+ * the one the user pointed at. The order is the snapshot's own: the projection flattens the tree
+ * depth first, and the panel passes it through untouched, so the panel's index and the runner's
+ * index are the same index.
+ */
+function matchesTestId(components: ScreenComponent[], testId: string): ScreenComponent[] {
+  return components.filter(item => normalize(item.identifier) === normalize(testId));
 }
 
 /** A role query compares the role exactly and skips a hidden node, as the runner does. */
-function matchesRole(components: ScreenComponent[], role: string, name: string): number {
-  return components.filter(item => (item.role ?? "") === role && accessibleName(item) === name && item.hidden !== true).length;
+function matchesRole(components: ScreenComponent[], role: string, name: string): ScreenComponent[] {
+  return components.filter(item => (item.role ?? "") === role && accessibleName(item) === name && item.hidden !== true);
 }
 
-function matchesPlaceholder(components: ScreenComponent[], placeholder: string): number {
-  return components.filter(item => normalize(item.placeholder) === placeholder).length;
+function matchesPlaceholder(components: ScreenComponent[], placeholder: string): ScreenComponent[] {
+  return components.filter(item => normalize(item.placeholder) === placeholder);
 }
 
-function matchesText(components: ScreenComponent[], text: string): number {
-  return innermostOnly(components, components.filter(item => accessibleName(item) === text || elementText(item) === text)).length;
+function matchesText(components: ScreenComponent[], text: string): ScreenComponent[] {
+  return innermostOnly(components, components.filter(item => accessibleName(item) === text || elementText(item) === text));
 }
 
-function matchesLabel(components: ScreenComponent[], label: string): number {
-  return innermostOnly(components, components.filter(item => accessibleName(item) === label)).length;
+function matchesLabel(components: ScreenComponent[], label: string): ScreenComponent[] {
+  return innermostOnly(components, components.filter(item => accessibleName(item) === label));
 }
 
 /**
@@ -154,6 +197,12 @@ export type ResolvedSelector = {
   component?: ScreenComponent;
   /** How many elements the point sits inside, so the panel knows how far out it can still walk. */
   levels: number;
+  /**
+   * How many elements the chosen selector matches: 1 when it is pinned, more when every candidate
+   * was ambiguous and the best one was kept and flagged. "Ambiguous" on its own is a verdict; the
+   * count is the thing a user can act on, and it is what the panel shows them.
+   */
+  matches: number;
 };
 
 const area = ({ bounds }: ScreenComponent) => bounds.width * bounds.height;
@@ -215,13 +264,13 @@ export function resolveSelector(components: ScreenComponent[], point: ScreenPoin
   const levels = ladder.length;
   const chain = ladder.slice(Math.max(0, Math.min(level, levels - 1)));
   const component = chain[0];
-  if (!component) return { selector: { kind: "point", point }, ambiguous: false, levels };
+  if (!component) return { selector: { kind: "point", point }, ambiguous: false, levels, matches: 1 };
 
   // Only the named ranks; the point fallback is not a candidate, it is what is left when these fail.
   // Depth first, rank within a depth: the innermost element that can be named at all wins, because
   // that is the thing the user pointed at. An enclosing element is reached by pointing at it, or
   // by walking out — not by quietly outranking what is under the pointer.
-  type Candidate = { selector: Exclude<RecordedSelector, { kind: "point" }>; owner: ScreenComponent };
+  type Candidate = { selector: NamedSelector; owner: ScreenComponent };
   const candidates: Candidate[] = [];
   for (const owner of chain.slice(0, 8)) {
     // The role is the runner's own, passed through untouched. Translating it here is what this
@@ -247,20 +296,45 @@ export function resolveSelector(components: ScreenComponent[], point: ScreenPoin
     }
   }
 
+  // The first candidate that resolves to exactly one element wins, whatever its rank: an ambiguous
+  // preferred candidate never beats a unique later one, for this element or an enclosing one.
   for (const { selector, owner } of candidates) {
-    const matches = selector.kind === "testId" ? matchesTestId(components, selector.testId)
-      : selector.kind === "role" ? matchesRole(components, selector.role, selector.name)
-        : selector.kind === "placeholder" ? matchesPlaceholder(components, selector.placeholder)
-          : selector.kind === "label" ? matchesLabel(components, selector.label)
-            : matchesText(components, selector.text);
-    if (matches === 1) return { selector, ambiguous: false, component: owner, levels };
+    if (selectorMatches(components, selector).length === 1) {
+      return { selector, ambiguous: false, component: owner, levels, matches: 1 };
+    }
   }
-  // Nothing was unique. The best-ranked candidate still describes the element better than a
-  // coordinate does, so it is kept and flagged; with no candidate at all, the point is all there is.
+  // Nothing was unique, so the element is narrowed by position instead. A bare selector matching
+  // two is a step that fails with `LOCATOR_AMBIGUOUS`; the same selector at `.nth(i)` is a step
+  // that runs, and `i` is where the element the user pointed at actually sits among the matches.
+  for (const { selector, owner } of candidates) {
+    const found = selectorMatches(components, selector);
+    const index = found.indexOf(owner);
+    if (index < 0 || found.length < 2) continue;
+    return {
+      selector: { kind: "nth", inner: selector, index, matches: found.length },
+      ambiguous: true, component: owner, levels, matches: found.length,
+    };
+  }
+  // The element matched a candidate the runner would not count it among — a container the
+  // innermost-only rule drops, say. The selector still describes it better than a coordinate, so
+  // it is kept and flagged; with no candidate at all, the point is all there is.
   const fallback = candidates[0];
   return fallback
-    ? { selector: fallback.selector, ambiguous: true, component: fallback.owner, levels }
-    : { selector: { kind: "point", point }, ambiguous: false, component, levels };
+    ? { selector: fallback.selector, ambiguous: true, component: fallback.owner, levels, matches: selectorMatches(components, fallback.selector).length }
+    : { selector: { kind: "point", point }, ambiguous: false, component, levels, matches: 1 };
+}
+
+/** The elements one selector matches, in the runner's own order. See the `matches*` helpers. */
+function selectorMatches(components: ScreenComponent[], selector: RecordedSelector): ScreenComponent[] {
+  switch (selector.kind) {
+    case "testId": return matchesTestId(components, selector.testId);
+    case "role": return matchesRole(components, selector.role, selector.name);
+    case "placeholder": return matchesPlaceholder(components, selector.placeholder);
+    case "label": return matchesLabel(components, selector.label);
+    case "text": return matchesText(components, selector.text);
+    // A point names no element, and an `nth` has already been narrowed to one.
+    default: return [];
+  }
 }
 
 /**
@@ -275,14 +349,15 @@ export function anchorSelector(components: ScreenComponent[], point: ScreenPoint
   const distance = (item: ScreenComponent) =>
     Math.hypot(item.bounds.x + item.bounds.width / 2 - point.x, item.bounds.y + item.bounds.height / 2 - point.y);
   for (const item of [...components].sort((a, b) => distance(a) - distance(b)).slice(0, 40)) {
-    if (item.identifier && matchesTestId(components, item.identifier) === 1) return { kind: "testId", testId: item.identifier };
+    if (item.identifier && matchesTestId(components, item.identifier).length === 1) return { kind: "testId", testId: item.identifier };
     const placeholder = normalize(item.placeholder);
-    if (placeholder && matchesPlaceholder(components, placeholder) === 1) return { kind: "placeholder", placeholder };
+    if (placeholder && matchesPlaceholder(components, placeholder).length === 1) return { kind: "placeholder", placeholder };
     const text = accessibleName(item) || elementText(item);
     if (!text) continue;
-    if (matchesText(components, text) === 1) return { kind: "text", text };
-    if (matchesLabel(components, text) === 1) return { kind: "label", label: text };
+    if (matchesText(components, text).length === 1) return { kind: "text", text };
+    if (matchesLabel(components, text).length === 1) return { kind: "label", label: text };
   }
+  return undefined;
 }
 
 const quote = (value: string) => JSON.stringify(value);
@@ -296,20 +371,121 @@ export function selectorSource(selector: RecordedSelector): string {
     case "text": return `screen.getByText(${quote(selector.text)})`;
     case "label": return `screen.getByLabel(${quote(selector.label)})`;
     case "point": return `screen.tapAt({ x: ${Math.round(selector.point.x)}, y: ${Math.round(selector.point.y)} })`;
+    // Chained on the locator, as the runner's own narrowing is.
+    case "nth": return `${selectorSource(selector.inner)}.nth(${selector.index})`;
+  }
+}
+
+/**
+ * The expression a step emits, without the `await` or the semicolon the file needs.
+ *
+ * The element menu shows exactly this, so a row reads as the code it would add rather than as a
+ * verb the user then has to imagine the shape of. The emitter wraps it; nothing else formats steps.
+ */
+export function stepExpression(step: { kind: RecordedStepKind; selector: RecordedSelector; value?: string }): string {
+  const locator = selectorSource(step.selector);
+  switch (step.kind) {
+    // A point is already a whole action — `screen.tapAt(...)` — so there is nothing to call on it.
+    case "tap": return step.selector.kind === "point" ? locator : `${locator}.tap()`;
+    case "longPress": return `${locator}.longPress()`;
+    case "fill": return `${locator}.fill(${quote(step.value ?? "")})`;
+    case "scrollUntilVisible": return `screen.scrollUntilVisible(${locator})`;
+    case "assertVisible": return `expect(${locator}).toBeVisible()`;
+    case "assertText": return `expect(${locator}).toHaveText(${quote(step.value ?? "")})`;
   }
 }
 
 /** How a step reads in the panel's step list. */
-export function stepLabel(kind: RecordedStepKind, selector: RecordedSelector): string {
-  const verb = kind === "tap" ? "Tap" : "Expect visible";
+export function stepLabel(kind: RecordedStepKind, selector: RecordedSelector, value?: string): string {
+  const verb = kind === "tap" ? "Tap"
+    : kind === "longPress" ? "Long press"
+      : kind === "fill" ? "Type into"
+        : kind === "scrollUntilVisible" ? "Scroll to"
+          : kind === "assertText" ? "Expect text of"
+            : "Expect visible";
+  const suffix = kind === "fill" || kind === "assertText" ? ` → ${JSON.stringify(value ?? "")}` : "";
   switch (selector.kind) {
-    case "testId": return `${verb} #${selector.testId}`;
-    case "role": return `${verb} "${selector.name}" (${selector.role})`;
-    case "placeholder": return `${verb} "${selector.placeholder}"`;
-    case "text": return `${verb} "${selector.text}"`;
-    case "label": return `${verb} "${selector.label}"`;
+    case "testId": return `${verb} #${selector.testId}${suffix}`;
+    case "role": return `${verb} "${selector.name}" (${selector.role})${suffix}`;
+    case "placeholder": return `${verb} "${selector.placeholder}"${suffix}`;
+    case "text": return `${verb} "${selector.text}"${suffix}`;
+    case "label": return `${verb} "${selector.label}"${suffix}`;
     case "point": return `${verb} at ${Math.round(selector.point.x)}, ${Math.round(selector.point.y)}`;
+    // The position is the whole point of the step, so the list says which of the matches it is.
+    case "nth": return `${stepLabel(kind, selector.inner, value)} (${selector.index + 1} of ${selector.matches})`;
   }
+}
+
+/**
+ * One row of the element menu: a step the element supports, and the code it would add.
+ *
+ * `needsValue` rows carry text the user has to supply — `fill` types it, `toHaveText` compares it —
+ * so the menu asks before the step is recorded rather than emitting an empty string literal.
+ */
+export type StepOffer = {
+  kind: RecordedStepKind;
+  /** The code the row shows, e.g. `screen.getByText("Explore").tap()`. */
+  source: string;
+  needsValue?: boolean;
+  /** What a `needsValue` row starts from: the field's current value, or the element's own text. */
+  suggestedValue?: string;
+};
+
+/** The roles whose elements take typed text, as `e2e`'s `Role` union names them. */
+const TEXT_INPUT_ROLES = new Set(["textbox", "searchbox", "combobox", "spinbutton"]);
+
+/**
+ * What the panel does to the device when a row is chosen.
+ *
+ * The menu is how a step is recorded, and a step that is recorded but never taken leaves the flow
+ * on the wrong screen — the next row would be resolved against a screen the test will not be on.
+ * So a row that acts, acts. `none` is for the rows that genuinely change nothing: an assertion
+ * reads the screen, and `scrollUntilVisible` is only ever offered for an element the user just
+ * pointed at, which is on screen already, so its search loop has nothing to do here.
+ */
+export type StepEffect = "tap" | "type" | "none";
+
+export function stepEffect(kind: RecordedStepKind): StepEffect {
+  switch (kind) {
+    case "tap": return "tap";
+    case "fill": return "type";
+    default: return "none";
+  }
+}
+
+/**
+ * What the runner can do with this element, as menu rows.
+ *
+ * Derived from the element's role and what it carries, never from the app: a role in
+ * `TEXT_INPUT_ROLES`, or a placeholder — which only a text field has — is what makes a row a
+ * `fill`, and an element with its own text is what makes `toHaveText` a comparison with something
+ * rather than with nothing.
+ *
+ * A coordinate gets the tap alone. There is no element behind it to be visible, to hold text or to
+ * be scrolled to, which is the same refusal the recorder makes for a point assertion.
+ */
+export function stepOffers(selector: RecordedSelector, component?: ScreenComponent): StepOffer[] {
+  // A narrowed selector supports whatever its inner one does: the narrowing is on the locator, and
+  // every action and matcher chains after it.
+  const offer = (kind: RecordedStepKind, value?: string, needsValue?: boolean): StepOffer => ({
+    kind,
+    source: stepExpression({ kind, selector, ...(value === undefined ? {} : { value }) }),
+    ...(needsValue ? { needsValue: true } : {}),
+    ...(value === undefined ? {} : { suggestedValue: value }),
+  });
+  if (selector.kind === "point") return [offer("tap")];
+  const role = component?.role ?? "";
+  const placeholder = normalize(component?.placeholder);
+  const typeable = TEXT_INPUT_ROLES.has(role) || placeholder !== "";
+  // One row per kind, not one per variant. Enumerating `longPress` beside `tap` and `toHaveText`
+  // beside `toBeVisible` made the menu a list of near-duplicates of the same selector, which is
+  // harder to read than the three choices it is actually offering.
+  return [
+    offer("tap"),
+    ...(typeable ? [offer("fill", normalize(component?.value), true)] : []),
+    offer("assertVisible"),
+    offer("scrollUntilVisible"),
+  ];
 }
 
 /** A test title turned into a file name, e.g. `the tab bar works` → `the-tab-bar-works`. */
@@ -318,48 +494,100 @@ export function testFileSlug(title: string): string {
   return slug || "recorded";
 }
 
-function stepSource(step: RecordedStep): string[] {
-  const lines: string[] = [];
-  if (step.ambiguous) lines.push(`  // TODO: this matched more than one element. Add a testID to pin it.`);
+/** One emitted line, and whether the runner will report a step for it. */
+type EmittedLine = { text: string; call?: true };
+
+function stepSource(step: RecordedStep): EmittedLine[] {
+  const lines: EmittedLine[] = [];
+  // A positional step runs, which a bare ambiguous one does not, so this is a note and not a TODO:
+  // nothing has to be edited for the test to work, and the durable fix is still named.
+  if (step.selector.kind === "nth") {
+    lines.push({ text: `  // ${step.selector.matches} elements match this selector; this is the one that was recorded. A testID would pin it by name.` });
+  } else if (step.ambiguous) {
+    lines.push({ text: `  // TODO: this matched more than one element. Add a testID to pin it.` });
+  }
   if (step.selector.kind === "point") {
-    lines.push(`  // TODO: nothing resolved here. A coordinate tap breaks on any layout change.`);
+    lines.push({ text: `  // TODO: nothing resolved here. A coordinate tap breaks on any layout change.` });
     // A locator action waits for its element; a coordinate does not, so it would fire into a
-    // splash screen. The anchor is the wait the tap itself cannot express.
+    // splash screen. The anchor is the wait the tap itself cannot express — and the runner reports
+    // it as a step of its own, which is why it counts as a call.
     if (step.anchor && step.anchor.kind !== "point") {
-      lines.push(`  await expect(${selectorSource(step.anchor)}).toBeVisible();`);
+      lines.push({ text: `  await expect(${selectorSource(step.anchor)}).toBeVisible();`, call: true });
     }
-    if (step.kind === "tap") { lines.push(`  await ${selectorSource(step.selector)};`); return lines; }
-    // There is nothing to assert about a bare coordinate.
-    lines.push(`  // Skipped an assertion on a point with no element.`);
+    if (step.kind === "tap") { lines.push({ text: `  await ${stepExpression(step)};`, call: true }); return lines; }
+    // There is nothing to assert about, type into, or scroll to a bare coordinate.
+    lines.push({ text: `  // Skipped a step on a point with no element.` });
     return lines;
   }
-  lines.push(step.kind === "tap"
-    ? `  await ${selectorSource(step.selector)}.tap();`
-    : `  await expect(${selectorSource(step.selector)}).toBeVisible();`);
+  lines.push({ text: `  await ${stepExpression(step)};`, call: true });
   return lines;
 }
 
 /**
- * Emits the whole test from the steps. It is a full re-emit every time, so deleting a step or
- * renaming the test just re-renders — nothing is ever patched in place, and the preview and the
- * saved file are always the same text.
+ * Where one step's lines sit in the emitted file, as 1-based line numbers.
+ *
+ * `calls` are the lines the runner will report a step for; the rest are the TODO comments a step
+ * carries with it. A run marks the calls and leaves the comments alone.
+ */
+export type EmittedStepSpan = { stepId: string; from: number; to: number; calls: number[] };
+export type EmittedTest = {
+  source: string;
+  spans: EmittedStepSpan[];
+  /**
+   * Every awaited line in file order, `await app.open()` first.
+   *
+   * This is what maps the runner's live progress to a line. A `step` event carries
+   * `identity.stepIndex` and no source position — only the finished report has one — and the runner
+   * reports one step per awaited call, in order, so the index *is* the position in this list.
+   * The report reconciles it at the end, so a mismatch corrects itself rather than persisting.
+   */
+  calls: number[];
+};
+
+/**
+ * Emits the whole test from the steps, and says which lines each step produced.
+ *
+ * It is a full re-emit every time, so deleting a step or renaming the test just re-renders —
+ * nothing is ever patched in place, and the preview and the saved file are always the same text.
+ *
+ * The spans are what lets a run report land on the right line. A step is not one line: an
+ * ambiguous one carries a TODO above its call, and a coordinate tap carries a TODO and an anchor
+ * gate as well. Recovering that by diffing emitted sources, as the preview's new-line animation
+ * does, is good enough to flash a line and far too weak to attribute a pass or a failure, so the
+ * emitter reports it instead of the reader guessing.
  *
  * `agent.act` is never emitted: a recorded test exists to be deterministic.
  */
+export function emitE2eTestLines(steps: readonly RecordedStep[], options: { title: string }): EmittedTest {
+  const lines: EmittedLine[] = [
+    { text: `import { test } from "@e2e-dev/mobile";` },
+    { text: `import { expect } from "e2e";` },
+    { text: `` },
+    { text: `// Recorded from the Testing panel. Every step is a pinned locator, driven by no agent.` },
+    { text: `test(${quote(options.title)}, async ({ app, screen }) => {` },
+    // The runner reports `app.open` as a step like any other, so it counts as a call.
+    { text: `  await app.open();`, call: true },
+    { text: `` },
+  ];
+  const spans: EmittedStepSpan[] = [];
+  if (steps.length === 0) lines.push({ text: "  // Tap the mirror to record steps." });
+  for (const step of steps) {
+    const from = lines.length + 1;
+    const emitted = stepSource(step);
+    lines.push(...emitted);
+    spans.push({
+      stepId: step.id, from, to: lines.length,
+      calls: emitted.flatMap((line, index) => line.call ? [from + index] : []),
+    });
+  }
+  lines.push({ text: `});` }, { text: `` });
+  return {
+    source: lines.map(line => line.text).join("\n"),
+    spans,
+    calls: lines.flatMap((line, index) => line.call ? [index + 1] : []),
+  };
+}
+
 export function emitE2eTest(steps: readonly RecordedStep[], options: { title: string }): string {
-  const body = steps.length === 0
-    ? ["  // Tap the mirror to record steps."]
-    : steps.flatMap(stepSource);
-  return [
-    `import { test } from "@e2e-dev/mobile";`,
-    `import { expect } from "e2e";`,
-    ``,
-    `// Recorded from the Testing panel. Every step is a pinned locator, driven by no agent.`,
-    `test(${quote(options.title)}, async ({ app, screen }) => {`,
-    `  await app.open();`,
-    ``,
-    ...body,
-    `});`,
-    ``,
-  ].join("\n");
+  return emitE2eTestLines(steps, options).source;
 }

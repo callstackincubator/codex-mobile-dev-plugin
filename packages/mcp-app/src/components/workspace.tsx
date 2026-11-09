@@ -131,6 +131,11 @@ export function Workspace({ panels, recordingController, banner, displayModeCont
   const bottomToolbar = !fullscreen && layout !== "none";
   const menuSide = bottomToolbar ? "top" : "bottom";
   const ToolIcon = tools[tool].icon;
+  // The Testing panel records by tapping the mirror and reads the test it emits beside it, so the
+  // mirror leads and the preview follows it — the reading order of the thing being done. Every
+  // other tool is a readout the simulator is secondary to, and keeps the simulator on the right.
+  // Only side by side: stacked, "left" is the top panel, which the simulator already is.
+  const mirrorFirst = tool === "testing" && open;
   const toolbar = <nav className={`workspace-toolbar @container flex h-12 shrink-0 items-center justify-between gap-2 px-2 ${bottomToolbar ? "border-t" : "border-y"}`} aria-label="Developer tools">
     {displayModeControl}
     <Select items={[{ value: "none", label: "Tools" }, ...Object.entries(tools).map(([value, { label }]) => ({ value, label }))]} value={open ? tool : "none"} onValueChange={value => {
@@ -173,7 +178,7 @@ export function Workspace({ panels, recordingController, banner, displayModeCont
     {contextControl}
     {!bottomToolbar && toolbar}
     <ResizablePanelGroup id="workspace-panels" groupRef={workspaceGroupRef} orientation={split ? "horizontal" : "vertical"} className="min-h-0 flex-1" data-split={split}>
-      {split ? [toolPanel, divider, simulatorPanel] : [simulatorPanel, divider, toolPanel]}
+      {split ? (mirrorFirst ? [simulatorPanel, divider, toolPanel] : [toolPanel, divider, simulatorPanel]) : [simulatorPanel, divider, toolPanel]}
     </ResizablePanelGroup>
   </main>;
 }

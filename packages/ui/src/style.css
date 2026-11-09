@@ -351,7 +351,18 @@ html[data-theme="dark"] .tracesift-explorer { color-scheme: dark; }
  * not at the preview — so the new lines announce themselves: they settle in, hold a tint long
  * enough to be caught out of the corner of the eye, and fade back into the rest of the file.
  */
-.testing-preview-line { display: block; min-height: 1em; border-radius: 3px; margin-inline: -2px; padding-inline: 2px; }
+.testing-preview-line {
+  display: grid;
+  /* The gutter, then the code. Fixed, so nothing moves when a run marks a line. */
+  grid-template-columns: 1.35em minmax(0, 1fr);
+  align-items: start;
+  min-height: 1lh;
+  border-radius: 3px;
+  margin-inline: -2px;
+  padding-inline: 2px;
+}
+/* The line's own text wraps inside its column; the gutter is not part of the wrap. */
+.testing-preview-code { white-space: pre-wrap; overflow-wrap: anywhere; }
 .testing-preview-line.is-new { animation: testing-preview-line-in 1400ms ease-out both; }
 @keyframes testing-preview-line-in {
   from { background: color-mix(in oklab, var(--primary) 26%, transparent); opacity: 0.4; }
@@ -367,4 +378,33 @@ html[data-theme="dark"] .tracesift-explorer { color-scheme: dark; }
     from { background: color-mix(in oklab, var(--primary) 20%, transparent); }
     to { background: transparent; }
   }
+}
+
+/*
+ * A run's per-line marks. The mark occupies a fixed gutter whether or not it is showing, so the
+ * code never shifts sideways when a run starts or ends — the preview is read while the run is
+ * happening, and text that moves under the eye is worse than no mark at all.
+ *
+ * A passing run holds its checkmarks and then fades them: the test is the thing on screen, not the
+ * scoreboard. A failure keeps its mark until the next run.
+ */
+.testing-run-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Exactly one line box tall, so the mark centres on the line it belongs to rather than drifting
+     with the icon's own box — and so a wrapped line keeps its mark level with the first row. */
+  height: 1lh;
+  opacity: 0;
+  transition: opacity 240ms ease-out;
+}
+.testing-run-mark.is-running { opacity: 1; color: var(--muted-foreground); }
+.testing-run-mark.is-passed { opacity: 1; color: light-dark(oklch(0.6 0.13 157), oklch(0.77 0.14 157)); }
+.testing-run-mark.is-failed { opacity: 1; color: light-dark(oklch(0.58 0.2 25), oklch(0.7 0.19 25)); }
+.testing-run-mark.is-fading { opacity: 0; transition-duration: 600ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  /* The marks still come and go; they just stop easing, so nothing animates on screen. */
+  .testing-run-mark { transition: none; }
+  .testing-run-mark.is-fading { transition: none; }
 }
