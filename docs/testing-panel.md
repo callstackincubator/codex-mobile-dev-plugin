@@ -236,12 +236,15 @@ nothing, because they change nothing: an assertion reads, and `scrollUntilVisibl
 for an element the user just pointed at, which is on screen already.
 
 In its place is Maestro Studio's model. **Right-click an element on the mirror and the panel offers
-what the runner can do with it**, each row showing the code the step would add:
+what the runner can do with it**. The selected element is named once, followed by compact actions:
 
 ```
-screen.getByText("Go To Explore List").tap()
-expect(screen.getByText("Go To Explore List")).toBeVisible()
-screen.scrollUntilVisible(screen.getByText("Go To Explore List"))
+Selected element
+"Go To Explore List"
+
+Tap
+Check visibility
+Scroll into view
 ```
 
 **One row per kind of thing to do, not one per variant.** An earlier pass listed `longPress` beside
@@ -250,12 +253,11 @@ selector — harder to read than the three choices it was actually offering. `lo
 `assertText` are still emitted and read back correctly; they are reachable by editing the file the
 panel wrote, not from the menu.
 
-Each row is the code in its own inset card with the chevron outside it, because a selector is long
-and a line of truncated text is the one thing a menu of code must not be. The code wraps.
-
-The rows are TypeScript because the file is; a row and the line it adds are the same text, produced
-by the same `stepExpression`. Choosing a row records the step and sends **nothing** to the device,
-which is what an assertion needs — acting on the element would change the thing just asserted.
+The exact TypeScript remains on each row as a hover tooltip and appears in the live test preview
+after selection. It is still produced by the same `stepExpression` used by the emitter, without
+making the user scan the same selector once per action. Choosing an assertion row records the step
+without touching the device; action rows such as tap and fill also perform the action so recording
+can continue from the resulting screen.
 
 What is offered comes from the element's role and what it carries, never from the app:
 

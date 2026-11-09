@@ -44,16 +44,21 @@ test("the element menu renders the runner's own steps over the mirror and record
 
   await act(async () => { await testRecorder.openMenu({ x: 150, y: 420 }); });
   assert.ok(menu(), "the right-click opens the menu over the outline");
-  // Each row is the code the step would add, not a verb the user has to imagine the shape of.
+  // The selector is named once and rows stay compact; exact code is still available as a tooltip.
+  assert.match(menu()?.textContent ?? "", /Selected element"Go To Explore List" \(button\)/);
   assert.deepEqual(rows().map(row => row.textContent), [
-    'screen.getByRole("button", "Go To Explore List").tap()',
-    'expect(screen.getByRole("button", "Go To Explore List")).toBeVisible()',
-    'screen.scrollUntilVisible(screen.getByRole("button", "Go To Explore List"))',
+    "Tap",
+    "Check visibility",
+    "Scroll into view",
   ]);
+  assert.equal(menu()?.querySelector(".lucide-chevron-right"), null, "action rows do not imply a submenu");
+  assert.ok(rows().every(row => row.className.includes("hover:bg-accent")), "every action has a visible hover state");
+  assert.ok(menu()?.className.includes("cursor-pointer"), "popover buttons use a pointer cursor");
+  assert.equal(rows()[0].title, 'screen.getByRole("button", "Go To Explore List").tap()');
   // The menu is anchored to the outline, inside the stage the annotation store measured.
   const box = menu() as HTMLElement;
-  // 352 wide where the stage allows it, clamped so the code it shows is not cut off by the edge.
-  const width = Math.max(180, Math.min(440, VIEWPORT.stageWidth - 8));
+  // Compact actions cap the menu at 320px while preserving the narrow-stage clamp.
+  const width = Math.max(180, Math.min(320, VIEWPORT.stageWidth - 8));
   assert.equal(box.style.width, `${width}px`);
   assert.equal(box.style.left, `${Math.max(4, Math.min(10 + 100 / 402 * 300 + 8, VIEWPORT.stageWidth - width - 4))}px`);
 
@@ -100,7 +105,7 @@ test("a row that needs a value asks for it instead of emitting an empty string",
   // A field is the one element that gains a fourth row, because it is the one that takes text.
   assert.deepEqual(rows().map(row => row.dataset.recorderOffer), ["tap", "fill", "assertVisible", "scrollUntilVisible"]);
   await act(async () => { rows().find(row => row.dataset.recorderOffer === "fill")!.click(); });
-  const input = dom.window.document.querySelector('[aria-label="Step value"]') as HTMLInputElement;
+  const input = dom.window.document.querySelector('[aria-label="Text to enter"]') as HTMLInputElement;
   assert.equal(input.value, "Paris", "it starts from the field's own value");
   assert.equal(rows().length, 0, "the rows give way to the question");
   await act(async () => { input.value = "Berlin"; });
@@ -159,6 +164,17 @@ test("a run marks the preview line by line, and marks nothing it was not told ab
     .map(mark => mark.className.replace("testing-run-mark", "").trim());
   const preview = () => (dom.window.document.querySelector("[data-testing-preview]") as HTMLElement).innerText
     ?? dom.window.document.querySelector("[data-testing-preview]")!.textContent!;
+
+  assert.equal(dom.window.document.querySelector("[aria-label=Testing] dl"), null,
+    "project, config, target, bundle and device metadata no longer duplicate the controls");
+  const testing = dom.window.document.querySelector("[aria-label=Testing]");
+  assert.ok(testing?.className.includes("cursor-pointer"), "testing panel buttons use a pointer cursor");
+  assert.ok(!dom.window.document.querySelector("[data-testing-title]")?.closest(".grid")?.className.includes("bg-card"),
+    "title and file fields have no card fill");
+  assert.ok([...dom.window.document.querySelectorAll("[data-testing-step]")]
+    .every(step => !step.className.includes("bg-card")), "step rows have no card fill");
+  assert.match(dom.window.document.body.textContent ?? "", /Test title.*File name.*Steps/s,
+    "the recorder is organized around naming, steps and output");
 
   // One step, one call line: line 8 of the emitted file, which is where the report will point.
   const spans = testRecorder.emitted.spans;
@@ -223,7 +239,7 @@ test("the element menu survives a tree invalidation that takes the hover outline
   await act(async () => { (testRecorder as any).update({ hover: undefined }); });
   const menu = dom.window.document.querySelector("[data-element=recorder-menu]") as HTMLElement;
   assert.ok(menu, "the menu does not go with the outline");
-  const stays = Math.max(180, Math.min(440, VIEWPORT.stageWidth - 8));
+  const stays = Math.max(180, Math.min(320, VIEWPORT.stageWidth - 8));
   assert.equal(menu.style.left, `${Math.max(4, Math.min(10 + 100 / 402 * 300 + 8, VIEWPORT.stageWidth - stays - 4))}px`);
 
   testRecorder.clearSteps();
@@ -254,7 +270,8 @@ test("a coordinate gets the tap row and is told why that is all", async t => {
   await act(async () => { await testRecorder.openMenu({ x: 10, y: 20 }); });
   const rows = [...dom.window.document.querySelectorAll("[data-recorder-offer]")] as HTMLElement[];
   assert.deepEqual(rows.map(row => row.dataset.recorderOffer), ["tap"]);
-  assert.match(rows[0].textContent ?? "", /screen\.tapAt\(\{ x: 10, y: 20 \}\)/);
+  assert.equal(rows[0].textContent, "Tap");
+  assert.match(rows[0].title, /screen\.tapAt\(\{ x: 10, y: 20 \}\)/);
   // Three missing rows with no explanation read as a broken menu.
   assert.match(dom.window.document.querySelector("[data-element=recorder-menu]")?.textContent ?? "",
     /only the coordinate can be acted on/);

@@ -379,8 +379,8 @@ export function selectorSource(selector: RecordedSelector): string {
 /**
  * The expression a step emits, without the `await` or the semicolon the file needs.
  *
- * The element menu shows exactly this, so a row reads as the code it would add rather than as a
- * verb the user then has to imagine the shape of. The emitter wraps it; nothing else formats steps.
+ * The element menu keeps this on each action as a tooltip, while its compact row uses the action's
+ * plain-language label. The emitter wraps it; nothing else formats steps.
  */
 export function stepExpression(step: { kind: RecordedStepKind; selector: RecordedSelector; value?: string }): string {
   const locator = selectorSource(step.selector);
@@ -417,14 +417,14 @@ export function stepLabel(kind: RecordedStepKind, selector: RecordedSelector, va
 }
 
 /**
- * One row of the element menu: a step the element supports, and the code it would add.
+ * One row of the element menu: a step the element supports and the code it would add.
  *
  * `needsValue` rows carry text the user has to supply — `fill` types it, `toHaveText` compares it —
  * so the menu asks before the step is recorded rather than emitting an empty string literal.
  */
 export type StepOffer = {
   kind: RecordedStepKind;
-  /** The code the row shows, e.g. `screen.getByText("Explore").tap()`. */
+  /** The code the row exposes as a tooltip, e.g. `screen.getByText("Explore").tap()`. */
   source: string;
   needsValue?: boolean;
   /** What a `needsValue` row starts from: the field's current value, or the element's own text. */

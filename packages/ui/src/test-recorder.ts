@@ -84,7 +84,7 @@ export type TestRecorderSnapshot = {
   };
   /**
    * The element menu a right-click opened: what the runner can do with the element the outline is
-   * on, each row carrying the code it would add. Walking the outline out with the wheel and then
+   * on, each row carrying the action and emitted code it represents. Walking the outline out with the wheel and then
    * right-clicking acts on the element the outline shows, which is why the menu resolves at the
    * hover level rather than from the innermost hit.
    */
@@ -398,7 +398,7 @@ export class TestRecorder {
 
   /**
    * Opens the element menu over the mirror: what the runner can do with the element the outline is
-   * currently on, each row showing the code the step would add.
+   * currently on, each row carrying the action and emitted code the step would add.
    *
    * It resolves from the same cached tree and the same walked-out level as the outline, so the
    * menu is about the element the user can see outlined — including one they walked out to with

@@ -31,7 +31,7 @@ function TestingProjectPicker({ panel }: { panel: TestingPanel }) {
           <ChevronDownIcon className="shrink-0 transition-transform" style={{ transform: open ? "rotate(180deg)" : undefined }} />
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="flex max-h-(--radix-popover-content-available-height) w-max min-w-[min(var(--radix-popover-trigger-width),var(--radix-popover-content-available-width))] max-w-(--radix-popover-content-available-width) flex-col gap-1 overflow-y-auto p-1" aria-label="Testing project">
+      <PopoverContent align="start" className="flex max-h-(--radix-popover-content-available-height) w-max min-w-[min(var(--radix-popover-trigger-width),var(--radix-popover-content-available-width))] max-w-(--radix-popover-content-available-width) flex-col gap-1 overflow-y-auto p-1 [&_button:not(:disabled)]:cursor-pointer" aria-label="Testing project">
         {state.projects.map(project => <Button key={project.path} type="button" variant="ghost" data-testing-project-option={project.path} aria-pressed={project.path === state.projectPath}
           className="h-auto min-h-7 min-w-0 flex-1 justify-start rounded-md px-1.5 py-1 text-left font-normal" onClick={() => choose(project.path)}>
           <span className="flex min-w-0 items-center gap-2">
@@ -72,8 +72,8 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
         : !target?.bundleId ? `Target "${target?.name}" declares no bundleId, so there is no app to launch.`
           : !booted ? "Boot a simulator to record against it."
             : "";
-  return <section className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-3" aria-label="Testing">
-    <header className="flex flex-wrap items-center gap-2">
+  return <section className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4 [&_button:not(:disabled)]:cursor-pointer" aria-label="Testing">
+    <header className="flex flex-wrap items-center gap-2 border-b pb-3">
       <TestingProjectPicker panel={panel} />
       {state.targets.length > 1 && <Select items={state.targets.map(entry => ({ value: entry.name, label: entry.name }))} value={state.targetName} onValueChange={value => { if (value) panel.selectTarget(value); }}>
         <SelectTrigger id="testing-target-select" size="sm" className="shrink-0" aria-label="Target"><SelectValue>{state.targetName || "Target"}</SelectValue></SelectTrigger>
@@ -81,7 +81,7 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
           {state.targets.map(entry => <SelectItem key={entry.name} value={entry.name}>{entry.name}{entry.platform ? ` · ${entry.platform}` : ""}</SelectItem>)}
         </SelectGroup></SelectContent>
       </Select>}
-      <Button type="button" size="sm" data-testing-launch disabled={!panel.canLaunch} onClick={() => void panel.launchApp()}>
+      <Button type="button" size="sm" className="sm:ml-auto" data-testing-launch disabled={!panel.canLaunch} onClick={() => void panel.launchApp()}>
         {state.launching ? <LoaderCircleIcon className="animate-spin" /> : <PlayIcon />}
         {state.appLaunched ? "Relaunch app" : "Launch app"}
       </Button>
@@ -96,15 +96,7 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
       </AlertDescription>
     </Alert>}
 
-    {state.projectPath && <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
-      <dt className="text-muted-foreground">Project</dt><dd className="truncate" title={state.projectPath}>{state.projectPath}</dd>
-      {state.configPath && <><dt className="text-muted-foreground">Config</dt><dd className="truncate" title={state.configPath}>{state.configPath.split("/").at(-1)}</dd></>}
-      {target && <><dt className="text-muted-foreground">Target</dt><dd className="truncate">{target.name}{target.platform ? ` · ${target.platform}` : ""}</dd></>}
-      {target?.bundleId && <><dt className="text-muted-foreground">Bundle ID</dt><dd className="truncate">{target.bundleId}</dd></>}
-      <dt className="text-muted-foreground">Device</dt><dd className="truncate">{device ? `${device.name ?? device.udid}${booted ? "" : " · not booted"}` : "None selected"}</dd>
-    </dl>}
-
-    {blocker && <p className="text-xs text-muted-foreground">{blocker}</p>}
+    {blocker && <p className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">{blocker}</p>}
 
     <TestingRecorder panel={panel} recordable={Boolean(booted && device && (device.platform ?? "ios") === "ios" && device.kind !== "physical")} udid={device?.udid ?? ""} />
   </section>;
@@ -168,18 +160,17 @@ function TestingRecorder({ panel, recordable, udid }: { panel: TestingPanel; rec
   const panelState = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
   const recording = state.recordingUdid === udid && udid !== "";
   const saveable = Boolean(panelState.projectPath) && state.steps.length > 0 && !panelState.saving;
-  return <div className="flex min-h-0 flex-1 flex-col gap-2">
-    <div className="flex flex-wrap items-center gap-2">
+  return <div className="flex min-h-0 flex-1 flex-col gap-3">
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/20 p-2">
       {recording
         ? <Button type="button" size="sm" variant="outline" data-testing-stop onClick={() => testRecorder.stop()}><SquareIcon />Stop</Button>
         : <Button type="button" size="sm" variant="outline" data-testing-record disabled={!recordable} onClick={() => testRecorder.start(udid, panel.dirty)}><CircleIcon />Record</Button>}
-      <Button type="button" size="sm" variant="ghost" data-testing-clear disabled={state.steps.length === 0} onClick={() => testRecorder.clearSteps()}><Trash2Icon />Clear</Button>
       <Button type="button" size="sm" variant="outline" data-testing-run disabled={!panel.canRun}
         title="Save the test, then run it against this device. Recording stops: the runner needs the device to itself."
         onClick={() => void panel.runTest()}>
         {panelState.running ? <LoaderCircleIcon className="animate-spin" /> : <FlaskConicalIcon />}Run test
       </Button>
-      {state.resolving && <span className="flex items-center gap-1 text-xs text-muted-foreground" role="status"><LoaderCircleIcon className="animate-spin" />Reading the screen…</span>}
+      {state.resolving && <span className="ml-auto flex items-center gap-1 text-xs text-muted-foreground" role="status"><LoaderCircleIcon className="animate-spin" />Reading the screen…</span>}
     </div>
 
     {!recordable && !recording && <p className="text-xs text-muted-foreground">Recording needs a booted iOS simulator in the mirror.</p>}
@@ -196,31 +187,43 @@ function TestingRecorder({ panel, recordable, udid }: { panel: TestingPanel; rec
       </AlertDescription>
     </Alert>}
 
-    <label className="flex items-center gap-2 text-xs">
-      <span className="text-muted-foreground">Title</span>
-      <input type="text" data-testing-title defaultValue={state.title} onBlur={event => testRecorder.setTitle(event.target.value)}
-        className="min-w-0 flex-1 rounded-md border bg-transparent px-2 py-1" aria-label="Test title" />
-    </label>
+    <div className="grid gap-3 rounded-lg border p-3 md:grid-cols-2">
+      <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium">
+        <span>Test title</span>
+        <input type="text" data-testing-title defaultValue={state.title} onBlur={event => testRecorder.setTitle(event.target.value)}
+          className="min-w-0 rounded-md border bg-background px-2.5 py-1.5 font-normal" aria-label="Test title" />
+      </label>
+      <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium">
+        <span>File name</span>
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="flex min-w-0 flex-1 items-center overflow-hidden rounded-md border bg-background focus-within:ring-2 focus-within:ring-ring/50">
+            <code className="shrink-0 border-r bg-muted/50 px-2.5 py-1.5 font-normal text-muted-foreground">tests/</code>
+            <input type="text" data-testing-filename defaultValue={panelState.fileName} placeholder={`${testFileSlug(state.title)}.e2e.ts`}
+              onBlur={event => panel.setFileName(event.target.value)} className="min-w-0 flex-1 bg-transparent px-2.5 py-1.5 font-normal outline-none" aria-label="Test file name" />
+          </span>
+          <Button type="button" size="sm" data-testing-save disabled={!saveable} onClick={() => void panel.saveTest()}>
+            {panelState.saving ? <LoaderCircleIcon className="animate-spin" /> : <SaveIcon />}Save
+          </Button>
+        </span>
+      </label>
+    </div>
 
-    <ol className="flex flex-col gap-1 text-xs">
-      {state.steps.map((step, index) => <li key={step.id} className="flex items-center gap-2 rounded-md border px-2 py-1" data-testing-step={step.id}>
-        <span className="w-4 shrink-0 text-right text-muted-foreground">{index + 1}</span>
-        <span className="min-w-0 flex-1 truncate" title={step.label}>{step.label}</span>
-        {step.ambiguous && <span className="shrink-0 text-amber-600" title="This matched more than one element. Add a testID to pin it.">ambiguous</span>}
-        {step.selector.kind === "point" && <span className="shrink-0 text-amber-600" title="Nothing resolved here, so the test taps a coordinate.">coordinates</span>}
-        <Button type="button" variant="ghost" size="icon-xs" aria-label={`Remove step ${index + 1}`} onClick={() => testRecorder.removeStep(step.id)}><XIcon /></Button>
-      </li>)}
-      {state.steps.length === 0 && <li className="text-muted-foreground">No steps yet.</li>}
-    </ol>
-
-    <div className="flex flex-wrap items-center gap-2 text-xs">
-      <span className="text-muted-foreground">File</span>
-      <code className="shrink-0 text-muted-foreground">tests/</code>
-      <input type="text" data-testing-filename defaultValue={panelState.fileName} placeholder={`${testFileSlug(state.title)}.e2e.ts`}
-        onBlur={event => panel.setFileName(event.target.value)} className="min-w-0 flex-1 rounded-md border bg-transparent px-2 py-1" aria-label="Test file name" />
-      <Button type="button" size="sm" data-testing-save disabled={!saveable} onClick={() => void panel.saveTest()}>
-        {panelState.saving ? <LoaderCircleIcon className="animate-spin" /> : <SaveIcon />}Save
-      </Button>
+    <div className="flex min-h-0 flex-col gap-2">
+      <div className="flex items-center gap-2">
+        <h2 className="text-xs font-medium">Steps</h2>
+        {state.steps.length > 0 && <span className="text-xs text-muted-foreground">{state.steps.length}</span>}
+        <Button type="button" size="sm" variant="ghost" className="ml-auto" data-testing-clear disabled={state.steps.length === 0} onClick={() => testRecorder.clearSteps()}><Trash2Icon />Clear</Button>
+      </div>
+      <ol className="flex flex-col gap-1 text-xs">
+        {state.steps.map((step, index) => <li key={step.id} className="flex items-center gap-2 rounded-md border px-2 py-1.5" data-testing-step={step.id}>
+          <span className="w-4 shrink-0 text-right text-muted-foreground">{index + 1}</span>
+          <span className="min-w-0 flex-1 truncate" title={step.label}>{step.label}</span>
+          {step.ambiguous && <span className="shrink-0 text-amber-600" title="This matched more than one element. Add a testID to pin it.">ambiguous</span>}
+          {step.selector.kind === "point" && <span className="shrink-0 text-amber-600" title="Nothing resolved here, so the test taps a coordinate.">coordinates</span>}
+          <Button type="button" variant="ghost" size="icon-xs" aria-label={`Remove step ${index + 1}`} onClick={() => testRecorder.removeStep(step.id)}><XIcon /></Button>
+        </li>)}
+        {state.steps.length === 0 && <li className="rounded-lg border border-dashed px-3 py-5 text-center text-muted-foreground">No steps yet. Right-click an element in the mirror to add one.</li>}
+      </ol>
     </div>
 
     {panelState.overwritePath && <Alert>
@@ -237,7 +240,7 @@ function TestingRecorder({ panel, recordable, udid }: { panel: TestingPanel; rec
     {panelState.savedPath && !panel.dirty && <p className="text-xs text-muted-foreground" role="status">Saved to {panelState.savedPath}</p>}
     {panelState.savedPath && panel.dirty && <p className="text-xs text-amber-600" role="status">Unsaved steps since {panelState.savedPath} was written.</p>}
 
-    <div className="flex min-h-0 flex-1 flex-col gap-1">
+    <div className="flex min-h-0 flex-1 flex-col gap-1.5 border-t pt-3">
       <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <span>Preview</span>
         {state.run?.state === "running" && <span className="flex items-center gap-1" role="status">
