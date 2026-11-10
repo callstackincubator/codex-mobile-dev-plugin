@@ -2,7 +2,7 @@ import { useRef, useState, useSyncExternalStore } from "react";
 import { CheckIcon, ChevronDownIcon, CircleIcon, CircleXIcon, CopyIcon, FlaskConicalIcon, FolderOpenIcon, GripVerticalIcon, LoaderCircleIcon, MoreHorizontalIcon, PlayIcon, SaveIcon, SquareIcon, Trash2Icon, XIcon } from "lucide-react";
 import type { DeviceAppsStore } from "../device-apps.ts";
 import type { TestingPanel } from "../testing-panel.ts";
-import { testRecorder } from "../test-recorder.ts";
+import { formatRunDuration, testRecorder } from "../test-recorder.ts";
 import type { TestRunView } from "../test-recorder.ts";
 import { allStepOffers, isAgentStep, testFileSlug } from "@mobile-dev/shared/test-recording.ts";
 import type { RecordedStep } from "@mobile-dev/shared/test-recording.ts";
@@ -84,12 +84,10 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
           {state.targets.map(entry => <SelectItem key={entry.name} value={entry.name}>{entry.name}{entry.platform ? ` · ${entry.platform}` : ""}</SelectItem>)}
         </SelectGroup></SelectContent>
       </Select>}
-      <TestingControls panel={panel} recordable={recordable} udid={device?.udid ?? ""} />
-      <Button type="button" size="sm" className="sm:ml-auto" data-testing-launch disabled={!panel.canLaunch} onClick={() => void panel.launchApp()}>
-        {state.launching ? <LoaderCircleIcon className="animate-spin" /> : <PlayIcon />}
-        {state.appLaunched ? "Relaunch app" : "Launch app"}
-      </Button>
+      {/* Before the controls, so the `ml-auto` below has one thing to push away from and the
+          status does not end up marooned past the right edge of the group. */}
       {state.loadingProject && <span className="flex items-center gap-1 text-xs text-muted-foreground" role="status"><LoaderCircleIcon className="animate-spin" />Reading config…</span>}
+      <TestingControls panel={panel} recordable={recordable} udid={device?.udid ?? ""} />
     </header>
 
     {state.error && <Alert variant="destructive">
@@ -106,15 +104,36 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
   </section>;
 }
 
-/** The recorder's primary actions live with the other app-level controls in the panel header. */
+/**
+ * Launch, Record and Run test: the three things done to the app, as one control group.
+ *
+ * They are one row, one gap and one button size because they are read as one sequence — launch the
+ * app, record against it, run what was recorded. Launch used to sit outside this group and be
+ * pushed to the far end of the header by `sm:ml-auto`, which put the first step of that sequence
+ * furthest from the other two and left it to wrap on its own in a narrow panel. It keeps the solid
+ * variant: it is the one step that has to happen before the rest mean anything, and that is a
+ * difference worth seeing — the height, padding, gap and icon treatment are the primitive's own
+ * and are now identical across all three.
+ */
 function TestingControls({ panel, recordable, udid }: { panel: TestingPanel; recordable: boolean; udid: string }) {
   const state = useSyncExternalStore(testRecorder.subscribe, testRecorder.getSnapshot);
   const panelState = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
   const recording = state.recordingUdid === udid && udid !== "";
-  return <div data-testing-controls className="flex min-w-0 items-center gap-2">
+  // `ml-auto` on the group, not on any button in it: the header is one flex row, so the free
+  // space between what names the project and what acts on it belongs to the gap between them.
+  // The group keeps its own gap and sizes, and on a header too narrow to hold both it wraps whole
+  // onto the next line rather than crowding or clipping the picker.
+  return <div data-testing-controls className="flex min-w-0 flex-wrap items-center gap-2 ml-auto">
+    <Button type="button" size="sm" data-testing-launch disabled={!panel.canLaunch} onClick={() => void panel.launchApp()}>
+      {panelState.launching ? <LoaderCircleIcon className="animate-spin" /> : <PlayIcon />}
+      {panelState.appLaunched ? "Relaunch app" : "Launch app"}
+    </Button>
     {recording
       ? <Button type="button" size="sm" variant="outline" data-testing-stop onClick={() => testRecorder.stop()}><SquareIcon />Stop</Button>
-      : <Button type="button" size="sm" variant="outline" data-testing-record disabled={!recordable} onClick={() => testRecorder.start(udid, panel.dirty)}><CircleIcon />Record</Button>}
+      : state.steps.length > 0
+        ? <RecordMenu udid={udid} recordable={recordable} steps={state.steps.length} />
+        : <Button type="button" size="sm" variant="outline" data-testing-record disabled={!recordable}
+          onClick={() => testRecorder.start(udid)}><CircleIcon />Record</Button>}
     <Button type="button" size="sm" variant="outline" data-testing-run disabled={!panel.canRun}
       title="Save the test, then run it against this device. Recording stops: the runner needs the device to itself."
       onClick={() => void panel.runTest()}>
@@ -122,6 +141,38 @@ function TestingControls({ panel, recordable, udid }: { panel: TestingPanel; rec
     </Button>
     {state.resolving && <span className="flex items-center gap-1 text-xs text-muted-foreground" role="status"><LoaderCircleIcon className="animate-spin" />Reading the screen…</span>}
   </div>;
+}
+
+/**
+ * What Record does when there are already steps.
+ *
+ * It used to decide on its own, from whether the recording was dirty: steps survived while they
+ * were unsaved and were wiped the moment they had been saved — and saving stops the recording, so
+ * the very next Record threw away the flow the user had just written. The condition was sound and
+ * invisible, which is the worst a destructive default can be. The question is small enough to ask.
+ *
+ * Escape dismisses it without recording: a popover that starts something on the way out is one
+ * nobody can back out of.
+ */
+function RecordMenu({ udid, recordable, steps }: { udid: string; recordable: boolean; steps: number }) {
+  const [open, setOpen] = useState(false);
+  const choose = (keepSteps: boolean) => { setOpen(false); testRecorder.start(udid, keepSteps); };
+  const count = `${steps} step${steps === 1 ? "" : "s"}`;
+  return <Popover open={open} onOpenChange={setOpen}>
+    <PopoverTrigger asChild>
+      <Button type="button" size="sm" variant="outline" data-testing-record disabled={!recordable}><CircleIcon />Record</Button>
+    </PopoverTrigger>
+    <PopoverContent align="start" className="flex w-64 flex-col gap-1 p-1.5 [&_button:not(:disabled)]:cursor-pointer"
+      role="menu" aria-label="Record">
+      <p className="px-2.5 pb-0.5 pt-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        This flow has {count}
+      </p>
+      <MenuRow icon={<PlayIcon className="size-4 shrink-0 text-muted-foreground" />} attributes={{ "data-testing-record-resume": "" }}
+        title={`Keep the ${count} and record the next one after them`} onClick={() => choose(true)}>Resume</MenuRow>
+      <MenuRow icon={<Trash2Icon className="size-4 shrink-0 text-muted-foreground" />} attributes={{ "data-testing-record-new": "" }}
+        title={`Clear the ${count} and start a new flow`} onClick={() => choose(false)}>New</MenuRow>
+    </PopoverContent>
+  </Popover>;
 }
 
 /**
@@ -158,7 +209,8 @@ function TestPreview({ source, run, highlightedLines }: { source: string; run?: 
             a sibling of the whole line, not a character at the front of it.
             The run's own state is announced once, above the preview; a mark per line would read the
             whole file out. So the gutter is decoration, and `aria-hidden` throughout. */}
-        <span className={`testing-run-mark${mark ? ` is-${mark}` : ""}${run?.fading ? " is-fading" : ""}`} aria-hidden>
+        {/* Only a tick fades. A failing mark is what says where the run broke, so it stays. */}
+        <span className={`testing-run-mark${mark ? ` is-${mark}` : ""}${run?.fading && mark === "passed" ? " is-fading" : ""}`} aria-hidden>
           {mark === "running" ? <LoaderCircleIcon className="size-3 animate-spin" />
             : mark === "passed" ? <CheckIcon className="size-3" />
               : mark === "failed" ? <CircleXIcon className="size-3" /> : null}
@@ -214,6 +266,15 @@ function TestingRecorder({ panel, recordable, udid }: { panel: TestingPanel; rec
           {state.run?.state === "failed" && <span className="flex min-w-0 items-center gap-1 break-words font-normal text-red-600 dark:text-red-400" role="status">
             <CircleXIcon className="size-3 shrink-0" />{state.run.error ?? "Failed"}
           </span>}
+          {/* The runner's own number, beside its verdict and on a failure too: how long a run took
+              before it gave up is part of reading it. It is not the panel's `ui.testing.run`
+              timing, which includes spawning the CLI. */}
+          {state.run && state.run.state !== "running" && state.run.durationMs !== undefined
+            && <span data-testing-run-duration className="font-normal tabular-nums text-muted-foreground"
+              title="How long the runner reported the run taking.">{formatRunDuration(state.run.durationMs)}</span>}
+          {/* The verdict is still about a run that happened; the lines it marked have moved. */}
+          {state.run?.stale && <span data-testing-run-stale className="font-normal text-muted-foreground"
+            title="The steps changed after this run, so the line marks no longer point at the same steps.">· before your edits</span>}
         </p>
         {state.run?.output && <pre className="max-h-32 overflow-auto rounded-md border bg-muted/40 p-2 font-mono text-[10px] whitespace-pre-wrap">{state.run.output}</pre>}
         <TestPreview source={testRecorder.source} run={state.run} highlightedLines={highlightedLines} />

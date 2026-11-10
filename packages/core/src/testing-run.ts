@@ -55,6 +55,8 @@ export interface TestRunResult {
   status: string;
   exitCode: number;
   steps: TestRunStep[];
+  /** How long the run itself took, in milliseconds. See `reportDuration`. */
+  durationMs?: number;
   /** Set when the report could not be read at all, so the panel can say why rather than go quiet. */
   output?: string;
 }
@@ -106,6 +108,39 @@ export function reportSteps(report: unknown, file: string): TestRunStep[] {
     }
   }
   return steps;
+}
+
+/**
+ * How long the run took, from the report itself rather than from the panel's own clock.
+ *
+ * The report has no run-level duration: `run.startedAt` is required and `run.finishedAt` is
+ * optional, so the span between them is the number when both are there. When the run was cut short
+ * — interrupted, or a reporter that never saw the end — there is no `finishedAt`, and the attempts
+ * are what is left: `attempt.durationMs` is required of every one, so their sum is the time the
+ * runner actually spent. It is the lower bound of the two, which is the honest way round: it
+ * undercounts the runner's own setup rather than inventing a span from a clock nobody recorded.
+ *
+ * This is deliberately not the panel's `ui.testing.run` timing, which brackets the whole call
+ * including spawning the CLI and resolving the project. The two answer different questions and
+ * neither should be read as the other.
+ */
+export function reportDuration(report: unknown): number | undefined {
+  const run = record(record(report)?.run);
+  if (!run) return;
+  const started = Date.parse(str(run.startedAt));
+  const finished = Date.parse(str(run.finishedAt));
+  if (Number.isFinite(started) && Number.isFinite(finished) && finished >= started) return finished - started;
+  let total = 0;
+  let seen = false;
+  for (const entry of list(run.results)) {
+    for (const item of list(record(entry)?.attempts)) {
+      const duration = record(item)?.durationMs;
+      if (typeof duration !== "number" || !Number.isFinite(duration)) continue;
+      total += duration;
+      seen = true;
+    }
+  }
+  return seen ? total : undefined;
 }
 
 export function reportStatus(report: unknown, exitCode: number): string {
@@ -338,10 +373,12 @@ async function runOnce(request: TestRunRequest, deps: TestRunDeps): Promise<Test
   if (generated) await rm(generated, { force: true });
   const report = parseReport(stdout);
   const steps = report ? reportSteps(report, request.relativePath) : [];
+  const durationMs = report ? reportDuration(report) : undefined;
   return {
     status: reportStatus(report, exitCode),
     exitCode,
     steps,
+    ...(durationMs === undefined ? {} : { durationMs }),
     // Only when there is nothing to show on the lines: an exit with no report is the runner
     // refusing before it got to the test, and its own words are the only explanation there is.
     ...(steps.length === 0 ? { output: tail(`${stdout}\n${stderr}`) } : {}),

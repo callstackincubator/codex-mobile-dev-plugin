@@ -544,7 +544,10 @@ selector, and counts `ui.testing.record_start`/`record_stop`, `ui.testing.step_t
 `ui.testing.step_reorder`, and `ui.testing.step_recommand_action`/`ui.testing.step_recommand_assert`
 when a step is pointed at another command — the same action/assertion split the recording counters
 use, so a flow's shape stays readable whether a step was recorded or edited into place. They are
-counts of an edit, carrying no selector, element name, command text or position.
+counts of an edit, carrying no selector, element name, command text or position. Pressing Record
+on a flow that already has steps counts `ui.testing.record_resume` or `ui.testing.record_new`
+alongside `ui.testing.record_start`, and only where there was a question to answer — it says
+whether that choice is carrying its weight, and carries nothing about the flow itself.
 Recording an agentic step counts `ui.testing.step_agent_act`, `ui.testing.step_agent_assert` or
 `ui.testing.step_agent_wait`,
 kept apart from `ui.testing.step_tap`/`step_assert` because the two answer different questions:

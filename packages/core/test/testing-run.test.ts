@@ -6,7 +6,7 @@ import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { existsSync } from "node:fs";
-import { parseProgressLine, parseReport, progressConfigSource, reportSteps, reportStatus, runRecordedTest, runnerBin, runnerEnv } from "../src/testing-run.ts";
+import { parseProgressLine, parseReport, progressConfigSource, reportDuration, reportSteps, reportStatus, runRecordedTest, runnerBin, runnerEnv } from "../src/testing-run.ts";
 
 const FILE = "tests/a-recorded-flow.e2e.ts";
 
@@ -249,4 +249,29 @@ test("the generated config is syntactically whole, line by line", () => {
   }
   // The newline the reporter writes has to reach the file as an escape, not as a newline.
   assert.match(source, /\}\) \+ "\\n"\);/);
+});
+
+test("the run's own duration comes from the report, with the attempts as the fallback", () => {
+  const run = (fields: Record<string, unknown>) => ({ schemaVersion: "report-1", run: { status: "passed", results: [], ...fields } });
+  // `run.startedAt` is required and `run.finishedAt` is optional, so the span between them is the
+  // number whenever the run reached its end.
+  assert.equal(reportDuration(run({ startedAt: "2026-01-01T00:00:00.000Z", finishedAt: "2026-01-01T00:00:08.410Z" })), 8410);
+  // Cut short, so there is no `finishedAt` — but `attempt.durationMs` is required of every attempt,
+  // and their sum is the time the runner actually spent.
+  assert.equal(reportDuration(run({
+    startedAt: "2026-01-01T00:00:00.000Z",
+    results: [{ attempts: [{ index: 0, durationMs: 1200 }, { index: 1, durationMs: 300 }] }, { attempts: [{ index: 0, durationMs: 40 }] }],
+  })), 1540);
+  // A clock that went backwards is not a duration; the attempts answer instead.
+  assert.equal(reportDuration(run({
+    startedAt: "2026-01-01T00:00:09.000Z", finishedAt: "2026-01-01T00:00:00.000Z",
+    results: [{ attempts: [{ index: 0, durationMs: 7 }] }],
+  })), 7);
+  // Nothing to go on at all is left undefined rather than reported as a run that took no time.
+  assert.equal(reportDuration(run({ startedAt: "not a date" })), undefined);
+  assert.equal(reportDuration(run({ startedAt: "2026-01-01T00:00:00.000Z", results: [{ attempts: [{ index: 0 }] }] })), undefined);
+  assert.equal(reportDuration(undefined), undefined);
+  // The whole path, as the tool returns it: the steps' own durations are parsed too, and are
+  // there if the gutter ever wants them.
+  assert.equal(reportSteps(report([{ line: 8, status: "passed" }]), FILE)[0].durationMs, 12);
 });

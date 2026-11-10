@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { ScreenComponent } from "../../shared/src/screen-annotations.ts";
-import { TestRecorder } from "../src/test-recorder.ts";
+import { TestRecorder, formatRunDuration } from "../src/test-recorder.ts";
 import { agentActSuggestion } from "../../shared/src/test-recording.ts";
 
 const UDID = "11111111-2222-3333-4444-555555555555";
@@ -338,7 +338,7 @@ test("a pointer move during the menu's own read does not drop the menu", async (
   recorder.detach(UDID);
 });
 
-test("a passing run holds its marks, then lets them go; a failing one keeps them", async () => {
+test("the verdict stays, the ticks go, and a failing mark stays with them gone", async () => {
   const recorder = new TestRecorder();
   recorder.attach(UDID, reader([tab("Explore", 800)], { count: 0 }));
   recorder.start(UDID);
@@ -349,20 +349,69 @@ test("a passing run holds its marks, then lets them go; a failing one keeps them
   assert.deepEqual(recorder.getSnapshot().run?.lines, {});
   recorder.applyRunProgress([{ stepIndex: 1, phase: "start" }]);
   assert.deepEqual(recorder.getSnapshot().run?.lines, { 8: "running" });
-  recorder.finishRun({ status: "passed", steps: [{ line: 8, status: "passed" }] });
-  assert.equal(recorder.getSnapshot().run?.fading, undefined, "the checkmark is held first, so it can be caught");
+  recorder.finishRun({ status: "passed", steps: [{ line: 8, status: "passed" }], durationMs: 8410 });
+  assert.equal(recorder.getSnapshot().run?.fading, undefined, "the tick is held first, so it can be caught");
 
-  // The preview is the test, not a scoreboard, so a pass gives the lines back.
   await new Promise(resolve => setTimeout(resolve, 2_700));
   assert.equal(recorder.getSnapshot().run?.fading, true);
   await new Promise(resolve => setTimeout(resolve, 800));
-  assert.equal(recorder.getSnapshot().run, undefined);
+  // The ticks go; the verdict and the duration are what the user came back for, and they stay.
+  assert.deepEqual(recorder.getSnapshot().run?.lines, {}, "the preview is the test, not a scoreboard");
+  assert.equal(recorder.getSnapshot().run?.state, "passed");
+  assert.equal(recorder.getSnapshot().run?.durationMs, 8410);
+  assert.equal(recorder.getSnapshot().run?.fading, undefined);
 
+  // A mixed run: the ticks around the failure go, the failure itself does not. It is the only
+  // thing on screen that says *where*, so nothing times it out.
   recorder.beginRun();
-  recorder.finishRun({ status: "failed", steps: [{ line: 8, status: "failed", error: "Timed out" }] });
+  recorder.finishRun({ status: "failed", durationMs: 420, steps: [
+    { line: 8, status: "passed" }, { line: 9, status: "failed", error: "Timed out" },
+  ] });
+  assert.deepEqual(recorder.getSnapshot().run?.lines, { 8: "passed", 9: "failed" });
   await new Promise(resolve => setTimeout(resolve, 3_500));
-  assert.deepEqual(recorder.getSnapshot().run?.lines, { 8: "failed" }, "a failure stays until the next run");
+  assert.deepEqual(recorder.getSnapshot().run?.lines, { 9: "failed" });
+  assert.equal(recorder.getSnapshot().run?.state, "failed");
+  assert.equal(recorder.getSnapshot().run?.durationMs, 420, "and how long it took before it broke");
   recorder.clearRun();
+  recorder.detach(UDID);
+});
+
+test("a run's marks go when the steps move out from under them, and the verdict is flagged", async () => {
+  const recorder = new TestRecorder();
+  recorder.attach(UDID, reader([tab("Explore", 800)], { count: 0 }));
+  recorder.start(UDID);
+  await pick(recorder, { x: 50, y: 820 });
+  recorder.finishRun({ status: "passed", steps: [{ line: 8, status: "passed" }], durationMs: 8410 });
+
+  // The marks are claims about lines of the file as it was emitted, so the first edit to the steps
+  // moves the lines out from under them — well before the ticks would have faded on their own.
+  // The verdict and the duration are about a run that did happen, so they stay, flagged, so
+  // nothing reads as a verdict on what is on screen now.
+  await pick(recorder, { x: 50, y: 820 });
+  const edited = recorder.getSnapshot().run;
+  assert.deepEqual(edited?.lines, {}, "no mark points at a line that has since changed");
+  assert.equal(edited?.state, "passed");
+  assert.equal(edited?.durationMs, 8410);
+  assert.equal(edited?.stale, true);
+
+  // Every other way the steps move says the same thing, including a failing mark: it says where
+  // the run broke in a file that no longer has that line.
+  for (const edit of [
+    () => recorder.duplicateStep(recorder.getSnapshot().steps[0]!.id),
+    () => recorder.moveStep(recorder.getSnapshot().steps[0]!.id, 1),
+    () => recorder.removeStep(recorder.getSnapshot().steps[0]!.id),
+  ]) {
+    recorder.finishRun({ status: "failed", steps: [{ line: 8, status: "failed", error: "Timed out" }] });
+    assert.deepEqual(recorder.getSnapshot().run?.lines, { 8: "failed" });
+    edit();
+    assert.deepEqual(recorder.getSnapshot().run?.lines, {});
+    assert.equal(recorder.getSnapshot().run?.stale, true);
+  }
+
+  // Starting a recording is the other way out: see `start`.
+  recorder.finishRun({ status: "passed", steps: [{ line: 8, status: "passed" }] });
+  recorder.start(UDID, true);
+  assert.equal(recorder.getSnapshot().run, undefined);
   recorder.detach(UDID);
 });
 
@@ -652,4 +701,45 @@ test("waitFor is recorded like the other judgements and emits the agent's own ca
   assert.match(recorder.source, /await agent\.waitFor\("the list has loaded", \{ vision: "only" \}\);/);
   assert.match(recorder.source, /async \(\{ agent, app, screen \}\)/);
   recorder.detach(UDID);
+});
+
+test("Record asks what to do with the steps already there, and either answer leaves a clean state", async () => {
+  const reads = { count: 0 };
+  const recorder = new TestRecorder();
+  recorder.attach(UDID, reader([tab("Explore", 800)], reads));
+  recorder.start(UDID);
+  await pick(recorder, { x: 50, y: 820 });
+  recorder.stop();
+
+  // A finished run's marks are a verdict on the file as it was.
+  recorder.finishRun({ status: "passed", steps: [{ line: 8, status: "passed" }], durationMs: 8410 });
+  assert.equal(recorder.getSnapshot().run?.state, "passed");
+  assert.equal(recorder.getSnapshot().run?.durationMs, 8410);
+
+  // Resume keeps the flow and adds to the end of it — this is the case that used to wipe, because
+  // saving clears the dirty flag and the old Record read that flag to decide.
+  recorder.start(UDID, true);
+  assert.equal(recorder.getSnapshot().steps.length, 1, "the recorded flow survives");
+  assert.equal(recorder.getSnapshot().run, undefined, "and no stale overlay marks lines it no longer describes");
+  await pick(recorder, { x: 50, y: 820 });
+  assert.equal(recorder.getSnapshot().steps.length, 2, "the next step lands after the ones already there");
+
+  // New is the other answer, and it is now a thing the user asked for rather than a default.
+  recorder.finishRun({ status: "failed", steps: [], durationMs: 420 });
+  recorder.start(UDID, false);
+  assert.deepEqual(recorder.getSnapshot().steps, []);
+  assert.equal(recorder.getSnapshot().run, undefined);
+  recorder.detach(UDID);
+});
+
+test("a run's duration reads the way the runner's own CLI writes it", () => {
+  assert.equal(formatRunDuration(8410), "8.41s");
+  assert.equal(formatRunDuration(1000), "1.00s");
+  assert.equal(formatRunDuration(125_300), "125.30s");
+  // Under a second it is milliseconds: `0.84s` reads as a rounding of something longer.
+  assert.equal(formatRunDuration(840), "840ms");
+  assert.equal(formatRunDuration(999), "999ms");
+  assert.equal(formatRunDuration(0), "0ms");
+  assert.equal(formatRunDuration(-1), "");
+  assert.equal(formatRunDuration(Number.NaN), "");
 });

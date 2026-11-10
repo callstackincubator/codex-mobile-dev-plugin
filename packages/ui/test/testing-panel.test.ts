@@ -142,7 +142,7 @@ test("a failing run keeps its mark on the line the report blames", async () => {
   assert.equal(run?.state, "failed");
   assert.deepEqual(run?.lines, { 8: "passed", 9: "failed" });
   assert.equal(run?.error, "Timed out");
-  assert.equal(run?.fading, undefined, "a failure stays put until the next run");
+  assert.equal(run?.stale, undefined, "the result is about the file as it was just emitted");
   testRecorder.clearRun();
   testRecorder.clearSteps();
   testRecorder.detach(UDID);

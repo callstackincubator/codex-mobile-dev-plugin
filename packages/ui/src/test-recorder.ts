@@ -64,8 +64,22 @@ export type TestRunView = {
   error?: string;
   /** The runner said nothing a line could be marked with — its own output is the explanation. */
   output?: string;
-  /** A passing run's marks are on their way out; the CSS honours `prefers-reduced-motion`. */
+  /**
+   * How long the run took, from the report. Not the panel's own `ui.testing.run` timing, which
+   * brackets the whole call including spawning the CLI; see `reportDuration`.
+   */
+  durationMs?: number;
+  /**
+   * The passing ticks are on their way out; the CSS honours `prefers-reduced-motion`. Only they
+   * fade — a failing mark is the one thing a failed run leaves behind to look at.
+   */
   fading?: boolean;
+  /**
+   * The steps changed after the run, so the line marks have been dropped: they were claims about
+   * lines that have since moved. The verdict and the duration stay — they are facts about a run
+   * that happened, and they do not stop being true because the next flow is being written.
+   */
+  stale?: true;
 };
 
 export type TestRecorderSnapshot = {
@@ -124,6 +138,17 @@ export type TestRecorderSnapshot = {
   error: string;
 };
 
+/**
+ * How long a passing tick stays before it starts to go, and how long going takes.
+ *
+ * The ticks go and the verdict stays. Once a run has passed, a column of green beside every line
+ * says nothing the chip above the preview does not, and it buries the code the user came back to
+ * read; the chip and the duration are the part worth keeping on screen. A failing mark is the
+ * exception in both directions: it is the one thing that says *where*, so it never fades.
+ */
+const HOLD_MS = 2_500;
+const FADE_MS = 600;
+
 const DEFAULT_TITLE = "a recorded flow";
 /**
  * The runner reported no elements at all, so there is nothing a recorded step could name. It is
@@ -137,9 +162,6 @@ const NO_TREE = "The app is not reporting any elements, so a recorded step would
  * user touching it.
  */
 const TREE_TTL_MS = 1_500;
-/** How long a passing run's checkmarks stay before they start to go, and how long going takes. */
-const HOLD_MS = 2_500;
-const FADE_MS = 600;
 
 /**
  * Records taps on the mirror as deterministic test steps.
@@ -174,7 +196,6 @@ export class TestRecorder {
    * menu the user asked for. Only another `openMenu` or a `closeMenu` cancels this one.
    */
   private menuToken = 0;
-  private fadeTimer?: ReturnType<typeof setTimeout>;
   /** The centre of the element the last step named, which is where its action lands. */
   private lastTarget?: ScreenPoint;
   /** That element's rectangle, which is the box a scoped swipe is drawn inside. */
@@ -182,6 +203,8 @@ export class TestRecorder {
   private snapshot: TestRecorderSnapshot = {
     recordingUdid: "", steps: [], title: DEFAULT_TITLE, revision: 0, resolving: false, error: "",
   };
+
+  private fadeTimer?: ReturnType<typeof setTimeout>;
 
   private treeSource?: RecorderTreeSource;
 
@@ -206,7 +229,16 @@ export class TestRecorder {
   private update(fields: Partial<TestRecorderSnapshot>) {
     // Anything that changes the emitted source is a new revision; the controls are not.
     const changed = fields.steps !== undefined || (fields.title !== undefined && fields.title !== this.snapshot.title);
-    this.snapshot = { ...this.snapshot, ...fields, ...(changed ? { revision: this.snapshot.revision + 1 } : {}) };
+    // A run's marks are tied to lines of the file as it was emitted, so the first edit to the
+    // steps — recorded, deleted, dragged, duplicated, re-pointed — moves the lines out from under
+    // them. They go; the verdict and the duration stay, because those are about a run that did
+    // happen and the user is often reading them while writing the next step. Clearing the whole
+    // run here would also make `start()`'s own clear indistinguishable from an edit.
+    const run = fields.run === undefined && fields.steps !== undefined && this.snapshot.run
+      && this.snapshot.run.state !== "running" && Object.keys(this.snapshot.run.lines).length > 0
+      ? { run: { ...this.snapshot.run, lines: {}, stale: true as const } }
+      : {};
+    this.snapshot = { ...this.snapshot, ...fields, ...run, ...(changed ? { revision: this.snapshot.revision + 1 } : {}) };
     for (const listener of this.listeners) listener();
   }
 
@@ -249,10 +281,18 @@ export class TestRecorder {
    */
   start(udid: string, keepSteps = false) {
     if (!udid || !this.reader) return;
+    const had = this.snapshot.steps.length > 0;
     this.invalidate();
     this.clearHover();
+    // A run's marks are a verdict on the file as it was. Resuming adds steps that verdict never
+    // covered and starting again replaces the file entirely, so either way the overlay would be
+    // marking lines of something else — and a passing run's marks are mid-fade besides.
+    this.clearRun();
     this.update({ recordingUdid: udid, error: "", menu: undefined, ...(keepSteps ? {} : { steps: [] }) });
     countUiEvent("ui.testing.record_start");
+    // Which way the user answered, counted only where there was a question to answer. It says
+    // whether the choice is carrying its weight; nothing about the flow itself is sent.
+    if (had) countUiEvent(keepSteps ? "ui.testing.record_resume" : "ui.testing.record_new");
   }
 
   stop() {
@@ -626,7 +666,8 @@ export class TestRecorder {
    * for why there is no per-step stream to follow.
    */
   beginRun() {
-    if (this.fadeTimer !== undefined) { clearTimeout(this.fadeTimer); this.fadeTimer = undefined; }
+    // A fade left over from the previous run would take this run's marks with it.
+    this.stopFade();
     this.update({ run: { state: "running", lines: {} } });
   }
 
@@ -662,12 +703,15 @@ export class TestRecorder {
    * The run is over: each line takes the status the report gave it, and a line the runner never
    * reached loses its mark rather than keeping a spinner that will never resolve.
    *
-   * A passing run holds its checkmarks briefly and then fades them, so the preview goes back to
-   * being the test rather than a scoreboard. A failure stays until the next run.
+   * The verdict and the duration then stay above the preview until the next run begins, the steps
+   * are edited, or it is cleared — pass or fail, with no timeout. The marks in the preview are the
+   * half that still goes: the passing ticks fade shortly after the run, because a column of green
+   * repeats what the chip already says and buries the code underneath it, while the mark on a line
+   * that failed stays for good, since it is the only thing on screen that says where. See
+   * `fadePassedMarks`.
    */
-  finishRun(result: { status: string; steps: { line: number; status: string; error?: string }[]; output?: string }) {
-    // A fade left over from the previous run would take this run's marks with it.
-    if (this.fadeTimer !== undefined) { clearTimeout(this.fadeTimer); this.fadeTimer = undefined; }
+  finishRun(result: { status: string; steps: { line: number; status: string; error?: string }[]; output?: string; durationMs?: number }) {
+    this.stopFade();
     const lines: Record<number, RunLineMark> = {};
     let error: string | undefined;
     for (const step of result.steps) {
@@ -679,22 +723,67 @@ export class TestRecorder {
     }
     const passed = result.status === "passed" && error === undefined;
     this.update({ run: { state: passed ? "passed" : "failed", lines,
-      ...(error ? { error } : {}), ...(result.output ? { output: result.output } : {}) } });
-    if (!passed) return;
-    this.fadeTimer = setTimeout(() => {
-      this.fadeTimer = undefined;
-      if (this.snapshot.run?.state !== "passed") return;
-      this.update({ run: { ...this.snapshot.run, fading: true } });
-      this.fadeTimer = setTimeout(() => { this.fadeTimer = undefined; this.clearRun(); }, FADE_MS);
-    }, HOLD_MS);
+      ...(error ? { error } : {}), ...(result.output ? { output: result.output } : {}),
+      // Shown for a failure as well: how long a run took before it gave up is as much a part of
+      // reading it as how long a passing one took.
+      ...(result.durationMs === undefined ? {} : { durationMs: result.durationMs }) } });
+    this.fadePassedMarks();
   }
 
   /** The run failed to start at all, or the user cleared it. */
   failRun(error: string) { this.update({ run: { state: "failed", lines: {}, error } }); }
   clearRun() {
-    if (this.fadeTimer !== undefined) { clearTimeout(this.fadeTimer); this.fadeTimer = undefined; }
+    this.stopFade();
     if (this.snapshot.run) this.update({ run: undefined });
   }
+
+  private stopFade() {
+    if (this.fadeTimer !== undefined) { clearTimeout(this.fadeTimer); this.fadeTimer = undefined; }
+  }
+
+  /**
+   * Lets the passing ticks go, a while after the run, and leaves everything else alone.
+   *
+   * The run itself is untouched: the verdict and the duration stay above the preview until the
+   * next run, an edit or an explicit clear. Only the `passed` entries leave `lines`, so a mixed
+   * run keeps the mark on the line that failed while the ticks around it clear.
+   */
+  private fadePassedMarks() {
+    this.stopFade();
+    if (!Object.values(this.snapshot.run?.lines ?? {}).includes("passed")) return;
+    // A run whose marks are still worth fading: nothing has replaced it, and nothing has already
+    // dropped them — an edit to the steps takes them all at once and sets `stale`.
+    const fadable = () => {
+      const run = this.snapshot.run;
+      return run && run.state !== "running" && !run.stale
+        && Object.values(run.lines).includes("passed") ? run : undefined;
+    };
+    this.fadeTimer = setTimeout(() => {
+      this.fadeTimer = undefined;
+      const run = fadable();
+      if (!run) return;
+      this.update({ run: { ...run, fading: true } });
+      this.fadeTimer = setTimeout(() => {
+        this.fadeTimer = undefined;
+        const current = this.snapshot.run;
+        if (!current) return;
+        const { fading: _gone, ...rest } = current;
+        this.update({ run: { ...rest,
+          lines: Object.fromEntries(Object.entries(current.lines).filter(([, mark]) => mark !== "passed")) } });
+      }, FADE_MS);
+    }, HOLD_MS);
+  }
+}
+
+/**
+ * How long a run took, the way the `e2e` CLI writes it.
+ *
+ * Seconds to two decimals once there is a second to show, and whole milliseconds below that: a run
+ * that took 840ms reads as a number, where `0.84s` reads as a rounding of something longer.
+ */
+export function formatRunDuration(durationMs: number): string {
+  if (!Number.isFinite(durationMs) || durationMs < 0) return "";
+  return durationMs < 1000 ? `${Math.round(durationMs)}ms` : `${(durationMs / 1000).toFixed(2)}s`;
 }
 
 /** A direction the model understands, defaulting to the one the menu lists first. */

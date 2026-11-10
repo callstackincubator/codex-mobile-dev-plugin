@@ -427,7 +427,14 @@ export class TestingPanel {
           ...(text(entry.error) ? { error: text(entry.error) } : {}),
         }))
         .filter(step => step.line > 0);
-      testRecorder.finishRun({ status: text(data.status) || "failed", steps, ...(text(data.output) ? { output: text(data.output) } : {}) });
+      // The runner's own number for the run, which is not the timing below: that one brackets the
+      // whole call, spawning the CLI and resolving the project included.
+      const durationMs = typeof data.durationMs === "number" && Number.isFinite(data.durationMs) ? data.durationMs : undefined;
+      testRecorder.finishRun({
+        status: text(data.status) || "failed", steps,
+        ...(text(data.output) ? { output: text(data.output) } : {}),
+        ...(durationMs === undefined ? {} : { durationMs }),
+      });
       countUiEvent(text(data.status) === "passed" ? "ui.testing.run_passed" : "ui.testing.run_failed");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

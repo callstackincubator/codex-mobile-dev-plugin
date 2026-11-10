@@ -406,6 +406,7 @@ html[data-theme="dark"] .tracesift-explorer { color-scheme: dark; }
 .testing-run-mark.is-running { opacity: 1; color: var(--muted-foreground); }
 .testing-run-mark.is-passed { opacity: 1; color: light-dark(oklch(0.6 0.13 157), oklch(0.77 0.14 157)); }
 .testing-run-mark.is-failed { opacity: 1; color: light-dark(oklch(0.58 0.2 25), oklch(0.7 0.19 25)); }
+/* Only ever set on a passing tick; a failing mark is never given this class. */
 .testing-run-mark.is-fading { opacity: 0; transition-duration: 600ms; }
 
 @media (prefers-reduced-motion: reduce) {
