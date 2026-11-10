@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { ScreenComponent } from "../src/screen-annotations.ts";
-import { allStepOffers, anchorSelector, emitE2eTest, emitE2eTestLines, treeHealth, resolveSelector, selectorSource, stepLabel, stepOffers, testFileSlug } from "../src/test-recording.ts";
+import { agentActSuggestion, agentStepLabel, allStepOffers, anchorSelector, emitE2eTest, emitE2eTestLines, treeHealth, resolveSelector, selectorSource, stepLabel, stepOffers, testFileSlug } from "../src/test-recording.ts";
+import type { RecordedSelector, RecordedStep, VisionMode } from "../src/test-recording.ts";
 
 /**
  * One element as the recorder reads it: the e2e runner's own projected node, where `role` is the
@@ -410,8 +411,9 @@ test("the full command list is the rest of the runner's surface, gated on what t
   const rows = allStepOffers({ kind: "text", text: "Go To Explore List" }, button);
   // The short list stays short; this is where a step the runner has but the four rows do not — an
   // element that should be gone, a disabled button — is reachable without leaving the panel.
+  // The four swipes are one command offered four ways; the menu gathers them into a single row.
   assert.deepEqual(rows.map(row => row.kind), [
-    "tap", "doubleTap", "longPress", "scrollUntilVisible",
+    "tap", "doubleTap", "longPress", "swipe", "swipe", "swipe", "swipe", "scrollUntilVisible",
     "assertVisible", "assertNotVisible", "assertText", "assertContainsText",
     "assertEnabled", "assertDisabled", "assertSelected",
   ]);
@@ -430,8 +432,10 @@ test("the full command list is the rest of the runner's surface, gated on what t
   assert.equal(fieldRows.find(row => row.kind === "assertValue")?.source,
     'expect(screen.getByPlaceholder("Search transactions")).toHaveValue("Paris")');
   assert.equal(fieldRows.find(row => row.kind === "assertValue")?.needsValue, true);
-  // A coordinate names no element, so there is still nothing but the tap to do with it.
-  assert.deepEqual(allStepOffers({ kind: "point", point: { x: 10, y: 20 } }).map(row => row.kind), ["tap"]);
+  // A coordinate names no element, so nothing that is about one is offered for it — but it does
+  // have a viewport, and `screen.swipe` is about the viewport rather than about anything in it.
+  assert.deepEqual(allStepOffers({ kind: "point", point: { x: 10, y: 20 } }).map(row => row.kind),
+    ["tap", "swipe", "swipe", "swipe", "swipe"]);
 });
 
 test("new step kinds read back to the user with the value they carry", () => {
@@ -499,4 +503,148 @@ test("a narrowed selector still reads back, and still supports every step", () =
     'expect(screen.getByText("Settings").nth(1)).toBeVisible()',
     'screen.scrollUntilVisible(screen.getByText("Settings").nth(1))',
   ]);
+});
+
+test("an agentic step emits the agent call and nothing about a locator", () => {
+  const source = emitE2eTest([
+    { id: "1", kind: "agentAct", instruction: 'tap the "Explore" tab', label: "" },
+    { id: "2", kind: "agentAssert", instruction: "the city list is showing", label: "" },
+  ], { title: "the agent explores" });
+  assert.match(source, /await agent\.act\("tap the \\"Explore\\" tab"\);/);
+  // `vision` defaults to false, so an assert that wants the default writes no options object.
+  assert.match(source, /await agent\.assert\("the city list is showing"\);/);
+  // There is no locator to be ambiguous, to narrow by position or to gate behind an anchor.
+  assert.doesNotMatch(source, /TODO/);
+  assert.doesNotMatch(source, /screen\./);
+});
+
+test("an agentic assertion emits the vision mode only when it is not the default", () => {
+  const emit = (vision?: VisionMode) => emitE2eTest(
+    [{ id: "1", kind: "agentAssert", instruction: "the badge is red", label: "", ...(vision === undefined ? {} : { vision }) }],
+    { title: "vision" });
+  assert.match(emit(), /agent\.assert\("the badge is red"\);/);
+  assert.match(emit(false), /agent\.assert\("the badge is red"\);/);
+  assert.match(emit(true), /agent\.assert\("the badge is red", \{ vision: true \}\);/);
+  assert.match(emit("only"), /agent\.assert\("the badge is red", \{ vision: "only" \}\);/);
+});
+
+test("the agent fixture and the header comment follow the steps", () => {
+  const pinned: RecordedStep[] = [{ id: "1", kind: "tap", selector: { kind: "text", text: "Explore" }, label: "" }];
+  const mixed: RecordedStep[] = [...pinned, { id: "2", kind: "agentAct", instruction: "scroll to the bottom", label: "" }];
+  // A recording with no agentic step emits byte for byte what it always did.
+  const before = emitE2eTest(pinned, { title: "t" });
+  assert.match(before, /test\("t", async \(\{ app, screen \}\) => \{/);
+  assert.match(before, /Every step is a pinned locator, driven by no agent\./);
+  const after = emitE2eTest(mixed, { title: "t" });
+  assert.match(after, /test\("t", async \(\{ agent, app, screen \}\) => \{/);
+  assert.match(after, /Pinned locators where an element was named, and agent steps where it was described\./);
+  assert.doesNotMatch(after, /driven by no agent/);
+});
+
+test("an agent step reads as its instruction and the element only drafts one", () => {
+  assert.equal(agentStepLabel("agentAct", "tap the cart"), 'Agent "tap the cart"');
+  assert.equal(agentStepLabel("agentAssert", "the cart is empty"), 'Agent check "the cart is empty"');
+  // The suggestion is a typing shortcut written out of what the element carried; it is never the
+  // step, and an element with nothing to call it hands the user a blank field rather than a guess.
+  assert.equal(agentActSuggestion({ label: "Explore", role: "tab" }), 'tap the "Explore" tab');
+  assert.equal(agentActSuggestion({ text: "Submit" }), 'tap "Submit"');
+  // `other` is not a role `getByRole` accepts, so it is not a word to call the element by either.
+  assert.equal(agentActSuggestion({ label: "Submit", role: "other" }), 'tap "Submit"');
+  assert.equal(agentActSuggestion({ role: "button" }), "");
+  assert.equal(agentActSuggestion(), "");
+});
+
+test("act params are emitted as literals, and as nothing at all when there are none", () => {
+  const act = (params?: Record<string, string>) => emitE2eTest(
+    [{ id: "1", kind: "agentAct", instruction: "sign in", label: "", ...(params ? { params } : {}) }],
+    { title: "params" });
+  // The whole options object is omitted when there is nothing to put in it, so the line a
+  // recording without params emits is the line it emitted before params existed.
+  assert.match(act(), /await agent\.act\("sign in"\);/);
+  assert.match(act({}), /await agent\.act\("sign in"\);/);
+  // A row the user started and never named is not a param.
+  assert.match(act({ "  ": "orphan" }), /await agent\.act\("sign in"\);/);
+
+  // The text is the type: what parses as a number or a keyword is written as one.
+  assert.match(act({ email: "a@b.com", attempts: "3", retry: "false", note: "null" }),
+    /agent\.act\("sign in", \{ params: \{ email: "a@b\.com", attempts: 3, retry: false, note: null \} \}\);/);
+  assert.match(act({ n: "-2.5e3" }), /params: \{ n: -2\.5e3 \}/);
+  // Surrounding whitespace is not part of a number, and is kept where it is part of a string.
+  assert.match(act({ n: "  7  " }), /params: \{ n: 7 \}/);
+  assert.match(act({ s: " hi " }), /params: \{ s: " hi " \}/);
+  // Everything `Number()` would take and JSON would not stays a string, so the file says what the
+  // user typed rather than a different number or an identifier.
+  for (const value of ["0x10", "1_000", "Infinity", "NaN", "+1", "01", ""]) {
+    assert.match(act({ v: value }), new RegExp(`params: \\{ v: ${JSON.stringify(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\}`),
+      `${JSON.stringify(value)} is not a JSON number`);
+  }
+  // A key an object literal cannot take bare is quoted rather than mangled.
+  assert.match(act({ "user-id": "7" }), /params: \{ "user-id": 7 \}/);
+});
+
+test("only act carries params, and only assert carries vision", () => {
+  const source = emitE2eTest([
+    { id: "1", kind: "agentAct", instruction: "sign in", label: "", params: { email: "a@b.com" } },
+    { id: "2", kind: "agentAssert", instruction: "the dashboard is showing", label: "", vision: true },
+  ], { title: "both" });
+  assert.match(source, /agent\.act\("sign in", \{ params: \{ email: "a@b\.com" \} \}\);/);
+  assert.match(source, /agent\.assert\("the dashboard is showing", \{ vision: true \}\);/);
+  assert.doesNotMatch(source, /act\([^)]*vision/);
+  assert.doesNotMatch(source, /assert\([^)]*params/);
+});
+
+test("waitFor judges like assert and takes the same vision", () => {
+  const emit = (vision?: VisionMode) => emitE2eTest(
+    [{ id: "1", kind: "agentWaitFor", instruction: "the spinner is gone", label: "", ...(vision === undefined ? {} : { vision }) }],
+    { title: "wait" });
+  assert.match(emit(), /await agent\.waitFor\("the spinner is gone"\);/);
+  assert.match(emit(false), /await agent\.waitFor\("the spinner is gone"\);/);
+  assert.match(emit(true), /await agent\.waitFor\("the spinner is gone", \{ vision: true \}\);/);
+  assert.match(emit("only"), /await agent\.waitFor\("the spinner is gone", \{ vision: "only" \}\);/);
+  // `interval` and `maxModelCalls` are budgets the panel never writes, so neither reaches the file.
+  assert.doesNotMatch(emit(true), /interval|maxModelCalls|timeout/);
+  // It is an agent step like the others, so it flips the fixtures and the header comment.
+  assert.match(emit(), /test\("wait", async \(\{ agent, app, screen \}\) => \{/);
+  assert.match(emit(), /Pinned locators where an element was named/);
+  assert.doesNotMatch(emit(), /TODO|screen\.getBy/);
+});
+
+test("a swipe is scoped to the element it names, or to the viewport when nothing is named", () => {
+  const swipe = (selector: RecordedSelector, direction?: "up" | "down" | "left" | "right") => emitE2eTest(
+    [{ id: "1", kind: "swipe", selector, label: "", ...(direction ? { direction } : {}) }], { title: "s" });
+  for (const direction of ["up", "down", "left", "right"] as const) {
+    assert.match(swipe({ kind: "testId", testId: "carousel" }, direction),
+      new RegExp(`await screen\\.getByTestId\\("carousel"\\)\\.swipe\\(\\{ direction: "${direction}" \\}\\);`));
+    assert.match(swipe({ kind: "point", point: { x: 4, y: 8 } }, direction),
+      new RegExp(`await screen\\.swipe\\(\\{ direction: "${direction}" \\}\\);`));
+  }
+  // `momentum` defaults to `none` and how hard a flick was thrown is not something the panel can
+  // observe, so `direction` is the whole of the options object.
+  assert.doesNotMatch(swipe({ kind: "text", text: "Cards" }, "left"), /momentum/);
+  // A viewport swipe needs no element, so it is emitted rather than skipped — but it is still a
+  // coordinate's screen, so it keeps the TODO and the wait every point step carries.
+  const viewport = emitE2eTest([{
+    id: "1", kind: "swipe", selector: { kind: "point", point: { x: 4, y: 8 } }, label: "",
+    direction: "down", anchor: { kind: "text", text: "Explore" },
+  }], { title: "s" });
+  assert.match(viewport, /TODO: nothing resolved here/);
+  assert.match(viewport, /await expect\(screen\.getByText\("Explore"\)\)\.toBeVisible\(\);\n\s+await screen\.swipe\(\{ direction: "down" \}\);/);
+  assert.doesNotMatch(viewport, /Skipped a step on a point/);
+});
+
+test("the swipe rows are one command offered four ways, on an element and on a bare point", () => {
+  const named = allStepOffers({ kind: "testId", testId: "carousel" }).filter(offer => offer.kind === "swipe");
+  assert.deepEqual(named.map(offer => offer.suggestedValue), ["up", "down", "left", "right"]);
+  assert.equal(named[0].source, 'screen.getByTestId("carousel").swipe({ direction: "up" })');
+  // Choosing a direction records the step at once; it is a choice from four, not text to supply.
+  assert.ok(named.every(offer => offer.needsValue === undefined));
+  const point = allStepOffers({ kind: "point", point: { x: 4, y: 8 } });
+  assert.deepEqual(point.map(offer => offer.kind), ["tap", "swipe", "swipe", "swipe", "swipe"]);
+  assert.equal(point[1].source, 'screen.swipe({ direction: "up" })');
+});
+
+test("a swipe step says which way it went", () => {
+  assert.equal(stepLabel("swipe", { kind: "role", role: "list", name: "Cards" }, "left"), 'Swipe left on "Cards" (list)');
+  assert.equal(stepLabel("swipe", { kind: "point", point: { x: 4, y: 8 } }, "down"), "Swipe down (viewport)");
+  assert.equal(stepLabel("swipe", { kind: "testId", testId: "c" }), "Swipe up on #c", "the direction the menu lists first");
 });

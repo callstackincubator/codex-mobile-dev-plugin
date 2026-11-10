@@ -1,12 +1,12 @@
 import { useRef, useState, useSyncExternalStore } from "react";
-import { CheckIcon, ChevronDownIcon, ChevronLeftIcon, CircleIcon, CircleXIcon, CopyIcon, FlaskConicalIcon, FolderOpenIcon, GripVerticalIcon, LoaderCircleIcon, MoreHorizontalIcon, PlayIcon, SaveIcon, SquareIcon, Trash2Icon, XIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, CircleIcon, CircleXIcon, CopyIcon, FlaskConicalIcon, FolderOpenIcon, GripVerticalIcon, LoaderCircleIcon, MoreHorizontalIcon, PlayIcon, SaveIcon, SquareIcon, Trash2Icon, XIcon } from "lucide-react";
 import type { DeviceAppsStore } from "../device-apps.ts";
 import type { TestingPanel } from "../testing-panel.ts";
 import { testRecorder } from "../test-recorder.ts";
 import type { TestRunView } from "../test-recorder.ts";
-import { allStepOffers, testFileSlug } from "@mobile-dev/shared/test-recording.ts";
+import { allStepOffers, isAgentStep, testFileSlug } from "@mobile-dev/shared/test-recording.ts";
 import type { RecordedStep } from "@mobile-dev/shared/test-recording.ts";
-import { MenuRow, OFFER_LABEL, OfferIcon, StepCommandList } from "./step-commands.tsx";
+import { BackRow, MenuRow, OFFER_LABEL, OfferIcon, StepCommandList, useMenuStack } from "./step-commands.tsx";
 import { CODE_TOKEN_CLASS, changedLines, highlightCode } from "../code-highlight.ts";
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert.tsx";
 import { Button } from "./ui/button.tsx";
@@ -308,8 +308,11 @@ function StepList({ steps, onHoverStep, onFocusStep }: {
       <GripVerticalIcon aria-hidden className="size-3.5 shrink-0 cursor-grab text-muted-foreground opacity-40 group-hover/step:opacity-100" />
       <span className="w-4 shrink-0 text-right text-muted-foreground">{index + 1}</span>
       <span className="min-w-0 flex-1 truncate" title={step.label}>{step.label}</span>
-      {step.ambiguous && <span className="shrink-0 text-amber-600" title="This matched more than one element. Add a testID to pin it.">ambiguous</span>}
-      {step.selector.kind === "point" && <span className="shrink-0 text-amber-600" title="Nothing resolved here, so the test taps a coordinate.">coordinates</span>}
+      {/* Both badges are about a locator, and an agent step has none: nothing was resolved, so
+          nothing can be ambiguous or fall back to a coordinate. */}
+      {!isAgentStep(step) && step.ambiguous && <span className="shrink-0 text-amber-600" title="This matched more than one element. Add a testID to pin it.">ambiguous</span>}
+      {!isAgentStep(step) && step.selector.kind === "point" && <span className="shrink-0 text-amber-600" title="Nothing resolved here, so the test taps a coordinate.">coordinates</span>}
+      {isAgentStep(step) && <span className="shrink-0 text-muted-foreground" title="Resolved by the agent at run time, not by a locator.">agent</span>}
       <StepMenu step={step} index={index} />
       <Button type="button" variant="ghost" size="icon-xs" aria-label={`Remove step ${index + 1}`} onClick={() => testRecorder.removeStep(step.id)}><XIcon /></Button>
     </li>)}
@@ -322,15 +325,20 @@ function StepList({ steps, onHoverStep, onFocusStep }: {
  *
  * "Change command" is the mirror's "All commands" list, offered against the element this step
  * already named: the commands are derived from what that element carried when it was recorded
- * (see `RecordedStep.target`), so a text field still offers `fill` and an element with text still
+ * (see `PinnedStep.target`), so a text field still offers `fill` and an element with text still
  * offers the text matchers, long after the screen has moved on.
+ *
+ * An agent step is offered Duplicate alone. It has no element to re-point — and converting it to a
+ * pinned command would have to invent a locator, while converting a pinned step the other way
+ * would throw away the one it was recorded for. Agentic is recorded over the mirror, where there
+ * is a screen to describe.
  */
 function StepMenu({ step, index }: { step: RecordedStep; index: number }) {
   const [open, setOpen] = useState(false);
-  const [commands, setCommands] = useState(false);
-  const offers = allStepOffers(step.selector, step.target);
-  const close = () => { setOpen(false); setCommands(false); };
-  return <Popover open={open} onOpenChange={value => { setOpen(value); if (!value) setCommands(false); }}>
+  const { view, push, back, reset } = useMenuStack();
+  const offers = isAgentStep(step) ? [] : allStepOffers(step.selector, step.target);
+  const close = () => { setOpen(false); reset(); };
+  return <Popover open={open} onOpenChange={value => { setOpen(value); if (!value) reset(); }}>
     <PopoverTrigger asChild>
       <Button type="button" variant="ghost" size="icon-xs" data-testing-step-menu={step.id}
         aria-label={`Edit step ${index + 1}`}
@@ -341,23 +349,21 @@ function StepMenu({ step, index }: { step: RecordedStep; index: number }) {
     </PopoverTrigger>
     <PopoverContent align="end" className="flex w-60 max-h-(--radix-popover-content-available-height) flex-col gap-1 overflow-y-auto p-1.5 [&_button:not(:disabled)]:cursor-pointer"
       role="menu" aria-label={`Step ${index + 1}`} onMouseLeave={close}>
-      {commands
+      {view === "commands"
         // The list replaces the menu rather than hanging beside it — the row it opens from is only
         // as wide as a step — so it carries its own way back; without one the menu was a dead end
         // that could only be left by dismissing it and pointing at the row again.
         ? <>
-          <MenuRow icon={<ChevronLeftIcon className="size-4 shrink-0 text-muted-foreground" />} attributes={{ "data-testing-step-commands-back": step.id }}
-            title="Back to this step's menu" onClick={() => setCommands(false)}>Back</MenuRow>
-          <div className="-mx-1.5 border-t" />
+          <BackRow onClick={back} attributes={{ "data-testing-step-commands-back": step.id }} />
           <StepCommandList commands={offers} onChoose={(kind, value) => { close(); testRecorder.changeStepCommand(step.id, kind, value); }} />
         </>
         : <>
           <MenuRow icon={<CopyIcon className="size-4 shrink-0 text-muted-foreground" />} attributes={{ "data-testing-step-duplicate": step.id }}
             title="Add a copy of this step at the end of the list"
             onClick={() => { close(); testRecorder.duplicateStep(step.id); }}>Duplicate</MenuRow>
-          <MenuRow chevron icon={<OfferIcon kind={step.kind} />} attributes={{ "data-testing-step-commands": step.id }}
+          {!isAgentStep(step) && <MenuRow chevron icon={<OfferIcon kind={step.kind} />} attributes={{ "data-testing-step-commands": step.id }}
             title={`Currently ${OFFER_LABEL[step.kind]}`}
-            onOpen={() => setCommands(true)} onClick={() => setCommands(true)}>Change command</MenuRow>
+            onOpen={() => push("commands")} onClick={() => push("commands")}>Change command</MenuRow>}
         </>}
     </PopoverContent>
   </Popover>;

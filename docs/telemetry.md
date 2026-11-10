@@ -545,6 +545,17 @@ selector, and counts `ui.testing.record_start`/`record_stop`, `ui.testing.step_t
 when a step is pointed at another command — the same action/assertion split the recording counters
 use, so a flow's shape stays readable whether a step was recorded or edited into place. They are
 counts of an edit, carrying no selector, element name, command text or position.
+Recording an agentic step counts `ui.testing.step_agent_act`, `ui.testing.step_agent_assert` or
+`ui.testing.step_agent_wait`,
+kept apart from `ui.testing.step_tap`/`step_assert` because the two answer different questions:
+whether the recorder can pin a step, and whether a user reached for the agent instead. They are
+counts only — the instruction the user wrote is free text about their own app, so it is never
+sent, and neither is the `vision` mode chosen for an `agent.assert`. `ui.testing.agent_params`
+gauges how many params an `act` step was recorded with, which is what says whether the editor is
+reached for at all; it is a count of rows, never a key, a value or the text they were typed into.
+A recorded `swipe` counts `ui.testing.step_action` like every other non-tap pinned command, so the
+action/assertion split stays the boundary it was; the direction and the gesture's coordinates are
+not sent.
 `ui.testing.step_assert` now covers every assertion the menu can record, not only `toBeVisible`
 and `toHaveText`; it is the same boundary — a step recorded that reads the screen rather than
 acting on it — so counts stay comparable across the release. Selectors, element names and the

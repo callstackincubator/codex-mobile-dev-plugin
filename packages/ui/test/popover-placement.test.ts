@@ -63,3 +63,26 @@ test("a submenu taller than the room above its row is pushed down, not off the w
   assert.equal(placed.top, MARGIN, "its top stops at the window, and the rest of it scrolls");
   assert.equal(placed.maxHeight, 640 - MARGIN * 2);
 });
+
+test("a cascading branch flips to the left, but only when the left has room", () => {
+  const row = box(290, 500, 280, 36);
+  const panel = { width: 220, height: 200 };
+  // Room on the right: the branch opens there, as its chevron says it will.
+  assert.equal(placeBeside(row, panel, { width: 1200, height: 900 }, { flip: true }).left, 574);
+  // No room on the right, room on the left: it flips rather than lying over the menu it came from,
+  // which by the third panel of a cascade is the trail the user is following.
+  assert.equal(placeBeside(row, panel, { width: 687, height: 640 }, { flip: true }).left, 290 - 4 - 220);
+  // Neither side fits, so it is pushed in from the edge — flipping here would point one way and
+  // open the other, which is the case `placeBeside` refuses by default.
+  const narrow = placeBeside(box(20, 500, 180, 36), panel, { width: 300, height: 640 }, { flip: true });
+  assert.equal(narrow.left, 300 - 220 - MARGIN);
+  // Opting out is still the default, and still what the "All commands" submenu does.
+  assert.equal(placeBeside(row, panel, { width: 687, height: 640 }).left, 687 - 220 - MARGIN);
+});
+
+test("a branch beside a row in the middle of a list lines up with its top", () => {
+  const row = box(100, 240, 280, 36);
+  const panel = { width: 220, height: 200 };
+  assert.equal(placeBeside(row, panel, { width: 1200, height: 900 }, { align: "top" }).top, 240);
+  assert.equal(placeBeside(row, panel, { width: 1200, height: 900 }).top, 276 - 200, "bottom is still the default");
+});

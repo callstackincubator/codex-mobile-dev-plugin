@@ -1,7 +1,7 @@
-import { allStepOffers, anchorSelector, emitE2eTestLines, hitLadder, resolveSelector, stepEffect, stepIsAssertion, stepLabel, stepNeedsValue, stepOffers, treeHealth } from "@mobile-dev/shared/test-recording.ts";
-import type { RecordedStep, RecordedStepKind, StepOffer } from "@mobile-dev/shared/test-recording.ts";
+import { agentStepLabel, allStepOffers, anchorSelector, emitE2eTestLines, hitLadder, isAgentStep, resolveSelector, stepEffect, stepIsAssertion, stepLabel, stepNeedsValue, stepOffers, treeHealth } from "@mobile-dev/shared/test-recording.ts";
+import type { AgentParams, AgentStep, AgentStepKind, PinnedStep, PinnedStepKind, RecordedStep, StepOffer, StepTarget, SwipeDirection, VisionMode } from "@mobile-dev/shared/test-recording.ts";
 import type { ScreenBounds, ScreenComponent, ScreenPoint, ScreenSize } from "@mobile-dev/shared/screen-annotations.ts";
-import { countUiEvent, recordUiTiming } from "./telemetry.ts";
+import { countUiEvent, recordUiTiming, setUiGauge } from "./telemetry.ts";
 
 /**
  * Reads the screen the recorder is recording against. The simulator panel owns the device
@@ -19,7 +19,12 @@ export type RecorderReader = {
    * row is resolved against a screen the test will not be on. The recorder does not touch the
    * device itself — the simulator panel owns the stream — so it asks.
    */
-  perform?: (action: { kind: "tap"; point: ScreenPoint } | { kind: "type"; text: string }) => void;
+  perform?: (action:
+    | { kind: "tap"; point: ScreenPoint }
+    | { kind: "type"; text: string }
+    // Start and end in screen space, as every other point here is; the panel's own stream carries
+    // a swipe, so the gesture a recorded step emits is one the mirror can also take.
+    | { kind: "swipe"; from: ScreenPoint; to: ScreenPoint }) => void;
   /**
    * Gives the device back to whoever wants it next.
    *
@@ -102,6 +107,12 @@ export type TestRecorderSnapshot = {
      */
     commands: StepOffer[];
     /**
+     * What the element carries, for the Agentic rows to write their first draft out of. The
+     * instruction is free text the user edits and the runner resolves itself, so this only ever
+     * saves them typing; see `agentActSuggestion`.
+     */
+    target?: StepTarget;
+    /**
      * The element's own rectangle, and the screen it is in. The menu carries its own anchor rather
      * than borrowing the outline's: a hover is dropped by anything that invalidates the tree, and a
      * menu the user explicitly asked for must not vanish with it.
@@ -166,6 +177,8 @@ export class TestRecorder {
   private fadeTimer?: ReturnType<typeof setTimeout>;
   /** The centre of the element the last step named, which is where its action lands. */
   private lastTarget?: ScreenPoint;
+  /** That element's rectangle, which is the box a scoped swipe is drawn inside. */
+  private lastBounds?: ScreenBounds;
   private snapshot: TestRecorderSnapshot = {
     recordingUdid: "", steps: [], title: DEFAULT_TITLE, revision: 0, resolving: false, error: "",
   };
@@ -356,17 +369,21 @@ export class TestRecorder {
    * device: the flow has already run past this point, and re-taking a step out of order would
    * leave the app somewhere the rest of the list does not describe.
    */
-  changeStepCommand(id: string, kind: RecordedStepKind, value?: string) {
-    const steps = this.snapshot.steps.map(step => {
-      if (step.id !== id) return step;
+  changeStepCommand(id: string, kind: PinnedStepKind, value?: string) {
+    const steps: RecordedStep[] = this.snapshot.steps.map(step => {
+      // An agent step has no selector to keep, which is the whole reason this is offered: the
+      // mirror's Agentic branch records one, and nothing converts between the two shapes.
+      if (step.id !== id || isAgentStep(step)) return step;
       // A kind that carries no text drops the old one rather than keeping a value nothing emits.
       const next = stepNeedsValue(kind) ? value ?? step.value ?? "" : undefined;
-      const { value: _dropped, ...rest } = step;
+      // Both of the optional halves go, so a step never keeps the other command's leftovers: no
+      // text on a kind that emits none, no direction on a kind that is not a swipe.
+      const { value: _dropped, direction: _wasSwipe, ...rest } = step;
       return {
         ...rest,
         kind,
         label: stepLabel(kind, step.selector, next),
-        ...(next === undefined ? {} : { value: next }),
+        ...(kind === "swipe" ? { direction: swipeDirection(value) } : next === undefined ? {} : { value: next }),
       };
     });
     if (steps.every((step, index) => step === this.snapshot.steps[index])) return;
@@ -430,24 +447,26 @@ export class TestRecorder {
    *
    * Returns whether a step was added; a refusal has already said why.
    */
-  private addStep(components: ScreenComponent[], point: ScreenPoint, kind: RecordedStepKind, value?: string): boolean {
+  private addStep(components: ScreenComponent[], point: ScreenPoint, kind: PinnedStepKind, value?: string): boolean {
     const screen = this.reader?.screen();
     // The outline the user is looking at is the step they mean, walked-out level and all.
     const { selector, ambiguous, component: named } = resolveSelector(components, point, screen, this.hoverLevel);
     const target = named && { ...(named.role === undefined ? {} : { role: named.role }), ...(named.placeholder === undefined ? {} : { placeholder: named.placeholder }), ...(named.label === undefined ? {} : { label: named.label }), ...(named.text === undefined ? {} : { text: named.text }), ...(named.value === undefined ? {} : { value: named.value }) };
-    if (selector.kind === "point" && kind !== "tap") {
+    // A coordinate has no element, so most commands would emit nothing — but a tap lands on it and
+    // `screen.swipe` is about the viewport rather than about anything in it, so both go through.
+    if (selector.kind === "point" && kind !== "tap" && kind !== "swipe") {
       // A coordinate is not a thing to be visible, to hold text or to be scrolled to, so the step
       // would emit nothing. Say so instead of adding a step whose whole body is two comments.
       countUiEvent("ui.testing.step_unresolved");
       this.update({ error: "Nothing here can be named, so there is nothing to act on but the coordinate. Scroll the mirror to pick the element around it, or add a testID." });
       return false;
     }
-    const step: RecordedStep = {
+    const step: PinnedStep = {
       id: crypto.randomUUID(),
       kind,
       selector,
       label: stepLabel(kind, selector, value),
-      ...(value === undefined ? {} : { value }),
+      ...(kind === "swipe" ? { direction: swipeDirection(value) } : value === undefined ? {} : { value }),
       ...(ambiguous ? { ambiguous } : {}),
       // Only a coordinate tap needs one: every locator action waits for its own element.
       ...(selector.kind === "point" ? { anchor: anchorSelector(components, point) } : {}),
@@ -456,6 +475,9 @@ export class TestRecorder {
     };
     // Where the runner's own locator action would land, for `chooseOffer` to act on.
     const owner = resolveSelector(components, point, screen, this.hoverLevel).component;
+    // A locator swipe is scoped to the element, a viewport swipe to the screen; `undefined` here
+    // is what makes `chooseOffer` fall back to the whole screen.
+    this.lastBounds = selector.kind === "point" ? undefined : owner?.bounds;
     this.lastTarget = owner
       ? { x: owner.bounds.x + owner.bounds.width / 2, y: owner.bounds.y + owner.bounds.height / 2 }
       : point;
@@ -508,6 +530,7 @@ export class TestRecorder {
       label: stepLabel("tap", selector), ambiguous, matches,
       offers: stepOffers(selector, component),
       commands: allStepOffers(selector, component),
+      ...(component ? { target: component } : {}),
       bounds, screen,
     } });
   }
@@ -519,11 +542,42 @@ export class TestRecorder {
   }
 
   /**
+   * Records an `agent.act` or `agent.assert` step from the sentence the user wrote.
+   *
+   * It does not go through `addStep`, and that is the point: there is no selector to resolve, so
+   * the tree is never read and the coordinate refusal never applies — an element nothing can name
+   * is exactly where describing it is the only way to write the step. The element the user
+   * right-clicked only ever prefilled the sentence; it is not carried onto the step and never
+   * reaches the file, because the runner resolves the instruction against the screen it finds.
+   *
+   * Nothing is sent to the device either. Taking an agent step here would mean running a model
+   * against the live app mid-recording, which is a run, not a recording.
+   */
+  recordAgentStep(chosen:
+    | { kind: "agentAct"; instruction: string; params?: AgentParams }
+    | { kind: "agentAssert" | "agentWaitFor"; instruction: string; vision?: VisionMode }) {
+    const instruction = chosen.instruction.trim();
+    this.update({ menu: undefined });
+    if (!instruction || !this.snapshot.recordingUdid) return;
+    const kind: AgentStepKind = chosen.kind;
+    // The optional halves — `params` on an act, `vision` on an assert — are carried exactly as the
+    // form left them, and the form leaves a default off rather than writing it out: no params from
+    // rows the user never filled in, no `vision: false` where `false` is what the runner does.
+    const step: AgentStep = { ...chosen, instruction, id: crypto.randomUUID(), label: agentStepLabel(kind, instruction) };
+    this.update({ steps: [...this.snapshot.steps, step] });
+    countUiEvent(kind === "agentAct" ? "ui.testing.step_agent_act"
+      : kind === "agentWaitFor" ? "ui.testing.step_agent_wait" : "ui.testing.step_agent_assert");
+    // Counted apart from the step itself: whether params are reached for at all is the question,
+    // and the count is of the rows, never of a key or a value.
+    if (chosen.kind === "agentAct" && chosen.params) setUiGauge("ui.testing.agent_params", Object.keys(chosen.params).length);
+  }
+
+  /**
    * Records the step a menu row stands for. Nothing is sent to the device: the menu is how a user
    * records an assertion, a scroll or a typed value without the tap that would change the screen
    * out from under it.
    */
-  async chooseOffer(kind: RecordedStepKind, value?: string) {
+  async chooseOffer(kind: PinnedStepKind, value?: string) {
     const point = this.menuPoint;
     this.update({ menu: undefined });
     if (!point || !this.snapshot.recordingUdid) return;
@@ -545,6 +599,10 @@ export class TestRecorder {
       else if (effect === "doubleTap") {
         this.reader?.perform?.({ kind: "tap", point: where });
         this.reader?.perform?.({ kind: "tap", point: where });
+      }
+      else if (effect === "swipe") {
+        const span = this.lastBounds;
+        this.reader?.perform?.({ kind: "swipe", ...swipePath(span ?? { x: 0, y: 0, ...(this.reader?.screen() ?? { width: 0, height: 0 }) }, swipeDirection(value)) });
       }
       else if (effect === "type") {
         this.reader?.perform?.({ kind: "tap", point: where });
@@ -636,6 +694,32 @@ export class TestRecorder {
   clearRun() {
     if (this.fadeTimer !== undefined) { clearTimeout(this.fadeTimer); this.fadeTimer = undefined; }
     if (this.snapshot.run) this.update({ run: undefined });
+  }
+}
+
+/** A direction the model understands, defaulting to the one the menu lists first. */
+function swipeDirection(value?: string): SwipeDirection {
+  return value === "down" || value === "left" || value === "right" ? value : "up";
+}
+
+/**
+ * The gesture a recorded swipe takes on the device, drawn inside the box it is scoped to.
+ *
+ * Taken over the middle 70% of the box, so the start and the end are both well inside it: a
+ * gesture begun on the very edge of the screen is an edge gesture to the OS — back, the shade,
+ * the app switcher — and not the swipe the step describes. The finger travels the way the step is
+ * named, which is the direction `e2e` names too.
+ */
+function swipePath(box: ScreenBounds, direction: SwipeDirection): { from: ScreenPoint; to: ScreenPoint } {
+  const midX = box.x + box.width / 2;
+  const midY = box.y + box.height / 2;
+  const reachX = box.width * 0.35;
+  const reachY = box.height * 0.35;
+  switch (direction) {
+    case "up": return { from: { x: midX, y: midY + reachY }, to: { x: midX, y: midY - reachY } };
+    case "down": return { from: { x: midX, y: midY - reachY }, to: { x: midX, y: midY + reachY } };
+    case "left": return { from: { x: midX + reachX, y: midY }, to: { x: midX - reachX, y: midY } };
+    case "right": return { from: { x: midX - reachX, y: midY }, to: { x: midX + reachX, y: midY } };
   }
 }
 

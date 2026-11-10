@@ -59,14 +59,33 @@ export function placeBelow(anchor: Box, size: { width: number; height: number },
  * menu it came from, which is what a cascading menu does in a tight window.
  *
  * Its bottom lines up with its row and it grows upward, since the row is the last in the menu.
+ *
+ * `flip` opts into opening on the left when the right has no room *and the left does*, which is
+ * what a cascading branch several levels deep needs: by the third panel the right edge is reached
+ * on any ordinary window, and overlapping the menu it came from hides the trail the user is
+ * following. It stays opt-in because the narrow case above is still real — when neither side fits,
+ * flipping would point one way and open the other, so the pushed-in placement is what happens.
+ *
+ * `align` is which of the row's edges the panel lines up with: `bottom` for a row at the end of a
+ * menu, `top` for one in the middle of a list, where growing upward would hide the rows above it.
  */
-export function placeBeside(row: Box, size: { width: number; height: number }, view: View): Placement {
+export function placeBeside(
+  row: Box,
+  size: { width: number; height: number },
+  view: View,
+  options: { flip?: boolean; align?: "top" | "bottom" } = {},
+): Placement {
   const maxHeight = Math.max(120, view.height - MARGIN * 2);
   const height = Math.min(size.height, maxHeight);
+  const rightmost = Math.max(MARGIN, view.width - size.width - MARGIN);
+  const right = row.right + 4;
+  const left = row.left - 4 - size.width;
+  const flipped = options.flip && right > rightmost && left >= MARGIN;
   return {
-    left: clamp(row.right + 4, MARGIN, Math.max(MARGIN, view.width - size.width - MARGIN)),
-    // Bottom-aligned with the row, then pushed back in if that would take it off either edge.
-    top: clamp(row.bottom - height, MARGIN, Math.max(MARGIN, view.height - MARGIN - height)),
+    left: flipped ? left : clamp(right, MARGIN, rightmost),
+    // Lined up with the chosen edge, then pushed back in if that would take it off either edge.
+    top: clamp(options.align === "top" ? row.top : row.bottom - height, MARGIN,
+      Math.max(MARGIN, view.height - MARGIN - height)),
     maxHeight,
   };
 }

@@ -44,7 +44,7 @@ export type NamedSelector = Exclude<RecordedSelector, { kind: "point" } | { kind
  * The menu shows the common few up front and the rest behind "All commands"; see `stepOffers` and
  * `allStepOffers`.
  */
-export type RecordedStepKind =
+export type PinnedStepKind =
   | "tap"
   | "doubleTap"
   | "longPress"
@@ -57,16 +57,55 @@ export type RecordedStepKind =
   | "assertValue"
   | "assertEnabled"
   | "assertDisabled"
-  | "assertSelected";
+  | "assertSelected"
+  | "swipe";
 
-export type RecordedStep = {
+/**
+ * The four directions `screen.swipe` and `locator.swipe` take, as `e2e`'s own `ScrollDirection`
+ * declares them. `Momentum` is the other `SwipeOptions` key and the panel never writes it: its
+ * default is `none`, and how hard a flick was thrown is not something a recorded step can observe.
+ */
+export type SwipeDirection = "up" | "down" | "left" | "right";
+export const SWIPE_DIRECTIONS: readonly SwipeDirection[] = ["up", "down", "left", "right"];
+
+/**
+ * The two steps that are a sentence rather than a locator.
+ *
+ * `agent.act` and `agent.assert` take an instruction and nothing else — no locator, not even an
+ * optional one — so an agent step is a different shape of step, not a pinned one with its selector
+ * left out. That is the whole reason `RecordedStep` is a union: a pinned step without a selector
+ * has never been a legal step and must stay impossible to write.
+ */
+export type AgentStepKind = "agentAct" | "agentAssert" | "agentWaitFor";
+
+export type RecordedStepKind = PinnedStepKind | AgentStepKind;
+
+/**
+ * What `agent.assert`'s judge is shown, as `e2e`'s own `VisionMode` declares it: the tree, the tree
+ * with a masked screenshot, or the screenshot alone. `false` is the runner's default, which is why
+ * the emitter leaves the options object off entirely rather than writing it out.
+ */
+export type VisionMode = boolean | "only";
+
+/** What every step carries, however it names what it acts on. */
+type RecordedStepCommon = {
   id: string;
-  kind: RecordedStepKind;
-  selector: RecordedSelector;
   /** What the step reads as in the panel's list, e.g. `Tap "Explore" (tab)`. */
   label: string;
+};
+
+/** A step pinned to one element, which is every step the mirror's command menu records. */
+export type PinnedStep = RecordedStepCommon & {
+  kind: PinnedStepKind;
+  selector: RecordedSelector;
   /** The text a `fill` types. Only a `fill` has one. */
   value?: string;
+  /**
+   * Which way a `swipe` goes. Only a `swipe` has one, and it is its own field rather than `value`
+   * because it is a choice from four, not text the user supplies — nothing asks for it through a
+   * form, and nothing compares it with what is on screen.
+   */
+  direction?: SwipeDirection;
   /** Set when every rank matched more than one element, so the panel can flag the step. */
   ambiguous?: boolean;
   /**
@@ -83,6 +122,49 @@ export type RecordedStep = {
    */
   target?: StepTarget;
 };
+
+/**
+ * A step the agent carries out, or judges, from a sentence.
+ *
+ * The element the user tapped to record it is a typing shortcut for that sentence and nothing
+ * more: it is never stored here and never emitted, because the runner resolves the instruction
+ * against the screen it finds at run time, not against the tree the panel read.
+ */
+export type AgentStep = RecordedStepCommon & (
+  | { kind: "agentAct"; instruction: string; params?: AgentParams }
+  | { kind: "agentAssert"; instruction: string; vision?: VisionMode }
+  | { kind: "agentWaitFor"; instruction: string; vision?: VisionMode }
+);
+
+/**
+ * The values an `act` instruction refers to, as the panel records them.
+ *
+ * Every value is held as the text the user typed and turned into a literal only on emit, because
+ * the panel's editor is a key and a text field: there is no type picker, so the text is the only
+ * thing there is to store, and storing a parsed value would mean deciding its type at the moment
+ * of a keystroke rather than at the moment the file is written.
+ *
+ * A record rather than a list of pairs, which settles the duplicate key: `params` is an object in
+ * the emitted file, so two rows with one key can only ever mean the later row, and keeping a list
+ * would preserve a difference the runner cannot express. The editor writes the rows into this in
+ * order, so the last row with a given key is the one that survives.
+ *
+ * `e2e`'s own `AgentParams` admits nested objects, arrays, `Secret` and `unique()`. The panel
+ * records none of those: each is a decision with a runtime meaning — a secret is withheld from the
+ * model, a unique value defeats the replay cache — and a key/value row is not where that is
+ * chosen. Those stay something the user writes in the file.
+ */
+export type AgentParams = Record<string, string>;
+
+export type RecordedStep = PinnedStep | AgentStep;
+
+export function isAgentStepKind(kind: RecordedStepKind): kind is AgentStepKind {
+  return kind === "agentAct" || kind === "agentAssert" || kind === "agentWaitFor";
+}
+
+export function isAgentStep(step: RecordedStep): step is AgentStep {
+  return isAgentStepKind(step.kind);
+}
 
 /**
  * The part of an element a command row is gated on: only a text field can be filled or have a
@@ -385,6 +467,49 @@ export function anchorSelector(components: ScreenComponent[], point: ScreenPoint
 
 const quote = (value: string) => JSON.stringify(value);
 
+/** A key that can be written bare in an object literal, as opposed to one that has to be quoted. */
+const BARE_KEY = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+
+/**
+ * A JSON number, exactly. Deliberately not `Number(value)`, which also accepts `0x10`, `1_000`,
+ * `Infinity` and a leading `+` — each of which would reach the file as a different number than the
+ * text the user typed, or as an identifier.
+ */
+const JSON_NUMBER = /^-?(0|[1-9]\d*)(\.\d+)?([eE][+-]?\d+)?$/;
+
+/**
+ * One param value as a literal: a number, `true`, `false` or `null` unquoted, anything else as a
+ * string.
+ *
+ * The editor has no type picker, so the text is the type: a user typing `3` into a field called
+ * `attempts` means the number, and one typing `a@b.com` means the string. Surrounding whitespace
+ * is not part of a number or a keyword, so it is dropped when deciding and when writing one; a
+ * string keeps every character it was given, since a trailing space may be exactly what the
+ * instruction is about.
+ */
+function paramValueSource(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed === "true" || trimmed === "false" || trimmed === "null") return trimmed;
+  if (JSON_NUMBER.test(trimmed)) return trimmed;
+  return quote(value);
+}
+
+/**
+ * The `{ params: … }` options argument, or nothing at all.
+ *
+ * Nothing at all is the point: `params` is the only `ActOptions` key the panel records, so with no
+ * params there is no options object to write, and `agent.act("…")` stays the line it always was.
+ * A row with a blank key is not a param — it is a row the user has started and not finished — so
+ * it is dropped rather than emitted as `"": …`.
+ */
+function paramsSource(params?: AgentParams): string {
+  const entries = Object.entries(params ?? {}).filter(([key]) => key.trim() !== "");
+  if (entries.length === 0) return "";
+  const body = entries.map(([key, value]) =>
+    `${BARE_KEY.test(key) ? key : quote(key)}: ${paramValueSource(value)}`).join(", ");
+  return `, { params: { ${body} } }`;
+}
+
 /** The locator expression a step emits, e.g. `screen.getByRole("tab", "Explore")`. */
 export function selectorSource(selector: RecordedSelector): string {
   switch (selector.kind) {
@@ -405,7 +530,26 @@ export function selectorSource(selector: RecordedSelector): string {
  * The element menu keeps this on each action as a tooltip, while its compact row uses the action's
  * plain-language label. The emitter wraps it; nothing else formats steps.
  */
-export function stepExpression(step: { kind: RecordedStepKind; selector: RecordedSelector; value?: string }): string {
+export function stepExpression(step:
+  | { kind: PinnedStepKind; selector: RecordedSelector; value?: string; direction?: SwipeDirection }
+  | { kind: "agentAct"; instruction: string; params?: AgentParams }
+  | { kind: "agentAssert"; instruction: string; vision?: VisionMode }
+  | { kind: "agentWaitFor"; instruction: string; vision?: VisionMode }
+): string {
+  // Neither agent call takes a locator, so neither reads a selector: the instruction is the step.
+  // `act` has no `vision` at all — the act model pulls pixels itself when the tree lacks what it
+  // needs — and `assert`'s defaults to `false`, so an options object is emitted only when the user
+  // asked for something other than the default.
+  if (step.kind === "agentAct") return `agent.act(${quote(step.instruction)}${paramsSource(step.params)})`;
+  if (step.kind === "agentAssert" || step.kind === "agentWaitFor") {
+    // `waitFor` judges the same way `assert` does, on a loop, so it takes the same `vision` and
+    // leaves it out for the same reason: `false` is what the runner does anyway.
+    const call = step.kind === "agentAssert" ? "assert" : "waitFor";
+    const vision = step.vision === "only" ? quote("only") : step.vision === true ? "true" : undefined;
+    return vision
+      ? `agent.${call}(${quote(step.instruction)}, { vision: ${vision} })`
+      : `agent.${call}(${quote(step.instruction)})`;
+  }
   const locator = selectorSource(step.selector);
   switch (step.kind) {
     // A point is already a whole action — `screen.tapAt(...)` — so there is nothing to call on it.
@@ -425,6 +569,11 @@ export function stepExpression(step: { kind: RecordedStepKind; selector: Recorde
     case "assertEnabled": return `expect(${locator}).toBeEnabled()`;
     case "assertDisabled": return `expect(${locator}).toBeDisabled()`;
     case "assertSelected": return `expect(${locator}).toBeSelected()`;
+    // The one command with two forms. A point names no element, so there is nothing to scope the
+    // gesture to and the viewport is swiped; a selector scopes it to the element it names, which
+    // is the difference between flicking the screen and flicking one carousel on it. `momentum`
+    // is left at its default, so `direction` is the whole of the options object.
+    case "swipe": return `${step.selector.kind === "point" ? "screen" : locator}.swipe({ direction: ${quote(step.direction ?? "up")} })`;
   }
 }
 
@@ -443,6 +592,12 @@ const STEP_VERB: Record<RecordedStepKind, string> = {
   assertEnabled: "Expect enabled",
   assertDisabled: "Expect disabled",
   assertSelected: "Expect selected",
+  swipe: "Swipe",
+  // An agent step reads as what the agent was told, so the verb says who is acting and the
+  // instruction says the rest.
+  agentAct: "Agent",
+  agentAssert: "Agent check",
+  agentWaitFor: "Agent wait",
 };
 
 /** Whether the step carries text the user has to supply: one types it, the rest compare with it. */
@@ -450,8 +605,18 @@ export function stepNeedsValue(kind: RecordedStepKind): boolean {
   return kind === "fill" || kind === "assertText" || kind === "assertContainsText" || kind === "assertValue";
 }
 
+/** How an agent step reads in the panel's step list: the verb, then the sentence it was given. */
+export function agentStepLabel(kind: AgentStepKind, instruction: string): string {
+  return `${STEP_VERB[kind]} ${JSON.stringify(instruction)}`;
+}
+
 /** How a step reads in the panel's step list. */
-export function stepLabel(kind: RecordedStepKind, selector: RecordedSelector, value?: string): string {
+export function stepLabel(kind: PinnedStepKind, selector: RecordedSelector, value?: string): string {
+  // Which way it went is the step, so it belongs in the verb rather than trailing the element.
+  if (kind === "swipe") {
+    const way = `Swipe ${value ?? "up"}`;
+    return selector.kind === "point" ? `${way} (viewport)` : `${way} on ${stepLabel("tap", selector).replace(/^Tap /, "")}`;
+  }
   const verb = STEP_VERB[kind];
   const suffix = stepNeedsValue(kind) ? ` → ${JSON.stringify(value ?? "")}` : "";
   switch (selector.kind) {
@@ -473,7 +638,12 @@ export function stepLabel(kind: RecordedStepKind, selector: RecordedSelector, va
  * so the menu asks before the step is recorded rather than emitting an empty string literal.
  */
 export type StepOffer = {
-  kind: RecordedStepKind;
+  /**
+   * Pinned only. An agentic step is never a row here: it names no element, so it cannot be gated
+   * on what one carries, and converting a recorded step to one would throw away the locator that
+   * step exists for. The mirror offers Agentic from a branch of its own.
+   */
+  kind: PinnedStepKind;
   /** The code the row exposes as a tooltip, e.g. `screen.getByText("Explore").tap()`. */
   source: string;
   needsValue?: boolean;
@@ -493,7 +663,7 @@ const TEXT_INPUT_ROLES = new Set(["textbox", "searchbox", "combobox", "spinbutto
  * reads the screen, and `scrollUntilVisible` is only ever offered for an element the user just
  * pointed at, which is on screen already, so its search loop has nothing to do here.
  */
-export type StepEffect = "tap" | "doubleTap" | "type" | "none";
+export type StepEffect = "tap" | "doubleTap" | "type" | "swipe" | "none";
 
 export function stepEffect(kind: RecordedStepKind): StepEffect {
   switch (kind) {
@@ -503,6 +673,8 @@ export function stepEffect(kind: RecordedStepKind): StepEffect {
     // the device coalesces them into a real double tap is the app's business, not the step's.
     case "doubleTap": return "doubleTap";
     case "fill": return "type";
+    // A swipe moves the screen under the rest of the flow, so it is taken as well as recorded.
+    case "swipe": return "swipe";
     // `longPress` has no equivalent in the panel's input path, so the step is recorded and the app
     // stays where it is — the same as every assertion, which reads the screen and changes nothing.
     default: return "none";
@@ -523,7 +695,7 @@ export function stepEffect(kind: RecordedStepKind): StepEffect {
 export function stepOffers(selector: RecordedSelector, component?: StepTarget): StepOffer[] {
   // A narrowed selector supports whatever its inner one does: the narrowing is on the locator, and
   // every action and matcher chains after it.
-  const offer = (kind: RecordedStepKind, value?: string, needsValue?: boolean): StepOffer => ({
+  const offer = (kind: PinnedStepKind, value?: string, needsValue?: boolean): StepOffer => ({
     kind,
     source: stepExpression({ kind, selector, ...(value === undefined ? {} : { value }) }),
     ...(needsValue ? { needsValue: true } : {}),
@@ -557,13 +729,23 @@ export function stepOffers(selector: RecordedSelector, component?: StepTarget): 
  * text, to be enabled or to be scrolled to.
  */
 export function allStepOffers(selector: RecordedSelector, component?: StepTarget): StepOffer[] {
-  const offer = (kind: RecordedStepKind, value?: string): StepOffer => ({
+  const offer = (kind: PinnedStepKind, value?: string): StepOffer => ({
     kind,
     source: stepExpression({ kind, selector, ...(value === undefined ? {} : { value }) }),
     ...(stepNeedsValue(kind) ? { needsValue: true } : {}),
     ...(value === undefined ? {} : { suggestedValue: value }),
   });
-  if (selector.kind === "point") return [offer("tap")];
+  // One row per direction, carrying its own exact code; the menu gathers them into one branch.
+  // The direction travels in `suggestedValue` because it is what the chosen row stands for, not
+  // text the row asks for — `stepNeedsValue("swipe")` is false, so no form opens.
+  const swipes = SWIPE_DIRECTIONS.map(direction => ({
+    kind: "swipe" as const,
+    source: stepExpression({ kind: "swipe", selector, direction }),
+    suggestedValue: direction,
+  }));
+  // A coordinate still has no element to assert about, fill or scroll to — but it does have a
+  // viewport, and `screen.swipe` is about the viewport rather than about anything on it.
+  if (selector.kind === "point") return [offer("tap"), ...swipes];
   const role = component?.role ?? "";
   const placeholder = normalize(component?.placeholder);
   const typeable = TEXT_INPUT_ROLES.has(role) || placeholder !== "";
@@ -573,6 +755,7 @@ export function allStepOffers(selector: RecordedSelector, component?: StepTarget
     offer("doubleTap"),
     offer("longPress"),
     ...(typeable ? [offer("fill", normalize(component?.value))] : []),
+    ...swipes,
     offer("scrollUntilVisible"),
     offer("assertVisible"),
     offer("assertNotVisible"),
@@ -586,7 +769,9 @@ export function allStepOffers(selector: RecordedSelector, component?: StepTarget
 
 /** Whether a command acts on the app or only reads it, for the menu's two groups. */
 export function stepIsAssertion(kind: RecordedStepKind): boolean {
-  return kind.startsWith("assert");
+  // `agentAssert` is judged by a model rather than matched by a locator, and it still reads the
+  // screen without changing it, which is the only distinction this answers.
+  return kind.startsWith("assert") || kind === "agentAssert";
 }
 
 /** A test title turned into a file name, e.g. `the tab bar works` → `the-tab-bar-works`. */
@@ -599,6 +784,9 @@ export function testFileSlug(title: string): string {
 type EmittedLine = { text: string; call?: true };
 
 function stepSource(step: RecordedStep): EmittedLine[] {
+  // An agent step names no element: there is no selector to be ambiguous, no `nth` to explain and
+  // no coordinate to gate behind an anchor, so the instruction is the whole of it.
+  if (isAgentStep(step)) return [{ text: `  await ${stepExpression(step)};`, call: true }];
   const lines: EmittedLine[] = [];
   // A positional step runs, which a bare ambiguous one does not, so this is a note and not a TODO:
   // nothing has to be edited for the test to work, and the durable fix is still named.
@@ -615,7 +803,9 @@ function stepSource(step: RecordedStep): EmittedLine[] {
     if (step.anchor && step.anchor.kind !== "point") {
       lines.push({ text: `  await expect(${selectorSource(step.anchor)}).toBeVisible();`, call: true });
     }
-    if (step.kind === "tap") { lines.push({ text: `  await ${stepExpression(step)};`, call: true }); return lines; }
+    // A tap at the coordinate, and a swipe of the viewport the coordinate is in: neither needs an
+    // element, which is the whole of what a point lacks.
+    if (step.kind === "tap" || step.kind === "swipe") { lines.push({ text: `  await ${stepExpression(step)};`, call: true }); return lines; }
     // There is nothing to assert about, type into, or scroll to a bare coordinate.
     lines.push({ text: `  // Skipped a step on a point with no element.` });
     return lines;
@@ -657,15 +847,21 @@ export type EmittedTest = {
  * does, is good enough to flash a line and far too weak to attribute a pass or a failure, so the
  * emitter reports it instead of the reader guessing.
  *
- * `agent.act` is never emitted: a recorded test exists to be deterministic.
+ * A recording is pinned locators by default — that is what makes a recorded test repeatable — so
+ * the fixtures and the header comment follow the steps: `agent` is destructured, and the comment
+ * says what the file is, only once a recording actually contains an agentic step. A recording
+ * without one emits exactly what it always did.
  */
 export function emitE2eTestLines(steps: readonly RecordedStep[], options: { title: string }): EmittedTest {
+  const agentic = steps.some(isAgentStep);
   const lines: EmittedLine[] = [
     { text: `import { test } from "@e2e-dev/mobile";` },
     { text: `import { expect } from "e2e";` },
     { text: `` },
-    { text: `// Recorded from the Testing panel. Every step is a pinned locator, driven by no agent.` },
-    { text: `test(${quote(options.title)}, async ({ app, screen }) => {` },
+    { text: agentic
+      ? `// Recorded from the Testing panel. Pinned locators where an element was named, and agent steps where it was described.`
+      : `// Recorded from the Testing panel. Every step is a pinned locator, driven by no agent.` },
+    { text: `test(${quote(options.title)}, async ({ ${agentic ? "agent, app, screen" : "app, screen"} }) => {` },
     // The runner reports `app.open` as a step like any other, so it counts as a call.
     { text: `  await app.open();`, call: true },
     { text: `` },
@@ -691,4 +887,22 @@ export function emitE2eTestLines(steps: readonly RecordedStep[], options: { titl
 
 export function emitE2eTest(steps: readonly RecordedStep[], options: { title: string }): string {
   return emitE2eTestLines(steps, options).source;
+}
+
+/**
+ * The sentence an `agent.act` row starts from, written out of the element the user right-clicked.
+ *
+ * It is a typing shortcut and nothing else: the element is not stored on the step and never
+ * reaches the file, because the runner resolves the instruction against the screen it finds at run
+ * time. Starting from `tap the "Explore" tab` is the difference between a row the user edits and a
+ * blank box they have to compose in, and both end up as the same free text.
+ *
+ * Empty when the element carries no name at all — there is nothing to call it, so the user says
+ * what they mean rather than being handed a sentence about nothing.
+ */
+export function agentActSuggestion(target?: StepTarget): string {
+  const name = normalize(target?.label) || normalize(target?.text) || normalize(target?.placeholder);
+  if (!name) return "";
+  const role = QUERYABLE_ROLES.has(target?.role ?? "") ? target!.role! : "";
+  return role ? `tap the ${JSON.stringify(name)} ${role}` : `tap ${JSON.stringify(name)}`;
 }

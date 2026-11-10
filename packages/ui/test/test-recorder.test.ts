@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { ScreenComponent } from "../../shared/src/screen-annotations.ts";
 import { TestRecorder } from "../src/test-recorder.ts";
+import { agentActSuggestion } from "../../shared/src/test-recording.ts";
 
 const UDID = "11111111-2222-3333-4444-555555555555";
 const SCREEN = { width: 402, height: 874 };
@@ -532,5 +533,123 @@ test("a step can be duplicated, re-pointed at another command, and dragged into 
   assert.equal(recorder.getSnapshot().steps.length, 2);
   recorder.clearSteps();
   assert.equal(recorder.getSnapshot().steps.length, 0);
+  recorder.detach(UDID);
+});
+
+test("an agentic step is recorded from a sentence, even where nothing can be named", async () => {
+  const reads = { count: 0 };
+  const recorder = new TestRecorder();
+  const done: unknown[] = [];
+  recorder.attach(UDID, { ...reader([tab("Explore", 800)], reads), perform: action => { done.push(action); } });
+  recorder.start(UDID);
+
+  // The menu over an element carries what it is, so the Act row can draft a sentence out of it.
+  await recorder.openMenu({ x: 50, y: 820 });
+  assert.equal(recorder.getSnapshot().menu?.target?.label, "Explore");
+  assert.equal(agentActSuggestion(recorder.getSnapshot().menu?.target), 'tap the "Explore" button');
+
+  recorder.recordAgentStep({ kind: "agentAct", instruction: '  tap the "Explore" tab  ' });
+  const [act] = recorder.getSnapshot().steps;
+  assert.equal(act.kind, "agentAct");
+  assert.equal(act.instruction, 'tap the "Explore" tab', "the sentence is trimmed, not the element's");
+  assert.equal(act.selector, undefined, "an agent step names no element");
+  assert.equal(act.label, 'Agent "tap the \\"Explore\\" tab"');
+  // Nothing is sent to the device: running the instruction would be a run, not a recording.
+  assert.deepEqual(done, []);
+  // Opening the menu is what closes it; recording the step closes it too.
+  assert.equal(recorder.getSnapshot().menu, undefined);
+
+  // Empty space resolves to a coordinate, which the pinned rows refuse — and which is exactly
+  // where describing the step is the only way to write it.
+  await recorder.openMenu({ x: 300, y: 200 });
+  recorder.recordAgentStep({ kind: "agentAssert", instruction: "the city list is showing", vision: "only" });
+  const assertStep = recorder.getSnapshot().steps.at(-1);
+  assert.equal(assertStep?.kind, "agentAssert");
+  assert.equal(assertStep?.vision, "only");
+  assert.equal(recorder.getSnapshot().error, "", "nothing refused the step");
+
+  // A blank sentence is not a step.
+  recorder.recordAgentStep({ kind: "agentAct", instruction: "   " });
+  assert.equal(recorder.getSnapshot().steps.length, 2);
+
+  // Params ride on the act step and nothing else; no params means no options object at all.
+  recorder.recordAgentStep({ kind: "agentAct", instruction: "sign in", params: { email: "a@b.com", attempts: "3" } });
+  const signIn = recorder.getSnapshot().steps.at(-1);
+  assert.deepEqual(signIn?.params, { email: "a@b.com", attempts: "3" });
+  assert.match(recorder.source, /await agent\.act\("sign in", \{ params: \{ email: "a@b\.com", attempts: 3 \} \}\);/);
+  recorder.removeStep(signIn!.id);
+
+  const source = recorder.source;
+  assert.match(source, /async \(\{ agent, app, screen \}\)/);
+  assert.match(source, /await agent\.act\("tap the \\"Explore\\" tab"\);/);
+  assert.match(source, /await agent\.assert\("the city list is showing", \{ vision: "only" \}\);/);
+
+  // The editing an agent step does support still works on it; what it cannot do is take a locator.
+  recorder.duplicateStep(act.id);
+  assert.equal(recorder.getSnapshot().steps.length, 3);
+  recorder.changeStepCommand(act.id, "assertVisible");
+  assert.equal(recorder.getSnapshot().steps[0].kind, "agentAct", "no command swap invents a locator");
+  recorder.moveStep(act.id, 2);
+  assert.equal(recorder.getSnapshot().steps.at(-1)?.id, act.id);
+  recorder.detach(UDID);
+});
+
+test("a swipe is recorded and taken on the device, scoped to the element or to the viewport", async () => {
+  const reads = { count: 0 };
+  const recorder = new TestRecorder();
+  const done: any[] = [];
+  recorder.attach(UDID, { ...reader([tab("Explore", 800)], reads), perform: action => { done.push(action); } });
+  recorder.start(UDID);
+
+  // Scoped: the gesture runs inside the element's own rectangle, well in from its edges, since a
+  // gesture begun on an edge is an edge gesture to the OS rather than the swipe the step means.
+  await pick(recorder, { x: 50, y: 820 }, "swipe", "left");
+  const scoped = recorder.getSnapshot().steps.at(-1);
+  assert.equal(scoped?.kind, "swipe");
+  assert.equal(scoped?.direction, "left");
+  assert.equal(scoped?.label, 'Swipe left on "Explore" (button)');
+  assert.deepEqual(done.at(-1), { kind: "swipe", from: { x: 85, y: 820 }, to: { x: 15, y: 820 } });
+  assert.match(recorder.source, /await screen\.getByRole\("button", "Explore"\)\.swipe\(\{ direction: "left" \}\);/);
+
+  // The viewport form, on a point nothing can name — the refusal every other non-tap command
+  // still gets must let this one through, because it is not about an element at all.
+  await pick(recorder, { x: 300, y: 200 }, "swipe", "up");
+  const viewport = recorder.getSnapshot().steps.at(-1);
+  assert.equal(viewport?.selector.kind, "point");
+  assert.equal(viewport?.direction, "up");
+  assert.equal(recorder.getSnapshot().error, "", "nothing refused it");
+  // The middle 70% of the whole screen, since there is no element to scope it to.
+  const { from, to } = done.at(-1);
+  assert.equal(from.x, SCREEN.width / 2);
+  assert.ok(Math.abs(from.y - (SCREEN.height / 2 + SCREEN.height * 0.35)) < 0.01);
+  assert.ok(Math.abs(to.y - (SCREEN.height / 2 - SCREEN.height * 0.35)) < 0.01, "the finger travels upwards");
+  assert.match(recorder.source, /await screen\.swipe\(\{ direction: "up" \}\);/);
+  // Still a coordinate's screen, so it keeps the wait a point step needs.
+  assert.deepEqual(viewport?.anchor, { kind: "text", text: "Explore" });
+
+  // An unknown direction is not a reason to record a broken step; the menu's first one stands.
+  await pick(recorder, { x: 50, y: 820 }, "swipe", "sideways");
+  assert.equal(recorder.getSnapshot().steps.at(-1)?.direction, "up");
+
+  // Swapping a swipe for a command that is not one drops the direction with it.
+  const swipe = recorder.getSnapshot().steps.at(-1)!;
+  recorder.changeStepCommand(swipe.id, "assertVisible");
+  assert.equal(recorder.getSnapshot().steps.at(-1)?.direction, undefined);
+  recorder.detach(UDID);
+});
+
+test("waitFor is recorded like the other judgements and emits the agent's own call", async () => {
+  const recorder = new TestRecorder();
+  recorder.attach(UDID, reader([tab("Explore", 800)], { count: 0 }));
+  recorder.start(UDID);
+  recorder.recordAgentStep({ kind: "agentWaitFor", instruction: "the spinner is gone" });
+  recorder.recordAgentStep({ kind: "agentWaitFor", instruction: "the list has loaded", vision: "only" });
+  const steps = recorder.getSnapshot().steps;
+  assert.deepEqual(steps.map(step => step.kind), ["agentWaitFor", "agentWaitFor"]);
+  assert.equal(steps[0].label, 'Agent wait "the spinner is gone"');
+  assert.equal(steps[0].vision, undefined, "off is the runner's default, so it is not stored");
+  assert.match(recorder.source, /await agent\.waitFor\("the spinner is gone"\);/);
+  assert.match(recorder.source, /await agent\.waitFor\("the list has loaded", \{ vision: "only" \}\);/);
+  assert.match(recorder.source, /async \(\{ agent, app, screen \}\)/);
   recorder.detach(UDID);
 });

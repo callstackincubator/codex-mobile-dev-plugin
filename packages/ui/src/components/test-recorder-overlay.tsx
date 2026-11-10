@@ -1,47 +1,14 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { ListIcon } from "lucide-react";
 import type { ScreenAnnotationsStore } from "../screen-annotations";
 import { testRecorder } from "../test-recorder";
-import type { StepOffer } from "@mobile-dev/shared/test-recording.ts";
-import { MenuRow, OFFER_LABEL, OfferIcon, OfferValueForm, StepCommandList } from "./step-commands";
+import { agentActSuggestion } from "@mobile-dev/shared/test-recording.ts";
+import type { StepOffer, StepTarget } from "@mobile-dev/shared/test-recording.ts";
+import { AgenticBranch, MenuRow, OFFER_LABEL, OfferIcon, OfferValueForm, StepCommandList } from "./step-commands";
+import { usePlacement, windowView as view } from "./cascading-menu";
 import { MARGIN, placeBelow, placeBeside } from "../popover-placement";
-import type { Box, Placement } from "../popover-placement";
-
-/** The window every popover here is fitted into. See `popover-placement`. */
-const view = () => ({ width: window.innerWidth, height: window.innerHeight });
-
-/** Re-fits a popover whenever its own size, its anchor or the window changes. */
-function usePlacement(
-  element: React.RefObject<HTMLElement | null>,
-  place: () => Placement | undefined,
-  deps: unknown[],
-): Placement | undefined {
-  const [placement, setPlacement] = useState<Placement>();
-  const measure = useCallback(() => {
-    const next = place();
-    // The same numbers mean the same position, and writing them again would re-run this effect.
-    setPlacement(current => current && next && current.left === next.left && current.top === next.top
-      && current.maxHeight === next.maxHeight ? current : next);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
-  useLayoutEffect(() => {
-    measure();
-    const node = element.current;
-    // A row that opens a form, a list that loads: the popover's own height is what decides whether
-    // it still fits, so it is watched rather than measured once.
-    const observer = typeof ResizeObserver === "function" && node ? new ResizeObserver(() => measure()) : undefined;
-    if (node) observer?.observe(node);
-    window.addEventListener("resize", measure);
-    window.addEventListener("scroll", measure, true);
-    return () => {
-      observer?.disconnect();
-      window.removeEventListener("resize", measure);
-      window.removeEventListener("scroll", measure, true);
-    };
-  }, [element, measure]);
-  return placement;
-}
+import type { Box } from "../popover-placement";
 
 /**
  * The element menu: what the runner can do with the element the outline is on.
@@ -56,9 +23,9 @@ function usePlacement(
  * window: they may lie over the mirror, the toolbar or the panel's edge, and they are never cut
  * off by the stage that the element they are about happens to live in.
  */
-function ElementMenu({ label, offers, commands, matches, width, anchor }: {
+function ElementMenu({ label, offers, commands, matches, element, width, anchor }: {
   label: string; offers: readonly StepOffer[]; commands: readonly StepOffer[];
-  matches: number; width: number; anchor: () => Box | undefined;
+  matches: number; element?: StepTarget; width: number; anchor: () => Box | undefined;
 }) {
   const [asking, setAsking] = useState<StepOffer | undefined>();
   const [open, setOpen] = useState(false);
@@ -105,7 +72,7 @@ function ElementMenu({ label, offers, commands, matches, width, anchor }: {
             as a broken menu. The step list flags the same thing once the step is recorded. */}
         {offers.length === 1 && offers[0]?.kind === "tap" && offers[0].source.startsWith("screen.tapAt")
           && <p className="px-2.5 pt-1 text-[11px] text-amber-600 dark:text-amber-500">
-            Nothing here can be named, so only the coordinate can be acted on.
+            Nothing here can be named. The coordinate can still be tapped or swiped, or describe the step under Agentic.
           </p>}
         {offers.map(offerRow)}
         <div className="-mx-1.5 border-t" />
@@ -127,6 +94,9 @@ function ElementMenu({ label, offers, commands, matches, width, anchor }: {
           offerRow={offerRow}
           onClose={() => setOpen(false)}
         />}
+        {/* The one branch that needs no selector, which is why it is here even when the element
+            menu has nothing but a coordinate to offer. */}
+        <AgenticBranch suggestion={agentActSuggestion(element)} onRecord={step => testRecorder.recordAgentStep(step)} />
       </>}
   </div>, document.body);
 }
@@ -247,6 +217,7 @@ export function TestRecorderOverlay({ store }: { store: ScreenAnnotationsStore }
       offers={menu.offers}
       commands={menu.commands}
       matches={menu.matches}
+      element={menu.target}
       // Wide enough for a row to read as a sentence, narrow enough to leave the mirror visible.
       width={Math.max(180, Math.min(280, window.innerWidth - MARGIN * 2))}
       anchor={menuAnchor}

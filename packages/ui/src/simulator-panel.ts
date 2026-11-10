@@ -296,8 +296,18 @@ export function createSimulatorPanel(
     // Taking the step the menu recorded. `tap` and `type` are the panel's own input messages, so
     // the app advances exactly as a user's own tap would, and the next step is resolved against
     // the screen the test will be on.
-    perform: (action: { kind: "tap"; point: { x: number; y: number } } | { kind: "type"; text: string }) => {
+    perform: (action:
+      | { kind: "tap"; point: { x: number; y: number } }
+      | { kind: "type"; text: string }
+      | { kind: "swipe"; from: { x: number; y: number }; to: { x: number; y: number } }) => {
       if (action.kind === "tap") send({ type: "tap", x: action.point.x, y: action.point.y, ...points });
+      // The stream carries a swipe of its own, so a recorded `swipe` is taken as the gesture it
+      // emits rather than merely written down. `duration` is in seconds here, and a third of one
+      // is a deliberate drag: fast enough not to be read as a long press, slow enough that the
+      // app sees the intermediate touches rather than a jump.
+      else if (action.kind === "swipe") {
+        send({ type: "swipe", startX: action.from.x, startY: action.from.y, endX: action.to.x, endY: action.to.y, ...points, duration: 0.3 });
+      }
       // The runner's `fill` replaces the field's contents; typing on the mirror appends to them, and
       // there is no input message that clears a field. So a `fill` recorded into a field that
       // already has text leaves the app showing something the test will not produce — the step is
