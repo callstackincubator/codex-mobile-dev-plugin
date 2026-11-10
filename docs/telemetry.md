@@ -540,7 +540,12 @@ content scrubbing are preserved; no note text or selection evidence enters telem
 The Testing panel's recorder measures `ui.testing.tree_read`, the read that resolves a tap into a
 selector, and counts `ui.testing.record_start`/`record_stop`, `ui.testing.step_tap`,
 `ui.testing.step_assert`, `ui.testing.step_unresolved`, `ui.testing.hover_walk`,
-`ui.testing.menu_open`. `ui.testing.step_assert` now covers every assertion the menu can record, not only `toBeVisible`
+`ui.testing.menu_open`. Editing a recorded step counts `ui.testing.step_duplicate`,
+`ui.testing.step_reorder`, and `ui.testing.step_recommand_action`/`ui.testing.step_recommand_assert`
+when a step is pointed at another command — the same action/assertion split the recording counters
+use, so a flow's shape stays readable whether a step was recorded or edited into place. They are
+counts of an edit, carrying no selector, element name, command text or position.
+`ui.testing.step_assert` now covers every assertion the menu can record, not only `toBeVisible`
 and `toHaveText`; it is the same boundary — a step recorded that reads the screen rather than
 acting on it — so counts stay comparable across the release. Selectors, element names and the
 recorded source are not sent; these are counts only. **The timing's

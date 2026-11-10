@@ -1,10 +1,12 @@
 import { useRef, useState, useSyncExternalStore } from "react";
-import { CheckIcon, ChevronDownIcon, CircleIcon, CircleXIcon, FlaskConicalIcon, FolderOpenIcon, LoaderCircleIcon, PlayIcon, SaveIcon, SquareIcon, Trash2Icon, XIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, ChevronLeftIcon, CircleIcon, CircleXIcon, CopyIcon, FlaskConicalIcon, FolderOpenIcon, GripVerticalIcon, LoaderCircleIcon, MoreHorizontalIcon, PlayIcon, SaveIcon, SquareIcon, Trash2Icon, XIcon } from "lucide-react";
 import type { DeviceAppsStore } from "../device-apps.ts";
 import type { TestingPanel } from "../testing-panel.ts";
 import { testRecorder } from "../test-recorder.ts";
 import type { TestRunView } from "../test-recorder.ts";
-import { testFileSlug } from "@mobile-dev/shared/test-recording.ts";
+import { allStepOffers, testFileSlug } from "@mobile-dev/shared/test-recording.ts";
+import type { RecordedStep } from "@mobile-dev/shared/test-recording.ts";
+import { MenuRow, OFFER_LABEL, OfferIcon, StepCommandList } from "./step-commands.tsx";
 import { CODE_TOKEN_CLASS, changedLines, highlightCode } from "../code-highlight.ts";
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert.tsx";
 import { Button } from "./ui/button.tsx";
@@ -214,16 +216,7 @@ function TestingRecorder({ panel, recordable, udid }: { panel: TestingPanel; rec
         {state.steps.length > 0 && <span className="text-xs text-muted-foreground">{state.steps.length}</span>}
         <Button type="button" size="sm" variant="ghost" className="ml-auto" data-testing-clear disabled={state.steps.length === 0} onClick={() => testRecorder.clearSteps()}><Trash2Icon />Clear</Button>
       </div>
-      <ol className="flex flex-col gap-1 text-xs">
-        {state.steps.map((step, index) => <li key={step.id} className="flex items-center gap-2 rounded-md border px-2 py-1.5" data-testing-step={step.id}>
-          <span className="w-4 shrink-0 text-right text-muted-foreground">{index + 1}</span>
-          <span className="min-w-0 flex-1 truncate" title={step.label}>{step.label}</span>
-          {step.ambiguous && <span className="shrink-0 text-amber-600" title="This matched more than one element. Add a testID to pin it.">ambiguous</span>}
-          {step.selector.kind === "point" && <span className="shrink-0 text-amber-600" title="Nothing resolved here, so the test taps a coordinate.">coordinates</span>}
-          <Button type="button" variant="ghost" size="icon-xs" aria-label={`Remove step ${index + 1}`} onClick={() => testRecorder.removeStep(step.id)}><XIcon /></Button>
-        </li>)}
-        {state.steps.length === 0 && <li className="rounded-lg border border-dashed px-3 py-5 text-center text-muted-foreground">No steps yet. Right-click an element in the mirror to add one.</li>}
-      </ol>
+      <StepList steps={state.steps} />
     </div>
 
     {panelState.overwritePath && <Alert>
@@ -255,4 +248,90 @@ function TestingRecorder({ panel, recordable, udid }: { panel: TestingPanel; rec
       <TestPreview source={testRecorder.source} run={state.run} />
     </div>
   </div>;
+}
+
+/**
+ * The recorded steps, in the order the file emits them.
+ *
+ * Every row is editable in place: a step can be dragged to another position, copied, or pointed at
+ * a different command while keeping the element it named. All three go through the recorder, so
+ * the numbering, the ambiguous badge and the preview are recomputed from one list rather than kept
+ * in step by hand.
+ */
+function StepList({ steps }: { steps: readonly RecordedStep[] }) {
+  // The row being dragged and the gap it would land in. Held here rather than in the recorder:
+  // a drag that is abandoned must leave the recorded flow exactly as it was.
+  const [dragging, setDragging] = useState<string | undefined>();
+  const [over, setOver] = useState<number | undefined>();
+  const drop = (index: number) => {
+    if (dragging) testRecorder.moveStep(dragging, index);
+    setDragging(undefined); setOver(undefined);
+  };
+  return <ol className="flex flex-col gap-1 text-xs">
+    {steps.map((step, index) => <li
+      key={step.id}
+      draggable
+      data-testing-step={step.id}
+      className={`group/step flex items-center gap-2 rounded-md border px-2 py-1.5 ${dragging === step.id ? "opacity-50" : ""} ${over === index && dragging !== step.id ? "border-primary" : ""}`}
+      onDragStart={event => { setDragging(step.id); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", step.id); }}
+      onDragEnd={() => { setDragging(undefined); setOver(undefined); }}
+      onDragOver={event => { if (!dragging) return; event.preventDefault(); event.dataTransfer.dropEffect = "move"; setOver(index); }}
+      onDrop={event => { event.preventDefault(); drop(index); }}
+    >
+      <GripVerticalIcon aria-hidden className="size-3.5 shrink-0 cursor-grab text-muted-foreground opacity-40 group-hover/step:opacity-100" />
+      <span className="w-4 shrink-0 text-right text-muted-foreground">{index + 1}</span>
+      <span className="min-w-0 flex-1 truncate" title={step.label}>{step.label}</span>
+      {step.ambiguous && <span className="shrink-0 text-amber-600" title="This matched more than one element. Add a testID to pin it.">ambiguous</span>}
+      {step.selector.kind === "point" && <span className="shrink-0 text-amber-600" title="Nothing resolved here, so the test taps a coordinate.">coordinates</span>}
+      <StepMenu step={step} index={index} />
+      <Button type="button" variant="ghost" size="icon-xs" aria-label={`Remove step ${index + 1}`} onClick={() => testRecorder.removeStep(step.id)}><XIcon /></Button>
+    </li>)}
+    {steps.length === 0 && <li className="rounded-lg border border-dashed px-3 py-5 text-center text-muted-foreground">No steps yet. Right-click an element in the mirror to add one.</li>}
+  </ol>;
+}
+
+/**
+ * One step's own menu, revealed by pointing at its row.
+ *
+ * "Change command" is the mirror's "All commands" list, offered against the element this step
+ * already named: the commands are derived from what that element carried when it was recorded
+ * (see `RecordedStep.target`), so a text field still offers `fill` and an element with text still
+ * offers the text matchers, long after the screen has moved on.
+ */
+function StepMenu({ step, index }: { step: RecordedStep; index: number }) {
+  const [open, setOpen] = useState(false);
+  const [commands, setCommands] = useState(false);
+  const offers = allStepOffers(step.selector, step.target);
+  const close = () => { setOpen(false); setCommands(false); };
+  return <Popover open={open} onOpenChange={value => { setOpen(value); if (!value) setCommands(false); }}>
+    <PopoverTrigger asChild>
+      <Button type="button" variant="ghost" size="icon-xs" data-testing-step-menu={step.id}
+        aria-label={`Edit step ${index + 1}`}
+        // Revealed by the hover, but never hidden from the keyboard: `focus-visible` keeps it
+        // reachable by tabbing, where opacity alone would make it a control nobody can find.
+        className={`shrink-0 opacity-0 transition-opacity group-hover/step:opacity-100 focus-visible:opacity-100 ${open ? "opacity-100" : ""}`}
+        onMouseEnter={() => setOpen(true)}><MoreHorizontalIcon /></Button>
+    </PopoverTrigger>
+    <PopoverContent align="end" className="flex w-60 max-h-(--radix-popover-content-available-height) flex-col gap-1 overflow-y-auto p-1.5 [&_button:not(:disabled)]:cursor-pointer"
+      role="menu" aria-label={`Step ${index + 1}`} onMouseLeave={close}>
+      {commands
+        // The list replaces the menu rather than hanging beside it — the row it opens from is only
+        // as wide as a step — so it carries its own way back; without one the menu was a dead end
+        // that could only be left by dismissing it and pointing at the row again.
+        ? <>
+          <MenuRow icon={<ChevronLeftIcon className="size-4 shrink-0 text-muted-foreground" />} attributes={{ "data-testing-step-commands-back": step.id }}
+            title="Back to this step's menu" onClick={() => setCommands(false)}>Back</MenuRow>
+          <div className="-mx-1.5 border-t" />
+          <StepCommandList commands={offers} onChoose={(kind, value) => { close(); testRecorder.changeStepCommand(step.id, kind, value); }} />
+        </>
+        : <>
+          <MenuRow icon={<CopyIcon className="size-4 shrink-0 text-muted-foreground" />} attributes={{ "data-testing-step-duplicate": step.id }}
+            title="Add a copy of this step at the end of the list"
+            onClick={() => { close(); testRecorder.duplicateStep(step.id); }}>Duplicate</MenuRow>
+          <MenuRow chevron icon={<OfferIcon kind={step.kind} />} attributes={{ "data-testing-step-commands": step.id }}
+            title={`Currently ${OFFER_LABEL[step.kind]}`}
+            onOpen={() => setCommands(true)} onClick={() => setCommands(true)}>Change command</MenuRow>
+        </>}
+    </PopoverContent>
+  </Popover>;
 }

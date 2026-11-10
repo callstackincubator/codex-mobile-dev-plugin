@@ -1,64 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
-import { ArrowDownToLineIcon, ChevronRightIcon, EyeIcon, EyeOffIcon, ListIcon, MousePointerClickIcon, TextCursorInputIcon, TypeIcon } from "lucide-react";
+import { ListIcon } from "lucide-react";
 import type { ScreenAnnotationsStore } from "../screen-annotations";
 import { testRecorder } from "../test-recorder";
-import { stepIsAssertion } from "@mobile-dev/shared/test-recording.ts";
-import type { RecordedStepKind, StepOffer } from "@mobile-dev/shared/test-recording.ts";
+import type { StepOffer } from "@mobile-dev/shared/test-recording.ts";
+import { MenuRow, OFFER_LABEL, OfferIcon, OfferValueForm, StepCommandList } from "./step-commands";
 import { MARGIN, placeBelow, placeBeside } from "../popover-placement";
 import type { Box, Placement } from "../popover-placement";
-import { Button } from "./ui/button";
-
-const OFFER_LABEL: Record<RecordedStepKind, string> = {
-  tap: "Tap",
-  doubleTap: "Double tap",
-  longPress: "Long press",
-  fill: "Enter text",
-  scrollUntilVisible: "Scroll into view",
-  assertVisible: "Check visibility",
-  assertNotVisible: "Check it is gone",
-  assertText: "Check text is",
-  assertContainsText: "Check text contains",
-  assertValue: "Check field value",
-  assertEnabled: "Check it is enabled",
-  assertDisabled: "Check it is disabled",
-  assertSelected: "Check it is selected",
-};
-
-function OfferIcon({ kind }: { kind: RecordedStepKind }) {
-  const Icon = kind === "fill" ? TextCursorInputIcon
-    : kind === "assertText" || kind === "assertContainsText" || kind === "assertValue" ? TypeIcon
-      : kind === "assertNotVisible" ? EyeOffIcon
-        : stepIsAssertion(kind) ? EyeIcon
-          : kind === "scrollUntilVisible" ? ArrowDownToLineIcon
-            : MousePointerClickIcon;
-  return <Icon className="size-4 shrink-0 text-muted-foreground transition-colors group-hover/offer:text-accent-foreground group-focus-visible/offer:text-accent-foreground" />;
-}
-
-/** One row of the menu: an action to record, or the row a submenu hangs off. */
-function MenuRow({ children, title, onClick, onOpen, chevron, icon, attributes }: {
-  children: React.ReactNode; title?: string; onClick: () => void; onOpen?: () => void;
-  chevron?: boolean; icon?: React.ReactNode; attributes?: Record<string, string>;
-}) {
-  return <button
-    type="button" role="menuitem" title={title} {...attributes}
-    className="group/offer flex min-w-0 items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground focus-visible:outline-none"
-    onClick={onClick}
-    // A submenu opens by pointing at its row, as a menu's submenu does; the click and the keyboard
-    // focus open it too, so it is not reachable by hover alone.
-    onMouseEnter={onOpen}
-    onFocus={onOpen}
-  >
-    {icon}
-    <span className="min-w-0 flex-1 truncate font-medium">{children}</span>
-    {chevron && <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground" />}
-  </button>;
-}
-
-/** The heading over a group of rows, e.g. the element a selector names, or `Assertions`. */
-function MenuGroup({ children }: { children: React.ReactNode }) {
-  return <p className="px-2.5 pb-0.5 pt-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{children}</p>;
-}
 
 /** The window every popover here is fitted into. See `popover-placement`. */
 const view = () => ({ width: window.innerWidth, height: window.innerHeight });
@@ -114,11 +62,9 @@ function ElementMenu({ label, offers, commands, matches, width, anchor }: {
 }) {
   const [asking, setAsking] = useState<StepOffer | undefined>();
   const [open, setOpen] = useState(false);
-  const input = useRef<HTMLInputElement>(null);
   const menu = useRef<HTMLDivElement>(null);
   const row = useRef<HTMLDivElement>(null);
   const target = label.replace(/^Tap /, "");
-  useEffect(() => { if (asking) input.current?.focus(); }, [asking]);
   const placement = usePlacement(menu, () => {
     const rect = anchor();
     return rect && placeBelow(rect, { width, height: menu.current?.offsetHeight ?? 0 }, view());
@@ -126,11 +72,6 @@ function ElementMenu({ label, offers, commands, matches, width, anchor }: {
   const choose = (offer: StepOffer) => {
     if (offer.needsValue) { setAsking(offer); return; }
     void testRecorder.chooseOffer(offer.kind);
-  };
-  const submit = () => {
-    if (!asking) return;
-    void testRecorder.chooseOffer(asking.kind, input.current?.value ?? "");
-    setAsking(undefined);
   };
   const offerRow = (offer: StepOffer) => <MenuRow
     key={`${offer.kind}:${offer.source}`}
@@ -157,19 +98,8 @@ function ElementMenu({ label, offers, commands, matches, width, anchor }: {
     </div>
     <div className="-mx-1.5 border-t" />
     {asking
-      ? <form className="flex flex-col gap-1.5" onSubmit={event => { event.preventDefault(); submit(); }}>
-        <div className="flex items-center gap-2 px-2 py-1 text-sm font-medium">
-          <OfferIcon kind={asking.kind} />
-          <span>{OFFER_LABEL[asking.kind]}</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <input ref={input} type="text" defaultValue={asking.suggestedValue ?? ""} aria-label={asking.kind === "fill" ? "Text to enter" : "Text to expect"}
-            placeholder={asking.kind === "fill" ? "Text to enter" : "Text to expect"}
-            className="min-w-0 flex-1 rounded-lg border bg-muted/40 px-2.5 py-1.5 text-sm"
-            onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); setAsking(undefined); } }} />
-          <Button type="submit" size="sm" className="shrink-0">Add</Button>
-        </div>
-      </form>
+      ? <OfferValueForm offer={asking} onCancel={() => setAsking(undefined)}
+        onSubmit={value => { setAsking(undefined); void testRecorder.chooseOffer(asking.kind, value); }} />
       : <>
         {/* A coordinate gets the tap and nothing else, and silence about the other three rows reads
             as a broken menu. The step list flags the same thing once the step is recorded. */}
@@ -217,8 +147,6 @@ function CommandMenu({ commands, width, row, offerRow, onClose }: {
   offerRow: (offer: StepOffer) => React.ReactNode; onClose: () => void;
 }) {
   const panel = useRef<HTMLDivElement>(null);
-  const actions = commands.filter(offer => !stepIsAssertion(offer.kind));
-  const assertions = commands.filter(offer => stepIsAssertion(offer.kind));
   const placement = usePlacement(panel, () => {
     const anchor = row.current?.getBoundingClientRect();
     return anchor && placeBeside(anchor, { width, height: panel.current?.offsetHeight ?? 0 }, view());
@@ -245,10 +173,8 @@ function CommandMenu({ commands, width, row, offerRow, onClose }: {
     onPointerDown={event => event.stopPropagation()}
     onContextMenu={event => event.preventDefault()}
   >
-    <MenuGroup>Actions</MenuGroup>
-    {actions.map(offerRow)}
-    {assertions.length > 0 && <MenuGroup>Assertions</MenuGroup>}
-    {assertions.map(offerRow)}
+    {/* The rows are the element menu's own, so a command reads and behaves the same in both. */}
+    <StepCommandList commands={commands} onChoose={(kind, value) => void testRecorder.chooseOffer(kind, value)} renderRow={offer => offerRow(offer)} />
   </div>, document.body);
 }
 

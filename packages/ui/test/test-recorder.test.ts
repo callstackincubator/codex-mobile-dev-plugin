@@ -482,3 +482,55 @@ test("the full command list is offered beside the short one, and records what it
   // path has one tap in it, so the gesture is sent as two.
   assert.deepEqual(done, [{ kind: "tap", point: { x: 50, y: 820 } }, { kind: "tap", point: { x: 50, y: 820 } }]);
 });
+
+test("a step can be duplicated, re-pointed at another command, and dragged into place", async () => {
+  const recorder = new TestRecorder();
+  const field: ScreenComponent = {
+    name: "Search", label: "Search", role: "textbox", value: "hi", depth: 1, source: "accessibility",
+    nodeId: "search", bounds: { x: 0, y: 100, width: 100, height: 40 },
+  };
+  recorder.attach(UDID, reader([tab("Explore", 800), field], { count: 0 }));
+  recorder.start(UDID);
+  await pick(recorder, { x: 50, y: 820 });
+  await pick(recorder, { x: 50, y: 120 });
+
+  const [explore, search] = recorder.getSnapshot().steps;
+  // What the element carried is kept with the step, so its own menu can offer the same commands
+  // the mirror's did long after that screen has gone.
+  assert.equal(search.target?.role, "textbox");
+  assert.equal(search.target?.value, "hi");
+
+  recorder.duplicateStep(explore.id);
+  let steps = recorder.getSnapshot().steps;
+  assert.equal(steps.length, 3);
+  assert.notEqual(steps[2].id, explore.id, "a copy is its own step, not the same one twice");
+  assert.deepEqual(steps[2].selector, explore.selector);
+
+  // The command changes; the element it named does not.
+  recorder.changeStepCommand(steps[2].id, "assertNotVisible");
+  steps = recorder.getSnapshot().steps;
+  assert.equal(steps[2].kind, "assertNotVisible");
+  assert.equal(steps[2].label, 'Expect not visible "Explore" (button)');
+  assert.deepEqual(steps[2].selector, explore.selector);
+  assert.match(recorder.source, /await expect\(screen\.getByRole\("button", "Explore"\)\)\.not\.toBeVisible\(\);/);
+
+  // A kind that carries text takes it; swapping back drops it rather than leaving it to emit.
+  recorder.changeStepCommand(steps[2].id, "assertText", "Explore");
+  assert.equal(recorder.getSnapshot().steps[2].value, "Explore");
+  recorder.changeStepCommand(steps[2].id, "assertVisible");
+  assert.equal(recorder.getSnapshot().steps[2].value, undefined);
+
+  // Reordering is the emitted order, so the file follows the list.
+  recorder.moveStep(steps[2].id, 0);
+  assert.deepEqual(recorder.getSnapshot().steps.map(step => step.id), [steps[2].id, explore.id, search.id]);
+  const lines = recorder.source.split("\n").filter(line => line.includes("await screen") || line.includes("await expect"));
+  assert.match(lines[0], /toBeVisible/);
+  assert.match(lines[1], /\.tap\(\)/);
+
+  // Everything else about the list keeps working on top of the edits.
+  recorder.removeStep(explore.id);
+  assert.equal(recorder.getSnapshot().steps.length, 2);
+  recorder.clearSteps();
+  assert.equal(recorder.getSnapshot().steps.length, 0);
+  recorder.detach(UDID);
+});

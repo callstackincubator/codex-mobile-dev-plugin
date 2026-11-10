@@ -1,4 +1,4 @@
-import { allStepOffers, anchorSelector, emitE2eTestLines, hitLadder, resolveSelector, stepEffect, stepIsAssertion, stepLabel, stepOffers, treeHealth } from "@mobile-dev/shared/test-recording.ts";
+import { allStepOffers, anchorSelector, emitE2eTestLines, hitLadder, resolveSelector, stepEffect, stepIsAssertion, stepLabel, stepNeedsValue, stepOffers, treeHealth } from "@mobile-dev/shared/test-recording.ts";
 import type { RecordedStep, RecordedStepKind, StepOffer } from "@mobile-dev/shared/test-recording.ts";
 import type { ScreenBounds, ScreenComponent, ScreenPoint, ScreenSize } from "@mobile-dev/shared/screen-annotations.ts";
 import { countUiEvent, recordUiTiming } from "./telemetry.ts";
@@ -332,6 +332,65 @@ export class TestRecorder {
   setTitle(title: string) { this.update({ title: title.trim() || DEFAULT_TITLE }); }
   removeStep(id: string) { this.update({ steps: this.snapshot.steps.filter(step => step.id !== id) }); }
   clearSteps() { this.update({ steps: [] }); }
+
+  /**
+   * Appends a copy of one step at the end of the list.
+   *
+   * At the end rather than beside the original: a recorded flow is read top to bottom, and the
+   * step being copied is almost always one the user wants to repeat *after* what follows it —
+   * tapping the same disclosure again to collapse it, asserting the same row twice. Dragging it
+   * into place is the other half of this, and it is cheaper than deciding for them.
+   */
+  duplicateStep(id: string) {
+    const step = this.snapshot.steps.find(entry => entry.id === id);
+    if (!step) return;
+    this.update({ steps: [...this.snapshot.steps, { ...step, id: crypto.randomUUID() }] });
+    countUiEvent("ui.testing.step_duplicate");
+  }
+
+  /**
+   * Swaps what a step does while keeping the element it named.
+   *
+   * The selector is the expensive half of a step — it was resolved against a screen that has since
+   * moved on — so changing the command must not cost the user that screen. Nothing is sent to the
+   * device: the flow has already run past this point, and re-taking a step out of order would
+   * leave the app somewhere the rest of the list does not describe.
+   */
+  changeStepCommand(id: string, kind: RecordedStepKind, value?: string) {
+    const steps = this.snapshot.steps.map(step => {
+      if (step.id !== id) return step;
+      // A kind that carries no text drops the old one rather than keeping a value nothing emits.
+      const next = stepNeedsValue(kind) ? value ?? step.value ?? "" : undefined;
+      const { value: _dropped, ...rest } = step;
+      return {
+        ...rest,
+        kind,
+        label: stepLabel(kind, step.selector, next),
+        ...(next === undefined ? {} : { value: next }),
+      };
+    });
+    if (steps.every((step, index) => step === this.snapshot.steps[index])) return;
+    this.update({ steps });
+    countUiEvent(stepIsAssertion(kind) ? "ui.testing.step_recommand_assert" : "ui.testing.step_recommand_action");
+  }
+
+  /**
+   * Moves a step to another position in the list, which is the order the file is emitted in.
+   *
+   * Everything derived from position — the numbering, the preview, the lines a run marks — is
+   * recomputed from `steps`, so the move is the whole change.
+   */
+  moveStep(id: string, toIndex: number) {
+    const from = this.snapshot.steps.findIndex(step => step.id === id);
+    if (from < 0) return;
+    const to = Math.max(0, Math.min(this.snapshot.steps.length - 1, toIndex));
+    if (to === from) return;
+    const steps = [...this.snapshot.steps];
+    const [moved] = steps.splice(from, 1);
+    steps.splice(to, 0, moved!);
+    this.update({ steps });
+    countUiEvent("ui.testing.step_reorder");
+  }
   dismissError() { this.update({ error: "" }); }
 
   /**
@@ -374,7 +433,8 @@ export class TestRecorder {
   private addStep(components: ScreenComponent[], point: ScreenPoint, kind: RecordedStepKind, value?: string): boolean {
     const screen = this.reader?.screen();
     // The outline the user is looking at is the step they mean, walked-out level and all.
-    const { selector, ambiguous } = resolveSelector(components, point, screen, this.hoverLevel);
+    const { selector, ambiguous, component: named } = resolveSelector(components, point, screen, this.hoverLevel);
+    const target = named && { ...(named.role === undefined ? {} : { role: named.role }), ...(named.placeholder === undefined ? {} : { placeholder: named.placeholder }), ...(named.label === undefined ? {} : { label: named.label }), ...(named.text === undefined ? {} : { text: named.text }), ...(named.value === undefined ? {} : { value: named.value }) };
     if (selector.kind === "point" && kind !== "tap") {
       // A coordinate is not a thing to be visible, to hold text or to be scrolled to, so the step
       // would emit nothing. Say so instead of adding a step whose whole body is two comments.
@@ -391,6 +451,8 @@ export class TestRecorder {
       ...(ambiguous ? { ambiguous } : {}),
       // Only a coordinate tap needs one: every locator action waits for its own element.
       ...(selector.kind === "point" ? { anchor: anchorSelector(components, point) } : {}),
+      // Kept so the step list can offer the same commands later; see `RecordedStep.target`.
+      ...(target ? { target } : {}),
     };
     // Where the runner's own locator action would land, for `chooseOffer` to act on.
     const owner = resolveSelector(components, point, screen, this.hoverLevel).component;

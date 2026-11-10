@@ -74,7 +74,22 @@ export type RecordedStep = {
    * coordinate is always actionable, so without this the tap fires before the screen exists.
    */
   anchor?: RecordedSelector;
+  /**
+   * What the element carried when the step was recorded, so the step list can offer the same
+   * commands the mirror's menu did without the tree it resolved from. The screen the step was
+   * recorded on is long gone by the time a user re-opens that list, and re-reading the device
+   * would answer about a different screen; the fields a command row is gated on are few and they
+   * belong to the step, so they are kept with it.
+   */
+  target?: StepTarget;
 };
+
+/**
+ * The part of an element a command row is gated on: only a text field can be filled or have a
+ * value, and only an element with text of its own can be compared against text. It is a subset of
+ * `ScreenComponent` so a live component can be passed straight through.
+ */
+export type StepTarget = Pick<ScreenComponent, "role" | "placeholder" | "label" | "text" | "value">;
 
 /**
  * The roles `screen.getByRole` accepts, as `e2e`'s own `Role` union declares them.
@@ -505,7 +520,7 @@ export function stepEffect(kind: RecordedStepKind): StepEffect {
  * A coordinate gets the tap alone. There is no element behind it to be visible, to hold text or to
  * be scrolled to, which is the same refusal the recorder makes for a point assertion.
  */
-export function stepOffers(selector: RecordedSelector, component?: ScreenComponent): StepOffer[] {
+export function stepOffers(selector: RecordedSelector, component?: StepTarget): StepOffer[] {
   // A narrowed selector supports whatever its inner one does: the narrowing is on the locator, and
   // every action and matcher chains after it.
   const offer = (kind: RecordedStepKind, value?: string, needsValue?: boolean): StepOffer => ({
@@ -541,7 +556,7 @@ export function stepOffers(selector: RecordedSelector, component?: ScreenCompone
  * A coordinate still gets the tap alone: there is no element behind it to be visible, to hold
  * text, to be enabled or to be scrolled to.
  */
-export function allStepOffers(selector: RecordedSelector, component?: ScreenComponent): StepOffer[] {
+export function allStepOffers(selector: RecordedSelector, component?: StepTarget): StepOffer[] {
   const offer = (kind: RecordedStepKind, value?: string): StepOffer => ({
     kind,
     source: stepExpression({ kind, selector, ...(value === undefined ? {} : { value }) }),
