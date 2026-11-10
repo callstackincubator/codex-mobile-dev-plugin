@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { ScreenComponent } from "../src/screen-annotations.ts";
-import { anchorSelector, emitE2eTest, emitE2eTestLines, treeHealth, resolveSelector, selectorSource, stepLabel, stepOffers, testFileSlug } from "../src/test-recording.ts";
+import { allStepOffers, anchorSelector, emitE2eTest, emitE2eTestLines, treeHealth, resolveSelector, selectorSource, stepLabel, stepOffers, testFileSlug } from "../src/test-recording.ts";
 
 /**
  * One element as the recorder reads it: the e2e runner's own projected node, where `role` is the
@@ -403,6 +403,35 @@ test("a text field is offered typing, and a coordinate is offered nothing but th
   assert.equal(fill?.suggestedValue, "Paris");
   // A coordinate has no element to be visible, to hold text or to be scrolled to.
   assert.deepEqual(stepOffers({ kind: "point", point: { x: 10, y: 20 } }).map(row => row.kind), ["tap"]);
+});
+
+test("the full command list is the rest of the runner's surface, gated on what the element carries", () => {
+  const button = component({ bounds: TAB, role: "button", label: "Go To Explore List", text: "Go To Explore List" });
+  const rows = allStepOffers({ kind: "text", text: "Go To Explore List" }, button);
+  // The short list stays short; this is where a step the runner has but the four rows do not — an
+  // element that should be gone, a disabled button — is reachable without leaving the panel.
+  assert.deepEqual(rows.map(row => row.kind), [
+    "tap", "doubleTap", "longPress", "scrollUntilVisible",
+    "assertVisible", "assertNotVisible", "assertText", "assertContainsText",
+    "assertEnabled", "assertDisabled", "assertSelected",
+  ]);
+  assert.equal(rows.find(row => row.kind === "assertNotVisible")?.source,
+    'expect(screen.getByText("Go To Explore List")).not.toBeVisible()');
+  assert.equal(rows.find(row => row.kind === "doubleTap")?.source, 'screen.getByText("Go To Explore List").doubleTap()');
+  assert.equal(rows.find(row => row.kind === "assertText")?.suggestedValue, "Go To Explore List",
+    "a text comparison starts from the text the element actually has");
+  // A button has no value to fill or to compare against, and the checked matchers are left out
+  // because whether a device reports a `checked` state at all depends on the platform.
+  assert.equal(rows.some(row => row.kind === "fill" || row.kind === "assertValue"), false);
+  assert.equal(rows.some(row => String(row.kind).includes("Checked")), false);
+
+  const field = component({ bounds: TAB, role: "textbox", placeholder: "Search transactions", value: "Paris" });
+  const fieldRows = allStepOffers({ kind: "placeholder", placeholder: "Search transactions" }, field);
+  assert.equal(fieldRows.find(row => row.kind === "assertValue")?.source,
+    'expect(screen.getByPlaceholder("Search transactions")).toHaveValue("Paris")');
+  assert.equal(fieldRows.find(row => row.kind === "assertValue")?.needsValue, true);
+  // A coordinate names no element, so there is still nothing but the tap to do with it.
+  assert.deepEqual(allStepOffers({ kind: "point", point: { x: 10, y: 20 } }).map(row => row.kind), ["tap"]);
 });
 
 test("new step kinds read back to the user with the value they carry", () => {

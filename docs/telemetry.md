@@ -539,7 +539,11 @@ content scrubbing are preserved; no note text or selection evidence enters telem
 
 The Testing panel's recorder measures `ui.testing.tree_read`, the read that resolves a tap into a
 selector, and counts `ui.testing.record_start`/`record_stop`, `ui.testing.step_tap`,
-`ui.testing.step_assert`, `ui.testing.step_unresolved` and `ui.testing.hover_walk`. **The timing's
+`ui.testing.step_assert`, `ui.testing.step_unresolved`, `ui.testing.hover_walk`,
+`ui.testing.menu_open`. `ui.testing.step_assert` now covers every assertion the menu can record, not only `toBeVisible`
+and `toHaveText`; it is the same boundary — a step recorded that reads the screen rather than
+acting on it — so counts stay comparable across the release. Selectors, element names and the
+recorded source are not sent; these are counts only. **The timing's
 meaning changed when the recorder moved to the test runner's own element tree**: it now measures an
 agent-device snapshot of the device projected by the project's `@e2e-dev/mobile` (around a tenth of
 a second against a booted iPhone 17 Pro), where it previously measured a Baguette `describe-ui`

@@ -1,25 +1,98 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { ArrowDownToLineIcon, EyeIcon, MousePointerClickIcon, TextCursorInputIcon } from "lucide-react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
+import { ArrowDownToLineIcon, ChevronRightIcon, EyeIcon, EyeOffIcon, ListIcon, MousePointerClickIcon, TextCursorInputIcon, TypeIcon } from "lucide-react";
 import type { ScreenAnnotationsStore } from "../screen-annotations";
 import { testRecorder } from "../test-recorder";
+import { stepIsAssertion } from "@mobile-dev/shared/test-recording.ts";
 import type { RecordedStepKind, StepOffer } from "@mobile-dev/shared/test-recording.ts";
+import { MARGIN, placeBelow, placeBeside } from "../popover-placement";
+import type { Box, Placement } from "../popover-placement";
 import { Button } from "./ui/button";
 
 const OFFER_LABEL: Record<RecordedStepKind, string> = {
   tap: "Tap",
+  doubleTap: "Double tap",
   longPress: "Long press",
   fill: "Enter text",
   scrollUntilVisible: "Scroll into view",
   assertVisible: "Check visibility",
-  assertText: "Check text",
+  assertNotVisible: "Check it is gone",
+  assertText: "Check text is",
+  assertContainsText: "Check text contains",
+  assertValue: "Check field value",
+  assertEnabled: "Check it is enabled",
+  assertDisabled: "Check it is disabled",
+  assertSelected: "Check it is selected",
 };
 
 function OfferIcon({ kind }: { kind: RecordedStepKind }) {
-  const Icon = kind === "fill" || kind === "assertText" ? TextCursorInputIcon
-    : kind === "assertVisible" ? EyeIcon
-      : kind === "scrollUntilVisible" ? ArrowDownToLineIcon
-        : MousePointerClickIcon;
+  const Icon = kind === "fill" ? TextCursorInputIcon
+    : kind === "assertText" || kind === "assertContainsText" || kind === "assertValue" ? TypeIcon
+      : kind === "assertNotVisible" ? EyeOffIcon
+        : stepIsAssertion(kind) ? EyeIcon
+          : kind === "scrollUntilVisible" ? ArrowDownToLineIcon
+            : MousePointerClickIcon;
   return <Icon className="size-4 shrink-0 text-muted-foreground transition-colors group-hover/offer:text-accent-foreground group-focus-visible/offer:text-accent-foreground" />;
+}
+
+/** One row of the menu: an action to record, or the row a submenu hangs off. */
+function MenuRow({ children, title, onClick, onOpen, chevron, icon, attributes }: {
+  children: React.ReactNode; title?: string; onClick: () => void; onOpen?: () => void;
+  chevron?: boolean; icon?: React.ReactNode; attributes?: Record<string, string>;
+}) {
+  return <button
+    type="button" role="menuitem" title={title} {...attributes}
+    className="group/offer flex min-w-0 items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground focus-visible:outline-none"
+    onClick={onClick}
+    // A submenu opens by pointing at its row, as a menu's submenu does; the click and the keyboard
+    // focus open it too, so it is not reachable by hover alone.
+    onMouseEnter={onOpen}
+    onFocus={onOpen}
+  >
+    {icon}
+    <span className="min-w-0 flex-1 truncate font-medium">{children}</span>
+    {chevron && <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground" />}
+  </button>;
+}
+
+/** The heading over a group of rows, e.g. the element a selector names, or `Assertions`. */
+function MenuGroup({ children }: { children: React.ReactNode }) {
+  return <p className="px-2.5 pb-0.5 pt-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{children}</p>;
+}
+
+/** The window every popover here is fitted into. See `popover-placement`. */
+const view = () => ({ width: window.innerWidth, height: window.innerHeight });
+
+/** Re-fits a popover whenever its own size, its anchor or the window changes. */
+function usePlacement(
+  element: React.RefObject<HTMLElement | null>,
+  place: () => Placement | undefined,
+  deps: unknown[],
+): Placement | undefined {
+  const [placement, setPlacement] = useState<Placement>();
+  const measure = useCallback(() => {
+    const next = place();
+    // The same numbers mean the same position, and writing them again would re-run this effect.
+    setPlacement(current => current && next && current.left === next.left && current.top === next.top
+      && current.maxHeight === next.maxHeight ? current : next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+  useLayoutEffect(() => {
+    measure();
+    const node = element.current;
+    // A row that opens a form, a list that loads: the popover's own height is what decides whether
+    // it still fits, so it is watched rather than measured once.
+    const observer = typeof ResizeObserver === "function" && node ? new ResizeObserver(() => measure()) : undefined;
+    if (node) observer?.observe(node);
+    window.addEventListener("resize", measure);
+    window.addEventListener("scroll", measure, true);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", measure, true);
+    };
+  }, [element, measure]);
+  return placement;
 }
 
 /**
@@ -27,14 +100,29 @@ function OfferIcon({ kind }: { kind: RecordedStepKind }) {
  *
  * The selector is named once, then every row is a plain-language action the `e2e` runner can
  * express for it. The emitted code remains available as a tooltip and appears in the test preview
- * after the action is chosen. The `fill` row needs a value, so it asks for one here instead of
- * recording an empty string literal.
+ * after the action is chosen. A row that needs a value — `fill` types it, the text matchers
+ * compare with it — asks for one here instead of recording an empty string literal.
+ *
+ * The short list is what most steps are. Everything else the runner can express hangs off "All
+ * commands" as a submenu of its own, opened by pointing at the row. Both are portals fitted to the
+ * window: they may lie over the mirror, the toolbar or the panel's edge, and they are never cut
+ * off by the stage that the element they are about happens to live in.
  */
-function ElementMenu({ label, offers, matches, left, top, width }: { label: string; offers: readonly StepOffer[]; matches: number; left: number; top: number; width: number }) {
+function ElementMenu({ label, offers, commands, matches, width, anchor }: {
+  label: string; offers: readonly StepOffer[]; commands: readonly StepOffer[];
+  matches: number; width: number; anchor: () => Box | undefined;
+}) {
   const [asking, setAsking] = useState<StepOffer | undefined>();
+  const [open, setOpen] = useState(false);
   const input = useRef<HTMLInputElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
+  const row = useRef<HTMLDivElement>(null);
   const target = label.replace(/^Tap /, "");
   useEffect(() => { if (asking) input.current?.focus(); }, [asking]);
+  const placement = usePlacement(menu, () => {
+    const rect = anchor();
+    return rect && placeBelow(rect, { width, height: menu.current?.offsetHeight ?? 0 }, view());
+  }, [anchor, width, asking]);
   const choose = (offer: StepOffer) => {
     if (offer.needsValue) { setAsking(offer); return; }
     void testRecorder.chooseOffer(offer.kind);
@@ -44,10 +132,19 @@ function ElementMenu({ label, offers, matches, left, top, width }: { label: stri
     void testRecorder.chooseOffer(asking.kind, input.current?.value ?? "");
     setAsking(undefined);
   };
-  return <div
+  const offerRow = (offer: StepOffer) => <MenuRow
+    key={`${offer.kind}:${offer.source}`}
+    title={offer.source}
+    icon={<OfferIcon kind={offer.kind} />}
+    attributes={{ "data-recorder-offer": offer.kind }}
+    onClick={() => choose(offer)}
+  >{OFFER_LABEL[offer.kind]}</MenuRow>;
+  return createPortal(<div
+    ref={menu}
     data-element="recorder-menu" role="menu" aria-label="Element steps"
-    className="pointer-events-auto absolute z-30 flex flex-col gap-1.5 rounded-xl border bg-popover p-1.5 text-popover-foreground shadow-lg [&_button:not(:disabled)]:cursor-pointer"
-    style={{ left, top, width }}
+    className="pointer-events-auto fixed z-50 flex flex-col gap-1.5 overflow-y-auto rounded-xl border bg-popover p-1.5 text-popover-foreground shadow-lg [&_button:not(:disabled)]:cursor-pointer"
+    // Hidden until it has been measured, so it is never seen at the position it was measured from.
+    style={{ left: placement?.left ?? 0, top: placement?.top ?? 0, width, maxHeight: placement?.maxHeight, visibility: placement ? "visible" : "hidden" }}
     onPointerDown={event => event.stopPropagation()}
     onContextMenu={event => event.preventDefault()}
   >
@@ -66,7 +163,8 @@ function ElementMenu({ label, offers, matches, left, top, width }: { label: stri
           <span>{OFFER_LABEL[asking.kind]}</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <input ref={input} type="text" defaultValue={asking.suggestedValue ?? ""} aria-label="Text to enter" placeholder="Text to enter"
+          <input ref={input} type="text" defaultValue={asking.suggestedValue ?? ""} aria-label={asking.kind === "fill" ? "Text to enter" : "Text to expect"}
+            placeholder={asking.kind === "fill" ? "Text to enter" : "Text to expect"}
             className="min-w-0 flex-1 rounded-lg border bg-muted/40 px-2.5 py-1.5 text-sm"
             onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); setAsking(undefined); } }} />
           <Button type="submit" size="sm" className="shrink-0">Add</Button>
@@ -79,17 +177,79 @@ function ElementMenu({ label, offers, matches, left, top, width }: { label: stri
           && <p className="px-2.5 pt-1 text-[11px] text-amber-600 dark:text-amber-500">
             Nothing here can be named, so only the coordinate can be acted on.
           </p>}
-        {offers.map(offer => <button
-        key={`${offer.kind}:${offer.source}`} type="button" role="menuitem" data-recorder-offer={offer.kind}
-        title={offer.source}
-        className="group/offer flex min-w-0 items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground focus-visible:outline-none"
-        onClick={() => choose(offer)}
-      >
-        <OfferIcon kind={offer.kind} />
-        <span className="min-w-0 flex-1 font-medium">{OFFER_LABEL[offer.kind]}</span>
-      </button>)}
+        {offers.map(offerRow)}
+        <div className="-mx-1.5 border-t" />
+        <div ref={row} className="flex flex-col" onMouseEnter={() => setOpen(true)}>
+          <MenuRow
+            chevron
+            icon={<ListIcon className="size-4 shrink-0 text-muted-foreground transition-colors group-hover/offer:text-accent-foreground" />}
+            attributes={{ "data-recorder-panel": "commands" }}
+            onOpen={() => setOpen(true)}
+            onClick={() => setOpen(true)}
+          >All commands</MenuRow>
+        </div>
+        {open && <CommandMenu
+          commands={commands}
+          // Narrower than the menu it hangs off: its rows are short, and every point it does not
+          // take is a point of the menu behind it that a tight window leaves visible.
+          width={Math.min(width, 220)}
+          row={row}
+          offerRow={offerRow}
+          onClose={() => setOpen(false)}
+        />}
       </>}
-  </div>;
+  </div>, document.body);
+}
+
+/**
+ * The "All commands" submenu: a popover of its own, beside the row it hangs off.
+ *
+ * It always opens to the right, the side its chevron points at — see `placeBeside` for why there
+ * is no flip to the left — and its bottom lines up with its row, growing upward since the row is
+ * the last in the menu. Both are pushed back in if they would take it past an edge of the window.
+ *
+ * It is a portal rather than a child of the menu for two reasons: the menu scrolls once it is
+ * taller than the window, and a scrolling box clips what hangs out of it; and the submenu has to
+ * be free to lie outside the menu, the stage and the panel alike.
+ */
+function CommandMenu({ commands, width, row, offerRow, onClose }: {
+  commands: readonly StepOffer[]; width: number; row: React.RefObject<HTMLDivElement | null>;
+  offerRow: (offer: StepOffer) => React.ReactNode; onClose: () => void;
+}) {
+  const panel = useRef<HTMLDivElement>(null);
+  const actions = commands.filter(offer => !stepIsAssertion(offer.kind));
+  const assertions = commands.filter(offer => stepIsAssertion(offer.kind));
+  const placement = usePlacement(panel, () => {
+    const anchor = row.current?.getBoundingClientRect();
+    return anchor && placeBeside(anchor, { width, height: panel.current?.offsetHeight ?? 0 }, view());
+  }, [row, width, commands]);
+
+  // The row and this panel are one hover target with a gap between them, so leaving either one
+  // only starts a close that entering the other cancels — otherwise crossing the gap closes it.
+  const leaving = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const hold = () => { if (leaving.current) clearTimeout(leaving.current); };
+  const release = useCallback(() => { hold(); leaving.current = setTimeout(onClose, 120); }, [onClose]);
+  useEffect(() => {
+    const node = row.current;
+    node?.addEventListener("mouseleave", release);
+    node?.addEventListener("mouseenter", hold);
+    return () => { hold(); node?.removeEventListener("mouseleave", release); node?.removeEventListener("mouseenter", hold); };
+  }, [row, release]);
+  return createPortal(<div
+    ref={panel}
+    data-element="recorder-commands" role="menu" aria-label="All commands"
+    className="pointer-events-auto fixed z-50 flex flex-col gap-1.5 overflow-y-auto rounded-xl border bg-popover p-1.5 text-popover-foreground shadow-lg [&_button:not(:disabled)]:cursor-pointer"
+    style={{ left: placement?.left ?? 0, top: placement?.top ?? 0, width, maxHeight: placement?.maxHeight, visibility: placement ? "visible" : "hidden" }}
+    onMouseEnter={hold}
+    onMouseLeave={release}
+    onPointerDown={event => event.stopPropagation()}
+    onContextMenu={event => event.preventDefault()}
+  >
+    <MenuGroup>Actions</MenuGroup>
+    {actions.map(offerRow)}
+    {assertions.length > 0 && <MenuGroup>Assertions</MenuGroup>}
+    {assertions.map(offerRow)}
+  </div>, document.body);
 }
 
 /**
@@ -105,40 +265,65 @@ function ElementMenu({ label, offers, matches, left, top, width }: { label: stri
 export function TestRecorderOverlay({ store }: { store: ScreenAnnotationsStore }) {
   const { viewport: v } = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const { hover, menu } = useSyncExternalStore(testRecorder.subscribe, testRecorder.getSnapshot);
+  // State rather than a ref: the menu is a child, and a child's layout effect runs before the
+  // parent's ref is attached, so a ref here is still null the first time the menu measures itself.
+  const [host, setHost] = useState<HTMLDivElement | null>(null);
   // The outline and the menu are drawn from whichever is there. A hover is dropped by anything that
   // invalidates the tree — an input, a frame, a slow read — and the menu, which the user asked for
   // explicitly, carries its own rectangle so it cannot be taken away with one.
   const anchor = hover ?? menu;
+  const bounds = menu?.bounds;
+  const screen = menu?.screen;
+  // The menu is placed against the window, so it needs the element's rectangle in the window's own
+  // coordinates: the stage's position plus the element's position inside it. It is read when the
+  // menu measures itself rather than passed as numbers, so a panel that moves under an open menu —
+  // a resize, a scroll, a pane dragged wider — moves the menu with it.
+  const menuAnchor = useCallback(() => {
+    const stage = host?.getBoundingClientRect();
+    if (!stage || !bounds || !screen || !v.width || !v.height) return undefined;
+    const left = stage.left + v.x + bounds.x / screen.width * v.width;
+    const top = stage.top + v.y + bounds.y / screen.height * v.height;
+    const width = bounds.width / screen.width * v.width;
+    const height = bounds.height / screen.height * v.height;
+    return { left, top, width, height, right: left + width, bottom: top + height };
+  }, [host, bounds, screen, v]);
+  // The canvas closes the menu when it is clicked through, but the menu is no longer inside the
+  // stage and the rest of the panel is not the canvas: a click anywhere else closes it too.
+  useEffect(() => {
+    if (!menu) return;
+    const dismiss = (event: PointerEvent) => {
+      const target = event.target as Element | null;
+      if (target?.closest("[data-element=recorder-menu],[data-element=recorder-commands]")) return;
+      testRecorder.closeMenu();
+    };
+    window.addEventListener("pointerdown", dismiss);
+    return () => window.removeEventListener("pointerdown", dismiss);
+  }, [menu]);
   if (!anchor || !v.width || !v.height) return null;
-  const { bounds, screen } = anchor;
   const rect = {
-    left: v.x + bounds.x / screen.width * v.width,
-    top: v.y + bounds.y / screen.height * v.height,
-    width: bounds.width / screen.width * v.width,
-    height: bounds.height / screen.height * v.height,
+    left: v.x + anchor.bounds.x / anchor.screen.width * v.width,
+    top: v.y + anchor.bounds.y / anchor.screen.height * v.height,
+    width: anchor.bounds.width / anchor.screen.width * v.width,
+    height: anchor.bounds.height / anchor.screen.height * v.height,
   };
   // Above the outline when there is room, inside its top edge when it is against the stage top.
   const above = rect.top > v.y + 22;
-  return <div className="pointer-events-none absolute inset-0 z-20" data-element="recorder-hover">
+  return <div ref={setHost} className="pointer-events-none absolute inset-0 z-20" data-element="recorder-hover">
     <div className={`absolute border-2 border-solid ${anchor.ambiguous ? "border-amber-500 bg-amber-500/10" : "border-blue-500 bg-blue-500/10"}`} style={rect} />
     <span
       className={`absolute max-w-[min(18rem,100%)] truncate rounded px-1.5 py-0.5 text-[10px] font-medium text-white shadow-sm ${anchor.ambiguous ? "bg-amber-600" : "bg-blue-600"}`}
       style={{ left: Math.max(4, Math.min(rect.left, v.stageWidth - 16)), top: Math.max(2, above ? rect.top - 20 : rect.top + 2) }}
     >{anchor.label}{hover && hover.levels > 1 ? ` · ${hover.level + 1}/${hover.levels}` : ""}</span>
     {/* Anchored to the element, not to the pointer, so walking out with the wheel moves the menu
-        with the element it is about. Clamped to the stage so a menu on a bottom tab stays on screen. */}
-    {menu && (() => {
-      // The selector is named once above compact action rows, so the menu can stay out of the way
-      // of the app while still using nearly all of a narrow stage.
-      const width = Math.max(180, Math.min(320, v.stageWidth - 8));
-      return <ElementMenu
-        label={menu.label}
-        offers={menu.offers}
-        matches={menu.matches}
-        width={width}
-        left={Math.max(4, Math.min(rect.left + 8, v.stageWidth - width - 4))}
-        top={Math.max(4, Math.min(rect.top + rect.height + 6, Math.max(4, v.stageHeight - 200)))}
-      />;
-    })()}
+        with the element it is about. */}
+    {menu && <ElementMenu
+      label={menu.label}
+      offers={menu.offers}
+      commands={menu.commands}
+      matches={menu.matches}
+      // Wide enough for a row to read as a sentence, narrow enough to leave the mirror visible.
+      width={Math.max(180, Math.min(280, window.innerWidth - MARGIN * 2))}
+      anchor={menuAnchor}
+    />}
   </div>;
 }

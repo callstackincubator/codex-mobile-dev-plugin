@@ -245,13 +245,43 @@ Selected element
 Tap
 Check visibility
 Scroll into view
+──────────────
+All commands     ›
 ```
 
 **One row per kind of thing to do, not one per variant.** An earlier pass listed `longPress` beside
 `tap` and `toHaveText` beside `toBeVisible`, which made the menu five near-duplicates of one
-selector — harder to read than the three choices it was actually offering. `longPress` and
-`assertText` are still emitted and read back correctly; they are reachable by editing the file the
-panel wrote, not from the menu.
+selector — harder to read than the three choices it was actually offering. The rest of what the
+runner can express hangs off **All commands** as a submenu of its own, grouped into actions and
+assertions, so `longPress`, `doubleTap`, `not.toBeVisible`, `toContainText`, `toHaveValue`,
+`toBeEnabled`, `toBeDisabled` and `toBeSelected` no longer need the user to leave the panel and
+write the line by hand. Only the short list is in front of them by default.
+
+**The submenu is a panel of its own and opens on hover.** Pointing at the row is enough — a click
+and keyboard focus open it too — and it is drawn beside the menu rather than replacing what was in
+it, so the selected element and the short list stay visible behind it. It always opens to the
+right, the side its chevron points at. There is no flip to the left: this panel is often only a
+few hundred points wide, so "flip when it does not fit" meant it opened on the left nearly always
+— a chevron pointing one way and a panel opening the other. When the right has no room it is
+pushed in from the window's edge instead, overlapping the menu it came from, as a cascading menu
+does in a tight window; it is also narrower than that menu, so part of it stays visible behind.
+The row and the panel are one hover target with a gap between them, so leaving either only starts
+a close that entering the other cancels.
+
+**Both popovers are portals fitted to the window, not to the stage.** The stage is a box with the
+device in it and it clips what it contains, so a menu placed inside it was cut off at the bottom of
+a short panel — and the old placement guessed the menu's height rather than measuring it. They are
+rendered into `document.body`, positioned `fixed`, and measured through a `ResizeObserver` so a row
+that opens a form re-fits the menu: below the element when the window has room, above it when it
+does not, pinned to the edge they ran past when neither side fits, and scrolling only once they
+are taller than the window itself. The arithmetic lives in `packages/ui/src/popover-placement.ts`,
+apart from the component, so it can be checked against real layouts — a short panel, a narrow one
+— rather than only through a DOM with no layout in it. They are free to lie over the mirror, the toolbar or the panel's edge — what
+they must never be is clipped. Each is hidden until it has been measured, so neither is seen at the
+position it was measured from, and because the anchor is read at measure time rather than passed as
+numbers, a panel resized or scrolled under an open menu takes the menu with it. The canvas still
+dismisses the menu when it is clicked through; a pointer down anywhere outside both popovers does
+too, since neither is inside the canvas any more.
 
 The exact TypeScript remains on each row as a hover tooltip and appears in the live test preview
 after selection. It is still produced by the same `stepExpression` used by the emitter, without
@@ -268,15 +298,22 @@ What is offered comes from the element's role and what it carries, never from th
 | `expect(…).toBeVisible()` | any element a selector names |
 | `screen.scrollUntilVisible(…)` | any element a selector names |
 
-The `fill` row needs a value, so it asks for one in the menu rather than emitting an empty string
-literal; the field starts from the element's current value.
+Under **All commands**, the same gating holds: `.fill("…")` and `toHaveValue` need a text field,
+`toHaveText`/`toContainText` need an element with text of its own to start from, and everything
+else is offered for any element a selector names.
+
+A row that needs a value asks for one in the menu rather than emitting an empty string literal:
+`fill` starts from the field's current value, the text matchers from the element's own text.
 
 Only actions the runner can really perform on a device are offered. `secondaryTap`,
 `selectOption`, `setInputFiles`, `scrollIntoView` and tap `modifiers` all exist in the runner's
 typings and all fail on a device with `UNSUPPORTED_CAPABILITY`, so they are not rows.
-`check()`/`uncheck()` are left out for now: the runner declares them and the mobile reference does
-not say they work on a device, and a row that emits an unrunnable step is worse than a missing row
-— the tap is there instead.
+`check()`/`uncheck()` and `toBeChecked` are left out for the same reason by a different route:
+the runner has them, and whether a device reports a `checked` state at all depends on the platform
+and the component — an Android `Switch` does not — so a row for them would emit a step that cannot
+be relied on to run, which is worse than a missing row. `doubleTap` is offered and is the one
+command the panel cannot perform exactly as written: the input path has a single tap in it, so the
+gesture is sent as two taps to keep the screen in step with the flow.
 
 One thing the menu needed fixing for: the recorder re-attaches its reader whenever the simulator
 panel refreshes its device list, which is every few seconds, and `attach` used to invalidate the

@@ -37,19 +37,27 @@ export type NamedSelector = Exclude<RecordedSelector, { kind: "point" } | { kind
  * constraint: the element menu offers rows from this list, so a row the runner cannot express is
  * a row that does not exist. `secondaryTap`, `selectOption`, `setInputFiles` and `scrollIntoView`
  * are deliberately absent — the runner declares them, and a device refuses them with
- * `UNSUPPORTED_CAPABILITY`.
+ * `UNSUPPORTED_CAPABILITY`. So are `check`/`uncheck` and `toBeChecked`: the runner has them, and
+ * whether a device reports a `checked` state at all depends on the platform and the component, so
+ * a row for them would emit a step that cannot be relied on to run.
  *
- * Not every kind is offered by the element menu. `longPress` and `assertText` are emitted and read
- * back correctly, but the menu shows one row per *kind of thing to do*, not one per variant, so
- * they are reachable only by editing the file the panel wrote. See `stepOffers`.
+ * The menu shows the common few up front and the rest behind "All commands"; see `stepOffers` and
+ * `allStepOffers`.
  */
 export type RecordedStepKind =
   | "tap"
+  | "doubleTap"
   | "longPress"
   | "fill"
+  | "scrollUntilVisible"
   | "assertVisible"
+  | "assertNotVisible"
   | "assertText"
-  | "scrollUntilVisible";
+  | "assertContainsText"
+  | "assertValue"
+  | "assertEnabled"
+  | "assertDisabled"
+  | "assertSelected";
 
 export type RecordedStep = {
   id: string;
@@ -387,23 +395,50 @@ export function stepExpression(step: { kind: RecordedStepKind; selector: Recorde
   switch (step.kind) {
     // A point is already a whole action — `screen.tapAt(...)` — so there is nothing to call on it.
     case "tap": return step.selector.kind === "point" ? locator : `${locator}.tap()`;
+    case "doubleTap": return `${locator}.doubleTap()`;
     case "longPress": return `${locator}.longPress()`;
     case "fill": return `${locator}.fill(${quote(step.value ?? "")})`;
     case "scrollUntilVisible": return `screen.scrollUntilVisible(${locator})`;
     case "assertVisible": return `expect(${locator}).toBeVisible()`;
+    // The runner's own negation, which waits for the element to stay gone rather than catching it
+    // mid-transition. `toBeHidden` is the other spelling and means something else on a device:
+    // an element that has gone is absent from the tree, not hidden in it.
+    case "assertNotVisible": return `expect(${locator}).not.toBeVisible()`;
     case "assertText": return `expect(${locator}).toHaveText(${quote(step.value ?? "")})`;
+    case "assertContainsText": return `expect(${locator}).toContainText(${quote(step.value ?? "")})`;
+    case "assertValue": return `expect(${locator}).toHaveValue(${quote(step.value ?? "")})`;
+    case "assertEnabled": return `expect(${locator}).toBeEnabled()`;
+    case "assertDisabled": return `expect(${locator}).toBeDisabled()`;
+    case "assertSelected": return `expect(${locator}).toBeSelected()`;
   }
+}
+
+/** The verb each kind reads as in the panel's step list. */
+const STEP_VERB: Record<RecordedStepKind, string> = {
+  tap: "Tap",
+  doubleTap: "Double tap",
+  longPress: "Long press",
+  fill: "Type into",
+  scrollUntilVisible: "Scroll to",
+  assertVisible: "Expect visible",
+  assertNotVisible: "Expect not visible",
+  assertText: "Expect text of",
+  assertContainsText: "Expect text in",
+  assertValue: "Expect value of",
+  assertEnabled: "Expect enabled",
+  assertDisabled: "Expect disabled",
+  assertSelected: "Expect selected",
+};
+
+/** Whether the step carries text the user has to supply: one types it, the rest compare with it. */
+export function stepNeedsValue(kind: RecordedStepKind): boolean {
+  return kind === "fill" || kind === "assertText" || kind === "assertContainsText" || kind === "assertValue";
 }
 
 /** How a step reads in the panel's step list. */
 export function stepLabel(kind: RecordedStepKind, selector: RecordedSelector, value?: string): string {
-  const verb = kind === "tap" ? "Tap"
-    : kind === "longPress" ? "Long press"
-      : kind === "fill" ? "Type into"
-        : kind === "scrollUntilVisible" ? "Scroll to"
-          : kind === "assertText" ? "Expect text of"
-            : "Expect visible";
-  const suffix = kind === "fill" || kind === "assertText" ? ` → ${JSON.stringify(value ?? "")}` : "";
+  const verb = STEP_VERB[kind];
+  const suffix = stepNeedsValue(kind) ? ` → ${JSON.stringify(value ?? "")}` : "";
   switch (selector.kind) {
     case "testId": return `${verb} #${selector.testId}${suffix}`;
     case "role": return `${verb} "${selector.name}" (${selector.role})${suffix}`;
@@ -443,12 +478,18 @@ const TEXT_INPUT_ROLES = new Set(["textbox", "searchbox", "combobox", "spinbutto
  * reads the screen, and `scrollUntilVisible` is only ever offered for an element the user just
  * pointed at, which is on screen already, so its search loop has nothing to do here.
  */
-export type StepEffect = "tap" | "type" | "none";
+export type StepEffect = "tap" | "doubleTap" | "type" | "none";
 
 export function stepEffect(kind: RecordedStepKind): StepEffect {
   switch (kind) {
     case "tap": return "tap";
+    // Two taps, which is the closest the panel's one-shot tap can come to the gesture the step
+    // emits. It is what keeps the app on the screen the next step is resolved against; whether
+    // the device coalesces them into a real double tap is the app's business, not the step's.
+    case "doubleTap": return "doubleTap";
     case "fill": return "type";
+    // `longPress` has no equivalent in the panel's input path, so the step is recorded and the app
+    // stays where it is — the same as every assertion, which reads the screen and changes nothing.
     default: return "none";
   }
 }
@@ -486,6 +527,51 @@ export function stepOffers(selector: RecordedSelector, component?: ScreenCompone
     offer("assertVisible"),
     offer("scrollUntilVisible"),
   ];
+}
+
+/**
+ * Every step the runner can express for this element, for the menu's "all commands" list.
+ *
+ * `stepOffers` is the short list — the four things most steps are — and it stays short on purpose.
+ * This is the rest of what the runner has, which is the difference between a recorder that can
+ * assert an element is *gone* and one whose user has to leave the panel and write that line by
+ * hand. Each row is still gated on what the element carries: only a text field can be filled or
+ * have a value, and only an element with text of its own can be compared against text.
+ *
+ * A coordinate still gets the tap alone: there is no element behind it to be visible, to hold
+ * text, to be enabled or to be scrolled to.
+ */
+export function allStepOffers(selector: RecordedSelector, component?: ScreenComponent): StepOffer[] {
+  const offer = (kind: RecordedStepKind, value?: string): StepOffer => ({
+    kind,
+    source: stepExpression({ kind, selector, ...(value === undefined ? {} : { value }) }),
+    ...(stepNeedsValue(kind) ? { needsValue: true } : {}),
+    ...(value === undefined ? {} : { suggestedValue: value }),
+  });
+  if (selector.kind === "point") return [offer("tap")];
+  const role = component?.role ?? "";
+  const placeholder = normalize(component?.placeholder);
+  const typeable = TEXT_INPUT_ROLES.has(role) || placeholder !== "";
+  const text = normalize(component?.label) || normalize(component?.text);
+  return [
+    offer("tap"),
+    offer("doubleTap"),
+    offer("longPress"),
+    ...(typeable ? [offer("fill", normalize(component?.value))] : []),
+    offer("scrollUntilVisible"),
+    offer("assertVisible"),
+    offer("assertNotVisible"),
+    ...(text ? [offer("assertText", text), offer("assertContainsText", text)] : []),
+    ...(typeable ? [offer("assertValue", normalize(component?.value))] : []),
+    offer("assertEnabled"),
+    offer("assertDisabled"),
+    offer("assertSelected"),
+  ];
+}
+
+/** Whether a command acts on the app or only reads it, for the menu's two groups. */
+export function stepIsAssertion(kind: RecordedStepKind): boolean {
+  return kind.startsWith("assert");
 }
 
 /** A test title turned into a file name, e.g. `the tab bar works` → `the-tab-bar-works`. */

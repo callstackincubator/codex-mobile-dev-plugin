@@ -51,16 +51,28 @@ test("the element menu renders the runner's own steps over the mirror and record
     "Check visibility",
     "Scroll into view",
   ]);
-  assert.equal(menu()?.querySelector(".lucide-chevron-right"), null, "action rows do not imply a submenu");
+  assert.equal(rows().some(row => row.querySelector(".lucide-chevron-right")), false,
+    "an action row records a step, so it does not imply a submenu");
+  // The one row that leads somewhere is the only one carrying a chevron.
+  assert.deepEqual([...menu()!.querySelectorAll("[data-recorder-panel]")].map(row => (row as HTMLElement).dataset.recorderPanel),
+    ["commands"]);
   assert.ok(rows().every(row => row.className.includes("hover:bg-accent")), "every action has a visible hover state");
   assert.ok(menu()?.className.includes("cursor-pointer"), "popover buttons use a pointer cursor");
   assert.equal(rows()[0].title, 'screen.getByRole("button", "Go To Explore List").tap()');
-  // The menu is anchored to the outline, inside the stage the annotation store measured.
+  // The menu is placed against the window, not inside the stage: the stage clips what it holds,
+  // and a menu cut off at the bottom of a short panel is worse than one lying over the mirror.
   const box = menu() as HTMLElement;
-  // Compact actions cap the menu at 320px while preserving the narrow-stage clamp.
-  const width = Math.max(180, Math.min(320, VIEWPORT.stageWidth - 8));
+  assert.equal(box.parentElement, dom.window.document.body, "it is a portal, so nothing can clip it");
+  assert.ok(box.className.includes("fixed"), "it is placed against the window, not inside the stage");
+  const width = Math.max(180, Math.min(280, dom.window.innerWidth - 16));
   assert.equal(box.style.width, `${width}px`);
-  assert.equal(box.style.left, `${Math.max(4, Math.min(10 + 100 / 402 * 300 + 8, VIEWPORT.stageWidth - width - 4))}px`);
+  // The element's own left edge in window coordinates, pushed in from the window's edge if needed.
+  const left = 10 + 100 / 402 * 300;
+  assert.equal(box.style.left, `${Math.max(8, Math.min(left, dom.window.innerWidth - width - 8))}px`);
+  // Below the element, since this window has room for it there.
+  const bottom = 20 + (400 + 44) / 874 * 650;
+  assert.equal(box.style.top, `${bottom + 6}px`);
+  assert.equal(box.style.visibility, "visible", "it is shown only once it has been measured");
 
   await act(async () => { rows().find(row => row.dataset.recorderOffer === "assertVisible")!.click(); });
   await act(async () => { await Promise.resolve(); });
@@ -239,8 +251,8 @@ test("the element menu survives a tree invalidation that takes the hover outline
   await act(async () => { (testRecorder as any).update({ hover: undefined }); });
   const menu = dom.window.document.querySelector("[data-element=recorder-menu]") as HTMLElement;
   assert.ok(menu, "the menu does not go with the outline");
-  const stays = Math.max(180, Math.min(320, VIEWPORT.stageWidth - 8));
-  assert.equal(menu.style.left, `${Math.max(4, Math.min(10 + 100 / 402 * 300 + 8, VIEWPORT.stageWidth - stays - 4))}px`);
+  const stays = Math.max(180, Math.min(280, dom.window.innerWidth - 16));
+  assert.equal(menu.style.left, `${Math.max(8, Math.min(10 + 100 / 402 * 300, dom.window.innerWidth - stays - 8))}px`);
 
   testRecorder.clearSteps();
   testRecorder.detach("udid");
@@ -275,6 +287,70 @@ test("a coordinate gets the tap row and is told why that is all", async t => {
   // Three missing rows with no explanation read as a broken menu.
   assert.match(dom.window.document.querySelector("[data-element=recorder-menu]")?.textContent ?? "",
     /only the coordinate can be acted on/);
+
+  testRecorder.clearSteps();
+  testRecorder.detach("udid");
+});
+
+test("the command list is a submenu of its own, opened by pointing at its row", async t => {
+  const { module: { TestRecorderOverlay, testRecorder }, dom, onTeardown } = await renderEnvironment<any>(t, {
+    exports: 'export { TestRecorderOverlay } from "./packages/ui/src/components/test-recorder-overlay.tsx";\n'
+      + 'export { testRecorder } from "./packages/ui/src/test-recorder.ts";',
+    slug: "recorder-submenu",
+    extraGlobals: { crypto: { randomUUID: () => `id-${Math.random()}` } },
+  });
+  const { act, createElement } = await import("react");
+  const { createRoot } = await import("react-dom/client");
+
+  const annotations = { subscribe: () => () => undefined, getSnapshot: () => ANNOTATIONS_SNAPSHOT };
+  testRecorder.attach("udid", { readComponents: async () => [button], screen: () => SCREEN, release: () => undefined });
+  testRecorder.start("udid");
+  const root = createRoot(dom.window.document.getElementById("root")!);
+  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations })); });
+  onTeardown(async () => {
+    await act(async () => { root.unmount(); });
+    await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
+  });
+  const menu = () => dom.window.document.querySelector("[data-element=recorder-menu]") as HTMLElement;
+  const submenu = () => dom.window.document.querySelector("[data-element=recorder-commands]") as HTMLElement;
+  const rows = () => [...dom.window.document.querySelectorAll("[data-recorder-offer]")] as HTMLButtonElement[];
+  const opener = () => dom.window.document.querySelector("[data-recorder-panel=commands]") as HTMLButtonElement;
+
+  await act(async () => { await testRecorder.openMenu({ x: 150, y: 420 }); });
+  // The short list is what is in front of the user, and the submenu is not open until it is asked for.
+  assert.deepEqual(rows().map(row => row.textContent), ["Tap", "Check visibility", "Scroll into view"]);
+  assert.equal(submenu(), null);
+
+  // Pointing at the row is enough; no click is needed to see what it leads to.
+  await act(async () => { opener().dispatchEvent(new dom.window.MouseEvent("mouseover", { bubbles: true })); });
+  assert.ok(submenu(), "hovering the row opens the submenu");
+  // A panel of its own, beside the menu rather than replacing what was in it, and a portal too:
+  // the menu scrolls once it is taller than the window, and a scrolling box clips what hangs out.
+  assert.equal(submenu().parentElement, dom.window.document.body);
+  assert.ok(submenu().className.includes("fixed"));
+  // Where it lands is `popover-placement`'s arithmetic, checked there against real layouts; what
+  // matters here is that it is narrower than the menu, so a tight window keeps part of the menu
+  // behind it visible.
+  assert.ok(Number.parseFloat(submenu().style.width) < Number.parseFloat(menu().style.width));
+  assert.ok(submenu().className.includes("bg-popover") && submenu().className.includes("shadow-lg"));
+  assert.deepEqual(rows().slice(0, 3).map(row => row.textContent), ["Tap", "Check visibility", "Scroll into view"],
+    "the menu behind it keeps its own rows");
+  const commands = rows().slice(3).map(row => row.dataset.recorderOffer);
+  assert.ok(commands.includes("assertNotVisible") && commands.includes("doubleTap") && commands.includes("longPress"));
+  assert.match(submenu().textContent ?? "", /ActionsTap.*AssertionsCheck visibility/);
+
+  // Leaving the row and its panel closes it, but only after a moment: they have a gap between
+  // them, and crossing it must not be a way out.
+  await act(async () => { opener().parentElement!.dispatchEvent(new dom.window.MouseEvent("mouseleave", { bubbles: false })); });
+  assert.ok(submenu(), "it is not taken away the instant the pointer leaves the row");
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 200)); });
+  assert.equal(submenu(), null);
+
+  await act(async () => { opener().dispatchEvent(new dom.window.MouseEvent("mouseover", { bubbles: true })); });
+  await act(async () => { rows().find(row => row.dataset.recorderOffer === "assertNotVisible")!.click(); });
+  await act(async () => { await Promise.resolve(); });
+  assert.equal(dom.window.document.querySelector("[data-element=recorder-menu]"), null, "choosing a command closes the menu");
+  assert.match(testRecorder.source, /await expect\(screen\.getByRole\("button", "Go To Explore List"\)\)\.not\.toBeVisible\(\);/);
 
   testRecorder.clearSteps();
   testRecorder.detach("udid");

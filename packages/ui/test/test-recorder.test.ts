@@ -459,3 +459,26 @@ test("progress from a finished run is ignored, so the report has the last word",
   recorder.clearRun();
   recorder.detach(UDID);
 });
+
+test("the full command list is offered beside the short one, and records what it says", async () => {
+  const reads = { count: 0 };
+  const recorder = new TestRecorder();
+  const done: unknown[] = [];
+  recorder.attach(UDID, { ...reader([tab("Explore", 800)], reads), perform: action => { done.push(action); } });
+  recorder.start(UDID);
+
+  await recorder.openMenu({ x: 50, y: 820 });
+  const commands = recorder.getSnapshot().menu?.commands ?? [];
+  // The short list stays short; everything else the runner can express is here.
+  assert.deepEqual(recorder.getSnapshot().menu?.offers.map(offer => offer.kind), ["tap", "assertVisible", "scrollUntilVisible"]);
+  assert.ok(commands.length > 3);
+  assert.equal(commands.find(offer => offer.kind === "assertNotVisible")?.source,
+    'expect(screen.getByRole("button", "Explore")).not.toBeVisible()');
+
+  await recorder.chooseOffer("doubleTap");
+  assert.equal(recorder.getSnapshot().steps[0].kind, "doubleTap");
+  assert.match(recorder.source, /await screen\.getByRole\("button", "Explore"\)\.doubleTap\(\);/);
+  // The app has to end up on the screen the next step is resolved against, and the panel's input
+  // path has one tap in it, so the gesture is sent as two.
+  assert.deepEqual(done, [{ kind: "tap", point: { x: 50, y: 820 } }, { kind: "tap", point: { x: 50, y: 820 } }]);
+});

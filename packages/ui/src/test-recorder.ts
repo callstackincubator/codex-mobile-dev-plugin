@@ -1,4 +1,4 @@
-import { anchorSelector, emitE2eTestLines, hitLadder, resolveSelector, stepEffect, stepLabel, stepOffers, treeHealth } from "@mobile-dev/shared/test-recording.ts";
+import { allStepOffers, anchorSelector, emitE2eTestLines, hitLadder, resolveSelector, stepEffect, stepIsAssertion, stepLabel, stepOffers, treeHealth } from "@mobile-dev/shared/test-recording.ts";
 import type { RecordedStep, RecordedStepKind, StepOffer } from "@mobile-dev/shared/test-recording.ts";
 import type { ScreenBounds, ScreenComponent, ScreenPoint, ScreenSize } from "@mobile-dev/shared/screen-annotations.ts";
 import { countUiEvent, recordUiTiming } from "./telemetry.ts";
@@ -94,6 +94,13 @@ export type TestRecorderSnapshot = {
     /** How many elements the offered selector matches; 1 unless the menu is flagged. */
     matches: number;
     offers: StepOffer[];
+    /**
+     * Every step the runner can express for the same element, for the menu's "all commands" list.
+     * The short list above is what most steps are; this is the rest of the runner's surface, so a
+     * step it has — an element that should be *gone*, a field's value, a disabled button — does
+     * not need the user to leave the panel and write the line themselves.
+     */
+    commands: StepOffer[];
     /**
      * The element's own rectangle, and the screen it is in. The menu carries its own anchor rather
      * than borrowing the outline's: a hover is dropped by anything that invalidates the tree, and a
@@ -391,7 +398,7 @@ export class TestRecorder {
       ? { x: owner.bounds.x + owner.bounds.width / 2, y: owner.bounds.y + owner.bounds.height / 2 }
       : point;
     this.update({ steps: [...this.snapshot.steps, step] });
-    countUiEvent(kind === "tap" ? "ui.testing.step_tap" : kind === "assertVisible" || kind === "assertText" ? "ui.testing.step_assert" : "ui.testing.step_action");
+    countUiEvent(kind === "tap" ? "ui.testing.step_tap" : stepIsAssertion(kind) ? "ui.testing.step_assert" : "ui.testing.step_action");
     if (selector.kind === "point") countUiEvent("ui.testing.step_unresolved");
     return true;
   }
@@ -435,7 +442,12 @@ export class TestRecorder {
     const { selector, ambiguous, component, matches } = resolveSelector(components, point, screen, this.hoverLevel);
     // Nothing resolved is still somewhere: the menu marks the coordinate a tap here would record.
     const bounds = component?.bounds ?? { x: point.x - 12, y: point.y - 12, width: 24, height: 24 };
-    this.update({ menu: { label: stepLabel("tap", selector), ambiguous, matches, offers: stepOffers(selector, component), bounds, screen } });
+    this.update({ menu: {
+      label: stepLabel("tap", selector), ambiguous, matches,
+      offers: stepOffers(selector, component),
+      commands: allStepOffers(selector, component),
+      bounds, screen,
+    } });
   }
 
   closeMenu() {
@@ -465,6 +477,13 @@ export class TestRecorder {
       const effect = stepEffect(kind);
       const where = this.lastTarget ?? point;
       if (effect === "tap") this.reader?.perform?.({ kind: "tap", point: where });
+      // The panel's input path has one tap in it, so a double tap is sent as two. It is the screen
+      // that has to keep up with the recorded flow, and an app that treats the pair as two taps is
+      // one the emitted `doubleTap` would behave differently on — the step is right either way.
+      else if (effect === "doubleTap") {
+        this.reader?.perform?.({ kind: "tap", point: where });
+        this.reader?.perform?.({ kind: "tap", point: where });
+      }
       else if (effect === "type") {
         this.reader?.perform?.({ kind: "tap", point: where });
         this.reader?.perform?.({ kind: "type", text: value ?? "" });
