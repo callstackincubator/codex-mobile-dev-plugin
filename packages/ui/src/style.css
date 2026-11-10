@@ -364,6 +364,11 @@ html[data-theme="dark"] .tracesift-explorer { color-scheme: dark; }
 /* The line's own text wraps inside its column; the gutter is not part of the wrap. */
 .testing-preview-code { white-space: pre-wrap; overflow-wrap: anywhere; }
 .testing-preview-line.is-new { animation: testing-preview-line-in 1400ms ease-out both; }
+.testing-preview-line.is-step-highlighted {
+  background: color-mix(in oklab, var(--primary) 16%, transparent);
+  box-shadow: inset 2px 0 var(--primary);
+  animation: none;
+}
 @keyframes testing-preview-line-in {
   from { background: color-mix(in oklab, var(--primary) 26%, transparent); opacity: 0.4; }
   18% { background: color-mix(in oklab, var(--primary) 26%, transparent); opacity: 1; }

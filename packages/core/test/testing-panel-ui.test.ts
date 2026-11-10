@@ -185,14 +185,31 @@ test("a run marks the preview line by line, and marks nothing it was not told ab
     "title and file fields have no card fill");
   assert.ok([...dom.window.document.querySelectorAll("[data-testing-step]")]
     .every(step => !step.className.includes("bg-card")), "step rows have no card fill");
-  assert.match(dom.window.document.body.textContent ?? "", /Test title.*File name.*Steps/s,
-    "the recorder is organized around naming, steps and output");
+  const workspace = dom.window.document.querySelector("[data-testing-recorder-workspace]")!;
+  assert.deepEqual([...workspace.children].map(child => child.getAttribute("data-testing-preview-pane") !== null
+    ? "preview" : child.getAttribute("data-testing-editor-pane") !== null ? "editor" : "unknown"),
+  ["preview", "editor"], "the preview stays to the left of the test editor");
+  assert.match(workspace.className, /minmax\(0,3fr\).*minmax\(0,2fr\)/,
+    "the preview is wider than the test editor");
+  assert.match(workspace.textContent ?? "", /Preview.*Test title.*File name.*Steps/s,
+    "the recorder is organized around preview, naming and steps");
+  const header = dom.window.document.querySelector("[aria-label=Testing] > header")!;
+  assert.ok(header.contains(dom.window.document.querySelector("[data-testing-controls]")),
+    "record and run controls share the project and launch bar");
 
   // One step, one call line: line 8 of the emitted file, which is where the report will point.
   const spans = testRecorder.emitted.spans;
   assert.deepEqual(spans.map((span: any) => span.calls), [[8]]);
   const lines = testRecorder.source.split("\n");
   assert.match(lines[7], /await screen\.getByRole\("button", "Go To Explore List"\)\.tap\(\);/);
+
+  const step = dom.window.document.querySelector("[data-testing-step]")!;
+  await act(async () => { step.dispatchEvent(new dom.window.MouseEvent("mouseover", { bubbles: true })); });
+  assert.ok(dom.window.document.querySelector('[data-testing-preview-line="8"]')?.classList.contains("is-step-highlighted"),
+    "hovering a step highlights the line it emits");
+  await act(async () => { step.dispatchEvent(new dom.window.MouseEvent("mouseout", { bubbles: true })); });
+  assert.equal(dom.window.document.querySelector(".testing-preview-line.is-step-highlighted"), null,
+    "the emitted line returns to normal when the step is no longer hovered");
 
   // The gutter is a column of its own, not a character at the front of the line: that is what keeps
   // the code still when a run starts and keeps a mark level with a line that wraps.

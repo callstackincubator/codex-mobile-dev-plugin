@@ -67,6 +67,7 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
   const device = devices.device;
   const booted = device?.state === "Booted" || device?.state === "connected";
   const target = state.targets.find(entry => entry.name === state.targetName) ?? state.targets[0];
+  const recordable = Boolean(booted && device && (device.platform ?? "ios") === "ios" && device.kind !== "physical");
   // Why the recorder cannot start yet, in the order the user has to fix them.
   const blocker = !state.projectPath ? "Choose a project to record against."
     : state.loadingProject ? ""
@@ -83,6 +84,7 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
           {state.targets.map(entry => <SelectItem key={entry.name} value={entry.name}>{entry.name}{entry.platform ? ` · ${entry.platform}` : ""}</SelectItem>)}
         </SelectGroup></SelectContent>
       </Select>}
+      <TestingControls panel={panel} recordable={recordable} udid={device?.udid ?? ""} />
       <Button type="button" size="sm" className="sm:ml-auto" data-testing-launch disabled={!panel.canLaunch} onClick={() => void panel.launchApp()}>
         {state.launching ? <LoaderCircleIcon className="animate-spin" /> : <PlayIcon />}
         {state.appLaunched ? "Relaunch app" : "Launch app"}
@@ -100,8 +102,26 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
 
     {blocker && <p className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">{blocker}</p>}
 
-    <TestingRecorder panel={panel} recordable={Boolean(booted && device && (device.platform ?? "ios") === "ios" && device.kind !== "physical")} udid={device?.udid ?? ""} />
+    <TestingRecorder panel={panel} recordable={recordable} udid={device?.udid ?? ""} />
   </section>;
+}
+
+/** The recorder's primary actions live with the other app-level controls in the panel header. */
+function TestingControls({ panel, recordable, udid }: { panel: TestingPanel; recordable: boolean; udid: string }) {
+  const state = useSyncExternalStore(testRecorder.subscribe, testRecorder.getSnapshot);
+  const panelState = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
+  const recording = state.recordingUdid === udid && udid !== "";
+  return <div data-testing-controls className="flex min-w-0 items-center gap-2">
+    {recording
+      ? <Button type="button" size="sm" variant="outline" data-testing-stop onClick={() => testRecorder.stop()}><SquareIcon />Stop</Button>
+      : <Button type="button" size="sm" variant="outline" data-testing-record disabled={!recordable} onClick={() => testRecorder.start(udid, panel.dirty)}><CircleIcon />Record</Button>}
+    <Button type="button" size="sm" variant="outline" data-testing-run disabled={!panel.canRun}
+      title="Save the test, then run it against this device. Recording stops: the runner needs the device to itself."
+      onClick={() => void panel.runTest()}>
+      {panelState.running ? <LoaderCircleIcon className="animate-spin" /> : <FlaskConicalIcon />}Run test
+    </Button>
+    {state.resolving && <span className="flex items-center gap-1 text-xs text-muted-foreground" role="status"><LoaderCircleIcon className="animate-spin" />Reading the screen…</span>}
+  </div>;
 }
 
 /**
@@ -113,7 +133,7 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
  * an effect would flash the new lines unmarked for a frame. `generation` remounts the marked
  * lines so their animation runs again for the next step, instead of only on the first.
  */
-function TestPreview({ source, run }: { source: string; run?: TestRunView }) {
+function TestPreview({ source, run, highlightedLines }: { source: string; run?: TestRunView; highlightedLines?: { from: number; to: number } }) {
   const shown = useRef({ source: "", range: [0, 0] as [number, number], generation: 0 });
   if (shown.current.source !== source) {
     const previous = shown.current.source;
@@ -130,7 +150,9 @@ function TestPreview({ source, run }: { source: string; run?: TestRunView }) {
       const added = index >= from && index < to;
       // The report's lines are 1-based, as the file's own line numbers are.
       const mark = run?.lines[index + 1];
-      return <span key={added ? `new-${generation}-${index}` : `line-${index}`} className={`testing-preview-line${added ? " is-new" : ""}`}>
+      const highlighted = highlightedLines && index + 1 >= highlightedLines.from && index + 1 <= highlightedLines.to;
+      return <span key={added ? `new-${generation}-${index}` : `line-${index}`} data-testing-preview-line={index + 1}
+        className={`testing-preview-line${added ? " is-new" : ""}${highlighted ? " is-step-highlighted" : ""}`}>
         {/* Two columns: a fixed gutter and the code. That is why the code does not move when a run
             starts, and why a mark stays level with the first row of a line that wraps — the mark is
             a sibling of the whole line, not a character at the front of it.
@@ -162,19 +184,11 @@ function TestingRecorder({ panel, recordable, udid }: { panel: TestingPanel; rec
   const panelState = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
   const recording = state.recordingUdid === udid && udid !== "";
   const saveable = Boolean(panelState.projectPath) && state.steps.length > 0 && !panelState.saving;
+  const [hoveredStep, setHoveredStep] = useState<string>();
+  const [focusedStep, setFocusedStep] = useState<string>();
+  const highlightedStep = hoveredStep ?? focusedStep;
+  const highlightedLines = testRecorder.emitted.spans.find(span => span.stepId === highlightedStep);
   return <div className="flex min-h-0 flex-1 flex-col gap-3">
-    <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/20 p-2">
-      {recording
-        ? <Button type="button" size="sm" variant="outline" data-testing-stop onClick={() => testRecorder.stop()}><SquareIcon />Stop</Button>
-        : <Button type="button" size="sm" variant="outline" data-testing-record disabled={!recordable} onClick={() => testRecorder.start(udid, panel.dirty)}><CircleIcon />Record</Button>}
-      <Button type="button" size="sm" variant="outline" data-testing-run disabled={!panel.canRun}
-        title="Save the test, then run it against this device. Recording stops: the runner needs the device to itself."
-        onClick={() => void panel.runTest()}>
-        {panelState.running ? <LoaderCircleIcon className="animate-spin" /> : <FlaskConicalIcon />}Run test
-      </Button>
-      {state.resolving && <span className="ml-auto flex items-center gap-1 text-xs text-muted-foreground" role="status"><LoaderCircleIcon className="animate-spin" />Reading the screen…</span>}
-    </div>
-
     {!recordable && !recording && <p className="text-xs text-muted-foreground">Recording needs a booted iOS simulator in the mirror.</p>}
     {recording && <p className="text-xs text-muted-foreground">
       Click the mirror to drive the app; nothing is recorded. Right-click an element for the steps it
@@ -189,63 +203,68 @@ function TestingRecorder({ panel, recordable, udid }: { panel: TestingPanel; rec
       </AlertDescription>
     </Alert>}
 
-    <div className="grid gap-3 rounded-lg border p-3 md:grid-cols-2">
-      <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium">
-        <span>Test title</span>
-        <input type="text" data-testing-title defaultValue={state.title} onBlur={event => testRecorder.setTitle(event.target.value)}
-          className="min-w-0 rounded-md border bg-background px-2.5 py-1.5 font-normal" aria-label="Test title" />
-      </label>
-      <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium">
-        <span>File name</span>
-        <span className="flex min-w-0 items-center gap-2">
-          <span className="flex min-w-0 flex-1 items-center overflow-hidden rounded-md border bg-background focus-within:ring-2 focus-within:ring-ring/50">
-            <code className="shrink-0 border-r bg-muted/50 px-2.5 py-1.5 font-normal text-muted-foreground">tests/</code>
-            <input type="text" data-testing-filename defaultValue={panelState.fileName} placeholder={`${testFileSlug(state.title)}.e2e.ts`}
-              onBlur={event => panel.setFileName(event.target.value)} className="min-w-0 flex-1 bg-transparent px-2.5 py-1.5 font-normal outline-none" aria-label="Test file name" />
-          </span>
-          <Button type="button" size="sm" data-testing-save disabled={!saveable} onClick={() => void panel.saveTest()}>
-            {panelState.saving ? <LoaderCircleIcon className="animate-spin" /> : <SaveIcon />}Save
-          </Button>
-        </span>
-      </label>
-    </div>
+    <div data-testing-recorder-workspace className="grid min-h-0 flex-1 gap-3 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+      <section data-testing-preview-pane className="flex min-h-64 min-w-0 flex-col gap-1.5 rounded-lg border p-3 md:min-h-0">
+        <p className="flex flex-wrap items-center gap-2 text-xs font-medium">
+          <span>Preview</span>
+          {state.run?.state === "running" && <span className="flex items-center gap-1 font-normal text-muted-foreground" role="status">
+            <LoaderCircleIcon className="size-3 animate-spin" />Running
+          </span>}
+          {state.run?.state === "passed" && <span className="flex items-center gap-1 font-normal text-emerald-600 dark:text-emerald-400" role="status"><CheckIcon className="size-3" />Passed</span>}
+          {state.run?.state === "failed" && <span className="flex min-w-0 items-center gap-1 break-words font-normal text-red-600 dark:text-red-400" role="status">
+            <CircleXIcon className="size-3 shrink-0" />{state.run.error ?? "Failed"}
+          </span>}
+        </p>
+        {state.run?.output && <pre className="max-h-32 overflow-auto rounded-md border bg-muted/40 p-2 font-mono text-[10px] whitespace-pre-wrap">{state.run.output}</pre>}
+        <TestPreview source={testRecorder.source} run={state.run} highlightedLines={highlightedLines} />
+      </section>
 
-    <div className="flex min-h-0 flex-col gap-2">
-      <div className="flex items-center gap-2">
-        <h2 className="text-xs font-medium">Steps</h2>
-        {state.steps.length > 0 && <span className="text-xs text-muted-foreground">{state.steps.length}</span>}
-        <Button type="button" size="sm" variant="ghost" className="ml-auto" data-testing-clear disabled={state.steps.length === 0} onClick={() => testRecorder.clearSteps()}><Trash2Icon />Clear</Button>
+      <div data-testing-editor-pane className="flex min-h-0 min-w-0 flex-col gap-3 rounded-lg border p-3">
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,3fr)_minmax(0,5fr)]">
+          <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium">
+            <span>Test title</span>
+            <input type="text" data-testing-title defaultValue={state.title} onBlur={event => testRecorder.setTitle(event.target.value)}
+              className="min-w-0 rounded-md border bg-background px-2.5 py-1.5 font-normal" aria-label="Test title" />
+          </label>
+          <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium">
+            <span>File name</span>
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="flex min-w-0 flex-1 items-center overflow-hidden rounded-md border bg-background focus-within:ring-2 focus-within:ring-ring/50">
+                <code className="shrink-0 border-r bg-muted/50 px-2.5 py-1.5 font-normal text-muted-foreground">tests/</code>
+                <input type="text" data-testing-filename defaultValue={panelState.fileName} placeholder={`${testFileSlug(state.title)}.e2e.ts`}
+                  onBlur={event => panel.setFileName(event.target.value)} className="min-w-0 flex-1 bg-transparent px-2.5 py-1.5 font-normal outline-none" aria-label="Test file name" />
+              </span>
+              <Button type="button" size="sm" data-testing-save disabled={!saveable} onClick={() => void panel.saveTest()}>
+                {panelState.saving ? <LoaderCircleIcon className="animate-spin" /> : <SaveIcon />}Save
+              </Button>
+            </span>
+          </label>
+        </div>
+
+        <div className="flex min-h-0 flex-1 flex-col gap-2 border-t pt-3">
+          <div className="flex items-center gap-2">
+            <h2 className="text-xs font-medium">Steps</h2>
+            {state.steps.length > 0 && <span className="text-xs text-muted-foreground">{state.steps.length}</span>}
+            <Button type="button" size="sm" variant="ghost" className="ml-auto" data-testing-clear disabled={state.steps.length === 0} onClick={() => testRecorder.clearSteps()}><Trash2Icon />Clear</Button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto pr-1"><StepList steps={state.steps}
+            onHoverStep={setHoveredStep} onFocusStep={setFocusedStep} /></div>
+        </div>
+
+        {panelState.overwritePath && <Alert>
+          <AlertTitle>Replace the existing file?</AlertTitle>
+          <AlertDescription>
+            <span className="min-w-0 break-words">{panelState.overwritePath} already exists.</span>
+            <span className="flex gap-2">
+              <Button type="button" size="sm" data-testing-overwrite onClick={() => void panel.saveTest(true)}>Replace</Button>
+              <Button type="button" size="sm" variant="ghost" onClick={() => panel.cancelOverwrite()}>Cancel</Button>
+            </span>
+          </AlertDescription>
+        </Alert>}
+
+        {panelState.savedPath && !panel.dirty && <p className="text-xs text-muted-foreground" role="status">Saved to {panelState.savedPath}</p>}
+        {panelState.savedPath && panel.dirty && <p className="text-xs text-amber-600" role="status">Unsaved steps since {panelState.savedPath} was written.</p>}
       </div>
-      <StepList steps={state.steps} />
-    </div>
-
-    {panelState.overwritePath && <Alert>
-      <AlertTitle>Replace the existing file?</AlertTitle>
-      <AlertDescription>
-        <span className="min-w-0 break-words">{panelState.overwritePath} already exists.</span>
-        <span className="flex gap-2">
-          <Button type="button" size="sm" data-testing-overwrite onClick={() => void panel.saveTest(true)}>Replace</Button>
-          <Button type="button" size="sm" variant="ghost" onClick={() => panel.cancelOverwrite()}>Cancel</Button>
-        </span>
-      </AlertDescription>
-    </Alert>}
-
-    {panelState.savedPath && !panel.dirty && <p className="text-xs text-muted-foreground" role="status">Saved to {panelState.savedPath}</p>}
-    {panelState.savedPath && panel.dirty && <p className="text-xs text-amber-600" role="status">Unsaved steps since {panelState.savedPath} was written.</p>}
-
-    <div className="flex min-h-0 flex-1 flex-col gap-1.5 border-t pt-3">
-      <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        <span>Preview</span>
-        {state.run?.state === "running" && <span className="flex items-center gap-1" role="status">
-          <LoaderCircleIcon className="size-3 animate-spin" />Running
-        </span>}
-        {state.run?.state === "passed" && <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400" role="status"><CheckIcon className="size-3" />Passed</span>}
-        {state.run?.state === "failed" && <span className="flex min-w-0 items-center gap-1 break-words text-red-600 dark:text-red-400" role="status">
-          <CircleXIcon className="size-3 shrink-0" />{state.run.error ?? "Failed"}
-        </span>}
-      </p>
-      {state.run?.output && <pre className="max-h-32 overflow-auto rounded-md border bg-muted/40 p-2 font-mono text-[10px] whitespace-pre-wrap">{state.run.output}</pre>}
-      <TestPreview source={testRecorder.source} run={state.run} />
     </div>
   </div>;
 }
@@ -258,7 +277,11 @@ function TestingRecorder({ panel, recordable, udid }: { panel: TestingPanel; rec
  * the numbering, the ambiguous badge and the preview are recomputed from one list rather than kept
  * in step by hand.
  */
-function StepList({ steps }: { steps: readonly RecordedStep[] }) {
+function StepList({ steps, onHoverStep, onFocusStep }: {
+  steps: readonly RecordedStep[];
+  onHoverStep: (stepId: string | undefined) => void;
+  onFocusStep: (stepId: string | undefined) => void;
+}) {
   // The row being dragged and the gap it would land in. Held here rather than in the recorder:
   // a drag that is abandoned must leave the recorded flow exactly as it was.
   const [dragging, setDragging] = useState<string | undefined>();
@@ -273,6 +296,10 @@ function StepList({ steps }: { steps: readonly RecordedStep[] }) {
       draggable
       data-testing-step={step.id}
       className={`group/step flex items-center gap-2 rounded-md border px-2 py-1.5 ${dragging === step.id ? "opacity-50" : ""} ${over === index && dragging !== step.id ? "border-primary" : ""}`}
+      onMouseEnter={() => onHoverStep(step.id)}
+      onMouseLeave={() => onHoverStep(undefined)}
+      onFocus={() => onFocusStep(step.id)}
+      onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) onFocusStep(undefined); }}
       onDragStart={event => { setDragging(step.id); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", step.id); }}
       onDragEnd={() => { setDragging(undefined); setOver(undefined); }}
       onDragOver={event => { if (!dragging) return; event.preventDefault(); event.dataTransfer.dropEffect = "move"; setOver(index); }}
