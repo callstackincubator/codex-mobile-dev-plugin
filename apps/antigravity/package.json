@@ -1,0 +1,7 @@
+{
+  "name": "@mobile-dev/antigravity",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Antigravity: the Antigravity extension manifest and Auxiliary Pane sidecar for the shared server and MCP Apps panel."
+}

@@ -113,6 +113,20 @@ It sends plugin errors and aggregate measurements to Sentry, as described under
 [Privacy and support](#privacy-and-support), and nothing else to Callstack;
 profiles go only to the TraceSift service on your Mac.
 
+### Antigravity
+
+On an Apple Silicon Mac with Node.js 22.19 or later, install the Antigravity extension
+from this repository's `release/antigravity` branch with the `agy` CLI:
+
+```sh
+agy plugin install https://github.com/callstackincubator/mobile-dev/tree/release/antigravity/mobile-dev
+```
+
+Mobile Dev renders its live device panel, logs, storage, App Intelligence, and
+performance tools directly inside the Antigravity Auxiliary Pane beside the chat, and
+downloads the pinned panel runtime once on first open. Ask the agent to open Mobile Dev
+or click the **Mobile Dev** icon in the Auxiliary Pane.
+
 ### T3 Code
 
 [T3 Code](https://github.com/pingdotgg/t3code) runs Claude Code and Codex, so it loads
@@ -248,6 +262,7 @@ product in `apps/`:
 | `packages/native`, `packages/runtimes` | Native helpers and bundled Node runtimes |
 | `apps/codex-plugin` | The Codex plugin: manifest, updater, and update banner |
 | `apps/claude` | Claude: its server, which downloads the panel's runtime, skill, and the Claude Desktop extension and Claude Code plugin manifests |
+| `apps/antigravity` | Antigravity: its server, Auxiliary Pane sidecar proxy, skill, and extension manifest |
 | `apps/cursor` | Cursor: the Cursor plugin manifest |
 | `apps/mac` | The Mac app: SwiftUI window and its page |
 

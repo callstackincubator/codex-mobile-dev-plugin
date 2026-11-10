@@ -1,0 +1,31 @@
+{
+  "label": "Antigravity",
+  "manifest": ".antigravity-plugin",
+  "mcpConfig": "mcp_config.json",
+  "hooks": "hooks.json",
+  "root": "PLUGIN_ROOT",
+  "data": "PLUGIN_DATA",
+  "config": {
+    "file": "antigravity-mcp-config.json",
+    "server": {},
+    "target": "~/.gemini/antigravity/mcp_config.json"
+  },
+  "marketplace": {
+    "name": "mobile-dev-local",
+    "manifest": ".antigravity-plugin/marketplace.json"
+  },
+  "panelRuntime": "download",
+  "build": "tooling/build.mjs",
+  "skills": [
+    "skills/mobile-dev",
+    "../../packages/skills/agent-device"
+  ],
+  "folders": [
+    "scripts",
+    "sidecars",
+    "mcp_config.json",
+    "hooks.json"
+  ],
+  "readme": "README.md",
+  "maxFileBytes": 5242880
+}
