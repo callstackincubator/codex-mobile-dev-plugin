@@ -56,7 +56,7 @@ in `packages/core/src/app-flow-tools.ts`):
 |---|---|---|
 | `mobile_testing_agent_begin` | `{ title, goal }` | Opens the Testing tab, starts one session against the panel's current project, device and bundle id. Refuses, with what is missing, when any of the three is unset. |
 | `mobile_testing_agent_screen` | `{}` | The runner's element tree as the agent's eyes: one compact row per element — `ref`, `role`, `name`, `text`, `placeholder`, `value`, `testId`, `enabled`, `selected`, `bounds` — **and the selector the recorder would emit for it**, with its rank and whether it is unique. The agent never writes a locator; it names a `ref`. |
-| `mobile_testing_agent_step` | `{ ref?, kind, value?, direction?, instruction? }` | Records one step and performs it. `kind` is a `PinnedStepKind`; `instruction` with no `ref` records an `AgentStep`. Assertions record without touching the device, mirroring the element menu. |
+| `mobile_testing_agent_step` | `{ ref?, kind, value?, direction?, instruction? }` | Records one step and performs it. `kind` is a `PinnedStepKind`; `instruction` with no `ref` records an `AgentStep`. Assertions record without touching the device, mirroring the element menu. An acting step answers with `navigated: true` when it replaced the screen — see "Where a flow ends". |
 | `mobile_testing_agent_finish` | `{ note? }` | Ends the session with the steps left dirty in the panel. Saves nothing, runs nothing, and keeps the device session for the panel's recorder. |
 | `mobile_testing_agent_abort` | `{ reason }` | Drops the session; whatever was recorded stays in the panel. |
 
@@ -72,6 +72,40 @@ what keeps `write_file` and `run_test` out of the model's hands, which is what
 `packages/core/src/testing-tools.ts:17` already says.
 
 One session at a time. A second `agent_begin` refuses rather than stomping on the first.
+
+## Where a flow ends
+
+The first thing a real user asked for was *"record the test for the important areas on the Explore
+screen"*. The recording covered Explore, tapped through to Explore List, and then kept going:
+`Explore Cities` asserted, `Spending summary` asserted, the `Search transactions` field filled.
+None of that is the Explore screen.
+
+Nothing had said so. The skill said where a flow *starts* — "the navigation to the screen is part
+of the flow" — and a starting point is what the agent read the screen name as. So the skill now
+says where one **ends**: the named screen is the *scope*, a control that leaves it may be tapped
+and the arrival asserted once, and then the recording stops. A *flow* name ("the checkout flow")
+is not a boundary; a screen name is.
+
+The tool surface helps, because the skill alone is a rule with nothing to apply it to: a screen
+read answers with elements, not with screen identity. So an acting step now answers with
+**`navigated: true`** when it replaced the screen, and carries the session's own `goal` sentence
+back with it, which is the thing the agent has to weigh the new screen against.
+
+- The signal is the **overlap between the two reads' element identities** — role, testID, name,
+  text, which are what a test names an element by and are stable across reads, where node ids are
+  minted per read. A step that *changes* a screen leaves most of it in place; a step that
+  *navigates* replaces it. Measured on a real app: opening a disclosure kept every element,
+  switching tabs kept about two fifths of them — the tab bar and the chrome around it — and
+  tapping into a pushed screen kept about a tenth. The threshold is a third, in the gap between
+  those. A tab switch not firing is the answer worth having: it is usually the navigation *to* the
+  screen the recording is for, so a boundary warning there would land exactly as the agent
+  arrives.
+- The extra read costs nothing. An acting step needed one anyway to compare, and that read is the
+  one the agent's next `mobile_testing_agent_screen` is served from, so the loop still pays one
+  snapshot per step.
+- **It is a hint, not a gate.** Nothing refuses a step, nothing counts navigations, and
+  `agent_begin` has no scope limit. A checkout and a sign-in cross screens on purpose, and a
+  recorder that would not let them is worse than one that occasionally records a step too many.
 
 ## Reusing what is there
 

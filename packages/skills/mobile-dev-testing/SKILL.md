@@ -79,6 +79,28 @@ Then, on the target screen:
 Keep a flow under about fifteen steps. A long flow is two tests, and the second one is a second
 `begin` after you have finished the first.
 
+A control you **open** is part of the screen, so assert what it revealed — and close it again if
+the screen is meant to be left as you found it. A disclosure left open is a screen the next step
+resolves against and the test will not reach.
+
+## Where the flow ends
+
+**The screen the user named is the scope of the recording, not the place it starts.** Getting there
+is recorded because the test has to start from `app.open()`; everything after you leave it is
+somebody else's test.
+
+- You may tap a control that **navigates away**, and assert the arrival with **one** assertion —
+  that is how the screen's own navigation gets covered. Then the flow **ends**. Record nothing on
+  the screen you arrived at: not its heading, not its fields, not its search.
+- A step's result says `navigated: true` when the action replaced the screen. Treat it as the
+  boundary it is: assert you arrived, then `mobile_testing_agent_finish`.
+- **A flow name is not a boundary.** "Record the checkout flow", "record signing in" — the flow is
+  the scope, and crossing screens is the whole of it. A *screen* name is a boundary; a flow name is
+  not. When the user's words name neither clearly, ask rather than guess wide.
+- Say what you left out instead of recording it: *"I stopped at Explore List — say the word and
+  I'll record that screen too."* A sentence costs nothing; six steps about the wrong screen cost
+  the user an edit.
+
 Assert text the screen actually carries, copied from the read — not text you expect it to carry. If
 the thing you want to assert is not in the read at all, record `{ kind: "swipe", direction: "up" }`
 with no `ref` to scroll the viewport and read again; if it still is not there, say so rather than

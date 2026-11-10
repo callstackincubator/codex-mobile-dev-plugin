@@ -83,6 +83,23 @@ type Session = {
   refs: Map<string, { ref?: string; component: ScreenComponent }>;
   components: ScreenComponent[];
   screen?: ScreenSize;
+  /** The rows of the last read, kept so a read the step path already paid for is not paid twice. */
+  rows: ScreenRow[];
+  /** How many elements that read left out, for the same reason. */
+  truncated: number;
+  /** When the last read happened, so a tree the app has since changed on its own is not served. */
+  readAt: number;
+  /** The last read's element identities; see `hasNavigated`. */
+  identities: Set<string>;
+};
+
+/** One element of a screen read, as the agent sees it. */
+type ScreenRow = {
+  ref: string;
+  role?: string; name?: string; text?: string; placeholder?: string; value?: string; testId?: string;
+  enabled?: boolean; selected?: boolean; offScreen?: boolean;
+  bounds: number[];
+  selector?: string; rank?: string; unique?: boolean;
 };
 
 const PINNED_KINDS = [
@@ -91,6 +108,50 @@ const PINNED_KINDS = [
   "assertSelected", "swipe",
 ] as const satisfies readonly PinnedStepKind[];
 const AGENT_KINDS = ["agentAct", "agentAssert", "agentWaitFor"] as const satisfies readonly AgentStepKind[];
+
+/**
+ * How long a read stays usable without touching the device.
+ *
+ * An acting step reads the tree straight after its action — it has to, to tell the agent whether
+ * the screen was replaced — and the agent's own next `agent_screen` would otherwise read the same
+ * quiet screen again. This bounds the one thing that can still have changed: the app moving on by
+ * itself, an animation finishing or data arriving. The manual recorder caches on the same rule.
+ */
+const TREE_TTL_MS = 1_500;
+
+/**
+ * What an element is, independently of the read it came from.
+ *
+ * Node ids are minted per read, so two reads of one unchanged screen share none of them. What a
+ * test would name an element by — its role, its testID, its name, its text — is stable across
+ * reads and is exactly what the agent is looking at.
+ */
+function identity(component: ScreenComponent): string {
+  return [component.role, component.identifier, component.label, component.text, component.placeholder]
+    .map(value => (value ?? "").replace(/\s+/g, " ").trim()).join("\u0000");
+}
+
+/**
+ * Whether a step left the screen it was recorded on.
+ *
+ * Measured as the overlap between the two reads' element identities, because that is the thing
+ * the rule is actually about: a step that *changes* a screen leaves most of it in place — a
+ * disclosure adds a few rows, a filter rewrites a list under a heading, a fill re-labels one field
+ * — while a step that *navigates* replaces it. Measured against a real app's Explore screens:
+ * opening a disclosure kept every element the read had, switching tabs kept about two fifths of
+ * them (the tab bar and the chrome around it), and tapping into a pushed screen kept about a
+ * tenth. A third sits in the gap, with room on both sides.
+ *
+ * A tab switch therefore does not fire, which is the answer worth having: it is usually the
+ * navigation *to* the screen the recording is for, so a boundary warning there would land exactly
+ * as the agent arrives. And it is a hint either way — nothing refuses a step because of it.
+ */
+function hasNavigated(before: Set<string>, after: Set<string>): boolean {
+  if (before.size === 0 || after.size === 0) return false;
+  let kept = 0;
+  for (const value of before) if (after.has(value)) kept += 1;
+  return kept / before.size < 1 / 3;
+}
 
 function refused(message: string): never {
   throw new ExpectedOperationError("invalid_input", message);
@@ -176,7 +237,7 @@ export class TestingAgentRecordings {
       title: input.title.trim() || "a recorded flow",
       goal: input.goal.trim(),
       steps: [], status: "recording", note: "", error: "",
-      readId: 0, refs: new Map(), components: [],
+      readId: 0, refs: new Map(), components: [], rows: [], truncated: 0, readAt: 0, identities: new Set(),
     };
     this.changed();
     return {
@@ -199,11 +260,31 @@ export class TestingAgentRecordings {
    */
   async screen() {
     const session = this.recording();
+    // A read the step path already paid for answers this one, while it is still describing the
+    // screen it was taken of. The agent is told to re-read after every acting step and that read
+    // has already happened, so the loop costs one snapshot per step rather than two.
+    if (session.rows.length === 0 || performance.now() - session.readAt > TREE_TTL_MS) await this.refresh(session);
+    return {
+      readId: session.readId,
+      ...(session.screen ? { screen: session.screen } : {}),
+      elements: session.rows,
+      ...(session.truncated > 0
+        ? { truncated: session.truncated, note: `${session.truncated} further elements were left out of this read. Scroll with a swipe step if what you need is not here.` }
+        : {}),
+    };
+  }
+
+  /** Reads the device and makes that read the session's current tree, refs and rows. */
+  private async refresh(session: Session): Promise<void> {
     const startedAt = performance.now();
     let tree: Awaited<ReturnType<TestingDevices["read"]>>;
     try {
       tree = await this.devices.read(session.target);
     } catch (error) {
+      // The refs the agent holds described a screen this read failed to replace; none of them can
+      // be trusted now, so a step on one is refused rather than acted on.
+      session.refs = new Map();
+      session.rows = [];
       recordTestingAgentRead("failed", performance.now() - startedAt, 0);
       throw error;
     }
@@ -211,11 +292,12 @@ export class TestingAgentRecordings {
     session.components = tree.tree;
     session.screen = tree.screen;
     session.refs = new Map();
+    session.identities = new Set(tree.tree.map(identity));
     // Off-screen elements stay in the read, flagged. The manual recorder never had to think about
     // them — the user points at what they can see — but an agent asserting the *result* of a
     // filter is often asserting a row below the fold, and `getByText` resolves it whether or not
     // it is on screen. Dropping them hid exactly what the test was being written about.
-    const elements = tree.tree.slice(0, MAX_ELEMENTS).map(component => {
+    session.rows = tree.tree.slice(0, MAX_ELEMENTS).map(component => {
       const ref = `${session.readId}-${component.nodeId ?? ""}`;
       session.refs.set(ref, { component, ...(component.nodeId && tree.refs[component.nodeId] ? { ref: tree.refs[component.nodeId] } : {}) });
       const resolved = resolveComponentSelector(tree.tree, component, tree.screen);
@@ -242,15 +324,9 @@ export class TestingAgentRecordings {
         } : {}),
       };
     });
+    session.truncated = tree.tree.length - session.rows.length;
+    session.readAt = performance.now();
     recordTestingAgentRead("success", performance.now() - startedAt, tree.tree.length);
-    return {
-      readId: session.readId,
-      ...(tree.screen ? { screen: tree.screen } : {}),
-      elements,
-      ...(tree.tree.length > elements.length
-        ? { truncated: tree.tree.length - elements.length, note: `${tree.tree.length - elements.length} further elements were left out of this read. Scroll with a swipe step if what you need is not here.` }
-        : {}),
-    };
   }
 
   /**
@@ -344,7 +420,9 @@ export class TestingAgentRecordings {
   private async addStep(session: Session, step: PinnedStep, action?: Parameters<TestingDevices["perform"]>[1]) {
     session.steps.push(step);
     this.changed();
-    if (!action) return { ok: true, index: session.steps.length, label: step.label, source: stepExpression(step), acted: false };
+    const result = { ok: true, index: session.steps.length, label: step.label, source: stepExpression(step) };
+    if (!action) return { ...result, acted: false };
+    const before = session.identities;
     try {
       await this.devices.perform(session.target, action);
     } catch (error) {
@@ -353,14 +431,27 @@ export class TestingAgentRecordings {
       // never reached.
       session.error = errorMessage(error);
       this.changed();
-      throw error;
-    } finally {
       // Every action invalidates the tree, so the refs from the last read go with it.
       session.refs = new Map();
+      session.rows = [];
+      throw error;
     }
+    // Reading here rather than leaving it to the agent's next `agent_screen` is what makes the
+    // navigation hint possible at all — the comparison needs both sides — and it costs nothing,
+    // because that read is the one `agent_screen` then serves.
+    await this.refresh(session);
+    const navigated = hasNavigated(before, session.identities);
     return {
-      ok: true, index: session.steps.length, label: step.label, source: stepExpression(step), acted: true,
-      next: "The screen has changed. Call mobile_testing_agent_screen before the next step.",
+      ...result, acted: true,
+      // Advisory, never enforcement. Plenty of real flows cross screens on purpose — a checkout, a
+      // sign-in — and a recorder that refused them would be worse than one that occasionally
+      // records a step too many. So this says what happened and what the recording was for, and
+      // leaves the judgement where the reasoning is.
+      ...(navigated ? {
+        navigated: true,
+        goal: session.goal,
+        next: `That step replaced the screen. This recording is for: ${session.goal || session.title}. If the screen you have arrived at is outside that, assert that you arrived and call mobile_testing_agent_finish; only keep recording if the flow the user asked for genuinely crosses screens.`,
+      } : { next: "The screen has changed. Call mobile_testing_agent_screen before the next step." }),
     };
   }
 
@@ -447,7 +538,7 @@ export function registerTestingAgentTools(server: McpServer, devices: TestingDev
   registerAppTool(server, "mobile_testing_agent_step", {
     title: "Record one step",
     description:
-      "Record one step of the flow and, when it acts, take it on the device so the next step is read from the screen the test will be on. Pass a ref from the last screen read; assertions record without touching the device. Pass an instruction and no ref only for an element the screen read reported no selector for.",
+      "Record one step of the flow and, when it acts, take it on the device so the next step is read from the screen the test will be on. Pass a ref from the last screen read; assertions record without touching the device. Pass an instruction and no ref only for an element the screen read reported no selector for. The result says navigated: true when the step replaced the screen, with the recording's goal as a reminder of its scope.",
     inputSchema: {
       ref: z.string().min(1).max(64).optional().describe("An element ref from the latest mobile_testing_agent_screen."),
       kind: z.enum([...PINNED_KINDS, ...AGENT_KINDS]).optional().describe("The step; defaults to tap, or agentAct with an instruction."),

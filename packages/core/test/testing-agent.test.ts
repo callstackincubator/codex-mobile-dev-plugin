@@ -255,3 +255,96 @@ test("the five model tools are visible to the model and the panel's two are not"
   assert.deepEqual(visibility["mobile_testing_agent_state"], ["app"]);
   assert.deepEqual(visibility["mobile_testing_set_context"], ["app"]);
 });
+
+/** The Explore List, which shares nothing with the Explore screen but the application itself. */
+const LIST = tree([
+  { nodeId: "nav", role: "navigation", identifier: "explore-list" },
+  { nodeId: "title", role: "text", label: "Explore Cities" },
+  { nodeId: "search", role: "searchbox", placeholder: "Search transactions" },
+]);
+
+/** The Explore screen with a disclosure opened: everything it had, plus what the row revealed. */
+const EXPANDED = tree([
+  { nodeId: "bar", role: "tablist", label: "Tab Bar", bounds: { x: 0, y: 800, width: 402, height: 70 } },
+  { nodeId: "tab", parentId: "bar", role: "tab", label: "Explore", selected: true, bounds: { x: 100, y: 800, width: 100, height: 70 } },
+  { nodeId: "cta", role: "button", label: "Go To Explore List", text: "Go To Explore List" },
+  { nodeId: "blank", role: "other" },
+  { nodeId: "gone", role: "button", label: "Hidden", hidden: true },
+  { nodeId: "revealed", role: "text", label: "This app has two screens" },
+]);
+
+test("a step that replaces the screen says so, with the recording's own scope", async () => {
+  const { recordings } = await started([EXPLORE, LIST]);
+  const screen = await recordings.screen();
+  const cta = screen.elements.find(row => row.name === "Go To Explore List")!;
+  const result = await recordings.step({ ref: cta.ref, kind: "tap" });
+
+  assert.equal(result.navigated, true);
+  // The goal comes back with it, because the thing the agent has to weigh is what it was asked to
+  // record — a screen name is a boundary, and it only knows that from the sentence it wrote.
+  assert.equal(result.goal, "cover the Explore Details landmarks");
+  assert.match(result.next!, /assert that you arrived and call mobile_testing_agent_finish/);
+});
+
+test("a step that only changes the screen is not a navigation", async () => {
+  const { recordings } = await started([EXPLORE, EXPANDED]);
+  const screen = await recordings.screen();
+  const cta = screen.elements.find(row => row.name === "Go To Explore List")!;
+  const result = await recordings.step({ ref: cta.ref, kind: "tap" });
+
+  // Opening a disclosure leaves the screen in place and adds to it. A hint that fired here would
+  // end every flow at its first interesting step.
+  assert.equal(result.navigated, undefined);
+  assert.match(result.next!, /Call mobile_testing_agent_screen before the next step/);
+});
+
+test("the hint is advisory: the step is recorded and the recording goes on", async () => {
+  const { recordings } = await started([EXPLORE, LIST]);
+  const screen = await recordings.screen();
+  await recordings.step({ ref: screen.elements.find(row => row.name === "Go To Explore List")!.ref, kind: "tap" });
+
+  // Nothing refuses, nothing counts, nothing stops: a checkout and a sign-in cross screens on
+  // purpose, and a recorder that would not let them is worse than one that over-records.
+  assert.equal(recordings.state().steps.length, 1);
+  const next = await recordings.screen();
+  const title = next.elements.find(row => row.name === "Explore Cities")!;
+  const arrived = await recordings.step({ ref: title.ref, kind: "assertVisible" });
+  assert.equal(arrived.ok, true);
+  assert.equal(recordings.state().steps.length, 2);
+});
+
+test("the read a step already took is the read the next screen call answers with", async () => {
+  const device = fakeDevices([EXPLORE, LIST]);
+  const recordings = new TestingAgentRecordings(device.devices);
+  recordings.setContext(CONTEXT);
+  recordings.begin({ title: "t", goal: "g" });
+
+  const screen = await recordings.screen();
+  assert.equal(device.reads(), 1);
+  await recordings.step({ ref: screen.elements.find(row => row.name === "Go To Explore List")!.ref, kind: "tap" });
+  // The step had to read to answer whether it navigated; the agent's own re-read is that read.
+  assert.equal(device.reads(), 2);
+  const after = await recordings.screen();
+  assert.equal(device.reads(), 2, "one snapshot per step, not two");
+  assert.ok(after.elements.some(row => row.name === "Explore Cities"));
+  // And the refs it hands out are the ones the step's own read minted, so they are current.
+  assert.equal(after.readId, 2);
+});
+
+test("arriving at the screen the recording is for is not leaving it", async () => {
+  // A tab switch keeps the tab bar and the chrome around it — about two fifths of the read on a
+  // real app — and it is usually the navigation *to* the named screen. A boundary warning there
+  // would land exactly as the agent arrives.
+  const HOME = tree([
+    { nodeId: "bar", role: "tablist", label: "Tab Bar", bounds: { x: 0, y: 800, width: 402, height: 70 } },
+    { nodeId: "home", parentId: "bar", role: "tab", label: "Home", selected: true, bounds: { x: 0, y: 800, width: 100, height: 70 } },
+    { nodeId: "tab", parentId: "bar", role: "tab", label: "Explore", bounds: { x: 100, y: 800, width: 100, height: 70 } },
+    { nodeId: "settings", parentId: "bar", role: "tab", label: "Settings", bounds: { x: 200, y: 800, width: 100, height: 70 } },
+    { nodeId: "welcome", role: "text", label: "Welcome to Expo" },
+    { nodeId: "started", role: "text", label: "GET STARTED" },
+  ]);
+  const { recordings } = await started([HOME, EXPLORE]);
+  const screen = await recordings.screen();
+  const result = await recordings.step({ ref: screen.elements.find(row => row.name === "Explore")!.ref, kind: "tap" });
+  assert.equal(result.navigated, undefined);
+});

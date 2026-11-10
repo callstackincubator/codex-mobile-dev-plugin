@@ -236,7 +236,10 @@ function TestPreview({ source, run, highlightedLines }: { source: string; run?: 
     };
   }
   const { range: [from, to], generation } = shown.current;
-  return <pre data-testing-preview className="min-h-0 flex-1 overflow-auto rounded-md border bg-muted/40 p-2 font-mono text-[11px] leading-relaxed"><code>
+  // The preview is a well the panel contains, not a card sitting on it. The muted surface reads
+  // as recessed in light mode, but in dark mode it is *lighter* than the panel behind it, so the
+  // well is cut deeper there instead of being lifted out of the pane.
+  return <pre data-testing-preview className="min-h-0 flex-1 overflow-auto rounded-md border bg-muted/40 p-2 font-mono text-[11px] leading-relaxed dark:bg-black/15"><code>
     {source.split("\n").map((line, index) => {
       const added = index >= from && index < to;
       // The report's lines are 1-based, as the file's own line numbers are.
