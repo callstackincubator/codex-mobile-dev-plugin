@@ -1,8 +1,9 @@
-import { AppBridge, PostMessageTransport, type McpUiHostCapabilities, type McpUiHostContext } from "@modelcontextprotocol/ext-apps/app-bridge";
+import { AppBridge, McpUiMessageRequestSchema, PostMessageTransport, type McpUiHostCapabilities, type McpUiHostContext } from "@modelcontextprotocol/ext-apps/app-bridge";
+import { OpenAIMessageParamsSchema } from "@openai/mcp-extensions/app";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 /** A message or model-context update the panel sent to the chat. */
-type ChatEvent = { method: "message" | "modelContext" | "openLink" | "displayMode"; params: unknown };
+type ChatEvent = { method: "message" | "modelContext" | "openLink" | "displayMode" | "downloadFile"; params: unknown };
 
 declare global {
   interface Window {
@@ -46,9 +47,16 @@ async function open({ html, hostInfo, capabilities, context: initial, tool, init
   bridge = new AppBridge(null, hostInfo, capabilities, { hostContext: initial });
   bridge.oncalltool = params => window.mcpRequest("tools/call", params) as Promise<CallToolResult>;
   bridge.onreadresource = params => window.mcpRequest("resources/read", params) as never;
-  bridge.onmessage = async params => { events.push({ method: "message", params }); return {}; };
+  // The standard bridge strips extension metadata. Codex reads its routing metadata too.
+  if (capabilities.experimental?.["openai/message"] != null) {
+    bridge.setRequestHandler(McpUiMessageRequestSchema.extend({ params: OpenAIMessageParamsSchema }), async ({ params }) => {
+      events.push({ method: "message", params });
+      return {};
+    });
+  } else bridge.onmessage = async params => { events.push({ method: "message", params }); return {}; };
   bridge.onupdatemodelcontext = async params => { events.push({ method: "modelContext", params }); return {}; };
   bridge.onopenlink = async params => { events.push({ method: "openLink", params }); return {}; };
+  bridge.ondownloadfile = async params => { events.push({ method: "downloadFile", params }); return {}; };
   bridge.onrequestdisplaymode = async ({ mode }) => {
     events.push({ method: "displayMode", params: { mode } });
     const next = context.availableDisplayModes?.includes(mode) ? mode : context.displayMode ?? "inline";

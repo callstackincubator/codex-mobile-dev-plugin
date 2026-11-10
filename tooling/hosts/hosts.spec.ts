@@ -58,7 +58,7 @@ test.describe("MCP Apps hosts", () => {
   test("Claude exposes the same device and app tools as Codex", async ({ server, target }) => {
     test.skip(target !== "claude", "Compare Claude with Codex once.");
     const codex = await startServer("codex");
-    const client = new Client({ name: HOSTS.claude.clientName, version: "1" }, { capabilities: HOSTS.claude.clientCapabilities });
+    const client = new Client({ name: HOSTS.codex.clientName, version: "1" }, { capabilities: HOSTS.codex.clientCapabilities });
     try {
       await client.connect(codex.transport);
       const { tools } = await client.listTools();
@@ -93,7 +93,7 @@ test.describe("MCP Apps hosts", () => {
     test.skip(hasPanel(server) === false, "This target's server renders no panel in the chat.");
     const { view } = await openView("mobile_open_workspace");
     await expect(view.locator("#tool-select")).toContainText("Logs");
-    for (const label of ["Performance", "Storage", "App Intel", "TraceSift", "Logs"]) {
+    for (const label of ["Performance", "App Flow", "Storage", "App Intel", "TraceSift", "Logs"]) {
       await view.locator("#tool-select").click();
       await view.getByRole("option", { name: label }).click();
       await expect(view.locator("#tool-select")).toContainText(label);
@@ -115,8 +115,7 @@ test.describe("MCP Apps hosts", () => {
     expect(pageErrors).toEqual([]);
   });
 
-  test("an Android panel initialized while hidden shows its device controls and keeps tools collapsed", async ({ openView, page, pageErrors, target }) => {
-    test.skip(target !== "codex", "Codex retains inactive panels before displaying them.");
+  test("an Android panel initialized while hidden shows its device controls and keeps tools collapsed", async ({ openView, page, pageErrors }) => {
     const { view } = await openView("mobile_open_simulator", {
       arguments: { platform: "android" }, displayMode: "inline", initiallyHidden: true,
     });

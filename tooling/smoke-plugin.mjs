@@ -149,7 +149,16 @@ try {
   }
   if (name === "claude") await assert.rejects(access(join(plugin, "dist/browser-panel.html")));
   if (name === "claude") {
-    assert.equal(await readFile(join(plugin, "skills/mobile-dev/SKILL.md"), "utf8"), await readFile("packages/skills/mobile-dev/SKILL.md", "utf8"));
+    // Claude ships the same workflows and reference files as Codex. Only setup
+    // and Codex's display metadata differ between the packages.
+    for (const skill of ["mobile-dev", "agent-device"]) {
+      const source = join("packages/skills", skill);
+      for (const entry of await readdir(source, { recursive: true, withFileTypes: true })) {
+        const path = relative(source, join(entry.parentPath, entry.name));
+        if (!entry.isFile() || path.split(/[\\/]/).includes("agents")) continue;
+        assert.deepEqual(await readFile(join(plugin, "skills", skill, path)), await readFile(join(source, path)), `${skill}/${path}`);
+      }
+    }
     await access(join(plugin, "skills/mobile-dev-setup/references/missing-tools.md"));
     await assert.rejects(access(join(plugin, "skills/mobile-dev/references/missing-tools.md")));
   }

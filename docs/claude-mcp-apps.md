@@ -31,6 +31,35 @@ server scope. Hosts that block channels, and transcripts saved before the server
 issued instance keys, retain the usual independent-view behavior. We do not use
 client mount time as an ordering fallback or set a fixed sandbox domain.
 
+## Codex feature parity
+
+Both plugins use the same server registrations, device runtimes, workspace, and
+cards. Claude ships the same Mobile Dev and agent-device skills and reference
+files; its setup skill covers Claude's install and Node recovery steps.
+
+| Product feature | Claude support |
+| --- | --- |
+| iOS and Android devices | Live device views, selection, input, screenshots, inspection, and device resource limits use the shared workspace and tools. |
+| App control | Install, launch, stop, deep links, test pushes, permissions, and languages use the same tools. |
+| Logs and chat context | The shared log views, selected device context, screenshots, and annotations use standard model-context updates. Chat actions include their full reference where Claude has no composer attachment API. |
+| Performance | Live CPU, threads, memory, and FPS; saved recordings; shared range selection; Android frame details; inline comparisons; chart questions; and opening recordings in the workspace use the same code. JSON export follows the advertised download capability on either host. |
+| App Flow | The same editor, screen capture, flow tools, and start/resume chat actions. Progress uses server notifications where forwarded and polling otherwise. |
+| App storage | The same files, preferences, key-value stores, and SQLite views and tools. |
+| App Intelligence | The same screen/dependency graph, source browsing, generation, and query tools. |
+| TraceSift | The same profile analysis cards, full explorer, and investigation actions. |
+
+Host controls still differ. Codex owns its removable composer attachments and
+plugin-store migration tools. Claude uses standard context, panel controls for
+removing selections, and its own plugin update command. Its local connector cannot
+provide the remote-only global entry points listed above. These host APIs do not
+gate the shared device or app features.
+
+Host tests compare complete product tool definitions using each host's own client
+capabilities. Both run the same workspace tool navigation, hidden-panel recovery,
+saved chart, comparison, exact-range chat, workspace recording, and JSON download
+checks. Package smoke tests compare every shared skill and reference file with
+the source shipped by Codex, except its `agents` display metadata.
+
 Tests use the real servers in stand-in hosts and exercise the SDK handshake,
 messages, teardown, downloads, and replacement of mounted workspaces. They do not
 prove that a particular Claude account has received the side-panel rollout.
