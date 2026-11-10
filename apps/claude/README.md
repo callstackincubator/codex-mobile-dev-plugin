@@ -56,6 +56,9 @@ then restart Claude. The local plugin needs Claude Desktop on the Mac with your
 devices. Claude's web connector and Artifacts entry-point features require a remote
 server and do not turn this local plugin into a web service.
 
+See the [Claude MCP Apps audit](../../docs/claude-mcp-apps.md) for each supported
+feature and the features Claude limits to remote connectors.
+
 ## Requirements
 
 - An Apple Silicon Mac.

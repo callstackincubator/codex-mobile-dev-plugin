@@ -54,6 +54,28 @@ function fixture(canMessage = true, projectList: unknown[] = []) {
 }
 const settle = (ms = 60) => new Promise(resolve => setTimeout(resolve, ms));
 
+test("screen sweep messages use advertised routing and respect standard host limits", async t => {
+  const host = fixture(); const panel = new AppFlowPanel(host.app); t.after(() => panel.dispose());
+  panel.setAvailable(true); await panel.selectProject("/projects/demo");
+  await panel.requestAgentStart({ mode: "screen-ui-and-structure", screenIds: ["s".repeat(8000)] });
+  assert.equal(host.messages.length, 0);
+  assert.match(panel.getSnapshot().error ?? "", /8,000-character/);
+  host.app.getHostCapabilities = () => ({ message: { text: {} }, experimental: { "openai/message": {} } });
+  await panel.requestAgentStart({ mode: "screen-ui-and-structure" });
+  assert.deepEqual((host.messages[0] as Parameters<App["sendMessage"]>[0])._meta, { "openai/message": { target: "active", send: true } });
+});
+
+test("screen sweep message timeouts report uncertain delivery without retrying", async t => {
+  const host = fixture(); const panel = new AppFlowPanel(host.app); t.after(() => panel.dispose());
+  panel.setAvailable(true); await panel.selectProject("/projects/demo");
+  let calls = 0;
+  host.app.sendMessage = async () => { calls++; throw Object.assign(new Error("Request timed out"), { code: -32001 }); };
+  await panel.requestAgentStart({ mode: "screen-ui-and-structure" });
+  assert.equal(calls, 1);
+  assert.equal(panel.getSnapshot().agentStartPending, false);
+  assert.match(panel.getSnapshot().error ?? "", /Check the chat before retrying/);
+});
+
 test("structure builds call the server directly while screen sweeps wake the active Codex agent", async t => {
   const host = fixture(); const panel = new AppFlowPanel(host.app); t.after(() => panel.dispose());
   panel.setAvailable(true); await panel.selectProject("/projects/demo");

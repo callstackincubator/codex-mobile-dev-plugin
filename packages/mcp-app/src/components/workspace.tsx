@@ -169,7 +169,7 @@ export function Workspace({ panels, recordingController, banner, displayModeCont
   // A collapsed simulator area would put the handle's line against the toolbar's border, doubling it.
   // The handle stays draggable so the simulators can be pulled back open.
   const divider = <ResizableHandle key="divider" hidden={layout === "none" || (!fullscreen && !open)} disabled={layout === "none" || (!fullscreen && !open)} className={simulatorsCollapsed ? "bg-transparent" : undefined} aria-label="Resize tools and simulators" />;
-  return <main className="flex flex-col" style={{ height: "var(--workspace-height, 100dvh)", paddingBottom: "var(--workspace-bottom-inset, 0px)" }}>
+  return <main className="flex flex-col" style={{ height: "var(--workspace-height, 100dvh)", paddingTop: "var(--workspace-top-inset, 0px)", paddingRight: "var(--workspace-right-inset, 0px)", paddingBottom: "var(--workspace-bottom-inset, 0px)", paddingLeft: "var(--workspace-left-inset, 0px)" }}>
     {banner}
     {contextControl}
     {!bottomToolbar && toolbar}

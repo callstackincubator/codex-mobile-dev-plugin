@@ -15,6 +15,9 @@ type RecordingState = {
   canMessage: boolean;
   /** The server has Mobile Dev's workspace to open the recording in. */
   canOpen: boolean;
+  canDownload: boolean;
+  downloading: boolean;
+  downloadStatus: string;
   busy: boolean;
   error: string;
 };
@@ -43,7 +46,7 @@ export class RecordingController {
   constructor(app: HostBridge, { attachments = () => undefined, workspace = false }: RecordingOptions = {}) {
     this.app = app;
     this.attachments = attachments;
-    this.state = { canMessage: false, canOpen: workspace, busy: false, error: "" };
+    this.state = { canMessage: false, canOpen: workspace, canDownload: false, downloading: false, downloadStatus: "", busy: false, error: "" };
     document.addEventListener("visibilitychange", this.visibilityChanged);
   }
   subscribe = (listener: () => void) => {
@@ -59,7 +62,7 @@ export class RecordingController {
   hostChanged() {
     const capabilities = this.app.getHostCapabilities();
     const canMessage = Boolean(capabilities?.message?.text);
-    this.update({ canMessage });
+    this.update({ canMessage, canDownload: Boolean(capabilities?.downloadFile && this.app.downloadFile) });
     this.schedule();
   }
   setVisible(visible: boolean) { this.visible = visible; this.schedule(); }
@@ -215,6 +218,27 @@ export class RecordingController {
       const message = timedOut ? "The host did not confirm delivery. Check the chat before retrying to avoid sending the question twice." : error instanceof Error ? error.message : "Could not send this recording to chat.";
       this.update({ error: message });
     } finally { this.update({ busy: false }); }
+  }
+  async download() {
+    const { recording, preview, canDownload, downloading } = this.state;
+    if (this.disposed || !recording || preview || !canDownload || downloading || !this.app.downloadFile) return;
+    if (recording.status !== "finished" && recording.status !== "failed") return;
+    this.update({ downloading: true, downloadStatus: "", error: "" });
+    const startedAt = performance.now();
+    try {
+      const result = await this.app.downloadFile({ contents: [{ type: "resource", resource: {
+        uri: `file:///mobile-dev-recording-${recording.id}.json`, mimeType: "application/json", text: JSON.stringify(recording),
+      } }] }, { timeout: 600_000, signal: this.lifetime.signal });
+      if (this.disposed) return;
+      recordUiTiming("ui.recording.download_ack", performance.now() - startedAt);
+      if (result.isError) this.update({ downloadStatus: "The download did not finish." });
+      else { countUiEvent("ui.recording.download"); this.update({ downloadStatus: "Download started." }); }
+    } catch {
+      if (!this.disposed) {
+        captureUiError(new Error("Recording download could not be confirmed."), "recording.download");
+        this.update({ downloadStatus: "The download could not be confirmed. Check your downloads before trying again." });
+      }
+    } finally { this.update({ downloading: false }); }
   }
   dispose() {
     this.disposed = true;

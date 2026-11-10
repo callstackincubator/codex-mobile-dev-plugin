@@ -2,6 +2,19 @@
 
 [Back to README](../README.md) · [Contributing](../CONTRIBUTING.md)
 
+Native MCP Apps workspaces preserve existing surface, readiness, processing,
+input, stream, and MCP measurements when Claude renders them directly.
+`ui.workspace.superseded` counts workspaces retired by a newer opening before
+their usual teardown flushes and stops collection. Election keys stay local.
+`ui.app_flow.message_ack` measures the host's message acknowledgement in
+milliseconds; it does not mean the user agreed or that a sweep started.
+`ui.recording.download_ack` measures the host download response in milliseconds,
+including time spent waiting for confirmation. `ui.recording.download` counts
+accepted download requests, not completed file writes. Failed requests use the
+fixed `recording.download` error message. File contents, names, recording IDs,
+and paths never enter these measurements. Retiring a workspace aborts a pending
+download and stops further collection.
+
 ## Hosts
 
 Since 0.1.165, UI and server telemetry carry a `host` tag and attribute with one of

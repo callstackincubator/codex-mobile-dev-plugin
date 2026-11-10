@@ -12,6 +12,24 @@ import type { HostAttachments } from "../src/host-bridge.ts";
 const simulator = { udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS 26" };
 const log = stackLogs([{ timestamp: "2026-09-30T12:00:00Z", message: "Request failed", level: "error", source: "js", origin: "metro", stack: "at load (App.tsx:9:3)", sequence: 1 }])[0];
 
+test("standard hosts keep log context after accepting a draft and never retry messages", async () => {
+  let calls = 0;
+  let unavailable = false;
+  const context = new PanelContext({
+    getHostCapabilities: () => ({ message: { text: {} }, updateModelContext: { text: {} } }),
+    async updateModelContext() { return {}; },
+    async sendMessage() { calls++; if (unavailable) throw new Error("No active composer"); return {}; },
+  } as unknown as App);
+  await context.sendLogToChat(log);
+  assert.ok(context.attachedKey, "The host can acknowledge a draft before the user agrees to send it.");
+  unavailable = true;
+  await assert.rejects(context.sendLogToChat(log), /No active composer/);
+  assert.equal(calls, 2);
+  context.dispose();
+  await assert.rejects(context.sendLogToChat(log), /workspace has closed/);
+  assert.equal(calls, 2);
+});
+
 test("hosts without context pills receive the clicked log in the message", async () => {
   const messages: Parameters<App["sendMessage"]>[0][] = [];
   const context = new PanelContext({
@@ -358,6 +376,8 @@ test("standard context supports logs, local removal and complete chat messages",
   await context.sendLogToChat(log);
   assert.match(JSON.stringify(messages[0].content), /Request failed/);
   assert.equal(messages[0]._meta, undefined);
+  assert.equal(context.attachmentCount, 1, "A draft acknowledgement does not prove the user sent the message.");
+  await context.attach(undefined);
   assert.equal(context.attachmentCount, 0);
   assert.equal(updates.at(-1)?.structuredContent?.selectedLog, null);
 });
@@ -386,7 +406,7 @@ test("standard screenshot context is capability-gated and clearing rolls back on
   assert.equal(updates.at(-1)?.content?.some(item => item.type === "image"), false);
 });
 
-test("failed standard context cleanup never retries a delivered message", async () => {
+test("standard draft acceptance keeps context without an implicit cleanup write", async () => {
   let sent = 0;
   const context = new PanelContext({
     getHostCapabilities: () => ({ message: { text: {} }, updateModelContext: { text: {}, structuredContent: {} } }),
@@ -395,4 +415,5 @@ test("failed standard context cleanup never retries a delivered message", async 
   } as unknown as App, () => undefined);
   await context.sendLogToChat(log);
   assert.equal(sent, 1);
+  assert.ok(context.attachedKey);
 });

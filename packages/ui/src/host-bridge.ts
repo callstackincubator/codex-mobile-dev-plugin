@@ -11,7 +11,7 @@ export type HostBridge = Pick<App,
   | "getHostContext"
   | "sendMessage"
   | "updateModelContext"
-  | "requestDisplayMode">;
+  | "requestDisplayMode"> & Partial<Pick<App, "downloadFile">>;
 
 /**
  * App Flow follows the server's logging notifications where a host forwards them, and polls

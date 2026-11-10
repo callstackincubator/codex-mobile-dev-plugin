@@ -1,8 +1,16 @@
 import type { AppFlowHostBridge } from "./host-bridge.ts";
+import { chatMessage } from "./chat-message.ts";
 import { LoggingMessageNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
 import type { AppFlowBuildMode, AppFlowProgressEvent, AppFlowPrompt, AppFlowPromptResolution, AppFlowResult, DeepLinkJudgeMode, ExplorationMode, ManualRecordingEvent, StartAppFlowInput } from "@mobile-dev/shared/app-flow.ts";
 import { AppFlowRecordingStore } from "./app-flow-recording.ts";
 import { captureUiError, countUiEvent, getUiTelemetryAttributes, recordUiTiming } from "./telemetry.ts";
+
+function agentMessageError(error: unknown) {
+  if (typeof error === "object" && error !== null && "code" in error && error.code === -32001) {
+    return "The host did not confirm delivery. Check the chat before retrying to avoid sending the request twice.";
+  }
+  return error instanceof Error ? error.message : String(error);
+}
 
 export type AppFlowRunState = "idle" | "running" | "needs-user-action" | "suspended" | "completed" | "failed" | "cancelled";
 export interface AppFlowSweepSummary { completed: number; total: number; message: string; captured?: number; captureLimit?: number; }
@@ -367,11 +375,14 @@ export class AppFlowPanel {
     const prompt = `Start an App Flow screen sweep with mobile_appflow_start using these exact arguments, then service its mobile_appflow_next_decision and mobile_appflow_submit_decision loop until the run completes, fails, is cancelled, is suspended, or needs user action. Do not resolve a human auth/review prompt yourself.\n\n${JSON.stringify(input)}${explain}`;
     this.update({ agentStartPending: true, error: null });
     try {
-      const response = await this.app.sendMessage({ role: "user", content: [{ type: "text", text: prompt }] }, { timeout: 5000, maxTotalTimeout: 5000 });
-      if (response.isError) throw new Error("Codex could not start the App Flow sweep.");
+      const startedAt = performance.now();
+      const response = await this.app.sendMessage(chatMessage(this.app, prompt), { timeout: 5000, maxTotalTimeout: 5000 });
+      if (this.disposed) return;
+      recordUiTiming("ui.app_flow.message_ack", performance.now() - startedAt);
+      if (response.isError) throw new Error("The host did not accept the App Flow request. Try again from chat.");
       clearTimeout(this.agentStartTimer);
       this.agentStartTimer = setTimeout(() => { this.agentStartTimer = undefined; this.update({ agentStartPending: false }); }, 30000);
-    } catch (error) { this.progressStartedAt = undefined; this.update({ agentStartPending: false, error: error instanceof Error ? error.message : String(error) }); }
+    } catch (error) { this.progressStartedAt = undefined; this.update({ agentStartPending: false, error: agentMessageError(error) }); }
   }
 
   async launchApp() {
@@ -421,11 +432,15 @@ export class AppFlowPanel {
       // leaves its next model decision without a caller, so wake a new turn for this same run.
       if (resolution !== "stop" && this.snapshot.state === "running" && this.canSendAgentStart) {
         const resume = `Resume the existing App Flow run ${runId}. Service its mobile_appflow_next_decision and mobile_appflow_submit_decision loop until it completes, fails, is cancelled, is suspended, or needs user action. Do not start a new run and do not resolve a human auth/review prompt yourself.`;
-        const response = await this.app.sendMessage({ role: "user", content: [{ type: "text", text: resume }] }, { timeout: 5000, maxTotalTimeout: 5000 });
-        if (response.isError) throw new Error("Codex could not resume the App Flow decision loop.");
+        if (this.disposed) return;
+        const startedAt = performance.now();
+        const response = await this.app.sendMessage(chatMessage(this.app, resume), { timeout: 5000, maxTotalTimeout: 5000 });
+        if (this.disposed) return;
+        recordUiTiming("ui.app_flow.message_ack", performance.now() - startedAt);
+        if (response.isError) throw new Error("The host did not accept the App Flow resume request. Try again from chat.");
       }
     }
-    catch (error) { this.update({ error: error instanceof Error ? error.message : String(error) }); }
+    catch (error) { this.update({ error: agentMessageError(error) }); }
   }
   async replay(nodeId: string) {
     const projectPath = this.snapshot.projectPath;

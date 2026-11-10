@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { PointerEvent } from "react";
 import { Area, AreaChart, CartesianGrid, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { ExternalLinkIcon, MessageCircleIcon } from "lucide-react";
+import { DownloadIcon, ExternalLinkIcon, MessageCircleIcon } from "lucide-react";
 import type { RecordingController } from "../recording-controller.ts";
 import type { RecordingRange } from "@mobile-dev/shared/recordings.ts";
 import { summarizeRecording } from "@mobile-dev/shared/recordings.ts";
@@ -216,9 +216,11 @@ export function RecordingCard({ controller, detailed = false }: { controller: Re
         <div className="recording-actions">
           <Button disabled={state.canMessage === false || state.busy || hasReadings === false} onClick={() => { void controller.send("ask"); }}><MessageCircleIcon />{range ? "Ask about this range" : "Ask about recording"}</Button>
           {detailed === false && state.canOpen && <Button variant="outline" disabled={state.canMessage === false || state.busy} onClick={() => { void controller.send("open"); }}><ExternalLinkIcon />Open in Mobile Dev</Button>}
+          {detailed && state.canDownload && <Button variant="outline" disabled={state.downloading || !!state.preview || (recording.status !== "finished" && recording.status !== "failed")} onClick={() => { void controller.download(); }}><DownloadIcon />{state.downloading ? "Downloading…" : "Download JSON"}</Button>}
           {state.canMessage === false && <p>This host does not support sending chart selections to chat.</p>}
         </div>
         {state.error && <p role="alert" className="recording-error">{state.error}</p>}
+        {state.downloadStatus && <p role="status">{state.downloadStatus}</p>}
         {detailed && <p className="recording-footnote">{recording.samples.length} CPU/memory samples · {hasFps && `${recording.fps.samples.length} FPS samples · `}Recording {recording.id} · {time.toLocaleDateString()}</p>}
       </aside>
     </div>

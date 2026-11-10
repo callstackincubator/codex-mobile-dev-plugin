@@ -16,11 +16,12 @@ import { DeviceWorkspace } from "@mobile-dev/ui/device-workspace.ts";
 import { WorkspaceTools } from "@mobile-dev/ui/workspace-tools.ts";
 import type { ToolName } from "@mobile-dev/ui/workspace-tools.ts";
 import { startLiveReload } from "./live-reload.ts";
-import { ErrorBoundary, captureUiError, startUiTelemetry, stopUiTelemetry } from "@mobile-dev/ui/telemetry.ts";
+import { ErrorBoundary, captureUiError, countUiEvent, startUiTelemetry, stopUiTelemetry } from "@mobile-dev/ui/telemetry.ts";
 import { PLUGIN_VERSION } from "@mobile-dev/shared/version.ts";
 import { RecordingController } from "@mobile-dev/ui/recording-controller.ts";
 import type { WorkspaceOptions } from "./workspace-extension.ts";
 import { applyHostStyles } from "./host-styles.ts";
+import { WorkspaceInstances } from "./workspace-instances.ts";
 
 /** Starts the device workspace: the panel MCP Apps hosts open beside the chat. */
 export function startWorkspaceApp(options: WorkspaceOptions = {}) {
@@ -33,9 +34,11 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
   const recordingController = new RecordingController(app, { attachments, workspace: true });
   const extension = options.extension?.(app);
   const reactRoot = createRoot(document.getElementById("root")!);
+  let disposingUI: Promise<void> | undefined;
   let automaticTool: ToolName | undefined;
   let automaticToolRevision = 0;
   function renderWorkspace(automaticLayout?: DeviceLayout) {
+    if (disposingUI) return;
     const workspace = <ErrorBoundary fallback={<p role="alert">Mobile Dev could not render. Reopen the panel to try again.</p>}>
       <Workspace panels={panels} recordingController={recordingController} banner={extension?.banner} displayModeControl={options.displayModeControl === false ? undefined : <DisplayModeButton app={app} />} contextControl={<ContextAttachments context={panels.context} />} automaticLayout={automaticLayout} automaticTool={automaticTool} automaticToolRevision={automaticToolRevision} onLayout={changeLayout} />
     </ErrorBoundary>;
@@ -50,9 +53,24 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
   function changeLayout(layout: DeviceLayout, manual = false) { devices.changeLayout(layout, manual); }
 
   let stopLiveReload = () => {};
-  let disposingUI: Promise<void> | undefined;
+  const instances = new WorkspaceInstances(() => {
+    countUiEvent("ui.workspace.superseded");
+    const root = document.getElementById("root")!;
+    root.inert = true;
+    stopLiveReload();
+    void disposeUI().then(() => {
+      const notice = document.createElement("p");
+      notice.className = "p-3 text-sm text-muted-foreground";
+      notice.setAttribute("role", "status");
+      notice.textContent = "This workspace has closed. Use the newest Mobile Dev view in this conversation.";
+      root.replaceChildren(notice);
+      root.inert = false;
+    });
+  });
   function disposeUI() {
     return disposingUI ??= (async () => {
+      instances.dispose();
+      panels.context.dispose();
       window.removeEventListener("pagehide", onPageHide);
       app.removeEventListener("hostcontextchanged", hostContext);
       window.removeEventListener("focus", resumeContext);
@@ -81,6 +99,7 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
     const root = document.documentElement;
     root.style.setProperty("--workspace-height", height ? `${height}px` : "100dvh");
     root.style.setProperty("--workspace-bottom-inset", `${host?.safeAreaInsets?.bottom ?? 0}px`);
+    for (const edge of ["top", "right", "left"] as const) root.style.setProperty(`--workspace-${edge}-inset`, `${host?.safeAreaInsets?.[edge] ?? 0}px`);
     if (height === reportedInlineHeight) return;
     reportedInlineHeight = height;
     if (height) void app.sendSizeChanged({ height }).catch(error => captureUiError(error, "workspace.resize"));
@@ -109,6 +128,7 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
     devices.notice(message);
   }
   function openDevices(input: unknown) {
+    if (disposingUI) return;
     const target = panelTargetSchema.safeParse(input);
     if (target.success === false) {
       const error = new Error("Mobile Dev received an invalid opening target.");
@@ -125,6 +145,9 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
     openDevices(input.arguments ?? {});
   };
   app.ontoolresult = result => {
+    if (disposingUI) return;
+    if (!result.isError) instances.accept(result.structuredContent?.workspaceInstance);
+    if (disposingUI) return;
     // mobile_open_performance_recording sends the recording's ID (older servers send the recording).
     if (result.structuredContent?.recording !== undefined || result.structuredContent?.recordingId !== undefined) {
       try { recordingController.accept(result); }
@@ -142,6 +165,7 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
   void (async () => {
     try {
       await app.connect();
+      if (disposingUI) return;
       attributeHost(app);
       hostContext();
       const capabilities = app.getHostCapabilities();

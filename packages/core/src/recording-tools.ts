@@ -6,6 +6,7 @@ import { cpuTargetSchema } from "@mobile-dev/shared/cpu.ts";
 import type { CpuTarget } from "@mobile-dev/shared/cpu.ts";
 import { RECORDING_URI, recordingIdSchema, recordingPreview, recordingRangeSchema, recordingReferenceSchema, recordingSchema, summarizeRecording } from "@mobile-dev/shared/recordings.ts";
 import type { PerformanceRecording, RecordingRange } from "@mobile-dev/shared/recordings.ts";
+import { workspaceInstanceSchema, type WorkspaceInstance } from "@mobile-dev/shared/workspace-instance.ts";
 import { errorMessage } from "@mobile-dev/shared/protocol.ts";
 import { captureServerError } from "./telemetry.ts";
 import type { PerformanceRecordings } from "./performance-recordings.ts";
@@ -221,10 +222,14 @@ export function registerRecordingTools(server: McpServer, recordings: Performanc
 }
 
 /** Opens a saved recording in Mobile Dev's workspace; the panel registers it with its page. */
-export function registerOpenRecordingTool(server: McpServer, showRecording: ShowRecording, workspaceUri: string) {
+export function registerOpenRecordingTool(server: McpServer, showRecording: ShowRecording, workspaceUri: string, instance: () => WorkspaceInstance) {
   registerAppTool(server, "mobile_open_performance_recording", {
     title: "Open a recording in Mobile Dev",
     description: "Open the saved recording and selected time range in the Mobile Dev workspace. Does not start a live performance collector or boot a device.",
-    inputSchema, outputSchema: referenceOutputSchema, annotations: read, _meta: { ui: { resourceUri: workspaceUri, visibility } },
-  }, showRecording);
+    inputSchema, outputSchema: { ...referenceOutputSchema, workspaceInstance: workspaceInstanceSchema.optional() }, annotations: read, _meta: { ui: { resourceUri: workspaceUri, visibility } },
+  }, async input => {
+    const workspaceInstance = instance();
+    const result = await showRecording(input);
+    return result.isError ? result : { ...result, structuredContent: { ...result.structuredContent, workspaceInstance } };
+  });
 }

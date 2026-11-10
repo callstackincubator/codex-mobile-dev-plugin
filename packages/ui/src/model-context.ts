@@ -1,4 +1,4 @@
-import { chatMessage } from "./chat-message.ts";
+import { chatMessage, retriesComposer } from "./chat-message.ts";
 import type { HostAttachmentsSource, HostBridge } from "./host-bridge.ts";
 import type { SimulatorDevice } from "@mobile-dev/shared/protocol.ts";
 import type { StackedLog } from "@mobile-dev/shared/logs.ts";
@@ -16,12 +16,12 @@ function composerUnavailable(error: unknown) {
 }
 
 // A cached panel can become visible before its chat's composer registers again.
-async function withComposer<T>(request: () => Promise<T>): Promise<T> {
+async function withComposer<T>(retry: boolean, request: () => Promise<T>): Promise<T> {
   const delays = [100, 250, 500, 1000];
   for (let attempt = 0; ; attempt++) {
     try { return await request(); }
     catch (error) {
-      if (!composerUnavailable(error) || attempt >= delays.length) throw error;
+      if (!retry || !composerUnavailable(error) || attempt >= delays.length) throw error;
       await new Promise(resolve => setTimeout(resolve, delays[attempt]));
     }
   }
@@ -45,6 +45,7 @@ export class PanelContext {
   private readonly app: HostBridge;
   private readonly attachments: HostAttachmentsSource;
   private contextReady = false;
+  private disposed = false;
   onChange = () => {};
 
   constructor(app: HostBridge, attachments: HostAttachmentsSource = () => undefined) { this.app = app; this.attachments = attachments; }
@@ -99,7 +100,8 @@ export class PanelContext {
     try {
       // Publish first so widget context, where a host exposes it, matches the draft.
       if (!hostAttachments || annotations.some(annotation => this.pendingAnnotations.has(annotation.id))) await this.publish();
-      const result = await withComposer(() => {
+      const result = await withComposer(retriesComposer(this.app), () => {
+        if (this.disposed) throw new Error("This workspace has closed. Use the newest Mobile Dev view.");
         if (!hostAttachments && revision !== this.revision) throw new Error("Notes changed while preparing the draft. Add them to chat again.");
         if (annotations.some(annotation => !this.annotations.some(item => item.id === annotation.id))) throw new Error("Annotations were removed from chat before sending.");
         return this.app.sendMessage(chatMessage(this.app, text), { timeout: 5000, maxTotalTimeout: 5000 });
@@ -144,15 +146,15 @@ export class PanelContext {
         do { publishing = this.queue; await publishing; } while (publishing !== this.queue);
       }
       const text = this.usesHostAttachments ? prompt : `${prompt}\n\n${formatLogContext(log)}`;
-      const result = await withComposer(() => {
+      const result = await withComposer(retriesComposer(this.app), () => {
+        if (this.disposed) throw new Error("This workspace has closed. Use the newest Mobile Dev view.");
         if (this.canAttach && this.attached !== log) throw new Error("The selected log was removed or changed before sending.");
         return this.app.sendMessage(chatMessage(this.app, text), { timeout: 5000, maxTotalTimeout: 5000 });
       });
       if (result.isError) throw new Error("Could not send this log to chat.");
-      if (this.attached === log) {
+      if (this.usesHostAttachments && this.attached === log) {
         this.attached = undefined;
         this.revision++; this.changed();
-        await this.clearSentContext();
       }
     } finally { recordUiTiming("ui.logs.send", performance.now() - startedAt); }
   }
@@ -206,14 +208,15 @@ export class PanelContext {
     } finally { this.changed(); }
   }
 
-  private async clearSentContext() {
-    if (this.usesHostAttachments) return;
-    // Delivery already succeeded. A context cleanup failure must not invite a
-    // duplicate send; retain the existing message timing and error boundaries.
-    await this.publish().catch(() => captureUiError(new Error("Could not clear sent context."), "context.clear_sent"));
+  dispose() {
+    this.disposed = true;
+    this.revision++;
+    this.listeners.clear();
+    this.onChange = () => {};
   }
 
   hostChanged() {
+    if (this.disposed) return;
     if (!this.usesHostAttachments) {
       const ready = this.canAttach;
       if (ready && !this.contextReady) void this.publish().catch(() => {});
@@ -243,15 +246,15 @@ export class PanelContext {
   }
 
   resume() {
-    if (!this.deferred || this.pending || this.resuming) return;
+    if (this.disposed || !this.deferred || this.pending || this.resuming) return;
     this.resuming = this.publish().catch(() => {}).finally(() => { this.resuming = undefined; this.changed(); });
   }
 
   private publish(): Promise<void> {
-    if (!this.canAttach) return Promise.resolve();
+    if (this.disposed || !this.canAttach) return Promise.resolve();
     const revision = this.revision;
     const run = this.queue.catch(() => {}).then(async () => {
-      if (revision !== this.revision) return;
+      if (this.disposed || revision !== this.revision) return;
       const selected = this.simulator;
       const log = this.attached;
       const devices = this.simulators.map(device => {
@@ -279,7 +282,7 @@ export class PanelContext {
       const params = { content, structuredContent: { selectedSimulator: selected ?? null, selectedSimulators: this.simulators, selectedLog: log ?? null, selectedLogKey: log ? logKey(log) : null, screenshotIds: this.screenshots.map(item => item.id), annotationIds: this.annotations.map(item => item.id) } };
       this.pending = true;
       try {
-        await withComposer(async () => {
+        await withComposer(this.usesHostAttachments, async () => {
           if (revision !== this.revision) return;
           const host = this.attachments();
           if (host) this.updateId = (await host.update(params, { timeout: 5000 }))?.updateId;

@@ -13,6 +13,44 @@ function contains(text: string, fragment: string, expected = true) {
   assert.equal(included, expected, `Telemetry fragment: ${fragment}`);
 }
 
+test("native recording downloads measure host acknowledgement without exporting file contents to Sentry", async t => {
+  const built = await build({
+    stdin: { contents: 'export * from "./packages/ui/src/telemetry.ts"; export { RecordingController } from "./packages/ui/src/recording-controller.ts";', resolveDir: process.cwd(), loader: "ts" },
+    bundle: true, write: false, format: "iife", globalName: "ExportTest", platform: "browser",
+    define: { "process.env.NODE_ENV": '"production"' },
+  });
+  const dom = new JSDOM(`<html data-view="workspace"><head><meta name="mobile-dev-environment" content="development">${identityMeta}</head></html>`, {
+    pretendToBeVisual: true, runScripts: "outside-only", url: "https://mobile-dev.test/",
+  });
+  t.after(() => dom.window.close());
+  const window = dom.window;
+  window.Math.random = () => 0;
+  Object.defineProperty(window.performance, "getEntriesByType", { value: () => [] });
+  Object.defineProperty(window.performance, "getEntries", { value: () => [] });
+  const bodies: string[] = [];
+  window.fetch = async (_url, options) => { bodies.push(String(options?.body ?? "")); return new Response("", { status: 200 }); };
+  window.eval(built.outputFiles[0].text);
+  const api = window.ExportTest;
+  const app = {
+    getHostCapabilities: () => ({ downloadFile: {} }),
+    async callServerTool() { return { content: [] }; },
+    async downloadFile() { return { isError: false }; },
+  };
+  api.startUiTelemetry(app);
+  const controller = new api.RecordingController(app);
+  controller.hostChanged();
+  const recording = recordingFixture();
+  controller.accept({ content: [], structuredContent: { recording } });
+  await controller.download();
+  controller.dispose();
+  await api.stopUiTelemetry();
+  const encoded = bodies.join("\n");
+  contains(encoded, "ui.recording.download_ack.mean");
+  contains(encoded, "ui.recording.download");
+  contains(encoded, '"surface":{"value":"recording"');
+  for (const privateText of [recording.id, recording.title, recording.target.bundleId, "file:///", '"samples"']) contains(encoded, privateText, false);
+});
+
 test("UI heap collection uses the existing timer, active context and byte units in both environments", async t => {
   const root = process.cwd();
   const built = await build({
