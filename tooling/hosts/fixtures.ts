@@ -21,7 +21,7 @@ const build = join(root, ".host-tests");
 const HOST_ORIGIN = "https://host.test";
 
 /** The real server a target ships, started over stdio in a throwaway home directory. */
-export async function startServer(target: Target) {
+export async function startServer(target: Target | "browser") {
   const home = await mkdtemp(join(tmpdir(), "mobile-dev-host-test-"));
   const transport = new StdioClientTransport({
     command: process.execPath, args: [join(build, target, "server.mjs")], cwd: join(build, target), stderr: "pipe",

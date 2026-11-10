@@ -35,12 +35,16 @@ const sharedPage = output => buildUIPage({
 });
 
 const targets = {
-  // Claude Desktop and Claude Code load Claude's server and the shared page; Claude
-  // Code shows the panel in a browser, through the browser panel's page.
+  // Claude loads the shared MCP Apps page directly in its native panel.
   async claude(directory) {
     await sharedPage(`${directory}/app.html`);
-    await buildHostPage({ entry: "packages/mcp-app/src/browser-panel.ts", template: "packages/mcp-app/src/browser-panel.html", output: `${directory}/browser-panel.html` });
     await buildClaudeHost(directory, { sentryDirectory: ".sentry/host-tests/claude" });
+  },
+  // The shared server retains browser panels for hosts without MCP Apps.
+  async browser(directory) {
+    await sharedPage(`${directory}/app.html`);
+    await buildHostPage({ entry: "packages/mcp-app/src/browser-panel.ts", template: "packages/mcp-app/src/browser-panel.html", output: `${directory}/browser-panel.html` });
+    await buildServerBundles({ entryPoints: { server: "packages/core/src/index.ts" }, outdir: directory, sentryDirectory: ".sentry/host-tests/browser" });
   },
   codex: directory => buildCodexHost(environment, directory),
   async mac(directory) {
@@ -55,7 +59,9 @@ const targets = {
 };
 
 // `node tooling/hosts/build.mjs codex` builds one target; no arguments builds all.
-const selected = process.argv.length > 2 ? process.argv.slice(2) : Object.keys(targets);
+const requested = process.argv.length > 2 ? process.argv.slice(2) : Object.keys(targets);
+// Claude's regression suite compares its full tool catalog with Codex's.
+const selected = [...new Set([...requested, ...(requested.includes("claude") ? ["codex"] : [])])];
 for (const target of selected) {
   if (!(target in targets)) throw new Error(`Unknown target ${target}. Use ${Object.keys(targets).join(", ")}.`);
   await rm(`${HOST_TESTS}/${target}`, { recursive: true, force: true });

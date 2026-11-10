@@ -19,14 +19,16 @@ A host adds to the shared pieces without changing them:
   the host shows it, and its `ServerFeature`s. The panel (`createPanel` in
   `packages/core/src/panel-tools.ts`) owns Baguette, the panel and workspace pages and
   the tools only they use, opening recordings in the workspace, the App tab's reads
-  and the native device form. Codex, Cursor's shared entry and the Mac app pass it.
+  and the native device form. Codex, Claude, Cursor's shared entry and the Mac app pass it.
   Codex and Cursor add agent-device's commands, and Codex the self-updater, which
   installs through Codex's marketplace; the Mac app, which has no agent, adds its page
-  resource. Claude's entry (`apps/claude/server`) passes the panel with `inline: false`,
-  so even MCP Apps hosts such as the desktop app's Code tab render none in the chat, and
-  the browser panel feature with `always: true`, which shows it beside the chat in a
-  browser; it adds agent-device's commands. `MOBILE_DEV_PANEL=browser`
-  (`packages/core/src/panel-placement.ts`) gives the Codex and shared entries Claude's setup,
+  resource. Claude's entry (`apps/claude/server`) adds agent-device's commands and
+  opens the same native panel as Codex. Its package removes the browser host page
+  and has no browser panel feature or context-reading tool. The panel's resource
+  content sets `ui.preferredDisplayMode: "fullscreen"` for Claude's side panel,
+  alongside OpenAI's display-mode metadata. Claude controls side-panel availability.
+  `MOBILE_DEV_PANEL=browser` (`packages/core/src/panel-placement.ts`) lets the Codex
+  and shared entries use a browser panel instead,
   and recording cards then offer no workspace. MCP Apps hosts advertise the same capabilities
   whether or not an inline panel suits them. T3 Code, for example, asks the user to confirm every
   panel tool call that is not read-only, so its Codex threads need `browser`. Every host lists simulators for logs, CPU and device choices with
@@ -39,7 +41,7 @@ A host adds to the shared pieces without changing them:
   a separate module, so esbuild splits it into chunks beside `server.mjs`, keeping
   every file under the Claude plugin directory's 5 MiB limit.
 - **Panel:** a host's page entry calls `startMcpApp` with its chrome. Codex adds the
-  update banner; Claude uses the shared entry, for its cards.
+  update banner; Claude uses the shared entry for its panel and cards.
 - **Views:** shared views depend only on `HostBridge`, the subset of `App` they use,
   plus optional host context attachments. `DeviceWorkspace` keeps the iOS and Android
   panels, their selection and layout identical in every host.

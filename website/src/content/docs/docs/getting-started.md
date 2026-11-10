@@ -43,14 +43,16 @@ When an update is offered in the desktop app, click **Update**, then fully quit 
 
 ### Claude Desktop
 
-Claude Desktop currently uses a manual preview. Obtain a `mobile-dev-<version>-claude-desktop-darwin-arm64.mcpb` bundle from the person sharing it, or [build a bundle from source](https://github.com/callstackincubator/mobile-dev/blob/main/CONTRIBUTING.md#claude-desktop-local-development). The bundle is not yet published by this repository's release workflow.
+Download `mobile-dev-<version>-claude-desktop-darwin-arm64.mcpb` from the [latest release](https://github.com/callstackincubator/mobile-dev/releases/latest), or [build a bundle from source](https://github.com/callstackincubator/mobile-dev/blob/main/CONTRIBUTING.md#claude-desktop-local-development).
 
 1. Open **Settings → Desktop app** and choose **Manage** beside **Extensions**.
 2. Open **Advanced settings**. Under **Extension Developer**, choose **Install Extension…** and select the `.mcpb` file. You can also open the bundle with Claude Desktop.
 3. Fully quit and reopen Claude, start a new conversation, and ask **“Open Mobile Dev.”**
 4. Approve the connector when prompted. Choose **Expand** for the larger view when available.
 
-The bundle includes the plugin and native helpers; Claude supplies Node. Install newer bundles manually to update. Mobile Dev does not add a permanent Claude sidebar entry.
+Mobile Dev opens its native MCP Apps panel inside Claude, with the same device workspace and app tools as Codex. It requests the side panel where Claude offers it. Side-panel access is still rolling out, so the view may open inline; use the expand control when available. Selected devices and context go straight to Claude, and Ask and Investigate actions use Claude's chat bridge.
+
+The bundle includes the server and panel; Claude supplies Node. The server downloads and verifies its pinned device runtime when first needed. Install newer bundles manually to update. Claude's permanent Artifacts entry points currently require a remote connector, so they do not apply to this local extension.
 
 See [Claude's desktop extension instructions](https://support.claude.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop) for the current custom-extension installation flow.
 
@@ -65,7 +67,14 @@ Merge the generated `.local-dev/claude-desktop-config.json` entry into the exist
 
 ### Claude Code
 
-The source build can package a local Claude Code plugin:
+Install the Claude Code plugin from the release marketplace:
+
+```sh
+claude plugin marketplace add https://github.com/callstackincubator/mobile-dev.git#release/claude
+claude plugin install mobile-dev@mobile-dev
+```
+
+Or package a source build:
 
 ```sh
 npm run package:claude
@@ -73,7 +82,7 @@ claude plugin validate ./release/claude-plugin/mobile-dev
 claude --plugin-dir ./release/claude-plugin/mobile-dev
 ```
 
-Run these after the source-build setup above. The plugin requires Node.js 22.19 or later on `PATH`. Rich views depend on the host's MCP Apps capabilities. Use one Mobile Dev installation or local connection at a time to avoid duplicate servers.
+Run these after the source-build setup above. The plugin finds Node.js 22.19 or later on `PATH` or in common version-manager locations. Claude Desktop renders the native panel; terminal sessions use the tools directly. The Claude plugin does not open a browser. Use one Mobile Dev installation or local connection at a time to avoid duplicate servers.
 
 ## Cursor
 

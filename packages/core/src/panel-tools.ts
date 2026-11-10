@@ -112,8 +112,7 @@ export type PanelOptions = {
  * Mobile Dev's live device panel and workspace with the tools only they use: device
  * streams and input, screenshots, UI inspection, device settings, physical iPhone
  * mirroring, Baguette's simulator controls, the App tab's reads, opening recordings in
- * the workspace and asking for devices in a native form. Hosts that show devices
- * themselves, such as Claude, leave it out.
+ * the workspace and asking for devices in a native form.
  */
 export function createPanel({ baguette = new Baguette(), simulatorInput, copyScreenshot = copyPNGToClipboard, resourceSaving = new ResourceSaving(), inline = true }: PanelOptions = {}): Panel {
   return {
@@ -149,7 +148,7 @@ function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, sh
         ? content.replace('data-view="panel"', 'data-view="workspace"').replace('data-layout="stacked"', 'data-layout="split"')
         : content,
       _meta: {
-        ui: { permissions: { clipboardWrite: {} }, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } },
+        ui: { preferredDisplayMode: "fullscreen", permissions: { clipboardWrite: {} }, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } },
         "openai/ui": { preferredDisplayMode: "fullscreen", availableDisplayModes: ["inline", "fullscreen"] },
       },
     }] };

@@ -19,7 +19,7 @@ export type HostBridge = Pick<App,
  */
 export type AppFlowHostBridge = HostBridge & Partial<Pick<App, "setNotificationHandler" | "removeNotificationHandler">>;
 
-/** Whether the host lets views call server tools. Hosts without it, such as Claude Code, show only what the tool result carries; Mobile Dev's panel needs it. */
+/** Whether the host lets views call server tools. Hosts without it show only what the tool result carries; Mobile Dev's panel needs it. */
 export function cardsCallTools(app: Pick<HostBridge, "getHostCapabilities">): boolean {
   return app.getHostCapabilities()?.serverTools !== undefined;
 }

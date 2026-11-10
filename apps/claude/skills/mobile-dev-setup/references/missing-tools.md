@@ -4,7 +4,7 @@ Use this when the installed plugin's tools are unavailable. Diagnose and explain
 setup problem in chat from the actual startup failure.
 
 Find the installed plugin root from the absolute path of the loaded `SKILL.md`: the
-skill is under `<plugin-root>/skills/mobile-dev/SKILL.md`. Inspect its
+skill is under `<plugin-root>/skills/<skill-name>/SKILL.md`. Inspect its
 `.claude-plugin/plugin.json` and whether the plugin is enabled. Use that installed
 copy rather than a source checkout or a guessed cache version. In Claude Code,
 `claude mcp list` and `/mcp` show the `mobile-dev` server's status.

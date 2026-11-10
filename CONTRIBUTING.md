@@ -23,7 +23,7 @@ host as an argument.
 | `packages/runtimes` | Pinned Node runtimes bundled into the server (agent-device, serve-emu). |
 | `packages/skills` | Agent skills for the shared tools; each host's package step includes the ones its host supports. |
 | `apps/codex-plugin` | Codex: manifest, launcher, assets, and its own server (`server/`, the self-updater) and panel (`ui/`, the update banner). |
-| `apps/claude` | Claude: the Claude Desktop extension (`manifest.json`, MCPB) and the Claude Code plugin (`.claude-plugin/plugin.json`). Both run Claude's server (`server/`): the shared server with the panel, which Claude Code shows in a browser, and agent-device's commands, with its skill in `skills/` and the shared agent-device skill. The packages leave out the panel's native parts and download them on first use. |
+| `apps/claude` | Claude: the Claude Desktop extension (`manifest.json`, MCPB) and the Claude Code plugin (`.claude-plugin/plugin.json`). Both run Claude's server (`server/`): the shared server with the native MCP Apps panel and agent-device's commands. They ship the shared Mobile Dev and agent-device skills and Claude's setup skill in `skills/`. The packages leave out the panel's native parts and download them on first use. |
 | `apps/cursor` | Cursor: the Cursor plugin manifest (`.cursor-plugin/plugin.json`). It runs the shared server and panel unchanged. |
 | `apps/mac` | The Mac app: a SwiftUI shell (`Sources/`), the page it hosts (`web/`) and its server (`server/`). |
 | `packages/test-support` | Fixtures shared by tests across packages and apps. |
@@ -313,7 +313,8 @@ This writes `release/mobile-dev-<version>-claude-desktop-darwin-arm64.mcpb`, the
 Claude plugin folder `release/claude-plugin/mobile-dev` with its ZIP, and a local
 `mobile-dev-local` marketplace in `release/claude-plugin`. Both packages run
 Claude's server (`apps/claude/server`), with the panel and agent-device's commands as
-`device_*` tools, the skill in `apps/claude/skills` and the shared agent-device skill.
+`device_*` tools, the shared Mobile Dev and agent-device skills, and Claude's setup
+skill in `apps/claude/skills`.
 Packaging fails if a file exceeds the Claude plugin directory's 5 MiB limit, so the
 packages leave out the panel's native parts (`PANEL_PARTS` in
 `tooling/host-runtime.mjs`: Baguette, serve-emu, the iOS mirror addon and its
@@ -352,14 +353,15 @@ Local builds retain the `development` telemetry environment. Public releases use
 
 ### Claude Code local development
 
-Claude's server shows Mobile Dev in a browser beside the chat; in the Claude desktop
-app's Code tab that is its built-in browser pane. The terminal advertises no MCP Apps
-support, but the Code tab does (Claude Code runs there with `CLAUDE_CODE_MCP_APPS_HOST=1`)
-and would render the panel inline. So Claude's server passes `createPanel({ inline: false })`,
-whose opening tools carry no `ui.resourceUri` for a host to render and name their page under
-`mobile-dev/panel` instead, and `browserPanel({ always: true })`, which links the page for
-every host. Opening a recording in the workspace is left out there; recordings stay chat
-cards. Build, then load the Claude plugin folder from this checkout:
+Claude's server registers the same native MCP Apps panel and device tools as Codex,
+without Codex's updater. The resource content sets
+`_meta.ui.preferredDisplayMode: "fullscreen"` for Claude, alongside the existing
+OpenAI display-mode metadata. Claude uses this preference to open the side panel
+where available; it can keep the view inline when the rollout, window size, or
+conversation does not allow the side panel. The shared UI also offers an expand
+control. See [Claude's display-mode guide](https://claude.com/docs/connectors/building/mcp-apps/display-modes).
+
+Build, then load the Claude plugin folder from this checkout:
 
 ```sh
 npm run build
@@ -367,11 +369,20 @@ npm run package:claude
 claude --plugin-dir ./release/claude-plugin/mobile-dev
 ```
 
-Ask **“Open Mobile Dev.”** The agent opens the returned loopback link in its
-browser. The server cannot choose how the host shows that browser: the result asks
-the agent to open the page in the foreground, but the host may still show it as a
-card in the chat with an **Open** button. Rebuild, repackage and restart the
-session after code changes.
+Ask **"Open Mobile Dev"** in Claude Desktop. The native panel includes device
+streams and controls, logs, storage, App Intelligence, recordings with per-thread
+detail, comparisons, and TraceSift's explorer. Its chat actions use the capabilities
+Claude advertises. A terminal without MCP Apps can use the tools directly.
+Claude's package has no browser page, HTTP panel bridge, or
+`mobile_read_panel_context` tool. Rebuild, repackage, and restart the session after
+code changes.
+
+The shared Mobile Dev skill keeps Claude's device workflows in step with Codex.
+Claude ships its own setup skill and Node recovery reference. Its pinned helper
+download and server splitting still meet the directory's 5 MiB file limit.
+[Global entry points](https://claude.com/docs/connectors/building/mcp-apps/entry-points)
+in Claude currently require a remote connector and access to the unified Claude
+experience. They are not an install route for this local plugin.
 
 ### Browser panels and Synara
 
@@ -381,8 +392,8 @@ Node.js 22.19 or later. For local development, `npm run build` and
 `npm run claude:config` generate a standard MCP JSON entry in
 `.local-dev/claude-desktop-config.json` with absolute command and argument paths.
 Use those paths in the selected provider's MCP configuration, then start a fresh
-Synara provider session. The Claude Code and Cursor packages include this same
-server and `dist/browser-panel.html`. The native Codex plugin runs its own entry;
+Synara provider session. The Cursor package includes this same server and `dist/browser-panel.html`.
+Claude and Codex run their own native panel entries;
 use the shared server entry for a Synara browser panel.
 
 Ask the agent to open Mobile Dev. When the MCP client advertises no MCP Apps
@@ -492,8 +503,8 @@ claude plugin install mobile-dev@mobile-dev-local
 
 Set `MOBILE_DEV_PANEL=browser` on T3 Code's Codex instance, as the
 [installation steps](README.md#t3-code) describe. The Codex manifest forwards that
-variable to the server, which then serves the panel as a browser page like Claude's
-server does: `mobile_open_simulator` has no `ui.resourceUri`, so T3 Code renders no
+variable to the server, which then serves the panel as a browser page:
+`mobile_open_simulator` has no `ui.resourceUri`, so T3 Code renders no
 inline app, and its result carries the `browserPanel` link that the agent opens with
 `preview_open`. The shared server in `dist/server.mjs` reads the variable too. An
 unknown value logs a warning to the server's stderr and keeps the default placement.

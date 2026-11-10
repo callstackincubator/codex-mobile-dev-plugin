@@ -7,7 +7,6 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { PANEL_PARTS, releaseVersion } from "./host-runtime.mjs";
 import { panelRuntimeArchive } from "./panel-runtime.mjs";
 import { codexOnlyPaths, pluginHost, pluginHosts } from "./plugin-hosts.mjs";
@@ -29,7 +28,7 @@ const expectedTools = [...panels ? panelTools : ["mobile_render_performance_reco
 const panelFiles = PANEL_PARTS.map(part => `dist/${part}`);
 // Packages that leave the panel's parts out pin their archive instead.
 const bundled = host.bundlesPanel;
-const packagedFiles = panels ? bundled ? panelFiles : ["dist/panel-runtime.json", "dist/browser-panel.html"] : [];
+const packagedFiles = panels ? bundled ? panelFiles : ["dist/panel-runtime.json"] : [];
 
 async function withServer(label, command, args, env, capabilities, check) {
   const client = new Client({ name: `${name}-${label}-smoke`, version: "1" }, { capabilities });
@@ -44,21 +43,14 @@ async function withServer(label, command, args, env, capabilities, check) {
     // Behavior follows client capabilities, not the host's name.
     assert.match(client.getInstructions(), panels ? /mobile_open_simulator/ : /the host's own simulator view/);
     const { tools } = await client.listTools();
-    // A panel that shows beside the chat names its page under its own key, and leaves out
-    // opening a recording, which would render the workspace in the chat.
-    const workspace = tools.find(tool => tool.name === "mobile_open_workspace");
-    const inline = workspace?._meta?.ui?.resourceUri !== undefined;
-    for (const tool of expectedTools) {
-      if (tool === "mobile_open_performance_recording" && inline === false) continue;
-      assert.ok(tools.some(candidate => candidate.name === tool), tool);
-    }
-    if (panels && inline === false) assert.equal(tools.some(tool => tool.name === "mobile_open_performance_recording"), false);
+    for (const tool of expectedTools) assert.ok(tools.some(candidate => candidate.name === tool), tool);
+    if (name === "claude") assert.equal(tools.some(tool => tool.name === "mobile_read_panel_context"), false);
     // The panel's device form is listed for hosts that render forms; elsewhere the agent asks in chat.
     const forms = capabilities.extensions?.["openai/elicitation"] !== undefined || capabilities.elicitation !== undefined;
     assert.equal(tools.some(tool => tool.name === "mobile_choose_devices"), panels && forms);
     if (panels === false) for (const tool of panelTools) assert.equal(tools.some(candidate => candidate.name === tool), false, tool);
     const view = tools.find(tool => tool.name === (panels ? "mobile_open_workspace" : "mobile_render_performance_recording"));
-    const resource = await client.readResource({ uri: view._meta.ui?.resourceUri ?? view._meta["mobile-dev/panel"].resourceUri });
+    const resource = await client.readResource({ uri: view._meta.ui.resourceUri });
     const html = resource.contents[0].text;
     assert.ok(html.includes(`name="mobile-dev-environment" content="${env.MOBILE_DEV_ENVIRONMENT}"`));
     assert.match(html, /name="mobile-dev-telemetry" content="off"/);
@@ -95,26 +87,14 @@ async function smokePanelRuntime(plugin, launch) {
     assert.notEqual(started.isError, true, JSON.stringify(started.content));
     const installed = await readdir(join(data, "panel-runtime"));
     assert.deepEqual(installed, [`${version}-${pin.sha256.slice(0, 12)}`]);
-    await smokeBrowserPanel(client);
+    const opened = await client.callTool({ name: "mobile_open_simulator", arguments: { platform: "ios" } });
+    assert.notEqual(opened.isError, true, JSON.stringify(opened.content));
+    assert.equal(opened.structuredContent?.browserPanel, undefined);
+    const { tools } = await client.listTools();
+    const workspace = tools.find(tool => tool.name === "mobile_open_workspace");
+    const resource = await client.readResource({ uri: workspace._meta.ui.resourceUri });
+    assert.equal(resource.contents[0]._meta.ui.preferredDisplayMode, "fullscreen");
   });
-}
-
-async function smokeBrowserPanel(client) {
-  const result = await client.callTool({ name: "mobile_open_simulator", arguments: { platform: "ios" } });
-  const text = JSON.stringify(result.content);
-  const address = text.match(/http:\/\/127\.0\.0\.1:\d+\/[\w-]+\/\?[^"\s\\]+/)?.[0];
-  assert.ok(address, "The host receives a browser panel link to show beside the chat.");
-  const page = await fetch(address);
-  assert.equal(page.status, 200);
-  assert.match(await page.text(), /mobile-dev-browser-panel/);
-  const transport = new StreamableHTTPClientTransport(new URL("mcp", address));
-  const panel = new Client({ name: "browser-package-smoke", version: "1" });
-  try {
-    await panel.connect(transport);
-    const context = await client.callTool({ name: "mobile_read_panel_context", arguments: {} });
-    assert.match(context.content[0].text, /No Mobile Dev browser panel/);
-    await transport.terminateSession();
-  } finally { await panel.close(); }
 }
 
 async function smokeDesktopBundle() {
@@ -132,6 +112,7 @@ async function smokeDesktopBundle() {
   for (const path of [manifest.server.entry_point, "dist/app.html", "dist/agent-device/tools.json", ...packagedFiles]) {
     await access(join(directory, path));
   }
+  if (name === "claude") await assert.rejects(access(join(directory, "dist/browser-panel.html")));
   if (bundled === false) for (const path of panelFiles) await assert.rejects(access(join(directory, path)), path);
   // No Codex installation, no PATH Node lookup, and no dependency on package cwd.
   const args = manifest.server.mcp_config.args.map(arg => arg.replaceAll("${__dirname}", directory));
@@ -166,6 +147,12 @@ try {
   for (const path of ["LICENSE", "README.md", "PRIVACY.md", "dist/app.html", ...host.skills.map(skill => `skills/${basename(skill)}/SKILL.md`), "skills/agent-device/references/workflow.md", ...packagedFiles]) {
     await access(join(plugin, path));
   }
+  if (name === "claude") await assert.rejects(access(join(plugin, "dist/browser-panel.html")));
+  if (name === "claude") {
+    assert.equal(await readFile(join(plugin, "skills/mobile-dev/SKILL.md"), "utf8"), await readFile("packages/skills/mobile-dev/SKILL.md", "utf8"));
+    await access(join(plugin, "skills/mobile-dev-setup/references/missing-tools.md"));
+    await assert.rejects(access(join(plugin, "skills/mobile-dev/references/missing-tools.md")));
+  }
   if (bundled === false) for (const path of panelFiles) await assert.rejects(access(join(plugin, path)), path);
   if (host.readme) assert.equal(await readFile(join(plugin, "README.md"), "utf8"), await readFile(host.readme, "utf8"));
   // Plugin directories reject symlinks, and agents/openai.yaml is Codex's skill metadata.
@@ -199,6 +186,6 @@ try {
       { MOBILE_DEV_ENVIRONMENT: "development", [host.root]: plugin, ...launcher ? { PATH } : {}, ...extra },
       { extensions: { "io.modelcontextprotocol/ui": { mimeTypes: ["text/html;profile=mcp-app"] } } }, check);
     await smokePanelRuntime(plugin, launch);
-    console.log(`${host.label} plugin downloaded, verified and started its pinned panel runtime, and opened the browser panel.`);
+    console.log(`${host.label} plugin downloaded, verified and started its pinned panel runtime, and opened the native MCP Apps panel.`);
   }
 } finally { await rm(temporary, { recursive: true, force: true }); }
