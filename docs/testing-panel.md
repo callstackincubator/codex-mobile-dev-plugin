@@ -1,8 +1,12 @@
 # Testing panel — record e2e tests from the mirror
 
-Status: steps 1-4 of the build order are implemented — the tab, the project picker, launching the
-app, tap recording with selector resolution and a live preview, and saving the test into the
-project. Swipes, typing and the Run button are still design only.
+Status: steps 1-6 of the build order are implemented — the tab, the project picker, launching the
+app, recording through the mirror's element menu with selector resolution and a live preview,
+saving the test into the project, and running it with per-line marks. Typing and swipes are
+recorded from the menu rather than from the gesture, which is step 5's own answer; a drag on the
+mirror still records nothing (step 7), and the Maestro emitter (step 8) is still design only.
+A test can also be recorded by the user's own coding agent, which drives the same recorder from
+the server — see [docs/agent-recording.md](agent-recording.md).
 
 A new workspace tool, **Testing**, that turns the existing simulator mirror into a
 Maestro-Studio-style recorder: pick a project, launch its app, tap the mirror, and watch the test

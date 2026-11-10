@@ -1,5 +1,5 @@
 import { componentsAt } from "./screen-annotations.ts";
-import type { ScreenComponent, ScreenPoint, ScreenSize } from "./screen-annotations.ts";
+import type { ScreenBounds, ScreenComponent, ScreenPoint, ScreenSize } from "./screen-annotations.ts";
 
 /**
  * How a recorded step names the element it acted on. The ranks are tried in order and the first
@@ -67,6 +67,36 @@ export type PinnedStepKind =
  */
 export type SwipeDirection = "up" | "down" | "left" | "right";
 export const SWIPE_DIRECTIONS: readonly SwipeDirection[] = ["up", "down", "left", "right"];
+
+/** A direction the runner understands, defaulting to the one the menu lists first. */
+export function swipeDirection(value?: string): SwipeDirection {
+  return value === "down" || value === "left" || value === "right" ? value : "up";
+}
+
+/**
+ * The gesture a recorded swipe takes on the device, drawn inside the box it is scoped to.
+ *
+ * Taken over the middle 70% of the box, so the start and the end are both well inside it: a
+ * gesture begun on the very edge of the screen is an edge gesture to the OS — back, the shade,
+ * the app switcher — and not the swipe the step describes. The finger travels the way the step is
+ * named, which is the direction `e2e` names too.
+ *
+ * It lives here rather than beside either driver because both take the step they record: the
+ * panel sends it through the mirror's input stream, and an agent recording sends it through
+ * agent-device. One arithmetic, so a swipe means the same gesture whoever asked for it.
+ */
+export function swipePath(box: ScreenBounds, direction: SwipeDirection): { from: ScreenPoint; to: ScreenPoint } {
+  const midX = box.x + box.width / 2;
+  const midY = box.y + box.height / 2;
+  const reachX = box.width * 0.35;
+  const reachY = box.height * 0.35;
+  switch (direction) {
+    case "up": return { from: { x: midX, y: midY + reachY }, to: { x: midX, y: midY - reachY } };
+    case "down": return { from: { x: midX, y: midY - reachY }, to: { x: midX, y: midY + reachY } };
+    case "left": return { from: { x: midX + reachX, y: midY }, to: { x: midX - reachX, y: midY } };
+    case "right": return { from: { x: midX - reachX, y: midY }, to: { x: midX + reachX, y: midY } };
+  }
+}
 
 /**
  * The two steps that are a sentence rather than a locator.
@@ -341,9 +371,7 @@ function covers({ bounds }: ScreenComponent, point: ScreenPoint): boolean {
  * area, which is also the order "walk out to the parent" means on screen.
  */
 export function hitLadder(components: ScreenComponent[], point: ScreenPoint, screen?: ScreenSize): ScreenComponent[] {
-  const hits = components.filter(item => covers(item, point)
-    // A root spanning the whole screen names nothing; it is the screen.
-    && (!screen || item.bounds.width < screen.width * .95 || item.bounds.height < screen.height * .95))
+  const hits = components.filter(item => covers(item, point) && !isScreenSized(item, screen))
     .sort((a, b) => area(a) - area(b) || b.depth - a.depth);
   // The overlay's own pick leads when it is one of them, so the recorder starts on the element the
   // mirror highlights.
@@ -370,7 +398,65 @@ export function resolveSelector(components: ScreenComponent[], point: ScreenPoin
   const chain = ladder.slice(Math.max(0, Math.min(level, levels - 1)));
   const component = chain[0];
   if (!component) return { selector: { kind: "point", point }, ambiguous: false, levels, matches: 1 };
+  // A coordinate is what is left when nothing in the chain can be named — the one fallback a point
+  // has and an element does not, which is why it lives here rather than in `resolveChain`.
+  return resolveChain(components, chain, levels)
+    ?? { selector: { kind: "point", point }, ambiguous: false, component, levels, matches: 1 };
+}
 
+/**
+ * The element and its ancestors, innermost first: the element-shaped equivalent of the hit ladder.
+ *
+ * The point path reaches a chain by hit-testing; an agent that already named an element reaches
+ * the same shape by walking `parentId` up. Both then go through `resolveChain`, so a step an agent
+ * records and a step a tap records are resolved by one piece of code rather than two that agree
+ * for a while.
+ */
+export function ancestorChain(components: ScreenComponent[], component: ScreenComponent): ScreenComponent[] {
+  const byId = new Map(components.flatMap(item => item.nodeId ? [[item.nodeId, item] as const] : []));
+  const chain = [component];
+  const seen = new Set(component.nodeId ? [component.nodeId] : []);
+  for (let parent = component.parentId; parent !== undefined; ) {
+    const next = byId.get(parent);
+    // A cycle cannot happen in a tree and would hang the walk if it ever did.
+    if (!next || seen.has(parent)) break;
+    seen.add(parent);
+    chain.push(next);
+    parent = next.parentId;
+  }
+  return chain;
+}
+
+/**
+ * How a test should name one element, or nothing when the screen offers no way to name it.
+ *
+ * This is the whole of the ranking — depth first, rank within a depth, the first candidate that
+ * resolves to exactly one element winning whatever its rank, and a position among the matches as
+ * the last resort. It takes a chain rather than a point because the two callers start from
+ * different things: a tap starts from a coordinate and an agent starts from an element it read.
+ */
+export function resolveComponentSelector(components: ScreenComponent[], component: ScreenComponent, screen?: ScreenSize): ResolvedSelector | undefined {
+  // A root spanning the whole screen names nothing; it is the screen. The point path never reaches
+  // one because `hitLadder` drops it, and without the same rule here every unnameable element on
+  // an app whose root carries a title resolves to that title — `screen.getByText("expoapp57")`,
+  // reported as unique, for a scroll bar.
+  const chain = ancestorChain(components, component).filter(item => !isScreenSized(item, screen));
+  return chain.length > 0 ? resolveChain(components, chain, chain.length) : undefined;
+}
+
+function isScreenSized({ bounds }: ScreenComponent, screen?: ScreenSize): boolean {
+  return screen !== undefined && bounds.width >= screen.width * .95 && bounds.height >= screen.height * .95;
+}
+
+/**
+ * The ranks, tried over one chain of elements, innermost first.
+ *
+ * Returns nothing when no element in the chain carries anything a query could name. The point path
+ * answers that with a coordinate; the agent path answers it by saying so, because an agent can
+ * describe what it cannot name and a coordinate recorded from a `ref` would be a worse step than
+ * the `agent.act` the agent would write instead.
+ */
+export function resolveChain(components: ScreenComponent[], chain: ScreenComponent[], levels: number): ResolvedSelector | undefined {
   // Only the named ranks; the point fallback is not a candidate, it is what is left when these fail.
   // Depth first, rank within a depth: the innermost element that can be named at all wins, because
   // that is the thing the user pointed at. An enclosing element is reached by pointing at it, or
@@ -422,11 +508,11 @@ export function resolveSelector(components: ScreenComponent[], point: ScreenPoin
   }
   // The element matched a candidate the runner would not count it among — a container the
   // innermost-only rule drops, say. The selector still describes it better than a coordinate, so
-  // it is kept and flagged; with no candidate at all, the point is all there is.
+  // it is kept and flagged; with no candidate at all, there is nothing here to name.
   const fallback = candidates[0];
   return fallback
     ? { selector: fallback.selector, ambiguous: true, component: fallback.owner, levels, matches: selectorMatches(components, fallback.selector).length }
-    : { selector: { kind: "point", point }, ambiguous: false, component, levels, matches: 1 };
+    : undefined;
 }
 
 /** The elements one selector matches, in the runner's own order. See the `matches*` helpers. */
@@ -450,10 +536,14 @@ function selectorMatches(components: ScreenComponent[], selector: RecordedSelect
  * into a splash screen and misses. This picks a neighbour that does resolve uniquely, which the
  * emitter puts in front of the tap as a gate.
  */
-export function anchorSelector(components: ScreenComponent[], point: ScreenPoint): RecordedSelector | undefined {
+export function anchorSelector(components: ScreenComponent[], point: ScreenPoint, screen?: ScreenSize): RecordedSelector | undefined {
   const distance = (item: ScreenComponent) =>
     Math.hypot(item.bounds.x + item.bounds.width / 2 - point.x, item.bounds.y + item.bounds.height / 2 - point.y);
-  for (const item of [...components].sort((a, b) => distance(a) - distance(b)).slice(0, 40)) {
+  // The screen's own root is the nearest thing to any point and names nothing: gating a step on
+  // `expect(screen.getByText("<the app>")).toBeVisible()` waits for the application to exist,
+  // which it did before the test started.
+  for (const item of components.filter(entry => !isScreenSized(entry, screen))
+    .sort((a, b) => distance(a) - distance(b)).slice(0, 40)) {
     if (item.identifier && matchesTestId(components, item.identifier).length === 1) return { kind: "testId", testId: item.identifier };
     const placeholder = normalize(item.placeholder);
     if (placeholder && matchesPlaceholder(components, placeholder).length === 1) return { kind: "placeholder", placeholder };
@@ -796,7 +886,13 @@ function stepSource(step: RecordedStep): EmittedLine[] {
     lines.push({ text: `  // TODO: this matched more than one element. Add a testID to pin it.` });
   }
   if (step.selector.kind === "point") {
-    lines.push({ text: `  // TODO: nothing resolved here. A coordinate tap breaks on any layout change.` });
+    // A swipe of the viewport is the one step a point *means*: `screen.swipe({ direction })` names
+    // no coordinate, so nothing in it can break on a layout change and the TODO was simply untrue
+    // of it. The anchor below still applies — a swipe is as actionable as a tap and will fire into
+    // a splash screen just the same.
+    if (step.kind !== "swipe") {
+      lines.push({ text: `  // TODO: nothing resolved here. A coordinate tap breaks on any layout change.` });
+    }
     // A locator action waits for its element; a coordinate does not, so it would fire into a
     // splash screen. The anchor is the wait the tap itself cannot express — and the runner reports
     // it as a step of its own, which is why it counts as a call.

@@ -58,6 +58,15 @@ export function Workspace({ panels, recordingController, banner, displayModeCont
     onLayout("none");
     panels.hide();
   }, [recordingState.recording?.id]);
+  // An agent recording opens the Testing tab for the user: they asked their agent for a test, and
+  // the steps appearing one at a time are the whole point. Which tool is on screen is this
+  // component's own state, so the panel asks rather than reaches.
+  useEffect(() => testing.onAgentRecordingStarted(() => {
+    manualLayout.current = true;
+    setTool("testing");
+    setSavedVisible(false);
+    panels.show("testing");
+  }), [testing]);
   const performanceState = useSyncExternalStore(performance.subscribe, performance.getSnapshot);
   const wide = useMediaQuery("(min-width: 900px)");
   const fullscreen = document.documentElement.dataset.view === "workspace";

@@ -11,7 +11,8 @@ import { registerTestingTools } from "../src/testing-tools.ts";
 const projection = {
   projectSnapshot(raw: readonly unknown[], { mintId }: { mintId: () => string }) {
     const index = (raw as Record<string, unknown>[]).map(node => ({
-      id: mintId(), kind: String(node.kind ?? ""), node: node.node as Record<string, unknown>, parent: undefined,
+      id: mintId(), kind: String(node.kind ?? ""), ref: node.ref as string | undefined,
+      node: node.node as Record<string, unknown>, parent: undefined,
     }));
     for (const [position, entry] of index.entries()) {
       const parent = (raw as Record<string, unknown>[])[position].parent;
@@ -65,6 +66,12 @@ function fakeAgentDevice(calls: Record<string, unknown>[], snapshot: () => { nod
       apps: { open: async (options: Record<string, unknown>) => { calls.push({ call: "open", ...options }); } },
       capture: { snapshot: async (options: Record<string, unknown>) => { calls.push({ call: "snapshot", ...options }); return snapshot(); } },
       sessions: { close: async (options: Record<string, unknown>) => { calls.push({ call: "close", ...options }); } },
+      interactions: {
+        scroll: async (options: Record<string, unknown>) => { calls.push({ call: "scroll", ...options }); },
+        click: async (options: Record<string, unknown>) => { calls.push({ call: "click", ...options }); },
+        fill: async (options: Record<string, unknown>) => { calls.push({ call: "fill", ...options }); },
+        swipe: async (options: Record<string, unknown>) => { calls.push({ call: "swipe", ...options }); },
+      },
     }),
   });
 }
@@ -162,6 +169,7 @@ test("shutting the plugin down gives the recorder's device back", async () => {
       apps: { open: async () => undefined },
       capture: { snapshot: async () => ({ nodes: [] }) },
       sessions: { close: async (options?: unknown) => { closed.push(options); } },
+      interactions: { click: async () => undefined, fill: async () => undefined, swipe: async () => undefined, scroll: async () => undefined },
     }),
   }) as never);
   const server = { registerTool: () => undefined, registerResource: () => undefined } as never;
@@ -174,4 +182,64 @@ test("shutting the plugin down gives the recorder's device back", async () => {
   (devices as unknown as { client?: unknown }).client = (await (devices as unknown as { connect(): Promise<unknown> }).connect());
   await shutdown();
   assert.deepEqual(closed, [{ session: "mobile-dev-recorder" }]);
+});
+
+test("each element keeps the agent-device ref an action is placed on", () => {
+  // The panel never needs these — it records selectors and drives the mirror — but an agent
+  // recording acts through agent-device, whose tap and fill take a ref. Keeping the pair beside
+  // the projection is what stops the server resolving the same element a second time.
+  const { tree, refs } = projectedComponents(projection as never, [
+    { kind: "button", ref: "e1", node: { role: "tab", name: "Explore", rect } },
+    { kind: "other", ref: "e2", node: { role: "other", name: "Nowhere" } },
+  ]);
+  // The `@` the projection stripped is put back: `click({ ref: "e1" })` parses a bare ref as a
+  // selector and refuses it with `Invalid selector term "e1", expected key=value`.
+  assert.deepEqual(refs, { [tree[0].nodeId!]: "@e1" }, "an element with no box is not in the tree, so it has no ref either");
+});
+
+test("disabled and selected survive the projection, for the matchers that read them", () => {
+  const { tree } = projectedComponents(projection as never, [
+    { kind: "button", node: { role: "tab", name: "Explore", states: { selected: true }, rect } },
+    { kind: "button", node: { role: "button", name: "Save", states: { disabled: true }, rect } },
+  ]);
+  assert.equal(tree[0].selected, true);
+  assert.equal(tree[0].disabled, undefined);
+  assert.equal(tree[1].disabled, true);
+});
+
+test("an agent recording's step is placed on the element's own ref, on the recorder's session", async () => {
+  const calls: Record<string, unknown>[] = [];
+  const devices = new TestingDevices(fakeAgentDevice(calls, () => ({ nodes: [] })) as never);
+  (devices as unknown as { projections: Map<string, unknown> }).projections.set("/project", Promise.resolve(projection));
+
+  await devices.read(target);
+  await devices.perform(target, { kind: "tap", ref: "e1" });
+  await devices.perform(target, { kind: "doubleTap", ref: "e1" });
+  await devices.perform(target, { kind: "type", ref: "e2", text: "Roaming Rosa" });
+  await devices.perform(target, { kind: "swipe", from: { x: 1, y: 2 }, to: { x: 3, y: 4 } });
+
+  const clicks = calls.filter(entry => entry.call === "click");
+  assert.deepEqual(clicks.map(entry => entry.ref), ["e1", "e1"]);
+  // One session, the recorder's: an agent recording is another holder of it, never a second one.
+  assert.ok(clicks.every(entry => entry.session === "mobile-dev-recorder" && entry.udid === target.udid));
+  assert.equal(clicks[0].doubleTap, undefined);
+  // The next step is resolved against the screen this one produced, so the wait for that screen
+  // to stop moving belongs here; without it agent-device refuses the next action outright.
+  assert.equal(clicks[0].settle, true);
+  assert.equal(calls.find(entry => entry.call === "fill")!.settle, true);
+  assert.equal(calls.find(entry => entry.call === "swipe")!.settle, undefined, "a swipe has no element to come to rest");
+  assert.equal(clicks[1].doubleTap, true, "agent-device takes the double tap as the one gesture the step emits");
+  const fill = calls.find(entry => entry.call === "fill")!;
+  assert.equal(fill.text, "Roaming Rosa");
+  assert.deepEqual(calls.find(entry => entry.call === "swipe")!.from, { x: 1, y: 2 });
+  // Nothing re-attached: the step runs on the session the read already opened.
+  assert.equal(calls.filter(entry => entry.call === "open").length, 1);
+});
+
+test("a step on a device nothing is attached to attaches first", async () => {
+  const calls: Record<string, unknown>[] = [];
+  const devices = new TestingDevices(fakeAgentDevice(calls, () => ({ nodes: [] })) as never);
+  await devices.perform(target, { kind: "tap", ref: "e1" });
+  assert.equal(calls.filter(entry => entry.call === "open").length, 1);
+  assert.equal(calls.find(entry => entry.call === "open")!.relaunch, false);
 });

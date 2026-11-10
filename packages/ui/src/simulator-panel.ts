@@ -936,6 +936,10 @@ export function createSimulatorPanel(
     // A click outside the element menu dismisses it rather than recording through it; the menu
     // stops its own pointer events from reaching the canvas at all.
     if (testRecorder.getSnapshot().menu) { testRecorder.closeMenu(); return; }
+    // While an agent is recording, the mirror is its screen: a tap landing between the agent's
+    // read and its step would resolve that step against a screen that has already moved. Two
+    // drivers on one screen is solved by locking, not by hoping.
+    if (testRecorder.isAgentRecording(selected?.udid)) return;
     if (!ready || inputBlocked || busy || event.button !== 0 || pointer) return;
     const position = mappedPoint(event);
     const edge: TouchInput["edge"] = position.y > points.height - 14 ? "bottom" : position.y < 14 ? "top" : undefined;
@@ -951,6 +955,7 @@ export function createSimulatorPanel(
     if (annotations.getSnapshot().selecting) { if (annotationPointer === undefined || annotationPointer === event.pointerId) annotations.hover(mappedPoint(event)); return; }
     // While recording, the pointer previews what it would record. Not during a drag: the touch is
     // already going to the device, and the screen under it is no longer the one that was read.
+    if (testRecorder.isAgentRecording(selected?.udid)) return;
     if (testRecorder.isRecording(selected?.udid) && !pointer) { void testRecorder.hover(mappedPoint(event)); return; }
     if (!pointer || pointer.id !== event.pointerId) return;
     Object.assign(pointer, mappedPoint(event));
@@ -971,6 +976,10 @@ export function createSimulatorPanel(
   canvas.addEventListener("contextmenu", event => {
     if (!testRecorder.isRecording(selected?.udid) || annotations.getSnapshot().selecting) return;
     event.preventDefault();
+    // The element menu records a step and takes it, which is exactly the second driver the lock
+    // exists to stop. The browser's own menu is still suppressed, so the lock is not a regression
+    // to a canvas context menu with nothing in it.
+    if (testRecorder.isAgentRecording(selected?.udid)) return;
     void testRecorder.openMenu(mappedPoint(event));
   });
   // While recording, the wheel walks the outline out to the enclosing element and back in — the
@@ -982,6 +991,7 @@ export function createSimulatorPanel(
   canvas.addEventListener("wheel", event => {
     if (!testRecorder.isRecording(selected?.udid) || annotations.getSnapshot().selecting) return;
     event.preventDefault();
+    if (testRecorder.isAgentRecording(selected?.udid)) return;
     if (wheelTravel !== 0 && Math.sign(event.deltaY) !== Math.sign(wheelTravel)) wheelTravel = 0;
     wheelTravel += event.deltaY;
     while (Math.abs(wheelTravel) >= WHEEL_STEP) {

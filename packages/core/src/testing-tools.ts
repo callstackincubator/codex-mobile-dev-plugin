@@ -105,8 +105,12 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
     },
     annotations: read,
     _meta: appVisibility,
-  }, safe(async ({ udid, projectPath: selected, bundleId }: { udid: string; projectPath: string; bundleId: string }) =>
-    dataResult({ ...await devices.read({ udid, projectPath: selected, bundleId }) })));
+  }, safe(async ({ udid, projectPath: selected, bundleId }: { udid: string; projectPath: string; bundleId: string }) => {
+    // The refs go no further than the server: the panel records selectors and drives the mirror,
+    // so an agent-device handle per element would be a few kilobytes a read that nothing reads.
+    const { tree, screen } = await devices.read({ udid, projectPath: selected, bundleId });
+    return dataResult({ tree, ...(screen ? { screen } : {}) });
+  }));
 
   registerAppTool(server, "mobile_testing_run_test", {
     title: "Run a recorded test",

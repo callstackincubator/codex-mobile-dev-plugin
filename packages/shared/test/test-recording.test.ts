@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { ScreenComponent } from "../src/screen-annotations.ts";
-import { agentActSuggestion, agentStepLabel, allStepOffers, anchorSelector, emitE2eTest, emitE2eTestLines, treeHealth, resolveSelector, selectorSource, stepLabel, stepOffers, testFileSlug } from "../src/test-recording.ts";
+import { agentActSuggestion, agentStepLabel, allStepOffers, ancestorChain, anchorSelector, emitE2eTest, emitE2eTestLines, treeHealth, resolveComponentSelector, resolveSelector, selectorSource, stepLabel, stepOffers, swipeDirection, swipePath, testFileSlug } from "../src/test-recording.ts";
 import type { RecordedSelector, RecordedStep, VisionMode } from "../src/test-recording.ts";
 
 /**
@@ -621,13 +621,15 @@ test("a swipe is scoped to the element it names, or to the viewport when nothing
   // `momentum` defaults to `none` and how hard a flick was thrown is not something the panel can
   // observe, so `direction` is the whole of the options object.
   assert.doesNotMatch(swipe({ kind: "text", text: "Cards" }, "left"), /momentum/);
-  // A viewport swipe needs no element, so it is emitted rather than skipped — but it is still a
-  // coordinate's screen, so it keeps the TODO and the wait every point step carries.
+  // A viewport swipe needs no element, so it is emitted rather than skipped. It keeps the wait
+  // every point step carries — it is as actionable as a tap and would fire into a splash screen —
+  // but not the TODO, which is about a coordinate breaking on a layout change and names no
+  // coordinate here.
   const viewport = emitE2eTest([{
     id: "1", kind: "swipe", selector: { kind: "point", point: { x: 4, y: 8 } }, label: "",
     direction: "down", anchor: { kind: "text", text: "Explore" },
   }], { title: "s" });
-  assert.match(viewport, /TODO: nothing resolved here/);
+  assert.doesNotMatch(viewport, /TODO/);
   assert.match(viewport, /await expect\(screen\.getByText\("Explore"\)\)\.toBeVisible\(\);\n\s+await screen\.swipe\(\{ direction: "down" \}\);/);
   assert.doesNotMatch(viewport, /Skipped a step on a point/);
 });
@@ -647,4 +649,100 @@ test("a swipe step says which way it went", () => {
   assert.equal(stepLabel("swipe", { kind: "role", role: "list", name: "Cards" }, "left"), 'Swipe left on "Cards" (list)');
   assert.equal(stepLabel("swipe", { kind: "point", point: { x: 4, y: 8 } }, "down"), "Swipe down (viewport)");
   assert.equal(stepLabel("swipe", { kind: "testId", testId: "c" }), "Swipe up on #c", "the direction the menu lists first");
+});
+
+test("an element names itself the same way a tap on it would", () => {
+  // The two entry points are one ranking. A point reaches the chain by hit-testing, an agent
+  // reaches it by walking `parentId` up, and both then run `resolveChain` — which is what keeps an
+  // agent-recorded step and a hand-recorded step the same step.
+  const components = [
+    component({ bounds: TAB, role: "tablist", label: "Tab Bar", nodeId: "bar" }),
+    component({ bounds: { x: 0, y: 800, width: 50, height: 40 }, role: "tab", label: "Explore", nodeId: "tab", parentId: "bar" }),
+  ];
+  const byPoint = resolveSelector(components, { x: 20, y: 820 }, SCREEN);
+  const byElement = resolveComponentSelector(components, components[1]);
+  assert.deepEqual(byPoint.selector, { kind: "role", role: "tab", name: "Explore" });
+  assert.deepEqual(byElement?.selector, byPoint.selector);
+  assert.equal(byElement?.component, components[1]);
+});
+
+test("an element whose own node carries nothing is named by what encloses it", () => {
+  // The same depth-first rule the ladder follows: the innermost element that can be named at all
+  // wins, and a bare container falls through to its parent rather than to nothing.
+  const components = [
+    component({ bounds: TAB, identifier: "SubmitButton", nodeId: "button" }),
+    component({ bounds: TAB, role: "other", nodeId: "icon", parentId: "button" }),
+  ];
+  assert.deepEqual(resolveComponentSelector(components, components[1])?.selector, { kind: "testId", testId: "SubmitButton" });
+});
+
+test("an element nothing can name resolves to nothing rather than to a coordinate", () => {
+  // The one place the two entry points differ, and deliberately: a tap has a coordinate to fall
+  // back on, while a `ref` does not — recording `screen.tapAt` from an element an agent named
+  // would be a worse step than the `agent.act` sentence it writes instead.
+  const components = [component({ bounds: TAB, role: "other", nodeId: "blank" })];
+  assert.equal(resolveComponentSelector(components, components[0]), undefined);
+  assert.deepEqual(resolveSelector(components, { x: 50, y: 820 }).selector, { kind: "point", point: { x: 50, y: 820 } });
+});
+
+test("the ancestor chain is innermost first and survives a broken parent link", () => {
+  const components = [
+    component({ bounds: TAB, label: "Card", nodeId: "card" }),
+    component({ bounds: TAB, label: "Row", nodeId: "row", parentId: "card" }),
+    component({ bounds: TAB, label: "Orphan", nodeId: "orphan", parentId: "gone" }),
+  ];
+  assert.deepEqual(ancestorChain(components, components[1]).map(item => item.nodeId), ["row", "card"]);
+  assert.deepEqual(ancestorChain(components, components[2]).map(item => item.nodeId), ["orphan"]);
+});
+
+test("a swipe is drawn well inside the box, so the OS does not read it as an edge gesture", () => {
+  // Both drivers take a recorded swipe — the panel through the mirror's stream, the server through
+  // agent-device — so the arithmetic is shared rather than written twice.
+  const path = swipePath({ x: 0, y: 0, width: 400, height: 800 }, "up");
+  assert.deepEqual(path, { from: { x: 200, y: 680 }, to: { x: 200, y: 120 } });
+  assert.deepEqual(swipePath({ x: 0, y: 0, width: 400, height: 800 }, "right"),
+    { from: { x: 60, y: 400 }, to: { x: 340, y: 400 } });
+  assert.equal(swipeDirection("sideways"), "up", "an unknown direction is the one the menu lists first");
+  assert.equal(swipeDirection("left"), "left");
+});
+
+test("the screen's own root is never what names an element", () => {
+  // The point path never reaches it, because the hit ladder drops anything spanning the screen.
+  // Without the same rule on the element path, every unnameable element on an app whose root
+  // carries a title resolved to that title — `screen.getByText("expoapp57")` for a scroll bar,
+  // reported as unique.
+  const components = [
+    component({ bounds: { x: 0, y: 0, ...SCREEN }, label: "expoapp57", role: "application", nodeId: "root" }),
+    component({ bounds: TAB, role: "other", nodeId: "scrollbar", parentId: "root", label: "" }),
+  ];
+  assert.equal(resolveComponentSelector(components, components[1], SCREEN), undefined);
+  assert.equal(resolveComponentSelector(components, components[0], SCREEN), undefined);
+  // Without a screen size there is nothing to compare against, so the rule cannot apply.
+  assert.deepEqual(resolveComponentSelector(components, components[1])?.selector, { kind: "text", text: "expoapp57" });
+});
+
+test("a viewport swipe carries no coordinate, so it carries no coordinate TODO", () => {
+  // `screen.swipe({ direction })` names no point: there is nothing to break on a layout change
+  // and nothing to wait for. The TODO and the anchor gate are about a coordinate *tap*.
+  const step: RecordedStep = {
+    id: "s", kind: "swipe", label: "Swipe up (viewport)", direction: "up",
+    selector: { kind: "point", point: { x: 0, y: 0 } },
+  };
+  const { source } = emitE2eTestLines([step], { title: "t" });
+  assert.match(source, /await screen\.swipe\(\{ direction: "up" \}\);/);
+  assert.doesNotMatch(source, /TODO/);
+  // A coordinate *tap* still says what it is.
+  const tap: RecordedStep = { id: "s", kind: "tap", label: "Tap at 0, 0", selector: { kind: "point", point: { x: 0, y: 0 } } };
+  assert.match(emitE2eTest([tap], { title: "t" }), /TODO: nothing resolved here/);
+});
+
+test("the screen's own root is never the thing a coordinate step waits for", () => {
+  // It is the nearest element to any point and it names nothing:
+  // `expect(screen.getByText("<the app>")).toBeVisible()` waits for the application to exist,
+  // which it did before the test started.
+  const components = [
+    component({ bounds: { x: 0, y: 0, ...SCREEN }, label: "expoapp57", role: "application", nodeId: "root" }),
+    component({ bounds: { x: 100, y: 400, width: 80, height: 40 }, label: "Paris", role: "text", nodeId: "paris" }),
+  ];
+  assert.deepEqual(anchorSelector(components, { x: 201, y: 437 }, SCREEN), { kind: "text", text: "Paris" });
 });

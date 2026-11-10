@@ -19,6 +19,8 @@ import { APP_FLOW_DIRECTORY, createAppFlowHost } from "./app-flow-host.ts";
 import { AppFlowProjectChoices } from "./app-flow-projects.ts";
 import { registerAppFlowTools } from "./app-flow-tools.ts";
 import { registerTestingTools } from "./testing-tools.ts";
+import { registerTestingAgentTools } from "./testing-agent.ts";
+import { TestingDevices } from "./testing-device.ts";
 import { TESTING_DIRECTORY, TestingProjectChoices } from "./testing-projects.ts";
 import { ServeEmu } from "./serve-emu.ts";
 import { listIosDevices, registerIosDeviceTools } from "./ios-devices.ts";
@@ -111,7 +113,11 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
   registerAppStorageTools(server);
   const appFlow = await createAppFlowHost();
   const closeAppFlow = registerAppFlowTools(server, appFlow, new AppFlowProjectChoices(APP_FLOW_DIRECTORY));
-  const closeTestingDevices = registerTestingTools(server, new TestingProjectChoices(TESTING_DIRECTORY));
+  // One device holder for both drivers. agent-device allows exactly one session per device, and an
+  // agent recording is another holder of the panel's `mobile-dev-recorder` session, never a second.
+  const testingDevices = new TestingDevices();
+  const closeTestingDevices = registerTestingTools(server, new TestingProjectChoices(TESTING_DIRECTORY), testingDevices);
+  registerTestingAgentTools(server, testingDevices);
 
   const resource = async () => typeof html === "string" ? { html } : await html();
   const page = async () => configureUI((await resource()).html);

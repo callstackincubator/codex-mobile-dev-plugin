@@ -5,6 +5,31 @@ import { testRecorder } from "./test-recorder.ts";
 import type { RecorderTreeSource } from "./test-recorder.ts";
 import type { ScreenComponent } from "@mobile-dev/shared/screen-annotations.ts";
 import { testFileSlug } from "@mobile-dev/shared/test-recording.ts";
+import type { RecordedStep } from "@mobile-dev/shared/test-recording.ts";
+
+/**
+ * An agent recording, as the server reports it.
+ *
+ * The recording itself lives in the server — see `packages/core/src/testing-agent.ts` for why it
+ * has to — and the panel polls for it, the same way it polls a run's progress and for the same
+ * reason: a tool call is one request and one response.
+ */
+export type TestingAgentView = {
+  active: boolean;
+  status: "idle" | "recording" | "finished" | "aborted";
+  title: string;
+  goal: string;
+  steps: number;
+  note: string;
+};
+
+/** 400 ms while an agent is recording, so a step lands in the panel as it is recorded. */
+const AGENT_POLL_ACTIVE_MS = 400;
+/**
+ * And a slow tick otherwise, so a recording the agent starts is noticed even when the user is
+ * looking at another tool. It is what opens the Testing tab for them.
+ */
+const AGENT_POLL_IDLE_MS = 2_500;
 
 /** One entry of the project selector. The server owns the list so a pick survives the panel document. */
 export interface TestingProjectOption { path: string; name: string }
@@ -41,6 +66,8 @@ export type TestingSnapshot = {
   running: boolean;
   /** Run asked to replace an existing file and is waiting on the answer. */
   pendingRun: boolean;
+  /** The agent recording the server holds, or null when no agent has ever recorded here. */
+  agent: TestingAgentView | null;
   error: string | null;
 };
 
@@ -74,12 +101,38 @@ export class TestingPanel {
   private snapshot: TestingSnapshot = {
     open: false, available: false, projectPath: "", projects: [], targets: [], targetName: "", configPath: "",
     loadingProject: false, pickingProject: false, launching: false, appLaunched: false,
-    fileName: "", saving: false, overwritePath: "", savedRevision: -1, savedPath: "", running: false, pendingRun: false, error: null,
+    fileName: "", saving: false, overwritePath: "", savedRevision: -1, savedPath: "", running: false, pendingRun: false,
+    agent: null, error: null,
   };
+
+  /** The agent recording's revision the panel has already adopted; -1 before the first poll. */
+  private agentRevision = -1;
+  private agentTimer?: ReturnType<typeof setTimeout>;
+  private agentPolling = false;
+  /** The last selection reported to the server, so the context tool is not called on every tick. */
+  private reportedContext = "";
+  private readonly stopWatchingDevices: () => void;
+  /** Set when a session goes active, for the host chrome to show the Testing tab. */
+  private onAgentRecording?: () => void;
 
   constructor(app: HostBridge, deviceApps: DeviceAppsStore) {
     this.app = app;
     this.deviceApps = deviceApps;
+    // The device is half of what an agent recording needs and it belongs to the simulator panel,
+    // so the selection is reported whenever either half moves.
+    this.stopWatchingDevices = deviceApps.subscribe(() => { void this.reportContext(); });
+  }
+
+  /**
+   * The host chrome's way of being told to show the Testing tab.
+   *
+   * Which tool is on screen is the host's own state — the workspace component holds it — so the
+   * panel asks rather than reaches. Opening the tab is the point of an agent recording: the user
+   * asked their agent for a test and the steps have to be somewhere they can see them.
+   */
+  onAgentRecordingStarted(listener: () => void) {
+    this.onAgentRecording = listener;
+    return () => { if (this.onAgentRecording === listener) this.onAgentRecording = undefined; };
   }
 
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
@@ -89,6 +142,7 @@ export class TestingPanel {
     this.snapshot = { ...this.snapshot, ...fields };
     for (const listener of this.listeners) listener();
     this.syncTreeSource();
+    void this.reportContext();
   }
 
   /**
@@ -131,9 +185,15 @@ export class TestingPanel {
   hide() { this.update({ open: false }); }
   setAvailable(available: boolean) {
     this.update({ available });
-    // The panel can be opened before the host answers, which leaves nothing to reopen; try again
-    // once the host is there rather than leaving an empty selector for the rest of the session.
-    if (available && this.snapshot.open) void this.restoreProject();
+    if (!available) return;
+    // Reopened on the last project whether or not the tab is showing: an agent recording needs a
+    // project the user has already chosen, and asking them to open the tab first only to have it
+    // reopen on the folder they picked last time is a step that answers nothing. The *choice* is
+    // still theirs — nothing is ever inferred from the server's working directory.
+    void this.restoreProject();
+    // And the poll runs from here rather than from `show`, so a recording the agent starts while
+    // the user is in another tool is what opens the Testing tab for them.
+    this.pollAgent();
   }
 
   /** The target the recorder would use: the chosen one, else the first the config declares. */
@@ -367,9 +427,117 @@ export class TestingPanel {
     }
   }
 
+  /**
+   * Tells the server what the panel has selected, so an agent recording has something to record
+   * against.
+   *
+   * This is the only thing that knows the selection: the project is the user's explicit pick, the
+   * device is whichever one the mirror shows, and the bundle id comes from the project's own e2e
+   * config. `mobile_testing_agent_begin` reads it and refuses when any of the three is missing,
+   * which is what keeps an OS folder dialog from opening inside an agent's turn.
+   */
+  private async reportContext() {
+    if (this.disposed || !this.snapshot.available) return;
+    const projectPath = this.snapshot.projectPath;
+    const bundleId = this.target?.bundleId ?? "";
+    const device = this.deviceApps.getSnapshot().device;
+    const booted = device?.state === "Booted" || device?.state === "connected";
+    // Only an iOS simulator can be recorded against; anything else is reported as no device.
+    const udid = booted && device && (device.platform ?? "ios") === "ios" && device.kind !== "physical" ? device.udid : "";
+    const key = `${projectPath}\u0000${udid}\u0000${bundleId}`;
+    if (key === this.reportedContext) return;
+    this.reportedContext = key;
+    try {
+      await this.call("mobile_testing_set_context", { projectPath, udid, bundleId }, 10_000);
+    } catch {
+      // The next change reports again; a selection the server missed only means an agent is told
+      // to ask the user, which is the refusal it would have given anyway.
+      this.reportedContext = "";
+    }
+  }
+
+  /**
+   * One poll of the agent recording the server holds, which then schedules the next.
+   *
+   * Fast while a session is active so a step appears in the panel as it is recorded, slow
+   * otherwise so a session started from another tool is still noticed. Failures are silent and do
+   * not stop the loop: a missed tick is one the next one covers.
+   */
+  private pollAgent() {
+    if (this.disposed || this.agentPolling) return;
+    this.agentPolling = true;
+    void this.readAgentState().finally(() => {
+      this.agentPolling = false;
+      if (this.disposed || !this.snapshot.available) return;
+      clearTimeout(this.agentTimer);
+      this.agentTimer = setTimeout(() => this.pollAgent(),
+        this.snapshot.agent?.active ? AGENT_POLL_ACTIVE_MS : AGENT_POLL_IDLE_MS);
+    });
+  }
+
+  private async readAgentState() {
+    let data: Record<string, unknown>;
+    try {
+      const response = await this.call("mobile_testing_agent_state", {}, 5_000);
+      data = object(response.structuredContent) ?? {};
+    } catch {
+      return;
+    }
+    if (this.disposed) return;
+    const revision = typeof data.revision === "number" ? data.revision : 0;
+    const status = data.status === "recording" || data.status === "finished" || data.status === "aborted" ? data.status : "idle";
+    const steps = (Array.isArray(data.steps) ? data.steps : []) as RecordedStep[];
+    const agent: TestingAgentView = {
+      active: data.active === true, status,
+      title: text(data.title), goal: text(data.goal), steps: steps.length, note: text(data.note),
+    };
+    const first = this.agentRevision < 0;
+    const unchanged = !first && revision === this.agentRevision;
+    this.agentRevision = revision;
+    if (status === "idle") { this.update({ agent: null }); return; }
+    const wasActive = this.snapshot.agent?.active === true;
+    this.update({ agent });
+    if (agent.active) {
+      // A session already in flight when the panel opened is adopted too: the agent may have
+      // started before the user's host drew this document.
+      if (!unchanged || !wasActive) {
+        const udid = this.deviceApps.getSnapshot().device?.udid ?? "";
+        testRecorder.adoptAgentRecording(udid, steps, agent.title);
+      }
+      if (!wasActive) this.onAgentRecording?.();
+      return;
+    }
+    // The agent stopped. The steps are left dirty exactly as they are, and from here the flow is
+    // an ordinary unsaved recording: the banner clears and the mirror is the user's again.
+    if (wasActive) {
+      if (steps.length !== testRecorder.getSnapshot().steps.length) {
+        testRecorder.adoptAgentRecording(this.deviceApps.getSnapshot().device?.udid ?? "", steps, agent.title);
+      }
+      testRecorder.endAgentRecording(status === "aborted" ? "aborted" : "finished");
+      this.update({ savedRevision: -1, savedPath: "" });
+    }
+  }
+
+  /** The user's Stop button on the agent banner. The server drops the session; the steps stay. */
+  async stopAgent() {
+    if (!this.snapshot.agent?.active) return;
+    try {
+      await this.call("mobile_testing_agent_abort", { reason: "The user stopped the recording from the Testing panel." }, 10_000);
+    } catch (error) {
+      this.update({ error: error instanceof Error ? error.message : String(error) });
+      return;
+    }
+    // Do not wait for the next tick to hand the mirror back: the user pressed Stop to get it back.
+    testRecorder.endAgentRecording("aborted");
+    this.update({ agent: { ...this.snapshot.agent, active: false, status: "aborted" } });
+    this.pollAgent();
+  }
+
   /** Whether Run has something to run: a project, steps, and no run or save already in flight. */
   get canRun(): boolean {
-    return Boolean(this.snapshot.available && this.snapshot.projectPath
+    // Never while an agent is recording: a run resets the app and takes the one agent-device
+    // session the device allows, which is the session the recording is being read through.
+    return Boolean(this.snapshot.available && this.snapshot.projectPath && !this.snapshot.agent?.active
       && testRecorder.getSnapshot().steps.length > 0 && !this.snapshot.running && !this.snapshot.saving);
   }
 
@@ -454,6 +622,8 @@ export class TestingPanel {
 
   dispose() {
     this.disposed = true;
+    clearTimeout(this.agentTimer);
+    this.stopWatchingDevices();
     this.update({ open: false });
     this.listeners.clear();
     // The panel is going; the device it was reading must not go with it. See `RecorderTreeSource`.

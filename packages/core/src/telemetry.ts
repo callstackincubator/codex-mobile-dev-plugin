@@ -72,6 +72,21 @@ export function recordProjectDialog(outcome: "chosen" | "cancelled" | "failed", 
   Sentry.metrics.distribution("app_flow.project_dialog.duration", Math.max(0, duration), { unit: "millisecond", attributes });
 }
 
+/**
+ * How long an agent recording's screen read took, and how much of a screen it answered with.
+ *
+ * The read is the only thing in an agent recording that costs anything — a flow is ten to twenty
+ * of them — so it is the boundary worth measuring. The element count is a size, never content:
+ * no names, no text and nothing the user's app put on screen is sent.
+ */
+export function recordTestingAgentRead(outcome: "success" | "failed", duration: number, elements: number) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = { component: "server", surface: "testing", outcome };
+  Sentry.metrics.count("testing.agent.screen.samples", 1, { attributes });
+  Sentry.metrics.distribution("testing.agent.screen.duration", Math.max(0, duration), { unit: "millisecond", attributes });
+  if (outcome === "success") Sentry.metrics.gauge("testing.agent.screen.elements", elements, { attributes });
+}
+
 export function recordTraceSiftOperation(operation: "ready" | "analyze" | "remember" | "restore" | "handoff" | "task" | "payload" | "pick" | "project", outcome: "success" | "failed", duration: number) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes = { component: "server", surface: "tracesift", operation, outcome };

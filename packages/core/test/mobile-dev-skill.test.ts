@@ -11,3 +11,29 @@ test("App Flow opens saved and runtime-only screens without extra device verific
   assert.match(skill, /When either replay tool returns `ok: true`, stop/);
   assert.match(skill, /Do not take a snapshot, verify the destination, open an agent-device session/);
 });
+
+test("the testing skill records, hands over, and never saves or runs", async () => {
+  const skill = await readFile(new URL("../../skills/mobile-dev-testing/SKILL.md", import.meta.url), "utf8");
+
+  // The loop, in the order the tools enforce it.
+  assert.match(skill, /mobile_testing_agent_begin.*mobile_testing_agent_screen.*mobile_testing_agent_step.*mobile_testing_agent_finish/s);
+  assert.match(skill, /Read the screen again after every step that acts/);
+  // The prerequisites are the user's to set: an agent that opens the folder picker opens a system
+  // dialog inside its own turn.
+  assert.match(skill, /\*\*Never choose the project for them\*\*/);
+  // Pinned locators are the point of recording; a sentence is the fallback for an element the
+  // screen read reported no selector for.
+  assert.match(skill, /## Never write a locator/);
+  assert.match(skill, /no `selector` at all/);
+  assert.match(skill, /\*\*Never save\.\*\*/);
+  assert.match(skill, /\*\*Never run the test\.\*\*/);
+  // And the handover, which is the whole deliverable: the user adjusts and saves.
+  assert.match(skill, /in the Testing panel, unsaved/);
+});
+
+test("the testing skill ships from every plugin that has the panel", async () => {
+  const { sharedSkills } = await import("../../../tooling/plugin-hosts.mjs");
+  assert.ok(sharedSkills.includes("packages/skills/mobile-dev-testing"), "Codex and Cursor");
+  const claude = JSON.parse(await readFile(new URL("../../../apps/claude/plugin-host.json", import.meta.url), "utf8"));
+  assert.ok(claude.skills.includes("../../packages/skills/mobile-dev-testing"), "Claude Code");
+});

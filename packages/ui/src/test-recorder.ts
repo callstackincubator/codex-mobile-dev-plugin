@@ -1,4 +1,4 @@
-import { agentStepLabel, allStepOffers, anchorSelector, emitE2eTestLines, hitLadder, isAgentStep, resolveSelector, stepEffect, stepIsAssertion, stepLabel, stepNeedsValue, stepOffers, treeHealth } from "@mobile-dev/shared/test-recording.ts";
+import { agentStepLabel, allStepOffers, anchorSelector, emitE2eTestLines, hitLadder, isAgentStep, resolveSelector, stepEffect, stepIsAssertion, stepLabel, stepNeedsValue, stepOffers, swipeDirection, swipePath, treeHealth } from "@mobile-dev/shared/test-recording.ts";
 import type { AgentParams, AgentStep, AgentStepKind, PinnedStep, PinnedStepKind, RecordedStep, StepOffer, StepTarget, SwipeDirection, VisionMode } from "@mobile-dev/shared/test-recording.ts";
 import type { ScreenBounds, ScreenComponent, ScreenPoint, ScreenSize } from "@mobile-dev/shared/screen-annotations.ts";
 import { countUiEvent, recordUiTiming, setUiGauge } from "./telemetry.ts";
@@ -85,6 +85,15 @@ export type TestRunView = {
 export type TestRecorderSnapshot = {
   /** The udid being recorded against, or "" when nothing is recording. */
   recordingUdid: string;
+  /**
+   * The udid an *agent* is recording against, or "" when the user owns the flow.
+   *
+   * The steps, the preview, the emitter and Save are the same ones either way — this is
+   * deliberately not a second state machine — so the only thing this answers is who is driving.
+   * The mirror's input is locked while it is set, because the agent and the user must not both be
+   * acting on one screen, and the panel draws its banner from it.
+   */
+  agentUdid: string;
   steps: RecordedStep[];
   title: string;
   /** Bumped by every change to what would be written, so the panel can tell saved from dirty. */
@@ -201,7 +210,7 @@ export class TestRecorder {
   /** That element's rectangle, which is the box a scoped swipe is drawn inside. */
   private lastBounds?: ScreenBounds;
   private snapshot: TestRecorderSnapshot = {
-    recordingUdid: "", steps: [], title: DEFAULT_TITLE, revision: 0, resolving: false, error: "",
+    recordingUdid: "", agentUdid: "", steps: [], title: DEFAULT_TITLE, revision: 0, resolving: false, error: "",
   };
 
   private fadeTimer?: ReturnType<typeof setTimeout>;
@@ -272,6 +281,62 @@ export class TestRecorder {
     return Boolean(udid) && this.snapshot.recordingUdid === udid;
   }
 
+  /**
+   * Whether an agent is recording, so the mirror's own input is locked.
+   *
+   * Two drivers on one screen is solved by locking, not by hoping: a tap the user lands between
+   * the agent's read and its step resolves the step against a screen that has already moved.
+   */
+  isAgentRecording(udid?: string) {
+    return this.snapshot.agentUdid !== "" && (udid === undefined || this.snapshot.agentUdid === udid);
+  }
+
+  /**
+   * Takes the steps of an agent recording the server holds, as they arrive.
+   *
+   * `recordingUdid` is set for the agent's device, so the step list, the preview, editing,
+   * duplication and Save all work exactly as they do for a recording the user tapped out: an
+   * agent-recorded flow is an ordinary unsaved recording that happened to be written by something
+   * else. The steps replace rather than append — the server holds the whole flow, and reconciling
+   * two lists would be a second source of truth.
+   */
+  adoptAgentRecording(udid: string, steps: readonly RecordedStep[], title?: string) {
+    if (!udid) return;
+    const startedAt = performance.now();
+    const added = Math.max(0, steps.length - this.snapshot.steps.length);
+    const began = this.snapshot.agentUdid !== udid;
+    if (began) {
+      this.clearHover();
+      this.clearRun();
+      countUiEvent("ui.testing.agent_session_start");
+    }
+    const sameSteps = steps.length === this.snapshot.steps.length
+      && steps.every((step, index) => step.id === this.snapshot.steps[index]?.id);
+    if (!began && sameSteps && (title === undefined || title === this.snapshot.title)) return;
+    this.update({
+      agentUdid: udid, recordingUdid: udid, error: "", menu: undefined,
+      steps: [...steps],
+      ...(title ? { title } : {}),
+    });
+    // Counted as steps, never as what they say: an element's name and the goal sentence are the
+    // user's own content and are not sent. See docs/telemetry.md.
+    for (let index = 0; index < added; index += 1) countUiEvent("ui.testing.agent_step_adopted");
+    recordUiTiming("ui.testing.agent_adopt", performance.now() - startedAt);
+  }
+
+  /**
+   * The agent is done. The steps stay, dirty, and the flow is an ordinary unsaved recording from
+   * here — so this stops the recorder exactly as the Stop button does, device release included.
+   * Leaving it armed would turn the user's next tap on the mirror into a step the agent never
+   * recorded, and leaving the session open is the leak `TestingDevices.release` exists to stop.
+   */
+  endAgentRecording(reason: "finished" | "aborted") {
+    if (!this.snapshot.agentUdid) return;
+    this.update({ agentUdid: "" });
+    this.stop();
+    if (reason === "aborted") countUiEvent("ui.testing.agent_session_abort");
+  }
+
   get source() { return this.emitted.source; }
 
   /**
@@ -280,7 +345,7 @@ export class TestRecorder {
    * of a finished test is never what was meant.
    */
   start(udid: string, keepSteps = false) {
-    if (!udid || !this.reader) return;
+    if (!udid || !this.reader || this.snapshot.agentUdid) return;
     const had = this.snapshot.steps.length > 0;
     this.invalidate();
     this.clearHover();
@@ -298,7 +363,7 @@ export class TestRecorder {
   stop() {
     if (!this.snapshot.recordingUdid) return;
     this.clearHover();
-    this.update({ recordingUdid: "", resolving: false, menu: undefined });
+    this.update({ recordingUdid: "", agentUdid: "", resolving: false, menu: undefined });
     // The steps stay; the device does not. See `RecorderReader.release`.
     this.reader?.release?.();
     countUiEvent("ui.testing.record_stop");
@@ -509,7 +574,7 @@ export class TestRecorder {
       ...(kind === "swipe" ? { direction: swipeDirection(value) } : value === undefined ? {} : { value }),
       ...(ambiguous ? { ambiguous } : {}),
       // Only a coordinate tap needs one: every locator action waits for its own element.
-      ...(selector.kind === "point" ? { anchor: anchorSelector(components, point) } : {}),
+      ...(selector.kind === "point" ? { anchor: anchorSelector(components, point, screen) } : {}),
       // Kept so the step list can offer the same commands later; see `RecordedStep.target`.
       ...(target ? { target } : {}),
     };
@@ -784,32 +849,6 @@ export class TestRecorder {
 export function formatRunDuration(durationMs: number): string {
   if (!Number.isFinite(durationMs) || durationMs < 0) return "";
   return durationMs < 1000 ? `${Math.round(durationMs)}ms` : `${(durationMs / 1000).toFixed(2)}s`;
-}
-
-/** A direction the model understands, defaulting to the one the menu lists first. */
-function swipeDirection(value?: string): SwipeDirection {
-  return value === "down" || value === "left" || value === "right" ? value : "up";
-}
-
-/**
- * The gesture a recorded swipe takes on the device, drawn inside the box it is scoped to.
- *
- * Taken over the middle 70% of the box, so the start and the end are both well inside it: a
- * gesture begun on the very edge of the screen is an edge gesture to the OS — back, the shade,
- * the app switcher — and not the swipe the step describes. The finger travels the way the step is
- * named, which is the direction `e2e` names too.
- */
-function swipePath(box: ScreenBounds, direction: SwipeDirection): { from: ScreenPoint; to: ScreenPoint } {
-  const midX = box.x + box.width / 2;
-  const midY = box.y + box.height / 2;
-  const reachX = box.width * 0.35;
-  const reachY = box.height * 0.35;
-  switch (direction) {
-    case "up": return { from: { x: midX, y: midY + reachY }, to: { x: midX, y: midY - reachY } };
-    case "down": return { from: { x: midX, y: midY - reachY }, to: { x: midX, y: midY + reachY } };
-    case "left": return { from: { x: midX + reachX, y: midY }, to: { x: midX - reachX, y: midY } };
-    case "right": return { from: { x: midX - reachX, y: midY }, to: { x: midX + reachX, y: midY } };
-  }
 }
 
 /** The one recorder. See the class comment for why there is only one. */

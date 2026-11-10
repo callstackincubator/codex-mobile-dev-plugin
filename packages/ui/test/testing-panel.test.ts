@@ -17,6 +17,16 @@ const tab: ScreenComponent = {
 // Saving touches no device, so the store is a stub: the real one binds to the document.
 const deviceApps = { subscribe: () => () => undefined, getSnapshot: () => ({ device: undefined }) } as unknown as DeviceAppsStore;
 
+/**
+ * The calls the save and run path makes, with the panel's own background plumbing left out.
+ *
+ * An open panel also reports its selection to the server and polls for an agent recording — see
+ * `packages/core/src/testing-agent.ts` — and neither is part of what saving or running does. They
+ * are asserted where they belong, in `testing-agent-panel.test.ts`.
+ */
+const BACKGROUND = new Set(["mobile_testing_set_context", "mobile_testing_agent_state", "mobile_testing_projects"]);
+const flow = (calls: { name: string }[]) => calls.map(call => call.name).filter(name => !BACKGROUND.has(name));
+
 function host(responses: Record<string, unknown>, calls: { name: string; arguments: Record<string, unknown> }[]) {
   return {
     async callServerTool({ name, arguments: input }: { name: string; arguments: Record<string, unknown> }) {
@@ -45,7 +55,7 @@ test("a saved recording stops recording, so the next tap is not an unsaved step"
 
   await panel.saveTest();
 
-  assert.equal(calls.at(-1)?.name, "mobile_testing_write_file");
+  assert.deepEqual(flow(calls), ["mobile_testing_write_file"]);
   assert.equal(testRecorder.getSnapshot().recordingUdid, "", "recording must end with the file it produced");
   assert.equal(panel.getSnapshot().savedPath, `${PROJECT}/tests/flow.e2e.ts`);
   assert.equal(panel.dirty, false);
@@ -53,6 +63,7 @@ test("a saved recording stops recording, so the next tap is not an unsaved step"
   assert.equal(testRecorder.getSnapshot().steps.length, 1);
   testRecorder.clearSteps();
   testRecorder.detach(UDID);
+  panel.dispose();
 });
 
 test("a save blocked by an existing file leaves the recording running", async () => {
@@ -69,6 +80,7 @@ test("a save blocked by an existing file leaves the recording running", async ()
   testRecorder.stop();
   testRecorder.clearSteps();
   testRecorder.detach(UDID);
+  panel.dispose();
 });
 
 test("Run saves, hands the device back, and only then runs", async () => {
@@ -85,16 +97,18 @@ test("Run saves, hands the device back, and only then runs", async () => {
 
   // The order is the feature: the recorder holds the one agent-device session the device allows,
   // so a run spawned while it is held fails with "Device is already in use".
-  assert.deepEqual(calls.map(call => call.name),
+  assert.deepEqual(flow(calls),
     ["mobile_testing_write_file", "mobile_testing_release_device", "mobile_testing_run_test"]);
   assert.equal(testRecorder.getSnapshot().recordingUdid, "", "a recording left armed would take the session straight back");
-  assert.deepEqual(calls.at(-1)?.arguments, { projectPath: PROJECT, relativePath: "tests/flow.e2e.ts" });
+  assert.deepEqual(calls.findLast(call => call.name === "mobile_testing_run_test")?.arguments,
+    { projectPath: PROJECT, relativePath: "tests/flow.e2e.ts" });
   assert.equal(panel.getSnapshot().running, false);
   assert.equal(testRecorder.getSnapshot().run?.state, "passed");
   assert.deepEqual(testRecorder.getSnapshot().run?.lines, { 8: "passed" });
   testRecorder.clearRun();
   testRecorder.clearSteps();
   testRecorder.detach(UDID);
+  panel.dispose();
 });
 
 test("Run never replaces a file without being asked, and resumes from the answer", async () => {
@@ -111,7 +125,7 @@ test("Run never replaces a file without being asked, and resumes from the answer
   await panel.runTest();
 
   assert.equal(panel.getSnapshot().overwritePath, `${PROJECT}/tests/flow.e2e.ts`);
-  assert.deepEqual(calls.map(call => call.name), ["mobile_testing_write_file"], "nothing ran over a file the user has not agreed to replace");
+  assert.deepEqual(flow(calls), ["mobile_testing_write_file"], "nothing ran over a file the user has not agreed to replace");
 
   responses.mobile_testing_write_file = { written: true, existed: true, path: `${PROJECT}/tests/flow.e2e.ts` };
   await panel.saveTest(true);
@@ -119,11 +133,12 @@ test("Run never replaces a file without being asked, and resumes from the answer
   await new Promise(resolve => setTimeout(resolve, 0));
   await new Promise(resolve => setTimeout(resolve, 0));
   // The answer finishes what Run began, so the user does not press Run twice.
-  assert.deepEqual(calls.map(call => call.name),
+  assert.deepEqual(flow(calls),
     ["mobile_testing_write_file", "mobile_testing_write_file", "mobile_testing_release_device", "mobile_testing_run_test"]);
   testRecorder.clearRun();
   testRecorder.clearSteps();
   testRecorder.detach(UDID);
+  panel.dispose();
 });
 
 test("a failing run keeps its mark on the line the report blames", async () => {
@@ -146,4 +161,5 @@ test("a failing run keeps its mark on the line the report blames", async () => {
   testRecorder.clearRun();
   testRecorder.clearSteps();
   testRecorder.detach(UDID);
+  panel.dispose();
 });

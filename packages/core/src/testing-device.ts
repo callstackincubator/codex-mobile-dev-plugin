@@ -35,7 +35,13 @@ interface SemanticNode {
   states?: Record<string, boolean | undefined>;
   rect?: { x: number; y: number; width: number; height: number };
 }
-interface ProjectedNode { id: string; kind: string; node: SemanticNode; parent?: ProjectedNode }
+/**
+ * `ref` is agent-device's own handle for the node, which is what an action is placed on: the
+ * projection keeps it beside the semantic node, so a selector the panel resolved and a tap the
+ * server performs are about the same element without a second lookup. It is absent for a node
+ * agent-device did not give one.
+ */
+interface ProjectedNode { id: string; kind: string; ref?: string; node: SemanticNode; parent?: ProjectedNode }
 interface ProjectedSnapshot { index: readonly ProjectedNode[]; viewport?: ScreenSize }
 interface EngineProjection {
   projectSnapshot(raw: readonly unknown[], options: { mintId: () => string }): ProjectedSnapshot;
@@ -53,7 +59,37 @@ export interface TestingDeviceTarget {
 export interface TestingDeviceTree {
   tree: ScreenComponent[];
   screen?: ScreenSize;
+  /**
+   * Each element's agent-device ref, by the `nodeId` the panel knows it as.
+   *
+   * The panel never needs this — it records selectors and drives the mirror — but an agent
+   * recording acts through agent-device itself, and a `ref` is what its tap, fill and scroll take.
+   * Keeping the pair here is what stops the server resolving the element a second time, and a
+   * second resolution is a second answer.
+   */
+  refs: Record<string, string>;
 }
+
+/**
+ * One thing an agent recording does to the device, after the step has been recorded.
+ *
+ * The kinds are `stepEffect`'s, not `PinnedStepKind`'s: an assertion changes nothing, so it never
+ * reaches here, and `scrollUntilVisible` is only ever offered for an element that is on screen
+ * already. The same reduction the mirror's menu makes, made once in `test-recording.ts`.
+ */
+export type TestingDeviceAction =
+  | { kind: "tap"; ref: string }
+  | { kind: "doubleTap"; ref: string }
+  | { kind: "type"; ref: string; text: string }
+  // An element-scoped swipe, drawn inside the element's own box.
+  | { kind: "swipe"; from: { x: number; y: number }; to: { x: number; y: number } }
+  /**
+   * A swipe of the viewport, which the runner performs as `interactions.scroll` — so this does
+   * too. Deriving a trajectory from the snapshot's viewport instead is what agent-device refuses
+   * with "Gesture trajectory does not fit inside the viewport" whenever something shrinks the
+   * window the gesture runtime measures, the on-screen keyboard above all.
+   */
+  | { kind: "scroll"; direction: "up" | "down" | "left" | "right" };
 
 /**
  * agent-device allows exactly one session per device, so a leaked session makes the user's next
@@ -122,6 +158,10 @@ function toComponent(entry: ProjectedNode, depth: number): ScreenComponent | und
     ...(placeholder ? { placeholder } : {}),
     // The runner skips a hidden node for a role query; `hidden` is set only by `visibleToUser: false`.
     ...(entry.node.states?.["hidden"] === true ? { hidden: true } : {}),
+    // What `toBeDisabled` and `toBeSelected` read, so an agent reading the screen can tell a
+    // selected tab from the rest without a second call.
+    ...(entry.node.states?.["disabled"] === true ? { disabled: true } : {}),
+    ...(entry.node.states?.["selected"] === true ? { selected: true } : {}),
   };
 }
 
@@ -135,17 +175,29 @@ export function projectedComponents(projection: EngineProjection, nodes: readonl
   let minted = 0;
   const snapshot = projection.projectSnapshot(nodes, { mintId: () => `n${++minted}` });
   const tree: ScreenComponent[] = [];
+  const refs: Record<string, string> = {};
   for (const entry of snapshot.index) {
     const component = toComponent(entry, depthOf(entry));
-    if (component) tree.push(component);
+    if (!component) continue;
+    tree.push(component);
+    // agent-device's own refs are `@e20`; the projection strips the `@` for its own use, and
+    // `interactions.click({ ref })` parses a bare `e20` as a selector and refuses it. So the
+    // sigil is put back here, at the one boundary that hands a ref to agent-device.
+    if (entry.ref) refs[entry.id] = entry.ref.startsWith("@") ? entry.ref : `@${entry.ref}`;
   }
-  return { tree, ...(snapshot.viewport ? { screen: snapshot.viewport } : {}) };
+  return { tree, refs, ...(snapshot.viewport ? { screen: snapshot.viewport } : {}) };
 }
 
 type AgentDeviceClient = {
   apps: { open(options: Record<string, unknown>): Promise<unknown> };
   capture: { snapshot(options: Record<string, unknown>): Promise<{ nodes?: unknown }> };
   sessions: { close(options?: Record<string, unknown>): Promise<unknown> };
+  interactions: {
+    click(options: Record<string, unknown>): Promise<unknown>;
+    fill(options: Record<string, unknown>): Promise<unknown>;
+    swipe(options: Record<string, unknown>): Promise<unknown>;
+    scroll(options: Record<string, unknown>): Promise<unknown>;
+  };
 };
 
 /** The error agent-device raises when the session exists but nothing is attached to an app. */
@@ -230,6 +282,47 @@ export class TestingDevices {
     }
     if (!Array.isArray(snapshot.nodes)) throw new Error("The device snapshot returned no nodes.");
     return projectedComponents(projection, snapshot.nodes);
+  }
+
+  /**
+   * Takes the step an agent recording just recorded, on the same session the read used.
+   *
+   * Not the panel's own input path: the server cannot reach the mirror's stream, and this is the
+   * better half of the trade anyway — agent-device places the action on the element's own ref, so
+   * the tap lands where the runner's locator action will land rather than on a coordinate someone
+   * computed from a rectangle. The mirror shows every change regardless, because the video stream
+   * and the snapshot hold the same simulator at once.
+   *
+   * Every action asks agent-device to **settle** afterwards. The step the agent records next is
+   * resolved against the screen this one produced, and a screen mid-transition answers with refs
+   * that are already stale — agent-device refuses the next action outright with "had no confirmed
+   * resting position when the transition window ran out". The wait belongs here, where the
+   * transition is, rather than as a sleep the caller guesses at.
+   */
+  async perform(target: TestingDeviceTarget, action: TestingDeviceAction): Promise<void> {
+    const run = this.queue.then(() => this.performOnce(target, action), () => this.performOnce(target, action));
+    this.queue = run.catch(() => undefined);
+    return run;
+  }
+
+  private async performOnce(target: TestingDeviceTarget, action: TestingDeviceAction): Promise<void> {
+    const client = await this.connect();
+    if (this.attached !== target.udid) await this.attach(client, target);
+    const base = { platform: "ios", udid: target.udid, session: SESSION, settle: true };
+    switch (action.kind) {
+      case "tap": await client.interactions.click({ ...base, ref: action.ref }); return;
+      // agent-device takes the double tap as one gesture, so unlike the mirror — whose input path
+      // has a single tap in it and sends two — this is the gesture the emitted `doubleTap` names.
+      case "doubleTap": await client.interactions.click({ ...base, ref: action.ref, doubleTap: true }); return;
+      // The runner's `fill` replaces a field's contents, and so does agent-device's, so an agent
+      // recording leaves the screen showing exactly what the step will produce — the one place it
+      // is more faithful than the mirror, which can only append.
+      case "type": await client.interactions.fill({ ...base, ref: action.ref, text: action.text }); return;
+      // `SwipeOptions` has no settle: a swipe is a gesture over the viewport rather than an
+      // action on an element, so there is no element whose resting position the next step needs.
+      case "swipe": await client.interactions.swipe({ platform: "ios", udid: target.udid, session: SESSION, from: action.from, to: action.to }); return;
+      case "scroll": await client.interactions.scroll({ ...base, direction: action.direction }); return;
+    }
   }
 
   /**

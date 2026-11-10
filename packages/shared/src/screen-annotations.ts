@@ -10,9 +10,10 @@ export type ReactElementContext = { component: string; owners: string[]; key?: s
  * `role`, `label`, `text`, `value`, `placeholder` and `hidden` are the test runner's own fields,
  * carried through untouched when the recorder reads the runner's tree: `label` is the accessible
  * *name* `getByRole`/`getByLabel` match, `text` is what `getByText` also searches, and `hidden`
- * is the node a role query skips. An inspection that does not report one simply leaves it unset.
+ * is the node a role query skips, and `disabled`/`selected` are the states `toBeDisabled` and
+ * `toBeSelected` read. An inspection that does not report one simply leaves it unset.
  */
-export type ScreenComponent = { name: string; bounds: ScreenBounds; role?: string; identifier?: string; label?: string; text?: string; value?: string; placeholder?: string; hidden?: boolean; depth: number; source?: "accessibility" | "screen" | "react-native"; nodeId?: string; parentId?: string; react?: ReactElementContext };
+export type ScreenComponent = { name: string; bounds: ScreenBounds; role?: string; identifier?: string; label?: string; text?: string; value?: string; placeholder?: string; hidden?: boolean; disabled?: boolean; selected?: boolean; depth: number; source?: "accessibility" | "screen" | "react-native"; nodeId?: string; parentId?: string; react?: ReactElementContext };
 export type ScreenSelectionContext = { ancestors: ScreenComponent[]; siblings: ScreenComponent[]; siblingCount: number; children: ScreenComponent[]; childCount: number; instance?: { index: number; total: number } };
 export type ScreenAnnotation = {
   id: string;

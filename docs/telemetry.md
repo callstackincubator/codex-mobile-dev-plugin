@@ -577,6 +577,21 @@ device go through `captureServerError` as `testing.tool` and `testing.release`. 
 labels, placeholders, testIDs, roles, bounds, bundle ids, project paths, device identifiers or
 emitted test source are attached to any of these.
 
+An **agent recording** — the user's own coding agent writing the flow through
+`mobile_testing_agent_*`, see [docs/agent-recording.md](agent-recording.md) — is measured on both
+sides of the one boundary it crosses. In the server, `testing.agent.screen.duration` times the
+element read an agent asks for before each step, `testing.agent.screen.samples` counts those reads
+by outcome, and `testing.agent.screen.elements` gauges how big the screen it answered with was.
+That read is the only thing in an agent recording that costs anything — a flow is ten to twenty of
+them — and the element count is a size, never content. In the panel,
+`ui.testing.agent_session_start` counts a session the panel adopted,
+`ui.testing.agent_step_adopted` counts each step as it arrives, `ui.testing.agent_session_abort`
+counts the user pressing Stop on the banner, and `ui.testing.agent_adopt` times the adopt that
+makes a step appear. The goal sentence, the test's title, the instruction of an agent step and
+every element name the read answered with are the user's own content about their own app and are
+**not** sent; these are counts, durations and sizes only. Handled failures of the agent tools go
+through `captureServerError` as `testing.agent`, beside `testing.tool` and `testing.release`.
+
 Since 0.1.99, `ui.logs.foreground_change` counts automatic app-filter changes applied while Logs is active, including selected-device and process-lifetime changes. From 0.1.103, these changes update the visible query and local process identity mapping instead of restarting a scoped collector. `ui.logs.app_identity` measures batch insertion with native PID-to-app joins and discovery updates in milliseconds, using bounded aggregate windows. Hidden or closed log views defer row processing until reopened. Shared `ui.device_apps.discovery` timing and handled discovery-error coverage remain in place, including Android's foreground PID lookup; native session operations retain MCP tracing, Node runtime coverage, and `logs.ios.parse` timings. No app IDs, PIDs, package names, device IDs, or query text are attached to these measurements. Native helper telemetry and symbols are unchanged.
 
 Since 0.1.99, `ui.logs.query_parse` measures query compilation in milliseconds once per edit, including automatic app-clause edits from 0.1.103. Existing `ui.logs.filter`, buffered/filtered row gauges, and search counts cover keyword filtering and visible age refreshes; filtering time still covers snapshot derivation and grouping. Query text, field values, regex patterns, and validation messages remain local. Age refresh timers stop when Logs closes, unmounts, or the document becomes hidden.

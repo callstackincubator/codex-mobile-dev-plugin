@@ -1,5 +1,5 @@
 import { useRef, useState, useSyncExternalStore } from "react";
-import { CheckIcon, ChevronDownIcon, CircleIcon, CircleXIcon, CopyIcon, FlaskConicalIcon, FolderOpenIcon, GripVerticalIcon, LoaderCircleIcon, MoreHorizontalIcon, PlayIcon, SaveIcon, SquareIcon, Trash2Icon, XIcon } from "lucide-react";
+import { BotIcon, CheckIcon, ChevronDownIcon, CircleIcon, CircleXIcon, CopyIcon, FlaskConicalIcon, FolderOpenIcon, GripVerticalIcon, LoaderCircleIcon, MoreHorizontalIcon, PlayIcon, SaveIcon, SquareIcon, Trash2Icon, XIcon } from "lucide-react";
 import type { DeviceAppsStore } from "../device-apps.ts";
 import type { TestingPanel } from "../testing-panel.ts";
 import { formatRunDuration, testRecorder } from "../test-recorder.ts";
@@ -98,10 +98,43 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
       </AlertDescription>
     </Alert>}
 
-    {blocker && <p className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">{blocker}</p>}
+    {blocker && !state.agent?.active && <p className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">{blocker}</p>}
+
+    <AgentRecordingBanner panel={panel} />
 
     <TestingRecorder panel={panel} recordable={recordable} udid={device?.udid ?? ""} />
   </section>;
+}
+
+/**
+ * What the panel says while the user's own coding agent is writing the flow.
+ *
+ * The recording lives in the server and the panel polls it, so this is the one thing on screen
+ * that says who is driving — and the Stop button is the reason it has to be: the user asked for
+ * the recording and must be able to take the mirror back without going via their agent.
+ *
+ * Once the agent stops, the banner says what was recorded and that nothing has been saved. From
+ * there it is an ordinary unsaved recording: the same step list, the same preview, the same Save.
+ */
+function AgentRecordingBanner({ panel }: { panel: TestingPanel }) {
+  const state = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
+  const agent = state.agent;
+  if (!agent || agent.status === "idle") return null;
+  if (agent.active) return <div data-testing-agent-banner className="flex flex-wrap items-center gap-2 rounded-md border border-primary/40 bg-primary/5 px-3 py-2 text-xs" role="status">
+    <BotIcon className="size-4 shrink-0 text-primary" aria-hidden />
+    <span className="min-w-0 flex-1 break-words"><span className="font-medium">Agent is recording</span>{agent.goal ? ` — ${agent.goal}` : ""}</span>
+    <span className="shrink-0 tabular-nums text-muted-foreground">{agent.steps} step{agent.steps === 1 ? "" : "s"}</span>
+    <Button type="button" size="sm" variant="outline" data-testing-agent-stop className="shrink-0"
+      title="Stop the agent's recording. The steps it has written stay here for you to adjust."
+      onClick={() => void panel.stopAgent()}><SquareIcon />Stop</Button>
+  </div>;
+  // The handover. It says what is there and what has *not* happened, because "recorded" reads as
+  // "saved" to anyone who did not watch it: nothing is in the project until the user saves it.
+  return <p data-testing-agent-handover className="rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground" role="status">
+    {agent.status === "aborted" ? "The agent stopped recording" : "The agent finished recording"}
+    {` ${agent.steps} step${agent.steps === 1 ? "" : "s"}`}{agent.note ? ` — ${agent.note}` : ""}.
+    {" "}Nothing has been saved or run: adjust the steps below, then press Save.
+  </p>;
 }
 
 /**
@@ -119,21 +152,28 @@ function TestingControls({ panel, recordable, udid }: { panel: TestingPanel; rec
   const state = useSyncExternalStore(testRecorder.subscribe, testRecorder.getSnapshot);
   const panelState = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
   const recording = state.recordingUdid === udid && udid !== "";
+  // While an agent is recording, the device is its own: a launch would reset the app under the
+  // flow, and Record would arm a second driver on one screen.
+  const agentRecording = panelState.agent?.active === true;
   // `ml-auto` on the group, not on any button in it: the header is one flex row, so the free
   // space between what names the project and what acts on it belongs to the gap between them.
   // The group keeps its own gap and sizes, and on a header too narrow to hold both it wraps whole
   // onto the next line rather than crowding or clipping the picker.
   return <div data-testing-controls className="flex min-w-0 flex-wrap items-center gap-2 ml-auto">
-    <Button type="button" size="sm" data-testing-launch disabled={!panel.canLaunch} onClick={() => void panel.launchApp()}>
+    <Button type="button" size="sm" data-testing-launch disabled={!panel.canLaunch || agentRecording} onClick={() => void panel.launchApp()}>
       {panelState.launching ? <LoaderCircleIcon className="animate-spin" /> : <PlayIcon />}
       {panelState.appLaunched ? "Relaunch app" : "Launch app"}
     </Button>
-    {recording
-      ? <Button type="button" size="sm" variant="outline" data-testing-stop onClick={() => testRecorder.stop()}><SquareIcon />Stop</Button>
-      : state.steps.length > 0
-        ? <RecordMenu udid={udid} recordable={recordable} steps={state.steps.length} />
-        : <Button type="button" size="sm" variant="outline" data-testing-record disabled={!recordable}
-          onClick={() => testRecorder.start(udid)}><CircleIcon />Record</Button>}
+    {agentRecording
+      // The agent's own Stop is on the banner, where the goal it is recording for is: one Stop,
+      // beside what it stops.
+      ? null
+      : recording
+        ? <Button type="button" size="sm" variant="outline" data-testing-stop onClick={() => testRecorder.stop()}><SquareIcon />Stop</Button>
+        : state.steps.length > 0
+          ? <RecordMenu udid={udid} recordable={recordable} steps={state.steps.length} />
+          : <Button type="button" size="sm" variant="outline" data-testing-record disabled={!recordable}
+            onClick={() => testRecorder.start(udid)}><CircleIcon />Record</Button>}
     <Button type="button" size="sm" variant="outline" data-testing-run disabled={!panel.canRun}
       title="Save the test, then run it against this device. Recording stops: the runner needs the device to itself."
       onClick={() => void panel.runTest()}>
@@ -235,14 +275,19 @@ function TestingRecorder({ panel, recordable, udid }: { panel: TestingPanel; rec
   const state = useSyncExternalStore(testRecorder.subscribe, testRecorder.getSnapshot);
   const panelState = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
   const recording = state.recordingUdid === udid && udid !== "";
-  const saveable = Boolean(panelState.projectPath) && state.steps.length > 0 && !panelState.saving;
+  // Not while the agent is still writing the flow: saving half of one is a file the user did not
+  // ask for, and the agent is told to hand over rather than to save.
+  const saveable = Boolean(panelState.projectPath) && state.steps.length > 0 && !panelState.saving && !panelState.agent?.active;
   const [hoveredStep, setHoveredStep] = useState<string>();
   const [focusedStep, setFocusedStep] = useState<string>();
   const highlightedStep = hoveredStep ?? focusedStep;
   const highlightedLines = testRecorder.emitted.spans.find(span => span.stepId === highlightedStep);
   return <div className="flex min-h-0 flex-1 flex-col gap-3">
-    {!recordable && !recording && <p className="text-xs text-muted-foreground">Recording needs a booted iOS simulator in the mirror.</p>}
-    {recording && <p className="text-xs text-muted-foreground">
+    {!recordable && !recording && !panelState.agent?.active && <p className="text-xs text-muted-foreground">Recording needs a booted iOS simulator in the mirror.</p>}
+    {panelState.agent?.active && <p className="text-xs text-muted-foreground">
+      The mirror is the agent's while it records, so clicking it does nothing. Press Stop to take it back.
+    </p>}
+    {recording && !panelState.agent?.active && <p className="text-xs text-muted-foreground">
       Click the mirror to drive the app; nothing is recorded. Right-click an element for the steps it
       supports, and scroll over the outline to pick the element around it.
     </p>}
