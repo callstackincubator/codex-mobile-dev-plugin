@@ -1,9 +1,18 @@
-import { AppBridge, McpUiMessageRequestSchema, PostMessageTransport, type McpUiHostCapabilities, type McpUiHostContext } from "@modelcontextprotocol/ext-apps/app-bridge";
-import { OpenAIMessageParamsSchema } from "@openai/mcp-extensions/app";
+import {
+  AppBridge, McpUiMessageRequestSchema, PostMessageTransport,
+  type McpUiDownloadFileRequest, type McpUiHostCapabilities, type McpUiHostContext,
+  type McpUiOpenLinkRequest, type McpUiRequestDisplayModeRequest, type McpUiUpdateModelContextRequest,
+} from "@modelcontextprotocol/ext-apps/app-bridge";
+import { OpenAIMessageParamsSchema, type OpenAIMessageParams } from "@openai/mcp-extensions/app";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 /** A message or model-context update the panel sent to the chat. */
-type ChatEvent = { method: "message" | "modelContext" | "openLink" | "displayMode" | "downloadFile"; params: unknown };
+type ChatEvent =
+  | { method: "message"; params: OpenAIMessageParams }
+  | { method: "modelContext"; params: McpUiUpdateModelContextRequest["params"] }
+  | { method: "openLink"; params: McpUiOpenLinkRequest["params"] }
+  | { method: "displayMode"; params: McpUiRequestDisplayModeRequest["params"] }
+  | { method: "downloadFile"; params: McpUiDownloadFileRequest["params"] };
 
 declare global {
   interface Window {

@@ -42,10 +42,17 @@ test("native recording downloads measure host acknowledgement without exporting 
   const recording = recordingFixture();
   controller.accept({ content: [], structuredContent: { recording } });
   await controller.download();
+  const pending = Promise.withResolvers<{ isError: boolean }>();
+  app.downloadFile = () => pending.promise;
+  const downloading = controller.download();
+  api.setUiSurface("logs");
+  pending.resolve({ isError: false });
+  await downloading;
   controller.dispose();
   await api.stopUiTelemetry();
   const encoded = bodies.join("\n");
   contains(encoded, "ui.recording.download_ack.mean");
+  assert.equal(encoded.match(/ui\.recording\.download_ack\.mean/g)?.length, 1, "A late acknowledgement must not add a timing to another surface.");
   contains(encoded, "ui.recording.download");
   contains(encoded, '"surface":{"value":"recording"');
   for (const privateText of [recording.id, recording.title, recording.target.bundleId, "file:///", '"samples"']) contains(encoded, privateText, false);
@@ -319,9 +326,10 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   api.recordUiTiming("ui.annotations.tree_processing", 3);
   api.recordUiTiming("ui.annotations.inspection", 12);
   let sendFailure = "";
-  const context = new api.PanelContext({ getHostCapabilities: () => ({ message: { text: {} } }), async sendMessage() {
+  const context = new api.PanelContext({ getHostCapabilities: () => ({ message: { text: {} }, experimental: { "openai/message": {} } }), async sendMessage() {
     if (sendFailure === "timeout") throw Object.assign(new Error("Request timed out"), { code: -32001 });
     if (sendFailure === "composer") throw new Error("MCP app messages require an available composer");
+    if (sendFailure === "refused") return { isError: true };
     if (sendFailure) throw new Error("PRIVATE_SEND_ERROR");
     return {};
   } }, () => ({ getCurrent: () => undefined, async update() { return { updateId: "PRIVATE_UPDATE" }; } }));
@@ -334,7 +342,7 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   } }] });
   await store.toggle(); store.select({ x: 50, y: 40 }); store.setText("PRIVATE_NOTE"); await store.save(); await store.send();
   store.select({ x: 50, y: 40 }); store.setText("PRIVATE_NOTE_AGAIN"); await store.save();
-  for (const failure of ["timeout", "composer", "unexpected", ""]) { sendFailure = failure; await store.send(); }
+  for (const failure of ["timeout", "composer", "unexpected", "refused", ""]) { sendFailure = failure; await store.send(); }
   store.dispose();
   api.countUiEvent("ui.annotations.runtime_available");
   api.countUiEvent("ui.annotations.inspection_fallback");
@@ -514,6 +522,7 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   contains(encoded, "ui.annotations.send.mean");
   contains(encoded, "ui.annotations.send_success");
   contains(encoded, "ui.annotations.send_timeout");
+  contains(encoded, "ui.annotations.delivery_unconfirmed");
   contains(encoded, "ui.annotations.send_composer_unavailable");
   contains(encoded, "ui.annotations.send_failure");
   contains(encoded, "ui.annotations.source_available");

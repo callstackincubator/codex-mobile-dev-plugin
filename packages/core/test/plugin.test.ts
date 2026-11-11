@@ -31,7 +31,7 @@ test("opening tools accept optional intent and preserve it in their results", as
   t.after(async () => { await client.close(); await plugin.close(); await fake.close(); });
   await plugin.server.connect(serverTransport);
   await client.connect(clientTransport);
-  let previousInstance: { scope: string; createdAt: number; sequence: number } | undefined;
+  let previousInstance: { scope: string; sequence: number } | undefined;
   for (const name of ["mobile_open_simulator", "mobile_open_workspace"]) {
     for (const target of [{}, { platform: "android", kind: "emulator" }, { platform: "ios", kind: "physical", deviceId: "00008110-000A0B1C2D3E4000" }]) {
       const result = await client.callTool({ name, arguments: target });
@@ -42,7 +42,6 @@ test("opening tools accept optional intent and preserve it in their results", as
       if (previousInstance) {
         assert.equal(instance.scope, previousInstance.scope);
         assert.ok(instance.sequence > previousInstance.sequence);
-        assert.ok(instance.createdAt >= previousInstance.createdAt);
       }
       previousInstance = instance;
     }

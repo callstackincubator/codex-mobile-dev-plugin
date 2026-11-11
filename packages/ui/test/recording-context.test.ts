@@ -94,6 +94,33 @@ test("download refusal and timeouts stay distinct and never retry", async t => {
   });
 });
 
+test("a pending download never puts the previous recording's status on a new recording", async t => {
+  for (const reject of [false, true]) await t.test(String(reject), async t => {
+    const pending = Promise.withResolvers<{ isError: boolean }>();
+    const f = fixture(t, false, () => pending.promise);
+    const saving = f.controller.download();
+    f.controller.accept({ content: [], structuredContent: { recording: {
+      ...f.recording, id: "701a3e78-5aeb-4141-a8a5-21ae92b05127", title: "Another recording",
+    } } });
+    assert.equal(f.controller.getSnapshot().downloading, true, "The host still has one pending confirmation.");
+    if (reject) pending.reject(new Error("Transport closed"));
+    else pending.resolve({ isError: false });
+    await saving;
+    assert.equal(f.controller.getSnapshot().downloadStatus, "");
+    assert.equal(f.controller.getSnapshot().downloading, false);
+  });
+});
+
+test("opening a new recording clears the previous recording's completed download status", async t => {
+  const f = fixture(t, false, async () => ({ isError: false }));
+  await f.controller.download();
+  assert.equal(f.controller.getSnapshot().downloadStatus, "Download started.");
+  f.controller.accept({ content: [], structuredContent: { recording: {
+    ...f.recording, id: "701a3e78-5aeb-4141-a8a5-21ae92b05127", title: "Another recording",
+  } } });
+  assert.equal(f.controller.getSnapshot().downloadStatus, "");
+});
+
 test("downloads need an advertised capability and never export a preview or active run", async t => {
   let calls = 0;
   const f = fixture(t, false, async () => { calls++; return { isError: false }; });

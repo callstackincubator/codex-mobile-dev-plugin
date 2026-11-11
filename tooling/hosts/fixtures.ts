@@ -92,7 +92,7 @@ export const test = base.extend<Fixtures>({
     });
     await page.exposeFunction("mcpRequest", (method: string, params: never) =>
       method === "tools/call" ? server.client.callTool(params) : server.client.readResource(params));
-    await use(async (name, { arguments: args = {}, theme = "light", displayMode = "fullscreen", width, initiallyHidden, capabilities = host.capabilities } = {}) => {
+    await use(async (name, { arguments: args = {}, theme = "light", displayMode = "fullscreen", width, initiallyHidden, capabilities = {} } = {}) => {
       const tool = server.tools.find(candidate => candidate.name === name);
       const uri = (tool?._meta?.ui as { resourceUri?: string } | undefined)?.resourceUri;
       if (uri === undefined) throw new Error(`${name} has no UI resource.`);
@@ -105,7 +105,7 @@ export const test = base.extend<Fixtures>({
       context.containerDimensions = { ...page.viewportSize()! };
       await page.goto(`${HOST_ORIGIN}/host.html`);
       await page.evaluate(options => window.harness.open(options), {
-        html, hostInfo: host.hostInfo, capabilities, context, tool: { arguments: args, result }, initiallyHidden,
+        html, hostInfo: host.hostInfo, capabilities: { ...host.capabilities, ...capabilities }, context, tool: { arguments: args, result }, initiallyHidden,
       });
       return { view: page.frameLocator("#view"), result };
     });

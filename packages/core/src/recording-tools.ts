@@ -226,7 +226,7 @@ export function registerOpenRecordingTool(server: McpServer, showRecording: Show
   registerAppTool(server, "mobile_open_performance_recording", {
     title: "Open a recording in Mobile Dev",
     description: "Open the saved recording and selected time range in the Mobile Dev workspace. Does not start a live performance collector or boot a device.",
-    inputSchema, outputSchema: { ...referenceOutputSchema, workspaceInstance: workspaceInstanceSchema.optional() }, annotations: read, _meta: { ui: { resourceUri: workspaceUri, visibility } },
+    inputSchema, outputSchema: { ...referenceOutputSchema, workspaceInstance: workspaceInstanceSchema }, annotations: read, _meta: { ui: { resourceUri: workspaceUri, visibility } },
   }, async input => {
     const workspaceInstance = instance();
     const result = await showRecording(input);

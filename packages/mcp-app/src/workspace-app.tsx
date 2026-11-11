@@ -57,7 +57,6 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
     countUiEvent("ui.workspace.superseded");
     const root = document.getElementById("root")!;
     root.inert = true;
-    stopLiveReload();
     void disposeUI().then(() => {
       const notice = document.createElement("p");
       notice.className = "p-3 text-sm text-muted-foreground";
@@ -70,7 +69,7 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
   function disposeUI() {
     return disposingUI ??= (async () => {
       instances.dispose();
-      panels.context.dispose();
+      stopLiveReload();
       window.removeEventListener("pagehide", onPageHide);
       app.removeEventListener("hostcontextchanged", hostContext);
       window.removeEventListener("focus", resumeContext);
@@ -83,9 +82,9 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
       await stopUiTelemetry();
     })();
   }
-  function onPageHide(event: PageTransitionEvent) { if (!event.persisted) { stopLiveReload(); void disposeUI(); } }
+  function onPageHide(event: PageTransitionEvent) { if (!event.persisted) void disposeUI(); }
   window.addEventListener("pagehide", onPageHide);
-  app.onteardown = async () => { stopLiveReload(); await disposeUI(); return {}; };
+  app.onteardown = async () => { await disposeUI(); return {}; };
 
   // MCP Apps sizing: fill fullscreen, a fixed container height, or a host that sends
   // no dimensions. A container without a fixed height sizes to the app, so choose an
@@ -123,6 +122,7 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
   window.addEventListener("pageshow", resumeContext);
   document.addEventListener("visibilitychange", resumeContext);
   function connectionFailed(error: unknown) {
+    if (disposingUI) return;
     captureUiError(error, "host.connect");
     const message = error instanceof Error ? error.message : "Could not connect to the host.";
     devices.notice(message);
@@ -146,8 +146,7 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
   };
   app.ontoolresult = result => {
     if (disposingUI) return;
-    if (!result.isError) instances.accept(result.structuredContent?.workspaceInstance);
-    if (disposingUI) return;
+    if (!result.isError && !instances.accept(result.structuredContent?.workspaceInstance)) return;
     // mobile_open_performance_recording sends the recording's ID (older servers send the recording).
     if (result.structuredContent?.recording !== undefined || result.structuredContent?.recordingId !== undefined) {
       try { recordingController.accept(result); }

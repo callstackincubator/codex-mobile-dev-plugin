@@ -1,16 +1,9 @@
 import type { AppFlowHostBridge } from "./host-bridge.ts";
-import { chatMessage } from "./chat-message.ts";
+import { sendChatMessage } from "./chat-message.ts";
 import { LoggingMessageNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
 import type { AppFlowBuildMode, AppFlowProgressEvent, AppFlowPrompt, AppFlowPromptResolution, AppFlowResult, DeepLinkJudgeMode, ExplorationMode, ManualRecordingEvent, StartAppFlowInput } from "@mobile-dev/shared/app-flow.ts";
 import { AppFlowRecordingStore } from "./app-flow-recording.ts";
 import { captureUiError, countUiEvent, getUiTelemetryAttributes, recordUiTiming } from "./telemetry.ts";
-
-function agentMessageError(error: unknown) {
-  if (typeof error === "object" && error !== null && "code" in error && error.code === -32001) {
-    return "The host did not confirm delivery. Check the chat before retrying to avoid sending the request twice.";
-  }
-  return error instanceof Error ? error.message : String(error);
-}
 
 export type AppFlowRunState = "idle" | "running" | "needs-user-action" | "suspended" | "completed" | "failed" | "cancelled";
 export interface AppFlowSweepSummary { completed: number; total: number; message: string; captured?: number; captureLimit?: number; }
@@ -328,45 +321,22 @@ export class AppFlowPanel {
   }
 
   async requestAgentStart(options: StartOptions) {
+    if (this.disposed || this.snapshot.agentStartPending) return;
     if (!this.canSendAgentStart) { this.update({ error: "This host cannot send a follow-up message, so a screen sweep must be started from chat." }); return; }
     const projectPath = this.snapshot.projectPath.trim();
     if (!projectPath) return;
     this.progressStartedAt = performance.now();
-    // Clear the previous run the same way `start` does. Without this, a second sweep on the same
-    // project (a fresh start or a Resume — the label is cosmetic, both land here) kept the finished
-    // run's id, and that stale id is self-sustaining: `ingest` drops every envelope whose runId
-    // differs from it, the status-by-project discovery in `pollEvents` only runs while the panel
-    // has no runId, and `mobile_appflow_status` answers with no runId once a run is done, so
-    // nothing could ever overwrite it. The panel sat on the old summary and a frozen clock until
-    // the user switched projects. The progress/summary/prompt reset is what unfreezes the display;
-    // the runId reset is what lets the new run's events in at all.
-    //
-    // `state` is deliberately left alone — unlike `start`, nothing has been started here yet. The
-    // prompt only asks the agent to call `mobile_appflow_start`, so claiming "running" would show
-    // a live run that may never begin (and the agent may decline). `agentStartPending` is what
-    // drives the pending affordance and keeps `pollNeeded` polling, and the first real event — or
-    // the status discovery it unblocks — sets the honest state a moment later.
-    //
-    // Clearing the id is necessary but not sufficient: `pollEvents` fires about a second later,
-    // usually before Codex has called `mobile_appflow_start`, and the project-scoped status it uses
-    // for discovery still answers with the PREVIOUS run — a paused run is still returned by the
-    // active-run finder, and an orphaned Codex-owned run is returned reconciled to "failed", both
-    // carrying their runId. Adopting it pinned the panel back onto the dead run, which is why the
-    // display only unfroze when the user switched projects. The epoch and the abandoned id below
-    // are what make the adoption site reject those answers.
+    // Drop the previous run so its paused or orphaned status cannot be adopted
+    // while the agent prepares a new sweep. Keep state unchanged until the run
+    // actually starts; agentStartPending drives polling in the meantime.
     this.startEpoch++; this.abandonedRunId = this.snapshot.runId ?? this.abandonedRunId;
+    const epoch = this.startEpoch;
+    clearTimeout(this.agentStartTimer); this.agentStartTimer = undefined;
     this.update({ runId: null, progress: null, sweepSummary: null, prompt: null });
     this.countUiStateOption(options);
     const input = { projectPath, ...options, mode: "screen-ui-and-structure" satisfies AppFlowBuildMode };
-    // The sweep tools answer with run status and the decision requests the loop needs, and nothing
-    // else: `start` returns instructions, `next_decision`/`submit_decision` return the pending
-    // request for the navigation and judging roles. None of them carries a capture. So an agent
-    // that is only told to service the loop finishes holding nothing about the screens the user
-    // ticked, and the ask — "explore this screen with AI" — ends in a bare run summary. That is
-    // what the paragraph below fixes: the captures live behind `mobile_appflow_result`, which the
-    // loop never mentions, so the read and the write-up have to be asked for here. A screen whose
-    // work is already done makes the loop terminate at once, which is exactly the case where the
-    // summary was the whole reply, and the one this matters most for.
+    // The decision loop returns status, not captures. Ask the agent to read the
+    // saved result and describe the selected screens after the run ends.
     //
     // The ids are repeated only to say which captures to describe. They are already in `input`,
     // where the queue enforces them; wording has never bounded the run and does not start to here.
@@ -376,13 +346,18 @@ export class AppFlowPanel {
     this.update({ agentStartPending: true, error: null });
     try {
       const startedAt = performance.now();
-      const response = await this.app.sendMessage(chatMessage(this.app, prompt), { timeout: 5000, maxTotalTimeout: 5000 });
-      if (this.disposed) return;
-      recordUiTiming("ui.app_flow.message_ack", performance.now() - startedAt);
+      const context = getUiTelemetryAttributes();
+      const response = await sendChatMessage(this.app, prompt);
+      if (this.disposed || epoch !== this.startEpoch) return;
+      recordUiTiming("ui.app_flow.message_ack", performance.now() - startedAt, context);
       if (response.isError) throw new Error("The host did not accept the App Flow request. Try again from chat.");
       clearTimeout(this.agentStartTimer);
       this.agentStartTimer = setTimeout(() => { this.agentStartTimer = undefined; this.update({ agentStartPending: false }); }, 30000);
-    } catch (error) { this.progressStartedAt = undefined; this.update({ agentStartPending: false, error: agentMessageError(error) }); }
+    } catch (error) {
+      if (this.disposed || epoch !== this.startEpoch) return;
+      this.progressStartedAt = undefined;
+      this.update({ agentStartPending: false, error: error instanceof Error ? error.message : String(error) });
+    }
   }
 
   async launchApp() {
@@ -423,24 +398,28 @@ export class AppFlowPanel {
     catch (error) { this.update({ error: error instanceof Error ? error.message : String(error) }); }
   }
   async resolvePrompt(resolution: AppFlowPromptResolution) {
+    if (this.disposed) return;
     const { runId, prompt, projectPath } = this.snapshot; if (!runId) return;
+    const epoch = this.startEpoch;
+    const context = getUiTelemetryAttributes();
     this.update({ prompt: null });
     try {
       await this.call("mobile_appflow_resolve_prompt", { runId, resolution, projectPath, ...(prompt?.id ? { promptId: prompt.id } : {}) });
+      if (this.disposed || epoch !== this.startEpoch) return;
       await this.refreshStatus();
-      // A Codex turn deliberately ends when a human prompt appears. Continuing only the engine
+      if (this.disposed || epoch !== this.startEpoch || this.snapshot.runId !== runId) return;
+      // An agent turn ends when a human prompt appears. Continuing only the engine
       // leaves its next model decision without a caller, so wake a new turn for this same run.
       if (resolution !== "stop" && this.snapshot.state === "running" && this.canSendAgentStart) {
         const resume = `Resume the existing App Flow run ${runId}. Service its mobile_appflow_next_decision and mobile_appflow_submit_decision loop until it completes, fails, is cancelled, is suspended, or needs user action. Do not start a new run and do not resolve a human auth/review prompt yourself.`;
-        if (this.disposed) return;
         const startedAt = performance.now();
-        const response = await this.app.sendMessage(chatMessage(this.app, resume), { timeout: 5000, maxTotalTimeout: 5000 });
-        if (this.disposed) return;
-        recordUiTiming("ui.app_flow.message_ack", performance.now() - startedAt);
+        const response = await sendChatMessage(this.app, resume);
+        if (this.disposed || epoch !== this.startEpoch || this.snapshot.runId !== runId) return;
+        recordUiTiming("ui.app_flow.message_ack", performance.now() - startedAt, context);
         if (response.isError) throw new Error("The host did not accept the App Flow resume request. Try again from chat.");
       }
     }
-    catch (error) { this.update({ error: agentMessageError(error) }); }
+    catch (error) { if (!this.disposed && epoch === this.startEpoch) this.update({ error: error instanceof Error ? error.message : String(error) }); }
   }
   async replay(nodeId: string) {
     const projectPath = this.snapshot.projectPath;
@@ -484,7 +463,9 @@ export class AppFlowPanel {
     // The active sweep may be owned by the MCP process serving Codex's tool calls, so always use
     // the project-scoped durable lookup instead of assuming this panel owns the runId.
     const target = { projectPath: this.snapshot.projectPath };
+    const epoch = this.startEpoch;
     const response = await this.call("mobile_appflow_status", target);
+    if (this.disposed || epoch !== this.startEpoch) return;
     const data = object(response.structuredContent) ?? {};
     const state = typeof data.state === "string" ? data.state as AppFlowRunState : this.snapshot.state;
     const statusRunId = typeof data.runId === "string" ? data.runId : undefined;

@@ -31,7 +31,7 @@ test("recording tools distinguish data, inline rendering, workspace opening and 
   const recordings = new PerformanceRecordings({ open() { throw new Error("Already monitoring this app"); }, async read() { throw new Error("Not running"); }, async closeSession() {} }, unavailableFps, store);
   const server = new McpServer({ name: "recordings-test", version: "1" });
   const showRecording = registerRecordingTools(server, recordings, async () => "Pixel");
-  registerOpenRecordingTool(server, showRecording, "ui://test/workspace.html", () => ({ scope: "b415b152-e431-4a3a-9415-8b288cf9dc99", createdAt: 1, sequence: 1 }));
+  registerOpenRecordingTool(server, showRecording, "ui://test/workspace.html", () => ({ scope: "b415b152-e431-4a3a-9415-8b288cf9dc99", sequence: 1 }));
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "recordings-client", version: "1" });
   t.after(async () => { await client.close(); await server.close(); await recordings.close(); await rm(directory, { recursive: true, force: true }); });

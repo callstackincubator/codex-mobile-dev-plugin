@@ -1,4 +1,4 @@
-import { chatMessage } from "./chat-message.ts";
+import { ChatDeliveryUnconfirmed, composerUnavailable, sendChatMessage } from "./chat-message.ts";
 import { attachReference, cardsCallTools } from "./host-bridge.ts";
 import type { HostAttachmentsSource, HostBridge } from "./host-bridge.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -8,7 +8,7 @@ import { buildSelectionPrompt, frameSelectionEvidence, type SelectionCard } from
 import { findingName } from "@mobile-dev/shared/tracesift-labels.ts";
 import { buildReactSelectionPrompt, reactSelectionEvidence, type ReactSelectionRecording } from "@mobile-dev/shared/tracesift-react-selection.ts";
 import type { ContributionChartKind } from "./components/tracesift/contribution-chart.tsx";
-import { captureUiError, countUiEvent, markUiSurfaceReady, recordUiTiming, setUiGauge, setUiSurface, setUiTelemetryContext } from "./telemetry.ts";
+import { captureUiError, countUiEvent, getUiTelemetryAttributes, markUiSurfaceReady, recordUiTiming, setUiGauge, setUiSurface, setUiTelemetryContext } from "./telemetry.ts";
 
 type State = {
   analysis?: TraceSiftAnalysis;
@@ -45,11 +45,6 @@ type State = {
     selected?: string[];
   };
 };
-
-function composerUnavailable(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
-  return /(?:no (?:active |available )?composer|composer.*(?:unavailable|not available|not active)|requires? an (?:active|available) composer|MCP app messages are disabled for this view)/i.test(message);
-}
 
 export class TraceSiftController {
   private state: State = { canInvestigate: false, canCallTools: false, dark: false, error: "", notice: "", chartKind: "bar" };
@@ -196,7 +191,8 @@ export class TraceSiftController {
   };
   /** Sends one hand-off to the active chat, as a pill where the host has them. Never retry a timeout: the message may have landed. */
   private async sendHandoff(text: string, event: string, cardId: string, pill: { title: string; message: string }) {
-    let sending = false;
+    if (this.disposed) return;
+    const context = getUiTelemetryAttributes();
     try {
       const modelContext = this.attachments();
       if (modelContext) {
@@ -209,24 +205,20 @@ export class TraceSiftController {
         } finally { recordUiTiming("ui.tracesift.context_attach", performance.now() - contextStartedAt); }
       }
       if (this.disposed) return;
-      const message = chatMessage(this.app, modelContext ? pill.message : text);
       const sendStartedAt = performance.now();
-      sending = true;
-      const sent = await this.app.sendMessage(message, { timeout: 5000, maxTotalTimeout: 5000 });
+      const sent = await sendChatMessage(this.app, modelContext ? pill.message : text);
+      if (this.disposed) return;
       if (sent.isError) throw new Error("The host could not start this investigation.");
-      recordUiTiming("ui.tracesift.message_ack", performance.now() - sendStartedAt);
-      countUiEvent(event);
+      recordUiTiming("ui.tracesift.message_ack", performance.now() - sendStartedAt, context);
+      countUiEvent(event, 1, context);
     } catch (error) {
-      const timedOut = sending && typeof error === "object" && error !== null && "code" in error && error.code === -32001;
-      const missingComposer = sending && composerUnavailable(error);
-      countUiEvent(timedOut ? "ui.tracesift.delivery_unconfirmed" : missingComposer ? "ui.tracesift.composer_unavailable" : "ui.tracesift.send_failed");
-      if (!timedOut && !missingComposer) captureUiError(new Error("TraceSift investigation action failed."), "tracesift.investigate");
-      throw new Error(timedOut
-        ? "The host did not confirm delivery. Check the chat before retrying to avoid sending the investigation twice."
-        : missingComposer
-          ? "The host could not find this chat's input. Reopen the chat, then try Investigate again."
-          : error instanceof Error ? error.message : "Could not start this investigation.",
-        { cause: error });
+      if (this.disposed) return;
+      const unconfirmed = error instanceof ChatDeliveryUnconfirmed;
+      const missingComposer = composerUnavailable(error);
+      countUiEvent(unconfirmed ? "ui.tracesift.delivery_unconfirmed" : missingComposer ? "ui.tracesift.composer_unavailable" : "ui.tracesift.send_failed", 1, context);
+      if (!unconfirmed && !missingComposer) captureUiError(new Error("TraceSift investigation action failed."), "tracesift.investigate", context);
+      if (missingComposer) throw new Error("The host could not find this chat's input. Reopen the chat, then try Investigate again.");
+      throw error instanceof Error ? error : new Error("Could not start this investigation.");
     }
   }
 

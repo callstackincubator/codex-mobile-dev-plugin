@@ -41,7 +41,7 @@ test("a newer workspace stops the old UI, closes its context, and still acknowle
     async function ready() {
       for (let i = 0; i < 200 && !initialized; i++) await setTimeout(5);
       assert.ok(initialized);
-      send({ method: "ui/notifications/tool-result", params: { content: [], structuredContent: { workspaceInstance: { scope, createdAt: 1, sequence } } } });
+      send({ method: "ui/notifications/tool-result", params: { content: [], structuredContent: { workspaceInstance: { scope, sequence } } } });
     }
     async function close() {
       send({ id: "teardown", method: "ui/resource-teardown", params: {} });

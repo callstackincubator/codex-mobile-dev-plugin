@@ -9,6 +9,7 @@ import { HOSTS } from "./profiles.ts";
 import { expect, startServer, test } from "./fixtures.ts";
 
 const root = join(import.meta.dirname, "../..");
+const codexOnlyTools = ["mobile_check_plugin_update", "mobile_migrate_plugin_to_store"];
 
 // Regression checks for each shipped target, against its real server and page
 // in a stand-in for its host. Device-backed behavior needs a simulator or emulator
@@ -51,8 +52,8 @@ test.describe("MCP Apps hosts", () => {
   });
 
   test("only Codex ships the plugin updater", async ({ server, target }) => {
-    const updater = server.tools.filter(tool => tool.name.includes("plugin_")).map(tool => tool.name).sort();
-    expect(updater).toEqual(target === "codex" ? ["mobile_check_plugin_update", "mobile_migrate_plugin_to_store"] : []);
+    const updater = server.tools.filter(tool => codexOnlyTools.includes(tool.name)).map(tool => tool.name).sort();
+    expect(updater).toEqual(target === "codex" ? codexOnlyTools : []);
   });
 
   test("Claude exposes the same device and app tools as Codex", async ({ server, target }) => {
@@ -62,7 +63,7 @@ test.describe("MCP Apps hosts", () => {
     try {
       await client.connect(codex.transport);
       const { tools } = await client.listTools();
-      expect(server.tools).toEqual(tools.filter(tool => !tool.name.includes("plugin_")));
+      expect(server.tools).toEqual(tools.filter(tool => !codexOnlyTools.includes(tool.name)));
       expect(server.tools.some(tool => tool.name === "mobile_read_panel_context")).toBe(false);
     } finally { await client.close(); await codex.close(); }
   });

@@ -1,5 +1,4 @@
 import { recordingWithFramesFixture } from "../../packages/test-support/recording-fixtures.ts";
-import { HOSTS } from "./profiles.ts";
 import { expect, test } from "./fixtures.ts";
 
 // Run the same saved-data workflows against both shipped servers and pages.
@@ -25,12 +24,12 @@ test.describe("Product parity", () => {
       await expect.poll(() => page.evaluate(() => window.harness.events.filter(event => event.method === "message").length)).toBe(1);
       const events = await page.evaluate(() => window.harness.events.filter(event => event.method === "message" || event.method === "modelContext"));
       const message = events.find(event => event.method === "message")!.params;
-      const context = (target === "codex" ? events.find(event => event.method === "modelContext")!.params : message) as { content: { text: string }[] };
-      const reference = context.content.map(item => item.text).join("\n");
+      const context = target === "codex" ? events.find(event => event.method === "modelContext")!.params : message;
+      const reference = (context.content ?? []).flatMap(item => item.type === "text" ? [item.text] : []).join("\n");
       expect(reference).toContain(recording.id);
       expect(reference).toContain('"start":12,"end":18');
       expect(reference).toContain(action === "ask" ? "mobile_read_performance_recording" : "mobile_open_performance_recording");
-      const route = (message as { _meta?: Record<string, unknown> })._meta?.["openai/message"];
+      const route = message._meta?.["openai/message"];
       expect(route).toEqual(target === "codex" ? { target: "active", send: true } : undefined);
       expect(pageErrors).toEqual([]);
     });
@@ -57,8 +56,8 @@ test.describe("Product parity", () => {
     await view.getByRole("button", { name: "Ask about this range" }).click();
     await expect.poll(() => page.evaluate(() => window.harness.events.filter(event => event.method === "message").length)).toBe(1);
     const events = await page.evaluate(() => window.harness.events.filter(event => event.method === "message" || event.method === "modelContext"));
-    const context = events.find(event => event.method === (target === "codex" ? "modelContext" : "message"))!.params as { content: { text: string }[] };
-    const reference = context.content.map(item => item.text).join("\n");
+    const context = target === "codex" ? events.find(event => event.method === "modelContext")!.params : events.find(event => event.method === "message")!.params;
+    const reference = (context.content ?? []).flatMap(item => item.type === "text" ? [item.text] : []).join("\n");
     expect(reference).toContain(first.id);
     expect(reference).toContain(second.id);
     expect(reference).toContain('"start":12,"end":18');
@@ -66,12 +65,12 @@ test.describe("Product parity", () => {
     expect(pageErrors).toEqual([]);
   });
 
-  test("the workspace downloads the full original recording when the host supports it", async ({ server, openView, page, pageErrors, target }) => {
+  test("the workspace downloads the full original recording when the host supports it", async ({ server, openView, page, pageErrors }) => {
     const recording = recordingWithFramesFixture();
     await server.saveRecording(recording);
     const { view, result } = await openView("mobile_open_performance_recording", {
       arguments: { recordingId: recording.id, range: { start: 12, end: 18 } },
-      capabilities: { ...HOSTS[target as keyof typeof HOSTS].capabilities, downloadFile: {} },
+      capabilities: { downloadFile: {} },
     });
     expect(result.isError).not.toBe(true);
     await expect(view.getByRole("heading", { name: recording.title })).toBeVisible();
@@ -82,9 +81,10 @@ test.describe("Product parity", () => {
     await expect(view.getByText("Download started.", { exact: true })).toBeVisible();
     const downloads = await page.evaluate(() => window.harness.events.filter(event => event.method === "downloadFile"));
     expect(downloads).toHaveLength(1);
-    const contents = (downloads[0].params as { contents: { type: string; resource: { uri: string; mimeType: string; text: string } }[] }).contents;
+    const contents = downloads[0].params.contents;
     expect(contents).toHaveLength(1);
     expect(contents[0].type).toBe("resource");
+    if (contents[0].type !== "resource" || !("text" in contents[0].resource)) throw new Error("Expected an embedded JSON recording.");
     expect(contents[0].resource.uri).toBe(`file:///mobile-dev-recording-${recording.id}.json`);
     expect(contents[0].resource.mimeType).toBe("application/json");
     expect(JSON.parse(contents[0].resource.text)).toEqual(recording);

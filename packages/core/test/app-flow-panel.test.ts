@@ -76,6 +76,89 @@ test("screen sweep message timeouts report uncertain delivery without retrying",
   assert.match(panel.getSnapshot().error ?? "", /Check the chat before retrying/);
 });
 
+test("a screen sweep acknowledgement from an old project cannot change a newer request", async t => {
+  const host = fixture(); const panel = new AppFlowPanel(host.app); t.after(() => panel.dispose());
+  panel.setAvailable(true); await panel.selectProject("/projects/first");
+  const first = Promise.withResolvers<{}>();
+  const second = Promise.withResolvers<{}>();
+  let calls = 0;
+  host.app.sendMessage = () => ++calls === 1 ? first.promise : second.promise;
+  const oldRequest = panel.requestAgentStart({ mode: "screen-ui-and-structure" });
+  await panel.selectProject("/projects/second");
+  const newRequest = panel.requestAgentStart({ mode: "screen-ui-and-structure" });
+  assert.equal(calls, 2);
+  first.reject(new Error("Transport closed"));
+  await oldRequest;
+  assert.equal(panel.getSnapshot().projectPath, "/projects/second");
+  assert.equal(panel.getSnapshot().error, null);
+  assert.equal(panel.getSnapshot().agentStartPending, true);
+  second.resolve({}); await newRequest;
+  assert.equal(panel.getSnapshot().error, null);
+});
+
+test("screen sweep messages cannot start twice while pending or after disposal", async t => {
+  const host = fixture(); const panel = new AppFlowPanel(host.app); t.after(() => panel.dispose());
+  panel.setAvailable(true); await panel.selectProject("/projects/demo");
+  const reply = Promise.withResolvers<{}>();
+  let calls = 0;
+  host.app.sendMessage = () => { calls++; return reply.promise; };
+  const sending = panel.requestAgentStart({ mode: "screen-ui-and-structure" });
+  await panel.requestAgentStart({ mode: "screen-ui-and-structure" });
+  assert.equal(calls, 1);
+  await panel.dispose(); reply.resolve({}); await sending;
+  await panel.requestAgentStart({ mode: "screen-ui-and-structure" });
+  assert.equal(calls, 1);
+});
+
+test("resolving a prompt from an old project cannot send a resume message for the new project", async t => {
+  const host = fixture(); const panel = new AppFlowPanel(host.app); t.after(() => panel.dispose());
+  host.returnsStatus({ exists: true, runId: "old-run", state: "needs-user-action" });
+  panel.setAvailable(true); await panel.selectProject("/projects/first");
+  const resolved = Promise.withResolvers<{ content: [] }>();
+  const call = host.app.callServerTool.bind(host.app);
+  host.app.callServerTool = input => input.name === "mobile_appflow_resolve_prompt" ? resolved.promise : call(input);
+  const resolving = panel.resolvePrompt("continue");
+  host.returnsStatus({ exists: true, runId: "new-run", state: "running" });
+  await panel.selectProject("/projects/second");
+  resolved.resolve({ content: [] }); await resolving;
+  assert.equal(panel.getSnapshot().runId, "new-run");
+  assert.equal(host.messages.length, 0);
+});
+
+test("a status reply arriving after a project switch cannot overwrite the selected run", async t => {
+  const host = fixture(); const panel = new AppFlowPanel(host.app); t.after(() => panel.dispose());
+  host.returnsStatus({ exists: true, runId: "old-run", state: "needs-user-action" });
+  panel.setAvailable(true); await panel.selectProject("/projects/first");
+  const requested = Promise.withResolvers<void>();
+  const status = Promise.withResolvers<{ content: []; structuredContent: Record<string, unknown> }>();
+  const call = host.app.callServerTool.bind(host.app);
+  host.app.callServerTool = input => {
+    if (input.name === "mobile_appflow_status" && input.arguments?.projectPath === "/projects/first") {
+      requested.resolve(); return status.promise;
+    }
+    return call(input);
+  };
+  const resolving = panel.resolvePrompt("continue");
+  await requested.promise;
+  host.returnsStatus({ exists: true, runId: "new-run", state: "running" });
+  await panel.selectProject("/projects/second");
+  status.resolve({ content: [], structuredContent: { runId: "old-run", state: "running" } });
+  await resolving;
+  assert.equal(panel.getSnapshot().projectPath, "/projects/second");
+  assert.equal(panel.getSnapshot().runId, "new-run");
+  assert.equal(host.messages.length, 0);
+});
+
+test("resolving a prompt never resumes a run that the current status replaced", async t => {
+  const host = fixture(); const panel = new AppFlowPanel(host.app); t.after(() => panel.dispose());
+  host.returnsStatus({ exists: true, runId: "old-run", state: "needs-user-action" });
+  panel.setAvailable(true); await panel.selectProject("/projects/demo");
+  host.returnsStatus({ exists: true, runId: "new-run", state: "running" });
+  await panel.resolvePrompt("continue");
+  assert.equal(panel.getSnapshot().runId, "new-run");
+  assert.equal(host.messages.length, 0);
+});
+
 test("structure builds call the server directly while screen sweeps wake the active Codex agent", async t => {
   const host = fixture(); const panel = new AppFlowPanel(host.app); t.after(() => panel.dispose());
   panel.setAvailable(true); await panel.selectProject("/projects/demo");

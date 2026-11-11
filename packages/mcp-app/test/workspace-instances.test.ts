@@ -4,7 +4,7 @@ import { setImmediate } from "node:timers/promises";
 import { WorkspaceInstances } from "../src/workspace-instances.ts";
 
 const scope = "dfd85435-af38-4aa4-b116-eab6ef7af217";
-const key = (sequence: number, createdAt = 10) => ({ scope, sequence, createdAt });
+const key = (sequence: number) => ({ scope, sequence });
 
 function channels() {
   type Channel = { onmessage: ((event: MessageEvent) => void) | null; postMessage(data: unknown): void; close(): void };
@@ -43,18 +43,46 @@ test("new workspaces stop older ones, including an old result mounted later", as
   assert.equal(bus.size(), 0);
 });
 
-test("server time orders different calls and session scopes stay separate", async () => {
+test("late results cannot move a workspace backwards and session scopes stay separate", async () => {
   const bus = channels();
   const retired: string[] = [];
   const older = new WorkspaceInstances(() => retired.push("older"), bus.create);
   const newer = new WorkspaceInstances(() => retired.push("newer"), bus.create);
   const other = new WorkspaceInstances(() => retired.push("other"), bus.create);
-  older.accept(key(50, 10)); newer.accept(key(1, 11));
-  other.accept({ ...key(1, 100), scope: "18a001fc-058f-4917-9e67-f6c4dc77d42e" });
+  older.accept(key(1)); newer.accept(key(3));
+  assert.equal(newer.accept(key(1)), false);
+  other.accept({ ...key(100), scope: "18a001fc-058f-4917-9e67-f6c4dc77d42e" });
   await setImmediate();
   assert.deepEqual(retired, ["older"]);
   newer.dispose(); other.dispose();
   assert.equal(bus.size(), 0);
+});
+
+test("two mounts of the same saved result leave exactly one workspace active", async () => {
+  const bus = channels();
+  let retired = 0;
+  const first = new WorkspaceInstances(() => retired++, bus.create);
+  const second = new WorkspaceInstances(() => retired++, bus.create);
+  first.accept(key(1)); second.accept(key(1));
+  await setImmediate();
+  assert.equal(retired, 1);
+  assert.equal(bus.size(), 1);
+  first.dispose(); second.dispose();
+  assert.equal(bus.size(), 0);
+});
+
+test("a host that rejects channel writes keeps the workspace usable", () => {
+  let closed = 0;
+  const view = new WorkspaceInstances(() => assert.fail("A denied channel cannot elect a peer"), () => ({
+    onmessage: null,
+    postMessage() { throw new Error("Denied"); },
+    close() { closed++; },
+  }));
+  assert.equal(view.accept(key(1)), true);
+  assert.equal(closed, 1);
+  assert.equal(view.accept(key(2)), true);
+  view.dispose();
+  assert.equal(closed, 1);
 });
 
 test("old transcripts and hosts without channels keep their workspace usable", () => {

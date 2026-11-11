@@ -23,7 +23,7 @@ test("standard hosts keep log context after accepting a draft and never retry me
   await context.sendLogToChat(log);
   assert.ok(context.attachedKey, "The host can acknowledge a draft before the user agrees to send it.");
   unavailable = true;
-  await assert.rejects(context.sendLogToChat(log), /No active composer/);
+  await assert.rejects(context.sendLogToChat(log), /did not confirm delivery/);
   assert.equal(calls, 2);
   context.dispose();
   await assert.rejects(context.sendLogToChat(log), /workspace has closed/);
@@ -142,7 +142,7 @@ test("rejected and timed out sends keep the log for manual retry", async () => {
       if (fail && failure === "timeout") throw Object.assign(new Error("Request timed out"), { code: -32001 });
       return { isError: fail };
     });
-    await assert.rejects(context.sendLogToChat(log), failure === "timeout" ? /Request timed out/ : /Could not send/);
+    await assert.rejects(context.sendLogToChat(log), failure === "timeout" ? /did not confirm delivery/ : /Could not send/);
     assert.equal(messages.length, 1);
     assert.ok(context.attachedKey);
     fail = false;

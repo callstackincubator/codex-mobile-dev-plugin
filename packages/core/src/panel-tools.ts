@@ -131,8 +131,7 @@ function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, sh
   { baguette, simulatorInput, copyScreenshot, resourceSaving, inline }: Required<PanelOptions>) {
   const scope = randomUUID();
   let sequence = 0;
-  let createdAt = 0;
-  const instance = () => ({ scope, createdAt: createdAt = Math.max(createdAt, Date.now()), sequence: ++sequence });
+  const instance = () => ({ scope, sequence: ++sequence });
   const streams = new StreamSessions(baguette);
   const closeIosMirror = registerIosMirrorTools(server, APP_URI);
   const closeInspection = registerInspectionTools(server, baguette, android);

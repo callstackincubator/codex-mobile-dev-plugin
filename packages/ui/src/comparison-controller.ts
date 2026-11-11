@@ -1,4 +1,4 @@
-import { chatMessage } from "./chat-message.ts";
+import { sendChatMessage } from "./chat-message.ts";
 import { attachReference, cardsCallTools } from "./host-bridge.ts";
 import type { HostAttachmentsSource, HostBridge } from "./host-bridge.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -6,7 +6,7 @@ import { comparisonDuration, comparisonReferenceSchema, comparisonSchema } from 
 import type { PerformanceComparison } from "@mobile-dev/shared/performance-comparison.ts";
 import { recordingRangeSchema } from "@mobile-dev/shared/recordings.ts";
 import type { RecordingRange } from "@mobile-dev/shared/recordings.ts";
-import { captureUiError, countUiEvent, markUiSurfaceReady, recordUiTiming, setUiGauge, setUiSurface, setUiTelemetryContext } from "./telemetry.ts";
+import { captureUiError, countUiEvent, getUiTelemetryAttributes, markUiSurfaceReady, recordUiTiming, setUiGauge, setUiSurface, setUiTelemetryContext } from "./telemetry.ts";
 import { readRecording, RecordingReadError, toolResultText } from "./recording-reader.ts";
 
 type ComparisonState = {
@@ -147,12 +147,12 @@ export class ComparisonController {
   async ask() {
     const { comparison, range, canMessage, busy } = this.state;
     if (comparison === undefined || canMessage === false || busy || this.disposed) return;
+    const context = getUiTelemetryAttributes();
     this.update({ busy: true, error: "" });
     const recordingIds = comparison.recordings.map(recording => recording.id);
     const reference = JSON.stringify({ recordingIds, title: comparison.title, ...(range ? { range } : {}) });
     const interval = range ? `${range.start}–${range.end}s` : "the entire runs";
     const prompt = `Compare CPU, memory, and device-wide Display FPS for ${interval}, aligned at recording start. Read the original runs and summaries with mobile_compare_performance_recordings using ${reference}. Account for different durations, devices, apps and memory definitions. Distinguish measurements from hypotheses about their cause; device-wide display data cannot attribute a slowdown to one app.`;
-    let sending = false;
     try {
       // Hosts with composer pills carry the reference there, and the message stays one line.
       const modelContext = this.attachments();
@@ -166,19 +166,17 @@ export class ComparisonController {
         } finally { recordUiTiming("ui.comparison.context_attach", performance.now() - contextStartedAt); }
       }
       if (this.disposed) return;
-      const message = chatMessage(this.app, modelContext ? (range ? "Compare this selected range." : "Compare these runs.") : prompt);
       const startedAt = performance.now();
-      sending = true;
-      const result = await this.app.sendMessage(message, { timeout: 5000, maxTotalTimeout: 5000 });
+      const result = await sendChatMessage(this.app, modelContext ? (range ? "Compare this selected range." : "Compare these runs.") : prompt);
+      if (this.disposed) return;
       if (result.isError) throw new Error("The host could not send this comparison to chat.");
-      countUiEvent("ui.comparison.ask");
+      countUiEvent("ui.comparison.ask", 1, context);
       const elapsed = performance.now() - startedAt;
-      recordUiTiming("ui.comparison.message_ack", elapsed);
+      recordUiTiming("ui.comparison.message_ack", elapsed, context);
     } catch (error) {
-      captureUiError(error, "comparison.ask");
-      const timedOut = sending && typeof error === "object" && error !== null && "code" in error && error.code === -32001;
-      const text = timedOut ? "The host did not confirm delivery. Check the chat before retrying to avoid sending the question twice." : error instanceof Error ? error.message : "Could not send this comparison to chat.";
-      this.update({ error: text });
+      if (this.disposed) return;
+      captureUiError(error, "comparison.ask", context);
+      this.update({ error: error instanceof Error ? error.message : "Could not send this comparison to chat." });
     } finally { this.update({ busy: false }); }
   }
   dispose() { this.disposed = true; this.loading?.abort(); this.listeners.clear(); }
