@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { deleteTestFile, findConfig, inspectProject, listTestFiles, parseTargets, TestingProjectChoices, writeTestFile } from "../src/testing-projects.ts";
+import { deleteTestFile, findConfig, inspectProject, listTestFiles, parseTargets, readTestFile, TestingProjectChoices, writeTestFile } from "../src/testing-projects.ts";
 
 const CONFIG = `import { mobile } from "@e2e-dev/mobile";
 import type { E2EConfig } from "e2e";
@@ -152,6 +152,18 @@ test("the project's own tests are listed, newest first, and nothing else is", as
       "newest first");
     const first = listed.find(entry => entry.name === "first.e2e.ts")!;
     assert.equal(first.sizeBytes, Buffer.byteLength(SOURCE, "utf-8"));
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("a project test can be previewed without reading outside tests", async () => {
+  const { root, path } = await project();
+  try {
+    await writeTestFile(path, "tests/flow.e2e.ts", SOURCE);
+    assert.equal(await readTestFile(path, "tests/flow.e2e.ts"), SOURCE);
+    await assert.rejects(readTestFile(path, "tests/missing.e2e.ts"), /no longer there/);
+    await assert.rejects(readTestFile(path, "tests/../../outside.e2e.ts"), /file name|tests\//);
+    await writeFile(join(path, "tests", "oversized.e2e.ts"), "x".repeat(256 * 1024 + 1));
+    await assert.rejects(readTestFile(path, "tests/oversized.e2e.ts"), /too large/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

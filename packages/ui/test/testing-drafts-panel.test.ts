@@ -104,7 +104,7 @@ test("opening a kept recording puts its steps back without arming the recorder",
 
   assert.equal(testRecorder.getSnapshot().steps.length, 2);
   assert.equal(testRecorder.getSnapshot().title, "the explore screen");
-  assert.equal(testRecorder.getSnapshot().recordingUdid, "", "reopening a flow must not start recording");
+  assert.equal(testRecorder.getSnapshot().recordingDeviceId, "", "reopening a flow must not start recording");
   assert.equal(panel.getSnapshot().draftId, DRAFT);
   assert.equal(panel.getSnapshot().fileName, "explore");
   // The flow that was on screen is kept before it is replaced, so swapping drafts loses nothing.
@@ -298,5 +298,30 @@ test("the project's tests are listed per project, and dropped when the project i
   (panel as unknown as { update(fields: Record<string, unknown>): void }).update({ projectPath: "" });
   await panel.refreshTests();
   assert.deepEqual(panel.getSnapshot().tests, []);
+  panel.dispose();
+});
+
+test("opening a project test previews its source and preserves the recording", async () => {
+  const calls: { name: string; arguments: Record<string, unknown> }[] = [];
+  const panel = open({
+    mobile_testing_draft_save: { id: DRAFT },
+    mobile_testing_read_file: { source: 'test("stored", async () => {});\n' },
+  }, calls);
+  testRecorder.stop();
+  testRecorder.clearSteps();
+  await recordOneStep();
+  const steps = testRecorder.getSnapshot().steps;
+
+  await panel.openTest("tests/stored.e2e.ts");
+  assert.equal(panel.getSnapshot().selectedTestPath, "tests/stored.e2e.ts");
+  assert.match(panel.getSnapshot().selectedTestSource, /stored/);
+  assert.deepEqual(testRecorder.getSnapshot().steps, steps, "previewing leaves the editable flow intact");
+  assert.equal(testRecorder.getSnapshot().recordingDeviceId, "", "the mirror stops recording while a project file is previewed");
+  assert.equal(named(calls, "mobile_testing_draft_save").length, 1, "the recording is kept before switching");
+  assert.deepEqual(named(calls, "mobile_testing_read_file")[0].arguments,
+    { projectPath: PROJECT, relativePath: "tests/stored.e2e.ts" });
+
+  await panel.openDraft(DRAFT);
+  assert.equal(panel.getSnapshot().selectedTestPath, "", "reopening a draft exits the project preview");
   panel.dispose();
 });

@@ -107,6 +107,10 @@ export type TestingSnapshot = {
   loadingDraft: boolean;
   /** The `.e2e.ts` files the chosen project already holds, newest first. */
   tests: StoredTestSummary[];
+  /** A project file shown as source, without importing it into the editable recorder. */
+  selectedTestPath: string;
+  selectedTestSource: string;
+  loadingTest: boolean;
   /** A stored test is being deleted; its path, so only its own row shows the spinner. */
   deletingTest: string;
   error: string | null;
@@ -137,13 +141,14 @@ export class TestingPanel {
   private restoreRequest?: Promise<void>;
   /** Guards against a slow project load overwriting a newer selection. */
   private loadRevision = 0;
+  private testReadRevision = 0;
   /** The project and target the installed tree source reads; "" when there is no source. */
   private treeSourceKey = "";
   private snapshot: TestingSnapshot = {
     open: false, available: false, projectPath: "", projects: [], targets: [], targetName: "", configPath: "",
     loadingProject: false, pickingProject: false, launching: false, appLaunched: false,
     fileName: "", saving: false, overwritePath: "", savedRevision: -1, savedPath: "", running: false, pendingRun: false,
-    agent: null, drafts: [], draftId: "", loadingDraft: false, tests: [], deletingTest: "", error: null,
+    agent: null, drafts: [], draftId: "", loadingDraft: false, tests: [], selectedTestPath: "", selectedTestSource: "", loadingTest: false, deletingTest: "", error: null,
   };
 
   /** The agent recording's revision the panel has already adopted; -1 before the first poll. */
@@ -369,6 +374,7 @@ export class TestingPanel {
   async selectProject(projectPath: string) {
     const path = projectPath.trim();
     const revision = ++this.loadRevision;
+    this.clearTestPreview();
     // The flow on screen belongs to the project it was recorded against, so the panel lets go of
     // its draft rather than rewriting that draft under a different project's path.
     clearTimeout(this.draftTimer);
@@ -467,6 +473,7 @@ export class TestingPanel {
    */
   async refreshTests() {
     if (!this.snapshot.available || !this.snapshot.projectPath) {
+      this.clearTestPreview();
       if (this.snapshot.tests.length > 0) this.update({ tests: [] });
       return;
     }
@@ -476,9 +483,44 @@ export class TestingPanel {
       const listed = object(response.structuredContent)?.tests;
       const tests = (Array.isArray(listed) ? listed : []) as StoredTestSummary[];
       // A slow read must not land on a project the user has since left.
-      if (!this.disposed && this.snapshot.projectPath === projectPath) this.update({ tests });
+      if (!this.disposed && this.snapshot.projectPath === projectPath) {
+        if (this.snapshot.selectedTestPath && !tests.some(test => test.relativePath === this.snapshot.selectedTestPath)) this.clearTestPreview();
+        this.update({ tests });
+      }
     } catch {
       // The list is a readout; a read that missed leaves the recording on screen untouched.
+    }
+  }
+
+  private clearTestPreview() {
+    ++this.testReadRevision;
+    if (this.snapshot.selectedTestPath || this.snapshot.loadingTest) this.update({ selectedTestPath: "", selectedTestSource: "", loadingTest: false });
+  }
+
+  /** Shows the file exactly as stored. The recorder's current flow remains intact. */
+  async openTest(relativePath: string) {
+    const projectPath = this.snapshot.projectPath;
+    if (!relativePath || !projectPath || this.snapshot.agent?.active) return;
+    const revision = ++this.testReadRevision;
+    clearTimeout(this.draftTimer);
+    await this.keepDraft();
+    if (this.disposed || this.snapshot.projectPath !== projectPath || revision !== this.testReadRevision) return;
+    testRecorder.stop();
+    this.update({ selectedTestPath: relativePath, selectedTestSource: "", loadingTest: true, error: null });
+    const startedAt = performance.now(), telemetryContext = getUiTelemetryAttributes();
+    try {
+      const response = await this.call("mobile_testing_read_file", { projectPath, relativePath }, 15_000);
+      if (revision === this.testReadRevision && this.snapshot.projectPath === projectPath)
+        this.update({ selectedTestSource: text(object(response.structuredContent)?.source) });
+      countUiEvent("ui.testing.test_preview");
+    } catch (error) {
+      if (revision === this.testReadRevision) {
+        this.update({ error: error instanceof Error ? error.message : String(error) });
+        captureUiError(error, "testing.test_preview", telemetryContext);
+      }
+    } finally {
+      if (getUiTelemetryAttributes() === telemetryContext) recordUiTiming("ui.testing.test_preview", performance.now() - startedAt);
+      if (revision === this.testReadRevision) this.update({ loadingTest: false });
     }
   }
 
@@ -581,6 +623,7 @@ export class TestingPanel {
    */
   async openDraft(id: string) {
     if (!id || this.snapshot.loadingDraft || this.snapshot.agent?.active) return;
+    this.clearTestPreview();
     if (id === this.snapshot.draftId) return;
     clearTimeout(this.draftTimer);
     await this.keepDraft();
@@ -647,6 +690,7 @@ export class TestingPanel {
   /** Starts a new flow, keeping whatever is on screen as its own draft first. */
   async newRecording() {
     if (this.snapshot.agent?.active) return;
+    this.clearTestPreview();
     clearTimeout(this.draftTimer);
     await this.keepDraft();
     if (this.disposed) return;
@@ -822,6 +866,7 @@ export class TestingPanel {
     const wasActive = this.snapshot.agent?.active === true;
     this.update({ agent });
     if (agent.active) {
+      this.clearTestPreview();
       // A session already in flight when the panel opened is adopted too: the agent may have
       // started before the user's host drew this document.
       if (!unchanged || !wasActive) {
@@ -867,7 +912,7 @@ export class TestingPanel {
   get canRun(): boolean {
     // Never while an agent is recording: a run resets the app and takes the one agent-device
     // session the device allows, which is the session the recording is being read through.
-    return Boolean(this.snapshot.available && this.snapshot.projectPath && !this.snapshot.agent?.active
+    return Boolean(this.snapshot.available && this.snapshot.projectPath && !this.snapshot.selectedTestPath && !this.snapshot.agent?.active
       && testRecorder.getSnapshot().steps.length > 0 && !this.snapshot.running && !this.snapshot.saving);
   }
 

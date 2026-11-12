@@ -160,7 +160,7 @@ test("a run marks the preview line by line, and marks nothing it was not told ab
     launchApp: async () => {}, saveTest: async () => {}, runTest: async (options?: unknown) => { runs.push(options); }, selectTarget: () => {},
     setFileName: () => {}, cancelOverwrite: () => {}, dismissError: () => {},
     refreshDrafts: async () => {}, openDraft: async () => {}, deleteDraft: async () => {}, newRecording: async () => {},
-    refreshTests: async () => {}, deleteTest: async () => {},
+    refreshTests: async () => {}, openTest: async () => {}, deleteTest: async () => {},
   };
   const deviceApps = {
     subscribe: () => () => undefined,
@@ -576,7 +576,7 @@ function panelStub(overrides: Record<string, unknown> = {}) {
     launchApp: async () => {}, saveTest: async () => {}, runTest: async () => {}, selectTarget: () => {},
     setFileName: () => {}, cancelOverwrite: () => {}, dismissError: () => {},
     refreshDrafts: async () => {}, openDraft: async () => {}, deleteDraft: async () => {}, newRecording: async () => {},
-    refreshTests: async () => {}, deleteTest: async () => {},
+    refreshTests: async () => {}, openTest: async () => {}, deleteTest: async () => {},
   };
 }
 
@@ -693,12 +693,14 @@ test("the list keeps what is not stored above what the project holds, and asks b
   const { createRoot } = await import("react-dom/client");
 
   const deleted: string[] = [];
+  const previewed: string[] = [];
   const panel = {
     ...panelStub({
       drafts: [{ id: "draft-1", projectPath: "/app", title: "the explore screen", fileName: "", origin: "user", stepCount: 3, createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" }],
       tests: [{ relativePath: "tests/flow.e2e.ts", name: "flow.e2e.ts", updatedAt: "2026-01-01T00:00:00.000Z", sizeBytes: 420 }],
     }),
     deleteTest: async (path: string) => { deleted.push(path); },
+    openTest: async (path: string) => { previewed.push(path); },
   };
   const deviceApps = { subscribe: () => () => undefined, getSnapshot: () => DEVICE_SNAPSHOT };
 
@@ -725,6 +727,9 @@ test("the list keeps what is not stored above what the project holds, and asks b
   await act(async () => { groups[1].click(); });
   assert.match(query('[data-testing-test="tests/flow.e2e.ts"]')?.textContent ?? "", /flow\.e2e\.ts/,
     "a saved test is listed here rather than leaving the list");
+  await act(async () => { query('[data-testing-test-option="tests/flow.e2e.ts"]')!.click(); });
+  assert.deepEqual(previewed, ["tests/flow.e2e.ts"], "the project row opens a preview");
+  await act(async () => { query("[data-testing-drafts]")!.click(); });
 
   // Neither delete happens on one click of a trash icon sitting beside the row the user wanted.
   // The question is a popover beside the icon, so the row it is about stays readable under it.
@@ -739,6 +744,29 @@ test("the list keeps what is not stored above what the project holds, and asks b
   assert.deepEqual(deleted, ["tests/flow.e2e.ts"]);
   assert.equal(query("[role=alertdialog]"), null, "answering it closes the question");
 
+  testRecorder.clearSteps();
+});
+
+test("a selected project test shows its source without editable recording controls", async t => {
+  const { module: { TestingView, testRecorder }, dom, onTeardown } = await renderEnvironment<any>(t, {
+    exports: 'export { TestingView } from "./packages/ui/src/components/testing-view.tsx";\n'
+      + 'export { testRecorder } from "./packages/ui/src/test-recorder.ts";',
+    slug: "testing-project-preview",
+  });
+  const { act, createElement } = await import("react");
+  const { createRoot } = await import("react-dom/client");
+  const panel = panelStub({
+    tests: [{ relativePath: "tests/flow.e2e.ts", name: "flow.e2e.ts", updatedAt: "2026-01-01T00:00:00.000Z", sizeBytes: 30 }],
+    selectedTestPath: "tests/flow.e2e.ts", selectedTestSource: 'test("stored", async () => {});', loadingTest: false,
+  });
+  const root = createRoot(dom.window.document.getElementById("root")!);
+  await act(async () => { root.render(createElement(TestingView, { panel, deviceApps: { subscribe: () => () => undefined, getSnapshot: () => DEVICE_SNAPSHOT } })); });
+  onTeardown(async () => { await act(async () => { root.unmount(); }); });
+  const query = (selector: string) => dom.window.document.querySelector(selector);
+  assert.match(query("[data-testing-stored-preview]")?.textContent ?? "", /stored/);
+  assert.equal(query("[data-testing-editor-pane]"), null);
+  assert.equal(query("[data-testing-run]")?.hasAttribute("disabled"), true);
+  assert.ok(query("[data-testing-new-from-preview]"));
   testRecorder.clearSteps();
 });
 

@@ -332,6 +332,16 @@ export async function listTestFiles(projectPath: string): Promise<StoredTest[]> 
   return found.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 }
 
+/** Reads a listed test for the panel's read-only source preview. */
+export async function readTestFile(projectPath: string, relativePath: string): Promise<string> {
+  const { path: root } = await inspectProject(projectPath);
+  const target = await resolveTestPath(root, relativePath);
+  const info = await stat(target).catch(() => undefined);
+  if (!info?.isFile()) throw new ExpectedOperationError("invalid_input", "That test file is no longer there.");
+  if (info.size > MAX_TEST_BYTES) throw new ExpectedOperationError("invalid_input", "That test is too large to preview.");
+  return readFile(target, "utf-8");
+}
+
 /**
  * Deletes one test the project holds. The panel asks before this runs, and the host asks again:
  * this removes a file from the user's repository, which nothing here can put back.

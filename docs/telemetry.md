@@ -616,6 +616,9 @@ panel's list and answer different questions — a recording thrown away before i
 a test removed from the repository. The file name, its path and the project path are not sent, and
 listing the stored tests is not measured: it is a folder read the panel does on open, not a wait
 the user sits through.
+Selecting a stored test counts `ui.testing.test_preview` and measures that same name from the
+read request through its response. A failed read goes through `captureUiError` as
+`testing.test_preview`. The test source and path are not sent.
 
 `ui.testing.record_prepare` times the warm tree read Record now does before the mirror can resolve
 an element, which is the wait the `preparing...` overlay is explaining. It is deliberately **not**

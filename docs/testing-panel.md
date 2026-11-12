@@ -94,8 +94,8 @@ panel stops being listed.
 
 Opening a draft keeps the flow on screen first, so swapping between two loses neither, and it does
 **not** start recording — the user opened a flow to look at it, and a stray tap on the mirror must
-not append to it. A stored test is a readout: its name, its path under the project, and when it was
-last written.
+not append to it. A stored test can be selected to preview its source as saved in the project.
+The preview is read-only; the current recording stays intact and can be reopened from Not stored.
 
 Both deletes **ask first**, in a popover hanging off the trash icon. A draft's steps cannot be
 replayed from anywhere else, and a stored test is a file in the user's repository that nothing here
@@ -104,12 +104,12 @@ the icon rather than replacing the row so the row it is about stays readable und
 the question has room to name what will go and say that it cannot be undone, which a row the width
 of a file name does not.
 
-Six app-only tools carry it: `mobile_testing_drafts`, `mobile_testing_draft_read`,
+Seven app-only tools carry it: `mobile_testing_drafts`, `mobile_testing_draft_read`,
 `mobile_testing_draft_save` and `mobile_testing_draft_delete` over `TestDraftStore`
-(`packages/core/src/testing-drafts.ts`), and `mobile_testing_tests` and
-`mobile_testing_delete_file` over the project's own `tests/` folder
-(`listTestFiles`/`deleteTestFile` in `packages/core/src/testing-projects.ts`) — the delete
-annotated destructive, so the host asks as well as the panel. All six are in
+(`packages/core/src/testing-drafts.ts`), and `mobile_testing_tests`,
+`mobile_testing_read_file` and `mobile_testing_delete_file` over the project's own `tests/` folder
+(`listTestFiles`/`readTestFile`/`deleteTestFile` in `packages/core/src/testing-projects.ts`) — the delete
+annotated destructive, so the host asks as well as the panel. All seven are in
 `packages/core/src/testing-tools.ts`. The step schema they validate against is
 `packages/shared/src/test-drafts.ts`, which is the one place a `RecordedStep` is described as data
 rather than as a type. A stored test's path goes through the same `resolveTestPath` boundary the

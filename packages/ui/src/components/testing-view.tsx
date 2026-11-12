@@ -155,7 +155,8 @@ function TestingDraftPicker({ panel }: { panel: TestingPanel }) {
   // a brand new flow lands a moment after the first step.
   if (state.drafts.length === 0 && !state.draftId && state.tests.length === 0) return null;
   const current = state.drafts.find(draft => draft.id === state.draftId);
-  const label = current ? draftLabel(current) : recorder.steps.length > 0 ? draftLabel(recorder) : "Tests";
+  const selectedTest = state.tests.find(test => test.relativePath === state.selectedTestPath);
+  const label = selectedTest ? selectedTest.name : current ? draftLabel(current) : recorder.steps.length > 0 ? draftLabel(recorder) : "Tests";
   return <Popover open={open} onOpenChange={value => {
     setOpen(value);
     if (value) { void panel.refreshDrafts(); void panel.refreshTests(); }
@@ -212,8 +213,12 @@ function TestingDraftPicker({ panel }: { panel: TestingPanel }) {
       <ListGroup label="In the project" count={state.tests.length} open={storedOpen}
         attributes={{ "data-testing-group": "stored" }} onToggle={() => setStoredOpen(value => !value)}>
         {state.tests.map(stored => {
+          const selected = stored.relativePath === state.selectedTestPath;
           return <span key={stored.relativePath} className="flex min-w-0 items-center gap-1" data-testing-test={stored.relativePath}>
-            <span className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 py-1" title={stored.relativePath}>
+            <Button type="button" variant="ghost" data-testing-test-option={stored.relativePath} aria-pressed={selected} disabled={agentRecording}
+              className="h-auto min-h-7 min-w-0 flex-1 justify-start gap-2 rounded-md px-1.5 py-1 text-left font-normal" title={stored.relativePath}
+              onClick={() => { setOpen(false); void panel.openTest(stored.relativePath); }}>
+              <CheckIcon className={`size-3.5 shrink-0 ${selected ? "opacity-100" : "opacity-0"}`} />
               <FileCode2Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
               <span className="flex min-w-0 flex-col">
                 <span className="truncate text-sm">{stored.name}</span>
@@ -221,7 +226,7 @@ function TestingDraftPicker({ panel }: { panel: TestingPanel }) {
                   {stored.relativePath}{sinceLabel(stored.updatedAt) ? ` · ${sinceLabel(stored.updatedAt)}` : ""}
                 </span>
               </span>
-            </span>
+            </Button>
             <ConfirmDelete attributes={{ "data-testing-test-delete": stored.relativePath }}
               busy={state.deletingTest === stored.relativePath}
               title="Delete this test from the project" label={`Delete ${stored.name}`}
@@ -350,7 +355,8 @@ function TestingControls({ panel, recordable, deviceId, platform }: { panel: Tes
       {panelState.launching ? <LoaderCircleIcon className="animate-spin" /> : <PlayIcon />}
       {panelState.appLaunched ? "Relaunch app" : "Launch app"}
     </Button>
-    {agentRecording
+    {panelState.selectedTestPath ? <Button type="button" size="sm" variant="outline" data-testing-new-from-preview
+      onClick={() => void panel.newRecording()}><FilePlus2Icon />New recording</Button> : agentRecording
       // The agent's own Stop is on the banner, where the goal it is recording for is: one Stop,
       // beside what it stops.
       ? null
@@ -360,7 +366,7 @@ function TestingControls({ panel, recordable, deviceId, platform }: { panel: Tes
           ? <RecordMenu deviceId={deviceId} platform={platform} recordable={recordable} steps={state.steps.length} />
           : <Button type="button" size="sm" variant="outline" data-testing-record disabled={!recordable}
             onClick={() => testRecorder.start(deviceId, platform)}><CircleIcon />Record</Button>}
-    <Button type="button" size="sm" variant="outline" data-testing-run disabled={!panel.canRun}
+    <Button type="button" size="sm" variant="outline" data-testing-run disabled={!panel.canRun || Boolean(panelState.selectedTestPath)}
       title="Save the test, then run it against this device. Recording stops: the runner needs the device to itself."
       onClick={() => void panel.runTest()}>
       {panelState.running ? <LoaderCircleIcon className="animate-spin" /> : <FlaskConicalIcon />}Run test
@@ -535,6 +541,12 @@ function TestingRecorder({ panel, recordable, deviceId }: { panel: TestingPanel;
     }
   }
   const playUntilStep = useCallback((stepId: string) => { void panel.runTest({ untilStepId: stepId }); }, [panel]);
+  if (panelState.selectedTestPath) return <div className="flex min-h-0 flex-1 flex-col gap-2" data-testing-stored-preview>
+    <p className="text-xs text-muted-foreground">{panelState.selectedTestPath} · Project file preview</p>
+    {panelState.loadingTest
+      ? <p className="flex items-center gap-1 text-xs text-muted-foreground" role="status"><LoaderCircleIcon className="size-3 animate-spin" />Reading test…</p>
+      : <TestPreview source={panelState.selectedTestSource} />}
+  </div>;
   return <div className="flex min-h-0 flex-1 flex-col gap-3">
     {!recordable && !recording && !panelState.agent?.active && <p className="text-xs text-muted-foreground">Recording needs a booted iOS simulator or Android emulator in the mirror.</p>}
     {panelState.agent?.active && <p className="text-xs text-muted-foreground">
