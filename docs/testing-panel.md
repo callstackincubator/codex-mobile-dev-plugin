@@ -384,7 +384,7 @@ Selected element
 "Go To Explore List"
 
 Tap
-Check visibility
+Is Visible
 Scroll into view
 ──────────────
 All commands     ›

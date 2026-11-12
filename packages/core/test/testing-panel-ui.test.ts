@@ -49,7 +49,7 @@ test("the element menu renders the runner's own steps over the mirror and record
   assert.match(menu()?.textContent ?? "", /Selected element"Go To Explore List" \(button\)/);
   assert.deepEqual(rows().map(row => row.textContent), [
     "Tap",
-    "Check visibility",
+    "Is Visible",
     "Scroll into view",
   ]);
   assert.equal(rows().some(row => row.querySelector(".lucide-chevron-right")), false,
@@ -415,7 +415,7 @@ test("the command list is a submenu of its own, opened by pointing at its row", 
 
   await act(async () => { await testRecorder.openMenu({ x: 150, y: 420 }); });
   // The short list is what is in front of the user, and the submenu is not open until it is asked for.
-  assert.deepEqual(rows().map(row => row.textContent), ["Tap", "Check visibility", "Scroll into view"]);
+  assert.deepEqual(rows().map(row => row.textContent), ["Tap", "Is Visible", "Scroll into view"]);
   assert.equal(submenu(), null);
 
   // Pointing at the row is enough; no click is needed to see what it leads to.
@@ -430,11 +430,11 @@ test("the command list is a submenu of its own, opened by pointing at its row", 
   // behind it visible.
   assert.ok(Number.parseFloat(submenu().style.width) < Number.parseFloat(menu().style.width));
   assert.ok(submenu().className.includes("bg-popover") && submenu().className.includes("shadow-lg"));
-  assert.deepEqual(rows().slice(0, 3).map(row => row.textContent), ["Tap", "Check visibility", "Scroll into view"],
+  assert.deepEqual(rows().slice(0, 3).map(row => row.textContent), ["Tap", "Is Visible", "Scroll into view"],
     "the menu behind it keeps its own rows");
   const commands = rows().slice(3).map(row => row.dataset.recorderOffer);
   assert.ok(commands.includes("assertNotVisible") && commands.includes("doubleTap") && commands.includes("longPress"));
-  assert.match(submenu().textContent ?? "", /ActionsTap.*AssertionsCheck visibility/);
+  assert.match(submenu().textContent ?? "", /ActionsTap.*AssertionsIs Visible/);
 
   // Leaving the row and its panel closes it, but only after a moment: they have a gap between
   // them, and crossing it must not be a way out.
