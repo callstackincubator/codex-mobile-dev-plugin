@@ -31,8 +31,8 @@ test("the element menu renders the runner's own steps over the mirror and record
     subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
     getSnapshot: () => ANNOTATIONS_SNAPSHOT,
   };
-  testRecorder.attach("udid", { readComponents: async () => [button], screen: () => SCREEN, release: () => undefined });
-  testRecorder.start("udid");
+  testRecorder.attach("udid", "ios", { readComponents: async () => [button], screen: () => SCREEN, release: () => undefined });
+  testRecorder.start("udid", "ios");
 
   const root = createRoot(dom.window.document.getElementById("root")!);
   await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations })); });
@@ -83,7 +83,7 @@ test("the element menu renders the runner's own steps over the mirror and record
   assert.match(testRecorder.source, /await expect\(screen\.getByRole\("button", "Go To Explore List"\)\)\.toBeVisible\(\);/);
 
   testRecorder.clearSteps();
-  testRecorder.detach("udid");
+  testRecorder.detach("udid", "ios");
 });
 
 test("a row that needs a value asks for it instead of emitting an empty string", async t => {
@@ -102,11 +102,11 @@ test("a row that needs a value asks for it instead of emitting an empty string",
   };
   const annotations = { subscribe: () => () => undefined, getSnapshot: () => ANNOTATIONS_SNAPSHOT };
   const done: unknown[] = [];
-  testRecorder.attach("udid", {
+  testRecorder.attach("udid", "ios", {
     readComponents: async () => [field], screen: () => SCREEN, release: () => undefined,
     perform: (action: unknown) => { done.push(action); },
   });
-  testRecorder.start("udid");
+  testRecorder.start("udid", "ios");
   const root = createRoot(dom.window.document.getElementById("root")!);
   await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations })); });
   onTeardown(async () => {
@@ -130,7 +130,7 @@ test("a row that needs a value asks for it instead of emitting an empty string",
   assert.deepEqual(done, [{ kind: "tap", point: { x: 200, y: 422 } }, { kind: "type", text: "Berlin" }]);
 
   testRecorder.clearSteps();
-  testRecorder.detach("udid");
+  testRecorder.detach("udid", "ios");
 });
 
 test("a run marks the preview line by line, and marks nothing it was not told about", async t => {
@@ -167,8 +167,8 @@ test("a run marks the preview line by line, and marks nothing it was not told ab
     getSnapshot: () => DEVICE_SNAPSHOT,
   };
 
-  testRecorder.attach("udid", { readComponents: async () => [button], screen: () => SCREEN, release: () => undefined });
-  testRecorder.start("udid");
+  testRecorder.attach("udid", "ios", { readComponents: async () => [button], screen: () => SCREEN, release: () => undefined });
+  testRecorder.start("udid", "ios");
   await testRecorder.openMenu({ x: 150, y: 420 });
   await testRecorder.chooseOffer("tap");
 
@@ -302,7 +302,7 @@ test("a run marks the preview line by line, and marks nothing it was not told ab
 
   testRecorder.clearRun();
   testRecorder.clearSteps();
-  testRecorder.detach("udid");
+  testRecorder.detach("udid", "ios");
 });
 
 test("the element menu survives a tree invalidation that takes the hover outline away", async t => {
@@ -316,8 +316,8 @@ test("the element menu survives a tree invalidation that takes the hover outline
   const { createRoot } = await import("react-dom/client");
 
   const annotations = { subscribe: () => () => undefined, getSnapshot: () => ANNOTATIONS_SNAPSHOT };
-  testRecorder.attach("udid", { readComponents: async () => [button], screen: () => SCREEN, release: () => undefined });
-  testRecorder.start("udid");
+  testRecorder.attach("udid", "ios", { readComponents: async () => [button], screen: () => SCREEN, release: () => undefined });
+  testRecorder.start("udid", "ios");
   const root = createRoot(dom.window.document.getElementById("root")!);
   await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations })); });
   onTeardown(async () => {
@@ -336,7 +336,7 @@ test("the element menu survives a tree invalidation that takes the hover outline
   assert.equal(menu.style.left, `${Math.max(8, Math.min(10 + 100 / 402 * 300, dom.window.innerWidth - stays - 8))}px`);
 
   testRecorder.clearSteps();
-  testRecorder.detach("udid");
+  testRecorder.detach("udid", "ios");
 });
 
 test("a coordinate gets the tap row and is told why that is all", async t => {
@@ -350,8 +350,8 @@ test("a coordinate gets the tap row and is told why that is all", async t => {
   const { createRoot } = await import("react-dom/client");
 
   const annotations = { subscribe: () => () => undefined, getSnapshot: () => ANNOTATIONS_SNAPSHOT };
-  testRecorder.attach("udid", { readComponents: async () => [button], screen: () => SCREEN, release: () => undefined });
-  testRecorder.start("udid");
+  testRecorder.attach("udid", "ios", { readComponents: async () => [button], screen: () => SCREEN, release: () => undefined });
+  testRecorder.start("udid", "ios");
   const root = createRoot(dom.window.document.getElementById("root")!);
   await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations })); });
   onTeardown(async () => {
@@ -386,7 +386,7 @@ test("a coordinate gets the tap row and is told why that is all", async t => {
   assert.match(testRecorder.source, /await screen\.swipe\(\{ direction: "down" \}\);/);
 
   testRecorder.clearSteps();
-  testRecorder.detach("udid");
+  testRecorder.detach("udid", "ios");
 });
 
 test("the command list is a submenu of its own, opened by pointing at its row", async t => {
@@ -400,8 +400,8 @@ test("the command list is a submenu of its own, opened by pointing at its row", 
   const { createRoot } = await import("react-dom/client");
 
   const annotations = { subscribe: () => () => undefined, getSnapshot: () => ANNOTATIONS_SNAPSHOT };
-  testRecorder.attach("udid", { readComponents: async () => [button], screen: () => SCREEN, release: () => undefined });
-  testRecorder.start("udid");
+  testRecorder.attach("udid", "ios", { readComponents: async () => [button], screen: () => SCREEN, release: () => undefined });
+  testRecorder.start("udid", "ios");
   const root = createRoot(dom.window.document.getElementById("root")!);
   await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations })); });
   onTeardown(async () => {
@@ -450,7 +450,7 @@ test("the command list is a submenu of its own, opened by pointing at its row", 
   assert.match(testRecorder.source, /await expect\(screen\.getByRole\("button", "Go To Explore List"\)\)\.not\.toBeVisible\(\);/);
 
   testRecorder.clearSteps();
-  testRecorder.detach("udid");
+  testRecorder.detach("udid", "ios");
 });
 
 test("the agentic branches cascade to the side, and record a sentence with its params", async t => {
@@ -465,11 +465,11 @@ test("the agentic branches cascade to the side, and record a sentence with its p
 
   const annotations = { subscribe: () => () => undefined, getSnapshot: () => ANNOTATIONS_SNAPSHOT };
   const done: unknown[] = [];
-  testRecorder.attach("udid", {
+  testRecorder.attach("udid", "ios", {
     readComponents: async () => [button], screen: () => SCREEN, release: () => undefined,
     perform: (action: unknown) => { done.push(action); },
   });
-  testRecorder.start("udid");
+  testRecorder.start("udid", "ios");
   const root = createRoot(dom.window.document.getElementById("root")!);
   await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations })); });
   onTeardown(async () => {
@@ -555,7 +555,7 @@ test("the agentic branches cascade to the side, and record a sentence with its p
   assert.match(testRecorder.source, /await agent\.assert\("the city list is showing", \{ vision: "only" \}\);/);
 
   testRecorder.clearSteps();
-  testRecorder.detach("udid");
+  testRecorder.detach("udid", "ios");
 });
 
 /** A `TestingPanel` stub for the view: enough snapshot for the controls, no server behind it. */
@@ -592,8 +592,8 @@ test("a step's commands open beside it, and Clear asks before it throws the flow
 
   const panel = panelStub();
   const deviceApps = { subscribe: () => () => undefined, getSnapshot: () => DEVICE_SNAPSHOT };
-  testRecorder.attach("udid", { readComponents: async () => [button], screen: () => SCREEN, release: () => undefined });
-  testRecorder.start("udid");
+  testRecorder.attach("udid", "ios", { readComponents: async () => [button], screen: () => SCREEN, release: () => undefined });
+  testRecorder.start("udid", "ios");
   await testRecorder.openMenu({ x: 150, y: 420 });
   await testRecorder.chooseOffer("tap");
 
@@ -638,7 +638,7 @@ test("a step's commands open beside it, and Clear asks before it throws the flow
   await act(async () => { confirm!.click(); });
   assert.equal(testRecorder.getSnapshot().steps.length, 0, "answering it clears the flow");
 
-  testRecorder.detach("udid");
+  testRecorder.detach("udid", "ios");
 });
 
 test("Record says the mirror is not ready yet, until selection actually is", async t => {
@@ -656,7 +656,7 @@ test("Record says the mirror is not ready yet, until selection actually is", asy
   let release: (components: unknown[]) => void = () => {};
   const tree = new Promise<unknown[]>(resolve => { release = resolve; });
   const annotations = { subscribe: () => () => undefined, getSnapshot: () => ANNOTATIONS_SNAPSHOT };
-  testRecorder.attach("udid", { readComponents: () => tree, screen: () => SCREEN, release: () => undefined });
+  testRecorder.attach("udid", "ios", { readComponents: () => tree, screen: () => SCREEN, release: () => undefined });
 
   const root = createRoot(dom.window.document.getElementById("root")!);
   await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations })); });
@@ -667,7 +667,7 @@ test("Record says the mirror is not ready yet, until selection actually is", asy
   const overlay = () => dom.window.document.querySelector("[data-element=recorder-preparing]") as HTMLElement | null;
 
   assert.equal(overlay(), null, "nothing is over the mirror until Record is pressed");
-  await act(async () => { testRecorder.start("udid"); });
+  await act(async () => { testRecorder.start("udid", "ios"); });
   assert.ok(overlay(), "Record puts it there at once, rather than after the first dead click");
   assert.match(overlay()!.textContent ?? "", /preparing\.\.\./);
   assert.ok(overlay()!.className.includes("pointer-events-none"),
@@ -679,7 +679,7 @@ test("Record says the mirror is not ready yet, until selection actually is", asy
 
   testRecorder.stop();
   testRecorder.clearSteps();
-  testRecorder.detach("udid");
+  testRecorder.detach("udid", "ios");
 });
 
 test("the list keeps what is not stored above what the project holds, and asks before deleting either", async t => {
@@ -754,8 +754,8 @@ test("moving from one step to the next hands the highlight over without dimming 
 
   const panel = panelStub();
   const deviceApps = { subscribe: () => () => undefined, getSnapshot: () => DEVICE_SNAPSHOT };
-  testRecorder.attach("udid", { readComponents: async () => [button], screen: () => SCREEN, release: () => undefined });
-  testRecorder.start("udid");
+  testRecorder.attach("udid", "ios", { readComponents: async () => [button], screen: () => SCREEN, release: () => undefined });
+  testRecorder.start("udid", "ios");
   await testRecorder.openMenu({ x: 150, y: 420 });
   await testRecorder.chooseOffer("tap");
   await testRecorder.openMenu({ x: 150, y: 420 });
@@ -803,5 +803,5 @@ test("moving from one step to the next hands the highlight over without dimming 
     "and it never touches the arrival animation, which is what restarted on mouse-leave");
 
   testRecorder.clearSteps();
-  testRecorder.detach("udid");
+  testRecorder.detach("udid", "ios");
 });

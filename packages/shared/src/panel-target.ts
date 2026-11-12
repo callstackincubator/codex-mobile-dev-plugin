@@ -1,14 +1,30 @@
 import { z } from "zod";
+import type { SimulatorDevice } from "./protocol.ts";
 
 const platform = z.enum(["ios", "android"]).optional().describe("The task's established platform. Omit when undecided.");
 const kind = z.enum(["simulator", "emulator", "physical"]).optional().describe("The requested device kind. Omit when undecided.");
-const deviceId = z.string().min(1).max(256).regex(/^[A-Za-z0-9_.:\[\]%-]+$/).optional().describe("An exact device ID from device discovery. Omit to select a matching device automatically.");
+export const deviceIdSchema = z.string().min(1).max(256).regex(/^[A-Za-z0-9_.:\[\]%-]+$/).describe("An exact device ID from device discovery. Omit to select a matching device automatically.");
 
-export const panelTargetSchema = z.object({ platform, kind, deviceId }).strict().superRefine((target, context) => {
+export const panelTargetSchema = z.object({ platform, kind, deviceId: deviceIdSchema.optional() }).strict().superRefine((target, context) => {
   if (target.platform === "ios" && target.kind === "emulator" || target.platform === "android" && target.kind === "simulator") {
     context.addIssue({ code: "custom", path: ["kind"], message: "Use simulator for iOS or emulator for Android." });
   }
 });
+
+/**
+ * Whether the Testing panel can record against a device: a booted iOS simulator or a booted
+ * Android emulator. Anything physical is out, because agent-device's session on a physical
+ * device is not the one the mirror holds.
+ */
+/** The platform the recorder attaches with. A simulator listing that omits `platform` is iOS. */
+export function recordablePlatform(device: SimulatorDevice): "ios" | "android" {
+  return device.platform === "android" ? "android" : "ios";
+}
+
+export function isRecordableDevice(device?: SimulatorDevice): boolean {
+  if (!device || device.state !== "Booted" || device.kind === "physical") return false;
+  return device.platform === "android" ? device.kind === "emulator" : device.platform === "ios" || device.platform === undefined;
+}
 
 export type PanelTarget = z.infer<typeof panelTargetSchema>;
 

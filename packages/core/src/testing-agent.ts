@@ -4,7 +4,7 @@ import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
 import { errorMessage } from "@mobile-dev/shared/protocol.ts";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
-import { udidSchema } from "@mobile-dev/shared/protocol.ts";
+import { deviceIdSchema } from "@mobile-dev/shared/panel-target.ts";
 import {
   agentStepLabel, anchorSelector, emitE2eTest, resolveComponentSelector, selectorSource, stepEffect, stepExpression,
   stepLabel, stepNeedsValue, swipeDirection, swipePath,
@@ -50,7 +50,7 @@ const RANK_LABEL: Record<string, string> = {
 const MAX_ELEMENTS = 200;
 
 /** What the panel's selection is, as the panel reports it. Nothing here is inferred. */
-export type TestingAgentContext = { projectPath: string; udid: string; bundleId: string };
+export type TestingAgentContext = { projectPath: string; deviceId: string; platform: "ios" | "android"; bundleId: string };
 
 export type TestingAgentStatus = "idle" | "recording" | "finished" | "aborted";
 
@@ -240,14 +240,14 @@ export class TestingAgentRecordings {
     const context = this.context;
     const missing = [
       context?.projectPath ? "" : "an e2e project",
-      context?.udid ? "" : "a booted simulator in the mirror",
+      context?.deviceId ? "" : "a booted simulator or emulator in the mirror",
       context?.bundleId ? "" : "a target with a bundle id in the project's e2e config",
     ].filter(Boolean);
     if (!context || missing.length > 0) {
       refused(`The Testing panel has no ${missing.join(", no ")} selected, so there is nothing to record against. Ask the user to open Mobile Dev's Testing tab and choose one, then begin again.`);
     }
     this.session = {
-      target: { udid: context.udid, projectPath: context.projectPath, bundleId: context.bundleId },
+      target: { deviceId: context.deviceId, platform: context.platform, projectPath: context.projectPath, bundleId: context.bundleId },
       title: input.title.trim() || "a recorded flow",
       goal: input.goal.trim(),
       steps: [], status: "recording", note: "", error: "", draftId: "",
@@ -258,7 +258,8 @@ export class TestingAgentRecordings {
       ok: true,
       title: this.session.title,
       projectPath: context.projectPath,
-      udid: context.udid,
+      deviceId: context.deviceId,
+      platform: context.platform,
       bundleId: context.bundleId,
       next: "Call mobile_testing_agent_screen to read the screen, then mobile_testing_agent_step with one of its refs. Re-read after every step that acts.",
     };
@@ -299,7 +300,7 @@ export class TestingAgentRecordings {
       // be trusted now, so a step on one is refused rather than acted on.
       session.refs = new Map();
       session.rows = [];
-      recordTestingAgentRead("failed", performance.now() - startedAt, 0);
+      recordTestingAgentRead("failed", performance.now() - startedAt, 0, session.target.platform);
       throw error;
     }
     session.readId += 1;
@@ -340,7 +341,7 @@ export class TestingAgentRecordings {
     });
     session.truncated = tree.tree.length - session.rows.length;
     session.readAt = performance.now();
-    recordTestingAgentRead("success", performance.now() - startedAt, tree.tree.length);
+    recordTestingAgentRead("success", performance.now() - startedAt, tree.tree.length, session.target.platform);
   }
 
   /**
@@ -620,13 +621,14 @@ export function registerTestingAgentTools(server: McpServer, devices: TestingDev
       "Tell the server which project, device and bundle id the Testing panel has selected, so an agent recording has something to record against. The panel calls this whenever the selection changes; nothing is ever inferred from the server's own working directory.",
     inputSchema: {
       projectPath: z.string().max(4096),
-      udid: udidSchema.or(z.literal("")),
+      deviceId: deviceIdSchema.or(z.literal("")),
+      platform: z.enum(["ios", "android"]).optional(),
       bundleId: z.string().max(512),
     },
     annotations: write,
     _meta: appVisibility,
-  }, safe((input: TestingAgentContext) => {
-    if (input.projectPath && input.udid && input.bundleId) recordings.setContext(input);
+  }, safe((input: Omit<TestingAgentContext, "platform"> & { platform?: "ios" | "android" }) => {
+    if (input.projectPath && input.deviceId && input.platform && input.bundleId) recordings.setContext({ ...input, platform: input.platform });
     else recordings.clearContext();
     return dataResult({ ok: true });
   }));

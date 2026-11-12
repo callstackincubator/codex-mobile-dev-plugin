@@ -76,7 +76,7 @@ function fakeAgentDevice(calls: Record<string, unknown>[], snapshot: () => { nod
   });
 }
 
-const target = { udid: "11111111-2222-3333-4444-555555555555", projectPath: "/project", bundleId: "com.example.app" };
+const target = { deviceId: "11111111-2222-3333-4444-555555555555", platform: "ios" as const, projectPath: "/project", bundleId: "com.example.app" };
 
 test("the recorder attaches to the running app and never relaunches it", async () => {
   const calls: Record<string, unknown>[] = [];
@@ -90,7 +90,7 @@ test("the recorder attaches to the running app and never relaunches it", async (
   // Relaunching would throw away the screen the user navigated to, which is the whole point.
   assert.equal(open.relaunch, false);
   assert.equal(open.app, "com.example.app");
-  assert.equal(open.udid, target.udid);
+  assert.equal(open.udid, target.deviceId);
   // `--foreground` refuses outright when more than one app is running, which is every real simulator.
   assert.equal(open.foreground, undefined);
   // The runner's own snapshot options: a different tree would resolve differently.
@@ -178,7 +178,7 @@ test("shutting the plugin down gives the recorder's device back", async () => {
   // Nothing is attached, so there is nothing to give back and nothing is called.
   await shutdown();
   assert.deepEqual(closed, []);
-  (devices as unknown as { attached?: string; client?: unknown }).attached = "udid";
+  (devices as unknown as { attached?: string; client?: unknown }).attached = "ios:udid";
   (devices as unknown as { client?: unknown }).client = (await (devices as unknown as { connect(): Promise<unknown> }).connect());
   await shutdown();
   assert.deepEqual(closed, [{ session: "mobile-dev-recorder" }]);
@@ -221,7 +221,7 @@ test("an agent recording's step is placed on the element's own ref, on the recor
   const clicks = calls.filter(entry => entry.call === "click");
   assert.deepEqual(clicks.map(entry => entry.ref), ["e1", "e1"]);
   // One session, the recorder's: an agent recording is another holder of it, never a second one.
-  assert.ok(clicks.every(entry => entry.session === "mobile-dev-recorder" && entry.udid === target.udid));
+  assert.ok(clicks.every(entry => entry.session === "mobile-dev-recorder" && entry.udid === target.deviceId));
   assert.equal(clicks[0].doubleTap, undefined);
   // The next step is resolved against the screen this one produced, so the wait for that screen
   // to stop moving belongs here; without it agent-device refuses the next action outright.
@@ -242,4 +242,38 @@ test("a step on a device nothing is attached to attaches first", async () => {
   await devices.perform(target, { kind: "tap", ref: "e1" });
   assert.equal(calls.filter(entry => entry.call === "open").length, 1);
   assert.equal(calls.find(entry => entry.call === "open")!.relaunch, false);
+});
+
+test("an Android emulator is addressed by serial, never udid, on every call", async () => {
+  const calls: Record<string, unknown>[] = [];
+  const devices = new TestingDevices(fakeAgentDevice(calls, () => ({ nodes: [] })) as never);
+  (devices as unknown as { projections: Map<string, unknown> }).projections.set("/project", Promise.resolve(projection));
+  const android = { ...target, deviceId: "emulator-5554", platform: "android" as const };
+
+  await devices.read(android);
+  await devices.perform(android, { kind: "tap", ref: "e1" });
+  await devices.perform(android, { kind: "type", ref: "e2", text: "hi" });
+  await devices.perform(android, { kind: "scroll", direction: "down" });
+  await devices.perform(android, { kind: "swipe", from: { x: 1, y: 2 }, to: { x: 3, y: 4 } });
+
+  const names = ["open", "snapshot", "click", "fill", "scroll", "swipe"];
+  for (const call of names) {
+    const entry = calls.find(item => item.call === call)!;
+    assert.ok(entry, call);
+    assert.equal(entry.platform, "android", call);
+    assert.equal(entry.serial, "emulator-5554", call);
+    assert.equal(entry.udid, undefined, call);
+  }
+  assert.equal(calls.find(item => item.call === "open")!.relaunch, false);
+});
+
+test("the same id on another platform is not a cached attach", async () => {
+  const calls: Record<string, unknown>[] = [];
+  const devices = new TestingDevices(fakeAgentDevice(calls, () => ({ nodes: [] })) as never);
+  (devices as unknown as { projections: Map<string, unknown> }).projections.set("/project", Promise.resolve(projection));
+
+  await devices.read(target);
+  await devices.read({ ...target, platform: "android" });
+
+  assert.equal(calls.filter(entry => entry.call === "open").length, 2);
 });

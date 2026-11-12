@@ -3,7 +3,9 @@ import type { DeviceAppsStore } from "./device-apps.ts";
 import { captureUiError, countUiEvent, getUiTelemetryAttributes, recordUiTiming } from "./telemetry.ts";
 import { testRecorder } from "./test-recorder.ts";
 import type { RecorderTreeSource } from "./test-recorder.ts";
+import { isRecordableDevice, recordablePlatform } from "@mobile-dev/shared/panel-target.ts";
 import type { ScreenComponent } from "@mobile-dev/shared/screen-annotations.ts";
+import { screenSize } from "@mobile-dev/shared/screen-annotations.ts";
 import { testFileSlug } from "@mobile-dev/shared/test-recording.ts";
 import type { RecordedStep } from "@mobile-dev/shared/test-recording.ts";
 import type { TestDraftSummary } from "@mobile-dev/shared/test-drafts.ts";
@@ -223,10 +225,14 @@ export class TestingPanel {
 
   private treeSource(projectPath: string, bundleId: string): RecorderTreeSource {
     return {
-      read: async udid => {
-        const result = await this.call("mobile_testing_read_tree", { udid, projectPath, bundleId }, 20000);
-        const tree = object(result.structuredContent)?.tree;
-        return Array.isArray(tree) ? tree as ScreenComponent[] : [];
+      read: async (deviceId, platform) => {
+        const result = await this.call("mobile_testing_read_tree", { deviceId, platform, projectPath, bundleId }, 20000);
+        const content = object(result.structuredContent);
+        const tree = content?.tree;
+        // The screen the runner measured against. Android's is device pixels and the mirror's is
+        // the stream's own size, so the mirror cannot place these rectangles without it.
+        const screen = screenSize(content?.screen);
+        return { tree: Array.isArray(tree) ? tree as ScreenComponent[] : [], ...(screen ? { screen } : {}) };
       },
       // Fire and forget: giving the device back must never hold up stopping a recording, and a
       // release that fails leaves the session for the next `read` to take over.
@@ -263,11 +269,25 @@ export class TestingPanel {
     return targets.find(entry => entry.name === targetName) ?? targets[0];
   }
 
+  /**
+   * Why the selected target cannot be recorded against the mirrored device, or "". A flow recorded
+   * on one platform and run on another is a test nobody can reproduce, so it is refused here
+   * rather than discovered when the run fails.
+   */
+  get targetMismatch(): string {
+    const device = this.deviceApps.getSnapshot().device;
+    const target = this.target;
+    if (!device || !target?.platform) return "";
+    const mirrored = recordablePlatform(device);
+    if (target.platform === mirrored) return "";
+    return `Target "${target.name}" is ${target.platform}, but the mirror shows ${mirrored === "ios" ? "an iOS" : "an Android"} device. Choose ${mirrored === "ios" ? "an iOS" : "an Android"} target.`;
+  }
+
   /** Whether a launch is possible: a bundle id to launch and a booted device to launch it on. */
   get canLaunch(): boolean {
     const device = this.deviceApps.getSnapshot().device;
     const booted = device?.state === "Booted" || device?.state === "connected";
-    return Boolean(this.snapshot.available && this.target?.bundleId && booted && !this.snapshot.launching);
+    return Boolean(this.snapshot.available && this.target?.bundleId && booted && !this.targetMismatch && !this.snapshot.launching);
   }
 
   /** Reads the server's project list, so a pick survives the panel document. */
@@ -372,9 +392,10 @@ export class TestingPanel {
           ...(text(entry.platform) ? { platform: text(entry.platform) } : {}),
           ...(text(entry.bundleId) ? { bundleId: text(entry.bundleId) } : {}),
         }));
-      // iOS first: it is the only platform the recorder handles, so it is the useful default even
-      // in a config that declares a web target ahead of it.
-      const preferred = targets.find(entry => entry.platform === "ios") ?? targets[0];
+      // The target on the mirrored device's platform, so a project with both records against the
+      // right one without being asked; else the first, which `targetMismatch` then reports on.
+      const device = this.deviceApps.getSnapshot().device;
+      const preferred = (device ? targets.find(entry => entry.platform === recordablePlatform(device)) : undefined) ?? targets[0];
       this.update({ targets, targetName: preferred?.name ?? "", configPath: text(data.configPath) });
     } catch (error) {
       if (revision === this.loadRevision) this.update({ error: error instanceof Error ? error.message : String(error) });
@@ -402,7 +423,7 @@ export class TestingPanel {
     const startedAt = performance.now(), telemetryContext = getUiTelemetryAttributes();
     try {
       await this.call("mobile_launch_app", {
-        platform: device.platform ?? "ios",
+        platform: recordablePlatform(device),
         deviceId: device.udid,
         bundleId,
       }, 120_000);
@@ -529,7 +550,7 @@ export class TestingPanel {
         const response = await this.call("mobile_testing_draft_save", {
           ...(replacing ? { id: replacing } : {}),
           projectPath, title: recorder.title, fileName: this.snapshot.fileName,
-          origin: recorder.agentUdid ? "agent" : "user",
+          origin: recorder.agentDeviceId ? "agent" : "user",
           steps: recorder.steps,
         }, 15_000);
         const id = text(object(response.structuredContent)?.id);
@@ -741,14 +762,16 @@ export class TestingPanel {
     const projectPath = this.snapshot.projectPath;
     const bundleId = this.target?.bundleId ?? "";
     const device = this.deviceApps.getSnapshot().device;
-    const booted = device?.state === "Booted" || device?.state === "connected";
-    // Only an iOS simulator can be recorded against; anything else is reported as no device.
-    const udid = booted && device && (device.platform ?? "ios") === "ios" && device.kind !== "physical" ? device.udid : "";
-    const key = `${projectPath}\u0000${udid}\u0000${bundleId}`;
+    // Only a booted iOS simulator or Android emulator can be recorded against; anything else is
+    // reported as no device.
+    const recordable = device !== undefined && isRecordableDevice(device);
+    const deviceId = recordable ? device.udid : "";
+    const platform = recordable ? recordablePlatform(device) : undefined;
+    const key = `${projectPath}\u0000${platform ?? ""}\u0000${deviceId}\u0000${bundleId}`;
     if (key === this.reportedContext) return;
     this.reportedContext = key;
     try {
-      await this.call("mobile_testing_set_context", { projectPath, udid, bundleId }, 10_000);
+      await this.call("mobile_testing_set_context", { projectPath, deviceId, ...(platform ? { platform } : {}), bundleId }, 10_000);
     } catch {
       // The next change reports again; a selection the server missed only means an agent is told
       // to ask the user, which is the refusal it would have given anyway.
@@ -802,8 +825,8 @@ export class TestingPanel {
       // A session already in flight when the panel opened is adopted too: the agent may have
       // started before the user's host drew this document.
       if (!unchanged || !wasActive) {
-        const udid = this.deviceApps.getSnapshot().device?.udid ?? "";
-        testRecorder.adoptAgentRecording(udid, steps, agent.title);
+        const device = this.deviceApps.getSnapshot().device;
+        if (device) testRecorder.adoptAgentRecording(device.udid, recordablePlatform(device), steps, agent.title);
       }
       if (!wasActive) this.onAgentRecording?.();
       return;
@@ -812,7 +835,8 @@ export class TestingPanel {
     // an ordinary unsaved recording: the banner clears and the mirror is the user's again.
     if (wasActive) {
       if (steps.length !== testRecorder.getSnapshot().steps.length) {
-        testRecorder.adoptAgentRecording(this.deviceApps.getSnapshot().device?.udid ?? "", steps, agent.title);
+        const device = this.deviceApps.getSnapshot().device;
+        if (device) testRecorder.adoptAgentRecording(device.udid, recordablePlatform(device), steps, agent.title);
       }
       testRecorder.endAgentRecording(status === "aborted" ? "aborted" : "finished");
       // The server kept the finished flow, so the panel adopts that draft rather than autosaving
@@ -902,6 +926,7 @@ export class TestingPanel {
       const response = await this.call("mobile_testing_run_test", {
         projectPath: this.snapshot.projectPath, relativePath,
         ...(this.snapshot.configPath ? { configPath: this.snapshot.configPath } : {}),
+        ...(this.snapshot.targetName ? { target: this.snapshot.targetName } : {}),
         ...(until ? { untilSource: until.source } : {}),
       }, 15 * 60_000);
       const data = object(response.structuredContent) ?? {};

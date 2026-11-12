@@ -20,7 +20,7 @@ import { encodeScreenshotAttachment } from "./screenshot-attachment.ts";
 import { getScreenAnnotations } from "./screen-annotations.ts";
 import { testRecorder } from "./test-recorder.ts";
 import type { ScreenAnnotation } from "@mobile-dev/shared/screen-annotations.ts";
-import { accessibilityScreen, screenComponents, screenSize } from "@mobile-dev/shared/screen-annotations.ts";
+import { accessibilityScreen, scaledComponents, screenComponents, screenSize } from "@mobile-dev/shared/screen-annotations.ts";
 import { AndroidVideo } from "./android-video.ts";
 import { PhysicalIosVideo } from "./ios-mirror-video.ts";
 import { iosVideoBatchSchema } from "@mobile-dev/shared/ios-video.ts";
@@ -33,6 +33,7 @@ import type { StreamMessage } from "./stream-input.ts";
 import { IosVideo } from "./ios-video.ts";
 import type { AndroidVideoBatch } from "./android-video.ts";
 import type { HostBridge } from "./host-bridge.ts";
+import { isRecordableDevice, recordablePlatform } from "@mobile-dev/shared/panel-target.ts";
 import type { PanelTarget } from "@mobile-dev/shared/panel-target.ts";
 import { initialPanelDevice } from "./device-layout.ts";
 
@@ -143,7 +144,7 @@ export function createSimulatorPanel(
     if (!ready || !stream || inputBlocked) return;
     // Every input can change the screen, so a tree read before it no longer describes what the
     // next tap lands on. Typing and the hardware buttons go through here too, not just touches.
-    if (testRecorder.isRecording(selected?.udid)) testRecorder.invalidate();
+    if (isRecordingSelected()) testRecorder.invalidate();
     stream.input?.send(message);
   }
 
@@ -287,10 +288,17 @@ export function createSimulatorPanel(
    * the inspection path the annotation overlay uses, but the e2e runner's own element tree, so a
    * recorded selector resolves to the same element when the test runs. The Testing panel installs
    * that source — it knows the project and the target — and this supplies the device and the
-   * screen. Only iOS simulators are wired up; a physical device has no tree here at all.
+   * screen. Only iOS simulators and Android emulators are wired up; a physical device has no tree here at all.
    */
   const recorderReader = {
-    readComponents: async () => selected ? testRecorder.readTree(selected.udid) : [],
+    readComponents: async () => {
+      if (!selected) return [];
+      const { tree, screen } = await testRecorder.readTree(selected.udid, recordablePlatform(selected));
+      // `screen` is the space the runner measured in; `points` is the space the mirror maps
+      // pointer events into. They agree on an iOS simulator and do not on Android, where scrcpy
+      // caps the stream's longest edge while the tree stays in device pixels.
+      return screen ? scaledComponents(tree, screen, points) : tree;
+    },
     screen: () => points,
     release: () => testRecorder.releaseTree(),
     // Taking the step the menu recorded. `tap` and `type` are the panel's own input messages, so
@@ -315,10 +323,12 @@ export function createSimulatorPanel(
       else if (action.text) send({ type: "type", text: action.text });
     },
   };
+  function isRecordingSelected() {
+    return selected ? testRecorder.isRecording(selected.udid, recordablePlatform(selected)) : false;
+  }
   function syncRecorder() {
-    const recordable = platform === "ios" && selected?.kind !== "physical" && selected?.state === "Booted";
-    if (recordable && selected) testRecorder.attach(selected.udid, recorderReader);
-    else if (selected) testRecorder.detach(selected.udid);
+    if (selected && isRecordableDevice(selected)) testRecorder.attach(selected.udid, recordablePlatform(selected), recorderReader);
+    else if (selected) testRecorder.detach(selected.udid, recordablePlatform(selected));
   }
 
   const stopObservingAnnotations = annotations.subscribe(() => {
@@ -956,7 +966,7 @@ export function createSimulatorPanel(
     // While recording, the pointer previews what it would record. Not during a drag: the touch is
     // already going to the device, and the screen under it is no longer the one that was read.
     if (testRecorder.isAgentRecording(selected?.udid)) return;
-    if (testRecorder.isRecording(selected?.udid) && !pointer) { void testRecorder.hover(mappedPoint(event)); return; }
+    if (isRecordingSelected() && !pointer) { void testRecorder.hover(mappedPoint(event)); return; }
     if (!pointer || pointer.id !== event.pointerId) return;
     Object.assign(pointer, mappedPoint(event));
     send({ type: "touch1-move", x: pointer.x, y: pointer.y, ...points, ...(pointer.edge ? { edge: pointer.edge } : {}) });
@@ -974,7 +984,7 @@ export function createSimulatorPanel(
     testRecorder.closeMenu();
   }, { capture: true });
   canvas.addEventListener("contextmenu", event => {
-    if (!testRecorder.isRecording(selected?.udid) || annotations.getSnapshot().selecting) return;
+    if (!isRecordingSelected() || annotations.getSnapshot().selecting) return;
     event.preventDefault();
     // The element menu records a step and takes it, which is exactly the second driver the lock
     // exists to stop. The browser's own menu is still suppressed, so the lock is not a regression
@@ -989,7 +999,7 @@ export function createSimulatorPanel(
   let wheelTravel = 0;
   const WHEEL_STEP = 60;
   canvas.addEventListener("wheel", event => {
-    if (!testRecorder.isRecording(selected?.udid) || annotations.getSnapshot().selecting) return;
+    if (!isRecordingSelected() || annotations.getSnapshot().selecting) return;
     event.preventDefault();
     if (testRecorder.isAgentRecording(selected?.udid)) return;
     if (wheelTravel !== 0 && Math.sign(event.deltaY) !== Math.sign(wheelTravel)) wheelTravel = 0;

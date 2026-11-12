@@ -42,8 +42,8 @@ function host(responses: Record<string, unknown>, calls: { name: string; argumen
 }
 
 async function recordOneStep(panel: TestingPanel) {
-  testRecorder.attach(UDID, { readComponents: async () => [tab], screen: () => ({ width: 402, height: 874 }) });
-  testRecorder.start(UDID);
+  testRecorder.attach(UDID, "ios", { readComponents: async () => [tab], screen: () => ({ width: 402, height: 874 }) });
+  testRecorder.start(UDID, "ios");
   // A left click records nothing now; a step comes from the element menu.
   await testRecorder.openMenu({ x: 50, y: 820 });
   await testRecorder.chooseOffer("tap");
@@ -61,13 +61,13 @@ test("a saved recording stops recording, so the next tap is not an unsaved step"
   await panel.saveTest();
 
   assert.deepEqual(flow(calls), ["mobile_testing_write_file"]);
-  assert.equal(testRecorder.getSnapshot().recordingUdid, "", "recording must end with the file it produced");
+  assert.equal(testRecorder.getSnapshot().recordingDeviceId, "", "recording must end with the file it produced");
   assert.equal(panel.getSnapshot().savedPath, `${PROJECT}/tests/flow.e2e.ts`);
   assert.equal(panel.dirty, false);
   // The steps stay, so the user can add to the flow and save again — they just are not armed.
   assert.equal(testRecorder.getSnapshot().steps.length, 1);
   testRecorder.clearSteps();
-  testRecorder.detach(UDID);
+  testRecorder.detach(UDID, "ios");
   panel.dispose();
 });
 
@@ -81,10 +81,10 @@ test("a save blocked by an existing file leaves the recording running", async ()
   await panel.saveTest();
 
   assert.equal(panel.getSnapshot().overwritePath, `${PROJECT}/tests/flow.e2e.ts`);
-  assert.equal(testRecorder.getSnapshot().recordingUdid, UDID, "nothing was written, so nothing is finished");
+  assert.equal(testRecorder.getSnapshot().recordingDeviceId, UDID, "nothing was written, so nothing is finished");
   testRecorder.stop();
   testRecorder.clearSteps();
-  testRecorder.detach(UDID);
+  testRecorder.detach(UDID, "ios");
   panel.dispose();
 });
 
@@ -104,7 +104,7 @@ test("Run saves, hands the device back, and only then runs", async () => {
   // so a run spawned while it is held fails with "Device is already in use".
   assert.deepEqual(flow(calls),
     ["mobile_testing_write_file", "mobile_testing_release_device", "mobile_testing_run_test"]);
-  assert.equal(testRecorder.getSnapshot().recordingUdid, "", "a recording left armed would take the session straight back");
+  assert.equal(testRecorder.getSnapshot().recordingDeviceId, "", "a recording left armed would take the session straight back");
   assert.deepEqual(calls.findLast(call => call.name === "mobile_testing_run_test")?.arguments,
     { projectPath: PROJECT, relativePath: "tests/flow.e2e.ts" });
   assert.equal(panel.getSnapshot().running, false);
@@ -112,7 +112,7 @@ test("Run saves, hands the device back, and only then runs", async () => {
   assert.deepEqual(testRecorder.getSnapshot().run?.lines, { 8: "passed" });
   testRecorder.clearRun();
   testRecorder.clearSteps();
-  testRecorder.detach(UDID);
+  testRecorder.detach(UDID, "ios");
   panel.dispose();
 });
 
@@ -154,7 +154,7 @@ test("Play until here runs the flow cut short, and never writes the test", async
   assert.equal(testRecorder.getSnapshot().run?.untilLine, 6);
   testRecorder.clearRun();
   testRecorder.clearSteps();
-  testRecorder.detach(UDID);
+  testRecorder.detach(UDID, "ios");
   panel.dispose();
 });
 
@@ -184,7 +184,7 @@ test("Run never replaces a file without being asked, and resumes from the answer
     ["mobile_testing_write_file", "mobile_testing_write_file", "mobile_testing_release_device", "mobile_testing_run_test"]);
   testRecorder.clearRun();
   testRecorder.clearSteps();
-  testRecorder.detach(UDID);
+  testRecorder.detach(UDID, "ios");
   panel.dispose();
 });
 
@@ -207,6 +207,17 @@ test("a failing run keeps its mark on the line the report blames", async () => {
   assert.equal(run?.stale, undefined, "the result is about the file as it was just emitted");
   testRecorder.clearRun();
   testRecorder.clearSteps();
-  testRecorder.detach(UDID);
+  testRecorder.detach(UDID, "ios");
   panel.dispose();
+});
+
+test("a booted Android emulator is recordable and a target of the wrong platform is reported", () => {
+  const emulator = { udid: "emulator-5554", name: "Pixel", state: "Booted", runtime: "", platform: "android", kind: "emulator" };
+  const store = { subscribe: () => () => undefined, getSnapshot: () => ({ device: emulator }) } as unknown as DeviceAppsStore;
+  const panel = new TestingPanel(host({}, []), store);
+  const update = (panel as unknown as { update(fields: Record<string, unknown>): void }).update.bind(panel);
+  update({ targets: [{ name: "ios", platform: "ios", bundleId: "a" }, { name: "android", platform: "android", bundleId: "a" }], targetName: "ios" });
+  assert.match(panel.targetMismatch, /is ios, but the mirror shows an Android device/);
+  update({ targetName: "android" });
+  assert.equal(panel.targetMismatch, "");
 });

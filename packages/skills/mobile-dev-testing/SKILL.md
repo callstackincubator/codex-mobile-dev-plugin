@@ -1,12 +1,12 @@
 ---
 name: mobile-dev-testing
-description: Use when the user asks to record, write or capture an end-to-end test for a screen or a flow of their iOS app, with Mobile Dev's Testing panel. Drives the simulator through Mobile Dev's recorder one step at a time, pinning each step to a locator the e2e runner can resolve, and leaves the flow in the panel for the user to adjust, save and run. Skip when the user wants a test written straight into a file, or when there is no Mobile Dev panel.
+description: Use when the user asks to record, write or capture an end-to-end test for a screen or a flow of their iOS or Android app, with Mobile Dev's Testing panel. Drives the simulator or emulator through Mobile Dev's recorder one step at a time, pinning each step to a locator the e2e runner can resolve, and leaves the flow in the panel for the user to adjust, save and run. Skip when the user wants a test written straight into a file, or when there is no Mobile Dev panel.
 ---
 
 # Record an e2e test with Mobile Dev
 
 The user asks for a test for a screen — *"record the test for the important areas on the Explore
-Details screen"* — and you write it by driving their simulator, one step per tool call. The steps
+Details screen"* — and you write it by driving their simulator or emulator, one step per tool call. The steps
 appear in Mobile Dev's **Testing** tab as you record them, and when you stop, the flow is sitting
 there unsaved for the user to adjust.
 
@@ -16,7 +16,7 @@ to call.
 ## Before you start
 
 The recording goes against whatever the Testing panel already has selected: an **e2e project**, a
-**booted iOS simulator in the mirror**, and a **target with a bundle id** in that project's
+**booted iOS simulator or Android emulator in the mirror**, and a **target with a bundle id** in that project's
 `e2e.config.ts`. `mobile_testing_agent_begin` reads that selection and refuses, naming what is
 missing, when any of the three is unset.
 

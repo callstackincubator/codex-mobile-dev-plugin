@@ -79,9 +79,9 @@ export function recordProjectDialog(outcome: "chosen" | "cancelled" | "failed", 
  * of them — so it is the boundary worth measuring. The element count is a size, never content:
  * no names, no text and nothing the user's app put on screen is sent.
  */
-export function recordTestingAgentRead(outcome: "success" | "failed", duration: number, elements: number) {
+export function recordTestingAgentRead(outcome: "success" | "failed", duration: number, elements: number, platform: "ios" | "android") {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
-  const attributes = { component: "server", surface: "testing", outcome };
+  const attributes = { component: "server", surface: "testing", platform, outcome };
   Sentry.metrics.count("testing.agent.screen.samples", 1, { attributes });
   Sentry.metrics.distribution("testing.agent.screen.duration", Math.max(0, duration), { unit: "millisecond", attributes });
   if (outcome === "success") Sentry.metrics.gauge("testing.agent.screen.elements", elements, { attributes });

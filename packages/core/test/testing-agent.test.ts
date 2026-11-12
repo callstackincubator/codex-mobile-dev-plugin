@@ -7,9 +7,11 @@ import { TestDraftStore } from "../src/testing-drafts.ts";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { udidSchema } from "../../shared/src/protocol.ts";
+import { deviceIdSchema, isRecordableDevice } from "../../shared/src/panel-target.ts";
 
 const SCREEN = { width: 402, height: 874 };
-const CONTEXT = { projectPath: "/project", udid: "11111111-2222-3333-4444-555555555555", bundleId: "com.example.app" };
+const CONTEXT = { projectPath: "/project", deviceId: "11111111-2222-3333-4444-555555555555", platform: "ios" as const, bundleId: "com.example.app" };
 
 type Node = {
   nodeId: string; parentId?: string; role?: string; label?: string; text?: string; value?: string;
@@ -116,7 +118,7 @@ test("a step names the element by ref and is taken on the device", async () => {
   // The step is placed on the element's own agent-device ref, which is where the runner's locator
   // action will land — not on a coordinate computed from a rectangle.
   assert.deepEqual(actions.map(entry => entry.action), [{ kind: "tap", ref: "e-tab" }]);
-  assert.deepEqual(actions[0].target, { udid: CONTEXT.udid, projectPath: CONTEXT.projectPath, bundleId: CONTEXT.bundleId });
+  assert.deepEqual(actions[0].target, { deviceId: CONTEXT.deviceId, platform: "ios", projectPath: CONTEXT.projectPath, bundleId: CONTEXT.bundleId });
   const [step] = recordings.state().steps;
   assert.equal(step.label, 'Tap "Explore" (tab)');
 });
@@ -385,4 +387,20 @@ test("a recording with no steps keeps nothing", async () => {
   await recordings.finish({});
   assert.deepEqual(await drafts.list(CONTEXT.projectPath), []);
   assert.equal(recordings.state().draftId, "");
+});
+
+test("an adb serial is a valid device id where a uuid schema refuses it", () => {
+  assert.equal(udidSchema.safeParse("emulator-5554").success, false);
+  assert.equal(deviceIdSchema.safeParse("emulator-5554").success, true);
+  assert.equal(deviceIdSchema.safeParse(CONTEXT.deviceId).success, true);
+});
+
+test("only a booted simulator or emulator is recordable", () => {
+  const base = { udid: "x", name: "d", runtime: "" };
+  assert.equal(isRecordableDevice({ ...base, state: "Booted", platform: "ios", kind: "simulator" }), true);
+  assert.equal(isRecordableDevice({ ...base, udid: "emulator-5554", state: "Booted", platform: "android", kind: "emulator" }), true);
+  assert.equal(isRecordableDevice({ ...base, state: "Shutdown", platform: "android", kind: "emulator" }), false);
+  assert.equal(isRecordableDevice({ ...base, state: "connected", platform: "android", kind: "physical" } as never), false);
+  assert.equal(isRecordableDevice({ ...base, state: "connected", platform: "ios", kind: "physical" } as never), false);
+  assert.equal(isRecordableDevice(undefined), false);
 });

@@ -300,3 +300,11 @@ test("the run's own duration comes from the report, with the attempts as the fal
   // there if the gutter ever wants them.
   assert.equal(reportSteps(report([{ line: 8, status: "passed" }]), FILE)[0].durationMs, 12);
 });
+
+test("the selected target reaches the runner, so an Android recording does not run on iOS", async () => {
+  const root = await project();
+  const seen: { command?: string; args?: readonly string[]; cwd?: string } = {};
+  await runRecordedTest({ projectPath: root, relativePath: FILE, target: "android" },
+    { spawner: spawner(JSON.stringify(report([{ line: 8, status: "passed" }])), 0, seen) });
+  assert.deepEqual(seen.args, ["run", FILE, "--reporter", "json", "--target", "android"]);
+});

@@ -2,8 +2,9 @@
 
 Status: implemented. The five model tools, `mobile_testing_agent_state` and
 `mobile_testing_set_context` are in `packages/core/src/testing-agent.ts`; the panel polls, adopts
-and locks the mirror; the skill is `packages/skills/mobile-dev-testing`. Android, physical iOS,
-Maestro, saving and running are still out, as below.
+and locks the mirror; the skill is `packages/skills/mobile-dev-testing`. Android emulators are supported
+through the context's `deviceId` and `platform`; physical devices, Maestro, saving and running are
+still out, as below.
 
 The Testing panel records an e2e test from the user's own taps on the mirror
 ([docs/testing-panel.md](testing-panel.md)). This adds the other driver: the user tells their
@@ -24,7 +25,7 @@ runs it exactly as if they had tapped it themselves.
 | Running | No | There is no file to run, and a run resets the app and takes the device session |
 | Prerequisites | Refuse when no project or device is chosen | Project choice stays the user's explicit act, and an OS folder picker must not open inside an agent turn |
 
-Out of the first pass: Android, physical iOS, Maestro, saving, running, and any agent in the
+Out of the first pass: physical devices, Maestro, saving, running, and any agent in the
 server process.
 
 ## Why the server has to own the session

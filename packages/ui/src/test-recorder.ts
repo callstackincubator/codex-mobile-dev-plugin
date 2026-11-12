@@ -43,8 +43,17 @@ export type RecorderReader = {
  * target the recording is for; the simulator panel knows the device and the screen. The recorder
  * is the one object both already share, so it is where the two halves meet.
  */
+/** A device is the pair: an iOS UDID and an adb serial are different namespaces. */
+export type DevicePlatform = "ios" | "android";
+
 export type RecorderTreeSource = {
-  read: (udid: string) => Promise<ScreenComponent[]>;
+  /**
+   * The runner's tree, and the screen its rectangles are measured against.
+   *
+   * The screen is the runner's, not the mirror's: on Android the two differ, and the panel that
+   * owns the mirror converts between them. See `scaledComponents`.
+   */
+  read: (deviceId: string, platform: DevicePlatform) => Promise<{ tree: ScreenComponent[]; screen?: ScreenSize }>;
   release: () => void;
 };
 
@@ -97,17 +106,19 @@ export type TestRunView = {
 };
 
 export type TestRecorderSnapshot = {
-  /** The udid being recorded against, or "" when nothing is recording. */
-  recordingUdid: string;
+  /** The device being recorded against (UDID or adb serial), or "" when nothing is recording. */
+  recordingDeviceId: string;
+  /** Its platform, or "" when nothing is recording. */
+  recordingPlatform: DevicePlatform | "";
   /**
-   * The udid an *agent* is recording against, or "" when the user owns the flow.
+   * The device an *agent* is recording against, or "" when the user owns the flow.
    *
    * The steps, the preview, the emitter and Save are the same ones either way — this is
    * deliberately not a second state machine — so the only thing this answers is who is driving.
    * The mirror's input is locked while it is set, because the agent and the user must not both be
    * acting on one screen, and the panel draws its banner from it.
    */
-  agentUdid: string;
+  agentDeviceId: string;
   steps: RecordedStep[];
   title: string;
   /** Bumped by every change to what would be written, so the panel can tell saved from dirty. */
@@ -249,7 +260,7 @@ export class TestRecorder {
   /** That element's rectangle, which is the box a scoped swipe is drawn inside. */
   private lastBounds?: ScreenBounds;
   private snapshot: TestRecorderSnapshot = {
-    recordingUdid: "", agentUdid: "", steps: [], title: DEFAULT_TITLE, revision: 0, flowId: newFlowId(), resolving: false, preparing: false, error: "",
+    recordingDeviceId: "", recordingPlatform: "", agentDeviceId: "", steps: [], title: DEFAULT_TITLE, revision: 0, flowId: newFlowId(), resolving: false, preparing: false, error: "",
   };
 
   private fadeTimer?: ReturnType<typeof setTimeout>;
@@ -268,8 +279,8 @@ export class TestRecorder {
   }
 
   /** What a panel's `readComponents` forwards to. Without a source there is nothing to record from. */
-  readTree(udid: string): Promise<ScreenComponent[]> {
-    return this.treeSource ? this.treeSource.read(udid) : Promise.resolve([]);
+  readTree(deviceId: string, platform: DevicePlatform): Promise<{ tree: ScreenComponent[]; screen?: ScreenSize }> {
+    return this.treeSource ? this.treeSource.read(deviceId, platform) : Promise.resolve({ tree: [] });
   }
 
   releaseTree() { this.treeSource?.release(); }
@@ -291,8 +302,8 @@ export class TestRecorder {
   }
 
   /** The simulator panel hands the recorder its way of reading the device it shows. */
-  attach(udid: string, reader: RecorderReader) {
-    if (this.snapshot.recordingUdid && this.snapshot.recordingUdid !== udid) return;
+  attach(deviceId: string, platform: DevicePlatform, reader: RecorderReader) {
+    if (this.snapshot.recordingDeviceId && !this.isRecordingDevice(deviceId, platform)) return;
     // The panel re-attaches whenever it refreshes its device list, which is every few seconds.
     // Invalidating on each of those threw the cached tree away — and with it, through
     // `clearHover`, the outline and any open element menu, about a second after they appeared.
@@ -305,19 +316,23 @@ export class TestRecorder {
   }
 
   /** The panel's device went away, so nothing can be recorded from it any more. */
-  detach(udid: string) {
-    if (this.snapshot.recordingUdid && this.snapshot.recordingUdid !== udid) return;
+  detach(deviceId: string, platform: DevicePlatform) {
+    if (this.snapshot.recordingDeviceId && !this.isRecordingDevice(deviceId, platform)) return;
     const reader = this.reader;
     this.reader = undefined;
     this.invalidate();
     // `stop` releases through the reader, which is why the reader outlives this assignment until
     // after it; with nothing recording there is still a session to give back.
-    if (this.snapshot.recordingUdid) { this.reader = reader; this.stop(); this.reader = undefined; }
+    if (this.snapshot.recordingDeviceId) { this.reader = reader; this.stop(); this.reader = undefined; }
     else reader?.release?.();
   }
 
-  isRecording(udid?: string) {
-    return Boolean(udid) && this.snapshot.recordingUdid === udid;
+  private isRecordingDevice(deviceId: string, platform: DevicePlatform) {
+    return this.snapshot.recordingDeviceId === deviceId && this.snapshot.recordingPlatform === platform;
+  }
+
+  isRecording(deviceId?: string, platform?: DevicePlatform) {
+    return Boolean(deviceId) && platform !== undefined && this.isRecordingDevice(deviceId!, platform);
   }
 
   /**
@@ -326,24 +341,24 @@ export class TestRecorder {
    * Two drivers on one screen is solved by locking, not by hoping: a tap the user lands between
    * the agent's read and its step resolves the step against a screen that has already moved.
    */
-  isAgentRecording(udid?: string) {
-    return this.snapshot.agentUdid !== "" && (udid === undefined || this.snapshot.agentUdid === udid);
+  isAgentRecording(deviceId?: string) {
+    return this.snapshot.agentDeviceId !== "" && (deviceId === undefined || this.snapshot.agentDeviceId === deviceId);
   }
 
   /**
    * Takes the steps of an agent recording the server holds, as they arrive.
    *
-   * `recordingUdid` is set for the agent's device, so the step list, the preview, editing,
+   * `recordingDeviceId` is set for the agent's device, so the step list, the preview, editing,
    * duplication and Save all work exactly as they do for a recording the user tapped out: an
    * agent-recorded flow is an ordinary unsaved recording that happened to be written by something
    * else. The steps replace rather than append — the server holds the whole flow, and reconciling
    * two lists would be a second source of truth.
    */
-  adoptAgentRecording(udid: string, steps: readonly RecordedStep[], title?: string) {
-    if (!udid) return;
+  adoptAgentRecording(deviceId: string, platform: DevicePlatform, steps: readonly RecordedStep[], title?: string) {
+    if (!deviceId) return;
     const startedAt = performance.now();
     const added = Math.max(0, steps.length - this.snapshot.steps.length);
-    const began = this.snapshot.agentUdid !== udid;
+    const began = this.snapshot.agentDeviceId !== deviceId;
     if (began) {
       this.clearHover();
       this.clearRun();
@@ -353,7 +368,7 @@ export class TestRecorder {
       && steps.every((step, index) => step.id === this.snapshot.steps[index]?.id);
     if (!began && sameSteps && (title === undefined || title === this.snapshot.title)) return;
     this.update({
-      agentUdid: udid, recordingUdid: udid, error: "", menu: undefined,
+      agentDeviceId: deviceId, recordingDeviceId: deviceId, recordingPlatform: platform, error: "", menu: undefined,
       steps: [...steps],
       ...(began ? { flowId: newFlowId() } : {}),
       ...(title ? { title } : {}),
@@ -371,8 +386,8 @@ export class TestRecorder {
    * recorded, and leaving the session open is the leak `TestingDevices.release` exists to stop.
    */
   endAgentRecording(reason: "finished" | "aborted") {
-    if (!this.snapshot.agentUdid) return;
-    this.update({ agentUdid: "" });
+    if (!this.snapshot.agentDeviceId) return;
+    this.update({ agentDeviceId: "" });
     this.stop();
     if (reason === "aborted") countUiEvent("ui.testing.agent_session_abort");
   }
@@ -384,8 +399,8 @@ export class TestRecorder {
    * to the file just written — the saved steps are still on screen, and a tap landing on the end
    * of a finished test is never what was meant.
    */
-  start(udid: string, keepSteps = false) {
-    if (!udid || !this.reader || this.snapshot.agentUdid) return;
+  start(deviceId: string, platform: DevicePlatform, keepSteps = false) {
+    if (!deviceId || !this.reader || this.snapshot.agentDeviceId) return;
     const had = this.snapshot.steps.length > 0;
     this.invalidate();
     this.clearHover();
@@ -396,13 +411,13 @@ export class TestRecorder {
     // A flow that is not being resumed is a different recording, however much of the old one is
     // still on screen a moment before. Anything holding on to the last flow — the panel's kept
     // draft above all — has to be told, or the next thing written lands on the wrong one.
-    this.update({ recordingUdid: udid, error: "", menu: undefined, preparing: true, ...(keepSteps ? {} : { steps: [], flowId: newFlowId() }) });
+    this.update({ recordingDeviceId: deviceId, recordingPlatform: platform, error: "", menu: undefined, preparing: true, ...(keepSteps ? {} : { steps: [], flowId: newFlowId() }) });
     countUiEvent("ui.testing.record_start");
     // The first tree read is what makes an element selectable, and it is the slow part: the
     // session attaches to the app and the tree is projected before anything can be named. Warming
     // it here rather than on the first hover means the wait happens once, while the overlay is
     // saying so, instead of silently under the user's first few clicks.
-    void this.prepare(udid);
+    void this.prepare(deviceId, platform);
     // Which way the user answered, counted only where there was a question to answer. It says
     // whether the choice is carrying its weight; nothing about the flow itself is sent.
     if (had) countUiEvent(keepSteps ? "ui.testing.record_resume" : "ui.testing.record_new");
@@ -416,23 +431,23 @@ export class TestRecorder {
    * recording. A read that fails leaves `preparing` false — the overlay must never outlive the
    * thing it is explaining — and the next hover retries as it always did.
    */
-  private async prepare(udid: string): Promise<void> {
+  private async prepare(deviceId: string, platform: DevicePlatform): Promise<void> {
     const startedAt = performance.now();
     try {
       await this.currentComponents();
     } catch {
       // Silent: a failed warm read is not an error the user asked for. The first hover says so.
     } finally {
-      recordUiTiming("ui.testing.record_prepare", performance.now() - startedAt);
+      recordUiTiming("ui.testing.record_prepare", performance.now() - startedAt, platform);
       // Only the recording this prepared for: Stop, or a second Record, owns the flag after that.
-      if (this.snapshot.preparing && this.snapshot.recordingUdid === udid) this.update({ preparing: false });
+      if (this.snapshot.preparing && this.isRecordingDevice(deviceId, platform)) this.update({ preparing: false });
     }
   }
 
   stop() {
-    if (!this.snapshot.recordingUdid) return;
+    if (!this.snapshot.recordingDeviceId) return;
     this.clearHover();
-    this.update({ recordingUdid: "", agentUdid: "", resolving: false, preparing: false, menu: undefined });
+    this.update({ recordingDeviceId: "", recordingPlatform: "", agentDeviceId: "", resolving: false, preparing: false, menu: undefined });
     // The steps stay; the device does not. See `RecorderReader.release`.
     this.reader?.release?.();
     countUiEvent("ui.testing.record_stop");
@@ -452,13 +467,13 @@ export class TestRecorder {
     // waiting on — a browser sends a pointermove after the right-click, and a hover landing in that
     // window would invalidate the menu's own token and silently drop it.
     if (this.snapshot.menu || this.menuOpening) return;
-    if (!this.snapshot.recordingUdid || !point) { this.clearHover(); return; }
+    if (!this.snapshot.recordingDeviceId || !point) { this.clearHover(); return; }
     const token = ++this.hoverToken;
     let components: ScreenComponent[];
     try { components = await this.currentComponents(); }
     catch { return; }
     // The pointer moved on, or recording stopped, while the tree was being read.
-    if (token !== this.hoverToken || !this.snapshot.recordingUdid) return;
+    if (token !== this.hoverToken || !this.snapshot.recordingDeviceId) return;
     this.hoverPoint = point;
     // Walking out is anchored to one element: pointing at a different one starts again from it.
     const innermost = hitLadder(components, point, this.reader?.screen())[0]?.nodeId;
@@ -472,7 +487,7 @@ export class TestRecorder {
    * It re-resolves from the cached tree, so it costs nothing and stays in step with the tap.
    */
   walkHover(outwards: boolean) {
-    if (!this.snapshot.recordingUdid || !this.hoverPoint) return;
+    if (!this.snapshot.recordingDeviceId || !this.hoverPoint) return;
     const next = this.hoverLevel + (outwards ? 1 : -1);
     const levels = this.snapshot.hover?.levels ?? 1;
     if (next < 0 || next > levels - 1) return;
@@ -525,11 +540,11 @@ export class TestRecorder {
    * it — and any run marks go, because they were a verdict on whatever was in the list before.
    */
   restore(steps: readonly RecordedStep[], title?: string) {
-    if (this.snapshot.agentUdid) return;
+    if (this.snapshot.agentDeviceId) return;
     this.clearHover();
     this.clearRun();
     this.update({
-      recordingUdid: "", resolving: false, preparing: false, error: "", menu: undefined,
+      recordingDeviceId: "", recordingPlatform: "", resolving: false, preparing: false, error: "", menu: undefined,
       steps: [...steps], flowId: newFlowId(), ...(title ? { title } : {}),
     });
     countUiEvent("ui.testing.draft_restore");
@@ -627,7 +642,7 @@ export class TestRecorder {
         this.componentsReadAt = performance.now();
         return components;
       } finally {
-        recordUiTiming("ui.testing.tree_read", performance.now() - startedAt);
+        recordUiTiming("ui.testing.tree_read", performance.now() - startedAt, this.snapshot.recordingPlatform || undefined);
         this.pending = undefined;
       }
     })();
@@ -689,7 +704,7 @@ export class TestRecorder {
    * the wheel — rather than whatever happens to be innermost under the pointer.
    */
   async openMenu(point: ScreenPoint) {
-    if (!this.snapshot.recordingUdid) return;
+    if (!this.snapshot.recordingDeviceId) return;
     const token = ++this.menuToken;
     let components: ScreenComponent[];
     this.menuOpening = true;
@@ -697,7 +712,7 @@ export class TestRecorder {
     try { components = await this.currentComponents(); }
     catch (error) { this.update({ error: error instanceof Error ? error.message : String(error) }); return; }
     finally { this.menuOpening = false; this.update({ resolving: false }); }
-    if (token !== this.menuToken || !this.snapshot.recordingUdid) return;
+    if (token !== this.menuToken || !this.snapshot.recordingDeviceId) return;
     // The menu owns the outline from here, so a hover still in flight cannot move it.
     this.hoverToken++;
     if (treeHealth(components) === "no-accessibility") { this.update({ error: NO_TREE }); return; }
@@ -751,7 +766,7 @@ export class TestRecorder {
     | { kind: "agentAssert" | "agentWaitFor"; instruction: string; vision?: VisionMode }) {
     const instruction = chosen.instruction.trim();
     this.update({ menu: undefined });
-    if (!instruction || !this.snapshot.recordingUdid) return;
+    if (!instruction || !this.snapshot.recordingDeviceId) return;
     const kind: AgentStepKind = chosen.kind;
     // The optional halves — `params` on an act, `vision` on an assert — are carried exactly as the
     // form left them, and the form leaves a default off rather than writing it out: no params from
@@ -773,7 +788,7 @@ export class TestRecorder {
   async chooseOffer(kind: PinnedStepKind, value?: string) {
     const point = this.menuPoint;
     this.update({ menu: undefined });
-    if (!point || !this.snapshot.recordingUdid) return;
+    if (!point || !this.snapshot.recordingDeviceId) return;
     this.update({ resolving: true });
     try {
       const components = await this.currentComponents();

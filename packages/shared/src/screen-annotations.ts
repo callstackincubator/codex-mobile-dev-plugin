@@ -68,6 +68,31 @@ export function accessibilityScreen(tree: unknown): ScreenSize | undefined {
   if (frame?.x === 0 && frame.y === 0 && /^(AX)?Application$/i.test(String(root?.role ?? ""))) return screenSize(frame);
 }
 
+/**
+ * The same components, in another screen's coordinate space.
+ *
+ * The recorder's tree and the mirror do not always measure in the same unit. An iOS simulator
+ * reports both in points, so nothing happens here. Android reports element bounds in device
+ * pixels while scrcpy caps the stream's longest edge — a 1280x2856 emulator arrives as 574x1280 —
+ * so every rectangle is more than twice the size of the picture the user is pointing at, and a
+ * hit test finds only the full-screen groups. One boundary converts; the hit ladder, the outline
+ * and the tap that follows all stay in the mirror's own space.
+ */
+export function scaledComponents(tree: readonly ScreenComponent[], from: ScreenSize, to: ScreenSize): ScreenComponent[] {
+  if (!(from.width > 0) || !(from.height > 0) || !(to.width > 0) || !(to.height > 0)) return [...tree];
+  const scaleX = to.width / from.width, scaleY = to.height / from.height;
+  // An exact match is every iOS read and a native-resolution Android stream; copying 10,000
+  // rectangles to multiply them by one is work with nothing to show for it.
+  if (Math.abs(scaleX - 1) < 1e-6 && Math.abs(scaleY - 1) < 1e-6) return [...tree];
+  return tree.map(component => ({
+    ...component,
+    bounds: {
+      x: component.bounds.x * scaleX, y: component.bounds.y * scaleY,
+      width: component.bounds.width * scaleX, height: component.bounds.height * scaleY,
+    },
+  }));
+}
+
 // Accept backend trees and normalized, flat MCP snapshots with explicit parents.
 export function screenComponents(tree: unknown, scale = 1): ScreenComponent[] {
   const components: ScreenComponent[] = [];

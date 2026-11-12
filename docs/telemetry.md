@@ -624,6 +624,12 @@ while this one answers "how long is Record unusable for" — the number the over
 of. A read that fails still records the timing, because the wait happened; it carries no selector,
 element name, bundle id or project path.
 
+The Testing panel records on Android emulators as well as iOS simulators, so `ui.testing.tree_read`,
+`ui.testing.record_prepare` and the `testing.agent.screen.*` metrics now carry a `platform`
+attribute (`ios` or `android`; two values, no device ids). One series hid that waiting on an
+emulator is a different number from waiting on a simulator. Names, units and boundaries are
+unchanged, and no span or per-frame event was added.
+
 Since 0.1.99, `ui.logs.foreground_change` counts automatic app-filter changes applied while Logs is active, including selected-device and process-lifetime changes. From 0.1.103, these changes update the visible query and local process identity mapping instead of restarting a scoped collector. `ui.logs.app_identity` measures batch insertion with native PID-to-app joins and discovery updates in milliseconds, using bounded aggregate windows. Hidden or closed log views defer row processing until reopened. Shared `ui.device_apps.discovery` timing and handled discovery-error coverage remain in place, including Android's foreground PID lookup; native session operations retain MCP tracing, Node runtime coverage, and `logs.ios.parse` timings. No app IDs, PIDs, package names, device IDs, or query text are attached to these measurements. Native helper telemetry and symbols are unchanged.
 
 Since 0.1.99, `ui.logs.query_parse` measures query compilation in milliseconds once per edit, including automatic app-clause edits from 0.1.103. Existing `ui.logs.filter`, buffered/filtered row gauges, and search counts cover keyword filtering and visible age refreshes; filtering time still covers snapshot derivation and grouping. Query text, field values, regex patterns, and validation messages remain local. Age refresh timers stop when Logs closes, unmounts, or the document becomes hidden.

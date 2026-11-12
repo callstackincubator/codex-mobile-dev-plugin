@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { ScreenComponent } from "../src/screen-annotations.ts";
+import { scaledComponents } from "../src/screen-annotations.ts";
 import { agentActSuggestion, agentStepLabel, allStepOffers, ancestorChain, anchorSelector, emitE2eTest, emitE2eTestLines, treeHealth, resolveComponentSelector, resolveSelector, selectorSource, stepLabel, stepOffers, swipeDirection, swipePath, testFileSlug } from "../src/test-recording.ts";
 import type { RecordedSelector, RecordedStep, VisionMode } from "../src/test-recording.ts";
 
@@ -745,4 +746,42 @@ test("the screen's own root is never the thing a coordinate step waits for", () 
     component({ bounds: { x: 100, y: 400, width: 80, height: 40 }, label: "Paris", role: "text", nodeId: "paris" }),
   ];
   assert.deepEqual(anchorSelector(components, { x: 201, y: 437 }, SCREEN), { kind: "text", text: "Paris" });
+});
+
+/**
+ * The Android mirror and the runner's tree do not measure in the same unit: agent-device reports
+ * element bounds in device pixels, and scrcpy caps the stream's longest edge, so a 1280x2856
+ * emulator arrives as 574x1280. Left unconverted, a pointer anywhere below the top fifth of the
+ * mirror falls outside every element but the full-screen groups — which is the one element the
+ * recorder offered, and the outline it drew was the right rectangle at twice the size.
+ */
+test("an Android tree scaled into the mirror's space resolves the element under the pointer", () => {
+  const device = { width: 1280, height: 2856 };
+  const mirror = { width: 574, height: 1280 };
+  // Captured from a booted AVD through the recorder's own read path.
+  const tree: ScreenComponent[] = [
+    { name: "root", role: "group", bounds: { x: 0, y: 0, width: 1280, height: 2856 }, depth: 0, source: "accessibility", nodeId: "n1" },
+    { name: "Explore", role: "tab", label: "Explore", text: "Explore", bounds: { x: 427, y: 2544, width: 427, height: 240 }, depth: 1, source: "accessibility", nodeId: "n2", parentId: "n1" },
+  ];
+  const point = { x: 287, y: 1194 };
+
+  assert.equal(resolveSelector(tree, point, mirror).component, undefined, "unconverted, the tab is nowhere near the pointer");
+
+  const scaled = scaledComponents(tree, device, mirror);
+  const tab = scaled[1]!;
+  assert.equal(Math.round(tab.bounds.x), 191);
+  assert.equal(Math.round(tab.bounds.y), 1140);
+  assert.equal(Math.round(tab.bounds.width), 191);
+  assert.equal(Math.round(tab.bounds.height), 108);
+  assert.equal(resolveSelector(scaled, point, mirror).component?.nodeId, "n2");
+});
+
+test("components are left alone when the mirror already measures what the runner measured", () => {
+  const screen = { width: 402, height: 874 };
+  const tree: ScreenComponent[] = [
+    { name: "Explore", role: "tab", bounds: { x: 100, y: 800, width: 100, height: 40 }, depth: 0, source: "accessibility", nodeId: "n1" },
+  ];
+  assert.deepEqual(scaledComponents(tree, screen, screen), tree);
+  // A screen the runner could not name must not silently collapse every rectangle to zero.
+  assert.deepEqual(scaledComponents(tree, { width: 0, height: 0 }, screen), tree);
 });

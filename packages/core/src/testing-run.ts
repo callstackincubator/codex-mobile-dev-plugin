@@ -244,6 +244,8 @@ export interface TestRunRequest {
    * patterns (`tests/**`) and imports resolve from where it sits.
    */
   untilSource?: string;
+  /** The e2e target to run against; without it the runner takes the config's first, whatever platform that is. */
+  target?: string;
 }
 
 /**
@@ -369,6 +371,7 @@ async function runOnce(request: TestRunRequest, deps: TestRunDeps): Promise<Test
   };
   const child = spawner(bin, [
     "run", runPath, "--reporter", "json",
+    ...(request.target ? ["--target", request.target] : []),
     ...(generated ? ["--config", PROGRESS_CONFIG] : []),
   ], {
     cwd: request.projectPath,

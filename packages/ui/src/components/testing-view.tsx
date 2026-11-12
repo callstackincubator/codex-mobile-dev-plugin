@@ -3,7 +3,8 @@ import { BotIcon, CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleIcon, Circ
 import type { DeviceAppsStore } from "../device-apps.ts";
 import type { TestingPanel } from "../testing-panel.ts";
 import { OPEN_STEP, formatRunDuration, testRecorder } from "../test-recorder.ts";
-import type { TestRunView } from "../test-recorder.ts";
+import type { DevicePlatform, TestRunView } from "../test-recorder.ts";
+import { isRecordableDevice, recordablePlatform } from "@mobile-dev/shared/panel-target.ts";
 import { allStepOffers, isAgentStep, testFileSlug } from "@mobile-dev/shared/test-recording.ts";
 import { draftLabel } from "@mobile-dev/shared/test-drafts.ts";
 import type { RecordedStep } from "@mobile-dev/shared/test-recording.ts";
@@ -247,14 +248,18 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
   const device = devices.device;
   const booted = device?.state === "Booted" || device?.state === "connected";
   const target = state.targets.find(entry => entry.name === state.targetName) ?? state.targets[0];
-  const recordable = Boolean(booted && device && (device.platform ?? "ios") === "ios" && device.kind !== "physical");
+  const mismatch = panel.targetMismatch;
+  const recordable = isRecordableDevice(device) && !mismatch;
+  const deviceId = device?.udid ?? "";
+  const platform = device ? recordablePlatform(device) : "ios";
   // Why the recorder cannot start yet, in the order the user has to fix them.
   const blocker = !state.projectPath ? "Choose a project to record against."
     : state.loadingProject ? ""
       : state.targets.length === 0 ? "No targets found in this project's e2e config."
         : !target?.bundleId ? `Target "${target?.name}" declares no bundleId, so there is no app to launch.`
-          : !booted ? "Boot a simulator to record against it."
-            : "";
+          : !booted ? "Boot an iOS simulator or Android emulator to record against it."
+            : !isRecordableDevice(device) ? "Recording works on an iOS simulator or an Android emulator, not a physical device."
+              : mismatch;
   return <section className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4 [&_button:not(:disabled)]:cursor-pointer" aria-label="Testing">
     <header className="flex flex-wrap items-center gap-2 border-b pb-3">
       <TestingProjectPicker panel={panel} />
@@ -268,7 +273,7 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
       {/* Before the controls, so the `ml-auto` below has one thing to push away from and the
           status does not end up marooned past the right edge of the group. */}
       {state.loadingProject && <span className="flex items-center gap-1 text-xs text-muted-foreground" role="status"><LoaderCircleIcon className="animate-spin" />Reading config…</span>}
-      <TestingControls panel={panel} recordable={recordable} udid={device?.udid ?? ""} />
+      <TestingControls panel={panel} recordable={recordable} deviceId={deviceId} platform={platform} />
     </header>
 
     {state.error && <Alert variant="destructive">
@@ -283,7 +288,7 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
 
     <AgentRecordingBanner panel={panel} />
 
-    <TestingRecorder panel={panel} recordable={recordable} udid={device?.udid ?? ""} />
+    <TestingRecorder panel={panel} recordable={recordable} deviceId={deviceId} platform={platform} />
   </section>;
 }
 
@@ -329,10 +334,10 @@ function AgentRecordingBanner({ panel }: { panel: TestingPanel }) {
  * difference worth seeing — the height, padding, gap and icon treatment are the primitive's own
  * and are now identical across all three.
  */
-function TestingControls({ panel, recordable, udid }: { panel: TestingPanel; recordable: boolean; udid: string }) {
+function TestingControls({ panel, recordable, deviceId, platform }: { panel: TestingPanel; recordable: boolean; deviceId: string; platform: DevicePlatform }) {
   const state = useSyncExternalStore(testRecorder.subscribe, testRecorder.getSnapshot);
   const panelState = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
-  const recording = state.recordingUdid === udid && udid !== "";
+  const recording = state.recordingDeviceId === deviceId && deviceId !== "";
   // While an agent is recording, the device is its own: a launch would reset the app under the
   // flow, and Record would arm a second driver on one screen.
   const agentRecording = panelState.agent?.active === true;
@@ -352,9 +357,9 @@ function TestingControls({ panel, recordable, udid }: { panel: TestingPanel; rec
       : recording
         ? <Button type="button" size="sm" variant="outline" data-testing-stop onClick={() => testRecorder.stop()}><SquareIcon />Stop</Button>
         : state.steps.length > 0
-          ? <RecordMenu udid={udid} recordable={recordable} steps={state.steps.length} />
+          ? <RecordMenu deviceId={deviceId} platform={platform} recordable={recordable} steps={state.steps.length} />
           : <Button type="button" size="sm" variant="outline" data-testing-record disabled={!recordable}
-            onClick={() => testRecorder.start(udid)}><CircleIcon />Record</Button>}
+            onClick={() => testRecorder.start(deviceId, platform)}><CircleIcon />Record</Button>}
     <Button type="button" size="sm" variant="outline" data-testing-run disabled={!panel.canRun}
       title="Save the test, then run it against this device. Recording stops: the runner needs the device to itself."
       onClick={() => void panel.runTest()}>
@@ -375,9 +380,9 @@ function TestingControls({ panel, recordable, udid }: { panel: TestingPanel; rec
  * Escape dismisses it without recording: a popover that starts something on the way out is one
  * nobody can back out of.
  */
-function RecordMenu({ udid, recordable, steps }: { udid: string; recordable: boolean; steps: number }) {
+function RecordMenu({ deviceId, platform, recordable, steps }: { deviceId: string; platform: DevicePlatform; recordable: boolean; steps: number }) {
   const [open, setOpen] = useState(false);
-  const choose = (keepSteps: boolean) => { setOpen(false); testRecorder.start(udid, keepSteps); };
+  const choose = (keepSteps: boolean) => { setOpen(false); testRecorder.start(deviceId, platform, keepSteps); };
   const count = `${steps} step${steps === 1 ? "" : "s"}`;
   return <Popover open={open} onOpenChange={setOpen}>
     <PopoverTrigger asChild>
@@ -476,10 +481,10 @@ function TestPreview({ source, run, highlightedLines, playUntil, onPlayUntil }: 
  * the mirror canvas by the simulator panel, which holds the device connection; this is the readout
  * and the controls.
  */
-function TestingRecorder({ panel, recordable, udid }: { panel: TestingPanel; recordable: boolean; udid: string }) {
+function TestingRecorder({ panel, recordable, deviceId }: { panel: TestingPanel; recordable: boolean; deviceId: string; platform: DevicePlatform }) {
   const state = useSyncExternalStore(testRecorder.subscribe, testRecorder.getSnapshot);
   const panelState = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
-  const recording = state.recordingUdid === udid && udid !== "";
+  const recording = state.recordingDeviceId === deviceId && deviceId !== "";
   // Not while the agent is still writing the flow: saving half of one is a file the user did not
   // ask for, and the agent is told to hand over rather than to save.
   const saveable = Boolean(panelState.projectPath) && state.steps.length > 0 && !panelState.saving && !panelState.agent?.active;
@@ -531,7 +536,7 @@ function TestingRecorder({ panel, recordable, udid }: { panel: TestingPanel; rec
   }
   const playUntilStep = useCallback((stepId: string) => { void panel.runTest({ untilStepId: stepId }); }, [panel]);
   return <div className="flex min-h-0 flex-1 flex-col gap-3">
-    {!recordable && !recording && !panelState.agent?.active && <p className="text-xs text-muted-foreground">Recording needs a booted iOS simulator in the mirror.</p>}
+    {!recordable && !recording && !panelState.agent?.active && <p className="text-xs text-muted-foreground">Recording needs a booted iOS simulator or Android emulator in the mirror.</p>}
     {panelState.agent?.active && <p className="text-xs text-muted-foreground">
       The mirror is the agent's while it records, so clicking it does nothing. Press Stop to take it back.
     </p>}

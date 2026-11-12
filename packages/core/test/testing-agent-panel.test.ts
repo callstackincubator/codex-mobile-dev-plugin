@@ -59,7 +59,7 @@ test("the panel reports its selection, and only when it changes", async t => {
   const context = () => calls.filter(entry => entry.name === "mobile_testing_set_context");
   // Nothing is reported as a selection until all three halves are there: an agent recording
   // against half a selection is the refusal it would get anyway, one round trip later.
-  assert.deepEqual(context().at(-1)?.arguments, { projectPath: "", udid: DEVICE.udid, bundleId: "" });
+  assert.deepEqual(context().at(-1)?.arguments, { projectPath: "", deviceId: DEVICE.udid, platform: "ios", bundleId: "" });
   const before = context().length;
   panel.setFileName("whatever");
   await tick();
@@ -81,7 +81,7 @@ test("a session the agent starts opens the Testing tab and adopts its steps live
   // The same step list, the same preview, the same emitter — deliberately not a second state
   // machine, which is what makes Save and the step editor work unchanged.
   assert.deepEqual(testRecorder.getSnapshot().steps.map((entry: any) => entry.id), ["a"]);
-  assert.equal(testRecorder.getSnapshot().recordingUdid, DEVICE.udid);
+  assert.equal(testRecorder.getSnapshot().recordingDeviceId, DEVICE.udid);
   assert.equal(testRecorder.isAgentRecording(DEVICE.udid), true);
   assert.match(testRecorder.source, /await screen\.getByText\("Tap \\"Explore\\""\)\.tap\(\);/);
 
@@ -102,7 +102,7 @@ test("a finished session hands the flow back, dirty and unsaved", async t => {
 
   // The banner clears and the mirror is the user's again, with the steps still there to adjust.
   assert.equal(testRecorder.isAgentRecording(DEVICE.udid), false);
-  assert.equal(testRecorder.getSnapshot().recordingUdid, "", "a flow left armed turns the next stray tap into a step the agent never recorded");
+  assert.equal(testRecorder.getSnapshot().recordingDeviceId, "", "a flow left armed turns the next stray tap into a step the agent never recorded");
   assert.equal(testRecorder.getSnapshot().steps.length, 1);
   assert.equal(panel.getSnapshot().agent.status, "finished");
   assert.equal(panel.dirty, true, "nothing was saved, so everything is unsaved");
@@ -130,7 +130,7 @@ test("the user cannot start a second recording over the agent's", async t => {
   await tick();
   Object.assign(agent, { active: true, status: "recording", revision: 1, title: "t", goal: "g", steps: [] });
   await (panel as any).readAgentState();
-  testRecorder.start(DEVICE.udid, false);
+  testRecorder.start(DEVICE.udid, "ios", false);
   assert.equal(testRecorder.isAgentRecording(DEVICE.udid), true, "Record is refused while the agent drives the device");
 });
 

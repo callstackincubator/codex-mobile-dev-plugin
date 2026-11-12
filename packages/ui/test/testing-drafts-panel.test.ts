@@ -34,8 +34,8 @@ function open(responses: Record<string, unknown>, calls: { name: string; argumen
 }
 
 async function recordOneStep() {
-  testRecorder.attach(UDID, { readComponents: async () => [tab], screen: () => ({ width: 402, height: 874 }) });
-  testRecorder.start(UDID);
+  testRecorder.attach(UDID, "ios", { readComponents: async () => [tab], screen: () => ({ width: 402, height: 874 }) });
+  testRecorder.start(UDID, "ios");
   await testRecorder.openMenu({ x: 50, y: 820 });
   await testRecorder.chooseOffer("tap");
 }
@@ -191,7 +191,7 @@ test("recording a second flow keeps a second draft rather than overwriting the f
   assert.equal(panel.getSnapshot().draftId, ids[0]);
 
   // Record again, without resuming: a different recording, from the first step on.
-  testRecorder.start(UDID);
+  testRecorder.start(UDID, "ios");
   assert.equal(panel.getSnapshot().draftId, "", "the finished flow's draft is let go as the new one begins");
   await testRecorder.openMenu({ x: 50, y: 820 });
   await testRecorder.chooseOffer("assertVisible");
@@ -211,7 +211,7 @@ test("resuming a flow goes on writing the same draft", async () => {
   await keep(panel);
 
   // Record with `keepSteps`: the same recording, carried on.
-  testRecorder.start(UDID, true);
+  testRecorder.start(UDID, "ios", true);
   await testRecorder.openMenu({ x: 50, y: 820 });
   await testRecorder.chooseOffer("assertVisible");
   await keep(panel);

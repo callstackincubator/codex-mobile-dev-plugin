@@ -1,6 +1,9 @@
 # Testing panel — record e2e tests from the mirror
 
-Status: steps 1-6 of the build order are implemented — the tab, the project picker, launching the
+Status: Android emulators are supported alongside iOS simulators — the device is identified by
+`deviceId` plus an explicit `platform`, and the e2e run is pinned with `--target`. The Android path
+is not yet verified on a real emulator, including the pixel space below. Steps 1-6 of the build
+order are implemented — the tab, the project picker, launching the
 app, recording through the mirror's element menu with selector resolution and a live preview,
 saving the test into the project, and running it with per-line marks. Typing and swipes are
 recorded from the menu rather than from the gesture, which is step 5's own answer; a drag on the
@@ -12,20 +15,20 @@ A new workspace tool, **Testing**, that turns the existing simulator mirror into
 Maestro-Studio-style recorder: pick a project, launch its app, tap the mirror, and watch the test
 source grow one step per interaction. The file is written to the project when the user clicks Save.
 
-First pass targets the **iOS simulator** and the **e2e** runner (`@e2e-dev/mobile`).
+First pass targets the **iOS simulator** (and now the **Android emulator**) and the **e2e** runner (`@e2e-dev/mobile`).
 Maestro YAML is a second emitter behind the same recorder.
 
 ## Scope of the first pass
 
 | Decision | Choice |
 |---|---|
-| Platform | iOS simulator only (Baguette stream path) |
+| Platform | iOS simulator (Baguette stream path) and Android emulator (`serve-emu`/scrcpy); physical devices excluded |
 | Tap → code | Resolve a selector from the accessibility tree; fall back to coordinates |
 | Output | Live **preview** in the panel; written to the project's `tests/<name>.e2e.ts` only on **Save** |
 | Emitter | e2e TypeScript now; Maestro YAML later, same recorder |
 
-Android (`serve-emu`) and physical iOS (`ios-mirror`) are explicitly out of the first pass.
-Both already have input and hierarchy paths, so they slot in behind the same interfaces.
+Physical iOS (`ios-mirror`) and physical Android are out. Android emulators slot in behind the same
+interfaces: the recorder reads the same agent-device snapshot with `{ platform: "android", serial }`.
 
 ## What already exists
 
@@ -333,8 +336,9 @@ flag the step in the UI. The step list should show the chosen selector and let t
 from the other candidates — that override is what makes recorded tests maintainable.
 
 iOS bounds are device points, matching the mirror's own coordinate space after the canvas scale
-factor is applied; no normalization needed on this path. (Android bounds are screen pixels —
-handle at the adapter, not in the emitter.)
+factor is applied; no normalization needed on this path. Android's mirror and the snapshot are
+both expected to be in device pixels, so no conversion is added; confirm by hovering the mirror on
+a real emulator.
 
 ### 5. Gestures beyond tap
 

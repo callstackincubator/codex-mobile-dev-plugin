@@ -49,7 +49,9 @@ interface EngineProjection {
 
 /** What one device's recording session needs to attach to the app the user is already tapping. */
 export interface TestingDeviceTarget {
-  udid: string;
+  /** An iOS simulator UDID or an Android emulator's adb serial. */
+  deviceId: string;
+  platform: "ios" | "android";
   /** The e2e project whose `@e2e-dev/mobile` projects the snapshot; its build, not ours. */
   projectPath: string;
   /** The app to attach to, from the project's config. Never launched fresh — see `attach`. */
@@ -249,16 +251,26 @@ export class TestingDevices {
    */
   private async attach(client: AgentDeviceClient, target: TestingDeviceTarget): Promise<void> {
     await client.apps.open({
-      platform: "ios", udid: target.udid, session: SESSION,
+      ...this.selector(target), session: SESSION,
       app: target.bundleId, relaunch: false, noRecord: true, timeoutMs: 120_000,
     });
-    this.attached = target.udid;
+    this.attached = this.key(target);
   }
 
   /** The runner's own snapshot call, with the runner's own options: a different tree is a different test. */
-  private snapshot(client: AgentDeviceClient, udid: string): Promise<{ nodes?: unknown }> {
-    return client.capture.snapshot({ platform: "ios", udid, session: SESSION, interactiveOnly: false });
+  private snapshot(client: AgentDeviceClient, target: TestingDeviceTarget): Promise<{ nodes?: unknown }> {
+    return client.capture.snapshot({ ...this.selector(target), session: SESSION, interactiveOnly: false });
   }
+
+  /** The device selector agent-device takes: an adb serial on Android, a UDID on iOS. */
+  private selector(target: TestingDeviceTarget) {
+    return target.platform === "android"
+      ? { platform: "android" as const, serial: target.deviceId }
+      : { platform: "ios" as const, udid: target.deviceId };
+  }
+
+  /** Platform-qualified, so the same string on another platform is never taken for a cached attach. */
+  private key(target: TestingDeviceTarget): string { return `${target.platform}:${target.deviceId}`; }
 
   async read(target: TestingDeviceTarget): Promise<TestingDeviceTree> {
     const run = this.queue.then(() => this.readOnce(target), () => this.readOnce(target));
@@ -268,17 +280,17 @@ export class TestingDevices {
 
   private async readOnce(target: TestingDeviceTarget): Promise<TestingDeviceTree> {
     const [client, projection] = await Promise.all([this.connect(), this.projection(target.projectPath)]);
-    if (this.attached !== target.udid) await this.attach(client, target);
+    if (this.attached !== this.key(target)) await this.attach(client, target);
     let snapshot: { nodes?: unknown };
     try {
-      snapshot = await this.snapshot(client, target.udid);
+      snapshot = await this.snapshot(client, target);
     } catch (error) {
       // The session can go while the panel is idle — the app was closed, the runner was swept. One
       // reattach, then the failure is real and the panel says so.
       if (!needsAttach(error)) throw error;
       this.attached = undefined;
       await this.attach(client, target);
-      snapshot = await this.snapshot(client, target.udid);
+      snapshot = await this.snapshot(client, target);
     }
     if (!Array.isArray(snapshot.nodes)) throw new Error("The device snapshot returned no nodes.");
     return projectedComponents(projection, snapshot.nodes);
@@ -307,8 +319,8 @@ export class TestingDevices {
 
   private async performOnce(target: TestingDeviceTarget, action: TestingDeviceAction): Promise<void> {
     const client = await this.connect();
-    if (this.attached !== target.udid) await this.attach(client, target);
-    const base = { platform: "ios", udid: target.udid, session: SESSION, settle: true };
+    if (this.attached !== this.key(target)) await this.attach(client, target);
+    const base = { ...this.selector(target), session: SESSION, settle: true };
     switch (action.kind) {
       case "tap": await client.interactions.click({ ...base, ref: action.ref }); return;
       // agent-device takes the double tap as one gesture, so unlike the mirror — whose input path
@@ -320,7 +332,7 @@ export class TestingDevices {
       case "type": await client.interactions.fill({ ...base, ref: action.ref, text: action.text }); return;
       // `SwipeOptions` has no settle: a swipe is a gesture over the viewport rather than an
       // action on an element, so there is no element whose resting position the next step needs.
-      case "swipe": await client.interactions.swipe({ platform: "ios", udid: target.udid, session: SESSION, from: action.from, to: action.to }); return;
+      case "swipe": await client.interactions.swipe({ ...this.selector(target), session: SESSION, from: action.from, to: action.to }); return;
       case "scroll": await client.interactions.scroll({ ...base, direction: action.direction }); return;
     }
   }

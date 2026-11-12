@@ -15,6 +15,9 @@ test("App Flow opens saved and runtime-only screens without extra device verific
 test("the testing skill records, hands over, and never saves or runs", async () => {
   const skill = await readFile(new URL("../../skills/mobile-dev-testing/SKILL.md", import.meta.url), "utf8");
 
+  assert.match(skill, /iOS or Android app/);
+  assert.match(skill, /booted iOS simulator or Android emulator in the mirror/);
+
   // The loop, in the order the tools enforce it.
   assert.match(skill, /mobile_testing_agent_begin.*mobile_testing_agent_screen.*mobile_testing_agent_step.*mobile_testing_agent_finish/s);
   assert.match(skill, /Read the screen again after every step that acts/);
