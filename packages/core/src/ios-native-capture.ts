@@ -9,11 +9,16 @@ export type NativeBatch = { generation: number; frames: { data: Buffer; timestam
 export type NativeTouchSample = { phase: number; x: number; y: number; width: number; height: number };
 export type NativeCapture = { read(): Promise<NativeBatch>; touch(samples: NativeTouchSample[], generation: number): Promise<void>; requestKeyframe(): void; close(): Promise<void> };
 export type IosCapture = { read(): Promise<IosVideoBatch>; touch(samples: NativeTouchSample[], generation: number): Promise<void>; reset(): Promise<void>; close(): Promise<void> };
-type NativeAddon = { openDevice(udid: string): Promise<NativeCapture> };
+export type NativeIosConnection = { udid: string; transportType: "wired" | "localNetwork" };
+type NativeAddon = {
+  initializeTelemetry(): void;
+  openDevice(udid: string): Promise<NativeCapture>;
+  listDeviceConnections(): Promise<NativeIosConnection[]>;
+};
 let addon: NativeAddon | undefined;
 
-export async function openNativeIosCapture(udid: string): Promise<NativeCapture> {
-  if (process.platform !== "darwin" || process.arch !== "arm64") throw new ExpectedOperationError("unsupported_platform", "Physical iOS mirroring requires an Apple Silicon Mac.");
+function nativeAddon(): NativeAddon {
+  if (process.platform !== "darwin" || process.arch !== "arm64") throw new ExpectedOperationError("unsupported_platform", "Physical iOS device support requires an Apple Silicon Mac.");
   if (addon === undefined) {
     // Bundles, and the chunks they split into, sit in dist/ beside the addon.
     const bundled = import.meta.url.endsWith(".mjs");
@@ -25,5 +30,16 @@ export async function openNativeIosCapture(udid: string): Promise<NativeCapture>
     const loaded: NativeAddon = require(path);
     addon = loaded;
   }
-  return addon.openDevice(udid);
+  return addon;
+}
+
+export async function openNativeIosCapture(udid: string): Promise<NativeCapture> {
+  const loaded = nativeAddon();
+  loaded.initializeTelemetry();
+  return loaded.openDevice(udid);
+}
+
+export async function listNativeIosConnections(): Promise<NativeIosConnection[]> {
+  const loaded = nativeAddon();
+  return loaded.listDeviceConnections();
 }

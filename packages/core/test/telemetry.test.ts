@@ -618,7 +618,7 @@ test("physical iOS discovery accepts an unreported transport and reports malform
   registerIosDeviceTools(server, async () => {
     const stdout = JSON.stringify(payload);
     const run = async () => ({ stdout });
-    return listIosDevices(undefined, run);
+    return listIosDevices(undefined, run, async () => []);
   });
   const client = new Client({ name: "test", version: "1" });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();

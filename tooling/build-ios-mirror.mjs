@@ -66,7 +66,9 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve("tooling/build-ios-m
   const require = createRequire(import.meta.url);
   const addonPath = resolve(binaryPath);
   const addon = require(addonPath);
-  if (typeof addon.openDevice !== "function") throw new Error("The physical iOS capture addon did not export its Node-API entry point.");
+  if (typeof addon.openDevice !== "function" || typeof addon.listDeviceConnections !== "function" || typeof addon.initializeTelemetry !== "function") {
+    throw new Error("The physical iOS capture addon did not export its Node-API entry points.");
+  }
   const binary = await readFile(binaryPath);
   const binaryHash = createHash("sha256");
   binaryHash.update(binary);

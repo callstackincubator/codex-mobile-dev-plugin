@@ -6,7 +6,7 @@
 
 The plugin uses Codex's bundled Node runtime. iOS needs an Apple Silicon Mac with Xcode 26 or later and an installed simulator runtime. Baguette uses Apple's simulator frameworks. agent-device builds its bundled XCTest runner with Xcode on its first interaction and caches it under `~/.agent-device/apple-runner`. The plugin carries all three runtimes, their npm dependencies, and the Apple runner source. It does not download code at runtime.
 
-Physical iOS discovery requires Xcode 27 or later. It uses the selected Xcode installation's `xcrun devicectl` JSON output and needs no additional native library. Pair the phone with Xcode and enable wireless connectivity there to discover it over Wi-Fi.
+Physical iOS discovery requires Xcode 27 or later. It reads device metadata and pairing state from `xcrun devicectl` and checks current USB and Wi-Fi connections through macOS's `usbmuxd`. A connected phone is listed before opening a developer tunnel. Pair the phone with Xcode and enable wireless connectivity there to discover it over Wi-Fi.
 
 Discovery preserves remembered disconnected and unavailable devices. Their `transportType` is omitted when Xcode reports no transport; this does not prevent listing other devices. Malformed responses identify the failing JSON field. The Xcode version requirement is shown only when the JSON version is too old.
 
