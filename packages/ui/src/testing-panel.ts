@@ -862,10 +862,20 @@ export class TestingPanel {
    * stops, the session is given back and *waited for*, and only then is the runner spawned. The
    * server tool releases again on its own account, because a release the caller forgot is the
    * same failure.
+   *
+   * **Play until here does not save.** `untilStepId` runs the flow only as far as that step, from a
+   * truncated copy the server writes beside the test and deletes when the run ends — so the saved
+   * file is never cut down to the part that was tried, and a half-run never raises the overwrite
+   * question about a file the user has not asked to replace. Every line the copy keeps is at the
+   * line number it has in the full file, so the marks land on the preview unchanged; see
+   * `emittedThrough` and `untilSource`.
    */
-  async runTest() {
+  async runTest(options: { untilStepId?: string } = {}) {
     if (!this.canRun) return;
-    if (this.dirty || !this.snapshot.savedPath) {
+    const until = options.untilStepId ? testRecorder.emittedThrough(options.untilStepId) : undefined;
+    // The step went while the pointer was on its play button; there is nothing to run up to.
+    if (options.untilStepId && !until) return;
+    if (!until && (this.dirty || !this.snapshot.savedPath)) {
       await this.saveTest();
       // The file is already there and the user has not answered yet; `saveTest(true)` resumes.
       if (this.snapshot.overwritePath) { this.update({ pendingRun: true }); return; }
@@ -882,7 +892,8 @@ export class TestingPanel {
       // A release that fails is still worth running through: the tool releases again before it
       // spawns, and the runner's own "device is already in use" is a clearer report than ours.
     }
-    testRecorder.beginRun();
+    testRecorder.beginRun(until?.untilLine);
+    if (until) countUiEvent("ui.testing.run_until");
     const startedAt = performance.now(), telemetryContext = getUiTelemetryAttributes();
     // The run's own tool call is one request and one response, so progress comes from polling a
     // second tool while it is in flight. See `mobile_testing_run_progress`.
@@ -891,6 +902,7 @@ export class TestingPanel {
       const response = await this.call("mobile_testing_run_test", {
         projectPath: this.snapshot.projectPath, relativePath,
         ...(this.snapshot.configPath ? { configPath: this.snapshot.configPath } : {}),
+        ...(until ? { untilSource: until.source } : {}),
       }, 15 * 60_000);
       const data = object(response.structuredContent) ?? {};
       const steps = (Array.isArray(data.steps) ? data.steps : []).map(entry => object(entry))

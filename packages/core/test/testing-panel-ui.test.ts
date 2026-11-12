@@ -150,12 +150,14 @@ test("a run marks the preview line by line, and marks nothing it was not told ab
     appLaunched: true, fileName: "flow", saving: false, overwritePath: "", savedRevision: -1, savedPath: "", running: false,
     pendingRun: false, drafts: [], draftId: "", loadingDraft: false, tests: [], deletingTest: "", error: null,
   };
+  /** What Run was asked for, so Play until here can be told apart from the Run test button. */
+  const runs: unknown[] = [];
   const panel = {
     subscribe: (listener: () => void) => { panelListeners.add(listener); return () => { panelListeners.delete(listener); }; },
     getSnapshot: () => panelState,
     canLaunch: true, canRun: true, dirty: true,
     refreshProjects: async () => {}, chooseProject: async () => {}, pickProject: async () => {},
-    launchApp: async () => {}, saveTest: async () => {}, runTest: async () => {}, selectTarget: () => {},
+    launchApp: async () => {}, saveTest: async () => {}, runTest: async (options?: unknown) => { runs.push(options); }, selectTarget: () => {},
     setFileName: () => {}, cancelOverwrite: () => {}, dismissError: () => {},
     refreshDrafts: async () => {}, openDraft: async () => {}, deleteDraft: async () => {}, newRecording: async () => {},
     refreshTests: async () => {}, deleteTest: async () => {},
@@ -244,12 +246,42 @@ test("a run marks the preview line by line, and marks nothing it was not told ab
     "the emitted line returns to normal when the step is no longer hovered");
 
   // The gutter is a column of its own, not a character at the front of the line: that is what keeps
-  // the code still when a run starts and keeps a mark level with a line that wraps.
+  // the code still when a run starts and keeps a mark level with a line that wraps. The line number
+  // is a third column in front of it, for the same reason and read the same way.
   const line = dom.window.document.querySelector("[data-testing-preview] .testing-preview-line")!;
   assert.deepEqual([...line.children].map(child => child.className.split(" ")[0]),
-    ["testing-run-mark", "testing-preview-code"], "the mark and the code are siblings, in that order");
+    ["testing-preview-number", "testing-run-mark", "testing-preview-code"],
+    "the number, the mark and the code are siblings, in that order");
+  assert.deepEqual([...dom.window.document.querySelectorAll("[data-testing-preview] .testing-preview-number")]
+    .slice(0, 3).map(number => number.textContent), ["1", "2", "3"], "numbered from the file's own first line");
+
+  // Play until here: the gutter's other occupant, on the lines a step emitted and nowhere else.
+  const plays = () => [...dom.window.document.querySelectorAll("[data-testing-preview] .testing-play-until")]
+    .map(play => play.getAttribute("data-testing-play-until"));
+  assert.deepEqual(plays(), ["6", "8"],
+    "the step's own line offers to run the flow up to it, and so does the app.open above it");
+  // A play beside a comment would promise a line the runner never executes, and the gutter marks
+  // only the awaited calls, so the two have to be the same set of lines.
+  assert.deepEqual(plays().map(at => lines[Number(at) - 1].trim().startsWith("//")), [false, false],
+    "a comment is not somewhere a run can stop");
+  assert.deepEqual(plays(), testRecorder.emitted.calls.map(String),
+    "exactly the lines the runner reports a step for");
+  const play = dom.window.document.querySelector('[data-testing-preview-line="8"] .testing-play-until') as HTMLButtonElement;
+  assert.ok(line.querySelector(".testing-play-until") === null, "and it is not on the import at the top of the file");
+  // The app opening is where a flow most often breaks, and it is the one call the header holds.
+  const opening = dom.window.document.querySelector('[data-testing-preview-line="6"] .testing-play-until') as HTMLButtonElement;
+  assert.match(opening.getAttribute("aria-label") ?? "", /^Run the test up to the app opening, line 6$/);
+  await act(async () => { opening.click(); });
+  assert.deepEqual(runs, [{ untilStepId: "app:open" }], "that run opens the app and does nothing else");
+  runs.length = 0;
+  assert.match(play.getAttribute("aria-label") ?? "", /^Run the test up to .*, line 8$/,
+    "the gutter's mark is decoration, but this is a control and says what it does");
+  await act(async () => { play.click(); });
+  assert.deepEqual(runs, [{ untilStepId: testRecorder.getSnapshot().steps[0].id }],
+    "clicking it runs the flow as far as that step, not the whole file");
 
   await act(async () => { testRecorder.beginRun(); });
+  assert.deepEqual(plays(), [], "the gutter is the run's own while it is in flight, so no play hides a spinner");
   assert.deepEqual(marks().filter(mark => mark !== ""), [], "nothing is marked until the runner says where it is");
   await act(async () => { testRecorder.applyRunProgress([{ stepIndex: 1, phase: "start" }]); });
   assert.equal(marks().filter(mark => mark === "is-running").length, 1, "one line spins: the one the runner is on");

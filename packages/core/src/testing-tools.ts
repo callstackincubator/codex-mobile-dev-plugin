@@ -217,18 +217,21 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
       relativePath: z.string().min(1).max(512).describe("The test to run, relative to the project, e.g. tests/a-recorded-flow.e2e.ts."),
       configPath: z.string().min(1).max(4096).optional().describe("The project's e2e config, so the run can report live per-step progress."),
       timeoutMs: z.number().int().min(10_000).max(30 * 60_000).optional(),
+      untilSource: z.string().min(1).max(400_000).optional().describe(
+        "Run this truncated copy of the test instead of the file itself, for \"play until here\": the same flow cut off after one step. It is written beside the test for the one run and removed afterwards; the file itself is not touched."),
     },
     // A test run drives the app on the device: it taps, types and changes the app's own state.
     annotations: destructive,
     _meta: appVisibility,
-  }, safe(async ({ projectPath: selected, relativePath, configPath, timeoutMs }: { projectPath: string; relativePath: string; configPath?: string; timeoutMs?: number }) => {
+  }, safe(async ({ projectPath: selected, relativePath, configPath, timeoutMs, untilSource }: { projectPath: string; relativePath: string; configPath?: string; timeoutMs?: number; untilSource?: string }) => {
     // The release is a dependency of the run, not a step the caller is trusted to have taken: see
     // `TestRunDeps`. The panel releases too, but a caller who forgets must not break the run.
     progress = [];
     running = true;
     try {
       const result = await runRecordedTest(
-        { projectPath: selected, relativePath, ...(configPath ? { configPath } : {}), ...(timeoutMs === undefined ? {} : { timeoutMs }) },
+        { projectPath: selected, relativePath, ...(configPath ? { configPath } : {}), ...(timeoutMs === undefined ? {} : { timeoutMs }),
+          ...(untilSource === undefined ? {} : { untilSource }) },
         { release: () => devices.release(), onProgress: entry => { progress.push(entry); } });
       return dataResult({ ...result }, `${relativePath} ${result.status}.`);
     } finally {

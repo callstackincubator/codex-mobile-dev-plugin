@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import type { HostBridge } from "../src/host-bridge.ts";
 import type { DeviceAppsStore } from "../src/device-apps.ts";
 import { TestingPanel } from "../src/testing-panel.ts";
-import { testRecorder } from "../src/test-recorder.ts";
+import { OPEN_STEP, testRecorder } from "../src/test-recorder.ts";
 import type { ScreenComponent } from "../../shared/src/screen-annotations.ts";
 
 const UDID = "11111111-2222-3333-4444-555555555555";
@@ -110,6 +110,48 @@ test("Run saves, hands the device back, and only then runs", async () => {
   assert.equal(panel.getSnapshot().running, false);
   assert.equal(testRecorder.getSnapshot().run?.state, "passed");
   assert.deepEqual(testRecorder.getSnapshot().run?.lines, { 8: "passed" });
+  testRecorder.clearRun();
+  testRecorder.clearSteps();
+  testRecorder.detach(UDID);
+  panel.dispose();
+});
+
+test("Play until here runs the flow cut short, and never writes the test", async () => {
+  const calls: { name: string; arguments: Record<string, unknown> }[] = [];
+  const panel = new TestingPanel(host({
+    mobile_testing_run_test: { status: "passed", exitCode: 0, steps: [{ line: 8, status: "passed" }] },
+  }, calls), deviceApps);
+  panel.setAvailable(true);
+  (panel as unknown as { update(fields: Record<string, unknown>): void }).update({ projectPath: PROJECT, fileName: "flow" });
+  await recordOneStep(panel);
+  // A second step, so there is something below the one being played to.
+  await testRecorder.openMenu({ x: 50, y: 820 });
+  await testRecorder.chooseOffer("tap");
+  const [first] = testRecorder.getSnapshot().steps;
+  const full = testRecorder.source.split("\n");
+
+  await panel.runTest({ untilStepId: first!.id });
+
+  // No write at all: a half-run must not raise the overwrite question, and must not leave the
+  // saved test cut down to the part that was tried.
+  assert.deepEqual(flow(calls), ["mobile_testing_release_device", "mobile_testing_run_test"]);
+  assert.equal(panel.dirty, true, "nothing was saved, so the recording is still ahead of the file");
+  const sent = calls.findLast(call => call.name === "mobile_testing_run_test")?.arguments ?? {};
+  assert.equal(sent.relativePath, "tests/flow.e2e.ts");
+  // The copy is the file's own text with the second step's line taken out and nothing else moved:
+  // every line it keeps is at the line number it has in the full file, which is what lets the
+  // runner's report mark the preview's own lines with no translation.
+  assert.deepEqual(String(sent.untilSource).split("\n"), [...full.slice(0, 8), ...full.slice(9)]);
+  assert.equal(testRecorder.getSnapshot().run?.state, "passed");
+  assert.equal(testRecorder.getSnapshot().run?.untilLine, 8, "a verdict about part of the flow has to say so");
+
+  // The app opening on its own: the header's own call, with none of the steps under it.
+  await panel.runTest({ untilStepId: OPEN_STEP });
+  const opening = String(calls.findLast(call => call.name === "mobile_testing_run_test")?.arguments.untilSource);
+  assert.equal(opening.includes("await app.open();"), true);
+  assert.deepEqual(opening.split("\n").filter(line => line.includes("await ")), ["  await app.open();"],
+    "nothing is driven after it, which is the whole of what this run asks");
+  assert.equal(testRecorder.getSnapshot().run?.untilLine, 6);
   testRecorder.clearRun();
   testRecorder.clearSteps();
   testRecorder.detach(UDID);

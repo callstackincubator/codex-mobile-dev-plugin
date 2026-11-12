@@ -353,15 +353,36 @@ html[data-theme="dark"] .tracesift-explorer { color-scheme: dark; }
  */
 .testing-preview-line {
   display: grid;
-  /* The gutter, then the code. Fixed, so nothing moves when a run marks a line. */
-  grid-template-columns: 1.35em minmax(0, 1fr);
+  /* The line number, the gutter, then the code. All fixed, so nothing moves when a run marks a
+     line: the number column is wide enough for a three-figure file and does not grow at 100. */
+  grid-template-columns: 3ch 1.35em minmax(0, 1fr);
   align-items: start;
   min-height: 1lh;
   border-radius: 3px;
   margin-inline: -2px;
   padding-inline: 2px;
+  /* Air between one line and the next. The file is read down a narrow pane beside the mirror, and
+     a wrapped call run together with the one below it is the hardest thing in the panel to scan.
+     It is padding rather than a margin so the hover highlight and the arrival tint cover it too,
+     and `.testing-play-until` offsets by the same amount to stay level with its line. */
+  padding-block: 2px;
   /* The hover highlight is painted as a layer over the line; see below. */
   position: relative;
+}
+/*
+ * The line numbers. Out of the selection, because the preview is there to be copied into a file:
+ * dragging over it has to give the code and nothing else. `tabular-nums` keeps the column from
+ * shifting under the eye as a 1 follows a 0 down the file.
+ */
+.testing-preview-number {
+  height: 1lh;
+  padding-inline-end: 0.5ch;
+  color: var(--muted-foreground);
+  opacity: 0.55;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+  -webkit-user-select: none;
 }
 /* The line's own text wraps inside its column; the gutter is not part of the wrap. */
 .testing-preview-code { white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -388,8 +409,9 @@ html[data-theme="dark"] .tracesift-explorer { color-scheme: dark; }
   box-shadow: inset 2px 0 var(--primary);
   pointer-events: none;
 }
-/* Positioned too, so the code and the run mark paint above that layer rather than under it. */
-.testing-run-mark, .testing-preview-code { position: relative; }
+/* Positioned too, so the number, the code and the run mark paint above that layer rather than
+   under it. */
+.testing-preview-number, .testing-run-mark, .testing-preview-code { position: relative; }
 @keyframes testing-preview-line-in {
   from { background: color-mix(in oklab, var(--primary) 26%, transparent); opacity: 0.4; }
   18% { background: color-mix(in oklab, var(--primary) 26%, transparent); opacity: 1; }
@@ -434,4 +456,48 @@ html[data-theme="dark"] .tracesift-explorer { color-scheme: dark; }
   /* The marks still come and go; they just stop easing, so nothing animates on screen. */
   .testing-run-mark { transition: none; }
   .testing-run-mark.is-fading { transition: none; }
+}
+
+/*
+ * Play until here: the gutter's other occupant.
+ *
+ * It sits *over* the gutter rather than in it, so the column stays exactly as wide as it was and
+ * no line of code moves when a play appears — the same reason the mark has a fixed column at all.
+ * Pointing at a line swaps its mark for the play, and the mark comes back when the pointer leaves;
+ * the two never show together, because a gutter that says both "passed" and "run to here" says
+ * neither. Nothing is rendered at all while a run is in flight, so a spinner is never hidden by a
+ * pointer resting on its line.
+ */
+.testing-play-until {
+  position: absolute;
+  /* The line's own padding, so this lands on the gutter column rather than beside it, and level
+     with the mark it stands in for rather than 2px above it. See `padding-block` above. */
+  inset-inline-start: calc(2px + 3ch);
+  top: 2px;
+  display: flex;
+  width: 1.35em;
+  height: 1lh;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  color: var(--muted-foreground);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 120ms ease-out, color 120ms ease-out;
+  /* Hidden until the line is pointed at, and unreachable by the pointer until then: an invisible
+     button that still swallows clicks is worse than no button. */
+  pointer-events: none;
+}
+.testing-preview-line:hover .testing-play-until,
+.testing-play-until:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+.testing-play-until:hover, .testing-play-until:focus-visible { color: var(--primary); }
+/* The mark steps aside for the play, and only on a line that has one. */
+.testing-preview-line:hover:has(.testing-play-until) .testing-run-mark,
+.testing-preview-line:has(.testing-play-until:focus-visible) .testing-run-mark { opacity: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .testing-play-until { transition: none; }
 }

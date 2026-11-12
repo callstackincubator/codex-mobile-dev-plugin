@@ -232,6 +232,18 @@ export interface TestRunRequest {
   /** The project's own `e2e.config.ts`, which the generated progress config spreads. */
   configPath?: string;
   timeoutMs?: number;
+  /**
+   * A truncated copy of the test to run instead of the file itself — Play until here.
+   *
+   * The panel re-emits the flow from its first *n* steps, which is the saved file's own text with
+   * the later steps and nothing else removed, so every line it keeps is still at the line number
+   * it has in the file: the report's lines land on the preview's lines with no translation, and
+   * `EmittedTest.calls` indexes the same way because the truncated call list is a prefix of the
+   * full one. It is written beside the real test for one run and removed when the run ends — a
+   * sibling rather than a temp directory because the test is discovered through the project's own
+   * patterns (`tests/**`) and imports resolve from where it sits.
+   */
+  untilSource?: string;
 }
 
 /**
@@ -243,6 +255,19 @@ export interface TestRunRequest {
  * run and removed when the run ends, so it is never a file anyone has to think about.
  */
 const PROGRESS_CONFIG = "e2e.config.mobile-dev-progress.mts";
+
+/**
+ * Where a Play-until-here run's truncated copy goes: beside the test it was cut from.
+ *
+ * The name is marked and the file is deleted when the run ends, so it is never a file anyone has
+ * to think about — and it keeps the `.e2e.ts` suffix because the project's own test patterns are
+ * what make a file discoverable at all; naming the selection does not exempt it from them.
+ */
+export function untilTestPath(relativePath: string): string {
+  return relativePath.endsWith(".e2e.ts")
+    ? `${relativePath.slice(0, -".e2e.ts".length)}.mobile-dev-until.e2e.ts`
+    : `${relativePath}.mobile-dev-until.e2e.ts`;
+}
 
 type Spawner = typeof spawn;
 
@@ -333,8 +358,17 @@ async function runOnce(request: TestRunRequest, deps: TestRunDeps): Promise<Test
     ? join(request.projectPath, PROGRESS_CONFIG)
     : undefined;
   if (generated && request.configPath) await writeFile(generated, progressConfigSource(request.configPath));
+  // Play until here runs a truncated copy of the file, not the file: see `untilSource`. The real
+  // test stays exactly as the user saved it, and the copy goes when the run does.
+  const runPath = request.untilSource === undefined ? request.relativePath : untilTestPath(request.relativePath);
+  const partial = request.untilSource === undefined ? undefined : join(request.projectPath, runPath);
+  if (partial && request.untilSource !== undefined) await writeFile(partial, request.untilSource);
+  const discard = () => {
+    if (generated) void rm(generated, { force: true });
+    if (partial) void rm(partial, { force: true });
+  };
   const child = spawner(bin, [
-    "run", request.relativePath, "--reporter", "json",
+    "run", runPath, "--reporter", "json",
     ...(generated ? ["--config", PROGRESS_CONFIG] : []),
   ], {
     cwd: request.projectPath,
@@ -363,16 +397,19 @@ async function runOnce(request: TestRunRequest, deps: TestRunDeps): Promise<Test
   const exitCode = await new Promise<number>((resolve, reject) => {
     const timer = setTimeout(() => {
       child.kill("SIGTERM");
-      if (generated) void rm(generated, { force: true });
+      discard();
       reject(new ExpectedOperationError("resource_limit", `The test run did not finish within ${Math.round(timeoutMs / 1000)}s.`));
     }, timeoutMs);
     timer.unref?.();
-    child.on("error", error => { clearTimeout(timer); if (generated) void rm(generated, { force: true }); reject(error); });
+    child.on("error", error => { clearTimeout(timer); discard(); reject(error); });
     child.on("close", code => { clearTimeout(timer); resolve(code ?? 1); });
   });
   if (generated) await rm(generated, { force: true });
+  if (partial) await rm(partial, { force: true });
   const report = parseReport(stdout);
-  const steps = report ? reportSteps(report, request.relativePath) : [];
+  // The report attributes its steps to the file the runner actually ran, which for a partial run
+  // is the copy; its line numbers are the real file's, so the panel needs no translation.
+  const steps = report ? reportSteps(report, runPath) : [];
   const durationMs = report ? reportDuration(report) : undefined;
   return {
     status: reportStatus(report, exitCode),

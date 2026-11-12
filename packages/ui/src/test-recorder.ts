@@ -1,4 +1,4 @@
-import { agentStepLabel, allStepOffers, anchorSelector, emitE2eTestLines, hitLadder, isAgentStep, resolveSelector, stepEffect, stepIsAssertion, stepLabel, stepNeedsValue, stepOffers, swipeDirection, swipePath, treeHealth } from "@mobile-dev/shared/test-recording.ts";
+import { agentStepLabel, allStepOffers, anchorSelector, emitE2eTest, emitE2eTestLines, hitLadder, isAgentStep, resolveSelector, stepEffect, stepIsAssertion, stepLabel, stepNeedsValue, stepOffers, swipeDirection, swipePath, treeHealth } from "@mobile-dev/shared/test-recording.ts";
 import type { AgentParams, AgentStep, AgentStepKind, PinnedStep, PinnedStepKind, RecordedStep, StepOffer, StepTarget, SwipeDirection, VisionMode } from "@mobile-dev/shared/test-recording.ts";
 import type { ScreenBounds, ScreenComponent, ScreenPoint, ScreenSize } from "@mobile-dev/shared/screen-annotations.ts";
 import { countUiEvent, recordUiTiming, setUiGauge } from "./telemetry.ts";
@@ -48,6 +48,15 @@ export type RecorderTreeSource = {
   release: () => void;
 };
 
+/**
+ * The `app.open()` the emitter writes above the steps, as Play until here names it.
+ *
+ * It is not one of the recorded steps — it is the header's own call — so it has no step id to go
+ * by, and this stands in for one. It is not a UUID, which is what `crypto.randomUUID` gives every
+ * recorded step, so it can never be mistaken for one of them.
+ */
+export const OPEN_STEP = "app:open";
+
 /** What a run marks one line of the preview with. */
 export type RunLineMark = "running" | "passed" | "failed";
 
@@ -74,6 +83,11 @@ export type TestRunView = {
    * fade — a failing mark is the one thing a failed run leaves behind to look at.
    */
   fading?: boolean;
+  /**
+   * The run was a Play until here: it ran the flow only as far as this line, so the lines below it
+   * were never reached. A verdict about part of a test must not read as a verdict about the test.
+   */
+  untilLine?: number;
   /**
    * The steps changed after the run, so the line marks have been dropped: they were claims about
    * lines that have since moved. The verdict and the duration stay — they are facts about a run
@@ -800,14 +814,43 @@ export class TestRecorder {
   get emitted() { return emitE2eTestLines(this.snapshot.steps, { title: this.snapshot.title }); }
 
   /**
+   * The same test cut off after one step: what Play until here runs.
+   *
+   * It is a re-emit of the first *n* steps rather than a slice of the source text, so the file it
+   * produces is a whole test — the header, the steps up to and including this one, and the closing
+   * brace. Every line it keeps stays at the line number it has in the full file: the header is a
+   * fixed seven lines whether or not an agent step is left in it, and the only thing removed is
+   * the tail. That is what lets the runner's report mark the preview's own lines.
+   *
+   * `untilLine` is the last line of the step that was asked for, which is where the run stops.
+   *
+   * `OPEN_STEP` is the flow with no steps at all: the app opened and nothing done to it. It is a
+   * real thing to ask for — the app launching is where a flow most often breaks — and it is the
+   * one line of the header the runner reports, so it marks like any other.
+   */
+  emittedThrough(stepId: string): { source: string; untilLine: number } | undefined {
+    const steps = this.snapshot.steps;
+    if (stepId === OPEN_STEP) {
+      const emitted = emitE2eTestLines([], { title: this.snapshot.title });
+      const line = emitted.calls[0];
+      return line === undefined ? undefined : { source: emitted.source, untilLine: line };
+    }
+    const index = steps.findIndex(step => step.id === stepId);
+    if (index < 0) return;
+    const span = this.emitted.spans[index];
+    if (!span) return;
+    return { source: emitE2eTest(steps.slice(0, index + 1), { title: this.snapshot.title }), untilLine: span.to };
+  }
+
+  /**
    * A run has started. Every call line goes to `running` together, because that is as much as the
    * command line honestly tells us while the runner works — see `packages/core/src/testing-run.ts`
    * for why there is no per-step stream to follow.
    */
-  beginRun() {
+  beginRun(untilLine?: number) {
     // A fade left over from the previous run would take this run's marks with it.
     this.stopFade();
-    this.update({ run: { state: "running", lines: {} } });
+    this.update({ run: { state: "running", lines: {}, ...(untilLine === undefined ? {} : { untilLine }) } });
   }
 
   /**
@@ -861,7 +904,11 @@ export class TestRecorder {
       if (mark === "failed" && !error) error = step.error ?? `${step.status} at line ${step.line}`;
     }
     const passed = result.status === "passed" && error === undefined;
+    // How far the run was asked to go is a fact about the run, so it outlives the run's own report:
+    // "Passed" on a flow that stopped three steps in has to keep saying so.
+    const untilLine = this.snapshot.run?.untilLine;
     this.update({ run: { state: passed ? "passed" : "failed", lines,
+      ...(untilLine === undefined ? {} : { untilLine }),
       ...(error ? { error } : {}), ...(result.output ? { output: result.output } : {}),
       // Shown for a failure as well: how long a run took before it gave up is as much a part of
       // reading it as how long a passing one took.
@@ -870,7 +917,10 @@ export class TestRecorder {
   }
 
   /** The run failed to start at all, or the user cleared it. */
-  failRun(error: string) { this.update({ run: { state: "failed", lines: {}, error } }); }
+  failRun(error: string) {
+    const untilLine = this.snapshot.run?.untilLine;
+    this.update({ run: { state: "failed", lines: {}, error, ...(untilLine === undefined ? {} : { untilLine }) } });
+  }
   clearRun() {
     this.stopFade();
     if (this.snapshot.run) this.update({ run: undefined });

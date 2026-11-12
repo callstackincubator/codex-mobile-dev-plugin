@@ -592,6 +592,15 @@ every element name the read answered with are the user's own content about their
 **not** sent; these are counts, durations and sizes only. Handled failures of the agent tools go
 through `captureServerError` as `testing.agent`, beside `testing.tool` and `testing.release`.
 
+Running a recorded test measures `ui.testing.run`, which brackets the panel's whole call — the
+runner spawned, the project resolved and the report read — and counts `ui.testing.run_passed` or
+`ui.testing.run_failed` from the verdict. It is deliberately not the duration shown beside that
+verdict: that one is the runner's own number from the report, and the two answer different
+questions. Play until here, the run a line of the preview offers, counts `ui.testing.run_until`
+as well, so a flow tried a step at a time is not read as a flow run end to end; it is counted
+beside the verdict, not instead of it. The test's title, its path, the project path, the steps and
+the runner's output are the user's own content and are **not** sent.
+
 Unsaved recordings — the flows the panel keeps so one survives the panel document being rebuilt —
 measure `ui.testing.draft_save`, the autosave write, and count `ui.testing.draft_restore` when one
 is reopened into the step list and `ui.testing.draft_delete` when the user throws one away. The

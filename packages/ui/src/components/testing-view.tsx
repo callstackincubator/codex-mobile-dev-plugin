@@ -2,7 +2,7 @@ import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import { BotIcon, CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleIcon, CircleXIcon, CopyIcon, FileCode2Icon, FilePlus2Icon, FlaskConicalIcon, FolderOpenIcon, GripVerticalIcon, HistoryIcon, LoaderCircleIcon, MoreHorizontalIcon, PlayIcon, SaveIcon, SquareIcon, Trash2Icon, UserIcon, XIcon } from "lucide-react";
 import type { DeviceAppsStore } from "../device-apps.ts";
 import type { TestingPanel } from "../testing-panel.ts";
-import { formatRunDuration, testRecorder } from "../test-recorder.ts";
+import { OPEN_STEP, formatRunDuration, testRecorder } from "../test-recorder.ts";
 import type { TestRunView } from "../test-recorder.ts";
 import { allStepOffers, isAgentStep, testFileSlug } from "@mobile-dev/shared/test-recording.ts";
 import { draftLabel } from "@mobile-dev/shared/test-drafts.ts";
@@ -405,7 +405,12 @@ function RecordMenu({ udid, recordable, steps }: { udid: string; recordable: boo
  * an effect would flash the new lines unmarked for a frame. `generation` remounts the marked
  * lines so their animation runs again for the next step, instead of only on the first.
  */
-function TestPreview({ source, run, highlightedLines }: { source: string; run?: TestRunView; highlightedLines?: { from: number; to: number } }) {
+function TestPreview({ source, run, highlightedLines, playUntil, onPlayUntil }: {
+  source: string; run?: TestRunView; highlightedLines?: { from: number; to: number };
+  /** Which step each line belongs to, so a line can be run up to. Empty when nothing can be run. */
+  playUntil?: ReadonlyMap<number, { stepId: string; label: string }>;
+  onPlayUntil?: (stepId: string) => void;
+}) {
   const shown = useRef({ source: "", range: [0, 0] as [number, number], generation: 0 });
   if (shown.current.source !== source) {
     const previous = shown.current.source;
@@ -426,6 +431,9 @@ function TestPreview({ source, run, highlightedLines }: { source: string; run?: 
       // The report's lines are 1-based, as the file's own line numbers are.
       const mark = run?.lines[index + 1];
       const highlighted = highlightedLines && index + 1 >= highlightedLines.from && index + 1 <= highlightedLines.to;
+      // Play until here. Only on a line the runner executes: the imports, the comments and the
+      // closing brace are not somewhere a run can stop, so they are not offered as one.
+      const play = onPlayUntil ? playUntil?.get(index + 1) : undefined;
       return <span key={added ? `new-${generation}-${index}` : `line-${index}`} data-testing-preview-line={index + 1}
         className={`testing-preview-line${added ? " is-new" : ""}${highlighted ? " is-step-highlighted" : ""}`}>
         {/* Two columns: a fixed gutter and the code. That is why the code does not move when a run
@@ -434,11 +442,24 @@ function TestPreview({ source, run, highlightedLines }: { source: string; run?: 
             The run's own state is announced once, above the preview; a mark per line would read the
             whole file out. So the gutter is decoration, and `aria-hidden` throughout. */}
         {/* Only a tick fades. A failing mark is what says where the run broke, so it stays. */}
+        {/* The file's own line numbers. They are what the runner's report, an error and this panel
+            all point at, so reading one off the preview should not mean counting rows. Decoration
+            like the mark beside them — announced nowhere — and outside the selection, so copying
+            the preview gives the code and not a column of numbers with it. */}
+        <span className="testing-preview-number" aria-hidden>{index + 1}</span>
         <span className={`testing-run-mark${mark ? ` is-${mark}` : ""}${run?.fading && mark === "passed" ? " is-fading" : ""}`} aria-hidden>
           {mark === "running" ? <LoaderCircleIcon className="size-3 animate-spin" />
             : mark === "passed" ? <CheckIcon className="size-3" />
               : mark === "failed" ? <CircleXIcon className="size-3" /> : null}
         </span>
+        {/* The gutter holds one thing at a time: hovering a line swaps its mark for the play that
+            runs the flow up to it, and the mark comes back when the pointer leaves. It is a real
+            button rather than a click target on the line, so it is reachable by keyboard and says
+            what it does — the mark beside it is decoration, this is not. */}
+        {play && <button type="button" data-testing-play-until={index + 1} className="testing-play-until"
+          title={`Run the test up to and including ${play.label}, and no further`}
+          aria-label={`Run the test up to ${play.label}, line ${index + 1}`}
+          onClick={() => onPlayUntil?.(play.stepId)}><PlayIcon className="size-3" /></button>}
         <span className="testing-preview-code">
           {highlightCode(line).map((token, position) =>
             token.kind === "plain"
@@ -480,7 +501,35 @@ function TestingRecorder({ panel, recordable, udid }: { panel: TestingPanel; rec
   const unhoverStep = useCallback((stepId: string) =>
     setHoveredStep(current => current === stepId ? undefined : current), []);
   const highlightedStep = hoveredStep ?? focusedStep;
-  const highlightedLines = testRecorder.emitted.spans.find(span => span.stepId === highlightedStep);
+  const spans = testRecorder.emitted.spans;
+  const highlightedLines = spans.find(span => span.stepId === highlightedStep);
+  /**
+   * Which step each line of the preview came from, so a line can offer to run the flow up to it.
+   *
+   * Only the awaited calls, which are the lines the runner reports a step for. A step can carry a
+   * TODO comment above its call, and a comment is not somewhere a run can stop: a play beside one
+   * would promise a line the runner never executes. The gutter marks exactly these lines too, so
+   * what offers to be run and what comes back marked are the same set.
+   *
+   * Nothing is built while a run is in flight — the gutter is the run's own then, and a second run
+   * cannot start anyway.
+   *
+   * Built on every render, like the spans it reads: both are one pass over the steps, and the
+   * file is re-emitted whenever those change, so there is nothing a memo could hold on to.
+   */
+  const playUntil = new Map<number, { stepId: string; label: string }>();
+  if (state.run?.state !== "running") {
+    // The app opening is the first thing the runner does and the first thing a flow breaks on, so
+    // it is somewhere a run can stop too — the one line of the header that is a call at all.
+    const open = testRecorder.emitted.calls[0];
+    if (open !== undefined) playUntil.set(open, { stepId: OPEN_STEP, label: "the app opening" });
+    for (const [index, span] of spans.entries()) {
+      const step = state.steps[index];
+      const label = step ? `step ${index + 1} (${step.label})` : `step ${index + 1}`;
+      for (const line of span.calls) playUntil.set(line, { stepId: span.stepId, label });
+    }
+  }
+  const playUntilStep = useCallback((stepId: string) => { void panel.runTest({ untilStepId: stepId }); }, [panel]);
   return <div className="flex min-h-0 flex-1 flex-col gap-3">
     {!recordable && !recording && !panelState.agent?.active && <p className="text-xs text-muted-foreground">Recording needs a booted iOS simulator in the mirror.</p>}
     {panelState.agent?.active && <p className="text-xs text-muted-foreground">
@@ -528,12 +577,17 @@ function TestingRecorder({ panel, recordable, udid }: { panel: TestingPanel; rec
             {state.run && state.run.state !== "running" && state.run.durationMs !== undefined
               && <span data-testing-run-duration className="font-normal tabular-nums text-muted-foreground"
                 title="How long the runner reported the run taking.">{formatRunDuration(state.run.durationMs)}</span>}
+            {/* A verdict about part of the flow must not read as a verdict about the test: the run
+                was asked to stop at a step, so what it passed is everything up to that line. */}
+            {state.run?.untilLine !== undefined && <span data-testing-run-until className="font-normal text-muted-foreground"
+              title="This run stops at the step you played to; the steps below it are not run.">· to line {state.run.untilLine}</span>}
             {/* The verdict is still about a run that happened; the lines it marked have moved. */}
             {state.run?.stale && <span data-testing-run-stale className="font-normal text-muted-foreground"
               title="The steps changed after this run, so the line marks no longer point at the same steps.">· before your edits</span>}
           </p>
           {state.run?.output && <pre className="max-h-32 overflow-auto rounded-md border bg-muted/40 p-2 font-mono text-[10px] whitespace-pre-wrap">{state.run.output}</pre>}
-          <TestPreview source={testRecorder.source} run={state.run} highlightedLines={highlightedLines} />
+          <TestPreview source={testRecorder.source} run={state.run} highlightedLines={highlightedLines}
+            playUntil={playUntil} onPlayUntil={panel.canRun ? playUntilStep : undefined} />
         </section>
       </ResizablePanel>
 
