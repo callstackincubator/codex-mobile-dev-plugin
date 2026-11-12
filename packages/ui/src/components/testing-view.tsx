@@ -269,9 +269,9 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
     <header className="flex flex-wrap items-center gap-2 border-b pb-3">
       <TestingProjectPicker panel={panel} />
       {state.targets.length > 1 && <Select items={state.targets.map(entry => ({ value: entry.name, label: entry.name }))} value={state.targetName} onValueChange={value => { if (value) panel.selectTarget(value); }}>
-        <SelectTrigger id="testing-target-select" size="sm" className="shrink-0" aria-label="Target"><SelectValue>{state.targetName || "Target"}</SelectValue></SelectTrigger>
-        <SelectContent align="start"><SelectGroup>
-          {state.targets.map(entry => <SelectItem key={entry.name} value={entry.name}>{entry.name}{entry.platform ? ` · ${entry.platform}` : ""}</SelectItem>)}
+        <SelectTrigger id="testing-target-select" size="sm" className="shrink-0 bg-background hover:bg-muted aria-expanded:bg-muted dark:bg-input/30 dark:hover:bg-input/50" aria-label="Target"><SelectValue>{state.targetName || "Target"}</SelectValue></SelectTrigger>
+        <SelectContent align="start" alignItemWithTrigger={false} className="w-max min-w-(--anchor-width) max-w-(--available-width)"><SelectGroup>
+          {state.targets.map(entry => <SelectItem key={entry.name} value={entry.name}>{entry.name}{entry.platform && entry.platform !== entry.name ? ` · ${entry.platform}` : ""}</SelectItem>)}
         </SelectGroup></SelectContent>
       </Select>}
       <TestingDraftPicker panel={panel} />
