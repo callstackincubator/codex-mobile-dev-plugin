@@ -130,7 +130,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
     // Cards from a server whose panel opens recordings in the workspace can open them there.
     const content = (await page()).replace('data-view="panel"', `data-view="${view}"${panel?.inline ? " data-workspace" : ""}`);
     return { contents: [{ uri: uri.href, mimeType: RESOURCE_MIME_TYPE, text: content, _meta: {
-      ui: { prefersBorder: true, permissions: { clipboardWrite: {} }, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } },
+      ui: { prefersBorder: true, permissions: { clipboardWrite: {} }, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: ["https://assets.claude.ai"] } },
       "openai/ui": { preferredDisplayMode: "inline", availableDisplayModes: ["inline", "fullscreen"] },
     } }] };
   };

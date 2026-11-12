@@ -82,6 +82,7 @@ export class WorkspaceTools {
   }
 
   async dispose() {
+    this.context.dispose();
     this.deviceApps.dispose();
     this.storage.dispose();
     this.tracesift.dispose();

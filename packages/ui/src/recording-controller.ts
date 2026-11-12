@@ -1,10 +1,10 @@
-import { chatMessage } from "./chat-message.ts";
+import { sendChatMessage } from "./chat-message.ts";
 import { attachReference, cardsCallTools } from "./host-bridge.ts";
 import type { HostAttachmentsSource, HostBridge } from "./host-bridge.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { recordingRangeSchema, recordingReferenceSchema, recordingSchema, summarizeRecording } from "@mobile-dev/shared/recordings.ts";
 import type { PerformanceRecording, RecordingRange } from "@mobile-dev/shared/recordings.ts";
-import { captureUiError, countUiEvent, markUiSurfaceReady, recordUiTiming, setUiGauge, setUiSurface, setUiTelemetryContext } from "./telemetry.ts";
+import { captureUiError, countUiEvent, getUiTelemetryAttributes, markUiSurfaceReady, recordUiTiming, setUiGauge, setUiSurface, setUiTelemetryContext } from "./telemetry.ts";
 import { readRecording, RecordingReadError, RecordingTrimmedError, toolResultText } from "./recording-reader.ts";
 
 type RecordingState = {
@@ -15,6 +15,9 @@ type RecordingState = {
   canMessage: boolean;
   /** The server has Mobile Dev's workspace to open the recording in. */
   canOpen: boolean;
+  canDownload: boolean;
+  downloading: boolean;
+  downloadStatus: string;
   busy: boolean;
   error: string;
 };
@@ -43,7 +46,7 @@ export class RecordingController {
   constructor(app: HostBridge, { attachments = () => undefined, workspace = false }: RecordingOptions = {}) {
     this.app = app;
     this.attachments = attachments;
-    this.state = { canMessage: false, canOpen: workspace, busy: false, error: "" };
+    this.state = { canMessage: false, canOpen: workspace, canDownload: false, downloading: false, downloadStatus: "", busy: false, error: "" };
     document.addEventListener("visibilitychange", this.visibilityChanged);
   }
   subscribe = (listener: () => void) => {
@@ -59,7 +62,7 @@ export class RecordingController {
   hostChanged() {
     const capabilities = this.app.getHostCapabilities();
     const canMessage = Boolean(capabilities?.message?.text);
-    this.update({ canMessage });
+    this.update({ canMessage, canDownload: Boolean(capabilities?.downloadFile && this.app.downloadFile) });
     this.schedule();
   }
   setVisible(visible: boolean) { this.visible = visible; this.schedule(); }
@@ -115,7 +118,7 @@ export class RecordingController {
       }
       if (changedRecording) markUiSurfaceReady(this.readyAt);
     }
-    this.update({ recording, range, preview, error: recording.error ?? "" });
+    this.update({ recording, range, preview, error: recording.error ?? "", ...(changedRecording ? { downloadStatus: "" } : {}) });
     this.schedule();
   }
   private async load(recordingId: string, range?: RecordingRange) {
@@ -159,7 +162,7 @@ export class RecordingController {
     this.polling = true;
     try {
       const recording = await readRecording(this.app, recordingId, this.lifetime.signal);
-      if (this.state.recording?.id === recordingId) this.present(recording);
+      if (!this.disposed && this.state.recording?.id === recordingId) this.present(recording);
     } catch (error) {
       // A host that trims long results keeps the card on what it shows until the next read.
       if (this.disposed === false && error instanceof RecordingTrimmedError === false) {
@@ -170,7 +173,8 @@ export class RecordingController {
   }
   async send(action: "ask" | "open") {
     const { recording, range, canMessage, busy } = this.state;
-    if (recording === undefined || canMessage === false || busy) return;
+    if (this.disposed || recording === undefined || canMessage === false || busy) return;
+    const context = getUiTelemetryAttributes();
     this.update({ busy: true, error: "" });
     const selected = range ?? { start: 0, end: recording.durationSeconds };
     const reference = JSON.stringify({ recordingId: recording.id, range: selected });
@@ -187,7 +191,6 @@ export class RecordingController {
     const prompt = action === "ask"
       ? `Explain ${metricNames} during ${selected.start}–${selected.end}s of “${recording.title}”. Read the original samples with mobile_read_performance_recording using ${reference}. Distinguish measurements from hypotheses about their cause${displayContext}${frameContext}.`
       : `Open “${recording.title}” in Mobile Dev with ${selected.start}–${selected.end}s selected. Use mobile_open_performance_recording with ${reference}.`;
-    let sending = false;
     try {
       const modelContext = this.attachments();
       if (modelContext) {
@@ -201,20 +204,40 @@ export class RecordingController {
       }
       if (this.disposed) return;
       const text = modelContext ? (action === "ask" ? (range ? "Explain this selected range." : "Explain this recording.") : "Open this recording in Mobile Dev.") : prompt;
-      const message = chatMessage(this.app, text);
       const startedAt = performance.now();
-      sending = true;
-      const result = await this.app.sendMessage(message, { timeout: 5000, maxTotalTimeout: 5000 });
+      const result = await sendChatMessage(this.app, text);
+      if (this.disposed) return;
       if (result.isError) throw new Error("The host could not send this recording to chat.");
-      countUiEvent(`ui.recording.${action}`);
+      countUiEvent(`ui.recording.${action}`, 1, context);
       const elapsed = performance.now() - startedAt;
-      recordUiTiming("ui.recording.message_ack", elapsed);
+      recordUiTiming("ui.recording.message_ack", elapsed, context);
     } catch (error) {
-      captureUiError(new Error("Recording chat action failed."), `recording.${action}`);
-      const timedOut = sending && typeof error === "object" && error !== null && "code" in error && error.code === -32001;
-      const message = timedOut ? "The host did not confirm delivery. Check the chat before retrying to avoid sending the question twice." : error instanceof Error ? error.message : "Could not send this recording to chat.";
-      this.update({ error: message });
+      if (this.disposed) return;
+      captureUiError(new Error("Recording chat action failed."), `recording.${action}`, context);
+      this.update({ error: error instanceof Error ? error.message : "Could not send this recording to chat." });
     } finally { this.update({ busy: false }); }
+  }
+  async download() {
+    const { recording, preview, canDownload, downloading } = this.state;
+    if (this.disposed || !recording || preview || !canDownload || downloading || !this.app.downloadFile) return;
+    if (recording.status !== "finished" && recording.status !== "failed") return;
+    this.update({ downloading: true, downloadStatus: "", error: "" });
+    const startedAt = performance.now();
+    const context = getUiTelemetryAttributes();
+    try {
+      const result = await this.app.downloadFile({ contents: [{ type: "resource", resource: {
+        uri: `file:///mobile-dev-recording-${recording.id}.json`, mimeType: "application/json", text: JSON.stringify(recording),
+      } }] }, { timeout: 600_000, signal: this.lifetime.signal });
+      if (this.disposed) return;
+      recordUiTiming("ui.recording.download_ack", performance.now() - startedAt, context);
+      if (!result.isError) countUiEvent("ui.recording.download", 1, context);
+      if (this.state.recording?.id === recording.id) this.update({ downloadStatus: result.isError ? "The download did not finish." : "Download started." });
+    } catch {
+      if (!this.disposed) {
+        captureUiError(new Error("Recording download could not be confirmed."), "recording.download", context);
+        if (this.state.recording?.id === recording.id) this.update({ downloadStatus: "The download could not be confirmed. Check your downloads before trying again." });
+      }
+    } finally { this.update({ downloading: false }); }
   }
   dispose() {
     this.disposed = true;

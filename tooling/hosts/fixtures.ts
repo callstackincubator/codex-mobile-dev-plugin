@@ -1,10 +1,12 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test as base, expect, type FrameLocator, type Page } from "@playwright/test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { CallToolResult, JSONRPCMessage, Tool } from "@modelcontextprotocol/sdk/types.js";
+import type { McpUiHostCapabilities } from "@modelcontextprotocol/ext-apps/app-bridge";
+import { recordingSchema, type PerformanceRecording } from "../../packages/shared/src/recordings.ts";
 import { HOSTS, type Target, type Theme } from "./profiles.ts";
 
 declare global {
@@ -21,7 +23,7 @@ const build = join(root, ".host-tests");
 const HOST_ORIGIN = "https://host.test";
 
 /** The real server a target ships, started over stdio in a throwaway home directory. */
-export async function startServer(target: Target) {
+export async function startServer(target: Target | "browser") {
   const home = await mkdtemp(join(tmpdir(), "mobile-dev-host-test-"));
   const transport = new StdioClientTransport({
     command: process.execPath, args: [join(build, target, "server.mjs")], cwd: join(build, target), stderr: "pipe",
@@ -30,7 +32,16 @@ export async function startServer(target: Target) {
   });
   const stderr: string[] = [];
   transport.stderr?.on("data", chunk => { stderr.push(String(chunk)); });
-  return { transport, stderr, async close() { await transport.close(); await rm(home, { recursive: true, force: true }); } };
+  return {
+    transport, stderr,
+    async saveRecording(recording: PerformanceRecording) {
+      const saved = recordingSchema.parse(recording);
+      const directory = join(home, "Library/Application Support/mobile-dev/recordings");
+      await mkdir(directory, { recursive: true });
+      await writeFile(join(directory, `${saved.id}.json`), JSON.stringify(saved));
+    },
+    async close() { await transport.close(); await rm(home, { recursive: true, force: true }); },
+  };
 }
 
 type Opened = { view: FrameLocator; result: CallToolResult };
@@ -40,9 +51,9 @@ type Fixtures = {
   /** Errors the page or the view logged; tests assert this stays empty. */
   pageErrors: string[];
   /** An MCP client for the target's server, as the host's MCP client. */
-  server: { client: Client; tools: Tool[] };
+  server: { client: Client; tools: Tool[]; saveRecording(recording: PerformanceRecording): Promise<void> };
   /** Opens the view a tool renders, as an MCP Apps host would after the model calls it. */
-  openView(tool: string, options?: { arguments?: Record<string, unknown>; theme?: Theme; displayMode?: "inline" | "fullscreen"; width?: number; initiallyHidden?: boolean }): Promise<Opened>;
+  openView(tool: string, options?: { arguments?: Record<string, unknown>; theme?: Theme; displayMode?: "inline" | "fullscreen"; width?: number; initiallyHidden?: boolean; capabilities?: McpUiHostCapabilities }): Promise<Opened>;
   /** Loads the Mac app's page with a stand-in for the WebKit relay to its server. */
   openMac(options?: { theme?: Theme }): Promise<Page>;
 };
@@ -64,7 +75,7 @@ export const test = base.extend<Fixtures>({
     try {
       await client.connect(server.transport);
       const { tools } = await client.listTools();
-      await use({ client, tools });
+      await use({ client, tools, saveRecording: server.saveRecording });
     } catch (error) {
       throw new Error(`${error instanceof Error ? error.message : error}\n${server.stderr.join("")}`);
     } finally {
@@ -81,7 +92,7 @@ export const test = base.extend<Fixtures>({
     });
     await page.exposeFunction("mcpRequest", (method: string, params: never) =>
       method === "tools/call" ? server.client.callTool(params) : server.client.readResource(params));
-    await use(async (name, { arguments: args = {}, theme = "light", displayMode = "fullscreen", width, initiallyHidden } = {}) => {
+    await use(async (name, { arguments: args = {}, theme = "light", displayMode = "fullscreen", width, initiallyHidden, capabilities = {} } = {}) => {
       const tool = server.tools.find(candidate => candidate.name === name);
       const uri = (tool?._meta?.ui as { resourceUri?: string } | undefined)?.resourceUri;
       if (uri === undefined) throw new Error(`${name} has no UI resource.`);
@@ -94,7 +105,7 @@ export const test = base.extend<Fixtures>({
       context.containerDimensions = { ...page.viewportSize()! };
       await page.goto(`${HOST_ORIGIN}/host.html`);
       await page.evaluate(options => window.harness.open(options), {
-        html, hostInfo: host.hostInfo, capabilities: host.capabilities, context, tool: { arguments: args, result }, initiallyHidden,
+        html, hostInfo: host.hostInfo, capabilities: { ...host.capabilities, ...capabilities }, context, tool: { arguments: args, result }, initiallyHidden,
       });
       return { view: page.frameLocator("#view"), result };
     });

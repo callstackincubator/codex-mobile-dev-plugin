@@ -4,16 +4,18 @@ import Ajv2020 from "ajv/dist/2020.js";
 import { codexToolBudget } from "../../apps/codex-plugin/tooling/codex-tool-limits.mjs";
 import { oversizedFiles, PANEL_PARTS } from "../host-runtime.mjs";
 import { pluginHost, pluginHosts } from "../plugin-hosts.mjs";
-import { expect, test } from "./fixtures.ts";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { HOSTS } from "./profiles.ts";
+import { expect, startServer, test } from "./fixtures.ts";
 
 const root = join(import.meta.dirname, "../..");
+const codexOnlyTools = ["mobile_check_plugin_update", "mobile_migrate_plugin_to_store"];
 
 // Regression checks for each shipped target, against its real server and page
 // in a stand-in for its host. Device-backed behavior needs a simulator or emulator
 // and is covered by the smoke scripts instead.
 
-// Claude shows devices in its own simulator views, so its server has no panel.
-// A panel that renders in the chat; Claude's shows beside it, in a browser (browser-panel.spec.ts).
+// Both hosts expose the shared native MCP Apps panel.
 const hasPanel = (server: { tools: { name: string; _meta?: Record<string, unknown> }[] }) =>
   server.tools.some(tool => tool.name === "mobile_open_workspace" && (tool._meta?.ui as { resourceUri?: string } | undefined)?.resourceUri !== undefined);
 
@@ -50,15 +52,49 @@ test.describe("MCP Apps hosts", () => {
   });
 
   test("only Codex ships the plugin updater", async ({ server, target }) => {
-    const updater = server.tools.filter(tool => tool.name.includes("plugin_")).map(tool => tool.name).sort();
-    expect(updater).toEqual(target === "codex" ? ["mobile_check_plugin_update", "mobile_migrate_plugin_to_store"] : []);
+    const updater = server.tools.filter(tool => codexOnlyTools.includes(tool.name)).map(tool => tool.name).sort();
+    expect(updater).toEqual(target === "codex" ? codexOnlyTools : []);
+  });
+
+  test("Claude exposes the same device and app tools as Codex", async ({ server, target }) => {
+    test.skip(target !== "claude", "Compare Claude with Codex once.");
+    const codex = await startServer("codex");
+    const client = new Client({ name: HOSTS.codex.clientName, version: "1" }, { capabilities: HOSTS.codex.clientCapabilities });
+    try {
+      await client.connect(codex.transport);
+      const { tools } = await client.listTools();
+      expect(server.tools).toEqual(tools.filter(tool => !codexOnlyTools.includes(tool.name)));
+      expect(server.tools.some(tool => tool.name === "mobile_read_panel_context")).toBe(false);
+    } finally { await client.close(); await codex.close(); }
+  });
+
+  test("native panels request the side panel and recordings can open in the workspace", async ({ server, target }) => {
+    for (const name of ["mobile_open_simulator", "mobile_open_workspace", "mobile_open_app_intel", "mobile_open_performance_recording"]) {
+      const tool = server.tools.find(tool => tool.name === name)!;
+      expect(tool?._meta?.ui).toHaveProperty("resourceUri");
+      const resource = await server.client.readResource({ uri: (tool._meta!.ui as { resourceUri: string }).resourceUri });
+      expect(resource.contents[0]._meta?.ui).toHaveProperty("preferredDisplayMode", "fullscreen");
+    }
+    for (const name of ["mobile_render_performance_recording", "mobile_compare_performance_recordings"]) {
+      const tool = server.tools.find(tool => tool.name === name)!;
+      const resource = await server.client.readResource({ uri: (tool._meta!.ui as { resourceUri: string }).resourceUri });
+      expect(resource.contents[0].text).toContain("data-workspace");
+    }
+    if (target === "claude") {
+      expect(existsSync(join(root, ".host-tests/claude/browser-panel.html"))).toBe(false);
+      // App Intelligence opens without device helpers, so check the opening result too.
+      const result = await server.client.callTool({ name: "mobile_open_app_intel", arguments: {} });
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent?.browserPanel).toBeUndefined();
+      expect(JSON.stringify(result.content)).not.toContain("http://127.0.0.1");
+    }
   });
 
   test("the workspace opens every tool without errors", async ({ openView, pageErrors, server }) => {
     test.skip(hasPanel(server) === false, "This target's server renders no panel in the chat.");
     const { view } = await openView("mobile_open_workspace");
     await expect(view.locator("#tool-select")).toContainText("Logs");
-    for (const label of ["Performance", "Storage", "App Intel", "TraceSift", "Logs"]) {
+    for (const label of ["Performance", "App Flow", "Storage", "App Intel", "TraceSift", "Logs"]) {
       await view.locator("#tool-select").click();
       await view.getByRole("option", { name: label }).click();
       await expect(view.locator("#tool-select")).toContainText(label);
@@ -80,8 +116,7 @@ test.describe("MCP Apps hosts", () => {
     expect(pageErrors).toEqual([]);
   });
 
-  test("an Android panel initialized while hidden shows its device controls and keeps tools collapsed", async ({ openView, page, pageErrors, target }) => {
-    test.skip(target !== "codex", "Codex retains inactive panels before displaying them.");
+  test("an Android panel initialized while hidden shows its device controls and keeps tools collapsed", async ({ openView, page, pageErrors }) => {
     const { view } = await openView("mobile_open_simulator", {
       arguments: { platform: "android" }, displayMode: "inline", initiallyHidden: true,
     });

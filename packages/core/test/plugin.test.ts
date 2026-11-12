@@ -31,11 +31,19 @@ test("opening tools accept optional intent and preserve it in their results", as
   t.after(async () => { await client.close(); await plugin.close(); await fake.close(); });
   await plugin.server.connect(serverTransport);
   await client.connect(clientTransport);
+  let previousInstance: { scope: string; sequence: number } | undefined;
   for (const name of ["mobile_open_simulator", "mobile_open_workspace"]) {
     for (const target of [{}, { platform: "android", kind: "emulator" }, { platform: "ios", kind: "physical", deviceId: "00008110-000A0B1C2D3E4000" }]) {
       const result = await client.callTool({ name, arguments: target });
       assert.equal(result.isError, undefined);
       assert.deepEqual(result.structuredContent?.panelTarget, target);
+      const instance = result.structuredContent?.workspaceInstance as typeof previousInstance;
+      assert.ok(instance);
+      if (previousInstance) {
+        assert.equal(instance.scope, previousInstance.scope);
+        assert.ok(instance.sequence > previousInstance.sequence);
+      }
+      previousInstance = instance;
     }
     const invalid = await client.callTool({ name, arguments: { platform: "android", kind: "simulator" } });
     assert.equal(invalid.isError, true);
@@ -82,7 +90,7 @@ test("live UI reads use MCP and allow only Sentry browser connections", async t 
   await plugin.server.connect(serverTransport);
   await client.connect(clientTransport);
   const first = await client.readResource({ uri: APP_URI });
-  assert.deepEqual(first.contents[0]._meta?.ui, { permissions: { clipboardWrite: {} }, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } });
+  assert.deepEqual(first.contents[0]._meta?.ui, { preferredDisplayMode: "fullscreen", permissions: { clipboardWrite: {} }, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: ["https://assets.claude.ai"] } });
   const uri = `ui://mobile-dev/live?after=${revision}`;
   const unchanged = await client.readResource({ uri });
   assert.deepEqual(JSON.parse(unchanged.contents[0].text as string), { revision });
@@ -260,6 +268,11 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
   }
   assert.equal((workspace._meta?.ui as { resourceUri: string }).resourceUri, WORKSPACE_URI);
   const workspaceResource = await client.readResource({ uri: WORKSPACE_URI });
+  for (const uri of [APP_URI, WORKSPACE_URI]) {
+    const resource = await client.readResource({ uri });
+    assert.equal((resource.contents[0]._meta?.ui as { preferredDisplayMode: string }).preferredDisplayMode, "fullscreen");
+    assert.deepEqual(resource.contents[0]._meta?.["openai/ui"], { preferredDisplayMode: "fullscreen", availableDisplayModes: ["inline", "fullscreen"] });
+  }
   const recordingResource = await client.readResource({ uri: RECORDING_URI });
   // Cards from a server with the workspace can open recordings there.
   assert.match(recordingResource.contents[0].text as string, /data-view="recording" data-workspace/);
@@ -276,7 +289,7 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
   }
   assert.equal(recordingResource.contents[0].mimeType, "text/html;profile=mcp-app");
   assert.deepEqual(recordingResource.contents[0]._meta?.["openai/ui"], { preferredDisplayMode: "inline", availableDisplayModes: ["inline", "fullscreen"] });
-  assert.deepEqual(recordingResource.contents[0]._meta?.ui, { prefersBorder: true, permissions: { clipboardWrite: {} }, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } });
+  assert.deepEqual(recordingResource.contents[0]._meta?.ui, { prefersBorder: true, permissions: { clipboardWrite: {} }, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: ["https://assets.claude.ai"] } });
   const renderRecording = tools.tools.find(tool => tool.name === "mobile_render_performance_recording");
   assert.deepEqual(renderRecording?._meta?.ui, { resourceUri: RECORDING_URI, visibility: ["app", "model"] });
   const comparisonResource = await client.readResource({ uri: COMPARISON_URI });
@@ -314,7 +327,7 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
   OpenAIUiResourceMetadataSchema.parse(resource.contents[0]._meta?.["openai/ui"]);
   assert.equal(resource.contents[0].mimeType, "text/html;profile=mcp-app");
   assert.match(resource.contents[0].text as string, /data-view="panel" data-layout="stacked"/);
-  assert.deepEqual(resource.contents[0]._meta?.ui, { permissions: { clipboardWrite: {} }, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } });
+  assert.deepEqual(resource.contents[0]._meta?.ui, { preferredDisplayMode: "fullscreen", permissions: { clipboardWrite: {} }, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: ["https://assets.claude.ai"] } });
   const status = await client.callTool({ name: "mobile_open_simulator", arguments: {} });
   assert.equal(status.structuredContent?.connected, true);
   assert.equal((status.structuredContent?.devices as unknown[]).length, 2);

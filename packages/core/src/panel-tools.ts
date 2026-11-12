@@ -1,4 +1,6 @@
 import { parseResourceInput } from "./resource-input.ts";
+import { randomUUID } from "node:crypto";
+import { workspaceInstanceSchema } from "@mobile-dev/shared/workspace-instance.ts";
 import { openRequestSession } from "./request-session.ts";
 import type { ServerRequestContext } from "./request-session.ts";
 import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -112,8 +114,7 @@ export type PanelOptions = {
  * Mobile Dev's live device panel and workspace with the tools only they use: device
  * streams and input, screenshots, UI inspection, device settings, physical iPhone
  * mirroring, Baguette's simulator controls, the App tab's reads, opening recordings in
- * the workspace and asking for devices in a native form. Hosts that show devices
- * themselves, such as Claude, leave it out.
+ * the workspace and asking for devices in a native form.
  */
 export function createPanel({ baguette = new Baguette(), simulatorInput, copyScreenshot = copyPNGToClipboard, resourceSaving = new ResourceSaving(), inline = true }: PanelOptions = {}): Panel {
   return {
@@ -128,6 +129,9 @@ export function createPanel({ baguette = new Baguette(), simulatorInput, copyScr
 
 function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, showRecording, opened }: PanelShared,
   { baguette, simulatorInput, copyScreenshot, resourceSaving, inline }: Required<PanelOptions>) {
+  const scope = randomUUID();
+  let sequence = 0;
+  const instance = () => ({ scope, sequence: ++sequence });
   const streams = new StreamSessions(baguette);
   const closeIosMirror = registerIosMirrorTools(server, APP_URI);
   const closeInspection = registerInspectionTools(server, baguette, android);
@@ -140,7 +144,7 @@ function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, sh
   registerResourceSavingTools(server, baguette, android, resourceSaving);
   registerPanelAppControlTools(server, drivers);
   // Opening a recording renders the workspace in the chat; beside the chat, recordings stay cards.
-  if (inline) registerOpenRecordingTool(server, showRecording, WORKSPACE_URI);
+  if (inline) registerOpenRecordingTool(server, showRecording, WORKSPACE_URI, instance);
 
   const readApp = async (uri: URL): Promise<ReadResourceResult> => {
     const content = await page();
@@ -149,7 +153,7 @@ function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, sh
         ? content.replace('data-view="panel"', 'data-view="workspace"').replace('data-layout="stacked"', 'data-layout="split"')
         : content,
       _meta: {
-        ui: { permissions: { clipboardWrite: {} }, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } },
+        ui: { preferredDisplayMode: "fullscreen", permissions: { clipboardWrite: {} }, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: ["https://assets.claude.ai"] } },
         "openai/ui": { preferredDisplayMode: "fullscreen", availableDisplayModes: ["inline", "fullscreen"] },
       },
     }] };
@@ -218,6 +222,7 @@ function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, sh
   });
 
   const openPanel = (tool: string, defaults: Partial<PanelTarget> = {}, startBackend = true) => guarded(async (input: PanelTarget) => {
+    const workspaceInstance = instance();
     const panelTarget = { ...input, ...defaults };
     let status = { connected: false, managed: false, baseUrl: "", devices: [] as Awaited<ReturnType<Baguette["status"]>>["devices"], error: undefined as string | undefined };
     if (startBackend) try { status = { ...(await baguette.start()), error: undefined }; }
@@ -229,7 +234,7 @@ function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, sh
     // Hosts can pass the model either form of a result, and Claude Code passes only the
     // structured one, so another place to show the panel goes into both.
     const opening = await opened({ tool, target: panelTarget });
-    const response = result({ ...status, panelTarget, ...opening ? { browserPanel: opening } : {} }, startBackend ? (status.connected ? `Found ${status.devices.length} simulators.` : status.error ?? "The bundled simulator backend could not start.") : "Opened App Intelligence.");
+    const response = result({ ...status, panelTarget, workspaceInstance, ...opening ? { browserPanel: opening } : {} }, startBackend ? (status.connected ? `Found ${status.devices.length} simulators.` : status.error ?? "The bundled simulator backend could not start.") : "Opened App Intelligence.");
     if (opening) response.content.push({ type: "text", text: opening.instructions });
     return response;
   });
@@ -239,7 +244,7 @@ function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, sh
   const openingTool = (name: string, config: { description: string; resourceUri: string; entrypoint: "global" | "thread"; defaults?: Partial<PanelTarget>; startBackend?: boolean }) => {
     const definition = {
       title: "Mobile Dev", description: config.description,
-      inputSchema: panelTargetSchema, outputSchema: { ...statusOutput, panelTarget: panelTargetSchema, browserPanel: browserPanelOutput }, annotations: write,
+      inputSchema: panelTargetSchema, outputSchema: { ...statusOutput, panelTarget: panelTargetSchema, workspaceInstance: workspaceInstanceSchema, browserPanel: browserPanelOutput }, annotations: write,
     };
     if (inline === false) {
       server.registerTool(name, { ...definition, _meta: { [PANEL_PAGE_META]: { resourceUri: config.resourceUri } } }, openPanel(name, config.defaults, config.startBackend));

@@ -182,20 +182,21 @@ test("TraceSift never retries an unconfirmed send", async () => {
   assert.match(controller.getSnapshot().error, /Check the chat before retrying/);
 });
 
-test("TraceSift reports an unavailable composer without retrying", async () => {
+for (const routed of [false, true]) test(`TraceSift reports a rejected request without retrying, routed=${routed}`, async t => {
   let sends = 0;
   const app = {
-    getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
+    getHostCapabilities: () => ({ serverTools: {}, message: { text: {} }, ...(routed ? { experimental: { "openai/message": {} } } : {}) }),
     getHostContext: () => hostContext,
     async callServerTool() { return { content: [], structuredContent: { apiVersion: 1, handoff: "PRIVATE_HANDOFF" } }; },
     async sendMessage() { sends++; throw new Error("No active composer is available."); },
   };
   const controller = new TraceSiftController(app as never);
+  t.after(() => controller.dispose());
   controller.hostChanged();
   controller.accept({ content: [], structuredContent: analysis });
   await controller.investigate("react-commit-1-2");
   assert.equal(sends, 1);
-  assert.match(controller.getSnapshot().error, /Reopen the chat/);
+  assert.match(controller.getSnapshot().error, routed ? /Reopen the chat/ : /did not confirm delivery/);
 });
 
 const cpuAnalysis = {

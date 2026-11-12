@@ -30,8 +30,8 @@ function cancelReadinessFrames() {
   readinessFrames.clear();
 }
 
-export function recordUiTiming(name: string, duration: number) {
-  if (running === false || document.visibilityState === "hidden") return;
+export function recordUiTiming(name: string, duration: number, context = attributes) {
+  if (running === false || context !== attributes || document.visibilityState === "hidden") return;
   let window = measurements.get(name);
   if (window === undefined) {
     window = new MeasurementWindow();
@@ -47,7 +47,7 @@ export async function measureUiOperation<T>(timing: string, failure: string, wor
   const context = attributes;
   try { return await work(); }
   catch (error) { if (attributes === context) countUiEvent(failure); throw error; }
-  finally { if (attributes === context) recordUiTiming(timing, performance.now() - startedAt); }
+  finally { recordUiTiming(timing, performance.now() - startedAt, context); }
 }
 
 export function setUiGauge(name: string, value: number) {

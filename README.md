@@ -63,15 +63,17 @@ To install the prebuilt plugin from this repository instead, see
 
 ### Claude Code and Claude Desktop
 
-In Claude Code, ask to see a device and Claude opens Mobile Dev's device panel in its
-browser beside the chat, such as the Claude desktop app's built-in browser pane. The
-first open downloads the panel's runtime (Baguette, Android streaming and iPhone
-mirroring) once from this repository's GitHub release, checked against the checksum
-the plugin pins. Claude reads the devices you select in the panel and anything you add
-to chat from it. Mobile Dev also adds device control through the bundled
-[agent-device](https://agent-device.dev/) runtime, native
-and Metro logs, app control and storage, interactive CPU, memory and FPS charts in
-chat, and TraceSift findings.
+In Claude Desktop, ask to see a device and Claude opens Mobile Dev's native MCP Apps
+panel. It requests the side panel where available and includes the same device
+workspace as Codex, with logs, storage, App Intelligence, performance recordings,
+comparisons, and TraceSift's explorer. The panel shares selected devices, logs,
+screenshots, and notes with Claude, and its Ask and Investigate actions use Claude's
+chat bridge. Claude controls side-panel availability; use its expand control when
+needed. Terminal sessions can use the tools directly.
+
+The first device-panel open downloads the pinned runtime helpers from this
+repository's GitHub release and checks their size and checksum. The other tools
+work without that download.
 
 On an Apple Silicon Mac with Node.js 22.19 or later, install the Claude Code plugin
 from this repository's `release/claude` branch. It finds Node on `PATH` or where

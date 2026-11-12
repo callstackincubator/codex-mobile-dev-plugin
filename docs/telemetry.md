@@ -2,6 +2,28 @@
 
 [Back to README](../README.md) · [Contributing](../CONTRIBUTING.md)
 
+Native MCP Apps workspaces preserve existing surface, readiness, processing,
+input, stream, and MCP measurements when Claude renders them directly.
+`ui.workspace.superseded` counts workspaces retired by a newer opening before
+their usual teardown flushes and stops collection. Election keys stay local.
+`ui.app_flow.message_ack` measures the host's message acknowledgement in
+milliseconds; it does not mean the user agreed or that a sweep started.
+`ui.recording.download_ack` measures the host download response in milliseconds,
+including time spent waiting for confirmation. `ui.recording.download` counts
+accepted download requests, not completed file writes. Failed requests use the
+fixed `recording.download` error message. File contents, names, recording IDs,
+and paths never enter these measurements. Retiring a workspace aborts a pending
+download and stops further collection.
+
+Download counts and errors retain their starting context. Chat and download
+acknowledgement timings pass that context to `recordUiTiming`; a response after a
+surface or device-context change adds no timing to the new context. Chat delivery
+uses one shared request function: any rejected promise has uncertain delivery,
+while an explicit `isError` result means refusal. The new bounded count
+`ui.annotations.delivery_unconfirmed` covers all rejected message requests;
+`ui.annotations.send_timeout` still counts only SDK timeouts. Message content and
+raw host errors stay out of these reports.
+
 ## Hosts
 
 Since 0.1.165, UI and server telemetry carry a `host` tag and attribute with one of
