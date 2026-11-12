@@ -592,6 +592,17 @@ every element name the read answered with are the user's own content about their
 **not** sent; these are counts, durations and sizes only. Handled failures of the agent tools go
 through `captureServerError` as `testing.agent`, beside `testing.tool` and `testing.release`.
 
+Unsaved recordings — the flows the panel keeps so one survives the panel document being rebuilt —
+measure `ui.testing.draft_save`, the autosave write, and count `ui.testing.draft_restore` when one
+is reopened into the step list and `ui.testing.draft_delete` when the user throws one away. The
+measurement brackets the panel's call and the list refresh that follows it, so it says what the
+keep costs the user between one edit and the next; the keep the panel makes as it is torn down is
+not measured, because the document it would be attributed to is going away. The title, the file name, the project path, the
+steps and everything they name are the user's own content and are **not** sent; these are counts
+and a duration. An autosave that fails is silent on screen and goes through `captureUiError` as
+`testing.draft_save`; the server's own keep of a finished agent recording goes through
+`captureServerError` as `testing.agent.draft`.
+
 Since 0.1.99, `ui.logs.foreground_change` counts automatic app-filter changes applied while Logs is active, including selected-device and process-lifetime changes. From 0.1.103, these changes update the visible query and local process identity mapping instead of restarting a scoped collector. `ui.logs.app_identity` measures batch insertion with native PID-to-app joins and discovery updates in milliseconds, using bounded aggregate windows. Hidden or closed log views defer row processing until reopened. Shared `ui.device_apps.discovery` timing and handled discovery-error coverage remain in place, including Android's foreground PID lookup; native session operations retain MCP tracing, Node runtime coverage, and `logs.ios.parse` timings. No app IDs, PIDs, package names, device IDs, or query text are attached to these measurements. Native helper telemetry and symbols are unchanged.
 
 Since 0.1.99, `ui.logs.query_parse` measures query compilation in milliseconds once per edit, including automatic app-clause edits from 0.1.103. Existing `ui.logs.filter`, buffered/filtered row gauges, and search counts cover keyword filtering and visible age refreshes; filtering time still covers snapshot derivation and grouping. Query text, field values, regex patterns, and validation messages remain local. Age refresh timers stop when Logs closes, unmounts, or the document becomes hidden.

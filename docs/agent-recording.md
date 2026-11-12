@@ -20,6 +20,7 @@ runs it exactly as if they had tapped it themselves.
 | Panel | Live — steps appear as they are recorded | "Opens up the panel for the user" is the point; it also gives the user a Stop button |
 | Step kind | Pinned locators; `agent.act`/`agent.assert` only where nothing resolves | Same rule the manual recorder follows: the point of recording is determinism |
 | Saving | No. The agent finishes with the steps dirty in the panel | The user adjusts before anything reaches `tests/` |
+| Keeping | Yes, as an unsaved recording in the plugin's own storage | Nothing reaches `tests/`, and a flow the user has not opened the panel for yet is not lost — see [docs/testing-panel.md](testing-panel.md#unsaved-recordings) |
 | Running | No | There is no file to run, and a run resets the app and takes the device session |
 | Prerequisites | Refuse when no project or device is chosen | Project choice stays the user's explicit act, and an OS folder picker must not open inside an agent turn |
 
@@ -140,7 +141,9 @@ otherwise so a session the agent started is noticed.
   that calls `agent_abort`; left-click drive and the right-click element menu on the mirror are
   disabled, because the agent and the user must not both be acting on one screen.
 - On `finished`: the banner clears, the steps stay dirty, and the panel says what was recorded and
-  that nothing has been saved. From here it is an ordinary unsaved recording.
+  that nothing has been saved. From here it is an ordinary unsaved recording. The server has kept the
+  flow by then and `agent_state` carries its `draftId`, which the panel adopts so its own autosave
+  replaces that draft rather than leaving a second copy of one recording in the list.
 
 ## The skill
 

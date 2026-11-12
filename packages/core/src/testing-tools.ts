@@ -6,6 +6,9 @@ import { errorMessage } from "@mobile-dev/shared/protocol.ts";
 import { captureServerError } from "./telemetry.ts";
 import type { TestingProjectChoices } from "./testing-projects.ts";
 import { inspectProject, writeTestFile } from "./testing-projects.ts";
+import { TestDraftStore } from "./testing-drafts.ts";
+import { MAX_DRAFT_STEPS, recordedStepSchema, testDraftIdSchema } from "@mobile-dev/shared/test-drafts.ts";
+import type { TestDraft } from "@mobile-dev/shared/test-drafts.ts";
 import { TestingDevices } from "./testing-device.ts";
 import { runRecordedTest } from "./testing-run.ts";
 import type { TestRunProgress } from "./testing-run.ts";
@@ -36,7 +39,7 @@ function dataResult(data: Record<string, unknown>, message?: string): CallToolRe
 
 /** The Testing panel's project selection, and the device tree its recorder names selectors from. */
 /** Returns the shutdown the plugin has to run: the recorder's device session, handed back. */
-export function registerTestingTools(server: McpServer, projects: TestingProjectChoices, devices = new TestingDevices()): () => Promise<void> {
+export function registerTestingTools(server: McpServer, projects: TestingProjectChoices, devices = new TestingDevices(), drafts = new TestDraftStore()): () => Promise<void> {
   /**
    * The live progress of the run in flight.
    *
@@ -83,6 +86,67 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
   }, safe(async ({ projectPath: selected, relativePath, contents, overwrite }: { projectPath: string; relativePath: string; contents: string; overwrite?: boolean }) => {
     const result = await writeTestFile(selected, relativePath, contents, overwrite ?? false);
     return dataResult({ ...result }, result.written ? `Saved ${result.path}` : `${result.path} already exists.`);
+  }));
+
+  /**
+   * The unsaved recordings.
+   *
+   * A flow lives in the panel document until Save writes it into the project, and the host rebuilds
+   * that document whenever the user looks at another tool or another chat — so a flow they have not
+   * saved, or one their agent recorded while they were reading the chat, used to be gone when they
+   * came back. The panel autosaves into these instead, and lists them so a flow can be reopened,
+   * swapped for another or thrown away. Nothing here touches the user's project.
+   */
+  registerAppTool(server, "mobile_testing_drafts", {
+    title: "List unsaved recordings",
+    description: "List the recorded tests that have not been written into a project yet, newest first. Pass projectPath to list one project's drafts.",
+    inputSchema: { projectPath: projectPath.optional() },
+    annotations: read,
+    _meta: appVisibility,
+  }, safe(async ({ projectPath: selected }: { projectPath?: string }) =>
+    dataResult({ drafts: await drafts.list(selected ?? "") })));
+
+  registerAppTool(server, "mobile_testing_draft_read", {
+    title: "Read an unsaved recording",
+    description: "Read one unsaved recording, with its steps, so the panel can put it back in the step list.",
+    inputSchema: { id: testDraftIdSchema },
+    annotations: read,
+    _meta: appVisibility,
+  }, safe(async ({ id }: { id: string }) => {
+    const draft = await drafts.read(id);
+    return dataResult(draft ? { draft } : {}, draft ? undefined : "That recording is no longer there.");
+  }));
+
+  registerAppTool(server, "mobile_testing_draft_save", {
+    title: "Keep an unsaved recording",
+    description:
+      "Write the recording in the panel to the plugin's own storage so it survives the panel being rebuilt. Nothing is written into the user's project; that is mobile_testing_write_file.",
+    inputSchema: {
+      id: testDraftIdSchema.optional().describe("The draft to replace. Omit to start a new one."),
+      projectPath,
+      title: z.string().max(160),
+      fileName: z.string().max(256).optional(),
+      origin: z.enum(["user", "agent"]).optional(),
+      steps: z.array(recordedStepSchema).max(MAX_DRAFT_STEPS),
+    },
+    // The plugin's own state, replaced wholesale by the panel that owns it.
+    annotations: write,
+    _meta: appVisibility,
+  }, safe(async (input: { id?: string; projectPath: string; title: string; fileName?: string; origin?: "user" | "agent"; steps: TestDraft["steps"] }) => {
+    const draft = await drafts.save({ ...input, steps: input.steps });
+    return dataResult({ id: draft.id, updatedAt: draft.updatedAt });
+  }));
+
+  registerAppTool(server, "mobile_testing_draft_delete", {
+    title: "Delete an unsaved recording",
+    description: "Forget one unsaved recording. The steps are gone; a recording already written into the project is untouched.",
+    inputSchema: { id: testDraftIdSchema },
+    // Throwing away a flow the user recorded and never saved is not recoverable.
+    annotations: destructive,
+    _meta: appVisibility,
+  }, safe(async ({ id }: { id: string }) => {
+    const removed = await drafts.remove(id);
+    return dataResult({ removed }, removed ? "Deleted the recording." : "That recording was already gone.");
   }));
 
   registerAppTool(server, "mobile_testing_project_config", {

@@ -98,6 +98,16 @@ export type TestRecorderSnapshot = {
   title: string;
   /** Bumped by every change to what would be written, so the panel can tell saved from dirty. */
   revision: number;
+  /**
+   * Which flow the step list *is*, as opposed to how many times it has changed.
+   *
+   * A new one is minted whenever the list stops being the same recording — Record on a flow the
+   * user did not choose to resume, Clear, a kept recording reopened, an agent session beginning.
+   * `revision` cannot answer this: it moves for an edit and for a brand new flow alike, and the
+   * panel has to tell those apart or it keeps writing one recording over another's file. See
+   * `TestingPanel.keepDraft`.
+   */
+  flowId: string;
   /** A step is being resolved: the tap is held until its tree read finishes. */
   resolving: boolean;
   /**
@@ -179,6 +189,11 @@ const TREE_TTL_MS = 1_500;
  * two concurrent recordings would interleave steps from two screens into one file. That is why
  * this is a module singleton rather than a per-stage store.
  */
+/** A fresh flow identity. Not a step id and never emitted: it only ever leaves the panel's memory. */
+function newFlowId(): string {
+  return crypto.randomUUID();
+}
+
 export class TestRecorder {
   private readonly listeners = new Set<() => void>();
   private reader?: RecorderReader;
@@ -210,7 +225,7 @@ export class TestRecorder {
   /** That element's rectangle, which is the box a scoped swipe is drawn inside. */
   private lastBounds?: ScreenBounds;
   private snapshot: TestRecorderSnapshot = {
-    recordingUdid: "", agentUdid: "", steps: [], title: DEFAULT_TITLE, revision: 0, resolving: false, error: "",
+    recordingUdid: "", agentUdid: "", steps: [], title: DEFAULT_TITLE, revision: 0, flowId: newFlowId(), resolving: false, error: "",
   };
 
   private fadeTimer?: ReturnType<typeof setTimeout>;
@@ -316,6 +331,7 @@ export class TestRecorder {
     this.update({
       agentUdid: udid, recordingUdid: udid, error: "", menu: undefined,
       steps: [...steps],
+      ...(began ? { flowId: newFlowId() } : {}),
       ...(title ? { title } : {}),
     });
     // Counted as steps, never as what they say: an element's name and the goal sentence are the
@@ -353,7 +369,10 @@ export class TestRecorder {
     // covered and starting again replaces the file entirely, so either way the overlay would be
     // marking lines of something else — and a passing run's marks are mid-fade besides.
     this.clearRun();
-    this.update({ recordingUdid: udid, error: "", menu: undefined, ...(keepSteps ? {} : { steps: [] }) });
+    // A flow that is not being resumed is a different recording, however much of the old one is
+    // still on screen a moment before. Anything holding on to the last flow — the panel's kept
+    // draft above all — has to be told, or the next thing written lands on the wrong one.
+    this.update({ recordingUdid: udid, error: "", menu: undefined, ...(keepSteps ? {} : { steps: [], flowId: newFlowId() }) });
     countUiEvent("ui.testing.record_start");
     // Which way the user answered, counted only where there was a question to answer. It says
     // whether the choice is carrying its weight; nothing about the flow itself is sent.
@@ -447,9 +466,28 @@ export class TestRecorder {
     this.update({ hover });
   }
 
+  /**
+   * Puts a kept recording back in the panel, without arming the recorder.
+   *
+   * The flow comes back as steps rather than as the file it would emit, so it is still editable:
+   * the generated source is an output and nothing reads it back. Nothing starts recording — the
+   * user reopened a flow to look at it, and a tap on the mirror a moment later must not append to
+   * it — and any run marks go, because they were a verdict on whatever was in the list before.
+   */
+  restore(steps: readonly RecordedStep[], title?: string) {
+    if (this.snapshot.agentUdid) return;
+    this.clearHover();
+    this.clearRun();
+    this.update({
+      recordingUdid: "", resolving: false, error: "", menu: undefined,
+      steps: [...steps], flowId: newFlowId(), ...(title ? { title } : {}),
+    });
+    countUiEvent("ui.testing.draft_restore");
+  }
+
   setTitle(title: string) { this.update({ title: title.trim() || DEFAULT_TITLE }); }
   removeStep(id: string) { this.update({ steps: this.snapshot.steps.filter(step => step.id !== id) }); }
-  clearSteps() { this.update({ steps: [] }); }
+  clearSteps() { this.update({ steps: [], flowId: newFlowId() }); }
 
   /**
    * Appends a copy of one step at the end of the list.

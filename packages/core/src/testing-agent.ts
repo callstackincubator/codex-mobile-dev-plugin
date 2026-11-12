@@ -15,6 +15,7 @@ import type {
 } from "@mobile-dev/shared/test-recording.ts";
 import type { ScreenComponent, ScreenSize } from "@mobile-dev/shared/screen-annotations.ts";
 import { TestingDevices } from "./testing-device.ts";
+import { TestDraftStore } from "./testing-drafts.ts";
 import type { TestingDeviceTarget } from "./testing-device.ts";
 import { captureServerError, recordTestingAgentRead } from "./telemetry.ts";
 
@@ -64,6 +65,15 @@ export type TestingAgentState = {
   steps: RecordedStep[];
   note: string;
   error: string;
+  /**
+   * The unsaved recording the finished session was kept as, or "" while it is still in flight.
+   *
+   * The server writes the draft rather than the panel, because the panel may never have been
+   * looking: the user asks their agent for a test in the chat, reads the answer there, and only
+   * opens the Testing tab later. The panel adopts this id so its own autosave keeps replacing the
+   * same draft instead of leaving a second copy of the same flow in the list.
+   */
+  draftId: string;
 };
 
 type Session = {
@@ -91,6 +101,8 @@ type Session = {
   readAt: number;
   /** The last read's element identities; see `hasNavigated`. */
   identities: Set<string>;
+  /** Set once the session ends and its steps are kept as an unsaved recording. */
+  draftId: string;
 };
 
 /** One element of a screen read, as the agent sees it. */
@@ -177,11 +189,12 @@ function stepTarget(component: ScreenComponent): StepTarget {
  */
 export class TestingAgentRecordings {
   private readonly devices: TestingDevices;
+  private readonly drafts: TestDraftStore;
   private context?: TestingAgentContext;
   private session?: Session;
   private revision = 0;
 
-  constructor(devices: TestingDevices) { this.devices = devices; }
+  constructor(devices: TestingDevices, drafts = new TestDraftStore()) { this.devices = devices; this.drafts = drafts; }
 
   /** The panel's current project, device and bundle id. The only thing that knows the selection. */
   setContext(context: TestingAgentContext) { this.context = context; }
@@ -198,6 +211,7 @@ export class TestingAgentRecordings {
       steps: session?.steps ?? [],
       note: session?.note ?? "",
       error: session?.error ?? "",
+      draftId: session?.draftId ?? "",
     };
   }
 
@@ -236,7 +250,7 @@ export class TestingAgentRecordings {
       target: { udid: context.udid, projectPath: context.projectPath, bundleId: context.bundleId },
       title: input.title.trim() || "a recorded flow",
       goal: input.goal.trim(),
-      steps: [], status: "recording", note: "", error: "",
+      steps: [], status: "recording", note: "", error: "", draftId: "",
       readId: 0, refs: new Map(), components: [], rows: [], truncated: 0, readAt: 0, identities: new Set(),
     };
     this.changed();
@@ -462,10 +476,11 @@ export class TestingAgentRecordings {
    * themselves — a run would also reset the app and take the device session, which is the one
    * thing the panel's recorder still needs.
    */
-  finish(input: { note?: string }) {
+  async finish(input: { note?: string }) {
     const session = this.recording();
     session.status = "finished";
     session.note = input.note?.trim() ?? "";
+    await this.keep(session);
     this.changed();
     return {
       ok: true,
@@ -476,13 +491,36 @@ export class TestingAgentRecordings {
   }
 
   /** Drops the session. Whatever was recorded stays in the panel, which is the user's to keep. */
-  abort(input: { reason: string }) {
+  async abort(input: { reason: string }) {
     const session = this.session;
     if (!session || session.status !== "recording") return { ok: true, steps: session?.steps.length ?? 0, wasRecording: false };
     session.status = "aborted";
     session.note = input.reason.trim();
+    await this.keep(session);
     this.changed();
     return { ok: true, steps: session.steps.length, wasRecording: true };
+  }
+
+  /**
+   * Keeps a finished session's steps as an unsaved recording.
+   *
+   * Best effort on purpose: the agent's turn ends with the flow in the panel, and a draft that
+   * could not be written must not turn a recording that worked into a tool error. The panel still
+   * has the steps either way — it polls `state()` — and its own autosave is the second chance.
+   */
+  private async keep(session: Session): Promise<void> {
+    if (session.steps.length === 0) return;
+    try {
+      const draft = await this.drafts.save({
+        projectPath: session.target.projectPath,
+        title: session.title,
+        origin: "agent",
+        steps: session.steps,
+      });
+      session.draftId = draft.id;
+    } catch (error) {
+      captureServerError(error, "testing.agent.draft");
+    }
   }
 }
 
@@ -558,7 +596,7 @@ export function registerTestingAgentTools(server: McpServer, devices: TestingDev
     inputSchema: { note: z.string().max(500).optional().describe("One line on what was recorded, for the user.") },
     annotations: write,
     _meta: sharedVisibility,
-  }, safe(async (input: { note?: string }) => dataResult(recordings.finish(input))));
+  }, safe(async (input: { note?: string }) => dataResult(await recordings.finish(input))));
 
   registerAppTool(server, "mobile_testing_agent_abort", {
     title: "Abandon the recording",
@@ -566,7 +604,7 @@ export function registerTestingAgentTools(server: McpServer, devices: TestingDev
     inputSchema: { reason: z.string().min(1).max(500).describe("Why the recording stopped.") },
     annotations: write,
     _meta: sharedVisibility,
-  }, safe(async (input: { reason: string }) => dataResult(recordings.abort(input))));
+  }, safe(async (input: { reason: string }) => dataResult(await recordings.abort(input))));
 
   registerAppTool(server, "mobile_testing_agent_state", {
     title: "Read the agent recording",

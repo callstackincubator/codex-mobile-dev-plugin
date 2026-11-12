@@ -22,6 +22,8 @@ import { registerTestingTools } from "./testing-tools.ts";
 import { registerTestingAgentTools } from "./testing-agent.ts";
 import { TestingDevices } from "./testing-device.ts";
 import { TESTING_DIRECTORY, TestingProjectChoices } from "./testing-projects.ts";
+import { TestDraftStore } from "./testing-drafts.ts";
+import { TestingAgentRecordings } from "./testing-agent.ts";
 import { ServeEmu } from "./serve-emu.ts";
 import { listIosDevices, registerIosDeviceTools } from "./ios-devices.ts";
 import { deviceChoiceFormSupport, registerDeviceChoiceTools } from "./device-choice-tools.ts";
@@ -116,8 +118,11 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
   // One device holder for both drivers. agent-device allows exactly one session per device, and an
   // agent recording is another holder of the panel's `mobile-dev-recorder` session, never a second.
   const testingDevices = new TestingDevices();
-  const closeTestingDevices = registerTestingTools(server, new TestingProjectChoices(TESTING_DIRECTORY), testingDevices);
-  registerTestingAgentTools(server, testingDevices);
+  // One store for both: the panel autosaves the flow it is holding and the agent keeps the flow it
+  // finished, and those are the same list of unsaved recordings.
+  const testDrafts = new TestDraftStore();
+  const closeTestingDevices = registerTestingTools(server, new TestingProjectChoices(TESTING_DIRECTORY), testingDevices, testDrafts);
+  registerTestingAgentTools(server, testingDevices, new TestingAgentRecordings(testingDevices, testDrafts));
 
   const resource = async () => typeof html === "string" ? { html } : await html();
   const page = async () => configureUI((await resource()).html);

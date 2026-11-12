@@ -20,11 +20,14 @@ const deviceApps = { subscribe: () => () => undefined, getSnapshot: () => ({ dev
 /**
  * The calls the save and run path makes, with the panel's own background plumbing left out.
  *
- * An open panel also reports its selection to the server and polls for an agent recording — see
- * `packages/core/src/testing-agent.ts` — and neither is part of what saving or running does. They
- * are asserted where they belong, in `testing-agent-panel.test.ts`.
+ * An open panel also reports its selection to the server, polls for an agent recording — see
+ * `packages/core/src/testing-agent.ts` — and lists the recordings it has kept unsaved. None of the
+ * three is part of what saving or running does; they are asserted where they belong, in
+ * `testing-agent-panel.test.ts` and `testing-drafts-panel.test.ts`.
  */
-const BACKGROUND = new Set(["mobile_testing_set_context", "mobile_testing_agent_state", "mobile_testing_projects"]);
+const BACKGROUND = new Set([
+  "mobile_testing_set_context", "mobile_testing_agent_state", "mobile_testing_projects", "mobile_testing_drafts",
+]);
 const flow = (calls: { name: string }[]) => calls.map(call => call.name).filter(name => !BACKGROUND.has(name));
 
 function host(responses: Record<string, unknown>, calls: { name: string; arguments: Record<string, unknown> }[]) {

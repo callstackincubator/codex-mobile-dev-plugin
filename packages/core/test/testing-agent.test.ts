@@ -3,6 +3,10 @@ import assert from "node:assert/strict";
 import { TestingAgentRecordings, registerTestingAgentTools } from "../src/testing-agent.ts";
 import type { TestingDeviceAction, TestingDeviceTarget, TestingDeviceTree } from "../src/testing-device.ts";
 import type { TestingDevices } from "../src/testing-device.ts";
+import { TestDraftStore } from "../src/testing-drafts.ts";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const SCREEN = { width: 402, height: 874 };
 const CONTEXT = { projectPath: "/project", udid: "11111111-2222-3333-4444-555555555555", bundleId: "com.example.app" };
@@ -56,10 +60,13 @@ const DETAIL = tree([
 
 async function started(screens: TestingDeviceTree[] = [EXPLORE]) {
   const device = fakeDevices(screens);
-  const recordings = new TestingAgentRecordings(device.devices);
+  // A real store on a temporary directory: finishing keeps the flow, and the test must not write
+  // into the user's own Application Support folder to prove it.
+  const drafts = new TestDraftStore(await mkdtemp(join(tmpdir(), "mobile-dev-agent-drafts-")));
+  const recordings = new TestingAgentRecordings(device.devices, drafts);
   recordings.setContext(CONTEXT);
   recordings.begin({ title: "the explore details screen", goal: "cover the Explore Details landmarks" });
-  return { ...device, recordings };
+  return { ...device, recordings, drafts };
 }
 
 test("a recording refuses to start when the panel has nothing selected", async () => {
@@ -192,7 +199,7 @@ test("the revision moves on every change, which is what the panel adopts on", as
   assert.equal(recordings.state().revision, begun, "reading the screen records nothing");
   await recordings.step({ ref: screen.elements.find(row => row.name === "Explore")!.ref, kind: "assertSelected" });
   assert.equal(recordings.state().revision, begun + 1);
-  recordings.finish({ note: "covered the tab bar" });
+  await recordings.finish({ note: "covered the tab bar" });
   assert.equal(recordings.state().revision, begun + 2);
 });
 
@@ -200,7 +207,7 @@ test("finishing leaves the steps dirty in the panel and saves nothing", async ()
   const { recordings } = await started();
   const screen = await recordings.screen();
   await recordings.step({ ref: screen.elements.find(row => row.name === "Explore")!.ref, kind: "tap" });
-  const result = recordings.finish({ note: "the Explore tab" });
+  const result = await recordings.finish({ note: "the Explore tab" });
 
   assert.equal(result.steps, 1);
   // The whole file, emitted by the same emitter the panel's preview and Save use.
@@ -219,11 +226,11 @@ test("aborting keeps what was recorded and lets the next recording start", async
   const { recordings } = await started();
   const screen = await recordings.screen();
   await recordings.step({ ref: screen.elements.find(row => row.name === "Explore")!.ref, kind: "assertVisible" });
-  assert.deepEqual(recordings.abort({ reason: "the user pressed Stop" }), { ok: true, steps: 1, wasRecording: true });
+  assert.deepEqual(await recordings.abort({ reason: "the user pressed Stop" }), { ok: true, steps: 1, wasRecording: true });
   assert.equal(recordings.state().status, "aborted");
   assert.equal(recordings.state().steps.length, 1, "whatever was recorded is the user's to keep");
   // Aborting an idle recorder is not an error; the panel's Stop button can always be pressed.
-  assert.deepEqual(recordings.abort({ reason: "again" }), { ok: true, steps: 1, wasRecording: false });
+  assert.deepEqual(await recordings.abort({ reason: "again" }), { ok: true, steps: 1, wasRecording: false });
   recordings.begin({ title: "another", goal: "g" });
   assert.deepEqual(recordings.state().steps, []);
 });
@@ -347,4 +354,35 @@ test("arriving at the screen the recording is for is not leaving it", async () =
   const screen = await recordings.screen();
   const result = await recordings.step({ ref: screen.elements.find(row => row.name === "Explore")!.ref, kind: "tap" });
   assert.equal(result.navigated, undefined);
+});
+
+test("finishing keeps the flow, so a panel that was never looking still finds it", async () => {
+  const { recordings, drafts } = await started();
+  const screen = await recordings.screen();
+  await recordings.step({ ref: screen.elements.find(row => row.name === "Explore")!.ref, kind: "tap" });
+  await recordings.finish({ note: "recorded the Explore tab" });
+
+  const kept = await drafts.list(CONTEXT.projectPath);
+  assert.equal(kept.length, 1);
+  assert.equal(kept[0].origin, "agent");
+  assert.equal(kept[0].title, "the explore details screen");
+  assert.equal(kept[0].stepCount, 1);
+  // The panel adopts this id rather than keeping a second copy of the same steps a moment later.
+  assert.equal(recordings.state().draftId, kept[0].id);
+});
+
+test("an abandoned recording is kept too: the steps are the user's to keep", async () => {
+  const { recordings, drafts } = await started();
+  const screen = await recordings.screen();
+  await recordings.step({ ref: screen.elements.find(row => row.name === "Explore")!.ref, kind: "tap" });
+  await recordings.abort({ reason: "the user pressed Stop" });
+
+  assert.equal((await drafts.list(CONTEXT.projectPath)).length, 1);
+});
+
+test("a recording with no steps keeps nothing", async () => {
+  const { recordings, drafts } = await started();
+  await recordings.finish({});
+  assert.deepEqual(await drafts.list(CONTEXT.projectPath), []);
+  assert.equal(recordings.state().draftId, "");
 });

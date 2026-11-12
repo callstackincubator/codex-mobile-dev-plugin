@@ -1,0 +1,241 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import type { HostBridge } from "../src/host-bridge.ts";
+import type { DeviceAppsStore } from "../src/device-apps.ts";
+import { TestingPanel } from "../src/testing-panel.ts";
+import { testRecorder } from "../src/test-recorder.ts";
+import type { ScreenComponent } from "../../shared/src/screen-annotations.ts";
+
+const UDID = "11111111-2222-3333-4444-555555555555";
+const PROJECT = "/Users/someone/app";
+const DRAFT = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+
+const tab: ScreenComponent = {
+  name: "Explore", label: "Explore", role: "AXButton", depth: 1, source: "accessibility", nodeId: "explore",
+  bounds: { x: 0, y: 800, width: 100, height: 40 },
+};
+
+const deviceApps = { subscribe: () => () => undefined, getSnapshot: () => ({ device: undefined }) } as unknown as DeviceAppsStore;
+
+function host(responses: Record<string, unknown>, calls: { name: string; arguments: Record<string, unknown> }[]) {
+  return {
+    async callServerTool({ name, arguments: input }: { name: string; arguments: Record<string, unknown> }) {
+      calls.push({ name, arguments: input });
+      return { content: [], structuredContent: responses[name] ?? {} };
+    },
+  } as unknown as HostBridge;
+}
+
+function open(responses: Record<string, unknown>, calls: { name: string; arguments: Record<string, unknown> }[]) {
+  const panel = new TestingPanel(host(responses, calls), deviceApps);
+  panel.setAvailable(true);
+  (panel as unknown as { update(fields: Record<string, unknown>): void }).update({ projectPath: PROJECT });
+  return panel;
+}
+
+async function recordOneStep() {
+  testRecorder.attach(UDID, { readComponents: async () => [tab], screen: () => ({ width: 402, height: 874 }) });
+  testRecorder.start(UDID);
+  await testRecorder.openMenu({ x: 50, y: 820 });
+  await testRecorder.chooseOffer("tap");
+}
+
+/** The panel's own autosave, without waiting out its debounce. */
+function keep(panel: TestingPanel): Promise<void> {
+  return (panel as unknown as { keepDraft(): Promise<void> }).keepDraft();
+}
+
+const named = (calls: { name: string }[], name: string) => calls.filter(call => call.name === name);
+
+test("the flow on screen is kept, so switching away does not lose it", async () => {
+  const calls: { name: string; arguments: Record<string, unknown> }[] = [];
+  const panel = open({ mobile_testing_draft_save: { id: DRAFT, updatedAt: "2026-01-01T00:00:00.000Z" } }, calls);
+  await recordOneStep();
+
+  await keep(panel);
+
+  const saved = named(calls, "mobile_testing_draft_save");
+  assert.equal(saved.length, 1);
+  assert.equal(saved[0].arguments.projectPath, PROJECT);
+  assert.equal((saved[0].arguments.steps as unknown[]).length, 1);
+  assert.equal(saved[0].arguments.id, undefined, "the first keep creates the draft");
+  assert.equal(panel.getSnapshot().draftId, DRAFT);
+
+  // The next keep replaces the same draft rather than leaving a second copy of one flow.
+  await testRecorder.openMenu({ x: 50, y: 820 });
+  await testRecorder.chooseOffer("assertVisible");
+  await keep(panel);
+  const again = named(calls, "mobile_testing_draft_save");
+  assert.equal(again.length, 2);
+  assert.equal(again[1].arguments.id, DRAFT);
+  panel.dispose();
+});
+
+test("an unchanged flow is not rewritten, and an empty one is never kept", async () => {
+  const calls: { name: string; arguments: Record<string, unknown> }[] = [];
+  const panel = open({ mobile_testing_draft_save: { id: DRAFT } }, calls);
+  testRecorder.stop();
+  testRecorder.clearSteps();
+
+  await keep(panel);
+  assert.deepEqual(named(calls, "mobile_testing_draft_save"), [], "nothing to keep with no steps");
+
+  await recordOneStep();
+  await keep(panel);
+  await keep(panel);
+  assert.equal(named(calls, "mobile_testing_draft_save").length, 1, "an unchanged flow is already kept");
+  panel.dispose();
+});
+
+test("opening a kept recording puts its steps back without arming the recorder", async () => {
+  const calls: { name: string; arguments: Record<string, unknown> }[] = [];
+  const steps = [
+    { id: "s1", kind: "tap", label: 'Tap "Explore" (tab)', selector: { kind: "role", role: "tab", name: "Explore" } },
+    { id: "s2", kind: "assertVisible", label: 'Expect "Paris"', selector: { kind: "text", text: "Paris" } },
+  ];
+  const panel = open({
+    mobile_testing_draft_save: { id: "11111111-1111-4111-8111-111111111111" },
+    mobile_testing_draft_read: { draft: { id: DRAFT, title: "the explore screen", fileName: "explore", steps } },
+    mobile_testing_drafts: { drafts: [] },
+  }, calls);
+  await recordOneStep();
+
+  await panel.openDraft(DRAFT);
+
+  assert.equal(testRecorder.getSnapshot().steps.length, 2);
+  assert.equal(testRecorder.getSnapshot().title, "the explore screen");
+  assert.equal(testRecorder.getSnapshot().recordingUdid, "", "reopening a flow must not start recording");
+  assert.equal(panel.getSnapshot().draftId, DRAFT);
+  assert.equal(panel.getSnapshot().fileName, "explore");
+  // The flow that was on screen is kept before it is replaced, so swapping drafts loses nothing.
+  assert.equal(named(calls, "mobile_testing_draft_save").length, 1);
+  // And the restored flow is not immediately written back as a change of its own.
+  await keep(panel);
+  assert.equal(named(calls, "mobile_testing_draft_save").length, 1);
+  panel.dispose();
+});
+
+test("deleting the recording on screen clears the panel with it", async () => {
+  const calls: { name: string; arguments: Record<string, unknown> }[] = [];
+  const panel = open({ mobile_testing_draft_save: { id: DRAFT }, mobile_testing_drafts: { drafts: [] } }, calls);
+  await recordOneStep();
+  await keep(panel);
+  assert.equal(panel.getSnapshot().draftId, DRAFT);
+
+  await panel.deleteDraft(DRAFT);
+
+  assert.deepEqual(named(calls, "mobile_testing_draft_delete").map(call => call.arguments.id), [DRAFT]);
+  assert.equal(panel.getSnapshot().draftId, "");
+  assert.equal(testRecorder.getSnapshot().steps.length, 0);
+  // And the cleared panel is not kept straight back as an empty draft.
+  await keep(panel);
+  assert.equal(named(calls, "mobile_testing_draft_save").length, 1);
+  panel.dispose();
+});
+
+test("saving into the project forgets the draft it was standing in for", async () => {
+  const calls: { name: string; arguments: Record<string, unknown> }[] = [];
+  const panel = open({
+    mobile_testing_draft_save: { id: DRAFT },
+    mobile_testing_drafts: { drafts: [] },
+    mobile_testing_write_file: { written: true, existed: false, path: `${PROJECT}/tests/flow.e2e.ts` },
+  }, calls);
+  (panel as unknown as { update(fields: Record<string, unknown>): void }).update({ fileName: "flow" });
+  await recordOneStep();
+  await keep(panel);
+
+  await panel.saveTest();
+  await new Promise(resolve => setTimeout(resolve, 0));
+
+  assert.deepEqual(named(calls, "mobile_testing_draft_delete").map(call => call.arguments.id), [DRAFT]);
+  assert.equal(panel.getSnapshot().draftId, "");
+  assert.equal(testRecorder.getSnapshot().steps.length, 1, "the steps stay on screen; only the kept copy goes");
+  panel.dispose();
+});
+
+test("nothing is kept while the agent is recording: the server holds that flow", async () => {
+  const calls: { name: string; arguments: Record<string, unknown> }[] = [];
+  const panel = open({ mobile_testing_draft_save: { id: DRAFT } }, calls);
+  // After the panel's first agent poll, which reports no session and would otherwise clear this.
+  await new Promise(resolve => setTimeout(resolve, 0));
+  await new Promise(resolve => setTimeout(resolve, 0));
+  (panel as unknown as { update(fields: Record<string, unknown>): void }).update({
+    agent: { active: true, status: "recording", title: "a flow", goal: "explore", steps: 1, note: "", draftId: "" },
+  });
+  await recordOneStep();
+
+  await keep(panel);
+
+  assert.deepEqual(named(calls, "mobile_testing_draft_save"), []);
+  panel.dispose();
+});
+
+test("recording a second flow keeps a second draft rather than overwriting the first", async () => {
+  // The bug this covers: Record starts a new flow, the panel kept the finished one's id, and the
+  // next autosave wrote the new recording over the old one's file. Two recordings, one row.
+  const calls: { name: string; arguments: Record<string, unknown> }[] = [];
+  const ids = ["11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"];
+  let next = 0;
+  const panel = new TestingPanel({
+    async callServerTool({ name, arguments: input }: { name: string; arguments: Record<string, unknown> }) {
+      calls.push({ name, arguments: input });
+      if (name === "mobile_testing_draft_save") return { content: [], structuredContent: { id: input.id ?? ids[next++] } };
+      return { content: [], structuredContent: {} };
+    },
+  } as unknown as HostBridge, deviceApps);
+  panel.setAvailable(true);
+  (panel as unknown as { update(fields: Record<string, unknown>): void }).update({ projectPath: PROJECT });
+
+  await recordOneStep();
+  await keep(panel);
+  assert.equal(panel.getSnapshot().draftId, ids[0]);
+
+  // Record again, without resuming: a different recording, from the first step on.
+  testRecorder.start(UDID);
+  assert.equal(panel.getSnapshot().draftId, "", "the finished flow's draft is let go as the new one begins");
+  await testRecorder.openMenu({ x: 50, y: 820 });
+  await testRecorder.chooseOffer("assertVisible");
+  await keep(panel);
+
+  const saved = named(calls, "mobile_testing_draft_save");
+  assert.equal(saved.length, 2);
+  assert.equal(saved[1].arguments.id, undefined, "the second flow must not replace the first one's draft");
+  assert.equal(panel.getSnapshot().draftId, ids[1]);
+  panel.dispose();
+});
+
+test("resuming a flow goes on writing the same draft", async () => {
+  const calls: { name: string; arguments: Record<string, unknown> }[] = [];
+  const panel = open({ mobile_testing_draft_save: { id: DRAFT } }, calls);
+  await recordOneStep();
+  await keep(panel);
+
+  // Record with `keepSteps`: the same recording, carried on.
+  testRecorder.start(UDID, true);
+  await testRecorder.openMenu({ x: 50, y: 820 });
+  await testRecorder.chooseOffer("assertVisible");
+  await keep(panel);
+
+  const saved = named(calls, "mobile_testing_draft_save");
+  assert.equal(saved.length, 2);
+  assert.equal(saved[1].arguments.id, DRAFT);
+  assert.equal((saved[1].arguments.steps as unknown[]).length, 2);
+  panel.dispose();
+});
+
+test("Clear starts a flow of its own, so the cleared recording stays in the list", async () => {
+  const calls: { name: string; arguments: Record<string, unknown> }[] = [];
+  const panel = open({ mobile_testing_draft_save: { id: DRAFT }, mobile_testing_drafts: { drafts: [] } }, calls);
+  await recordOneStep();
+  await keep(panel);
+
+  testRecorder.clearSteps();
+  assert.equal(panel.getSnapshot().draftId, "");
+  await recordOneStep();
+  await keep(panel);
+
+  const saved = named(calls, "mobile_testing_draft_save");
+  assert.equal(saved.length, 2);
+  assert.equal(saved[1].arguments.id, undefined);
+  panel.dispose();
+});

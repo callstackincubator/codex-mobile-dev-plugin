@@ -47,6 +47,46 @@ Two things do **not** exist:
    state (recordings, tracesift, clipboard temp files). The server does not know a project root.
 2. **No codegen of any kind.**
 
+## Unsaved recordings
+
+A flow lives in the recorder, which lives in the panel document, and the host rebuilds that
+document whenever the user looks at another tool or another chat. Until Save writes a file there
+was nothing else holding it, so a recording the user had not saved — or one their agent made while
+they were reading its answer in the chat — was simply gone when they came back. Both are the
+ordinary way the panel is used, which made it the ordinary way work was lost.
+
+So the panel keeps what it is holding, and lists what it has kept.
+
+| Decision | Choice | Why |
+|---|---|---|
+| Where | `~/Library/Application Support/mobile-dev/testing/drafts/<id>.json`, beside `projects.json` | The plugin's own state. Nothing reaches the user's repository until they press Save, which is the whole promise of the Save button |
+| What | The `RecordedStep[]`, not the emitted source | A flow comes back **editable**. The generated file is an output and nothing reads it back |
+| When | Autosaved 700 ms after the last change, and once more as the panel is torn down | One write per edit burst, and the teardown flush covers the switch that used to lose the flow |
+| Who | The panel for its own recording; the server for an agent's, at `agent_finish`/`agent_abort` | The panel may never have been looking. The server publishes the draft's id in `agent_state`, and the panel adopts it rather than keeping a second copy |
+| Scope | Listed per project | A flow names elements of one app; another project's selectors have never existed in it |
+| Until when | Deleted when the flow is written into the project, or when the user deletes it | The draft stood in for a file that now exists |
+| How many | 30, oldest dropped | A safety net, not an archive |
+
+A draft belongs to a **flow**, not to the panel. The recorder mints a `flowId` whenever the step
+list stops being the same recording — Record on a flow the user did not choose to resume, Clear, a
+kept recording reopened, an agent session beginning — and the panel keeps the draft pinned to that
+id. `revision` cannot stand in for it: it moves for an edit and for a brand new flow alike, and
+when the panel went by revision alone, recording a second test wrote it straight over the first
+one's file. Two recordings, one row in the list.
+
+The control is a popover beside the project picker, shown only once there is something in it: each
+row is a kept flow with its step count, how long ago it was touched and whether the user or an
+agent recorded it, a trash button, and **New recording** at the foot. Opening one keeps the flow
+on screen first, so swapping between two loses neither, and it does **not** start recording — the
+user opened a flow to look at it, and a stray tap on the mirror must not append to it.
+
+Four app-only tools carry it: `mobile_testing_drafts`, `mobile_testing_draft_read`,
+`mobile_testing_draft_save` and `mobile_testing_draft_delete`, in
+`packages/core/src/testing-tools.ts` over `TestDraftStore`
+(`packages/core/src/testing-drafts.ts`). The step schema they validate against is
+`packages/shared/src/test-drafts.ts`, which is the one place a `RecordedStep` is described as data
+rather than as a type.
+
 ## Architecture
 
 ```mermaid

@@ -147,7 +147,7 @@ test("a run marks the preview line by line, and marks nothing it was not told ab
     open: true, available: true, projectPath: "/app", projects: [], targets: [{ name: "ios", platform: "ios", bundleId: "com.app" }],
     targetName: "ios", configPath: "/app/e2e.config.ts", loadingProject: false, pickingProject: false, launching: false,
     appLaunched: true, fileName: "flow", saving: false, overwritePath: "", savedRevision: -1, savedPath: "", running: false,
-    pendingRun: false, error: null,
+    pendingRun: false, drafts: [], draftId: "", loadingDraft: false, error: null,
   };
   const panel = {
     subscribe: (listener: () => void) => { panelListeners.add(listener); return () => { panelListeners.delete(listener); }; },
@@ -156,6 +156,7 @@ test("a run marks the preview line by line, and marks nothing it was not told ab
     refreshProjects: async () => {}, chooseProject: async () => {}, pickProject: async () => {},
     launchApp: async () => {}, saveTest: async () => {}, runTest: async () => {}, selectTarget: () => {},
     setFileName: () => {}, cancelOverwrite: () => {}, dismissError: () => {},
+    refreshDrafts: async () => {}, openDraft: async () => {}, deleteDraft: async () => {}, newRecording: async () => {},
   };
   const deviceApps = {
     subscribe: () => () => undefined,

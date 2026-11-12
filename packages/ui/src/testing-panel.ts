@@ -6,6 +6,7 @@ import type { RecorderTreeSource } from "./test-recorder.ts";
 import type { ScreenComponent } from "@mobile-dev/shared/screen-annotations.ts";
 import { testFileSlug } from "@mobile-dev/shared/test-recording.ts";
 import type { RecordedStep } from "@mobile-dev/shared/test-recording.ts";
+import type { TestDraftSummary } from "@mobile-dev/shared/test-drafts.ts";
 
 /**
  * An agent recording, as the server reports it.
@@ -21,6 +22,8 @@ export type TestingAgentView = {
   goal: string;
   steps: number;
   note: string;
+  /** The unsaved recording a finished session was kept as; "" while it is still recording. */
+  draftId: string;
 };
 
 /** 400 ms while an agent is recording, so a step lands in the panel as it is recorded. */
@@ -30,6 +33,16 @@ const AGENT_POLL_ACTIVE_MS = 400;
  * looking at another tool. It is what opens the Testing tab for them.
  */
 const AGENT_POLL_IDLE_MS = 2_500;
+
+/**
+ * How long the panel waits after the last change before keeping the flow.
+ *
+ * Long enough that dragging a step or typing a title is one write rather than a dozen, short
+ * enough that switching tools a moment after a tap still finds the step. A write is a few
+ * kilobytes to a file in the plugin's own storage, so the cost of being wrong here is small in
+ * one direction and a lost recording in the other.
+ */
+const DRAFT_AUTOSAVE_MS = 700;
 
 /** One entry of the project selector. The server owns the list so a pick survives the panel document. */
 export interface TestingProjectOption { path: string; name: string }
@@ -68,6 +81,19 @@ export type TestingSnapshot = {
   pendingRun: boolean;
   /** The agent recording the server holds, or null when no agent has ever recorded here. */
   agent: TestingAgentView | null;
+  /**
+   * The recordings that have not been written into a project yet, newest first.
+   *
+   * A flow lives in the panel document, which the host rebuilds whenever the user looks at
+   * another tool or another chat, so without this a recording they had not saved — or one their
+   * agent made while they were reading the chat — was gone when they came back. The panel keeps
+   * what it is holding as it changes and lists the rest, so one can be reopened or thrown away.
+   */
+  drafts: TestDraftSummary[];
+  /** The draft the flow on screen is being kept as; "" before the first autosave. */
+  draftId: string;
+  /** A draft is being read back into the panel. */
+  loadingDraft: boolean;
   error: string | null;
 };
 
@@ -102,7 +128,7 @@ export class TestingPanel {
     open: false, available: false, projectPath: "", projects: [], targets: [], targetName: "", configPath: "",
     loadingProject: false, pickingProject: false, launching: false, appLaunched: false,
     fileName: "", saving: false, overwritePath: "", savedRevision: -1, savedPath: "", running: false, pendingRun: false,
-    agent: null, error: null,
+    agent: null, drafts: [], draftId: "", loadingDraft: false, error: null,
   };
 
   /** The agent recording's revision the panel has already adopted; -1 before the first poll. */
@@ -112,6 +138,23 @@ export class TestingPanel {
   /** The last selection reported to the server, so the context tool is not called on every tick. */
   private reportedContext = "";
   private readonly stopWatchingDevices: () => void;
+  private readonly stopWatchingRecorder: () => void;
+  private draftTimer?: ReturnType<typeof setTimeout>;
+  /** The recorder revision already kept, so an unchanged flow is not rewritten on every tick. */
+  private draftRevision = -1;
+  /**
+   * Which flow `draftId` belongs to.
+   *
+   * Without it, pressing Record on a finished recording kept the old draft id and wrote the new
+   * flow straight over the old one's file: the list showed one recording where the user had made
+   * two. `revision` cannot tell those apart — it moves for an edit and for a new flow alike — so
+   * the recorder mints a `flowId` and the draft is pinned to it. A flow that is not the one the
+   * draft was taken from is kept as a new draft, whatever the panel was holding a moment ago.
+   */
+  private draftFlowId = "";
+  private draftWrite?: Promise<void>;
+  /** Set while `dispose` makes its last keep, so the guards do not refuse the flush. */
+  private flushing = false;
   /** Set when a session goes active, for the host chrome to show the Testing tab. */
   private onAgentRecording?: () => void;
 
@@ -121,6 +164,9 @@ export class TestingPanel {
     // The device is half of what an agent recording needs and it belongs to the simulator panel,
     // so the selection is reported whenever either half moves.
     this.stopWatchingDevices = deviceApps.subscribe(() => { void this.reportContext(); });
+    // Every change to what would be written bumps the recorder's revision, which is exactly the
+    // thing worth keeping, so one subscription covers recording, editing, dragging and the title.
+    this.stopWatchingRecorder = testRecorder.subscribe(() => { this.scheduleDraft(); });
   }
 
   /**
@@ -194,6 +240,7 @@ export class TestingPanel {
     // And the poll runs from here rather than from `show`, so a recording the agent starts while
     // the user is in another tool is what opens the Testing tab for them.
     this.pollAgent();
+    void this.refreshDrafts();
   }
 
   /** The target the recorder would use: the chosen one, else the first the config declares. */
@@ -288,8 +335,14 @@ export class TestingPanel {
   async selectProject(projectPath: string) {
     const path = projectPath.trim();
     const revision = ++this.loadRevision;
+    // The flow on screen belongs to the project it was recorded against, so the panel lets go of
+    // its draft rather than rewriting that draft under a different project's path.
+    clearTimeout(this.draftTimer);
+    this.draftRevision = testRecorder.getSnapshot().revision;
+    this.draftFlowId = "";
     this.update({ projectPath: path, targets: [], targetName: "", configPath: "", appLaunched: false,
-      overwritePath: "", savedRevision: -1, savedPath: "", error: null });
+      overwritePath: "", savedRevision: -1, savedPath: "", draftId: "", drafts: [], error: null });
+    void this.refreshDrafts();
     if (!path || !this.snapshot.available) return;
     this.update({ loadingProject: true });
     try {
@@ -349,6 +402,180 @@ export class TestingPanel {
     }
   }
 
+  /**
+   * The unsaved recordings of the chosen project, newest first.
+   *
+   * Listed for the project rather than for everything: a draft is reopened into a panel pointed
+   * at one project, and a flow recorded against another app's selectors would come back naming
+   * elements that project has never had.
+   */
+  async refreshDrafts() {
+    if (!this.snapshot.available) return;
+    try {
+      const response = await this.call("mobile_testing_drafts",
+        this.snapshot.projectPath ? { projectPath: this.snapshot.projectPath } : {}, 10_000);
+      const listed = object(response.structuredContent)?.drafts;
+      const drafts = (Array.isArray(listed) ? listed : []) as TestDraftSummary[];
+      if (!this.disposed) this.update({ drafts });
+    } catch {
+      // The list is a convenience; the flow on screen is unaffected by a read that missed.
+    }
+  }
+
+  /** Asks for a keep after the edits settle. Called on every recorder change. */
+  private scheduleDraft() {
+    if (this.disposed) return;
+    // A new flow is not the kept one, and saying so here rather than at the next write keeps the
+    // picker honest: the row it ticks and the name on its button are about the flow on screen.
+    if (this.snapshot.draftId && testRecorder.getSnapshot().flowId !== this.draftFlowId) {
+      this.update({ draftId: "" });
+    }
+    clearTimeout(this.draftTimer);
+    this.draftTimer = setTimeout(() => { void this.keepDraft(); }, DRAFT_AUTOSAVE_MS);
+  }
+
+  /**
+   * Keeps the flow on screen as an unsaved recording.
+   *
+   * Not while an agent is recording: the server holds that flow and writes its own draft when the
+   * session ends, so keeping it here too would leave two copies of one recording in the list. Not
+   * once it has been written into the project either — the draft is deleted at that point, and
+   * the panel has nothing left to protect.
+   */
+  private async keepDraft(): Promise<void> {
+    const { available, projectPath, agent } = this.snapshot;
+    const recorder = testRecorder.getSnapshot();
+    if ((this.disposed && !this.flushing) || !available || !projectPath || agent?.active) return;
+    if (recorder.steps.length === 0 || recorder.revision === this.draftRevision) return;
+    if (recorder.revision === this.snapshot.savedRevision) return;
+    const revision = recorder.revision;
+    // The draft only belongs to the flow it was taken from. Record, Clear and an agent session
+    // all begin a different recording, and writing this one over that one's file is how two
+    // recordings became one.
+    const sameFlow = recorder.flowId === this.draftFlowId;
+    const replacing = sameFlow ? this.snapshot.draftId : "";
+    const flowId = recorder.flowId;
+    // Serialized: two writes in flight would race over which one the list ends on, and the later
+    // call carries the newer steps anyway.
+    const write = (this.draftWrite ?? Promise.resolve()).catch(() => undefined).then(async () => {
+      if (this.disposed && !this.flushing) return;
+      // Not measured while the panel is being torn down: the dispose-time keep is bookkeeping on
+      // the way out, not a wait the user sat through, and a measurement recorded from a document
+      // that is going away has no surface left to attribute it to.
+      const measured = !this.flushing;
+      const startedAt = performance.now(), telemetryContext = getUiTelemetryAttributes();
+      try {
+        const response = await this.call("mobile_testing_draft_save", {
+          ...(replacing ? { id: replacing } : {}),
+          projectPath, title: recorder.title, fileName: this.snapshot.fileName,
+          origin: recorder.agentUdid ? "agent" : "user",
+          steps: recorder.steps,
+        }, 15_000);
+        const id = text(object(response.structuredContent)?.id);
+        this.draftRevision = revision;
+        this.draftFlowId = flowId;
+        if (this.disposed) return;
+        if (id) this.update({ draftId: id });
+        await this.refreshDrafts();
+      } catch (error) {
+        // Silent: an autosave that failed must not put a banner over a recording that is working.
+        // The next change tries again, and the steps are still on screen either way.
+        if (measured) captureUiError(error, "testing.draft_save", telemetryContext);
+      } finally {
+        if (measured && getUiTelemetryAttributes() === telemetryContext) {
+          recordUiTiming("ui.testing.draft_save", performance.now() - startedAt);
+        }
+      }
+    });
+    this.draftWrite = write;
+    await write;
+  }
+
+  /**
+   * Puts one kept recording back in the panel.
+   *
+   * The flow on screen is kept first, so swapping between two drafts never loses the one being
+   * left. Nothing starts recording: the user opened a flow to look at it.
+   */
+  async openDraft(id: string) {
+    if (!id || this.snapshot.loadingDraft || this.snapshot.agent?.active) return;
+    if (id === this.snapshot.draftId) return;
+    clearTimeout(this.draftTimer);
+    await this.keepDraft();
+    if (this.disposed) return;
+    this.update({ loadingDraft: true, error: null });
+    try {
+      const response = await this.call("mobile_testing_draft_read", { id }, 15_000);
+      const draft = object(object(response.structuredContent)?.draft);
+      const steps = Array.isArray(draft?.steps) ? draft.steps as RecordedStep[] : [];
+      if (!draft || steps.length === 0) {
+        this.update({ error: "That recording is no longer there." });
+        await this.refreshDrafts();
+        return;
+      }
+      testRecorder.restore(steps, text(draft.title) || undefined);
+      // The restored flow is already kept, so the change `restore` just made is not written back,
+      // and the draft is pinned to the flow it came back as.
+      this.draftRevision = testRecorder.getSnapshot().revision;
+      this.draftFlowId = testRecorder.getSnapshot().flowId;
+      this.update({ draftId: text(draft.id), fileName: text(draft.fileName), savedRevision: -1, savedPath: "", overwritePath: "" });
+    } catch (error) {
+      this.update({ error: error instanceof Error ? error.message : String(error) });
+    } finally {
+      this.update({ loadingDraft: false });
+    }
+  }
+
+  /**
+   * Throws one kept recording away. Deleting the one on screen clears the panel too: leaving the
+   * steps up after the user deleted them would only have the next edit write them back.
+   */
+  async deleteDraft(id: string) {
+    if (!id || !this.snapshot.available) return;
+    const current = id === this.snapshot.draftId;
+    if (current && this.snapshot.agent?.active) return;
+    clearTimeout(this.draftTimer);
+    try {
+      await this.call("mobile_testing_draft_delete", { id }, 15_000);
+      countUiEvent("ui.testing.draft_delete");
+    } catch (error) {
+      this.update({ error: error instanceof Error ? error.message : String(error) });
+      return;
+    }
+    if (current) this.forgetDraft(true);
+    await this.refreshDrafts();
+  }
+
+  /**
+   * Lets go of the draft the panel is holding, optionally clearing the steps with it. Used when a
+   * flow is written into the project and when its draft is deleted.
+   */
+  private forgetDraft(clearSteps: boolean) {
+    clearTimeout(this.draftTimer);
+    this.draftRevision = -1;
+    this.draftFlowId = "";
+    if (clearSteps) {
+      testRecorder.stop();
+      testRecorder.clearSteps();
+      this.draftRevision = testRecorder.getSnapshot().revision;
+    }
+    this.update({ draftId: "", fileName: clearSteps ? "" : this.snapshot.fileName });
+  }
+
+  /** Starts a new flow, keeping whatever is on screen as its own draft first. */
+  async newRecording() {
+    if (this.snapshot.agent?.active) return;
+    clearTimeout(this.draftTimer);
+    await this.keepDraft();
+    if (this.disposed) return;
+    testRecorder.stop();
+    testRecorder.clearSteps();
+    testRecorder.setTitle("");
+    this.draftRevision = testRecorder.getSnapshot().revision;
+    this.draftFlowId = "";
+    this.update({ draftId: "", fileName: "", savedRevision: -1, savedPath: "", overwritePath: "" });
+  }
+
   setFileName(fileName: string) { this.update({ fileName: fileName.trim(), overwritePath: "" }); }
 
   /** The path the Save button writes to, relative to the project. */
@@ -384,7 +611,16 @@ export class TestingPanel {
       const data = object(response.structuredContent) ?? {};
       if (data.written === true) {
         const resume = this.snapshot.pendingRun;
+        const keptAs = this.snapshot.draftId;
         this.update({ savedRevision: recorder.revision, savedPath: text(data.path), overwritePath: "", pendingRun: false });
+        // The flow is in the project now, which is what the draft was standing in for. The steps
+        // stay on screen; only the copy in the plugin's own storage goes.
+        if (keptAs) {
+          this.forgetDraft(false);
+          void this.call("mobile_testing_draft_delete", { id: keptAs }, 10_000)
+            .then(() => this.refreshDrafts())
+            .catch(() => undefined);
+        }
         // The flow is written, so the recording is over: leaving it armed turns the next stray tap
         // on the mirror into a step the saved file does not have.
         testRecorder.stop();
@@ -490,6 +726,7 @@ export class TestingPanel {
     const agent: TestingAgentView = {
       active: data.active === true, status,
       title: text(data.title), goal: text(data.goal), steps: steps.length, note: text(data.note),
+      draftId: text(data.draftId),
     };
     const first = this.agentRevision < 0;
     const unchanged = !first && revision === this.agentRevision;
@@ -514,7 +751,12 @@ export class TestingPanel {
         testRecorder.adoptAgentRecording(this.deviceApps.getSnapshot().device?.udid ?? "", steps, agent.title);
       }
       testRecorder.endAgentRecording(status === "aborted" ? "aborted" : "finished");
-      this.update({ savedRevision: -1, savedPath: "" });
+      // The server kept the finished flow, so the panel adopts that draft rather than autosaving
+      // a second copy of the same steps a moment later.
+      this.draftRevision = testRecorder.getSnapshot().revision;
+      this.draftFlowId = agent.draftId ? testRecorder.getSnapshot().flowId : "";
+      this.update({ savedRevision: -1, savedPath: "", ...(agent.draftId ? { draftId: agent.draftId } : {}) });
+      void this.refreshDrafts();
     }
   }
 
@@ -621,9 +863,16 @@ export class TestingPanel {
   dismissError() { this.update({ error: null }); }
 
   dispose() {
+    // One last keep before the document goes: the host rebuilds this panel whenever the user
+    // looks at another tool, which is the very moment a recording used to disappear, and the
+    // debounce may still be holding the newest step.
+    this.flushing = true;
+    void this.keepDraft().finally(() => { this.flushing = false; });
     this.disposed = true;
     clearTimeout(this.agentTimer);
+    clearTimeout(this.draftTimer);
     this.stopWatchingDevices();
+    this.stopWatchingRecorder();
     this.update({ open: false });
     this.listeners.clear();
     // The panel is going; the device it was reading must not go with it. See `RecorderTreeSource`.

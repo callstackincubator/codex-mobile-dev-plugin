@@ -1,10 +1,11 @@
 import { useRef, useState, useSyncExternalStore } from "react";
-import { BotIcon, CheckIcon, ChevronDownIcon, CircleIcon, CircleXIcon, CopyIcon, FlaskConicalIcon, FolderOpenIcon, GripVerticalIcon, LoaderCircleIcon, MoreHorizontalIcon, PlayIcon, SaveIcon, SquareIcon, Trash2Icon, XIcon } from "lucide-react";
+import { BotIcon, CheckIcon, ChevronDownIcon, CircleIcon, CircleXIcon, CopyIcon, FilePlus2Icon, FlaskConicalIcon, FolderOpenIcon, GripVerticalIcon, HistoryIcon, LoaderCircleIcon, MoreHorizontalIcon, PlayIcon, SaveIcon, SquareIcon, Trash2Icon, UserIcon, XIcon } from "lucide-react";
 import type { DeviceAppsStore } from "../device-apps.ts";
 import type { TestingPanel } from "../testing-panel.ts";
 import { formatRunDuration, testRecorder } from "../test-recorder.ts";
 import type { TestRunView } from "../test-recorder.ts";
 import { allStepOffers, isAgentStep, testFileSlug } from "@mobile-dev/shared/test-recording.ts";
+import { draftLabel } from "@mobile-dev/shared/test-drafts.ts";
 import type { RecordedStep } from "@mobile-dev/shared/test-recording.ts";
 import { BackRow, MenuRow, OFFER_LABEL, OfferIcon, StepCommandList, useMenuStack } from "./step-commands.tsx";
 import { CODE_TOKEN_CLASS, changedLines, highlightCode } from "../code-highlight.ts";
@@ -54,6 +55,89 @@ function TestingProjectPicker({ panel }: { panel: TestingPanel }) {
   </div>;
 }
 
+
+/** How long ago a draft was last touched, short enough to sit under its name in a row. */
+function sinceLabel(iso: string): string {
+  const at = Date.parse(iso);
+  if (Number.isNaN(at)) return "";
+  const seconds = Math.max(0, Math.round((Date.now() - at) / 1000));
+  if (seconds < 60) return "just now";
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+}
+
+/**
+ * The unsaved recordings of this project.
+ *
+ * A flow lives in the panel document until Save writes it into the project, and the host rebuilds
+ * that document whenever the user looks at another tool or another chat — so without this, a flow
+ * they had not saved, or one their agent recorded while they were reading the chat, was simply
+ * gone when they came back. The panel keeps what it is holding as it changes; this is how one is
+ * reopened, swapped for another, or thrown away.
+ *
+ * It is only shown once there is something in it: an empty control for a feature that exists to
+ * recover work is a row of chrome in the way of the work.
+ */
+function TestingDraftPicker({ panel }: { panel: TestingPanel }) {
+  const state = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
+  const recorder = useSyncExternalStore(testRecorder.subscribe, testRecorder.getSnapshot);
+  const [open, setOpen] = useState(false);
+  const agentRecording = state.agent?.active === true;
+  // The one on screen may not be in the list yet: the autosave is debounced, and the first keep of
+  // a brand new flow lands a moment after the first step.
+  if (state.drafts.length === 0 && !state.draftId) return null;
+  const current = state.drafts.find(draft => draft.id === state.draftId);
+  const label = current ? draftLabel(current) : recorder.steps.length > 0 ? draftLabel(recorder) : "Recordings";
+  return <Popover open={open} onOpenChange={value => { setOpen(value); if (value) void panel.refreshDrafts(); }}>
+    <PopoverTrigger asChild>
+      <Button type="button" variant="outline" size="sm" data-testing-drafts className="min-w-0 max-w-64 shrink-0 justify-between gap-1.5 font-normal"
+        aria-label="Unsaved recordings" title="Recordings that have not been written into the project yet">
+        <span className="flex min-w-0 items-center gap-1.5">
+          {state.loadingDraft ? <LoaderCircleIcon className="shrink-0 animate-spin" /> : <HistoryIcon className="shrink-0" />}
+          <span className="min-w-0 truncate">{label}</span>
+        </span>
+        <ChevronDownIcon className="shrink-0 transition-transform" style={{ transform: open ? "rotate(180deg)" : undefined }} />
+      </Button>
+    </PopoverTrigger>
+    <PopoverContent align="start" className="flex max-h-(--radix-popover-content-available-height) w-max min-w-[min(var(--radix-popover-trigger-width),var(--radix-popover-content-available-width))] max-w-(--radix-popover-content-available-width) flex-col gap-1 overflow-y-auto p-1 [&_button:not(:disabled)]:cursor-pointer" aria-label="Unsaved recordings">
+      <p className="px-1.5 pt-1 text-xs text-muted-foreground">Not saved into the project yet.</p>
+      {state.drafts.map(draft => {
+        const selected = draft.id === state.draftId;
+        return <span key={draft.id} className="flex min-w-0 items-center gap-1">
+          <Button type="button" variant="ghost" data-testing-draft-option={draft.id} aria-pressed={selected} disabled={agentRecording}
+            className="h-auto min-h-7 min-w-0 flex-1 justify-start rounded-md px-1.5 py-1 text-left font-normal"
+            onClick={() => { setOpen(false); void panel.openDraft(draft.id); }}>
+            <span className="flex min-w-0 items-center gap-2">
+              <CheckIcon className={`size-3.5 shrink-0 ${selected ? "opacity-100" : "opacity-0"}`} />
+              <span className="flex min-w-0 flex-col">
+                <span className="truncate">{draftLabel(draft)}</span>
+                <span className="flex items-center gap-1 truncate text-xs text-muted-foreground">
+                  {draft.origin === "agent" ? <BotIcon className="size-3 shrink-0" aria-label="Recorded by an agent" /> : <UserIcon className="size-3 shrink-0" aria-label="Recorded by you" />}
+                  {draft.stepCount} step{draft.stepCount === 1 ? "" : "s"}
+                  {sinceLabel(draft.updatedAt) ? ` · ${sinceLabel(draft.updatedAt)}` : ""}
+                </span>
+              </span>
+            </span>
+          </Button>
+          <Button type="button" variant="ghost" size="sm" data-testing-draft-delete={draft.id} disabled={agentRecording && selected}
+            className="size-7 shrink-0 p-0 text-muted-foreground hover:text-destructive"
+            title={selected ? "Delete this recording and clear the panel" : "Delete this recording"}
+            aria-label={`Delete ${draftLabel(draft)}`}
+            onClick={() => void panel.deleteDraft(draft.id)}><Trash2Icon /></Button>
+        </span>;
+      })}
+      {state.drafts.length === 0 && <p className="px-1.5 py-1 text-xs text-muted-foreground">Nothing kept for this project yet.</p>}
+      <Button type="button" variant="ghost" data-testing-draft-new disabled={agentRecording}
+        className="h-auto min-h-7 justify-start rounded-md border-t px-1.5 py-1 text-left font-normal"
+        title="Keep what is on screen and start an empty flow."
+        onClick={() => { setOpen(false); void panel.newRecording(); }}><FilePlus2Icon />New recording</Button>
+    </PopoverContent>
+  </Popover>;
+}
+
 /**
  * The Testing tool: choose an e2e project, launch its app on the mirrored device, then record a
  * deterministic test by tapping the mirror.
@@ -84,6 +168,7 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
           {state.targets.map(entry => <SelectItem key={entry.name} value={entry.name}>{entry.name}{entry.platform ? ` · ${entry.platform}` : ""}</SelectItem>)}
         </SelectGroup></SelectContent>
       </Select>}
+      <TestingDraftPicker panel={panel} />
       {/* Before the controls, so the `ml-auto` below has one thing to push away from and the
           status does not end up marooned past the right edge of the group. */}
       {state.loadingProject && <span className="flex items-center gap-1 text-xs text-muted-foreground" role="status"><LoaderCircleIcon className="animate-spin" />Reading config…</span>}
