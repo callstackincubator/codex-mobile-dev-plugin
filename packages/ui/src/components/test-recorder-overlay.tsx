@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
-import { ListIcon } from "lucide-react";
+import { ListIcon, LoaderCircleIcon } from "lucide-react";
 import type { ScreenAnnotationsStore } from "../screen-annotations";
 import { testRecorder } from "../test-recorder";
 import { agentActSuggestion } from "@mobile-dev/shared/test-recording.ts";
@@ -160,7 +160,7 @@ function CommandMenu({ commands, width, row, offerRow, onClose }: {
  */
 export function TestRecorderOverlay({ store }: { store: ScreenAnnotationsStore }) {
   const { viewport: v } = useSyncExternalStore(store.subscribe, store.getSnapshot);
-  const { hover, menu } = useSyncExternalStore(testRecorder.subscribe, testRecorder.getSnapshot);
+  const { hover, menu, preparing } = useSyncExternalStore(testRecorder.subscribe, testRecorder.getSnapshot);
   // State rather than a ref: the menu is a child, and a child's layout effect runs before the
   // parent's ref is attached, so a ref here is still null the first time the menu measures itself.
   const [host, setHost] = useState<HTMLDivElement | null>(null);
@@ -195,7 +195,21 @@ export function TestRecorderOverlay({ store }: { store: ScreenAnnotationsStore }
     window.addEventListener("pointerdown", dismiss);
     return () => window.removeEventListener("pointerdown", dismiss);
   }, [menu]);
-  if (!anchor || !v.width || !v.height) return null;
+  if (!v.width || !v.height) return null;
+  // Record arms the recorder at once, but nothing on the mirror can be selected until the runner's
+  // element tree has been read, and that takes a second or two. Without this the panel said
+  // "Stop" while the first few clicks did nothing, which reads as a broken recorder rather than as
+  // a wait. The overlay covers the canvas — not the whole stage — so it says *where* the wait is,
+  // and it lets clicks through: the mirror still drives the app while the tree is being read.
+  if (preparing) return <div className="pointer-events-none absolute inset-0 z-20" data-element="recorder-preparing">
+    <div className="absolute flex items-center justify-center bg-background/60 backdrop-blur-[1px]"
+      style={{ left: v.x, top: v.y, width: v.width, height: v.height }} role="status">
+      <span className="flex items-center gap-2 rounded-md bg-background/90 px-3 py-1.5 text-xs font-medium shadow-sm">
+        <LoaderCircleIcon className="size-3.5 animate-spin" />preparing...
+      </span>
+    </div>
+  </div>;
+  if (!anchor) return null;
   const rect = {
     left: v.x + anchor.bounds.x / anchor.screen.width * v.width,
     top: v.y + anchor.bounds.y / anchor.screen.height * v.height,

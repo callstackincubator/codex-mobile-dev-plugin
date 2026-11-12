@@ -9,6 +9,15 @@ import type { RecordedStep } from "@mobile-dev/shared/test-recording.ts";
 import type { TestDraftSummary } from "@mobile-dev/shared/test-drafts.ts";
 
 /**
+ * One test the project already holds, as the server reports it.
+ *
+ * The panel's list has two halves: what has not been stored yet (the drafts above) and what the
+ * project already holds. A saved recording moves from one to the other, which is the whole reason
+ * this exists — the draft is deleted on save, so before this the test left the list entirely.
+ */
+export type StoredTestSummary = { relativePath: string; name: string; updatedAt: string; sizeBytes: number };
+
+/**
  * An agent recording, as the server reports it.
  *
  * The recording itself lives in the server — see `packages/core/src/testing-agent.ts` for why it
@@ -94,6 +103,10 @@ export type TestingSnapshot = {
   draftId: string;
   /** A draft is being read back into the panel. */
   loadingDraft: boolean;
+  /** The `.e2e.ts` files the chosen project already holds, newest first. */
+  tests: StoredTestSummary[];
+  /** A stored test is being deleted; its path, so only its own row shows the spinner. */
+  deletingTest: string;
   error: string | null;
 };
 
@@ -128,7 +141,7 @@ export class TestingPanel {
     open: false, available: false, projectPath: "", projects: [], targets: [], targetName: "", configPath: "",
     loadingProject: false, pickingProject: false, launching: false, appLaunched: false,
     fileName: "", saving: false, overwritePath: "", savedRevision: -1, savedPath: "", running: false, pendingRun: false,
-    agent: null, drafts: [], draftId: "", loadingDraft: false, error: null,
+    agent: null, drafts: [], draftId: "", loadingDraft: false, tests: [], deletingTest: "", error: null,
   };
 
   /** The agent recording's revision the panel has already adopted; -1 before the first poll. */
@@ -241,6 +254,7 @@ export class TestingPanel {
     // the user is in another tool is what opens the Testing tab for them.
     this.pollAgent();
     void this.refreshDrafts();
+    void this.refreshTests();
   }
 
   /** The target the recorder would use: the chosen one, else the first the config declares. */
@@ -341,8 +355,9 @@ export class TestingPanel {
     this.draftRevision = testRecorder.getSnapshot().revision;
     this.draftFlowId = "";
     this.update({ projectPath: path, targets: [], targetName: "", configPath: "", appLaunched: false,
-      overwritePath: "", savedRevision: -1, savedPath: "", draftId: "", drafts: [], error: null });
+      overwritePath: "", savedRevision: -1, savedPath: "", draftId: "", drafts: [], tests: [], error: null });
     void this.refreshDrafts();
+    void this.refreshTests();
     if (!path || !this.snapshot.available) return;
     this.update({ loadingProject: true });
     try {
@@ -420,6 +435,52 @@ export class TestingPanel {
     } catch {
       // The list is a convenience; the flow on screen is unaffected by a read that missed.
     }
+  }
+
+  /**
+   * The tests the chosen project already holds.
+   *
+   * Read from the folder rather than remembered: a test written by hand, by an agent or in another
+   * checkout belongs in the list beside the recorded ones, and a recording that was saved has to
+   * appear here the moment its draft goes.
+   */
+  async refreshTests() {
+    if (!this.snapshot.available || !this.snapshot.projectPath) {
+      if (this.snapshot.tests.length > 0) this.update({ tests: [] });
+      return;
+    }
+    const projectPath = this.snapshot.projectPath;
+    try {
+      const response = await this.call("mobile_testing_tests", { projectPath }, 15_000);
+      const listed = object(response.structuredContent)?.tests;
+      const tests = (Array.isArray(listed) ? listed : []) as StoredTestSummary[];
+      // A slow read must not land on a project the user has since left.
+      if (!this.disposed && this.snapshot.projectPath === projectPath) this.update({ tests });
+    } catch {
+      // The list is a readout; a read that missed leaves the recording on screen untouched.
+    }
+  }
+
+  /**
+   * Deletes one test out of the project. The panel asks first — see the row's confirmation — and
+   * the host asks again, because this removes a file from the user's repository.
+   */
+  async deleteTest(relativePath: string) {
+    const projectPath = this.snapshot.projectPath;
+    if (!relativePath || !projectPath || !this.snapshot.available || this.snapshot.deletingTest) return;
+    this.update({ deletingTest: relativePath, error: null });
+    try {
+      await this.call("mobile_testing_delete_file", { projectPath, relativePath }, 15_000);
+      countUiEvent("ui.testing.test_delete");
+      // The file the panel last wrote is the one that just went, so the "Saved to …" line under
+      // the editor would be pointing at nothing.
+      if (this.snapshot.savedPath.endsWith(relativePath)) this.update({ savedPath: "", savedRevision: -1 });
+    } catch (error) {
+      this.update({ error: error instanceof Error ? error.message : String(error) });
+    } finally {
+      this.update({ deletingTest: "" });
+    }
+    await this.refreshTests();
   }
 
   /** Asks for a keep after the edits settle. Called on every recorder change. */
@@ -621,6 +682,9 @@ export class TestingPanel {
             .then(() => this.refreshDrafts())
             .catch(() => undefined);
         }
+        // And it is one of the project's tests now, so it appears in the stored half of the list
+        // rather than leaving the list with its draft.
+        void this.refreshTests();
         // The flow is written, so the recording is over: leaving it armed turns the next stray tap
         // on the mirror into a step the saved file does not have.
         testRecorder.stop();

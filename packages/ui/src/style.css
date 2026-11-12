@@ -360,15 +360,36 @@ html[data-theme="dark"] .tracesift-explorer { color-scheme: dark; }
   border-radius: 3px;
   margin-inline: -2px;
   padding-inline: 2px;
+  /* The hover highlight is painted as a layer over the line; see below. */
+  position: relative;
 }
 /* The line's own text wraps inside its column; the gutter is not part of the wrap. */
 .testing-preview-code { white-space: pre-wrap; overflow-wrap: anywhere; }
 .testing-preview-line.is-new { animation: testing-preview-line-in 1400ms ease-out both; }
-.testing-preview-line.is-step-highlighted {
+/*
+ * The hover highlight: a layer of its own, not the line's own `background`.
+ *
+ * It used to be a background plus `animation: none`, which was a bug with a long tail. The arrival
+ * animation above holds its end state on the lines a step added, and those lines keep `is-new` for
+ * as long as the file does not change — so suppressing the animation while a step was hovered
+ * *cancelled* it, and letting it back on mouse-leave **restarted it from the beginning**. Leaving
+ * a step lit its lines up again and faded them out over 1400ms, which is what a highlight must
+ * never do: it has to go the moment the pointer does.
+ *
+ * As a layer there is nothing to suppress. The animation keeps running underneath, the highlight
+ * appears and disappears with the class, and the two never touch the same property.
+ */
+.testing-preview-line.is-step-highlighted::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 3px;
   background: color-mix(in oklab, var(--primary) 16%, transparent);
   box-shadow: inset 2px 0 var(--primary);
-  animation: none;
+  pointer-events: none;
 }
+/* Positioned too, so the code and the run mark paint above that layer rather than under it. */
+.testing-run-mark, .testing-preview-code { position: relative; }
 @keyframes testing-preview-line-in {
   from { background: color-mix(in oklab, var(--primary) 26%, transparent); opacity: 0.4; }
   18% { background: color-mix(in oklab, var(--primary) 26%, transparent); opacity: 1; }

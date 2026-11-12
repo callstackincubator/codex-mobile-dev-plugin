@@ -111,6 +111,16 @@ export type TestRecorderSnapshot = {
   /** A step is being resolved: the tap is held until its tree read finishes. */
   resolving: boolean;
   /**
+   * Recording has been asked for but the screen cannot be named yet.
+   *
+   * Pressing Record arms the recorder immediately, but nothing on the mirror can be selected until
+   * the runner's element tree has been read — attaching to the app and projecting the tree takes a
+   * second or two — and until this existed the panel said "Record" and then ignored the first few
+   * seconds of pointing, with nothing on screen to say why. `start` now warms the tree itself and
+   * holds this until that read lands, which is the moment selection actually works.
+   */
+  preparing: boolean;
+  /**
    * What a tap at the pointer would record, for the outline drawn over the mirror: the bounds of
    * the element the selector would name, the step it would add, and the screen those bounds are
    * in so the overlay can scale them to the canvas.
@@ -225,7 +235,7 @@ export class TestRecorder {
   /** That element's rectangle, which is the box a scoped swipe is drawn inside. */
   private lastBounds?: ScreenBounds;
   private snapshot: TestRecorderSnapshot = {
-    recordingUdid: "", agentUdid: "", steps: [], title: DEFAULT_TITLE, revision: 0, flowId: newFlowId(), resolving: false, error: "",
+    recordingUdid: "", agentUdid: "", steps: [], title: DEFAULT_TITLE, revision: 0, flowId: newFlowId(), resolving: false, preparing: false, error: "",
   };
 
   private fadeTimer?: ReturnType<typeof setTimeout>;
@@ -372,17 +382,43 @@ export class TestRecorder {
     // A flow that is not being resumed is a different recording, however much of the old one is
     // still on screen a moment before. Anything holding on to the last flow — the panel's kept
     // draft above all — has to be told, or the next thing written lands on the wrong one.
-    this.update({ recordingUdid: udid, error: "", menu: undefined, ...(keepSteps ? {} : { steps: [], flowId: newFlowId() }) });
+    this.update({ recordingUdid: udid, error: "", menu: undefined, preparing: true, ...(keepSteps ? {} : { steps: [], flowId: newFlowId() }) });
     countUiEvent("ui.testing.record_start");
+    // The first tree read is what makes an element selectable, and it is the slow part: the
+    // session attaches to the app and the tree is projected before anything can be named. Warming
+    // it here rather than on the first hover means the wait happens once, while the overlay is
+    // saying so, instead of silently under the user's first few clicks.
+    void this.prepare(udid);
     // Which way the user answered, counted only where there was a question to answer. It says
     // whether the choice is carrying its weight; nothing about the flow itself is sent.
     if (had) countUiEvent(keepSteps ? "ui.testing.record_resume" : "ui.testing.record_new");
   }
 
+  /**
+   * Reads the screen once so the first hover or right-click is answered locally.
+   *
+   * Measured as its own timing: how long Record is unusable for is a number the panel is judged on,
+   * and it is not the same as `ui.testing.tree_read`, which also covers the warm reads during a
+   * recording. A read that fails leaves `preparing` false — the overlay must never outlive the
+   * thing it is explaining — and the next hover retries as it always did.
+   */
+  private async prepare(udid: string): Promise<void> {
+    const startedAt = performance.now();
+    try {
+      await this.currentComponents();
+    } catch {
+      // Silent: a failed warm read is not an error the user asked for. The first hover says so.
+    } finally {
+      recordUiTiming("ui.testing.record_prepare", performance.now() - startedAt);
+      // Only the recording this prepared for: Stop, or a second Record, owns the flag after that.
+      if (this.snapshot.preparing && this.snapshot.recordingUdid === udid) this.update({ preparing: false });
+    }
+  }
+
   stop() {
     if (!this.snapshot.recordingUdid) return;
     this.clearHover();
-    this.update({ recordingUdid: "", agentUdid: "", resolving: false, menu: undefined });
+    this.update({ recordingUdid: "", agentUdid: "", resolving: false, preparing: false, menu: undefined });
     // The steps stay; the device does not. See `RecorderReader.release`.
     this.reader?.release?.();
     countUiEvent("ui.testing.record_stop");
@@ -479,7 +515,7 @@ export class TestRecorder {
     this.clearHover();
     this.clearRun();
     this.update({
-      recordingUdid: "", resolving: false, error: "", menu: undefined,
+      recordingUdid: "", resolving: false, preparing: false, error: "", menu: undefined,
       steps: [...steps], flowId: newFlowId(), ...(title ? { title } : {}),
     });
     countUiEvent("ui.testing.draft_restore");

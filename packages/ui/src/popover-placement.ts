@@ -68,21 +68,32 @@ export function placeBelow(anchor: Box, size: { width: number; height: number },
  *
  * `align` is which of the row's edges the panel lines up with: `bottom` for a row at the end of a
  * menu, `top` for one in the middle of a list, where growing upward would hide the rows above it.
+ *
+ * `side: "left"` asks for the left outright, whether or not the right has room, for a branch whose
+ * parent menu is itself against the right edge of the workspace. It falls back to the right only
+ * when the left cannot hold the panel at all.
  */
 export function placeBeside(
   row: Box,
   size: { width: number; height: number },
   view: View,
-  options: { flip?: boolean; align?: "top" | "bottom" } = {},
+  options: { flip?: boolean; align?: "top" | "bottom"; side?: "left" | "right" } = {},
 ): Placement {
   const maxHeight = Math.max(120, view.height - MARGIN * 2);
   const height = Math.min(size.height, maxHeight);
   const rightmost = Math.max(MARGIN, view.width - size.width - MARGIN);
   const right = row.right + 4;
   const left = row.left - 4 - size.width;
-  const flipped = options.flip && right > rightmost && left >= MARGIN;
+  // `side: "left"` is a branch that opens on the left by design rather than because the right ran
+  // out: the step list is the rightmost thing in the panel, so a submenu of a step row opens over
+  // the preview — which is where there is room — instead of over the list it came from. It still
+  // falls back to the right when the left has no room, because a submenu off the edge of the
+  // window shows nothing at all.
+  const chooseLeft = options.side === "left"
+    ? left >= MARGIN
+    : options.flip && right > rightmost && left >= MARGIN;
   return {
-    left: flipped ? left : clamp(right, MARGIN, rightmost),
+    left: chooseLeft ? left : clamp(right, MARGIN, rightmost),
     // Lined up with the chosen edge, then pushed back in if that would take it off either edge.
     top: clamp(options.align === "top" ? row.top : row.bottom - height, MARGIN,
       Math.max(MARGIN, view.height - MARGIN - height)),

@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { ArrowDownIcon, ArrowDownToLineIcon, ArrowLeftIcon, ArrowRightIcon, ArrowUpIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon, EyeIcon, EyeOffIcon, HandIcon, MousePointerClickIcon, PlusIcon, SparklesIcon, TextCursorInputIcon, TypeIcon, WandSparklesIcon, XIcon } from "lucide-react";
+import { useEffect, useId, useRef, useState } from "react";
+import { ArrowDownIcon, ArrowDownToLineIcon, ArrowLeftIcon, ArrowRightIcon, ArrowUpIcon, CheckIcon, ChevronRightIcon, EyeIcon, EyeOffIcon, HandIcon, MousePointerClickIcon, PlusIcon, SparklesIcon, TextCursorInputIcon, TypeIcon, WandSparklesIcon, XIcon } from "lucide-react";
 import { stepIsAssertion } from "@mobile-dev/shared/test-recording.ts";
 import type { AgentParams, AgentStepKind, PinnedStepKind, RecordedStepKind, StepOffer, SwipeDirection, VisionMode } from "@mobile-dev/shared/test-recording.ts";
 import { Branch } from "./cascading-menu";
@@ -129,35 +129,6 @@ export function StepCommandList({ commands, onChoose, renderRow }: {
     {assertions.map(row)}
   </>;
 }
-
-/**
- * Where a menu currently is, as a stack the Back row pops.
- *
- * Both menus that record a step are deeper than one screen — "All commands" replaces the step
- * menu, and Agentic is a branch with a form at the end of it — and a replaced menu with no way
- * back is a dead end the user can only leave by dismissing it and starting again. One stack, so
- * Back means the same thing at every level of both.
- */
-export type MenuView = "root" | "commands" | "agentic" | "agentAct" | "agentAssert";
-
-export function useMenuStack(initial: MenuView = "root") {
-  const [stack, setStack] = useState<MenuView[]>([initial]);
-  const push = useCallback((view: MenuView) => setStack(current => [...current, view]), []);
-  // The root is never popped: a menu is always somewhere.
-  const back = useCallback(() => setStack(current => current.length > 1 ? current.slice(0, -1) : current), []);
-  const reset = useCallback(() => setStack([initial]), [initial]);
-  return { view: stack[stack.length - 1]!, depth: stack.length, push, back, reset };
-}
-
-/** The row that pops one level of `useMenuStack`, with the divider that separates it from the rest. */
-export function BackRow({ onClick, attributes }: { onClick: () => void; attributes?: Record<string, string> }) {
-  return <>
-    <MenuRow icon={<ChevronLeftIcon className="size-4 shrink-0 text-muted-foreground" />}
-      title="Back" attributes={attributes} onClick={onClick}>Back</MenuRow>
-    <div className="-mx-1.5 border-t" />
-  </>;
-}
-
 
 const DIRECTION_ICON = { up: ArrowUpIcon, down: ArrowDownIcon, left: ArrowLeftIcon, right: ArrowRightIcon };
 

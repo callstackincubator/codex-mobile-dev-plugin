@@ -83,6 +83,19 @@ export function Workspace({ panels, recordingController, banner, displayModeCont
   useEffect(() => {
     setUiTelemetryContext({ logs_open: logState.open, logs_paused: logState.paused, performance_running: performanceState.monitoring || performanceState.fpsMonitoring });
   }, [logState.open, logState.paused, performanceState.monitoring, performanceState.fpsMonitoring]);
+  const testingOpen = tool === "testing" && open === true;
+  /**
+   * The Testing panel is read as three panes side by side — mirror, preview, steps — so it asks
+   * for a horizontal workspace of its own rather than inheriting `split`.
+   *
+   * `split` is `wide && fullscreen`, and outside the fullscreen workspace it is false: the group
+   * was then vertical, the mirror kept the 60% default meant for a tool stacked under it, and the
+   * Testing panel's own two panes were left with 40% of the height between them. Recording is done
+   * by tapping the mirror and read back beside it, which only works as a row — so wherever there
+   * is width for a row, that is what this panel gets.
+   */
+  const testingSplit = testingOpen && wide;
+  const sideBySide = split || testingSplit;
   const isOpen = () => (tool === "performance" && savedVisible) || panels.panel(tool).getSnapshot().open;
   const closeTools = () => {
     setSavedVisible(false);
@@ -95,6 +108,7 @@ export function Workspace({ panels, recordingController, banner, displayModeCont
     panels.show(next);
   };
   const logsRef = usePanelRef();
+  const simulatorsRef = usePanelRef();
   const simulatorGroupRef = useGroupRef();
   const workspaceGroupRef = useGroupRef();
   useEffect(() => { if (open) logsRef.current?.expand(); else logsRef.current?.collapse(); }, [open, split, layout]);
@@ -118,7 +132,21 @@ export function Workspace({ panels, recordingController, banner, displayModeCont
         const panelIds = Object.keys(current);
         if (panelIds.length > 0) {
           workspacePending = false;
-          workspace.setLayout({ "tools-resizable": layout === "none" ? 100 : split ? 64 : 40, "simulators-resizable": layout === "none" ? 0 : split ? 36 : 60 });
+          // The Testing panel is read as three panes — mirror, preview, steps — and the preview
+          // and the steps split the tools pane 60/40 of their own accord. A quarter of the
+          // workspace for the mirror is what makes those 45% and 30%: the mirror is tapped, while
+          // the two beside it are read, and reading a generated file needs the room.
+          const toolsShare = testingOpen ? 75 : split ? 64 : 40;
+          workspace.setLayout({ "tools-resizable": toolsShare, "simulators-resizable": 100 - toolsShare });
+          // No visible platform is the panel being collapsed, not a share of 0. A share is the
+          // group's last *requested* layout, which it re-applies whenever a panel's constraints
+          // change — and the Testing panel changes them as it opens. A 0 requested while nothing
+          // was bootable therefore outlived the device: discovery selected a simulator, the
+          // platform selector read "iOS", and the mirror stayed shut until the user toggled the
+          // platform off and on again. Collapsing says the same thing in the group's own terms,
+          // so expanding it is all that finding a device has to do.
+          if (layout === "none") simulatorsRef.current?.collapse();
+          else simulatorsRef.current?.expand();
           if (isOpen() === false) logsRef.current?.collapse();
         }
       }
@@ -128,9 +156,14 @@ export function Workspace({ panels, recordingController, banner, displayModeCont
     observer.observe(document.getElementById("simulator-panels")!);
     observer.observe(document.getElementById("workspace-panels")!);
     applyLayout();
-    return () => observer.disconnect();
-  }, [layout, split, tool]);
-  const toolPanel = <ResizablePanel key="tools" id="tools-resizable" panelRef={logsRef} defaultSize={split ? "64%" : "40%"} minSize={split ? "240px" : "25%"} maxSize="100%" collapsible collapsedSize={`${collapsedToolSize}px`} onResize={(size, _id, previous) => {
+    // And again on the next frame, because the group re-derives its own layout from the panels'
+    // defaults when their constraints change — which is what opening the Testing panel does, since
+    // its mirror and its tools declare sizes of their own. Asking during the commit is asking
+    // before that, so the answer was thrown away; the frame after it is when it sticks.
+    const frame = requestAnimationFrame(() => { workspacePending = true; simulatorsPending = layout !== "none"; applyLayout(); });
+    return () => { cancelAnimationFrame(frame); observer.disconnect(); };
+  }, [layout, split, sideBySide, tool, testingOpen]);
+  const toolPanel = <ResizablePanel key="tools" id="tools-resizable" panelRef={logsRef} defaultSize={testingOpen ? "75%" : split ? "64%" : "40%"} minSize={sideBySide ? "240px" : "25%"} maxSize="100%" collapsible collapsedSize={`${collapsedToolSize}px`} onResize={(size, _id, previous) => {
     if (!previous) return;
     if (size.inPixels <= collapsedToolSize + 1 && isOpen()) closeTools();
     else if (size.inPixels > 80 && isOpen() === false) showTool(tool);
@@ -144,7 +177,7 @@ export function Workspace({ panels, recordingController, banner, displayModeCont
   // mirror leads and the preview follows it — the reading order of the thing being done. Every
   // other tool is a readout the simulator is secondary to, and keeps the simulator on the right.
   // Only side by side: stacked, "left" is the top panel, which the simulator already is.
-  const mirrorFirst = tool === "testing" && open;
+  const mirrorFirst = testingOpen && sideBySide;
   const toolbar = <nav className={`workspace-toolbar @container flex h-12 shrink-0 items-center justify-between gap-2 px-2 ${bottomToolbar ? "border-t" : "border-y"}`} aria-label="Developer tools">
     {displayModeControl}
     <Select items={[{ value: "none", label: "Tools" }, ...Object.entries(tools).map(([value, { label }]) => ({ value, label }))]} value={open ? tool : "none"} onValueChange={value => {
@@ -169,7 +202,7 @@ export function Workspace({ panels, recordingController, banner, displayModeCont
       </SelectGroup></SelectContent>
     </Select>
   </nav>;
-  const simulatorPanel = <ResizablePanel key="simulators" id="simulators-resizable" minSize="0%" maxSize="100%" collapsible collapsedSize="0px" defaultSize={split ? "36%" : "60%"} onResize={size => setSimulatorsCollapsed(size.inPixels < 1)}>
+  const simulatorPanel = <ResizablePanel key="simulators" id="simulators-resizable" panelRef={simulatorsRef} minSize="0%" maxSize="100%" collapsible collapsedSize="0px" defaultSize={testingOpen ? "25%" : split ? "36%" : "60%"} onResize={size => setSimulatorsCollapsed(size.inPixels < 1)}>
     <div className="flex h-full min-h-0 flex-col">
       <ResizablePanelGroup id="simulator-panels" groupRef={simulatorGroupRef} orientation="horizontal" className="min-h-0 flex-1" aria-label="Simulators">
         <ResizablePanel id="ios-resizable" defaultSize="100%" minSize="0px" maxSize="100%" collapsible collapsedSize="0px"><SimulatorView platform="ios" visible={layout === "ios" || layout === "both"} /></ResizablePanel>
@@ -186,8 +219,8 @@ export function Workspace({ panels, recordingController, banner, displayModeCont
     {banner}
     {contextControl}
     {!bottomToolbar && toolbar}
-    <ResizablePanelGroup id="workspace-panels" groupRef={workspaceGroupRef} orientation={split ? "horizontal" : "vertical"} className="min-h-0 flex-1" data-split={split}>
-      {split ? (mirrorFirst ? [simulatorPanel, divider, toolPanel] : [toolPanel, divider, simulatorPanel]) : [simulatorPanel, divider, toolPanel]}
+    <ResizablePanelGroup id="workspace-panels" groupRef={workspaceGroupRef} orientation={sideBySide ? "horizontal" : "vertical"} className="min-h-0 flex-1" data-split={sideBySide}>
+      {sideBySide ? (mirrorFirst ? [simulatorPanel, divider, toolPanel] : [toolPanel, divider, simulatorPanel]) : [simulatorPanel, divider, toolPanel]}
     </ResizablePanelGroup>
   </main>;
 }

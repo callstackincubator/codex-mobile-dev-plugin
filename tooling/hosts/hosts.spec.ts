@@ -66,6 +66,62 @@ test.describe("MCP Apps hosts", () => {
     expect(pageErrors).toEqual([]);
   });
 
+  test("the Testing panel puts the mirror, the preview and the steps side by side", async ({ openView, page, server }) => {
+    test.skip(hasPanel(server) === false, "This target's server renders no panel in the chat.");
+    // Recording is done by tapping the mirror and read back in the preview beside it, so the three
+    // panes are a row: a quarter for the mirror, which is tapped, and the rest for what is read.
+    // This asks for the row itself rather than for `split`, which is false outside the fullscreen
+    // workspace — the mirror then kept the 60% default meant for a tool stacked under it, and the
+    // preview and the steps were left sharing the height below it.
+    for (const displayMode of ["fullscreen", "inline"] as const) {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      const { view } = await openView("mobile_open_workspace", { displayMode });
+      // A mirror needs a platform to show: with none the pane is collapsed, which is the point of
+      // the shares below. These hosts see no devices, so the platform is chosen here.
+      await view.locator("#platform-select").click();
+      await view.getByRole("option", { name: "iOS" }).click();
+      await page.keyboard.press("Escape");
+      await view.locator("#tool-select").click();
+      await view.getByRole("option", { name: "Testing" }).click();
+      await view.locator("[data-testing-recorder-workspace]").waitFor();
+      const share = async (selector: string) => {
+        const box = await view.locator(selector).boundingBox();
+        return Math.round((box?.width ?? 0) / 1280 * 100);
+      };
+      // The panel's own padding and the gaps between the panes come off the two that are read, so
+      // the shares are 25/45/30 of the pane area and a little under that of the window.
+      expect(await share("#simulators-resizable"), `the mirror in ${displayMode}`).toBe(25);
+      expect(await share("#testing-preview-resizable"), `the preview in ${displayMode}`).toBeGreaterThan(40);
+      expect(await share("#testing-steps-resizable"), `the steps in ${displayMode}`).toBeGreaterThan(26);
+      // And in that order, left to right: the mirror leads, because it is what is acted on.
+      const mirror = await view.locator("#simulators-resizable").boundingBox();
+      const preview = await view.locator("#testing-preview-resizable").boundingBox();
+      const steps = await view.locator("#testing-steps-resizable").boundingBox();
+      expect(mirror!.x).toBeLessThan(preview!.x);
+      expect(preview!.x).toBeLessThan(steps!.x);
+    }
+  });
+
+  test("a platform found while the Testing panel is open opens the mirror", async ({ openView, page, server }) => {
+    test.skip(hasPanel(server) === false, "This target's server renders no panel in the chat.");
+    // The ordinary order: the panel opens while the backend is still looking, and discovery
+    // selects a simulator a moment later. The mirror used to stay shut through that — the panel
+    // asked for its own shares during the commit that changed its panels' constraints, where the
+    // group discards them and keeps what it last requested, which was a mirror of nothing.
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const { view } = await openView("mobile_open_workspace", { displayMode: "fullscreen" });
+    await view.locator("#tool-select").click();
+    await view.getByRole("option", { name: "Testing" }).click();
+    await view.locator("[data-testing-recorder-workspace]").waitFor();
+    const mirror = view.locator("#simulators-resizable");
+    // Nothing to mirror yet, so the pane is collapsed rather than an empty quarter of the window.
+    await expect.poll(async () => Math.round((await mirror.boundingBox())?.width ?? 0)).toBe(0);
+    await page.keyboard.press("Escape");
+    await view.locator("#platform-select").click();
+    await view.getByRole("option", { name: "iOS" }).click();
+    await expect.poll(async () => Math.round((await mirror.boundingBox())?.width ?? 0)).toBe(320);
+  });
+
   test("Back to chat appears only where the host has no control of its own", async ({ openView, target, server }) => {
     test.skip(hasPanel(server) === false, "This target's server renders no panel in the chat.");
     const { view } = await openView("mobile_open_workspace", { displayMode: "fullscreen" });

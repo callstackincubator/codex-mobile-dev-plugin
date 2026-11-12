@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
-import { lstat, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 import { chooseProjectFolder } from "./project-folder-dialog.ts";
@@ -277,4 +277,68 @@ export async function writeTestFile(projectPath: string, relativePath: string, c
     await unlink(temporary).catch(() => undefined);
   }
   return { path: target, written: true, existed };
+}
+
+/** One test the project already holds, as a row of the panel's list. */
+export interface StoredTest {
+  /** Path under the project, e.g. `tests/a-recorded-flow.e2e.ts`. */
+  relativePath: string;
+  /** The file's own name, which is what the row reads as. */
+  name: string;
+  updatedAt: string;
+  sizeBytes: number;
+}
+
+/** How deep under `tests/` the listing walks. Deeper than a folder per feature is not a list. */
+const MAX_TEST_DEPTH = 3;
+/** A project with more tests than this is browsed in an editor, not in a popover. */
+const MAX_LISTED_TESTS = 200;
+
+/**
+ * The `.e2e.ts` files already in the project's `tests/` folder, newest first.
+ *
+ * This is the other half of the panel's list: a recording that has been written into the project
+ * is no longer a draft, and before this it simply left the list when it was saved — the user
+ * pressed Save and watched their test disappear. Read rather than remembered, so a test written by
+ * hand, by an agent or by another checkout is in the list too.
+ *
+ * A project with no `tests/` folder yet is an empty list, not an error: nothing has been saved.
+ */
+export async function listTestFiles(projectPath: string): Promise<StoredTest[]> {
+  const { path: root } = await inspectProject(projectPath);
+  const testsRoot = resolve(root, TESTS_DIRECTORY);
+  const found: StoredTest[] = [];
+  const walk = async (directory: string, depth: number): Promise<void> => {
+    if (depth > MAX_TEST_DEPTH || found.length >= MAX_LISTED_TESTS) return;
+    const entries = await readdir(directory, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      if (found.length >= MAX_LISTED_TESTS) return;
+      const child = join(directory, entry.name);
+      // Symlinks are skipped rather than followed: the listing must not walk out of the project.
+      if (entry.isSymbolicLink()) continue;
+      if (entry.isDirectory()) { await walk(child, depth + 1); continue; }
+      if (!entry.isFile() || !entry.name.endsWith(".e2e.ts")) continue;
+      const info = await stat(child).catch(() => undefined);
+      if (!info) continue;
+      found.push({
+        relativePath: [TESTS_DIRECTORY, ...relative(testsRoot, child).split(/[\\/]/).filter(Boolean)].join("/"),
+        name: entry.name,
+        updatedAt: info.mtime.toISOString(),
+        sizeBytes: info.size,
+      });
+    }
+  };
+  await walk(testsRoot, 1);
+  return found.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+}
+
+/**
+ * Deletes one test the project holds. The panel asks before this runs, and the host asks again:
+ * this removes a file from the user's repository, which nothing here can put back.
+ */
+export async function deleteTestFile(projectPath: string, relativePath: string): Promise<{ path: string; removed: boolean }> {
+  const { path: root } = await inspectProject(projectPath);
+  const target = await resolveTestPath(root, relativePath);
+  const removed = await unlink(target).then(() => true, () => false);
+  return { path: target, removed };
 }

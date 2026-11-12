@@ -239,3 +239,64 @@ test("Clear starts a flow of its own, so the cleared recording stays in the list
   assert.equal(saved[1].arguments.id, undefined);
   panel.dispose();
 });
+
+test("a saved recording moves into the project's half of the list rather than leaving it", async () => {
+  // The bug this covers: the draft is deleted when the flow is written into the project, and
+  // nothing else listed the file, so pressing Save made the test vanish from the panel's list.
+  const calls: { name: string; arguments: Record<string, unknown> }[] = [];
+  const panel = open({
+    mobile_testing_draft_save: { id: DRAFT },
+    mobile_testing_drafts: { drafts: [] },
+    mobile_testing_tests: { tests: [{ relativePath: "tests/flow.e2e.ts", name: "flow.e2e.ts", updatedAt: "2026-01-01T00:00:00.000Z", sizeBytes: 420 }] },
+    mobile_testing_write_file: { written: true, existed: false, path: `${PROJECT}/tests/flow.e2e.ts` },
+  }, calls);
+  (panel as unknown as { update(fields: Record<string, unknown>): void }).update({ fileName: "flow" });
+  await recordOneStep();
+  await keep(panel);
+
+  await panel.saveTest();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  await new Promise(resolve => setTimeout(resolve, 0));
+
+  assert.ok(named(calls, "mobile_testing_tests").length > 0, "the project's tests are read again after a save");
+  assert.deepEqual(panel.getSnapshot().tests.map(entry => entry.relativePath), ["tests/flow.e2e.ts"]);
+  assert.deepEqual(panel.getSnapshot().drafts, [], "and it is no longer one of the unstored recordings");
+  panel.dispose();
+});
+
+test("deleting one of the project's tests removes the file and re-reads the folder", async () => {
+  const calls: { name: string; arguments: Record<string, unknown> }[] = [];
+  const panel = open({
+    mobile_testing_tests: { tests: [] },
+    mobile_testing_delete_file: { path: `${PROJECT}/tests/flow.e2e.ts`, removed: true },
+  }, calls);
+  (panel as unknown as { update(fields: Record<string, unknown>): void }).update({
+    savedPath: `${PROJECT}/tests/flow.e2e.ts`, savedRevision: 3,
+  });
+
+  await panel.deleteTest("tests/flow.e2e.ts");
+
+  assert.deepEqual(named(calls, "mobile_testing_delete_file").map(call => call.arguments),
+    [{ projectPath: PROJECT, relativePath: "tests/flow.e2e.ts" }]);
+  assert.equal(panel.getSnapshot().deletingTest, "", "the row stops spinning when the delete lands");
+  assert.equal(panel.getSnapshot().savedPath, "", "the \"Saved to …\" line is not left pointing at a file that is gone");
+  assert.ok(named(calls, "mobile_testing_tests").length > 0);
+  panel.dispose();
+});
+
+test("the project's tests are listed per project, and dropped when the project is left", async () => {
+  const calls: { name: string; arguments: Record<string, unknown> }[] = [];
+  const panel = open({
+    mobile_testing_tests: { tests: [{ relativePath: "tests/flow.e2e.ts", name: "flow.e2e.ts", updatedAt: "2026-01-01T00:00:00.000Z", sizeBytes: 10 }] },
+  }, calls);
+
+  await panel.refreshTests();
+  assert.deepEqual(named(calls, "mobile_testing_tests").map(call => call.arguments), [{ projectPath: PROJECT }]);
+  assert.equal(panel.getSnapshot().tests.length, 1);
+
+  // With no project there is nothing to list: another project's tests must not stay on screen.
+  (panel as unknown as { update(fields: Record<string, unknown>): void }).update({ projectPath: "" });
+  await panel.refreshTests();
+  assert.deepEqual(panel.getSnapshot().tests, []);
+  panel.dispose();
+});

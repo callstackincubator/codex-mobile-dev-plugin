@@ -5,7 +5,7 @@ import { z } from "zod";
 import { errorMessage } from "@mobile-dev/shared/protocol.ts";
 import { captureServerError } from "./telemetry.ts";
 import type { TestingProjectChoices } from "./testing-projects.ts";
-import { inspectProject, writeTestFile } from "./testing-projects.ts";
+import { deleteTestFile, inspectProject, listTestFiles, writeTestFile } from "./testing-projects.ts";
 import { TestDraftStore } from "./testing-drafts.ts";
 import { MAX_DRAFT_STEPS, recordedStepSchema, testDraftIdSchema } from "@mobile-dev/shared/test-drafts.ts";
 import type { TestDraft } from "@mobile-dev/shared/test-drafts.ts";
@@ -86,6 +86,38 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
   }, safe(async ({ projectPath: selected, relativePath, contents, overwrite }: { projectPath: string; relativePath: string; contents: string; overwrite?: boolean }) => {
     const result = await writeTestFile(selected, relativePath, contents, overwrite ?? false);
     return dataResult({ ...result }, result.written ? `Saved ${result.path}` : `${result.path} already exists.`);
+  }));
+
+  /**
+   * The tests the project already holds.
+   *
+   * The other half of the panel's list. A recording that has been written into the project stops
+   * being a draft, and the draft is deleted at that point — so until this existed, pressing Save
+   * made the test leave the list altogether. Read from the folder rather than remembered, so a
+   * test written by hand or by an agent is listed beside the recorded ones.
+   */
+  registerAppTool(server, "mobile_testing_tests", {
+    title: "List the project's tests",
+    description: "List the .e2e.ts files already in the project's tests/ folder, newest first.",
+    inputSchema: { projectPath },
+    annotations: read,
+    _meta: appVisibility,
+  }, safe(async ({ projectPath: selected }: { projectPath: string }) =>
+    dataResult({ tests: await listTestFiles(selected) })));
+
+  registerAppTool(server, "mobile_testing_delete_file", {
+    title: "Delete one of the project's tests",
+    description: "Delete one .e2e.ts file from the project's tests/ folder. The panel asks before calling this; the file is not recoverable from here.",
+    inputSchema: {
+      projectPath,
+      relativePath: z.string().min(1).max(512).describe("The test to delete, relative to the project, e.g. tests/a-recorded-flow.e2e.ts."),
+    },
+    // Removing a file from the user's repository is exactly what the host should ask about.
+    annotations: destructive,
+    _meta: appVisibility,
+  }, safe(async ({ projectPath: selected, relativePath }: { projectPath: string; relativePath: string }) => {
+    const result = await deleteTestFile(selected, relativePath);
+    return dataResult({ ...result }, result.removed ? `Deleted ${result.path}` : `${result.path} was already gone.`);
   }));
 
   /**

@@ -155,6 +155,9 @@ test("the banner says who is driving, and its Stop is the one beside the goal", 
   assert.equal(dom.window.document.querySelector("[data-testing-stop]"), null);
   assert.equal((dom.window.document.querySelector("[data-testing-run]") as HTMLButtonElement).disabled, true,
     "a run resets the app and takes the one device session the recording is being read through");
+  // Save lives in the Test Description section, which starts folded: saving half a flow the agent
+  // is still writing is a file the user did not ask for.
+  await act(async () => { (dom.window.document.querySelector("[data-testing-description-toggle]") as HTMLElement).click(); });
   assert.equal((dom.window.document.querySelector("[data-testing-save]") as HTMLButtonElement).disabled, true);
 
   Object.assign(agent, { active: false, status: "finished", revision: 2, note: "4 landmarks" });

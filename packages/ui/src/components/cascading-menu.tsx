@@ -139,7 +139,7 @@ function focusFirst(node: HTMLElement | null) {
  * than the window scrolls, and a scrolling box clips what hangs out of it; and a branch has to be
  * free to lie outside the menu, the stage and the panel alike.
  */
-export function BranchPanel({ panelRef, row, width, label, align, flip, children, attributes, onHold, onLeave, onClose }: {
+export function BranchPanel({ panelRef, row, width, label, align, flip, side, children, attributes, onHold, onLeave, onClose }: {
   /** The panel's own node, which the branch measures for its safe path. */
   panelRef: React.RefObject<HTMLDivElement | null>;
   row: React.RefObject<HTMLElement | null>;
@@ -147,6 +147,8 @@ export function BranchPanel({ panelRef, row, width, label, align, flip, children
   label: string;
   align?: "top" | "bottom";
   flip?: boolean;
+  /** Which side the branch opens on by design; see `placeBeside`. */
+  side?: "left" | "right";
   children: React.ReactNode;
   attributes?: Record<string, string>;
   onHold: () => void;
@@ -158,8 +160,8 @@ export function BranchPanel({ panelRef, row, width, label, align, flip, children
   const placement = usePlacement(panel, () => {
     const anchor = row.current?.getBoundingClientRect();
     return anchor && placeBeside(anchor, { width, height: panel.current?.offsetHeight ?? 0 }, windowView(),
-      { ...(flip === undefined ? {} : { flip }), ...(align === undefined ? {} : { align }) });
-  }, [row, width, align, flip, children]);
+      { ...(flip === undefined ? {} : { flip }), ...(align === undefined ? {} : { align }), ...(side === undefined ? {} : { side }) });
+  }, [row, width, align, flip, side, children]);
   // Opened from the keyboard, the branch is useless until the keyboard is in it. Opened by the
   // pointer this is harmless: the element focused is the one the pointer is already over.
   useEffect(() => { if (document.activeElement === row.current) focusFirst(panel.current); }, [row]);
@@ -191,11 +193,13 @@ export function BranchPanel({ panelRef, row, width, label, align, flip, children
  * its test attributes; everything about *when* the branch is open is here, so it behaves the same
  * in the mirror's menu as in any other.
  */
-export function Branch({ label, width, align, flip, renderRow, children, attributes }: {
+export function Branch({ label, width, align, flip, side, renderRow, children, attributes }: {
   label: string;
   width: number;
   align?: "top" | "bottom";
   flip?: boolean;
+  /** Which side the branch opens on by design; see `placeBeside`. */
+  side?: "left" | "right";
   renderRow: (handlers: { onOpen: () => void; onClick: () => void }) => React.ReactNode;
   children: React.ReactNode;
   attributes?: Record<string, string>;
@@ -218,7 +222,7 @@ export function Branch({ label, width, align, flip, renderRow, children, attribu
       }}
     >{renderRow({ onOpen: enter, onClick: hold })}</div>
     {open && <BranchPanel panelRef={panel} row={row} width={width} label={label}
-      {...(align === undefined ? {} : { align })} {...(flip === undefined ? {} : { flip })}
+      {...(align === undefined ? {} : { align })} {...(flip === undefined ? {} : { flip })} {...(side === undefined ? {} : { side })}
       {...(attributes === undefined ? {} : { attributes })}
       onHold={hold} onLeave={leave} onClose={close}>{children}</BranchPanel>}
   </>;

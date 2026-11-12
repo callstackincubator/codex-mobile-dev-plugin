@@ -1,5 +1,5 @@
-import { useRef, useState, useSyncExternalStore } from "react";
-import { BotIcon, CheckIcon, ChevronDownIcon, CircleIcon, CircleXIcon, CopyIcon, FilePlus2Icon, FlaskConicalIcon, FolderOpenIcon, GripVerticalIcon, HistoryIcon, LoaderCircleIcon, MoreHorizontalIcon, PlayIcon, SaveIcon, SquareIcon, Trash2Icon, UserIcon, XIcon } from "lucide-react";
+import { useCallback, useRef, useState, useSyncExternalStore } from "react";
+import { BotIcon, CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleIcon, CircleXIcon, CopyIcon, FileCode2Icon, FilePlus2Icon, FlaskConicalIcon, FolderOpenIcon, GripVerticalIcon, HistoryIcon, LoaderCircleIcon, MoreHorizontalIcon, PlayIcon, SaveIcon, SquareIcon, Trash2Icon, UserIcon, XIcon } from "lucide-react";
 import type { DeviceAppsStore } from "../device-apps.ts";
 import type { TestingPanel } from "../testing-panel.ts";
 import { formatRunDuration, testRecorder } from "../test-recorder.ts";
@@ -7,11 +7,13 @@ import type { TestRunView } from "../test-recorder.ts";
 import { allStepOffers, isAgentStep, testFileSlug } from "@mobile-dev/shared/test-recording.ts";
 import { draftLabel } from "@mobile-dev/shared/test-drafts.ts";
 import type { RecordedStep } from "@mobile-dev/shared/test-recording.ts";
-import { BackRow, MenuRow, OFFER_LABEL, OfferIcon, StepCommandList, useMenuStack } from "./step-commands.tsx";
+import { MenuRow, OFFER_LABEL, OfferIcon, StepCommandList } from "./step-commands.tsx";
+import { Branch } from "./cascading-menu.tsx";
 import { CODE_TOKEN_CLASS, changedLines, highlightCode } from "../code-highlight.ts";
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert.tsx";
 import { Button } from "./ui/button.tsx";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover.tsx";
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "./ui/resizable.tsx";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "./ui/base-select.tsx";
 
 /**
@@ -69,32 +71,97 @@ function sinceLabel(iso: string): string {
   return `${Math.round(hours / 24)}d ago`;
 }
 
+/** A group header in the tests list: a disclosure that says how many rows it is holding. */
+function ListGroup({ label, count, open, onToggle, attributes, children }: {
+  label: string; count: number; open: boolean; onToggle: () => void;
+  attributes?: Record<string, string>; children: React.ReactNode;
+}) {
+  return <div className="flex min-w-0 flex-col">
+    <button type="button" {...attributes} aria-expanded={open}
+      className="flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-[10px] font-medium uppercase tracking-wide text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+      onClick={onToggle}>
+      {open ? <ChevronDownIcon className="size-3.5 shrink-0" /> : <ChevronRightIcon className="size-3.5 shrink-0" />}
+      <span className="min-w-0 truncate">{label}</span>
+      <span className="shrink-0 tabular-nums">{count}</span>
+    </button>
+    {open && <div className="flex min-w-0 flex-col gap-1 pl-1">{children}</div>}
+  </div>;
+}
+
 /**
- * The unsaved recordings of this project.
+ * The delete a row asks through: the trash icon, and the question in a popover beside it.
+ *
+ * Deleting a recording throws away steps nothing can replay, and deleting a stored test removes a
+ * file from the user's repository; both used to happen on one click of an icon that sits beside
+ * the row the user was reaching for. The question hangs off the icon rather than replacing the row
+ * so the row it is about stays legible underneath it, and so the question has room to say what
+ * will go and that it cannot be undone — which a row the width of a file name does not.
+ */
+function ConfirmDelete({ question, label, title, disabled, busy, attributes, onConfirm }: {
+  /** What is about to go, as the sentence the popover opens with. */
+  question: string;
+  /** The trash button's own accessible name, e.g. `Delete flow.e2e.ts`. */
+  label: string;
+  title: string;
+  disabled?: boolean;
+  busy?: boolean;
+  attributes?: Record<string, string>;
+  onConfirm: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return <Popover open={open} onOpenChange={setOpen}>
+    <PopoverTrigger asChild>
+      <Button type="button" variant="ghost" size="sm" disabled={disabled || busy} {...attributes}
+        className="size-7 shrink-0 p-0 text-muted-foreground hover:text-destructive"
+        title={title} aria-label={label}>
+        {busy ? <LoaderCircleIcon className="animate-spin" /> : <Trash2Icon />}
+      </Button>
+    </PopoverTrigger>
+    <PopoverContent align="end" className="flex w-64 flex-col gap-2 p-2.5 [&_button:not(:disabled)]:cursor-pointer"
+      role="alertdialog" aria-label={question}>
+      <p className="min-w-0 break-words text-xs">{question}</p>
+      <div className="flex justify-end gap-2">
+        <Button type="button" size="sm" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+        <Button type="button" size="sm" variant="destructive" data-confirm-delete=""
+          onClick={() => { setOpen(false); onConfirm(); }}>Delete</Button>
+      </div>
+    </PopoverContent>
+  </Popover>;
+}
+
+/**
+ * The flows of this project: the ones that are not stored yet, and the tests the project holds.
  *
  * A flow lives in the panel document until Save writes it into the project, and the host rebuilds
- * that document whenever the user looks at another tool or another chat — so without this, a flow
- * they had not saved, or one their agent recorded while they were reading the chat, was simply
- * gone when they came back. The panel keeps what it is holding as it changes; this is how one is
- * reopened, swapped for another, or thrown away.
+ * that document whenever the user looks at another tool or another chat — so without the first
+ * group, a flow they had not saved, or one their agent recorded while they were reading the chat,
+ * was simply gone when they came back.
  *
- * It is only shown once there is something in it: an empty control for a feature that exists to
- * recover work is a row of chrome in the way of the work.
+ * The second group is here because saving used to have the same effect for the opposite reason:
+ * the draft is deleted once the file exists, so the test the user had just saved left the list.
+ * Now it moves — out of **Not stored** and into the project's own tests, which are read from the
+ * folder so a test written by hand or by an agent is listed beside the recorded ones. That group
+ * starts collapsed: it is the archive, and what is being worked on is above it.
  */
 function TestingDraftPicker({ panel }: { panel: TestingPanel }) {
   const state = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
   const recorder = useSyncExternalStore(testRecorder.subscribe, testRecorder.getSnapshot);
   const [open, setOpen] = useState(false);
+  const [unstoredOpen, setUnstoredOpen] = useState(true);
+  const [storedOpen, setStoredOpen] = useState(false);
   const agentRecording = state.agent?.active === true;
   // The one on screen may not be in the list yet: the autosave is debounced, and the first keep of
   // a brand new flow lands a moment after the first step.
-  if (state.drafts.length === 0 && !state.draftId) return null;
+  if (state.drafts.length === 0 && !state.draftId && state.tests.length === 0) return null;
   const current = state.drafts.find(draft => draft.id === state.draftId);
-  const label = current ? draftLabel(current) : recorder.steps.length > 0 ? draftLabel(recorder) : "Recordings";
-  return <Popover open={open} onOpenChange={value => { setOpen(value); if (value) void panel.refreshDrafts(); }}>
+  const label = current ? draftLabel(current) : recorder.steps.length > 0 ? draftLabel(recorder) : "Tests";
+  return <Popover open={open} onOpenChange={value => {
+    setOpen(value);
+    if (value) { void panel.refreshDrafts(); void panel.refreshTests(); }
+  }}>
     <PopoverTrigger asChild>
       <Button type="button" variant="outline" size="sm" data-testing-drafts className="min-w-0 max-w-64 shrink-0 justify-between gap-1.5 font-normal"
-        aria-label="Unsaved recordings" title="Recordings that have not been written into the project yet">
+        aria-label="Recordings and tests" title="What has not been stored yet, and the tests this project holds">
         <span className="flex min-w-0 items-center gap-1.5">
           {state.loadingDraft ? <LoaderCircleIcon className="shrink-0 animate-spin" /> : <HistoryIcon className="shrink-0" />}
           <span className="min-w-0 truncate">{label}</span>
@@ -102,38 +169,67 @@ function TestingDraftPicker({ panel }: { panel: TestingPanel }) {
         <ChevronDownIcon className="shrink-0 transition-transform" style={{ transform: open ? "rotate(180deg)" : undefined }} />
       </Button>
     </PopoverTrigger>
-    <PopoverContent align="start" className="flex max-h-(--radix-popover-content-available-height) w-max min-w-[min(var(--radix-popover-trigger-width),var(--radix-popover-content-available-width))] max-w-(--radix-popover-content-available-width) flex-col gap-1 overflow-y-auto p-1 [&_button:not(:disabled)]:cursor-pointer" aria-label="Unsaved recordings">
-      <p className="px-1.5 pt-1 text-xs text-muted-foreground">Not saved into the project yet.</p>
-      {state.drafts.map(draft => {
-        const selected = draft.id === state.draftId;
-        return <span key={draft.id} className="flex min-w-0 items-center gap-1">
-          <Button type="button" variant="ghost" data-testing-draft-option={draft.id} aria-pressed={selected} disabled={agentRecording}
-            className="h-auto min-h-7 min-w-0 flex-1 justify-start rounded-md px-1.5 py-1 text-left font-normal"
-            onClick={() => { setOpen(false); void panel.openDraft(draft.id); }}>
-            <span className="flex min-w-0 items-center gap-2">
-              <CheckIcon className={`size-3.5 shrink-0 ${selected ? "opacity-100" : "opacity-0"}`} />
+    <PopoverContent align="start" className="flex max-h-(--radix-popover-content-available-height) w-max min-w-[min(var(--radix-popover-trigger-width),var(--radix-popover-content-available-width))] max-w-(--radix-popover-content-available-width) flex-col gap-1 overflow-y-auto p-1 [&_button:not(:disabled)]:cursor-pointer" aria-label="Recordings and tests">
+      <ListGroup label="Not stored" count={state.drafts.length} open={unstoredOpen}
+        attributes={{ "data-testing-group": "unstored" }} onToggle={() => setUnstoredOpen(value => !value)}>
+        {state.drafts.map(draft => {
+          const selected = draft.id === state.draftId;
+          return <span key={draft.id} className="flex min-w-0 items-center gap-1">
+            <Button type="button" variant="ghost" data-testing-draft-option={draft.id} aria-pressed={selected} disabled={agentRecording}
+              className="h-auto min-h-7 min-w-0 flex-1 justify-start rounded-md px-1.5 py-1 text-left font-normal"
+              onClick={() => { setOpen(false); void panel.openDraft(draft.id); }}>
+              <span className="flex min-w-0 items-center gap-2">
+                <CheckIcon className={`size-3.5 shrink-0 ${selected ? "opacity-100" : "opacity-0"}`} />
+                <span className="flex min-w-0 flex-col">
+                  <span className="truncate">{draftLabel(draft)}</span>
+                  <span className="flex items-center gap-1 truncate text-xs text-muted-foreground">
+                    {draft.origin === "agent" ? <BotIcon className="size-3 shrink-0" aria-label="Recorded by an agent" /> : <UserIcon className="size-3 shrink-0" aria-label="Recorded by you" />}
+                    {draft.stepCount} step{draft.stepCount === 1 ? "" : "s"}
+                    {sinceLabel(draft.updatedAt) ? ` · ${sinceLabel(draft.updatedAt)}` : ""}
+                  </span>
+                </span>
+              </span>
+            </Button>
+            <ConfirmDelete attributes={{ "data-testing-draft-delete": draft.id }} disabled={agentRecording && selected}
+              title={selected ? "Delete this recording and clear the panel" : "Delete this recording"}
+              label={`Delete ${draftLabel(draft)}`}
+              question={selected
+                ? `Delete “${draftLabel(draft)}” and clear the panel? Its ${draft.stepCount} step${draft.stepCount === 1 ? "" : "s"} cannot be brought back.`
+                : `Delete “${draftLabel(draft)}”? Its ${draft.stepCount} step${draft.stepCount === 1 ? "" : "s"} cannot be brought back.`}
+              onConfirm={() => void panel.deleteDraft(draft.id)} />
+          </span>;
+        })}
+        {state.drafts.length === 0 && <p className="px-1.5 py-1 text-xs text-muted-foreground">Everything recorded here has been saved into the project.</p>}
+        <Button type="button" variant="ghost" data-testing-draft-new disabled={agentRecording}
+          className="h-auto min-h-7 justify-start rounded-md px-1.5 py-1 text-left font-normal"
+          title="Keep what is on screen and start an empty flow."
+          onClick={() => { setOpen(false); void panel.newRecording(); }}><FilePlus2Icon />New recording</Button>
+      </ListGroup>
+
+      <div className="-mx-1 border-t" />
+
+      <ListGroup label="In the project" count={state.tests.length} open={storedOpen}
+        attributes={{ "data-testing-group": "stored" }} onToggle={() => setStoredOpen(value => !value)}>
+        {state.tests.map(stored => {
+          return <span key={stored.relativePath} className="flex min-w-0 items-center gap-1" data-testing-test={stored.relativePath}>
+            <span className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 py-1" title={stored.relativePath}>
+              <FileCode2Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
               <span className="flex min-w-0 flex-col">
-                <span className="truncate">{draftLabel(draft)}</span>
-                <span className="flex items-center gap-1 truncate text-xs text-muted-foreground">
-                  {draft.origin === "agent" ? <BotIcon className="size-3 shrink-0" aria-label="Recorded by an agent" /> : <UserIcon className="size-3 shrink-0" aria-label="Recorded by you" />}
-                  {draft.stepCount} step{draft.stepCount === 1 ? "" : "s"}
-                  {sinceLabel(draft.updatedAt) ? ` · ${sinceLabel(draft.updatedAt)}` : ""}
+                <span className="truncate text-sm">{stored.name}</span>
+                <span className="truncate text-xs text-muted-foreground">
+                  {stored.relativePath}{sinceLabel(stored.updatedAt) ? ` · ${sinceLabel(stored.updatedAt)}` : ""}
                 </span>
               </span>
             </span>
-          </Button>
-          <Button type="button" variant="ghost" size="sm" data-testing-draft-delete={draft.id} disabled={agentRecording && selected}
-            className="size-7 shrink-0 p-0 text-muted-foreground hover:text-destructive"
-            title={selected ? "Delete this recording and clear the panel" : "Delete this recording"}
-            aria-label={`Delete ${draftLabel(draft)}`}
-            onClick={() => void panel.deleteDraft(draft.id)}><Trash2Icon /></Button>
-        </span>;
-      })}
-      {state.drafts.length === 0 && <p className="px-1.5 py-1 text-xs text-muted-foreground">Nothing kept for this project yet.</p>}
-      <Button type="button" variant="ghost" data-testing-draft-new disabled={agentRecording}
-        className="h-auto min-h-7 justify-start rounded-md border-t px-1.5 py-1 text-left font-normal"
-        title="Keep what is on screen and start an empty flow."
-        onClick={() => { setOpen(false); void panel.newRecording(); }}><FilePlus2Icon />New recording</Button>
+            <ConfirmDelete attributes={{ "data-testing-test-delete": stored.relativePath }}
+              busy={state.deletingTest === stored.relativePath}
+              title="Delete this test from the project" label={`Delete ${stored.name}`}
+              question={`Delete ${stored.relativePath} from the project? The file is removed and cannot be brought back from here.`}
+              onConfirm={() => void panel.deleteTest(stored.relativePath)} />
+          </span>;
+        })}
+        {state.tests.length === 0 && <p className="px-1.5 py-1 text-xs text-muted-foreground">No tests in this project's tests/ folder yet.</p>}
+      </ListGroup>
     </PopoverContent>
   </Popover>;
 }
@@ -368,6 +464,21 @@ function TestingRecorder({ panel, recordable, udid }: { panel: TestingPanel; rec
   const saveable = Boolean(panelState.projectPath) && state.steps.length > 0 && !panelState.saving && !panelState.agent?.active;
   const [hoveredStep, setHoveredStep] = useState<string>();
   const [focusedStep, setFocusedStep] = useState<string>();
+  /**
+   * The highlight goes the moment the pointer leaves the row, and a row that has already been left
+   * cannot take it from the one the pointer is on now.
+   *
+   * What made leaving a step *re-light* its lines was never the clearing — it was the preview's
+   * own arrival animation being cancelled while the line was highlighted and restarted when it no
+   * longer was; see `.is-step-highlighted` in `style.css`. With that gone, clearing on the row's
+   * own leave is exactly right. The guard stays because the browser dispatches the leave of one
+   * row and the enter of the next together, and the order is not guaranteed to be the one the eye
+   * follows: clearing only when the id still matches means the row under the pointer wins
+   * whichever event lands last.
+   */
+  const hoverStep = useCallback((stepId: string | undefined) => setHoveredStep(stepId), []);
+  const unhoverStep = useCallback((stepId: string) =>
+    setHoveredStep(current => current === stepId ? undefined : current), []);
   const highlightedStep = hoveredStep ?? focusedStep;
   const highlightedLines = testRecorder.emitted.spans.find(span => span.stepId === highlightedStep);
   return <div className="flex min-h-0 flex-1 flex-col gap-3">
@@ -388,79 +499,158 @@ function TestingRecorder({ panel, recordable, udid }: { panel: TestingPanel; rec
       </AlertDescription>
     </Alert>}
 
-    <div data-testing-recorder-workspace className="grid min-h-0 flex-1 gap-3 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-      <section data-testing-preview-pane className="flex min-h-64 min-w-0 flex-col gap-1.5 rounded-lg border p-3 md:min-h-0">
-        <p className="flex flex-wrap items-center gap-2 text-xs font-medium">
-          <span>Preview</span>
-          {state.run?.state === "running" && <span className="flex items-center gap-1 font-normal text-muted-foreground" role="status">
-            <LoaderCircleIcon className="size-3 animate-spin" />Running
-          </span>}
-          {state.run?.state === "passed" && <span className="flex items-center gap-1 font-normal text-emerald-600 dark:text-emerald-400" role="status"><CheckIcon className="size-3" />Passed</span>}
-          {state.run?.state === "failed" && <span className="flex min-w-0 items-center gap-1 break-words font-normal text-red-600 dark:text-red-400" role="status">
-            <CircleXIcon className="size-3 shrink-0" />{state.run.error ?? "Failed"}
-          </span>}
-          {/* The runner's own number, beside its verdict and on a failure too: how long a run took
-              before it gave up is part of reading it. It is not the panel's `ui.testing.run`
-              timing, which includes spawning the CLI. */}
-          {state.run && state.run.state !== "running" && state.run.durationMs !== undefined
-            && <span data-testing-run-duration className="font-normal tabular-nums text-muted-foreground"
-              title="How long the runner reported the run taking.">{formatRunDuration(state.run.durationMs)}</span>}
-          {/* The verdict is still about a run that happened; the lines it marked have moved. */}
-          {state.run?.stale && <span data-testing-run-stale className="font-normal text-muted-foreground"
-            title="The steps changed after this run, so the line marks no longer point at the same steps.">· before your edits</span>}
-        </p>
-        {state.run?.output && <pre className="max-h-32 overflow-auto rounded-md border bg-muted/40 p-2 font-mono text-[10px] whitespace-pre-wrap">{state.run.output}</pre>}
-        <TestPreview source={testRecorder.source} run={state.run} highlightedLines={highlightedLines} />
-      </section>
+    {/* The preview and the step list are dragged apart rather than fixed at 3fr/2fr: how much of
+        the pane each deserves depends on the flow being written — a long file to read, or a long
+        list to reorder — and that changes while one test is being recorded. The defaults are the
+        panel's own share of the workspace: with the mirror at 25%, these are the 45% and 30% the
+        preview and the steps get.
+        A row at every width, with no stacked form. Stacking gave each pane 60% and 40% of the
+        *height* left over under the mirror, which is how the three panes ended up at 60/22/16
+        instead of 25/45/30; the panes have their own minimum widths, and the workspace keeps the
+        mirror beside them wherever there is width for a row. */}
+    <ResizablePanelGroup id="testing-workspace-panels" orientation="horizontal"
+      data-testing-recorder-workspace className="min-h-0 flex-1 gap-3"
+      aria-label="Preview and steps">
+      <ResizablePanel id="testing-preview-resizable" defaultSize="60%" minSize="20%" maxSize="85%">
+        <section data-testing-preview-pane className="flex h-full min-h-0 min-w-0 flex-col gap-1.5 overflow-hidden rounded-lg border p-3">
+          <p className="flex flex-wrap items-center gap-2 text-xs font-medium">
+            <span>Preview</span>
+            {state.run?.state === "running" && <span className="flex items-center gap-1 font-normal text-muted-foreground" role="status">
+              <LoaderCircleIcon className="size-3 animate-spin" />Running
+            </span>}
+            {state.run?.state === "passed" && <span className="flex items-center gap-1 font-normal text-emerald-600 dark:text-emerald-400" role="status"><CheckIcon className="size-3" />Passed</span>}
+            {state.run?.state === "failed" && <span className="flex min-w-0 items-center gap-1 break-words font-normal text-red-600 dark:text-red-400" role="status">
+              <CircleXIcon className="size-3 shrink-0" />{state.run.error ?? "Failed"}
+            </span>}
+            {/* The runner's own number, beside its verdict and on a failure too: how long a run took
+                before it gave up is part of reading it. It is not the panel's `ui.testing.run`
+                timing, which includes spawning the CLI. */}
+            {state.run && state.run.state !== "running" && state.run.durationMs !== undefined
+              && <span data-testing-run-duration className="font-normal tabular-nums text-muted-foreground"
+                title="How long the runner reported the run taking.">{formatRunDuration(state.run.durationMs)}</span>}
+            {/* The verdict is still about a run that happened; the lines it marked have moved. */}
+            {state.run?.stale && <span data-testing-run-stale className="font-normal text-muted-foreground"
+              title="The steps changed after this run, so the line marks no longer point at the same steps.">· before your edits</span>}
+          </p>
+          {state.run?.output && <pre className="max-h-32 overflow-auto rounded-md border bg-muted/40 p-2 font-mono text-[10px] whitespace-pre-wrap">{state.run.output}</pre>}
+          <TestPreview source={testRecorder.source} run={state.run} highlightedLines={highlightedLines} />
+        </section>
+      </ResizablePanel>
 
-      <div data-testing-editor-pane className="flex min-h-0 min-w-0 flex-col gap-3 rounded-lg border p-3">
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,3fr)_minmax(0,5fr)]">
-          <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium">
-            <span>Test title</span>
-            <input type="text" data-testing-title defaultValue={state.title} onBlur={event => testRecorder.setTitle(event.target.value)}
-              className="min-w-0 rounded-md border bg-background px-2.5 py-1.5 font-normal" aria-label="Test title" />
-          </label>
-          <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium">
-            <span>File name</span>
-            <span className="flex min-w-0 items-center gap-2">
-              <span className="flex min-w-0 flex-1 items-center overflow-hidden rounded-md border bg-background focus-within:ring-2 focus-within:ring-ring/50">
-                <code className="shrink-0 border-r bg-muted/50 px-2.5 py-1.5 font-normal text-muted-foreground">tests/</code>
-                <input type="text" data-testing-filename defaultValue={panelState.fileName} placeholder={`${testFileSlug(state.title)}.e2e.ts`}
-                  onBlur={event => panel.setFileName(event.target.value)} className="min-w-0 flex-1 bg-transparent px-2.5 py-1.5 font-normal outline-none" aria-label="Test file name" />
-              </span>
-              <Button type="button" size="sm" data-testing-save disabled={!saveable} onClick={() => void panel.saveTest()}>
-                {panelState.saving ? <LoaderCircleIcon className="animate-spin" /> : <SaveIcon />}Save
-              </Button>
-            </span>
-          </label>
-        </div>
+      <ResizableHandle withHandle aria-label="Resize the preview and the steps" />
 
-        <div className="flex min-h-0 flex-1 flex-col gap-2 border-t pt-3">
-          <div className="flex items-center gap-2">
-            <h2 className="text-xs font-medium">Steps</h2>
-            {state.steps.length > 0 && <span className="text-xs text-muted-foreground">{state.steps.length}</span>}
-            <Button type="button" size="sm" variant="ghost" className="ml-auto" data-testing-clear disabled={state.steps.length === 0} onClick={() => testRecorder.clearSteps()}><Trash2Icon />Clear</Button>
+      <ResizablePanel id="testing-steps-resizable" defaultSize="40%" minSize="15%" maxSize="80%">
+        <div data-testing-editor-pane className="flex h-full min-h-0 min-w-0 flex-col gap-3 overflow-hidden rounded-lg border p-3">
+          <TestDescription panel={panel} saveable={saveable} />
+
+          <div className="flex min-h-0 flex-1 flex-col gap-2 border-t pt-3">
+            <div className="flex items-center gap-2">
+              <h2 className="text-xs font-medium">Steps</h2>
+              {state.steps.length > 0 && <span className="text-xs text-muted-foreground">{state.steps.length}</span>}
+              <ClearStepsButton steps={state.steps.length} />
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto pr-1"><StepList steps={state.steps}
+              onHoverStep={hoverStep} onUnhoverStep={unhoverStep} onFocusStep={setFocusedStep} /></div>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto pr-1"><StepList steps={state.steps}
-            onHoverStep={setHoveredStep} onFocusStep={setFocusedStep} /></div>
+
+          {panelState.overwritePath && <Alert>
+            <AlertTitle>Replace the existing file?</AlertTitle>
+            <AlertDescription>
+              <span className="min-w-0 break-words">{panelState.overwritePath} already exists.</span>
+              <span className="flex gap-2">
+                <Button type="button" size="sm" data-testing-overwrite onClick={() => void panel.saveTest(true)}>Replace</Button>
+                <Button type="button" size="sm" variant="ghost" onClick={() => panel.cancelOverwrite()}>Cancel</Button>
+              </span>
+            </AlertDescription>
+          </Alert>}
+
+          {panelState.savedPath && !panel.dirty && <p className="text-xs text-muted-foreground" role="status">Saved to {panelState.savedPath}</p>}
+          {panelState.savedPath && panel.dirty && <p className="text-xs text-amber-600" role="status">Unsaved steps since {panelState.savedPath} was written.</p>}
         </div>
-
-        {panelState.overwritePath && <Alert>
-          <AlertTitle>Replace the existing file?</AlertTitle>
-          <AlertDescription>
-            <span className="min-w-0 break-words">{panelState.overwritePath} already exists.</span>
-            <span className="flex gap-2">
-              <Button type="button" size="sm" data-testing-overwrite onClick={() => void panel.saveTest(true)}>Replace</Button>
-              <Button type="button" size="sm" variant="ghost" onClick={() => panel.cancelOverwrite()}>Cancel</Button>
-            </span>
-          </AlertDescription>
-        </Alert>}
-
-        {panelState.savedPath && !panel.dirty && <p className="text-xs text-muted-foreground" role="status">Saved to {panelState.savedPath}</p>}
-        {panelState.savedPath && panel.dirty && <p className="text-xs text-amber-600" role="status">Unsaved steps since {panelState.savedPath} was written.</p>}
-      </div>
-    </div>
+      </ResizablePanel>
+    </ResizablePanelGroup>
   </div>;
+}
+
+/**
+ * What the test is called and where it is written, as one collapsible section.
+ *
+ * The two fields and Save used to sit permanently above the step list, taking a third of a pane
+ * that is mostly used for the steps: they are touched once per recording — at the end — while the
+ * list beside them is touched on every tap. Folded away they are one row, and the row says what is
+ * inside it, so nothing is hidden from someone who has not opened it yet. It opens itself when
+ * there is something to save and nothing has been written yet, which is exactly the moment the
+ * fields are wanted.
+ */
+function TestDescription({ panel, saveable }: { panel: TestingPanel; saveable: boolean }) {
+  const state = useSyncExternalStore(testRecorder.subscribe, testRecorder.getSnapshot);
+  const panelState = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
+  const [open, setOpen] = useState(false);
+  return <section className="flex min-w-0 flex-col" aria-label="Test Description">
+    <button type="button" data-testing-description-toggle aria-expanded={open}
+      className="flex min-w-0 items-center gap-1.5 rounded-md px-1 py-1 text-left text-xs font-medium hover:bg-accent hover:text-accent-foreground"
+      onClick={() => setOpen(value => !value)}>
+      {open ? <ChevronDownIcon className="size-3.5 shrink-0 text-muted-foreground" /> : <ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground" />}
+      <span className="shrink-0">Test Description</span>
+      {/* Closed, the row is the readout: the name the flow will be saved under, clipped at a width
+          of its own so it degrades the same way wherever the pane ends. The file name is *not*
+          here — at the width this pane actually gets, a name and a path side by side were two
+          truncated strings reading as neither. The path is one click away, in the File name field
+          below, which is where it is edited anyway. */}
+      <span data-testing-description-title className="ml-auto min-w-0 max-w-[24ch] truncate font-normal text-muted-foreground"
+        title={state.title.trim() || "Untitled flow"}>
+        {state.title.trim() || "Untitled flow"}
+      </span>
+    </button>
+    {open && <div data-testing-description className="grid gap-3 pt-2 lg:grid-cols-[minmax(0,3fr)_minmax(0,5fr)]">
+      <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium">
+        <span>Test title</span>
+        <input type="text" data-testing-title defaultValue={state.title} onBlur={event => testRecorder.setTitle(event.target.value)}
+          className="min-w-0 rounded-md border bg-background px-2.5 py-1.5 font-normal" aria-label="Test title" />
+      </label>
+      <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium">
+        <span>File name</span>
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="flex min-w-0 flex-1 items-center overflow-hidden rounded-md border bg-background focus-within:ring-2 focus-within:ring-ring/50">
+            <code className="shrink-0 border-r bg-muted/50 px-2.5 py-1.5 font-normal text-muted-foreground">tests/</code>
+            <input type="text" data-testing-filename defaultValue={panelState.fileName} placeholder={`${testFileSlug(state.title)}.e2e.ts`}
+              onBlur={event => panel.setFileName(event.target.value)} className="min-w-0 flex-1 bg-transparent px-2.5 py-1.5 font-normal outline-none" aria-label="Test file name" />
+          </span>
+          <Button type="button" size="sm" data-testing-save disabled={!saveable} onClick={() => void panel.saveTest()}>
+            {panelState.saving ? <LoaderCircleIcon className="animate-spin" /> : <SaveIcon />}Save
+          </Button>
+        </span>
+      </label>
+    </div>}
+  </section>;
+}
+
+/**
+ * Clear, as an icon that asks first.
+ *
+ * It throws away every step of the flow on screen, and there is no undo: the steps are the whole
+ * of what was recorded. It used to be one unguarded click of a button labelled "Clear", sitting at
+ * the end of the same row as the step count. Now it is the icon alone, tinted like the destructive
+ * thing it is, and the question names how much is about to go.
+ */
+function ClearStepsButton({ steps }: { steps: number }) {
+  const [open, setOpen] = useState(false);
+  const count = `${steps} step${steps === 1 ? "" : "s"}`;
+  return <Popover open={open} onOpenChange={setOpen}>
+    <PopoverTrigger asChild>
+      <Button type="button" size="icon-xs" variant="ghost" data-testing-clear disabled={steps === 0}
+        className="ml-auto text-destructive hover:bg-destructive/10 hover:text-destructive"
+        aria-label="Clear test" title="Clear every step of this test"><Trash2Icon /></Button>
+    </PopoverTrigger>
+    <PopoverContent align="end" className="flex w-60 flex-col gap-2 p-2.5" role="alertdialog" aria-label="Clear test">
+      <p className="text-xs">Clear all {count}? The recording cannot be brought back.</p>
+      <div className="flex justify-end gap-2">
+        <Button type="button" size="sm" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+        <Button type="button" size="sm" variant="destructive" data-testing-clear-confirm
+          onClick={() => { setOpen(false); testRecorder.clearSteps(); }}>Clear</Button>
+      </div>
+    </PopoverContent>
+  </Popover>;
 }
 
 /**
@@ -471,9 +661,11 @@ function TestingRecorder({ panel, recordable, udid }: { panel: TestingPanel; rec
  * the numbering, the ambiguous badge and the preview are recomputed from one list rather than kept
  * in step by hand.
  */
-function StepList({ steps, onHoverStep, onFocusStep }: {
+function StepList({ steps, onHoverStep, onUnhoverStep, onFocusStep }: {
   steps: readonly RecordedStep[];
   onHoverStep: (stepId: string | undefined) => void;
+  /** Clears the highlight, but only if this row is still the one holding it. */
+  onUnhoverStep: (stepId: string) => void;
   onFocusStep: (stepId: string | undefined) => void;
 }) {
   // The row being dragged and the gap it would land in. Held here rather than in the recorder:
@@ -484,6 +676,9 @@ function StepList({ steps, onHoverStep, onFocusStep }: {
     if (dragging) testRecorder.moveStep(dragging, index);
     setDragging(undefined); setOver(undefined);
   };
+  // The rows own the highlight between them; the list adds nothing. An unconditional clear here
+  // fires for the list *and* every ancestor leave, which is one more way for the highlight to be
+  // taken from the row the pointer is actually on.
   return <ol className="flex flex-col gap-1 text-xs">
     {steps.map((step, index) => <li
       key={step.id}
@@ -491,7 +686,7 @@ function StepList({ steps, onHoverStep, onFocusStep }: {
       data-testing-step={step.id}
       className={`group/step flex items-center gap-2 rounded-md border px-2 py-1.5 ${dragging === step.id ? "opacity-50" : ""} ${over === index && dragging !== step.id ? "border-primary" : ""}`}
       onMouseEnter={() => onHoverStep(step.id)}
-      onMouseLeave={() => onHoverStep(undefined)}
+      onMouseLeave={() => onUnhoverStep(step.id)}
       onFocus={() => onFocusStep(step.id)}
       onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) onFocusStep(undefined); }}
       onDragStart={event => { setDragging(step.id); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", step.id); }}
@@ -514,6 +709,9 @@ function StepList({ steps, onHoverStep, onFocusStep }: {
   </ol>;
 }
 
+/** How wide the step's command branch is: a list of short command names. */
+const STEP_COMMANDS_WIDTH = 230;
+
 /**
  * One step's own menu, revealed by pointing at its row.
  *
@@ -529,10 +727,9 @@ function StepList({ steps, onHoverStep, onFocusStep }: {
  */
 function StepMenu({ step, index }: { step: RecordedStep; index: number }) {
   const [open, setOpen] = useState(false);
-  const { view, push, back, reset } = useMenuStack();
   const offers = isAgentStep(step) ? [] : allStepOffers(step.selector, step.target);
-  const close = () => { setOpen(false); reset(); };
-  return <Popover open={open} onOpenChange={value => { setOpen(value); if (!value) reset(); }}>
+  const close = () => setOpen(false);
+  return <Popover open={open} onOpenChange={setOpen}>
     <PopoverTrigger asChild>
       <Button type="button" variant="ghost" size="icon-xs" data-testing-step-menu={step.id}
         aria-label={`Edit step ${index + 1}`}
@@ -543,22 +740,25 @@ function StepMenu({ step, index }: { step: RecordedStep; index: number }) {
     </PopoverTrigger>
     <PopoverContent align="end" className="flex w-60 max-h-(--radix-popover-content-available-height) flex-col gap-1 overflow-y-auto p-1.5 [&_button:not(:disabled)]:cursor-pointer"
       role="menu" aria-label={`Step ${index + 1}`} onMouseLeave={close}>
-      {view === "commands"
-        // The list replaces the menu rather than hanging beside it — the row it opens from is only
-        // as wide as a step — so it carries its own way back; without one the menu was a dead end
-        // that could only be left by dismissing it and pointing at the row again.
-        ? <>
-          <BackRow onClick={back} attributes={{ "data-testing-step-commands-back": step.id }} />
-          <StepCommandList commands={offers} onChoose={(kind, value) => { close(); testRecorder.changeStepCommand(step.id, kind, value); }} />
-        </>
-        : <>
-          <MenuRow icon={<CopyIcon className="size-4 shrink-0 text-muted-foreground" />} attributes={{ "data-testing-step-duplicate": step.id }}
-            title="Add a copy of this step at the end of the list"
-            onClick={() => { close(); testRecorder.duplicateStep(step.id); }}>Duplicate</MenuRow>
-          {!isAgentStep(step) && <MenuRow chevron icon={<OfferIcon kind={step.kind} />} attributes={{ "data-testing-step-commands": step.id }}
-            title={`Currently ${OFFER_LABEL[step.kind]}`}
-            onOpen={() => push("commands")} onClick={() => push("commands")}>Change command</MenuRow>}
-        </>}
+      <MenuRow icon={<CopyIcon className="size-4 shrink-0 text-muted-foreground" />} attributes={{ "data-testing-step-duplicate": step.id }}
+        title="Add a copy of this step at the end of the list"
+        onClick={() => { close(); testRecorder.duplicateStep(step.id); }}>Duplicate</MenuRow>
+      {/* The command list hangs *beside* this menu rather than replacing it, as every other
+          cascading menu in the panel does. Replacing it took the step away from under the user and
+          needed a Back row to undo itself; the branch keeps the row it came from on screen, so the
+          trail from the step to the command reads in one glance. It opens on the left because the
+          step list is the rightmost pane in the workspace: to the right is the window's edge, and
+          to the left is the preview, which is where there is room for it. */}
+      {!isAgentStep(step) && <Branch
+        label={`Change command for step ${index + 1}`} width={STEP_COMMANDS_WIDTH} align="top" side="left"
+        attributes={{ "data-element": "testing-step-commands", "data-testing-step-commands-panel": step.id }}
+        renderRow={handlers => <MenuRow chevron icon={<OfferIcon kind={step.kind} />}
+          attributes={{ "data-testing-step-commands": step.id }}
+          title={`Currently ${OFFER_LABEL[step.kind]}`}
+          onOpen={handlers.onOpen} onClick={handlers.onClick}>Change command</MenuRow>}
+      >
+        <StepCommandList commands={offers} onChoose={(kind, value) => { close(); testRecorder.changeStepCommand(step.id, kind, value); }} />
+      </Branch>}
     </PopoverContent>
   </Popover>;
 }

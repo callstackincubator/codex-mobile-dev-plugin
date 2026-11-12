@@ -86,3 +86,15 @@ test("a branch beside a row in the middle of a list lines up with its top", () =
   assert.equal(placeBeside(row, panel, { width: 1200, height: 900 }, { align: "top" }).top, 240);
   assert.equal(placeBeside(row, panel, { width: 1200, height: 900 }).top, 276 - 200, "bottom is still the default");
 });
+
+test("a branch asked for the left opens there even when the right has room", () => {
+  const row = box(600, 500, 240, 36);
+  const panel = { width: 230, height: 200 };
+  // The step list is the rightmost pane in the Testing workspace, so its submenu opens over the
+  // preview rather than over the window's edge — whether or not the right would have fitted.
+  assert.equal(placeBeside(row, panel, { width: 1600, height: 900 }, { side: "left" }).left, 600 - 4 - 230);
+  // The default is unchanged: no `side`, and the right is where it goes.
+  assert.equal(placeBeside(row, panel, { width: 1600, height: 900 }).left, 840 + 4);
+  // With no room on the left either, the right is better than off the edge of the window.
+  assert.equal(placeBeside(box(10, 500, 120, 36), panel, { width: 1600, height: 900 }, { side: "left" }).left, 134);
+});

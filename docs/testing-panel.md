@@ -74,18 +74,43 @@ id. `revision` cannot stand in for it: it moves for an edit and for a brand new 
 when the panel went by revision alone, recording a second test wrote it straight over the first
 one's file. Two recordings, one row in the list.
 
-The control is a popover beside the project picker, shown only once there is something in it: each
-row is a kept flow with its step count, how long ago it was touched and whether the user or an
-agent recorded it, a trash button, and **New recording** at the foot. Opening one keeps the flow
-on screen first, so swapping between two loses neither, and it does **not** start recording — the
-user opened a flow to look at it, and a stray tap on the mirror must not append to it.
+The control is a popover beside the project picker, shown only once there is something in it, and
+it holds **two groups**:
 
-Four app-only tools carry it: `mobile_testing_drafts`, `mobile_testing_draft_read`,
-`mobile_testing_draft_save` and `mobile_testing_draft_delete`, in
-`packages/core/src/testing-tools.ts` over `TestDraftStore`
-(`packages/core/src/testing-drafts.ts`). The step schema they validate against is
+| Group | Holds | Starts |
+|---|---|---|
+| **Not stored** | The drafts: a kept flow with its step count, how long ago it was touched and whether the user or an agent recorded it. **New recording** is at its foot | Expanded — it is what is being worked on |
+| **In the project** | The `.e2e.ts` files in the project's own `tests/` folder, newest first | Collapsed — it is the archive |
+
+The second group exists because deleting the draft on save had an effect nobody asked for: the
+test the user had just saved **left the list**. There was nowhere for it to go. Now it moves from
+the top group into the bottom one, which is also the honest description of what Save did. The
+bottom group is **read from the folder** rather than remembered, so a test written by hand, by an
+agent or in another checkout is listed beside the recorded ones, and a test deleted outside the
+panel stops being listed.
+
+Opening a draft keeps the flow on screen first, so swapping between two loses neither, and it does
+**not** start recording — the user opened a flow to look at it, and a stray tap on the mirror must
+not append to it. A stored test is a readout: its name, its path under the project, and when it was
+last written.
+
+Both deletes **ask first**, in a popover hanging off the trash icon. A draft's steps cannot be
+replayed from anywhere else, and a stored test is a file in the user's repository that nothing here
+can put back — and both icons sit beside the row the user was reaching for. The question hangs off
+the icon rather than replacing the row so the row it is about stays readable underneath it, and so
+the question has room to name what will go and say that it cannot be undone, which a row the width
+of a file name does not.
+
+Six app-only tools carry it: `mobile_testing_drafts`, `mobile_testing_draft_read`,
+`mobile_testing_draft_save` and `mobile_testing_draft_delete` over `TestDraftStore`
+(`packages/core/src/testing-drafts.ts`), and `mobile_testing_tests` and
+`mobile_testing_delete_file` over the project's own `tests/` folder
+(`listTestFiles`/`deleteTestFile` in `packages/core/src/testing-projects.ts`) — the delete
+annotated destructive, so the host asks as well as the panel. All six are in
+`packages/core/src/testing-tools.ts`. The step schema they validate against is
 `packages/shared/src/test-drafts.ts`, which is the one place a `RecordedStep` is described as data
-rather than as a type.
+rather than as a type. A stored test's path goes through the same `resolveTestPath` boundary the
+write does, so a delete cannot climb out of `tests/`.
 
 ## Architecture
 
@@ -106,7 +131,7 @@ flowchart LR
 
 ### Where the mirror sits
 
-In the Testing panel the mirror is on the **left** and the step list and preview on the right;
+In the Testing panel the mirror is on the **left** and the preview and step list on the right;
 every other tool keeps the simulator on the right. Recording is done by tapping the mirror and read
 back in the preview beside it, so the mirror leads in the same direction the panel is read. It is
 one flag in `packages/mcp-app/src/components/workspace.tsx` that reverses the resizable group's
@@ -115,6 +140,50 @@ simulator already is. The hover outline is unaffected: `TestRecorderOverlay` pos
 annotation store's viewport, which is measured **inside the stage**, so moving the stage within the
 workspace does not move the rectangle, and the stage's own `ResizeObserver` re-measures when the
 swap changes its width.
+
+#### The mirror has to be there when the panel opens
+
+The panel is useless without a device: with no mirror it shows "Boot a simulator to record against
+it." while the user is looking at a booted simulator. That is what it did, and the cause was not in
+this panel at all. The workspace's automatic layout was decided **once**, from the first device
+list — and the opening tool *starts* the backend, so that first list routinely comes back before
+anything has been found. It resolved to `none`, both device panels stayed hidden, the platform
+selector read "Platforms", and nothing ever asked again; discovery found the simulator a moment
+later and the panels selected it, but the layout was already settled. Picking the platform by hand
+was the only way to see a device that had been there all along.
+
+`WorkspaceDevices.settleLayout` (`packages/ui/src/workspace-devices.ts`) is the second look: a
+panel's selection changing — which is what discovery does — finishes a layout that is still
+unresolved. It only ever turns `none` into a platform. A layout that resolved to something, and
+any layout the user chose themselves, are left exactly as they are.
+
+#### The three panes
+
+| Pane | Default | Why |
+|---|---|---|
+| Mirror | 25% of the workspace | It is tapped, not read. A phone at a quarter of a wide workspace is still a usable target |
+| Preview | 45% | A generated test file is the thing being read, and a wrapped line of `screen.getByRole(…)` is unreadable |
+| Steps | 30% | A list of short labels, which is what is left |
+
+All three are **draggable**: the mirror against the tools through the workspace's own handle, and
+the preview against the steps through a handle of their own
+(`testing-preview-resizable`/`testing-steps-resizable` in
+`packages/ui/src/components/testing-view.tsx`). The split that suits a flow changes while the flow
+is being written — a long file to read, a long list to reorder — so the numbers above are defaults
+rather than a layout. The preview and the steps are 60/40 **of the tools pane**, which is what
+makes them 45% and 30% beside a mirror with 25%; the panel's own padding and the gaps between the
+panes come off the two that are read, so measured against the whole window they land a couple of
+points under that.
+
+**The row is asked for by this panel, not inherited from `split`.** `split` is `wide && fullscreen`
+— true only in the fullscreen workspace — and everywhere else the workspace group was vertical:
+the mirror kept the 60% default meant for a tool stacked underneath it, and the preview and the
+steps were left sharing the 40% of height below, which at a narrow tools pane stacked them too.
+That is how the three panes came out at roughly 60/22/16 instead of 25/45/30. `testingSplit` in
+`packages/mcp-app/src/components/workspace.tsx` now asks for a horizontal workspace wherever the
+window is wide enough for one, and the panel's own group has no stacked form at all. Under that
+width the workspace stacks as it always did, with the mirror on top. `tooling/hosts/hosts.spec.ts`
+holds the three shares against both the fullscreen workspace and the panel beside the chat.
 
 ### 1. The tab
 
@@ -159,6 +228,30 @@ While recording, `pointermove` runs the same resolution against the same cached 
 outline over the mirror with the step it would record (`packages/ui/src/components/test-recorder-overlay.tsx`).
 It is a preview, not a second code path: what is outlined is what a tap records. The outline is
 cleared whenever the cache is invalidated, because the screen it described is gone.
+
+**Record shows a `preparing...` overlay until selection actually works.** Pressing Record arms the
+recorder at once, but nothing on the mirror can be *named* until the runner's element tree has been
+read — attaching to the app and projecting the tree takes a second or two — so the panel used to
+say "Stop" while the first few seconds of pointing did nothing, with nothing on screen to say why.
+That reads as a broken recorder rather than as a wait. `start` now warms the tree itself and holds
+`preparing` until that read lands, and the overlay covers the **canvas** (not the whole stage), so
+it says where the wait is. It lets clicks through: the mirror still drives the app while the tree
+is being read. A read that fails drops the flag rather than leaving the overlay up — the overlay
+must never outlive the thing it is explaining — and the first hover retries as it always did. The
+wait has its own timing, `ui.testing.record_prepare`, because "how long is Record unusable for" is
+a different question from `ui.testing.tree_read`, which also covers the warm reads during a
+recording.
+
+**Pointing at a step tints the lines it emits**, and the tint goes with the pointer. What made
+*leaving* a step light its lines up again — and then fade them out over more than a second — was
+not the clearing at all: the highlight used to be a `background` plus `animation: none`, and the
+lines a step added keep `is-new` for as long as the file does not change. Suppressing the arrival
+animation while a line was highlighted **cancelled** it, and letting it back on mouse-leave
+**restarted it from the beginning**. The highlight is painted as a `::before` layer now, so the
+two never touch the same property and there is nothing to restart. The row clears the highlight
+when the pointer leaves it, guarded so that a row already left cannot take it from the row the
+pointer is on: the browser dispatches the leave of one and the enter of the next together, and the
+order is not the one the eye follows.
 
 ### 4. Selector resolution
 
@@ -311,6 +404,15 @@ pushed in from the window's edge instead, overlapping the menu it came from, as 
 does in a tight window; it is also narrower than that menu, so part of it stays visible behind.
 The row and the panel are one hover target with a gap between them, so leaving either only starts
 a close that entering the other cancels.
+
+A **step row's** own "Change command" is the same branch with `side: "left"`, which asks for the
+left outright rather than only when the right has run out. It used to replace the step menu with
+the command list and a Back row — navigation, not a menu: the step the user was acting on went
+away, and the only way back was a button put there for the purpose. As a branch the step stays on
+screen beside the commands. It opens on the left because the step list is the **rightmost** pane in
+the workspace: to its right is the window's edge, and to its left is the preview, which is where
+there is room. It still falls back to the right when the left cannot hold it, because a panel off
+the edge of the window shows nothing at all.
 
 **Both popovers are portals fitted to the window, not to the stage.** The stage is a box with the
 device in it and it clips what it contains, so a menu placed inside it was cut off at the bottom of
@@ -469,6 +571,23 @@ findable a second later. The file is re-emitted whole on every change, so "what 
 recovered by matching the previous render from both ends (`changedLines`); the marked lines are
 keyed by a generation so each step animates, not only the first. The preview is always a full re-emit from the steps, so editing or
 deleting a step just re-renders; nothing is ever half-written.
+
+**Test Description** is the collapsible section the title field, the file name field and Save sit
+in. They are touched once per recording — at the end — while the step list beside them is touched
+on every tap, so permanently open they cost a third of a pane that is mostly used for the steps.
+Closed, the row is the readout: the title and the path the flow will be saved under, which is what
+someone who has not opened it needs to know. The name has a **text width of its own** and clips
+inside it, so the row degrades the same way wherever the pane ends, and carries the whole value as
+a tooltip. The file name is **not** beside it: at the width this pane actually gets, a name and a
+path together were two truncated strings reading as neither — `a recorded flow lkfl… ·
+tests/a-recorded-flow-lkflksd-s…`. The path is one click away in the File name field, which is
+where it is edited anyway.
+
+**Clear asks first, and is the icon alone.** It throws away every step of the flow on screen and
+there is no undo — the steps are the whole of what was recorded — so a button labelled "Clear" at
+the end of the step count's row was a destructive default one click deep. It is now the trash icon
+tinted as the destructive thing it is, and the question it asks names how many steps are about to
+go.
 
 Save behaviour:
 

@@ -601,7 +601,19 @@ not measured, because the document it would be attributed to is going away. The 
 steps and everything they name are the user's own content and are **not** sent; these are counts
 and a duration. An autosave that fails is silent on screen and goes through `captureUiError` as
 `testing.draft_save`; the server's own keep of a finished agent recording goes through
-`captureServerError` as `testing.agent.draft`.
+`captureServerError` as `testing.agent.draft`. Deleting one of the project's own stored tests
+counts `ui.testing.test_delete`, beside `ui.testing.draft_delete`: they are the two halves of the
+panel's list and answer different questions — a recording thrown away before it was ever saved, and
+a test removed from the repository. The file name, its path and the project path are not sent, and
+listing the stored tests is not measured: it is a folder read the panel does on open, not a wait
+the user sits through.
+
+`ui.testing.record_prepare` times the warm tree read Record now does before the mirror can resolve
+an element, which is the wait the `preparing...` overlay is explaining. It is deliberately **not**
+folded into `ui.testing.tree_read`: that one covers every read, warm and cold, during a recording,
+while this one answers "how long is Record unusable for" — the number the overlay exists because
+of. A read that fails still records the timing, because the wait happened; it carries no selector,
+element name, bundle id or project path.
 
 Since 0.1.99, `ui.logs.foreground_change` counts automatic app-filter changes applied while Logs is active, including selected-device and process-lifetime changes. From 0.1.103, these changes update the visible query and local process identity mapping instead of restarting a scoped collector. `ui.logs.app_identity` measures batch insertion with native PID-to-app joins and discovery updates in milliseconds, using bounded aggregate windows. Hidden or closed log views defer row processing until reopened. Shared `ui.device_apps.discovery` timing and handled discovery-error coverage remain in place, including Android's foreground PID lookup; native session operations retain MCP tracing, Node runtime coverage, and `logs.ios.parse` timings. No app IDs, PIDs, package names, device IDs, or query text are attached to these measurements. Native helper telemetry and symbols are unchanged.
 

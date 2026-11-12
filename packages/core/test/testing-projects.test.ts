@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { findConfig, inspectProject, parseTargets, TestingProjectChoices, writeTestFile } from "../src/testing-projects.ts";
+import { deleteTestFile, findConfig, inspectProject, listTestFiles, parseTargets, TestingProjectChoices, writeTestFile } from "../src/testing-projects.ts";
 
 const CONFIG = `import { mobile } from "@e2e-dev/mobile";
 import type { E2EConfig } from "e2e";
@@ -128,5 +128,65 @@ test("a folder that is not an e2e project cannot be written to", async () => {
     await mkdir(other);
     await assert.rejects(writeTestFile(other, "tests/flow.e2e.ts", SOURCE), /no e2e.config.ts/);
     assert.ok(path);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("the project's own tests are listed, newest first, and nothing else is", async () => {
+  const { root, path } = await project();
+  try {
+    // Nothing saved yet is an empty list, not an error: there is no tests/ folder at all.
+    assert.deepEqual(await listTestFiles(path), []);
+
+    await writeTestFile(path, "tests/first.e2e.ts", SOURCE);
+    await writeTestFile(path, "tests/checkout/pay.e2e.ts", SOURCE);
+    // Not a recorded test, and not listed: the panel's list is of tests, not of the folder.
+    await writeFile(join(path, "tests", "helpers.ts"), SOURCE, "utf-8");
+    // Written last, so it is first: the list is ordered by when each file was written.
+    await writeFile(join(path, "tests", "latest.e2e.ts"), SOURCE, "utf-8");
+
+    const listed = await listTestFiles(path);
+    assert.deepEqual([...listed].sort((left, right) => left.relativePath.localeCompare(right.relativePath))
+      .map(entry => entry.relativePath),
+    ["tests/checkout/pay.e2e.ts", "tests/first.e2e.ts", "tests/latest.e2e.ts"]);
+    assert.deepEqual(listed.map(entry => entry.updatedAt), [...listed.map(entry => entry.updatedAt)].sort().reverse(),
+      "newest first");
+    const first = listed.find(entry => entry.name === "first.e2e.ts")!;
+    assert.equal(first.sizeBytes, Buffer.byteLength(SOURCE, "utf-8"));
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("a symlink under tests is skipped rather than followed out of the project", async () => {
+  const { root, path } = await project();
+  try {
+    await writeTestFile(path, "tests/flow.e2e.ts", SOURCE);
+    const outside = join(root, "outside");
+    await mkdir(outside);
+    await writeFile(join(outside, "elsewhere.e2e.ts"), SOURCE, "utf-8");
+    await symlink(outside, join(path, "tests", "linked"));
+    await symlink(join(outside, "elsewhere.e2e.ts"), join(path, "tests", "linked.e2e.ts"));
+
+    assert.deepEqual((await listTestFiles(path)).map(entry => entry.relativePath), ["tests/flow.e2e.ts"]);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("one of the project's tests can be deleted, and only from inside tests/", async () => {
+  const { root, path } = await project();
+  try {
+    await writeTestFile(path, "tests/flow.e2e.ts", SOURCE);
+    await writeFile(join(root, "outside.e2e.ts"), SOURCE, "utf-8");
+
+    const removed = await deleteTestFile(path, "tests/flow.e2e.ts");
+    assert.equal(removed.removed, true);
+    assert.equal(removed.path, join(path, "tests", "flow.e2e.ts"));
+    assert.deepEqual(await listTestFiles(path), []);
+
+    // A file that is already gone is not an error: the list the user clicked may be out of date.
+    assert.equal((await deleteTestFile(path, "tests/flow.e2e.ts")).removed, false);
+
+    // The same boundary the write goes through, so a delete cannot climb out of the folder.
+    for (const bad of ["../outside.e2e.ts", "tests/../../outside.e2e.ts", "src/flow.e2e.ts", "tests/flow.ts"]) {
+      await assert.rejects(deleteTestFile(path, bad), /tests\/|file name|\.e2e\.ts/, `${bad} must be refused`);
+    }
+    assert.ok(await readFile(join(root, "outside.e2e.ts"), "utf-8"));
   } finally { await rm(root, { recursive: true, force: true }); }
 });

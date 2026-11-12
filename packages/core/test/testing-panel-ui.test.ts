@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { renderEnvironment } from "./jsdom-env.ts";
 
 const SCREEN = { width: 402, height: 874 };
@@ -147,7 +148,7 @@ test("a run marks the preview line by line, and marks nothing it was not told ab
     open: true, available: true, projectPath: "/app", projects: [], targets: [{ name: "ios", platform: "ios", bundleId: "com.app" }],
     targetName: "ios", configPath: "/app/e2e.config.ts", loadingProject: false, pickingProject: false, launching: false,
     appLaunched: true, fileName: "flow", saving: false, overwritePath: "", savedRevision: -1, savedPath: "", running: false,
-    pendingRun: false, drafts: [], draftId: "", loadingDraft: false, error: null,
+    pendingRun: false, drafts: [], draftId: "", loadingDraft: false, tests: [], deletingTest: "", error: null,
   };
   const panel = {
     subscribe: (listener: () => void) => { panelListeners.add(listener); return () => { panelListeners.delete(listener); }; },
@@ -157,6 +158,7 @@ test("a run marks the preview line by line, and marks nothing it was not told ab
     launchApp: async () => {}, saveTest: async () => {}, runTest: async () => {}, selectTarget: () => {},
     setFileName: () => {}, cancelOverwrite: () => {}, dismissError: () => {},
     refreshDrafts: async () => {}, openDraft: async () => {}, deleteDraft: async () => {}, newRecording: async () => {},
+    refreshTests: async () => {}, deleteTest: async () => {},
   };
   const deviceApps = {
     subscribe: () => () => undefined,
@@ -183,18 +185,46 @@ test("a run marks the preview line by line, and marks nothing it was not told ab
     "project, config, target, bundle and device metadata no longer duplicate the controls");
   const testing = dom.window.document.querySelector("[aria-label=Testing]");
   assert.ok(testing?.className.includes("cursor-pointer"), "testing panel buttons use a pointer cursor");
+  // The title and file name fields are folded into Test Description: they are touched once per
+  // recording, at the end, while the step list beside them is touched on every tap.
+  assert.equal(dom.window.document.querySelector("[data-testing-title]"), null,
+    "the naming fields start folded away");
+  const description = dom.window.document.querySelector("[data-testing-description-toggle]") as HTMLButtonElement;
+  assert.equal(description.getAttribute("aria-expanded"), "false");
+  assert.match(description.textContent ?? "", /Test Description/);
+  await act(async () => { description.click(); });
+  assert.ok(dom.window.document.querySelector("[data-testing-title]"), "opening it shows the title field");
+  assert.ok(dom.window.document.querySelector("[data-testing-filename]"), "and the file name field");
+  assert.ok(dom.window.document.querySelector("[data-testing-description]")?.contains(
+    dom.window.document.querySelector("[data-testing-save]")), "Save moves inside the section with them");
+  // Closed, the row reads as the name the flow will be saved under, clipped at a width of its own
+  // so it degrades the same way wherever the pane ends. The file name is not beside it: at the
+  // width this pane gets, a name and a path together were two truncated strings reading as neither,
+  // and the path is in the File name field a click below.
+  const readout = dom.window.document.querySelector("[data-testing-description-title]") as HTMLElement;
+  assert.ok(readout, "the name is the header's readout");
+  assert.ok(readout.className.includes("max-w-[24ch]"), "it has a text width of its own");
+  assert.ok(readout.className.includes("truncate"), "and clips rather than wrapping");
+  assert.equal(readout.title, "a recorded flow", "with the whole value as a tooltip");
+  assert.equal(dom.window.document.querySelector("[data-testing-description-file]"), null,
+    "the file name is not duplicated in the header");
+  assert.doesNotMatch(description.textContent ?? "", /tests\//, "nor is the path, under any other name");
   assert.ok(!dom.window.document.querySelector("[data-testing-title]")?.closest(".grid")?.className.includes("bg-card"),
     "title and file fields have no card fill");
   assert.ok([...dom.window.document.querySelectorAll("[data-testing-step]")]
     .every(step => !step.className.includes("bg-card")), "step rows have no card fill");
+  // The preview and the steps are dragged apart rather than fixed at 3fr/2fr, so the group is a
+  // resizable one with a handle between its two panes.
   const workspace = dom.window.document.querySelector("[data-testing-recorder-workspace]")!;
-  assert.deepEqual([...workspace.children].map(child => child.getAttribute("data-testing-preview-pane") !== null
-    ? "preview" : child.getAttribute("data-testing-editor-pane") !== null ? "editor" : "unknown"),
-  ["preview", "editor"], "the preview stays to the left of the test editor");
-  assert.match(workspace.className, /minmax\(0,3fr\).*minmax\(0,2fr\)/,
-    "the preview is wider than the test editor");
-  assert.match(workspace.textContent ?? "", /Preview.*Test title.*File name.*Steps/s,
+  const panes = [...workspace.children].filter(child => child.getAttribute("data-slot") === "resizable-panel");
+  assert.deepEqual(panes.map(pane => pane.id), ["testing-preview-resizable", "testing-steps-resizable"],
+    "the preview stays to the left of the test editor");
+  assert.ok(panes[0].querySelector("[data-testing-preview-pane]"));
+  assert.ok(panes[1].querySelector("[data-testing-editor-pane]"));
+  assert.ok(workspace.querySelector("[data-slot=resizable-handle]"), "and they can be dragged apart");
+  assert.match(workspace.textContent ?? "", /Preview.*Test Description.*Steps/s,
     "the recorder is organized around preview, naming and steps");
+  await act(async () => { description.click(); });
   const header = dom.window.document.querySelector("[aria-label=Testing] > header")!;
   assert.ok(header.contains(dom.window.document.querySelector("[data-testing-controls]")),
     "record and run controls share the project and launch bar");
@@ -491,6 +521,254 @@ test("the agentic branches cascade to the side, and record a sentence with its p
   assert.equal(panel("recorder-menu"), null, "recording the step closes the whole menu");
   assert.deepEqual(testRecorder.getSnapshot().steps.map((step: any) => [step.kind, step.vision]), [["agentAssert", "only"]]);
   assert.match(testRecorder.source, /await agent\.assert\("the city list is showing", \{ vision: "only" \}\);/);
+
+  testRecorder.clearSteps();
+  testRecorder.detach("udid");
+});
+
+/** A `TestingPanel` stub for the view: enough snapshot for the controls, no server behind it. */
+function panelStub(overrides: Record<string, unknown> = {}) {
+  const listeners = new Set<() => void>();
+  const state: Record<string, unknown> = {
+    open: true, available: true, projectPath: "/app", projects: [], targets: [{ name: "ios", platform: "ios", bundleId: "com.app" }],
+    targetName: "ios", configPath: "/app/e2e.config.ts", loadingProject: false, pickingProject: false, launching: false,
+    appLaunched: true, fileName: "flow", saving: false, overwritePath: "", savedRevision: -1, savedPath: "", running: false,
+    pendingRun: false, agent: null, drafts: [], draftId: "", loadingDraft: false, tests: [], deletingTest: "", error: null,
+    ...overrides,
+  };
+  return {
+    subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
+    getSnapshot: () => state,
+    canLaunch: true, canRun: true, dirty: true,
+    refreshProjects: async () => {}, chooseProject: async () => {}, pickProject: async () => {},
+    launchApp: async () => {}, saveTest: async () => {}, runTest: async () => {}, selectTarget: () => {},
+    setFileName: () => {}, cancelOverwrite: () => {}, dismissError: () => {},
+    refreshDrafts: async () => {}, openDraft: async () => {}, deleteDraft: async () => {}, newRecording: async () => {},
+    refreshTests: async () => {}, deleteTest: async () => {},
+  };
+}
+
+test("a step's commands open beside it, and Clear asks before it throws the flow away", async t => {
+  const { module: { TestingView, testRecorder }, dom, onTeardown } = await renderEnvironment<any>(t, {
+    exports: 'export { TestingView } from "./packages/ui/src/components/testing-view.tsx";\n'
+      + 'export { testRecorder } from "./packages/ui/src/test-recorder.ts";',
+    slug: "testing-step-menu",
+    extraGlobals: { crypto: { randomUUID: () => `id-${Math.random()}` } },
+  });
+  const { act, createElement } = await import("react");
+  const { createRoot } = await import("react-dom/client");
+
+  const panel = panelStub();
+  const deviceApps = { subscribe: () => () => undefined, getSnapshot: () => DEVICE_SNAPSHOT };
+  testRecorder.attach("udid", { readComponents: async () => [button], screen: () => SCREEN, release: () => undefined });
+  testRecorder.start("udid");
+  await testRecorder.openMenu({ x: 150, y: 420 });
+  await testRecorder.chooseOffer("tap");
+
+  const root = createRoot(dom.window.document.getElementById("root")!);
+  await act(async () => { root.render(createElement(TestingView, { panel, deviceApps })); });
+  onTeardown(async () => {
+    await act(async () => { root.unmount(); });
+    await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
+  });
+  const query = (selector: string) => dom.window.document.querySelector(selector) as HTMLElement | null;
+
+  // The step's own menu, revealed by pointing at the row it belongs to.
+  const trigger = query("[data-testing-step-menu]")!;
+  await act(async () => { trigger.dispatchEvent(new dom.window.MouseEvent("mouseover", { bubbles: true })); });
+  const commandsRow = query("[data-testing-step-commands]");
+  assert.ok(commandsRow, "the menu offers the step another command");
+  assert.ok(query("[data-testing-step-duplicate]"), "beside Duplicate");
+  assert.equal(query("[data-testing-step-commands-back]"), null,
+    "the list is a branch now, so there is nothing to go back from");
+
+  // Pointing at that row opens the list beside the menu, not over it.
+  await act(async () => { commandsRow!.dispatchEvent(new dom.window.MouseEvent("mouseover", { bubbles: true })); });
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 150)); });
+  const branch = query("[data-element=testing-step-commands]");
+  assert.ok(branch, "hovering the row opens the command list");
+  assert.equal(branch!.parentElement, dom.window.document.body, "as a portal, so nothing can clip it");
+  assert.ok(query("[data-testing-step-duplicate]"), "and the menu it came from is still on screen");
+  assert.ok(branch!.textContent?.includes("Actions"), "the list is the runner's own command vocabulary");
+  // That it opens on the *left* is `placeBeside`'s arithmetic, checked in
+  // `packages/ui/test/popover-placement.test.ts` against real layouts: every rectangle in JSDOM is
+  // zero, so there is no left here to open on.
+
+  // Clear is the icon alone, tinted, and it asks before it acts.
+  const clear = query("[data-testing-clear]")!;
+  assert.equal(clear.textContent?.trim(), "", "no text label beside the icon");
+  assert.equal(clear.getAttribute("aria-label"), "Clear test");
+  assert.ok(clear.className.includes("text-destructive"), "and it is tinted as the destructive thing it is");
+  await act(async () => { clear.click(); });
+  const confirm = query("[data-testing-clear-confirm]");
+  assert.ok(confirm, "clicking it asks first");
+  assert.equal(testRecorder.getSnapshot().steps.length, 1, "and nothing has been cleared yet");
+  await act(async () => { confirm!.click(); });
+  assert.equal(testRecorder.getSnapshot().steps.length, 0, "answering it clears the flow");
+
+  testRecorder.detach("udid");
+});
+
+test("Record says the mirror is not ready yet, until selection actually is", async t => {
+  const { module: { TestRecorderOverlay, testRecorder }, dom, onTeardown } = await renderEnvironment<any>(t, {
+    exports: 'export { TestRecorderOverlay } from "./packages/ui/src/components/test-recorder-overlay.tsx";\n'
+      + 'export { testRecorder } from "./packages/ui/src/test-recorder.ts";',
+    slug: "recorder-preparing",
+    extraGlobals: { crypto: { randomUUID: () => `id-${Math.random()}` } },
+  });
+  const { act, createElement } = await import("react");
+  const { createRoot } = await import("react-dom/client");
+
+  // The real wait: attaching to the app and projecting its tree takes a second or two, and until
+  // it lands nothing on the mirror can be named.
+  let release: (components: unknown[]) => void = () => {};
+  const tree = new Promise<unknown[]>(resolve => { release = resolve; });
+  const annotations = { subscribe: () => () => undefined, getSnapshot: () => ANNOTATIONS_SNAPSHOT };
+  testRecorder.attach("udid", { readComponents: () => tree, screen: () => SCREEN, release: () => undefined });
+
+  const root = createRoot(dom.window.document.getElementById("root")!);
+  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations })); });
+  onTeardown(async () => {
+    await act(async () => { root.unmount(); });
+    await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
+  });
+  const overlay = () => dom.window.document.querySelector("[data-element=recorder-preparing]") as HTMLElement | null;
+
+  assert.equal(overlay(), null, "nothing is over the mirror until Record is pressed");
+  await act(async () => { testRecorder.start("udid"); });
+  assert.ok(overlay(), "Record puts it there at once, rather than after the first dead click");
+  assert.match(overlay()!.textContent ?? "", /preparing\.\.\./);
+  assert.ok(overlay()!.className.includes("pointer-events-none"),
+    "the mirror still drives the app while the tree is being read");
+
+  await act(async () => { release([button]); await tree; });
+  assert.equal(overlay(), null, "it goes when an element can actually be selected");
+  assert.equal(testRecorder.getSnapshot().preparing, false);
+
+  testRecorder.stop();
+  testRecorder.clearSteps();
+  testRecorder.detach("udid");
+});
+
+test("the list keeps what is not stored above what the project holds, and asks before deleting either", async t => {
+  const { module: { TestingView, testRecorder }, dom, onTeardown } = await renderEnvironment<any>(t, {
+    exports: 'export { TestingView } from "./packages/ui/src/components/testing-view.tsx";\n'
+      + 'export { testRecorder } from "./packages/ui/src/test-recorder.ts";',
+    slug: "testing-list-groups",
+    extraGlobals: { crypto: { randomUUID: () => `id-${Math.random()}` } },
+  });
+  const { act, createElement } = await import("react");
+  const { createRoot } = await import("react-dom/client");
+
+  const deleted: string[] = [];
+  const panel = {
+    ...panelStub({
+      drafts: [{ id: "draft-1", projectPath: "/app", title: "the explore screen", fileName: "", origin: "user", stepCount: 3, createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" }],
+      tests: [{ relativePath: "tests/flow.e2e.ts", name: "flow.e2e.ts", updatedAt: "2026-01-01T00:00:00.000Z", sizeBytes: 420 }],
+    }),
+    deleteTest: async (path: string) => { deleted.push(path); },
+  };
+  const deviceApps = { subscribe: () => () => undefined, getSnapshot: () => DEVICE_SNAPSHOT };
+
+  const root = createRoot(dom.window.document.getElementById("root")!);
+  await act(async () => { root.render(createElement(TestingView, { panel, deviceApps })); });
+  onTeardown(async () => {
+    await act(async () => { root.unmount(); });
+    await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
+  });
+  const query = (selector: string) => dom.window.document.querySelector(selector) as HTMLElement | null;
+
+  await act(async () => { query("[data-testing-drafts]")!.click(); });
+  const groups = [...dom.window.document.querySelectorAll("[data-testing-group]")] as HTMLElement[];
+  assert.deepEqual(groups.map(group => group.dataset.testingGroup), ["unstored", "stored"],
+    "what is being worked on is above the archive");
+  assert.match(groups[0].textContent ?? "", /Not stored/);
+  // Expanded by default: the unsaved recordings are the ones at risk of being lost.
+  assert.equal(groups[0].getAttribute("aria-expanded"), "true");
+  assert.ok(query("[data-testing-draft-option=draft-1]"));
+  // Collapsed by default: the project's own tests are there to be found, not to be read every time.
+  assert.equal(groups[1].getAttribute("aria-expanded"), "false");
+  assert.equal(query("[data-testing-test-delete]"), null);
+
+  await act(async () => { groups[1].click(); });
+  assert.match(query('[data-testing-test="tests/flow.e2e.ts"]')?.textContent ?? "", /flow\.e2e\.ts/,
+    "a saved test is listed here rather than leaving the list");
+
+  // Neither delete happens on one click of a trash icon sitting beside the row the user wanted.
+  // The question is a popover beside the icon, so the row it is about stays readable under it.
+  await act(async () => { query("[data-testing-test-delete]")!.click(); });
+  assert.deepEqual(deleted, [], "nothing is deleted while the question is still up");
+  const question = query("[role=alertdialog]");
+  assert.match(question?.textContent ?? "",
+    /Delete tests\/flow\.e2e\.ts from the project\? The file is removed and cannot be brought back/);
+  assert.equal(question?.parentElement?.closest("[role=alertdialog]"), null, "it is a popover, not the row");
+  assert.ok(query('[data-testing-test="tests/flow.e2e.ts"]'), "and the row it is about is still listed");
+  await act(async () => { query("[data-confirm-delete]")!.click(); });
+  assert.deepEqual(deleted, ["tests/flow.e2e.ts"]);
+  assert.equal(query("[role=alertdialog]"), null, "answering it closes the question");
+
+  testRecorder.clearSteps();
+});
+
+test("moving from one step to the next hands the highlight over without dimming the first", async t => {
+  const { module: { TestingView, testRecorder }, dom, onTeardown } = await renderEnvironment<any>(t, {
+    exports: 'export { TestingView } from "./packages/ui/src/components/testing-view.tsx";\n'
+      + 'export { testRecorder } from "./packages/ui/src/test-recorder.ts";',
+    slug: "testing-step-hover",
+    extraGlobals: { crypto: { randomUUID: () => `id-${Math.random()}` } },
+  });
+  const { act, createElement } = await import("react");
+  const { createRoot } = await import("react-dom/client");
+
+  const panel = panelStub();
+  const deviceApps = { subscribe: () => () => undefined, getSnapshot: () => DEVICE_SNAPSHOT };
+  testRecorder.attach("udid", { readComponents: async () => [button], screen: () => SCREEN, release: () => undefined });
+  testRecorder.start("udid");
+  await testRecorder.openMenu({ x: 150, y: 420 });
+  await testRecorder.chooseOffer("tap");
+  await testRecorder.openMenu({ x: 150, y: 420 });
+  await testRecorder.chooseOffer("assertVisible");
+
+  const root = createRoot(dom.window.document.getElementById("root")!);
+  await act(async () => { root.render(createElement(TestingView, { panel, deviceApps })); });
+  onTeardown(async () => {
+    await act(async () => { root.unmount(); });
+    await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
+  });
+  const steps = () => [...dom.window.document.querySelectorAll("[data-testing-step]")] as HTMLElement[];
+  const highlighted = () => [...dom.window.document.querySelectorAll(".testing-preview-line.is-step-highlighted")]
+    .map(line => (line as HTMLElement).dataset.testingPreviewLine);
+  const spans = testRecorder.emitted.spans;
+  assert.equal(steps().length, 2);
+
+  await act(async () => { steps()[0].dispatchEvent(new dom.window.MouseEvent("mouseover", { bubbles: true })); });
+  assert.deepEqual(highlighted(), spans[0].calls.map(String), "pointing at a step tints the lines it emits");
+
+  // Leaving the row takes the highlight away at once. What made leaving a step *re-light* its
+  // lines was the preview's own arrival animation being cancelled while they were highlighted and
+  // restarted when they no longer were — see `.is-step-highlighted` in `style.css`, which paints
+  // the highlight as a layer now so there is no animation to restart.
+  await act(async () => { steps()[0].dispatchEvent(new dom.window.MouseEvent("mouseout", { bubbles: true })); });
+  assert.deepEqual(highlighted(), [], "the highlight goes with the pointer");
+
+  // And a row that has already been left cannot take it from the row the pointer is on now: the
+  // browser dispatches the leave of one and the enter of the next together.
+  await act(async () => {
+    steps()[1].dispatchEvent(new dom.window.MouseEvent("mouseover", { bubbles: true }));
+    steps()[0].dispatchEvent(new dom.window.MouseEvent("mouseout", { bubbles: true }));
+  });
+  assert.deepEqual(highlighted(), spans[1].calls.map(String), "the second step's lines are the ones tinted");
+
+  // The flash itself was CSS, and JSDOM applies none: the highlight suppressed the arrival
+  // animation that `is-new` holds on the lines a step added, so letting it back on mouse-leave
+  // restarted it — the lines lit up again and faded over 1400ms. The highlight is a layer now, so
+  // there is nothing to cancel and nothing to restart.
+  const css = await readFile(new URL("../../ui/src/style.css", import.meta.url), "utf-8");
+  const highlightRule = css.slice(css.indexOf(".testing-preview-line.is-step-highlighted"));
+  assert.match(highlightRule.slice(0, 64), /is-step-highlighted::before/,
+    "the highlight is painted as its own layer");
+  assert.doesNotMatch(highlightRule.slice(0, highlightRule.indexOf("}")), /animation/,
+    "and it never touches the arrival animation, which is what restarted on mouse-leave");
 
   testRecorder.clearSteps();
   testRecorder.detach("udid");
