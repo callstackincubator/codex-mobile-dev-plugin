@@ -779,13 +779,42 @@ test("a selected project test offers temporary step edits and per-line runs", as
   assert.ok(query("[data-testing-stored-undo]"));
   await act(async () => { (query("[data-testing-source-edit]") as HTMLElement).click(); });
   assert.ok(query("[data-testing-source-input]"), "the whole source opens for editing");
+  assert.match(query("[data-testing-source-edit]")?.parentElement?.textContent ?? "", /^PreviewEdit/);
+  assert.equal(query("[data-testing-source-edit]")?.getAttribute("aria-pressed"), "true");
+  assert.ok(query(".testing-source-editor-code")?.classList.contains("bg-muted/40"), "Edit shares Preview's surface");
+  assert.ok(query(".testing-source-editor-code")?.classList.contains("dark:bg-black/15"));
   assert.equal(query("[data-testing-source-line-number]")?.textContent, "1");
   assert.ok(query("[data-testing-source-highlight] .text-emerald-600"), "strings retain preview syntax colors");
+  const suggestionInput = query("[data-testing-source-input]") as HTMLTextAreaElement;
+  const originalSource = suggestionInput.value;
+  const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype, "value")!.set!;
+  await act(async () => {
+    setter.call(suggestionInput, `${suggestionInput.value}\nawait screen.getByT`);
+    suggestionInput.setSelectionRange(suggestionInput.value.length, suggestionInput.value.length);
+    suggestionInput.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+  });
+  assert.deepEqual([...dom.window.document.querySelectorAll("[data-testing-source-suggestion]")]
+    .map(element => element.getAttribute("data-testing-source-suggestion")), ["getByTestId", "getByText"]);
+  await act(async () => { suggestionInput.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })); });
+  await act(async () => { suggestionInput.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true })); });
+  assert.match(suggestionInput.value, /screen\.getByText\(""\)$/);
+  assert.equal(query("[data-testing-source-suggestions]"), null);
+  for (const [typed, expected] of [
+    ["await exp", "expect visible"],
+    ['await expect(screen.getByText("Done")).toBeVisible(', "timeout"],
+    ['await agent.assert("The list is visible", ', "vision: true"],
+  ]) {
+    await act(async () => {
+      setter.call(suggestionInput, `${originalSource}\n${typed}`);
+      suggestionInput.setSelectionRange(suggestionInput.value.length, suggestionInput.value.length);
+      suggestionInput.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+    });
+    assert.ok(query(`[data-testing-source-suggestion="${expected}"]`), `${typed} offers ${expected}`);
+  }
   await act(async () => { (query("[data-testing-source-cancel]") as HTMLElement).click(); });
   assert.equal(query("[data-testing-source-input]"), null, "Cancel restores the preview");
   await act(async () => { (query("[data-testing-source-edit]") as HTMLElement).click(); });
   const input = query("[data-testing-source-input]") as HTMLTextAreaElement;
-  const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype, "value")!.set!;
   await act(async () => { setter.call(input, input.value.replace("Done", "Saved")); input.dispatchEvent(new dom.window.Event("input", { bubbles: true })); });
   assert.match(query("[data-testing-source-highlight]")?.textContent ?? "", /Saved/);
   await act(async () => { (query("[data-testing-source-save]") as HTMLElement).click(); });

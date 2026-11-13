@@ -11,6 +11,7 @@ import type { RecordedStep } from "@mobile-dev/shared/test-recording.ts";
 import { MenuRow, OFFER_LABEL, OfferIcon, StepCommandList } from "./step-commands.tsx";
 import { Branch } from "./cascading-menu.tsx";
 import { CODE_TOKEN_CLASS, changedLines, highlightCode } from "../code-highlight.ts";
+import { testSourceSuggestions } from "../test-source-suggestions.ts";
 import { changeStoredStepCommand, duplicateStoredStep, moveStoredStep, storedStepCommands, storedTestSteps, storedTestUntilSource } from "../stored-test-steps.ts";
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert.tsx";
 import { Button } from "./ui/button.tsx";
@@ -492,8 +493,40 @@ function PreviewEditor({ source, onCancel, onSave, saving }: {
 }) {
   const [value, setValue] = useState(source);
   const highlighted = useRef<HTMLPreElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const [cursor, setCursor] = useState(0);
+  const [completionOpen, setCompletionOpen] = useState(false);
+  const [selectedSuggestion, setSelectedSuggestion] = useState(0);
+  const [completionPosition, setCompletionPosition] = useState({ left: 8, top: 8 });
+  const completion = completionOpen ? testSourceSuggestions(value, cursor) : undefined;
+  const placeCompletion = (input: HTMLTextAreaElement, nextValue: string, position: number) => {
+    const before = nextValue.slice(0, position);
+    const lines = before.split("\n");
+    const style = getComputedStyle(input);
+    const fontSize = parseFloat(style.fontSize) || 11;
+    const lineHeight = parseFloat(style.lineHeight) || fontSize * 1.625;
+    const characterWidth = fontSize * 0.6;
+    const left = (parseFloat(style.paddingLeft) || 8) + (lines.at(-1)?.length ?? 0) * characterWidth - input.scrollLeft;
+    const below = (parseFloat(style.paddingTop) || 8) + lines.length * lineHeight - input.scrollTop;
+    setCompletionPosition({
+      left: Math.max(6, Math.min(left, Math.max(6, input.clientWidth - 220))),
+      top: Math.max(6, below + 174 > input.clientHeight ? below - 174 : below),
+    });
+  };
+  const acceptCompletion = (item: NonNullable<typeof completion>["items"][number]) => {
+    if (!completion || !inputRef.current) return;
+    const next = value.slice(0, completion.from) + item.insert + value.slice(completion.to);
+    const nextCursor = completion.from + item.insert.length - (item.cursorBack ?? 0);
+    setValue(next);
+    setCursor(nextCursor);
+    setSelectedSuggestion(0);
+    setCompletionOpen(Boolean(testSourceSuggestions(next, nextCursor)));
+    placeCompletion(inputRef.current, next, nextCursor);
+    inputRef.current.focus();
+    requestAnimationFrame(() => inputRef.current?.setSelectionRange(nextCursor, nextCursor));
+  };
   return <div className="flex min-h-0 flex-1 flex-col gap-2" data-testing-source-editor>
-    <div className="testing-source-editor-code">
+    <div className="testing-source-editor-code bg-muted/40 dark:bg-black/15">
       <pre ref={highlighted} aria-hidden="true" data-testing-source-highlight><code>
         {value.split("\n").map((line, index) => <span key={index} className="testing-source-editor-line">
           <span className="testing-source-editor-number" data-testing-source-line-number>{index + 1}</span>
@@ -501,14 +534,37 @@ function PreviewEditor({ source, onCancel, onSave, saving }: {
           {line.length === 0 ? "\u200b" : null}
         </span>)}
       </code></pre>
-      <textarea autoFocus aria-label="Test source" data-testing-source-input spellCheck={false} wrap="off"
-        className="testing-source-editor-input" value={value} onChange={event => setValue(event.target.value)}
+      <textarea ref={inputRef} autoFocus aria-label="Test source" data-testing-source-input spellCheck={false} wrap="off"
+        aria-autocomplete="list" aria-controls={completion ? "testing-source-suggestions" : undefined}
+        aria-activedescendant={completion ? `testing-source-suggestion-${selectedSuggestion}` : undefined}
+        className="testing-source-editor-input" value={value} onChange={event => {
+          const input = event.currentTarget;
+          setValue(input.value);
+          setCursor(input.selectionStart);
+          setSelectedSuggestion(0);
+          setCompletionOpen(input.selectionStart === input.selectionEnd);
+          placeCompletion(input, input.value, input.selectionStart);
+        }}
+        onBlur={() => setCompletionOpen(false)} onClick={() => setCompletionOpen(false)}
         onScroll={event => {
           if (!highlighted.current) return;
           highlighted.current.scrollTop = event.currentTarget.scrollTop;
           highlighted.current.scrollLeft = event.currentTarget.scrollLeft;
+          if (completionOpen) placeCompletion(event.currentTarget, value, cursor);
         }}
         onKeyDown={event => {
+          if (completion && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+            event.preventDefault();
+            setSelectedSuggestion(current => (current + (event.key === "ArrowDown" ? 1 : -1) + completion.items.length) % completion.items.length);
+            return;
+          }
+          if (completion && (event.key === "Enter" || event.key === "Tab")) {
+            event.preventDefault();
+            acceptCompletion(completion.items[selectedSuggestion]);
+            return;
+          }
+          if (event.key === "Escape" && completion) { event.preventDefault(); setCompletionOpen(false); return; }
+          if (["ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown"].includes(event.key)) setCompletionOpen(false);
           if (event.key !== "Tab" || event.shiftKey) return;
           event.preventDefault();
           const input = event.currentTarget;
@@ -517,6 +573,16 @@ function PreviewEditor({ source, onCancel, onSave, saving }: {
           setValue(next);
           requestAnimationFrame(() => { input.selectionStart = input.selectionEnd = start + 2; });
         }} />
+      {completion && <div id="testing-source-suggestions" role="listbox" aria-label="Test code suggestions"
+        data-testing-source-suggestions className="testing-source-suggestions" style={completionPosition}>
+        {completion.items.map((item, index) => <button key={item.label} type="button" role="option"
+          id={`testing-source-suggestion-${index}`} aria-selected={index === selectedSuggestion}
+          data-testing-source-suggestion={item.label} className="testing-source-suggestion"
+          onMouseDown={event => event.preventDefault()} onMouseEnter={() => setSelectedSuggestion(index)}
+          onClick={() => acceptCompletion(item)}>{item.label}{item.detail
+            ? <span className="block truncate text-[10px] text-muted-foreground">{item.detail}</span>
+            : <span className="text-muted-foreground">{item.insert.startsWith(item.label) ? item.insert.slice(item.label.length) : ""}</span>}</button>)}
+      </div>}
     </div>
     <div className="flex justify-end gap-2">
       <Button type="button" size="sm" variant="ghost" data-testing-source-cancel onClick={onCancel}>Cancel</Button>
@@ -556,8 +622,8 @@ function StoredTestPreview({ panel, source, path, loading }: { panel: TestingPan
         <ResizablePanel id="testing-stored-source" defaultSize="60%" minSize="20%" maxSize="85%">
           <section className="flex h-full min-h-0 min-w-0 flex-col gap-1.5 overflow-hidden rounded-lg border p-3" aria-label="Preview">
             <p className="flex items-center gap-2 text-xs font-medium">Preview
-              {!editing && <Button type="button" size="sm" variant="ghost" className="ml-auto" data-testing-source-edit
-                disabled={panelState.running || panelState.saving} onClick={() => setEditing(true)}>Edit</Button>}
+              <Button type="button" size="sm" variant="ghost" className={editing ? "bg-accent text-accent-foreground" : undefined} data-testing-source-edit aria-pressed={editing}
+                disabled={editing || panelState.running || panelState.saving} onClick={() => setEditing(true)}>Edit</Button>
               {recorder.run?.state === "running" && <span role="status" className="text-muted-foreground">Running…</span>}
               {recorder.run?.state === "passed" && <span role="status" className="text-emerald-600">Passed</span>}
               {recorder.run?.state === "failed" && <span role="status" className="text-red-600">{recorder.run.error ?? "Failed"}</span>}
@@ -708,8 +774,8 @@ function TestingRecorder({ panel, recordable, deviceId }: { panel: TestingPanel;
         <section data-testing-preview-pane className="flex h-full min-h-0 min-w-0 flex-col gap-1.5 overflow-hidden rounded-lg border p-3">
           <p className="flex flex-wrap items-center gap-2 text-xs font-medium">
             <span>Preview</span>
-            {!editing && !panelState.agent?.active && <Button type="button" size="sm" variant="ghost" className="ml-auto" data-testing-source-edit
-              disabled={panelState.running || panelState.saving} onClick={() => setEditing(true)}>Edit</Button>}
+            {!panelState.agent?.active && <Button type="button" size="sm" variant="ghost" className={editing ? "bg-accent text-accent-foreground" : undefined} data-testing-source-edit aria-pressed={editing}
+              disabled={editing || panelState.running || panelState.saving} onClick={() => setEditing(true)}>Edit</Button>}
             {state.run?.state === "running" && <span className="flex items-center gap-1 font-normal text-muted-foreground" role="status">
               <LoaderCircleIcon className="size-3 animate-spin" />Running
             </span>}
