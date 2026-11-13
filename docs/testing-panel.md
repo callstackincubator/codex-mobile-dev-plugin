@@ -94,8 +94,14 @@ panel stops being listed.
 
 Opening a draft keeps the flow on screen first, so swapping between two loses neither, and it does
 **not** start recording — the user opened a flow to look at it, and a stray tap on the mirror must
-not append to it. A stored test can be selected to preview its source as saved in the project.
-The preview is read-only; the current recording stays intact and can be reopened from Not stored.
+not append to it. A stored test can be selected to preview its source and awaited calls. The
+source calls can be reordered, duplicated or changed to compatible commands. Each edit updates a
+temporary working copy, not the project file. Save writes the working copy to the original path
+and removes it; Undo removes the working copy and reloads the original. Save refuses if the
+original changed on disk after the copy was opened. Each playable call keeps a visible Play icon
+beside its source line. Play runs a temporary sibling of the source,
+so neither a full run nor Play until here saves pending edits. The current recording stays intact
+and can be reopened from Not stored.
 
 Both deletes **ask first**, in a popover hanging off the trash icon. A draft's steps cannot be
 replayed from anywhere else, and a stored test is a file in the user's repository that nothing here
@@ -104,12 +110,13 @@ the icon rather than replacing the row so the row it is about stays readable und
 the question has room to name what will go and say that it cannot be undone, which a row the width
 of a file name does not.
 
-Seven app-only tools carry it: `mobile_testing_drafts`, `mobile_testing_draft_read`,
+Ten app-only tools carry it: `mobile_testing_drafts`, `mobile_testing_draft_read`,
 `mobile_testing_draft_save` and `mobile_testing_draft_delete` over `TestDraftStore`
 (`packages/core/src/testing-drafts.ts`), and `mobile_testing_tests`,
-`mobile_testing_read_file` and `mobile_testing_delete_file` over the project's own `tests/` folder
-(`listTestFiles`/`readTestFile`/`deleteTestFile` in `packages/core/src/testing-projects.ts`) — the delete
-annotated destructive, so the host asks as well as the panel. All seven are in
+`mobile_testing_read_file`, `mobile_testing_stage_file`, `mobile_testing_save_staged_file`,
+`mobile_testing_discard_staged_file` and `mobile_testing_delete_file` over the project's own `tests/` folder
+(`packages/core/src/testing-projects.ts`) — Save and delete are annotated destructive, so the host
+asks as well as the panel. All ten are in
 `packages/core/src/testing-tools.ts`. The step schema they validate against is
 `packages/shared/src/test-drafts.ts`, which is the one place a `RecordedStep` is described as data
 rather than as a type. A stored test's path goes through the same `resolveTestPath` boundary the

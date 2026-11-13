@@ -325,3 +325,46 @@ test("opening a project test previews its source and preserves the recording", a
   assert.equal(panel.getSnapshot().selectedTestPath, "", "reopening a draft exits the project preview");
   panel.dispose();
 });
+
+test("project test edits stage before Save and Undo discards the working copy", async () => {
+  const calls: { name: string; arguments: Record<string, unknown> }[] = [];
+  const source = 'test("saved", async () => {});';
+  const panel = open({
+    mobile_testing_read_file: { source, originalHash: "a".repeat(64), staged: false },
+    mobile_testing_tests: { tests: [{ relativePath: "tests/saved.e2e.ts", name: "saved.e2e.ts", updatedAt: "2026-01-01T00:00:00.000Z", sizeBytes: 20 }] },
+    mobile_testing_stage_file: { staged: true },
+    mobile_testing_save_staged_file: { path: `${PROJECT}/tests/saved.e2e.ts`, originalHash: "b".repeat(64) },
+    mobile_testing_discard_staged_file: { source, originalHash: "a".repeat(64) },
+  }, calls);
+  await panel.openTest("tests/saved.e2e.ts");
+  panel.editStoredTest("first edit");
+  await panel.saveStoredTest();
+  assert.deepEqual(named(calls, "mobile_testing_stage_file").map(call => call.arguments.source), ["first edit"]);
+  assert.equal(named(calls, "mobile_testing_save_staged_file").length, 1);
+  assert.equal(panel.getSnapshot().selectedTestStaged, false);
+  panel.editStoredTest("second edit");
+  await panel.undoStoredTest();
+  assert.equal(named(calls, "mobile_testing_stage_file")[1].arguments.originalHash, "b".repeat(64), "later edits use the newly saved file as their base");
+  assert.equal(panel.getSnapshot().selectedTestSource, source);
+  assert.equal(panel.getSnapshot().selectedTestStaged, false);
+  assert.equal(named(calls, "mobile_testing_discard_staged_file").length, 1);
+  panel.dispose();
+});
+
+test("Play until a saved call runs a temporary copy without saving the project file", async () => {
+  const calls: { name: string; arguments: Record<string, unknown> }[] = [];
+  const source = 'test("flow", async ({ app, screen }) => {\n  await app.open();\n  await screen.getByText("A").tap();\n  await screen.getByText("B").tap();\n});';
+  const panel = open({
+    mobile_testing_read_file: { source, originalHash: "a".repeat(64), staged: false },
+    mobile_testing_run_test: { status: "passed", steps: [{ line: 3, status: "passed" }] },
+  }, calls);
+  await panel.openTest("tests/flow.e2e.ts");
+  await panel.runStoredTest(3);
+  const run = named(calls, "mobile_testing_run_test")[0];
+  assert.ok(run);
+  assert.match(run.arguments.untilSource as string, /await screen\.getByText\("A"\)\.tap\(\);\n  return;/);
+  assert.deepEqual(named(calls, "mobile_testing_save_staged_file"), []);
+  assert.deepEqual(named(calls, "mobile_testing_write_file"), []);
+  assert.equal(testRecorder.getSnapshot().run?.lines[3], "passed");
+  panel.dispose();
+});

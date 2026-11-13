@@ -494,9 +494,24 @@ html[data-theme="dark"] .tracesift-explorer { color-scheme: dark; }
   pointer-events: auto;
 }
 .testing-play-until:hover, .testing-play-until:focus-visible { color: var(--primary); }
+/* Saved project tests keep the play control beside the run mark without showing it until hover. */
+[data-testing-stored-preview] .testing-preview-line { grid-template-columns: 3ch 1.35em 1.35em minmax(0, 1fr); }
+[data-testing-stored-preview] .testing-preview-code { grid-column: 4; }
+[data-testing-stored-preview] .testing-play-until {
+  position: relative;
+  grid-column: 3;
+  inset: auto;
+}
+[data-testing-stored-preview] .testing-preview-line:hover .testing-play-until,
+[data-testing-stored-preview] .testing-play-until:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
 /* The mark steps aside for the play, and only on a line that has one. */
 .testing-preview-line:hover:has(.testing-play-until) .testing-run-mark,
 .testing-preview-line:has(.testing-play-until:focus-visible) .testing-run-mark { opacity: 0; }
+[data-testing-stored-preview] .testing-preview-line:hover:has(.testing-play-until) .testing-run-mark,
+[data-testing-stored-preview] .testing-preview-line:has(.testing-play-until:focus-visible) .testing-run-mark { opacity: 1; }
 
 @media (prefers-reduced-motion: reduce) {
   .testing-play-until { transition: none; }

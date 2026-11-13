@@ -7,6 +7,7 @@ import { isRecordableDevice, recordablePlatform } from "@mobile-dev/shared/panel
 import type { ScreenComponent } from "@mobile-dev/shared/screen-annotations.ts";
 import { screenSize } from "@mobile-dev/shared/screen-annotations.ts";
 import { testFileSlug } from "@mobile-dev/shared/test-recording.ts";
+import { storedTestUntilSource } from "./stored-test-steps.ts";
 import type { RecordedStep } from "@mobile-dev/shared/test-recording.ts";
 import type { TestDraftSummary } from "@mobile-dev/shared/test-drafts.ts";
 
@@ -110,6 +111,8 @@ export type TestingSnapshot = {
   /** A project file shown as source, without importing it into the editable recorder. */
   selectedTestPath: string;
   selectedTestSource: string;
+  selectedTestOriginalHash: string;
+  selectedTestStaged: boolean;
   loadingTest: boolean;
   /** A stored test is being deleted; its path, so only its own row shows the spinner. */
   deletingTest: string;
@@ -142,13 +145,14 @@ export class TestingPanel {
   /** Guards against a slow project load overwriting a newer selection. */
   private loadRevision = 0;
   private testReadRevision = 0;
+  private stageWrite?: Promise<void>;
   /** The project and target the installed tree source reads; "" when there is no source. */
   private treeSourceKey = "";
   private snapshot: TestingSnapshot = {
     open: false, available: false, projectPath: "", projects: [], targets: [], targetName: "", configPath: "",
     loadingProject: false, pickingProject: false, launching: false, appLaunched: false,
     fileName: "", saving: false, overwritePath: "", savedRevision: -1, savedPath: "", running: false, pendingRun: false,
-    agent: null, drafts: [], draftId: "", loadingDraft: false, tests: [], selectedTestPath: "", selectedTestSource: "", loadingTest: false, deletingTest: "", error: null,
+    agent: null, drafts: [], draftId: "", loadingDraft: false, tests: [], selectedTestPath: "", selectedTestSource: "", selectedTestOriginalHash: "", selectedTestStaged: false, loadingTest: false, deletingTest: "", error: null,
   };
 
   /** The agent recording's revision the panel has already adopted; -1 before the first poll. */
@@ -494,7 +498,8 @@ export class TestingPanel {
 
   private clearTestPreview() {
     ++this.testReadRevision;
-    if (this.snapshot.selectedTestPath || this.snapshot.loadingTest) this.update({ selectedTestPath: "", selectedTestSource: "", loadingTest: false });
+    if (this.snapshot.selectedTestPath) testRecorder.clearRun();
+    if (this.snapshot.selectedTestPath || this.snapshot.loadingTest) this.update({ selectedTestPath: "", selectedTestSource: "", selectedTestOriginalHash: "", selectedTestStaged: false, loadingTest: false });
   }
 
   /** Shows the file exactly as stored. The recorder's current flow remains intact. */
@@ -504,14 +509,18 @@ export class TestingPanel {
     const revision = ++this.testReadRevision;
     clearTimeout(this.draftTimer);
     await this.keepDraft();
+    await this.stageWrite?.catch(() => undefined);
     if (this.disposed || this.snapshot.projectPath !== projectPath || revision !== this.testReadRevision) return;
     testRecorder.stop();
+    testRecorder.clearRun();
     this.update({ selectedTestPath: relativePath, selectedTestSource: "", loadingTest: true, error: null });
     const startedAt = performance.now(), telemetryContext = getUiTelemetryAttributes();
     try {
       const response = await this.call("mobile_testing_read_file", { projectPath, relativePath }, 15_000);
-      if (revision === this.testReadRevision && this.snapshot.projectPath === projectPath)
-        this.update({ selectedTestSource: text(object(response.structuredContent)?.source) });
+      if (revision === this.testReadRevision && this.snapshot.projectPath === projectPath) {
+        const data = object(response.structuredContent);
+        this.update({ selectedTestSource: text(data?.source), selectedTestOriginalHash: text(data?.originalHash), selectedTestStaged: data?.staged === true });
+      }
       countUiEvent("ui.testing.test_preview");
     } catch (error) {
       if (revision === this.testReadRevision) {
@@ -521,6 +530,70 @@ export class TestingPanel {
     } finally {
       if (getUiTelemetryAttributes() === telemetryContext) recordUiTiming("ui.testing.test_preview", performance.now() - startedAt);
       if (revision === this.testReadRevision) this.update({ loadingTest: false });
+    }
+  }
+
+  /** Edits the temporary working copy; the project file is only replaced by Save. */
+  editStoredTest(source: string) {
+    const { projectPath, selectedTestPath: relativePath, selectedTestOriginalHash: originalHash } = this.snapshot;
+    if (!projectPath || !relativePath || !originalHash || this.snapshot.running || this.snapshot.saving || source === this.snapshot.selectedTestSource) return;
+    this.update({ selectedTestSource: source, selectedTestStaged: true, error: null });
+    testRecorder.clearRun();
+    const startedAt = performance.now(), telemetryContext = getUiTelemetryAttributes();
+    const write = (this.stageWrite ?? Promise.resolve()).catch(() => undefined).then(async () => {
+      await this.call("mobile_testing_stage_file", { projectPath, relativePath, originalHash, source }, 15_000);
+      countUiEvent("ui.testing.test_edit");
+    });
+    this.stageWrite = write;
+    void write.catch(error => {
+      if (this.snapshot.projectPath === projectPath && this.snapshot.selectedTestPath === relativePath) this.update({ error: error instanceof Error ? error.message : String(error) });
+      captureUiError(error, "testing.test_stage", telemetryContext);
+    }).finally(() => {
+      if (getUiTelemetryAttributes() === telemetryContext) recordUiTiming("ui.testing.test_stage", performance.now() - startedAt);
+    });
+  }
+
+  async saveStoredTest() {
+    const { projectPath, selectedTestPath: relativePath } = this.snapshot;
+    if (!projectPath || !relativePath || !this.snapshot.selectedTestStaged || this.snapshot.saving) return;
+    this.update({ saving: true, error: null });
+    const startedAt = performance.now(), telemetryContext = getUiTelemetryAttributes();
+    try {
+      await this.stageWrite;
+      const response = await this.call("mobile_testing_save_staged_file", { projectPath, relativePath }, 60_000);
+      if (this.snapshot.projectPath === projectPath && this.snapshot.selectedTestPath === relativePath)
+        this.update({ selectedTestStaged: false, selectedTestOriginalHash: text(object(response.structuredContent)?.originalHash) });
+      countUiEvent("ui.testing.test_save");
+      await this.refreshTests();
+    } catch (error) {
+      this.update({ error: error instanceof Error ? error.message : String(error) });
+      captureUiError(error, "testing.test_save", telemetryContext);
+    } finally {
+      if (getUiTelemetryAttributes() === telemetryContext) recordUiTiming("ui.testing.test_save", performance.now() - startedAt);
+      this.update({ saving: false });
+    }
+  }
+
+  async undoStoredTest() {
+    const { projectPath, selectedTestPath: relativePath } = this.snapshot;
+    if (!projectPath || !relativePath || !this.snapshot.selectedTestStaged || this.snapshot.saving) return;
+    this.update({ saving: true, error: null });
+    const startedAt = performance.now(), telemetryContext = getUiTelemetryAttributes();
+    try {
+      await this.stageWrite?.catch(() => undefined);
+      const response = await this.call("mobile_testing_discard_staged_file", { projectPath, relativePath }, 15_000);
+      if (this.snapshot.projectPath === projectPath && this.snapshot.selectedTestPath === relativePath) {
+        const data = object(response.structuredContent);
+        this.update({ selectedTestSource: text(data?.source), selectedTestOriginalHash: text(data?.originalHash), selectedTestStaged: false });
+        testRecorder.clearRun();
+      }
+      countUiEvent("ui.testing.test_undo");
+    } catch (error) {
+      this.update({ error: error instanceof Error ? error.message : String(error) });
+      captureUiError(error, "testing.test_undo", telemetryContext);
+    } finally {
+      if (getUiTelemetryAttributes() === telemetryContext) recordUiTiming("ui.testing.test_undo", performance.now() - startedAt);
+      this.update({ saving: false });
     }
   }
 
@@ -914,6 +987,51 @@ export class TestingPanel {
     // session the device allows, which is the session the recording is being read through.
     return Boolean(this.snapshot.available && this.snapshot.projectPath && !this.snapshot.selectedTestPath && !this.snapshot.agent?.active
       && testRecorder.getSnapshot().steps.length > 0 && !this.snapshot.running && !this.snapshot.saving);
+  }
+
+  get canRunStored(): boolean {
+    return Boolean(this.snapshot.available && this.snapshot.projectPath && this.snapshot.selectedTestPath
+      && !this.snapshot.loadingTest && !this.snapshot.agent?.active && !this.snapshot.running && !this.snapshot.saving);
+  }
+
+  /** Runs a temporary sibling copy so Play and Run never save the working copy implicitly. */
+  async runStoredTest(untilLine?: number) {
+    if (!this.canRunStored) return;
+    const { projectPath, selectedTestPath: relativePath, selectedTestSource: source } = this.snapshot;
+    const untilSource = untilLine === undefined ? source : storedTestUntilSource(source, untilLine);
+    if (untilSource === undefined) return;
+    this.update({ running: true, error: null });
+    testRecorder.clearRun();
+    testRecorder.beginRun(untilLine);
+    if (untilLine !== undefined) countUiEvent("ui.testing.run_until");
+    const startedAt = performance.now(), telemetryContext = getUiTelemetryAttributes();
+    try {
+      await this.stageWrite;
+      await this.call("mobile_testing_release_device", {}, 30_000).catch(() => undefined);
+      const response = await this.call("mobile_testing_run_test", {
+        projectPath, relativePath, untilSource,
+        ...(this.snapshot.configPath ? { configPath: this.snapshot.configPath } : {}),
+        ...(this.snapshot.targetName ? { target: this.snapshot.targetName } : {}),
+      }, 15 * 60_000);
+      const data = object(response.structuredContent) ?? {};
+      const steps = (Array.isArray(data.steps) ? data.steps : []).map(entry => object(entry))
+        .filter((entry): entry is Record<string, unknown> => entry !== null)
+        .map(entry => ({ line: typeof entry.line === "number" ? entry.line : 0, status: text(entry.status), ...(text(entry.error) ? { error: text(entry.error) } : {}) }))
+        .filter(step => step.line > 0);
+      testRecorder.finishRun({ status: text(data.status) || "failed", steps,
+        ...(text(data.output) ? { output: text(data.output) } : {}),
+        ...(typeof data.durationMs === "number" ? { durationMs: data.durationMs } : {}) });
+      countUiEvent(text(data.status) === "passed" ? "ui.testing.run_passed" : "ui.testing.run_failed");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      testRecorder.failRun(message);
+      this.update({ error: message });
+      captureUiError(error, "testing.run", telemetryContext);
+    } finally {
+      if (getUiTelemetryAttributes() === telemetryContext) recordUiTiming("ui.testing.run", performance.now() - startedAt);
+      this.update({ running: false });
+      testRecorder.invalidate();
+    }
   }
 
   /**

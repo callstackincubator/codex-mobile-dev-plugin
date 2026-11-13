@@ -155,12 +155,12 @@ test("a run marks the preview line by line, and marks nothing it was not told ab
   const panel = {
     subscribe: (listener: () => void) => { panelListeners.add(listener); return () => { panelListeners.delete(listener); }; },
     getSnapshot: () => panelState,
-    canLaunch: true, canRun: true, dirty: true,
+    canLaunch: true, canRun: true, canRunStored: true, dirty: true,
     refreshProjects: async () => {}, chooseProject: async () => {}, pickProject: async () => {},
     launchApp: async () => {}, saveTest: async () => {}, runTest: async (options?: unknown) => { runs.push(options); }, selectTarget: () => {},
     setFileName: () => {}, cancelOverwrite: () => {}, dismissError: () => {},
     refreshDrafts: async () => {}, openDraft: async () => {}, deleteDraft: async () => {}, newRecording: async () => {},
-    refreshTests: async () => {}, openTest: async () => {}, deleteTest: async () => {},
+    refreshTests: async () => {}, openTest: async () => {}, editStoredTest: () => {}, saveStoredTest: async () => {}, undoStoredTest: async () => {}, runStoredTest: async () => {}, deleteTest: async () => {},
   };
   const deviceApps = {
     subscribe: () => () => undefined,
@@ -571,12 +571,12 @@ function panelStub(overrides: Record<string, unknown> = {}) {
   return {
     subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
     getSnapshot: () => state,
-    canLaunch: true, canRun: true, dirty: true,
+    canLaunch: true, canRun: true, canRunStored: true, dirty: true,
     refreshProjects: async () => {}, chooseProject: async () => {}, pickProject: async () => {},
     launchApp: async () => {}, saveTest: async () => {}, runTest: async () => {}, selectTarget: () => {},
     setFileName: () => {}, cancelOverwrite: () => {}, dismissError: () => {},
     refreshDrafts: async () => {}, openDraft: async () => {}, deleteDraft: async () => {}, newRecording: async () => {},
-    refreshTests: async () => {}, openTest: async () => {}, deleteTest: async () => {},
+    refreshTests: async () => {}, openTest: async () => {}, editStoredTest: () => {}, saveStoredTest: async () => {}, undoStoredTest: async () => {}, runStoredTest: async () => {}, deleteTest: async () => {},
   };
 }
 
@@ -747,7 +747,7 @@ test("the list keeps what is not stored above what the project holds, and asks b
   testRecorder.clearSteps();
 });
 
-test("a selected project test shows its source without editable recording controls", async t => {
+test("a selected project test offers temporary step edits and per-line runs", async t => {
   const { module: { TestingView, testRecorder }, dom, onTeardown } = await renderEnvironment<any>(t, {
     exports: 'export { TestingView } from "./packages/ui/src/components/testing-view.tsx";\n'
       + 'export { testRecorder } from "./packages/ui/src/test-recorder.ts";',
@@ -755,17 +755,32 @@ test("a selected project test shows its source without editable recording contro
   });
   const { act, createElement } = await import("react");
   const { createRoot } = await import("react-dom/client");
-  const panel = panelStub({
+  const edits: string[] = [];
+  const panel = { ...panelStub({
     tests: [{ relativePath: "tests/flow.e2e.ts", name: "flow.e2e.ts", updatedAt: "2026-01-01T00:00:00.000Z", sizeBytes: 30 }],
-    selectedTestPath: "tests/flow.e2e.ts", selectedTestSource: 'test("stored", async () => {});', loadingTest: false,
-  });
+    selectedTestPath: "tests/flow.e2e.ts",
+    selectedTestSource: 'test("stored", async ({ app, screen }) => {\n  await app.open();\n  await screen.getByText("Done").tap();\n});',
+    loadingTest: false, selectedTestStaged: true,
+  }), editStoredTest: (source: string) => { edits.push(source); } };
   const root = createRoot(dom.window.document.getElementById("root")!);
   await act(async () => { root.render(createElement(TestingView, { panel, deviceApps: { subscribe: () => () => undefined, getSnapshot: () => DEVICE_SNAPSHOT } })); });
-  onTeardown(async () => { await act(async () => { root.unmount(); }); });
+  onTeardown(async () => {
+    await act(async () => { root.unmount(); });
+    await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
+  });
   const query = (selector: string) => dom.window.document.querySelector(selector);
   assert.match(query("[data-testing-stored-preview]")?.textContent ?? "", /stored/);
+  assert.match(query("[data-testing-stored-steps]")?.textContent ?? "", /screen\.getByText\("Done"\)\.tap\(\)/);
+  assert.equal(query("[data-testing-stored-step]")?.getAttribute("data-testing-stored-step"), "3");
+  assert.ok(query('[data-testing-play-until="3"]'), "a saved call offers play until here");
+  assert.doesNotMatch(query("[data-testing-stored-step]")?.textContent ?? "", /:3/, "the source line is not repeated in the step row");
+  assert.ok(query("[data-testing-stored-save]"));
+  assert.ok(query("[data-testing-stored-undo]"));
+  await act(async () => { (query("[data-testing-stored-step-menu]") as HTMLElement).click(); });
+  await act(async () => { (query("[data-testing-stored-duplicate]") as HTMLElement).click(); });
+  assert.equal(edits.length, 1, "duplicate edits the working copy");
   assert.equal(query("[data-testing-editor-pane]"), null);
-  assert.equal(query("[data-testing-run]")?.hasAttribute("disabled"), true);
+  assert.equal(query("[data-testing-run]")?.hasAttribute("disabled"), false);
   assert.ok(query("[data-testing-new-from-preview]"));
   testRecorder.clearSteps();
 });

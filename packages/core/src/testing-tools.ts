@@ -5,7 +5,7 @@ import { z } from "zod";
 import { errorMessage } from "@mobile-dev/shared/protocol.ts";
 import { captureServerError } from "./telemetry.ts";
 import type { TestingProjectChoices } from "./testing-projects.ts";
-import { deleteTestFile, inspectProject, listTestFiles, readTestFile, writeTestFile } from "./testing-projects.ts";
+import { deleteTestFile, discardStagedTestFile, inspectProject, listTestFiles, previewTestFile, saveStagedTestFile, stageTestFile, writeTestFile } from "./testing-projects.ts";
 import { TestDraftStore } from "./testing-drafts.ts";
 import { MAX_DRAFT_STEPS, recordedStepSchema, testDraftIdSchema } from "@mobile-dev/shared/test-drafts.ts";
 import type { TestDraft } from "@mobile-dev/shared/test-drafts.ts";
@@ -112,7 +112,36 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
     annotations: read,
     _meta: appVisibility,
   }, safe(async ({ projectPath: selected, relativePath }: { projectPath: string; relativePath: string }) =>
-    dataResult({ source: await readTestFile(selected, relativePath) })));
+    dataResult(await previewTestFile(selected, relativePath))));
+
+  registerAppTool(server, "mobile_testing_stage_file", {
+    title: "Keep project test edits temporarily",
+    description: "Keep edits to a project test in a temporary working copy without changing the project file.",
+    inputSchema: { projectPath, relativePath: z.string().min(1).max(512), originalHash: z.string().length(64), source: z.string().max(256 * 1024) },
+    annotations: write,
+    _meta: appVisibility,
+  }, safe(async ({ projectPath: selected, relativePath, originalHash, source }: { projectPath: string; relativePath: string; originalHash: string; source: string }) => {
+    await stageTestFile(selected, relativePath, originalHash, source);
+    return dataResult({ staged: true });
+  }));
+
+  registerAppTool(server, "mobile_testing_save_staged_file", {
+    title: "Save project test edits",
+    description: "Write a staged test to its original project file if that file has not changed since editing began.",
+    inputSchema: { projectPath, relativePath: z.string().min(1).max(512) },
+    annotations: destructive,
+    _meta: appVisibility,
+  }, safe(async ({ projectPath: selected, relativePath }: { projectPath: string; relativePath: string }) =>
+    dataResult(await saveStagedTestFile(selected, relativePath))));
+
+  registerAppTool(server, "mobile_testing_discard_staged_file", {
+    title: "Undo project test edits",
+    description: "Discard a temporary working copy and return the unchanged project test.",
+    inputSchema: { projectPath, relativePath: z.string().min(1).max(512) },
+    annotations: write,
+    _meta: appVisibility,
+  }, safe(async ({ projectPath: selected, relativePath }: { projectPath: string; relativePath: string }) =>
+    dataResult(await discardStagedTestFile(selected, relativePath))));
 
   registerAppTool(server, "mobile_testing_delete_file", {
     title: "Delete one of the project's tests",

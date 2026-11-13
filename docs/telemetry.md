@@ -619,6 +619,10 @@ the user sits through.
 Selecting a stored test counts `ui.testing.test_preview` and measures that same name from the
 read request through its response. A failed read goes through `captureUiError` as
 `testing.test_preview`. The test source and path are not sent.
+Editing a project test counts `ui.testing.test_edit` and measures `ui.testing.test_stage` around
+the temporary write. Save counts and measures `ui.testing.test_save`; Undo counts and measures
+`ui.testing.test_undo`. Handled staging, save and undo failures go through `captureUiError` as
+`testing.test_stage`, `testing.test_save` and `testing.test_undo`. The source, path, and command are not sent.
 
 `ui.testing.record_prepare` times the warm tree read Record now does before the mirror can resolve
 an element, which is the wait the `preparing...` overlay is explaining. It is deliberately **not**

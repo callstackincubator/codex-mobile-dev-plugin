@@ -11,6 +11,7 @@ import type { RecordedStep } from "@mobile-dev/shared/test-recording.ts";
 import { MenuRow, OFFER_LABEL, OfferIcon, StepCommandList } from "./step-commands.tsx";
 import { Branch } from "./cascading-menu.tsx";
 import { CODE_TOKEN_CLASS, changedLines, highlightCode } from "../code-highlight.ts";
+import { changeStoredStepCommand, duplicateStoredStep, moveStoredStep, storedStepCommands, storedTestSteps, storedTestUntilSource } from "../stored-test-steps.ts";
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert.tsx";
 import { Button } from "./ui/button.tsx";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover.tsx";
@@ -366,9 +367,9 @@ function TestingControls({ panel, recordable, deviceId, platform }: { panel: Tes
           ? <RecordMenu deviceId={deviceId} platform={platform} recordable={recordable} steps={state.steps.length} />
           : <Button type="button" size="sm" variant="outline" data-testing-record disabled={!recordable}
             onClick={() => testRecorder.start(deviceId, platform)}><CircleIcon />Record</Button>}
-    <Button type="button" size="sm" variant="outline" data-testing-run disabled={!panel.canRun || Boolean(panelState.selectedTestPath)}
+    <Button type="button" size="sm" variant="outline" data-testing-run disabled={panelState.selectedTestPath ? !panel.canRunStored : !panel.canRun}
       title="Save the test, then run it against this device. Recording stops: the runner needs the device to itself."
-      onClick={() => void panel.runTest()}>
+      onClick={() => void (panelState.selectedTestPath ? panel.runStoredTest() : panel.runTest())}>
       {panelState.running ? <LoaderCircleIcon className="animate-spin" /> : <FlaskConicalIcon />}Run test
     </Button>
     {state.resolving && <span className="flex items-center gap-1 text-xs text-muted-foreground" role="status"><LoaderCircleIcon className="animate-spin" />Reading the screen…</span>}
@@ -482,6 +483,86 @@ function TestPreview({ source, run, highlightedLines, playUntil, onPlayUntil }: 
   </code></pre>;
 }
 
+/** A project file's awaited calls can be edited in a temporary working copy. */
+function StoredTestPreview({ panel, source, path, loading }: { panel: TestingPanel; source: string; path: string; loading: boolean }) {
+  const panelState = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
+  const recorder = useSyncExternalStore(testRecorder.subscribe, testRecorder.getSnapshot);
+  const [highlightedLine, setHighlightedLine] = useState<number>();
+  const [draggingLine, setDraggingLine] = useState<number>();
+  const steps = storedTestSteps(source);
+  const playUntil = new Map<number, { stepId: string; label: string }>();
+  if (recorder.run?.state !== "running") {
+    for (const [index, line] of source.split("\n").entries()) {
+      if (/^\s*await\s+.+;\s*$/.test(line)) playUntil.set(index + 1, { stepId: String(index + 1), label: `line ${index + 1}` });
+    }
+  }
+  return <div className="flex min-h-0 flex-1 flex-col gap-2" data-testing-stored-preview>
+    <div className="flex flex-wrap items-center gap-2 text-xs">
+      <span className="min-w-0 flex-1 truncate text-muted-foreground">{path}</span>
+      {panelState.selectedTestStaged && <>
+        <span className="text-amber-600 dark:text-amber-400" role="status">Unsaved edits are temporary and may be lost until you Save.</span>
+        <Button type="button" size="sm" variant="ghost" data-testing-stored-undo disabled={panelState.saving}
+          onClick={() => void panel.undoStoredTest()}>Undo edits</Button>
+        <Button type="button" size="sm" data-testing-stored-save disabled={panelState.saving}
+          onClick={() => void panel.saveStoredTest()}><SaveIcon />Save</Button>
+      </>}
+    </div>
+    {loading ? <p className="flex items-center gap-1 text-xs text-muted-foreground" role="status"><LoaderCircleIcon className="size-3 animate-spin" />Reading test…</p>
+      : <ResizablePanelGroup id="testing-stored-panels" orientation="horizontal" className="min-h-0 flex-1 gap-3" aria-label="Saved test preview and steps">
+        <ResizablePanel id="testing-stored-source" defaultSize="60%" minSize="20%" maxSize="85%">
+          <section className="flex h-full min-h-0 min-w-0 flex-col gap-1.5 overflow-hidden rounded-lg border p-3" aria-label="Preview">
+            <p className="flex items-center gap-2 text-xs font-medium">Preview
+              {recorder.run?.state === "running" && <span role="status" className="text-muted-foreground">Running…</span>}
+              {recorder.run?.state === "passed" && <span role="status" className="text-emerald-600">Passed</span>}
+              {recorder.run?.state === "failed" && <span role="status" className="text-red-600">{recorder.run.error ?? "Failed"}</span>}
+            </p>
+            <TestPreview source={source} run={recorder.run}
+              highlightedLines={highlightedLine === undefined ? undefined : { from: highlightedLine, to: highlightedLine }}
+              playUntil={playUntil} onPlayUntil={panel.canRunStored ? line => void panel.runStoredTest(Number(line)) : undefined} />
+          </section>
+        </ResizablePanel>
+        <ResizableHandle withHandle aria-label="Resize the preview and the steps" />
+        <ResizablePanel id="testing-stored-steps" defaultSize="40%" minSize="15%" maxSize="80%">
+          <section className="flex h-full min-h-0 min-w-0 flex-col gap-2 overflow-hidden rounded-lg border p-3" aria-label="Steps">
+            <p className="flex items-center gap-2 text-xs font-medium">Steps <span className="font-normal text-muted-foreground">{steps.length}</span></p>
+            <ol className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pr-1 text-xs" data-testing-stored-steps>
+              {steps.map((step, index) => <li key={step.line}>
+                <div data-testing-stored-step={step.line} draggable={Boolean(storedTestUntilSource(source, step.line))}
+                  className="group/step flex items-center gap-2 rounded-md border px-2 py-1.5 text-xs"
+                  onMouseEnter={() => setHighlightedLine(step.line)} onMouseLeave={() => setHighlightedLine(undefined)}
+                  onDragStart={event => { setDraggingLine(step.line); event.dataTransfer.effectAllowed = "move"; }}
+                  onDragEnd={() => setDraggingLine(undefined)} onDragOver={event => { if (draggingLine !== undefined) event.preventDefault(); }}
+                  onDrop={event => { event.preventDefault(); if (draggingLine !== undefined) panel.editStoredTest(moveStoredStep(source, draggingLine, step.line)); setDraggingLine(undefined); }}>
+                  <GripVerticalIcon aria-hidden className="size-3.5 shrink-0 cursor-grab text-muted-foreground opacity-40 group-hover/step:opacity-100" />
+                  <span className="w-4 shrink-0 text-right text-muted-foreground">{index + 1}</span>
+                  <button type="button" className="min-w-0 flex-1 truncate text-left font-mono" title={step.label}
+                    onFocus={() => setHighlightedLine(step.line)} onBlur={() => setHighlightedLine(undefined)}>{step.label}</button>
+                  <Popover>
+                    <PopoverTrigger asChild><Button type="button" variant="ghost" size="icon-xs" data-testing-stored-step-menu={step.line}
+                      aria-label={`Edit step ${index + 1}`}><MoreHorizontalIcon /></Button></PopoverTrigger>
+                    <PopoverContent align="end" className="flex w-60 flex-col gap-1 p-1.5" role="menu" aria-label={`Step ${index + 1}`}>
+                      {storedTestUntilSource(source, step.line) ? <>
+                        <MenuRow icon={<CopyIcon className="size-4" />} title="Duplicate this step"
+                          attributes={{ "data-testing-stored-duplicate": String(step.line) }}
+                          onClick={() => panel.editStoredTest(duplicateStoredStep(source, step.line))}>Duplicate</MenuRow>
+                        {storedStepCommands(step).length > 0 && <p className="border-t px-2 pt-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Change command</p>}
+                        {storedStepCommands(step).map(command => <MenuRow key={command.id} title={`Change to ${command.label}`}
+                          attributes={{ "data-testing-stored-command": command.id }}
+                          onClick={() => panel.editStoredTest(changeStoredStepCommand(source, step.line, command.id))}>{command.label}</MenuRow>)}
+                        {storedStepCommands(step).length === 0 && <p className="px-2 py-1 text-xs text-muted-foreground">No compatible commands for this call.</p>}
+                      </> : <p className="px-2 py-1 text-xs text-muted-foreground">This multi-line call can be viewed here and edited in your editor.</p>}
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </li>)}
+              {steps.length === 0 && <li className="rounded-lg border border-dashed px-3 py-5 text-center text-muted-foreground">No awaited calls found in this file.</li>}
+            </ol>
+          </section>
+        </ResizablePanel>
+      </ResizablePanelGroup>}
+  </div>;
+}
+
 /**
  * The recorder: the steps taken so far and the test they emit. The taps themselves are captured on
  * the mirror canvas by the simulator panel, which holds the device connection; this is the readout
@@ -541,12 +622,8 @@ function TestingRecorder({ panel, recordable, deviceId }: { panel: TestingPanel;
     }
   }
   const playUntilStep = useCallback((stepId: string) => { void panel.runTest({ untilStepId: stepId }); }, [panel]);
-  if (panelState.selectedTestPath) return <div className="flex min-h-0 flex-1 flex-col gap-2" data-testing-stored-preview>
-    <p className="text-xs text-muted-foreground">{panelState.selectedTestPath} · Project file preview</p>
-    {panelState.loadingTest
-      ? <p className="flex items-center gap-1 text-xs text-muted-foreground" role="status"><LoaderCircleIcon className="size-3 animate-spin" />Reading test…</p>
-      : <TestPreview source={panelState.selectedTestSource} />}
-  </div>;
+  if (panelState.selectedTestPath) return <StoredTestPreview key={panelState.selectedTestPath} panel={panel} source={panelState.selectedTestSource}
+    path={panelState.selectedTestPath} loading={panelState.loadingTest} />;
   return <div className="flex min-h-0 flex-1 flex-col gap-3">
     {!recordable && !recording && !panelState.agent?.active && <p className="text-xs text-muted-foreground">Recording needs a booted iOS simulator or Android emulator in the mirror.</p>}
     {panelState.agent?.active && <p className="text-xs text-muted-foreground">

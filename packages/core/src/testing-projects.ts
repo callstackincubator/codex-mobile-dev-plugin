@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
-import { homedir } from "node:os";
+import { createHash, randomUUID } from "node:crypto";
+import { homedir, tmpdir } from "node:os";
 import { lstat, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
@@ -340,6 +340,66 @@ export async function readTestFile(projectPath: string, relativePath: string): P
   if (!info?.isFile()) throw new ExpectedOperationError("invalid_input", "That test file is no longer there.");
   if (info.size > MAX_TEST_BYTES) throw new ExpectedOperationError("invalid_input", "That test is too large to preview.");
   return readFile(target, "utf-8");
+}
+
+type StagedTest = { projectPath: string; relativePath: string; originalHash: string; source: string };
+const STAGED_TESTS_DIRECTORY = join(tmpdir(), "mobile-dev-testing-edits");
+
+function sourceHash(source: string): string { return createHash("sha256").update(source).digest("hex"); }
+function stagedPath(projectPath: string, relativePath: string): string {
+  return join(STAGED_TESTS_DIRECTORY, `${sourceHash(`${projectPath}\0${relativePath}`)}.json`);
+}
+
+async function stagedTest(projectPath: string, relativePath: string): Promise<StagedTest | undefined> {
+  const source = await readFile(stagedPath(projectPath, relativePath), "utf-8").catch(() => undefined);
+  if (!source) return;
+  try {
+    const staged = JSON.parse(source) as StagedTest;
+    if (staged.projectPath === projectPath && staged.relativePath === relativePath
+      && /^[a-f0-9]{64}$/.test(staged.originalHash) && typeof staged.source === "string") return staged;
+  } catch { /* An incomplete temp file is not a test. */ }
+}
+
+/** Opens the original plus any working copy left by an earlier panel session. */
+export async function previewTestFile(projectPath: string, relativePath: string) {
+  const original = await readTestFile(projectPath, relativePath);
+  const staged = await stagedTest(projectPath, relativePath);
+  return { source: staged?.source ?? original, originalHash: staged?.originalHash ?? sourceHash(original), staged: Boolean(staged) };
+}
+
+/** Replaces only the temporary copy. The project file stays unchanged until Save. */
+export async function stageTestFile(projectPath: string, relativePath: string, originalHash: string, source: string): Promise<void> {
+  await readTestFile(projectPath, relativePath);
+  if (!/^[a-f0-9]{64}$/.test(originalHash)) throw new ExpectedOperationError("invalid_input", "Open the test before editing it.");
+  if (Buffer.byteLength(source, "utf-8") > MAX_TEST_BYTES) throw new ExpectedOperationError("invalid_input", "That test is too large to save.");
+  const path = stagedPath(projectPath, relativePath);
+  const existing = await stagedTest(projectPath, relativePath);
+  if (existing && existing.originalHash !== originalHash) throw new ExpectedOperationError("invalid_input", "The working copy changed. Reopen the test before editing it.");
+  await mkdir(STAGED_TESTS_DIRECTORY, { recursive: true, mode: 0o700 });
+  const temporary = `${path}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporary, JSON.stringify({ projectPath, relativePath, originalHash, source } satisfies StagedTest), { mode: 0o600 });
+    await rename(temporary, path);
+  } finally { await unlink(temporary).catch(() => undefined); }
+}
+
+/** Commits the working copy only if nobody changed the project file after editing began. */
+export async function saveStagedTestFile(projectPath: string, relativePath: string): Promise<{ path: string; originalHash: string }> {
+  const staged = await stagedTest(projectPath, relativePath);
+  if (!staged) throw new ExpectedOperationError("invalid_input", "There are no staged edits for this test.");
+  const original = await readTestFile(projectPath, relativePath);
+  if (sourceHash(original) !== staged.originalHash)
+    throw new ExpectedOperationError("invalid_input", "The test changed on disk since it was opened. Reopen it before saving.");
+  const written = await writeTestFile(projectPath, relativePath, staged.source, true);
+  await unlink(stagedPath(projectPath, relativePath));
+  return { path: written.path, originalHash: sourceHash(staged.source) };
+}
+
+/** Undo drops the working copy and returns the original source. */
+export async function discardStagedTestFile(projectPath: string, relativePath: string): Promise<{ source: string; originalHash: string }> {
+  const original = await readTestFile(projectPath, relativePath);
+  await unlink(stagedPath(projectPath, relativePath)).catch(() => undefined);
+  return { source: original, originalHash: sourceHash(original) };
 }
 
 /**

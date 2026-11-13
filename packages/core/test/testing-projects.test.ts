@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { deleteTestFile, findConfig, inspectProject, listTestFiles, parseTargets, readTestFile, TestingProjectChoices, writeTestFile } from "../src/testing-projects.ts";
+import { deleteTestFile, discardStagedTestFile, findConfig, inspectProject, listTestFiles, parseTargets, previewTestFile, readTestFile, saveStagedTestFile, stageTestFile, TestingProjectChoices, writeTestFile } from "../src/testing-projects.ts";
 
 const CONFIG = `import { mobile } from "@e2e-dev/mobile";
 import type { E2EConfig } from "e2e";
@@ -164,6 +164,39 @@ test("a project test can be previewed without reading outside tests", async () =
     await assert.rejects(readTestFile(path, "tests/../../outside.e2e.ts"), /file name|tests\//);
     await writeFile(join(path, "tests", "oversized.e2e.ts"), "x".repeat(256 * 1024 + 1));
     await assert.rejects(readTestFile(path, "tests/oversized.e2e.ts"), /too large/);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("saved test edits stay temporary until Save, and Undo restores the project file", async () => {
+  const { root, path } = await project();
+  try {
+    const relativePath = "tests/flow.e2e.ts";
+    await writeTestFile(path, relativePath, SOURCE);
+    const opened = await previewTestFile(path, relativePath);
+    await stageTestFile(path, relativePath, opened.originalHash, "edited\n");
+    assert.equal(await readTestFile(path, relativePath), SOURCE, "staging never writes the project file");
+    assert.deepEqual(await previewTestFile(path, relativePath), { source: "edited\n", originalHash: opened.originalHash, staged: true });
+    await discardStagedTestFile(path, relativePath);
+    assert.equal((await previewTestFile(path, relativePath)).source, SOURCE);
+
+    await stageTestFile(path, relativePath, opened.originalHash, "saved\n");
+    await saveStagedTestFile(path, relativePath);
+    assert.equal(await readTestFile(path, relativePath), "saved\n");
+    assert.equal((await previewTestFile(path, relativePath)).staged, false);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("Save refuses to replace a project test changed outside the panel", async () => {
+  const { root, path } = await project();
+  try {
+    const relativePath = "tests/flow.e2e.ts";
+    await writeTestFile(path, relativePath, SOURCE);
+    const opened = await previewTestFile(path, relativePath);
+    await stageTestFile(path, relativePath, opened.originalHash, "panel edit\n");
+    await writeTestFile(path, relativePath, "external edit\n", true);
+    await assert.rejects(saveStagedTestFile(path, relativePath), /changed on disk/);
+    assert.equal(await readTestFile(path, relativePath), "external edit\n");
+    await discardStagedTestFile(path, relativePath);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
