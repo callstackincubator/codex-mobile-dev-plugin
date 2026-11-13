@@ -1,18 +1,20 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { changeStoredStepCommand, duplicateStoredStep, moveStoredStep, removeStoredStep, storedStepCommands, storedTestSteps, storedTestUntilSource } from "../src/stored-test-steps.ts";
+import { changeStoredStepCommand, duplicateStoredStep, moveStoredStep, removeStoredStep, storedStepCommands, storedTestCallLines, storedTestSteps, storedTestUntilSource } from "../src/stored-test-steps.ts";
 
 test("saved tests show awaited calls at their source lines", () => {
-  assert.deepEqual(storedTestSteps(`import { test } from "@e2e-dev/mobile";
+  const source = `import { test } from "@e2e-dev/mobile";
 test("flow", async ({ app, screen }) => {
   await app.open();
   // await screen.tap(); is only a comment
   await screen.getByRole("button", "Continue").tap();
   await expect(screen.getByText("Done")).toBeVisible();
-});`), [
+});`;
+  assert.deepEqual(storedTestSteps(source), [
     { line: 5, label: 'screen.getByRole("button", "Continue").tap()' },
     { line: 6, label: 'expect(screen.getByText("Done")).toBeVisible()' },
   ]);
+  assert.deepEqual(storedTestCallLines(source), [3, 5, 6], "live progress includes app.open and excludes comments");
 });
 
 test("reorder, duplicate and command changes edit source without losing its wrapper", () => {

@@ -887,13 +887,13 @@ export class TestRecorder {
    *
    * A `step` event has no source position — only the finished report does — but it has the step's
    * index within its test, and the runner reports one step per awaited call in order, so the index
-   * is the position in `EmittedTest.calls`. A step that has started is running; one that has ended
-   * takes its own status. The report reconciles all of it at the end.
+   * is the position in the supplied call lines. Recorded flows default to `EmittedTest.calls`;
+   * saved project tests supply the awaited lines parsed from their source. A step that has started
+   * is running; one that has ended takes its own status. The report reconciles all of it at the end.
    */
-  applyRunProgress(entries: readonly { stepIndex: number; phase: "start" | "end"; status?: string; error?: string }[]) {
+  applyRunProgress(entries: readonly { stepIndex: number; phase: "start" | "end"; status?: string; error?: string }[], calls = this.emitted.calls) {
     const run = this.snapshot.run;
     if (!run || run.state !== "running") return;
-    const calls = this.emitted.calls;
     const lines: Record<number, RunLineMark> = {};
     let error: string | undefined;
     for (const entry of entries) {

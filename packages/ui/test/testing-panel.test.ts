@@ -116,6 +116,47 @@ test("Run saves, hands the device back, and only then runs", async () => {
   panel.dispose();
 });
 
+test("a project test polls live progress against its own source lines", async () => {
+  const calls: { name: string; arguments: Record<string, unknown> }[] = [];
+  let finishRun!: (value: unknown) => void;
+  const pendingRun = new Promise(resolve => { finishRun = resolve; });
+  const app = {
+    async callServerTool({ name, arguments: input }: { name: string; arguments: Record<string, unknown> }) {
+      calls.push({ name, arguments: input });
+      if (name === "mobile_testing_run_test") {
+        const structuredContent = await pendingRun;
+        return { content: [], structuredContent };
+      }
+      if (name === "mobile_testing_run_progress") return { content: [], structuredContent: { progress: [
+        { stepIndex: 0, phase: "start" }, { stepIndex: 0, phase: "end", status: "passed" },
+        { stepIndex: 1, phase: "start" },
+      ] } };
+      return { content: [], structuredContent: {} };
+    },
+  } as unknown as HostBridge;
+  const panel = new TestingPanel(app, deviceApps);
+  panel.setAvailable(true);
+  const source = 'test("stored", async ({ app, screen }) => {\n  await app.open();\n  await screen.getByText("Done").tap();\n});';
+  (panel as unknown as { update(fields: Record<string, unknown>): void }).update({
+    projectPath: PROJECT, selectedTestPath: "tests/stored.e2e.ts", selectedTestSource: source, configPath: `${PROJECT}/e2e.config.ts`,
+  });
+
+  const running = panel.runStoredTest();
+  const deadline = Date.now() + 1_500;
+  while (!calls.some(call => call.name === "mobile_testing_run_progress") && Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, 25));
+  }
+
+  assert.ok(calls.some(call => call.name === "mobile_testing_run_progress"), "project runs poll while the runner is in flight");
+  assert.deepEqual(testRecorder.getSnapshot().run?.lines, { 2: "passed", 3: "running" },
+    "runner indexes map to the awaited calls in the saved project's source");
+  finishRun({ status: "passed", exitCode: 0, steps: [{ line: 2, status: "passed" }, { line: 3, status: "passed" }] });
+  await running;
+
+  testRecorder.clearRun();
+  panel.dispose();
+});
+
 test("Play until here runs the flow cut short, and never writes the test", async () => {
   const calls: { name: string; arguments: Record<string, unknown> }[] = [];
   const panel = new TestingPanel(host({

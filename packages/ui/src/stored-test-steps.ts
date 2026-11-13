@@ -1,6 +1,11 @@
 /** A saved test has source but no recorder step data; edit its awaited call lines in a working copy. */
 export type StoredTestStep = { line: number; label: string };
 
+/** Every awaited call line, including app.open, in the order the runner indexes them. */
+export function storedTestCallLines(source: string): number[] {
+  return source.split("\n").flatMap((line, index) => /^\s*await\b/.test(line) ? [index + 1] : []);
+}
+
 export function storedTestSteps(source: string): StoredTestStep[] {
   return source.split("\n").flatMap((line, index) => {
     const expression = line.match(/^\s*await\s+(.+?)\s*;?\s*$/)?.[1];

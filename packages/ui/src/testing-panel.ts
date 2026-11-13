@@ -7,7 +7,7 @@ import { isRecordableDevice, recordablePlatform } from "@mobile-dev/shared/panel
 import type { ScreenComponent } from "@mobile-dev/shared/screen-annotations.ts";
 import { screenSize } from "@mobile-dev/shared/screen-annotations.ts";
 import { testFileSlug } from "@mobile-dev/shared/test-recording.ts";
-import { storedTestUntilSource } from "./stored-test-steps.ts";
+import { storedTestCallLines, storedTestUntilSource } from "./stored-test-steps.ts";
 import type { RecordedStep } from "@mobile-dev/shared/test-recording.ts";
 import type { TestDraftSummary } from "@mobile-dev/shared/test-drafts.ts";
 
@@ -847,7 +847,7 @@ export class TestingPanel {
    * One poll of the run's live progress. Failures are silent: the run is still going, the report
    * will say what happened, and a progress read that missed is not worth an error banner.
    */
-  private async pollRunProgress() {
+  private async pollRunProgress(callLines?: readonly number[]) {
     try {
       const response = await this.call("mobile_testing_run_progress", {}, 5_000);
       const data = object(response.structuredContent) ?? {};
@@ -860,7 +860,7 @@ export class TestingPanel {
           ...(text(item.status) ? { status: text(item.status) } : {}),
           ...(text(item.error) ? { error: text(item.error) } : {}),
         }));
-      testRecorder.applyRunProgress(entries);
+      testRecorder.applyRunProgress(entries, callLines);
     } catch {
       // See above.
     }
@@ -1006,6 +1006,10 @@ export class TestingPanel {
     testRecorder.beginRun(untilLine);
     if (untilLine !== undefined) countUiEvent("ui.testing.run_until");
     const startedAt = performance.now(), telemetryContext = getUiTelemetryAttributes();
+    // A saved project test has no recorder steps to supply `emitted.calls`, so map the runner's
+    // step indexes against the awaited calls in the source currently shown in the preview.
+    const callLines = storedTestCallLines(source);
+    const poll = setInterval(() => { void this.pollRunProgress(callLines); }, 400);
     try {
       await this.stageWrite;
       await this.call("mobile_testing_release_device", {}, 30_000).catch(() => undefined);
@@ -1029,6 +1033,7 @@ export class TestingPanel {
       this.update({ error: message });
       captureUiError(error, "testing.run", telemetryContext);
     } finally {
+      clearInterval(poll);
       if (getUiTelemetryAttributes() === telemetryContext) recordUiTiming("ui.testing.run", performance.now() - startedAt);
       this.update({ running: false });
       testRecorder.invalidate();
