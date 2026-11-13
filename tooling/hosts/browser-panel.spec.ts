@@ -97,6 +97,21 @@ test.describe("Browser panels", { tag: "@browser" }, () => {
     }
   });
 
+  test("an agent clear leaves the panel's device context readable", async ({ page, browserPanel }) => {
+    const read = async () => JSON.stringify((await browserPanel.host.callTool({ name: "mobile_read_panel_context", arguments: {} })).content);
+    await page.goto(browserPanel.url);
+    await expect(page.frameLocator("iframe").locator("#ios-panel")).toBeVisible();
+    await expect.poll(read).toContain("Mobile Dev browser panel.");
+    // The clear only forgets what was read, so pair each attempt with a fresh read.
+    await expect.poll(async () => {
+      await read();
+      const result = await browserPanel.host.callTool({ name: "mobile_clear_panel_context", arguments: {} });
+      return JSON.stringify(result.content);
+    }).toContain("Cleared the shared context of 1");
+    // The page learns of the clear from its poll and the panel shares the devices again.
+    await expect.poll(read, { timeout: 10_000 }).toContain("Mobile Dev browser panel.");
+  });
+
   test("an unrelated tool cannot run from a panel link", async ({ page, browserPanel }) => {
     const url = new URL(browserPanel.url);
     url.searchParams.set("tool", "mobile_show_devices");

@@ -345,6 +345,7 @@ test("standard context supports logs, local removal and complete chat messages",
   const messages: Parameters<App["sendMessage"]>[0][] = [];
   const context = new PanelContext({
     getHostCapabilities: () => ({ message: { text: {} }, updateModelContext: { text: {}, structuredContent: {} } }),
+    getHostContext: () => ({}),
     async updateModelContext(params) { updates.push(params); return {}; },
     async sendMessage(params) { messages.push(params); return {}; },
   } as App, () => undefined);

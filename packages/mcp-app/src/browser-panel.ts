@@ -3,9 +3,10 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport, StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { PLUGIN_VERSION } from "@mobile-dev/shared/version.ts";
-import { PANEL_PAGE_META } from "@mobile-dev/shared/panel-target.ts";
+import { CONTEXT_CLEARS, PANEL_PAGE_META } from "@mobile-dev/shared/panel-target.ts";
 
 const dark = matchMedia("(prefers-color-scheme: dark)");
+const CLEARS_POLL_MS = 2000;
 const DISCONNECTED = "Mobile Dev disconnected from its chat session. Ask the agent to open Mobile Dev again.";
 const EXPIRED = "Mobile Dev's browser connection expired. Reload this page to reconnect.";
 
@@ -34,16 +35,25 @@ async function open() {
     fetch: (url, options) => fetch(url, { ...options, keepalive: options?.method === "DELETE" }),
   });
   let bridge: AppBridge | undefined;
+  let bridgeReady = false;
   let heartbeat: ReturnType<typeof setInterval> | undefined;
+  let clearsPoll: ReturnType<typeof setInterval> | undefined;
+  let polling = false;
   let startup: ReturnType<typeof setTimeout> | undefined;
   let disposed = false;
   let checking = false;
   let contextChanged = () => {};
+  // How many times the agent has cleared this tab's context, as the server counts them.
+  let clears = 0;
+  // The count this tab's current content was stored under. A clear the server made before
+  // the store cannot have dropped that content, so the poll ignores counts up to it.
+  let storedClears = 0;
 
   function dispose() {
     if (disposed) return;
     disposed = true;
     clearInterval(heartbeat);
+    clearInterval(clearsPoll);
     clearTimeout(startup);
     dark.removeEventListener("change", contextChanged);
     removeEventListener("pagehide", hide);
@@ -69,6 +79,32 @@ async function open() {
       const expired = error instanceof StreamableHTTPError && error.code === 404;
       stopped(expired ? EXPIRED : DISCONNECTED);
     } finally { checking = false; }
+  }
+  // The server cannot push to the page (it keeps no idle stream), so the page asks whether the
+  // agent cleared the context it read. A failed poll is left to the heartbeat to report.
+  async function pollClears() {
+    const sessionId = transport.sessionId;
+    if (disposed || polling || sessionId === undefined) return;
+    polling = true;
+    try {
+      const response = await fetch(new URL("context", location.href), { headers: { "mcp-session-id": sessionId } });
+      if (response.status === 404) return stopped(EXPIRED);
+      if (response.ok === false) return;
+      const body: unknown = await response.json();
+      const count = typeof body === "object" && body !== null && "clears" in body ? body.clears : undefined;
+      if (typeof count === "number" && count > storedClears && count !== clears) { clears = count; contextChanged(); }
+    } catch { /* the heartbeat reports a stopped server */ }
+    finally { polling = false; }
+  }
+  // The agent can only clear content the server holds, so the page polls only while this
+  // tab has stored some (the server keeps no idle stream to push on).
+  function watchClears(shared: boolean) {
+    if (disposed || shared === false) {
+      clearInterval(clearsPoll);
+      clearsPoll = undefined;
+      return;
+    }
+    clearsPoll ??= setInterval(() => { void pollClears(); }, CLEARS_POLL_MS);
   }
   client.onerror = error => {
     if (error instanceof TypeError) stopped(DISCONNECTED);
@@ -101,7 +137,10 @@ async function open() {
     const host = document.documentElement.dataset.telemetryHost ?? "other";
     // Advertise only capabilities this browser can fulfill. Chat messages need a
     // host-owned bridge; model context goes to the server, where the agent reads it.
-    const hostContext = context();
+    // Passed to the panel with every host context, so a view can tell a clear from the agent
+    // from its own state and drop the notes it still shows.
+    const withClears = (hostContext: McpUiHostContext): McpUiHostContext => ({ ...hostContext, [CONTEXT_CLEARS]: clears });
+    const hostContext = withClears(context());
     const capabilities = { serverTools: {}, serverResources: {}, openLinks: {}, updateModelContext: { text: {}, image: {} } };
     bridge = new AppBridge(client, { name: host, version: PLUGIN_VERSION }, capabilities, { hostContext });
     bridge.onupdatemodelcontext = async ({ content }) => {
@@ -113,6 +152,10 @@ async function open() {
       });
       if (response.status === 404) stopped(EXPIRED);
       if (response.ok === false) throw new Error(`Mobile Dev could not share this with the chat (${response.status}).`);
+      const body: unknown = await response.json().catch(() => undefined);
+      const count = typeof body === "object" && body !== null && "clears" in body ? body.clears : undefined;
+      if (typeof count === "number" && count > storedClears) storedClears = count;
+      watchClears((content ?? []).length > 0);
       return {};
     };
     bridge.onopenlink = async ({ url }) => {
@@ -125,8 +168,9 @@ async function open() {
     };
     bridge.onrequestdisplaymode = async () => ({ mode: "inline" });
     contextChanged = () => {
-      const updated = context();
-      bridge?.setHostContext(updated);
+      // setHostContext notifies over the bridge, which must be connected first.
+      if (bridgeReady === false || disposed) return;
+      bridge?.setHostContext(withClears(context()));
     };
     dark.addEventListener("change", contextChanged);
     const initialized = new Promise<void>((resolve, reject) => {
@@ -139,6 +183,7 @@ async function open() {
     const frameWindow = frame.contentWindow!;
     const frameTransport = new PostMessageTransport(frameWindow, frameWindow);
     await bridge.connect(frameTransport);
+    bridgeReady = true;
     frame.srcdoc = content.text;
     await initialized;
     await bridge.sendToolInput({ arguments: target });
