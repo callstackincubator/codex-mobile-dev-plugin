@@ -100,6 +100,7 @@ jobs:
           npm run build:release
           npm run package:release
           npm run package:claude -- --release
+          npm run package:antigravity -- --release
 
       - name: Validate the extracted release ZIP
         env:
@@ -118,6 +119,14 @@ jobs:
           mkdir "$RUNNER_TEMP/mobile-dev-claude"
           unzip -q "release/mobile-dev-$RELEASE_VERSION-claude-plugin-darwin-arm64.zip" -d "$RUNNER_TEMP/mobile-dev-claude"
           npm run test:claude -- "$RUNNER_TEMP/mobile-dev-claude"
+
+      - name: Validate the extracted Antigravity package
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          mkdir "$RUNNER_TEMP/mobile-dev-antigravity"
+          unzip -q "release/mobile-dev-$RELEASE_VERSION-antigravity-plugin-darwin-arm64.zip" -d "$RUNNER_TEMP/mobile-dev-antigravity"
+          npm run test:antigravity -- "$RUNNER_TEMP/mobile-dev-antigravity"
 
       - name: Upload Sentry source maps and native symbols
         env:
@@ -251,6 +260,10 @@ jobs:
             branch: claude
             package: claude-plugin-darwin-arm64.zip
             script: apps/claude/tooling/publish-release.mjs
+          - host: antigravity
+            branch: antigravity
+            package: antigravity-plugin-darwin-arm64.zip
+            script: apps/antigravity/tooling/publish-release.mjs
     concurrency:
       group: release-${{ matrix.branch }}
       cancel-in-progress: false
