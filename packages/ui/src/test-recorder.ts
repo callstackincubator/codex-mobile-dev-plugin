@@ -120,6 +120,8 @@ export type TestRecorderSnapshot = {
    */
   agentDeviceId: string;
   steps: RecordedStep[];
+  /** Source edited directly in the preview; supersedes the generated source. */
+  sourceOverride?: string;
   title: string;
   /** Bumped by every change to what would be written, so the panel can tell saved from dirty. */
   revision: number;
@@ -287,7 +289,7 @@ export class TestRecorder {
 
   private update(fields: Partial<TestRecorderSnapshot>) {
     // Anything that changes the emitted source is a new revision; the controls are not.
-    const changed = fields.steps !== undefined || (fields.title !== undefined && fields.title !== this.snapshot.title);
+    const changed = fields.steps !== undefined || fields.sourceOverride !== undefined || (fields.title !== undefined && fields.title !== this.snapshot.title);
     // A run's marks are tied to lines of the file as it was emitted, so the first edit to the
     // steps — recorded, deleted, dragged, duplicated, re-pointed — moves the lines out from under
     // them. They go; the verdict and the duration stay, because those are about a run that did
@@ -369,7 +371,7 @@ export class TestRecorder {
     if (!began && sameSteps && (title === undefined || title === this.snapshot.title)) return;
     this.update({
       agentDeviceId: deviceId, recordingDeviceId: deviceId, recordingPlatform: platform, error: "", menu: undefined,
-      steps: [...steps],
+      steps: [...steps], sourceOverride: undefined,
       ...(began ? { flowId: newFlowId() } : {}),
       ...(title ? { title } : {}),
     });
@@ -392,7 +394,16 @@ export class TestRecorder {
     if (reason === "aborted") countUiEvent("ui.testing.agent_session_abort");
   }
 
-  get source() { return this.emitted.source; }
+  get source() { return this.snapshot.sourceOverride ?? this.emitted.source; }
+
+  /** Switching to code editing makes source the authority for this flow. */
+  editSource(source: string) {
+    if (source === this.source || this.snapshot.agentDeviceId) return;
+    this.stop();
+    this.clearRun();
+    this.update({ sourceOverride: source });
+    countUiEvent("ui.testing.source_edit");
+  }
 
   /**
    * Begins recording. A recording that was already saved starts a new flow rather than appending
@@ -400,7 +411,7 @@ export class TestRecorder {
    * of a finished test is never what was meant.
    */
   start(deviceId: string, platform: DevicePlatform, keepSteps = false) {
-    if (!deviceId || !this.reader || this.snapshot.agentDeviceId) return;
+    if (!deviceId || !this.reader || this.snapshot.agentDeviceId || (keepSteps && this.snapshot.sourceOverride !== undefined)) return;
     const had = this.snapshot.steps.length > 0;
     this.invalidate();
     this.clearHover();
@@ -411,7 +422,7 @@ export class TestRecorder {
     // A flow that is not being resumed is a different recording, however much of the old one is
     // still on screen a moment before. Anything holding on to the last flow — the panel's kept
     // draft above all — has to be told, or the next thing written lands on the wrong one.
-    this.update({ recordingDeviceId: deviceId, recordingPlatform: platform, error: "", menu: undefined, preparing: true, ...(keepSteps ? {} : { steps: [], flowId: newFlowId() }) });
+    this.update({ recordingDeviceId: deviceId, recordingPlatform: platform, error: "", menu: undefined, preparing: true, ...(keepSteps ? {} : { steps: [], sourceOverride: undefined, flowId: newFlowId() }) });
     countUiEvent("ui.testing.record_start");
     // The first tree read is what makes an element selectable, and it is the slow part: the
     // session attaches to the app and the tree is projected before anything can be named. Warming
@@ -534,25 +545,25 @@ export class TestRecorder {
   /**
    * Puts a kept recording back in the panel, without arming the recorder.
    *
-   * The flow comes back as steps rather than as the file it would emit, so it is still editable:
-   * the generated source is an output and nothing reads it back. Nothing starts recording — the
+   * A recorded flow comes back as steps; a code-edited flow also restores its source override.
+   * Nothing starts recording — the
    * user reopened a flow to look at it, and a tap on the mirror a moment later must not append to
    * it — and any run marks go, because they were a verdict on whatever was in the list before.
    */
-  restore(steps: readonly RecordedStep[], title?: string) {
+  restore(steps: readonly RecordedStep[], title?: string, source?: string) {
     if (this.snapshot.agentDeviceId) return;
     this.clearHover();
     this.clearRun();
     this.update({
       recordingDeviceId: "", recordingPlatform: "", resolving: false, preparing: false, error: "", menu: undefined,
-      steps: [...steps], flowId: newFlowId(), ...(title ? { title } : {}),
+      steps: [...steps], sourceOverride: source, flowId: newFlowId(), ...(title ? { title } : {}),
     });
     countUiEvent("ui.testing.draft_restore");
   }
 
   setTitle(title: string) { this.update({ title: title.trim() || DEFAULT_TITLE }); }
   removeStep(id: string) { this.update({ steps: this.snapshot.steps.filter(step => step.id !== id) }); }
-  clearSteps() { this.update({ steps: [], flowId: newFlowId() }); }
+  clearSteps() { this.update({ steps: [], sourceOverride: undefined, flowId: newFlowId() }); }
 
   /**
    * Appends a copy of one step at the end of the list.
@@ -846,6 +857,7 @@ export class TestRecorder {
    * one line of the header the runner reports, so it marks like any other.
    */
   emittedThrough(stepId: string): { source: string; untilLine: number } | undefined {
+    if (this.snapshot.sourceOverride !== undefined) return;
     const steps = this.snapshot.steps;
     if (stepId === OPEN_STEP) {
       const emitted = emitE2eTestLines([], { title: this.snapshot.title });

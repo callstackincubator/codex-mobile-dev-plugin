@@ -198,11 +198,12 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
       fileName: z.string().max(256).optional(),
       origin: z.enum(["user", "agent"]).optional(),
       steps: z.array(recordedStepSchema).max(MAX_DRAFT_STEPS),
+      source: z.string().max(256 * 1024).optional(),
     },
     // The plugin's own state, replaced wholesale by the panel that owns it.
     annotations: write,
     _meta: appVisibility,
-  }, safe(async (input: { id?: string; projectPath: string; title: string; fileName?: string; origin?: "user" | "agent"; steps: TestDraft["steps"] }) => {
+  }, safe(async (input: { id?: string; projectPath: string; title: string; fileName?: string; origin?: "user" | "agent"; steps: TestDraft["steps"]; source?: string }) => {
     const draft = await drafts.save({ ...input, steps: input.steps });
     return dataResult({ id: draft.id, updatedAt: draft.updatedAt });
   }));

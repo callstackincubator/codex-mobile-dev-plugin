@@ -756,12 +756,13 @@ test("a selected project test offers temporary step edits and per-line runs", as
   const { act, createElement } = await import("react");
   const { createRoot } = await import("react-dom/client");
   const edits: string[] = [];
+  let saves = 0;
   const panel = { ...panelStub({
     tests: [{ relativePath: "tests/flow.e2e.ts", name: "flow.e2e.ts", updatedAt: "2026-01-01T00:00:00.000Z", sizeBytes: 30 }],
     selectedTestPath: "tests/flow.e2e.ts",
     selectedTestSource: 'test("stored", async ({ app, screen }) => {\n  await app.open();\n  await screen.getByText("Done").tap();\n});',
     loadingTest: false, selectedTestStaged: true,
-  }), editStoredTest: (source: string) => { edits.push(source); } };
+  }), editStoredTest: (source: string) => { edits.push(source); }, saveStoredTest: async () => { saves += 1; } };
   const root = createRoot(dom.window.document.getElementById("root")!);
   await act(async () => { root.render(createElement(TestingView, { panel, deviceApps: { subscribe: () => () => undefined, getSnapshot: () => DEVICE_SNAPSHOT } })); });
   onTeardown(async () => {
@@ -776,13 +777,54 @@ test("a selected project test offers temporary step edits and per-line runs", as
   assert.doesNotMatch(query("[data-testing-stored-step]")?.textContent ?? "", /:3/, "the source line is not repeated in the step row");
   assert.ok(query("[data-testing-stored-save]"));
   assert.ok(query("[data-testing-stored-undo]"));
+  await act(async () => { (query("[data-testing-source-edit]") as HTMLElement).click(); });
+  assert.ok(query("[data-testing-source-input]"), "the whole source opens for editing");
+  assert.equal(query("[data-testing-source-line-number]")?.textContent, "1");
+  assert.ok(query("[data-testing-source-highlight] .text-emerald-600"), "strings retain preview syntax colors");
+  await act(async () => { (query("[data-testing-source-cancel]") as HTMLElement).click(); });
+  assert.equal(query("[data-testing-source-input]"), null, "Cancel restores the preview");
+  await act(async () => { (query("[data-testing-source-edit]") as HTMLElement).click(); });
+  const input = query("[data-testing-source-input]") as HTMLTextAreaElement;
+  const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype, "value")!.set!;
+  await act(async () => { setter.call(input, input.value.replace("Done", "Saved")); input.dispatchEvent(new dom.window.Event("input", { bubbles: true })); });
+  assert.match(query("[data-testing-source-highlight]")?.textContent ?? "", /Saved/);
+  await act(async () => { (query("[data-testing-source-save]") as HTMLElement).click(); });
+  assert.match(edits[0] ?? "", /getByText\("Saved"\)/);
+  assert.equal(saves, 1, "Save writes the edited project test");
   await act(async () => { (query("[data-testing-stored-step-menu]") as HTMLElement).click(); });
   await act(async () => { (query("[data-testing-stored-duplicate]") as HTMLElement).click(); });
-  assert.equal(edits.length, 1, "duplicate edits the working copy");
+  assert.equal(edits.length, 2, "duplicate edits the working copy");
   assert.equal(query("[data-testing-editor-pane]"), null);
   assert.equal(query("[data-testing-run]")?.hasAttribute("disabled"), false);
   assert.ok(query("[data-testing-new-from-preview]"));
   testRecorder.clearSteps();
+});
+
+test("editing a recording makes its preview the source of truth", async t => {
+  const { module: { TestingView, testRecorder }, dom, onTeardown } = await renderEnvironment<any>(t, {
+    exports: 'export { TestingView } from "./packages/ui/src/components/testing-view.tsx";\n'
+      + 'export { testRecorder } from "./packages/ui/src/test-recorder.ts";',
+    slug: "testing-recording-source-edit",
+    extraGlobals: { crypto: { randomUUID: () => `id-${Math.random()}` } },
+  });
+  const { act, createElement } = await import("react");
+  const { createRoot } = await import("react-dom/client");
+  testRecorder.restore([{ id: "step-1", label: "Tap Done", kind: "tap", selector: { kind: "text", text: "Done" } }]);
+  let saved = "";
+  const panel = { ...panelStub(), saveTest: async () => { saved = testRecorder.source; } };
+  const root = createRoot(dom.window.document.getElementById("root")!);
+  await act(async () => { root.render(createElement(TestingView, { panel, deviceApps: { subscribe: () => () => undefined, getSnapshot: () => DEVICE_SNAPSHOT } })); });
+  onTeardown(async () => { await act(async () => { root.unmount(); }); testRecorder.clearSteps(); });
+  const query = (selector: string) => dom.window.document.querySelector(selector);
+  await act(async () => { (query("[data-testing-source-edit]") as HTMLElement).click(); });
+  const input = query("[data-testing-source-input]") as HTMLTextAreaElement;
+  const value = input.value.replace('getByText("Done")', 'getByText("Saved")');
+  const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype, "value")!.set!;
+  await act(async () => { setter.call(input, value); input.dispatchEvent(new dom.window.Event("input", { bubbles: true })); });
+  await act(async () => { (query("[data-testing-source-save]") as HTMLElement).click(); });
+  assert.equal(saved, value);
+  assert.match(query("[data-testing-source-steps]")?.textContent ?? "", /getByText\("Saved"\)/);
+  assert.ok(query("[data-testing-new-from-source]"));
 });
 
 test("moving from one step to the next hands the highlight over without dimming the first", async t => {

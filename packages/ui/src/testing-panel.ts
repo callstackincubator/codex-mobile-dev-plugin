@@ -643,7 +643,7 @@ export class TestingPanel {
     const { available, projectPath, agent } = this.snapshot;
     const recorder = testRecorder.getSnapshot();
     if ((this.disposed && !this.flushing) || !available || !projectPath || agent?.active) return;
-    if (recorder.steps.length === 0 || recorder.revision === this.draftRevision) return;
+    if ((recorder.steps.length === 0 && !recorder.sourceOverride) || recorder.revision === this.draftRevision) return;
     if (recorder.revision === this.snapshot.savedRevision) return;
     const revision = recorder.revision;
     // The draft only belongs to the flow it was taken from. Record, Clear and an agent session
@@ -667,6 +667,7 @@ export class TestingPanel {
           projectPath, title: recorder.title, fileName: this.snapshot.fileName,
           origin: recorder.agentDeviceId ? "agent" : "user",
           steps: recorder.steps,
+          ...(recorder.sourceOverride === undefined ? {} : { source: recorder.sourceOverride }),
         }, 15_000);
         const id = text(object(response.structuredContent)?.id);
         this.draftRevision = revision;
@@ -706,12 +707,12 @@ export class TestingPanel {
       const response = await this.call("mobile_testing_draft_read", { id }, 15_000);
       const draft = object(object(response.structuredContent)?.draft);
       const steps = Array.isArray(draft?.steps) ? draft.steps as RecordedStep[] : [];
-      if (!draft || steps.length === 0) {
+      if (!draft || (steps.length === 0 && !text(draft.source))) {
         this.update({ error: "That recording is no longer there." });
         await this.refreshDrafts();
         return;
       }
-      testRecorder.restore(steps, text(draft.title) || undefined);
+      testRecorder.restore(steps, text(draft.title) || undefined, typeof draft.source === "string" ? draft.source : undefined);
       // The restored flow is already kept, so the change `restore` just made is not written back,
       // and the draft is pinned to the flow it came back as.
       this.draftRevision = testRecorder.getSnapshot().revision;
@@ -800,7 +801,7 @@ export class TestingPanel {
     const projectPath = this.snapshot.projectPath;
     const recorder = testRecorder.getSnapshot();
     if (!projectPath || !this.snapshot.available || this.snapshot.saving) return;
-    if (recorder.steps.length === 0) { this.update({ error: "Record a step before saving." }); return; }
+    if (recorder.steps.length === 0 && !recorder.sourceOverride) { this.update({ error: "Record a step before saving." }); return; }
     const relativePath = this.relativePath;
     this.update({ saving: true, error: null });
     try {
@@ -986,7 +987,7 @@ export class TestingPanel {
     // Never while an agent is recording: a run resets the app and takes the one agent-device
     // session the device allows, which is the session the recording is being read through.
     return Boolean(this.snapshot.available && this.snapshot.projectPath && !this.snapshot.selectedTestPath && !this.snapshot.agent?.active
-      && testRecorder.getSnapshot().steps.length > 0 && !this.snapshot.running && !this.snapshot.saving);
+      && (testRecorder.getSnapshot().steps.length > 0 || Boolean(testRecorder.getSnapshot().sourceOverride)) && !this.snapshot.running && !this.snapshot.saving);
   }
 
   get canRunStored(): boolean {

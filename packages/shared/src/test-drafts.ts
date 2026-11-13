@@ -10,6 +10,7 @@ import type { RecordedStep } from "./test-recording.ts";
  * they came back. A draft is that flow written down: the steps as data, not the emitted source,
  * so it comes back editable rather than as a file the panel cannot take apart again.
  *
+ * A preview code edit adds `source`; that source then takes precedence over generated steps.
  * Drafts are the plugin's own state, not the project's: nothing is ever written into the user's
  * repository until they press Save. One is deleted when its flow is saved, and when the user says
  * so. See `packages/core/src/testing-drafts.ts`.
@@ -91,6 +92,8 @@ export const testDraftSchema = z.object({
   /** Who recorded it, for the row's label. */
   origin: z.enum(["user", "agent"]),
   steps: z.array(recordedStepSchema).max(MAX_DRAFT_STEPS),
+  /** Source edited in the preview. When present it takes precedence over generated steps. */
+  source: z.string().max(256 * 1024).optional(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 }).strict();
@@ -101,8 +104,8 @@ export type TestDraft = Omit<z.infer<typeof testDraftSchema>, "steps"> & { steps
 export type TestDraftSummary = Omit<TestDraft, "steps"> & { stepCount: number };
 
 export function draftSummary(draft: TestDraft): TestDraftSummary {
-  const { steps, ...rest } = draft;
-  return { ...rest, stepCount: steps.length };
+  const { steps, source, ...rest } = draft;
+  return { ...rest, stepCount: source ? source.split("\n").filter(line => /^\s*await\s+/.test(line) && !/^\s*await\s+app\.open\s*\(/.test(line)).length : steps.length };
 }
 
 /** What a draft reads as in the list when it has no title of its own. */

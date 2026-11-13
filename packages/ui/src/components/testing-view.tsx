@@ -361,6 +361,9 @@ function TestingControls({ panel, recordable, deviceId, platform }: { panel: Tes
       // The agent's own Stop is on the banner, where the goal it is recording for is: one Stop,
       // beside what it stops.
       ? null
+      : state.sourceOverride !== undefined
+        ? <Button type="button" size="sm" variant="outline" data-testing-new-from-source
+            onClick={() => void panel.newRecording()}><FilePlus2Icon />New recording</Button>
       : recording
         ? <Button type="button" size="sm" variant="outline" data-testing-stop onClick={() => testRecorder.stop()}><SquareIcon />Stop</Button>
         : state.steps.length > 0
@@ -483,12 +486,53 @@ function TestPreview({ source, run, highlightedLines, playUntil, onPlayUntil }: 
   </code></pre>;
 }
 
+/** A code edit is local until Save; Cancel leaves the current test untouched. */
+function PreviewEditor({ source, onCancel, onSave, saving }: {
+  source: string; onCancel: () => void; onSave: (source: string) => void; saving: boolean;
+}) {
+  const [value, setValue] = useState(source);
+  const highlighted = useRef<HTMLPreElement>(null);
+  return <div className="flex min-h-0 flex-1 flex-col gap-2" data-testing-source-editor>
+    <div className="testing-source-editor-code">
+      <pre ref={highlighted} aria-hidden="true" data-testing-source-highlight><code>
+        {value.split("\n").map((line, index) => <span key={index} className="testing-source-editor-line">
+          <span className="testing-source-editor-number" data-testing-source-line-number>{index + 1}</span>
+          {highlightCode(line).map((token, position) => <span key={position} className={CODE_TOKEN_CLASS[token.kind]}>{token.text}</span>)}
+          {line.length === 0 ? "\u200b" : null}
+        </span>)}
+      </code></pre>
+      <textarea autoFocus aria-label="Test source" data-testing-source-input spellCheck={false} wrap="off"
+        className="testing-source-editor-input" value={value} onChange={event => setValue(event.target.value)}
+        onScroll={event => {
+          if (!highlighted.current) return;
+          highlighted.current.scrollTop = event.currentTarget.scrollTop;
+          highlighted.current.scrollLeft = event.currentTarget.scrollLeft;
+        }}
+        onKeyDown={event => {
+          if (event.key !== "Tab" || event.shiftKey) return;
+          event.preventDefault();
+          const input = event.currentTarget;
+          const start = input.selectionStart, end = input.selectionEnd;
+          const next = `${value.slice(0, start)}  ${value.slice(end)}`;
+          setValue(next);
+          requestAnimationFrame(() => { input.selectionStart = input.selectionEnd = start + 2; });
+        }} />
+    </div>
+    <div className="flex justify-end gap-2">
+      <Button type="button" size="sm" variant="ghost" data-testing-source-cancel onClick={onCancel}>Cancel</Button>
+      <Button type="button" size="sm" data-testing-source-save disabled={saving || !value.trim()}
+        onClick={() => onSave(value)}><SaveIcon />Save</Button>
+    </div>
+  </div>;
+}
+
 /** A project file's awaited calls can be edited in a temporary working copy. */
 function StoredTestPreview({ panel, source, path, loading }: { panel: TestingPanel; source: string; path: string; loading: boolean }) {
   const panelState = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
   const recorder = useSyncExternalStore(testRecorder.subscribe, testRecorder.getSnapshot);
   const [highlightedLine, setHighlightedLine] = useState<number>();
   const [draggingLine, setDraggingLine] = useState<number>();
+  const [editing, setEditing] = useState(false);
   const steps = storedTestSteps(source);
   const playUntil = new Map<number, { stepId: string; label: string }>();
   if (recorder.run?.state !== "running") {
@@ -512,13 +556,17 @@ function StoredTestPreview({ panel, source, path, loading }: { panel: TestingPan
         <ResizablePanel id="testing-stored-source" defaultSize="60%" minSize="20%" maxSize="85%">
           <section className="flex h-full min-h-0 min-w-0 flex-col gap-1.5 overflow-hidden rounded-lg border p-3" aria-label="Preview">
             <p className="flex items-center gap-2 text-xs font-medium">Preview
+              {!editing && <Button type="button" size="sm" variant="ghost" className="ml-auto" data-testing-source-edit
+                disabled={panelState.running || panelState.saving} onClick={() => setEditing(true)}>Edit</Button>}
               {recorder.run?.state === "running" && <span role="status" className="text-muted-foreground">Running…</span>}
               {recorder.run?.state === "passed" && <span role="status" className="text-emerald-600">Passed</span>}
               {recorder.run?.state === "failed" && <span role="status" className="text-red-600">{recorder.run.error ?? "Failed"}</span>}
             </p>
-            <TestPreview source={source} run={recorder.run}
+            {editing ? <PreviewEditor source={source} saving={panelState.saving}
+              onCancel={() => setEditing(false)} onSave={value => { panel.editStoredTest(value); setEditing(false); void panel.saveStoredTest(); }} />
+              : <TestPreview source={source} run={recorder.run}
               highlightedLines={highlightedLine === undefined ? undefined : { from: highlightedLine, to: highlightedLine }}
-              playUntil={playUntil} onPlayUntil={panel.canRunStored ? line => void panel.runStoredTest(Number(line)) : undefined} />
+              playUntil={playUntil} onPlayUntil={panel.canRunStored ? line => void panel.runStoredTest(Number(line)) : undefined} />}
           </section>
         </ResizablePanel>
         <ResizableHandle withHandle aria-label="Resize the preview and the steps" />
@@ -574,7 +622,9 @@ function TestingRecorder({ panel, recordable, deviceId }: { panel: TestingPanel;
   const recording = state.recordingDeviceId === deviceId && deviceId !== "";
   // Not while the agent is still writing the flow: saving half of one is a file the user did not
   // ask for, and the agent is told to hand over rather than to save.
-  const saveable = Boolean(panelState.projectPath) && state.steps.length > 0 && !panelState.saving && !panelState.agent?.active;
+  const saveable = Boolean(panelState.projectPath) && (state.steps.length > 0 || Boolean(state.sourceOverride)) && !panelState.saving && !panelState.agent?.active;
+  const [editing, setEditing] = useState(false);
+  const sourceSteps = state.sourceOverride === undefined ? undefined : storedTestSteps(state.sourceOverride);
   const [hoveredStep, setHoveredStep] = useState<string>();
   const [focusedStep, setFocusedStep] = useState<string>();
   /**
@@ -610,7 +660,7 @@ function TestingRecorder({ panel, recordable, deviceId }: { panel: TestingPanel;
    * file is re-emitted whenever those change, so there is nothing a memo could hold on to.
    */
   const playUntil = new Map<number, { stepId: string; label: string }>();
-  if (state.run?.state !== "running") {
+  if (state.run?.state !== "running" && sourceSteps === undefined) {
     // The app opening is the first thing the runner does and the first thing a flow breaks on, so
     // it is somewhere a run can stop too — the one line of the header that is a call at all.
     const open = testRecorder.emitted.calls[0];
@@ -658,6 +708,8 @@ function TestingRecorder({ panel, recordable, deviceId }: { panel: TestingPanel;
         <section data-testing-preview-pane className="flex h-full min-h-0 min-w-0 flex-col gap-1.5 overflow-hidden rounded-lg border p-3">
           <p className="flex flex-wrap items-center gap-2 text-xs font-medium">
             <span>Preview</span>
+            {!editing && !panelState.agent?.active && <Button type="button" size="sm" variant="ghost" className="ml-auto" data-testing-source-edit
+              disabled={panelState.running || panelState.saving} onClick={() => setEditing(true)}>Edit</Button>}
             {state.run?.state === "running" && <span className="flex items-center gap-1 font-normal text-muted-foreground" role="status">
               <LoaderCircleIcon className="size-3 animate-spin" />Running
             </span>}
@@ -680,8 +732,10 @@ function TestingRecorder({ panel, recordable, deviceId }: { panel: TestingPanel;
               title="The steps changed after this run, so the line marks no longer point at the same steps.">· before your edits</span>}
           </p>
           {state.run?.output && <pre className="max-h-32 overflow-auto rounded-md border bg-muted/40 p-2 font-mono text-[10px] whitespace-pre-wrap">{state.run.output}</pre>}
-          <TestPreview source={testRecorder.source} run={state.run} highlightedLines={highlightedLines}
-            playUntil={playUntil} onPlayUntil={panel.canRun ? playUntilStep : undefined} />
+          {editing ? <PreviewEditor source={testRecorder.source} saving={panelState.saving}
+            onCancel={() => setEditing(false)} onSave={value => { testRecorder.editSource(value); setEditing(false); void panel.saveTest(); }} />
+            : <TestPreview source={testRecorder.source} run={state.run} highlightedLines={sourceSteps ? undefined : highlightedLines}
+              playUntil={playUntil} onPlayUntil={panel.canRun && !sourceSteps ? playUntilStep : undefined} />}
         </section>
       </ResizablePanel>
 
@@ -694,11 +748,13 @@ function TestingRecorder({ panel, recordable, deviceId }: { panel: TestingPanel;
           <div className="flex min-h-0 flex-1 flex-col gap-2 border-t pt-3">
             <div className="flex items-center gap-2">
               <h2 className="text-xs font-medium">Steps</h2>
-              {state.steps.length > 0 && <span className="text-xs text-muted-foreground">{state.steps.length}</span>}
-              <ClearStepsButton steps={state.steps.length} />
+              {(sourceSteps ?? state.steps).length > 0 && <span className="text-xs text-muted-foreground">{(sourceSteps ?? state.steps).length}</span>}
+              <ClearStepsButton steps={(sourceSteps ?? state.steps).length} />
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto pr-1"><StepList steps={state.steps}
-              onHoverStep={hoverStep} onUnhoverStep={unhoverStep} onFocusStep={setFocusedStep} /></div>
+            <div className="min-h-0 flex-1 overflow-y-auto pr-1">{sourceSteps
+              ? <ol className="flex flex-col gap-1 text-xs" data-testing-source-steps>{sourceSteps.map((step, index) => <li key={step.line}
+                  className="rounded-md border px-2 py-1.5 font-mono"><span className="mr-2 text-muted-foreground">{index + 1}</span>{step.label}</li>)}</ol>
+              : <StepList steps={state.steps} onHoverStep={hoverStep} onUnhoverStep={unhoverStep} onFocusStep={setFocusedStep} />}</div>
           </div>
 
           {panelState.overwritePath && <Alert>

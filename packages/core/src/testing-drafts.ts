@@ -29,9 +29,9 @@ function sameProject(left: string, right: string): boolean {
  *
  * One file per draft, named by its id, the same shape `RecordingStore` uses for performance
  * recordings: a draft is read and replaced whole, and a file per draft means a delete is an
- * `unlink` rather than a rewrite of everyone else's work. The steps are stored as data rather than
- * as the emitted source, so reopening one puts the flow back in the step list where it can still
- * be edited — the generated file is an output, not a format to read back.
+ * `unlink` rather than a rewrite of everyone else's work. Recorded steps are stored as data so
+ * reopening a flow restores its controls. When the user edits the code preview, the source is
+ * stored too and takes precedence over the generated output.
  */
 export class TestDraftStore {
   readonly directory: string;
@@ -101,11 +101,11 @@ export class TestDraftStore {
    */
   async save(input: {
     id?: string; projectPath: string; title: string; fileName?: string;
-    origin?: "user" | "agent"; steps: TestDraft["steps"];
+    origin?: "user" | "agent"; steps: TestDraft["steps"]; source?: string;
   }): Promise<TestDraft> {
     const projectPath = normalizeProject(input.projectPath.trim());
     if (!projectPath) throw new ExpectedOperationError("invalid_input", "Choose the project folder.");
-    if (input.steps.length === 0) throw new ExpectedOperationError("invalid_input", "Record a step before saving a draft.");
+    if (input.steps.length === 0 && !input.source) throw new ExpectedOperationError("invalid_input", "Record a step before saving a draft.");
     const next = this.updates.catch(() => undefined).then(async () => {
       const existing = input.id ? await this.read(input.id) : undefined;
       const now = new Date().toISOString();
@@ -117,6 +117,7 @@ export class TestDraftStore {
         fileName: (input.fileName ?? existing?.fileName ?? "").slice(0, 256),
         origin: input.origin ?? existing?.origin ?? "user",
         steps: input.steps,
+        ...(input.source === undefined ? {} : { source: input.source }),
         createdAt: existing?.createdAt ?? now,
         updatedAt: now,
       };

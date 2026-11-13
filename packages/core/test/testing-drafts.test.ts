@@ -31,6 +31,14 @@ test("keeps a recording and reads its steps back", async () => {
   assert.equal(read?.origin, "user");
 });
 
+test("keeps edited source as the authority for a reopened draft", async () => {
+  const drafts = await store();
+  const source = 'test("edited", async ({ screen }) => {\n  await screen.getByText("Done").tap();\n});';
+  const saved = await drafts.save({ projectPath: PROJECT, title: "edited", steps: steps(1), source });
+  assert.equal((await drafts.read(saved.id))?.source, source);
+  assert.equal((await drafts.list(PROJECT))[0]?.stepCount, 1);
+});
+
 test("replaces a draft in place rather than listing it twice", async () => {
   const drafts = await store();
   const first = await drafts.save({ projectPath: PROJECT, title: "a flow", steps: steps(1) });
