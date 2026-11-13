@@ -30,12 +30,17 @@ function cancelReadinessFrames() {
   readinessFrames.clear();
 }
 
-export function recordUiTiming(name: string, duration: number) {
+/**
+ * `platform` splits one timing into a series per mirrored platform (two values, so still low
+ * cardinality): the window is keyed by name and platform and flushed with the attribute.
+ */
+export function recordUiTiming(name: string, duration: number, platform?: "ios" | "android") {
   if (running === false || document.visibilityState === "hidden") return;
-  let window = measurements.get(name);
+  const key = platform ? `${name}\u0000${platform}` : name;
+  let window = measurements.get(key);
   if (window === undefined) {
     window = new MeasurementWindow();
-    measurements.set(name, window);
+    measurements.set(key, window);
   }
   window.record(duration);
 }
@@ -102,13 +107,15 @@ export function flushUiMeasurements() {
   if (running === false) return;
   const now = performance.now();
   recordVisibleTime(now);
-  for (const [name, window] of measurements) {
+  for (const [key, window] of measurements) {
     const summary = window.take();
     if (summary === undefined) continue;
-    Sentry.metrics.count(`${name}.samples`, summary.count, { attributes });
-    Sentry.metrics.gauge(`${name}.mean`, summary.mean, { unit: "millisecond", attributes });
-    Sentry.metrics.gauge(`${name}.p95`, summary.p95, { unit: "millisecond", attributes });
-    Sentry.metrics.gauge(`${name}.max`, summary.max, { unit: "millisecond", attributes });
+    const [name, platform] = key.split("\u0000");
+    const scoped = platform ? { ...attributes, platform } : attributes;
+    Sentry.metrics.count(`${name}.samples`, summary.count, { attributes: scoped });
+    Sentry.metrics.gauge(`${name}.mean`, summary.mean, { unit: "millisecond", attributes: scoped });
+    Sentry.metrics.gauge(`${name}.p95`, summary.p95, { unit: "millisecond", attributes: scoped });
+    Sentry.metrics.gauge(`${name}.max`, summary.max, { unit: "millisecond", attributes: scoped });
   }
   for (const [name, value] of gauges) Sentry.metrics.gauge(name, value, { attributes });
   for (const [name, value] of counts) Sentry.metrics.count(name, value, { attributes });

@@ -537,6 +537,106 @@ it does not confirm user submission or a model response. Notes remain until the
 user clears them. Message/context construction timings, surface attribution, and
 content scrubbing are preserved; no note text or selection evidence enters telemetry.
 
+The Testing panel's recorder measures `ui.testing.tree_read`, the read that resolves a tap into a
+selector, and counts `ui.testing.record_start`/`record_stop`, `ui.testing.step_tap`,
+`ui.testing.step_assert`, `ui.testing.step_unresolved`, `ui.testing.hover_walk`,
+`ui.testing.menu_open`. Editing a recorded step counts `ui.testing.step_duplicate`,
+`ui.testing.step_reorder`, and `ui.testing.step_recommand_action`/`ui.testing.step_recommand_assert`
+when a step is pointed at another command — the same action/assertion split the recording counters
+use, so a flow's shape stays readable whether a step was recorded or edited into place. They are
+counts of an edit, carrying no selector, element name, command text or position. Pressing Record
+on a flow that already has steps counts `ui.testing.record_resume` or `ui.testing.record_new`
+alongside `ui.testing.record_start`, and only where there was a question to answer — it says
+whether that choice is carrying its weight, and carries nothing about the flow itself.
+Recording an agentic step counts `ui.testing.step_agent_act`, `ui.testing.step_agent_assert` or
+`ui.testing.step_agent_wait`,
+kept apart from `ui.testing.step_tap`/`step_assert` because the two answer different questions:
+whether the recorder can pin a step, and whether a user reached for the agent instead. They are
+counts only — the instruction the user wrote is free text about their own app, so it is never
+sent, and neither is the `vision` mode chosen for an `agent.assert`. `ui.testing.agent_params`
+gauges how many params an `act` step was recorded with, which is what says whether the editor is
+reached for at all; it is a count of rows, never a key, a value or the text they were typed into.
+A recorded `swipe` counts `ui.testing.step_action` like every other non-tap pinned command, so the
+action/assertion split stays the boundary it was; the direction and the gesture's coordinates are
+not sent.
+`ui.testing.step_assert` now covers every assertion the menu can record, not only `toBeVisible`
+and `toHaveText`; it is the same boundary — a step recorded that reads the screen rather than
+acting on it — so counts stay comparable across the release. Selectors, element names and the
+recorded source are not sent; these are counts only. **The timing's
+meaning changed when the recorder moved to the test runner's own element tree**: it now measures an
+agent-device snapshot of the device projected by the project's `@e2e-dev/mobile` (around a tenth of
+a second against a booted iPhone 17 Pro), where it previously measured a Baguette `describe-ui`
+loopback of tens of milliseconds. It is the same boundary — the wait a tap pays before its step is
+named — so the measurement stays comparable in purpose, but not in magnitude; read a step across
+that release as a change of read path, not a regression. The recorder caches the tree for 1.5 s and
+invalidates it on every input, so a warm hover or wheel walk is answered locally and not measured.
+`ui.testing.tree_chrome_only` is gone with the Baguette path, since the runner's snapshot is rooted
+at the application and cannot report only the simulator's chrome; `ui.testing.tree_empty` replaces
+it and counts a tree with no elements at all. Handled failures of the read and of releasing the
+device go through `captureServerError` as `testing.tool` and `testing.release`. No element names,
+labels, placeholders, testIDs, roles, bounds, bundle ids, project paths, device identifiers or
+emitted test source are attached to any of these.
+
+An **agent recording** — the user's own coding agent writing the flow through
+`mobile_testing_agent_*`, see [docs/agent-recording.md](agent-recording.md) — is measured on both
+sides of the one boundary it crosses. In the server, `testing.agent.screen.duration` times the
+element read an agent asks for before each step, `testing.agent.screen.samples` counts those reads
+by outcome, and `testing.agent.screen.elements` gauges how big the screen it answered with was.
+That read is the only thing in an agent recording that costs anything — a flow is ten to twenty of
+them — and the element count is a size, never content. In the panel,
+`ui.testing.agent_session_start` counts a session the panel adopted,
+`ui.testing.agent_step_adopted` counts each step as it arrives, `ui.testing.agent_session_abort`
+counts the user pressing Stop on the banner, and `ui.testing.agent_adopt` times the adopt that
+makes a step appear. The goal sentence, the test's title, the instruction of an agent step and
+every element name the read answered with are the user's own content about their own app and are
+**not** sent; these are counts, durations and sizes only. Handled failures of the agent tools go
+through `captureServerError` as `testing.agent`, beside `testing.tool` and `testing.release`.
+
+Running a recorded test measures `ui.testing.run`, which brackets the panel's whole call — the
+runner spawned, the project resolved and the report read — and counts `ui.testing.run_passed` or
+`ui.testing.run_failed` from the verdict. It is deliberately not the duration shown beside that
+verdict: that one is the runner's own number from the report, and the two answer different
+questions. Play until here, the run a line of the preview offers, counts `ui.testing.run_until`
+as well, so a flow tried a step at a time is not read as a flow run end to end; it is counted
+beside the verdict, not instead of it. The test's title, its path, the project path, the steps and
+the runner's output are the user's own content and are **not** sent.
+
+Unsaved recordings — the flows the panel keeps so one survives the panel document being rebuilt —
+measure `ui.testing.draft_save`, the autosave write, and count `ui.testing.draft_restore` when one
+is reopened into the step list and `ui.testing.draft_delete` when the user throws one away. The
+measurement brackets the panel's call and the list refresh that follows it, so it says what the
+keep costs the user between one edit and the next; the keep the panel makes as it is torn down is
+not measured, because the document it would be attributed to is going away. The title, the file name, the project path, the
+steps and everything they name are the user's own content and are **not** sent; these are counts
+and a duration. An autosave that fails is silent on screen and goes through `captureUiError` as
+`testing.draft_save`; the server's own keep of a finished agent recording goes through
+`captureServerError` as `testing.agent.draft`. Deleting one of the project's own stored tests
+counts `ui.testing.test_delete`, beside `ui.testing.draft_delete`: they are the two halves of the
+panel's list and answer different questions — a recording thrown away before it was ever saved, and
+a test removed from the repository. The file name, its path and the project path are not sent, and
+listing the stored tests is not measured: it is a folder read the panel does on open, not a wait
+the user sits through.
+Selecting a stored test counts `ui.testing.test_preview` and measures that same name from the
+read request through its response. A failed read goes through `captureUiError` as
+`testing.test_preview`. The test source and path are not sent.
+Editing a project test counts `ui.testing.test_edit` and measures `ui.testing.test_stage` around
+the temporary write. Save counts and measures `ui.testing.test_save`; Undo counts and measures
+`ui.testing.test_undo`. Handled staging, save and undo failures go through `captureUiError` as
+`testing.test_stage`, `testing.test_save` and `testing.test_undo`. The source, path, and command are not sent.
+
+`ui.testing.record_prepare` times the warm tree read Record now does before the mirror can resolve
+an element, which is the wait the `preparing...` overlay is explaining. It is deliberately **not**
+folded into `ui.testing.tree_read`: that one covers every read, warm and cold, during a recording,
+while this one answers "how long is Record unusable for" — the number the overlay exists because
+of. A read that fails still records the timing, because the wait happened; it carries no selector,
+element name, bundle id or project path.
+
+The Testing panel records on Android emulators as well as iOS simulators, so `ui.testing.tree_read`,
+`ui.testing.record_prepare` and the `testing.agent.screen.*` metrics now carry a `platform`
+attribute (`ios` or `android`; two values, no device ids). One series hid that waiting on an
+emulator is a different number from waiting on a simulator. Names, units and boundaries are
+unchanged, and no span or per-frame event was added.
+
 Since 0.1.99, `ui.logs.foreground_change` counts automatic app-filter changes applied while Logs is active, including selected-device and process-lifetime changes. From 0.1.103, these changes update the visible query and local process identity mapping instead of restarting a scoped collector. `ui.logs.app_identity` measures batch insertion with native PID-to-app joins and discovery updates in milliseconds, using bounded aggregate windows. Hidden or closed log views defer row processing until reopened. Shared `ui.device_apps.discovery` timing and handled discovery-error coverage remain in place, including Android's foreground PID lookup; native session operations retain MCP tracing, Node runtime coverage, and `logs.ios.parse` timings. No app IDs, PIDs, package names, device IDs, or query text are attached to these measurements. Native helper telemetry and symbols are unchanged.
 
 Since 0.1.99, `ui.logs.query_parse` measures query compilation in milliseconds once per edit, including automatic app-clause edits from 0.1.103. Existing `ui.logs.filter`, buffered/filtered row gauges, and search counts cover keyword filtering and visible age refreshes; filtering time still covers snapshot derivation and grouping. Query text, field values, regex patterns, and validation messages remain local. Age refresh timers stop when Logs closes, unmounts, or the document becomes hidden.

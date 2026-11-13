@@ -4,7 +4,16 @@ export type ScreenPoint = { x: number; y: number };
 export type ScreenSize = { width: number; height: number };
 export type ScreenBounds = ScreenPoint & ScreenSize;
 export type ReactElementContext = { component: string; owners: string[]; key?: string; sourceKind?: "element" | "owner"; source?: { file: string; line: number; column?: number; functionName?: string } };
-export type ScreenComponent = { name: string; bounds: ScreenBounds; role?: string; identifier?: string; label?: string; value?: string; depth: number; source?: "accessibility" | "screen" | "react-native"; nodeId?: string; parentId?: string; react?: ReactElementContext };
+/**
+ * One element over the screen's pixels.
+ *
+ * `role`, `label`, `text`, `value`, `placeholder` and `hidden` are the test runner's own fields,
+ * carried through untouched when the recorder reads the runner's tree: `label` is the accessible
+ * *name* `getByRole`/`getByLabel` match, `text` is what `getByText` also searches, and `hidden`
+ * is the node a role query skips, and `disabled`/`selected` are the states `toBeDisabled` and
+ * `toBeSelected` read. An inspection that does not report one simply leaves it unset.
+ */
+export type ScreenComponent = { name: string; bounds: ScreenBounds; role?: string; identifier?: string; label?: string; text?: string; value?: string; placeholder?: string; hidden?: boolean; disabled?: boolean; selected?: boolean; depth: number; source?: "accessibility" | "screen" | "react-native"; nodeId?: string; parentId?: string; react?: ReactElementContext };
 export type ScreenSelectionContext = { ancestors: ScreenComponent[]; siblings: ScreenComponent[]; siblingCount: number; children: ScreenComponent[]; childCount: number; instance?: { index: number; total: number } };
 export type ScreenAnnotation = {
   id: string;
@@ -57,6 +66,31 @@ export function screenSize(value: unknown): ScreenSize | undefined {
 export function accessibilityScreen(tree: unknown): ScreenSize | undefined {
   const root = record(tree), frame = bounds(root?.frame);
   if (frame?.x === 0 && frame.y === 0 && /^(AX)?Application$/i.test(String(root?.role ?? ""))) return screenSize(frame);
+}
+
+/**
+ * The same components, in another screen's coordinate space.
+ *
+ * The recorder's tree and the mirror do not always measure in the same unit. An iOS simulator
+ * reports both in points, so nothing happens here. Android reports element bounds in device
+ * pixels while scrcpy caps the stream's longest edge — a 1280x2856 emulator arrives as 574x1280 —
+ * so every rectangle is more than twice the size of the picture the user is pointing at, and a
+ * hit test finds only the full-screen groups. One boundary converts; the hit ladder, the outline
+ * and the tap that follows all stay in the mirror's own space.
+ */
+export function scaledComponents(tree: readonly ScreenComponent[], from: ScreenSize, to: ScreenSize): ScreenComponent[] {
+  if (!(from.width > 0) || !(from.height > 0) || !(to.width > 0) || !(to.height > 0)) return [...tree];
+  const scaleX = to.width / from.width, scaleY = to.height / from.height;
+  // An exact match is every iOS read and a native-resolution Android stream; copying 10,000
+  // rectangles to multiply them by one is work with nothing to show for it.
+  if (Math.abs(scaleX - 1) < 1e-6 && Math.abs(scaleY - 1) < 1e-6) return [...tree];
+  return tree.map(component => ({
+    ...component,
+    bounds: {
+      x: component.bounds.x * scaleX, y: component.bounds.y * scaleY,
+      width: component.bounds.width * scaleX, height: component.bounds.height * scaleY,
+    },
+  }));
 }
 
 // Accept backend trees and normalized, flat MCP snapshots with explicit parents.
