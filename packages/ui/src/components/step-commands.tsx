@@ -45,13 +45,13 @@ export function OfferIcon({ kind }: { kind: RecordedStepKind }) {
 }
 
 /** One row of a menu: an action to record, or the row a submenu hangs off. */
-export function MenuRow({ children, title, onClick, onOpen, chevron, icon, attributes }: {
+export function MenuRow({ children, title, onClick, onOpen, chevron, icon, attributes, disabled }: {
   children: React.ReactNode; title?: string; onClick: () => void; onOpen?: () => void;
-  chevron?: boolean; icon?: React.ReactNode; attributes?: Record<string, string>;
+  chevron?: boolean; icon?: React.ReactNode; attributes?: Record<string, string>; disabled?: boolean;
 }) {
   return <button
-    type="button" role="menuitem" title={title} {...attributes}
-    className="group/offer flex min-w-0 items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground focus-visible:outline-none"
+    type="button" role="menuitem" title={title} disabled={disabled} {...attributes}
+    className="group/offer flex min-w-0 items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-inherit"
     onClick={onClick}
     // A submenu opens by pointing at its row, as a menu's submenu does; the click and the keyboard
     // focus open it too, so it is not reachable by hover alone.

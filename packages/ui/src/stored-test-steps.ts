@@ -20,6 +20,10 @@ export function duplicateStoredStep(source: string, line: number): string {
   return editLine(source, line, (lines, index) => { lines.splice(index + 1, 0, lines[index]!); });
 }
 
+export function removeStoredStep(source: string, line: number): string {
+  return editLine(source, line, (lines, index) => { lines.splice(index, 1); });
+}
+
 export function moveStoredStep(source: string, fromLine: number, toLine: number): string {
   if (fromLine === toLine || !storedTestSteps(source).some(step => step.line === toLine)) return source;
   return editLine(source, fromLine, (lines, index) => {
@@ -65,10 +69,28 @@ export function changeStoredStepCommand(source: string, line: number, commandId:
   return lines.join("\n");
 }
 
+/** A complete one-line await can be moved safely; a multi-line call stays in the source editor. */
+function completeAwaitLine(line: string): boolean {
+  const expression = line.match(/^\s*await\s+(.+?);?\s*$/)?.[1];
+  if (!expression || /[,(.?:=+\-*/{}\[]$/.test(expression.trimEnd())) return false;
+  const closing: Record<string, string> = { "(": ")", "[": "]", "{": "}" };
+  const stack: string[] = [];
+  let quote = "";
+  for (let index = 0; index < expression.length; index++) {
+    const char = expression[index]!;
+    if (char === "\\" && quote) { index++; continue; }
+    if (quote) { if (char === quote) quote = ""; continue; }
+    if (char === '"' || char === "'" || char === "`") { quote = char; continue; }
+    if (closing[char]) stack.push(closing[char]);
+    else if ([")", "]", "}"].includes(char) && stack.pop() !== char) return false;
+  }
+  return !quote && stack.length === 0;
+}
+
 /** The runner uses a temporary sibling file; returning here stops after the chosen call. */
 export function storedTestUntilSource(source: string, line: number): string | undefined {
   const lines = source.split("\n");
-  if (!/^\s*await\s+.+;\s*$/.test(lines[line - 1] ?? "")) return;
+  if (!completeAwaitLine(lines[line - 1] ?? "")) return;
   const indent = lines[line - 1]!.match(/^\s*/)?.[0] ?? "";
   lines.splice(line, 0, `${indent}return;`);
   return lines.join("\n");

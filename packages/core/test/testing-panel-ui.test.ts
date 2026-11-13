@@ -820,9 +820,21 @@ test("a selected project test offers temporary step edits and per-line runs", as
   await act(async () => { (query("[data-testing-source-save]") as HTMLElement).click(); });
   assert.match(edits[0] ?? "", /getByText\("Saved"\)/);
   assert.equal(saves, 1, "Save writes the edited project test");
+  assert.equal(query("[data-testing-stored-step]")?.getAttribute("draggable"), "true");
+  assert.ok(query("[data-testing-stored-remove]"), "project test steps can be removed");
+  await act(async () => { (query("[data-testing-stored-step-menu]") as HTMLElement).click(); });
+  assert.ok(query("[data-testing-stored-commands]"), "Change command is a menu branch");
+  assert.equal(query("[data-testing-stored-command]"), null, "commands are hidden until the branch opens");
+  await act(async () => { (query("[data-testing-stored-commands]") as HTMLElement).click(); });
+  assert.ok(query("[data-testing-stored-commands-panel]"), "commands open in a separate popover");
+  await act(async () => { (query('[data-testing-stored-command="assertVisible"]') as HTMLElement).click(); });
+  assert.match(edits[1] ?? "", /toBeVisible\(\)/);
   await act(async () => { (query("[data-testing-stored-step-menu]") as HTMLElement).click(); });
   await act(async () => { (query("[data-testing-stored-duplicate]") as HTMLElement).click(); });
-  assert.equal(edits.length, 2, "duplicate edits the working copy");
+  assert.equal(edits.length, 3, "duplicate edits the working copy");
+  await act(async () => { (query("[data-testing-stored-remove]") as HTMLElement).click(); });
+  assert.equal(edits.length, 4, "remove edits the working copy");
+  assert.doesNotMatch(edits[3] ?? "", /getByText\("Done"\)/);
   assert.equal(query("[data-testing-editor-pane]"), null);
   assert.equal(query("[data-testing-run]")?.hasAttribute("disabled"), false);
   assert.ok(query("[data-testing-new-from-preview]"));
@@ -853,6 +865,15 @@ test("editing a recording makes its preview the source of truth", async t => {
   await act(async () => { (query("[data-testing-source-save]") as HTMLElement).click(); });
   assert.equal(saved, value);
   assert.match(query("[data-testing-source-steps]")?.textContent ?? "", /getByText\("Saved"\)/);
+  assert.equal(query("[data-testing-source-step]")?.getAttribute("draggable"), "true");
+  assert.ok(query("[data-testing-source-remove]"));
+  await act(async () => { (query("[data-testing-source-step-menu]") as HTMLElement).click(); });
+  assert.ok(query("[data-testing-source-commands]"));
+  await act(async () => { (query("[data-testing-source-duplicate]") as HTMLElement).click(); });
+  assert.equal((testRecorder.source.match(/getByText\("Saved"\)\.tap/g) ?? []).length, 2);
+  assert.equal(dom.window.document.querySelectorAll("[data-testing-source-step]").length, 2);
+  await act(async () => { (query("[data-testing-source-remove]") as HTMLElement).click(); });
+  assert.equal(dom.window.document.querySelectorAll("[data-testing-source-step]").length, 1);
   assert.ok(query("[data-testing-new-from-source]"));
 });
 

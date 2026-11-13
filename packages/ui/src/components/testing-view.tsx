@@ -12,7 +12,7 @@ import { MenuRow, OFFER_LABEL, OfferIcon, StepCommandList } from "./step-command
 import { Branch } from "./cascading-menu.tsx";
 import { CODE_TOKEN_CLASS, changedLines, highlightCode } from "../code-highlight.ts";
 import { testSourceSuggestions } from "../test-source-suggestions.ts";
-import { changeStoredStepCommand, duplicateStoredStep, moveStoredStep, storedStepCommands, storedTestSteps, storedTestUntilSource } from "../stored-test-steps.ts";
+import { changeStoredStepCommand, duplicateStoredStep, moveStoredStep, removeStoredStep, storedStepCommands, storedTestSteps, storedTestUntilSource } from "../stored-test-steps.ts";
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert.tsx";
 import { Button } from "./ui/button.tsx";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover.tsx";
@@ -592,12 +592,95 @@ function PreviewEditor({ source, onCancel, onSave, saving }: {
   </div>;
 }
 
+/** Source-backed drafts and project files have the same editable awaited-call rows. */
+function SourceStepList({ source, mode, onEdit, onHoverLine }: {
+  source: string; mode: "source" | "stored"; onEdit: (source: string) => void;
+  onHoverLine?: (line: number | undefined) => void;
+}) {
+  const steps = storedTestSteps(source);
+  const [draggingLine, setDraggingLine] = useState<number>();
+  const [overLine, setOverLine] = useState<number>();
+  const prefix = mode === "stored" ? "data-testing-stored" : "data-testing-source";
+  return <ol className="flex flex-col gap-1 text-xs" {...{ [`${prefix}-steps`]: "" }}>
+    {steps.map((step, index) => {
+      const editable = Boolean(storedTestUntilSource(source, step.line));
+      return <li key={step.line}>
+        <div {...{ [`${prefix}-step`]: String(step.line) }} draggable={editable}
+          className={`group/step flex items-center gap-2 rounded-md border px-2 py-1.5 text-xs ${draggingLine === step.line ? "opacity-50" : ""} ${overLine === step.line && draggingLine !== step.line ? "border-primary" : ""}`}
+          onMouseEnter={() => onHoverLine?.(step.line)} onMouseLeave={() => onHoverLine?.(undefined)}
+          onDragStart={event => { if (!editable) return; setDraggingLine(step.line); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", String(step.line)); }}
+          onDragEnd={() => { setDraggingLine(undefined); setOverLine(undefined); }}
+          onDragOver={event => { if (draggingLine === undefined || !editable) return; event.preventDefault(); event.dataTransfer.dropEffect = "move"; setOverLine(step.line); }}
+          onDrop={event => {
+            event.preventDefault();
+            if (draggingLine !== undefined && editable) onEdit(moveStoredStep(source, draggingLine, step.line));
+            setDraggingLine(undefined); setOverLine(undefined);
+          }}>
+          <GripVerticalIcon aria-hidden className={`size-3.5 shrink-0 text-muted-foreground opacity-40 group-hover/step:opacity-100 ${editable ? "cursor-grab" : ""}`} />
+          <span className="w-4 shrink-0 text-right text-muted-foreground">{index + 1}</span>
+          <button type="button" className="min-w-0 flex-1 truncate text-left font-mono" title={step.label}
+            onFocus={() => onHoverLine?.(step.line)} onBlur={() => onHoverLine?.(undefined)}>{step.label}</button>
+          <SourceStepMenu source={source} step={step} index={index} mode={mode} onEdit={onEdit} editable={editable} />
+          <Button type="button" variant="ghost" size="icon-xs" aria-label={`Remove step ${index + 1}`}
+            {...{ [`${prefix}-remove`]: String(step.line) }} disabled={!editable}
+            title={editable ? "Remove this step" : "Edit this multi-line call in Preview"}
+            onClick={() => onEdit(removeStoredStep(source, step.line))}><XIcon /></Button>
+        </div>
+      </li>;
+    })}
+    {steps.length === 0 && <li className="rounded-lg border border-dashed px-3 py-5 text-center text-muted-foreground">No awaited calls found in this file.</li>}
+  </ol>;
+}
+
+function SourceStepMenu({ source, step, index, mode, onEdit, editable }: {
+  source: string; step: ReturnType<typeof storedTestSteps>[number]; index: number;
+  mode: "source" | "stored"; onEdit: (source: string) => void; editable: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const leaving = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const prefix = mode === "stored" ? "data-testing-stored" : "data-testing-source";
+  const commands = editable ? storedStepCommands(step) : [];
+  const hold = () => { if (leaving.current) clearTimeout(leaving.current); };
+  const close = () => { hold(); setOpen(false); };
+  const release = () => {
+    hold();
+    const closeWhenBranchLeaves = () => {
+      if (document.querySelector(`[${prefix}-commands-panel="${step.line}"]`))
+        leaving.current = setTimeout(closeWhenBranchLeaves, 120);
+      else close();
+    };
+    leaving.current = setTimeout(closeWhenBranchLeaves, 120);
+  };
+  useEffect(() => () => hold(), []);
+  return <Popover open={open} onOpenChange={setOpen}>
+    <PopoverTrigger asChild><Button type="button" variant="ghost" size="icon-xs"
+      {...{ [`${prefix}-step-menu`]: String(step.line) }} aria-label={`Edit step ${index + 1}`}
+      className="shrink-0"
+      onMouseEnter={() => setOpen(true)}><MoreHorizontalIcon /></Button></PopoverTrigger>
+    <PopoverContent align="end" className="flex w-60 max-h-(--radix-popover-content-available-height) flex-col gap-1 overflow-y-auto p-1.5 [&_button:not(:disabled)]:cursor-pointer"
+      role="menu" aria-label={`Step ${index + 1}`} onMouseEnter={hold} onMouseLeave={release}>
+      <MenuRow icon={<CopyIcon className="size-4 shrink-0 text-muted-foreground" />} title={editable ? "Duplicate this step" : "Edit this multi-line call in Preview"}
+        attributes={{ [`${prefix}-duplicate`]: String(step.line) }} disabled={!editable}
+        onClick={() => { close(); onEdit(duplicateStoredStep(source, step.line)); }}>Duplicate</MenuRow>
+      <Branch label={`Change command for step ${index + 1}`} width={STEP_COMMANDS_WIDTH} align="top" side="left"
+        attributes={{ [`${prefix}-commands-panel`]: String(step.line) }}
+        renderRow={handlers => <MenuRow chevron icon={<OfferIcon kind="tap" />}
+          attributes={{ [`${prefix}-commands`]: String(step.line) }}
+          onOpen={handlers.onOpen} onClick={handlers.onClick}>Change command</MenuRow>}>
+        {commands.length ? commands.map(command => <MenuRow key={command.id} title={`Change to ${command.label}`}
+          attributes={{ [`${prefix}-command`]: command.id }}
+          onClick={() => { close(); onEdit(changeStoredStepCommand(source, step.line, command.id)); }}>{command.label}</MenuRow>)
+          : <p className="px-2 py-1 text-xs text-muted-foreground">No compatible commands for this call. Edit it in Preview.</p>}
+      </Branch>
+    </PopoverContent>
+  </Popover>;
+}
+
 /** A project file's awaited calls can be edited in a temporary working copy. */
 function StoredTestPreview({ panel, source, path, loading }: { panel: TestingPanel; source: string; path: string; loading: boolean }) {
   const panelState = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
   const recorder = useSyncExternalStore(testRecorder.subscribe, testRecorder.getSnapshot);
   const [highlightedLine, setHighlightedLine] = useState<number>();
-  const [draggingLine, setDraggingLine] = useState<number>();
   const [editing, setEditing] = useState(false);
   const steps = storedTestSteps(source);
   const playUntil = new Map<number, { stepId: string; label: string }>();
@@ -639,38 +722,8 @@ function StoredTestPreview({ panel, source, path, loading }: { panel: TestingPan
         <ResizablePanel id="testing-stored-steps" defaultSize="40%" minSize="15%" maxSize="80%">
           <section className="flex h-full min-h-0 min-w-0 flex-col gap-2 overflow-hidden rounded-lg border p-3" aria-label="Steps">
             <p className="flex items-center gap-2 text-xs font-medium">Steps <span className="font-normal text-muted-foreground">{steps.length}</span></p>
-            <ol className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pr-1 text-xs" data-testing-stored-steps>
-              {steps.map((step, index) => <li key={step.line}>
-                <div data-testing-stored-step={step.line} draggable={Boolean(storedTestUntilSource(source, step.line))}
-                  className="group/step flex items-center gap-2 rounded-md border px-2 py-1.5 text-xs"
-                  onMouseEnter={() => setHighlightedLine(step.line)} onMouseLeave={() => setHighlightedLine(undefined)}
-                  onDragStart={event => { setDraggingLine(step.line); event.dataTransfer.effectAllowed = "move"; }}
-                  onDragEnd={() => setDraggingLine(undefined)} onDragOver={event => { if (draggingLine !== undefined) event.preventDefault(); }}
-                  onDrop={event => { event.preventDefault(); if (draggingLine !== undefined) panel.editStoredTest(moveStoredStep(source, draggingLine, step.line)); setDraggingLine(undefined); }}>
-                  <GripVerticalIcon aria-hidden className="size-3.5 shrink-0 cursor-grab text-muted-foreground opacity-40 group-hover/step:opacity-100" />
-                  <span className="w-4 shrink-0 text-right text-muted-foreground">{index + 1}</span>
-                  <button type="button" className="min-w-0 flex-1 truncate text-left font-mono" title={step.label}
-                    onFocus={() => setHighlightedLine(step.line)} onBlur={() => setHighlightedLine(undefined)}>{step.label}</button>
-                  <Popover>
-                    <PopoverTrigger asChild><Button type="button" variant="ghost" size="icon-xs" data-testing-stored-step-menu={step.line}
-                      aria-label={`Edit step ${index + 1}`}><MoreHorizontalIcon /></Button></PopoverTrigger>
-                    <PopoverContent align="end" className="flex w-60 flex-col gap-1 p-1.5" role="menu" aria-label={`Step ${index + 1}`}>
-                      {storedTestUntilSource(source, step.line) ? <>
-                        <MenuRow icon={<CopyIcon className="size-4" />} title="Duplicate this step"
-                          attributes={{ "data-testing-stored-duplicate": String(step.line) }}
-                          onClick={() => panel.editStoredTest(duplicateStoredStep(source, step.line))}>Duplicate</MenuRow>
-                        {storedStepCommands(step).length > 0 && <p className="border-t px-2 pt-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Change command</p>}
-                        {storedStepCommands(step).map(command => <MenuRow key={command.id} title={`Change to ${command.label}`}
-                          attributes={{ "data-testing-stored-command": command.id }}
-                          onClick={() => panel.editStoredTest(changeStoredStepCommand(source, step.line, command.id))}>{command.label}</MenuRow>)}
-                        {storedStepCommands(step).length === 0 && <p className="px-2 py-1 text-xs text-muted-foreground">No compatible commands for this call.</p>}
-                      </> : <p className="px-2 py-1 text-xs text-muted-foreground">This multi-line call can be viewed here and edited in your editor.</p>}
-                    </PopoverContent>
-                  </Popover>
-                </div>
-              </li>)}
-              {steps.length === 0 && <li className="rounded-lg border border-dashed px-3 py-5 text-center text-muted-foreground">No awaited calls found in this file.</li>}
-            </ol>
+            <div className="min-h-0 flex-1 overflow-y-auto pr-1"><SourceStepList source={source} mode="stored"
+              onEdit={value => panel.editStoredTest(value)} onHoverLine={setHighlightedLine} /></div>
           </section>
         </ResizablePanel>
       </ResizablePanelGroup>}
@@ -818,8 +871,7 @@ function TestingRecorder({ panel, recordable, deviceId }: { panel: TestingPanel;
               <ClearStepsButton steps={(sourceSteps ?? state.steps).length} />
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto pr-1">{sourceSteps
-              ? <ol className="flex flex-col gap-1 text-xs" data-testing-source-steps>{sourceSteps.map((step, index) => <li key={step.line}
-                  className="rounded-md border px-2 py-1.5 font-mono"><span className="mr-2 text-muted-foreground">{index + 1}</span>{step.label}</li>)}</ol>
+              ? <SourceStepList source={testRecorder.source} mode="source" onEdit={value => testRecorder.editSource(value)} />
               : <StepList steps={state.steps} onHoverStep={hoverStep} onUnhoverStep={unhoverStep} onFocusStep={setFocusedStep} />}</div>
           </div>
 
