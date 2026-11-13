@@ -259,6 +259,34 @@ export async function resolveTestPath(projectPath: string, relativePath: string)
 }
 
 /**
+ * Resolves the paths an app-requested run may hand to the project's CLI.
+ *
+ * Runs have the same boundary as reads and writes: the test must be below `tests/`, and the only
+ * config that may be executed is the config discovered in the selected project. Keeping this at
+ * the tool boundary prevents a crafted app call from turning the runner into an arbitrary module
+ * loader while leaving `runRecordedTest` independently usable by its lower-level tests.
+ */
+export async function resolveTestRunPaths(projectPath: string, relativePath: string, configPath?: string): Promise<{
+  projectPath: string;
+  relativePath: string;
+  configPath?: string;
+}> {
+  const project = await inspectProject(projectPath);
+  const testPath = await resolveTestPath(project.path, relativePath);
+  if (!(await isFile(testPath))) throw new ExpectedOperationError("invalid_input", "That test file is no longer there.");
+  if (configPath !== undefined) {
+    const requestedConfig = normalize(configPath.trim());
+    if (!isAbsolute(requestedConfig) || !same(resolve(requestedConfig), resolve(project.configPath)))
+      throw new ExpectedOperationError("invalid_input", "Run the project with its own e2e config.");
+  }
+  return {
+    projectPath: project.path,
+    relativePath: relative(project.path, testPath).split(/[\\/]/).join("/"),
+    ...(configPath === undefined ? {} : { configPath: project.configPath }),
+  };
+}
+
+/**
  * Writes one recorded test into the project. Without `overwrite` an existing file is reported
  * rather than replaced, so the panel can ask before it destroys someone's test.
  */

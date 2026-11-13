@@ -5,7 +5,7 @@ import { z } from "zod";
 import { errorMessage } from "@mobile-dev/shared/protocol.ts";
 import { captureServerError } from "./telemetry.ts";
 import type { TestingProjectChoices } from "./testing-projects.ts";
-import { deleteTestFile, discardStagedTestFile, inspectProject, listTestFiles, previewTestFile, saveStagedTestFile, stageTestFile, writeTestFile } from "./testing-projects.ts";
+import { deleteTestFile, discardStagedTestFile, inspectProject, listTestFiles, previewTestFile, resolveTestRunPaths, saveStagedTestFile, stageTestFile, writeTestFile } from "./testing-projects.ts";
 import { TestDraftStore } from "./testing-drafts.ts";
 import { MAX_DRAFT_STEPS, recordedStepSchema, testDraftIdSchema } from "@mobile-dev/shared/test-drafts.ts";
 import type { TestDraft } from "@mobile-dev/shared/test-drafts.ts";
@@ -270,8 +270,9 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
     progress = [];
     running = true;
     try {
+      const paths = await resolveTestRunPaths(selected, relativePath, configPath);
       const result = await runRecordedTest(
-        { projectPath: selected, relativePath, ...(configPath ? { configPath } : {}), ...(timeoutMs === undefined ? {} : { timeoutMs }), ...(target ? { target } : {}),
+        { ...paths, ...(timeoutMs === undefined ? {} : { timeoutMs }), ...(target ? { target } : {}),
           ...(untilSource === undefined ? {} : { untilSource }) },
         { release: () => devices.release(), onProgress: entry => { progress.push(entry); } });
       return dataResult({ ...result }, `${relativePath} ${result.status}.`);

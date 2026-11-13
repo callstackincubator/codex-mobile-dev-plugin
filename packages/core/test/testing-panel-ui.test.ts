@@ -58,7 +58,8 @@ test("the element menu renders the runner's own steps over the mirror and record
   // surface, and the branch that describes a step instead of pinning one.
   assert.deepEqual([...menu()!.querySelectorAll("[data-recorder-panel]")].map(row => (row as HTMLElement).dataset.recorderPanel),
     ["commands", "agentic"]);
-  assert.ok(rows().every(row => row.className.includes("hover:bg-accent")), "every action has a visible hover state");
+  assert.ok(rows().every(row => row.className.includes("hover:bg-accent") || row.parentElement?.className.includes("hover:bg-accent")),
+    "every action row has a visible hover state");
   assert.ok(menu()?.className.includes("cursor-pointer"), "popover buttons use a pointer cursor");
   assert.equal(rows()[0].title, 'screen.getByRole("button", "Go To Explore List").tap()');
   // The menu is placed against the window, not inside the stage: the stage clips what it holds,

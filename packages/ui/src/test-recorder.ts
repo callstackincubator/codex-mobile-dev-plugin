@@ -268,6 +268,7 @@ export class TestRecorder {
   private fadeTimer?: ReturnType<typeof setTimeout>;
 
   private treeSource?: RecorderTreeSource;
+  private readonly readers = new Map<string, RecorderReader>();
 
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   getSnapshot = () => this.snapshot;
@@ -305,6 +306,8 @@ export class TestRecorder {
 
   /** The simulator panel hands the recorder its way of reading the device it shows. */
   attach(deviceId: string, platform: DevicePlatform, reader: RecorderReader) {
+    const key = this.deviceKey(deviceId, platform);
+    this.readers.set(key, reader);
     if (this.snapshot.recordingDeviceId && !this.isRecordingDevice(deviceId, platform)) return;
     // The panel re-attaches whenever it refreshes its device list, which is every few seconds.
     // Invalidating on each of those threw the cached tree away — and with it, through
@@ -319,7 +322,13 @@ export class TestRecorder {
 
   /** The panel's device went away, so nothing can be recorded from it any more. */
   detach(deviceId: string, platform: DevicePlatform) {
-    if (this.snapshot.recordingDeviceId && !this.isRecordingDevice(deviceId, platform)) return;
+    const key = this.deviceKey(deviceId, platform);
+    const detached = this.readers.get(key);
+    this.readers.delete(key);
+    if (this.snapshot.recordingDeviceId && !this.isRecordingDevice(deviceId, platform)) {
+      return;
+    }
+    if (detached !== this.reader) { detached?.release?.(); return; }
     const reader = this.reader;
     this.reader = undefined;
     this.invalidate();
@@ -332,6 +341,8 @@ export class TestRecorder {
   private isRecordingDevice(deviceId: string, platform: DevicePlatform) {
     return this.snapshot.recordingDeviceId === deviceId && this.snapshot.recordingPlatform === platform;
   }
+
+  private deviceKey(deviceId: string, platform: DevicePlatform) { return `${platform}\u0000${deviceId}`; }
 
   isRecording(deviceId?: string, platform?: DevicePlatform) {
     return Boolean(deviceId) && platform !== undefined && this.isRecordingDevice(deviceId!, platform);
@@ -358,6 +369,7 @@ export class TestRecorder {
    */
   adoptAgentRecording(deviceId: string, platform: DevicePlatform, steps: readonly RecordedStep[], title?: string) {
     if (!deviceId) return;
+    this.reader = this.readers.get(this.deviceKey(deviceId, platform)) ?? this.reader;
     const startedAt = performance.now();
     const added = Math.max(0, steps.length - this.snapshot.steps.length);
     const began = this.snapshot.agentDeviceId !== deviceId;
@@ -411,7 +423,13 @@ export class TestRecorder {
    * of a finished test is never what was meant.
    */
   start(deviceId: string, platform: DevicePlatform, keepSteps = false) {
-    if (!deviceId || !this.reader || this.snapshot.agentDeviceId || (keepSteps && this.snapshot.sourceOverride !== undefined)) return;
+    const reader = this.readers.get(this.deviceKey(deviceId, platform));
+    if (!deviceId || !reader || this.snapshot.agentDeviceId || (keepSteps && this.snapshot.sourceOverride !== undefined)) return;
+    if (this.reader !== reader) {
+      this.reader?.release?.();
+      this.reader = reader;
+      this.invalidate();
+    }
     const had = this.snapshot.steps.length > 0;
     this.invalidate();
     this.clearHover();

@@ -269,8 +269,10 @@ export class TestingDevices {
       : { platform: "ios" as const, udid: target.deviceId };
   }
 
-  /** Platform-qualified, so the same string on another platform is never taken for a cached attach. */
-  private key(target: TestingDeviceTarget): string { return `${target.platform}:${target.deviceId}`; }
+  /** Every input that decides which app/session is attached and how its tree is projected. */
+  private key(target: TestingDeviceTarget): string {
+    return `${target.platform}\u0000${target.deviceId}\u0000${target.projectPath}\u0000${target.bundleId}`;
+  }
 
   async read(target: TestingDeviceTarget): Promise<TestingDeviceTree> {
     const run = this.queue.then(() => this.readOnce(target), () => this.readOnce(target));
@@ -346,6 +348,12 @@ export class TestingDevices {
    * changes: each of those releases.
    */
   async release(): Promise<void> {
+    const run = this.queue.then(() => this.releaseOnce(), () => this.releaseOnce());
+    this.queue = run.catch(() => undefined);
+    return run;
+  }
+
+  private async releaseOnce(): Promise<void> {
     if (this.attached === undefined || this.client === undefined) return;
     this.attached = undefined;
     try {

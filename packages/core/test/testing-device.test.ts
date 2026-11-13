@@ -277,3 +277,40 @@ test("the same id on another platform is not a cached attach", async () => {
 
   assert.equal(calls.filter(entry => entry.call === "open").length, 2);
 });
+
+test("changing project or bundle on one device is not a cached attach", async () => {
+  const calls: Record<string, unknown>[] = [];
+  const devices = new TestingDevices(fakeAgentDevice(calls, () => ({ nodes: [] })) as never);
+  (devices as unknown as { projections: Map<string, unknown> }).projections.set("/project", Promise.resolve(projection));
+  (devices as unknown as { projections: Map<string, unknown> }).projections.set("/other-project", Promise.resolve(projection));
+
+  await devices.read(target);
+  await devices.read({ ...target, bundleId: "com.example.other" });
+  await devices.read({ ...target, projectPath: "/other-project" });
+
+  assert.equal(calls.filter(entry => entry.call === "open").length, 3);
+});
+
+test("release finishes before a later read can attach a new session", async () => {
+  const calls: Record<string, unknown>[] = [];
+  let finishClose!: () => void;
+  const close = new Promise<void>(resolve => { finishClose = resolve; });
+  const devices = new TestingDevices(async () => ({
+    createAgentDeviceClient: () => ({
+      apps: { open: async (options: Record<string, unknown>) => { calls.push({ call: "open", ...options }); } },
+      capture: { snapshot: async () => ({ nodes: [] }) },
+      sessions: { close: async () => { calls.push({ call: "close" }); await close; } },
+      interactions: { click: async () => {}, fill: async () => {}, swipe: async () => {}, scroll: async () => {} },
+    }),
+  }) as never);
+  (devices as unknown as { projections: Map<string, unknown> }).projections.set("/project", Promise.resolve(projection));
+
+  await devices.read(target);
+  const releasing = devices.release();
+  const reading = devices.read({ ...target, bundleId: "com.example.next" });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(calls.filter(entry => entry.call === "open").length, 1, "the new attach waits for close");
+  finishClose();
+  await Promise.all([releasing, reading]);
+  assert.deepEqual(calls.map(entry => entry.call), ["open", "close", "open"]);
+});

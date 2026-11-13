@@ -316,6 +316,25 @@ test("replacing the reader hands the old device back first", async () => {
   assert.equal(second.released, 0);
 });
 
+test("recording selects the reader for that simulator instead of the last panel refreshed", async () => {
+  const recorder = new TestRecorder();
+  const ios = { count: 0 };
+  const android = { count: 0 };
+  recorder.attach(UDID, "ios", reader([tab("iOS", 100)], ios));
+  recorder.attach("emulator-5554", "android", reader([tab("Android", 100)], android));
+
+  recorder.start(UDID, "ios");
+  await recorder.openMenu({ x: 50, y: 120 });
+
+  assert.equal(recorder.getSnapshot().menu?.target?.label, "iOS");
+  assert.ok(ios.count > 0);
+  assert.equal(android.count, 0);
+  const androidReleases = android.released;
+  recorder.detach("emulator-5554", "android");
+  assert.equal(android.released, androidReleases, "another panel disappearing cannot release the active recording");
+  recorder.detach(UDID, "ios");
+});
+
 test("a pointer move during the menu's own read does not drop the menu", async () => {
   const reads = { count: 0 };
   const recorder = new TestRecorder();

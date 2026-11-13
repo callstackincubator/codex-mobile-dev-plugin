@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { deleteTestFile, discardStagedTestFile, findConfig, inspectProject, listTestFiles, parseTargets, previewTestFile, readTestFile, saveStagedTestFile, stageTestFile, TestingProjectChoices, writeTestFile } from "../src/testing-projects.ts";
+import { deleteTestFile, discardStagedTestFile, findConfig, inspectProject, listTestFiles, parseTargets, previewTestFile, readTestFile, resolveTestRunPaths, saveStagedTestFile, stageTestFile, TestingProjectChoices, writeTestFile } from "../src/testing-projects.ts";
 
 const CONFIG = `import { mobile } from "@e2e-dev/mobile";
 import type { E2EConfig } from "e2e";
@@ -108,6 +108,22 @@ test("a path that leaves the tests folder is refused", async () => {
     }
     // Nothing escaped into the project root or above it.
     assert.equal(await readFile(join(root, "escaped.e2e.ts"), "utf-8").catch(() => undefined), undefined);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("a run accepts only an existing test and the selected project's config", async () => {
+  const { root, path } = await project();
+  try {
+    await writeTestFile(path, "tests/flow.e2e.ts", SOURCE);
+    assert.deepEqual(await resolveTestRunPaths(path, "tests/flow.e2e.ts", join(path, "e2e.config.ts")), {
+      projectPath: path,
+      relativePath: "tests/flow.e2e.ts",
+      configPath: join(path, "e2e.config.ts"),
+    });
+    await assert.rejects(resolveTestRunPaths(path, "../outside.e2e.ts"), /tests\//);
+    await assert.rejects(resolveTestRunPaths(path, "tests/missing.e2e.ts"), /no longer there/);
+    await writeFile(join(path, "other.config.ts"), "throw new Error('ran arbitrary code')\n");
+    await assert.rejects(resolveTestRunPaths(path, "tests/flow.e2e.ts", join(path, "other.config.ts")), /own e2e config/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
