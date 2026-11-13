@@ -8,7 +8,7 @@ import type { Theme } from "./profiles.ts";
 // match CI: refresh them with `npm run test:visual:docker -- --update-snapshots`, then review the diff.
 
 const themes: Theme[] = ["light", "dark"];
-const tools = [["performance", "Performance"], ["storage", "Storage"], ["tracesift", "TraceSift"]] as const;
+const tools = [["performance", "Performance"], ["storage", "Storage"], ["app-intel", "App Intel"], ["tracesift", "TraceSift"]] as const;
 
 for (const theme of themes) test.describe(`${theme}`, { tag: "@visual" }, () => {
   test(`workspace`, async ({ openView }) => {

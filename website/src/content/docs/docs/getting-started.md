@@ -114,7 +114,7 @@ Follow your client's configuration format. Device panels and interactive recordi
 
 1. Ask **“Build and run my app in the simulator beside this chat.”** You can name iOS, Android, a simulator model, or a connected device.
 2. Choose or reuse a device. Selecting a stopped simulator or AVD boots it.
-3. Watch the app beside the conversation. Use **Select** to annotate an element, or open **Logs**, **Performance**, **Storage**, or **TraceSift**.
+3. Watch the app beside the conversation. Use **Select** to annotate an element, or open **App Intelligence**, **Logs**, **Performance**, **Storage**, or **TraceSift**.
 
 Your app's own build tools compile, install, and launch it. Mobile Dev does not install Xcode runtimes or replace your project's build system.
 

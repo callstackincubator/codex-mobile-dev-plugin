@@ -6,6 +6,7 @@
 | --- | --- |
 | `mobile_open_simulator` | Open the native panel, optionally targeting a platform, device kind, or discovered device ID |
 | `mobile_open_workspace` | Open fullscreen with the same optional device targeting |
+| `mobile_open_app_intel` | Open App Intelligence, optionally focused on an exact screen ID from `mobile_app_intel` |
 | `mobile_list_simulators` | Start the bundled backend if needed and list devices |
 | `mobile_choose_devices` | Ask the user to choose task targets in the host's native form; listed only for hosts with one (Codex, Claude Code) |
 | `mobile_list_ios_devices` | Discover physical iPhones and iPads with USB/Wi-Fi, pairing state, UDID, and CoreDevice ID |
@@ -19,6 +20,14 @@
 | `mobile_stream_input` | Send a batch of panel input, app-only |
 | `mobile_stream_reset` | Recover one iOS panel's MJPEG capture, app-only |
 | `mobile_stream_close` | Close a panel stream, app-only |
+| `mobile_generate_app_intel` | Generate or replace a React Native project's static screen and dependency graph |
+| `mobile_app_intel` | Search the saved graph or query a screen/file's incoming or outgoing relationships |
+| `mobile_pick_app_intel_project` | Choose a project with the host folder picker, app-only |
+| `mobile_select_app_intel_project` | Switch to a remembered project, app-only |
+| `mobile_app_intel_snapshot` | Read the selected project's graph for the visualization, app-only |
+| `mobile_app_intel_status` | Read generation progress and saved-snapshot status, app-only |
+| `mobile_clear_app_intel` | Delete the selected project's saved graph, app-only |
+| `mobile_cancel_app_intel` | Cancel generation before its atomic save, app-only |
 | `mobile_log_sources` | List connected Android devices and local Metro targets |
 | `mobile_logs_session` | Start native and/or Metro log readers |
 | `mobile_read_logs` | Read a log batch and source status |

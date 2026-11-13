@@ -142,8 +142,8 @@ test("opening the panel links the browser page only for hosts without MCP Apps",
     const host = new Client({ name: "claude-code", version: "1" }, { capabilities });
     await plugin.server.connect(shared);
     await host.connect(hostSide);
-    for (const name of ["mobile_open_simulator", "mobile_open_workspace"]) {
-      const result = await host.callTool({ name, arguments: { platform: "android" } });
+    for (const name of ["mobile_open_simulator", "mobile_open_workspace", "mobile_open_app_intel"]) {
+      const result = await host.callTool({ name, arguments: { platform: "android", ...(name === "mobile_open_app_intel" ? { appIntelScreen: "navigation:Profile" } : {}) } });
       const texts = (result.content as Array<{ text: string }>).map(item => item.text);
       const structured = result.structuredContent as { browserPanel?: { url: string } };
       if (ui) { assert.equal(texts.length, 1); assert.equal(structured.browserPanel, undefined); continue; }
@@ -152,6 +152,7 @@ test("opening the panel links the browser page only for hosts without MCP Apps",
       const link = new URL(texts[1].match(/http:\/\/127\.0\.0\.1:\d+\/[\w-]+\/\?\S+/)![0]);
       assert.equal(link.searchParams.get("tool"), name);
       assert.equal(link.searchParams.get("platform"), "android");
+      assert.equal(link.searchParams.get("appIntelScreen"), name === "mobile_open_app_intel" ? "navigation:Profile" : null);
     }
     await host.close();
     await plugin.close();
@@ -175,7 +176,7 @@ test("a panel that never renders inline links the browser page for MCP Apps host
   await host.connect(hostSide);
   t.after(async () => { await host.close(); await plugin.close(); });
   const { tools } = await host.listTools();
-  for (const name of ["mobile_open_simulator", "mobile_open_workspace"]) {
+  for (const name of ["mobile_open_simulator", "mobile_open_workspace", "mobile_open_app_intel"]) {
     const tool = tools.find(candidate => candidate.name === name)!;
     // No UI resource for the host to render, and the page named for the browser panel.
     assert.equal(tool._meta?.ui, undefined);

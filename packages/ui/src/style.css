@@ -30,6 +30,23 @@ html:is([data-view="recording"], [data-view="comparison"], [data-view="tracesift
 .recording-track[data-reveal="pending"] .recording-change-highlight { opacity: 0; }
 .recording-track[data-reveal="finished"] .recording-change-highlight { animation: recording-highlight-reveal 150ms ease-out 250ms both; }
 @keyframes recording-highlight-reveal { from { opacity: 0; } to { opacity: 1; } }
+.app-intel-area-node { animation: app-intel-area-prompt 7s ease-in-out infinite; will-change: transform; }
+.app-intel-area-node:hover, .app-intel-area-node:focus-visible { animation: none; transform: translateY(-2px) scale(1.03); }
+@keyframes app-intel-area-prompt {
+  0%, 8%, 100% { transform: scale(1); }
+  4% { transform: scale(1.07); }
+}
+.app-intel-project-orbit { opacity: 0; transform-box: fill-box; transform-origin: center; animation: app-intel-orbit-expand 4.8s cubic-bezier(.22,.75,.25,1) infinite; }
+@keyframes app-intel-orbit-expand {
+  0% { opacity: 0; transform: scale(.15); }
+  16% { opacity: .13; }
+  65% { opacity: .055; transform: scale(1); }
+  78%, 100% { opacity: 0; transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-intel-area-node { animation: none; }
+  .app-intel-project-orbit { animation: none; opacity: .06; transform: none; }
+}
 .recording-sidebar { display: flex; flex-direction: column; min-width: 0; padding: 16px; border-top: 1px solid var(--border); gap: 16px; }
 .recording-overview { border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
 .recording-overview-bar { position: relative; height: 18px; margin-top: 14px; border-radius: 5px; background: var(--muted); overflow: hidden; }

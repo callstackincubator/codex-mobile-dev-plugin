@@ -25,8 +25,11 @@ export const serverBundleBanner = [
  * dynamically become chunks beside it, found the same way.
  */
 export async function buildServerBundles({ entryPoints, outdir, sentryDirectory, splitting = false }) {
+  const serverEntries = entryPoints.server && !entryPoints["app-intelligence-worker"]
+    ? { ...entryPoints, "app-intelligence-worker": "packages/core/src/app-intelligence/worker.ts" }
+    : entryPoints;
   const result = await build({
-    entryPoints, outdir, outExtension: { ".js": ".mjs" }, bundle: true, splitting,
+    entryPoints: serverEntries, outdir, outExtension: { ".js": ".mjs" }, bundle: true, splitting,
     // typescript.js is a single ~9.9 MB module, which no amount of splitting can bring under
     // Claude's 5 MiB per-file limit. App-flow's sources keep importing "typescript" so tsc
     // still sees the real declarations; at runtime this shim resolves the compiler from the

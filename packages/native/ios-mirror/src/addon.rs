@@ -7,16 +7,49 @@ async fn setup<T, E: std::fmt::Display>(deadline: tokio::time::Instant, operatio
     result.map_err(|_| "Timed out opening the iPhone developer connection.".to_string())?.map_err(|error| error.to_string())
 }
 
-use idevice::{IdeviceService, core_device::{build_start_audio_parameters, build_start_video_parameters}, core_device_proxy::CoreDeviceProxy, usbmuxd::{Connection, UsbmuxdAddr}, rsd::RsdHandshake};
+use idevice::{IdeviceError, IdeviceService, core_device::{build_start_audio_parameters, build_start_video_parameters}, core_device_proxy::CoreDeviceProxy, usbmuxd::{Connection, UsbmuxdAddr, UsbmuxdDevice}, rsd::RsdHandshake};
 use media::{hevc::{HevcAccessUnitAssembler, HevcDepacketizerEvent}, negotiation::{CallInfoBlob, build_screen_audio_offer, build_screen_video_offer, parse_screen_video_answer}, rtcp, rtp::RtpPacket};
 use napi::{bindgen_prelude::Buffer, Error, Result};
 use napi_derive::napi;
 use tokio::sync::{Notify, mpsc};
 use uuid::Uuid;
 
-#[napi_derive::module_init]
+#[napi]
 pub fn initialize_telemetry() {
     mobile_dev_telemetry::init("ios-mirror");
+}
+
+async fn connected_devices(address: &UsbmuxdAddr) -> std::result::Result<Vec<UsbmuxdDevice>, IdeviceError> {
+    let mut mux = address.connect(1).await?;
+    mux.get_devices().await
+}
+
+#[napi(object)]
+pub struct DeviceConnection {
+    pub udid: String,
+    pub transport_type: String,
+}
+
+#[napi]
+pub async fn list_device_connections() -> Result<Vec<DeviceConnection>> {
+    let path = UsbmuxdAddr::SOCKET_FILE.into();
+    let address = UsbmuxdAddr::UnixSocket(path);
+    let discovery = connected_devices(&address);
+    let result = tokio::time::timeout(Duration::from_secs(3), discovery).await;
+    let reply = result.map_err(|_| Error::from_reason("Timed out listing physical iOS connections."))?;
+    let devices = reply.map_err(|error| {
+        let message = format!("Could not list physical iOS connections: {error}");
+        Error::from_reason(message)
+    })?;
+    let connections = devices.into_iter().filter_map(|device| {
+        let transport_type = match device.connection_type {
+            Connection::Usb => "wired",
+            Connection::Network(_) => "localNetwork",
+            Connection::Unknown(_) => return None,
+        };
+        Some(DeviceConnection { udid: device.udid, transport_type: transport_type.into() })
+    }).collect();
+    Ok(connections)
 }
 
 struct Shared {
@@ -167,10 +200,9 @@ fn connection_id(response: &plist::Value) -> std::result::Result<u64, String> {
 
 async fn run(udid: &str, shared: &Shared, mut commands: mpsc::UnboundedReceiver<Command>, started: &mut Option<tokio::sync::oneshot::Sender<std::result::Result<(), String>>>) -> std::result::Result<(), String> {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(25);
-    let address = UsbmuxdAddr::UnixSocket("/var/run/usbmuxd".into());
-    let connect = address.connect(1);
-    let mut mux = setup(deadline, connect).await?;
-    let discovery = mux.get_devices();
+    let path = UsbmuxdAddr::SOCKET_FILE.into();
+    let address = UsbmuxdAddr::UnixSocket(path);
+    let discovery = connected_devices(&address);
     let devices = setup(deadline, discovery).await?;
     let device = devices.iter().filter(|device| device.udid == udid).min_by_key(|device| if device.connection_type == Connection::Usb { 0 } else { 1 })
         .ok_or("The iPhone is no longer connected. Check USB or Wi-Fi pairing in Xcode.")?;

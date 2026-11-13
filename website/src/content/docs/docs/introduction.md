@@ -1,9 +1,9 @@
 ---
 title: Introduction
-description: Bring devices, logs, performance, and app storage into your ADE so you and your coding agent can work on the same running app.
+description: Bring app structure, devices, logs, performance, and app storage into your ADE so you and your coding agent can work on the same mobile project.
 ---
 
-Mobile Dev is a plugin for mobile development in your agentic development environment (ADE). It brings iOS and Android devices beside your conversation, with tools to inspect the running app, read logs, record performance, and explore app storage.
+Mobile Dev is a plugin for mobile development in your agentic development environment (ADE). It brings your app's structure and iOS and Android devices beside your conversation, with tools to trace source dependencies, inspect the running app, read logs, record performance, and explore app storage.
 
 It works with Expo, React Native, SwiftUI, and other native mobile projects. Your project's own tools build and run the app. Mobile Dev supplies the device workspace and the information you and your agent use to work on it.
 
@@ -21,6 +21,7 @@ The agent opens Mobile Dev, selects a suitable installed device, and uses the pr
 | --- | --- |
 | Select simulators, emulators, or physical devices; inspect and annotate the screen | [Devices](/docs/devices) |
 | Install or relaunch an app, open a deep link, change permissions, or test another language | [App control](/docs/app-control) |
+| Trace screens through their source files and packages without running the app | [App Intelligence](/docs/app-intelligence) |
 | Map an app's screens and navigation, capture each screen, and record a path to one | [App Flow](/docs/app-flow) |
 | Read native and Metro messages together and send a log to your agent | [Logs](/docs/logs) |
 | Record CPU, memory, and supported device Display FPS; select and compare ranges | [Performance](/docs/performance) |
