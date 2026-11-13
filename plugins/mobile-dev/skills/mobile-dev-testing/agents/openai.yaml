@@ -1,0 +1,10 @@
+interface:
+  display_name: "Record an e2e test"
+  short_description: "Record an e2e test from the simulator"
+  default_prompt: "Use Mobile Dev and record the test for the important areas on this screen."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "mobile-dev"
+      description: "Bundled Baguette simulator tools and native panel"

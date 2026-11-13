@@ -1,5 +1,5 @@
 
-!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="6a6dc070-11ee-54cb-b653-a5248e133181")}catch(e){}}();
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="3d56a992-d8b4-534f-aa44-9f10d5f0bb93")}catch(e){}}();
 ;(function(){var g=globalThis.__SENTRY_ORCHESTRION__=globalThis.__SENTRY_ORCHESTRION__||{};g.bundler=g.bundler||new Set();})();import { createRequire as mobileDevBundleRequire } from 'node:module'; import { fileURLToPath as mobileDevFileURLToPath } from 'node:url'; import { dirname as mobileDevPathDirname } from 'node:path'; const require = mobileDevBundleRequire(import.meta.url); const __filename = mobileDevFileURLToPath(import.meta.url); const __dirname = mobileDevPathDirname(__filename);
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -62157,7 +62157,7 @@ var nodeRuntimeMetricsIntegration = defineIntegration((options = {}) => {
 });
 
 // packages/shared/src/version.ts
-var PLUGIN_VERSION = "0.1.181";
+var PLUGIN_VERSION = "0.1.183";
 
 // packages/shared/src/telemetry-identity.ts
 function isAnonymousUserId(value) {
@@ -62795,8 +62795,8 @@ import { createRequire as createRequire3 } from "node:module";
 import { existsSync as existsSync2 } from "node:fs";
 import { fileURLToPath as fileURLToPath5 } from "node:url";
 var addon;
-async function openNativeIosCapture(udid) {
-  if (process.platform !== "darwin" || process.arch !== "arm64") throw new ExpectedOperationError("unsupported_platform", "Physical iOS mirroring requires an Apple Silicon Mac.");
+function nativeAddon() {
+  if (process.platform !== "darwin" || process.arch !== "arm64") throw new ExpectedOperationError("unsupported_platform", "Physical iOS device support requires an Apple Silicon Mac.");
   if (addon === void 0) {
     const bundled = import.meta.url.endsWith(".mjs");
     const root = bundled ? "./ios-mirror/" : "../../native/vendor/ios-mirror/";
@@ -62807,7 +62807,12 @@ async function openNativeIosCapture(udid) {
     const loaded2 = require2(path);
     addon = loaded2;
   }
-  return addon.openDevice(udid);
+  return addon;
+}
+async function openNativeIosCapture(udid) {
+  const loaded2 = nativeAddon();
+  loaded2.initializeTelemetry();
+  return loaded2.openDevice(udid);
 }
 
 // packages/core/src/ios-mirror-server.ts
@@ -82946,4 +82951,4 @@ undici/lib/web/websocket/frame.js:
   (*! ws. MIT License. Einar Otto Stangvik <einaros@gmail.com> *)
 */
 
-//# debugId=6a6dc070-11ee-54cb-b653-a5248e133181
+//# debugId=3d56a992-d8b4-534f-aa44-9f10d5f0bb93

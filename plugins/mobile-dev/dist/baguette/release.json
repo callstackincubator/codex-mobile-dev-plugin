@@ -13,7 +13,7 @@
   "build": {
     "sourceCommit": "db17446e25059247879dba7941e4de641c2f31e2",
     "swift": "Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)\nTarget: arm64-apple-macosx27.0.0",
-    "binarySha256": "b89e02e77d797f380357976cc4769ed2d15e61dd693abc714c022d06f56c8430",
+    "binarySha256": "c07fc2d0e9f15b5bab27b44130ae16e0efbddd9e57603c434a4e6c529d0ada16",
     "telemetrySourceSHA256": "379153ecb22e6efbfa39f04158d77c08884e8176c4ba15e471a8a763d4fb44a6"
   }
 }
