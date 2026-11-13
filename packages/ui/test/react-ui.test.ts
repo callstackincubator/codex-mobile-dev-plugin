@@ -191,6 +191,21 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   assert.equal(pickerStore.value, "iphone");
   await act(async () => { (dom.window.document.querySelector('[data-device-option="iphone"]') as HTMLButtonElement).click(); });
   assert.equal(deviceChanges, 1);
+  const androidPickerElement = dom.window.document.querySelector('#android-panel [data-element="devices"]')!;
+  const androidPicker = getDevicePicker(androidPickerElement);
+  const bookingName = "Test <checkout> on Android";
+  const deviceSpecs = "ADC Android 14 2 CPU 3 GiB RAM · Wi-Fi";
+  const deviceSerial = "127.0.0.1:15555";
+  await act(async () => {
+    androidPicker.update({ value: deviceSerial, disabled: false, items: [{ value: deviceSerial, label: bookingName, detail: deviceSpecs, running: true }] });
+  });
+  const androidTrigger = androidPickerElement.querySelector('[data-slot="select-trigger"]') as HTMLButtonElement;
+  assert.equal(androidTrigger.textContent, bookingName);
+  await act(async () => { androidTrigger.click(); });
+  const bookingOption = dom.window.document.querySelector(`[data-device-option="${deviceSerial}"]`)!;
+  assert.equal(bookingOption.textContent, bookingName + deviceSpecs);
+  assert.equal(bookingOption.querySelector("checkout"), null);
+  await act(async () => { (bookingOption as HTMLButtonElement).click(); });
   const iosSettings = getDeviceSettings(dom.window.document.querySelector('#ios-panel [data-element="settings"]'));
   const changes: unknown[] = [];
   iosSettings.request = async (change: unknown) => { changes.push(change); return { appearance: "light", contentSize: "large", increaseContrast: false, locationSupported: true }; };

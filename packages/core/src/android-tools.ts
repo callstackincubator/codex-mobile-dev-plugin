@@ -10,6 +10,8 @@ import { ServeEmu, androidIdSchema } from "./serve-emu.ts";
 import { AndroidStreams } from "./android-streams.ts";
 import { retryableFailure } from "./simulator-unavailable.ts";
 import { errorMessage, inputSchema } from "@mobile-dev/shared/protocol.ts";
+import type { Status } from "@mobile-dev/shared/protocol.ts";
+import { androidBookingNames } from "./android-booking-names.ts";
 import { captureServerError } from "./telemetry.ts";
 
 const sessionIdSchema = z.string().regex(/^[a-f0-9]{64}$/);
@@ -17,6 +19,12 @@ const deviceInput = { deviceId: androidIdSchema.describe("An Android serial or a
 const write = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
 const read = { ...write, readOnlyHint: true };
 function result(data: object, text: string): CallToolResult { return { content: [{ type: "text", text }], structuredContent: { ...data } }; }
+async function deviceListResult(status: Status, text: string): Promise<CallToolResult> {
+  const response = result(status, text);
+  const bookingNames = await androidBookingNames(status.devices);
+  if (Object.keys(bookingNames).length > 0) response._meta = { bookingNames };
+  return response;
+}
 function guarded<T>(handler: (input: T, context: ServerRequestContext) => Promise<CallToolResult>) {
   return async (input: T, context: ServerRequestContext): Promise<CallToolResult> => {
     try { return await handler(input, context); }
@@ -31,7 +39,11 @@ export function registerAndroidTools(server: McpServer, android: ServeEmu, appUr
   const streams = new AndroidStreams(android);
   server.registerTool("mobile_list_android_devices", {
     title: "List Android devices", description: "Discover physical Android devices over USB or Wi-Fi and list running emulators and installed AVDs through ADB. Returns device kind, serial, model when available, transport for physical devices, and device/offline/unauthorized state (authorized devices use Booted). Listing does not boot, pair, authorize, or stream a device.", inputSchema: {}, annotations: read,
-  }, guarded(async () => { const status = await android.list(); return result(status, status.connected ? JSON.stringify(status.devices) : status.error!); }));
+  }, guarded(async () => {
+    const status = await android.list();
+    const text = status.connected ? JSON.stringify(status.devices) : status.error!;
+    return deviceListResult(status, text);
+  }));
   for (const action of ["boot", "shutdown"] as const) server.registerTool(`mobile_${action}_android_emulator`, {
     title: action === "boot" ? "Boot Android emulator" : "Shut down Android emulator",
     description: action === "boot"
@@ -41,7 +53,7 @@ export function registerAndroidTools(server: McpServer, android: ServeEmu, appUr
   }, guarded(async ({ deviceId }: { deviceId: string }) => {
     if (action === "shutdown") { await closeCpu(deviceId); streams.closeDevice(deviceId); }
     const status = await android[action](deviceId);
-    return result(status, `${action === "boot" ? "Booted" : "Shut down"} ${deviceId}.`);
+    return deviceListResult(status, `${action === "boot" ? "Booted" : "Shut down"} ${deviceId}.`);
   }));
   // The panel's annotations fall back to this tree; the agent reads screens with device_snapshot.
   registerAppTool(server, "mobile_android_describe_ui", {

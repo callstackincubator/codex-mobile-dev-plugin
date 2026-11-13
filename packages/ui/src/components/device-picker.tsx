@@ -9,7 +9,10 @@ function DeviceLabel({ item, wrap = false }: { item: DeviceOption; wrap?: boolea
   const Icon = item.kind === "tablet" ? TabletIcon : SmartphoneIcon;
   return <span className="flex min-w-0 items-center gap-2">
     <span className="relative flex shrink-0"><Icon className="size-4 text-muted-foreground" />{item.running && <span className="absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-green-500 ring-2 ring-popover" role="img" aria-label={item.statusLabel ?? "Running"} />}</span>
-    <span className={wrap ? "whitespace-normal [overflow-wrap:anywhere]" : "truncate"}>{item.label}</span>
+    <span className={wrap ? "whitespace-normal [overflow-wrap:anywhere]" : "truncate"}>
+      {item.label}
+      {wrap && item.detail && <span className="block text-xs text-muted-foreground">{item.detail}</span>}
+    </span>
   </span>;
 }
 

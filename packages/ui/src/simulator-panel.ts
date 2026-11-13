@@ -10,6 +10,8 @@ import { bezelGeometrySchema } from "@mobile-dev/shared/bezel.ts";
 import type { Bezel } from "@mobile-dev/shared/bezel.ts";
 import type { SimulatorDevice, Status, TouchInput } from "@mobile-dev/shared/protocol.ts";
 import { inputSchema } from "@mobile-dev/shared/protocol.ts";
+import { androidBookingNamesSchema } from "@mobile-dev/shared/android-devices.ts";
+import type { AndroidBookingNames } from "@mobile-dev/shared/android-devices.ts";
 import { physicalConnectionLabel } from "@mobile-dev/shared/ios-devices.ts";
 import type { PhysicalIosDevice } from "@mobile-dev/shared/ios-devices.ts";
 import type { DeviceOption } from "./device-picker.ts";
@@ -523,6 +525,13 @@ export function createSimulatorPanel(
     controls();
   }
 
+  let bookingNames: AndroidBookingNames = {};
+
+  function updateBookingNames(metadata: unknown) {
+    const parsed = androidBookingNamesSchema.safeParse(metadata);
+    bookingNames = parsed.success ? parsed.data : {};
+  }
+
   function renderStatus(next: Status, previous = selected?.udid) {
     statusRevision++;
     status = next;
@@ -548,12 +557,15 @@ export function createSimulatorPanel(
     });
     const virtualDevices = next.devices.filter(device => device.kind !== "physical");
     const androidPhysicalOptions: DeviceOption[] = next.devices.flatMap(device => {
-      if (device.kind !== "physical") return [];
+      if (device.kind !== "physical" || device.platform !== "android") return [];
       const connection = physicalConnectionLabel(device.transportType);
       const running = device.state === "Booted";
       const stateLabel = device.state === "unauthorized" ? "Unauthorized" : "Offline";
+      const deviceLabel = `${device.name} · ${connection}${running ? "" : ` · ${stateLabel}`}`;
+      const bookingName = running && Object.hasOwn(bookingNames, device.udid) ? bookingNames[device.udid] : undefined;
       return [{
-        value: device.udid, label: `${device.name} · ${connection}${running ? "" : ` · ${stateLabel}`}`,
+        value: device.udid, label: bookingName ?? deviceLabel,
+        ...(bookingName !== undefined ? { detail: deviceLabel } : {}),
         group: "Connected devices", kind: /tablet|pixel.*tab/i.test(device.name) ? "tablet" : "phone",
         running, statusLabel: "Connected", canStop: false,
       }];
@@ -822,6 +834,7 @@ export function createSimulatorPanel(
     if (platform === "android") {
       const result = await simulatorRead;
       if (revision === statusRevision && !disposed) {
+        updateBookingNames(result._meta?.bookingNames);
         renderStatus(result.structuredContent as Status);
         if (!busy && !reconnect.active) await connect();
       }
@@ -878,6 +891,7 @@ export function createSimulatorPanel(
       const before = selected;
       const result = await call(platform === "android" ? "mobile_boot_android_emulator" : "mobile_boot_simulator",
         platform === "android" ? { deviceId: before.udid } : { udid: before.udid }, { timeout: 300000 });
+      if (platform === "android") updateBookingNames(result._meta?.bookingNames);
       renderStatus(result.structuredContent as Status);
       if (platform === "android") {
         const booted = status?.devices.find(device => device.kind !== "physical" && device.name === before.name && device.state === "Booted");
@@ -900,6 +914,7 @@ export function createSimulatorPanel(
     try {
       if (wasSelected) await disconnect();
       const result = await call(platform === "android" ? "mobile_shutdown_android_emulator" : "mobile_shutdown_simulator", platform === "android" ? { deviceId: id } : { udid: id }, { timeout: 30000 });
+      if (platform === "android") updateBookingNames(result._meta?.bookingNames);
       const next = result.structuredContent as Status;
       const selectedId = wasSelected && platform === "android" ? next.devices.find(item => item.kind !== "physical" && item.name === device.name)?.udid : selected?.udid;
       if (wasSelected && next.connected) stoppedDisplay = true;
