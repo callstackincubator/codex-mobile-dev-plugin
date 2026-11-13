@@ -1,5 +1,5 @@
 
-!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="7a8d402e-6384-5108-9295-a1f7d96eaa9b")}catch(e){}}();
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="e09d2b17-27d4-515d-9977-9d31f6af8fe1")}catch(e){}}();
 import { createRequire as mobileDevBundleRequire } from 'node:module'; import { fileURLToPath as mobileDevFileURLToPath } from 'node:url'; import { dirname as mobileDevPathDirname } from 'node:path'; const require = mobileDevBundleRequire(import.meta.url); const __filename = mobileDevFileURLToPath(import.meta.url); const __dirname = mobileDevPathDirname(__filename);
 import {
   ExpectedOperationError,
@@ -27,7 +27,7 @@ import {
   telemetryHost,
   withIsolationScope,
   wrapMcpServerWithSentry
-} from "./chunk-LIQAYART.mjs";
+} from "./chunk-WWLGQFMG.mjs";
 import {
   external_exports
 } from "./chunk-BNXJFHSV.mjs";
@@ -4381,11 +4381,24 @@ function recordAppStorageOperation(operation, platform2, outcome, duration2) {
   public_api_exports.count("app_storage.operation.samples", 1, { attributes });
   public_api_exports.gauge("app_storage.operation.duration", duration2, { unit: "millisecond", attributes });
 }
+function recordAppIntelOperation(operation, outcome, duration2) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = { component: "server", surface: "app-intel", operation, outcome };
+  public_api_exports.count("app_intel.operation.samples", 1, { attributes });
+  public_api_exports.gauge("app_intel.operation.duration", duration2, { unit: "millisecond", attributes });
+}
 function recordProjectDialog(outcome, duration2) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes = { component: "server", surface: "app-flow", outcome };
   public_api_exports.count("app_flow.project_dialog.samples", 1, { attributes });
   public_api_exports.distribution("app_flow.project_dialog.duration", Math.max(0, duration2), { unit: "millisecond", attributes });
+}
+function recordTestingAgentRead(outcome, duration2, elements, platform2) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = { component: "server", surface: "testing", platform: platform2, outcome };
+  public_api_exports.count("testing.agent.screen.samples", 1, { attributes });
+  public_api_exports.distribution("testing.agent.screen.duration", Math.max(0, duration2), { unit: "millisecond", attributes });
+  if (outcome === "success") public_api_exports.gauge("testing.agent.screen.elements", elements, { attributes });
 }
 function recordTraceSiftOperation(operation, outcome, duration2) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
@@ -4603,7 +4616,7 @@ var resourceKinds = {
   "ui:": "ui"
 };
 var allowedContext = {
-  surface: ["app-flow", "logs", "performance", "storage", "simulator", "recording", "comparison", "tracesift"],
+  surface: ["app-flow", "logs", "performance", "storage", "simulator", "recording", "comparison", "tracesift", "app-intel"],
   view: ["panel", "workspace", "recording", "comparison", "tracesift"],
   layout: ["ios", "android", "both", "none"],
   device_platform: ["ios", "android", "mixed"],
@@ -4729,7 +4742,9 @@ export {
   recordBrowserPanelContext,
   recordPanelRuntime,
   recordAppStorageOperation,
+  recordAppIntelOperation,
   recordProjectDialog,
+  recordTestingAgentRead,
   recordTraceSiftOperation,
   recordTraceSiftPayload,
   recordAnalyticsFlush,
@@ -4755,4 +4770,4 @@ export {
   import_websocket
 };
 
-//# debugId=7a8d402e-6384-5108-9295-a1f7d96eaa9b
+//# debugId=e09d2b17-27d4-515d-9977-9d31f6af8fe1
