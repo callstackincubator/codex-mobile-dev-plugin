@@ -42,6 +42,9 @@ Depending on the tools you use, Mobile Dev processes:
 - App Intelligence project paths, screen names and routes, project-relative source
   and asset paths, package names, static import relationships, and analysis
   diagnostics when you generate or query a source graph.
+- Testing project paths and configuration, element trees, recorded steps, generated
+  test source, runner output, and locally kept unsaved recordings when you record,
+  edit, or run an e2e test.
 - App storage keys, values, database rows, and file metadata when you inspect
   storage. Results are filtered before reaching the host or panel: recognized
   sensitive fields, credential-like values, and binary values are redacted. These
@@ -94,8 +97,8 @@ not a guarantee of anonymity. These IDs are excluded from performance metrics
 and span attributes.
 
 The reporting code excludes MCP arguments/results, screenshots, screen video,
-app log content, typed/pasted text, App Intelligence graph contents, app storage
-contents, profile contents, and device performance recordings. It scrubs common
+app log content, typed/pasted text, App Intelligence graph contents, test source
+and step contents, app storage contents, profile contents, and device performance recordings. It scrubs common
 secrets, email addresses, URLs,
 and local home paths from error text. Session Replay, minidumps, and profiling
 are disabled in the configured Sentry integrations. Scrubbing is a safeguard,
@@ -183,6 +186,7 @@ and [OpenAI's privacy policy](https://openai.com/policies/privacy-policy/).
 | Mixpanel product analytics | Up to 24 months, then deleted. |
 | Local live logs | Held in bounded memory buffers. A server log session expires after five minutes without reads or keep-alives; closing the session stops collection. Copies already attached to the host follow the host's retention. |
 | Saved App Intelligence graphs and project history | Stored under `~/Library/Application Support/mobile-dev/app-intelligence` until you clear a graph or remove the files. Clearing a graph keeps the project in the recent-project list. |
+| Testing project history and unsaved recordings | Stored under `~/Library/Application Support/mobile-dev/testing` until you delete a recording or remove the files. Saving a recording into the project removes the local draft it replaced; the draft store keeps at most 30 recordings. Tests saved into the project's `tests/` folder follow your repository's retention. |
 | Saved performance recordings | Stored under `~/Library/Application Support/mobile-dev/recordings` until you remove them; the recording store has no automatic age-based expiry. |
 | TraceSift integration results/references and the chosen project folder | Stored under `~/.tracesift/integrations/mobile-dev` by default, or the corresponding `TRACE_SIFT_HOME` directory, until removed. Original profiles and the TraceSift service's own data are separate. |
 | Installation ID | Stored at `~/Library/Application Support/mobile-dev/telemetry/anonymous-user-id` until you remove it. Process-session IDs last for the process; copies in sent reports follow Sentry retention. |
@@ -192,8 +196,8 @@ and [OpenAI's privacy policy](https://openai.com/policies/privacy-policy/).
 
 Sentry's [data retention periods](https://docs.sentry.io/security-legal-pii/security/data-retention-periods/) apply to active telemetry data. Sentry separately [reports deleting production event-data backups](https://www.sentry.help/en/articles/13965019-how-frequently-is-data-backed-up) 30 or 90 days after backup creation, depending on the data type; that guidance does not specify an Application Metrics-specific backup period. Active-data expiry does not imply immediate removal from backups.
 
-Uninstalling the plugin does not necessarily remove saved recordings, identifiers,
-crash caches, TraceSift files, host messages, or backups. GitHub, the host, your
+Uninstalling the plugin does not necessarily remove saved recordings, testing drafts,
+identifiers, crash caches, TraceSift files, host messages, or backups. GitHub, the host, your
 operating system, and your own backup tools manage their copies separately.
 
 ## 6. Your choices and rights

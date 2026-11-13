@@ -28,6 +28,9 @@ Build a visual map of your app's screens and the navigation between them, for Ex
 ### App Intelligence
 Trace each Expo Router or React Navigation screen through the source files, assets, and packages it depends on, without building or running the app. Choose a project and generate its static iOS and Android graph, then browse entry points by area, fold or highlight dependency groups, and see which dependencies are platform-specific. Ask your agent what a screen depends on, which screens reach a file, or to show one screen's graph. Saved snapshots live under `~/Library/Application Support/mobile-dev/app-intelligence`; project paths and graph contents are excluded from Sentry telemetry.
 
+### Testing Studio
+Record deterministic e2e tests against a booted iOS simulator or Android emulator. Choose a project with an existing e2e setup, launch the configured target, and right-click elements in the mirror to add taps, text entry, gestures, and assertions. The generated TypeScript and editable step list stay beside the app; save only when the flow is ready, then run the whole test or play to one step with per-line results. Unsaved recordings are kept in Mobile Dev and stored tests remain in the project's `tests/` folder. You can also ask your coding agent to record a flow: its steps appear live in the same panel for you to review, adjust, and save.
+
 ### Native and JavaScript logs
 Read iOS unified logs, Android logcat, and Metro console messages together. Follow the foreground app, search and filter logs, and send an error and its stack trace to chat.
 
@@ -190,6 +193,7 @@ Desktop bundle uses Claude's Node runtime, the Cursor plugin uses Node.js from
 | Metro logs and React Native inspection | An existing local Metro server with a compatible app inspector target. |
 | Physical iOS CPU and memory | iOS 17.4 or later, a running development-signed app with `get-task-allow`, a mounted developer disk image, and Xcode/LLDB detached. |
 | Display FPS | Android 12 or later with FrameTimeline support, or a physical iOS device running iOS 17.4 or later. iOS simulators do not support Display FPS. |
+| Testing Studio | A booted iOS simulator or Android emulator, plus an existing e2e project with its dependencies installed and a target bundle ID in `e2e.config.*`. |
 | Profile analysis | A local TraceSift installation, found on `PATH` or through `TRACE_SIFT_COMMAND`. |
 
 Simulator tools use the full Xcode installation selected by `xcode-select` (or
@@ -218,8 +222,9 @@ Ask your agent to work with your app, for example:
 - “Record CPU and memory for 30 seconds while I scroll checkout.”
 - “Compare these two performance recordings.”
 - “Show me the App Intelligence for this project.”
+- “Record an e2e test for the checkout flow.”
 
-Open App Intelligence, Logs, Performance, Storage, or TraceSift. App Intelligence analyzes a project without a device; the other tools inspect the selected device. Use Screenshot to attach
+Open App Intelligence, Testing, Logs, Performance, Storage, or TraceSift. App Intelligence analyzes a project without a device; Testing records against a simulator or emulator; the other device tools inspect the selected device. Use Screenshot to attach
 an image to your next message, or Select to annotate an element or region with an
 instruction. Physical iOS supports taps and drags; keyboard and hardware-button
 controls are unavailable.
@@ -231,6 +236,7 @@ Detailed guides are available for
 [logs](https://github.com/callstackincubator/mobile-dev/blob/main/docs/logs.md),
 [performance](https://github.com/callstackincubator/mobile-dev/blob/main/docs/performance.md),
 [App Intelligence](https://incubator.callstack.com/codex-mobile-dev-plugin/docs/app-intelligence),
+[Testing](https://incubator.callstack.com/codex-mobile-dev-plugin/docs/testing),
 and [MCP tools](https://github.com/callstackincubator/mobile-dev/blob/main/docs/mcp-tools.md).
 [Architecture](https://github.com/callstackincubator/mobile-dev/blob/main/docs/architecture.md) explains how the hosts share the server
 and panel.

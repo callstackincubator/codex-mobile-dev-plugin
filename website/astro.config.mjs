@@ -25,6 +25,7 @@ const sidebar = [
   { label: 'App control', slug: 'docs/app-control' },
   { label: 'App Intelligence', slug: 'docs/app-intelligence' },
   { label: 'App Flow', slug: 'docs/app-flow' },
+  { label: 'Testing', slug: 'docs/testing' },
   { label: 'Logs', slug: 'docs/logs' },
   { label: 'Performance', slug: 'docs/performance' },
   { label: 'Profiles', slug: 'docs/profiles' },
