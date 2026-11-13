@@ -25,5 +25,7 @@ test("reorder, duplicate and command changes edit source without losing its wrap
   assert.match(changed, /import \{ expect \} from "e2e";/);
   assert.match(changed, /await expect\(screen\.getByText\("A"\)\)\.toBeVisible\(\);/);
   assert.ok(storedStepCommands(storedTestSteps(changed)[0]!).some(option => option.id === "tap"));
+  assert.ok(storedStepCommands({ line: 1, label: 'expect(screen.getByText("A")).toBeVisible({ timeout: 30000 })' })
+    .some(option => option.id === "tap"));
   assert.match(storedTestUntilSource(source, 4) ?? "", /await screen\.getByText\("A"\)\.tap\(\);\n  return;\n  await screen\.getByText\("B"\)\.tap\(\);/);
 });

@@ -59,10 +59,12 @@ test("an assertion is recorded from the element menu without touching the app", 
   assert.deepEqual(offers.map(offer => offer.kind), ["tap", "assertVisible", "scrollUntilVisible"]);
   assert.equal(offers.find(offer => offer.kind === "assertVisible")?.source,
     'expect(screen.getByRole("button", "Explore")).toBeVisible()');
-  await recorder.chooseOffer("assertVisible");
+  await recorder.chooseOffer("assertVisible", undefined, 30_000);
 
   assert.equal(recorder.getSnapshot().menu, undefined, "choosing a row closes the menu");
   assert.equal(recorder.getSnapshot().steps[0].kind, "assertVisible");
+  assert.equal(recorder.getSnapshot().steps[0].timeoutMs, 30_000);
+  assert.match(recorder.source, /toBeVisible\(\{ timeout: 30000 \}\)/);
   assert.equal(reads.count, 1, "the menu and the step it records share one read");
 });
 
@@ -557,12 +559,12 @@ test("a step can be duplicated, re-pointed at another command, and dragged into 
   assert.deepEqual(steps[2].selector, explore.selector);
 
   // The command changes; the element it named does not.
-  recorder.changeStepCommand(steps[2].id, "assertNotVisible");
+  recorder.changeStepCommand(steps[2].id, "assertNotVisible", undefined, 30_000);
   steps = recorder.getSnapshot().steps;
   assert.equal(steps[2].kind, "assertNotVisible");
   assert.equal(steps[2].label, 'Expect not visible "Explore" (button)');
   assert.deepEqual(steps[2].selector, explore.selector);
-  assert.match(recorder.source, /await expect\(screen\.getByRole\("button", "Explore"\)\)\.not\.toBeVisible\(\);/);
+  assert.match(recorder.source, /await expect\(screen\.getByRole\("button", "Explore"\)\)\.not\.toBeVisible\(\{ timeout: 30000 \}\);/);
 
   // A kind that carries text takes it; swapping back drops it rather than leaving it to emit.
   recorder.changeStepCommand(steps[2].id, "assertText", "Explore");

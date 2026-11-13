@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { ArrowDownIcon, ArrowDownToLineIcon, ArrowLeftIcon, ArrowRightIcon, ArrowUpIcon, CheckIcon, ChevronRightIcon, EyeIcon, EyeOffIcon, HandIcon, MousePointerClickIcon, PlusIcon, SparklesIcon, TextCursorInputIcon, TypeIcon, WandSparklesIcon, XIcon } from "lucide-react";
-import { stepIsAssertion } from "@mobile-dev/shared/test-recording.ts";
+import { DEFAULT_ASSERTION_TIMEOUT_MS, stepIsAssertion, stepNeedsValue } from "@mobile-dev/shared/test-recording.ts";
 import type { AgentParams, AgentStepKind, PinnedStepKind, RecordedStepKind, StepOffer, SwipeDirection, VisionMode } from "@mobile-dev/shared/test-recording.ts";
 import { Branch } from "./cascading-menu";
 import { Button } from "./ui/button";
@@ -69,24 +69,40 @@ export function MenuGroup({ children }: { children: React.ReactNode }) {
   return <p className="px-2.5 pb-0.5 pt-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{children}</p>;
 }
 
-/** The form a `needsValue` row asks through, so no step is recorded with an empty string literal. */
-export function OfferValueForm({ offer, onSubmit, onCancel }: {
-  offer: StepOffer; onSubmit: (value: string) => void; onCancel: () => void;
+/** Collects a command's text and, when requested, its wait budget. */
+export function OfferValueForm({ offer, onSubmit, onCancel, initialTimeoutMs, includeTimeout = false, back = false }: {
+  offer: StepOffer; onSubmit: (value?: string, timeoutMs?: number) => void; onCancel: () => void;
+  initialTimeoutMs?: number; includeTimeout?: boolean; back?: boolean;
 }) {
   const input = useRef<HTMLInputElement>(null);
-  useEffect(() => { input.current?.focus(); }, [offer]);
+  const timeoutInput = useRef<HTMLInputElement>(null);
+  useEffect(() => { (stepNeedsValue(offer.kind) ? input : timeoutInput).current?.focus(); }, [offer, includeTimeout]);
   const placeholder = offer.kind === "fill" ? "Text to enter" : "Text to expect";
-  return <form className="flex flex-col gap-1.5" onSubmit={event => { event.preventDefault(); onSubmit(input.current?.value ?? ""); }}>
-    <div className="flex items-center gap-2 px-2 py-1 text-sm font-medium">
-      <OfferIcon kind={offer.kind} />
-      <span>{OFFER_LABEL[offer.kind]}</span>
-    </div>
-    <div className="flex items-center gap-1.5">
+  return <form className="flex flex-col gap-1.5" onSubmit={event => {
+    event.preventDefault();
+    const timeoutMs = includeTimeout ? Number(timeoutInput.current?.value) : undefined;
+    if (includeTimeout && (!Number.isSafeInteger(timeoutMs) || timeoutMs! <= 0)) return;
+    onSubmit(stepNeedsValue(offer.kind) ? input.current?.value ?? "" : undefined, timeoutMs);
+  }}>
+    {back ? <button type="button" className="flex items-center gap-1 rounded-lg px-2 py-1 text-left text-sm hover:bg-accent"
+      onClick={onCancel} aria-label="Back to assertion options"><ArrowLeftIcon className="size-4" />Back</button>
+      : <div className="flex items-center gap-2 px-2 py-1 text-sm font-medium">
+        <OfferIcon kind={offer.kind} />
+        <span>{OFFER_LABEL[offer.kind]}</span>
+      </div>}
+    {stepNeedsValue(offer.kind) && <div className="flex items-center gap-1.5">
       <input ref={input} type="text" defaultValue={offer.suggestedValue ?? ""} aria-label={placeholder} placeholder={placeholder}
         className="min-w-0 flex-1 rounded-lg border bg-muted/40 px-2.5 py-1.5 text-sm"
         onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); onCancel(); } }} />
-      <Button type="submit" size="sm" className="shrink-0">Add</Button>
-    </div>
+    </div>}
+    {includeTimeout && <label className="flex items-center gap-2 text-xs text-muted-foreground">
+      Timeout (ms)
+      <input ref={timeoutInput} type="number" min="1" step="1" required
+        defaultValue={initialTimeoutMs ?? DEFAULT_ASSERTION_TIMEOUT_MS} aria-label="Assertion timeout in milliseconds"
+        className="min-w-0 flex-1 rounded-lg border bg-muted/40 px-2.5 py-1.5 text-sm text-foreground"
+        onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); onCancel(); } }} />
+    </label>}
+    <Button type="submit" size="sm" className="self-end">Add</Button>
   </form>;
 }
 
@@ -99,9 +115,10 @@ export function OfferValueForm({ offer, onSubmit, onCancel }: {
  * pointer, and from a recorded step's own menu, where the element is whatever that step named.
  * A row carrying text asks for it here, so neither caller has to own that form.
  */
-export function StepCommandList({ commands, onChoose, renderRow }: {
+export function StepCommandList({ commands, onChoose, renderRow, initialTimeoutMs }: {
   commands: readonly StepOffer[];
-  onChoose: (kind: PinnedStepKind, value?: string) => void;
+  onChoose: (kind: PinnedStepKind, value?: string, timeoutMs?: number) => void;
+  initialTimeoutMs?: number;
   /** The element menu draws its own rows, so its tooltips and attributes stay as they were. */
   renderRow?: (offer: StepOffer, choose: (offer: StepOffer) => void) => React.ReactNode;
 }) {
@@ -110,9 +127,11 @@ export function StepCommandList({ commands, onChoose, renderRow }: {
     if (offer.needsValue) { setAsking(offer); return; }
     onChoose(offer.kind);
   };
-  if (asking) return <OfferValueForm offer={asking} onCancel={() => setAsking(undefined)}
-    onSubmit={value => { setAsking(undefined); onChoose(asking.kind, value); }} />;
-  const row = (offer: StepOffer) => renderRow
+  if (asking) return <OfferValueForm offer={asking} initialTimeoutMs={initialTimeoutMs} onCancel={() => setAsking(undefined)}
+    onSubmit={(value, timeoutMs) => { setAsking(undefined); onChoose(asking.kind, value, timeoutMs); }} />;
+  const row = (offer: StepOffer) => stepIsAssertion(offer.kind)
+    ? <AssertionBranch key={`${offer.kind}:${offer.source}`} offer={offer} onChoose={onChoose} initialTimeoutMs={initialTimeoutMs} />
+    : renderRow
     ? renderRow(offer, choose)
     : <MenuRow key={`${offer.kind}:${offer.source}`} title={offer.source} icon={<OfferIcon kind={offer.kind} />}
       attributes={{ "data-recorder-offer": offer.kind }} onClick={() => choose(offer)}>{OFFER_LABEL[offer.kind]}</MenuRow>;
@@ -128,6 +147,45 @@ export function StepCommandList({ commands, onChoose, renderRow }: {
     {assertions.length > 0 && <MenuGroup>Assertions</MenuGroup>}
     {assertions.map(row)}
   </>;
+}
+
+/** Assertion choices stay beside their command; only Add timeout opens an editor. */
+export function AssertionBranch({ offer, onChoose, initialTimeoutMs }: {
+  offer: StepOffer;
+  onChoose: (kind: PinnedStepKind, value?: string, timeoutMs?: number) => void;
+  initialTimeoutMs?: number;
+}) {
+  const [editor, setEditor] = useState<"default" | "timeout" | undefined>();
+  const selectDefault = () => {
+    if (stepNeedsValue(offer.kind)) { setEditor("default"); return; }
+    onChoose(offer.kind);
+  };
+  return <Branch label={`${OFFER_LABEL[offer.kind]} options`} width={220} align="top" flip
+    attributes={{ "data-recorder-assertion-panel": offer.kind }}
+    renderRow={handlers => <div className="group/offer flex min-w-0 items-center rounded-lg transition-colors hover:bg-accent hover:text-accent-foreground focus-within:bg-accent focus-within:text-accent-foreground">
+      <button type="button" role="menuitem" title={offer.source}
+        data-recorder-offer={offer.kind}
+        className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm focus-visible:outline-none"
+        onClick={() => { if (stepNeedsValue(offer.kind)) handlers.onClick(); selectDefault(); }}>
+        <OfferIcon kind={offer.kind} />
+        <span className="min-w-0 flex-1 truncate font-medium">{OFFER_LABEL[offer.kind]}</span>
+      </button>
+      <button type="button" aria-label={`${OFFER_LABEL[offer.kind]} options`}
+        className="flex self-stretch items-center rounded-lg px-2.5 text-muted-foreground focus-visible:outline-none"
+        onFocus={handlers.onOpen} onClick={handlers.onClick}>
+        <ChevronRightIcon className="size-4" />
+      </button>
+    </div>}
+  >
+    {editor ? <OfferValueForm offer={offer} includeTimeout={editor === "timeout"} back
+      initialTimeoutMs={initialTimeoutMs}
+      onCancel={() => setEditor(undefined)}
+      onSubmit={(value, timeoutMs) => onChoose(offer.kind, value, timeoutMs)} />
+      : <>
+        <MenuRow attributes={{ "data-recorder-assertion-default": offer.kind }} onClick={selectDefault}>Insert</MenuRow>
+        <MenuRow attributes={{ "data-recorder-assertion-timeout": offer.kind }} onClick={() => setEditor("timeout")}>Add timeout</MenuRow>
+      </>}
+  </Branch>;
 }
 
 const DIRECTION_ICON = { up: ArrowUpIcon, down: ArrowDownIcon, left: ArrowLeftIcon, right: ArrowRightIcon };

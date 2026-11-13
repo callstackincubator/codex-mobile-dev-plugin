@@ -130,6 +130,8 @@ export type PinnedStep = RecordedStepCommon & {
   selector: RecordedSelector;
   /** The text a `fill` types. Only a `fill` has one. */
   value?: string;
+  /** Assertion wait budget in milliseconds; absent uses e2e's default. */
+  timeoutMs?: number;
   /**
    * Which way a `swipe` goes. Only a `swipe` has one, and it is its own field rather than `value`
    * because it is a choice from four, not text the user supplies — nothing asks for it through a
@@ -187,6 +189,9 @@ export type AgentStep = RecordedStepCommon & (
 export type AgentParams = Record<string, string>;
 
 export type RecordedStep = PinnedStep | AgentStep;
+
+/** e2e's default assertionTimeout when the project does not override it. */
+export const DEFAULT_ASSERTION_TIMEOUT_MS = 5_000;
 
 export function isAgentStepKind(kind: RecordedStepKind): kind is AgentStepKind {
   return kind === "agentAct" || kind === "agentAssert" || kind === "agentWaitFor";
@@ -621,7 +626,7 @@ export function selectorSource(selector: RecordedSelector): string {
  * plain-language label. The emitter wraps it; nothing else formats steps.
  */
 export function stepExpression(step:
-  | { kind: PinnedStepKind; selector: RecordedSelector; value?: string; direction?: SwipeDirection }
+  | { kind: PinnedStepKind; selector: RecordedSelector; value?: string; direction?: SwipeDirection; timeoutMs?: number }
   | { kind: "agentAct"; instruction: string; params?: AgentParams }
   | { kind: "agentAssert"; instruction: string; vision?: VisionMode }
   | { kind: "agentWaitFor"; instruction: string; vision?: VisionMode }
@@ -641,6 +646,7 @@ export function stepExpression(step:
       : `agent.${call}(${quote(step.instruction)})`;
   }
   const locator = selectorSource(step.selector);
+  const timeout = step.timeoutMs === undefined ? "" : `{ timeout: ${step.timeoutMs} }`;
   switch (step.kind) {
     // A point is already a whole action — `screen.tapAt(...)` — so there is nothing to call on it.
     case "tap": return step.selector.kind === "point" ? locator : `${locator}.tap()`;
@@ -648,17 +654,17 @@ export function stepExpression(step:
     case "longPress": return `${locator}.longPress()`;
     case "fill": return `${locator}.fill(${quote(step.value ?? "")})`;
     case "scrollUntilVisible": return `screen.scrollUntilVisible(${locator})`;
-    case "assertVisible": return `expect(${locator}).toBeVisible()`;
+    case "assertVisible": return `expect(${locator}).toBeVisible(${timeout})`;
     // The runner's own negation, which waits for the element to stay gone rather than catching it
     // mid-transition. `toBeHidden` is the other spelling and means something else on a device:
     // an element that has gone is absent from the tree, not hidden in it.
-    case "assertNotVisible": return `expect(${locator}).not.toBeVisible()`;
-    case "assertText": return `expect(${locator}).toHaveText(${quote(step.value ?? "")})`;
-    case "assertContainsText": return `expect(${locator}).toContainText(${quote(step.value ?? "")})`;
-    case "assertValue": return `expect(${locator}).toHaveValue(${quote(step.value ?? "")})`;
-    case "assertEnabled": return `expect(${locator}).toBeEnabled()`;
-    case "assertDisabled": return `expect(${locator}).toBeDisabled()`;
-    case "assertSelected": return `expect(${locator}).toBeSelected()`;
+    case "assertNotVisible": return `expect(${locator}).not.toBeVisible(${timeout})`;
+    case "assertText": return `expect(${locator}).toHaveText(${quote(step.value ?? "")}${timeout ? `, ${timeout}` : ""})`;
+    case "assertContainsText": return `expect(${locator}).toContainText(${quote(step.value ?? "")}${timeout ? `, ${timeout}` : ""})`;
+    case "assertValue": return `expect(${locator}).toHaveValue(${quote(step.value ?? "")}${timeout ? `, ${timeout}` : ""})`;
+    case "assertEnabled": return `expect(${locator}).toBeEnabled(${timeout})`;
+    case "assertDisabled": return `expect(${locator}).toBeDisabled(${timeout})`;
+    case "assertSelected": return `expect(${locator}).toBeSelected(${timeout})`;
     // The one command with two forms. A point names no element, so there is nothing to scope the
     // gesture to and the viewport is swiped; a selector scopes it to the element it names, which
     // is the difference between flicking the screen and flicking one carousel on it. `momentum`

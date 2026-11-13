@@ -164,6 +164,20 @@ test("the emitted test is deterministic and imports the e2e API", () => {
   assert.doesNotMatch(source, /agent\.act/);
 });
 
+test("assertion timeouts emit when explicitly selected", () => {
+  const selector = { kind: "testId" as const, testId: "homeScreenFeedTabs-selector-0" };
+  const source = emitE2eTest([
+    { id: "1", kind: "assertVisible", selector, label: "", timeoutMs: 30_000 },
+    { id: "2", kind: "assertNotVisible", selector, label: "", timeoutMs: 5_000 },
+    { id: "3", kind: "assertText", selector, label: "", value: "Ready", timeoutMs: 12_000 },
+    { id: "4", kind: "assertEnabled", selector, label: "" },
+  ], { title: "timeouts" });
+  assert.match(source, /toBeVisible\(\{ timeout: 30000 \}\)/);
+  assert.match(source, /not\.toBeVisible\(\{ timeout: 5000 \}\)/);
+  assert.match(source, /toHaveText\("Ready", \{ timeout: 12000 \}\)/);
+  assert.match(source, /toBeEnabled\(\)/);
+});
+
 test("an unreliable step carries a TODO into the file", () => {
   const source = emitE2eTest([
     { id: "1", kind: "tap", selector: { kind: "role", role: "button", name: "Open" }, label: "", ambiguous: true },

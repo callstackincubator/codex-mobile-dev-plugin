@@ -577,7 +577,7 @@ export class TestRecorder {
    * device: the flow has already run past this point, and re-taking a step out of order would
    * leave the app somewhere the rest of the list does not describe.
    */
-  changeStepCommand(id: string, kind: PinnedStepKind, value?: string) {
+  changeStepCommand(id: string, kind: PinnedStepKind, value?: string, timeoutMs?: number) {
     const steps: RecordedStep[] = this.snapshot.steps.map(step => {
       // An agent step has no selector to keep, which is the whole reason this is offered: the
       // mirror's Agentic branch records one, and nothing converts between the two shapes.
@@ -586,12 +586,13 @@ export class TestRecorder {
       const next = stepNeedsValue(kind) ? value ?? step.value ?? "" : undefined;
       // Both of the optional halves go, so a step never keeps the other command's leftovers: no
       // text on a kind that emits none, no direction on a kind that is not a swipe.
-      const { value: _dropped, direction: _wasSwipe, ...rest } = step;
+      const { value: _dropped, direction: _wasSwipe, timeoutMs: _wasTimeout, ...rest } = step;
       return {
         ...rest,
         kind,
         label: stepLabel(kind, step.selector, next),
         ...(kind === "swipe" ? { direction: swipeDirection(value) } : next === undefined ? {} : { value: next }),
+        ...(stepIsAssertion(kind) && timeoutMs !== undefined ? { timeoutMs } : {}),
       };
     });
     if (steps.every((step, index) => step === this.snapshot.steps[index])) return;
@@ -655,7 +656,7 @@ export class TestRecorder {
    *
    * Returns whether a step was added; a refusal has already said why.
    */
-  private addStep(components: ScreenComponent[], point: ScreenPoint, kind: PinnedStepKind, value?: string): boolean {
+  private addStep(components: ScreenComponent[], point: ScreenPoint, kind: PinnedStepKind, value?: string, timeoutMs?: number): boolean {
     const screen = this.reader?.screen();
     // The outline the user is looking at is the step they mean, walked-out level and all.
     const { selector, ambiguous, component: named } = resolveSelector(components, point, screen, this.hoverLevel);
@@ -675,6 +676,7 @@ export class TestRecorder {
       selector,
       label: stepLabel(kind, selector, value),
       ...(kind === "swipe" ? { direction: swipeDirection(value) } : value === undefined ? {} : { value }),
+      ...(stepIsAssertion(kind) && timeoutMs !== undefined ? { timeoutMs } : {}),
       ...(ambiguous ? { ambiguous } : {}),
       // Only a coordinate tap needs one: every locator action waits for its own element.
       ...(selector.kind === "point" ? { anchor: anchorSelector(components, point, screen) } : {}),
@@ -785,7 +787,7 @@ export class TestRecorder {
    * records an assertion, a scroll or a typed value without the tap that would change the screen
    * out from under it.
    */
-  async chooseOffer(kind: PinnedStepKind, value?: string) {
+  async chooseOffer(kind: PinnedStepKind, value?: string, timeoutMs?: number) {
     const point = this.menuPoint;
     this.update({ menu: undefined });
     if (!point || !this.snapshot.recordingDeviceId) return;
@@ -793,7 +795,7 @@ export class TestRecorder {
     try {
       const components = await this.currentComponents();
       if (treeHealth(components) === "no-accessibility") { this.update({ error: NO_TREE }); return; }
-      const added = this.addStep(components, point, kind, value);
+      const added = this.addStep(components, point, kind, value, timeoutMs);
       if (!added) return;
       // The step is taken as well as recorded, so the app is on the screen the next step will be
       // resolved against. `where` is the element's own centre, which is where the runner's locator

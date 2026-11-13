@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { BotIcon, CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleIcon, CircleXIcon, CopyIcon, FileCode2Icon, FilePlus2Icon, FlaskConicalIcon, FolderOpenIcon, GripVerticalIcon, HistoryIcon, LoaderCircleIcon, MoreHorizontalIcon, PlayIcon, SaveIcon, SquareIcon, Trash2Icon, UserIcon, XIcon } from "lucide-react";
 import type { DeviceAppsStore } from "../device-apps.ts";
 import type { TestingPanel } from "../testing-panel.ts";
@@ -875,8 +875,20 @@ const STEP_COMMANDS_WIDTH = 230;
  */
 function StepMenu({ step, index }: { step: RecordedStep; index: number }) {
   const [open, setOpen] = useState(false);
+  const leaving = useRef<ReturnType<typeof setTimeout>>(undefined);
   const offers = isAgentStep(step) ? [] : allStepOffers(step.selector, step.target);
-  const close = () => setOpen(false);
+  const hold = () => { if (leaving.current) clearTimeout(leaving.current); };
+  const close = () => { hold(); setOpen(false); };
+  const release = () => {
+    hold();
+    const closeWhenBranchesLeave = () => {
+      if (document.querySelector(`[data-testing-step-commands-panel="${step.id}"]`)) {
+        leaving.current = setTimeout(closeWhenBranchesLeave, 120);
+      } else close();
+    };
+    leaving.current = setTimeout(closeWhenBranchesLeave, 120);
+  };
+  useEffect(() => () => hold(), []);
   return <Popover open={open} onOpenChange={setOpen}>
     <PopoverTrigger asChild>
       <Button type="button" variant="ghost" size="icon-xs" data-testing-step-menu={step.id}
@@ -887,7 +899,7 @@ function StepMenu({ step, index }: { step: RecordedStep; index: number }) {
         onMouseEnter={() => setOpen(true)}><MoreHorizontalIcon /></Button>
     </PopoverTrigger>
     <PopoverContent align="end" className="flex w-60 max-h-(--radix-popover-content-available-height) flex-col gap-1 overflow-y-auto p-1.5 [&_button:not(:disabled)]:cursor-pointer"
-      role="menu" aria-label={`Step ${index + 1}`} onMouseLeave={close}>
+      role="menu" aria-label={`Step ${index + 1}`} onMouseEnter={hold} onMouseLeave={release}>
       <MenuRow icon={<CopyIcon className="size-4 shrink-0 text-muted-foreground" />} attributes={{ "data-testing-step-duplicate": step.id }}
         title="Add a copy of this step at the end of the list"
         onClick={() => { close(); testRecorder.duplicateStep(step.id); }}>Duplicate</MenuRow>
@@ -905,7 +917,8 @@ function StepMenu({ step, index }: { step: RecordedStep; index: number }) {
           title={`Currently ${OFFER_LABEL[step.kind]}`}
           onOpen={handlers.onOpen} onClick={handlers.onClick}>Change command</MenuRow>}
       >
-        <StepCommandList commands={offers} onChoose={(kind, value) => { close(); testRecorder.changeStepCommand(step.id, kind, value); }} />
+        <StepCommandList commands={offers} initialTimeoutMs={!isAgentStep(step) ? step.timeoutMs : undefined}
+          onChoose={(kind, value, timeoutMs) => { close(); testRecorder.changeStepCommand(step.id, kind, value, timeoutMs); }} />
       </Branch>}
     </PopoverContent>
   </Popover>;

@@ -461,6 +461,11 @@ else is offered for any element a selector names.
 
 A row that needs a value asks for one in the menu rather than emitting an empty string literal:
 `fill` starts from the field's current value, the text matchers from the element's own text.
+Clicking an assertion row inserts it with e2e's default timeout. Hovering the row or clicking its
+arrow opens **Insert** and **Add timeout**. Assertions that require expected text ask for it before
+insertion. **Add timeout** opens a form with Back and Add controls, starting at e2e's 5,000 ms
+default. Adding it writes the matcher's `{ timeout: ... }` option into the generated test; an
+ordinary insert keeps the option implicit.
 
 Only actions the runner can really perform on a device are offered. `secondaryTap`,
 `selectOption`, `setInputFiles`, `scrollIntoView` and tap `modifiers` all exist in the runner's

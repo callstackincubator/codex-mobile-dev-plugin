@@ -32,7 +32,7 @@ export type StoredCommand = { id: string; label: string; expression: string };
 
 /** Only commands whose locator can be recovered without guessing are offered. */
 export function storedStepCommands(step: StoredTestStep): StoredCommand[] {
-  const assertion = step.label.match(/^expect\((.+)\)\.(?:toBeVisible|not\.toBeVisible|toBeEnabled|toBeDisabled|toBeSelected)\(\)$/);
+  const assertion = step.label.match(/^expect\((.+)\)\.(?:toBeVisible|not\.toBeVisible|toBeEnabled|toBeDisabled|toBeSelected)\((?:\{\s*timeout:\s*\d+\s*\})?\)$/);
   const action = step.label.match(/^(.+)\.(?:tap|doubleTap|longPress)\(\)$/);
   const scroll = step.label.match(/^screen\.scrollUntilVisible\((.+)\)$/);
   const locator = assertion?.[1] ?? action?.[1] ?? scroll?.[1];

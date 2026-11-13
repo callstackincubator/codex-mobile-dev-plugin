@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { MARGIN, placeBelow, placeBeside } from "../popover-placement";
 import type { Box, Placement } from "../popover-placement";
@@ -20,6 +20,9 @@ import type { Box, Placement } from "../popover-placement";
 
 /** The window every popover here is fitted into. See `popover-placement`. */
 export const windowView = () => ({ width: window.innerWidth, height: window.innerHeight });
+
+/** A portalled child branch keeps its parent open while the pointer is inside it. */
+const BranchHoverContext = createContext<{ hold: () => void; leave: () => void } | null>(null);
 
 export { MARGIN, placeBelow, placeBeside };
 
@@ -157,6 +160,7 @@ export function BranchPanel({ panelRef, row, width, label, align, flip, side, ch
   onClose: () => void;
 }) {
   const panel = panelRef;
+  const parent = useContext(BranchHoverContext);
   const placement = usePlacement(panel, () => {
     const anchor = row.current?.getBoundingClientRect();
     return anchor && placeBeside(anchor, { width, height: panel.current?.offsetHeight ?? 0 }, windowView(),
@@ -165,13 +169,13 @@ export function BranchPanel({ panelRef, row, width, label, align, flip, side, ch
   // Opened from the keyboard, the branch is useless until the keyboard is in it. Opened by the
   // pointer this is harmless: the element focused is the one the pointer is already over.
   useEffect(() => { if (document.activeElement === row.current) focusFirst(panel.current); }, [row]);
-  return createPortal(<div
+  return createPortal(<BranchHoverContext.Provider value={{ hold: onHold, leave: onLeave }}><div
     ref={panel}
     role="menu" aria-label={label} {...attributes}
     className="pointer-events-auto fixed z-50 flex flex-col gap-1.5 overflow-y-auto rounded-xl border bg-popover p-1.5 text-popover-foreground shadow-lg [&_button:not(:disabled)]:cursor-pointer"
     style={{ left: placement?.left ?? 0, top: placement?.top ?? 0, width, maxHeight: placement?.maxHeight, visibility: placement ? "visible" : "hidden" }}
-    onMouseEnter={onHold}
-    onMouseLeave={onLeave}
+    onMouseEnter={() => { onHold(); parent?.hold(); }}
+    onMouseLeave={() => { onLeave(); parent?.leave(); }}
     onPointerDown={event => event.stopPropagation()}
     onContextMenu={event => event.preventDefault()}
     // Left is back out of a branch, as it is in every cascading menu, and Escape is the same door.
@@ -183,7 +187,7 @@ export function BranchPanel({ panelRef, row, width, label, align, flip, side, ch
       onClose();
       row.current?.focus();
     }}
-  >{children}</div>, document.body);
+  >{children}</div></BranchHoverContext.Provider>, document.body);
 }
 
 /**

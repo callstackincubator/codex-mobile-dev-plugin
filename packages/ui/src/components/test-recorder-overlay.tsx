@@ -3,9 +3,9 @@ import { createPortal } from "react-dom";
 import { ListIcon, LoaderCircleIcon } from "lucide-react";
 import type { ScreenAnnotationsStore } from "../screen-annotations";
 import { testRecorder } from "../test-recorder";
-import { agentActSuggestion } from "@mobile-dev/shared/test-recording.ts";
+import { agentActSuggestion, stepIsAssertion } from "@mobile-dev/shared/test-recording.ts";
 import type { StepOffer, StepTarget } from "@mobile-dev/shared/test-recording.ts";
-import { AgenticBranch, MenuRow, OFFER_LABEL, OfferIcon, OfferValueForm, StepCommandList } from "./step-commands";
+import { AgenticBranch, AssertionBranch, MenuRow, OFFER_LABEL, OfferIcon, OfferValueForm, StepCommandList } from "./step-commands";
 import { usePlacement, windowView as view } from "./cascading-menu";
 import { MARGIN, placeBelow, placeBeside } from "../popover-placement";
 import type { Box } from "../popover-placement";
@@ -66,7 +66,7 @@ function ElementMenu({ label, offers, commands, matches, element, width, anchor 
     <div className="-mx-1.5 border-t" />
     {asking
       ? <OfferValueForm offer={asking} onCancel={() => setAsking(undefined)}
-        onSubmit={value => { setAsking(undefined); void testRecorder.chooseOffer(asking.kind, value); }} />
+        onSubmit={(value, timeoutMs) => { setAsking(undefined); void testRecorder.chooseOffer(asking.kind, value, timeoutMs); }} />
       : <>
         {/* A coordinate gets the tap and nothing else, and silence about the other three rows reads
             as a broken menu. The step list flags the same thing once the step is recorded. */}
@@ -74,7 +74,10 @@ function ElementMenu({ label, offers, commands, matches, element, width, anchor 
           && <p className="px-2.5 pt-1 text-[11px] text-amber-600 dark:text-amber-500">
             Nothing here can be named. The coordinate can still be tapped or swiped, or describe the step under Agentic.
           </p>}
-        {offers.map(offerRow)}
+        {offers.map(offer => stepIsAssertion(offer.kind)
+          ? <AssertionBranch key={`${offer.kind}:${offer.source}`} offer={offer}
+            onChoose={(kind, value, timeoutMs) => void testRecorder.chooseOffer(kind, value, timeoutMs)} />
+          : offerRow(offer))}
         <div className="-mx-1.5 border-t" />
         <div ref={row} className="flex flex-col" onMouseEnter={() => setOpen(true)}>
           <MenuRow
@@ -126,7 +129,17 @@ function CommandMenu({ commands, width, row, offerRow, onClose }: {
   // only starts a close that entering the other cancels — otherwise crossing the gap closes it.
   const leaving = useRef<ReturnType<typeof setTimeout>>(undefined);
   const hold = () => { if (leaving.current) clearTimeout(leaving.current); };
-  const release = useCallback(() => { hold(); leaving.current = setTimeout(onClose, 120); }, [onClose]);
+  const release = useCallback(() => {
+    hold();
+    const closeWhenBranchesLeave = () => {
+      // Assertion choices are portalled beside this menu. Keep their parent mounted while the
+      // pointer crosses into them, then close once the branch itself has gone.
+      if (document.querySelector("[data-recorder-assertion-panel]")) {
+        leaving.current = setTimeout(closeWhenBranchesLeave, 120);
+      } else onClose();
+    };
+    leaving.current = setTimeout(closeWhenBranchesLeave, 120);
+  }, [onClose]);
   useEffect(() => {
     const node = row.current;
     node?.addEventListener("mouseleave", release);
@@ -144,7 +157,7 @@ function CommandMenu({ commands, width, row, offerRow, onClose }: {
     onContextMenu={event => event.preventDefault()}
   >
     {/* The rows are the element menu's own, so a command reads and behaves the same in both. */}
-    <StepCommandList commands={commands} onChoose={(kind, value) => void testRecorder.chooseOffer(kind, value)} renderRow={offer => offerRow(offer)} />
+    <StepCommandList commands={commands} onChoose={(kind, value, timeoutMs) => void testRecorder.chooseOffer(kind, value, timeoutMs)} renderRow={offer => offerRow(offer)} />
   </div>, document.body);
 }
 
