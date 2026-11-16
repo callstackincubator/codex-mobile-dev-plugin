@@ -11,6 +11,7 @@ import { getScreenAnnotations } from "../src/screen-annotations.ts";
 import type { PhysicalIosDevice } from "../../shared/src/ios-devices.ts";
 import type { PhysicalAndroidDevice } from "../../shared/src/android-devices.ts";
 import type { SimulatorDevice } from "../../shared/src/protocol.ts";
+import type { AndroidBookingNames, PhysicalAndroidDevice } from "../../shared/src/android-devices.ts";
 import type { ScreenAnnotation } from "../../shared/src/screen-annotations.ts";
 import type { ScreenshotAttachment } from "../src/model-context.ts";
 import { WorkspaceDevices } from "../src/workspace-devices.ts";
@@ -76,6 +77,7 @@ function fixture(t: TestContext) {
   let simulatorError = "";
   let delayedDiscovery: Promise<void> | undefined;
   let androidDevices: SimulatorDevice[] | undefined;
+  let bookingNames: AndroidBookingNames | undefined;
   const stoppedPlatforms = new Set<string>();
   let failedInputPlatform: "ios" | "android" | undefined;
   let inspectionFailure = false;
@@ -156,7 +158,7 @@ function fixture(t: TestContext) {
       calls.push(call);
       if (call.name === "mobile_list_android_devices") {
         await delayedDiscovery;
-        if (androidDevices) return { content: [], structuredContent: { connected: true, devices: androidDevices } };
+        if (androidDevices) return { content: [], structuredContent: { connected: true, devices: androidDevices }, _meta: { bookingNames } };
       }
       if (call.name === "mobile_list_ios_devices") {
         await delayedDiscovery;
@@ -242,7 +244,7 @@ function fixture(t: TestContext) {
     return { panel, root, element: (name: string) => root.elements.get(name)! };
   });
   t.after(async () => { await Promise.all(panels.map(({ panel }) => panel.dispose())); for (const reset of restore) reset(); });
-  return { calls, closed, selections, failInspection() { inspectionFailure = true; }, setAndroidAccessibility(value: NonNullable<typeof androidAccessibility>) { androidAccessibility = value; }, screenshots, attachedAnnotations, ios: panels[0], android: panels[1], failClipboard() { screenshotCopied = false; }, setAndroidDevices(devices: SimulatorDevice[]) { androidDevices = devices; }, setPhysicalDevices(devices: PhysicalIosDevice[]) { physicalDevices = devices; }, failDiscovery(message: string) { physicalError = message; }, failSimulators(message: string) { simulatorError = message; }, delayDiscovery(value: Promise<void>) { delayedDiscovery = value; }, failInput(platform: "ios" | "android") { failedInputPlatform = platform; }, delayOpen(value: Promise<void>) { delayedOpen = value; }, blockIos() { blockedIos = true; }, stopDevices() { stopped = true; },
+  return { calls, closed, selections, failInspection() { inspectionFailure = true; }, setAndroidAccessibility(value: NonNullable<typeof androidAccessibility>) { androidAccessibility = value; }, screenshots, attachedAnnotations, ios: panels[0], android: panels[1], failClipboard() { screenshotCopied = false; }, setAndroidDevices(devices: SimulatorDevice[], names?: AndroidBookingNames) { androidDevices = devices; bookingNames = names; }, setPhysicalDevices(devices: PhysicalIosDevice[]) { physicalDevices = devices; }, failDiscovery(message: string) { physicalError = message; }, failSimulators(message: string) { simulatorError = message; }, delayDiscovery(value: Promise<void>) { delayedDiscovery = value; }, failInput(platform: "ios" | "android") { failedInputPlatform = platform; }, delayOpen(value: Promise<void>) { delayedOpen = value; }, blockIos() { blockedIos = true; }, stopDevices() { stopped = true; },
     visibility(value: string) { document.visibilityState = value; document.dispatchEvent(new Event("visibilitychange")); },
     frame(platform: "ios" | "android", sequence: number, options: { generation?: number; empty?: boolean } = {}) {
       const id = [...pendingReads.keys()].find(id => id.startsWith(platform)); assert.ok(id);
@@ -458,6 +460,26 @@ test("physical Android devices appear above emulators and stream without emulato
   const wireless = picker.getSnapshot();
   assert.equal(wireless.value, androidPhone.udid);
   assert.equal(wireless.items[0].label, "Pixel 9 · Wi-Fi");
+});
+
+test("the Android picker shows an ADC booking name above the device specs for the active connection", async t => {
+  const f = fixture(t);
+  const name = "Test checkout on Android";
+  const model = "ADC Android 14 2 CPU 3 GiB RAM";
+  const device: PhysicalAndroidDevice = { ...androidPhone, udid: "127.0.0.1:15555", name: model, model, transportType: "localNetwork" };
+  f.setAndroidDevices([device], { [device.udid]: name });
+  await f.android.panel.load();
+  const pickerElement = f.android.element("devices");
+  const picker = getDevicePicker(pickerElement as unknown as HTMLElement);
+  const option = picker.getSnapshot().items[0];
+  assert.equal(option.label, name);
+  assert.equal(option.detail, `${model} · Wi-Fi`);
+  assert.equal(f.android.panel.selected?.name, model);
+  f.setAndroidDevices([device]);
+  await picker.refresh?.();
+  const released = picker.getSnapshot().items[0];
+  assert.equal(released.label, `${model} · Wi-Fi`);
+  assert.equal(released.detail, undefined);
 });
 
 for (const state of ["unauthorized", "offline"]) test(`physical Android ${state} devices remain discoverable without booting or streaming`, async t => {
