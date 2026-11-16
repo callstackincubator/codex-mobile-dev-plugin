@@ -766,10 +766,11 @@ test("bundled tests are labeled In Studio and configured projects show read-only
     skillInstalled: true, mcpRegistrations: [".mcp.json", ".cursor/mcp.json"], loginStatus: { openai: true },
   } });
   await act(async () => { root.render(createElement(TestingView, { panel: configured, deviceApps })); });
-  assert.match(dom.window.document.body.textContent ?? "", /E2E configuration/);
+  assert.match(dom.window.document.body.textContent ?? "", /E2E setup/);
   assert.match(dom.window.document.body.textContent ?? "", /chatgpt · gpt-6-luna/);
   assert.match(dom.window.document.body.textContent ?? "", /\.mcp\.json, \.cursor\/mcp\.json/);
-  assert.doesNotMatch(dom.window.document.body.textContent ?? "", /Set up project/);
+  assert.equal(dom.window.document.querySelectorAll("[data-testing-setup]").length, 1, "model and project setup share one toolbar entry");
+  assert.equal(dom.window.document.querySelector("[data-testing-model]"), null);
   await act(async () => { root.render(createElement("div")); });
   await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
 
@@ -802,16 +803,29 @@ test("async project data prefills model and every discovered setup target", asyn
   }), startLogin: async () => ({ id: "11111111-1111-4111-8111-111111111111", kind: "login", status: "waiting", message: "Open the browser", completed: 0, total: 1, applied: [], auth: { url: "https://auth.example.test/start", instructions: "Open the browser" } }),
     openLoginUrl: async (url: string) => { opened.push(url); }, setupProgress: async () => null, cancelSetup: async () => {} };
   await act(async () => { root.render(createElement(TestingView, { panel, deviceApps: { subscribe: () => () => undefined, getSnapshot: () => DEVICE_SNAPSHOT } })); });
-  const identifiers = [...dom.window.document.querySelectorAll('[aria-label$="app identifier"]')] as HTMLInputElement[];
-  assert.deepEqual(identifiers.map(input => input.value), ["com.anonymous.expoapp57", "com.anonymous.expoapp57"]);
-  assert.deepEqual([...dom.window.document.querySelectorAll('[aria-label^="Target "][aria-label$=" name"]')].map(input => (input as HTMLInputElement).value), ["ios", "android"]);
+  assert.equal(dom.window.document.querySelectorAll('[aria-label$="app identifier"]').length, 0, "bundled opens on a summary, not the setup form");
+  assert.equal(dom.window.document.querySelector('[aria-label="Model ID"]'), null, "Agent model starts collapsed");
+  const modelToggle = [...dom.window.document.querySelectorAll('[data-slot="collapsible-trigger"]')].find(el => el.textContent?.includes("Agent model")) as HTMLElement;
+  await act(async () => { modelToggle.click(); });
   assert.equal((dom.window.document.querySelector('[aria-label="Model ID"]') as HTMLInputElement | null)?.value, "gpt-6-luna");
   assert.match(dom.window.document.body.textContent ?? "", /Signed in/, "stored e2e login status is reused");
   const signIn = [...dom.window.document.querySelectorAll("button")].find(button => button.textContent?.includes("Sign in with")) as HTMLButtonElement;
   await act(async () => { signIn.click(); await Promise.resolve(); });
   assert.deepEqual(opened, ["https://auth.example.test/start"], "a user-started OAuth flow auto-opens its emitted URL");
-  const mcp = [...dom.window.document.querySelectorAll('input[type="checkbox"]')].find(input => input.parentElement?.textContent?.includes("MCP")) as HTMLInputElement;
-  assert.equal(mcp.checked, true, "new setup preselects MCP registration");
+  const setUp = [...dom.window.document.querySelectorAll("button")].find(button => button.textContent?.includes("Set up project")) as HTMLButtonElement;
+  await act(async () => { setUp.click(); });
+  const identifiers = [...dom.window.document.querySelectorAll('[aria-label$="app identifier"]')] as HTMLInputElement[];
+  assert.deepEqual(identifiers.map(input => input.value), ["com.anonymous.expoapp57", "com.anonymous.expoapp57"]);
+  assert.deepEqual([...dom.window.document.querySelectorAll('[aria-label^="Target "][aria-label$=" name"]')].map(input => (input as HTMLInputElement).value), ["ios", "android"]);
+  const mcp = dom.window.document.querySelector('[role="switch"][aria-label*="MCP"]') as HTMLElement;
+  assert.equal(mcp.getAttribute("aria-checked"), "true", "new setup preselects MCP registration");
+  const waitingSnapshot = { ...panel.getSnapshot(), modelPreference: undefined };
+  const waiting = { ...panel, getSnapshot: () => waitingSnapshot };
+  await act(async () => { root.render(createElement(TestingView, { panel: waiting, deviceApps: { subscribe: () => () => undefined, getSnapshot: () => DEVICE_SNAPSHOT } })); });
+  assert.ok(dom.window.document.querySelector('[aria-label="Model provider"]'), "Agent model opens by itself when a run needs a model");
+  const waitingToggle = [...dom.window.document.querySelectorAll('[data-slot="collapsible-trigger"]')].find(el => el.textContent?.includes("Agent model")) as HTMLElement;
+  await act(async () => { waitingToggle.click(); });
+  assert.equal(dom.window.document.querySelector('[aria-label="Model provider"]'), null, "the user can still collapse it");
   await act(async () => { root.render(createElement("div")); });
   await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
   onTeardown(async () => { await act(async () => { root.unmount(); }); });

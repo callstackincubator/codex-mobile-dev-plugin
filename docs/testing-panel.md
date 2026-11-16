@@ -14,7 +14,7 @@ network `npx`), non-executing `app.json`/`app.config.*` data, then the mirrored 
 and Android targets are retained when known and are editable in the setup wizard.
 
 Deterministic tests use no model. The first bundled run containing `agent.act`, `agent.assert`,
-`agent.waitFor` or `agent.extract` opens the provider/model chooser. Subscription sign-in is driven by
+`agent.waitFor` or `agent.extract` opens the E2E setup popover on the model section. Subscription sign-in is driven by
 E2E's OAuth callbacks; Mobile Dev persists only the non-secret provider, model id and optional endpoint.
 Subscription status is read from E2E 0.17's own `$XDG_CONFIG_HOME/e2e/oauth.json` (or
 `~/.config/e2e/oauth.json`) as provider-id booleans; Mobile Dev neither copies nor exposes tokens or
@@ -23,14 +23,17 @@ keeps the visible link as fallback. Completed and cancelled flows clear callback
 Hosts may preselect a choice only through advertised `configuration.mobileDev.testing.defaultModel` (or
 the equivalent experimental capability); no host-name branch exists.
 
-Bundled/unconfigured projects offer **Set up project**, the opt-in GUI equivalent of `e2e init`:
+The toolbar has one **E2E setup** entry (a status dot plus `Bundled`/`Project`; its tooltip explains the
+runtime, replacing the separate runtime chip, Model button and Zero-setup banner). Both runtimes open on a compact summary; **Set up project** / **Update setup** opens the form. The popover holds the
+agent model (provider, model id, sign-in, **Use model** for bundled runs), the mobile targets and the
+opt-in GUI equivalent of `e2e init`:
 target names, platforms, identifiers and provider are editable, then
 an immutable plan lists every create/update/skip action. Apply revalidates the plan for stale files,
 preserves existing configs/tests/skills/MCP entries, uses the detected package manager, reports progress,
 supports cancellation and reports partial failures without pretending already-written files were rolled
 back. MCP registration is preselected and previews both `.mcp.json` and `.cursor/mcp.json`, preserving
-all other servers. Configured projects instead show read-only **E2E configuration** details—effective
-targets/config, statically discoverable model, dependency versions, skill state and MCP registrations—
+all other servers. Configured projects open on a read-only summary—effective
+targets/config, statically discoverable model, dependency versions, skill state and MCP registrations shown as status items—
 with mutations behind a separate **Update setup** action. Setup is the only zero-setup Studio path that
 writes configuration into the selected project.
 
