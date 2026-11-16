@@ -87,6 +87,13 @@ The panel UI sends nothing to Mixpanel, and its CSP is unchanged.
 
 ## Volume policy
 
+Testing setup adds `testing.setup.operation.samples`. Its attributes are limited to `component`,
+`surface`, `operation` (`plan`, `apply`, `login`, `preference`), bounded `outcome`, and a supported
+provider id (unknown values become `other`). It never includes project paths, bundle identifiers,
+model ids, endpoints, prompts, test/source text, OAuth codes, API keys or tokens. The existing UI
+Testing timings and outcome counters likewise carry no user content. Cancellation and partial failure
+are outcomes, not error payloads, and telemetry opt-out applies unchanged.
+
 Since 0.1.164, application metrics in the UI, Node servers and native helpers use
 independent 0.5% point sampling before SDK buffering and network transmission.
 This reduces metric point volume by 99.5% on average, including automatic Node

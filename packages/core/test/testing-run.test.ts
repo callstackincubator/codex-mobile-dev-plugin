@@ -7,7 +7,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { existsSync } from "node:fs";
 import { readFileSync } from "node:fs";
-import { parseProgressLine, parseReport, progressConfigSource, reportDuration, reportSteps, reportStatus, runRecordedTest, runnerBin, runnerEnv, untilTestPath } from "../src/testing-run.ts";
+import { bundledConfigSource, parseProgressLine, parseReport, progressConfigSource, reportDuration, reportSteps, reportStatus, runRecordedTest, runnerBin, runnerEnv, untilTestPath } from "../src/testing-run.ts";
+import { bundledE2eRoot } from "../src/e2e-runtime.ts";
 
 const FILE = "tests/a-recorded-flow.e2e.ts";
 
@@ -307,4 +308,27 @@ test("the selected target reaches the runner, so an Android recording does not r
   await runRecordedTest({ projectPath: root, relativePath: FILE, target: "android" },
     { spawner: spawner(JSON.stringify(report([{ line: 8, status: "passed" }])), 0, seen) });
   assert.deepEqual(seen.args, ["run", FILE, "--reporter", "json", "--target", "android"]);
+});
+
+test("bundled mode runs and cleans an isolated Studio workspace", async () => {
+  const root = await project();
+  const seen: { command?: string; args?: readonly string[]; cwd?: string } = {};
+  const result = await runRecordedTest({
+    projectPath: root, relativePath: FILE, untilSource: 'test("x", async () => {});\n',
+    runtime: { mode: "bundled", root: bundledE2eRoot() },
+    bundledTarget: { platform: "ios", bundleId: "com.example.app" },
+  }, { spawner: spawner(JSON.stringify(report([{ line: 1, status: "passed" }])), 0, seen) });
+  assert.equal(result.status, "passed");
+  assert.match(seen.args?.[0] ?? "", /e2e\/dist\/cli\/bin\.js$/);
+  assert.ok(seen.args?.some((value, index) => value === "--target" && seen.args?.[index + 1] === "ios"));
+  assert.ok(seen.cwd?.includes("mobile-dev-e2e-run-"));
+  assert.equal(existsSync(seen.cwd!), false, "temporary config, test and node_modules link are cleaned");
+});
+
+test("bundled deterministic tests need no model and agent tests request one", async () => {
+  assert.doesNotMatch(bundledConfigSource({ platform: "android", bundleId: "com.example.app" }), /agents:/);
+  await assert.rejects(runRecordedTest({
+    projectPath: "/unused", relativePath: FILE, untilSource: 'test("x", async ({ agent }) => { await agent.extract("title"); });\n',
+    runtime: { mode: "bundled", root: bundledE2eRoot() }, bundledTarget: { platform: "android", bundleId: "com.example.app" },
+  }), /Choose a provider and model/);
 });

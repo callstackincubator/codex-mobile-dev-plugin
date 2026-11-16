@@ -37,7 +37,17 @@ test("a config with no targets reads as none rather than throwing", () => {
   assert.deepEqual(parseTargets("export default { workers: 1 };"), []);
 });
 
-test("a project is the folder holding an e2e config, and one without is refused", async () => {
+async function installCompatibleRuntime(path: string) {
+  await mkdir(join(path, "node_modules/.bin"), { recursive: true });
+  await mkdir(join(path, "node_modules/e2e"), { recursive: true });
+  await mkdir(join(path, "node_modules/@e2e-dev/mobile/dist"), { recursive: true });
+  await writeFile(join(path, "node_modules/.bin/e2e"), "");
+  await writeFile(join(path, "node_modules/e2e/package.json"), JSON.stringify({ version: "0.17.0" }));
+  await writeFile(join(path, "node_modules/@e2e-dev/mobile/package.json"), JSON.stringify({ version: "0.9.2" }));
+  await writeFile(join(path, "node_modules/@e2e-dev/mobile/dist/nodes.js"), "export {};\n");
+}
+
+test("configured projects stay authoritative and folders without config use bundled mode", async () => {
   const root = await mkdtemp(join(tmpdir(), "testing-projects-"));
   try {
     const project = join(root, "app");
@@ -45,6 +55,8 @@ test("a project is the folder holding an e2e config, and one without is refused"
     await mkdir(project);
     await mkdir(empty);
     await writeFile(join(project, "e2e.config.ts"), CONFIG, "utf-8");
+    await installCompatibleRuntime(project);
+    await writeFile(join(empty, "app.json"), JSON.stringify({ expo: { ios: { bundleIdentifier: "com.example.empty" } } }));
 
     assert.equal(await findConfig(project), join(project, "e2e.config.ts"));
     assert.equal(await findConfig(empty), undefined);
@@ -52,12 +64,15 @@ test("a project is the folder holding an e2e config, and one without is refused"
     const inspected = await inspectProject(project);
     assert.equal(inspected.name, "app");
     assert.equal(inspected.targets.at(-1)?.bundleId, "com.anonymous.expoapp57");
+    assert.equal(inspected.runtimeMode, "project");
 
-    // A folder the recorder could not write a test for never reaches the panel's list.
     const choices = new TestingProjectChoices(join(root, "state"), async () => empty);
-    await assert.rejects(choices.record(empty), /no e2e.config.ts/);
+    const zeroSetup = await inspectProject(empty);
+    assert.equal(zeroSetup.runtimeMode, "bundled");
+    assert.equal(zeroSetup.targets[0]?.bundleId, "com.example.empty");
+    await choices.record(empty);
     await choices.record(project);
-    assert.deepEqual((await choices.list()).map(entry => entry.path), [project]);
+    assert.deepEqual(new Set((await choices.list()).map(entry => entry.path)), new Set([project, empty]));
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -69,6 +84,7 @@ async function project(): Promise<{ root: string; path: string }> {
   const path = join(root, "app");
   await mkdir(path);
   await writeFile(join(path, "e2e.config.ts"), CONFIG, "utf-8");
+  await installCompatibleRuntime(path);
   return { root, path };
 }
 
@@ -137,14 +153,23 @@ test("a symlinked tests folder is refused rather than followed", async () => {
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test("a folder that is not an e2e project cannot be written to", async () => {
+test("a folder without project setup saves into Studio state without modifying the project", async () => {
   const { root, path } = await project();
+  const previous = process.env.MOBILE_DEV_TESTING_DIRECTORY;
   try {
+    process.env.MOBILE_DEV_TESTING_DIRECTORY = join(root, "studio-state");
     const other = join(root, "not-a-project");
     await mkdir(other);
-    await assert.rejects(writeTestFile(other, "tests/flow.e2e.ts", SOURCE), /no e2e.config.ts/);
+    const saved = await writeTestFile(other, "tests/flow.e2e.ts", SOURCE);
+    assert.equal(saved.written, true);
+    assert.equal(await readFile(join(other, "tests/flow.e2e.ts"), "utf8").catch(() => undefined), undefined);
+    assert.equal(await readTestFile(other, "tests/flow.e2e.ts"), SOURCE);
     assert.ok(path);
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    if (previous === undefined) delete process.env.MOBILE_DEV_TESTING_DIRECTORY;
+    else process.env.MOBILE_DEV_TESTING_DIRECTORY = previous;
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("the project's own tests are listed, newest first, and nothing else is", async () => {

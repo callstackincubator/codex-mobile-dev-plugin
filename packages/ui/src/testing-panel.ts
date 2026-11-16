@@ -60,6 +60,10 @@ const DRAFT_AUTOSAVE_MS = 700;
 export interface TestingProjectOption { path: string; name: string }
 /** A target as the project's e2e config declares it; a static read may not see every field. */
 export interface TestingTargetOption { name: string; platform?: string; bundleId?: string }
+export type TestingModelPreference = { provider: "vercel" | "openrouter" | "openai-compatible" | "chatgpt" | "copilot" | "opencode-console" | "grok"; model: string; endpoint?: string };
+export type TestingProviderOption = { id: string; label: string; subscription?: string; defaultModel?: string };
+export type TestingSetupOptions = { targets: { name: string; platform: "ios" | "android"; bundleId: string }[]; provider: TestingModelPreference["provider"] | "none"; model?: string; endpoint?: string; installDependencies: boolean; installSkill: boolean; registerMcp: boolean };
+export type TestingSetupOperation = { id: string; kind: "apply" | "login"; status: "running" | "waiting" | "succeeded" | "failed" | "cancelled"; message: string; completed: number; total: number; applied: string[]; auth?: { url: string; instructions: string; userCode?: string }; prompt?: { message: string; placeholder?: string } };
 
 export type TestingSnapshot = {
   open: boolean;
@@ -70,6 +74,14 @@ export type TestingSnapshot = {
   /** The target the panel records against; "" until a project with targets is loaded. */
   targetName: string;
   configPath: string;
+  runtimeMode: "project" | "bundled";
+  setupState: "configured" | "available";
+  targetSource: "project" | "expo-cli" | "static-expo" | "foreground" | "none";
+  projectWarning: string;
+  modelPreference?: TestingModelPreference;
+  providers: TestingProviderOption[];
+  modelPickerOpen: boolean;
+  setupOpen: boolean;
   loadingProject: boolean;
   pickingProject: boolean;
   launching: boolean;
@@ -149,7 +161,7 @@ export class TestingPanel {
   /** The project and target the installed tree source reads; "" when there is no source. */
   private treeSourceKey = "";
   private snapshot: TestingSnapshot = {
-    open: false, available: false, projectPath: "", projects: [], targets: [], targetName: "", configPath: "",
+    open: false, available: false, projectPath: "", projects: [], targets: [], targetName: "", configPath: "", runtimeMode: "bundled", setupState: "available", targetSource: "none", projectWarning: "", providers: [], modelPickerOpen: false, setupOpen: false,
     loadingProject: false, pickingProject: false, launching: false, appLaunched: false,
     fileName: "", saving: false, overwritePath: "", savedRevision: -1, savedPath: "", running: false, pendingRun: false,
     agent: null, drafts: [], draftId: "", loadingDraft: false, tests: [], selectedTestPath: "", selectedTestSource: "", selectedTestOriginalHash: "", selectedTestStaged: false, loadingTest: false, deletingTest: "", error: null,
@@ -187,7 +199,11 @@ export class TestingPanel {
     this.deviceApps = deviceApps;
     // The device is half of what an agent recording needs and it belongs to the simulator panel,
     // so the selection is reported whenever either half moves.
-    this.stopWatchingDevices = deviceApps.subscribe(() => { void this.reportContext(); });
+    this.stopWatchingDevices = deviceApps.subscribe(() => {
+      void this.reportContext();
+      if (this.snapshot.projectPath && this.snapshot.runtimeMode === "bundled" && this.snapshot.targets.length === 0
+        && deviceApps.getSnapshot().foregroundApp?.bundleId) void this.selectProject(this.snapshot.projectPath);
+    });
     // Every change to what would be written bumps the recorder's revision, which is exactly the
     // thing worth keeping, so one subscription covers recording, editing, dragging and the title.
     this.stopWatchingRecorder = testRecorder.subscribe(() => { this.scheduleDraft(); });
@@ -247,6 +263,18 @@ export class TestingPanel {
       // release that fails leaves the session for the next `read` to take over.
       release: () => { void this.call("mobile_testing_release_device", {}, 10000).catch(() => undefined); },
     };
+  }
+
+  /** A host may advertise a preselection through configuration; host names never select behavior. */
+  private hostModelDefault(): TestingModelPreference | undefined {
+    const capabilities = this.app.getHostCapabilities() as unknown as Record<string, unknown> | undefined;
+    const configuration = object(capabilities?.configuration) ?? object(object(capabilities?.experimental)?.mobileDev);
+    const testing = object(configuration?.testing);
+    const candidate = object(testing?.defaultModel);
+    const provider = text(candidate?.provider) as TestingModelPreference["provider"];
+    const model = text(candidate?.model);
+    if (!provider || !model || !["vercel", "openrouter", "openai-compatible", "chatgpt", "copilot", "opencode-console", "grok"].includes(provider)) return;
+    return { provider, model, ...(text(candidate?.endpoint) ? { endpoint: text(candidate?.endpoint) } : {}) };
   }
 
   private async call(name: string, arguments_: Record<string, unknown>, timeout = 30000) {
@@ -384,14 +412,17 @@ export class TestingPanel {
     clearTimeout(this.draftTimer);
     this.draftRevision = testRecorder.getSnapshot().revision;
     this.draftFlowId = "";
-    this.update({ projectPath: path, targets: [], targetName: "", configPath: "", appLaunched: false,
+    this.update({ projectPath: path, targets: [], targetName: "", configPath: "", runtimeMode: "bundled", setupState: "available", targetSource: "none", projectWarning: "", appLaunched: false,
       overwritePath: "", savedRevision: -1, savedPath: "", draftId: "", drafts: [], tests: [], error: null });
     void this.refreshDrafts();
     void this.refreshTests();
     if (!path || !this.snapshot.available) return;
     this.update({ loadingProject: true });
     try {
-      const response = await this.call("mobile_testing_project_config", { projectPath: path });
+      const device = this.deviceApps.getSnapshot().device;
+      const foregroundBundleId = this.deviceApps.getSnapshot().foregroundApp?.bundleId ?? undefined;
+      const foregroundPlatform = device && isRecordableDevice(device) ? recordablePlatform(device) : undefined;
+      const response = await this.call("mobile_testing_project_config", { projectPath: path, ...(foregroundPlatform && foregroundBundleId ? { foregroundPlatform, foregroundBundleId } : {}) });
       if (revision !== this.loadRevision) return;
       const data = object(response.structuredContent) ?? {};
       const listed = Array.isArray(data.targets) ? data.targets : [];
@@ -404,9 +435,11 @@ export class TestingPanel {
         }));
       // The target on the mirrored device's platform, so a project with both records against the
       // right one without being asked; else the first, which `targetMismatch` then reports on.
-      const device = this.deviceApps.getSnapshot().device;
       const preferred = (device ? targets.find(entry => entry.platform === recordablePlatform(device)) : undefined) ?? targets[0];
-      this.update({ targets, targetName: preferred?.name ?? "", configPath: text(data.configPath) });
+      const preference = object(data.modelPreference);
+      const modelPreference = preference && text(preference.provider) && text(preference.model) ? { provider: text(preference.provider) as TestingModelPreference["provider"], model: text(preference.model), ...(text(preference.endpoint) ? { endpoint: text(preference.endpoint) } : {}) } : this.hostModelDefault();
+      const providers = (Array.isArray(data.providers) ? data.providers : []).map(entry => object(entry)).filter((entry): entry is Record<string, unknown> => entry !== null).map(entry => ({ id: text(entry.id), label: text(entry.label), ...(text(entry.subscription) ? { subscription: text(entry.subscription) } : {}), ...(text(entry.defaultModel) ? { defaultModel: text(entry.defaultModel) } : {}) })).filter(entry => entry.id && entry.label);
+      this.update({ targets, targetName: preferred?.name ?? "", configPath: text(data.configPath), runtimeMode: data.runtimeMode === "project" ? "project" : "bundled", setupState: data.setupState === "configured" ? "configured" : "available", targetSource: ["project", "expo-cli", "static-expo", "foreground"].includes(text(data.targetSource)) ? text(data.targetSource) as TestingSnapshot["targetSource"] : "none", projectWarning: text(data.warning), ...(modelPreference ? { modelPreference } : {}), providers });
     } catch (error) {
       if (revision === this.loadRevision) this.update({ error: error instanceof Error ? error.message : String(error) });
     } finally {
@@ -419,6 +452,36 @@ export class TestingPanel {
     if (!this.snapshot.targets.some(entry => entry.name === name)) return;
     this.update({ targetName: name, appLaunched: false });
   }
+
+  openSetup() { this.update({ setupOpen: true }); }
+  closeSetup() { this.update({ setupOpen: false }); }
+  openModelPicker() { this.update({ modelPickerOpen: true }); }
+  closeModelPicker() { this.update({ modelPickerOpen: false }); }
+
+  async saveModelPreference(preference?: TestingModelPreference) {
+    await this.call("mobile_testing_model_preference", { ...(preference ? { preference } : {}) });
+    this.update({ modelPreference: preference, modelPickerOpen: false });
+    countUiEvent("ui.testing.model_preference");
+  }
+
+  async planSetup(options: TestingSetupOptions) {
+    const response = await this.call("mobile_testing_setup_plan", { projectPath: this.snapshot.projectPath, options }, 60_000);
+    return object(object(response.structuredContent)?.plan);
+  }
+  async applySetup(planId: string) {
+    const response = await this.call("mobile_testing_setup_apply", { planId }, 30_000);
+    return object(object(response.structuredContent)?.operation) as TestingSetupOperation | null;
+  }
+  async setupProgress(operationId: string) {
+    const response = await this.call("mobile_testing_setup_progress", { operationId }, 10_000);
+    return object(object(response.structuredContent)?.operation) as TestingSetupOperation | null;
+  }
+  async cancelSetup(operationId: string) { await this.call("mobile_testing_setup_cancel", { operationId }); }
+  async startLogin(provider: string) {
+    const response = await this.call("mobile_testing_setup_login", { provider }, 30_000);
+    return object(object(response.structuredContent)?.operation) as TestingSetupOperation | null;
+  }
+  async answerLogin(operationId: string, value: string) { await this.call("mobile_testing_setup_answer", { operationId, value }); }
 
   /**
    * Launches the selected target's app on the mirrored device, so recording starts from the app
@@ -995,12 +1058,31 @@ export class TestingPanel {
       && !this.snapshot.loadingTest && !this.snapshot.agent?.active && !this.snapshot.running && !this.snapshot.saving);
   }
 
+  private bundledRunArguments() {
+    if (this.snapshot.runtimeMode !== "bundled") return {};
+    const target = this.target;
+    return {
+      ...(target?.platform === "ios" || target?.platform === "android" ? { platform: target.platform } : {}),
+      ...(target?.bundleId ? { bundleId: target.bundleId } : {}),
+      ...(this.snapshot.modelPreference ? { model: this.snapshot.modelPreference } : {}),
+    };
+  }
+
+  /** Deterministic tests stay model-free; an agent step opens the chooser before any run starts. */
+  private hasBundledModel(source: string): boolean {
+    if (this.snapshot.runtimeMode !== "bundled" || !/\bagent\s*\.\s*(act|assert|waitFor|extract)\s*\(/.test(source)) return true;
+    if (this.snapshot.modelPreference) return true;
+    this.update({ modelPickerOpen: true });
+    return false;
+  }
+
   /** Runs a temporary sibling copy so Play and Run never save the working copy implicitly. */
   async runStoredTest(untilLine?: number) {
     if (!this.canRunStored) return;
     const { projectPath, selectedTestPath: relativePath, selectedTestSource: source } = this.snapshot;
     const untilSource = untilLine === undefined ? source : storedTestUntilSource(source, untilLine);
     if (untilSource === undefined) return;
+    if (!this.hasBundledModel(untilSource)) return;
     this.update({ running: true, error: null });
     testRecorder.clearRun();
     testRecorder.beginRun(untilLine);
@@ -1017,6 +1099,7 @@ export class TestingPanel {
         projectPath, relativePath, untilSource,
         ...(this.snapshot.configPath ? { configPath: this.snapshot.configPath } : {}),
         ...(this.snapshot.targetName ? { target: this.snapshot.targetName } : {}),
+        ...this.bundledRunArguments(),
       }, 15 * 60_000);
       const data = object(response.structuredContent) ?? {};
       const steps = (Array.isArray(data.steps) ? data.steps : []).map(entry => object(entry))
@@ -1068,6 +1151,7 @@ export class TestingPanel {
     const until = options.untilStepId ? testRecorder.emittedThrough(options.untilStepId) : undefined;
     // The step went while the pointer was on its play button; there is nothing to run up to.
     if (options.untilStepId && !until) return;
+    if (!this.hasBundledModel(until?.source ?? testRecorder.source)) return;
     if (!until && (this.dirty || !this.snapshot.savedPath)) {
       await this.saveTest();
       // The file is already there and the user has not answered yet; `saveTest(true)` resumes.
@@ -1097,6 +1181,7 @@ export class TestingPanel {
         ...(this.snapshot.configPath ? { configPath: this.snapshot.configPath } : {}),
         ...(this.snapshot.targetName ? { target: this.snapshot.targetName } : {}),
         ...(until ? { untilSource: until.source } : {}),
+        ...this.bundledRunArguments(),
       }, 15 * 60_000);
       const data = object(response.structuredContent) ?? {};
       const steps = (Array.isArray(data.steps) ? data.steps : []).map(entry => object(entry))

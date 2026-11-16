@@ -5,6 +5,10 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from "node:pat
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 import { chooseProjectFolder } from "./project-folder-dialog.ts";
 import { recordProjectDialog } from "./telemetry.ts";
+import { bundledRuntimeDescriptor, projectRuntimeDescriptor } from "./e2e-runtime.ts";
+import type { TestingRuntimeDescriptor } from "./e2e-runtime.ts";
+import { discoverTestingTargets } from "./testing-target-discovery.ts";
+import type { ForegroundTestingTarget } from "./testing-target-discovery.ts";
 
 /**
  * The projects the Testing panel can record against: folders holding an `e2e.config.ts`. The user
@@ -40,6 +44,11 @@ export interface TestingProjectConfig {
   /** Absolute path of the config file that was read. */
   configPath: string;
   targets: TestingTarget[];
+  runtimeMode: "project" | "bundled";
+  runtime: TestingRuntimeDescriptor;
+  setupState: "configured" | "available";
+  targetSource: "project" | "expo-cli" | "static-expo" | "foreground" | "none";
+  warning?: string;
 }
 
 interface Choice { path: string; lastPickedAt: string }
@@ -107,15 +116,29 @@ export function parseTargets(source: string): TestingTarget[] {
   return targets;
 }
 
-/** Reads one project's e2e config. Throws when the folder is not an e2e project. */
-export async function inspectProject(projectPath: string): Promise<TestingProjectConfig> {
+/** Reads one selected project and chooses its compatible project-local or bundled runtime. */
+export async function inspectProject(projectPath: string, foreground?: ForegroundTestingTarget): Promise<TestingProjectConfig> {
   const path = normalize(projectPath.trim());
   if (!isAbsolute(path)) throw new ExpectedOperationError("invalid_input", "Choose the project folder.");
   if (!(await isDirectory(path))) throw new ExpectedOperationError("invalid_input", "That project folder no longer exists.");
   const configPath = await findConfig(path);
-  if (!configPath) throw new ExpectedOperationError("invalid_input", "That folder has no e2e.config.ts. Run `npx e2e init` in it first.");
-  const source = await readFile(configPath, "utf-8").catch(() => "");
-  return { path, name: basename(path) || path, configPath, targets: parseTargets(source) };
+  const source = configPath ? await readFile(configPath, "utf-8").catch(() => "") : "";
+  const configuredTargets = parseTargets(source);
+  const compatibleTargets = configuredTargets.filter(target => (target.platform === "ios" || target.platform === "android") && target.bundleId);
+  const projectRuntime = configPath && compatibleTargets.length ? await projectRuntimeDescriptor(path) : undefined;
+  if (projectRuntime) return {
+    path, name: basename(path) || path, configPath: configPath!, targets: compatibleTargets,
+    runtimeMode: "project", runtime: projectRuntime, setupState: "configured", targetSource: "project",
+  };
+  const discovered = await discoverTestingTargets(path, foreground);
+  const reason = !configPath ? "No e2e config is present."
+    : compatibleTargets.length === 0 ? "The project config has no compatible mobile target."
+      : "The project-local e2e runtime is missing or incompatible with this Studio version.";
+  return {
+    path, name: basename(path) || path, configPath: configPath ?? "", targets: discovered.targets,
+    runtimeMode: "bundled", runtime: await bundledRuntimeDescriptor(reason), setupState: "available",
+    targetSource: discovered.source, warning: [reason, discovered.warning].filter(Boolean).join(" "),
+  };
 }
 
 export class TestingProjectChoices {
@@ -174,10 +197,10 @@ export class TestingProjectChoices {
     return await next;
   }
 
-  /** Recorded folders that still exist and still hold an e2e config, newest first. */
+  /** Recorded folders that still exist, including zero-setup projects without an e2e config. */
   async list(): Promise<TestingProjectChoice[]> {
     const projects = TestingProjectChoices.clean(await this.read());
-    const available = await Promise.all(projects.map(async entry => ((await findConfig(entry.path)) ? entry : null)));
+    const available = await Promise.all(projects.map(async entry => ((await isDirectory(entry.path)) ? entry : null)));
     return available.filter((entry): entry is TestingProjectChoice => entry !== null);
   }
 
@@ -219,6 +242,21 @@ const SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const MAX_TEST_BYTES = 256 * 1024;
 
 export interface WrittenTest { path: string; written: boolean; existed: boolean }
+
+/**
+ * Project mode stores tests in the project. Bundled mode deliberately does not: its saved tests
+ * live under Mobile Dev's private state, keyed by a digest so telemetry, logs and directory names
+ * never contain the selected project's path.
+ */
+function bundledProjectDirectory(projectPath: string): string {
+  const stateRoot = process.env.MOBILE_DEV_TESTING_DIRECTORY?.trim() || TESTING_DIRECTORY;
+  return join(stateRoot, "bundled", sourceHash(normalize(projectPath)));
+}
+
+async function testStorage(projectPath: string): Promise<{ project: TestingProjectConfig; root: string }> {
+  const project = await inspectProject(projectPath);
+  return { project, root: project.runtimeMode === "project" ? project.path : bundledProjectDirectory(project.path) };
+}
 
 /**
  * Resolves the absolute path a recorded test may be written to.
@@ -271,8 +309,8 @@ export async function resolveTestRunPaths(projectPath: string, relativePath: str
   relativePath: string;
   configPath?: string;
 }> {
-  const project = await inspectProject(projectPath);
-  const testPath = await resolveTestPath(project.path, relativePath);
+  const { project, root } = await testStorage(projectPath);
+  const testPath = await resolveTestPath(root, relativePath);
   if (!(await isFile(testPath))) throw new ExpectedOperationError("invalid_input", "That test file is no longer there.");
   if (configPath !== undefined) {
     const requestedConfig = normalize(configPath.trim());
@@ -281,7 +319,7 @@ export async function resolveTestRunPaths(projectPath: string, relativePath: str
   }
   return {
     projectPath: project.path,
-    relativePath: relative(project.path, testPath).split(/[\\/]/).join("/"),
+    relativePath: [TESTS_DIRECTORY, ...relative(resolve(root, TESTS_DIRECTORY), testPath).split(/[\\/]/).filter(Boolean)].join("/"),
     ...(configPath === undefined ? {} : { configPath: project.configPath }),
   };
 }
@@ -291,7 +329,7 @@ export async function resolveTestRunPaths(projectPath: string, relativePath: str
  * rather than replaced, so the panel can ask before it destroys someone's test.
  */
 export async function writeTestFile(projectPath: string, relativePath: string, contents: string, overwrite = false): Promise<WrittenTest> {
-  const { path: root } = await inspectProject(projectPath);
+  const { root } = await testStorage(projectPath);
   if (Buffer.byteLength(contents, "utf-8") > MAX_TEST_BYTES) throw new ExpectedOperationError("invalid_input", "That test is too large to write.");
   const target = await resolveTestPath(root, relativePath);
   const existed = await isFile(target);
@@ -333,7 +371,7 @@ const MAX_LISTED_TESTS = 200;
  * A project with no `tests/` folder yet is an empty list, not an error: nothing has been saved.
  */
 export async function listTestFiles(projectPath: string): Promise<StoredTest[]> {
-  const { path: root } = await inspectProject(projectPath);
+  const { root } = await testStorage(projectPath);
   const testsRoot = resolve(root, TESTS_DIRECTORY);
   const found: StoredTest[] = [];
   const walk = async (directory: string, depth: number): Promise<void> => {
@@ -362,7 +400,7 @@ export async function listTestFiles(projectPath: string): Promise<StoredTest[]> 
 
 /** Reads a listed test for the panel's read-only source preview. */
 export async function readTestFile(projectPath: string, relativePath: string): Promise<string> {
-  const { path: root } = await inspectProject(projectPath);
+  const { root } = await testStorage(projectPath);
   const target = await resolveTestPath(root, relativePath);
   const info = await stat(target).catch(() => undefined);
   if (!info?.isFile()) throw new ExpectedOperationError("invalid_input", "That test file is no longer there.");
@@ -435,7 +473,7 @@ export async function discardStagedTestFile(projectPath: string, relativePath: s
  * this removes a file from the user's repository, which nothing here can put back.
  */
 export async function deleteTestFile(projectPath: string, relativePath: string): Promise<{ path: string; removed: boolean }> {
-  const { path: root } = await inspectProject(projectPath);
+  const { root } = await testStorage(projectPath);
   const target = await resolveTestPath(root, relativePath);
   const removed = await unlink(target).then(() => true, () => false);
   return { path: target, removed };

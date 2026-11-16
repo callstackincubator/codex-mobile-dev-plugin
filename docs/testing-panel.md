@@ -1,5 +1,30 @@
 # Testing panel — record e2e tests from the mirror
 
+## Zero-setup runtime and optional project setup
+
+Testing Studio no longer requires `e2e.config.ts`. Every panel build ships a pinned, integrity-checked
+runtime containing `e2e`, `@e2e-dev/mobile`, the supported AI SDK/provider packages, license notices
+and release metadata. A compatible project-local config and runtime remain authoritative. With no
+config, no compatible mobile target, no local packages, or an incompatible API line, Studio switches
+to **Bundled runtime** and keeps generated config plus saved tests in Mobile Dev's private state. Record,
+Save, Run, Play until here, manual recording and agent recording therefore do not modify the project.
+
+Bundled targets are discovered in this order: the project's local Expo CLI (`expo config --json`, never
+network `npx`), non-executing `app.json`/`app.config.*` data, then the mirrored foreground app. Both iOS
+and Android targets are retained when known and are editable in the setup wizard.
+
+Deterministic tests use no model. The first bundled run containing `agent.act`, `agent.assert`,
+`agent.waitFor` or `agent.extract` opens the provider/model chooser. Subscription sign-in is driven by
+E2E's OAuth callbacks; Mobile Dev persists only the non-secret provider, model id and optional endpoint.
+Hosts may preselect a choice only through advertised `configuration.mobileDev.testing.defaultModel` (or
+the equivalent experimental capability); no host-name branch exists.
+
+**Set up project** is the opt-in GUI equivalent of `e2e init`: targets and provider are editable, then
+an immutable plan lists every create/update/skip action. Apply revalidates the plan for stale files,
+preserves existing configs/tests/skills/MCP entries, uses the detected package manager, reports progress,
+supports cancellation and reports partial failures without pretending already-written files were rolled
+back. Setup is the only zero-setup Studio path that writes configuration into the selected project.
+
 Status: Android emulators are supported alongside iOS simulators — the device is identified by
 `deviceId` plus an explicit `platform`, and the e2e run is pinned with `--target`. The Android path
 is not yet verified on a real emulator, including the pixel space below. Steps 1-6 of the build
@@ -11,9 +36,10 @@ mirror still records nothing (step 7), and the Maestro emitter (step 8) is still
 A test can also be recorded by the user's own coding agent, which drives the same recorder from
 the server — see [docs/agent-recording.md](agent-recording.md).
 
-A new workspace tool, **Testing**, that turns the existing simulator mirror into a
+A workspace tool, **Testing**, that turns the existing simulator mirror into a
 Maestro-Studio-style recorder: pick a project, launch its app, tap the mirror, and watch the test
-source grow one step per interaction. The file is written to the project when the user clicks Save.
+source grow one step per interaction. In project mode Save writes to the project; in bundled mode it
+writes to Studio's private state until the user explicitly runs project setup.
 
 First pass targets the **iOS simulator** (and now the **Android emulator**) and the **e2e** runner (`@e2e-dev/mobile`).
 Maestro YAML is a second emitter behind the same recorder.
@@ -46,9 +72,8 @@ Almost every primitive is in place; the panel is mostly wiring.
 
 Two things do **not** exist:
 
-1. **No path writes into the user's project.** Every `writeFile` in the server targets its own
-   state (recordings, tracesift, clipboard temp files). The server does not know a project root.
-2. **No codegen of any kind.**
+The original implementation lacked project writes and code generation; both are now present behind
+the explicit project selection and the storage boundary described above.
 
 ## Unsaved recordings
 
@@ -83,7 +108,7 @@ it holds **two groups**:
 | Group | Holds | Starts |
 |---|---|---|
 | **Not stored** | The drafts: a kept flow with its step count, how long ago it was touched and whether the user or an agent recorded it. **New recording** is at its foot | Expanded — it is what is being worked on |
-| **In the project** | The `.e2e.ts` files in the project's own `tests/` folder, newest first | Collapsed — it is the archive |
+| **In the project / Studio** | Project `.e2e.ts` files in project mode; private Studio tests in bundled mode | Collapsed — it is the archive |
 
 The second group exists because deleting the draft on save had an effect nobody asked for: the
 test the user had just saved **left the list**. There was nowhere for it to go. Now it moves from

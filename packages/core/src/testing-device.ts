@@ -54,6 +54,8 @@ export interface TestingDeviceTarget {
   platform: "ios" | "android";
   /** The e2e project whose `@e2e-dev/mobile` projects the snapshot; its build, not ours. */
   projectPath: string;
+  /** The project root in project mode, or Mobile Dev's pinned artifact in bundled mode. */
+  runtimeRoot?: string;
   /** The app to attach to, from the project's config. Never launched fresh — see `attach`. */
   bundleId: string;
 }
@@ -230,13 +232,13 @@ export class TestingDevices {
     return this.client;
   }
 
-  private projection(projectPath: string): Promise<EngineProjection> {
-    let pending = this.projections.get(projectPath);
+  private projection(runtimeRoot: string): Promise<EngineProjection> {
+    let pending = this.projections.get(runtimeRoot);
     if (!pending) {
-      pending = loadProjection(projectPath);
+      pending = loadProjection(runtimeRoot);
       // A failed load must not be cached: the user installs the dependency and records again.
-      pending.catch(() => this.projections.delete(projectPath));
-      this.projections.set(projectPath, pending);
+      pending.catch(() => this.projections.delete(runtimeRoot));
+      this.projections.set(runtimeRoot, pending);
     }
     return pending;
   }
@@ -271,7 +273,7 @@ export class TestingDevices {
 
   /** Every input that decides which app/session is attached and how its tree is projected. */
   private key(target: TestingDeviceTarget): string {
-    return `${target.platform}\u0000${target.deviceId}\u0000${target.projectPath}\u0000${target.bundleId}`;
+    return `${target.platform}\u0000${target.deviceId}\u0000${target.projectPath}\u0000${target.runtimeRoot ?? target.projectPath}\u0000${target.bundleId}`;
   }
 
   async read(target: TestingDeviceTarget): Promise<TestingDeviceTree> {
@@ -281,7 +283,7 @@ export class TestingDevices {
   }
 
   private async readOnce(target: TestingDeviceTarget): Promise<TestingDeviceTree> {
-    const [client, projection] = await Promise.all([this.connect(), this.projection(target.projectPath)]);
+    const [client, projection] = await Promise.all([this.connect(), this.projection(target.runtimeRoot ?? target.projectPath)]);
     if (this.attached !== this.key(target)) await this.attach(client, target);
     let snapshot: { nodes?: unknown };
     try {

@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 
@@ -246,7 +247,15 @@ export interface TestRunRequest {
   untilSource?: string;
   /** The e2e target to run against; without it the runner takes the config's first, whatever platform that is. */
   target?: string;
+  /** Explicit runner/projection runtime. Project mode remains authoritative when compatible. */
+  runtime?: { mode: "project" | "bundled"; root: string };
+  /** Required only for a bundled run, whose ephemeral config cannot read a project target. */
+  bundledTarget?: { platform: "ios" | "android"; bundleId: string };
+  /** Non-secret preference for a bundled test containing agent.* calls. */
+  model?: { provider: BundledModelProvider; model: string; endpoint?: string };
 }
+
+export type BundledModelProvider = "vercel" | "openrouter" | "openai-compatible" | "chatgpt" | "copilot" | "opencode-console" | "grok";
 
 /**
  * Where the generated config goes: beside the project's own, at the project root.
@@ -339,6 +348,7 @@ function refusedTheConfig(result: TestRunResult): boolean {
 }
 
 export async function runRecordedTest(request: TestRunRequest, deps: TestRunDeps = {}): Promise<TestRunResult> {
+  if (request.runtime?.mode === "bundled") return runBundledTest(request, deps);
   const result = await runOnce(request, deps);
   if (!refusedTheConfig(result) || !request.configPath || !deps.onProgress) return result;
   // Without the progress sink nothing is generated, so this is the plain run.
@@ -346,6 +356,99 @@ export async function runRecordedTest(request: TestRunRequest, deps: TestRunDeps
   const retried = await runOnce(request, plain);
   // The retry is the answer only if it got further; otherwise the first failure is the real one.
   return retried.steps.length > 0 || retried.status !== result.status ? retried : result;
+}
+
+function quoted(value: string): string { return JSON.stringify(value); }
+
+function bundledModelSource(model: TestRunRequest["model"]): { imports: string[]; field: string } | undefined {
+  if (!model) return;
+  const id = quoted(model.model);
+  switch (model.provider) {
+    case "vercel": return { imports: ["import { gateway } from 'ai';"], field: `gateway(${id})` };
+    case "openrouter": return { imports: ["import { openrouter } from '@openrouter/ai-sdk-provider';"], field: `openrouter(${id})` };
+    case "openai-compatible": return {
+      imports: ["import { createOpenAICompatible } from '@ai-sdk/openai-compatible';"],
+      field: `createOpenAICompatible({ name: 'openai-compatible', baseURL: ${quoted(model.endpoint ?? "http://127.0.0.1:11434/v1")}, apiKey: process.env.LLM_API_KEY }).chatModel(${id})`,
+    };
+    case "chatgpt": return { imports: ["import { chatgpt } from 'e2e/oauth/chatgpt';"], field: `chatgpt(${id})` };
+    case "copilot": return { imports: ["import { copilot } from 'e2e/oauth/copilot';"], field: `copilot(${id})` };
+    case "opencode-console": return { imports: ["import { opencodeConsole } from 'e2e/oauth/opencode-console';"], field: `opencodeConsole(${id})` };
+    case "grok": return { imports: ["import { grok } from 'e2e/oauth/grok';"], field: `grok(${id})` };
+  }
+}
+
+export function bundledConfigSource(target: NonNullable<TestRunRequest["bundledTarget"]>, model?: TestRunRequest["model"]): string {
+  const selected = bundledModelSource(model);
+  return [
+    "import { mobile } from '@e2e-dev/mobile';",
+    ...(selected?.imports ?? []),
+    "",
+    "export default {",
+    ...(selected ? ["  agents: { default: {", `    model: ${selected.field},`, "    system: 'You are a thorough QA agent. Verify every outcome.',", "  } },"] : []),
+    `  targets: [{ name: ${quoted(target.platform)}, engine: mobile({ platform: ${quoted(target.platform)} }), app: { bundleId: ${quoted(target.bundleId)} } }],`,
+    "  workers: 1,",
+    "};",
+    "",
+  ].join("\n");
+}
+
+export function requiresModel(source: string): boolean { return /\bagent\s*\.\s*(act|assert|waitFor|extract)\s*\(/.test(source); }
+
+/** Runs from an isolated workspace; only the saved test source crosses out of the user's project. */
+async function runBundledTest(request: TestRunRequest, deps: TestRunDeps): Promise<TestRunResult> {
+  if (!request.runtime || !request.bundledTarget) throw new ExpectedOperationError("invalid_input", "Choose the mirrored app before running in bundled mode.");
+  const source = request.untilSource ?? await readFile(join(request.projectPath, request.relativePath), "utf8");
+  if (requiresModel(source) && !request.model)
+    throw new ExpectedOperationError("invalid_input", "This test contains agent steps. Choose a provider and model in Testing, then run it again.");
+  const requiredKey = request.model?.provider === "vercel" ? "AI_GATEWAY_API_KEY" : request.model?.provider === "openrouter" ? "OPENROUTER_API_KEY" : undefined;
+  if (requiredKey && !process.env[requiredKey]) throw new ExpectedOperationError("invalid_input", `${requiredKey} is not set. Add it to Mobile Dev's environment, then run again.`);
+  await deps.release?.();
+  const workspace = await mkdtemp(join(tmpdir(), "mobile-dev-e2e-run-"));
+  const runPath = request.untilSource === undefined ? request.relativePath : untilTestPath(request.relativePath);
+  const config = join(workspace, "e2e.config.mts");
+  const progressConfig = join(workspace, PROGRESS_CONFIG);
+  try {
+    await mkdir(dirname(join(workspace, runPath)), { recursive: true, mode: 0o700 });
+    await writeFile(join(workspace, runPath), source, { mode: 0o600 });
+    await writeFile(config, bundledConfigSource(request.bundledTarget, request.model), { mode: 0o600 });
+    if (deps.onProgress) await writeFile(progressConfig, progressConfigSource(config), { mode: 0o600 });
+    await symlink(join(request.runtime.root, "node_modules"), join(workspace, "node_modules"), "dir");
+    return await spawnRun({
+      command: process.execPath,
+      commandArgs: [join(request.runtime.root, "node_modules/e2e/dist/cli/bin.js")],
+      cwd: workspace, runPath, configName: deps.onProgress ? PROGRESS_CONFIG : "e2e.config.mts",
+      target: request.bundledTarget.platform, timeoutMs: request.timeoutMs, spawner: deps.spawner ?? spawn,
+      onProgress: deps.onProgress,
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+}
+
+async function spawnRun(input: { command: string; commandArgs?: string[]; cwd: string; runPath: string; configName?: string; target?: string; timeoutMs?: number; spawner: Spawner; onProgress?: (progress: TestRunProgress) => void }): Promise<TestRunResult> {
+  const child = input.spawner(input.command, [
+    ...(input.commandArgs ?? []), "run", input.runPath, "--reporter", "json",
+    ...(input.target ? ["--target", input.target] : []), ...(input.configName ? ["--config", input.configName] : []),
+  ], { cwd: input.cwd, stdio: ["ignore", "pipe", "pipe"], env: runnerEnv() });
+  let stdout = "", stderr = "", pending = "";
+  child.stdout?.setEncoding("utf8"); child.stderr?.setEncoding("utf8");
+  child.stdout?.on("data", chunk => { stdout += chunk; });
+  child.stderr?.on("data", chunk => {
+    stderr += chunk;
+    if (!input.onProgress) return;
+    pending += chunk;
+    const lines = pending.split("\n"); pending = lines.pop() ?? "";
+    for (const line of lines) { const progress = parseProgressLine(line); if (progress) input.onProgress(progress); }
+  });
+  const timeoutMs = input.timeoutMs ?? 10 * 60_000;
+  const exitCode = await new Promise<number>((resolve, reject) => {
+    const timer = setTimeout(() => { child.kill("SIGTERM"); reject(new ExpectedOperationError("resource_limit", `The test run did not finish within ${Math.round(timeoutMs / 1000)}s.`)); }, timeoutMs);
+    timer.unref?.(); child.on("error", error => { clearTimeout(timer); reject(error); }); child.on("close", code => { clearTimeout(timer); resolve(code ?? 1); });
+  });
+  const report = parseReport(stdout);
+  const steps = report ? reportSteps(report, input.runPath) : [];
+  const durationMs = report ? reportDuration(report) : undefined;
+  return { status: reportStatus(report, exitCode), exitCode, steps, ...(durationMs === undefined ? {} : { durationMs }), ...(steps.length === 0 ? { output: tail(`${stdout}\n${stderr}`) } : {}) };
 }
 
 async function runOnce(request: TestRunRequest, deps: TestRunDeps): Promise<TestRunResult> {

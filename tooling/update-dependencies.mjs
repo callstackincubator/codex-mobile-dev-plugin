@@ -91,8 +91,8 @@ if (wants("js")) {
   for (const path of workspaceManifests) workspaceChanged = updateManifest(path, "npm").changed || workspaceChanged;
   if (workspaceChanged) run("npm", ["install", "--no-audit", "--no-fund"], { stdio: "inherit", env: { ...process.env, HUSKY: "0" } });
 
-  // The device runtimes ship their own lockfiles; build.mjs checks agent-device against its manifest.
-  for (const runtime of ["packages/runtimes/agent-device", "packages/runtimes/serve-emu"]) {
+  // The device runtimes ship their own lockfiles; build.mjs checks them against release metadata.
+  for (const runtime of ["packages/runtimes/agent-device", "packages/runtimes/e2e", "packages/runtimes/serve-emu"]) {
     const path = `${runtime}/package.json`;
     const { manifest, changed } = updateManifest(path, runtime.split("/").pop());
     if (!changed) continue;

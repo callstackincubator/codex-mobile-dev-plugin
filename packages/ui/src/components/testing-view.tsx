@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { BotIcon, CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleIcon, CircleXIcon, CopyIcon, FileCode2Icon, FilePlus2Icon, FlaskConicalIcon, FolderOpenIcon, GripVerticalIcon, HistoryIcon, LoaderCircleIcon, MoreHorizontalIcon, PlayIcon, SaveIcon, SquareIcon, Trash2Icon, UserIcon, XIcon } from "lucide-react";
+import { BotIcon, CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleIcon, CircleXIcon, CopyIcon, ExternalLinkIcon, FileCode2Icon, FilePlus2Icon, FlaskConicalIcon, FolderOpenIcon, GripVerticalIcon, HistoryIcon, LoaderCircleIcon, MoreHorizontalIcon, PlayIcon, SaveIcon, Settings2Icon, SquareIcon, Trash2Icon, UserIcon, WandSparklesIcon, XIcon } from "lucide-react";
 import type { DeviceAppsStore } from "../device-apps.ts";
-import type { TestingPanel } from "../testing-panel.ts";
+import type { TestingModelPreference, TestingPanel, TestingSetupOperation, TestingSetupOptions } from "../testing-panel.ts";
 import { OPEN_STEP, formatRunDuration, testRecorder } from "../test-recorder.ts";
 import type { DevicePlatform, TestRunView } from "../test-recorder.ts";
 import { isRecordableDevice, recordablePlatform } from "@mobile-dev/shared/panel-target.ts";
@@ -242,6 +242,110 @@ function TestingDraftPicker({ panel }: { panel: TestingPanel }) {
   </Popover>;
 }
 
+function useOperation(panel: TestingPanel, initial: TestingSetupOperation | null, onDone?: (operation: TestingSetupOperation) => void) {
+  const [operation, setOperation] = useState<TestingSetupOperation | null>(initial);
+  useEffect(() => {
+    if (!operation || (operation.status !== "running" && operation.status !== "waiting")) return;
+    const timer = setInterval(() => { void panel.setupProgress(operation.id).then(next => {
+      if (!next) return;
+      setOperation(next);
+      if (["succeeded", "failed", "cancelled"].includes(next.status)) onDone?.(next);
+    }).catch(() => undefined); }, 500);
+    return () => clearInterval(timer);
+  }, [panel, operation?.id, operation?.status, onDone]);
+  return [operation, setOperation] as const;
+}
+
+/** Provider/model selection for the first bundled agent step. No key or token enters this view. */
+function TestingModelPicker({ panel }: { panel: TestingPanel }) {
+  const state = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
+  const choices = (state.providers ?? []).filter(entry => entry.id !== "none");
+  const initial: TestingModelPreference | undefined = state.modelPreference ?? (() => {
+    const first = choices[0];
+    return first ? { provider: first.id as TestingModelPreference["provider"], model: first.defaultModel ?? "" } : undefined;
+  })();
+  const [provider, setProvider] = useState<TestingModelPreference["provider"]>(initial?.provider ?? "chatgpt");
+  const choice = choices.find(entry => entry.id === provider);
+  const [model, setModel] = useState(initial?.model ?? choice?.defaultModel ?? "");
+  const [endpoint, setEndpoint] = useState(initial?.endpoint ?? "");
+  const [login, setLogin] = useOperation(panel, null);
+  const [answer, setAnswer] = useState("");
+  const startLogin = async () => {
+    if (!choice?.subscription) return;
+    setLogin(await panel.startLogin(choice.subscription));
+  };
+  return <Popover open={state.modelPickerOpen} onOpenChange={open => open ? panel.openModelPicker() : panel.closeModelPicker()}>
+    <PopoverTrigger asChild><Button type="button" size="sm" variant="outline" data-testing-model onClick={() => panel.openModelPicker()}><BotIcon />Model</Button></PopoverTrigger>
+    <PopoverContent align="end" className="flex w-[min(30rem,var(--radix-popover-content-available-width))] flex-col gap-3 p-4" aria-label="Testing model">
+      <div><p className="text-sm font-medium">Choose a model for agent steps</p><p className="text-xs text-muted-foreground">Deterministic steps never use a model. This saves only the provider, model and endpoint—not credentials or prompts.</p></div>
+      <label className="flex flex-col gap-1 text-xs font-medium"><span>Provider</span>
+        <Select items={choices.map(entry => ({ value: entry.id, label: entry.label }))} value={provider} onValueChange={value => {
+          if (!value) return; const next = value as TestingModelPreference["provider"]; setProvider(next); setModel(choices.find(entry => entry.id === next)?.defaultModel ?? ""); setLogin(null);
+        }}><SelectTrigger aria-label="Model provider"><SelectValue>{choice?.label ?? provider}</SelectValue></SelectTrigger><SelectContent>{choices.map(entry => <SelectItem key={entry.id} value={entry.id}>{entry.label}</SelectItem>)}</SelectContent></Select>
+      </label>
+      <label className="flex flex-col gap-1 text-xs font-medium"><span>Model ID</span><input value={model} onChange={event => setModel(event.target.value)} className="rounded-md border bg-background px-2.5 py-1.5 font-normal" /></label>
+      {provider === "openai-compatible" && <label className="flex flex-col gap-1 text-xs font-medium"><span>Base URL</span><input value={endpoint} onChange={event => setEndpoint(event.target.value)} placeholder="http://127.0.0.1:11434/v1" className="rounded-md border bg-background px-2.5 py-1.5 font-normal" /></label>}
+      {choice?.subscription && <div className="flex flex-col gap-2 rounded-md border p-2.5 text-xs">
+        <Button type="button" size="sm" variant="outline" disabled={login?.status === "running" || login?.status === "waiting"} onClick={() => void startLogin()}><ExternalLinkIcon />Sign in with {choice.label}</Button>
+        {login && <p role="status" className="break-words text-muted-foreground">{login.message}</p>}
+        {login?.auth && <a className="text-primary underline" href={login.auth.url} target="_blank" rel="noreferrer">Open sign-in page{login.auth.userCode ? ` · code ${login.auth.userCode}` : ""}</a>}
+        {login?.prompt && <span className="flex gap-2"><input value={answer} onChange={event => setAnswer(event.target.value)} placeholder={login.prompt.placeholder ?? "Authorization code"} className="min-w-0 flex-1 rounded-md border bg-background px-2 py-1" /><Button size="sm" onClick={() => { void panel.answerLogin(login.id, answer); setAnswer(""); }}>Continue</Button></span>}
+        {login && (login.status === "running" || login.status === "waiting") && <Button size="sm" variant="ghost" onClick={() => void panel.cancelSetup(login.id)}>Cancel sign-in</Button>}
+      </div>}
+      <div className="flex justify-end gap-2"><Button variant="ghost" size="sm" onClick={() => panel.closeModelPicker()}>Cancel</Button><Button size="sm" disabled={!model.trim()} onClick={() => void panel.saveModelPreference({ provider, model: model.trim(), ...(endpoint.trim() ? { endpoint: endpoint.trim() } : {}) })}>Use model</Button></div>
+    </PopoverContent>
+  </Popover>;
+}
+
+type SetupPlanView = { id: string; actions: { action: string; path: string; detail: string }[]; installCommand: string };
+
+/** GUI equivalent of e2e init: edit, preview an immutable plan, then explicitly apply it. */
+function TestingSetupWizard({ panel }: { panel: TestingPanel }) {
+  const state = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
+  const providers = state.providers ?? [];
+  const [targets, setTargets] = useState(() => state.targets.filter(target => target.bundleId && (target.platform === "ios" || target.platform === "android")).map(target => ({ name: target.name, platform: target.platform as "ios" | "android", bundleId: target.bundleId! })));
+  const [provider, setProvider] = useState<TestingSetupOptions["provider"]>(state.modelPreference?.provider ?? "none");
+  const providerInfo = providers.find(entry => entry.id === provider);
+  const [model, setModel] = useState(state.modelPreference?.model ?? "");
+  const [endpoint, setEndpoint] = useState(state.modelPreference?.endpoint ?? "");
+  const [installDependencies, setInstallDependencies] = useState(true);
+  const [installSkill, setInstallSkill] = useState(true);
+  const [registerMcp, setRegisterMcp] = useState(false);
+  const [plan, setPlan] = useState<SetupPlanView | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [operation, setOperation] = useOperation(panel, null, next => { if (next.status === "succeeded") void panel.selectProject(state.projectPath); });
+  const dirty = () => { setPlan(null); setError(""); };
+  const preview = async () => {
+    setBusy(true); setError("");
+    try {
+      const next = await panel.planSetup({ targets, provider, ...(model.trim() ? { model: model.trim() } : {}), ...(endpoint.trim() ? { endpoint: endpoint.trim() } : {}), installDependencies, installSkill, registerMcp });
+      setPlan(next as SetupPlanView | null);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    finally { setBusy(false); }
+  };
+  const apply = async () => { if (!plan) return; setBusy(true); try { setOperation(await panel.applySetup(plan.id)); } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setBusy(false); } };
+  return <Popover open={state.setupOpen} onOpenChange={open => open ? panel.openSetup() : panel.closeSetup()}>
+    <PopoverTrigger asChild><Button type="button" size="sm" variant="outline" data-testing-setup onClick={() => panel.openSetup()}><WandSparklesIcon />Set up project</Button></PopoverTrigger>
+    <PopoverContent align="end" className="flex max-h-[min(44rem,var(--radix-popover-content-available-height))] w-[min(42rem,var(--radix-popover-content-available-width))] flex-col gap-3 overflow-y-auto p-4" aria-label="Set up e2e">
+      <div><p className="text-sm font-medium">Set up e2e in this project</p><p className="text-xs text-muted-foreground">Studio already works in bundled mode. This optional wizard writes a normal project-local setup equivalent to e2e init.</p></div>
+      <section className="flex flex-col gap-2"><p className="text-xs font-medium">Mobile targets</p>{targets.map((target, index) => <div key={`${target.platform}-${index}`} className="grid grid-cols-[7rem_1fr_auto] gap-2">
+        <Select items={[{ value: "ios", label: "iOS" }, { value: "android", label: "Android" }]} value={target.platform} onValueChange={value => { if (!value) return; setTargets(items => items.map((item, itemIndex) => itemIndex === index ? { ...item, platform: value as "ios" | "android", name: value } : item)); dirty(); }}><SelectTrigger><SelectValue>{target.platform}</SelectValue></SelectTrigger><SelectContent><SelectItem value="ios">iOS</SelectItem><SelectItem value="android">Android</SelectItem></SelectContent></Select>
+        <input value={target.bundleId} aria-label={`${target.platform} app identifier`} onChange={event => { const value = event.target.value; setTargets(items => items.map((item, itemIndex) => itemIndex === index ? { ...item, bundleId: value } : item)); dirty(); }} className="rounded-md border bg-background px-2.5 py-1.5 text-xs" placeholder="com.example.app" />
+        <Button size="icon-sm" variant="ghost" aria-label={`Remove ${target.platform} target`} onClick={() => { setTargets(items => items.filter((_, itemIndex) => itemIndex !== index)); dirty(); }}><XIcon /></Button>
+      </div>)}<Button size="sm" variant="ghost" className="self-start" onClick={() => { const platform = targets.some(target => target.platform === "ios") ? "android" : "ios"; setTargets(items => [...items, { name: platform, platform, bundleId: "" }]); dirty(); }}>Add target</Button></section>
+      <label className="flex flex-col gap-1 text-xs font-medium"><span>Model provider for agent steps</span><Select items={providers.map(entry => ({ value: entry.id, label: entry.label }))} value={provider} onValueChange={value => { if (!value) return; setProvider(value as TestingSetupOptions["provider"]); const next = providers.find(entry => entry.id === value); setModel(next?.defaultModel ?? ""); dirty(); }}><SelectTrigger><SelectValue>{providerInfo?.label ?? provider}</SelectValue></SelectTrigger><SelectContent>{providers.map(entry => <SelectItem key={entry.id} value={entry.id}>{entry.label}</SelectItem>)}</SelectContent></Select></label>
+      {provider !== "none" && <label className="flex flex-col gap-1 text-xs font-medium"><span>Model ID</span><input value={model} onChange={event => { setModel(event.target.value); dirty(); }} className="rounded-md border bg-background px-2.5 py-1.5 font-normal" /></label>}
+      {provider === "openai-compatible" && <label className="flex flex-col gap-1 text-xs font-medium"><span>Base URL</span><input value={endpoint} onChange={event => { setEndpoint(event.target.value); dirty(); }} className="rounded-md border bg-background px-2.5 py-1.5 font-normal" /></label>}
+      <div className="grid gap-1 text-xs"><label><input type="checkbox" checked={installDependencies} onChange={event => { setInstallDependencies(event.target.checked); dirty(); }} /> Install dependencies with the detected package manager</label><label><input type="checkbox" checked={installSkill} onChange={event => { setInstallSkill(event.target.checked); dirty(); }} /> Install the e2e agent skill when absent</label><label><input type="checkbox" checked={registerMcp} onChange={event => { setRegisterMcp(event.target.checked); dirty(); }} /> Register the e2e MCP server when absent</label></div>
+      {!plan && <Button size="sm" disabled={busy || targets.length === 0 || targets.some(target => !target.bundleId.trim())} onClick={() => void preview()}>{busy ? <LoaderCircleIcon className="animate-spin" /> : <Settings2Icon />}Preview setup</Button>}
+      {plan && !operation && <section className="flex flex-col gap-2 rounded-md border p-3"><p className="text-xs font-medium">Confirmed plan preview</p><ul className="flex flex-col gap-1 text-xs">{plan.actions.map((action, index) => <li key={`${action.path}-${index}`}><code>{action.action}</code> {action.path} — <span className="text-muted-foreground">{action.detail}</span></li>)}</ul><p className="text-xs text-muted-foreground">The plan is immutable and will be rejected if an affected file changes.</p><span className="flex justify-end gap-2"><Button size="sm" variant="ghost" onClick={() => setPlan(null)}>Edit options</Button><Button size="sm" onClick={() => void apply()}>Confirm and apply</Button></span></section>}
+      {operation && <section className="flex flex-col gap-2 rounded-md border p-3 text-xs"><p role="status">{operation.message}</p><progress className="w-full" value={operation.completed} max={Math.max(1, operation.total)} />{operation.applied.length > 0 && <p className="text-muted-foreground">Applied: {operation.applied.join(", ")}</p>}{(operation.status === "running" || operation.status === "waiting") && <Button size="sm" variant="ghost" onClick={() => void panel.cancelSetup(operation.id)}>Cancel</Button>}{operation.status === "succeeded" && <Button size="sm" onClick={() => panel.closeSetup()}>Done</Button>}</section>}
+      {error && <p className="text-xs text-destructive" role="alert">{error}</p>}
+    </PopoverContent>
+  </Popover>;
+}
+
 /**
  * The Testing tool: choose an e2e project, launch its app on the mirrored device, then record a
  * deterministic test by tapping the mirror.
@@ -262,8 +366,8 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
   // Why the recorder cannot start yet, in the order the user has to fix them.
   const blocker = !state.projectPath ? "Choose a project to record against."
     : state.loadingProject ? ""
-      : state.targets.length === 0 ? "No targets found in this project's e2e config."
-        : !target?.bundleId ? `Target "${target?.name}" declares no bundleId, so there is no app to launch.`
+      : state.targets.length === 0 ? "No mobile app identifier was found. Open the app in the mirror, or use Set up project to enter one."
+        : !target?.bundleId ? `Target "${target?.name}" has no app identifier. Enter one in Set up project.`
           : !booted ? "Boot an iOS simulator or Android emulator to record against it."
             : !isRecordableDevice(device) ? "Recording works on an iOS simulator or an Android emulator, not a physical device."
               : mismatch;
@@ -277,6 +381,9 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
         </SelectGroup></SelectContent>
       </Select>}
       <TestingDraftPicker panel={panel} />
+      {state.projectPath && <span data-testing-runtime-mode className="rounded-full border px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{state.runtimeMode === "project" ? "Project runtime" : "Bundled runtime"}</span>}
+      {state.runtimeMode === "bundled" && state.projectPath && <TestingModelPicker key={`model-${state.projectPath}`} panel={panel} />}
+      {state.projectPath && <TestingSetupWizard key={`setup-${state.projectPath}`} panel={panel} />}
       {/* Before the controls, so the `ml-auto` below has one thing to push away from and the
           status does not end up marooned past the right edge of the group. */}
       {state.loadingProject && <span className="flex items-center gap-1 text-xs text-muted-foreground" role="status"><LoaderCircleIcon className="animate-spin" />Reading config…</span>}
@@ -290,6 +397,8 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
         <Button type="button" variant="ghost" size="sm" className="self-start" onClick={() => panel.dismissError()}>Dismiss</Button>
       </AlertDescription>
     </Alert>}
+
+    {state.projectWarning && <Alert><AlertTitle>{state.runtimeMode === "bundled" ? "Zero-setup mode" : "Testing"}</AlertTitle><AlertDescription><span>{state.projectWarning} Tests saved here stay in Mobile Dev until you opt into project setup.</span></AlertDescription></Alert>}
 
     {blocker && !state.agent?.active && <p className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">{blocker}</p>}
 

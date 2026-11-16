@@ -3,9 +3,10 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
 import { errorMessage } from "@mobile-dev/shared/protocol.ts";
-import { captureServerError } from "./telemetry.ts";
+import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
+import { captureServerError, recordTestingSetupOperation } from "./telemetry.ts";
 import type { TestingProjectChoices } from "./testing-projects.ts";
-import { deleteTestFile, discardStagedTestFile, inspectProject, listTestFiles, previewTestFile, resolveTestRunPaths, saveStagedTestFile, stageTestFile, writeTestFile } from "./testing-projects.ts";
+import { deleteTestFile, discardStagedTestFile, inspectProject, listTestFiles, previewTestFile, readTestFile, resolveTestRunPaths, saveStagedTestFile, stageTestFile, writeTestFile } from "./testing-projects.ts";
 import { TestDraftStore } from "./testing-drafts.ts";
 import { MAX_DRAFT_STEPS, recordedStepSchema, testDraftIdSchema } from "@mobile-dev/shared/test-drafts.ts";
 import type { TestDraft } from "@mobile-dev/shared/test-drafts.ts";
@@ -13,6 +14,9 @@ import { TestingDevices } from "./testing-device.ts";
 import { runRecordedTest } from "./testing-run.ts";
 import type { TestRunProgress } from "./testing-run.ts";
 import { deviceIdSchema } from "@mobile-dev/shared/panel-target.ts";
+import type { BundledModelProvider } from "./testing-run.ts";
+import { answerTestingSetup, applyTestingSetup, cancelTestingSetup, planTestingSetup, readTestingModelPreference, saveTestingModelPreference, SETUP_PROVIDERS, startTestingLogin, testingSetupProgress } from "./testing-setup.ts";
+import type { SetupOptions } from "./testing-setup.ts";
 
 const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 const write = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
@@ -84,8 +88,10 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
     annotations: destructive,
     _meta: appVisibility,
   }, safe(async ({ projectPath: selected, relativePath, contents, overwrite }: { projectPath: string; relativePath: string; contents: string; overwrite?: boolean }) => {
+    const project = await inspectProject(selected);
     const result = await writeTestFile(selected, relativePath, contents, overwrite ?? false);
-    return dataResult({ ...result }, result.written ? `Saved ${result.path}` : `${result.path} already exists.`);
+    const shownPath = project.runtimeMode === "bundled" ? `Studio/${relativePath}` : result.path;
+    return dataResult({ ...result, path: shownPath, storageMode: project.runtimeMode }, result.written ? `Saved ${shownPath}` : `${shownPath} already exists.`);
   }));
 
   /**
@@ -223,11 +229,51 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
   registerAppTool(server, "mobile_testing_project_config", {
     title: "Read a testing project's config",
     description: "Read the targets of a project's e2e config: the target names, their platforms, and the bundle ids to launch.",
-    inputSchema: { projectPath },
+    inputSchema: { projectPath, foregroundPlatform: z.enum(["ios", "android"]).optional(), foregroundBundleId: z.string().min(1).max(512).optional() },
     annotations: read,
     _meta: appVisibility,
-  }, safe(async ({ projectPath: selected }: { projectPath: string }) =>
-    dataResult({ ...await inspectProject(selected) })));
+  }, safe(async ({ projectPath: selected, foregroundPlatform, foregroundBundleId }: { projectPath: string; foregroundPlatform?: "ios" | "android"; foregroundBundleId?: string }) =>
+    dataResult({ ...await inspectProject(selected, foregroundPlatform && foregroundBundleId ? { platform: foregroundPlatform, bundleId: foregroundBundleId } : undefined), modelPreference: await readTestingModelPreference(), providers: SETUP_PROVIDERS })));
+
+  const setupTarget = z.object({ name: z.string().min(1).max(128), platform: z.enum(["ios", "android"]), bundleId: z.string().min(1).max(512) });
+  const setupOptions = z.object({
+    targets: z.array(setupTarget).min(1).max(8),
+    provider: z.enum(["none", "vercel", "openrouter", "openai-compatible", "chatgpt", "copilot", "opencode-console", "grok"]),
+    model: z.string().max(256).optional(), endpoint: z.string().max(2048).optional(),
+    installDependencies: z.boolean(), installSkill: z.boolean(), registerMcp: z.boolean(),
+  });
+  registerAppTool(server, "mobile_testing_setup_plan", {
+    title: "Preview e2e setup",
+    description: "Build an immutable, non-writing e2e init plan for the selected project. The plan must be confirmed and remains valid only while every affected file is unchanged.",
+    inputSchema: { projectPath, options: setupOptions }, annotations: read, _meta: appVisibility,
+  }, safe(async ({ projectPath: selected, options }: { projectPath: string; options: SetupOptions }) => {
+    try { const plan = await planTestingSetup(selected, options); recordTestingSetupOperation("plan", "succeeded", options.provider); return dataResult({ plan }); }
+    catch (error) { recordTestingSetupOperation("plan", "failed", options.provider); throw error; }
+  }));
+  registerAppTool(server, "mobile_testing_setup_apply", {
+    title: "Apply confirmed e2e setup", description: "Apply an unchanged preview plan and optionally install dependencies. Existing configs and example tests are preserved; progress is read separately.",
+    inputSchema: { planId: z.string().length(64) }, annotations: destructive, _meta: appVisibility,
+  }, safe(async ({ planId }: { planId: string }) => { const operation = applyTestingSetup(planId); recordTestingSetupOperation("apply", "started"); return dataResult({ operation }); }));
+  registerAppTool(server, "mobile_testing_setup_progress", {
+    title: "Read e2e setup progress", description: "Read setup or subscription-login progress without exposing credentials.",
+    inputSchema: { operationId: z.string().uuid() }, annotations: read, _meta: appVisibility,
+  }, safe(async ({ operationId }: { operationId: string }) => { const operation = testingSetupProgress(operationId); if (!operation) throw new ExpectedOperationError("invalid_input", "That setup operation is no longer available."); return dataResult({ operation }); }));
+  registerAppTool(server, "mobile_testing_setup_cancel", {
+    title: "Cancel e2e setup", description: "Cancel dependency installation or an in-progress E2E login. Files already applied are left in place and reported by progress.",
+    inputSchema: { operationId: z.string().uuid() }, annotations: write, _meta: appVisibility,
+  }, safe(async ({ operationId }: { operationId: string }) => dataResult({ cancelled: cancelTestingSetup(operationId) })));
+  registerAppTool(server, "mobile_testing_setup_login", {
+    title: "Sign in to an E2E subscription", description: "Start an OAuth login using the bundled E2E runtime's provider callbacks. The panel shows its URL, device code and prompts.",
+    inputSchema: { provider: z.enum(["openai", "github-copilot", "opencode-console", "spacexai"]) }, annotations: write, _meta: appVisibility,
+  }, safe(async ({ provider: selected }: { provider: "openai" | "github-copilot" | "opencode-console" | "spacexai" }) => { const operation = startTestingLogin(selected); recordTestingSetupOperation("login", "started"); return dataResult({ operation }); }));
+  registerAppTool(server, "mobile_testing_setup_answer", {
+    title: "Answer an E2E login prompt", description: "Return the pasted authorization code requested by E2E's OAuth callback. The answer is used in memory and never persisted by Mobile Dev.",
+    inputSchema: { operationId: z.string().uuid(), value: z.string().max(8192) }, annotations: write, _meta: appVisibility,
+  }, safe(async ({ operationId, value }: { operationId: string; value: string }) => dataResult({ accepted: answerTestingSetup(operationId, value) })));
+  registerAppTool(server, "mobile_testing_model_preference", {
+    title: "Save the Testing model preference", description: "Save or clear only the non-secret provider, model and endpoint preference used by bundled runs. Keys and OAuth credentials are never accepted.",
+    inputSchema: { preference: z.object({ provider: z.enum(["vercel", "openrouter", "openai-compatible", "chatgpt", "copilot", "opencode-console", "grok"]), model: z.string().min(1).max(256), endpoint: z.string().max(2048).optional() }).optional() }, annotations: write, _meta: appVisibility,
+  }, safe(async ({ preference }: { preference?: { provider: BundledModelProvider; model: string; endpoint?: string } }) => { await saveTestingModelPreference(preference); recordTestingSetupOperation("preference", "succeeded", preference?.provider); return dataResult({ saved: Boolean(preference) }); }));
 
   registerAppTool(server, "mobile_testing_read_tree", {
     title: "Read the runner's element tree",
@@ -242,9 +288,10 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
     annotations: read,
     _meta: appVisibility,
   }, safe(async ({ deviceId, platform, projectPath: selected, bundleId }: { deviceId: string; platform: "ios" | "android"; projectPath: string; bundleId: string }) => {
+    const project = await inspectProject(selected, { platform, bundleId });
     // The refs go no further than the server: the panel records selectors and drives the mirror,
     // so an agent-device handle per element would be a few kilobytes a read that nothing reads.
-    const { tree, screen } = await devices.read({ deviceId, platform, projectPath: selected, bundleId });
+    const { tree, screen } = await devices.read({ deviceId, platform, projectPath: selected, runtimeRoot: project.runtime.root, bundleId });
     return dataResult({ tree, ...(screen ? { screen } : {}) });
   }));
 
@@ -258,22 +305,35 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
       configPath: z.string().min(1).max(4096).optional().describe("The project's e2e config, so the run can report live per-step progress."),
       timeoutMs: z.number().int().min(10_000).max(30 * 60_000).optional(),
       target: z.string().min(1).max(256).optional().describe("The e2e target name to run against, so a flow recorded on Android does not run on the config's first (iOS) target."),
+      platform: z.enum(["ios", "android"]).optional().describe("The mirrored platform for a bundled run."),
+      bundleId: z.string().min(1).max(512).optional().describe("The foreground app identifier for a bundled run."),
+      model: z.object({
+        provider: z.enum(["vercel", "openrouter", "openai-compatible", "chatgpt", "copilot", "opencode-console", "grok"]),
+        model: z.string().min(1).max(256), endpoint: z.string().url().max(2048).optional(),
+      }).optional(),
       untilSource: z.string().min(1).max(400_000).optional().describe(
         "Run this truncated copy of the test instead of the file itself, for \"play until here\": the same flow cut off after one step. It is written beside the test for the one run and removed afterwards; the file itself is not touched."),
     },
     // A test run drives the app on the device: it taps, types and changes the app's own state.
     annotations: destructive,
     _meta: appVisibility,
-  }, safe(async ({ projectPath: selected, relativePath, configPath, timeoutMs, target, untilSource }: { projectPath: string; relativePath: string; configPath?: string; timeoutMs?: number; target?: string; untilSource?: string }) => {
+  }, safe(async ({ projectPath: selected, relativePath, configPath, timeoutMs, target, platform, bundleId, model, untilSource }: { projectPath: string; relativePath: string; configPath?: string; timeoutMs?: number; target?: string; platform?: "ios" | "android"; bundleId?: string; model?: { provider: BundledModelProvider; model: string; endpoint?: string }; untilSource?: string }) => {
     // The release is a dependency of the run, not a step the caller is trusted to have taken: see
     // `TestRunDeps`. The panel releases too, but a caller who forgets must not break the run.
     progress = [];
     running = true;
     try {
-      const paths = await resolveTestRunPaths(selected, relativePath, configPath);
+      const project = await inspectProject(selected, platform && bundleId ? { platform, bundleId } : undefined);
+      const paths = await resolveTestRunPaths(selected, relativePath, project.runtimeMode === "project" ? configPath : undefined);
+      const selectedTarget = project.targets.find(entry => entry.name === target)
+        ?? project.targets.find(entry => entry.platform === platform && (!bundleId || entry.bundleId === bundleId))
+        ?? project.targets[0];
+      const bundledSource = project.runtimeMode === "bundled" ? (untilSource ?? await readTestFile(selected, relativePath)) : untilSource;
       const result = await runRecordedTest(
         { ...paths, ...(timeoutMs === undefined ? {} : { timeoutMs }), ...(target ? { target } : {}),
-          ...(untilSource === undefined ? {} : { untilSource }) },
+          ...(bundledSource === undefined ? {} : { untilSource: bundledSource }), runtime: { mode: project.runtimeMode, root: project.runtime.root },
+          ...(project.runtimeMode === "bundled" && selectedTarget?.platform && selectedTarget.bundleId ? { bundledTarget: { platform: selectedTarget.platform as "ios" | "android", bundleId: selectedTarget.bundleId } } : {}),
+          ...(model ? { model } : {}) },
         { release: () => devices.release(), onProgress: entry => { progress.push(entry); } });
       return dataResult({ ...result }, `${relativePath} ${result.status}.`);
     } finally {
