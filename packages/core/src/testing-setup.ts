@@ -46,6 +46,16 @@ export type SetupPlan = {
 type InternalPlan = SetupPlan & { writes: PlannedWrite[]; observed: Record<string, string>; skillLink?: { path: string; target: string } };
 
 export type TestingModelPreference = { provider: BundledModelProvider; model: string; endpoint?: string };
+export type TestingLoginStatus = Record<"openai" | "github-copilot" | "opencode-console" | "spacexai", boolean>;
+export type TestingSetupInspection = {
+  provider?: SetupProvider;
+  model?: string;
+  endpoint?: string;
+  dependencies: { e2e?: string; mobile?: string };
+  skillInstalled: boolean;
+  mcpRegistrations: string[];
+  loginStatus: TestingLoginStatus;
+};
 const PREFERENCE_FILE = join(TESTING_DIRECTORY, "model-preference.json");
 
 function hash(value: string | Buffer): string { return createHash("sha256").update(value).digest("hex"); }
@@ -57,6 +67,78 @@ async function fileHash(path: string): Promise<string> {
 }
 function cleanText(value: string | undefined): string | undefined { const next = value?.trim(); return next ? next : undefined; }
 function provider(id: SetupProvider) { return SETUP_PROVIDERS.find(entry => entry.id === id); }
+
+const SUBSCRIPTION_IDS = ["openai", "github-copilot", "opencode-console", "spacexai"] as const;
+
+/** Reads only provider ids from e2e's own credential store. Tokens and account data never leave it. */
+export async function readTestingLoginStatus(): Promise<TestingLoginStatus> {
+  const status = Object.fromEntries(SUBSCRIPTION_IDS.map(id => [id, false])) as TestingLoginStatus;
+  try {
+    const module = await import(pathToFileURL(join(bundledE2eRoot(), "node_modules/e2e/dist/oauth/store.js")).href) as {
+      defaultCredentialStore(): { list(): Promise<string[]> };
+    };
+    const stored = new Set(await module.defaultCredentialStore().list());
+    for (const id of SUBSCRIPTION_IDS) status[id] = stored.has(id);
+  } catch { /* A missing or damaged store is safely reported as signed out. */ }
+  return status;
+}
+
+function detectedModel(source: string): Pick<TestingSetupInspection, "provider" | "model" | "endpoint"> {
+  const choices: { provider: SetupProvider; pattern: RegExp }[] = [
+    { provider: "chatgpt", pattern: /\bchatgpt\s*\(\s*["'`]([^"'`]+)["'`]/ },
+    { provider: "copilot", pattern: /\bcopilot\s*\(\s*["'`]([^"'`]+)["'`]/ },
+    { provider: "opencode-console", pattern: /\bopencodeConsole\s*\(\s*["'`]([^"'`]+)["'`]/ },
+    { provider: "grok", pattern: /\bgrok\s*\(\s*["'`]([^"'`]+)["'`]/ },
+    { provider: "vercel", pattern: /\bgateway\s*\(\s*["'`]([^"'`]+)["'`]/ },
+    { provider: "openrouter", pattern: /\bopenrouter\s*\(\s*["'`]([^"'`]+)["'`]/ },
+  ];
+  for (const choice of choices) {
+    const match = source.match(choice.pattern);
+    if (match) return { provider: choice.provider, model: match[1] };
+  }
+  const compatible = source.match(/createOpenAICompatible\s*\([\s\S]*?baseURL\s*:\s*["'`]([^"'`]+)["'`][\s\S]*?chatModel\s*\(\s*["'`]([^"'`]+)["'`]/);
+  return compatible ? { provider: "openai-compatible", endpoint: compatible[1], model: compatible[2] } : {};
+}
+
+async function dependencyVersion(root: string, name: string, manifest: Record<string, unknown>): Promise<string | undefined> {
+  const installed = await readFile(join(root, "node_modules", name, "package.json"), "utf8").then(value => JSON.parse(value).version as unknown, () => undefined).catch(() => undefined);
+  if (typeof installed === "string") return installed;
+  for (const field of ["dependencies", "devDependencies"] as const) {
+    const entries = manifest[field];
+    if (entries && typeof entries === "object" && typeof (entries as Record<string, unknown>)[name] === "string") return (entries as Record<string, string>)[name];
+  }
+}
+
+function hasE2eRegistration(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const servers = (value as Record<string, unknown>).mcpServers;
+  return Boolean(servers && typeof servers === "object" && (servers as Record<string, unknown>).e2e);
+}
+
+/** Read-only effective setup shown for an already configured project. */
+export async function inspectTestingSetup(root: string, configPath?: string): Promise<TestingSetupInspection> {
+  const manifest = await readFile(join(root, "package.json"), "utf8").then(value => JSON.parse(value) as Record<string, unknown>, () => ({})).catch(() => ({}));
+  const source = configPath ? await readFile(configPath, "utf8").catch(() => "") : "";
+  const [e2eVersion, mobileVersion] = await Promise.all([
+    dependencyVersion(root, "e2e", manifest),
+    dependencyVersion(root, "@e2e-dev/mobile", manifest),
+  ]);
+  const mcpRegistrations: string[] = [];
+  for (const relativePath of [".mcp.json", ".cursor/mcp.json"]) {
+    const registered = await readFile(join(root, relativePath), "utf8").then(value => hasE2eRegistration(JSON.parse(value)), () => false).catch(() => false);
+    if (registered) mcpRegistrations.push(relativePath);
+  }
+  return {
+    ...detectedModel(source),
+    dependencies: {
+      ...(e2eVersion ? { e2e: e2eVersion } : {}),
+      ...(mobileVersion ? { mobile: mobileVersion } : {}),
+    },
+    skillInstalled: await lstat(join(root, ".agents/skills/e2e/SKILL.md")).then(value => value.isFile(), () => false),
+    mcpRegistrations,
+    loginStatus: await readTestingLoginStatus(),
+  };
+}
 
 export async function readTestingModelPreference(): Promise<TestingModelPreference | undefined> {
   try {
@@ -145,9 +227,11 @@ export async function planTestingSetup(projectPath: string, input: SetupOptions)
   const root = resolve(projectPath.trim());
   if (!isAbsolute(projectPath.trim()) || !(await lstat(root).then(value => value.isDirectory(), () => false))) throw new ExpectedOperationError("invalid_input", "Choose an existing project folder.");
   if (!provider(input.provider)) throw new ExpectedOperationError("invalid_input", "Choose a provider supported by the bundled e2e runtime.");
-  const targets = input.targets.map(target => ({ ...target, name: target.name.trim(), bundleId: target.bundleId.trim() }))
-    .filter(target => target.name && target.bundleId);
+  const targets = input.targets.map(target => ({ ...target, name: target.name.trim(), bundleId: target.bundleId.trim() }));
   if (targets.length === 0) throw new ExpectedOperationError("invalid_input", "Add at least one iOS or Android target.");
+  if (targets.some(target => !target.name)) throw new ExpectedOperationError("invalid_input", "Every target needs a name.");
+  if (targets.some(target => !target.bundleId)) throw new ExpectedOperationError("invalid_input", "Every target needs an app identifier.");
+  if (new Set(targets.map(target => target.name)).size !== targets.length) throw new ExpectedOperationError("invalid_input", "Target names must be unique.");
   if (input.provider === "openai-compatible") {
     const endpoint = new URL(cleanText(input.endpoint) ?? "http://127.0.0.1:11434/v1");
     if (endpoint.protocol !== "https:" && !(endpoint.protocol === "http:" && ["127.0.0.1", "localhost", "::1"].includes(endpoint.hostname))) throw new ExpectedOperationError("invalid_input", "Use HTTPS unless the model endpoint is loopback.");
@@ -188,13 +272,14 @@ export async function planTestingSetup(projectPath: string, input: SetupOptions)
     else for (const file of await skillFiles()) await add(join(".agents/skills/e2e", file.relative), file.content, "skill");
   }
   if (options.registerMcp) {
-    const mcpPath = join(root, ".mcp.json");
-    const source = await readFile(mcpPath, "utf8").catch(() => "{}");
-    let mcp: Record<string, unknown>;
-    try { mcp = JSON.parse(source); } catch { throw new ExpectedOperationError("invalid_input", "Fix .mcp.json before registering the e2e server."); }
-    const servers = mcp.mcpServers && typeof mcp.mcpServers === "object" ? mcp.mcpServers as Record<string, unknown> : {};
-    if (servers.e2e) actions.push({ action: "skip", path: ".mcp.json", detail: "Existing e2e MCP registration is preserved." });
-    else await add(".mcp.json", JSON.stringify({ ...mcp, mcpServers: { ...servers, e2e: { command: "npx", args: ["e2e", "mcp"] } } }, null, 2) + "\n");
+    for (const relativePath of [".mcp.json", ".cursor/mcp.json"]) {
+      const source = await readFile(join(root, relativePath), "utf8").catch(() => "{}");
+      let mcp: Record<string, unknown>;
+      try { mcp = JSON.parse(source); } catch { throw new ExpectedOperationError("invalid_input", `Fix ${relativePath} before registering the e2e server.`); }
+      const servers = mcp.mcpServers && typeof mcp.mcpServers === "object" ? mcp.mcpServers as Record<string, unknown> : {};
+      if (servers.e2e) actions.push({ action: "skip", path: relativePath, detail: "Existing e2e MCP registration is preserved." });
+      else await add(relativePath, JSON.stringify({ ...mcp, mcpServers: { ...servers, e2e: { command: "npx", args: ["e2e", "mcp"] } } }, null, 2) + "\n");
+    }
   }
   const manager = packageManager(root, manifest);
   const installCommand = manager === "npm" ? "npm install" : `${manager} install`;
@@ -227,7 +312,15 @@ function publicOperation(operation: InternalOperation): SetupOperation {
   return result;
 }
 export function testingSetupProgress(id: string): SetupOperation | undefined { const operation = operations.get(id); return operation ? publicOperation(operation) : undefined; }
-export function cancelTestingSetup(id: string): boolean { const operation = operations.get(id); if (!operation || !["running", "waiting"].includes(operation.status)) return false; operation.abort.abort(); operation.status = "cancelled"; operation.message = "Cancelled."; operation.answer?.(""); return true; }
+export function cancelTestingSetup(id: string): boolean {
+  const operation = operations.get(id);
+  if (!operation || !["running", "waiting"].includes(operation.status)) return false;
+  const answer = operation.answer;
+  operation.abort.abort(); operation.status = "cancelled"; operation.message = "Cancelled.";
+  operation.auth = undefined; operation.prompt = undefined; operation.answer = undefined;
+  answer?.("");
+  return true;
+}
 export function answerTestingSetup(id: string, value: string): boolean { const operation = operations.get(id); if (!operation?.answer) return false; const answer = operation.answer; operation.answer = undefined; operation.prompt = undefined; operation.status = "running"; answer(value); return true; }
 
 async function atomicWrite(write: PlannedWrite): Promise<void> {
@@ -294,9 +387,10 @@ export function startTestingLogin(id: OAuthProvider, runLogin: LoginRunner = e2e
         onProgress: (message: string) => { operation.message = message; },
         onPrompt: (prompt: { message: string; placeholder?: string }) => new Promise<string>(resolvePrompt => { operation.prompt = prompt; operation.answer = resolvePrompt; operation.status = "waiting"; operation.message = prompt.message; }),
       });
-      operation.status = "succeeded"; operation.completed = 1; operation.prompt = undefined; operation.message = "Signed in.";
+      operation.status = "succeeded"; operation.completed = 1; operation.prompt = undefined; operation.auth = undefined; operation.message = "Signed in.";
     } catch (error) {
       operation.status = operation.abort.signal.aborted ? "cancelled" : "failed";
+      operation.prompt = undefined; operation.auth = undefined;
       operation.message = operation.abort.signal.aborted ? "Sign-in cancelled." : error instanceof Error ? error.message : String(error);
     }
   })();

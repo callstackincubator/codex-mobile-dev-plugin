@@ -172,6 +172,26 @@ test("a folder without project setup saves into Studio state without modifying t
   }
 });
 
+test("bundled mode lists only private Studio tests and never leaks project tests", async () => {
+  const root = await mkdtemp(join(tmpdir(), "testing-bundled-list-"));
+  const previous = process.env.MOBILE_DEV_TESTING_DIRECTORY;
+  try {
+    process.env.MOBILE_DEV_TESTING_DIRECTORY = join(root, "studio-state");
+    const selected = join(root, "selected");
+    await mkdir(join(selected, "tests"), { recursive: true });
+    await writeFile(join(selected, "tests", "project-only.e2e.ts"), SOURCE);
+    assert.deepEqual(await listTestFiles(selected), [], "project files are outside bundled Studio storage");
+
+    await writeTestFile(selected, "tests/studio-only.e2e.ts", SOURCE);
+    assert.deepEqual((await listTestFiles(selected)).map(entry => entry.relativePath), ["tests/studio-only.e2e.ts"]);
+    assert.equal(await readFile(join(selected, "tests", "studio-only.e2e.ts"), "utf8").catch(() => undefined), undefined);
+  } finally {
+    if (previous === undefined) delete process.env.MOBILE_DEV_TESTING_DIRECTORY;
+    else process.env.MOBILE_DEV_TESTING_DIRECTORY = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("the project's own tests are listed, newest first, and nothing else is", async () => {
   const { root, path } = await project();
   try {

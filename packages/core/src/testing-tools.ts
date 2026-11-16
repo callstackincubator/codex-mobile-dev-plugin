@@ -15,7 +15,7 @@ import { runRecordedTest } from "./testing-run.ts";
 import type { TestRunProgress } from "./testing-run.ts";
 import { deviceIdSchema } from "@mobile-dev/shared/panel-target.ts";
 import type { BundledModelProvider } from "./testing-run.ts";
-import { answerTestingSetup, applyTestingSetup, cancelTestingSetup, planTestingSetup, readTestingModelPreference, saveTestingModelPreference, SETUP_PROVIDERS, startTestingLogin, testingSetupProgress } from "./testing-setup.ts";
+import { answerTestingSetup, applyTestingSetup, cancelTestingSetup, inspectTestingSetup, planTestingSetup, readTestingModelPreference, saveTestingModelPreference, SETUP_PROVIDERS, startTestingLogin, testingSetupProgress } from "./testing-setup.ts";
 import type { SetupOptions } from "./testing-setup.ts";
 
 const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
@@ -232,12 +232,14 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
     inputSchema: { projectPath, foregroundPlatform: z.enum(["ios", "android"]).optional(), foregroundBundleId: z.string().min(1).max(512).optional() },
     annotations: read,
     _meta: appVisibility,
-  }, safe(async ({ projectPath: selected, foregroundPlatform, foregroundBundleId }: { projectPath: string; foregroundPlatform?: "ios" | "android"; foregroundBundleId?: string }) =>
-    dataResult({ ...await inspectProject(selected, foregroundPlatform && foregroundBundleId ? { platform: foregroundPlatform, bundleId: foregroundBundleId } : undefined), modelPreference: await readTestingModelPreference(), providers: SETUP_PROVIDERS })));
+  }, safe(async ({ projectPath: selected, foregroundPlatform, foregroundBundleId }: { projectPath: string; foregroundPlatform?: "ios" | "android"; foregroundBundleId?: string }) => {
+    const project = await inspectProject(selected, foregroundPlatform && foregroundBundleId ? { platform: foregroundPlatform, bundleId: foregroundBundleId } : undefined);
+    return dataResult({ ...project, setup: await inspectTestingSetup(project.path, project.configPath || undefined), modelPreference: await readTestingModelPreference(), providers: SETUP_PROVIDERS });
+  }));
 
   const setupTarget = z.object({ name: z.string().min(1).max(128), platform: z.enum(["ios", "android"]), bundleId: z.string().min(1).max(512) });
   const setupOptions = z.object({
-    targets: z.array(setupTarget).min(1).max(8),
+    targets: z.array(setupTarget).min(1).max(100),
     provider: z.enum(["none", "vercel", "openrouter", "openai-compatible", "chatgpt", "copilot", "opencode-console", "grok"]),
     model: z.string().max(256).optional(), endpoint: z.string().max(2048).optional(),
     installDependencies: z.boolean(), installSkill: z.boolean(), registerMcp: z.boolean(),
@@ -324,7 +326,7 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
     running = true;
     try {
       const project = await inspectProject(selected, platform && bundleId ? { platform, bundleId } : undefined);
-      const paths = await resolveTestRunPaths(selected, relativePath, project.runtimeMode === "project" ? configPath : undefined);
+      const paths = await resolveTestRunPaths(selected, relativePath, project.runtimeMode === "project" ? configPath : undefined, untilSource !== undefined);
       const selectedTarget = project.targets.find(entry => entry.name === target)
         ?? project.targets.find(entry => entry.platform === platform && (!bundleId || entry.bundleId === bundleId))
         ?? project.targets[0];

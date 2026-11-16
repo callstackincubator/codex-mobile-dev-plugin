@@ -304,14 +304,14 @@ export async function resolveTestPath(projectPath: string, relativePath: string)
  * the tool boundary prevents a crafted app call from turning the runner into an arbitrary module
  * loader while leaving `runRecordedTest` independently usable by its lower-level tests.
  */
-export async function resolveTestRunPaths(projectPath: string, relativePath: string, configPath?: string): Promise<{
+export async function resolveTestRunPaths(projectPath: string, relativePath: string, configPath?: string, previewSource = false): Promise<{
   projectPath: string;
   relativePath: string;
   configPath?: string;
 }> {
   const { project, root } = await testStorage(projectPath);
   const testPath = await resolveTestPath(root, relativePath);
-  if (!(await isFile(testPath))) throw new ExpectedOperationError("invalid_input", "That test file is no longer there.");
+  if (!previewSource && !(await isFile(testPath))) throw new ExpectedOperationError("invalid_input", "That test file is no longer there.");
   if (configPath !== undefined) {
     const requestedConfig = normalize(configPath.trim());
     if (!isAbsolute(requestedConfig) || !same(resolve(requestedConfig), resolve(project.configPath)))

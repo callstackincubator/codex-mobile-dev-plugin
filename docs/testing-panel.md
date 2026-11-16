@@ -16,14 +16,23 @@ and Android targets are retained when known and are editable in the setup wizard
 Deterministic tests use no model. The first bundled run containing `agent.act`, `agent.assert`,
 `agent.waitFor` or `agent.extract` opens the provider/model chooser. Subscription sign-in is driven by
 E2E's OAuth callbacks; Mobile Dev persists only the non-secret provider, model id and optional endpoint.
+Subscription status is read from E2E 0.17's own `$XDG_CONFIG_HOME/e2e/oauth.json` (or
+`~/.config/e2e/oauth.json`) as provider-id booleans; Mobile Dev neither copies nor exposes tokens or
+account data. A user-initiated Sign in opens the callback URL through the host's link capability and
+keeps the visible link as fallback. Completed and cancelled flows clear callback links and prompts.
 Hosts may preselect a choice only through advertised `configuration.mobileDev.testing.defaultModel` (or
 the equivalent experimental capability); no host-name branch exists.
 
-**Set up project** is the opt-in GUI equivalent of `e2e init`: targets and provider are editable, then
+Bundled/unconfigured projects offer **Set up project**, the opt-in GUI equivalent of `e2e init`:
+target names, platforms, identifiers and provider are editable, then
 an immutable plan lists every create/update/skip action. Apply revalidates the plan for stale files,
 preserves existing configs/tests/skills/MCP entries, uses the detected package manager, reports progress,
 supports cancellation and reports partial failures without pretending already-written files were rolled
-back. Setup is the only zero-setup Studio path that writes configuration into the selected project.
+back. MCP registration is preselected and previews both `.mcp.json` and `.cursor/mcp.json`, preserving
+all other servers. Configured projects instead show read-only **E2E configuration** details—effective
+targets/config, statically discoverable model, dependency versions, skill state and MCP registrations—
+with mutations behind a separate **Update setup** action. Setup is the only zero-setup Studio path that
+writes configuration into the selected project.
 
 Status: Android emulators are supported alongside iOS simulators — the device is identified by
 `deviceId` plus an explicit `platform`, and the e2e run is pinned with `--target`. The Android path
@@ -124,8 +133,10 @@ source calls can be reordered, duplicated or changed to compatible commands. Eac
 temporary working copy, not the project file. Save writes the working copy to the original path
 and removes it; Undo removes the working copy and reloads the original. Save refuses if the
 original changed on disk after the copy was opened. Each playable call keeps a visible Play icon
-beside its source line. Play runs a temporary sibling of the source,
-so neither a full run nor Play until here saves pending edits. The current recording stays intact
+beside its source line. Run and Play until here mirror the project into an isolated temporary root,
+stage the exact current preview at its original relative path, preserve source-line mapping, and remove
+the root when the runner exits. Neither action saves pending edits or creates a temporary project file.
+The current recording stays intact
 and can be reopened from Not stored.
 
 Both deletes **ask first**, in a popover hanging off the trash icon. A draft's steps cannot be

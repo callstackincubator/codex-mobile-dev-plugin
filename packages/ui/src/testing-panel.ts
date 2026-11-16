@@ -64,6 +64,7 @@ export type TestingModelPreference = { provider: "vercel" | "openrouter" | "open
 export type TestingProviderOption = { id: string; label: string; subscription?: string; defaultModel?: string };
 export type TestingSetupOptions = { targets: { name: string; platform: "ios" | "android"; bundleId: string }[]; provider: TestingModelPreference["provider"] | "none"; model?: string; endpoint?: string; installDependencies: boolean; installSkill: boolean; registerMcp: boolean };
 export type TestingSetupOperation = { id: string; kind: "apply" | "login"; status: "running" | "waiting" | "succeeded" | "failed" | "cancelled"; message: string; completed: number; total: number; applied: string[]; auth?: { url: string; instructions: string; userCode?: string }; prompt?: { message: string; placeholder?: string } };
+export type TestingSetupDetails = { provider?: string; model?: string; endpoint?: string; dependencies: { e2e?: string; mobile?: string }; skillInstalled: boolean; mcpRegistrations: string[]; loginStatus: Record<string, boolean> };
 
 export type TestingSnapshot = {
   open: boolean;
@@ -76,6 +77,7 @@ export type TestingSnapshot = {
   configPath: string;
   runtimeMode: "project" | "bundled";
   setupState: "configured" | "available";
+  setupDetails?: TestingSetupDetails;
   targetSource: "project" | "expo-cli" | "static-expo" | "foreground" | "none";
   projectWarning: string;
   modelPreference?: TestingModelPreference;
@@ -158,6 +160,8 @@ export class TestingPanel {
   private loadRevision = 0;
   private testReadRevision = 0;
   private stageWrite?: Promise<void>;
+  private pendingModelAction?: { kind: "recording"; options: { untilStepId?: string } } | { kind: "stored"; untilLine?: number };
+  private savingModelPreference = false;
   /** The project and target the installed tree source reads; "" when there is no source. */
   private treeSourceKey = "";
   private snapshot: TestingSnapshot = {
@@ -412,7 +416,8 @@ export class TestingPanel {
     clearTimeout(this.draftTimer);
     this.draftRevision = testRecorder.getSnapshot().revision;
     this.draftFlowId = "";
-    this.update({ projectPath: path, targets: [], targetName: "", configPath: "", runtimeMode: "bundled", setupState: "available", targetSource: "none", projectWarning: "", appLaunched: false,
+    this.pendingModelAction = undefined;
+    this.update({ projectPath: path, targets: [], targetName: "", configPath: "", runtimeMode: "bundled", setupState: "available", setupDetails: undefined, targetSource: "none", projectWarning: "", appLaunched: false,
       overwritePath: "", savedRevision: -1, savedPath: "", draftId: "", drafts: [], tests: [], error: null });
     void this.refreshDrafts();
     void this.refreshTests();
@@ -438,8 +443,18 @@ export class TestingPanel {
       const preferred = (device ? targets.find(entry => entry.platform === recordablePlatform(device)) : undefined) ?? targets[0];
       const preference = object(data.modelPreference);
       const modelPreference = preference && text(preference.provider) && text(preference.model) ? { provider: text(preference.provider) as TestingModelPreference["provider"], model: text(preference.model), ...(text(preference.endpoint) ? { endpoint: text(preference.endpoint) } : {}) } : this.hostModelDefault();
+      const setup = object(data.setup);
+      const dependencyData = object(setup?.dependencies) ?? {};
+      const loginData = object(setup?.loginStatus) ?? {};
+      const setupDetails: TestingSetupDetails | undefined = setup ? {
+        ...(text(setup.provider) ? { provider: text(setup.provider) } : {}), ...(text(setup.model) ? { model: text(setup.model) } : {}), ...(text(setup.endpoint) ? { endpoint: text(setup.endpoint) } : {}),
+        dependencies: { ...(text(dependencyData.e2e) ? { e2e: text(dependencyData.e2e) } : {}), ...(text(dependencyData.mobile) ? { mobile: text(dependencyData.mobile) } : {}) },
+        skillInstalled: setup.skillInstalled === true,
+        mcpRegistrations: Array.isArray(setup.mcpRegistrations) ? setup.mcpRegistrations.map(text).filter(Boolean) : [],
+        loginStatus: Object.fromEntries(Object.entries(loginData).map(([key, value]) => [key, value === true])),
+      } : undefined;
       const providers = (Array.isArray(data.providers) ? data.providers : []).map(entry => object(entry)).filter((entry): entry is Record<string, unknown> => entry !== null).map(entry => ({ id: text(entry.id), label: text(entry.label), ...(text(entry.subscription) ? { subscription: text(entry.subscription) } : {}), ...(text(entry.defaultModel) ? { defaultModel: text(entry.defaultModel) } : {}) })).filter(entry => entry.id && entry.label);
-      this.update({ targets, targetName: preferred?.name ?? "", configPath: text(data.configPath), runtimeMode: data.runtimeMode === "project" ? "project" : "bundled", setupState: data.setupState === "configured" ? "configured" : "available", targetSource: ["project", "expo-cli", "static-expo", "foreground"].includes(text(data.targetSource)) ? text(data.targetSource) as TestingSnapshot["targetSource"] : "none", projectWarning: text(data.warning), ...(modelPreference ? { modelPreference } : {}), providers });
+      this.update({ targets, targetName: preferred?.name ?? "", configPath: text(data.configPath), runtimeMode: data.runtimeMode === "project" ? "project" : "bundled", setupState: data.setupState === "configured" ? "configured" : "available", setupDetails, targetSource: ["project", "expo-cli", "static-expo", "foreground"].includes(text(data.targetSource)) ? text(data.targetSource) as TestingSnapshot["targetSource"] : "none", projectWarning: text(data.warning), modelPreference, providers });
     } catch (error) {
       if (revision === this.loadRevision) this.update({ error: error instanceof Error ? error.message : String(error) });
     } finally {
@@ -456,12 +471,34 @@ export class TestingPanel {
   openSetup() { this.update({ setupOpen: true }); }
   closeSetup() { this.update({ setupOpen: false }); }
   openModelPicker() { this.update({ modelPickerOpen: true }); }
-  closeModelPicker() { this.update({ modelPickerOpen: false }); }
+  closeModelPicker() { this.pendingModelAction = undefined; this.update({ modelPickerOpen: false }); }
 
   async saveModelPreference(preference?: TestingModelPreference) {
-    await this.call("mobile_testing_model_preference", { ...(preference ? { preference } : {}) });
-    this.update({ modelPreference: preference, modelPickerOpen: false });
-    countUiEvent("ui.testing.model_preference");
+    if (this.savingModelPreference) return;
+    this.savingModelPreference = true;
+    const pending = this.pendingModelAction;
+    this.pendingModelAction = undefined;
+    try {
+      await this.call("mobile_testing_model_preference", { ...(preference ? { preference } : {}) });
+      this.update({ modelPreference: preference, modelPickerOpen: false });
+      countUiEvent("ui.testing.model_preference");
+      if (preference && pending) {
+        if (pending.kind === "stored") void this.runStoredTest(pending.untilLine);
+        else void this.runTest(pending.options);
+      }
+    } catch (error) {
+      if (!this.pendingModelAction) this.pendingModelAction = pending;
+      throw error;
+    } finally {
+      this.savingModelPreference = false;
+    }
+  }
+
+  /** Opens an OAuth URL only for a sign-in flow the user explicitly started. */
+  async openLoginUrl(url: string) {
+    const destination = new URL(url);
+    if (destination.protocol !== "https:" && destination.protocol !== "http:") throw new Error("Only web sign-in links can be opened.");
+    await this.app.openLink({ url: destination.href });
   }
 
   async planSetup(options: TestingSetupOptions) {
@@ -1069,9 +1106,10 @@ export class TestingPanel {
   }
 
   /** Deterministic tests stay model-free; an agent step opens the chooser before any run starts. */
-  private hasBundledModel(source: string): boolean {
+  private hasBundledModel(source: string, action: NonNullable<TestingPanel["pendingModelAction"]>): boolean {
     if (this.snapshot.runtimeMode !== "bundled" || !/\bagent\s*\.\s*(act|assert|waitFor|extract)\s*\(/.test(source)) return true;
     if (this.snapshot.modelPreference) return true;
+    if (!this.pendingModelAction) this.pendingModelAction = action;
     this.update({ modelPickerOpen: true });
     return false;
   }
@@ -1082,7 +1120,7 @@ export class TestingPanel {
     const { projectPath, selectedTestPath: relativePath, selectedTestSource: source } = this.snapshot;
     const untilSource = untilLine === undefined ? source : storedTestUntilSource(source, untilLine);
     if (untilSource === undefined) return;
-    if (!this.hasBundledModel(untilSource)) return;
+    if (!this.hasBundledModel(untilSource, { kind: "stored", ...(untilLine === undefined ? {} : { untilLine }) })) return;
     this.update({ running: true, error: null });
     testRecorder.clearRun();
     testRecorder.beginRun(untilLine);
@@ -1126,11 +1164,9 @@ export class TestingPanel {
   /**
    * Runs the recorded test against the device, and marks the preview with what the runner reports.
    *
-   * **Run saves.** The runner runs a file, so there has to be one; running a copy in a temporary
-   * path would run a test whose failures point at lines of a file the user cannot open. It saves
-   * through the same path the Save button uses, which means an existing file is still never
-   * replaced without being asked about — the overwrite question stops the run and resumes it from
-   * the answer.
+   * **Run does not save.** The runner receives the exact emitted preview and stages it in an
+   * isolated temporary workspace. Save remains an independent action and a run cannot create or
+   * replace a project test.
    *
    * **Run releases the device first.** The recorder holds the one agent-device session the device
    * allows, so a run started while it is held fails with `Device is already in use by session
@@ -1151,13 +1187,8 @@ export class TestingPanel {
     const until = options.untilStepId ? testRecorder.emittedThrough(options.untilStepId) : undefined;
     // The step went while the pointer was on its play button; there is nothing to run up to.
     if (options.untilStepId && !until) return;
-    if (!this.hasBundledModel(until?.source ?? testRecorder.source)) return;
-    if (!until && (this.dirty || !this.snapshot.savedPath)) {
-      await this.saveTest();
-      // The file is already there and the user has not answered yet; `saveTest(true)` resumes.
-      if (this.snapshot.overwritePath) { this.update({ pendingRun: true }); return; }
-      if (this.dirty) return;
-    }
+    const previewSource = until?.source ?? testRecorder.source;
+    if (!this.hasBundledModel(previewSource, { kind: "recording", options })) return;
     const relativePath = this.relativePath;
     this.update({ running: true, error: null, pendingRun: false });
     testRecorder.clearRun();
@@ -1180,7 +1211,7 @@ export class TestingPanel {
         projectPath: this.snapshot.projectPath, relativePath,
         ...(this.snapshot.configPath ? { configPath: this.snapshot.configPath } : {}),
         ...(this.snapshot.targetName ? { target: this.snapshot.targetName } : {}),
-        ...(until ? { untilSource: until.source } : {}),
+        untilSource: previewSource,
         ...this.bundledRunArguments(),
       }, 15 * 60_000);
       const data = object(response.structuredContent) ?? {};

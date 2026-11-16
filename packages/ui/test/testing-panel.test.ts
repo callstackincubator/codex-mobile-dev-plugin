@@ -88,7 +88,7 @@ test("a save blocked by an existing file leaves the recording running", async ()
   panel.dispose();
 });
 
-test("Run saves, hands the device back, and only then runs", async () => {
+test("Run stages the current preview without saving, and hands the device back first", async () => {
   const calls: { name: string; arguments: Record<string, unknown> }[] = [];
   const panel = new TestingPanel(host({
     mobile_testing_write_file: { written: true, existed: false, path: `${PROJECT}/tests/flow.e2e.ts` },
@@ -102,11 +102,13 @@ test("Run saves, hands the device back, and only then runs", async () => {
 
   // The order is the feature: the recorder holds the one agent-device session the device allows,
   // so a run spawned while it is held fails with "Device is already in use".
-  assert.deepEqual(flow(calls),
-    ["mobile_testing_write_file", "mobile_testing_release_device", "mobile_testing_run_test"]);
+  assert.deepEqual(flow(calls), ["mobile_testing_release_device", "mobile_testing_run_test"]);
   assert.equal(testRecorder.getSnapshot().recordingDeviceId, "", "a recording left armed would take the session straight back");
-  assert.deepEqual(calls.findLast(call => call.name === "mobile_testing_run_test")?.arguments,
-    { projectPath: PROJECT, relativePath: "tests/flow.e2e.ts" });
+  const run = calls.findLast(call => call.name === "mobile_testing_run_test")?.arguments ?? {};
+  assert.equal(run.projectPath, PROJECT);
+  assert.equal(run.relativePath, "tests/flow.e2e.ts");
+  assert.equal(run.untilSource, testRecorder.source);
+  assert.equal(panel.dirty, true, "Run remains independent from Save");
   assert.equal(panel.getSnapshot().running, false);
   assert.equal(testRecorder.getSnapshot().run?.state, "passed");
   assert.deepEqual(testRecorder.getSnapshot().run?.lines, { 8: "passed" });
@@ -199,33 +201,77 @@ test("Play until here runs the flow cut short, and never writes the test", async
   panel.dispose();
 });
 
-test("Run never replaces a file without being asked, and resumes from the answer", async () => {
+test("model selection resumes the exact pending run once, and cancel drops it", async () => {
   const calls: { name: string; arguments: Record<string, unknown> }[] = [];
   const responses: Record<string, unknown> = {
-    mobile_testing_write_file: { written: false, existed: true, path: `${PROJECT}/tests/flow.e2e.ts` },
+    mobile_testing_model_preference: { saved: true },
     mobile_testing_run_test: { status: "passed", exitCode: 0, steps: [{ line: 8, status: "passed" }] },
   };
   const panel = new TestingPanel(host(responses, calls), deviceApps);
   panel.setAvailable(true);
-  (panel as unknown as { update(fields: Record<string, unknown>): void }).update({ projectPath: PROJECT, fileName: "flow" });
-  await recordOneStep(panel);
+  (panel as unknown as { update(fields: Record<string, unknown>): void }).update({ projectPath: PROJECT, fileName: "flow", runtimeMode: "bundled", targets: [{ name: "ios", platform: "ios", bundleId: "com.example.app" }], targetName: "ios" });
+  testRecorder.clearSteps();
+  testRecorder.editSource('import { test } from "e2e";\ntest("agent", async ({ agent }) => {\n  await agent.act("open settings");\n});\n');
 
   await panel.runTest();
-
-  assert.equal(panel.getSnapshot().overwritePath, `${PROJECT}/tests/flow.e2e.ts`);
-  assert.deepEqual(flow(calls), ["mobile_testing_write_file"], "nothing ran over a file the user has not agreed to replace");
-
-  responses.mobile_testing_write_file = { written: true, existed: true, path: `${PROJECT}/tests/flow.e2e.ts` };
-  await panel.saveTest(true);
-  // Saving does not block on a run that may take minutes, so the resumed run lands after it.
+  assert.equal(panel.getSnapshot().modelPickerOpen, true);
+  assert.deepEqual(flow(calls), []);
+  await Promise.all([
+    panel.saveModelPreference({ provider: "chatgpt", model: "gpt-6-luna" }),
+    panel.saveModelPreference({ provider: "chatgpt", model: "gpt-6-luna" }),
+  ]);
   await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(flow(calls).filter(name => name === "mobile_testing_run_test").length, 1);
+  assert.equal(flow(calls).filter(name => name === "mobile_testing_model_preference").length, 1, "double Use model cannot duplicate the pending run");
+
+  (panel as unknown as { update(fields: Record<string, unknown>): void }).update({ modelPreference: undefined });
+  await panel.runTest();
+  panel.closeModelPicker();
+  await panel.saveModelPreference({ provider: "chatgpt", model: "gpt-6-luna" });
   await new Promise(resolve => setTimeout(resolve, 0));
-  // The answer finishes what Run began, so the user does not press Run twice.
-  assert.deepEqual(flow(calls),
-    ["mobile_testing_write_file", "mobile_testing_write_file", "mobile_testing_release_device", "mobile_testing_run_test"]);
+  assert.equal(flow(calls).filter(name => name === "mobile_testing_run_test").length, 1, "cancelled pending work does not resume");
   testRecorder.clearRun();
   testRecorder.clearSteps();
   testRecorder.detach(UDID, "ios");
+  panel.dispose();
+});
+
+test("stored Play until here resumes with the same cutoff after model selection", async () => {
+  const calls: { name: string; arguments: Record<string, unknown> }[] = [];
+  const source = 'test("stored", async ({ agent }) => {\n  await agent.act("first");\n  await agent.act("second");\n});\n';
+  const panel = new TestingPanel(host({
+    mobile_testing_model_preference: { saved: true },
+    mobile_testing_run_test: { status: "passed", exitCode: 0, steps: [{ line: 2, status: "passed" }] },
+  }, calls), deviceApps);
+  panel.setAvailable(true);
+  (panel as unknown as { update(fields: Record<string, unknown>): void }).update({
+    projectPath: PROJECT, runtimeMode: "bundled", selectedTestPath: "tests/stored.e2e.ts", selectedTestSource: source,
+    targets: [{ name: "ios", platform: "ios", bundleId: "com.example.app" }], targetName: "ios",
+  });
+
+  await panel.runStoredTest(2);
+  assert.equal(panel.getSnapshot().modelPickerOpen, true);
+  await panel.saveModelPreference({ provider: "chatgpt", model: "gpt-6-luna" });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  const run = calls.find(call => call.name === "mobile_testing_run_test")!;
+  assert.match(String(run.arguments.untilSource), /agent\.act\("first"\)/);
+  assert.match(String(run.arguments.untilSource), /agent\.act\("first"\);\n  return;\n  await agent\.act\("second"\)/,
+    "the cutoff preserves line mapping and makes later calls unreachable");
+  assert.equal(calls.filter(call => call.name === "mobile_testing_run_test").length, 1);
+  testRecorder.clearRun();
+  panel.dispose();
+});
+
+test("OAuth links use the host open-link boundary and reject non-web schemes", async () => {
+  const opened: string[] = [];
+  const app = {
+    async callServerTool() { return { content: [], structuredContent: {} }; },
+    async openLink({ url }: { url: string }) { opened.push(url); return {}; },
+  } as unknown as HostBridge;
+  const panel = new TestingPanel(app, deviceApps);
+  await panel.openLoginUrl("https://auth.example.test/start");
+  assert.deepEqual(opened, ["https://auth.example.test/start"]);
+  await assert.rejects(panel.openLoginUrl("file:///tmp/oauth"), /web sign-in/);
   panel.dispose();
 });
 

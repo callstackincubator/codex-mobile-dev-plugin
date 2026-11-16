@@ -100,28 +100,27 @@ test("the project's own runner is spawned, never a downloaded one", async () => 
   assert.equal(result.output, undefined, "there are lines to mark, so the raw output is not needed");
 });
 
-test("play until here runs a truncated copy beside the test, and takes it away again", async () => {
+test("a preview run uses an isolated temporary project and leaves the project untouched", async () => {
   const root = await project();
   await mkdir(join(root, "tests"), { recursive: true });
   await writeFile(join(root, FILE), "the whole flow\n");
-  const until = untilTestPath(FILE);
-  assert.equal(until, "tests/a-recorded-flow.mobile-dev-until.e2e.ts", "a sibling, and still a test the project's own patterns discover");
-  // The report names the file the runner ran, which is the copy; its lines are the real file's.
-  const document = JSON.stringify(report([{ line: 8, status: "passed" }])).replaceAll(FILE, until);
+  const configPath = join(root, "e2e.config.ts");
+  await writeFile(configPath, "export default { targets: [] };\n");
+  const document = JSON.stringify(report([{ line: 8, status: "passed" }]));
   const seen: { command?: string; args?: readonly string[]; cwd?: string } = {};
   let copy: string | undefined;
-  const result = await runRecordedTest({ projectPath: root, relativePath: FILE, untilSource: "the flow, cut short\n" }, {
+  const result = await runRecordedTest({ projectPath: root, relativePath: FILE, configPath, untilSource: "the current preview\n" }, {
     spawner: ((command: string, args: readonly string[], options: { cwd?: string }) => {
-      // Read while the run is in flight: afterwards it is gone, which is the other half of this.
-      copy = readFileSync(join(root, until), "utf8");
+      copy = readFileSync(join(options.cwd!, FILE), "utf8");
       return spawner(document, 0, seen)(command, args, options as never);
     }) as never,
   });
-  assert.deepEqual(seen.args, ["run", until, "--reporter", "json"]);
-  assert.equal(copy, "the flow, cut short\n");
-  assert.deepEqual(result.steps.map(step => step.line), [8], "the copy's lines are the file's lines, so no mark has to be translated");
-  assert.equal(existsSync(join(root, until)), false, "the copy belongs to one run and nothing else");
-  assert.equal(readFileSync(join(root, FILE), "utf8"), "the whole flow\n", "a partial run must never cut the saved test down to the part that was tried");
+  assert.deepEqual(seen.args, ["run", FILE, "--reporter", "json", "--config", "e2e.config.mts"]);
+  assert.notEqual(seen.cwd, root);
+  assert.equal(copy, "the current preview\n");
+  assert.deepEqual(result.steps.map(step => step.line), [8]);
+  assert.equal(existsSync(seen.cwd!), false, "the isolated workspace is removed after the run");
+  assert.equal(readFileSync(join(root, FILE), "utf8"), "the whole flow\n");
 });
 
 test("a run that produced no report explains itself with the runner's own words", async () => {

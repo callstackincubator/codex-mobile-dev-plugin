@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { answerTestingSetup, applyTestingSetup, cancelTestingSetup, planTestingSetup, setupConfigSource, startTestingLogin, testingSetupProgress } from "../src/testing-setup.ts";
+import { answerTestingSetup, applyTestingSetup, cancelTestingSetup, inspectTestingSetup, planTestingSetup, readTestingLoginStatus, setupConfigSource, startTestingLogin, testingSetupProgress } from "../src/testing-setup.ts";
 
 const options = {
   targets: [
@@ -90,6 +90,18 @@ test("subscription login is driven through E2E callbacks and keeps prompt answer
   const done = await terminal(started.id);
   assert.equal(done.status, "succeeded");
   assert.equal(received, "synthetic-code");
+  assert.equal(done.auth, undefined, "completed sign-in does not leave a stale link");
+  assert.equal(done.prompt, undefined);
+
+  const cancelled = startTestingLogin("openai", async (_provider, callbacks) => {
+    callbacks.onAuth({ url: "https://example.test/login", instructions: "Open the browser" });
+    await callbacks.onPrompt({ message: "Paste the code" });
+    throw new Error("cancelled");
+  });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(cancelTestingSetup(cancelled.id), true);
+  assert.equal(testingSetupProgress(cancelled.id)?.auth, undefined);
+  assert.equal(testingSetupProgress(cancelled.id)?.prompt, undefined);
 });
 
 test("generated config includes only a chosen supported provider", () => {
@@ -97,4 +109,53 @@ test("generated config includes only a chosen supported provider", () => {
   assert.match(source, /e2e\/oauth\/chatgpt/);
   assert.match(source, /chatgpt\("gpt-6-luna"\)/);
   assert.doesNotMatch(source, /API_KEY/);
+});
+
+test("setup validates editable target names and registers both supported MCP locations", async () => {
+  const root = await project();
+  try {
+    await assert.rejects(planTestingSetup(root, { ...options, targets: [options.targets[0], { ...options.targets[1], name: "ios" }] }), /unique/);
+    await writeFile(join(root, ".mcp.json"), JSON.stringify({ mcpServers: { existing: { command: "keep" } } }, null, 2));
+    const plan = await planTestingSetup(root, { ...options, registerMcp: true });
+    assert.ok(plan.actions.some(action => action.path === ".mcp.json" && action.action === "update"));
+    assert.ok(plan.actions.some(action => action.path === ".cursor/mcp.json" && action.action === "create"));
+    assert.equal((await terminal(applyTestingSetup(plan.id).id)).status, "succeeded");
+    const rootMcp = JSON.parse(await readFile(join(root, ".mcp.json"), "utf8"));
+    const cursorMcp = JSON.parse(await readFile(join(root, ".cursor/mcp.json"), "utf8"));
+    assert.equal(rootMcp.mcpServers.existing.command, "keep", "unrelated registrations are preserved");
+    assert.deepEqual(rootMcp.mcpServers.e2e, { command: "npx", args: ["e2e", "mcp"] });
+    assert.deepEqual(cursorMcp.mcpServers.e2e, { command: "npx", args: ["e2e", "mcp"] });
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("configured setup inspection is read-only and reports effective versions, model, skill and MCP", async () => {
+  const root = await project();
+  try {
+    await mkdir(join(root, ".agents/skills/e2e"), { recursive: true });
+    await writeFile(join(root, ".agents/skills/e2e/SKILL.md"), "# e2e\n");
+    await writeFile(join(root, "e2e.config.ts"), `import { chatgpt } from "e2e/oauth/chatgpt";\nexport default { agents: { default: { model: chatgpt("gpt-6-luna") } } };\n`);
+    await writeFile(join(root, ".mcp.json"), JSON.stringify({ mcpServers: { e2e: { command: "npx" } } }));
+    await writeFile(join(root, "package.json"), JSON.stringify({ devDependencies: { e2e: "^0.17.0", "@e2e-dev/mobile": "^0.9.2" } }));
+    const inspected = await inspectTestingSetup(root, join(root, "e2e.config.ts"));
+    assert.equal(inspected.provider, "chatgpt");
+    assert.equal(inspected.model, "gpt-6-luna");
+    assert.deepEqual(inspected.dependencies, { e2e: "^0.17.0", mobile: "^0.9.2" });
+    assert.equal(inspected.skillInstalled, true);
+    assert.deepEqual(inspected.mcpRegistrations, [".mcp.json"]);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("stored e2e OAuth logins are detected from XDG config without exposing credential data", async () => {
+  const root = await mkdtemp(join(tmpdir(), "testing-oauth-status-"));
+  const previous = process.env.XDG_CONFIG_HOME;
+  try {
+    process.env.XDG_CONFIG_HOME = root;
+    await mkdir(join(root, "e2e"), { recursive: true });
+    await writeFile(join(root, "e2e/oauth.json"), JSON.stringify({ openai: { access: "synthetic-access", refresh: "synthetic-refresh", expires: Date.now() + 60_000 } }));
+    assert.deepEqual(await readTestingLoginStatus(), { openai: true, "github-copilot": false, "opencode-console": false, spacexai: false });
+  } finally {
+    if (previous === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = previous;
+    await rm(root, { recursive: true, force: true });
+  }
 });

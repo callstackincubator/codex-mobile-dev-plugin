@@ -148,6 +148,8 @@ test("a run marks the preview line by line, and marks nothing it was not told ab
   let panelState: Record<string, unknown> = {
     open: true, available: true, projectPath: "/app", projects: [], targets: [{ name: "ios", platform: "ios", bundleId: "com.app" }],
     targetName: "ios", configPath: "/app/e2e.config.ts", loadingProject: false, pickingProject: false, launching: false,
+    runtimeMode: "project", setupState: "configured", setupDetails: { dependencies: {}, skillInstalled: false, mcpRegistrations: [], loginStatus: {} },
+    providers: [], modelPickerOpen: false, setupOpen: false, targetSource: "project", projectWarning: "",
     appLaunched: true, fileName: "flow", saving: false, overwritePath: "", savedRevision: -1, savedPath: "", running: false,
     pendingRun: false, drafts: [], draftId: "", loadingDraft: false, tests: [], deletingTest: "", error: null,
   };
@@ -565,6 +567,8 @@ function panelStub(overrides: Record<string, unknown> = {}) {
   const state: Record<string, unknown> = {
     open: true, available: true, projectPath: "/app", projects: [], targets: [{ name: "ios", platform: "ios", bundleId: "com.app" }],
     targetName: "ios", configPath: "/app/e2e.config.ts", loadingProject: false, pickingProject: false, launching: false,
+    runtimeMode: "project", setupState: "configured", setupDetails: { dependencies: {}, skillInstalled: false, mcpRegistrations: [], loginStatus: {} },
+    providers: [], modelPickerOpen: false, setupOpen: false, targetSource: "project", projectWarning: "",
     appLaunched: true, fileName: "flow", saving: false, overwritePath: "", savedRevision: -1, savedPath: "", running: false,
     pendingRun: false, agent: null, drafts: [], draftId: "", loadingDraft: false, tests: [], deletingTest: "", error: null,
     ...overrides,
@@ -578,6 +582,7 @@ function panelStub(overrides: Record<string, unknown> = {}) {
     setFileName: () => {}, cancelOverwrite: () => {}, dismissError: () => {},
     refreshDrafts: async () => {}, openDraft: async () => {}, deleteDraft: async () => {}, newRecording: async () => {},
     refreshTests: async () => {}, openTest: async () => {}, editStoredTest: () => {}, saveStoredTest: async () => {}, undoStoredTest: async () => {}, runStoredTest: async () => {}, deleteTest: async () => {},
+    openSetup: () => {}, closeSetup: () => {}, openModelPicker: () => {}, closeModelPicker: () => {}, planSetup: async () => null, applySetup: async () => null,
   };
 }
 
@@ -746,6 +751,70 @@ test("the list keeps what is not stored above what the project holds, and asks b
   assert.equal(query("[role=alertdialog]"), null, "answering it closes the question");
 
   testRecorder.clearSteps();
+});
+
+test("bundled tests are labeled In Studio and configured projects show read-only setup", async t => {
+  const { module: { TestingView }, dom, onTeardown } = await renderEnvironment<any>(t, {
+    exports: 'export { TestingView } from "./packages/ui/src/components/testing-view.tsx";', slug: "testing-setup-modes",
+  });
+  const { act, createElement } = await import("react");
+  const { createRoot } = await import("react-dom/client");
+  const root = createRoot(dom.window.document.getElementById("root")!);
+  const deviceApps = { subscribe: () => () => undefined, getSnapshot: () => DEVICE_SNAPSHOT };
+  const configured = panelStub({ setupOpen: true, setupDetails: {
+    provider: "chatgpt", model: "gpt-6-luna", dependencies: { e2e: "0.17.0", mobile: "0.9.2" },
+    skillInstalled: true, mcpRegistrations: [".mcp.json", ".cursor/mcp.json"], loginStatus: { openai: true },
+  } });
+  await act(async () => { root.render(createElement(TestingView, { panel: configured, deviceApps })); });
+  assert.match(dom.window.document.body.textContent ?? "", /E2E configuration/);
+  assert.match(dom.window.document.body.textContent ?? "", /chatgpt · gpt-6-luna/);
+  assert.match(dom.window.document.body.textContent ?? "", /\.mcp\.json, \.cursor\/mcp\.json/);
+  assert.doesNotMatch(dom.window.document.body.textContent ?? "", /Set up project/);
+  await act(async () => { root.render(createElement("div")); });
+  await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
+
+  const bundled = panelStub({ runtimeMode: "bundled", setupState: "available", setupOpen: false,
+    tests: [{ relativePath: "tests/studio.e2e.ts", name: "studio.e2e.ts", updatedAt: "2026-01-01T00:00:00.000Z", sizeBytes: 10 }] });
+  await act(async () => { root.render(createElement(TestingView, { panel: bundled, deviceApps })); });
+  await act(async () => { (dom.window.document.querySelector("[data-testing-drafts]") as HTMLElement).click(); });
+  assert.match(dom.window.document.querySelector("[data-testing-group=stored]")?.textContent ?? "", /In Studio/);
+  await act(async () => { root.render(createElement("div")); });
+  await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
+  onTeardown(async () => { await act(async () => { root.unmount(); }); });
+});
+
+test("async project data prefills model and every discovered setup target", async t => {
+  const { module: { TestingView }, dom, onTeardown } = await renderEnvironment<any>(t, {
+    exports: 'export { TestingView } from "./packages/ui/src/components/testing-view.tsx";', slug: "testing-async-setup",
+  });
+  const { act, createElement } = await import("react");
+  const { createRoot } = await import("react-dom/client");
+  const root = createRoot(dom.window.document.getElementById("root")!);
+  const opened: string[] = [];
+  const panel = { ...panelStub({ runtimeMode: "bundled", setupState: "available", setupOpen: true, modelPickerOpen: true,
+    modelPreference: { provider: "chatgpt", model: "gpt-6-luna" },
+    setupDetails: { dependencies: {}, skillInstalled: false, mcpRegistrations: [], loginStatus: { openai: true } },
+    providers: [{ id: "none", label: "None" }, { id: "chatgpt", label: "ChatGPT", subscription: "openai", defaultModel: "gpt-default" }],
+    targets: [
+      { name: "ios", platform: "ios", bundleId: "com.anonymous.expoapp57" },
+      { name: "android", platform: "android", bundleId: "com.anonymous.expoapp57" },
+    ],
+  }), startLogin: async () => ({ id: "11111111-1111-4111-8111-111111111111", kind: "login", status: "waiting", message: "Open the browser", completed: 0, total: 1, applied: [], auth: { url: "https://auth.example.test/start", instructions: "Open the browser" } }),
+    openLoginUrl: async (url: string) => { opened.push(url); }, setupProgress: async () => null, cancelSetup: async () => {} };
+  await act(async () => { root.render(createElement(TestingView, { panel, deviceApps: { subscribe: () => () => undefined, getSnapshot: () => DEVICE_SNAPSHOT } })); });
+  const identifiers = [...dom.window.document.querySelectorAll('[aria-label$="app identifier"]')] as HTMLInputElement[];
+  assert.deepEqual(identifiers.map(input => input.value), ["com.anonymous.expoapp57", "com.anonymous.expoapp57"]);
+  assert.deepEqual([...dom.window.document.querySelectorAll('[aria-label^="Target "][aria-label$=" name"]')].map(input => (input as HTMLInputElement).value), ["ios", "android"]);
+  assert.equal((dom.window.document.querySelector('[aria-label="Model ID"]') as HTMLInputElement | null)?.value, "gpt-6-luna");
+  assert.match(dom.window.document.body.textContent ?? "", /Signed in/, "stored e2e login status is reused");
+  const signIn = [...dom.window.document.querySelectorAll("button")].find(button => button.textContent?.includes("Sign in with")) as HTMLButtonElement;
+  await act(async () => { signIn.click(); await Promise.resolve(); });
+  assert.deepEqual(opened, ["https://auth.example.test/start"], "a user-started OAuth flow auto-opens its emitted URL");
+  const mcp = [...dom.window.document.querySelectorAll('input[type="checkbox"]')].find(input => input.parentElement?.textContent?.includes("MCP")) as HTMLInputElement;
+  assert.equal(mcp.checked, true, "new setup preselects MCP registration");
+  await act(async () => { root.render(createElement("div")); });
+  await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
+  onTeardown(async () => { await act(async () => { root.unmount(); }); });
 });
 
 test("a selected project test offers temporary step edits and per-line runs", async t => {
