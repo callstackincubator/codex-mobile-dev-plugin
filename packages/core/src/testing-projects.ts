@@ -80,6 +80,16 @@ function timestamp(value: unknown): string {
   return typeof value === "string" && !Number.isNaN(Date.parse(value)) ? value : "";
 }
 
+/**
+ * The workspace Studio records against when no project is open: an empty folder in Mobile Dev's
+ * private state. It has no e2e config, so the bundled runtime owns it and its tests stay in Mobile
+ * Dev. Only the host can name it, so the panel asks the server instead of guessing a path.
+ */
+export function studioWorkspacePath(): string {
+  const stateRoot = process.env.MOBILE_DEV_TESTING_DIRECTORY?.trim() || TESTING_DIRECTORY;
+  return normalize(join(stateRoot, "studio-workspace"));
+}
+
 /** The e2e config file of a project folder, or undefined when it holds none. */
 export async function findConfig(projectPath: string): Promise<string | undefined> {
   for (const file of CONFIG_FILES) {
@@ -120,6 +130,7 @@ export function parseTargets(source: string): TestingTarget[] {
 export async function inspectProject(projectPath: string, foreground?: ForegroundTestingTarget): Promise<TestingProjectConfig> {
   const path = normalize(projectPath.trim());
   if (!isAbsolute(path)) throw new ExpectedOperationError("invalid_input", "Choose the project folder.");
+  if (path === studioWorkspacePath()) await mkdir(path, { recursive: true, mode: 0o700 });
   if (!(await isDirectory(path))) throw new ExpectedOperationError("invalid_input", "That project folder no longer exists.");
   const configPath = await findConfig(path);
   const source = configPath ? await readFile(configPath, "utf-8").catch(() => "") : "";
@@ -199,7 +210,8 @@ export class TestingProjectChoices {
 
   /** Recorded folders that still exist, including zero-setup projects without an e2e config. */
   async list(): Promise<TestingProjectChoice[]> {
-    const projects = TestingProjectChoices.clean(await this.read());
+    const studio = studioWorkspacePath();
+    const projects = TestingProjectChoices.clean(await this.read()).filter(entry => !same(entry.path, studio));
     const available = await Promise.all(projects.map(async entry => ((await isDirectory(entry.path)) ? entry : null)));
     return available.filter((entry): entry is TestingProjectChoice => entry !== null);
   }
@@ -353,6 +365,61 @@ export interface StoredTest {
   name: string;
   updatedAt: string;
   sizeBytes: number;
+  /** The app a bundled test is pinned to; absent for project tests and for tests not yet run or saved with one. */
+  target?: TestTarget;
+}
+
+/** The app a Studio test runs against, kept beside the test and never inside its source. */
+export interface TestTarget { platform: "ios" | "android"; bundleId: string }
+
+const TARGETS_FILE = "targets.json";
+
+function validTarget(value: unknown): TestTarget | undefined {
+  const entry = value as Partial<TestTarget> | null;
+  return (entry?.platform === "ios" || entry?.platform === "android") && typeof entry.bundleId === "string" && entry.bundleId.length > 0 && entry.bundleId.length <= 512
+    ? { platform: entry.platform, bundleId: entry.bundleId } : undefined;
+}
+
+async function readTargets(root: string): Promise<Record<string, TestTarget>> {
+  const saved = await readJson(join(root, TARGETS_FILE)) as { targets?: Record<string, unknown> } | null;
+  const targets: Record<string, TestTarget> = {};
+  for (const [path, value] of Object.entries(saved?.targets ?? {})) { const target = validTarget(value); if (target) targets[path] = target; }
+  return targets;
+}
+
+async function changeTargets(root: string, change: (targets: Record<string, TestTarget>) => void): Promise<void> {
+  const targets = await readTargets(root);
+  change(targets);
+  await mkdir(root, { recursive: true, mode: 0o700 });
+  const file = join(root, TARGETS_FILE);
+  const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporary, JSON.stringify({ version: 1, targets }, null, 2), { mode: 0o600 });
+    await rename(temporary, file);
+  } finally {
+    await unlink(temporary).catch(() => undefined);
+  }
+}
+
+/**
+ * Pins a Studio test to the app it was recorded or first run against. Only bundled tests carry one:
+ * a project test's app is its config's target, and nothing is written into the project for it.
+ */
+export async function writeTestTarget(projectPath: string, relativePath: string, target: TestTarget): Promise<boolean> {
+  const { project, root } = await testStorage(projectPath);
+  if (project.runtimeMode !== "bundled") return false;
+  const file = await resolveTestPath(root, relativePath);
+  if (!(await isFile(file))) throw new ExpectedOperationError("invalid_input", "Save the test before pinning an app to it.");
+  const checked = validTarget(target);
+  if (!checked) throw new ExpectedOperationError("invalid_input", "Choose an iOS or Android app identifier.");
+  await changeTargets(root, targets => { targets[relativePath] = checked; });
+  return true;
+}
+
+/** The app a bundled test is pinned to, if any. */
+export async function readTestTarget(projectPath: string, relativePath: string): Promise<TestTarget | undefined> {
+  const { project, root } = await testStorage(projectPath);
+  return project.runtimeMode === "bundled" ? (await readTargets(root))[relativePath] : undefined;
 }
 
 /** How deep under `tests/` the listing walks. Deeper than a folder per feature is not a list. */
@@ -371,8 +438,9 @@ const MAX_LISTED_TESTS = 200;
  * A project with no `tests/` folder yet is an empty list, not an error: nothing has been saved.
  */
 export async function listTestFiles(projectPath: string): Promise<StoredTest[]> {
-  const { root } = await testStorage(projectPath);
+  const { project, root } = await testStorage(projectPath);
   const testsRoot = resolve(root, TESTS_DIRECTORY);
+  const pinned = project.runtimeMode === "bundled" ? await readTargets(root) : {};
   const found: StoredTest[] = [];
   const walk = async (directory: string, depth: number): Promise<void> => {
     if (depth > MAX_TEST_DEPTH || found.length >= MAX_LISTED_TESTS) return;
@@ -386,11 +454,13 @@ export async function listTestFiles(projectPath: string): Promise<StoredTest[]> 
       if (!entry.isFile() || !entry.name.endsWith(".e2e.ts")) continue;
       const info = await stat(child).catch(() => undefined);
       if (!info) continue;
+      const relativePath = [TESTS_DIRECTORY, ...relative(testsRoot, child).split(/[\\/]/).filter(Boolean)].join("/");
       found.push({
-        relativePath: [TESTS_DIRECTORY, ...relative(testsRoot, child).split(/[\\/]/).filter(Boolean)].join("/"),
+        relativePath,
         name: entry.name,
         updatedAt: info.mtime.toISOString(),
         sizeBytes: info.size,
+        ...(pinned[relativePath] ? { target: pinned[relativePath] } : {}),
       });
     }
   };
@@ -473,8 +543,9 @@ export async function discardStagedTestFile(projectPath: string, relativePath: s
  * this removes a file from the user's repository, which nothing here can put back.
  */
 export async function deleteTestFile(projectPath: string, relativePath: string): Promise<{ path: string; removed: boolean }> {
-  const { root } = await testStorage(projectPath);
+  const { project, root } = await testStorage(projectPath);
   const target = await resolveTestPath(root, relativePath);
   const removed = await unlink(target).then(() => true, () => false);
+  if (removed && project.runtimeMode === "bundled") await changeTargets(root, targets => { delete targets[relativePath]; }).catch(() => undefined);
   return { path: target, removed };
 }

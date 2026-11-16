@@ -358,6 +358,7 @@ test("Play until a saved call runs a temporary copy without saving the project f
     mobile_testing_read_file: { source, originalHash: "a".repeat(64), staged: false },
     mobile_testing_run_test: { status: "passed", steps: [{ line: 3, status: "passed" }] },
   }, calls);
+  (panel as unknown as { update(fields: Record<string, unknown>): void }).update({ runtimeMode: "project" });
   await panel.openTest("tests/flow.e2e.ts");
   await panel.runStoredTest(3);
   const run = named(calls, "mobile_testing_run_test")[0];

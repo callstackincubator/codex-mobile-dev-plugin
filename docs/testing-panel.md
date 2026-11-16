@@ -9,6 +9,28 @@ config, no compatible mobile target, no local packages, or an incompatible API l
 to **Bundled runtime** and keeps generated config plus saved tests in Mobile Dev's private state. Record,
 Save, Run, Play until here, manual recording and agent recording therefore do not modify the project.
 
+### No project open
+
+Opening a project is optional. With no recorded project, Studio opens on **No project**: a private,
+empty workspace in Mobile Dev's state (`testing/studio-workspace`, reported as `studioPath` by
+`mobile_testing_projects`). It has no config, so it always runs on the Bundled runtime. The user picks
+nothing up front: the target is the app in the mirror's foreground (platform from the mirrored device,
+bundle id from the foreground app), so Launch app, Record, Save and Run work as in any bundled project.
+Saved tests are listed under **In Studio**. The project picker's first entry, **No project**, returns
+to this workspace; any recorded or newly chosen folder still switches to project behavior, and the
+workspace is never listed as a project. **Set up project** is hidden in this mode because there is
+no project to write into.
+
+### Pinned app
+
+A Studio (bundled) test is pinned to `{ platform, bundleId }`, stored in `targets.json` beside the
+tests in Mobile Dev's private state, never in the test source. Save pins the app being recorded
+against. Run on a test with no pin pins the app in front first (`mobile_testing_run_test` `pin`).
+A pinned test always runs against its own app: Studio opens it if it is not in front, and says so
+if it is not installed or the mirrored platform differs. The preview shows the pinned app with
+**Use current app** to re-pin (`mobile_testing_set_target`). With no pin and no foreground app, Run
+is disabled with a hint. Project tests keep using their config's targets.
+
 Bundled targets are discovered in this order: the project's local Expo CLI (`expo config --json`, never
 network `npx`), non-executing `app.json`/`app.config.*` data, then the mirrored foreground app. Both iOS
 and Android targets are retained when known and are editable in the setup wizard.

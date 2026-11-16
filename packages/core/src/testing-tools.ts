@@ -6,7 +6,7 @@ import { errorMessage } from "@mobile-dev/shared/protocol.ts";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 import { captureServerError, recordTestingSetupOperation } from "./telemetry.ts";
 import type { TestingProjectChoices } from "./testing-projects.ts";
-import { deleteTestFile, discardStagedTestFile, inspectProject, listTestFiles, previewTestFile, readTestFile, resolveTestRunPaths, saveStagedTestFile, stageTestFile, writeTestFile } from "./testing-projects.ts";
+import { deleteTestFile, discardStagedTestFile, inspectProject, listTestFiles, previewTestFile, readTestFile, resolveTestRunPaths, saveStagedTestFile, stageTestFile, studioWorkspacePath, writeTestFile, writeTestTarget } from "./testing-projects.ts";
 import { TestDraftStore } from "./testing-drafts.ts";
 import { MAX_DRAFT_STEPS, recordedStepSchema, testDraftIdSchema } from "@mobile-dev/shared/test-drafts.ts";
 import type { TestDraft } from "@mobile-dev/shared/test-drafts.ts";
@@ -56,11 +56,11 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
   let running = false;
   registerAppTool(server, "mobile_testing_projects", {
     title: "List testing projects",
-    description: "List the e2e project folders the Testing panel can record against, most recent first.",
+    description: "List the e2e project folders the Testing panel can record against, most recent first, and the private Studio workspace it uses when no project is open.",
     inputSchema: {},
     annotations: read,
     _meta: appVisibility,
-  }, safe(async () => dataResult({ projects: await projects.list() })));
+  }, safe(async () => dataResult({ projects: await projects.list(), studioPath: studioWorkspacePath() })));
 
   registerAppTool(server, "mobile_testing_choose_project", {
     title: "Choose a testing project",
@@ -83,13 +83,16 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
       relativePath: z.string().min(1).max(512).describe("Path under the project, inside tests/, ending in .e2e.ts."),
       contents: z.string().max(256 * 1024),
       overwrite: z.boolean().optional(),
+      platform: z.enum(["ios", "android"]).optional().describe("With bundleId: the app a Studio test is pinned to. Stored beside the test, never in its source."),
+      bundleId: z.string().min(1).max(512).optional(),
     },
     // Replacing someone's test file is destructive, so the host asks before this runs.
     annotations: destructive,
     _meta: appVisibility,
-  }, safe(async ({ projectPath: selected, relativePath, contents, overwrite }: { projectPath: string; relativePath: string; contents: string; overwrite?: boolean }) => {
+  }, safe(async ({ projectPath: selected, relativePath, contents, overwrite, platform, bundleId }: { projectPath: string; relativePath: string; contents: string; overwrite?: boolean; platform?: "ios" | "android"; bundleId?: string }) => {
     const project = await inspectProject(selected);
     const result = await writeTestFile(selected, relativePath, contents, overwrite ?? false);
+    if (result.written && platform && bundleId) await writeTestTarget(selected, relativePath, { platform, bundleId });
     const shownPath = project.runtimeMode === "bundled" ? `Studio/${relativePath}` : result.path;
     return dataResult({ ...result, path: shownPath, storageMode: project.runtimeMode }, result.written ? `Saved ${shownPath}` : `${shownPath} already exists.`);
   }));
@@ -297,6 +300,15 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
     return dataResult({ tree, ...(screen ? { screen } : {}) });
   }));
 
+  registerAppTool(server, "mobile_testing_set_target", {
+    title: "Pin a Studio test to an app",
+    description: "Store the app (platform and bundle id) a saved Studio test runs against. Only Studio tests carry one; a project test keeps using its config's target.",
+    inputSchema: { projectPath, relativePath: z.string().min(1).max(512), platform: z.enum(["ios", "android"]), bundleId: z.string().min(1).max(512) },
+    annotations: write,
+    _meta: appVisibility,
+  }, safe(async ({ projectPath: selected, relativePath, platform, bundleId }: { projectPath: string; relativePath: string; platform: "ios" | "android"; bundleId: string }) =>
+    dataResult({ pinned: await writeTestTarget(selected, relativePath, { platform, bundleId }) })));
+
   registerAppTool(server, "mobile_testing_run_test", {
     title: "Run a recorded test",
     description:
@@ -308,7 +320,8 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
       timeoutMs: z.number().int().min(10_000).max(30 * 60_000).optional(),
       target: z.string().min(1).max(256).optional().describe("The e2e target name to run against, so a flow recorded on Android does not run on the config's first (iOS) target."),
       platform: z.enum(["ios", "android"]).optional().describe("The mirrored platform for a bundled run."),
-      bundleId: z.string().min(1).max(512).optional().describe("The foreground app identifier for a bundled run."),
+      bundleId: z.string().min(1).max(512).optional().describe("The app identifier for a bundled run: the test's pinned app, or the foreground app when it has none."),
+      pin: z.boolean().optional().describe("Pin platform and bundleId to the saved test before running, for a bundled test that has no app yet."),
       model: z.object({
         provider: z.enum(["vercel", "openrouter", "openai-compatible", "chatgpt", "copilot", "opencode-console", "grok"]),
         model: z.string().min(1).max(256), endpoint: z.string().url().max(2048).optional(),
@@ -319,13 +332,14 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
     // A test run drives the app on the device: it taps, types and changes the app's own state.
     annotations: destructive,
     _meta: appVisibility,
-  }, safe(async ({ projectPath: selected, relativePath, configPath, timeoutMs, target, platform, bundleId, model, untilSource }: { projectPath: string; relativePath: string; configPath?: string; timeoutMs?: number; target?: string; platform?: "ios" | "android"; bundleId?: string; model?: { provider: BundledModelProvider; model: string; endpoint?: string }; untilSource?: string }) => {
+  }, safe(async ({ projectPath: selected, relativePath, configPath, timeoutMs, target, platform, bundleId, pin, model, untilSource }: { projectPath: string; relativePath: string; configPath?: string; timeoutMs?: number; target?: string; platform?: "ios" | "android"; bundleId?: string; pin?: boolean; model?: { provider: BundledModelProvider; model: string; endpoint?: string }; untilSource?: string }) => {
     // The release is a dependency of the run, not a step the caller is trusted to have taken: see
     // `TestRunDeps`. The panel releases too, but a caller who forgets must not break the run.
     progress = [];
     running = true;
     try {
       const project = await inspectProject(selected, platform && bundleId ? { platform, bundleId } : undefined);
+      if (pin && platform && bundleId) await writeTestTarget(selected, relativePath, { platform, bundleId }).catch(() => false);
       const paths = await resolveTestRunPaths(selected, relativePath, project.runtimeMode === "project" ? configPath : undefined, untilSource !== undefined);
       const selectedTarget = project.targets.find(entry => entry.name === target)
         ?? project.targets.find(entry => entry.platform === platform && (!bundleId || entry.bundleId === bundleId))
@@ -334,7 +348,8 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
       const result = await runRecordedTest(
         { ...paths, ...(timeoutMs === undefined ? {} : { timeoutMs }), ...(target ? { target } : {}),
           ...(bundledSource === undefined ? {} : { untilSource: bundledSource }), runtime: { mode: project.runtimeMode, root: project.runtime.root },
-          ...(project.runtimeMode === "bundled" && selectedTarget?.platform && selectedTarget.bundleId ? { bundledTarget: { platform: selectedTarget.platform as "ios" | "android", bundleId: selectedTarget.bundleId } } : {}),
+          ...(project.runtimeMode === "bundled" && platform && bundleId ? { bundledTarget: { platform, bundleId } }
+            : project.runtimeMode === "bundled" && selectedTarget?.platform && selectedTarget.bundleId ? { bundledTarget: { platform: selectedTarget.platform as "ios" | "android", bundleId: selectedTarget.bundleId } } : {}),
           ...(model ? { model } : {}) },
         { release: () => devices.release(), onProgress: entry => { progress.push(entry); } });
       return dataResult({ ...result }, `${relativePath} ${result.status}.`);

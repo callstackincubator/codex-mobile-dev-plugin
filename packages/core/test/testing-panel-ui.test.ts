@@ -159,6 +159,7 @@ test("a run marks the preview line by line, and marks nothing it was not told ab
     subscribe: (listener: () => void) => { panelListeners.add(listener); return () => { panelListeners.delete(listener); }; },
     getSnapshot: () => panelState,
     canLaunch: true, canRun: true, canRunStored: true, dirty: true,
+    noProject: false, storedTarget: undefined, foregroundTarget: undefined, storedRunHint: "", repinStoredTest: async () => {},
     refreshProjects: async () => {}, chooseProject: async () => {}, pickProject: async () => {},
     launchApp: async () => {}, saveTest: async () => {}, runTest: async (options?: unknown) => { runs.push(options); }, selectTarget: () => {},
     setFileName: () => {}, cancelOverwrite: () => {}, dismissError: () => {},
@@ -577,6 +578,8 @@ function panelStub(overrides: Record<string, unknown> = {}) {
     subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
     getSnapshot: () => state,
     canLaunch: true, canRun: true, canRunStored: true, dirty: true,
+    get noProject() { return state.projectPath === state.studioPath; }, useNoProject: async () => {},
+    storedTarget: undefined, foregroundTarget: undefined, storedRunHint: "", repinStoredTest: async () => {},
     refreshProjects: async () => {}, chooseProject: async () => {}, pickProject: async () => {},
     launchApp: async () => {}, saveTest: async () => {}, runTest: async () => {}, selectTarget: () => {},
     setFileName: () => {}, cancelOverwrite: () => {}, dismissError: () => {},
@@ -779,6 +782,52 @@ test("bundled tests are labeled In Studio and configured projects show read-only
   await act(async () => { root.render(createElement(TestingView, { panel: bundled, deviceApps })); });
   await act(async () => { (dom.window.document.querySelector("[data-testing-drafts]") as HTMLElement).click(); });
   assert.match(dom.window.document.querySelector("[data-testing-group=stored]")?.textContent ?? "", /In Studio/);
+  await act(async () => { root.render(createElement("div")); });
+  await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
+  onTeardown(async () => { await act(async () => { root.unmount(); }); });
+});
+
+test("with no project open the picker says so and setup offers no project files", async t => {
+  const { module: { TestingView }, dom, onTeardown } = await renderEnvironment<any>(t, {
+    exports: 'export { TestingView } from "./packages/ui/src/components/testing-view.tsx";', slug: "testing-no-project",
+  });
+  const { act, createElement } = await import("react");
+  const { createRoot } = await import("react-dom/client");
+  const root = createRoot(dom.window.document.getElementById("root")!);
+  const deviceApps = { subscribe: () => () => undefined, getSnapshot: () => DEVICE_SNAPSHOT };
+  let chosen = 0;
+  const panel = { ...panelStub({ projectPath: "/studio", studioPath: "/studio", runtimeMode: "bundled", setupState: "available", configPath: "", setupOpen: true }), useNoProject: async () => { chosen += 1; } };
+  await act(async () => { root.render(createElement(TestingView, { panel, deviceApps })); });
+  const trigger = dom.window.document.querySelector("[aria-label='Testing project']") as HTMLElement;
+  assert.match(trigger.textContent ?? "", /No project/);
+  assert.match(dom.window.document.body.textContent ?? "", /No project open/);
+  assert.doesNotMatch(dom.window.document.body.textContent ?? "", /Set up project/);
+  await act(async () => { trigger.click(); });
+  await act(async () => { (dom.window.document.querySelector("[data-testing-no-project]") as HTMLElement).click(); });
+  assert.equal(chosen, 1);
+  await act(async () => { root.render(createElement("div")); });
+  await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
+  onTeardown(async () => { await act(async () => { root.unmount(); }); });
+});
+
+test("a stored Studio test shows its pinned app and offers to re-pin it to the app in front", async t => {
+  const { module: { TestingView }, dom, onTeardown } = await renderEnvironment<any>(t, {
+    exports: 'export { TestingView } from "./packages/ui/src/components/testing-view.tsx";', slug: "testing-pinned-app",
+  });
+  const { act, createElement } = await import("react");
+  const { createRoot } = await import("react-dom/client");
+  const root = createRoot(dom.window.document.getElementById("root")!);
+  const deviceApps = { subscribe: () => () => undefined, getSnapshot: () => DEVICE_SNAPSHOT };
+  let repinned = 0;
+  const panel = { ...panelStub({ runtimeMode: "bundled", selectedTestPath: "tests/flow.e2e.ts", selectedTestSource: "await tap();\n" }),
+    storedTarget: { platform: "ios", bundleId: "com.a" }, foregroundTarget: { platform: "ios", bundleId: "com.b" },
+    storedRunHint: "com.a is not installed on the mirrored device.", canRunStored: false, repinStoredTest: async () => { repinned += 1; } };
+  await act(async () => { root.render(createElement(TestingView, { panel, deviceApps })); });
+  assert.match(dom.window.document.querySelector("[data-testing-pinned-app]")?.textContent ?? "", /com\.a/);
+  assert.match(dom.window.document.querySelector("[data-testing-run-hint]")?.textContent ?? "", /not installed/);
+  assert.equal((dom.window.document.querySelector("[data-testing-run]") as HTMLButtonElement).disabled, true);
+  await act(async () => { (dom.window.document.querySelector("[data-testing-repin]") as HTMLElement).click(); });
+  assert.equal(repinned, 1);
   await act(async () => { root.render(createElement("div")); });
   await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
   onTeardown(async () => { await act(async () => { root.unmount(); }); });

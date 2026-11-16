@@ -14,6 +14,7 @@ import { CODE_TOKEN_CLASS, changedLines, highlightCode } from "../code-highlight
 import { testSourceSuggestions } from "../test-source-suggestions.ts";
 import { changeStoredStepCommand, duplicateStoredStep, moveStoredStep, removeStoredStep, storedStepCommands, storedTestSteps, storedTestUntilSource } from "../stored-test-steps.ts";
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert.tsx";
+import { Badge } from "./ui/badge.tsx";
 import { Button } from "./ui/button.tsx";
 import { TestingSetup } from "./testing-setup.tsx";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover.tsx";
@@ -28,19 +29,30 @@ function TestingProjectPicker({ panel }: { panel: TestingPanel }) {
   const state = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
   const [open, setOpen] = useState(false);
   const selected = state.projects.find(project => project.path === state.projectPath);
-  const label = state.projectPath
+  const noProject = panel.noProject;
+  const label = noProject ? "No project" : state.projectPath
     ? selected?.name ?? state.projectPath.split("/").filter(Boolean).at(-1) ?? state.projectPath
     : "Choose a project";
   const choose = (projectPath: string) => { setOpen(false); void panel.chooseProject(projectPath); };
   return <div className="flex min-w-0 items-center gap-1">
     <Popover open={open} onOpenChange={value => { setOpen(value); if (value) void panel.refreshProjects(); }}>
       <PopoverTrigger asChild>
-        <Button type="button" variant="outline" size="sm" className="min-w-0 max-w-72 justify-between gap-1.5 font-normal" aria-label="Testing project" title={state.projectPath || "Choose an e2e project"}>
+        <Button type="button" variant="outline" size="sm" className="min-w-0 max-w-72 justify-between gap-1.5 font-normal" aria-label="Testing project" title={noProject ? "Recording without a project. Tests stay in Mobile Dev." : state.projectPath || "Choose an e2e project"}>
           <span className="min-w-0 truncate">{label}</span>
           <ChevronDownIcon className="shrink-0 transition-transform" style={{ transform: open ? "rotate(180deg)" : undefined }} />
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="flex max-h-(--radix-popover-content-available-height) w-max min-w-[min(var(--radix-popover-trigger-width),var(--radix-popover-content-available-width))] max-w-(--radix-popover-content-available-width) flex-col gap-1 overflow-y-auto p-1 [&_button:not(:disabled)]:cursor-pointer" aria-label="Testing project">
+        <Button type="button" variant="ghost" data-testing-no-project aria-pressed={noProject}
+          className="h-auto min-h-7 min-w-0 flex-1 justify-start rounded-md px-1.5 py-1 text-left font-normal" onClick={() => { setOpen(false); void panel.useNoProject(); }}>
+          <span className="flex min-w-0 items-center gap-2">
+            <CheckIcon className={`size-3.5 shrink-0 ${noProject ? "opacity-100" : "opacity-0"}`} />
+            <span className="flex min-w-0 flex-col">
+              <span className="truncate">No project</span>
+              <span className="truncate text-xs text-muted-foreground">Tests stay in Mobile Dev</span>
+            </span>
+          </span>
+        </Button>
         {state.projects.map(project => <Button key={project.path} type="button" variant="ghost" data-testing-project-option={project.path} aria-pressed={project.path === state.projectPath}
           className="h-auto min-h-7 min-w-0 flex-1 justify-start rounded-md px-1.5 py-1 text-left font-normal" onClick={() => choose(project.path)}>
           <span className="flex min-w-0 items-center gap-2">
@@ -51,7 +63,6 @@ function TestingProjectPicker({ panel }: { panel: TestingPanel }) {
             </span>
           </span>
         </Button>)}
-        {state.projects.length === 0 && <p className="px-1.5 py-1 text-xs text-muted-foreground">No projects yet. Choose a folder holding an e2e.config.ts.</p>}
         <Button type="button" variant="ghost" data-testing-project-browse disabled={state.pickingProject} className="h-auto min-h-7 justify-start rounded-md px-1.5 py-1 text-left font-normal" onClick={() => { setOpen(false); void panel.pickProject(); }}>
           <FolderOpenIcon />Choose another folder…
         </Button>
@@ -237,7 +248,7 @@ function TestingDraftPicker({ panel }: { panel: TestingPanel }) {
               onConfirm={() => void panel.deleteTest(stored.relativePath)} />
           </span>;
         })}
-        {state.tests.length === 0 && <p className="px-1.5 py-1 text-xs text-muted-foreground">No tests in this project's tests/ folder yet.</p>}
+        {state.tests.length === 0 && <p className="px-1.5 py-1 text-xs text-muted-foreground">{panel.noProject ? "No Studio tests yet." : "No tests in this project's tests/ folder yet."}</p>}
       </ListGroup>
     </PopoverContent>
   </Popover>;
@@ -261,9 +272,9 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
   const deviceId = device?.udid ?? "";
   const platform = device ? recordablePlatform(device) : "ios";
   // Why the recorder cannot start yet, in the order the user has to fix them.
-  const blocker = !state.projectPath ? "Choose a project to record against."
+  const blocker = !state.projectPath ? "Preparing Studio…"
     : state.loadingProject ? ""
-      : state.targets.length === 0 ? "No mobile app identifier was found. Open the app in the mirror, or use E2E setup to enter one."
+      : state.targets.length === 0 ? (panel.noProject ? "Open the app you want to record in the mirror. Studio records against the app in the foreground." : "No mobile app identifier was found. Open the app in the mirror, or use E2E setup to enter one.")
         : !target?.bundleId ? `Target "${target?.name}" has no app identifier. Enter one in E2E setup.`
           : !booted ? "Boot an iOS simulator or Android emulator to record against it."
             : !isRecordableDevice(device) ? "Recording works on an iOS simulator or an Android emulator, not a physical device."
@@ -294,6 +305,8 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
     </Alert>}
 
     {state.projectWarning && state.runtimeMode !== "bundled" && <Alert><AlertTitle>Testing</AlertTitle><AlertDescription><span>{state.projectWarning}</span></AlertDescription></Alert>}
+
+    {state.selectedTestPath && panel.storedRunHint && !state.agent?.active && <p data-testing-run-hint className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">{panel.storedRunHint}</p>}
 
     {blocker && !state.agent?.active && <p className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">{blocker}</p>}
 
@@ -376,7 +389,7 @@ function TestingControls({ panel, recordable, deviceId, platform }: { panel: Tes
           : <Button type="button" size="sm" variant="outline" data-testing-record disabled={!recordable}
             onClick={() => testRecorder.start(deviceId, platform)}><CircleIcon />Record</Button>}
     <Button type="button" size="sm" variant="outline" data-testing-run disabled={panelState.selectedTestPath ? !panel.canRunStored : !panel.canRun}
-      title="Run the current preview without saving it. Recording stops because the runner needs the device to itself."
+      title={panelState.selectedTestPath && panel.storedRunHint ? panel.storedRunHint : "Run the current preview without saving it. Recording stops because the runner needs the device to itself."}
       onClick={() => void (panelState.selectedTestPath ? panel.runStoredTest() : panel.runTest())}>
       {panelState.running ? <LoaderCircleIcon className="animate-spin" /> : <FlaskConicalIcon />}Run test
     </Button>
@@ -681,6 +694,21 @@ function SourceStepMenu({ source, step, index, mode, onEdit, editable }: {
 }
 
 /** A project file's awaited calls can be edited in a temporary working copy. */
+/** The app a Studio test is pinned to, with a way to pin it to the app in front instead. */
+function PinnedApp({ panel }: { panel: TestingPanel }) {
+  const state = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
+  const pinned = panel.storedTarget;
+  const front = panel.foregroundTarget;
+  const canRepin = Boolean(front) && !state.running && (!pinned || pinned.bundleId !== front!.bundleId || pinned.platform !== front!.platform);
+  return <span data-testing-pinned-app className="flex min-w-0 items-center gap-1.5">
+    <Badge variant="outline" className="h-auto min-w-0 gap-1.5 py-0.5 font-normal" title={pinned ? "Runs always open this app, whatever is in front." : "Not pinned yet. The first run pins the app in front."}>
+      <span className="truncate">{pinned ? pinned.bundleId : "No app pinned"}</span>
+      {pinned && <span className="text-muted-foreground">{pinned.platform}</span>}
+    </Badge>
+    {canRepin && <Button type="button" size="xs" variant="ghost" data-testing-repin title={`Pin this test to ${front!.bundleId}, the app in front`} onClick={() => void panel.repinStoredTest()}>{pinned ? "Use current app" : "Pin current app"}</Button>}
+  </span>;
+}
+
 function StoredTestPreview({ panel, source, path, loading }: { panel: TestingPanel; source: string; path: string; loading: boolean }) {
   const panelState = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
   const recorder = useSyncExternalStore(testRecorder.subscribe, testRecorder.getSnapshot);
@@ -696,6 +724,7 @@ function StoredTestPreview({ panel, source, path, loading }: { panel: TestingPan
   return <div className="flex min-h-0 flex-1 flex-col gap-2" data-testing-stored-preview>
     <div className="flex flex-wrap items-center gap-2 text-xs">
       <span className="min-w-0 flex-1 truncate text-muted-foreground">{path}</span>
+      {panelState.runtimeMode === "bundled" && <PinnedApp panel={panel} />}
       {panelState.selectedTestStaged && <>
         <span className="text-amber-600 dark:text-amber-400" role="status">Unsaved edits are temporary and may be lost until you Save.</span>
         <Button type="button" size="sm" variant="ghost" data-testing-stored-undo disabled={panelState.saving}

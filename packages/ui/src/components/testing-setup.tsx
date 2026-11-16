@@ -235,8 +235,8 @@ export function TestingSetup({ panel }: { panel: TestingPanel }) {
           </div>
         </Section>
         <Section title="Project">
-          <ul className="grid grid-cols-1 gap-2"><StatusItem ok={false} label="Project setup" value="None. Tests stay in Mobile Dev." /></ul>
-          <div className="flex justify-end"><Button size="sm" onClick={() => setView("setup")}><WandSparklesIcon />Set up project</Button></div>
+          <ul className="grid grid-cols-1 gap-2"><StatusItem ok={false} label={panel.noProject ? "No project open" : "Project setup"} value={panel.noProject ? "Recording against the app in the mirror. Tests stay in Mobile Dev." : "None. Tests stay in Mobile Dev."} /></ul>
+          {!panel.noProject && <div className="flex justify-end"><Button size="sm" onClick={() => setView("setup")}><WandSparklesIcon />Set up project</Button></div>}
         </Section>
         {error && <p className="text-xs text-destructive" role="alert">{error}</p>}
       </> : <>

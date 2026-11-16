@@ -18,7 +18,7 @@ import type { TestDraftSummary } from "@mobile-dev/shared/test-drafts.ts";
  * project already holds. A saved recording moves from one to the other, which is the whole reason
  * this exists — the draft is deleted on save, so before this the test left the list entirely.
  */
-export type StoredTestSummary = { relativePath: string; name: string; updatedAt: string; sizeBytes: number };
+export type StoredTestSummary = { relativePath: string; name: string; updatedAt: string; sizeBytes: number; /** The app a Studio test is pinned to. */ target?: { platform: "ios" | "android"; bundleId: string } };
 
 /**
  * An agent recording, as the server reports it.
@@ -71,6 +71,8 @@ export type TestingSnapshot = {
   available: boolean;
   projectPath: string;
   projects: TestingProjectOption[];
+  /** The private workspace Studio records against when no project is open; "" until the server says. */
+  studioPath: string;
   targets: TestingTargetOption[];
   /** The target the panel records against; "" until a project with targets is loaded. */
   targetName: string;
@@ -165,7 +167,7 @@ export class TestingPanel {
   /** The project and target the installed tree source reads; "" when there is no source. */
   private treeSourceKey = "";
   private snapshot: TestingSnapshot = {
-    open: false, available: false, projectPath: "", projects: [], targets: [], targetName: "", configPath: "", runtimeMode: "bundled", setupState: "available", targetSource: "none", projectWarning: "", providers: [], modelPickerOpen: false, setupOpen: false,
+    open: false, available: false, projectPath: "", projects: [], studioPath: "", targets: [], targetName: "", configPath: "", runtimeMode: "bundled", setupState: "available", targetSource: "none", projectWarning: "", providers: [], modelPickerOpen: false, setupOpen: false,
     loadingProject: false, pickingProject: false, launching: false, appLaunched: false,
     fileName: "", saving: false, overwritePath: "", savedRevision: -1, savedPath: "", running: false, pendingRun: false,
     agent: null, drafts: [], draftId: "", loadingDraft: false, tests: [], selectedTestPath: "", selectedTestSource: "", selectedTestOriginalHash: "", selectedTestStaged: false, loadingTest: false, deletingTest: "", error: null,
@@ -342,7 +344,7 @@ export class TestingPanel {
           .filter((entry): entry is Record<string, unknown> => entry !== null)
           .filter(entry => text(entry.path))
           .map(entry => ({ path: text(entry.path), name: text(entry.name) || projectName(text(entry.path)) }));
-        if (!this.disposed) this.update({ projects });
+        if (!this.disposed) this.update({ projects, studioPath: text(object(response.structuredContent)?.studioPath) || this.snapshot.studioPath });
       } catch {
         // The panel still works from the project it was last opened with, or the empty state.
       } finally {
@@ -358,8 +360,10 @@ export class TestingPanel {
     if (!this.snapshot.available || this.snapshot.projectPath || this.restoreRequest) return this.restoreRequest;
     const request = (async () => {
       await this.refreshProjects();
-      const latest = this.snapshot.projects[0];
-      if (latest && !this.disposed && !this.snapshot.projectPath) await this.selectProject(latest.path);
+      // No project is a state of its own: with nothing recorded against yet, Studio opens on its
+      // private workspace so recording never waits for a folder to be chosen.
+      const latest = this.snapshot.projects[0]?.path || this.snapshot.studioPath;
+      if (latest && !this.disposed && !this.snapshot.projectPath) await this.selectProject(latest);
     })();
     this.restoreRequest = request;
     try { await request; } finally { if (this.restoreRequest === request) this.restoreRequest = undefined; }
@@ -369,11 +373,20 @@ export class TestingPanel {
     this.update({ projects: [project, ...this.snapshot.projects.filter(entry => entry.path !== project.path)] });
   }
 
+  /** Whether Studio is on its private workspace rather than a project the user opened. */
+  get noProject(): boolean { return Boolean(this.snapshot.studioPath) && this.snapshot.projectPath === this.snapshot.studioPath; }
+
+  /** Leaves the open project and records in Studio's own workspace. */
+  async useNoProject() {
+    await this.refreshProjects();
+    if (this.snapshot.studioPath) await this.selectProject(this.snapshot.studioPath);
+  }
+
   /** Selects a project the selector already lists, and makes it the one the panel reopens with. */
   async chooseProject(projectPath: string) {
     const path = projectPath.trim();
     if (!path) return;
-    if (!this.snapshot.available) { await this.selectProject(path); return; }
+    if (!this.snapshot.available || path === this.snapshot.studioPath) { await this.selectProject(path); return; }
     try {
       const response = await this.call("mobile_testing_choose_project", { projectPath: path });
       const project = object(object(response.structuredContent)?.project);
@@ -907,6 +920,7 @@ export class TestingPanel {
     try {
       const response = await this.call("mobile_testing_write_file", {
         projectPath, relativePath, contents: testRecorder.source, overwrite: confirmOverwrite,
+        ...this.pinArguments(),
       }, 60_000);
       const data = object(response.structuredContent) ?? {};
       if (data.written === true) {
@@ -1092,12 +1106,56 @@ export class TestingPanel {
 
   get canRunStored(): boolean {
     return Boolean(this.snapshot.available && this.snapshot.projectPath && this.snapshot.selectedTestPath
-      && !this.snapshot.loadingTest && !this.snapshot.agent?.active && !this.snapshot.running && !this.snapshot.saving);
+      && !this.snapshot.loadingTest && !this.snapshot.agent?.active && !this.snapshot.running && !this.snapshot.saving
+      && !this.storedRunHint);
   }
 
-  private bundledRunArguments() {
-    if (this.snapshot.runtimeMode !== "bundled") return {};
+  /** The app a selected Studio test is pinned to; undefined for project tests and unpinned tests. */
+  get storedTarget(): NonNullable<StoredTestSummary["target"]> | undefined {
+    if (this.snapshot.runtimeMode !== "bundled") return undefined;
+    return this.snapshot.tests.find(test => test.relativePath === this.snapshot.selectedTestPath)?.target;
+  }
+
+  /** The app in front on the mirrored device, as a Studio target. */
+  get foregroundTarget(): NonNullable<StoredTestSummary["target"]> | undefined {
+    const { device, foregroundApp } = this.deviceApps.getSnapshot();
+    return device && isRecordableDevice(device) && foregroundApp?.bundleId ? { platform: recordablePlatform(device), bundleId: foregroundApp.bundleId } : undefined;
+  }
+
+  /** Why Run is unavailable for a selected Studio test, or "": it needs a pinned app or one in front. */
+  get storedRunHint(): string {
+    if (this.snapshot.runtimeMode !== "bundled" || !this.snapshot.selectedTestPath) return "";
+    const pinned = this.storedTarget;
+    if (!pinned) return this.foregroundTarget ? "" : "This test has no app yet. Open the app in the mirror to run it; Studio will pin it.";
+    const { device, apps, ready } = this.deviceApps.getSnapshot();
+    if (device && isRecordableDevice(device) && recordablePlatform(device) !== pinned.platform) return `This test is pinned to ${pinned.bundleId} (${pinned.platform}). Mirror an ${pinned.platform === "ios" ? "iOS simulator" : "Android emulator"} to run it.`;
+    if (ready && apps.length > 0 && !apps.some(app => app.bundleId === pinned.bundleId)) return `${pinned.bundleId} is not installed on the mirrored device.`;
+    return "";
+  }
+
+  /** The platform and bundle id sent with a save, so a Studio test is pinned to the app it was recorded against. */
+  private pinArguments() {
     const target = this.target;
+    return this.snapshot.runtimeMode === "bundled" && (target?.platform === "ios" || target?.platform === "android") && target.bundleId
+      ? { platform: target.platform, bundleId: target.bundleId } : {};
+  }
+
+  /** Pins the selected Studio test to the app in front, replacing the one it had. */
+  async repinStoredTest() {
+    const { projectPath, selectedTestPath: relativePath } = this.snapshot;
+    const target = this.foregroundTarget;
+    if (!projectPath || !relativePath || !target || this.snapshot.running) return;
+    try {
+      await this.call("mobile_testing_set_target", { projectPath, relativePath, ...target }, 10_000);
+      await this.refreshTests();
+    } catch (error) {
+      this.update({ error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  private bundledRunArguments(pinned?: { platform: "ios" | "android"; bundleId: string }) {
+    if (this.snapshot.runtimeMode !== "bundled") return {};
+    const target = pinned ?? this.target;
     return {
       ...(target?.platform === "ios" || target?.platform === "android" ? { platform: target.platform } : {}),
       ...(target?.bundleId ? { bundleId: target.bundleId } : {}),
@@ -1121,7 +1179,21 @@ export class TestingPanel {
     const untilSource = untilLine === undefined ? source : storedTestUntilSource(source, untilLine);
     if (untilSource === undefined) return;
     if (!this.hasBundledModel(untilSource, { kind: "stored", ...(untilLine === undefined ? {} : { untilLine }) })) return;
+    // A Studio test runs against the app it is pinned to, never whichever app is in front. A test
+    // with no app yet takes the one in front and keeps it, so later runs are pinned.
+    const pinned = this.storedTarget;
+    const runTarget = pinned ?? this.foregroundTarget;
+    if (this.snapshot.runtimeMode === "bundled" && !runTarget) return;
     this.update({ running: true, error: null });
+    if (pinned && this.deviceApps.getSnapshot().foregroundApp?.bundleId !== pinned.bundleId) {
+      try {
+        const device = this.deviceApps.getSnapshot().device;
+        if (device) await this.call("mobile_launch_app", { platform: pinned.platform, deviceId: device.udid, bundleId: pinned.bundleId }, 120_000);
+      } catch (error) {
+        this.update({ running: false, error: `Could not open ${pinned.bundleId}: ${error instanceof Error ? error.message : String(error)}` });
+        return;
+      }
+    }
     testRecorder.clearRun();
     testRecorder.beginRun(untilLine);
     if (untilLine !== undefined) countUiEvent("ui.testing.run_until");
@@ -1137,7 +1209,8 @@ export class TestingPanel {
         projectPath, relativePath, untilSource,
         ...(this.snapshot.configPath ? { configPath: this.snapshot.configPath } : {}),
         ...(this.snapshot.targetName ? { target: this.snapshot.targetName } : {}),
-        ...this.bundledRunArguments(),
+        ...this.bundledRunArguments(runTarget),
+        ...(!pinned && runTarget ? { pin: true } : {}),
       }, 15 * 60_000);
       const data = object(response.structuredContent) ?? {};
       const steps = (Array.isArray(data.steps) ? data.steps : []).map(entry => object(entry))
@@ -1158,6 +1231,7 @@ export class TestingPanel {
       if (getUiTelemetryAttributes() === telemetryContext) recordUiTiming("ui.testing.run", performance.now() - startedAt);
       this.update({ running: false });
       testRecorder.invalidate();
+      if (!pinned && runTarget) void this.refreshTests();
     }
   }
 

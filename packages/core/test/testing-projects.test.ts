@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { deleteTestFile, discardStagedTestFile, findConfig, inspectProject, listTestFiles, parseTargets, previewTestFile, readTestFile, resolveTestRunPaths, saveStagedTestFile, stageTestFile, TestingProjectChoices, writeTestFile } from "../src/testing-projects.ts";
+import { deleteTestFile, discardStagedTestFile, findConfig, inspectProject, listTestFiles, parseTargets, previewTestFile, readTestFile, resolveTestRunPaths, saveStagedTestFile, stageTestFile, readTestTarget, studioWorkspacePath, TestingProjectChoices, writeTestTarget, writeTestFile } from "../src/testing-projects.ts";
 
 const CONFIG = `import { mobile } from "@e2e-dev/mobile";
 import type { E2EConfig } from "e2e";
@@ -165,6 +165,54 @@ test("a folder without project setup saves into Studio state without modifying t
     assert.equal(await readFile(join(other, "tests/flow.e2e.ts"), "utf8").catch(() => undefined), undefined);
     assert.equal(await readTestFile(other, "tests/flow.e2e.ts"), SOURCE);
     assert.ok(path);
+  } finally {
+    if (previous === undefined) delete process.env.MOBILE_DEV_TESTING_DIRECTORY;
+    else process.env.MOBILE_DEV_TESTING_DIRECTORY = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("the Studio workspace needs no project: it is created on demand, bundled, and not listed as a project", async () => {
+  const { root } = await project();
+  const previous = process.env.MOBILE_DEV_TESTING_DIRECTORY;
+  try {
+    process.env.MOBILE_DEV_TESTING_DIRECTORY = join(root, "studio-state");
+    const studio = studioWorkspacePath();
+    assert.ok(studio.startsWith(join(root, "studio-state")));
+    const inspected = await inspectProject(studio, { platform: "ios", bundleId: "com.anonymous.expoapp57" });
+    assert.equal(inspected.runtimeMode, "bundled");
+    assert.deepEqual(inspected.targets, [{ name: "ios", platform: "ios", bundleId: "com.anonymous.expoapp57" }]);
+    assert.equal((await writeTestFile(studio, "tests/flow.e2e.ts", SOURCE)).written, true);
+    assert.equal(await readTestFile(studio, "tests/flow.e2e.ts"), SOURCE);
+    assert.equal(await readFile(join(studio, "tests/flow.e2e.ts"), "utf8").catch(() => undefined), undefined, "tests stay in Mobile Dev's state");
+    const choices = new TestingProjectChoices(join(root, "choices"));
+    await choices.record(studio);
+    assert.deepEqual(await choices.list(), []);
+  } finally {
+    if (previous === undefined) delete process.env.MOBILE_DEV_TESTING_DIRECTORY;
+    else process.env.MOBILE_DEV_TESTING_DIRECTORY = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a Studio test is pinned to its app beside the source, listed, re-pinned and cleared on delete", async () => {
+  const { root } = await project();
+  const previous = process.env.MOBILE_DEV_TESTING_DIRECTORY;
+  try {
+    process.env.MOBILE_DEV_TESTING_DIRECTORY = join(root, "studio-state");
+    const studio = studioWorkspacePath();
+    await assert.rejects(writeTestTarget(studio, "tests/flow.e2e.ts", { platform: "ios", bundleId: "com.a" }), /Save the test/);
+    await writeTestFile(studio, "tests/flow.e2e.ts", SOURCE);
+    assert.equal(await readTestTarget(studio, "tests/flow.e2e.ts"), undefined);
+    assert.equal(await writeTestTarget(studio, "tests/flow.e2e.ts", { platform: "ios", bundleId: "com.a" }), true);
+    assert.deepEqual(await readTestTarget(studio, "tests/flow.e2e.ts"), { platform: "ios", bundleId: "com.a" });
+    assert.deepEqual((await listTestFiles(studio))[0]?.target, { platform: "ios", bundleId: "com.a" });
+    assert.equal(await readTestFile(studio, "tests/flow.e2e.ts"), SOURCE, "the source carries no target");
+    await writeTestTarget(studio, "tests/flow.e2e.ts", { platform: "android", bundleId: "com.b" });
+    assert.deepEqual(await readTestTarget(studio, "tests/flow.e2e.ts"), { platform: "android", bundleId: "com.b" });
+    await deleteTestFile(studio, "tests/flow.e2e.ts");
+    await writeTestFile(studio, "tests/flow.e2e.ts", SOURCE);
+    assert.equal(await readTestTarget(studio, "tests/flow.e2e.ts"), undefined, "a deleted test leaves no pin behind");
   } finally {
     if (previous === undefined) delete process.env.MOBILE_DEV_TESTING_DIRECTORY;
     else process.env.MOBILE_DEV_TESTING_DIRECTORY = previous;

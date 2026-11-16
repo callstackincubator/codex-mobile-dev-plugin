@@ -15,6 +15,8 @@ const tab: ScreenComponent = {
 };
 
 // Saving touches no device, so the store is a stub: the real one binds to the document.
+/** A booted simulator with an app in front, for runs that need an app to pin. */
+const frontApps = { subscribe: () => () => undefined, getSnapshot: () => ({ device: { udid: "udid", name: "iPhone", state: "Booted", platform: "ios", kind: "simulator" }, apps: [], foregroundApp: { bundleId: "com.example.app", pid: 1 }, ready: false }) } as unknown as DeviceAppsStore;
 const deviceApps = { subscribe: () => () => undefined, getSnapshot: () => ({ device: undefined }) } as unknown as DeviceAppsStore;
 
 /**
@@ -140,7 +142,7 @@ test("a project test polls live progress against its own source lines", async ()
   panel.setAvailable(true);
   const source = 'test("stored", async ({ app, screen }) => {\n  await app.open();\n  await screen.getByText("Done").tap();\n});';
   (panel as unknown as { update(fields: Record<string, unknown>): void }).update({
-    projectPath: PROJECT, selectedTestPath: "tests/stored.e2e.ts", selectedTestSource: source, configPath: `${PROJECT}/e2e.config.ts`,
+    projectPath: PROJECT, runtimeMode: "project", selectedTestPath: "tests/stored.e2e.ts", selectedTestSource: source, configPath: `${PROJECT}/e2e.config.ts`,
   });
 
   const running = panel.runStoredTest();
@@ -242,7 +244,7 @@ test("stored Play until here resumes with the same cutoff after model selection"
   const panel = new TestingPanel(host({
     mobile_testing_model_preference: { saved: true },
     mobile_testing_run_test: { status: "passed", exitCode: 0, steps: [{ line: 2, status: "passed" }] },
-  }, calls), deviceApps);
+  }, calls), frontApps);
   panel.setAvailable(true);
   (panel as unknown as { update(fields: Record<string, unknown>): void }).update({
     projectPath: PROJECT, runtimeMode: "bundled", selectedTestPath: "tests/stored.e2e.ts", selectedTestSource: source,
@@ -307,4 +309,31 @@ test("a booted Android emulator is recordable and a target of the wrong platform
   assert.match(panel.targetMismatch, /is ios, but the mirror shows an Android device/);
   update({ targetName: "android" });
   assert.equal(panel.targetMismatch, "");
+});
+
+test("a Studio test with no app pins the one in front on its first run, then runs against the pin", async () => {
+  const calls: { name: string; arguments: Record<string, unknown> }[] = [];
+  const source = 'test("stored", async ({ app }) => {\n  await app.open();\n});\n';
+  const panel = new TestingPanel(host({ mobile_testing_run_test: { status: "passed", exitCode: 0, steps: [] } }, calls), frontApps);
+  panel.setAvailable(true);
+  (panel as unknown as { update(fields: Record<string, unknown>): void }).update({ projectPath: PROJECT, runtimeMode: "bundled", selectedTestPath: "tests/stored.e2e.ts", selectedTestSource: source, tests: [{ relativePath: "tests/stored.e2e.ts", name: "stored.e2e.ts", updatedAt: "", sizeBytes: 1 }] });
+  await panel.runStoredTest();
+  const first = calls.find(call => call.name === "mobile_testing_run_test")!;
+  assert.deepEqual([first.arguments.platform, first.arguments.bundleId, first.arguments.pin], ["ios", "com.example.app", true]);
+  calls.length = 0;
+  (panel as unknown as { update(fields: Record<string, unknown>): void }).update({ tests: [{ relativePath: "tests/stored.e2e.ts", name: "stored.e2e.ts", updatedAt: "", sizeBytes: 1, target: { platform: "ios", bundleId: "com.pinned.app" } }] });
+  await panel.runStoredTest();
+  assert.ok(calls.some(call => call.name === "mobile_launch_app" && call.arguments.bundleId === "com.pinned.app"), "the pinned app is opened when it is not in front");
+  const second = calls.find(call => call.name === "mobile_testing_run_test")!;
+  assert.deepEqual([second.arguments.bundleId, second.arguments.pin], ["com.pinned.app", undefined]);
+  panel.dispose();
+});
+
+test("Run is unavailable for a Studio test with neither a pinned app nor one in front", () => {
+  const panel = new TestingPanel(host({}, []), deviceApps);
+  panel.setAvailable(true);
+  (panel as unknown as { update(fields: Record<string, unknown>): void }).update({ projectPath: PROJECT, runtimeMode: "bundled", selectedTestPath: "tests/stored.e2e.ts", selectedTestSource: "x" });
+  assert.equal(panel.canRunStored, false);
+  assert.match(panel.storedRunHint, /Open the app in the mirror/);
+  panel.dispose();
 });
