@@ -19,6 +19,7 @@ import { APP_FLOW_DIRECTORY, createAppFlowHost } from "./app-flow-host.ts";
 import { AppFlowProjectChoices } from "./app-flow-projects.ts";
 import { registerAppFlowTools } from "./app-flow-tools.ts";
 import { registerTestingTools } from "./testing-tools.ts";
+import { systemDeviceOps } from "./testing-prepare.ts";
 import { registerTestingAgentTools } from "./testing-agent.ts";
 import { TestingDevices } from "./testing-device.ts";
 import { TESTING_DIRECTORY, TestingProjectChoices } from "./testing-projects.ts";
@@ -125,7 +126,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
   // One store for both: the panel autosaves the flow it is holding and the agent keeps the flow it
   // finished, and those are the same list of unsaved recordings.
   const testDrafts = new TestDraftStore();
-  const closeTestingDevices = registerTestingTools(server, new TestingProjectChoices(TESTING_DIRECTORY), testingDevices, testDrafts);
+  const closeTestingDevices = registerTestingTools(server, new TestingProjectChoices(TESTING_DIRECTORY), testingDevices, testDrafts, { ops: systemDeviceOps({ simulators, android, drivers }) });
   registerTestingAgentTools(server, testingDevices, new TestingAgentRecordings(testingDevices, testDrafts));
 
   const resource = async () => typeof html === "string" ? { html } : await html();

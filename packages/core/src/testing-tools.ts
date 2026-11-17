@@ -12,7 +12,11 @@ import { MAX_DRAFT_STEPS, recordedStepSchema, testDraftIdSchema } from "@mobile-
 import type { TestDraft } from "@mobile-dev/shared/test-drafts.ts";
 import { TestingDevices } from "./testing-device.ts";
 import { runRecordedTest } from "./testing-run.ts";
-import type { TestRunProgress } from "./testing-run.ts";
+import type { TestRunRequest } from "./testing-run.ts";
+import { MatrixRegistry, MAX_MATRIX_LIMIT, snapshotMatrix, startMatrix } from "./testing-matrix.ts";
+import type { LaneExecutor, MatrixDevice, MatrixRun } from "./testing-matrix.ts";
+import { createLaneExecutor } from "./testing-prepare.ts";
+import type { DeviceOps } from "./testing-prepare.ts";
 import { deviceIdSchema } from "@mobile-dev/shared/panel-target.ts";
 import type { BundledModelProvider } from "./testing-run.ts";
 import { answerTestingSetup, applyTestingSetup, cancelTestingSetup, inspectTestingSetup, planTestingSetup, readTestingModelPreference, saveTestingModelPreference, SETUP_PROVIDERS, startTestingLogin, testingSetupProgress } from "./testing-setup.ts";
@@ -43,17 +47,18 @@ function dataResult(data: Record<string, unknown>, message?: string): CallToolRe
 
 /** The Testing panel's project selection, and the device tree its recorder names selectors from. */
 /** Returns the shutdown the plugin has to run: the recorder's device session, handed back. */
-export function registerTestingTools(server: McpServer, projects: TestingProjectChoices, devices = new TestingDevices(), drafts = new TestDraftStore()): () => Promise<void> {
+export function registerTestingTools(server: McpServer, projects: TestingProjectChoices, devices = new TestingDevices(), drafts = new TestDraftStore(), matrix: { ops?: DeviceOps; registry?: MatrixRegistry; run?: typeof runRecordedTest } = {}): () => Promise<void> {
   /**
-   * The live progress of the run in flight.
+   * Every run, as a matrix of lanes; a single run is a matrix of one.
    *
-   * A tool call is one request and one response, so the run's own call cannot report as it goes.
-   * The panel polls this one instead, which is a few hundred bytes a second against a local server
-   * for as long as a run takes — cheaper than holding a notification channel open for a feature
-   * whose whole output is a spinner moving down a dozen lines.
+   * A tool call is one request and one response, so a run's own call cannot report as it goes.
+   * The panel polls `mobile_testing_run_progress` instead, which is a few hundred bytes a second
+   * against a local server for as long as a run takes — cheaper than holding a notification channel
+   * open for a feature whose whole output is a spinner moving down a dozen lines.
    */
-  let progress: TestRunProgress[] = [];
-  let running = false;
+  const registry = matrix.registry ?? new MatrixRegistry();
+  const runTest = matrix.run ?? runRecordedTest;
+  const matrixWire = (run: MatrixRun) => ({ ...snapshotMatrix(run), running: run.lanes.some(lane => !["passed", "failed", "cancelled", "error"].includes(lane.state)) });
   registerAppTool(server, "mobile_testing_projects", {
     title: "List testing projects",
     description: "List the e2e project folders the Testing panel can record against, most recent first, and the private Studio workspace it uses when no project is open.",
@@ -309,10 +314,39 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
   }, safe(async ({ projectPath: selected, relativePath, platform, bundleId }: { projectPath: string; relativePath: string; platform: "ios" | "android"; bundleId: string }) =>
     dataResult({ pinned: await writeTestTarget(selected, relativePath, { platform, bundleId }) })));
 
+  const modelSchema = z.object({
+    provider: z.enum(["vercel", "openrouter", "openai-compatible", "chatgpt", "copilot", "opencode-console", "grok"]),
+    model: z.string().min(1).max(256), endpoint: z.string().url().max(2048).optional(),
+  });
+  type RunInput = { projectPath: string; relativePath: string; configPath?: string; timeoutMs?: number; target?: string; platform?: "ios" | "android"; bundleId?: string; pin?: boolean; model?: { provider: BundledModelProvider; model: string; endpoint?: string }; untilSource?: string };
+
+  /** Everything a run needs before a device is chosen: the same for a single run and for every lane. */
+  async function prepareRequest(input: RunInput) {
+    const { projectPath: selected, relativePath, configPath, timeoutMs, target, platform, bundleId, pin, model, untilSource } = input;
+    const project = await inspectProject(selected, platform && bundleId ? { platform, bundleId } : undefined);
+    if (pin && platform && bundleId) await writeTestTarget(selected, relativePath, { platform, bundleId }).catch(() => false);
+    const paths = await resolveTestRunPaths(selected, relativePath, project.runtimeMode === "project" ? configPath : undefined, untilSource !== undefined);
+    const selectedTarget = project.targets.find(entry => entry.name === target)
+      ?? project.targets.find(entry => entry.platform === platform && (!bundleId || entry.bundleId === bundleId))
+      ?? project.targets[0];
+    const bundledSource = project.runtimeMode === "bundled" ? (untilSource ?? await readTestFile(selected, relativePath)) : untilSource;
+    const request: TestRunRequest = { ...paths, ...(timeoutMs === undefined ? {} : { timeoutMs }), ...(target ? { target } : {}),
+      ...(bundledSource === undefined ? {} : { untilSource: bundledSource }), runtime: { mode: project.runtimeMode, root: project.runtime.root },
+      ...(project.runtimeMode === "bundled" && platform && bundleId ? { bundledTarget: { platform, bundleId } }
+        : project.runtimeMode === "bundled" && selectedTarget?.platform && selectedTarget.bundleId ? { bundledTarget: { platform: selectedTarget.platform as "ios" | "android", bundleId: selectedTarget.bundleId } } : {}),
+      ...(model ? { model } : {}) };
+    return { request, project };
+  }
+
+  /** Starts a matrix whose lanes run `request` and returns once it is registered. */
+  function launchMatrix(testPath: string, devices_: MatrixDevice[], limit: number | undefined, executor: LaneExecutor) {
+    return startMatrix(registry, { testPath, devices: devices_, ...(limit === undefined ? {} : { limit }) }, executor);
+  }
+
   registerAppTool(server, "mobile_testing_run_test", {
     title: "Run a recorded test",
     description:
-      "Run one saved test with the project's own e2e CLI and report each step with the line it came from. The recorder's device session is released first: the runner allows one session per device, so a run started while the recorder holds it fails with \"Device is already in use\".",
+      "Run one saved test with the project's own e2e CLI and report each step with the line it came from. The recorder's device session is released first: the runner allows one session per device, so a run started while the recorder holds it fails with \"Device is already in use\". Runs on the one device the runner picks; use mobile_testing_run_matrix to choose devices.",
     inputSchema: {
       projectPath,
       relativePath: z.string().min(1).max(512).describe("The test to run, relative to the project, e.g. tests/a-recorded-flow.e2e.ts."),
@@ -322,50 +356,96 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
       platform: z.enum(["ios", "android"]).optional().describe("The mirrored platform for a bundled run."),
       bundleId: z.string().min(1).max(512).optional().describe("The app identifier for a bundled run: the test's pinned app, or the foreground app when it has none."),
       pin: z.boolean().optional().describe("Pin platform and bundleId to the saved test before running, for a bundled test that has no app yet."),
-      model: z.object({
-        provider: z.enum(["vercel", "openrouter", "openai-compatible", "chatgpt", "copilot", "opencode-console", "grok"]),
-        model: z.string().min(1).max(256), endpoint: z.string().url().max(2048).optional(),
-      }).optional(),
+      model: modelSchema.optional(),
       untilSource: z.string().min(1).max(400_000).optional().describe(
         "Run this truncated copy of the test instead of the file itself, for \"play until here\": the same flow cut off after one step. It is written beside the test for the one run and removed afterwards; the file itself is not touched."),
     },
     // A test run drives the app on the device: it taps, types and changes the app's own state.
     annotations: destructive,
     _meta: appVisibility,
-  }, safe(async ({ projectPath: selected, relativePath, configPath, timeoutMs, target, platform, bundleId, pin, model, untilSource }: { projectPath: string; relativePath: string; configPath?: string; timeoutMs?: number; target?: string; platform?: "ios" | "android"; bundleId?: string; pin?: boolean; model?: { provider: BundledModelProvider; model: string; endpoint?: string }; untilSource?: string }) => {
+  }, safe(async (input: RunInput) => {
     // The release is a dependency of the run, not a step the caller is trusted to have taken: see
     // `TestRunDeps`. The panel releases too, but a caller who forgets must not break the run.
-    progress = [];
-    running = true;
-    try {
-      const project = await inspectProject(selected, platform && bundleId ? { platform, bundleId } : undefined);
-      if (pin && platform && bundleId) await writeTestTarget(selected, relativePath, { platform, bundleId }).catch(() => false);
-      const paths = await resolveTestRunPaths(selected, relativePath, project.runtimeMode === "project" ? configPath : undefined, untilSource !== undefined);
-      const selectedTarget = project.targets.find(entry => entry.name === target)
-        ?? project.targets.find(entry => entry.platform === platform && (!bundleId || entry.bundleId === bundleId))
-        ?? project.targets[0];
-      const bundledSource = project.runtimeMode === "bundled" ? (untilSource ?? await readTestFile(selected, relativePath)) : untilSource;
-      const result = await runRecordedTest(
-        { ...paths, ...(timeoutMs === undefined ? {} : { timeoutMs }), ...(target ? { target } : {}),
-          ...(bundledSource === undefined ? {} : { untilSource: bundledSource }), runtime: { mode: project.runtimeMode, root: project.runtime.root },
-          ...(project.runtimeMode === "bundled" && platform && bundleId ? { bundledTarget: { platform, bundleId } }
-            : project.runtimeMode === "bundled" && selectedTarget?.platform && selectedTarget.bundleId ? { bundledTarget: { platform: selectedTarget.platform as "ios" | "android", bundleId: selectedTarget.bundleId } } : {}),
-          ...(model ? { model } : {}) },
-        { release: () => devices.release(), onProgress: entry => { progress.push(entry); } });
-      return dataResult({ ...result }, `${relativePath} ${result.status}.`);
-    } finally {
-      running = false;
-    }
+    const { request } = await prepareRequest(input);
+    const executor: LaneExecutor = {
+      // No device is chosen and nothing is booted or installed: the runner picks, as it always has.
+      prepare: async () => "",
+      run: (_lane, _device, signal, onProgress) => runTest(request, { release: () => devices.release(), onProgress, signal }),
+    };
+    const { run, done } = launchMatrix(input.relativePath, [{ deviceId: "auto", platform: input.platform ?? "ios", name: "Default device" }], 1, executor);
+    await done;
+    const lane = run.lanes[0]!;
+    // A run that could not start at all is the caller's error, as it was before lanes existed.
+    if (lane.state === "error" || (lane.state === "cancelled" && !lane.result)) throw new Error(lane.error ?? "The test run was cancelled.");
+    return dataResult({ ...lane.result!, matrixId: run.matrixId }, `${input.relativePath} ${lane.result!.status}.`);
+  }));
+
+  registerAppTool(server, "mobile_testing_run_matrix", {
+    title: "Run a recorded test on several devices",
+    description:
+      "Run one saved test on several devices at once, one independent lane per device, and return a matrixId immediately; read progress with mobile_testing_run_progress. At most `limit` lanes run at once (default 3, max 8); the rest are queued. Devices that are off are booted, and a device missing the app gets it installed by copying it from another device in the run that has it; otherwise that lane fails with \"App not installed\". Bundled mode only. A failure on one device does not stop the others.",
+    inputSchema: {
+      projectPath,
+      relativePath: z.string().min(1).max(512).describe("The test to run, relative to the project."),
+      devices: z.array(z.object({
+        deviceId: deviceIdSchema.describe("An iOS simulator UDID, an Android serial, or an avd: id from the device lists."),
+        platform: z.enum(["ios", "android"]),
+        name: z.string().min(1).max(128).optional().describe("A label for the lane."),
+      })).min(1).max(16),
+      apps: z.object({ ios: z.string().min(1).max(512).optional(), android: z.string().min(1).max(512).optional() })
+        .describe("The app id per platform: the iOS bundle id and the Android package name."),
+      limit: z.number().int().min(1).max(MAX_MATRIX_LIMIT).optional().describe("How many devices run at once. Default 3."),
+      timeoutMs: z.number().int().min(10_000).max(30 * 60_000).optional(),
+      model: modelSchema.optional(),
+      untilSource: z.string().min(1).max(400_000).optional().describe("A truncated copy of the test to run instead of the file."),
+    },
+    annotations: destructive,
+    _meta: appVisibility,
+  }, safe(async (input: Omit<RunInput, "platform" | "bundleId" | "pin" | "target" | "configPath"> & { devices: MatrixDevice[]; apps: { ios?: string; android?: string }; limit?: number }) => {
+    const unique = new Set(input.devices.map(device => device.deviceId));
+    if (unique.size !== input.devices.length) throw new ExpectedOperationError("invalid_input", "Each device can appear only once in a matrix.");
+    if (!matrix.ops) throw new ExpectedOperationError("unsupported_platform", "This server cannot prepare devices for a matrix run.");
+    const first = input.devices[0]!;
+    const { request, project } = await prepareRequest({ ...input, platform: first.platform, ...(input.apps[first.platform] ? { bundleId: input.apps[first.platform]! } : {}) });
+    if (project.runtimeMode !== "bundled") throw new ExpectedOperationError("invalid_input", "Running on several devices is available for Mobile Dev's bundled runner. This project uses its own e2e config, so run it on one device.");
+    // Only the devices of this matrix lose the recorder; a recorder on another device keeps its session.
+    await devices.releaseOn(input.devices.map(device => device.deviceId)).catch(() => undefined);
+    const executor = createLaneExecutor({
+      ops: matrix.ops, apps: input.apps,
+      runTest: (lane, deviceId, signal, onProgress) => runTest(
+        { ...request, bundledTarget: { platform: lane.platform, bundleId: input.apps[lane.platform]!, device: deviceId } },
+        { release: () => devices.releaseOn([lane.deviceId, deviceId]), onProgress, signal }),
+    });
+    const { run } = launchMatrix(input.relativePath, input.devices, input.limit, executor);
+    return dataResult({ matrixId: run.matrixId, limit: run.limit, lanes: snapshotMatrix(run).lanes }, `Started ${run.lanes.length} lanes, up to ${run.limit} at once.`);
   }));
 
   registerAppTool(server, "mobile_testing_run_progress", {
     title: "Read a run's progress",
     description:
-      "Read the steps the run in flight has started and finished so far, as the runner's own event spine reports them. Each entry carries the step's index within its test, which is its position among the file's awaited calls.",
-    inputSchema: {},
+      "Read the lanes of a matrix run: each device's state (queued, booting, installing, running, passed, failed, cancelled, error), the steps it has started and finished so far, and its result. Without a matrixId it reads the latest run, whose first lane's steps are also returned as `progress`. Each step carries its index within its test, which is its position among the file's awaited calls.",
+    inputSchema: { matrixId: z.string().min(1).max(128).optional() },
     annotations: read,
     _meta: appVisibility,
-  }, safe(async () => dataResult({ running, progress: [...progress] })));
+  }, safe(async ({ matrixId }: { matrixId?: string }) => {
+    const run = matrixId ? registry.get(matrixId) : registry.latest();
+    if (matrixId && !run) throw new ExpectedOperationError("invalid_input", "That run is no longer available.");
+    if (!run) return dataResult({ running: false, progress: [], lanes: [], busyDevices: registry.busyDevices() });
+    const wire = matrixWire(run);
+    return dataResult({ ...wire, progress: wire.lanes[0]?.progress ?? [], busyDevices: registry.busyDevices() });
+  }));
+
+  registerAppTool(server, "mobile_testing_cancel", {
+    title: "Cancel a test run",
+    description: "Cancel one device's lane of a matrix run, or every lane that has not finished. A queued lane never starts; a running lane's process is stopped.",
+    inputSchema: { matrixId: z.string().min(1).max(128), deviceId: deviceIdSchema.optional().describe("Cancel only this device's lane.") },
+    annotations: write,
+    _meta: appVisibility,
+  }, safe(async ({ matrixId, deviceId }: { matrixId: string; deviceId?: string }) => {
+    if (!registry.get(matrixId)) throw new ExpectedOperationError("invalid_input", "That run is no longer available.");
+    const cancelled = registry.cancel(matrixId, deviceId);
+    return dataResult({ cancelled: cancelled.map(lane => lane.deviceId) }, `Cancelled ${cancelled.length} lane${cancelled.length === 1 ? "" : "s"}.`);
+  }));
 
   registerAppTool(server, "mobile_testing_release_device", {
     title: "Release the recorder's device",

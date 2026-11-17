@@ -376,6 +376,15 @@ export class TestingDevices {
     return run;
   }
 
+  /**
+   * Releases the recorder only when it holds one of these devices. A matrix run touches only its own
+   * devices, so a recorder on some other device keeps its session.
+   */
+  async releaseOn(deviceIds: readonly string[]): Promise<void> {
+    const held = this.attached?.split("\u0000")[1];
+    if (held !== undefined && deviceIds.includes(held)) await this.release();
+  }
+
   private async releaseOnce(): Promise<void> {
     if (this.attached === undefined || this.client === undefined) return;
     this.attached = undefined;

@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { existsSync } from "node:fs";
 import { readFileSync } from "node:fs";
-import { bundledConfigSource, parseProgressLine, parseReport, progressConfigSource, reportDuration, reportSteps, reportStatus, runRecordedTest, runnerBin, runnerEnv, untilTestPath } from "../src/testing-run.ts";
+import { bundledConfigSource, bundledTargetName, parseProgressLine, parseReport, progressConfigSource, reportDuration, reportSteps, reportStatus, runRecordedTest, runnerBin, runnerEnv, untilTestPath } from "../src/testing-run.ts";
 import { bundledE2eRoot } from "../src/e2e-runtime.ts";
 
 const FILE = "tests/a-recorded-flow.e2e.ts";
@@ -330,4 +330,51 @@ test("bundled deterministic tests need no model and agent tests request one", as
     projectPath: "/unused", relativePath: FILE, untilSource: 'test("x", async ({ agent }) => { await agent.extract("title"); });\n',
     runtime: { mode: "bundled", root: bundledE2eRoot() }, bundledTarget: { platform: "android", bundleId: "com.example.app" },
   }), /Choose a provider and model/);
+});
+
+test("a device-pinned bundled config names the device and gives the target its own name", () => {
+  const source = bundledConfigSource({ platform: "ios", bundleId: "com.example.app", device: "A1B2-C3" });
+  assert.match(source, /name: "ios-A1B2-C3"/);
+  assert.match(source, /mobile\(\{ platform: "ios", device: "A1B2-C3" \}\)/);
+  assert.match(source, /workers: 1/);
+  assert.equal(bundledTargetName({ platform: "android", bundleId: "x", device: "emulator-5554" }), "android-emulator-5554");
+  assert.equal(bundledTargetName({ platform: "android", bundleId: "x", device: "avd:Pixel 8" }), "android-avd-Pixel-8");
+  // Without a device nothing changes from a single run.
+  const plain = bundledConfigSource({ platform: "ios", bundleId: "com.example.app" });
+  assert.match(plain, /name: "ios"/);
+  assert.doesNotMatch(plain, /device:/);
+});
+
+test("a pinned bundled run passes its own target and output directory, removed afterwards", async () => {
+  const root = await project();
+  const seen: { command?: string; args?: readonly string[]; cwd?: string } = {};
+  await runRecordedTest({
+    projectPath: root, relativePath: FILE, untilSource: 'test("x", async () => {});\n',
+    runtime: { mode: "bundled", root: bundledE2eRoot() },
+    bundledTarget: { platform: "android", bundleId: "com.example.app", device: "emulator-5554" },
+  }, { spawner: spawner(JSON.stringify(report([{ line: 1, status: "passed" }])), 0, seen) });
+  const args = seen.args ?? [];
+  assert.equal(args[args.indexOf("--target") + 1], "android-emulator-5554");
+  const output = args[args.indexOf("--output") + 1];
+  assert.ok(output?.startsWith(seen.cwd!), "the output lives inside the lane's own workspace");
+  assert.equal(existsSync(output!), false);
+});
+
+test("aborting a run kills its process and reports it as cancelled", async () => {
+  const root = await project();
+  let killed = false;
+  const controller = new AbortController();
+  const hanging = (() => {
+    const child = new EventEmitter() as EventEmitter & { stdout: Readable; stderr: Readable; kill: () => void };
+    child.stdout = Readable.from([]); child.stderr = Readable.from([]);
+    child.kill = () => { killed = true; };
+    return child;
+  }) as never;
+  const run = runRecordedTest({
+    projectPath: root, relativePath: FILE, untilSource: 'test("x", async () => {});\n',
+    runtime: { mode: "bundled", root: bundledE2eRoot() }, bundledTarget: { platform: "ios", bundleId: "a.b" },
+  }, { spawner: hanging, signal: controller.signal });
+  setTimeout(() => controller.abort(), 20);
+  await assert.rejects(run, /cancelled/);
+  assert.equal(killed, true);
 });

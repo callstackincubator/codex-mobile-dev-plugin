@@ -256,10 +256,17 @@ export interface TestRunRequest {
   /** Explicit runner/projection runtime. Project mode remains authoritative when compatible. */
   runtime?: { mode: "project" | "bundled"; root: string };
   /** Required only for a bundled run, whose ephemeral config cannot read a project target. */
-  bundledTarget?: { platform: "ios" | "android"; bundleId: string };
+  bundledTarget?: BundledTarget;
   /** Non-secret preference for a bundled test containing agent.* calls. */
   model?: { provider: BundledModelProvider; model: string; endpoint?: string };
 }
+
+/**
+ * The app a bundled run drives. `device` pins the run to one simulator UDID or emulator serial, which is
+ * what lets a test matrix run the same test on several devices at once; without it the runner takes
+ * whichever booted device it finds, as a single run always has.
+ */
+export interface BundledTarget { platform: "ios" | "android"; bundleId: string; device?: string }
 
 export type BundledModelProvider = "vercel" | "openrouter" | "openai-compatible" | "chatgpt" | "copilot" | "opencode-console" | "grok";
 
@@ -299,6 +306,8 @@ type Spawner = typeof spawn;
  */
 export interface TestRunDeps {
   spawner?: Spawner;
+  /** Kills the run's process when aborted, for a matrix lane the user cancels. */
+  signal?: AbortSignal;
   release?: () => Promise<void>;
   /** Called for each live `step` event, as it arrives. */
   onProgress?: (progress: TestRunProgress) => void;
@@ -416,7 +425,17 @@ function bundledModelSource(model: TestRunRequest["model"]): { imports: string[]
   }
 }
 
-export function bundledConfigSource(target: NonNullable<TestRunRequest["bundledTarget"]>, model?: TestRunRequest["model"]): string {
+/**
+ * The target name a bundled run uses and passes to `--target`. A pinned device gets its own name because
+ * the engine names its agent-device session after the target (`e2e-<target>-<n>`), and two concurrent
+ * runs must never share a session.
+ */
+export function bundledTargetName(target: BundledTarget): string {
+  if (!target.device) return target.platform;
+  return `${target.platform}-${target.device.replace(/[^A-Za-z0-9_-]/g, "-").slice(0, 64)}`;
+}
+
+export function bundledConfigSource(target: BundledTarget, model?: TestRunRequest["model"]): string {
   const selected = bundledModelSource(model);
   return [
     "import { mobile } from '@e2e-dev/mobile';",
@@ -424,7 +443,7 @@ export function bundledConfigSource(target: NonNullable<TestRunRequest["bundledT
     "",
     "export default {",
     ...(selected ? ["  agents: { default: {", `    model: ${selected.field},`, "    system: 'You are a thorough QA agent. Verify every outcome.',", "  } },"] : []),
-    `  targets: [{ name: ${quoted(target.platform)}, engine: mobile({ platform: ${quoted(target.platform)} }), app: { bundleId: ${quoted(target.bundleId)} } }],`,
+    `  targets: [{ name: ${quoted(bundledTargetName(target))}, engine: mobile({ platform: ${quoted(target.platform)}${target.device ? `, device: ${quoted(target.device)}` : ""} }), app: { bundleId: ${quoted(target.bundleId)} } }],`,
     "  workers: 1,",
     "};",
     "",
@@ -456,17 +475,22 @@ async function runBundledTest(request: TestRunRequest, deps: TestRunDeps): Promi
       command: process.execPath,
       commandArgs: [join(request.runtime.root, "node_modules/e2e/dist/cli/bin.js")],
       cwd: workspace, runPath, configName: deps.onProgress ? PROGRESS_CONFIG : "e2e.config.mts",
-      target: request.bundledTarget.platform, timeoutMs: request.timeoutMs, spawner: deps.spawner ?? spawn,
-      onProgress: deps.onProgress,
+      // Reports and artifacts go beside the run's own config, so concurrent lanes never share a directory
+      // and the workspace removal below takes them away.
+      output: join(workspace, "output"),
+      target: bundledTargetName(request.bundledTarget), timeoutMs: request.timeoutMs, spawner: deps.spawner ?? spawn,
+      onProgress: deps.onProgress, signal: deps.signal,
     });
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
 }
 
-async function spawnRun(input: { command: string; commandArgs?: string[]; cwd: string; runPath: string; configName?: string; target?: string; timeoutMs?: number; spawner: Spawner; onProgress?: (progress: TestRunProgress) => void }): Promise<TestRunResult> {
+async function spawnRun(input: { command: string; commandArgs?: string[]; cwd: string; runPath: string; configName?: string; target?: string; output?: string; timeoutMs?: number; spawner: Spawner; signal?: AbortSignal; onProgress?: (progress: TestRunProgress) => void }): Promise<TestRunResult> {
+  input.signal?.throwIfAborted();
   const child = input.spawner(input.command, [
     ...(input.commandArgs ?? []), "run", input.runPath, "--reporter", "json",
+    ...(input.output ? ["--output", input.output] : []),
     ...(input.target ? ["--target", input.target] : []), ...(input.configName ? ["--config", input.configName] : []),
   ], { cwd: input.cwd, stdio: ["ignore", "pipe", "pipe"], env: runnerEnv() });
   let stdout = "", stderr = "", pending = "";
@@ -482,7 +506,10 @@ async function spawnRun(input: { command: string; commandArgs?: string[]; cwd: s
   const timeoutMs = input.timeoutMs ?? 10 * 60_000;
   const exitCode = await new Promise<number>((resolve, reject) => {
     const timer = setTimeout(() => { child.kill("SIGTERM"); reject(new ExpectedOperationError("resource_limit", `The test run did not finish within ${Math.round(timeoutMs / 1000)}s.`)); }, timeoutMs);
-    timer.unref?.(); child.on("error", error => { clearTimeout(timer); reject(error); }); child.on("close", code => { clearTimeout(timer); resolve(code ?? 1); });
+    const cancel = () => { child.kill("SIGTERM"); reject(new ExpectedOperationError("cancelled", "The test run was cancelled.")); };
+    input.signal?.addEventListener("abort", cancel, { once: true });
+    const done = () => { clearTimeout(timer); input.signal?.removeEventListener("abort", cancel); };
+    timer.unref?.(); child.on("error", error => { done(); reject(error); }); child.on("close", code => { done(); resolve(code ?? 1); });
   });
   const report = parseReport(stdout);
   const steps = report ? reportSteps(report, input.runPath) : [];
