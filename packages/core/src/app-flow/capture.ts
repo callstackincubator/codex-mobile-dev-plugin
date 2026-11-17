@@ -209,7 +209,7 @@ function agentDeviceInstallCommand(app: string, appPath: string): string {
 export { agentDeviceOpenCommand } from './walk-commands.ts'
 
 type AgentDeviceClient = Awaited<ReturnType<import('./host.ts').AppFlowAgentDeviceModule['createAgentDeviceClient']>>
-type LaunchMode = 'native-run' | 'expo-go'
+export type LaunchMode = 'native-run' | 'expo-go'
 
 export interface CaptureDevice {
   client: AgentDeviceClient
@@ -834,18 +834,42 @@ function installedAppLaunchTarget(app: string): string {
   return formattedApp?.[1]?.trim() || app
 }
 
-async function listInstalledApps(
-  client: AgentDeviceClient,
-  platform: 'ios' | 'android'
+/**
+ * The apps installed on the sweep's device.
+ *
+ * Pass the booted device's id. Before a session is open the daemon resolves the target from the
+ * request alone, so an unscoped listing fails with AMBIGUOUS_MATCH as soon as a second simulator
+ * is booted. That failure used to be swallowed as an empty list, and the sweep then reported the
+ * freshly built app as "not installed".
+ */
+export async function listInstalledApps(
+  client: Pick<AgentDeviceClient, 'apps'>,
+  platform: 'ios' | 'android',
+  deviceId?: string
 ): Promise<string[]> {
-  return (await client.apps.list({ platform }).catch(() => [])) as string[]
+  try {
+    return (await client.apps.list({ platform, ...deviceSelector(platform, deviceId) })) as string[]
+  } catch (error) {
+    log('apps.list', `failed — ${errorMessage(error)}`)
+    return []
+  }
+}
+
+/** The request field that pins a call to one device: `udid` on iOS, `serial` on Android. */
+function deviceSelector(
+  platform: 'ios' | 'android',
+  deviceId: string | undefined
+): { udid?: string; serial?: string } {
+  if (!deviceId) return {}
+  return platform === 'android' ? { serial: deviceId } : { udid: deviceId }
 }
 
 async function ensureExpoGoInstalled(
   client: AgentDeviceClient,
-  ctx: CaptureContext
+  ctx: CaptureContext,
+  deviceId: string
 ): Promise<{ launchTarget: string; installPath: string | null }> {
-  const apps = await listInstalledApps(client, ctx.platform)
+  const apps = await listInstalledApps(client, ctx.platform, deviceId)
   const existing = matchInstalledApp(apps, [EXPO_GO_APP_NAME, 'host.exp.Exponent'])
   if (existing) {
     log('Expo Go already installed', existing)
@@ -856,7 +880,8 @@ async function ensureExpoGoInstalled(
   log('apps.install', appPath)
   const result = await client.apps.install({
     appPath,
-    platform: ctx.platform
+    platform: ctx.platform,
+    ...deviceSelector(ctx.platform, deviceId)
   })
   return {
     launchTarget: result.app || result.appId || EXPO_GO_APP_NAME,
@@ -918,7 +943,7 @@ function isMissingSessionError(error: unknown): boolean {
 }
 
 async function openAppSession(
-  client: AgentDeviceClient,
+  client: Pick<AgentDeviceClient, 'apps'>,
   app: string,
   options?: {
     url?: string | null
@@ -945,6 +970,7 @@ async function openAppSession(
     await client.apps.open({
       app: launchTarget,
       platform: 'ios',
+      ...(options?.udid ? { udid: options.udid } : {}),
       ...(url ? { url } : {}),
       ...(options?.relaunch ? { relaunch: true } : {})
     })
@@ -1209,8 +1235,8 @@ async function launchBoundApp(device: CaptureDevice, timing?: PhaseLedger): Prom
   await dismissOpenInAppPrompt(device, device.launchUrl)
 }
 
-async function openInstalledApp(
-  client: AgentDeviceClient,
+export async function openInstalledApp(
+  client: Pick<AgentDeviceClient, 'apps'>,
   ctx: CaptureContext,
   mode: LaunchMode,
   options: {
@@ -1240,7 +1266,7 @@ async function openInstalledApp(
     return { launchTarget, launchUrl, useCustomScheme: false }
   }
 
-  const apps = await listInstalledApps(client, ctx.platform)
+  const apps = await listInstalledApps(client, ctx.platform, options.udid)
   const nativeTarget = matchInstalledApp(apps, [ctx.bundleId, ctx.appName, ctx.slug])
   if (!nativeTarget) {
     const lookedFor =
@@ -1311,7 +1337,7 @@ async function resolveReusableNativeBuild(
     )
     return null
   }
-  const apps = await listInstalledApps(client, ctx.platform)
+  const apps = await listInstalledApps(client, ctx.platform, deviceId)
   const installed = matchInstalledApp(apps, [recorded])
   if (!installed) {
     log('checkInstalledBuild', `${recorded} is no longer installed — rebuilding`)
@@ -1401,7 +1427,7 @@ export async function bootDevice(ctx: CaptureContext): Promise<CaptureDevice> {
         }
       }
     } else {
-      const expoGo = await ensureExpoGoInstalled(client, ctx)
+      const expoGo = await ensureExpoGoInstalled(client, ctx, bootResult.id)
       expoGoTarget = expoGo.launchTarget
       if (expoGo.installPath) {
         setupCommands.push(agentDeviceInstallCommand(expoGo.launchTarget, expoGo.installPath))
