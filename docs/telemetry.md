@@ -608,6 +608,11 @@ as well, so a flow tried a step at a time is not read as a flow run end to end; 
 beside the verdict, not instead of it. The test's title, its path, the project path, the steps and
 the runner's output are the user's own content and are **not** sent.
 
+A run on several devices measures `ui.testing.matrix_run`, the panel's whole call from starting the
+matrix to its last lane ending, and counts `ui.testing.matrix_run` at the start and
+`ui.testing.matrix_passed` or `ui.testing.matrix_failed` at the end (passed only when every lane
+passed). Device names and ids, app ids and the number of devices are not sent.
+
 Unsaved recordings — the flows the panel keeps so one survives the panel document being rebuilt —
 measure `ui.testing.draft_save`, the autosave write, and count `ui.testing.draft_restore` when one
 is reopened into the step list and `ui.testing.draft_delete` when the user throws one away. The

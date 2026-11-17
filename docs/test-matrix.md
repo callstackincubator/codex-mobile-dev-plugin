@@ -1,6 +1,6 @@
 # Test matrix — plan
 
-Status: **proposed, not started.**
+Status: **bundled mode implemented** (milestones 1, 2, 3 and 5). Project mode (milestone 4) is deferred: it needs a device override the runner does not offer yet. Docs: [testing-panel.md](testing-panel.md#running-on-several-devices-test-matrix), [mcp-tools.md](mcp-tools.md).
 
 Run one recorded e2e test on several devices at once — e.g. iPhone 17, iPhone 16 and a Pixel emulator — from the Testing panel, or from chat through MCP.
 

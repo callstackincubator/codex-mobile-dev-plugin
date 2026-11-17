@@ -789,6 +789,44 @@ wrap.
 If a run produces no report at all — the runner refused before it reached the test — there is no
 line to mark, so the panel shows the runner's own output instead of going quiet.
 
+#### Running on several devices (test matrix)
+
+E2E setup → **Devices** lists the iOS simulators and Android emulators with *Booted*/*Off* and
+*Installed*/*App missing* badges. Tick two or more and **Run test** becomes **Run on N devices**; one
+or none is the plain single-device run. "Run up to [3] at once" caps how many devices work at the
+same time (1–8); the rest queue. The ticked devices and the limit are saved per project.
+
+Bundled runtime only. A project with its own `e2e.config.ts` pins its own device and `mobile()`
+returns an opaque engine handle, so the Devices section is disabled with a note there and single
+runs behave exactly as before.
+
+```mermaid
+flowchart LR
+  Panel -->|mobile_testing_run_matrix| Server
+  Server --> Sched["scheduler: limit 3"]
+  Sched --> Prep["lane: boot → install → launch"]
+  Prep --> Run["e2e run, config pinned to the device"]
+  Panel -->|mobile_testing_run_progress matrixId, polled| Server
+```
+
+- **One `e2e run` per device**, not the runner's device pool: a pool gives *different files* to
+  different devices, a matrix needs the *same* test on each with its own progress, failure and
+  cancel. Each lane gets a generated config with `mobile({ platform, device })` and a target name
+  unique to the device (the engine names its agent-device session after the target), plus its own
+  `--output` directory inside its temporary workspace. Nothing is written to the project.
+- **Lane states:** Queued → Booting → Installing → Running → Passed / Failed / Cancelled / Error.
+  A device that is off is booted (`xcrun simctl boot` + `bootstatus -b`, or the Android emulator
+  through `ServeEmu`; an `avd:` id becomes the running serial). Booting counts against the limit.
+- **A missing app is copied from another device in the run that has it**: iOS with `simctl
+  get_app_container` + `install`, Android with `pm path` + `adb pull`, installed with
+  `install-multiple` when the app is split. No device has it → the lane fails with "App not
+  installed" and the others carry on. The request carries one app id per platform
+  (`apps: { ios, android }`); a platform with none fails fast.
+- **The lanes view** shows a row per device (state, duration, cancel) and a summary such as
+  "2 passed · 1 failed". Clicking a row puts that device's steps on the preview. The recorder is
+  released only if it is on a matrix device, and a device is shown *Busy* while its lane is live.
+- Each lane calls the model once per `agent.*` step, so N devices cost about N× the calls.
+
 #### Line spans
 
 Attributing a report to a line needs to know which lines a step produced, and a step is not one
