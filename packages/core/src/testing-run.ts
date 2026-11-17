@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
@@ -311,6 +311,27 @@ export interface TestRunDeps {
   release?: () => Promise<void>;
   /** Called for each live `step` event, as it arrives. */
   onProgress?: (progress: TestRunProgress) => void;
+  /** The working directory a workspace run spawns from; {@link RUNNER_CWD} unless a test overrides it. */
+  runnerCwd?: string;
+}
+
+/**
+ * The working directory of every run that is not spawned in the user's project.
+ *
+ * It is a folder that is never deleted, not the run's temp workspace. The first run to need a device
+ * starts agent-device's daemon, which is detached, outlives the run and inherits its cwd. Once that
+ * cwd is removed every `spawn` the daemon makes fails with `ENOENT`, which agent-device reports as
+ * "xcodebuild not found in PATH" before retrying its runner for the whole 240 s `prepare` timeout: the
+ * next matrix lane hangs on a fresh device. The workspace keeps the generated config, the test and the
+ * output, and reaches the CLI as absolute paths: `--config` is the only path it resolves from cwd; the
+ * test and `--output` resolve from the config's folder and the test's imports from its own.
+ */
+export const RUNNER_CWD = join(homedir(), "Library/Application Support/mobile-dev/e2e-runner");
+
+async function runnerCwd(deps: TestRunDeps): Promise<string> {
+  const cwd = deps.runnerCwd ?? RUNNER_CWD;
+  await mkdir(cwd, { recursive: true, mode: 0o700 });
+  return cwd;
 }
 
 /**
@@ -399,7 +420,8 @@ async function runProjectPreview(request: TestRunRequest, deps: TestRunDeps): Pr
     await mkdir(dirname(join(workspace, request.relativePath)), { recursive: true, mode: 0o700 });
     await writeFile(join(workspace, request.relativePath), request.untilSource, { mode: 0o600 });
     await writeFile(join(workspace, configName), progressConfigSource(request.configPath, request.projectPath), { mode: 0o600 });
-    return await spawnRun({ command: bin, cwd: workspace, runPath: request.relativePath, configName,
+    // The project's own folder, as in a plain run: it outlives any daemon this run starts.
+    return await spawnRun({ command: bin, cwd: request.projectPath, runPath: request.relativePath, configName: join(workspace, configName),
       target: request.target, timeoutMs: request.timeoutMs, spawner: deps.spawner ?? spawn, onProgress: deps.onProgress });
   } finally {
     await rm(workspace, { recursive: true, force: true });
@@ -474,7 +496,7 @@ async function runBundledTest(request: TestRunRequest, deps: TestRunDeps): Promi
     return await spawnRun({
       command: process.execPath,
       commandArgs: [join(request.runtime.root, "node_modules/e2e/dist/cli/bin.js")],
-      cwd: workspace, runPath, configName: deps.onProgress ? PROGRESS_CONFIG : "e2e.config.mts",
+      cwd: await runnerCwd(deps), runPath, configName: deps.onProgress ? progressConfig : config,
       // Reports and artifacts go beside the run's own config, so concurrent lanes never share a directory
       // and the workspace removal below takes them away.
       output: join(workspace, "output"),

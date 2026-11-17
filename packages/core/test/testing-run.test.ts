@@ -4,10 +4,10 @@ import { EventEmitter } from "node:events";
 import { Readable } from "node:stream";
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { existsSync } from "node:fs";
 import { readFileSync } from "node:fs";
-import { bundledConfigSource, bundledTargetName, parseProgressLine, parseReport, progressConfigSource, reportDuration, reportSteps, reportStatus, runRecordedTest, runnerBin, runnerEnv, untilTestPath } from "../src/testing-run.ts";
+import { RUNNER_CWD, bundledConfigSource, bundledTargetName, parseProgressLine, parseReport, progressConfigSource, reportDuration, reportSteps, reportStatus, runRecordedTest, runnerBin, runnerEnv, untilTestPath } from "../src/testing-run.ts";
 import { bundledE2eRoot } from "../src/e2e-runtime.ts";
 
 const FILE = "tests/a-recorded-flow.e2e.ts";
@@ -109,17 +109,21 @@ test("a preview run uses an isolated temporary project and leaves the project un
   const document = JSON.stringify(report([{ line: 8, status: "passed" }]));
   const seen: { command?: string; args?: readonly string[]; cwd?: string } = {};
   let copy: string | undefined;
+  let workspace: string | undefined;
   const result = await runRecordedTest({ projectPath: root, relativePath: FILE, configPath, untilSource: "the current preview\n" }, {
     spawner: ((command: string, args: readonly string[], options: { cwd?: string }) => {
-      copy = readFileSync(join(options.cwd!, FILE), "utf8");
+      workspace = dirname(args[args.indexOf("--config") + 1]);
+      copy = readFileSync(join(workspace, FILE), "utf8");
       return spawner(document, 0, seen)(command, args, options as never);
     }) as never,
   });
-  assert.deepEqual(seen.args, ["run", FILE, "--reporter", "json", "--config", "e2e.config.mts"]);
-  assert.notEqual(seen.cwd, root);
+  assert.deepEqual(seen.args, ["run", FILE, "--reporter", "json", "--config", join(workspace!, "e2e.config.mts")]);
+  assert.notEqual(workspace, root);
+  assert.equal(seen.cwd, root, "a daemon the run starts inherits a folder that outlives the run");
   assert.equal(copy, "the current preview\n");
   assert.deepEqual(result.steps.map(step => step.line), [8]);
-  assert.equal(existsSync(seen.cwd!), false, "the isolated workspace is removed after the run");
+  assert.equal(existsSync(workspace!), false, "the isolated workspace is removed after the run");
+  assert.equal(existsSync(root), true);
   assert.equal(readFileSync(join(root, FILE), "utf8"), "the whole flow\n");
 });
 
@@ -311,17 +315,32 @@ test("the selected target reaches the runner, so an Android recording does not r
 
 test("bundled mode runs and cleans an isolated Studio workspace", async () => {
   const root = await project();
+  const runnerCwd = join(await mkdtemp(join(tmpdir(), "testing-run-cwd-")), "e2e-runner");
   const seen: { command?: string; args?: readonly string[]; cwd?: string } = {};
   const result = await runRecordedTest({
     projectPath: root, relativePath: FILE, untilSource: 'test("x", async () => {});\n',
     runtime: { mode: "bundled", root: bundledE2eRoot() },
     bundledTarget: { platform: "ios", bundleId: "com.example.app" },
-  }, { spawner: spawner(JSON.stringify(report([{ line: 1, status: "passed" }])), 0, seen) });
+  }, { spawner: spawner(JSON.stringify(report([{ line: 1, status: "passed" }])), 0, seen), runnerCwd });
   assert.equal(result.status, "passed");
   assert.match(seen.args?.[0] ?? "", /e2e\/dist\/cli\/bin\.js$/);
   assert.ok(seen.args?.some((value, index) => value === "--target" && seen.args?.[index + 1] === "ios"));
-  assert.ok(seen.cwd?.includes("mobile-dev-e2e-run-"));
-  assert.equal(existsSync(seen.cwd!), false, "temporary config, test and node_modules link are cleaned");
+  const config = seen.args![seen.args!.indexOf("--config") + 1];
+  assert.ok(isAbsolute(config) && dirname(config).includes("mobile-dev-e2e-run-"), "the CLI gets the workspace's config by absolute path");
+  assert.equal(existsSync(dirname(config)), false, "temporary config, test and node_modules link are cleaned");
+  assert.equal(seen.cwd, runnerCwd, "the daemon a run starts must not inherit the workspace it outlives");
+  assert.equal(existsSync(seen.cwd!), true, "the spawn cwd survives the workspace's removal");
+});
+
+test("a bundled run spawns from the app's stable runner folder by default", async () => {
+  const seen: { command?: string; args?: readonly string[]; cwd?: string } = {};
+  await runRecordedTest({
+    projectPath: await project(), relativePath: FILE, untilSource: 'test("x", async () => {});\n',
+    runtime: { mode: "bundled", root: bundledE2eRoot() }, bundledTarget: { platform: "ios", bundleId: "com.example.app" },
+  }, { spawner: spawner(JSON.stringify(report([{ line: 1, status: "passed" }])), 0, seen) });
+  assert.equal(seen.cwd, RUNNER_CWD);
+  assert.ok(!seen.cwd.startsWith(tmpdir()));
+  assert.equal(existsSync(RUNNER_CWD), true);
 });
 
 test("bundled deterministic tests need no model and agent tests request one", async () => {
@@ -356,7 +375,9 @@ test("a pinned bundled run passes its own target and output directory, removed a
   const args = seen.args ?? [];
   assert.equal(args[args.indexOf("--target") + 1], "android-emulator-5554");
   const output = args[args.indexOf("--output") + 1];
-  assert.ok(output?.startsWith(seen.cwd!), "the output lives inside the lane's own workspace");
+  const workspace = dirname(args[args.indexOf("--config") + 1]);
+  assert.ok(output?.startsWith(workspace), "the output lives inside the lane's own workspace");
+  assert.notEqual(seen.cwd, workspace);
   assert.equal(existsSync(output!), false);
 });
 
