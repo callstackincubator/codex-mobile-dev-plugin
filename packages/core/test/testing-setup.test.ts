@@ -45,7 +45,7 @@ test("the setup preview is immutable and apply creates a complete mobile scaffol
     assert.match(config, /platform: "android"/);
     const manifest = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
     assert.equal(manifest.scripts["test:e2e"], "e2e run");
-    assert.equal(manifest.devDependencies.e2e, "^0.17.0");
+    assert.equal(manifest.devDependencies.e2e, "^0.23.1");
     assert.match(await readFile(join(root, ".gitignore"), "utf8"), /\.e2e\/artifacts\//);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

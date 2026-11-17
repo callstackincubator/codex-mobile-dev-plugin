@@ -242,7 +242,7 @@ export async function planTestingSetup(projectPath: string, input: SetupOptions)
   let manifest: Record<string, unknown>;
   try { manifest = JSON.parse(originalPackage); } catch { throw new ExpectedOperationError("invalid_input", "Fix package.json before applying e2e setup."); }
   const model = modelSource(options);
-  const devDependencies = { ...((manifest.devDependencies && typeof manifest.devDependencies === "object") ? manifest.devDependencies as Record<string, string> : {}), e2e: "^0.17.0", "@e2e-dev/mobile": "^0.9.2", ...(options.provider === "none" ? {} : { ai: "^7.0.0", zod: "^4.1.8", ...model.dependencies }) };
+  const devDependencies = { ...((manifest.devDependencies && typeof manifest.devDependencies === "object") ? manifest.devDependencies as Record<string, string> : {}), e2e: "^0.23.1", "@e2e-dev/mobile": "^0.12.7", ...(options.provider === "none" ? {} : { ai: "^7.0.0", zod: "^4.1.8", ...model.dependencies }) };
   const scripts = { ...((manifest.scripts && typeof manifest.scripts === "object") ? manifest.scripts as Record<string, string> : {}) };
   if (scripts["test:e2e"] === undefined) scripts["test:e2e"] = "e2e run";
   const nextPackage = JSON.stringify({ ...manifest, scripts, devDependencies: Object.fromEntries(Object.entries(devDependencies).sort(([a], [b]) => a.localeCompare(b))) }, null, 2) + "\n";
