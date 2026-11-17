@@ -10,6 +10,8 @@ import { testFileSlug } from "@mobile-dev/shared/test-recording.ts";
 import { storedTestCallLines, storedTestUntilSource } from "./stored-test-steps.ts";
 import type { RecordedStep } from "@mobile-dev/shared/test-recording.ts";
 import type { TestDraftSummary } from "@mobile-dev/shared/test-drafts.ts";
+import { DEFAULT_MATRIX_LIMIT, clampLimit, isTerminalLane, matrixFinished, parseMatrix, parseMatrixDevices, readMatrixPreferences, writeMatrixPreferences } from "./testing-matrix.ts";
+import type { MatrixDeviceOption, MatrixLane, MatrixView } from "./testing-matrix.ts";
 
 /**
  * One test the project already holds, as the server reports it.
@@ -107,6 +109,17 @@ export type TestingSnapshot = {
   running: boolean;
   /** Run asked to replace an existing file and is waiting on the answer. */
   pendingRun: boolean;
+  /** The matrix run on screen: one lane per device. Null for a run on a single device. */
+  matrix: MatrixView | null;
+  /** The lane whose steps the preview shows. */
+  selectedLane: string;
+  /** Devices the matrix checklist can offer, with whether each is booted and has the app. */
+  matrixDevices: MatrixDeviceOption[];
+  matrixLoading: boolean;
+  /** The devices the user ticked, saved per project. */
+  matrixSelected: string[];
+  /** How many devices run at once; the rest queue. Saved per project. */
+  matrixLimit: number;
   /** The agent recording the server holds, or null when no agent has ever recorded here. */
   agent: TestingAgentView | null;
   /**
@@ -170,6 +183,7 @@ export class TestingPanel {
     open: false, available: false, projectPath: "", projects: [], studioPath: "", targets: [], targetName: "", configPath: "", runtimeMode: "bundled", setupState: "available", targetSource: "none", projectWarning: "", providers: [], modelPickerOpen: false, setupOpen: false,
     loadingProject: false, pickingProject: false, launching: false, appLaunched: false,
     fileName: "", saving: false, overwritePath: "", savedRevision: -1, savedPath: "", running: false, pendingRun: false,
+    matrix: null, selectedLane: "", matrixDevices: [], matrixLoading: false, matrixSelected: [], matrixLimit: DEFAULT_MATRIX_LIMIT,
     agent: null, drafts: [], draftId: "", loadingDraft: false, tests: [], selectedTestPath: "", selectedTestSource: "", selectedTestOriginalHash: "", selectedTestStaged: false, loadingTest: false, deletingTest: "", error: null,
   };
 
@@ -231,6 +245,11 @@ export class TestingPanel {
   getSnapshot = () => this.snapshot;
 
   private update(fields: Partial<TestingSnapshot>) {
+    // The matrix choice is saved per project, so it follows the project.
+    if (fields.projectPath !== undefined && fields.projectPath !== this.snapshot.projectPath) {
+      const saved = readMatrixPreferences(fields.projectPath);
+      fields = { ...fields, matrixSelected: saved.selected, matrixLimit: saved.limit, matrix: null, selectedLane: "" };
+    }
     this.snapshot = { ...this.snapshot, ...fields };
     for (const listener of this.listeners) listener();
     this.syncTreeSource();
@@ -1184,6 +1203,7 @@ export class TestingPanel {
     const pinned = this.storedTarget;
     const runTarget = pinned ?? this.foregroundTarget;
     if (this.snapshot.runtimeMode === "bundled" && !runTarget) return;
+    if (this.matrixRunCount > 1) { await this.runMatrix({ relativePath, source: untilSource, ...(untilLine === undefined ? {} : { untilLine }), callLines: storedTestCallLines(source) }); return; }
     this.update({ running: true, error: null });
     if (pinned && this.deviceApps.getSnapshot().foregroundApp?.bundleId !== pinned.bundleId) {
       try {
@@ -1264,6 +1284,7 @@ export class TestingPanel {
     const previewSource = until?.source ?? testRecorder.source;
     if (!this.hasBundledModel(previewSource, { kind: "recording", options })) return;
     const relativePath = this.relativePath;
+    if (this.matrixRunCount > 1) { await this.runMatrix({ relativePath, source: previewSource, ...(until ? { untilLine: until.untilLine } : {}) }); return; }
     this.update({ running: true, error: null, pendingRun: false });
     testRecorder.clearRun();
     // A recording left armed would read the tree mid-run and take the session straight back.
@@ -1316,6 +1337,178 @@ export class TestingPanel {
       if (getUiTelemetryAttributes() === telemetryContext) recordUiTiming("ui.testing.run", performance.now() - startedAt);
       this.update({ running: false });
       // The run drove the app, so whatever the recorder cached describes a screen that has gone.
+      testRecorder.invalidate();
+    }
+  }
+
+  // ---- Test matrix: the same test on several devices at once -------------------------------------------------
+
+  /** The matrix runs on Mobile Dev's bundled runner only; a project's own config pins its own device. */
+  get matrixEnabled(): boolean { return this.snapshot.runtimeMode === "bundled"; }
+
+  /** The ticked devices that still exist. Zero when the matrix is unavailable. */
+  get matrixSelection(): MatrixDeviceOption[] {
+    if (!this.matrixEnabled) return [];
+    const known = new Map(this.snapshot.matrixDevices.map(device => [device.deviceId, device]));
+    return this.snapshot.matrixSelected.flatMap(id => known.get(id) ?? []);
+  }
+
+  /** How many devices Run would use; a single device runs the plain way. */
+  get matrixRunCount(): number { return this.matrixSelection.length; }
+
+  /** The app a run would drive, per platform: the open test's own app first, then the project's targets. */
+  matrixApps(): { ios?: string; android?: string } {
+    const apps: { ios?: string; android?: string } = {};
+    for (const entry of this.snapshot.targets) {
+      const platform = entry.platform;
+      if ((platform === "ios" || platform === "android") && entry.bundleId && !apps[platform]) apps[platform] = entry.bundleId;
+    }
+    const own: StoredTestSummary["target"] = this.snapshot.selectedTestPath ? (this.storedTarget ?? this.foregroundTarget)
+      : this.target?.platform && this.target.bundleId && (this.target.platform === "ios" || this.target.platform === "android") ? { platform: this.target.platform, bundleId: this.target.bundleId } : this.foregroundTarget;
+    if (own) apps[own.platform] = own.bundleId;
+    return apps;
+  }
+
+  /** Whether a lane of the run on screen still holds this device. */
+  matrixBusy(deviceId: string): boolean {
+    return this.snapshot.matrix?.lanes.some(lane => !isTerminalLane(lane.state) && lane.deviceId === deviceId) ?? false;
+  }
+
+  setMatrixSelection(ids: string[]) {
+    this.update({ matrixSelected: ids });
+    writeMatrixPreferences(this.snapshot.projectPath, { selected: ids, limit: this.snapshot.matrixLimit });
+  }
+
+  setMatrixLimit(limit: number) {
+    const next = clampLimit(limit);
+    this.update({ matrixLimit: next });
+    writeMatrixPreferences(this.snapshot.projectPath, { selected: this.snapshot.matrixSelected, limit: next });
+  }
+
+  /** Lists the simulators and emulators, and for each booted one whether the app is on it. */
+  async loadMatrixDevices() {
+    if (!this.snapshot.available || this.snapshot.matrixLoading) return;
+    this.update({ matrixLoading: true });
+    try {
+      const read = (name: string) => this.call(name, {}, 20_000).then(result => result.structuredContent, () => undefined);
+      const [simulators, emulators] = await Promise.all([read("mobile_list_simulators"), read("mobile_list_android_devices")]);
+      const devices = [...parseMatrixDevices("ios", simulators), ...parseMatrixDevices("android", emulators)];
+      const apps = this.matrixApps();
+      const checked = await Promise.all(devices.map(async device => {
+        const appId = apps[device.platform];
+        if (!device.booted || !appId) return device;
+        try {
+          const result = await this.call("mobile_list_apps", { platform: device.platform, deviceId: device.deviceId }, 20_000);
+          const list = object(result.structuredContent)?.apps;
+          return { ...device, installed: Array.isArray(list) && list.some(entry => object(entry)?.bundleId === appId) };
+        } catch { return device; }
+      }));
+      if (!this.disposed) this.update({ matrixDevices: checked });
+    } finally {
+      if (!this.disposed) this.update({ matrixLoading: false });
+    }
+  }
+
+  private matrixCallLines?: readonly number[];
+  private matrixUntilLine?: number;
+  private laneSignature = "";
+
+  selectLane(runId: string) {
+    this.update({ selectedLane: runId });
+    this.showLane();
+  }
+
+  dismissMatrix() {
+    if (this.snapshot.running) return;
+    this.update({ matrix: null, selectedLane: "" });
+    testRecorder.clearRun();
+  }
+
+  /** Cancels one device's lane, or every lane that has not finished. */
+  async cancelMatrix(deviceId?: string) {
+    const matrix = this.snapshot.matrix;
+    if (!matrix) return;
+    try { await this.call("mobile_testing_cancel", { matrixId: matrix.matrixId, ...(deviceId ? { deviceId } : {}) }, 10_000); }
+    catch (error) { this.update({ error: error instanceof Error ? error.message : String(error) }); }
+    await this.readMatrix(matrix.matrixId);
+  }
+
+  /** Puts the chosen lane's steps on the preview, the way a single run would have. */
+  private showLane() {
+    const matrix = this.snapshot.matrix;
+    const lane = matrix?.lanes.find(entry => entry.runId === this.snapshot.selectedLane) ?? matrix?.lanes[0];
+    if (!lane) return;
+    const signature = `${lane.runId}|${lane.state}|${lane.progress.length}|${lane.result?.steps.length ?? -1}`;
+    if (signature === this.laneSignature) return;
+    this.laneSignature = signature;
+    testRecorder.beginRun(this.matrixUntilLine);
+    testRecorder.applyRunProgress(lane.progress, this.matrixCallLines);
+    if (lane.result) testRecorder.finishRun({ status: lane.result.status, steps: lane.result.steps,
+      ...(lane.result.output ? { output: lane.result.output } : {}), ...(lane.result.durationMs === undefined ? {} : { durationMs: lane.result.durationMs }) });
+    else if (lane.state === "error" || lane.state === "cancelled") testRecorder.failRun(lane.error ?? (lane.state === "cancelled" ? "This device's run was cancelled." : "The run failed to start."));
+  }
+
+  private async readMatrix(matrixId: string): Promise<MatrixView | null> {
+    const response = await this.call("mobile_testing_run_progress", { matrixId }, 5_000);
+    const matrix = parseMatrix(response.structuredContent);
+    if (!matrix || this.disposed) return matrix;
+    this.update({ matrix, selectedLane: matrix.lanes.some(lane => lane.runId === this.snapshot.selectedLane) ? this.snapshot.selectedLane : (matrix.lanes[0]?.runId ?? "") });
+    this.showLane();
+    return matrix;
+  }
+
+  /**
+   * Runs the same test on every ticked device: one independent lane each, started by the server,
+   * which boots a device that is off and installs the app where it is missing. The panel polls the
+   * lanes and shows the selected one's steps on the preview.
+   */
+  private async runMatrix(input: { relativePath: string; source: string; untilLine?: number; callLines?: readonly number[] }) {
+    const selection = this.matrixSelection;
+    const apps = this.matrixApps();
+    const missing = selection.find(device => !apps[device.platform]);
+    if (missing) { this.update({ error: `There is no ${missing.platform === "ios" ? "iOS bundle id" : "Android package"} for this test, so ${missing.name} cannot run it.` }); return; }
+    this.matrixCallLines = input.callLines;
+    this.matrixUntilLine = input.untilLine;
+    this.laneSignature = "";
+    this.update({ running: true, error: null, matrix: null, selectedLane: "", pendingRun: false });
+    testRecorder.clearRun();
+    // Only a recorder on one of these devices has to let go; the server releases its own session the same way.
+    if (selection.some(device => device.deviceId === testRecorder.getSnapshot().recordingDeviceId)) testRecorder.stop();
+    testRecorder.beginRun(input.untilLine);
+    const startedAt = performance.now(), telemetryContext = getUiTelemetryAttributes();
+    countUiEvent("ui.testing.matrix_run");
+    try {
+      await this.stageWrite;
+      const response = await this.call("mobile_testing_run_matrix", {
+        projectPath: this.snapshot.projectPath, relativePath: input.relativePath, untilSource: input.source,
+        devices: selection.map(device => ({ deviceId: device.deviceId, platform: device.platform, name: device.name })),
+        apps, limit: this.snapshot.matrixLimit,
+        ...(this.snapshot.modelPreference ? { model: this.snapshot.modelPreference } : {}),
+      }, 60_000);
+      const started = parseMatrix(response.structuredContent);
+      if (!started) throw new Error("The run did not start.");
+      this.update({ matrix: started, selectedLane: started.lanes[0]?.runId ?? "" });
+      this.showLane();
+      let failures = 0;
+      for (;;) {
+        await new Promise(resolve => setTimeout(resolve, 400));
+        if (this.disposed) return;
+        try {
+          const matrix = await this.readMatrix(started.matrixId);
+          failures = 0;
+          if (matrixFinished(matrix)) break;
+        } catch (error) { if (++failures >= 5) throw error; }
+      }
+      const passed = this.snapshot.matrix?.lanes.every(lane => lane.state === "passed");
+      countUiEvent(passed ? "ui.testing.matrix_passed" : "ui.testing.matrix_failed");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      testRecorder.failRun(message);
+      this.update({ error: message });
+      captureUiError(error, "testing.run_matrix", telemetryContext);
+    } finally {
+      if (getUiTelemetryAttributes() === telemetryContext) recordUiTiming("ui.testing.matrix_run", performance.now() - startedAt);
+      this.update({ running: false });
       testRecorder.invalidate();
     }
   }

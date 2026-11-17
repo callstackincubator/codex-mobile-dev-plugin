@@ -10,6 +10,7 @@ import { Label } from "./ui/label.tsx";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover.tsx";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/base-select.tsx";
 import { Switch } from "./ui/switch.tsx";
+import { MatrixDevices } from "./testing-matrix.tsx";
 
 type SetupPlanView = { id: string; actions: { action: string; path: string; detail: string }[]; installCommand: string };
 type SetupTarget = { name: string; platform: "ios" | "android"; bundleId: string };
@@ -234,6 +235,7 @@ export function TestingSetup({ panel }: { panel: TestingPanel }) {
             <Button size="sm" variant="outline" disabled={saving || provider === "none" || !model.trim() || (modelUnchanged && !saved)} onClick={() => void saveModel()} title="Use this model for agent steps in Studio runs. Nothing is written to the project.">{saving ? <LoaderCircleIcon className="animate-spin" /> : <BotIcon />}Use model</Button>
           </div>
         </Section>
+        <Section title="Devices" hint="Run the open test on several devices at once." defaultOpen={false}><MatrixDevices panel={panel} /></Section>
         <Section title="Project">
           <ul className="grid grid-cols-1 gap-2"><StatusItem ok={false} label={panel.noProject ? "No project open" : "Project setup"} value={panel.noProject ? "Recording against the app in the mirror. Tests stay in Mobile Dev." : "None. Tests stay in Mobile Dev."} /></ul>
           {!panel.noProject && <div className="flex justify-end"><Button size="sm" onClick={() => setView("setup")}><WandSparklesIcon />Set up project</Button></div>}
@@ -253,6 +255,7 @@ export function TestingSetup({ panel }: { panel: TestingPanel }) {
           {state.targets.length > 0 ? <ul className="flex flex-wrap gap-1.5">{state.targets.map(target => <li key={target.name}><Badge variant="outline" className="h-auto gap-1.5 py-1 font-normal"><span className="font-medium">{target.name}</span><span className="text-muted-foreground">{target.platform ?? "unknown"} · {target.bundleId ?? "no identifier"}</span></Badge></li>)}</ul>
             : <p className="text-xs text-muted-foreground">No targets configured.</p>}
         </Section>
+        <Section title="Devices" defaultOpen={false}><MatrixDevices panel={panel} /></Section>
         <div className="flex justify-end"><Button size="sm" variant="outline" onClick={() => setView("setup")}><WandSparklesIcon />Update setup</Button></div>
       </>) : <>
         <Section title="Agent model" hint={modelHint} defaultOpen={false} forceOpen={needsModel}>{modelFields}</Section>

@@ -909,7 +909,7 @@ export class TestRecorder {
    * saved project tests supply the awaited lines parsed from their source. A step that has started
    * is running; one that has ended takes its own status. The report reconciles all of it at the end.
    */
-  applyRunProgress(entries: readonly { stepIndex: number; phase: "start" | "end"; status?: string; error?: string }[], calls = this.emitted.calls) {
+  applyRunProgress(entries: readonly { stepIndex: number; phase: "start" | "end"; status?: string; error?: string }[], calls: readonly number[] = this.emitted.calls) {
     const run = this.snapshot.run;
     if (!run || run.state !== "running") return;
     const lines: Record<number, RunLineMark> = {};

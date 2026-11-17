@@ -17,6 +17,7 @@ import { Alert, AlertDescription, AlertTitle } from "./ui/alert.tsx";
 import { Badge } from "./ui/badge.tsx";
 import { Button } from "./ui/button.tsx";
 import { TestingSetup } from "./testing-setup.tsx";
+import { MatrixLanes } from "./testing-matrix.tsx";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover.tsx";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "./ui/resizable.tsx";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "./ui/base-select.tsx";
@@ -265,6 +266,8 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
   const state = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
   const devices = useSyncExternalStore(deviceApps.subscribe, deviceApps.getSnapshot);
   const device = devices.device;
+  // The Run button's "N devices" needs the device list before the setup popover is ever opened.
+  useEffect(() => { if (state.available && state.projectPath && state.runtimeMode === "bundled") void panel.loadMatrixDevices(); }, [panel, state.available, state.projectPath, state.runtimeMode]);
   const booted = device?.state === "Booted" || device?.state === "connected";
   const target = state.targets.find(entry => entry.name === state.targetName) ?? state.targets[0];
   const mismatch = panel.targetMismatch;
@@ -311,6 +314,8 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
     {blocker && !state.agent?.active && <p className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">{blocker}</p>}
 
     <AgentRecordingBanner panel={panel} />
+
+    <MatrixLanes panel={panel} />
 
     <TestingRecorder panel={panel} recordable={recordable} deviceId={deviceId} platform={platform} />
   </section>;
@@ -389,9 +394,9 @@ function TestingControls({ panel, recordable, deviceId, platform }: { panel: Tes
           : <Button type="button" size="sm" variant="outline" data-testing-record disabled={!recordable}
             onClick={() => testRecorder.start(deviceId, platform)}><CircleIcon />Record</Button>}
     <Button type="button" size="sm" variant="outline" data-testing-run disabled={panelState.selectedTestPath ? !panel.canRunStored : !panel.canRun}
-      title={panelState.selectedTestPath && panel.storedRunHint ? panel.storedRunHint : "Run the current preview without saving it. Recording stops because the runner needs the device to itself."}
+      title={panelState.selectedTestPath && panel.storedRunHint ? panel.storedRunHint : panel.matrixRunCount > 1 ? `Run the current preview on ${panel.matrixRunCount} devices, up to ${panelState.matrixLimit} at once, without saving it.` : "Run the current preview without saving it. Recording stops because the runner needs the device to itself."}
       onClick={() => void (panelState.selectedTestPath ? panel.runStoredTest() : panel.runTest())}>
-      {panelState.running ? <LoaderCircleIcon className="animate-spin" /> : <FlaskConicalIcon />}Run test
+      {panelState.running ? <LoaderCircleIcon className="animate-spin" /> : <FlaskConicalIcon />}{panel.matrixRunCount > 1 ? `Run on ${panel.matrixRunCount} devices` : "Run test"}
     </Button>
     {state.resolving && <span className="flex items-center gap-1 text-xs text-muted-foreground" role="status"><LoaderCircleIcon className="animate-spin" />Reading the screen…</span>}
   </div>;
