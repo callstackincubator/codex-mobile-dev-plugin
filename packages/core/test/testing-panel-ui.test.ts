@@ -151,7 +151,7 @@ test("a run marks the preview line by line, and marks nothing it was not told ab
     runtimeMode: "project", setupState: "configured", setupDetails: { dependencies: {}, skillInstalled: false, mcpRegistrations: [], loginStatus: {} },
     providers: [], modelPickerOpen: false, setupOpen: false, targetSource: "project", projectWarning: "",
     appLaunched: true, fileName: "flow", saving: false, overwritePath: "", savedRevision: -1, savedPath: "", running: false,
-    pendingRun: false, drafts: [], draftId: "", loadingDraft: false, tests: [], deletingTest: "", error: null,
+    pendingRun: false, matrix: null, selectedLane: "", matrixDevices: [], matrixLoading: false, matrixSelected: [], matrixLimit: 3, drafts: [], draftId: "", loadingDraft: false, tests: [], deletingTest: "", error: null,
   };
   /** What Run was asked for, so Play until here can be told apart from the Run test button. */
   const runs: unknown[] = [];
@@ -160,6 +160,8 @@ test("a run marks the preview line by line, and marks nothing it was not told ab
     getSnapshot: () => panelState,
     canLaunch: true, canRun: true, canRunStored: true, dirty: true,
     noProject: false, storedTarget: undefined, foregroundTarget: undefined, storedRunHint: "", repinStoredTest: async () => {},
+    matrixEnabled: true, matrixRunCount: 0, matrixApps: () => ({}), matrixBusy: () => false, loadMatrixDevices: async () => {},
+    setMatrixSelection: () => {}, setMatrixLimit: () => {}, selectLane: () => {}, cancelMatrix: async () => {}, dismissMatrix: () => {},
     refreshProjects: async () => {}, chooseProject: async () => {}, pickProject: async () => {},
     launchApp: async () => {}, saveTest: async () => {}, runTest: async (options?: unknown) => { runs.push(options); }, selectTarget: () => {},
     setFileName: () => {}, cancelOverwrite: () => {}, dismissError: () => {},
@@ -571,7 +573,7 @@ function panelStub(overrides: Record<string, unknown> = {}) {
     runtimeMode: "project", setupState: "configured", setupDetails: { dependencies: {}, skillInstalled: false, mcpRegistrations: [], loginStatus: {} },
     providers: [], modelPickerOpen: false, setupOpen: false, targetSource: "project", projectWarning: "",
     appLaunched: true, fileName: "flow", saving: false, overwritePath: "", savedRevision: -1, savedPath: "", running: false,
-    pendingRun: false, agent: null, drafts: [], draftId: "", loadingDraft: false, tests: [], deletingTest: "", error: null,
+    pendingRun: false, agent: null, matrix: null, selectedLane: "", matrixDevices: [], matrixLoading: false, matrixSelected: [], matrixLimit: 3, drafts: [], draftId: "", loadingDraft: false, tests: [], deletingTest: "", error: null,
     ...overrides,
   };
   return {
@@ -580,6 +582,8 @@ function panelStub(overrides: Record<string, unknown> = {}) {
     canLaunch: true, canRun: true, canRunStored: true, dirty: true,
     get noProject() { return state.projectPath === state.studioPath; }, useNoProject: async () => {},
     storedTarget: undefined, foregroundTarget: undefined, storedRunHint: "", repinStoredTest: async () => {},
+    matrixEnabled: true, matrixRunCount: 0, matrixApps: () => ({}), matrixBusy: () => false, loadMatrixDevices: async () => {},
+    setMatrixSelection: () => {}, setMatrixLimit: () => {}, selectLane: () => {}, cancelMatrix: async () => {}, dismissMatrix: () => {},
     refreshProjects: async () => {}, chooseProject: async () => {}, pickProject: async () => {},
     launchApp: async () => {}, saveTest: async () => {}, runTest: async () => {}, selectTarget: () => {},
     setFileName: () => {}, cancelOverwrite: () => {}, dismissError: () => {},
@@ -1072,4 +1076,68 @@ test("moving from one step to the next hands the highlight over without dimming 
 
   testRecorder.clearSteps();
   testRecorder.detach("udid", "ios");
+});
+
+test("the matrix shows its devices, one lane per device with a cancel, and Run on N devices", async t => {
+  const { module: { TestingView }, dom, onTeardown } = await renderEnvironment<any>(t, {
+    exports: 'export { TestingView } from "./packages/ui/src/components/testing-view.tsx";', slug: "testing-matrix",
+  });
+  const { act, createElement } = await import("react");
+  const { createRoot } = await import("react-dom/client");
+  const root = createRoot(dom.window.document.getElementById("root")!);
+  const cancelled: (string | undefined)[] = [];
+  const selected: string[][] = [];
+  const lane = (n: number, state: string, extra: object = {}) => ({ runId: `r${n}`, deviceId: `d${n}`, deviceName: `Phone ${n}`, platform: "ios", state, progress: [], ...extra });
+  const panel = { ...panelStub({
+    runtimeMode: "bundled", setupState: "available", setupOpen: true, targets: [{ name: "ios", platform: "ios", bundleId: "com.example.app" }],
+    matrixLimit: 3, matrixSelected: ["d0", "d1"],
+    matrixDevices: [
+      { deviceId: "d0", name: "iPhone 17", platform: "ios", runtime: "iOS 26", booted: true, installed: true },
+      { deviceId: "d1", name: "iPhone 16", platform: "ios", runtime: "iOS 18", booted: false },
+      { deviceId: "d2", name: "Pixel", platform: "android", runtime: "", booted: true, installed: false },
+    ],
+    matrix: { matrixId: "m", limit: 3, startedAt: 1, lanes: [lane(0, "running", { startedAt: Date.now() }), lane(1, "queued"), lane(2, "passed", { result: { status: "passed", steps: [], durationMs: 1500 } })] },
+    selectedLane: "r0",
+  }), matrixRunCount: 2, matrixApps: () => ({ ios: "com.example.app" }),
+    cancelMatrix: async (id?: string) => { cancelled.push(id); }, setMatrixSelection: (ids: string[]) => { selected.push(ids); } };
+  await act(async () => { root.render(createElement(TestingView, { panel, deviceApps: { subscribe: () => () => undefined, getSnapshot: () => DEVICE_SNAPSHOT } })); });
+  const doc = dom.window.document;
+  assert.match(doc.querySelector("[data-testing-run]")?.textContent ?? "", /Run on 2 devices/);
+  const rows = [...doc.querySelectorAll("[data-matrix-lane]")];
+  assert.deepEqual(rows.map(row => row.getAttribute("data-lane-state")), ["running", "queued", "passed"]);
+  assert.match(doc.querySelector("[data-testing-lanes]")?.textContent ?? "", /1 passed · 2 in progress/);
+  const cancel = doc.querySelector('[aria-label="Cancel Phone 0"]') as HTMLButtonElement;
+  await act(async () => { cancel.click(); });
+  assert.deepEqual(cancelled, ["d0"]);
+  assert.equal((doc.querySelector('[aria-label="Cancel Phone 2"]') as HTMLButtonElement).disabled, true, "a finished lane has nothing to cancel");
+  const devicesToggle = [...doc.querySelectorAll('[data-slot="collapsible-trigger"]')].find(el => el.textContent?.includes("Devices")) as HTMLElement;
+  await act(async () => { devicesToggle.click(); });
+  const text = doc.querySelector("[data-testing-matrix]")?.textContent ?? "";
+  assert.match(text, /iPhone 17/); assert.match(text, /Installed/); assert.match(text, /App missing/); assert.match(text, /Off/);
+  assert.match(text, /No Android app id/, "a platform without an app id says so");
+  assert.equal((doc.querySelector('[data-matrix-device="d2"] input') as HTMLInputElement).disabled, true);
+  await act(async () => { (doc.querySelector('[data-matrix-device="d0"] input') as HTMLInputElement).click(); });
+  assert.deepEqual(selected, [["d1"]]);
+  await act(async () => { root.render(createElement("div")); });
+  await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
+  onTeardown(async () => { await act(async () => { root.unmount(); }); });
+});
+
+test("a project that runs from its own config shows the matrix as unavailable", async t => {
+  const { module: { TestingView }, dom, onTeardown } = await renderEnvironment<any>(t, {
+    exports: 'export { TestingView } from "./packages/ui/src/components/testing-view.tsx";', slug: "testing-matrix-project",
+  });
+  const { act, createElement } = await import("react");
+  const { createRoot } = await import("react-dom/client");
+  const root = createRoot(dom.window.document.getElementById("root")!);
+  const panel = { ...panelStub({ runtimeMode: "project", setupOpen: true }), matrixEnabled: false };
+  await act(async () => { root.render(createElement(TestingView, { panel, deviceApps: { subscribe: () => () => undefined, getSnapshot: () => DEVICE_SNAPSHOT } })); });
+  const doc = dom.window.document;
+  const toggle = [...doc.querySelectorAll('[data-slot="collapsible-trigger"]')].find(el => el.textContent?.includes("Devices")) as HTMLElement;
+  await act(async () => { toggle.click(); });
+  assert.match(doc.querySelector("[data-matrix-disabled]")?.textContent ?? "", /bundled runner/);
+  assert.equal(doc.querySelector("[data-testing-matrix]"), null);
+  await act(async () => { root.render(createElement("div")); });
+  await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
+  onTeardown(async () => { await act(async () => { root.unmount(); }); });
 });
