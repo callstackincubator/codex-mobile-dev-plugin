@@ -1,5 +1,5 @@
 
-!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="b4a7c096-a80a-5009-82c7-8d9174f0f657")}catch(e){}}();
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="10e4d8da-6d22-54f2-911d-d437e1ee50f5")}catch(e){}}();
 import { createRequire as mobileDevBundleRequire } from 'node:module'; import { fileURLToPath as mobileDevFileURLToPath } from 'node:url'; import { dirname as mobileDevPathDirname } from 'node:path'; const require = mobileDevBundleRequire(import.meta.url); const __filename = mobileDevFileURLToPath(import.meta.url); const __dirname = mobileDevPathDirname(__filename);
 import {
   __commonJS,
@@ -62132,7 +62132,7 @@ var nodeRuntimeMetricsIntegration = defineIntegration((options = {}) => {
 });
 
 // packages/shared/src/version.ts
-var PLUGIN_VERSION = "0.1.184";
+var PLUGIN_VERSION = "0.1.185";
 
 // packages/shared/src/device-apps-command-diagnostics.ts
 var foregroundCauses = [
@@ -62642,4 +62642,4 @@ undici/lib/web/websocket/frame.js:
   (*! ws. MIT License. Einar Otto Stangvik <einaros@gmail.com> *)
 */
 
-//# debugId=b4a7c096-a80a-5009-82c7-8d9174f0f657
+//# debugId=10e4d8da-6d22-54f2-911d-d437e1ee50f5
