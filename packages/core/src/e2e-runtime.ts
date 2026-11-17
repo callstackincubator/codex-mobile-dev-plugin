@@ -17,6 +17,9 @@ export interface TestingRuntimeDescriptor {
 
 const sourceRuntime = resolve("packages/runtimes/e2e");
 
+/** The runner a project run executes (`runnerBin`); its presence is what makes a project's own setup usable. */
+export const PROJECT_CLI = "node_modules/.bin/e2e";
+
 /** The shipped runtime beside server.mjs, with the source tree fallback used by unit tests. */
 export function bundledE2eRoot(): string {
   const configured = process.env.MOBILE_DEV_E2E_RUNTIME?.trim();
@@ -45,17 +48,14 @@ export async function bundledRuntimeDescriptor(reason?: string): Promise<Testing
 
 export async function projectRuntimeDescriptor(projectPath: string): Promise<TestingRuntimeDescriptor | undefined> {
   const root = projectPath;
-  if (!existsSync(join(root, "node_modules/.bin/e2e"))
-    || !existsSync(join(root, "node_modules/@e2e-dev/mobile/dist/nodes.js"))) return;
-  const [e2eVersion, mobileVersion, bundled] = await Promise.all([
-    version(root, "e2e"), version(root, "@e2e-dev/mobile"), bundledRuntimeDescriptor(),
+  // A project with its own e2e setup is authoritative whatever its version: runs go through the
+  // project's own CLI, exactly as `npx e2e run` would. Only the recorder's tree projection is
+  // version-sensitive, and it falls back to the bundled one on its own (see `testing-device.ts`).
+  if (!existsSync(join(root, PROJECT_CLI))) return;
+  const [e2eVersion, mobileVersion] = await Promise.all([
+    version(root, "e2e"),
+    version(root, "@e2e-dev/mobile").catch(() => "unknown"),
   ]);
-  const apiLine = (value: string) => value.split(".").slice(0, 2).join(".");
-  // Studio imports the runner's public CLI and mobile projection. Keep the project authoritative
-  // only on the API lines the shipped Studio was tested against; a newer or older local install
-  // remains untouched and Studio falls back to its pinned runtime.
-  if (apiLine(e2eVersion) !== apiLine(bundled.e2eVersion)
-    || apiLine(mobileVersion) !== apiLine(bundled.mobileVersion)) return;
   return {
     mode: "project",
     root,

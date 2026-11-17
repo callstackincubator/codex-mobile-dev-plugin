@@ -37,15 +37,40 @@ test("a config with no targets reads as none rather than throwing", () => {
   assert.deepEqual(parseTargets("export default { workers: 1 };"), []);
 });
 
-async function installCompatibleRuntime(path: string) {
+async function installCompatibleRuntime(path: string, versions = { e2e: "0.17.0", mobile: "0.9.2" }) {
   await mkdir(join(path, "node_modules/.bin"), { recursive: true });
   await mkdir(join(path, "node_modules/e2e"), { recursive: true });
   await mkdir(join(path, "node_modules/@e2e-dev/mobile/dist"), { recursive: true });
   await writeFile(join(path, "node_modules/.bin/e2e"), "");
-  await writeFile(join(path, "node_modules/e2e/package.json"), JSON.stringify({ version: "0.17.0" }));
-  await writeFile(join(path, "node_modules/@e2e-dev/mobile/package.json"), JSON.stringify({ version: "0.9.2" }));
+  await writeFile(join(path, "node_modules/e2e/package.json"), JSON.stringify({ version: versions.e2e }));
+  await writeFile(join(path, "node_modules/@e2e-dev/mobile/package.json"), JSON.stringify({ version: versions.mobile }));
   await writeFile(join(path, "node_modules/@e2e-dev/mobile/dist/nodes.js"), "export {};\n");
 }
+
+test("a configured project on another e2e version still uses its own runtime", async () => {
+  const root = await mkdtemp(join(tmpdir(), "testing-projects-"));
+  try {
+    await writeFile(join(root, "e2e.config.ts"), CONFIG, "utf-8");
+    await installCompatibleRuntime(root, { e2e: "0.23.0", mobile: "0.12.6" });
+    const inspected = await inspectProject(root);
+    assert.equal(inspected.runtimeMode, "project");
+    assert.equal(inspected.runtime.e2eVersion, "0.23.0");
+    assert.equal(inspected.runtime.root, root);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a configured project without an installed e2e CLI falls back to bundled mode", async () => {
+  const root = await mkdtemp(join(tmpdir(), "testing-projects-"));
+  try {
+    await writeFile(join(root, "e2e.config.ts"), CONFIG, "utf-8");
+    const inspected = await inspectProject(root);
+    assert.equal(inspected.runtimeMode, "bundled");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test("configured projects stay authoritative and folders without config use bundled mode", async () => {
   const root = await mkdtemp(join(tmpdir(), "testing-projects-"));

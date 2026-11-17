@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 import type { ScreenComponent, ScreenSize } from "@mobile-dev/shared/screen-annotations.ts";
 import { APP_FLOW_DIRECTORY, loadVendoredAgentDevice } from "./app-flow-host.ts";
+import { bundledE2eRoot } from "./e2e-runtime.ts";
 import { captureServerError } from "./telemetry.ts";
 
 /**
@@ -127,7 +128,27 @@ async function loadProjection(projectPath: string): Promise<EngineProjection> {
   // Deep path rather than a package specifier: the package does not export this module, and a
   // copy of its mapping here would be the divergence this path exists to remove.
   const dynamicImport = new Function("specifier", "return import(specifier)") as (specifier: string) => Promise<unknown>;
-  return await dynamicImport(pathToFileURL(entry).href) as EngineProjection;
+  const module = await dynamicImport(pathToFileURL(entry).href) as Partial<EngineProjection> | null;
+  if (typeof module?.projectSnapshot !== "function") {
+    throw new ExpectedOperationError("invalid_input", "This project's @e2e-dev/mobile does not expose the node projection the recorder reads.");
+  }
+  return module as EngineProjection;
+}
+
+/**
+ * The project's projection when it loads, else the bundled runtime's. A project on an e2e version
+ * Studio was not built against still runs its tests with its own CLI; only the recorder's tree
+ * reading drops back to the pinned copy, so recording keeps working instead of refusing.
+ */
+async function loadProjectionWithFallback(runtimeRoot: string): Promise<EngineProjection> {
+  try {
+    return await loadProjection(runtimeRoot);
+  } catch (error) {
+    let bundled: string;
+    try { bundled = bundledE2eRoot(); } catch { throw error; }
+    if (bundled === runtimeRoot) throw error;
+    return await loadProjection(bundled).catch(() => { throw error; });
+  }
 }
 
 function textOf(value: unknown): string | undefined {
@@ -235,7 +256,7 @@ export class TestingDevices {
   private projection(runtimeRoot: string): Promise<EngineProjection> {
     let pending = this.projections.get(runtimeRoot);
     if (!pending) {
-      pending = loadProjection(runtimeRoot);
+      pending = loadProjectionWithFallback(runtimeRoot);
       // A failed load must not be cached: the user installs the dependency and records again.
       pending.catch(() => this.projections.delete(runtimeRoot));
       this.projections.set(runtimeRoot, pending);

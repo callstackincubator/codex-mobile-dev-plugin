@@ -4,9 +4,11 @@
 
 Testing Studio no longer requires `e2e.config.ts`. Every panel build ships a pinned, integrity-checked
 runtime containing `e2e`, `@e2e-dev/mobile`, the supported AI SDK/provider packages, license notices
-and release metadata. A compatible project-local config and runtime remain authoritative. With no
-config, no compatible mobile target, no local packages, or an incompatible API line, Studio switches
-to **Bundled runtime** and keeps generated config plus saved tests in Mobile Dev's private state. Record,
+and release metadata. A project with its own config, a compatible mobile target and an installed
+`e2e` CLI is always authoritative, whatever its e2e version: runs use the project's own CLI. Only the
+recorder's tree reading is version-sensitive; when the project's `@e2e-dev/mobile` node projection is
+missing or does not load, the recorder reads the tree with the bundled one instead. With no config,
+no compatible mobile target, or no installed `e2e` CLI, Studio switches to **Bundled runtime** and keeps generated config plus saved tests in Mobile Dev's private state. Record,
 Save, Run, Play until here, manual recording and agent recording therefore do not modify the project.
 
 ### No project open
