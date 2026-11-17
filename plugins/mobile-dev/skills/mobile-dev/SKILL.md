@@ -139,21 +139,13 @@ Build and launch the user's app with that app project's own tools. These tools d
 
 ## Android
 
-For Android work with Mobile Dev's tools, call `mobile_list_android_devices`; open or reuse the panel first unless the workflow is tool-only. Listing does not boot a device or start serve-emu. Use a returned serial for a running device, or `avd:<name>` for a stopped AVD. Choose an AVD using the device rules above and boot it with `mobile_boot_android_emulator` if needed. Read the returned list and use that AVD's running serial for later calls. `mobile_shutdown_android_emulator` stops an emulator; it cannot shut down a physical device.
+For Android work, call `mobile_list_android_devices`; open or reuse the panel first unless the workflow is tool-only. Listing does not boot a device or start serve-emu. Use a returned serial for a running device, or `avd:<name>` for a stopped AVD. Choose an AVD using the device rules above and boot it with `mobile_boot_android_emulator` if needed. Read the returned list and use that AVD's running serial for later calls. `mobile_shutdown_android_emulator` stops an emulator; it cannot shut down a physical device.
 
 Physical Android discovery uses `adb devices -l` and returns `kind: "physical"`, model when available, serial in `udid`, and `transportType: "wired"` for USB or `"localNetwork"` for Wi-Fi. Emulators and stopped AVDs have `kind: "emulator"`. Authorized devices use `state: "Booted"`; offline and unauthorized devices retain their ADB state and remain visible. The Android picker groups physical devices above Emulators and refreshes every three seconds while visible. USB requires debugging authorization on the phone; Wi-Fi requires wireless debugging pairing. Selecting an authorized physical device streams it with the existing Android tools. Do not send physical serials to emulator boot or shutdown tools.
 
 The panel starts the bundled Node.js fork of serve-emu 0.0.6 and streams H.264 through MCP. Bundled scrcpy 4.0 mirrors and controls physical Android devices without installing a companion app. An installed Android SDK is required. The backend uses the same Node executable as the plugin server. No separate serve-emu install or server command is needed. Closing the panel leaves the Android device running. Video errors and backlog recover from a fresh keyframe on the same stream. AVDs start without a separate window, and an early emulator exit ends the boot wait with its error. Input supports Home, Back, Recents, Lock, pointer gestures, and printable US-ASCII text. The host needs WebCodecs H.264 decoding.
 
 For app control, pass `platform: "android"` and the panel's running serial as `serial` to `device_open`, then continue with its session as above. Do not pass Android serials as iOS UDIDs. Native logs follow the selected Android serial and optional package filter.
-
-### Cloud Devices desktop mirror
-
-For an existing Cloud Devices lease, use `adc mirror LEASE_ID` to open a separate desktop scrcpy window. It uses ADB Burst and caps the longer edge of the video at 960 pixels to make the preview more responsive. If the installed CLI does not have `adc mirror`, explain that it needs an ADC update.
-
-If the user asks why the image looks soft or wants to inspect finer details, explain that the preview is scaled and offer `adc mirror LEASE_ID --full-resolution`. It requests a stream at the same display's native resolution and may feel less responsive.
-
-A lease accepts one ADB connection at a time. If a standard `adc connect` session is already attached, explain that `adc disconnect LEASE_ID` ends that local connection and interrupts any ADB work on it. The lease stays active and can then be mirrored.
 
 ### Saved CPU, memory, and FPS recordings
 

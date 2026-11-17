@@ -1,5 +1,5 @@
 
-!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="eedbe852-a72c-5a43-8483-0a0f6926069d")}catch(e){}}();
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="b788988c-a969-5c97-9d7e-4e19824b485a")}catch(e){}}();
 ;(function(){var g=globalThis.__SENTRY_ORCHESTRION__=globalThis.__SENTRY_ORCHESTRION__||{};g.bundler=g.bundler||new Set();})();import { createRequire as mobileDevBundleRequire } from 'node:module'; import { fileURLToPath as mobileDevFileURLToPath } from 'node:url'; import { dirname as mobileDevPathDirname } from 'node:path'; const require = mobileDevBundleRequire(import.meta.url); const __filename = mobileDevFileURLToPath(import.meta.url); const __dirname = mobileDevPathDirname(__filename);
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -65804,7 +65804,7 @@ var PLUGIN_VERSION;
 var init_version3 = __esm({
   "packages/shared/src/version.ts"() {
     "use strict";
-    PLUGIN_VERSION = "0.1.184";
+    PLUGIN_VERSION = "0.1.185";
   }
 });
 
@@ -162776,4 +162776,4 @@ content-type/index.js:
    *)
 */
 
-//# debugId=eedbe852-a72c-5a43-8483-0a0f6926069d
+//# debugId=b788988c-a969-5c97-9d7e-4e19824b485a
