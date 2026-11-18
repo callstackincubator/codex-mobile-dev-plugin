@@ -329,6 +329,68 @@ test("a Studio test with no app pins the one in front on its first run, then run
   panel.dispose();
 });
 
+test("a Studio save pins the app in front, not a stale target from an earlier app", async () => {
+  const calls: { name: string; arguments: Record<string, unknown> }[] = [];
+  const panel = new TestingPanel(host({ mobile_testing_write_file: { written: true, existed: false, path: `${PROJECT}/tests/flow.e2e.ts` } }, calls), frontApps);
+  panel.setAvailable(true);
+  (panel as unknown as { update(fields: Record<string, unknown>): void }).update({ projectPath: PROJECT, fileName: "flow", runtimeMode: "bundled", targets: [{ name: "foreground", platform: "ios", bundleId: "com.stale.app" }], targetName: "foreground" });
+  await recordOneStep(panel);
+  await panel.saveTest();
+  const write = calls.find(call => call.name === "mobile_testing_write_file")!;
+  assert.deepEqual([write.arguments.platform, write.arguments.bundleId], ["ios", "com.example.app"]);
+  testRecorder.clearSteps();
+  testRecorder.detach(UDID, "ios");
+  panel.dispose();
+});
+
+test("a Studio save shows its pin at once, even when the next listing has not caught up", async () => {
+  const calls: { name: string; arguments: Record<string, unknown> }[] = [];
+  const listed = { relativePath: "tests/flow.e2e.ts", name: "flow.e2e.ts", updatedAt: "", sizeBytes: 1 };
+  const panel = new TestingPanel(host({ mobile_testing_write_file: { written: true, existed: false, path: "Studio/tests/flow.e2e.ts" }, mobile_testing_tests: { tests: [listed] } }, calls), frontApps);
+  const update = (panel as unknown as { update(fields: Record<string, unknown>): void }).update.bind(panel);
+  panel.setAvailable(true);
+  update({ projectPath: PROJECT, fileName: "flow", runtimeMode: "bundled", tests: [listed] });
+  await recordOneStep(panel);
+  await panel.saveTest();
+  const path = calls.find(call => call.name === "mobile_testing_write_file")!.arguments.relativePath as string;
+  assert.equal(path, listed.relativePath);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.ok(calls.some(call => call.name === "mobile_testing_tests"), "the list is re-read after a save");
+  update({ selectedTestPath: path });
+  assert.deepEqual(panel.storedTarget, { platform: "ios", bundleId: "com.example.app" });
+  testRecorder.clearSteps();
+  testRecorder.detach(UDID, "ios");
+  panel.dispose();
+});
+
+test("a Studio test pinned by its first run shows the pin while the run is still going", async () => {
+  const source = 'test("stored", async ({ app }) => {\n  await app.open();\n});\n';
+  let duringRun: unknown;
+  let panel: TestingPanel;
+  const bridge = {
+    async callServerTool({ name }: { name: string }) {
+      if (name === "mobile_testing_run_test") duringRun = panel.storedTarget;
+      return { content: [], structuredContent: name === "mobile_testing_run_test" ? { status: "passed", exitCode: 0, steps: [] } : {} };
+    },
+  } as unknown as HostBridge;
+  panel = new TestingPanel(bridge, frontApps);
+  panel.setAvailable(true);
+  (panel as unknown as { update(fields: Record<string, unknown>): void }).update({ projectPath: PROJECT, runtimeMode: "bundled", selectedTestPath: "tests/stored.e2e.ts", selectedTestSource: source, tests: [{ relativePath: "tests/stored.e2e.ts", name: "stored.e2e.ts", updatedAt: "", sizeBytes: 1 }] });
+  await panel.runStoredTest();
+  assert.deepEqual(duringRun, { platform: "ios", bundleId: "com.example.app" });
+  panel.dispose();
+});
+
+test("a pinned Studio test can run when its app is installed but not running", () => {
+  const running = { subscribe: () => () => undefined, getSnapshot: () => ({ device: { udid: "udid", name: "iPhone", state: "Booted", platform: "ios", kind: "simulator" }, apps: [{ bundleId: "com.other.app", pid: 2 }], foregroundApp: { bundleId: "com.other.app", pid: 2 }, ready: true }) } as unknown as DeviceAppsStore;
+  const panel = new TestingPanel(host({}, []), running);
+  panel.setAvailable(true);
+  (panel as unknown as { update(fields: Record<string, unknown>): void }).update({ projectPath: PROJECT, runtimeMode: "bundled", selectedTestPath: "tests/stored.e2e.ts", selectedTestSource: "x", tests: [{ relativePath: "tests/stored.e2e.ts", name: "stored.e2e.ts", updatedAt: "", sizeBytes: 1, target: { platform: "ios", bundleId: "com.pinned.app" } }] });
+  assert.equal(panel.storedRunHint, "");
+  assert.equal(panel.canRunStored, true);
+  panel.dispose();
+});
+
 test("Run is unavailable for a Studio test with neither a pinned app nor one in front", () => {
   const panel = new TestingPanel(host({}, []), deviceApps);
   panel.setAvailable(true);

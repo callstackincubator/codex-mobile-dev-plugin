@@ -888,7 +888,6 @@ function TestingRecorder({ panel, recordable, deviceId }: { panel: TestingPanel;
             {state.run?.stale && <span data-testing-run-stale className="font-normal text-muted-foreground"
               title="The steps changed after this run, so the line marks no longer point at the same steps.">· before your edits</span>}
           </p>
-          {state.run?.output && <pre className="max-h-32 overflow-auto rounded-md border bg-muted/40 p-2 font-mono text-[10px] whitespace-pre-wrap">{state.run.output}</pre>}
           {editing ? <PreviewEditor source={testRecorder.source} saving={panelState.saving}
             onCancel={() => setEditing(false)} onSave={value => { testRecorder.editSource(value); setEditing(false); void panel.saveTest(); }} />
             : <TestPreview source={testRecorder.source} run={state.run} highlightedLines={sourceSteps ? undefined : highlightedLines}

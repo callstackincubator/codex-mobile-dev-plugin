@@ -157,6 +157,18 @@ function object(value: unknown): Record<string, unknown> | null {
 function text(value: unknown): string { return typeof value === "string" ? value : ""; }
 function projectName(projectPath: string): string { return projectPath.split("/").filter(Boolean).at(-1) ?? projectPath; }
 
+/** The targets a `mobile_testing_project_config` result lists, keeping only named entries. */
+function parseTargets(data: Record<string, unknown>): TestingTargetOption[] {
+  const listed = Array.isArray(data.targets) ? data.targets : [];
+  return listed.map(entry => object(entry)).filter((entry): entry is Record<string, unknown> => entry !== null)
+    .filter(entry => text(entry.name))
+    .map(entry => ({
+      name: text(entry.name),
+      ...(text(entry.platform) ? { platform: text(entry.platform) } : {}),
+      ...(text(entry.bundleId) ? { bundleId: text(entry.bundleId) } : {}),
+    }));
+}
+
 /**
  * The Testing panel: pick an e2e project, launch its app on the mirrored device, and (once the
  * recorder lands) turn taps on the mirror into a deterministic test.
@@ -164,6 +176,7 @@ function projectName(projectPath: string): string { return projectPath.split("/"
  * This is the walking skeleton — project selection and launch only. Tap interception, selector
  * resolution and codegen are specified in `docs/testing-panel.md` and are not implemented yet.
  */
+
 export class TestingPanel {
   private readonly app: HostBridge;
   private readonly deviceApps: DeviceAppsStore;
@@ -221,8 +234,11 @@ export class TestingPanel {
     // so the selection is reported whenever either half moves.
     this.stopWatchingDevices = deviceApps.subscribe(() => {
       void this.reportContext();
-      if (this.snapshot.projectPath && this.snapshot.runtimeMode === "bundled" && this.snapshot.targets.length === 0
-        && deviceApps.getSnapshot().foregroundApp?.bundleId) void this.selectProject(this.snapshot.projectPath);
+      const front = deviceApps.getSnapshot().foregroundApp?.bundleId;
+      if (this.snapshot.projectPath && this.snapshot.runtimeMode === "bundled" && front) {
+        if (this.snapshot.targets.length === 0) void this.selectProject(this.snapshot.projectPath);
+        else if (this.snapshot.targets.every(entry => entry.bundleId !== front)) void this.refreshStudioTargets();
+      }
     });
     // Every change to what would be written bumps the recorder's revision, which is exactly the
     // thing worth keeping, so one subscription covers recording, editing, dragging and the title.
@@ -438,6 +454,29 @@ export class TestingPanel {
     }
   }
 
+  /**
+   * Studio derives its only target from the app in front, so when another app comes to the front
+   * the target is re-read, in place: unlike `selectProject` it keeps drafts, tests and selection.
+   */
+  private async refreshStudioTargets() {
+    const { projectPath } = this.snapshot;
+    const { device, foregroundApp } = this.deviceApps.getSnapshot();
+    const foregroundBundleId = foregroundApp?.bundleId ?? undefined;
+    if (!projectPath || !device || !isRecordableDevice(device) || !foregroundBundleId || this.refreshingTargets === foregroundBundleId) return;
+    this.refreshingTargets = foregroundBundleId;
+    const revision = this.loadRevision;
+    try {
+      const response = await this.call("mobile_testing_project_config", { projectPath, foregroundPlatform: recordablePlatform(device), foregroundBundleId });
+      if (revision !== this.loadRevision || this.snapshot.runtimeMode !== "bundled") return;
+      const targets = parseTargets(object(response.structuredContent) ?? {});
+      const preferred = targets.find(entry => entry.platform === recordablePlatform(device)) ?? targets[0];
+      this.update({ targets, targetName: preferred?.name ?? "" });
+    } catch { /* the next foreground change retries */ } finally {
+      if (this.refreshingTargets === foregroundBundleId) this.refreshingTargets = "";
+    }
+  }
+  private refreshingTargets = "";
+
   /** Loads one project's e2e config into the panel. */
   async selectProject(projectPath: string) {
     const path = projectPath.trim();
@@ -462,14 +501,7 @@ export class TestingPanel {
       const response = await this.call("mobile_testing_project_config", { projectPath: path, ...(foregroundPlatform && foregroundBundleId ? { foregroundPlatform, foregroundBundleId } : {}) });
       if (revision !== this.loadRevision) return;
       const data = object(response.structuredContent) ?? {};
-      const listed = Array.isArray(data.targets) ? data.targets : [];
-      const targets = listed.map(entry => object(entry)).filter((entry): entry is Record<string, unknown> => entry !== null)
-        .filter(entry => text(entry.name))
-        .map(entry => ({
-          name: text(entry.name),
-          ...(text(entry.platform) ? { platform: text(entry.platform) } : {}),
-          ...(text(entry.bundleId) ? { bundleId: text(entry.bundleId) } : {}),
-        }));
+      const targets = parseTargets(data);
       // The target on the mirrored device's platform, so a project with both records against the
       // right one without being asked; else the first, which `targetMismatch` then reports on.
       const preferred = (device ? targets.find(entry => entry.platform === recordablePlatform(device)) : undefined) ?? targets[0];
@@ -607,6 +639,20 @@ export class TestingPanel {
    * checkout belongs in the list beside the recorded ones, and a recording that was saved has to
    * appear here the moment its draft goes.
    */
+  /**
+   * Pins the panel has just sent, keyed by project and test, so a test shows its app at once and a
+   * listing read before the server wrote `targets.json` does not drop it.
+   */
+  private readonly pendingPins = new Map<string, NonNullable<StoredTestSummary["target"]>>();
+
+  private notePinned(relativePath: string, target: NonNullable<StoredTestSummary["target"]>) {
+    const projectPath = this.snapshot.projectPath;
+    if (!projectPath) return;
+    this.pendingPins.set(`${projectPath}\0${relativePath}`, target);
+    if (this.snapshot.tests.some(test => test.relativePath === relativePath))
+      this.update({ tests: this.snapshot.tests.map(test => test.relativePath === relativePath ? { ...test, target } : test) });
+  }
+
   async refreshTests() {
     if (!this.snapshot.available || !this.snapshot.projectPath) {
       this.clearTestPreview();
@@ -617,7 +663,12 @@ export class TestingPanel {
     try {
       const response = await this.call("mobile_testing_tests", { projectPath }, 15_000);
       const listed = object(response.structuredContent)?.tests;
-      const tests = (Array.isArray(listed) ? listed : []) as StoredTestSummary[];
+      const tests = ((Array.isArray(listed) ? listed : []) as StoredTestSummary[]).map(test => {
+        const key = `${projectPath}\0${test.relativePath}`;
+        if (test.target) { this.pendingPins.delete(key); return test; }
+        const pending = this.pendingPins.get(key);
+        return pending ? { ...test, target: pending } : test;
+      });
       // A slow read must not land on a project the user has since left.
       if (!this.disposed && this.snapshot.projectPath === projectPath) {
         if (this.snapshot.selectedTestPath && !tests.some(test => test.relativePath === this.snapshot.selectedTestPath)) this.clearTestPreview();
@@ -956,6 +1007,8 @@ export class TestingPanel {
         }
         // And it is one of the project's tests now, so it appears in the stored half of the list
         // rather than leaving the list with its draft.
+        const pin = this.pinArguments();
+        if ("bundleId" in pin) this.notePinned(relativePath, pin);
         void this.refreshTests();
         // The flow is written, so the recording is over: leaving it armed turns the next stray tap
         // on the mirror into a step the saved file does not have.
@@ -1146,15 +1199,17 @@ export class TestingPanel {
     if (this.snapshot.runtimeMode !== "bundled" || !this.snapshot.selectedTestPath) return "";
     const pinned = this.storedTarget;
     if (!pinned) return this.foregroundTarget ? "" : "This test has no app yet. Open the app in the mirror to run it; Studio will pin it.";
-    const { device, apps, ready } = this.deviceApps.getSnapshot();
+    const { device } = this.deviceApps.getSnapshot();
     if (device && isRecordableDevice(device) && recordablePlatform(device) !== pinned.platform) return `This test is pinned to ${pinned.bundleId} (${pinned.platform}). Mirror an ${pinned.platform === "ios" ? "iOS simulator" : "Android emulator"} to run it.`;
-    if (ready && apps.length > 0 && !apps.some(app => app.bundleId === pinned.bundleId)) return `${pinned.bundleId} is not installed on the mirrored device.`;
+    // `deviceApps.apps` lists running apps, not installed ones, so it cannot say the pinned app is
+    // missing; Run opens it and reports a launch failure if it really is not on the device.
     return "";
   }
 
   /** The platform and bundle id sent with a save, so a Studio test is pinned to the app it was recorded against. */
   private pinArguments() {
-    const target = this.target;
+    // Studio's `targets` can lag the mirror, so the app actually in front wins.
+    const target = this.snapshot.runtimeMode === "bundled" ? this.foregroundTarget ?? this.target : this.target;
     return this.snapshot.runtimeMode === "bundled" && (target?.platform === "ios" || target?.platform === "android") && target.bundleId
       ? { platform: target.platform, bundleId: target.bundleId } : {};
   }
@@ -1225,6 +1280,8 @@ export class TestingPanel {
     try {
       await this.stageWrite;
       await this.call("mobile_testing_release_device", {}, 30_000).catch(() => undefined);
+      // The server pins before the run starts, so the badge shows it now rather than when the run ends.
+      if (!pinned && runTarget && this.snapshot.runtimeMode === "bundled") this.notePinned(relativePath, runTarget);
       const response = await this.call("mobile_testing_run_test", {
         projectPath, relativePath, untilSource,
         ...(this.snapshot.configPath ? { configPath: this.snapshot.configPath } : {}),
