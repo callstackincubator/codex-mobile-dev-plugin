@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { BotIcon, CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleIcon, CircleXIcon, CopyIcon, FileCode2Icon, FilePlus2Icon, FlaskConicalIcon, FolderOpenIcon, GripVerticalIcon, HistoryIcon, LoaderCircleIcon, MoreHorizontalIcon, PlayIcon, SaveIcon, SquareIcon, Trash2Icon, UserIcon, XIcon } from "lucide-react";
+import { BotIcon, CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleIcon, CircleXIcon, CopyIcon, FileCode2Icon, FilePlus2Icon, FlaskConicalIcon, FolderOpenIcon, GripVerticalIcon, HistoryIcon, LoaderCircleIcon, MoreHorizontalIcon, MousePointerClickIcon, PlayIcon, SaveIcon, SquareIcon, Trash2Icon, UserIcon, WandSparklesIcon, XIcon } from "lucide-react";
+import { TestingNote } from "./testing-note";
 import type { DeviceAppsStore } from "../device-apps.ts";
 import { platformLabel } from "../testing-panel.ts";
 import type { TestingPanel } from "../testing-panel.ts";
@@ -310,9 +311,11 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
 
     {state.projectWarning && state.runtimeMode !== "bundled" && <Alert><AlertTitle>Testing</AlertTitle><AlertDescription><span>{state.projectWarning}</span></AlertDescription></Alert>}
 
-    {state.selectedTestPath && panel.storedRunHint && !state.agent?.active && <p data-testing-run-hint className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">{panel.storedRunHint}</p>}
+    {state.selectedTestPath && panel.storedRunHint && !state.agent?.active && <TestingNote tone="warning" data-testing-run-hint
+      action={panel.canAddForegroundApp ? <Button type="button" size="xs" variant="outline" data-testing-add-app onClick={() => void panel.repinStoredTest()}>
+        Add {platformLabel(panel.foregroundTarget!.platform)} app</Button> : undefined}>{panel.storedRunHint}</TestingNote>}
 
-    {blocker && !state.agent?.active && <p className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">{blocker}</p>}
+    {blocker && !state.agent?.active && !(state.selectedTestPath && panel.storedRunHint) && <TestingNote tone={blocker === "Preparing Studio…" ? "info" : "warning"} data-testing-blocker>{blocker}</TestingNote>}
 
     <AgentRecordingBanner panel={panel} />
 
@@ -704,6 +707,14 @@ function SourceStepMenu({ source, step, index, mode, onEdit, editable }: {
  * The apps a Studio test runs against, one per platform, with a way to take the app in front: on
  * the recorded platform it replaces that app, on the other it adds one so the test runs on both.
  */
+/** One app a Studio test runs: its platform as a tag, then its id, cut short with the whole id on hover. */
+function AppBadge({ platform, bundleId, title, ...attributes }: { platform: "ios" | "android"; bundleId: string; title: string } & Record<`data-${string}`, string | undefined>) {
+  return <span {...attributes} title={title} className="inline-flex h-6 min-w-0 max-w-64 items-center overflow-hidden rounded-md border text-[11px]">
+    <span className="flex h-full shrink-0 items-center border-r bg-muted px-1.5 font-medium text-muted-foreground">{platformLabel(platform)}</span>
+    <span className="truncate px-1.5 font-mono">{bundleId}</span>
+  </span>;
+}
+
 function PinnedApp({ panel }: { panel: TestingPanel }) {
   const state = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
   const pinned = panel.storedTarget;
@@ -711,19 +722,15 @@ function PinnedApp({ panel }: { panel: TestingPanel }) {
   const apps = panel.storedApps;
   const added = pinned ? (["ios", "android"] as const).filter(platform => platform !== pinned.platform && apps[platform]) : [];
   const current = front ? apps[front.platform] : undefined;
-  const canRepin = Boolean(front) && !state.running && current !== front!.bundleId;
+  // Adding the other platform's app is the run hint's action, beside the reason it is needed.
+  const canRepin = Boolean(front) && !state.running && current !== front!.bundleId && !panel.canAddForegroundApp;
   const label = !pinned || !front ? "Pin current app"
     : front.platform === pinned.platform ? "Use current app"
     : current ? `Use current ${platformLabel(front.platform)} app` : `Add ${platformLabel(front.platform)} app`;
   return <span data-testing-pinned-app className="flex min-w-0 flex-wrap items-center gap-1.5">
-    <Badge variant="outline" className="h-auto min-w-0 gap-1.5 py-0.5 font-normal" title={pinned ? "Recorded against this app. Runs always open it, whatever is in front." : "Not pinned yet. The first run pins the app in front."}>
-      <span className="truncate">{pinned ? pinned.bundleId : "No app pinned"}</span>
-      {pinned && <span className="text-muted-foreground">{platformLabel(pinned.platform)}</span>}
-    </Badge>
-    {added.map(platform => <Badge key={platform} variant="outline" data-testing-added-app={platform} className="h-auto min-w-0 gap-1.5 py-0.5 font-normal" title={`Added for ${platformLabel(platform)}, so this test also runs there.`}>
-      <span className="truncate">{apps[platform]}</span>
-      <span className="text-muted-foreground">{platformLabel(platform)}</span>
-    </Badge>)}
+    {pinned ? <AppBadge platform={pinned.platform} bundleId={pinned.bundleId} title={`Recorded on ${platformLabel(pinned.platform)} against ${pinned.bundleId}. Runs there always open it, whatever is in front.`} />
+      : <Badge variant="outline" className="h-auto py-0.5 font-normal text-muted-foreground" title="Not pinned yet. The first run pins the app in front.">No app pinned</Badge>}
+    {added.map(platform => <AppBadge key={platform} platform={platform} bundleId={apps[platform]!} data-testing-added-app={platform} title={`Added for ${platformLabel(platform)}, so this test also runs there.`} />)}
     {canRepin && <Button type="button" size="xs" variant="ghost" data-testing-repin title={pinned && front!.platform !== pinned.platform ? `Run this test on ${platformLabel(front!.platform)} with ${front!.bundleId}, the app in front. The ${platformLabel(pinned.platform)} app stays.` : `Pin this test to ${front!.bundleId}, the app in front`} onClick={() => void panel.repinStoredTest()}>{label}</Button>}
   </span>;
 }
@@ -746,23 +753,21 @@ function ReRecordLine({ panel }: { panel: TestingPanel }) {
   useSyncExternalStore(panel.subscribe, panel.getSnapshot);
   const recorder = useSyncExternalStore(testRecorder.subscribe, testRecorder.getSnapshot);
   const mirrored = panel.mirroredPlatform;
-  if (recorder.picking && mirrored) return <p data-testing-rerecord-picking role="status" className="flex flex-wrap items-center gap-2 rounded-md bg-muted/50 px-2 py-1.5 text-xs text-muted-foreground">
-    {recorder.preparing ? <LoaderCircleIcon className="size-3 animate-spin" /> : null}
-    Right-click the element on the {platformLabel(mirrored)} mirror to use it for this step.
-    <Button type="button" size="xs" variant="ghost" onClick={() => panel.cancelReRecord()}>Cancel</Button>
-  </p>;
+  if (recorder.picking && mirrored) return <TestingNote data-testing-rerecord-picking
+    icon={recorder.preparing ? <LoaderCircleIcon className="mt-px size-3.5 shrink-0 animate-spin" /> : <MousePointerClickIcon className="mt-px size-3.5 shrink-0" />}
+    action={<Button type="button" size="xs" variant="ghost" onClick={() => panel.cancelReRecord()}>Cancel</Button>}>
+    {recorder.preparing ? `Reading the ${platformLabel(mirrored)} screen…` : <>Right-click the element on the {platformLabel(mirrored)} mirror, then choose <span className="font-medium text-foreground">Insert</span>.</>}
+  </TestingNote>;
   const target = panel.reRecord;
   if (!target) return null;
   const { line } = target;
   const label = platformLabel(target.platform);
-  if (!target.ready || !mirrored) return <p data-testing-rerecord className="text-xs text-muted-foreground">
-    Line {line} may differ on {label}. Mirror an {target.platform === "ios" ? "iOS simulator" : "Android device"} to re-record it.
-  </p>;
-  return <p data-testing-rerecord className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-    Line {line} may differ on {platformLabel(mirrored)}.
-    <Button type="button" size="xs" variant="outline" data-testing-rerecord-line={line} onClick={() => void panel.reRecordStoredLine(line)}
-      title={`Pick the element on the ${platformLabel(mirrored)} mirror. Line ${line} keeps its current locator on the other platform.`}>Re-record on {platformLabel(mirrored)}</Button>
-  </p>;
+  // The same note whichever mirror is active: the button brings the failing platform's mirror forward.
+  return <TestingNote data-testing-rerecord icon={<WandSparklesIcon className="mt-px size-3.5 shrink-0" />}
+    action={<Button type="button" size="xs" variant="outline" data-testing-rerecord-line={line} onClick={() => void panel.reRecordStoredLine(line)}
+      title={`Pick the element on the ${label} mirror. Line ${line} keeps its current locator on the other platform.`}>Re-record on {label}</Button>}>
+    <span className="font-medium text-foreground">Line {line}</span> may need a different locator on {label}. Pick the element there, and the other platform keeps its own.
+  </TestingNote>;
 }
 
 function StoredTestPreview({ panel, source, path, loading }: { panel: TestingPanel; source: string; path: string; loading: boolean }) {

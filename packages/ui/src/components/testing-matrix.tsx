@@ -1,5 +1,6 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { LoaderCircleIcon, RefreshCwIcon, SmartphoneIcon, XIcon } from "lucide-react";
+import { TestingNote } from "./testing-note";
 import { platformLabel } from "../testing-panel.ts";
 import type { TestingPanel } from "../testing-panel.ts";
 import { MAX_MATRIX_LIMIT, isTerminalLane, laneDuration, laneLabel, matrixFinished, matrixSummary } from "../testing-matrix.ts";
@@ -39,7 +40,7 @@ export function MatrixDevices({ panel }: { panel: TestingPanel }) {
   const apps = panel.matrixApps();
   const selected = new Set(state.matrixSelected);
   const toggle = (id: string, value: boolean) => panel.setMatrixSelection(value ? [...state.matrixSelected, id] : state.matrixSelected.filter(entry => entry !== id));
-  if (!enabled) return <p className="text-xs text-muted-foreground" data-matrix-disabled>Running on several devices needs the bundled runner. This project uses its own e2e config, so tests run on one device.</p>;
+  if (!enabled) return <TestingNote data-matrix-disabled>Running on several devices needs the bundled runner. This project uses its own e2e config, so tests run on one device.</TestingNote>;
   const only = panel.matrixPlatform;
   const groups = ([["iOS", "ios"], ["Android", "android"]] as const)
     .filter(([, platform]) => !only || platform === only)
@@ -50,9 +51,9 @@ export function MatrixDevices({ panel }: { panel: TestingPanel }) {
       <p className="text-xs font-medium text-muted-foreground">{label}</p>
       <ul className="flex flex-col divide-y">{devices.map(device => <DeviceRow key={device.deviceId} device={device} checked={selected.has(device.deviceId)}
         busy={panel.matrixBusy(device.deviceId)} appMissing={!apps[device.platform]} onToggle={value => toggle(device.deviceId, value)} />)}</ul>
-      {!apps[devices[0]!.platform] && <p className="pt-1 text-xs text-muted-foreground">No {label} app id for this test, so these devices cannot run it.</p>}
+      {!apps[devices[0]!.platform] && <div className="pt-1"><TestingNote tone="warning">No {label} app id for this test, so these devices cannot run it.</TestingNote></div>}
     </div>)}
-    {only && <p className="text-xs text-muted-foreground" data-matrix-platform-only>This test was recorded on {platformLabel(only)} and doesn't have an {platformLabel(only === "ios" ? "android" : "ios")} target. To add one, open the app on an {platformLabel(only === "ios" ? "android" : "ios")} device in the mirror and choose Add {platformLabel(only === "ios" ? "android" : "ios")} app.</p>}
+    {only && <TestingNote tone="warning" data-matrix-platform-only>This test was recorded on {platformLabel(only)} and doesn't have an {platformLabel(only === "ios" ? "android" : "ios")} target. To add one, open the app on an {platformLabel(only === "ios" ? "android" : "ios")} device in the mirror and choose Add {platformLabel(only === "ios" ? "android" : "ios")} app.</TestingNote>}
     {state.matrixDevices.length === 0 && <p className="text-xs text-muted-foreground">{state.matrixLoading ? "Looking for simulators and emulators…" : "No simulators or emulators found."}</p>}
     <div className="flex items-end justify-between gap-3">
       <div className="flex items-center gap-2"><Label htmlFor="testing-matrix-limit" className="text-xs text-muted-foreground">Run up to</Label>
@@ -61,7 +62,7 @@ export function MatrixDevices({ panel }: { panel: TestingPanel }) {
         <span className="text-xs text-muted-foreground">at once</span></div>
       <Button type="button" size="xs" variant="ghost" disabled={state.matrixLoading} onClick={() => void panel.loadMatrixDevices()}>{state.matrixLoading ? <LoaderCircleIcon className="animate-spin" /> : <RefreshCwIcon />}Refresh</Button>
     </div>
-    <p className="text-xs text-muted-foreground">{count > state.matrixLimit ? `${count - state.matrixLimit} will queue until a slot frees. ` : ""}Devices that are off are booted, and a missing app is copied from another selected device. Agent steps call the model once per device.</p>
+    <TestingNote>{count > state.matrixLimit ? `${count - state.matrixLimit} will queue until a slot frees. ` : ""}Devices that are off are booted, and a missing app is copied from another selected device. Agent steps call the model once per device.</TestingNote>
   </div>;
 }
 

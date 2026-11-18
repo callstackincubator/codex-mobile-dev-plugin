@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { ScreenComponent } from "../../shared/src/screen-annotations.ts";
-import { TestRecorder, formatRunDuration } from "../src/test-recorder.ts";
+import { TestRecorder, formatRunDuration, recorderShowsOn } from "../src/test-recorder.ts";
 import { agentActSuggestion } from "../../shared/src/test-recording.ts";
 
 const UDID = "11111111-2222-3333-4444-555555555555";
@@ -47,7 +47,7 @@ test("a tap row records the step and takes it on the device", async () => {
   assert.deepEqual(done, [{ kind: "tap", point: { x: 50, y: 820 } }]);
 });
 
-test("picking an element hands back its locator and records nothing", async () => {
+test("picking an element offers its locator to insert, hands it back on Insert, and records nothing", async () => {
   const reads = { count: 0 };
   const recorder = new TestRecorder();
   recorder.attach(UDID, "android", reader([tab("SEE USERS", 800)], reads));
@@ -55,9 +55,16 @@ test("picking an element hands back its locator and records nothing", async () =
   assert.equal(recorder.pickElement(UDID, "android", locator => { picked.push(locator); }), true);
   assert.equal(recorder.getSnapshot().picking, true);
   await recorder.openMenu({ x: 50, y: 820 });
+  assert.deepEqual(picked, [], "nothing is written until Insert");
+  assert.deepEqual(recorder.getSnapshot().menu?.pick, { locator: 'screen.getByRole("button", "SEE USERS")' });
+  assert.deepEqual(recorder.getSnapshot().menu?.offers, [], "the pick menu offers no steps");
+  recorder.closeMenu();
+  assert.equal(recorder.getSnapshot().picking, true, "Cancel in the popover keeps picking");
+  await recorder.openMenu({ x: 50, y: 820 });
+  recorder.confirmPick();
   assert.deepEqual(picked, ['screen.getByRole("button", "SEE USERS")']);
   assert.equal(recorder.getSnapshot().steps.length, 0, "a pick is not a step");
-  assert.equal(recorder.getSnapshot().menu, undefined, "and opens no menu");
+  assert.equal(recorder.getSnapshot().menu, undefined);
   assert.equal(recorder.getSnapshot().picking, false);
   assert.equal(recorder.getSnapshot().recordingDeviceId, "", "the mirror stops picking after one element");
 });
@@ -803,4 +810,11 @@ test("recording an Android emulator reads the tree with its serial and platform"
   assert.equal(recorder.isRecording("emulator-5554", "ios"), false, "the same string on another platform is another device");
   assert.deepEqual(seen[0], ["emulator-5554", "android"]);
   recorder.stop();
+});
+
+test("only the mirror of the platform being recorded or picked draws the recorder's overlay", () => {
+  assert.equal(recorderShowsOn("android", "android"), true);
+  assert.equal(recorderShowsOn("android", "ios"), false, "a re-record on Android must not paint the iOS mirror");
+  assert.equal(recorderShowsOn("ios", "android"), false);
+  assert.equal(recorderShowsOn("", "ios"), true, "nothing recording: nothing to hide");
 });

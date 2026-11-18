@@ -239,8 +239,8 @@ export class TestingPanel {
       void this.reportContext();
       const front = deviceApps.getSnapshot().foregroundApp?.bundleId;
       if (this.snapshot.projectPath && this.snapshot.runtimeMode === "bundled" && front) {
-        if (this.snapshot.targets.length === 0) void this.selectProject(this.snapshot.projectPath);
-        else if (this.snapshot.targets.every(entry => entry.bundleId !== front)) void this.refreshStudioTargets();
+        // Only the targets: reloading the whole project here would close the test the user has open.
+        if (this.snapshot.targets.every(entry => entry.bundleId !== front)) void this.refreshStudioTargets();
       }
     });
     // Every change to what would be written bumps the recorder's revision, which is exactly the
@@ -361,7 +361,20 @@ export class TestingPanel {
     if (!device || !target?.platform) return "";
     const mirrored = recordablePlatform(device);
     if (target.platform === mirrored) return "";
-    return `Target "${target.name}" is ${target.platform}, but the mirror shows ${mirrored === "ios" ? "an iOS" : "an Android"} device. Choose ${mirrored === "ios" ? "an iOS" : "an Android"} target.`;
+    // Studio's target follows the app in front, which is unknown for a moment after the mirror changes:
+    // `selectDevice` clears it and `refreshStudioTargets` re-reads the target once it is found. Until
+    // then the target is still the other mirror's, and warning about it only flashes. Say nothing until
+    // the new device has answered and its target is in.
+    if (this.noProject) {
+      const { ready, foregroundApp } = this.deviceApps.getSnapshot();
+      if (!ready || this.refreshingTargets) return "";
+      if (foregroundApp?.bundleId && this.snapshot.targets.every(entry => entry.bundleId !== foregroundApp.bundleId)) return "";
+    }
+    const shown = mirrored === "ios" ? "an iOS simulator" : "an Android emulator";
+    const other = target.platform === "ios" ? "an iOS simulator" : "an Android emulator";
+    // Studio's targets are the app in front, so its only target names are internal: say what to do on the device instead.
+    if (this.noProject) return `The mirror shows ${shown}, but the app was picked up on ${platformLabel(target.platform)}. Open the app on this device to record here, or switch the mirror to ${other}.`;
+    return `The "${target.name}" target runs on ${platformLabel(target.platform)}, but the mirror shows ${shown}. Choose ${mirrored === "ios" ? "an iOS" : "an Android"} target, or switch the mirror to ${other}.`;
   }
 
   /** Whether a launch is possible: a bundle id to launch and a booted device to launch it on. */
@@ -767,12 +780,27 @@ export class TestingPanel {
    * element on the mirror, and the line keeps its locator for the recorded platform and takes the
    * picked one on this platform behind a `platform` branch. The test is then saved.
    */
+  /**
+   * The device workspace's way of making one platform's mirror the active one. It answers false
+   * when that platform has no device showing, which only the user can change.
+   */
+  private focusMirror: ((platform: "ios" | "android") => boolean) | undefined;
+  setMirrorFocus(focus: ((platform: "ios" | "android") => boolean) | undefined) { this.focusMirror = focus; }
+
   async reRecordStoredLine(line: number) {
+    const platform = this.reRecord?.platform;
+    if (!platform || line <= 0) return;
+    this.update({ error: null });
+    // The element is picked on the mirror, so the failing platform's mirror has to be the active one.
+    if (this.mirroredPlatform !== platform) this.focusMirror?.(platform);
+    if (this.mirroredPlatform !== platform) {
+      this.update({ error: `Show a booted ${platform === "ios" ? "iOS simulator" : "Android emulator"} in the mirror to re-record line ${line}.` });
+      return;
+    }
     const mirrored = this.mirroredPlatform;
     const app = mirrored ? this.storedAppOn(mirrored) : undefined;
     const device = this.deviceApps.getSnapshot().device;
-    if (!mirrored || !app || !device || line <= 0) return;
-    this.update({ error: null });
+    if (!mirrored || mirrored !== platform || !app || !device) return;
     // The element tree is read from the app in front, so it has to be this platform's app.
     if (this.deviceApps.getSnapshot().foregroundApp?.bundleId !== app.bundleId) {
       try { await this.call("mobile_launch_app", { platform: app.platform, deviceId: device.udid, bundleId: app.bundleId }, 120_000); }
@@ -1278,11 +1306,21 @@ export class TestingPanel {
     const mirrored = this.mirroredPlatform;
     if (mirrored && !this.storedAppOn(mirrored)) {
       const recorded = platformLabel(pinned.platform), other = platformLabel(mirrored);
-      return `This test was recorded on ${recorded} and doesn't have an ${other} target. Open the app on this ${other} device and choose Add ${other} app, or mirror an ${pinned.platform === "ios" ? "iOS simulator" : "Android emulator"}.`;
+      const back = pinned.platform === "ios" ? "an iOS simulator" : "an Android emulator";
+      // With this platform's app in front, the note carries the Add button; without it, the app has to be opened first.
+      return this.foregroundTarget
+        ? `This test was recorded on ${recorded} and has no ${other} app yet. Add ${this.foregroundTarget.bundleId}, the app in front, to run it here too.`
+        : `This test was recorded on ${recorded} and has no ${other} app yet. Open the app on this ${other} device to add it, or mirror ${back}.`;
     }
     // `deviceApps.apps` lists running apps, not installed ones, so it cannot say the pinned app is
     // missing; Run opens it and reports a launch failure if it really is not on the device.
     return "";
+  }
+
+  /** Whether the run hint can offer to add the app in front as this test's app on the mirrored platform. */
+  get canAddForegroundApp(): boolean {
+    const pinned = this.storedTarget, front = this.foregroundTarget;
+    return this.snapshot.runtimeMode === "bundled" && Boolean(pinned && front) && front!.platform !== pinned!.platform && !this.storedAppOn(front!.platform) && !this.snapshot.running;
   }
 
   /** The platform and bundle id sent with a save, so a Studio test is pinned to the app it was recorded against. */

@@ -197,6 +197,12 @@ test("the runner is not handed the app's pinned agent-device state directory", (
   assert.equal(environment.NO_COLOR, "1", "the json reporter's output must not carry escape codes");
 });
 
+test("a bundled run gets the app's own state directory, never agent-device's shared default", () => {
+  const environment = runnerEnv({ PATH: "/usr/bin", AGENT_DEVICE_STATE_DIR: "/elsewhere" }, "/app/own-state");
+  assert.equal(environment.AGENT_DEVICE_STATE_DIR, "/app/own-state");
+  assert.equal(environment.PATH, "/usr/bin");
+});
+
 test("the generated config adds a reporter and changes nothing else", () => {
   const source = progressConfigSource("/app/e2e.config.ts");
   // The project's own config is spread, so its targets, agents and workers all stand.

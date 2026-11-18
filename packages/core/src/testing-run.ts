@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } f
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { APP_FLOW_DIRECTORY } from "./app-flow-host.ts";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 
 /**
@@ -394,10 +395,19 @@ export function runnerBin(projectPath: string): string {
  * reason that has nothing to do with their test. Run exists to be the same run they would get from
  * a terminal, so it gets the state directory a terminal would give it: its own.
  */
-export function runnerEnv(environment: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+export function runnerEnv(environment: NodeJS.ProcessEnv = process.env, stateDir?: string): NodeJS.ProcessEnv {
   const { AGENT_DEVICE_STATE_DIR: _pinned, ...rest } = environment;
-  return { ...rest, FORCE_COLOR: "0", NO_COLOR: "1" };
+  return { ...rest, ...(stateDir ? { AGENT_DEVICE_STATE_DIR: stateDir } : {}), FORCE_COLOR: "0", NO_COLOR: "1" };
 }
+
+/**
+ * The state directory bundled (Studio) runs use: the app's own, never agent-device's default
+ * `~/.agent-device`. That default is shared with every other agent-device user on the machine, and two
+ * daemons racing to register there produce "Daemon registration ownership could not be verified" until
+ * the folder is deleted. The bundled runner is the same build as the app's own clients, so sharing the
+ * app's directory is safe, and it keeps the recorder and the runner same-state-dir peers.
+ */
+export const BUNDLED_STATE_DIR = join(APP_FLOW_DIRECTORY, "agent-device");
 
 /**
  * Whether the run died over the generated config rather than over the test.
@@ -531,7 +541,7 @@ async function runBundledTest(request: TestRunRequest, deps: TestRunDeps): Promi
       cwd: await runnerCwd(deps), runPath, configName: deps.onProgress ? progressConfig : config,
       // Reports and artifacts go beside the run's own config, so concurrent lanes never share a directory
       // and the workspace removal below takes them away.
-      output: join(workspace, "output"),
+      output: join(workspace, "output"), stateDir: BUNDLED_STATE_DIR,
       target: bundledTargetName(request.bundledTarget), timeoutMs: request.timeoutMs, spawner: deps.spawner ?? spawn,
       onProgress: deps.onProgress, signal: deps.signal,
     });
@@ -540,13 +550,13 @@ async function runBundledTest(request: TestRunRequest, deps: TestRunDeps): Promi
   }
 }
 
-async function spawnRun(input: { command: string; commandArgs?: string[]; cwd: string; runPath: string; configName?: string; target?: string; output?: string; timeoutMs?: number; spawner: Spawner; signal?: AbortSignal; onProgress?: (progress: TestRunProgress) => void }): Promise<TestRunResult> {
+async function spawnRun(input: { command: string; commandArgs?: string[]; cwd: string; runPath: string; configName?: string; target?: string; output?: string; stateDir?: string; timeoutMs?: number; spawner: Spawner; signal?: AbortSignal; onProgress?: (progress: TestRunProgress) => void }): Promise<TestRunResult> {
   input.signal?.throwIfAborted();
   const child = input.spawner(input.command, [
     ...(input.commandArgs ?? []), "run", input.runPath, "--reporter", "json",
     ...(input.output ? ["--output", input.output] : []),
     ...(input.target ? ["--target", input.target] : []), ...(input.configName ? ["--config", input.configName] : []),
-  ], { cwd: input.cwd, stdio: ["ignore", "pipe", "pipe"], env: runnerEnv() });
+  ], { cwd: input.cwd, stdio: ["ignore", "pipe", "pipe"], env: runnerEnv(process.env, input.stateDir) });
   let stdout = "", stderr = "", pending = "";
   child.stdout?.setEncoding("utf8"); child.stderr?.setEncoding("utf8");
   child.stdout?.on("data", chunk => { stdout += chunk; });

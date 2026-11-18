@@ -194,6 +194,11 @@ export type TestRecorderSnapshot = {
      */
     bounds: ScreenBounds;
     screen: ScreenSize;
+    /**
+     * Set while a pick is in progress: the menu only offers to insert this element's locator into
+     * the step being re-recorded. No locator means the element cannot be named.
+     */
+    pick?: { locator?: string };
   };
   run?: TestRunView;
   error: string;
@@ -234,6 +239,14 @@ const TREE_TTL_MS = 1_500;
 /** A fresh flow identity. Not a step id and never emitted: it only ever leaves the panel's memory. */
 function newFlowId(): string {
   return crypto.randomUUID();
+}
+
+/**
+ * Whether the mirror of `panel` draws the recorder's hover, step tag and menu. The recorder is one
+ * snapshot shared by both mirrors, so without this a re-record or pick shows its UI on both.
+ */
+export function recorderShowsOn(recording: string, panel: string): boolean {
+  return recording === "" || recording === panel;
 }
 
 export class TestRecorder {
@@ -783,23 +796,18 @@ export class TestRecorder {
     const innermost = hitLadder(components, point, this.reader?.screen())[0]?.nodeId;
     if (innermost !== this.hoverInnermost) { this.hoverInnermost = innermost; this.hoverLevel = 0; }
     this.showHover(components);
-    if (this.pickHandler) { this.pick(components, point); return; }
     this.menuPoint = point;
     this.showMenu(components);
     countUiEvent("ui.testing.menu_open");
   }
 
-  /** Hands the outlined element's locator to the pick in progress, then stops picking. */
-  private pick(components: ScreenComponent[], point: ScreenPoint) {
-    const screen = this.reader?.screen();
+  /** Hands the locator the pick menu shows to the pick in progress, then stops picking. */
+  confirmPick() {
+    const locator = this.snapshot.menu?.pick?.locator;
     const onPick = this.pickHandler;
-    if (!screen || !onPick) return;
-    const { selector } = resolveSelector(components, point, screen, this.hoverLevel);
-    // A coordinate is not a locator: it cannot stand in for one in an assertion, and on another
-    // device it would name something else.
-    if (selector.kind === "point") { this.update({ error: "Nothing here can be named by the test runner. Pick another element, or walk out to its container with the scroll wheel." }); return; }
+    if (!locator || !onPick) return;
     this.stop();
-    onPick(selectorSource(selector));
+    onPick(locator);
   }
 
   /** The menu for the element the outline currently shows, resolved from the cached tree. */
@@ -810,6 +818,13 @@ export class TestRecorder {
     const { selector, ambiguous, component, matches } = resolveSelector(components, point, screen, this.hoverLevel);
     // Nothing resolved is still somewhere: the menu marks the coordinate a tap here would record.
     const bounds = component?.bounds ?? { x: point.x - 12, y: point.y - 12, width: 24, height: 24 };
+    // A coordinate is not a locator: it cannot stand in for one in an assertion, and on another
+    // device it would name something else. The pick menu says so rather than offering it.
+    if (this.pickHandler) {
+      this.update({ menu: { label: stepLabel("tap", selector), ambiguous, matches, offers: [], commands: [], bounds, screen,
+        pick: selector.kind === "point" ? {} : { locator: selectorSource(selector) } } });
+      return;
+    }
     this.update({ menu: {
       label: stepLabel("tap", selector), ambiguous, matches,
       offers: stepOffers(selector, component),

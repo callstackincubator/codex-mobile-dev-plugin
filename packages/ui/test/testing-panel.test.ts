@@ -306,9 +306,29 @@ test("a booted Android emulator is recordable and a target of the wrong platform
   const panel = new TestingPanel(host({}, []), store);
   const update = (panel as unknown as { update(fields: Record<string, unknown>): void }).update.bind(panel);
   update({ targets: [{ name: "ios", platform: "ios", bundleId: "a" }, { name: "android", platform: "android", bundleId: "a" }], targetName: "ios" });
-  assert.match(panel.targetMismatch, /is ios, but the mirror shows an Android device/);
+  assert.match(panel.targetMismatch, /runs on iOS, but the mirror shows an Android emulator/);
   update({ targetName: "android" });
   assert.equal(panel.targetMismatch, "");
+});
+
+test("Studio does not flash a mirror mismatch while the switched device's app is still unknown", () => {
+  // Switching the mirror clears the foreground app and re-reads Studio's target once it is found.
+  // In between, the target is still the other platform's: warning then makes the message flicker.
+  const emulator = { udid: "emulator-5554", name: "Pixel", state: "Booted", runtime: "", platform: "android", kind: "emulator" };
+  let snapshot: Record<string, unknown> = { device: emulator, apps: [], foregroundApp: null, ready: false };
+  const store = { subscribe: () => () => undefined, getSnapshot: () => snapshot } as unknown as DeviceAppsStore;
+  const panel = new TestingPanel(host({}, []), store);
+  const update = (panel as unknown as { update(fields: Record<string, unknown>): void }).update.bind(panel);
+  update({ studioPath: PROJECT, projectPath: PROJECT, targets: [{ name: "ios", platform: "ios", bundleId: "com.ios" }], targetName: "ios" });
+  assert.equal(panel.targetMismatch, "", "device just switched: nothing is known yet");
+  snapshot = { ...snapshot, ready: true, foregroundApp: { bundleId: "com.android", pid: 1 } };
+  assert.equal(panel.targetMismatch, "", "the foreground app is found but its target has not been re-read");
+  update({ targets: [{ name: "android", platform: "android", bundleId: "com.android" }], targetName: "android" });
+  assert.equal(panel.targetMismatch, "");
+  // Steady when it truly applies: the app in front is the target and it is on the other platform.
+  update({ targets: [{ name: "ios", platform: "ios", bundleId: "com.android" }], targetName: "ios" });
+  assert.match(panel.targetMismatch, /The mirror shows an Android emulator/);
+  panel.dispose();
 });
 
 test("a Studio test with no app pins the one in front on its first run, then runs against the pin", async () => {
@@ -416,7 +436,8 @@ test("an iOS-only Studio test on an Android mirror says so and adds the Android 
   const panel = new TestingPanel(host({ mobile_testing_set_target: { pinned: true } }, calls), androidFront);
   panel.setAvailable(true);
   (panel as unknown as { update(fields: Record<string, unknown>): void }).update({ projectPath: PROJECT, runtimeMode: "bundled", selectedTestPath: "tests/stored.e2e.ts", selectedTestSource: "x", tests: [iosOnly] });
-  assert.match(panel.storedRunHint, /recorded on iOS and doesn't have an Android target/);
+  assert.match(panel.storedRunHint, /recorded on iOS and has no Android app yet. Add com\.example\.android/);
+  assert.equal(panel.canAddForegroundApp, true);
   assert.equal(panel.canRunStored, false);
   await panel.repinStoredTest();
   const set = calls.find(call => call.name === "mobile_testing_set_target")!;
@@ -454,6 +475,7 @@ test("a line that failed on Android is re-recorded there behind a platform branc
   await panel.reRecordStoredLine(5);
   assert.equal(testRecorder.getSnapshot().picking, true);
   await testRecorder.openMenu({ x: 100, y: 120 });
+  testRecorder.confirmPick();
   await new Promise(resolve => setTimeout(resolve, 0));
   const staged = calls.find(call => call.name === "mobile_testing_stage_file")!;
   assert.match(staged.arguments.source as string, /async \(\{ app, screen, platform \}\)/);
@@ -463,7 +485,7 @@ test("a line that failed on Android is re-recorded there behind a platform branc
   panel.dispose();
 });
 
-test("a line that failed on an Android lane while an iOS device is mirrored is named, not re-recordable yet", () => {
+test("re-recording a line that failed on an Android lane brings the Android mirror forward first", async () => {
   const iosFront = { subscribe: () => () => undefined, getSnapshot: () => ({ device: { udid: "sim", name: "iPhone", state: "Booted", runtime: "", platform: "ios", kind: "simulator" }, apps: [], foregroundApp: { bundleId: "com.pinned.app", pid: 3 }, ready: true }) } as unknown as DeviceAppsStore;
   const source = 'test("flow", async ({ app, screen }) => {\n  await app.open();\n  await expect(screen.getByTestId("Home")).toBeVisible();\n});\n';
   const panel = new TestingPanel(host({}, []), iosFront);
@@ -474,8 +496,31 @@ test("a line that failed on an Android lane while an iOS device is mirrored is n
   (panel as unknown as { runPlatform: string }).runPlatform = "android";
   testRecorder.beginRun();
   testRecorder.finishRun({ status: "failed", steps: [{ line: 3, status: "failed", error: "Not found" }] });
-  try { assert.deepEqual(panel.reRecord, { line: 3, platform: "android", ready: false }); }
-  finally { panel.dispose(); }
+  const focused: string[] = [];
+  panel.setMirrorFocus(platform => { focused.push(platform); return false; });
+  try {
+    assert.deepEqual(panel.reRecord, { line: 3, platform: "android", ready: false });
+    await panel.reRecordStoredLine(3);
+    assert.deepEqual(focused, ["android"], "the Android mirror is brought forward");
+    assert.match(panel.getSnapshot().error ?? "", /Show a booted Android emulator in the mirror to re-record line 3/);
+  } finally { panel.dispose(); }
+});
+
+test("opening an app on the mirror keeps the open Studio test selected", async () => {
+  const listeners = new Set<() => void>();
+  let snapshot: Record<string, unknown> = { device: { udid: "emulator-5554", name: "Pixel", state: "Booted", runtime: "", platform: "android", kind: "emulator" }, apps: [], foregroundApp: null, ready: true };
+  const apps = { subscribe: (listener: () => void) => { listeners.add(listener); return () => listeners.delete(listener); }, getSnapshot: () => snapshot } as unknown as DeviceAppsStore;
+  const calls: { name: string; arguments: Record<string, unknown> }[] = [];
+  const panel = new TestingPanel(host({ mobile_testing_project_config: { runtimeMode: "bundled", targets: [{ name: "android", platform: "android", bundleId: "com.example.android" }] } }, calls), apps);
+  panel.setAvailable(true);
+  (panel as unknown as { update(fields: Record<string, unknown>): void }).update({ projectPath: PROJECT, runtimeMode: "bundled", targets: [], selectedTestPath: "tests/stored.e2e.ts", selectedTestSource: "x", tests: [iosOnly] });
+  snapshot = { ...snapshot, foregroundApp: { bundleId: "com.example.android", pid: 3 } };
+  for (const listener of listeners) listener();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  try {
+    assert.equal(panel.getSnapshot().selectedTestPath, "tests/stored.e2e.ts");
+    assert.deepEqual(panel.getSnapshot().targets.map(target => target.bundleId), ["com.example.android"]);
+  } finally { panel.dispose(); }
 });
 
 test("Run is unavailable for a Studio test with neither a pinned app nor one in front", () => {

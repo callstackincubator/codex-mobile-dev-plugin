@@ -2,12 +2,13 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import { createPortal } from "react-dom";
 import { ListIcon, LoaderCircleIcon } from "lucide-react";
 import type { ScreenAnnotationsStore } from "../screen-annotations";
-import { testRecorder } from "../test-recorder";
+import { testRecorder, recorderShowsOn } from "../test-recorder";
 import { agentActSuggestion, stepIsAssertion } from "@mobile-dev/shared/test-recording.ts";
 import type { StepOffer, StepTarget } from "@mobile-dev/shared/test-recording.ts";
 import { AgenticBranch, AssertionBranch, MenuRow, OFFER_LABEL, OfferIcon, OfferValueForm, StepCommandList } from "./step-commands";
 import { usePlacement, windowView as view } from "./cascading-menu";
 import { MARGIN, placeBelow, placeBeside } from "../popover-placement";
+import { Button } from "./ui/button";
 import type { Box } from "../popover-placement";
 
 /**
@@ -171,9 +172,41 @@ function CommandMenu({ commands, width, row, offerRow, onClose }: {
  * them in, so the outline cannot drift from what gets recorded, wherever in the workspace the
  * mirror sits.
  */
-export function TestRecorderOverlay({ store }: { store: ScreenAnnotationsStore }) {
+/**
+ * The pick menu: while a failed step is being re-recorded, the element right-clicked on the mirror
+ * is offered as that step's new locator, and nothing is written until the user inserts it.
+ */
+function PickMenu({ label, locator, width, anchor }: { label: string; locator?: string; width: number; anchor: () => Box | undefined }) {
+  const menu = useRef<HTMLDivElement>(null);
+  const placement = usePlacement(menu, () => {
+    const rect = anchor();
+    return rect && placeBelow(rect, { width, height: menu.current?.offsetHeight ?? 0 }, view());
+  }, [anchor, width]);
+  return createPortal(<div
+    ref={menu}
+    data-element="recorder-menu" role="dialog" aria-label="Insert locator"
+    className="pointer-events-auto fixed z-50 flex flex-col gap-2 rounded-xl border bg-popover p-2.5 text-popover-foreground shadow-lg [&_button:not(:disabled)]:cursor-pointer"
+    style={{ left: placement?.left ?? 0, top: placement?.top ?? 0, width, visibility: placement ? "visible" : "hidden" }}
+    onPointerDown={event => event.stopPropagation()}
+    onContextMenu={event => event.preventDefault()}
+  >
+    <div className="min-w-0">
+      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Selected element</p>
+      <p className="truncate text-sm font-medium" title={label}>{label.replace(/^Tap /, "")}</p>
+    </div>
+    {locator
+      ? <code data-recorder-pick-locator className="block truncate rounded bg-muted px-1.5 py-1 font-mono text-[11px]" title={locator}>{locator}</code>
+      : <p className="text-[11px] leading-4 text-amber-600 dark:text-amber-500">Nothing here can be named by the test runner. Pick another element, or walk out to its container with the scroll wheel.</p>}
+    <div className="flex justify-end gap-1.5">
+      <Button type="button" size="xs" variant="ghost" onClick={() => testRecorder.closeMenu()}>Cancel</Button>
+      <Button type="button" size="xs" data-recorder-pick-insert disabled={!locator} onClick={() => testRecorder.confirmPick()}>Insert</Button>
+    </div>
+  </div>, document.body);
+}
+
+export function TestRecorderOverlay({ store, platform }: { store: ScreenAnnotationsStore; platform: "ios" | "android" }) {
   const { viewport: v } = useSyncExternalStore(store.subscribe, store.getSnapshot);
-  const { hover, menu, preparing } = useSyncExternalStore(testRecorder.subscribe, testRecorder.getSnapshot);
+  const { hover, menu, preparing, recordingPlatform } = useSyncExternalStore(testRecorder.subscribe, testRecorder.getSnapshot);
   // State rather than a ref: the menu is a child, and a child's layout effect runs before the
   // parent's ref is attached, so a ref here is still null the first time the menu measures itself.
   const [host, setHost] = useState<HTMLDivElement | null>(null);
@@ -208,6 +241,8 @@ export function TestRecorderOverlay({ store }: { store: ScreenAnnotationsStore }
     window.addEventListener("pointerdown", dismiss);
     return () => window.removeEventListener("pointerdown", dismiss);
   }, [menu]);
+  // Both mirrors mount this overlay and share one recorder snapshot, so each draws only what is about its own device.
+  if (!recorderShowsOn(recordingPlatform, platform)) return null;
   if (!v.width || !v.height) return null;
   // Record arms the recorder at once, but nothing on the mirror can be selected until the runner's
   // element tree has been read, and that takes a second or two. Without this the panel said
@@ -239,7 +274,9 @@ export function TestRecorderOverlay({ store }: { store: ScreenAnnotationsStore }
     >{anchor.label}{hover && hover.levels > 1 ? ` · ${hover.level + 1}/${hover.levels}` : ""}</span>
     {/* Anchored to the element, not to the pointer, so walking out with the wheel moves the menu
         with the element it is about. */}
-    {menu && <ElementMenu
+    {menu?.pick && <PickMenu label={menu.label} locator={menu.pick.locator}
+      width={Math.max(180, Math.min(280, window.innerWidth - MARGIN * 2))} anchor={menuAnchor} />}
+    {menu && !menu.pick && <ElementMenu
       label={menu.label}
       offers={menu.offers}
       commands={menu.commands}

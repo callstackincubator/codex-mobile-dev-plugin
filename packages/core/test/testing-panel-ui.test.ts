@@ -35,7 +35,7 @@ test("the element menu renders the runner's own steps over the mirror and record
   testRecorder.start("udid", "ios");
 
   const root = createRoot(dom.window.document.getElementById("root")!);
-  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations })); });
+  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations, platform: "ios" })); });
   onTeardown(async () => {
     await act(async () => { root.unmount(); });
     await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
@@ -109,7 +109,7 @@ test("a row that needs a value asks for it instead of emitting an empty string",
   });
   testRecorder.start("udid", "ios");
   const root = createRoot(dom.window.document.getElementById("root")!);
-  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations })); });
+  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations, platform: "ios" })); });
   onTeardown(async () => {
     await act(async () => { root.unmount(); });
     await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
@@ -329,7 +329,7 @@ test("the element menu survives a tree invalidation that takes the hover outline
   testRecorder.attach("udid", "ios", { readComponents: async () => [button], screen: () => SCREEN, release: () => undefined });
   testRecorder.start("udid", "ios");
   const root = createRoot(dom.window.document.getElementById("root")!);
-  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations })); });
+  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations, platform: "ios" })); });
   onTeardown(async () => {
     await act(async () => { root.unmount(); });
     await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
@@ -363,7 +363,7 @@ test("a coordinate gets the tap row and is told why that is all", async t => {
   testRecorder.attach("udid", "ios", { readComponents: async () => [button], screen: () => SCREEN, release: () => undefined });
   testRecorder.start("udid", "ios");
   const root = createRoot(dom.window.document.getElementById("root")!);
-  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations })); });
+  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations, platform: "ios" })); });
   onTeardown(async () => {
     await act(async () => { root.unmount(); });
     await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
@@ -413,7 +413,7 @@ test("the command list is a submenu of its own, opened by pointing at its row", 
   testRecorder.attach("udid", "ios", { readComponents: async () => [button], screen: () => SCREEN, release: () => undefined });
   testRecorder.start("udid", "ios");
   const root = createRoot(dom.window.document.getElementById("root")!);
-  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations })); });
+  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations, platform: "ios" })); });
   onTeardown(async () => {
     await act(async () => { root.unmount(); });
     await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
@@ -481,7 +481,7 @@ test("the agentic branches cascade to the side, and record a sentence with its p
   });
   testRecorder.start("udid", "ios");
   const root = createRoot(dom.window.document.getElementById("root")!);
-  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations })); });
+  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations, platform: "ios" })); });
   onTeardown(async () => {
     await act(async () => { root.unmount(); });
     await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
@@ -676,7 +676,7 @@ test("Record says the mirror is not ready yet, until selection actually is", asy
   testRecorder.attach("udid", "ios", { readComponents: () => tree, screen: () => SCREEN, release: () => undefined });
 
   const root = createRoot(dom.window.document.getElementById("root")!);
-  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations })); });
+  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations, platform: "ios" })); });
   onTeardown(async () => {
     await act(async () => { root.unmount(); });
     await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
@@ -837,12 +837,15 @@ test("a stored Studio test shows its pinned app and offers to re-pin it to the a
   await act(async () => { (dom.window.document.querySelector("[data-testing-repin]") as HTMLElement).click(); });
   assert.equal(repinned, 1);
   assert.equal(dom.window.document.querySelector("[data-testing-repin]")?.textContent, "Use current app");
-  // With an Android app in front, the button adds it for Android and keeps the iOS app.
-  const android = { ...panel, foregroundTarget: { platform: "android", bundleId: "com.b.android" } };
+  // With an Android app in front, the warning itself offers to add it for Android, and the header does not.
+  const android = { ...panel, foregroundTarget: { platform: "android", bundleId: "com.b.android" }, canAddForegroundApp: true };
   await act(async () => { root.render(createElement(TestingView, { panel: android, deviceApps })); });
-  assert.equal(dom.window.document.querySelector("[data-testing-repin]")?.textContent, "Add Android app");
+  assert.equal(dom.window.document.querySelector("[data-testing-run-hint] [data-testing-add-app]")?.textContent, "Add Android app");
+  assert.equal(dom.window.document.querySelector("[data-testing-repin]"), null);
+  await act(async () => { (dom.window.document.querySelector("[data-testing-add-app]") as HTMLElement).click(); });
+  assert.equal(repinned, 2);
   // Once added, both apps show, and the app in front needs no button.
-  const both = { ...android, storedTarget: { platform: "ios", bundleId: "com.a", apps: { android: "com.b.android" } }, storedApps: { ios: "com.a", android: "com.b.android" } };
+  const both = { ...android, canAddForegroundApp: false, storedTarget: { platform: "ios", bundleId: "com.a", apps: { android: "com.b.android" } }, storedApps: { ios: "com.a", android: "com.b.android" } };
   await act(async () => { root.render(createElement(TestingView, { panel: both, deviceApps })); });
   assert.match(dom.window.document.querySelector('[data-testing-added-app="android"]')?.textContent ?? "", /com\.b\.android/);
   assert.equal(dom.window.document.querySelector("[data-testing-repin]"), null);
