@@ -57,7 +57,7 @@ function AppFlowHelp() {
       <div className="space-y-1"><p className="font-medium">Map creation</p>
         <ul className="list-disc space-y-1 pl-4 text-muted-foreground">
           <li><span className="text-foreground">Structure only</span> reads the navigation out of your source. It takes seconds and needs no device, but has no screenshots.</li>
-          <li><span className="text-foreground">Screen UI + Structure</span> also walks the app on an iOS simulator and photographs every screen it reaches. Sign in first.</li>
+          <li><span className="text-foreground">Screen UI + Structure</span> also walks the app on an iOS simulator and photographs every screen it reaches. If the app requires sign-in, sign in to it first.</li>
         </ul></div>
 
       <div className="space-y-1"><p className="font-medium">Launching (the walk only)</p>
@@ -257,11 +257,11 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
             <Button size="sm" onClick={start} disabled={!state.projectPath || state.launching || state.agentStartPending}>
               {state.agentStartPending ? "Asking Codex…" : isPaused || resumable ? "Resume" : state.result ? "Regenerate" : "Start"}</Button></>}
       </div>
-      {/* Shown for every mode, not just the deterministic pass. The AI modes do run a sign-in check
-          and stop to ask, but stopping mid-sweep is the expensive way to learn this, and a user who
-          signs in first never pays for it. The advice is the same either way, so the banner no
-          longer depends on which build is selected. */}
-      {!isRunning && <AppFlowWarning title="Sign in before capture">Launch the app and finish signing in first. A signed-out app captures its sign-in wall instead of the screens behind it.</AppFlowWarning>}
+      {/* Structure-only never launches the app, so sign-in guidance there implies a prerequisite
+          that does not exist. The model-free screen sweep does skip its sign-in check, though: if
+          this app has an auth wall, clearing it before capture prevents every route from recording
+          that same wall. */}
+      {!isRunning && mode === "screen-ui-and-structure" && <AppFlowWarning title="Sign in to this app, if required">Before capturing screens, launch the app under test and complete its sign-in flow. If the app does not require sign-in, you can continue normally.</AppFlowWarning>}
     </header>
     {isRunning && state.progress && <div className="flex items-center gap-3 border-b bg-muted/40 px-4 py-2"><Loader2 className="size-4 animate-spin" />
       <div className="min-w-0 flex-1"><div className="text-sm capitalize">{state.progress.phase}</div><div className="truncate text-xs text-muted-foreground">{state.progress.message}</div></div>

@@ -47,6 +47,7 @@ test("the capture mode is persisted when it changes, not when a sweep starts", a
     .find(entry => entry.textContent === text) as HTMLButtonElement;
   const trigger = document.querySelector('[aria-label="App Flow capture mode"]') as HTMLElement;
   assert.ok(trigger, "the toolbar offers the capture mode");
+  assert.doesNotMatch(document.body.textContent ?? "", /Sign in to this app/, "structure-only needs no sign-in guidance");
 
   await act(async () => { trigger.click(); });
   const option = Array.from(document.querySelectorAll('[role="option"]'))
@@ -55,6 +56,10 @@ test("the capture mode is persisted when it changes, not when a sweep starts", a
   await act(async () => { option.click(); });
   assert.equal(storage.getItem("app-flow-mode:/projects/demo"), "screen-ui-and-structure",
     "the choice is stored before anything is started");
+  assert.match(document.body.textContent ?? "", /Sign in to this app, if required/,
+    "the screen sweep names the app and makes sign-in conditional");
+  assert.match(document.body.textContent ?? "", /app under test.+does not require sign-in, you can continue normally/s,
+    "the guidance distinguishes app authentication from a Mobile Dev requirement");
 
   // What the workspace does when the panel is hidden and shown again, or another tool is picked.
   await act(async () => { root.unmount(); });
