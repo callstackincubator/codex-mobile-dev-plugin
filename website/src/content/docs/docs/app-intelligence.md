@@ -3,7 +3,9 @@ title: App Intelligence
 description: Trace Expo Router and React Navigation screens through their source files, assets, and packages without building or running the app.
 ---
 
-Open **App Intelligence** to see how each screen reaches the source files, assets, and packages it depends on. It statically analyzes an Expo Router or React Navigation project, so it does not need a running device, Metro, or an App Flow map.
+App Intelligence is available in Mobile Dev 0.1.183 and later. Open **Tools** and choose **App Intel** to see how each screen reaches the source files, assets, and packages it depends on. **App Intelligence** is the feature name; **App Intel** is its compact label in the Tools menu.
+
+If **App Intel** is missing, update Mobile Dev, fully quit and reopen your host, then start a new conversation. App Intelligence statically analyzes an Expo Router or React Navigation project, so it does not need a running device, Metro, or an App Flow map.
 
 App Intelligence answers source-structure questions. Use [App Flow](/docs/app-flow) when you need a map of runtime navigation, screen captures, UI states, or recorded paths through the running app.
 

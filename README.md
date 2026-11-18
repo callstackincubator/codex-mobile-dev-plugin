@@ -224,7 +224,7 @@ Ask your agent to work with your app, for example:
 - “Show me the App Intelligence for this project.”
 - “Record an e2e test for the checkout flow.”
 
-Open App Intelligence, Testing, Logs, Performance, Storage, or TraceSift. App Intelligence analyzes a project without a device; Testing records against a simulator or emulator; the other device tools inspect the selected device. Use Screenshot to attach
+Open **Tools** and choose **App Intel**, Testing, Logs, Performance, Storage, or TraceSift. App Intelligence, shown as **App Intel** in the Tools menu, is available in Mobile Dev 0.1.183 and later and analyzes a project without a device. If **App Intel** is missing, update Mobile Dev, fully quit and reopen your host, then start a new conversation. Testing records against a simulator or emulator; the other device tools inspect the selected device. Use Screenshot to attach
 an image to your next message, or Select to annotate an element or region with an
 instruction. Physical iOS supports taps and drags; keyboard and hardware-button
 controls are unavailable.
