@@ -43,7 +43,10 @@ Dev's `device_*` tools for the devices in Mobile Dev's panel. Open only that lin
 `127.0.0.1` addresses belong to Mobile Dev's backends, not to the panel, so never open
 or show them. Without a browser, give the user the link. Then read
 `mobile_read_panel_context` for the devices the user selected there, and again when
-they refer to something they added from the panel.
+they refer to something they added from the panel. Once you have acted on what they added,
+call `mobile_clear_panel_context` so it is not read again; it only forgets what you
+have read — notes added since your last read stay — and leaves their device
+selection alone.
 
 The first open downloads the panel's runtime once, which can take a minute. If it
 fails, tell the user what the result says. In the Claude desktop app's Code tab you

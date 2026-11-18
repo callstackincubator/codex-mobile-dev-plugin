@@ -19,8 +19,8 @@ export const BROWSER_CONTEXT_MAX_BYTES = 16 * 1024 * 1024;
 const NO_CONTEXT = "No Mobile Dev browser panel has shared context. Open Mobile Dev, or ask the user to select a device in the panel.";
 
 type PanelContent = TextContent | ImageContent;
-type BrowserSession = { transport: StreamableHTTPServerTransport; touched: number; requests: number; context?: { content: PanelContent[]; updated: number } };
-type PanelPage = { url(tool: string, target: PanelTarget): string; context(): PanelContent[]; close(): Promise<void> };
+type BrowserSession = { transport: StreamableHTTPServerTransport; touched: number; requests: number; clears: number; stores: number; read?: number; context?: { content: PanelContent[]; updated: number } };
+type PanelPage = { url(tool: string, target: PanelTarget): string; context(): PanelContent[]; clear(): { cleared: number; kept: number }; close(): Promise<void> };
 
 // What a panel would otherwise give an MCP Apps host's model context. Hosts mark
 // audience and other annotations; the agent reads only text and images.
@@ -64,6 +64,23 @@ export function browserPanel({ template = PAGE, always = false }: BrowserPanelOp
       const opened = await page?.catch(() => undefined);
       const content = opened?.context() ?? [];
       return { content: content.length ? content : [{ type: "text", text: NO_CONTEXT }] };
+    });
+    // The agent cannot reach into the page, so it asks the server to forget what it read.
+    // The page learns of it by polling the server's count of clears.
+    server.registerTool("mobile_clear_panel_context", {
+      title: "Clear Mobile Dev panel context",
+      description: "Clear the logs, screenshots and screen notes the user added to chat in a Mobile Dev panel opened in a browser, and remove them from the panel. Call it once you have acted on them, so they are not read again. It only forgets what mobile_read_panel_context has returned: notes added or changed since your last read stay. It leaves the user's selected devices alone.",
+      inputSchema: {}, annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    }, async () => {
+      const opened = await page?.catch(() => undefined);
+      const { cleared, kept } = opened?.clear() ?? { cleared: 0, kept: 0 };
+      const tabs = (count: number) => `${count} Mobile Dev browser tab${count === 1 ? "" : "s"}`;
+      const text = cleared
+        ? `Cleared the shared context of ${tabs(cleared)}.${kept ? ` Kept ${tabs(kept)} whose notes changed since your last read; call mobile_read_panel_context to see them.` : ""}`
+        : kept
+          ? `Nothing cleared: the shared context of ${tabs(kept)} changed since your last read. Call mobile_read_panel_context to see it, then clear again.`
+          : "No Mobile Dev browser tab has shared context, so there is nothing to clear.";
+      return { content: [{ type: "text", text }] };
     });
     return async () => {
       const opened = await page?.catch(() => undefined);
@@ -123,12 +140,19 @@ export async function startPanelPage(connections: SharedTransport, host: Telemet
     reply(response, 404);
   }
 
-  // The page replaces its tab's context, as ui/update-model-context does in a chat host.
+  // The page replaces its tab's context, as ui/update-model-context does in a chat host,
+  // and reads how many times the agent has cleared it, so it can drop what it still shows.
   async function context(request: IncomingMessage, response: ServerResponse) {
-    if (request.method !== "PUT") return reply(response, 405, { allow: "PUT" });
+    if (request.method !== "PUT" && request.method !== "GET") return reply(response, 405, { allow: "GET, PUT" });
     const sessionId = request.headers["mcp-session-id"];
     const session = typeof sessionId === "string" ? sessions.get(sessionId) : undefined;
     if (session === undefined) return reply(response, 404);
+    if (request.method === "GET") {
+      session.touched = Date.now();
+      response.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+      response.end(JSON.stringify({ clears: session.clears }));
+      return;
+    }
     if (request.headers["content-type"]?.startsWith("application/json") !== true) return reply(response, 415);
     const body = await readBody(request, BROWSER_CONTEXT_MAX_BYTES);
     if (body === undefined) {
@@ -143,9 +167,12 @@ export async function startPanelPage(connections: SharedTransport, host: Telemet
       return reply(response, 400);
     }
     session.context = { content: parsed.data.content, updated: Date.now() };
+    session.stores++;
     session.touched = Date.now();
     recordBrowserPanelContext("stored", body.byteLength);
-    reply(response, 204);
+    // The count the content was stored under: a clear up to it cannot have dropped this content.
+    response.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+    response.end(JSON.stringify({ clears: session.clears }));
   }
 
   async function mcp(request: IncomingMessage, response: ServerResponse) {
@@ -164,7 +191,7 @@ export async function startPanelPage(connections: SharedTransport, host: Telemet
       // Per-request SSE supports associated server requests and releases completed streams.
       sessionIdGenerator: randomUUID,
       onsessioninitialized: id => {
-        sessions.set(id, { transport, touched: Date.now(), requests: 0 });
+        sessions.set(id, { transport, touched: Date.now(), requests: 0, clears: 0, stores: 0 });
         recordBrowserPanelSessions(sessions.size);
       },
     });
@@ -191,13 +218,33 @@ export async function startPanelPage(connections: SharedTransport, host: Telemet
     },
     context() {
       // The most recently updated tab comes first; each open tab keeps its own.
-      const shared = Array.from(sessions.values()).flatMap(session => session.context ? [session.context] : []);
+      const shared = Array.from(sessions.values()).flatMap(session => {
+        if (session.context === undefined) return [];
+        // clear() forgets only what the agent has read; mark this snapshot as read.
+        session.read = session.stores;
+        return [session.context];
+      });
       shared.sort((a, b) => b.updated - a.updated);
       return shared.flatMap((context, index) => {
         if (context.content.length === 0) return [];
         const heading: PanelContent = { type: "text", text: shared.length > 1 ? `Mobile Dev browser tab ${index + 1} of ${shared.length}, most recent first.` : "Mobile Dev browser panel." };
         return [heading, ...context.content];
       });
+    },
+    clear() {
+      // Forget only what the agent has read: a tab whose notes were stored or changed
+      // since the last read holds content the agent never saw, so it keeps them.
+      let cleared = 0;
+      let kept = 0;
+      for (const session of sessions.values()) {
+        if (session.context === undefined || session.context.content.length === 0) continue;
+        if (session.read !== session.stores) { kept++; continue; }
+        session.context = undefined;
+        session.clears++;
+        cleared++;
+        recordBrowserPanelContext("cleared");
+      }
+      return { cleared, kept };
     },
     async close() {
       closing = true;

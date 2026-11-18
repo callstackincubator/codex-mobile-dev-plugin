@@ -26,8 +26,8 @@ export function recordBrowserPanelSessions(active: number) {
   Sentry.metrics.gauge("browser_panel.sessions", active, { attributes: { component: "server" } });
 }
 
-/** Counts browser panel context updates by outcome; sizes only for stored updates, never their content. */
-export function recordBrowserPanelContext(outcome: "stored" | "invalid" | "too_large", bytes?: number) {
+/** Counts browser panel context updates by outcome, cleared-by-the-agent included; sizes only for stored updates, never their content. */
+export function recordBrowserPanelContext(outcome: "stored" | "invalid" | "too_large" | "cleared", bytes?: number) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes = { component: "server", outcome };
   Sentry.metrics.count("browser_panel.context_update", 1, { attributes });
