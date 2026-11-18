@@ -41,3 +41,6 @@ export function panelTargetPlatform(target: PanelTarget): "ios" | "android" | un
  * `{ resourceUri }` that MCP Apps hosts ignore and the browser panel reads.
  */
 export const PANEL_PAGE_META = "mobile-dev/panel";
+
+/** How often the open Testing tab re-sends its selection, so the server can tell a closed tab from an idle one. */
+export const PANEL_HEARTBEAT_MS = 5_000;

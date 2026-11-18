@@ -14,7 +14,7 @@ import { MenuRow, OFFER_LABEL, OfferIcon, StepCommandList } from "./step-command
 import { Branch } from "./cascading-menu.tsx";
 import { CODE_TOKEN_CLASS, changedLines, highlightCode } from "../code-highlight.ts";
 import { testSourceSuggestions } from "../test-source-suggestions.ts";
-import { changeStoredStepCommand, duplicateStoredStep, moveStoredStep, removeStoredStep, storedStepCommands, storedTestSteps, storedTestUntilSource } from "../stored-test-steps.ts";
+import { changeStoredStepCommand, duplicateStoredStep, moveStoredStep, removeStoredStep, storedStepCommands, storedTestSteps, storedTestUntilSource } from "@mobile-dev/shared/stored-test-steps.ts";
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert.tsx";
 import { Badge } from "./ui/badge.tsx";
 import { Button } from "./ui/button.tsx";
@@ -167,7 +167,7 @@ function TestingDraftPicker({ panel }: { panel: TestingPanel }) {
   const [open, setOpen] = useState(false);
   const [unstoredOpen, setUnstoredOpen] = useState(true);
   const [storedOpen, setStoredOpen] = useState(false);
-  const agentRecording = state.agent?.active === true;
+  const agentRecording = state.agent?.active === true || state.agentRun;
   // The one on screen may not be in the list yet: the autosave is debounced, and the first keep of
   // a brand new flow lands a moment after the first step.
   if (state.drafts.length === 0 && !state.draftId && state.tests.length === 0) return null;
@@ -338,6 +338,14 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
 function AgentRecordingBanner({ panel }: { panel: TestingPanel }) {
   const state = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
   const agent = state.agent;
+  // An agent's run: the lanes below are live and the user's controls wait for them.
+  if (state.agentRun) return <div data-testing-agent-run-banner className="flex flex-wrap items-center gap-2 rounded-md border border-primary/40 bg-primary/5 px-3 py-2 text-xs" role="status">
+    <BotIcon className="size-4 shrink-0 text-primary" aria-hidden />
+    <span className="min-w-0 flex-1 break-words"><span className="font-medium">Agent is running tests</span>{state.matrix ? ` — ${state.matrix.lanes.length} device${state.matrix.lanes.length === 1 ? "" : "s"}` : ""}</span>
+    <Button type="button" size="sm" variant="outline" data-testing-agent-run-cancel className="shrink-0"
+      title="Cancel every lane the agent has running."
+      onClick={() => void panel.cancelMatrix()}><SquareIcon />Cancel</Button>
+  </div>;
   if (!agent || agent.status === "idle") return null;
   if (agent.active) return <div data-testing-agent-banner className="flex flex-wrap items-center gap-2 rounded-md border border-primary/40 bg-primary/5 px-3 py-2 text-xs" role="status">
     <BotIcon className="size-4 shrink-0 text-primary" aria-hidden />
@@ -352,7 +360,7 @@ function AgentRecordingBanner({ panel }: { panel: TestingPanel }) {
   return <p data-testing-agent-handover className="rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground" role="status">
     {agent.status === "aborted" ? "The agent stopped recording" : "The agent finished recording"}
     {` ${agent.steps} step${agent.steps === 1 ? "" : "s"}`}{agent.note ? ` — ${agent.note}` : ""}.
-    {" "}Nothing has been saved or run: adjust the steps below, then press Save.
+    {agent.savedPath ? ` Saved in Studio as ${agent.savedPath}.` : " Nothing has been saved or run: adjust the steps below, then press Save."}
   </p>;
 }
 
@@ -373,7 +381,7 @@ function TestingControls({ panel, recordable, deviceId, platform }: { panel: Tes
   const recording = state.recordingDeviceId === deviceId && deviceId !== "";
   // While an agent is recording, the device is its own: a launch would reset the app under the
   // flow, and Record would arm a second driver on one screen.
-  const agentRecording = panelState.agent?.active === true;
+  const agentRecording = panelState.agent?.active === true || panelState.agentRun;
   // `ml-auto` on the group, not on any button in it: the header is one flex row, so the free
   // space between what names the project and what acts on it belongs to the gap between them.
   // The group keeps its own gap and sizes, and on a header too narrow to hold both it wraps whole
@@ -837,7 +845,7 @@ function TestingRecorder({ panel, recordable, deviceId }: { panel: TestingPanel;
   const recording = state.recordingDeviceId === deviceId && deviceId !== "";
   // Not while the agent is still writing the flow: saving half of one is a file the user did not
   // ask for, and the agent is told to hand over rather than to save.
-  const saveable = Boolean(panelState.projectPath) && (state.steps.length > 0 || Boolean(state.sourceOverride)) && !panelState.saving && !panelState.agent?.active;
+  const saveable = Boolean(panelState.projectPath) && (state.steps.length > 0 || Boolean(state.sourceOverride)) && !panelState.saving && !panelState.agent?.active && !panelState.agentRun;
   const [editing, setEditing] = useState(false);
   const sourceSteps = state.sourceOverride === undefined ? undefined : storedTestSteps(state.sourceOverride);
   const [hoveredStep, setHoveredStep] = useState<string>();
@@ -923,7 +931,7 @@ function TestingRecorder({ panel, recordable, deviceId }: { panel: TestingPanel;
         <section data-testing-preview-pane className="flex h-full min-h-0 min-w-0 flex-col gap-1.5 overflow-hidden rounded-lg border p-3">
           <p className="flex flex-wrap items-center gap-2 text-xs font-medium">
             <span>Preview</span>
-            {!panelState.agent?.active && <Button type="button" size="sm" variant="ghost" className={editing ? "bg-accent text-accent-foreground" : undefined} data-testing-source-edit aria-pressed={editing}
+            {!panelState.agent?.active && !panelState.agentRun && <Button type="button" size="sm" variant="ghost" className={editing ? "bg-accent text-accent-foreground" : undefined} data-testing-source-edit aria-pressed={editing}
               disabled={editing || panelState.running || panelState.saving} onClick={() => setEditing(true)}>Edit</Button>}
             {state.run?.state === "running" && <span className="flex items-center gap-1 font-normal text-muted-foreground" role="status">
               <LoaderCircleIcon className="size-3 animate-spin" />Running

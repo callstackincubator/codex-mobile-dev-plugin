@@ -28,9 +28,11 @@ async function panelEnvironment(t: Parameters<typeof renderEnvironment>[0]) {
   });
   const calls: { name: string; arguments: Record<string, unknown> }[] = [];
   const agent: Record<string, unknown> = { active: false, status: "idle", revision: 0, title: "", goal: "", steps: [], note: "", error: "" };
+  const responses: Record<string, () => unknown> = {};
   const host = {
     callServerTool: async (request: { name: string; arguments: Record<string, unknown> }) => {
       calls.push(request);
+      if (responses[request.name]) return { content: [], structuredContent: responses[request.name]!() };
       if (request.name === "mobile_testing_agent_state") return { content: [], structuredContent: { ...agent } };
       if (request.name === "mobile_testing_projects") return { content: [], structuredContent: { projects: [] } };
       return { content: [], structuredContent: {} };
@@ -48,7 +50,7 @@ async function panelEnvironment(t: Parameters<typeof renderEnvironment>[0]) {
   const extra: (() => Promise<void> | void)[] = [];
   onTeardown(async () => { for (const fn of extra.reverse()) await fn(); panel.dispose(); });
   const tick = async () => { await new Promise(resolve => setTimeout(resolve, 0)); await new Promise(resolve => setTimeout(resolve, 0)); };
-  return { ...module, dom, onTeardown: (fn: () => Promise<void> | void) => { extra.push(fn); }, panel, calls, agent, tick,
+  return { ...module, dom, onTeardown: (fn: () => Promise<void> | void) => { extra.push(fn); }, panel, host, deviceApps, calls, agent, tick, responses,
     setDevice: (next: unknown) => { snapshot = { device: next } as never; for (const listener of listeners) listener(); } };
 }
 
@@ -166,4 +168,87 @@ test("the banner says who is driving, and its Stop is the one beside the goal", 
   // "Recorded" reads as "saved" to anyone who did not watch it happen.
   assert.match(dom.window.document.querySelector("[data-testing-agent-handover]")?.textContent ?? "",
     /The agent finished recording 1 step — 4 landmarks\. Nothing has been saved or run/);
+});
+
+const lane = (state: string, extra: Record<string, unknown> = {}) => ({ runId: `run-${state}`, deviceId: "d1", deviceName: "iPhone", platform: "ios", state, progress: [], ...extra });
+const wire = (running: boolean, state: string, matrixId = "m1") => ({ matrixId, testPath: "tests/flow.e2e.ts", lanes: [lane(state)], limit: 3, startedAt: 1, running });
+
+test("a run the agent starts shows as live lanes, locks editing, and frees it when the lanes finish", async t => {
+  const { panel, responses, tick } = await panelEnvironment(t);
+  panel.setAvailable(true);
+  await tick();
+  (panel as any).update({ projectPath: "/studio", runtimeMode: "bundled" });
+  assert.equal(panel.agentBusy, false);
+
+  responses.mobile_testing_run_progress = () => wire(true, "running");
+  await (panel as any).readAgentState();
+  assert.equal(panel.getSnapshot().agentRun, true);
+  assert.equal(panel.getSnapshot().matrix.lanes[0].state, "running", "the agent's lanes are the lanes on screen");
+  assert.equal(panel.agentBusy, true, "editing locks the way it does while the agent records");
+  assert.equal(panel.canRun, false);
+  assert.equal(panel.canRunStored, false);
+  panel.dismissMatrix();
+  assert.ok(panel.getSnapshot().matrix, "a live run cannot be dismissed");
+
+  responses.mobile_testing_run_progress = () => wire(false, "passed");
+  await (panel as any).readAgentState();
+  assert.equal(panel.getSnapshot().agentRun, false);
+  assert.equal(panel.getSnapshot().matrix.lanes[0].state, "passed", "the result stays on screen to read");
+  assert.equal(panel.agentBusy, false);
+
+  // The same finished run is not adopted again, and a run the panel did not see running never is.
+  await (panel as any).readAgentState();
+  assert.equal(panel.getSnapshot().agentRun, false);
+});
+
+test("the panel's own run is never taken over by the poll", async t => {
+  const { panel, responses, tick } = await panelEnvironment(t);
+  panel.setAvailable(true);
+  await tick();
+  (panel as any).update({ projectPath: "/studio", runtimeMode: "bundled", running: true });
+  responses.mobile_testing_run_progress = () => wire(true, "running", "theirs");
+  await (panel as any).readAgentState();
+  assert.equal(panel.getSnapshot().agentRun, false);
+  assert.equal(panel.getSnapshot().matrix, null);
+});
+
+test("a recording the agent saved in Studio refreshes the test list instead of adopting a draft", async t => {
+  const { panel, agent, tick, calls, testRecorder } = await panelEnvironment(t);
+  panel.setAvailable(true);
+  await tick();
+  Object.assign(agent, { active: true, status: "recording", revision: 1, title: "t", goal: "g", steps: [step("a", "Tap")] });
+  await (panel as any).readAgentState();
+  const before = calls.filter(entry => entry.name === "mobile_testing_tests").length;
+  (panel as any).update({ projectPath: "/studio", runtimeMode: "bundled" });
+  Object.assign(agent, { active: false, status: "finished", revision: 2, note: "n", savedPath: "tests/t.e2e.ts" });
+  await (panel as any).readAgentState();
+  await tick();
+  assert.equal(panel.getSnapshot().agent.savedPath, "tests/t.e2e.ts");
+  assert.equal(panel.getSnapshot().savedPath, "Studio/tests/t.e2e.ts");
+  assert.equal(panel.getSnapshot().draftId, "", "there is no draft: the test is saved");
+  assert.ok(calls.filter(entry => entry.name === "mobile_testing_tests").length > before, "the stored list is read again so the test appears");
+  assert.equal(testRecorder.getSnapshot().recordingDeviceId, "");
+});
+
+test("an open, visible tab re-sends its selection on a heartbeat, and tells the server when it goes", async t => {
+  const { TestingPanel, host, deviceApps, calls, tick } = await panelEnvironment(t);
+  const beating = new TestingPanel(host, deviceApps, { heartbeatMs: 10 });
+  const context = () => calls.filter(entry => entry.name === "mobile_testing_set_context");
+  beating.setAvailable(true);
+  await tick();
+  const initial = context().length;
+  // Closed (not shown): nothing is sent, so the server lets the report age out.
+  await new Promise(resolve => setTimeout(resolve, 60));
+  assert.equal(context().length, initial, "a tab that is not showing does not claim to be open");
+  beating.show();
+  await new Promise(resolve => setTimeout(resolve, 80));
+  assert.ok(context().length >= initial + 3, "the same selection is re-sent while the tab is open, which is what keeps it alive");
+  beating.hide();
+  await tick();
+  const hidden = context().length;
+  await new Promise(resolve => setTimeout(resolve, 60));
+  assert.equal(context().length, hidden, "hiding stops the heartbeat");
+  beating.dispose();
+  await tick();
+  assert.deepEqual(context().at(-1)?.arguments, { projectPath: "", deviceId: "", bundleId: "" }, "leaving clears the context on a best-effort basis");
 });

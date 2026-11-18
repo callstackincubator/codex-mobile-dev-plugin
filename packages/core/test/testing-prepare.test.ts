@@ -116,3 +116,18 @@ test("system ops copy a split APK with install-multiple and an iOS app with get_
   await ops.copyApp("ios", "11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222", "com.app", controller.signal);
   assert.deepEqual(calls.at(-1), ["xcrun", "simctl", "install", "22222222-2222-4222-8222-222222222222", "/sim/App.app"]);
 });
+
+test("the system ops list only the booted devices of a platform and read the foreground app through the given reader", async () => {
+  const status = (devices: unknown[]) => ({ list: async () => ({ connected: true, managed: false, baseUrl: "", devices }) }) as never;
+  const asked: [string, string][] = [];
+  const ops = systemDeviceOps({
+    simulators: status([{ udid: "A", name: "iPhone", state: "Booted", runtime: "iOS" }, { udid: "B", name: "Off", state: "Shutdown", runtime: "iOS" }]),
+    android: status([{ udid: "emulator-5554", name: "Pixel", state: "Booted", runtime: "", platform: "android", kind: "emulator" }, { udid: "avd:x", name: "Cold", state: "Shutdown", runtime: "", platform: "android", kind: "emulator" }]),
+    drivers: (() => ({})) as never,
+    foreground: async (platform, deviceId) => { asked.push([platform, deviceId]); return "com.example"; },
+  });
+  assert.deepEqual(await ops.bootedDevices!("ios"), [{ deviceId: "A", name: "iPhone" }]);
+  assert.deepEqual(await ops.bootedDevices!("android"), [{ deviceId: "emulator-5554", name: "Pixel" }]);
+  assert.equal(await ops.foregroundApp!("android", "emulator-5554"), "com.example");
+  assert.deepEqual(asked, [["android", "emulator-5554"]]);
+});

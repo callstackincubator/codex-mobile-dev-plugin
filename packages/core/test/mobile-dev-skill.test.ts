@@ -28,8 +28,8 @@ test("the testing skill records, hands over, and never saves or runs", async () 
   // screen read reported no selector for.
   assert.match(skill, /## Never write a locator/);
   assert.match(skill, /no `selector` at all/);
-  assert.match(skill, /\*\*Never save\.\*\*/);
-  assert.match(skill, /\*\*Never run the test\.\*\*/);
+  assert.match(skill, /\*\*Never save\*\* a project's test/);
+  assert.match(skill, /\*\*Never run the test\*\* while recording/);
   // And the handover, which is the whole deliverable: the user adjusts and saves.
   assert.match(skill, /in the Testing panel, unsaved/);
 });
@@ -57,4 +57,23 @@ test("the testing skill ships from every plugin that has the panel", async () =>
   assert.ok(sharedSkills.includes("packages/skills/mobile-dev-testing"), "Codex and Cursor");
   const claude = JSON.parse(await readFile(new URL("../../../apps/claude/plugin-host.json", import.meta.url), "utf8"));
   assert.ok(claude.skills.includes("../../packages/skills/mobile-dev-testing"), "Claude Code");
+});
+
+test("the testing skill teaches Studio mode: record saves, run, add the missing app, repair by locator only", async () => {
+  const skill = await readFile(new URL("../../skills/mobile-dev-testing/SKILL.md", import.meta.url), "utf8");
+
+  assert.match(skill, /## Studio mode: record, run, repair/);
+  // The tab must be open, and the agent says so rather than guessing a project.
+  assert.match(skill, /tell the user to \*\*open Mobile Dev's Testing tab\*\*/);
+  // Record now saves, and says where.
+  assert.match(skill, /`mobile_testing_agent_finish` \*\*writes the test\*\*.*`relativePath`/s);
+  // Run: one device or several, and devices that are off are the matrix's to boot.
+  assert.match(skill, /`mobile_testing_run_matrix/);
+  assert.match(skill, /\*\*Devices that are off are booted by the matrix\*\*/);
+  // A platform with no app: ask, wait, add without asking, report the id, run again.
+  assert.match(skill, /mobile_testing_wait_for_app.*mobile_testing_set_target.*mode: "add".*\*\*without asking\*\*.*which id you added/s);
+  // Failure: branch that platform's line only, two tries, then report; never touch an assertion.
+  assert.match(skill, /mobile_testing_branch_line/);
+  assert.match(skill, /\*\*At most two tries per failure\.\*\*.*likely app\s+bug/s);
+  assert.match(skill, /\*\*Never weaken or remove an assertion\*\*/);
 });

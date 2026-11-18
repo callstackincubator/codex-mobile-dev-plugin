@@ -69,7 +69,7 @@ export function changeStoredStepCommand(source: string, line: number, commandId:
   });
   if (!commandId.startsWith("assert") || /import\s*{[^}]*\bexpect\b[^}]*}\s*from\s*["']e2e["']/.test(changed)) return changed;
   const lines = changed.split("\n");
-  const lastImport = lines.findLastIndex(entry => /^import\s/.test(entry));
+  const lastImport = lines.map(entry => /^import\s/.test(entry)).lastIndexOf(true);
   lines.splice(lastImport + 1, 0, 'import { expect } from "e2e";');
   return lines.join("\n");
 }

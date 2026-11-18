@@ -6,7 +6,11 @@ import { errorMessage } from "@mobile-dev/shared/protocol.ts";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 import { captureServerError, recordTestingSetupOperation } from "./telemetry.ts";
 import type { TestingProjectChoices } from "./testing-projects.ts";
-import { deleteTestFile, discardStagedTestFile, inspectProject, listTestFiles, previewTestFile, readTestFile, resolveTestRunPaths, saveStagedTestFile, stageTestFile, studioWorkspacePath, writeTestFile, writeTestTarget } from "./testing-projects.ts";
+import { deleteTestFile, discardStagedTestFile, inspectProject, listTestFiles, previewTestFile, readTestFile, readTestTarget, resolveTestRunPaths, saveStagedTestFile, stageTestFile, studioWorkspacePath, writeTestFile, writeTestTarget } from "./testing-projects.ts";
+import type { TestTarget } from "./testing-projects.ts";
+import { branchStoredStepLocator } from "@mobile-dev/shared/stored-test-steps.ts";
+import { compactElements, describeFailure } from "./testing-failure.ts";
+import type { TestingAgentContext } from "./testing-agent.ts";
 import { TestDraftStore } from "./testing-drafts.ts";
 import { MAX_DRAFT_STEPS, recordedStepSchema, testDraftIdSchema } from "@mobile-dev/shared/test-drafts.ts";
 import type { TestDraft } from "@mobile-dev/shared/test-drafts.ts";
@@ -27,6 +31,36 @@ const write = { readOnlyHint: false, destructiveHint: false, openWorldHint: fals
 const destructive = { readOnlyHint: false, destructiveHint: true, openWorldHint: false };
 /** The Testing panel drives these itself; the model has its own e2e MCP server for test work. */
 const appVisibility = { ui: { visibility: ["app"] as ("app" | "model")[] } };
+/**
+ * The tools an agent drives No project (Studio) mode with: run, progress, cancel, pin an app,
+ * read a test, list tests, branch a line, wait for an app. The panel calls them too.
+ */
+const sharedVisibility = { ui: { visibility: ["app", "model"] as ("app" | "model")[] } };
+
+/** What the Testing tab has told the server; see `TestingAgentRecordings.setPanelProject`. */
+export interface PanelContext {
+  panelProjectPath(): string | undefined;
+  panelContext?(): TestingAgentContext | undefined;
+}
+
+/** Quote-aware: one expression with balanced brackets and no `;` outside a string. */
+function singleExpression(text: string): boolean {
+  const closing: Record<string, string> = { "(": ")", "[": "]", "{": "}" };
+  const stack: string[] = [];
+  let quote = "";
+  for (let index = 0; index < text.length; index++) {
+    const char = text[index]!;
+    if (char === "\\" && quote) { index++; continue; }
+    if (quote) { if (char === quote) quote = ""; continue; }
+    if (char === "\n" || char === ";") return false;
+    if (char === '"' || char === "'" || char === "`") { quote = char; continue; }
+    if (closing[char]) stack.push(closing[char]!);
+    else if ([")", "]", "}"].includes(char) && stack.pop() !== char) return false;
+  }
+  return !quote && stack.length === 0;
+}
+
+const LAUNCHER_APP = /^com\.apple\.springboard$|^com\.android\.systemui$|launcher/i;
 
 const projectPath = z.string().min(1).max(4096);
 
@@ -47,7 +81,7 @@ function dataResult(data: Record<string, unknown>, message?: string): CallToolRe
 
 /** The Testing panel's project selection, and the device tree its recorder names selectors from. */
 /** Returns the shutdown the plugin has to run: the recorder's device session, handed back. */
-export function registerTestingTools(server: McpServer, projects: TestingProjectChoices, devices = new TestingDevices(), drafts = new TestDraftStore(), matrix: { ops?: DeviceOps; registry?: MatrixRegistry; run?: typeof runRecordedTest } = {}): () => Promise<void> {
+export function registerTestingTools(server: McpServer, projects: TestingProjectChoices, devices = new TestingDevices(), drafts = new TestDraftStore(), matrix: { ops?: DeviceOps; registry?: MatrixRegistry; run?: typeof runRecordedTest; panel?: PanelContext; pollMs?: number; failureReadMs?: number } = {}): () => Promise<void> {
   /**
    * Every run, as a matrix of lanes; a single run is a matrix of one.
    *
@@ -58,6 +92,21 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
    */
   const registry = matrix.registry ?? new MatrixRegistry();
   const runTest = matrix.run ?? runRecordedTest;
+  /**
+   * The project a model-visible tool works on. With a panel, the Testing tab must have reported a
+   * project — that is the only proof the user has it open — and a call that names none defaults to
+   * it, so the agent never needs to know where Studio lives.
+   */
+  const panel = matrix.panel;
+  function resolveProject(selected?: string): string {
+    if (!panel) {
+      if (!selected) throw new ExpectedOperationError("invalid_input", "Pass projectPath.");
+      return selected;
+    }
+    const current = panel.panelProjectPath();
+    if (!current) throw new ExpectedOperationError("invalid_input", "The Testing tab is not open, so there is no project to work on. Ask the user to open Mobile Dev's Testing tab, then try again.");
+    return selected ?? current;
+  }
   const matrixWire = (run: MatrixRun) => ({ ...snapshotMatrix(run), running: run.lanes.some(lane => !["passed", "failed", "cancelled", "error"].includes(lane.state)) });
   registerAppTool(server, "mobile_testing_projects", {
     title: "List testing projects",
@@ -112,21 +161,21 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
    */
   registerAppTool(server, "mobile_testing_tests", {
     title: "List the project's tests",
-    description: "List the .e2e.ts files already in the project's tests/ folder, newest first.",
-    inputSchema: { projectPath },
+    description: "List the .e2e.ts files already in the project's tests/ folder, newest first. Each carries the app it is pinned to: target.platform and target.bundleId for the app it was recorded against, and target.apps for the app added on the other platform. projectPath defaults to the Testing tab's project.",
+    inputSchema: { projectPath: projectPath.optional() },
     annotations: read,
-    _meta: appVisibility,
-  }, safe(async ({ projectPath: selected }: { projectPath: string }) =>
-    dataResult({ tests: await listTestFiles(selected) })));
+    _meta: sharedVisibility,
+  }, safe(async ({ projectPath: selected }: { projectPath?: string }) =>
+    dataResult({ tests: await listTestFiles(resolveProject(selected)) })));
 
   registerAppTool(server, "mobile_testing_read_file", {
     title: "Preview a project test",
-    description: "Read the source of one .e2e.ts file in the project's tests/ folder for the Testing panel preview.",
-    inputSchema: { projectPath, relativePath: z.string().min(1).max(512) },
+    description: "Read the source of one .e2e.ts file in the project's tests/ folder. Lines are numbered from 1; the line numbers in a failed run's steps and failure refer to this source. projectPath defaults to the Testing tab's project.",
+    inputSchema: { projectPath: projectPath.optional(), relativePath: z.string().min(1).max(512) },
     annotations: read,
-    _meta: appVisibility,
-  }, safe(async ({ projectPath: selected, relativePath }: { projectPath: string; relativePath: string }) =>
-    dataResult(await previewTestFile(selected, relativePath))));
+    _meta: sharedVisibility,
+  }, safe(async ({ projectPath: selected, relativePath }: { projectPath?: string; relativePath: string }) =>
+    dataResult(await previewTestFile(resolveProject(selected), relativePath))));
 
   registerAppTool(server, "mobile_testing_stage_file", {
     title: "Keep project test edits temporarily",
@@ -307,12 +356,15 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
 
   registerAppTool(server, "mobile_testing_set_target", {
     title: "Pin a Studio test to an app",
-    description: "Store the app (platform and bundle id) a saved Studio test runs against. Only Studio tests carry one; a project test keeps using its config's target. With mode add, the app is added for its platform and the app the test was recorded against stays.",
-    inputSchema: { projectPath, relativePath: z.string().min(1).max(512), platform: z.enum(["ios", "android"]), bundleId: z.string().min(1).max(512), mode: z.enum(["replace", "add"]).optional() },
+    description: "Store the app (platform and bundle id) a saved Studio test runs against. Only Studio tests carry one; a project test keeps using its config's target. With mode add, the app is added for its platform and the app the test was recorded against stays: use it to give a test the app for its other platform, with the bundleId mobile_testing_wait_for_app returned. Returns the app id pinned. projectPath defaults to the Testing tab's project.",
+    inputSchema: { projectPath: projectPath.optional(), relativePath: z.string().min(1).max(512), platform: z.enum(["ios", "android"]), bundleId: z.string().min(1).max(512), mode: z.enum(["replace", "add"]).optional() },
     annotations: write,
-    _meta: appVisibility,
-  }, safe(async ({ projectPath: selected, relativePath, platform, bundleId, mode }: { projectPath: string; relativePath: string; platform: "ios" | "android"; bundleId: string; mode?: "replace" | "add" }) =>
-    dataResult({ pinned: await writeTestTarget(selected, relativePath, { platform, bundleId }, mode) })));
+    _meta: sharedVisibility,
+  }, safe(async ({ projectPath: selected, relativePath, platform, bundleId, mode }: { projectPath?: string; relativePath: string; platform: "ios" | "android"; bundleId: string; mode?: "replace" | "add" }) => {
+    const pinned = await writeTestTarget(resolveProject(selected), relativePath, { platform, bundleId }, mode);
+    return dataResult({ pinned, ...(pinned ? { added: { platform, bundleId, mode: mode ?? "replace" } } : {}) },
+      pinned ? `Pinned ${platform} ${bundleId} to ${relativePath} (${mode ?? "replace"}).` : "Only Studio tests carry a pinned app; nothing was changed.");
+  }));
 
   const modelSchema = z.object({
     provider: z.enum(["vercel", "openrouter", "openai-compatible", "chatgpt", "copilot", "opencode-console", "grok"]),
@@ -322,7 +374,13 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
 
   /** Everything a run needs before a device is chosen: the same for a single run and for every lane. */
   async function prepareRequest(input: RunInput) {
-    const { projectPath: selected, relativePath, configPath, timeoutMs, target, platform, bundleId, pin, model, untilSource } = input;
+    const { projectPath: selected, relativePath, configPath, timeoutMs, target, pin, model, untilSource } = input;
+    // A Studio test remembers its app, so a caller that names none runs the one it was pinned to.
+    let { platform, bundleId } = input;
+    if (!(platform && bundleId)) {
+      const stored = await readTestTarget(selected, relativePath).catch(() => undefined);
+      if (stored) ({ platform, bundleId } = storedApp(stored, platform, bundleId));
+    }
     const project = await inspectProject(selected, platform && bundleId ? { platform, bundleId } : undefined);
     if (pin && platform && bundleId) await writeTestTarget(selected, relativePath, { platform, bundleId }).catch(() => false);
     const paths = await resolveTestRunPaths(selected, relativePath, project.runtimeMode === "project" ? configPath : undefined, untilSource !== undefined);
@@ -335,7 +393,41 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
       ...(project.runtimeMode === "bundled" && platform && bundleId ? { bundledTarget: { platform, bundleId } }
         : project.runtimeMode === "bundled" && selectedTarget?.platform && selectedTarget.bundleId ? { bundledTarget: { platform: selectedTarget.platform as "ios" | "android", bundleId: selectedTarget.bundleId } } : {}),
       ...(model ? { model } : {}) };
-    return { request, project };
+    return { request, project, platform, bundleId };
+  }
+
+  /** The app a stored target gives a platform (the recorded platform's, or the one added). */
+  function storedApp(stored: TestTarget, platform?: "ios" | "android", bundleId?: string): { platform: "ios" | "android"; bundleId?: string } {
+    const chosen = platform ?? stored.platform;
+    return { platform: chosen, bundleId: bundleId ?? (chosen === stored.platform ? stored.bundleId : stored.apps?.[chosen]) };
+  }
+
+  /**
+   * The failing line and the device's screen, set on the lane before it settles, so whoever polls
+   * the run has what it takes to choose a locator without another call. Best effort: the run's own
+   * verdict is already in hand, and a device that cannot be read only costs the element list.
+   */
+  async function attachFailure(lane: { failure?: import("./testing-failure.ts").LaneFailure }, result: Awaited<ReturnType<typeof runRecordedTest>>, source: string,
+    read: { deviceId: string; platform: "ios" | "android"; projectPath: string; runtimeRoot: string; bundleId?: string }) {
+    const failure = describeFailure(result, source);
+    if (!failure) return;
+    lane.failure = failure;
+    if (!read.bundleId) { failure.elementsError = "No app id is known for this device, so its screen was not read."; return; }
+    if (!read.deviceId) { failure.elementsError = "The runner chose the device, so its screen was not read. Run with mobile_testing_run_matrix to name one."; return; }
+    try {
+      const timeout = matrix.failureReadMs ?? 20_000;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const tree = await Promise.race([
+        devices.read({ deviceId: read.deviceId, platform: read.platform, projectPath: read.projectPath, runtimeRoot: read.runtimeRoot, bundleId: read.bundleId }),
+        new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("Reading the device's screen timed out.")), timeout); }),
+      ]).finally(() => clearTimeout(timer));
+      Object.assign(failure, compactElements(tree.tree, tree.screen));
+    } catch (error) {
+      failure.elementsError = errorMessage(error);
+    } finally {
+      // The next run takes the device; a session this read left behind would refuse it.
+      await devices.releaseOn([read.deviceId]).catch(() => undefined);
+    }
   }
 
   /** Starts a matrix whose lanes run `request` and returns once it is registered. */
@@ -346,9 +438,9 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
   registerAppTool(server, "mobile_testing_run_test", {
     title: "Run a recorded test",
     description:
-      "Run one saved test with the project's own e2e CLI and report each step with the line it came from. The recorder's device session is released first: the runner allows one session per device, so a run started while the recorder holds it fails with \"Device is already in use\". Runs on the one device the runner picks; use mobile_testing_run_matrix to choose devices.",
+      "Run one saved test and report each step with the line it came from. Blocks until the run ends; for a long test, or to choose the device, start it with mobile_testing_run_matrix and read mobile_testing_run_progress. Without platform and bundleId a Studio test runs the app it is pinned to. The recorder's device session is released first. A failed run carries `failure`: the failing line, its error and, when the device can be read, its screen as locator rows to pick from. projectPath defaults to the Testing tab's project.",
     inputSchema: {
-      projectPath,
+      projectPath: projectPath.optional(),
       relativePath: z.string().min(1).max(512).describe("The test to run, relative to the project, e.g. tests/a-recorded-flow.e2e.ts."),
       configPath: z.string().min(1).max(4096).optional().describe("The project's e2e config, so the run can report live per-step progress."),
       timeoutMs: z.number().int().min(10_000).max(30 * 60_000).optional(),
@@ -362,46 +454,62 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
     },
     // A test run drives the app on the device: it taps, types and changes the app's own state.
     annotations: destructive,
-    _meta: appVisibility,
-  }, safe(async (input: RunInput) => {
+    _meta: sharedVisibility,
+  }, safe(async (raw: Omit<RunInput, "projectPath"> & { projectPath?: string }) => {
+    const input: RunInput = { ...raw, projectPath: resolveProject(raw.projectPath) };
     // The release is a dependency of the run, not a step the caller is trusted to have taken: see
     // `TestRunDeps`. The panel releases too, but a caller who forgets must not break the run.
-    const { request } = await prepareRequest(input);
+    const { request, project, platform, bundleId } = await prepareRequest(input);
+    const lanePlatform = platform ?? "ios";
     const executor: LaneExecutor = {
       // No device is chosen and nothing is booted or installed: the runner picks, as it always has.
       prepare: async () => "",
-      run: (_lane, _device, signal, onProgress) => runTest(request, { release: () => devices.release(), onProgress, signal }),
+      run: async (lane, _device, signal, onProgress) => {
+        const result = await runTest(request, { release: () => devices.release(), onProgress, signal });
+        const context = panel?.panelContext?.();
+        const source = request.untilSource ?? await readTestFile(input.projectPath, input.relativePath).catch(() => "");
+        await attachFailure(lane, result, source, { deviceId: context && context.platform === lanePlatform ? context.deviceId : "", platform: lanePlatform, projectPath: input.projectPath, runtimeRoot: project.runtime.root, ...(bundleId ? { bundleId } : {}) });
+        return result;
+      },
     };
-    const { run, done } = launchMatrix(input.relativePath, [{ deviceId: "auto", platform: input.platform ?? "ios", name: "Default device" }], 1, executor);
+    const { run, done } = launchMatrix(input.relativePath, [{ deviceId: "auto", platform: lanePlatform, name: "Default device" }], 1, executor);
     await done;
     const lane = run.lanes[0]!;
     // A run that could not start at all is the caller's error, as it was before lanes existed.
     if (lane.state === "error" || (lane.state === "cancelled" && !lane.result)) throw new Error(lane.error ?? "The test run was cancelled.");
-    return dataResult({ ...lane.result!, matrixId: run.matrixId }, `${input.relativePath} ${lane.result!.status}.`);
+    return dataResult({ ...lane.result!, matrixId: run.matrixId, ...(lane.failure ? { failure: lane.failure } : {}) }, `${input.relativePath} ${lane.result!.status}.`);
   }));
 
   registerAppTool(server, "mobile_testing_run_matrix", {
     title: "Run a recorded test on several devices",
     description:
-      "Run one saved test on several devices at once, one independent lane per device, and return a matrixId immediately; read progress with mobile_testing_run_progress. At most `limit` lanes run at once (default 3, max 8); the rest are queued. Devices that are off are booted, and a device missing the app gets it installed by copying it from another device in the run that has it; otherwise that lane fails with \"App not installed\". Bundled mode only. A failure on one device does not stop the others.",
+      "Run one saved test on several devices at once, one independent lane per device (iOS and Android can be mixed), and return a matrixId immediately; read progress with mobile_testing_run_progress. At most `limit` lanes run at once (default 3, max 8); the rest are queued. Devices that are off are booted, and a device missing the app gets it installed by copying it from another device in the run that has it; otherwise that lane fails with \"App not installed\". `apps` defaults to the apps the test is pinned to; a platform with no app is refused, naming the fix. Bundled mode only. A failure on one device does not stop the others, and its lane carries `failure` (line, error, screen). projectPath defaults to the Testing tab's project.",
     inputSchema: {
-      projectPath,
+      projectPath: projectPath.optional(),
       relativePath: z.string().min(1).max(512).describe("The test to run, relative to the project."),
       devices: z.array(z.object({
         deviceId: deviceIdSchema.describe("An iOS simulator UDID, an Android serial, or an avd: id from the device lists."),
         platform: z.enum(["ios", "android"]),
         name: z.string().min(1).max(128).optional().describe("A label for the lane."),
       })).min(1).max(16),
-      apps: z.object({ ios: z.string().min(1).max(512).optional(), android: z.string().min(1).max(512).optional() })
-        .describe("The app id per platform: the iOS bundle id and the Android package name."),
+      apps: z.object({ ios: z.string().min(1).max(512).optional(), android: z.string().min(1).max(512).optional() }).optional()
+        .describe("The app id per platform: the iOS bundle id and the Android package name. Defaults to the apps the test is pinned to."),
       limit: z.number().int().min(1).max(MAX_MATRIX_LIMIT).optional().describe("How many devices run at once. Default 3."),
       timeoutMs: z.number().int().min(10_000).max(30 * 60_000).optional(),
       model: modelSchema.optional(),
       untilSource: z.string().min(1).max(400_000).optional().describe("A truncated copy of the test to run instead of the file."),
     },
     annotations: destructive,
-    _meta: appVisibility,
-  }, safe(async (input: Omit<RunInput, "platform" | "bundleId" | "pin" | "target" | "configPath"> & { devices: MatrixDevice[]; apps: { ios?: string; android?: string }; limit?: number }) => {
+    _meta: sharedVisibility,
+  }, safe(async (raw: Omit<RunInput, "projectPath" | "platform" | "bundleId" | "pin" | "target" | "configPath"> & { projectPath?: string; devices: MatrixDevice[]; apps?: { ios?: string; android?: string }; limit?: number }) => {
+    const projectPathValue = resolveProject(raw.projectPath);
+    const stored = await readTestTarget(projectPathValue, raw.relativePath).catch(() => undefined);
+    const apps: { ios?: string; android?: string } = { ...(stored ? { [stored.platform]: stored.bundleId, ...stored.apps } : {}), ...raw.apps };
+    const input = { ...raw, projectPath: projectPathValue, apps };
+    for (const platform of ["ios", "android"] as const) {
+      if (input.devices.some(device => device.platform === platform) && !apps[platform])
+        throw new ExpectedOperationError("app_unavailable", `This test has no ${platform} app yet. Ask the user to open the app on a ${platform} device, call mobile_testing_wait_for_app with platform "${platform}", pin the bundleId it returns with mobile_testing_set_target mode "add", then run again.`);
+    }
     const unique = new Set(input.devices.map(device => device.deviceId));
     if (unique.size !== input.devices.length) throw new ExpectedOperationError("invalid_input", "Each device can appear only once in a matrix.");
     if (!matrix.ops) throw new ExpectedOperationError("unsupported_platform", "This server cannot prepare devices for a matrix run.");
@@ -412,9 +520,13 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
     await devices.releaseOn(input.devices.map(device => device.deviceId)).catch(() => undefined);
     const executor = createLaneExecutor({
       ops: matrix.ops, apps: input.apps,
-      runTest: (lane, deviceId, signal, onProgress) => runTest(
-        { ...request, bundledTarget: { platform: lane.platform, bundleId: input.apps[lane.platform]!, device: deviceId } },
-        { release: () => devices.releaseOn([lane.deviceId, deviceId]), onProgress, signal }),
+      runTest: async (lane, deviceId, signal, onProgress) => {
+        const result = await runTest(
+          { ...request, bundledTarget: { platform: lane.platform, bundleId: input.apps[lane.platform]!, device: deviceId } },
+          { release: () => devices.releaseOn([lane.deviceId, deviceId]), onProgress, signal });
+        await attachFailure(lane, result, request.untilSource ?? "", { deviceId, platform: lane.platform, projectPath: input.projectPath, runtimeRoot: project.runtime.root, bundleId: input.apps[lane.platform]! });
+        return result;
+      },
     });
     const { run } = launchMatrix(input.relativePath, input.devices, input.limit, executor);
     return dataResult({ matrixId: run.matrixId, limit: run.limit, lanes: snapshotMatrix(run).lanes }, `Started ${run.lanes.length} lanes, up to ${run.limit} at once.`);
@@ -423,11 +535,12 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
   registerAppTool(server, "mobile_testing_run_progress", {
     title: "Read a run's progress",
     description:
-      "Read the lanes of a matrix run: each device's state (queued, booting, installing, running, passed, failed, cancelled, error), the steps it has started and finished so far, and its result. Without a matrixId it reads the latest run, whose first lane's steps are also returned as `progress`. Each step carries its index within its test, which is its position among the file's awaited calls.",
+      "Read the lanes of a matrix run: each device's state (queued, booting, installing, running, passed, failed, cancelled, error), the steps it has started and finished so far, and its result. Without a matrixId it reads the latest run, whose first lane's steps are also returned as `progress`. Each step carries its index within its test, which is its position among the file's awaited calls. A lane that failed carries `failure`: the failing line, its source and error, and the device's screen as locator rows (`role \"name\" → screen.getBy…`) to pick a replacement from. `running` is false once every lane has finished.",
     inputSchema: { matrixId: z.string().min(1).max(128).optional() },
     annotations: read,
-    _meta: appVisibility,
+    _meta: sharedVisibility,
   }, safe(async ({ matrixId }: { matrixId?: string }) => {
+    if (panel) resolveProject();
     const run = matrixId ? registry.get(matrixId) : registry.latest();
     if (matrixId && !run) throw new ExpectedOperationError("invalid_input", "That run is no longer available.");
     if (!run) return dataResult({ running: false, progress: [], lanes: [], busyDevices: registry.busyDevices() });
@@ -440,11 +553,69 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
     description: "Cancel one device's lane of a matrix run, or every lane that has not finished. A queued lane never starts; a running lane's process is stopped.",
     inputSchema: { matrixId: z.string().min(1).max(128), deviceId: deviceIdSchema.optional().describe("Cancel only this device's lane.") },
     annotations: write,
-    _meta: appVisibility,
+    _meta: sharedVisibility,
   }, safe(async ({ matrixId, deviceId }: { matrixId: string; deviceId?: string }) => {
+    if (panel) resolveProject();
     if (!registry.get(matrixId)) throw new ExpectedOperationError("invalid_input", "That run is no longer available.");
     const cancelled = registry.cancel(matrixId, deviceId);
     return dataResult({ cancelled: cancelled.map(lane => lane.deviceId) }, `Cancelled ${cancelled.length} lane${cancelled.length === 1 ? "" : "s"}.`);
+  }));
+
+  registerAppTool(server, "mobile_testing_wait_for_app", {
+    title: "Wait for the user to open an app",
+    description:
+      "Wait until a booted device of one platform has an app in the foreground, and return that device and the app's bundleId; use it after asking the user to open the app on that platform, then pin the id with mobile_testing_set_target mode \"add\". Returns found: false with a message to relay to the user if nothing appears within timeoutMs (default 2 minutes). The home screen and launchers do not count.",
+    inputSchema: {
+      platform: z.enum(["ios", "android"]),
+      timeoutMs: z.number().int().min(100).max(10 * 60_000).optional().describe("How long to wait. Default 120000."),
+    },
+    annotations: read,
+    _meta: sharedVisibility,
+  }, safe(async ({ platform, timeoutMs }: { platform: "ios" | "android"; timeoutMs?: number }) => {
+    if (panel) resolveProject();
+    const ops = matrix.ops;
+    if (!ops?.bootedDevices || !ops.foregroundApp) throw new ExpectedOperationError("unsupported_platform", "This server cannot read what is on a device's screen.");
+    const deadline = Date.now() + (timeoutMs ?? 120_000);
+    let seen = 0;
+    for (;;) {
+      const booted = await ops.bootedDevices(platform).catch(() => []);
+      seen = booted.length;
+      for (const device of booted) {
+        const bundleId = await ops.foregroundApp(platform, device.deviceId).catch(() => null);
+        if (bundleId && !LAUNCHER_APP.test(bundleId)) return dataResult({ found: true, platform, deviceId: device.deviceId, deviceName: device.name, bundleId }, `${bundleId} is open on ${device.name}.`);
+      }
+      if (Date.now() >= deadline) break;
+      await new Promise(resolve => setTimeout(resolve, Math.min(matrix.pollMs ?? 1_500, Math.max(0, deadline - Date.now()))));
+    }
+    const label = platform === "ios" ? "iOS simulator" : "Android emulator";
+    const message = seen === 0
+      ? `No ${label} is booted. Ask the user to boot one and open the app on it.`
+      : `Nothing is open on the ${label}. Ask the user to open the app on it, then try again.`;
+    return dataResult({ found: false, timedOut: true, platform, message }, message);
+  }));
+
+  registerAppTool(server, "mobile_testing_branch_line", {
+    title: "Give one line its own locator for one platform",
+    description:
+      "Repair a Studio test for one platform: replace the locator on one line with `locator` on `platform` only, keeping the old locator for the other platform (`platform === \"android\" ? new : old`). The assertion or action on the line is never changed, and only the locator is. Take `locator` from a failed run's `failure.elements`, e.g. screen.getByText(\"Home\"). Writes the test and returns the new source; refuses, naming why, when the line cannot be rewritten with certainty (a multi-line call, no locator on the line). projectPath defaults to the Testing tab's project.",
+    inputSchema: {
+      projectPath: projectPath.optional(),
+      relativePath: z.string().min(1).max(512).describe("The Studio test, e.g. tests/checkout.e2e.ts."),
+      line: z.number().int().min(1).max(100_000).describe("The 1-based line of the failing step, from the run's failure.line."),
+      platform: z.enum(["ios", "android"]).describe("The platform whose run failed. The other platform keeps its locator."),
+      locator: z.string().min(1).max(1000).describe("A single screen.getBy… locator expression."),
+    },
+    annotations: destructive,
+    _meta: sharedVisibility,
+  }, safe(async ({ projectPath: selected, relativePath, line, platform, locator }: { projectPath?: string; relativePath: string; line: number; platform: "ios" | "android"; locator: string }) => {
+    const project = resolveProject(selected);
+    if ((await inspectProject(project)).runtimeMode !== "bundled") throw new ExpectedOperationError("invalid_input", "Branching a line is for Studio tests; edit a project test in its own file.");
+    if (!singleExpression(locator) || !locator.startsWith("screen.")) throw new ExpectedOperationError("invalid_input", "locator must be one screen.getBy… expression on a single line.");
+    const source = await readTestFile(project, relativePath);
+    const next = branchStoredStepLocator(source, line, platform, locator);
+    if (next === source) throw new ExpectedOperationError("invalid_input", `Line ${line} of ${relativePath} cannot be rewritten: it is not a single-line step with a locator. Read the test with mobile_testing_read_file and check the line.`);
+    await writeTestFile(project, relativePath, next, true);
+    return dataResult({ relativePath, line, platform, source: next }, `Line ${line} of ${relativePath} now uses ${locator} on ${platform}.`);
   }));
 
   registerAppTool(server, "mobile_testing_release_device", {

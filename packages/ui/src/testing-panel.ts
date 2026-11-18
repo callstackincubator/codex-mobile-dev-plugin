@@ -3,11 +3,11 @@ import type { DeviceAppsStore } from "./device-apps.ts";
 import { captureUiError, countUiEvent, getUiTelemetryAttributes, recordUiTiming } from "./telemetry.ts";
 import { testRecorder } from "./test-recorder.ts";
 import type { RecorderTreeSource } from "./test-recorder.ts";
-import { isRecordableDevice, recordablePlatform } from "@mobile-dev/shared/panel-target.ts";
+import { PANEL_HEARTBEAT_MS, isRecordableDevice, recordablePlatform } from "@mobile-dev/shared/panel-target.ts";
 import type { ScreenComponent } from "@mobile-dev/shared/screen-annotations.ts";
 import { screenSize } from "@mobile-dev/shared/screen-annotations.ts";
 import { testFileSlug } from "@mobile-dev/shared/test-recording.ts";
-import { branchStoredStepLocator, storedTestCallLines, storedTestUntilSource } from "./stored-test-steps.ts";
+import { branchStoredStepLocator, storedTestCallLines, storedTestUntilSource } from "@mobile-dev/shared/stored-test-steps.ts";
 import type { RecordedStep } from "@mobile-dev/shared/test-recording.ts";
 import type { TestDraftSummary } from "@mobile-dev/shared/test-drafts.ts";
 import { DEFAULT_MATRIX_LIMIT, clampLimit, isTerminalLane, matrixFinished, parseMatrix, parseMatrixDevices, readMatrixPreferences, writeMatrixPreferences } from "./testing-matrix.ts";
@@ -38,6 +38,8 @@ export type TestingAgentView = {
   note: string;
   /** The unsaved recording a finished session was kept as; "" while it is still recording. */
   draftId: string;
+  /** The Studio test a finished session was saved as, relative to Studio; "" when it was kept as a draft. */
+  savedPath: string;
 };
 
 /** 400 ms while an agent is recording, so a step lands in the panel as it is recorded. */
@@ -123,6 +125,11 @@ export type TestingSnapshot = {
   /** The agent recording the server holds, or null when no agent has ever recorded here. */
   agent: TestingAgentView | null;
   /**
+   * An agent started the run on screen (`matrix`). Its lanes are live and the panel's editing is
+   * locked the way it is while the agent records, until every lane has finished.
+   */
+  agentRun: boolean;
+  /**
    * The recordings that have not been written into a project yet, newest first.
    *
    * A flow lives in the panel document, which the host rebuilds whenever the user looks at
@@ -200,7 +207,7 @@ export class TestingPanel {
     loadingProject: false, pickingProject: false, launching: false, appLaunched: false,
     fileName: "", saving: false, overwritePath: "", savedRevision: -1, savedPath: "", running: false, pendingRun: false,
     matrix: null, selectedLane: "", matrixDevices: [], matrixLoading: false, matrixSelected: [], matrixLimit: DEFAULT_MATRIX_LIMIT,
-    agent: null, drafts: [], draftId: "", loadingDraft: false, tests: [], selectedTestPath: "", selectedTestSource: "", selectedTestOriginalHash: "", selectedTestStaged: false, loadingTest: false, deletingTest: "", error: null,
+    agent: null, agentRun: false, drafts: [], draftId: "", loadingDraft: false, tests: [], selectedTestPath: "", selectedTestSource: "", selectedTestOriginalHash: "", selectedTestStaged: false, loadingTest: false, deletingTest: "", error: null,
   };
 
   /** The agent recording's revision the panel has already adopted; -1 before the first poll. */
@@ -230,9 +237,20 @@ export class TestingPanel {
   /** Set when a session goes active, for the host chrome to show the Testing tab. */
   private onAgentRecording?: () => void;
 
-  constructor(app: HostBridge, deviceApps: DeviceAppsStore) {
+  private heartbeatTimer?: ReturnType<typeof setInterval>;
+  private readonly onPageHide = () => { void this.clearReportedContext(); };
+
+  constructor(app: HostBridge, deviceApps: DeviceAppsStore, options: { heartbeatMs?: number } = {}) {
     this.app = app;
     this.deviceApps = deviceApps;
+    // The server only believes a panel that keeps reporting: a closed tab or window sends nothing.
+    this.heartbeatTimer = setInterval(() => {
+      const hidden = typeof document !== "undefined" && document.visibilityState === "hidden";
+      if (this.snapshot.open && !hidden) void this.reportContext(true);
+    }, options.heartbeatMs ?? PANEL_HEARTBEAT_MS);
+    // An interval must not keep a host process alive on its own.
+    (this.heartbeatTimer as { unref?: () => void }).unref?.();
+    if (typeof window !== "undefined") window.addEventListener("pagehide", this.onPageHide);
     // The device is half of what an agent recording needs and it belongs to the simulator panel,
     // so the selection is reported whenever either half moves.
     this.stopWatchingDevices = deviceApps.subscribe(() => {
@@ -704,7 +722,7 @@ export class TestingPanel {
   /** Shows the file exactly as stored. The recorder's current flow remains intact. */
   async openTest(relativePath: string) {
     const projectPath = this.snapshot.projectPath;
-    if (!relativePath || !projectPath || this.snapshot.agent?.active) return;
+    if (!relativePath || !projectPath || this.agentBusy) return;
     const revision = ++this.testReadRevision;
     clearTimeout(this.draftTimer);
     await this.keepDraft();
@@ -965,7 +983,7 @@ export class TestingPanel {
    * left. Nothing starts recording: the user opened a flow to look at it.
    */
   async openDraft(id: string) {
-    if (!id || this.snapshot.loadingDraft || this.snapshot.agent?.active) return;
+    if (!id || this.snapshot.loadingDraft || this.agentBusy) return;
     this.clearTestPreview();
     if (id === this.snapshot.draftId) return;
     clearTimeout(this.draftTimer);
@@ -1001,7 +1019,7 @@ export class TestingPanel {
   async deleteDraft(id: string) {
     if (!id || !this.snapshot.available) return;
     const current = id === this.snapshot.draftId;
-    if (current && this.snapshot.agent?.active) return;
+    if (current && this.agentBusy) return;
     clearTimeout(this.draftTimer);
     try {
       await this.call("mobile_testing_draft_delete", { id }, 15_000);
@@ -1032,7 +1050,7 @@ export class TestingPanel {
 
   /** Starts a new flow, keeping whatever is on screen as its own draft first. */
   async newRecording() {
-    if (this.snapshot.agent?.active) return;
+    if (this.agentBusy) return;
     this.clearTestPreview();
     clearTimeout(this.draftTimer);
     await this.keepDraft();
@@ -1147,7 +1165,7 @@ export class TestingPanel {
    * config. `mobile_testing_agent_begin` reads it and refuses when any of the three is missing,
    * which is what keeps an OS folder dialog from opening inside an agent's turn.
    */
-  private async reportContext() {
+  private async reportContext(force = false) {
     if (this.disposed || !this.snapshot.available) return;
     const projectPath = this.snapshot.projectPath;
     const bundleId = this.target?.bundleId ?? "";
@@ -1158,7 +1176,7 @@ export class TestingPanel {
     const deviceId = recordable ? device.udid : "";
     const platform = recordable ? recordablePlatform(device) : undefined;
     const key = `${projectPath}\u0000${platform ?? ""}\u0000${deviceId}\u0000${bundleId}`;
-    if (key === this.reportedContext) return;
+    if (key === this.reportedContext && !force) return;
     this.reportedContext = key;
     try {
       await this.call("mobile_testing_set_context", { projectPath, deviceId, ...(platform ? { platform } : {}), bundleId }, 10_000);
@@ -1167,6 +1185,12 @@ export class TestingPanel {
       // to ask the user, which is the refusal it would have given anyway.
       this.reportedContext = "";
     }
+  }
+
+  /** Best effort on the way out: an empty project tells the server the tab is gone, without waiting out its expiry. */
+  private async clearReportedContext() {
+    this.reportedContext = "";
+    try { await this.call("mobile_testing_set_context", { projectPath: "", deviceId: "", bundleId: "" }, 3_000); } catch { /* the server's expiry covers it */ }
   }
 
   /**
@@ -1184,11 +1208,57 @@ export class TestingPanel {
       if (this.disposed || !this.snapshot.available) return;
       clearTimeout(this.agentTimer);
       this.agentTimer = setTimeout(() => this.pollAgent(),
-        this.snapshot.agent?.active ? AGENT_POLL_ACTIVE_MS : AGENT_POLL_IDLE_MS);
+        this.agentBusy ? AGENT_POLL_ACTIVE_MS : AGENT_POLL_IDLE_MS);
     });
   }
 
+  /**
+   * A run the agent started: the server holds it in the same registry the panel's own runs use, so
+   * the latest one is on screen as live lanes while any of them is unfinished. The panel never
+   * adopts a finished one it did not see running, and never one while it is running its own.
+   */
+  private async readAgentRun() {
+    if (this.snapshot.running || this.disposed || !this.snapshot.projectPath) return;
+    let matrix: MatrixView | null;
+    let running: boolean;
+    try {
+      const response = await this.call("mobile_testing_run_progress", {}, 5_000);
+      matrix = parseMatrix(response.structuredContent);
+      running = object(response.structuredContent)?.running === true;
+    } catch { return; }
+    if (this.disposed || this.snapshot.running || !matrix) return;
+    const adopted = this.snapshot.agentRun;
+    if (!adopted) {
+      if (!running || matrix.matrixId === this.snapshot.matrix?.matrixId) return;
+      // The lanes show against the test they run, so that test is opened first.
+      if (matrix.testPath && matrix.testPath !== this.snapshot.selectedTestPath) {
+        if (!this.snapshot.tests.some(test => test.relativePath === matrix!.testPath)) await this.refreshTests();
+        if (this.snapshot.tests.some(test => test.relativePath === matrix!.testPath)) await this.openTest(matrix.testPath);
+      }
+      if (this.disposed || this.snapshot.running) return;
+      this.matrixCallLines = storedTestCallLines(this.snapshot.selectedTestSource);
+      this.matrixUntilLine = undefined;
+      this.laneSignature = "";
+      testRecorder.beginRun();
+      this.update({ agentRun: true, matrix, selectedLane: matrix.lanes[0]?.runId ?? "", error: null });
+      this.onAgentRecording?.();
+      this.showLane();
+      return;
+    }
+    // Only the run the panel adopted: a newer one replaces it from the top.
+    if (matrix.matrixId !== this.snapshot.matrix?.matrixId) { this.update({ agentRun: false }); testRecorder.invalidate(); return; }
+    this.update({ matrix, selectedLane: matrix.lanes.some(lane => lane.runId === this.snapshot.selectedLane) ? this.snapshot.selectedLane : (matrix.lanes[0]?.runId ?? "") });
+    this.showLane();
+    if (!running) {
+      this.update({ agentRun: false });
+      testRecorder.invalidate();
+      // The agent may have saved, branched or pinned a test while the run was going.
+      void this.refreshTests();
+    }
+  }
+
   private async readAgentState() {
+    await this.readAgentRun();
     let data: Record<string, unknown>;
     try {
       const response = await this.call("mobile_testing_agent_state", {}, 5_000);
@@ -1203,8 +1273,9 @@ export class TestingPanel {
     const agent: TestingAgentView = {
       active: data.active === true, status,
       title: text(data.title), goal: text(data.goal), steps: steps.length, note: text(data.note),
-      draftId: text(data.draftId),
+      draftId: text(data.draftId), savedPath: text(data.savedPath),
     };
+    const savedPath = agent.savedPath;
     const first = this.agentRevision < 0;
     const unchanged = !first && revision === this.agentRevision;
     this.agentRevision = revision;
@@ -1233,15 +1304,25 @@ export class TestingPanel {
       // The server kept the finished flow, so the panel adopts that draft rather than autosaving
       // a second copy of the same steps a moment later.
       this.draftRevision = testRecorder.getSnapshot().revision;
-      this.draftFlowId = agent.draftId ? testRecorder.getSnapshot().flowId : "";
-      this.update({ savedRevision: -1, savedPath: "", ...(agent.draftId ? { draftId: agent.draftId } : {}) });
-      void this.refreshDrafts();
+      if (savedPath) {
+        // Studio: finishing wrote the test, so there is no draft to adopt. The steps are in the
+        // stored list now, and the recorder's copy is marked saved so autosave does not keep it again.
+        this.draftFlowId = "";
+        this.update({ savedRevision: testRecorder.getSnapshot().revision, savedPath: `Studio/${savedPath}` });
+        testRecorder.stop();
+        void this.refreshTests();
+        void this.refreshDrafts();
+      } else {
+        this.draftFlowId = agent.draftId ? testRecorder.getSnapshot().flowId : "";
+        this.update({ savedRevision: -1, savedPath: "", ...(agent.draftId ? { draftId: agent.draftId } : {}) });
+        void this.refreshDrafts();
+      }
     }
   }
 
   /** The user's Stop button on the agent banner. The server drops the session; the steps stay. */
   async stopAgent() {
-    if (!this.snapshot.agent?.active) return;
+    if (this.snapshot.agent?.active !== true) return;
     try {
       await this.call("mobile_testing_agent_abort", { reason: "The user stopped the recording from the Testing panel." }, 10_000);
     } catch (error) {
@@ -1254,17 +1335,20 @@ export class TestingPanel {
     this.pollAgent();
   }
 
+  /** An agent is recording or running tests: the mirror, the editor and the run controls are its own. */
+  get agentBusy(): boolean { return this.snapshot.agent?.active === true || this.snapshot.agentRun; }
+
   /** Whether Run has something to run: a project, steps, and no run or save already in flight. */
   get canRun(): boolean {
     // Never while an agent is recording: a run resets the app and takes the one agent-device
     // session the device allows, which is the session the recording is being read through.
-    return Boolean(this.snapshot.available && this.snapshot.projectPath && !this.snapshot.selectedTestPath && !this.snapshot.agent?.active
+    return Boolean(this.snapshot.available && this.snapshot.projectPath && !this.snapshot.selectedTestPath && !this.agentBusy
       && (testRecorder.getSnapshot().steps.length > 0 || Boolean(testRecorder.getSnapshot().sourceOverride)) && !this.snapshot.running && !this.snapshot.saving);
   }
 
   get canRunStored(): boolean {
     return Boolean(this.snapshot.available && this.snapshot.projectPath && this.snapshot.selectedTestPath
-      && !this.snapshot.loadingTest && !this.snapshot.agent?.active && !this.snapshot.running && !this.snapshot.saving
+      && !this.snapshot.loadingTest && !this.agentBusy && !this.snapshot.running && !this.snapshot.saving
       && !this.storedRunHint);
   }
 
@@ -1618,7 +1702,7 @@ export class TestingPanel {
   }
 
   dismissMatrix() {
-    if (this.snapshot.running) return;
+    if (this.snapshot.running || this.snapshot.agentRun) return;
     this.update({ matrix: null, selectedLane: "" });
     testRecorder.clearRun();
   }
@@ -1721,7 +1805,11 @@ export class TestingPanel {
     // debounce may still be holding the newest step.
     this.flushing = true;
     void this.keepDraft().finally(() => { this.flushing = false; });
+    // Before `disposed` is set, so the call still goes out.
+    void this.clearReportedContext();
     this.disposed = true;
+    clearInterval(this.heartbeatTimer);
+    if (typeof window !== "undefined") window.removeEventListener("pagehide", this.onPageHide);
     clearTimeout(this.agentTimer);
     clearTimeout(this.draftTimer);
     this.stopWatchingDevices();

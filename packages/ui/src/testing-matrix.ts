@@ -16,7 +16,7 @@ export type MatrixLane = {
   runId: string; deviceId: string; deviceName: string; platform: MatrixPlatform; state: LaneState;
   progress: LaneProgress[]; result?: LaneResult; error?: string; startedAt?: number; finishedAt?: number;
 };
-export type MatrixView = { matrixId: string; lanes: MatrixLane[]; limit: number; startedAt: number; finishedAt?: number };
+export type MatrixView = { matrixId: string; /** The test the lanes run, relative to the project. */ testPath?: string; lanes: MatrixLane[]; limit: number; startedAt: number; finishedAt?: number };
 
 /** One device in the checklist. `installed` is unknown (undefined) for a device that is off. */
 export type MatrixDeviceOption = {
@@ -93,7 +93,7 @@ export function parseMatrix(value: unknown): MatrixView | null {
     });
   }
   return {
-    matrixId: str(data.matrixId), lanes, limit: clampLimit(typeof data.limit === "number" ? data.limit : DEFAULT_MATRIX_LIMIT),
+    matrixId: str(data.matrixId), ...(str(data.testPath) ? { testPath: str(data.testPath) } : {}), lanes, limit: clampLimit(typeof data.limit === "number" ? data.limit : DEFAULT_MATRIX_LIMIT),
     startedAt: typeof data.startedAt === "number" ? data.startedAt : Date.now(),
     ...(typeof data.finishedAt === "number" ? { finishedAt: data.finishedAt } : {}),
   };

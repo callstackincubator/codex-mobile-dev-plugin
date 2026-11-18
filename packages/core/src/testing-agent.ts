@@ -4,7 +4,7 @@ import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
 import { errorMessage } from "@mobile-dev/shared/protocol.ts";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
-import { deviceIdSchema } from "@mobile-dev/shared/panel-target.ts";
+import { PANEL_HEARTBEAT_MS, deviceIdSchema } from "@mobile-dev/shared/panel-target.ts";
 import {
   agentStepLabel, anchorSelector, emitE2eTest, resolveComponentSelector, selectorSource, stepEffect, stepExpression,
   stepLabel, stepNeedsValue, swipeDirection, swipePath,
@@ -18,6 +18,7 @@ import { TestingDevices } from "./testing-device.ts";
 import { TestDraftStore } from "./testing-drafts.ts";
 import type { TestingDeviceTarget } from "./testing-device.ts";
 import { captureServerError, recordTestingAgentRead } from "./telemetry.ts";
+import { inspectProject, writeTestFile, writeTestTarget } from "./testing-projects.ts";
 
 /**
  * Recording an e2e test from the user's own coding agent, into the Testing panel the user is
@@ -49,6 +50,10 @@ const RANK_LABEL: Record<string, string> = {
  */
 const MAX_ELEMENTS = 200;
 
+/** How often the open Testing tab re-sends its selection, and how long silence is believed (three beats). */
+export { PANEL_HEARTBEAT_MS };
+export const PANEL_EXPIRY_MS = PANEL_HEARTBEAT_MS * 3;
+
 /** What the panel's selection is, as the panel reports it. Nothing here is inferred. */
 export type TestingAgentContext = { projectPath: string; deviceId: string; platform: "ios" | "android"; bundleId: string };
 
@@ -74,6 +79,12 @@ export type TestingAgentState = {
    * same draft instead of leaving a second copy of the same flow in the list.
    */
   draftId: string;
+  /**
+   * Where the finished session was saved as a test, or "" when it was only kept as a draft.
+   * Set in Studio (bundled) mode, where finishing writes the test; the panel refreshes its list
+   * from it instead of adopting a draft.
+   */
+  savedPath: string;
 };
 
 type Session = {
@@ -103,6 +114,8 @@ type Session = {
   identities: Set<string>;
   /** Set once the session ends and its steps are kept as an unsaved recording. */
   draftId: string;
+  /** Set once a Studio session's steps are written as a test, relative to its tests folder root. */
+  savedPath: string;
 };
 
 /** One element of a screen read, as the agent sees it. */
@@ -191,14 +204,46 @@ export class TestingAgentRecordings {
   private readonly devices: TestingDevices;
   private readonly drafts: TestDraftStore;
   private context?: TestingAgentContext;
+  /** The project the Testing panel reports, whether or not a device is selected: proof the tab is open. */
+  private panelProject = "";
   private session?: Session;
   private revision = 0;
 
-  constructor(devices: TestingDevices, drafts = new TestDraftStore()) { this.devices = devices; this.drafts = drafts; }
+  /** When the panel last reported, on `now`'s clock; 0 before the first report. */
+  private reportedAt = 0;
+  private readonly now: () => number;
+  private readonly expiryMs: number;
+
+  /**
+   * `expiryMs` is how long the server believes a panel that has stopped reporting: about three of
+   * the panel's heartbeats (`PANEL_HEARTBEAT_MS`). Both it and the clock are injectable so tests
+   * need not sleep.
+   */
+  constructor(devices: TestingDevices, drafts = new TestDraftStore(), options: { now?: () => number; expiryMs?: number } = {}) {
+    this.devices = devices; this.drafts = drafts;
+    this.now = options.now ?? Date.now;
+    this.expiryMs = options.expiryMs ?? PANEL_EXPIRY_MS;
+  }
+
+  /** Forgets a panel that has gone quiet: a closed tab or window reports nothing, and nothing else marks it closed. */
+  private expire() {
+    if (this.reportedAt !== 0 && this.now() - this.reportedAt > this.expiryMs) {
+      this.reportedAt = 0;
+      this.panelProject = "";
+      this.context = undefined;
+    }
+  }
 
   /** The panel's current project, device and bundle id. The only thing that knows the selection. */
   setContext(context: TestingAgentContext) { this.context = context; }
   clearContext() { this.context = undefined; }
+
+  /** The panel reports its project on every selection change, even with no device; empty means it has none. */
+  setPanelProject(projectPath: string) { this.panelProject = projectPath; this.reportedAt = projectPath ? this.now() : 0; }
+  /** The project the Testing panel has selected, or undefined when the tab has not reported one. */
+  panelProjectPath(): string | undefined { this.expire(); return this.panelProject || undefined; }
+  /** The panel's full selection, when it has a device and an app selected. */
+  panelContext(): TestingAgentContext | undefined { this.expire(); return this.context; }
 
   state(): TestingAgentState {
     const session = this.session;
@@ -212,6 +257,7 @@ export class TestingAgentRecordings {
       note: session?.note ?? "",
       error: session?.error ?? "",
       draftId: session?.draftId ?? "",
+      savedPath: session?.savedPath ?? "",
     };
   }
 
@@ -237,6 +283,7 @@ export class TestingAgentRecordings {
     if (this.session?.status === "recording") {
       refused(`An agent recording is already in flight: "${this.session.title}". Finish it with mobile_testing_agent_finish, or drop it with mobile_testing_agent_abort.`);
     }
+    this.expire();
     const context = this.context;
     const missing = [
       context?.projectPath ? "" : "an e2e project",
@@ -250,7 +297,7 @@ export class TestingAgentRecordings {
       target: { deviceId: context.deviceId, platform: context.platform, projectPath: context.projectPath, bundleId: context.bundleId },
       title: input.title.trim() || "a recorded flow",
       goal: input.goal.trim(),
-      steps: [], status: "recording", note: "", error: "", draftId: "",
+      steps: [], status: "recording", note: "", error: "", draftId: "", savedPath: "",
       readId: 0, refs: new Map(), components: [], rows: [], truncated: 0, readAt: 0, identities: new Set(),
     };
     this.changed();
@@ -471,24 +518,61 @@ export class TestingAgentRecordings {
   }
 
   /**
-   * Ends the recording with the steps left dirty in the panel.
+   * Ends the recording.
    *
-   * Nothing is saved and nothing is run. The user adjusts the flow, names the file and saves it
-   * themselves — a run would also reset the app and take the device session, which is the one
-   * thing the panel's recorder still needs.
+   * In Studio (bundled) mode the test is written into Studio, pinned to the recorded platform and
+   * app, and its path is returned: there is no project file for a user to review, and the agent
+   * runs the test next. In a project the steps stay unsaved in the panel for the user to adjust,
+   * name and save themselves. Nothing is run either way — a run resets the app and takes the
+   * device session.
    */
   async finish(input: { note?: string }) {
     const session = this.recording();
     session.status = "finished";
     session.note = input.note?.trim() ?? "";
-    await this.keep(session);
+    const source = emitE2eTest(session.steps, { title: session.title });
+    const saved = await this.saveToStudio(session, source);
+    if (!saved.relativePath) await this.keep(session);
     this.changed();
+    const count = `${session.steps.length} step${session.steps.length === 1 ? "" : "s"}`;
     return {
       ok: true,
       steps: session.steps.length,
-      source: emitE2eTest(session.steps, { title: session.title }),
-      next: `${session.steps.length} step${session.steps.length === 1 ? "" : "s"} are waiting in Mobile Dev's Testing panel, unsaved. Tell the user to review them there and press Save; nothing has been written to the project and nothing has been run.`,
+      source,
+      ...(saved.relativePath ? {
+        saved: true, relativePath: saved.relativePath, path: `Studio/${saved.relativePath}`,
+        platform: session.target.platform, bundleId: session.target.bundleId,
+        next: `${count} saved in Studio as ${saved.relativePath}, pinned to ${session.target.platform} ${session.target.bundleId}. Run it with mobile_testing_run_test or mobile_testing_run_matrix, passing that relativePath.`,
+      } : {
+        saved: false,
+        ...(saved.error ? { saveError: saved.error } : {}),
+        next: `${count} are waiting in Mobile Dev's Testing panel, unsaved. Tell the user to review them there and press Save; nothing has been written to the project and nothing has been run.${saved.error ? ` Saving to Studio failed: ${saved.error}` : ""}`,
+      }),
     };
+  }
+
+  /** Writes a Studio session's test and its app pin. Never throws: a failed save falls back to the draft. */
+  private async saveToStudio(session: Session, source: string): Promise<{ relativePath?: string; error?: string }> {
+    if (session.steps.length === 0) return {};
+    // A project that cannot be read is not Studio; the draft path handles it as it always did.
+    const project = await inspectProject(session.target.projectPath).catch(() => undefined);
+    if (project?.runtimeMode !== "bundled") return {};
+    try {
+      const base = session.title.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "recorded-flow";
+      for (let attempt = 1; attempt <= 50; attempt++) {
+        const relativePath = `tests/${base}${attempt === 1 ? "" : `-${attempt}`}.e2e.ts`;
+        // Never replaces: a name that is taken is a test the user or an earlier run already made.
+        const written = await writeTestFile(session.target.projectPath, relativePath, source, false);
+        if (!written.written) continue;
+        await writeTestTarget(session.target.projectPath, relativePath, { platform: session.target.platform, bundleId: session.target.bundleId });
+        session.savedPath = relativePath;
+        return { relativePath };
+      }
+      return { error: "Every test name this recording could take is already used." };
+    } catch (error) {
+      captureServerError(error, "testing.agent.save");
+      return { error: errorMessage(error) };
+    }
   }
 
   /** Drops the session. Whatever was recorded stays in the panel, which is the user's to keep. */
@@ -531,8 +615,8 @@ const write = { readOnlyHint: false, destructiveHint: false, openWorldHint: fals
 const appVisibility = { ui: { visibility: ["app"] as ("app" | "model")[] } };
 /**
  * Visible to the model *and* to the panel, which is the whole point of this file: the agent drives
- * the recording and the panel shows it. The eight tools in `testing-tools.ts` stay app-only —
- * writing a file and running a test are the user's acts, not a step in an agent's loop.
+ * the recording and the panel shows it. The run, progress, cancel, target, read and list tools in
+ * `testing-tools.ts` are shared the same way; the rest stay app-only.
  */
 const sharedVisibility = { ui: { visibility: ["app", "model"] as ("app" | "model")[] } };
 
@@ -556,7 +640,7 @@ export function registerTestingAgentTools(server: McpServer, devices: TestingDev
   registerAppTool(server, "mobile_testing_agent_begin", {
     title: "Begin recording an e2e test",
     description:
-      "Start recording an e2e test into Mobile Dev's Testing panel, against the project, device and app the panel already has selected. Refuses, saying what is missing, when the user has not chosen them. The steps appear in the panel as you record them and are never saved or run by you.",
+      "Start recording an e2e test into Mobile Dev's Testing panel, against the project, device and app the panel already has selected. Refuses, saying what is missing, when the user has not chosen them. The steps appear in the panel as you record them. In No project (Studio) mode mobile_testing_agent_finish saves the test pinned to the recorded app and returns its relativePath for mobile_testing_run_test / mobile_testing_run_matrix; in a project the steps stay unsaved for the user.",
     inputSchema: {
       title: z.string().min(1).max(200).describe("The test's title, e.g. \"the explore details screen\"."),
       goal: z.string().min(1).max(500).describe("What this flow covers, in one sentence. Shown to the user in the panel's banner."),
@@ -593,7 +677,7 @@ export function registerTestingAgentTools(server: McpServer, devices: TestingDev
   registerAppTool(server, "mobile_testing_agent_finish", {
     title: "Finish the recording",
     description:
-      "End the recording. The steps are left unsaved in the Testing panel for the user to adjust, save and run; nothing is written to the project and nothing is run.",
+      "End the recording. In No project (Studio) mode the test is saved into Studio, pinned to the recorded platform and app, and its relativePath is returned so you can run it. In a project the steps are left unsaved in the Testing panel for the user to adjust and save, and nothing is written. Nothing is run either way.",
     inputSchema: { note: z.string().max(500).optional().describe("One line on what was recorded, for the user.") },
     annotations: write,
     _meta: sharedVisibility,
@@ -628,6 +712,8 @@ export function registerTestingAgentTools(server: McpServer, devices: TestingDev
     annotations: write,
     _meta: appVisibility,
   }, safe((input: Omit<TestingAgentContext, "platform"> & { platform?: "ios" | "android" }) => {
+    // Called on every change and again on the panel's heartbeat; an empty project is the panel leaving.
+    recordings.setPanelProject(input.projectPath);
     if (input.projectPath && input.deviceId && input.platform && input.bundleId) recordings.setContext({ ...input, platform: input.platform });
     else recordings.clearContext();
     return dataResult({ ok: true });

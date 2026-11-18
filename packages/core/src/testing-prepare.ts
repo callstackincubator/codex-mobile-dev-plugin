@@ -21,6 +21,10 @@ export interface DeviceOps {
   /** Installs the app on `to` from the copy already on `from`. */
   copyApp(platform: MatrixPlatform, from: string, to: string, appId: string, signal: AbortSignal): Promise<void>;
   launch(platform: MatrixPlatform, deviceId: string, appId: string): Promise<void>;
+  /** The booted devices of a platform, for finding the one the user opened an app on. */
+  bootedDevices?(platform: MatrixPlatform): Promise<{ deviceId: string; name: string }[]>;
+  /** The bundle id or package of the app in the foreground, or null when none is. */
+  foregroundApp?(platform: MatrixPlatform, deviceId: string): Promise<string | null>;
 }
 
 export interface LaneExecutorDeps {
@@ -84,7 +88,7 @@ export function parsePmPaths(output: string): string[] {
 }
 
 /** The real thing: `simctl` for iOS simulators, the emulator through `ServeEmu` and `adb` for Android. */
-export function systemDeviceOps(deps: { simulators: Simctl; android: ServeEmu; drivers: DriverFactory; commands?: Commands }): DeviceOps {
+export function systemDeviceOps(deps: { simulators: Simctl; android: ServeEmu; drivers: DriverFactory; commands?: Commands; foreground?: (platform: MatrixPlatform, deviceId: string) => Promise<string | null> }): DeviceOps {
   const commands = deps.commands ?? systemCommands;
   const simctl = (args: string[], timeout = 30_000) => commands.run("xcrun", ["simctl", ...args], { timeout });
   const adb = async (serial: string, args: string[], timeout = 30_000) => commands.run(await commands.adb(), ["-s", serial, ...args], { timeout });
@@ -142,5 +146,10 @@ export function systemDeviceOps(deps: { simulators: Simctl; android: ServeEmu; d
       });
     },
     async launch(platform, deviceId, appId) { await deps.drivers({ platform, deviceId }).launch(appId); },
+    async bootedDevices(platform) {
+      const status = await (platform === "ios" ? deps.simulators.list() : deps.android.list());
+      return status.devices.flatMap(device => "state" in device && device.state === "Booted" && (device.platform ?? platform) === platform ? [{ deviceId: device.udid, name: device.name }] : []);
+    },
+    foregroundApp: async (platform, deviceId) => deps.foreground ? deps.foreground(platform, deviceId) : null,
   };
 }

@@ -59,7 +59,7 @@ in `packages/core/src/app-flow-tools.ts`):
 | `mobile_testing_agent_begin` | `{ title, goal }` | Opens the Testing tab, starts one session against the panel's current project, device and bundle id. Refuses, with what is missing, when any of the three is unset. |
 | `mobile_testing_agent_screen` | `{}` | The runner's element tree as the agent's eyes: one compact row per element — `ref`, `role`, `name`, `text`, `placeholder`, `value`, `testId`, `enabled`, `selected`, `bounds` — **and the selector the recorder would emit for it**, with its rank and whether it is unique. The agent never writes a locator; it names a `ref`. |
 | `mobile_testing_agent_step` | `{ ref?, kind, value?, direction?, instruction? }` | Records one step and performs it. `kind` is a `PinnedStepKind`; `instruction` with no `ref` records an `AgentStep`. Assertions record without touching the device, mirroring the element menu. An acting step answers with `navigated: true` when it replaced the screen — see "Where a flow ends". |
-| `mobile_testing_agent_finish` | `{ note? }` | Ends the session with the steps left dirty in the panel. Saves nothing, runs nothing, and keeps the device session for the panel's recorder. |
+| `mobile_testing_agent_finish` | `{ note? }` | Ends the session. In a project the steps are left dirty in the panel and nothing is saved; in Studio the test is saved, pinned to the recorded app, and its `relativePath` returned. Runs nothing either way. |
 | `mobile_testing_agent_abort` | `{ reason }` | Drops the session; whatever was recorded stays in the panel. |
 
 App-only:
@@ -69,9 +69,31 @@ App-only:
 | `mobile_testing_agent_state` | `{}` | `{ active, status, revision, title, goal, steps, note, error }`. The panel polls it. |
 | `mobile_testing_set_context` | `{ projectPath, udid, bundleId }` | The panel reports its selection whenever it changes. This is the only thing that knows the selected device, and `agent_begin` reads it. |
 
-The eight existing `mobile_testing_*` tools stay app-only. A narrow, intention-shaped surface is
-what keeps `write_file` and `run_test` out of the model's hands, which is what
-`packages/core/src/testing-tools.ts:17` already says.
+## Studio mode: the agent saves, runs and repairs
+
+In No project (Studio) mode the agent drives the whole loop, so more of `testing-tools.ts` is
+model-visible (`sharedVisibility`): `run_test`, `run_matrix`, `run_progress`, `cancel`, `set_target`,
+`read_file`, `tests`, plus two new tools. The rest (`write_file`, `stage_file`, `save_staged_file`,
+`delete_file`, drafts, setup) stay app-only.
+
+- **Gate.** Each model-visible tool refuses unless the Testing tab has reported a project
+  (`mobile_testing_set_context`), and `projectPath` defaults to it. The agent never needs to know
+  where Studio lives.
+- **`agent_finish` saves** in bundled mode: `tests/<slug>.e2e.ts`, never replacing a name that is
+  taken, pinned to the recorded platform and bundle id. It returns `relativePath`; no draft is kept.
+  In a project it still hands over unsaved.
+- **`mobile_testing_wait_for_app({ platform, timeoutMs })`** polls the booted devices of a
+  platform for a foreground app (home screens and launchers excluded) and returns its `bundleId`,
+  or `found: false` with a message to relay.
+- **`mobile_testing_branch_line({ relativePath, line, platform, locator })`** applies
+  `branchStoredStepLocator` (now `packages/shared/src/stored-test-steps.ts`, one copy for core and
+  the panel) and writes the result. Only the locator changes, so an assertion cannot be weakened
+  through it.
+- **Failure context.** A failed lane gets `failure: { line, source, error, elements }` before it
+  settles: the failing line and the device's tree as `role "name" → screen.getBy…` rows (at most 60).
+  `run_test` and `run_progress` both carry it.
+- **Panel.** The panel polls `run_progress`; a run it did not start is adopted as live lanes
+  (`agentRun`) and locks the same controls as `agent.active`. A saved recording refreshes the test list.
 
 One session at a time. A second `agent_begin` refuses rather than stomping on the first.
 

@@ -126,8 +126,16 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
   // One store for both: the panel autosaves the flow it is holding and the agent keeps the flow it
   // finished, and those are the same list of unsaved recordings.
   const testDrafts = new TestDraftStore();
-  const closeTestingDevices = registerTestingTools(server, new TestingProjectChoices(TESTING_DIRECTORY), testingDevices, testDrafts, { ops: systemDeviceOps({ simulators, android, drivers }) });
-  registerTestingAgentTools(server, testingDevices, new TestingAgentRecordings(testingDevices, testDrafts));
+  // One recordings object too: it holds the panel's context, which the model-visible run tools check.
+  const testingRecordings = new TestingAgentRecordings(testingDevices, testDrafts);
+  const closeTestingDevices = registerTestingTools(server, new TestingProjectChoices(TESTING_DIRECTORY), testingDevices, testDrafts, {
+    ops: systemDeviceOps({
+      simulators, android, drivers,
+      foreground: async (platform, deviceId) => (await readDeviceApps(deviceId, undefined, platform, platform === "ios" ? "simulator" : undefined, { ...deviceAppSources, simulator: simulatorForeground })).foregroundApp?.bundleId ?? null,
+    }),
+    panel: testingRecordings,
+  });
+  registerTestingAgentTools(server, testingDevices, testingRecordings);
 
   const resource = async () => typeof html === "string" ? { html } : await html();
   const page = async () => configureUI((await resource()).html);

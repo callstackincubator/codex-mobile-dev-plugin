@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { errorMessage } from "@mobile-dev/shared/protocol.ts";
 import { expectedOutcome } from "@mobile-dev/shared/error-reporting.ts";
+import type { LaneFailure } from "./testing-failure.ts";
 import type { TestRunProgress, TestRunResult } from "./testing-run.ts";
 
 /**
@@ -39,6 +40,8 @@ export interface Lane {
   resolvedDeviceId?: string;
   progress: TestRunProgress[];
   result?: TestRunResult;
+  /** The failing line and the device's screen, set before the lane settles as failed. */
+  failure?: LaneFailure;
   error?: string;
   startedAt?: number;
   finishedAt?: number;

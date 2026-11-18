@@ -1,6 +1,6 @@
 ---
 name: mobile-dev-testing
-description: Use when the user asks to record, write or capture an end-to-end test for a screen or a flow of their iOS or Android app, with Mobile Dev's Testing panel. Drives the simulator or emulator through Mobile Dev's recorder one step at a time, pinning each step to a locator the e2e runner can resolve, and leaves the flow in the panel for the user to adjust, save and run. Skip when the user wants a test written straight into a file, or when there is no Mobile Dev panel.
+description: Use when the user asks to record, write or capture an end-to-end test for a screen or a flow of their iOS or Android app, with Mobile Dev's Testing panel. Drives the simulator or emulator through Mobile Dev's recorder one step at a time, pinning each step to a locator the e2e runner can resolve, and leaves the flow in the panel for the user to adjust, save and run. In No project (Studio) mode it also saves, runs on one or several devices, iOS and Android side by side, and repairs a failing line's locator for one platform. Skip when the user wants a test written straight into a file, or when there is no Mobile Dev panel.
 ---
 
 # Record an e2e test with Mobile Dev
@@ -10,8 +10,9 @@ Details screen"* — and you write it by driving their simulator or emulator, on
 appear in Mobile Dev's **Testing** tab as you record them, and when you stop, the flow is sitting
 there unsaved for the user to adjust.
 
-You record. The user saves and runs. Those two are theirs, and the tools to do them are not yours
-to call.
+In a **project**, you record; the user saves and runs. Those two are theirs, and the tools to do
+them are not yours to call. In **No project (Studio) mode** the flow is yours end to end: see
+[Studio mode](#studio-mode-record-run-repair) below.
 
 ## Before you start
 
@@ -108,10 +109,11 @@ asserting text you have not seen.
 
 ## What you never do
 
-- **Never save.** There is no tool for it in your hands, and finishing is the handover: the steps
-  are dirty in the panel and the user presses Save when they are happy with them.
-- **Never run the test.** There is no file to run, and a run resets the app and takes the device
-  session the recording is being read through.
+- **Never save** a project's test. There is no tool for it in your hands, and finishing is the
+  handover: the steps are dirty in the panel and the user presses Save when they are happy with
+  them. (Studio mode's `finish` saves for you; that is the one exception.)
+- **Never run the test** while recording. There is no file to run, and a run resets the app and
+  takes the device session the recording is being read through.
 - **Never drive the device another way while recording** — not `device_*`, not `mobile_open_url`,
   not the mirror. The recorder's steps and another driver's taps interleave into a flow that does
   not describe anything. Everything the flow does goes through `mobile_testing_agent_step`, which
@@ -122,3 +124,58 @@ asserting text you have not seen.
 Tell the user what you recorded, in their terms, and that it is **in the Testing panel, unsaved**.
 Say which parts fell back to a sentence, if any, and why. Do not paste the emitted file as the
 deliverable — the panel is showing it, live, next to the steps.
+
+## Studio mode: record, run, repair
+
+No project open — the Testing tab says Studio — means tests live in Mobile Dev's own storage, each
+pinned to an app. The tab must be open: every tool below reads the tab's selection and refuses
+when it has none. Then tell the user to **open Mobile Dev's Testing tab** and stop. `projectPath`
+is optional on all of them; it defaults to the tab's project.
+
+### Record, which saves
+
+*"Use the opened iOS app and record a test."* Run the loop above. In Studio,
+`mobile_testing_agent_finish` **writes the test**, pinned to the platform and bundle id it was
+recorded on, and returns its `relativePath` (e.g. `tests/the-explore-screen.e2e.ts`). Tell the
+user the path. Nothing in the test file names a platform until you branch a line.
+
+### Run
+
+- One device, or a quick check: `mobile_testing_run_test({ relativePath })`. It waits for the end.
+- Several devices, iOS and Android side by side: `mobile_testing_run_matrix({ relativePath, devices })`
+  with a `{ deviceId, platform }` per device, from the device lists. It returns a `matrixId`
+  at once; read `mobile_testing_run_progress({ matrixId })` until `running` is false. `apps`
+  defaults to the apps the test is pinned to.
+- **Devices that are off are booted by the matrix**, and an app missing from a device is copied
+  from another device in the run that has it. Do not boot or install first.
+- The runs show in the Testing tab as live lanes, and the tab is locked while they go.
+
+### A platform has no app yet
+
+`run_matrix` refuses a platform the test has no app for. Then:
+
+1. Tell the user to **open the app on a device of that platform**.
+2. `mobile_testing_wait_for_app({ platform })`. It returns the foreground app's `bundleId`. If it
+   times out, relay its message and stop.
+3. `mobile_testing_set_target({ relativePath, platform, bundleId, mode: "add" })`. Do this
+   **without asking**, then tell the user which id you added.
+4. Run again.
+
+A device that needs the app opened or installed by hand is the only reason to ask the user to do
+anything on a device. Boot it and copy the app yourself when you can.
+
+### A lane fails
+
+A failed lane carries `failure`: the `line`, its `source` and `error`, and the device's screen as
+rows ending in the locator each would be written with (`button "Sign in" → screen.getByRole(…)`).
+Repair that platform's line and nothing else:
+
+1. Pick the row that names the element the line meant — the same control, never a different one.
+2. `mobile_testing_branch_line({ relativePath, line, platform, locator })`, with that lane's
+   `platform` and a locator copied from its rows. The other platform keeps its locator.
+3. Run again. **At most two tries per failure.** After the second, stop and report a likely app
+   bug: the line, the error, and what the screen showed.
+
+**Never weaken or remove an assertion** — not by changing its kind, loosening its text, deleting it
+or skipping the step. A fix swaps a locator and nothing more. If the element is not on that
+platform's screen at all, that is the bug to report, not a locator to find.
