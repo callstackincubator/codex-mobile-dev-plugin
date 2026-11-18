@@ -1406,8 +1406,17 @@ export class TestingPanel {
   /** The ticked devices that still exist. Zero when the matrix is unavailable. */
   get matrixSelection(): MatrixDeviceOption[] {
     if (!this.matrixEnabled) return [];
-    const known = new Map(this.snapshot.matrixDevices.map(device => [device.deviceId, device]));
+    const only = this.matrixPlatform;
+    const known = new Map(this.snapshot.matrixDevices.filter(device => !only || device.platform === only).map(device => [device.deviceId, device]));
     return this.snapshot.matrixSelected.flatMap(id => known.get(id) ?? []);
+  }
+
+  /**
+   * The one platform a pinned Studio test can run on: it was recorded against one app on one
+   * platform, and there is no app id for the other. Undefined when any platform may run.
+   */
+  get matrixPlatform(): "ios" | "android" | undefined {
+    return this.snapshot.runtimeMode === "bundled" ? this.storedTarget?.platform : undefined;
   }
 
   /** How many devices Run would use; a single device runs the plain way. */
@@ -1415,6 +1424,8 @@ export class TestingPanel {
 
   /** The app a run would drive, per platform: the open test's own app first, then the project's targets. */
   matrixApps(): { ios?: string; android?: string } {
+    const pinned = this.matrixPlatform ? this.storedTarget : undefined;
+    if (pinned) return { [pinned.platform]: pinned.bundleId };
     const apps: { ios?: string; android?: string } = {};
     for (const entry of this.snapshot.targets) {
       const platform = entry.platform;

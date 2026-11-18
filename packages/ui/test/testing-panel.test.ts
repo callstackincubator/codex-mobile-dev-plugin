@@ -391,6 +391,22 @@ test("a pinned Studio test can run when its app is installed but not running", (
   panel.dispose();
 });
 
+test("a Studio test pinned to iOS only offers and runs on iOS devices", () => {
+  const panel = new TestingPanel(host({}, []), frontApps);
+  panel.setAvailable(true);
+  (panel as unknown as { update(fields: Record<string, unknown>): void }).update({
+    projectPath: PROJECT, runtimeMode: "bundled", selectedTestPath: "tests/stored.e2e.ts", selectedTestSource: "x",
+    tests: [{ relativePath: "tests/stored.e2e.ts", name: "stored.e2e.ts", updatedAt: "", sizeBytes: 1, target: { platform: "ios", bundleId: "com.pinned.app" } }],
+    targets: [{ name: "android", platform: "android", bundleId: "com.stale.android" }],
+    matrixDevices: [{ deviceId: "sim", platform: "ios", name: "iPhone" }, { deviceId: "emu", platform: "android", name: "Pixel" }],
+    matrixSelected: ["sim", "emu"],
+  });
+  assert.equal(panel.matrixPlatform, "ios");
+  assert.deepEqual(panel.matrixSelection.map(device => device.deviceId), ["sim"]);
+  assert.deepEqual(panel.matrixApps(), { ios: "com.pinned.app" });
+  panel.dispose();
+});
+
 test("Run is unavailable for a Studio test with neither a pinned app nor one in front", () => {
   const panel = new TestingPanel(host({}, []), deviceApps);
   panel.setAvailable(true);

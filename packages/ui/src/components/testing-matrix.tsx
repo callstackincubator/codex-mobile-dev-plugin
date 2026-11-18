@@ -39,7 +39,10 @@ export function MatrixDevices({ panel }: { panel: TestingPanel }) {
   const selected = new Set(state.matrixSelected);
   const toggle = (id: string, value: boolean) => panel.setMatrixSelection(value ? [...state.matrixSelected, id] : state.matrixSelected.filter(entry => entry !== id));
   if (!enabled) return <p className="text-xs text-muted-foreground" data-matrix-disabled>Running on several devices needs the bundled runner. This project uses its own e2e config, so tests run on one device.</p>;
-  const groups = [["iOS", state.matrixDevices.filter(device => device.platform === "ios")], ["Android", state.matrixDevices.filter(device => device.platform === "android")]] as const;
+  const only = panel.matrixPlatform;
+  const groups = ([["iOS", "ios"], ["Android", "android"]] as const)
+    .filter(([, platform]) => !only || platform === only)
+    .map(([label, platform]) => [label, state.matrixDevices.filter(device => device.platform === platform)] as const);
   const count = panel.matrixRunCount;
   return <div className="flex flex-col gap-3" data-testing-matrix>
     {groups.map(([label, devices]) => devices.length > 0 && <div key={label} className="flex flex-col">
@@ -48,6 +51,7 @@ export function MatrixDevices({ panel }: { panel: TestingPanel }) {
         busy={panel.matrixBusy(device.deviceId)} appMissing={!apps[device.platform]} onToggle={value => toggle(device.deviceId, value)} />)}</ul>
       {!apps[devices[0]!.platform] && <p className="pt-1 text-xs text-muted-foreground">No {label} app id for this test, so these devices cannot run it.</p>}
     </div>)}
+    {only && <p className="text-xs text-muted-foreground" data-matrix-platform-only>This test was recorded on {only === "ios" ? "iOS" : "Android"} and doesn't have an {only === "ios" ? "Android" : "iOS"} target.</p>}
     {state.matrixDevices.length === 0 && <p className="text-xs text-muted-foreground">{state.matrixLoading ? "Looking for simulators and emulators…" : "No simulators or emulators found."}</p>}
     <div className="flex items-end justify-between gap-3">
       <div className="flex items-center gap-2"><Label htmlFor="testing-matrix-limit" className="text-xs text-muted-foreground">Run up to</Label>
