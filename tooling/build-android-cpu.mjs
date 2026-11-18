@@ -38,7 +38,7 @@ async function buildAndroidCpu() {
       "-I", sdk.include, "-c", "packages/native/telemetry/telemetry.c", "-o", telemetryObject], { stdio: "inherit" });
     execFileSync(cCompiler, ["-std=c11", "-O2", "-g", "-Wall", "-Wextra", "-Werror", "-fPIE", "-c", source, "-o", collectorObject], { stdio: "inherit" });
     const linker = join(compilerRoot, `${target}-clang++`);
-    execFileSync(linker, ["-pie", "-static-libstdc++", collectorObject, telemetryObject, sdk.library, sdk.unwind,
+    execFileSync(linker, ["-pie", "-Wl,-z,max-page-size=16384", "-Wl,-z,common-page-size=16384", "-static-libstdc++", collectorObject, telemetryObject, sdk.library, sdk.unwind,
       "-llog", "-lz", "-o", output], { stdio: "inherit" });
     await saveNativeSymbols(output, "mobile-dev-cpu", abi);
     const strip = join(compilerRoot, "llvm-strip");

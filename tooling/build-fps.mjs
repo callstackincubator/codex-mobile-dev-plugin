@@ -89,7 +89,7 @@ async function buildAndroid() {
     const cCompiler = join(root, `${target}-clang`);
     execFileSync(cCompiler, ["-std=c11", "-O2", "-g", "-DSENTRY_BUILD_STATIC=1", "-I", sdk.include,
       "-c", "packages/native/telemetry/telemetry.c", "-o", telemetryObject], { stdio: "inherit" });
-    execFileSync(compiler, ["-std=c++17", "-Oz", "-g", "-DNDEBUG", "-fPIE", "-pie", "-static-libstdc++",
+    execFileSync(compiler, ["-std=c++17", "-Oz", "-g", "-DNDEBUG", "-fPIE", "-pie", "-Wl,-z,max-page-size=16384", "-Wl,-z,common-page-size=16384", "-static-libstdc++",
       "packages/native/android-fps/collector.cpp", "packages/native/android-fps/perfetto/perfetto.cc", telemetryObject,
       sdk.library, sdk.unwind, "-I", "packages/native/android-fps", "-llog", "-lz", "-o", path], { stdio: "inherit" });
     await saveNativeSymbols(path, "mobile-dev-fps", abi);
