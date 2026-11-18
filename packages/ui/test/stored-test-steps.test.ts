@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { changeStoredStepCommand, duplicateStoredStep, moveStoredStep, removeStoredStep, storedStepCommands, storedTestCallLines, storedTestSteps, storedTestUntilSource } from "../src/stored-test-steps.ts";
+import { branchStoredStepLocator, changeStoredStepCommand, duplicateStoredStep, moveStoredStep, removeStoredStep, storedStepCommands, storedTestCallLines, storedTestSteps, storedTestUntilSource } from "../src/stored-test-steps.ts";
 
 test("saved tests show awaited calls at their source lines", () => {
   const source = `import { test } from "@e2e-dev/mobile";
@@ -37,4 +37,30 @@ test("reorder, duplicate and command changes edit source without losing its wrap
   assert.match(removeStoredStep(withoutSemicolon, 4), /getByText\("B"\)\.tap\(\);/);
   assert.doesNotMatch(removeStoredStep(withoutSemicolon, 4), /getByText\("A"\)/);
   assert.equal(storedTestUntilSource('await expect(\n  screen.getByText("A")\n).toBeVisible();', 1), undefined);
+});
+
+test("a failed line takes another platform's locator behind a platform branch, and keeps its own", () => {
+  const source = `import { test } from "@e2e-dev/mobile";
+import { expect } from "e2e";
+
+test("flow", async ({ app, screen }) => {
+  await app.open();
+  await expect(screen.getByTestId("Home")).toBeVisible();
+  await screen.getByRole("button", "see users").tap();
+});
+`;
+  let next = branchStoredStepLocator(source, 6, "android", 'screen.getByText("Home")');
+  next = branchStoredStepLocator(next, 7, "android", 'screen.getByRole("button", "SEE USERS")');
+  const lines = next.split("\n");
+  assert.equal(lines[3], 'test("flow", async ({ app, screen, platform }) => {', "the branch reads the platform fixture");
+  assert.equal(lines[5], '  await expect(platform === "android" ? screen.getByText("Home") : screen.getByTestId("Home")).toBeVisible();');
+  assert.equal(lines[6], '  await (platform === "android" ? screen.getByRole("button", "SEE USERS") : screen.getByRole("button", "see users")).tap();');
+  // Re-recording a branched line replaces that platform's side rather than nesting another branch.
+  const again = branchStoredStepLocator(next, 6, "android", 'screen.getByText("Start")').split("\n")[5];
+  assert.equal(again, '  await expect(platform === "android" ? screen.getByText("Start") : screen.getByTestId("Home")).toBeVisible();');
+  const ios = branchStoredStepLocator(next, 7, "ios", 'screen.getByText("see users")').split("\n")[6];
+  assert.equal(ios, '  await (platform === "android" ? screen.getByRole("button", "SEE USERS") : screen.getByText("see users")).tap();');
+  // A line with no locator to swap, and a coordinate, are left alone.
+  assert.equal(branchStoredStepLocator(source, 5, "android", 'screen.getByText("Home")'), source);
+  assert.equal(branchStoredStepLocator(source, 6, "android", "tapAt({ x: 1, y: 2 })"), source);
 });

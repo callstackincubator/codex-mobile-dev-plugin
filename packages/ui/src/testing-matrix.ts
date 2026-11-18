@@ -11,7 +11,7 @@ export const DEFAULT_MATRIX_LIMIT = 3;
 export const MAX_MATRIX_LIMIT = 8;
 
 export type LaneProgress = { stepIndex: number; phase: "start" | "end"; status?: string; error?: string };
-export type LaneResult = { status: string; steps: { line: number; status: string; error?: string }[]; output?: string; durationMs?: number };
+export type LaneResult = { status: string; steps: { line: number; status: string; error?: string }[]; error?: string; output?: string; durationMs?: number };
 export type MatrixLane = {
   runId: string; deviceId: string; deviceName: string; platform: MatrixPlatform; state: LaneState;
   progress: LaneProgress[]; result?: LaneResult; error?: string; startedAt?: number; finishedAt?: number;
@@ -83,6 +83,7 @@ export function parseMatrix(value: unknown): MatrixView | null {
         status: str(result.status) || "failed",
         steps: (Array.isArray(result.steps) ? result.steps : []).map(record).filter((step): step is Record<string, unknown> => step !== null && typeof step.line === "number" && step.line > 0)
           .map(step => ({ line: step.line as number, status: str(step.status), ...(str(step.error) ? { error: str(step.error) } : {}) })),
+        ...(str(result.error) ? { error: str(result.error) } : {}),
         ...(str(result.output) ? { output: str(result.output) } : {}),
         ...(typeof result.durationMs === "number" ? { durationMs: result.durationMs } : {}),
       } } : {}),

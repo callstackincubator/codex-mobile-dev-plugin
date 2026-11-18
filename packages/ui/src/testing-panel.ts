@@ -7,7 +7,7 @@ import { isRecordableDevice, recordablePlatform } from "@mobile-dev/shared/panel
 import type { ScreenComponent } from "@mobile-dev/shared/screen-annotations.ts";
 import { screenSize } from "@mobile-dev/shared/screen-annotations.ts";
 import { testFileSlug } from "@mobile-dev/shared/test-recording.ts";
-import { storedTestCallLines, storedTestUntilSource } from "./stored-test-steps.ts";
+import { branchStoredStepLocator, storedTestCallLines, storedTestUntilSource } from "./stored-test-steps.ts";
 import type { RecordedStep } from "@mobile-dev/shared/test-recording.ts";
 import type { TestDraftSummary } from "@mobile-dev/shared/test-drafts.ts";
 import { DEFAULT_MATRIX_LIMIT, clampLimit, isTerminalLane, matrixFinished, parseMatrix, parseMatrixDevices, readMatrixPreferences, writeMatrixPreferences } from "./testing-matrix.ts";
@@ -20,7 +20,7 @@ import type { MatrixDeviceOption, MatrixLane, MatrixView } from "./testing-matri
  * project already holds. A saved recording moves from one to the other, which is the whole reason
  * this exists — the draft is deleted on save, so before this the test left the list entirely.
  */
-export type StoredTestSummary = { relativePath: string; name: string; updatedAt: string; sizeBytes: number; /** The app a Studio test is pinned to. */ target?: { platform: "ios" | "android"; bundleId: string } };
+export type StoredTestSummary = { relativePath: string; name: string; updatedAt: string; sizeBytes: number; /** The app a Studio test is pinned to, and any app added for the other platform. */ target?: { platform: "ios" | "android"; bundleId: string; apps?: { ios?: string; android?: string } } };
 
 /**
  * An agent recording, as the server reports it.
@@ -155,6 +155,9 @@ function object(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" ? value as Record<string, unknown> : null;
 }
 function text(value: unknown): string { return typeof value === "string" ? value : ""; }
+/** How a platform reads in the panel. */
+export function platformLabel(platform: "ios" | "android"): string { return platform === "ios" ? "iOS" : "Android"; }
+
 function projectName(projectPath: string): string { return projectPath.split("/").filter(Boolean).at(-1) ?? projectPath; }
 
 /** The targets a `mobile_testing_project_config` result lists, keeping only named entries. */
@@ -736,6 +739,61 @@ export class TestingPanel {
     });
   }
 
+  /**
+   * The line a re-record would change: the selected Studio test's first failed line, when the last
+   * run failed on the other platform than the one it was recorded on and the mirror shows that one.
+   * Zero when there is nothing to offer.
+   */
+  get reRecordLine(): number { return this.reRecord?.line ?? 0; }
+
+  /**
+   * The failed line that can take a locator for the platform it failed on, and whether the mirror
+   * shows that platform: the element is picked on the mirror, so a failure on an Android lane
+   * while an iOS device is mirrored can be named but not re-recorded yet.
+   */
+  get reRecord(): { line: number; platform: "ios" | "android"; ready: boolean } | undefined {
+    const stored = this.storedTarget;
+    const platform = this.runPlatform ?? this.mirroredPlatform;
+    const run = testRecorder.getSnapshot().run;
+    if (!stored || !platform || platform === stored.platform || !this.storedAppOn(platform) || run?.state !== "failed" || this.snapshot.running || this.snapshot.saving) return;
+    const failed = Object.entries(run.lines).filter(([, mark]) => mark === "failed").map(([line]) => Number(line)).sort((a, b) => a - b)[0] ?? 0;
+    // Only a line whose locator can be swapped: a multi-line call or an agent step stays the user's to edit.
+    if (!failed || branchStoredStepLocator(this.snapshot.selectedTestSource, failed, platform, "screen.getByText(\"\")") === this.snapshot.selectedTestSource) return;
+    return { line: failed, platform, ready: this.mirroredPlatform === platform };
+  }
+
+  /**
+   * Re-records one failed line's locator on the mirrored platform: the user right-clicks the
+   * element on the mirror, and the line keeps its locator for the recorded platform and takes the
+   * picked one on this platform behind a `platform` branch. The test is then saved.
+   */
+  async reRecordStoredLine(line: number) {
+    const mirrored = this.mirroredPlatform;
+    const app = mirrored ? this.storedAppOn(mirrored) : undefined;
+    const device = this.deviceApps.getSnapshot().device;
+    if (!mirrored || !app || !device || line <= 0) return;
+    this.update({ error: null });
+    // The element tree is read from the app in front, so it has to be this platform's app.
+    if (this.deviceApps.getSnapshot().foregroundApp?.bundleId !== app.bundleId) {
+      try { await this.call("mobile_launch_app", { platform: app.platform, deviceId: device.udid, bundleId: app.bundleId }, 120_000); }
+      catch (error) { this.update({ error: `Could not open ${app.bundleId}: ${error instanceof Error ? error.message : String(error)}` }); return; }
+    }
+    const relativePath = this.snapshot.selectedTestPath;
+    const armed = testRecorder.pickElement(device.udid, mirrored, locator => {
+      const source = this.snapshot.selectedTestSource;
+      if (this.snapshot.selectedTestPath !== relativePath) return;
+      const next = branchStoredStepLocator(source, line, mirrored, locator);
+      if (next === source) { this.update({ error: `Line ${line} could not be changed. Edit it in Preview.` }); return; }
+      countUiEvent("ui.testing.rerecord_line");
+      this.editStoredTest(next);
+      void this.saveStoredTest();
+    });
+    if (!armed) this.update({ error: "The mirror is busy recording. Stop the recording, then try again." });
+  }
+
+  /** Leaves a re-record without changing the test. */
+  cancelReRecord() { if (testRecorder.getSnapshot().picking) testRecorder.stop(); }
+
   async saveStoredTest() {
     const { projectPath, selectedTestPath: relativePath } = this.snapshot;
     if (!projectPath || !relativePath || !this.snapshot.selectedTestStaged || this.snapshot.saving) return;
@@ -1188,6 +1246,24 @@ export class TestingPanel {
     return this.snapshot.tests.find(test => test.relativePath === this.snapshot.selectedTestPath)?.target;
   }
 
+  /** Every app id the selected Studio test has, per platform: the recorded one and any added one. */
+  get storedApps(): { ios?: string; android?: string } {
+    const stored = this.storedTarget;
+    return stored ? { ...stored.apps, [stored.platform]: stored.bundleId } : {};
+  }
+
+  /** The selected Studio test's app on one platform, if it has one there. */
+  storedAppOn(platform: "ios" | "android"): { platform: "ios" | "android"; bundleId: string } | undefined {
+    const bundleId = this.storedApps[platform];
+    return bundleId ? { platform, bundleId } : undefined;
+  }
+
+  /** The platform of the mirrored device, when it is one Studio can record and run on. */
+  get mirroredPlatform(): "ios" | "android" | undefined {
+    const { device } = this.deviceApps.getSnapshot();
+    return device && isRecordableDevice(device) ? recordablePlatform(device) : undefined;
+  }
+
   /** The app in front on the mirrored device, as a Studio target. */
   get foregroundTarget(): NonNullable<StoredTestSummary["target"]> | undefined {
     const { device, foregroundApp } = this.deviceApps.getSnapshot();
@@ -1199,8 +1275,11 @@ export class TestingPanel {
     if (this.snapshot.runtimeMode !== "bundled" || !this.snapshot.selectedTestPath) return "";
     const pinned = this.storedTarget;
     if (!pinned) return this.foregroundTarget ? "" : "This test has no app yet. Open the app in the mirror to run it; Studio will pin it.";
-    const { device } = this.deviceApps.getSnapshot();
-    if (device && isRecordableDevice(device) && recordablePlatform(device) !== pinned.platform) return `This test is pinned to ${pinned.bundleId} (${pinned.platform}). Mirror an ${pinned.platform === "ios" ? "iOS simulator" : "Android emulator"} to run it.`;
+    const mirrored = this.mirroredPlatform;
+    if (mirrored && !this.storedAppOn(mirrored)) {
+      const recorded = platformLabel(pinned.platform), other = platformLabel(mirrored);
+      return `This test was recorded on ${recorded} and doesn't have an ${other} target. Open the app on this ${other} device and choose Add ${other} app, or mirror an ${pinned.platform === "ios" ? "iOS simulator" : "Android emulator"}.`;
+    }
     // `deviceApps.apps` lists running apps, not installed ones, so it cannot say the pinned app is
     // missing; Run opens it and reports a launch failure if it really is not on the device.
     return "";
@@ -1214,13 +1293,18 @@ export class TestingPanel {
       ? { platform: target.platform, bundleId: target.bundleId } : {};
   }
 
-  /** Pins the selected Studio test to the app in front, replacing the one it had. */
+  /**
+   * Pins the selected Studio test to the app in front. On the recorded platform it replaces that
+   * app; on the other platform it adds the app there, so the test runs on both.
+   */
   async repinStoredTest() {
     const { projectPath, selectedTestPath: relativePath } = this.snapshot;
     const target = this.foregroundTarget;
     if (!projectPath || !relativePath || !target || this.snapshot.running) return;
+    const stored = this.storedTarget;
+    const mode = stored && stored.platform !== target.platform ? "add" : "replace";
     try {
-      await this.call("mobile_testing_set_target", { projectPath, relativePath, ...target }, 10_000);
+      await this.call("mobile_testing_set_target", { projectPath, relativePath, ...target, mode }, 10_000);
       await this.refreshTests();
     } catch (error) {
       this.update({ error: error instanceof Error ? error.message : String(error) });
@@ -1255,8 +1339,11 @@ export class TestingPanel {
     if (!this.hasBundledModel(untilSource, { kind: "stored", ...(untilLine === undefined ? {} : { untilLine }) })) return;
     // A Studio test runs against the app it is pinned to, never whichever app is in front. A test
     // with no app yet takes the one in front and keeps it, so later runs are pinned.
-    const pinned = this.storedTarget;
-    const runTarget = pinned ?? this.foregroundTarget;
+    // A test with an app on both platforms runs the one for the mirrored device's platform.
+    const stored = this.storedTarget;
+    const mirrored = this.mirroredPlatform;
+    const pinned = stored && mirrored ? this.storedAppOn(mirrored) : stored;
+    const runTarget = pinned ?? (stored ? undefined : this.foregroundTarget);
     if (this.snapshot.runtimeMode === "bundled" && !runTarget) return;
     if (this.matrixRunCount > 1) { await this.runMatrix({ relativePath, source: untilSource, ...(untilLine === undefined ? {} : { untilLine }), callLines: storedTestCallLines(source) }); return; }
     this.update({ running: true, error: null });
@@ -1270,6 +1357,7 @@ export class TestingPanel {
       }
     }
     testRecorder.clearRun();
+    this.runPlatform = runTarget?.platform ?? mirrored;
     testRecorder.beginRun(untilLine);
     if (untilLine !== undefined) countUiEvent("ui.testing.run_until");
     const startedAt = performance.now(), telemetryContext = getUiTelemetryAttributes();
@@ -1281,13 +1369,13 @@ export class TestingPanel {
       await this.stageWrite;
       await this.call("mobile_testing_release_device", {}, 30_000).catch(() => undefined);
       // The server pins before the run starts, so the badge shows it now rather than when the run ends.
-      if (!pinned && runTarget && this.snapshot.runtimeMode === "bundled") this.notePinned(relativePath, runTarget);
+      if (!stored && runTarget && this.snapshot.runtimeMode === "bundled") this.notePinned(relativePath, runTarget);
       const response = await this.call("mobile_testing_run_test", {
         projectPath, relativePath, untilSource,
         ...(this.snapshot.configPath ? { configPath: this.snapshot.configPath } : {}),
         ...(this.snapshot.targetName ? { target: this.snapshot.targetName } : {}),
         ...this.bundledRunArguments(runTarget),
-        ...(!pinned && runTarget ? { pin: true } : {}),
+        ...(!stored && runTarget ? { pin: true } : {}),
       }, 15 * 60_000);
       const data = object(response.structuredContent) ?? {};
       const steps = (Array.isArray(data.steps) ? data.steps : []).map(entry => object(entry))
@@ -1295,6 +1383,7 @@ export class TestingPanel {
         .map(entry => ({ line: typeof entry.line === "number" ? entry.line : 0, status: text(entry.status), ...(text(entry.error) ? { error: text(entry.error) } : {}) }))
         .filter(step => step.line > 0);
       testRecorder.finishRun({ status: text(data.status) || "failed", steps,
+        ...(text(data.error) ? { error: text(data.error) } : {}),
         ...(text(data.output) ? { output: text(data.output) } : {}),
         ...(typeof data.durationMs === "number" ? { durationMs: data.durationMs } : {}) });
       countUiEvent(text(data.status) === "passed" ? "ui.testing.run_passed" : "ui.testing.run_failed");
@@ -1308,7 +1397,7 @@ export class TestingPanel {
       if (getUiTelemetryAttributes() === telemetryContext) recordUiTiming("ui.testing.run", performance.now() - startedAt);
       this.update({ running: false });
       testRecorder.invalidate();
-      if (!pinned && runTarget) void this.refreshTests();
+      if (!stored && runTarget) void this.refreshTests();
     }
   }
 
@@ -1380,6 +1469,7 @@ export class TestingPanel {
       const durationMs = typeof data.durationMs === "number" && Number.isFinite(data.durationMs) ? data.durationMs : undefined;
       testRecorder.finishRun({
         status: text(data.status) || "failed", steps,
+        ...(text(data.error) ? { error: text(data.error) } : {}),
         ...(text(data.output) ? { output: text(data.output) } : {}),
         ...(durationMs === undefined ? {} : { durationMs }),
       });
@@ -1413,10 +1503,11 @@ export class TestingPanel {
 
   /**
    * The one platform a pinned Studio test can run on: it was recorded against one app on one
-   * platform, and there is no app id for the other. Undefined when any platform may run.
+   * platform and has no app added for the other. Undefined when any platform may run.
    */
   get matrixPlatform(): "ios" | "android" | undefined {
-    return this.snapshot.runtimeMode === "bundled" ? this.storedTarget?.platform : undefined;
+    const stored = this.snapshot.runtimeMode === "bundled" ? this.storedTarget : undefined;
+    return stored && !stored.apps?.[stored.platform === "ios" ? "android" : "ios"] ? stored.platform : undefined;
   }
 
   /** How many devices Run would use; a single device runs the plain way. */
@@ -1424,8 +1515,8 @@ export class TestingPanel {
 
   /** The app a run would drive, per platform: the open test's own app first, then the project's targets. */
   matrixApps(): { ios?: string; android?: string } {
-    const pinned = this.matrixPlatform ? this.storedTarget : undefined;
-    if (pinned) return { [pinned.platform]: pinned.bundleId };
+    // A pinned Studio test runs only the apps it has; the project's targets are not its apps.
+    if (this.snapshot.runtimeMode === "bundled" && this.storedTarget) return this.storedApps;
     const apps: { ios?: string; android?: string } = {};
     for (const entry of this.snapshot.targets) {
       const platform = entry.platform;
@@ -1480,6 +1571,8 @@ export class TestingPanel {
   private matrixCallLines?: readonly number[];
   private matrixUntilLine?: number;
   private laneSignature = "";
+  /** The platform the run on the preview ran on: a matrix lane's, not the mirror's. */
+  private runPlatform: "ios" | "android" | undefined;
 
   selectLane(runId: string) {
     this.update({ selectedLane: runId });
@@ -1509,9 +1602,10 @@ export class TestingPanel {
     const signature = `${lane.runId}|${lane.state}|${lane.progress.length}|${lane.result?.steps.length ?? -1}`;
     if (signature === this.laneSignature) return;
     this.laneSignature = signature;
+    this.runPlatform = lane.platform;
     testRecorder.beginRun(this.matrixUntilLine);
     testRecorder.applyRunProgress(lane.progress, this.matrixCallLines);
-    if (lane.result) testRecorder.finishRun({ status: lane.result.status, steps: lane.result.steps,
+    if (lane.result) testRecorder.finishRun({ status: lane.result.status, steps: lane.result.steps, ...(lane.result.error ? { error: lane.result.error } : {}),
       ...(lane.result.output ? { output: lane.result.output } : {}), ...(lane.result.durationMs === undefined ? {} : { durationMs: lane.result.durationMs }) });
     else if (lane.state === "error" || lane.state === "cancelled") testRecorder.failRun(lane.error ?? (lane.state === "cancelled" ? "This device's run was cancelled." : "The run failed to start."));
   }

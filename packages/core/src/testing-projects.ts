@@ -369,15 +369,26 @@ export interface StoredTest {
   target?: TestTarget;
 }
 
-/** The app a Studio test runs against, kept beside the test and never inside its source. */
-export interface TestTarget { platform: "ios" | "android"; bundleId: string }
+/**
+ * The app a Studio test runs against, kept beside the test and never inside its source.
+ * `platform` and `bundleId` are the app it was recorded or first pinned against; `apps` holds the
+ * app id the user added for the other platform, so the same test can run there too.
+ */
+export interface TestTarget { platform: "ios" | "android"; bundleId: string; apps?: { ios?: string; android?: string } }
 
 const TARGETS_FILE = "targets.json";
 
+const validAppId = (value: unknown): value is string => typeof value === "string" && value.length > 0 && value.length <= 512;
+
 function validTarget(value: unknown): TestTarget | undefined {
   const entry = value as Partial<TestTarget> | null;
-  return (entry?.platform === "ios" || entry?.platform === "android") && typeof entry.bundleId === "string" && entry.bundleId.length > 0 && entry.bundleId.length <= 512
-    ? { platform: entry.platform, bundleId: entry.bundleId } : undefined;
+  if (!(entry?.platform === "ios" || entry?.platform === "android") || !validAppId(entry.bundleId)) return undefined;
+  const apps: { ios?: string; android?: string } = {};
+  for (const platform of ["ios", "android"] as const) {
+    const id = entry.apps?.[platform];
+    if (platform !== entry.platform && validAppId(id)) apps[platform] = id;
+  }
+  return { platform: entry.platform, bundleId: entry.bundleId, ...(Object.keys(apps).length > 0 ? { apps } : {}) };
 }
 
 async function readTargets(root: string): Promise<Record<string, TestTarget>> {
@@ -405,14 +416,25 @@ async function changeTargets(root: string, change: (targets: Record<string, Test
  * Pins a Studio test to the app it was recorded or first run against. Only bundled tests carry one:
  * a project test's app is its config's target, and nothing is written into the project for it.
  */
-export async function writeTestTarget(projectPath: string, relativePath: string, target: TestTarget): Promise<boolean> {
+export async function writeTestTarget(projectPath: string, relativePath: string, target: TestTarget, mode: "replace" | "add" = "replace"): Promise<boolean> {
   const { project, root } = await testStorage(projectPath);
   if (project.runtimeMode !== "bundled") return false;
   const file = await resolveTestPath(root, relativePath);
   if (!(await isFile(file))) throw new ExpectedOperationError("invalid_input", "Save the test before pinning an app to it.");
-  const checked = validTarget(target);
+  const checked = validTarget({ platform: target.platform, bundleId: target.bundleId });
   if (!checked) throw new ExpectedOperationError("invalid_input", "Choose an iOS or Android app identifier.");
-  await changeTargets(root, targets => { targets[relativePath] = checked; });
+  await changeTargets(root, targets => {
+    const current = targets[relativePath];
+    // "add" gives the test an app on a second platform and leaves the recorded one in place.
+    if (mode === "add" && current && current.platform !== checked.platform) {
+      targets[relativePath] = { ...current, apps: { ...current.apps, [checked.platform]: checked.bundleId } };
+      return;
+    }
+    // Replacing the recorded app on its own platform keeps the one added for the other; a
+    // recorded app on another platform is a different test, so nothing of the old pin stays.
+    const kept = current?.platform === checked.platform ? current.apps : undefined;
+    targets[relativePath] = { ...checked, ...(kept ? { apps: kept } : {}) };
+  });
   return true;
 }
 

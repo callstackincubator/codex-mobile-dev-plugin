@@ -301,10 +301,14 @@ test("a run marks the preview line by line, and marks nothing it was not told ab
   assert.equal(marks()[7], "is-failed", "a failure stays on the line the report blames");
   assert.match(dom.window.document.body.textContent ?? "", /Timed out waiting for the element/);
 
-  // A run that produced no report has no line to mark, so the runner's own words stand in.
+  // A run that produced no report has no line to mark. The runner's raw output is not shown.
   await act(async () => { testRecorder.finishRun({ status: "failed", steps: [], output: "No tests matched" }); });
   assert.deepEqual(marks().filter(mark => mark !== ""), [], "no invented marks");
-  assert.match(dom.window.document.body.textContent ?? "", /No tests matched/);
+  assert.doesNotMatch(dom.window.document.body.textContent ?? "", /No tests matched/);
+
+  // A failure no line carries still shows its reason, in a chip under the verdict.
+  await act(async () => { testRecorder.finishRun({ status: "failed", steps: [], error: "App com.example.android is not installed" }); });
+  assert.equal(dom.window.document.querySelector("[data-testing-run-error]")?.textContent, "App com.example.android is not installed");
 
   testRecorder.clearRun();
   testRecorder.clearSteps();
@@ -824,7 +828,7 @@ test("a stored Studio test shows its pinned app and offers to re-pin it to the a
   const deviceApps = { subscribe: () => () => undefined, getSnapshot: () => DEVICE_SNAPSHOT };
   let repinned = 0;
   const panel = { ...panelStub({ runtimeMode: "bundled", selectedTestPath: "tests/flow.e2e.ts", selectedTestSource: "await tap();\n" }),
-    storedTarget: { platform: "ios", bundleId: "com.a" }, foregroundTarget: { platform: "ios", bundleId: "com.b" },
+    storedTarget: { platform: "ios", bundleId: "com.a" }, storedApps: { ios: "com.a" }, foregroundTarget: { platform: "ios", bundleId: "com.b" },
     storedRunHint: "com.a is not installed on the mirrored device.", canRunStored: false, repinStoredTest: async () => { repinned += 1; } };
   await act(async () => { root.render(createElement(TestingView, { panel, deviceApps })); });
   assert.match(dom.window.document.querySelector("[data-testing-pinned-app]")?.textContent ?? "", /com\.a/);
@@ -832,6 +836,16 @@ test("a stored Studio test shows its pinned app and offers to re-pin it to the a
   assert.equal((dom.window.document.querySelector("[data-testing-run]") as HTMLButtonElement).disabled, true);
   await act(async () => { (dom.window.document.querySelector("[data-testing-repin]") as HTMLElement).click(); });
   assert.equal(repinned, 1);
+  assert.equal(dom.window.document.querySelector("[data-testing-repin]")?.textContent, "Use current app");
+  // With an Android app in front, the button adds it for Android and keeps the iOS app.
+  const android = { ...panel, foregroundTarget: { platform: "android", bundleId: "com.b.android" } };
+  await act(async () => { root.render(createElement(TestingView, { panel: android, deviceApps })); });
+  assert.equal(dom.window.document.querySelector("[data-testing-repin]")?.textContent, "Add Android app");
+  // Once added, both apps show, and the app in front needs no button.
+  const both = { ...android, storedTarget: { platform: "ios", bundleId: "com.a", apps: { android: "com.b.android" } }, storedApps: { ios: "com.a", android: "com.b.android" } };
+  await act(async () => { root.render(createElement(TestingView, { panel: both, deviceApps })); });
+  assert.match(dom.window.document.querySelector('[data-testing-added-app="android"]')?.textContent ?? "", /com\.b\.android/);
+  assert.equal(dom.window.document.querySelector("[data-testing-repin]"), null);
   await act(async () => { root.render(createElement("div")); });
   await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
   onTeardown(async () => { await act(async () => { root.unmount(); }); });

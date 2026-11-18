@@ -399,12 +399,83 @@ test("a Studio test pinned to iOS only offers and runs on iOS devices", () => {
     tests: [{ relativePath: "tests/stored.e2e.ts", name: "stored.e2e.ts", updatedAt: "", sizeBytes: 1, target: { platform: "ios", bundleId: "com.pinned.app" } }],
     targets: [{ name: "android", platform: "android", bundleId: "com.stale.android" }],
     matrixDevices: [{ deviceId: "sim", platform: "ios", name: "iPhone" }, { deviceId: "emu", platform: "android", name: "Pixel" }],
-    matrixSelected: ["sim", "emu"],
   });
-  assert.equal(panel.matrixPlatform, "ios");
-  assert.deepEqual(panel.matrixSelection.map(device => device.deviceId), ["sim"]);
-  assert.deepEqual(panel.matrixApps(), { ios: "com.pinned.app" });
+  panel.setMatrixSelection(["sim", "emu"]);
+  try {
+    assert.equal(panel.matrixPlatform, "ios");
+    assert.deepEqual(panel.matrixSelection.map(device => device.deviceId), ["sim"]);
+    assert.deepEqual(panel.matrixApps(), { ios: "com.pinned.app" });
+  } finally { panel.dispose(); }
+});
+
+const androidFront = { subscribe: () => () => undefined, getSnapshot: () => ({ device: { udid: "emulator-5554", name: "Pixel", state: "Booted", runtime: "", platform: "android", kind: "emulator" }, apps: [], foregroundApp: { bundleId: "com.example.android", pid: 3 }, ready: true }) } as unknown as DeviceAppsStore;
+const iosOnly = { relativePath: "tests/stored.e2e.ts", name: "stored.e2e.ts", updatedAt: "", sizeBytes: 1, target: { platform: "ios", bundleId: "com.pinned.app" } };
+
+test("an iOS-only Studio test on an Android mirror says so and adds the Android app in front", async () => {
+  const calls: { name: string; arguments: Record<string, unknown> }[] = [];
+  const panel = new TestingPanel(host({ mobile_testing_set_target: { pinned: true } }, calls), androidFront);
+  panel.setAvailable(true);
+  (panel as unknown as { update(fields: Record<string, unknown>): void }).update({ projectPath: PROJECT, runtimeMode: "bundled", selectedTestPath: "tests/stored.e2e.ts", selectedTestSource: "x", tests: [iosOnly] });
+  assert.match(panel.storedRunHint, /recorded on iOS and doesn't have an Android target/);
+  assert.equal(panel.canRunStored, false);
+  await panel.repinStoredTest();
+  const set = calls.find(call => call.name === "mobile_testing_set_target")!;
+  assert.deepEqual([set.arguments.platform, set.arguments.bundleId, set.arguments.mode], ["android", "com.example.android", "add"]);
   panel.dispose();
+});
+
+test("a Studio test with apps on both platforms runs the mirrored platform's app and offers both in the matrix", async () => {
+  const calls: { name: string; arguments: Record<string, unknown> }[] = [];
+  const source = 'test("stored", async ({ app }) => {\n  await app.open();\n});\n';
+  const panel = new TestingPanel(host({ mobile_testing_run_test: { status: "passed", exitCode: 0, steps: [] } }, calls), androidFront);
+  panel.setAvailable(true);
+  (panel as unknown as { update(fields: Record<string, unknown>): void }).update({ projectPath: PROJECT, runtimeMode: "bundled", selectedTestPath: "tests/stored.e2e.ts", selectedTestSource: source,
+    tests: [{ ...iosOnly, target: { ...iosOnly.target, apps: { android: "com.pinned.android" } } }] });
+  assert.equal(panel.storedRunHint, "");
+  assert.equal(panel.matrixPlatform, undefined);
+  assert.deepEqual(panel.matrixApps(), { ios: "com.pinned.app", android: "com.pinned.android" });
+  await panel.runStoredTest();
+  const run = calls.find(call => call.name === "mobile_testing_run_test")!;
+  assert.deepEqual([run.arguments.platform, run.arguments.bundleId, run.arguments.pin], ["android", "com.pinned.android", undefined]);
+  panel.dispose();
+});
+
+test("a line that failed on Android is re-recorded there behind a platform branch, and saved", async () => {
+  const calls: { name: string; arguments: Record<string, unknown> }[] = [];
+  const source = 'import { test } from "@e2e-dev/mobile";\nimport { expect } from "e2e";\ntest("flow", async ({ app, screen }) => {\n  await app.open();\n  await expect(screen.getByTestId("Home")).toBeVisible();\n});\n';
+  const panel = new TestingPanel(host({ mobile_testing_save_staged_file: { saved: true, originalHash: "h2" } }, calls), androidFront);
+  panel.setAvailable(true);
+  (panel as unknown as { update(fields: Record<string, unknown>): void }).update({ projectPath: PROJECT, runtimeMode: "bundled", selectedTestPath: "tests/stored.e2e.ts", selectedTestSource: source, selectedTestOriginalHash: "h1",
+    tests: [{ ...iosOnly, target: { ...iosOnly.target, apps: { android: "com.example.android" } } }] });
+  testRecorder.attach("emulator-5554", "android", { readComponents: async () => [{ name: "Home", label: "Home", text: "Home", role: "text", depth: 1, source: "accessibility", nodeId: "home", bounds: { x: 0, y: 100, width: 200, height: 40 } }], screen: () => ({ width: 402, height: 874 }) });
+  testRecorder.beginRun();
+  testRecorder.finishRun({ status: "failed", steps: [{ line: 5, status: "failed", error: "Not found" }] });
+  assert.equal(panel.reRecordLine, 5);
+  await panel.reRecordStoredLine(5);
+  assert.equal(testRecorder.getSnapshot().picking, true);
+  await testRecorder.openMenu({ x: 100, y: 120 });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  const staged = calls.find(call => call.name === "mobile_testing_stage_file")!;
+  assert.match(staged.arguments.source as string, /async \(\{ app, screen, platform \}\)/);
+  assert.match(staged.arguments.source as string, /expect\(platform === "android" \? screen\.getByText\("Home"\) : screen\.getByTestId\("Home"\)\)/);
+  assert.ok(calls.some(call => call.name === "mobile_testing_save_staged_file"), "the change is saved");
+  testRecorder.detach("emulator-5554", "android");
+  panel.dispose();
+});
+
+test("a line that failed on an Android lane while an iOS device is mirrored is named, not re-recordable yet", () => {
+  const iosFront = { subscribe: () => () => undefined, getSnapshot: () => ({ device: { udid: "sim", name: "iPhone", state: "Booted", runtime: "", platform: "ios", kind: "simulator" }, apps: [], foregroundApp: { bundleId: "com.pinned.app", pid: 3 }, ready: true }) } as unknown as DeviceAppsStore;
+  const source = 'test("flow", async ({ app, screen }) => {\n  await app.open();\n  await expect(screen.getByTestId("Home")).toBeVisible();\n});\n';
+  const panel = new TestingPanel(host({}, []), iosFront);
+  panel.setAvailable(true);
+  (panel as unknown as { update(fields: Record<string, unknown>): void }).update({ projectPath: PROJECT, runtimeMode: "bundled", selectedTestPath: "tests/stored.e2e.ts", selectedTestSource: source,
+    tests: [{ ...iosOnly, target: { ...iosOnly.target, apps: { android: "com.example.android" } } }] });
+  // What showLane records for the Android lane of a matrix run.
+  (panel as unknown as { runPlatform: string }).runPlatform = "android";
+  testRecorder.beginRun();
+  testRecorder.finishRun({ status: "failed", steps: [{ line: 3, status: "failed", error: "Not found" }] });
+  try { assert.deepEqual(panel.reRecord, { line: 3, platform: "android", ready: false }); }
+  finally { panel.dispose(); }
 });
 
 test("Run is unavailable for a Studio test with neither a pinned app nor one in front", () => {

@@ -307,12 +307,12 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
 
   registerAppTool(server, "mobile_testing_set_target", {
     title: "Pin a Studio test to an app",
-    description: "Store the app (platform and bundle id) a saved Studio test runs against. Only Studio tests carry one; a project test keeps using its config's target.",
-    inputSchema: { projectPath, relativePath: z.string().min(1).max(512), platform: z.enum(["ios", "android"]), bundleId: z.string().min(1).max(512) },
+    description: "Store the app (platform and bundle id) a saved Studio test runs against. Only Studio tests carry one; a project test keeps using its config's target. With mode add, the app is added for its platform and the app the test was recorded against stays.",
+    inputSchema: { projectPath, relativePath: z.string().min(1).max(512), platform: z.enum(["ios", "android"]), bundleId: z.string().min(1).max(512), mode: z.enum(["replace", "add"]).optional() },
     annotations: write,
     _meta: appVisibility,
-  }, safe(async ({ projectPath: selected, relativePath, platform, bundleId }: { projectPath: string; relativePath: string; platform: "ios" | "android"; bundleId: string }) =>
-    dataResult({ pinned: await writeTestTarget(selected, relativePath, { platform, bundleId }) })));
+  }, safe(async ({ projectPath: selected, relativePath, platform, bundleId, mode }: { projectPath: string; relativePath: string; platform: "ios" | "android"; bundleId: string; mode?: "replace" | "add" }) =>
+    dataResult({ pinned: await writeTestTarget(selected, relativePath, { platform, bundleId }, mode) })));
 
   const modelSchema = z.object({
     provider: z.enum(["vercel", "openrouter", "openai-compatible", "chatgpt", "copilot", "opencode-console", "grok"]),

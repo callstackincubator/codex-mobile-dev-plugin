@@ -47,6 +47,21 @@ test("a tap row records the step and takes it on the device", async () => {
   assert.deepEqual(done, [{ kind: "tap", point: { x: 50, y: 820 } }]);
 });
 
+test("picking an element hands back its locator and records nothing", async () => {
+  const reads = { count: 0 };
+  const recorder = new TestRecorder();
+  recorder.attach(UDID, "android", reader([tab("SEE USERS", 800)], reads));
+  const picked: string[] = [];
+  assert.equal(recorder.pickElement(UDID, "android", locator => { picked.push(locator); }), true);
+  assert.equal(recorder.getSnapshot().picking, true);
+  await recorder.openMenu({ x: 50, y: 820 });
+  assert.deepEqual(picked, ['screen.getByRole("button", "SEE USERS")']);
+  assert.equal(recorder.getSnapshot().steps.length, 0, "a pick is not a step");
+  assert.equal(recorder.getSnapshot().menu, undefined, "and opens no menu");
+  assert.equal(recorder.getSnapshot().picking, false);
+  assert.equal(recorder.getSnapshot().recordingDeviceId, "", "the mirror stops picking after one element");
+});
+
 test("an assertion is recorded from the element menu without touching the app", async () => {
   const reads = { count: 0 };
   const recorder = new TestRecorder();
@@ -395,6 +410,18 @@ test("the verdict stays, the ticks go, and a failing mark stays with them gone",
   assert.equal(recorder.getSnapshot().run?.durationMs, 420, "and how long it took before it broke");
   recorder.clearRun();
   recorder.detach(UDID, "ios");
+});
+
+test("a failed run with no failing line keeps the runner's reason", () => {
+  const recorder = new TestRecorder();
+  recorder.beginRun();
+  recorder.finishRun({ status: "failed", steps: [], error: "App com.example.android is not installed" });
+  assert.equal(recorder.getSnapshot().run?.error, "App com.example.android is not installed");
+  // A failing line's own error is the more precise one, so it wins.
+  recorder.beginRun();
+  recorder.finishRun({ status: "failed", steps: [{ line: 9, status: "failed", error: "Timed out" }], error: "Test failed" });
+  assert.equal(recorder.getSnapshot().run?.error, "Timed out");
+  recorder.clearRun();
 });
 
 test("a run's marks go when the steps move out from under them, and the verdict is flagged", async () => {

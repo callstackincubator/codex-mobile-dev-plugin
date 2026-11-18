@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { BotIcon, CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleIcon, CircleXIcon, CopyIcon, FileCode2Icon, FilePlus2Icon, FlaskConicalIcon, FolderOpenIcon, GripVerticalIcon, HistoryIcon, LoaderCircleIcon, MoreHorizontalIcon, PlayIcon, SaveIcon, SquareIcon, Trash2Icon, UserIcon, XIcon } from "lucide-react";
 import type { DeviceAppsStore } from "../device-apps.ts";
+import { platformLabel } from "../testing-panel.ts";
 import type { TestingPanel } from "../testing-panel.ts";
 import { OPEN_STEP, formatRunDuration, testRecorder } from "../test-recorder.ts";
 import type { DevicePlatform, TestRunView } from "../test-recorder.ts";
@@ -699,19 +700,69 @@ function SourceStepMenu({ source, step, index, mode, onEdit, editable }: {
 }
 
 /** A project file's awaited calls can be edited in a temporary working copy. */
-/** The app a Studio test is pinned to, with a way to pin it to the app in front instead. */
+/**
+ * The apps a Studio test runs against, one per platform, with a way to take the app in front: on
+ * the recorded platform it replaces that app, on the other it adds one so the test runs on both.
+ */
 function PinnedApp({ panel }: { panel: TestingPanel }) {
   const state = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
   const pinned = panel.storedTarget;
   const front = panel.foregroundTarget;
-  const canRepin = Boolean(front) && !state.running && (!pinned || pinned.bundleId !== front!.bundleId || pinned.platform !== front!.platform);
-  return <span data-testing-pinned-app className="flex min-w-0 items-center gap-1.5">
-    <Badge variant="outline" className="h-auto min-w-0 gap-1.5 py-0.5 font-normal" title={pinned ? "Runs always open this app, whatever is in front." : "Not pinned yet. The first run pins the app in front."}>
+  const apps = panel.storedApps;
+  const added = pinned ? (["ios", "android"] as const).filter(platform => platform !== pinned.platform && apps[platform]) : [];
+  const current = front ? apps[front.platform] : undefined;
+  const canRepin = Boolean(front) && !state.running && current !== front!.bundleId;
+  const label = !pinned || !front ? "Pin current app"
+    : front.platform === pinned.platform ? "Use current app"
+    : current ? `Use current ${platformLabel(front.platform)} app` : `Add ${platformLabel(front.platform)} app`;
+  return <span data-testing-pinned-app className="flex min-w-0 flex-wrap items-center gap-1.5">
+    <Badge variant="outline" className="h-auto min-w-0 gap-1.5 py-0.5 font-normal" title={pinned ? "Recorded against this app. Runs always open it, whatever is in front." : "Not pinned yet. The first run pins the app in front."}>
       <span className="truncate">{pinned ? pinned.bundleId : "No app pinned"}</span>
-      {pinned && <span className="text-muted-foreground">{pinned.platform}</span>}
+      {pinned && <span className="text-muted-foreground">{platformLabel(pinned.platform)}</span>}
     </Badge>
-    {canRepin && <Button type="button" size="xs" variant="ghost" data-testing-repin title={`Pin this test to ${front!.bundleId}, the app in front`} onClick={() => void panel.repinStoredTest()}>{pinned ? "Use current app" : "Pin current app"}</Button>}
+    {added.map(platform => <Badge key={platform} variant="outline" data-testing-added-app={platform} className="h-auto min-w-0 gap-1.5 py-0.5 font-normal" title={`Added for ${platformLabel(platform)}, so this test also runs there.`}>
+      <span className="truncate">{apps[platform]}</span>
+      <span className="text-muted-foreground">{platformLabel(platform)}</span>
+    </Badge>)}
+    {canRepin && <Button type="button" size="xs" variant="ghost" data-testing-repin title={pinned && front!.platform !== pinned.platform ? `Run this test on ${platformLabel(front!.platform)} with ${front!.bundleId}, the app in front. The ${platformLabel(pinned.platform)} app stays.` : `Pin this test to ${front!.bundleId}, the app in front`} onClick={() => void panel.repinStoredTest()}>{label}</Button>}
   </span>;
+}
+
+/** Why the run failed, as a chip under the verdict, so a long reason does not crowd the header. */
+function RunFailureReason({ run }: { run: { state: string; error?: string } | null | undefined }) {
+  if (run?.state !== "failed" || !run.error) return null;
+  return <Badge variant="outline" data-testing-run-error role="alert" title={run.error}
+    className="h-auto max-w-full self-start justify-start gap-1.5 whitespace-normal break-words border-destructive/30 bg-destructive/10 py-1 text-left font-normal text-destructive">
+    <CircleXIcon className="size-3 shrink-0" /><span className="min-w-0">{run.error}</span>
+  </Badge>;
+}
+
+/**
+ * After a Studio test fails on the platform it was not recorded on: offers to pick the failed
+ * line's element on this platform, which keeps the recorded locator for the other one behind a
+ * `platform` branch. While picking, says what to do on the mirror.
+ */
+function ReRecordLine({ panel }: { panel: TestingPanel }) {
+  useSyncExternalStore(panel.subscribe, panel.getSnapshot);
+  const recorder = useSyncExternalStore(testRecorder.subscribe, testRecorder.getSnapshot);
+  const mirrored = panel.mirroredPlatform;
+  if (recorder.picking && mirrored) return <p data-testing-rerecord-picking role="status" className="flex flex-wrap items-center gap-2 rounded-md bg-muted/50 px-2 py-1.5 text-xs text-muted-foreground">
+    {recorder.preparing ? <LoaderCircleIcon className="size-3 animate-spin" /> : null}
+    Right-click the element on the {platformLabel(mirrored)} mirror to use it for this step.
+    <Button type="button" size="xs" variant="ghost" onClick={() => panel.cancelReRecord()}>Cancel</Button>
+  </p>;
+  const target = panel.reRecord;
+  if (!target) return null;
+  const { line } = target;
+  const label = platformLabel(target.platform);
+  if (!target.ready || !mirrored) return <p data-testing-rerecord className="text-xs text-muted-foreground">
+    Line {line} may differ on {label}. Mirror an {target.platform === "ios" ? "iOS simulator" : "Android device"} to re-record it.
+  </p>;
+  return <p data-testing-rerecord className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+    Line {line} may differ on {platformLabel(mirrored)}.
+    <Button type="button" size="xs" variant="outline" data-testing-rerecord-line={line} onClick={() => void panel.reRecordStoredLine(line)}
+      title={`Pick the element on the ${platformLabel(mirrored)} mirror. Line ${line} keeps its current locator on the other platform.`}>Re-record on {platformLabel(mirrored)}</Button>
+  </p>;
 }
 
 function StoredTestPreview({ panel, source, path, loading }: { panel: TestingPanel; source: string; path: string; loading: boolean }) {
@@ -747,8 +798,10 @@ function StoredTestPreview({ panel, source, path, loading }: { panel: TestingPan
                 disabled={editing || panelState.running || panelState.saving} onClick={() => setEditing(true)}>Edit</Button>
               {recorder.run?.state === "running" && <span role="status" className="text-muted-foreground">Running…</span>}
               {recorder.run?.state === "passed" && <span role="status" className="text-emerald-600">Passed</span>}
-              {recorder.run?.state === "failed" && <span role="status" className="text-red-600">{recorder.run.error ?? "Failed"}</span>}
+              {recorder.run?.state === "failed" && <span role="status" className="text-red-600">Failed</span>}
             </p>
+            <RunFailureReason run={recorder.run} />
+            <ReRecordLine panel={panel} />
             {editing ? <PreviewEditor source={source} saving={panelState.saving}
               onCancel={() => setEditing(false)} onSave={value => { panel.editStoredTest(value); setEditing(false); void panel.saveStoredTest(); }} />
               : <TestPreview source={source} run={recorder.run}
@@ -872,7 +925,7 @@ function TestingRecorder({ panel, recordable, deviceId }: { panel: TestingPanel;
             </span>}
             {state.run?.state === "passed" && <span className="flex items-center gap-1 font-normal text-emerald-600 dark:text-emerald-400" role="status"><CheckIcon className="size-3" />Passed</span>}
             {state.run?.state === "failed" && <span className="flex min-w-0 items-center gap-1 break-words font-normal text-red-600 dark:text-red-400" role="status">
-              <CircleXIcon className="size-3 shrink-0" />{state.run.error ?? "Failed"}
+              <CircleXIcon className="size-3 shrink-0" />Failed
             </span>}
             {/* The runner's own number, beside its verdict and on a failure too: how long a run took
                 before it gave up is part of reading it. It is not the panel's `ui.testing.run`
@@ -888,6 +941,7 @@ function TestingRecorder({ panel, recordable, deviceId }: { panel: TestingPanel;
             {state.run?.stale && <span data-testing-run-stale className="font-normal text-muted-foreground"
               title="The steps changed after this run, so the line marks no longer point at the same steps.">· before your edits</span>}
           </p>
+          <RunFailureReason run={state.run} />
           {editing ? <PreviewEditor source={testRecorder.source} saving={panelState.saving}
             onCancel={() => setEditing(false)} onSave={value => { testRecorder.editSource(value); setEditing(false); void panel.saveTest(); }} />
             : <TestPreview source={testRecorder.source} run={state.run} highlightedLines={sourceSteps ? undefined : highlightedLines}

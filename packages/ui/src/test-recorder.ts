@@ -1,4 +1,4 @@
-import { agentStepLabel, allStepOffers, anchorSelector, emitE2eTest, emitE2eTestLines, hitLadder, isAgentStep, resolveSelector, stepEffect, stepIsAssertion, stepLabel, stepNeedsValue, stepOffers, swipeDirection, swipePath, treeHealth } from "@mobile-dev/shared/test-recording.ts";
+import { agentStepLabel, allStepOffers, anchorSelector, emitE2eTest, emitE2eTestLines, hitLadder, isAgentStep, resolveSelector, selectorSource, stepEffect, stepIsAssertion, stepLabel, stepNeedsValue, stepOffers, swipeDirection, swipePath, treeHealth } from "@mobile-dev/shared/test-recording.ts";
 import type { AgentParams, AgentStep, AgentStepKind, PinnedStep, PinnedStepKind, RecordedStep, StepOffer, StepTarget, SwipeDirection, VisionMode } from "@mobile-dev/shared/test-recording.ts";
 import type { ScreenBounds, ScreenComponent, ScreenPoint, ScreenSize } from "@mobile-dev/shared/screen-annotations.ts";
 import { countUiEvent, recordUiTiming, setUiGauge } from "./telemetry.ts";
@@ -148,6 +148,11 @@ export type TestRecorderSnapshot = {
    */
   preparing: boolean;
   /**
+   * The recorder is armed to pick one element rather than record steps: the next right-click on the
+   * mirror hands that element's locator to whoever asked, and recording stops. No step is added.
+   */
+  picking: boolean;
+  /**
    * What a tap at the pointer would record, for the outline drawn over the mirror: the bounds of
    * the element the selector would name, the step it would add, and the screen those bounds are
    * in so the overlay can scale them to the canvas.
@@ -262,7 +267,7 @@ export class TestRecorder {
   /** That element's rectangle, which is the box a scoped swipe is drawn inside. */
   private lastBounds?: ScreenBounds;
   private snapshot: TestRecorderSnapshot = {
-    recordingDeviceId: "", recordingPlatform: "", agentDeviceId: "", steps: [], title: DEFAULT_TITLE, revision: 0, flowId: newFlowId(), resolving: false, preparing: false, error: "",
+    recordingDeviceId: "", recordingPlatform: "", agentDeviceId: "", steps: [], title: DEFAULT_TITLE, revision: 0, flowId: newFlowId(), resolving: false, preparing: false, picking: false, error: "",
   };
 
   private fadeTimer?: ReturnType<typeof setTimeout>;
@@ -440,7 +445,8 @@ export class TestRecorder {
     // A flow that is not being resumed is a different recording, however much of the old one is
     // still on screen a moment before. Anything holding on to the last flow — the panel's kept
     // draft above all — has to be told, or the next thing written lands on the wrong one.
-    this.update({ recordingDeviceId: deviceId, recordingPlatform: platform, error: "", menu: undefined, preparing: true, ...(keepSteps ? {} : { steps: [], sourceOverride: undefined, flowId: newFlowId() }) });
+    this.pickHandler = undefined;
+    this.update({ recordingDeviceId: deviceId, recordingPlatform: platform, error: "", menu: undefined, preparing: true, picking: false, ...(keepSteps ? {} : { steps: [], sourceOverride: undefined, flowId: newFlowId() }) });
     countUiEvent("ui.testing.record_start");
     // The first tree read is what makes an element selectable, and it is the slow part: the
     // session attaches to the app and the tree is projected before anything can be named. Warming
@@ -473,10 +479,35 @@ export class TestRecorder {
     }
   }
 
+  /**
+   * Arms the mirror to pick one element, for a step that needs a locator on this device rather
+   * than a new step: the outline follows the pointer as when recording, and the next right-click
+   * resolves that element and hands its locator code (`screen.getByText("Home")`) to `onPick`.
+   *
+   * Unlike `start` it leaves the recording, its steps and the last run's marks alone: picking is
+   * about a saved test, and the flow on screen is not the one being changed.
+   */
+  pickElement(deviceId: string, platform: DevicePlatform, onPick: (locator: string) => void) {
+    const reader = this.readers.get(this.deviceKey(deviceId, platform));
+    if (!deviceId || !reader || this.snapshot.agentDeviceId || this.snapshot.recordingDeviceId) return false;
+    if (this.reader !== reader) {
+      this.reader?.release?.();
+      this.reader = reader;
+    }
+    this.invalidate();
+    this.clearHover();
+    this.pickHandler = onPick;
+    this.update({ recordingDeviceId: deviceId, recordingPlatform: platform, error: "", menu: undefined, preparing: true, picking: true });
+    void this.prepare(deviceId, platform);
+    return true;
+  }
+  private pickHandler: ((locator: string) => void) | undefined;
+
   stop() {
     if (!this.snapshot.recordingDeviceId) return;
     this.clearHover();
-    this.update({ recordingDeviceId: "", recordingPlatform: "", agentDeviceId: "", resolving: false, preparing: false, menu: undefined });
+    this.pickHandler = undefined;
+    this.update({ recordingDeviceId: "", recordingPlatform: "", agentDeviceId: "", resolving: false, preparing: false, picking: false, menu: undefined });
     // The steps stay; the device does not. See `RecorderReader.release`.
     this.reader?.release?.();
     countUiEvent("ui.testing.record_stop");
@@ -573,7 +604,7 @@ export class TestRecorder {
     this.clearHover();
     this.clearRun();
     this.update({
-      recordingDeviceId: "", recordingPlatform: "", resolving: false, preparing: false, error: "", menu: undefined,
+      recordingDeviceId: "", recordingPlatform: "", resolving: false, preparing: false, picking: false, error: "", menu: undefined,
       steps: [...steps], sourceOverride: source, flowId: newFlowId(), ...(title ? { title } : {}),
     });
     countUiEvent("ui.testing.draft_restore");
@@ -752,9 +783,23 @@ export class TestRecorder {
     const innermost = hitLadder(components, point, this.reader?.screen())[0]?.nodeId;
     if (innermost !== this.hoverInnermost) { this.hoverInnermost = innermost; this.hoverLevel = 0; }
     this.showHover(components);
+    if (this.pickHandler) { this.pick(components, point); return; }
     this.menuPoint = point;
     this.showMenu(components);
     countUiEvent("ui.testing.menu_open");
+  }
+
+  /** Hands the outlined element's locator to the pick in progress, then stops picking. */
+  private pick(components: ScreenComponent[], point: ScreenPoint) {
+    const screen = this.reader?.screen();
+    const onPick = this.pickHandler;
+    if (!screen || !onPick) return;
+    const { selector } = resolveSelector(components, point, screen, this.hoverLevel);
+    // A coordinate is not a locator: it cannot stand in for one in an assertion, and on another
+    // device it would name something else.
+    if (selector.kind === "point") { this.update({ error: "Nothing here can be named by the test runner. Pick another element, or walk out to its container with the scroll wheel." }); return; }
+    this.stop();
+    onPick(selectorSource(selector));
   }
 
   /** The menu for the element the outline currently shows, resolved from the cached tree. */
@@ -939,7 +984,7 @@ export class TestRecorder {
    * that failed stays for good, since it is the only thing on screen that says where. See
    * `fadePassedMarks`.
    */
-  finishRun(result: { status: string; steps: { line: number; status: string; error?: string }[]; output?: string; durationMs?: number }) {
+  finishRun(result: { status: string; steps: { line: number; status: string; error?: string }[]; error?: string; output?: string; durationMs?: number }) {
     this.stopFade();
     const lines: Record<number, RunLineMark> = {};
     let error: string | undefined;
@@ -951,6 +996,8 @@ export class TestRecorder {
       if (mark === "failed" && !error) error = step.error ?? `${step.status} at line ${step.line}`;
     }
     const passed = result.status === "passed" && error === undefined;
+    // A failure no line could carry, such as the app failing to open, still says why.
+    if (!passed && !error && result.error) error = result.error;
     // How far the run was asked to go is a fact about the run, so it outlives the run's own report:
     // "Passed" on a flow that stopped three steps in has to keep saying so.
     const untilLine = this.snapshot.run?.untilLine;

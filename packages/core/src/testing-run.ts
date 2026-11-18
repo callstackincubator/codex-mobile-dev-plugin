@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -60,6 +60,8 @@ export interface TestRunResult {
   durationMs?: number;
   /** Set when the report could not be read at all, so the panel can say why rather than go quiet. */
   output?: string;
+  /** Why the run failed, in one line, when the report says so: see `reportError`. */
+  error?: string;
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -109,6 +111,32 @@ export function reportSteps(report: unknown, file: string): TestRunStep[] {
     }
   }
   return steps;
+}
+
+/**
+ * Why a failed run failed, in one line, from the report: the failing step's error, including a
+ * step with no line of its own such as `app.open`, else the attempt's error, else the run's.
+ * A step's line mark carries its own error, so this is what is left when no line could.
+ */
+export function reportError(report: unknown, file: string): string | undefined {
+  const run = record(record(report)?.run);
+  for (const entry of list(run?.results)) {
+    const result = record(entry);
+    if (!result || str(result.status) === "passed" || str(result.status) === "skipped") continue;
+    const attempts = list(result.attempts);
+    const attempt = record(attempts[attempts.length - 1]);
+    for (const item of list(attempt?.steps)) {
+      const step = record(item);
+      const source = record(step?.source);
+      if (!step || (str(source?.file) && str(source?.file) !== file)) continue;
+      const error = errorMessageOf(step.error);
+      if (error) return error;
+    }
+    const error = errorMessageOf(attempt?.error);
+    if (error) return error;
+  }
+  for (const item of list(run?.errors)) { const error = errorMessageOf(item); if (error) return error; }
+  return undefined;
 }
 
 /**
@@ -413,7 +441,8 @@ async function runProjectPreview(request: TestRunRequest, deps: TestRunDeps): Pr
   if (!request.configPath || request.untilSource === undefined) throw new ExpectedOperationError("invalid_input", "Open the project's e2e config before running this preview.");
   const bin = runnerBin(request.projectPath);
   await deps.release?.();
-  const workspace = await mkdtemp(join(tmpdir(), "mobile-dev-e2e-preview-"));
+  // The real path, for the reason `runBundledTest` gives.
+  const workspace = await realpath(await mkdtemp(join(tmpdir(), "mobile-dev-e2e-preview-")));
   const configName = "e2e.config.mts";
   try {
     await mirrorProject(request.projectPath, workspace, new Set([request.relativePath, configName]));
@@ -483,7 +512,10 @@ async function runBundledTest(request: TestRunRequest, deps: TestRunDeps): Promi
   const requiredKey = request.model?.provider === "vercel" ? "AI_GATEWAY_API_KEY" : request.model?.provider === "openrouter" ? "OPENROUTER_API_KEY" : undefined;
   if (requiredKey && !process.env[requiredKey]) throw new ExpectedOperationError("invalid_input", `${requiredKey} is not set. Add it to Mobile Dev's environment, then run again.`);
   await deps.release?.();
-  const workspace = await mkdtemp(join(tmpdir(), "mobile-dev-e2e-run-"));
+  // The real path: macOS's tmpdir is under /var, a symlink to /private/var. The runner sees the
+  // test at its real path but the config at the linked one, cannot place its steps in the test,
+  // and reports every step at "unknown" line 1, which leaves the preview with no line marks.
+  const workspace = await realpath(await mkdtemp(join(tmpdir(), "mobile-dev-e2e-run-")));
   const runPath = request.untilSource === undefined ? request.relativePath : untilTestPath(request.relativePath);
   const config = join(workspace, "e2e.config.mts");
   const progressConfig = join(workspace, PROGRESS_CONFIG);
@@ -536,7 +568,9 @@ async function spawnRun(input: { command: string; commandArgs?: string[]; cwd: s
   const report = parseReport(stdout);
   const steps = report ? reportSteps(report, input.runPath) : [];
   const durationMs = report ? reportDuration(report) : undefined;
-  return { status: reportStatus(report, exitCode), exitCode, steps, ...(durationMs === undefined ? {} : { durationMs }), ...(steps.length === 0 ? { output: tail(`${stdout}\n${stderr}`) } : {}) };
+  const status = reportStatus(report, exitCode);
+  const error = report && status !== "passed" ? reportError(report, input.runPath) : undefined;
+  return { status, exitCode, steps, ...(durationMs === undefined ? {} : { durationMs }), ...(error ? { error } : {}), ...(steps.length === 0 ? { output: tail(`${stdout}\n${stderr}`) } : {}) };
 }
 
 async function runOnce(request: TestRunRequest, deps: TestRunDeps): Promise<TestRunResult> {
@@ -605,11 +639,14 @@ async function runOnce(request: TestRunRequest, deps: TestRunDeps): Promise<Test
   // is the copy; its line numbers are the real file's, so the panel needs no translation.
   const steps = report ? reportSteps(report, runPath) : [];
   const durationMs = report ? reportDuration(report) : undefined;
+  const status = reportStatus(report, exitCode);
+  const error = report && status !== "passed" ? reportError(report, runPath) : undefined;
   return {
-    status: reportStatus(report, exitCode),
+    status,
     exitCode,
     steps,
     ...(durationMs === undefined ? {} : { durationMs }),
+    ...(error ? { error } : {}),
     // Only when there is nothing to show on the lines: an exit with no report is the runner
     // refusing before it got to the test, and its own words are the only explanation there is.
     ...(steps.length === 0 ? { output: tail(`${stdout}\n${stderr}`) } : {}),

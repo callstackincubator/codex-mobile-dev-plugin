@@ -1,5 +1,6 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { LoaderCircleIcon, RefreshCwIcon, SmartphoneIcon, XIcon } from "lucide-react";
+import { platformLabel } from "../testing-panel.ts";
 import type { TestingPanel } from "../testing-panel.ts";
 import { MAX_MATRIX_LIMIT, isTerminalLane, laneDuration, laneLabel, matrixFinished, matrixSummary } from "../testing-matrix.ts";
 import type { MatrixDeviceOption, MatrixLane } from "../testing-matrix.ts";
@@ -51,7 +52,7 @@ export function MatrixDevices({ panel }: { panel: TestingPanel }) {
         busy={panel.matrixBusy(device.deviceId)} appMissing={!apps[device.platform]} onToggle={value => toggle(device.deviceId, value)} />)}</ul>
       {!apps[devices[0]!.platform] && <p className="pt-1 text-xs text-muted-foreground">No {label} app id for this test, so these devices cannot run it.</p>}
     </div>)}
-    {only && <p className="text-xs text-muted-foreground" data-matrix-platform-only>This test was recorded on {only === "ios" ? "iOS" : "Android"} and doesn't have an {only === "ios" ? "Android" : "iOS"} target.</p>}
+    {only && <p className="text-xs text-muted-foreground" data-matrix-platform-only>This test was recorded on {platformLabel(only)} and doesn't have an {platformLabel(only === "ios" ? "android" : "ios")} target. To add one, open the app on an {platformLabel(only === "ios" ? "android" : "ios")} device in the mirror and choose Add {platformLabel(only === "ios" ? "android" : "ios")} app.</p>}
     {state.matrixDevices.length === 0 && <p className="text-xs text-muted-foreground">{state.matrixLoading ? "Looking for simulators and emulators…" : "No simulators or emulators found."}</p>}
     <div className="flex items-end justify-between gap-3">
       <div className="flex items-center gap-2"><Label htmlFor="testing-matrix-limit" className="text-xs text-muted-foreground">Run up to</Label>

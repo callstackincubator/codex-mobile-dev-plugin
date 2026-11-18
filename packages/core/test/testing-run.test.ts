@@ -5,9 +5,9 @@ import { Readable } from "node:stream";
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { readFileSync } from "node:fs";
-import { RUNNER_CWD, bundledConfigSource, bundledTargetName, parseProgressLine, parseReport, progressConfigSource, reportDuration, reportSteps, reportStatus, runRecordedTest, runnerBin, runnerEnv, untilTestPath } from "../src/testing-run.ts";
+import { RUNNER_CWD, bundledConfigSource, bundledTargetName, parseProgressLine, parseReport, progressConfigSource, reportDuration, reportError, reportSteps, reportStatus, runRecordedTest, runnerBin, runnerEnv, untilTestPath } from "../src/testing-run.ts";
 import { bundledE2eRoot } from "../src/e2e-runtime.ts";
 
 const FILE = "tests/a-recorded-flow.e2e.ts";
@@ -50,6 +50,25 @@ test("a step with no line of its own is not attributed to one", () => {
     source: { file: "", line: 0, column: 0 },
   } as never);
   assert.deepEqual(reportSteps(raw, FILE).map(step => step.line), [8]);
+});
+
+test("a failure no line can carry is still the run's reason", () => {
+  // `app.open` failing on a device has no source line, so no mark can show it; the reason must not
+  // be lost with the mark.
+  const raw = report([], "failed");
+  raw.run.results[0].attempts[0].steps.push({
+    id: "a:open", index: 0, kind: "app", api: "app.open", label: "", status: "failed", durationMs: 90,
+    source: { file: "", line: 0, column: 0 }, error: { message: "App com.example.android is not installed\nstack" },
+  } as never);
+  assert.equal(reportError(raw, FILE), "App com.example.android is not installed");
+  // With no failing step, the attempt's own error is the reason, then the run's.
+  const attempt = report([], "failed");
+  (attempt.run.results[0].attempts[0] as Record<string, unknown>).error = { message: "Device disconnected" };
+  assert.equal(reportError(attempt, FILE), "Device disconnected");
+  const run = report([], "failed");
+  (run.run as Record<string, unknown>).errors = [{ message: "No target matched android" }];
+  assert.equal(reportError(run, FILE), "No target matched android");
+  assert.equal(reportError(report([{ line: 8, status: "passed" }], "passed"), FILE), undefined);
 });
 
 test("a retried test is read from the attempt that decided it", () => {
@@ -327,6 +346,8 @@ test("bundled mode runs and cleans an isolated Studio workspace", async () => {
   assert.ok(seen.args?.some((value, index) => value === "--target" && seen.args?.[index + 1] === "ios"));
   const config = seen.args![seen.args!.indexOf("--config") + 1];
   assert.ok(isAbsolute(config) && dirname(config).includes("mobile-dev-e2e-run-"), "the CLI gets the workspace's config by absolute path");
+  // macOS's tmpdir is a symlink; a linked config path makes the runner report every step at "unknown".
+  assert.ok(config.startsWith(realpathSync(tmpdir())), "the workspace is given by its real path");
   assert.equal(existsSync(dirname(config)), false, "temporary config, test and node_modules link are cleaned");
   assert.equal(seen.cwd, runnerCwd, "the daemon a run starts must not inherit the workspace it outlives");
   assert.equal(existsSync(seen.cwd!), true, "the spawn cwd survives the workspace's removal");

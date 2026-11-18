@@ -235,6 +235,12 @@ test("a Studio test is pinned to its app beside the source, listed, re-pinned an
     assert.equal(await readTestFile(studio, "tests/flow.e2e.ts"), SOURCE, "the source carries no target");
     await writeTestTarget(studio, "tests/flow.e2e.ts", { platform: "android", bundleId: "com.b" });
     assert.deepEqual(await readTestTarget(studio, "tests/flow.e2e.ts"), { platform: "android", bundleId: "com.b" });
+    // Adding an app for the other platform keeps the recorded one, and re-pinning the recorded
+    // platform keeps the added one.
+    await writeTestTarget(studio, "tests/flow.e2e.ts", { platform: "ios", bundleId: "com.c" }, "add");
+    assert.deepEqual(await readTestTarget(studio, "tests/flow.e2e.ts"), { platform: "android", bundleId: "com.b", apps: { ios: "com.c" } });
+    await writeTestTarget(studio, "tests/flow.e2e.ts", { platform: "android", bundleId: "com.d" });
+    assert.deepEqual(await readTestTarget(studio, "tests/flow.e2e.ts"), { platform: "android", bundleId: "com.d", apps: { ios: "com.c" } });
     await deleteTestFile(studio, "tests/flow.e2e.ts");
     await writeTestFile(studio, "tests/flow.e2e.ts", SOURCE);
     assert.equal(await readTestTarget(studio, "tests/flow.e2e.ts"), undefined, "a deleted test leaves no pin behind");
