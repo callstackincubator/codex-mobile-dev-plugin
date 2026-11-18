@@ -79,11 +79,14 @@ static int read_counter(const char *path, Counter *counter) {
     return 0;
 }
 
-static int parse_memory(const char *text, uint64_t page_size, uint64_t *bytes) {
+/* statm: size resident shared ... (pages). shared counts file-backed and shmem pages, so resident - shared is the
+ * anonymous part (heap, Java, native malloc, bitmaps), i.e. RssAnon without a second /proc read. */
+static int parse_statm(const char *text, uint64_t page_size, uint64_t *bytes, uint64_t *anon_bytes) {
     const char *cursor = text;
-    uint64_t resident = 0;
-    for (int field = 0; field < 2; field++) {
+    uint64_t resident = 0, shared = 0;
+    for (int field = 0; field < 3; field++) {
         while (isspace((unsigned char)*cursor)) cursor++;
+        if (field == 2 && *cursor == '\0') break; /* The shared column is optional; anon then equals resident. */
         if (*cursor < '0' || *cursor > '9') return -1;
         errno = 0;
         char *end;
@@ -91,17 +94,19 @@ static int parse_memory(const char *text, uint64_t page_size, uint64_t *bytes) {
         if (errno != 0) return -1;
         if (*end != '\0' && isspace((unsigned char)*end) == 0) return -1;
         if (field == 1) resident = value;
+        if (field == 2) shared = value;
         cursor = end;
     }
     if (page_size == 0 || resident > UINT64_MAX / page_size) return -1;
     *bytes = resident * page_size;
+    *anon_bytes = (shared < resident ? resident - shared : 0) * page_size;
     return 0;
 }
 
-static int read_memory(const char *path, uint64_t page_size, uint64_t *bytes) {
+static int read_memory(const char *path, uint64_t page_size, uint64_t *bytes, uint64_t *anon_bytes) {
     char data[256];
     if (read_text(path, data, sizeof(data)) != 0) return -1;
-    if (parse_memory(data, page_size, bytes) != 0) { errno = EINVAL; return -1; }
+    if (parse_statm(data, page_size, bytes, anon_bytes) != 0) { errno = EINVAL; return -1; }
     return 0;
 }
 
@@ -124,10 +129,17 @@ static int failure(const char *operation) {
 #ifndef COLLECTOR_TEST
 int main(int argc, char **argv) {
     mobile_dev_telemetry_init("android-cpu");
-    if (argc != 2) { fprintf(stderr, "Usage: mobile-dev-cpu PID\n"); return 1; }
+    if (argc != 2 && argc != 3) { fprintf(stderr, "Usage: mobile-dev-cpu PID [INTERVAL_MS]\n"); return 1; }
     char *end;
     long pid = strtol(argv[1], &end, 10);
     if (*end != '\0' || pid <= 0 || pid > INT_MAX) return 1;
+    /* Optional sampling interval; the default (1000 ms) is what mobile-dev relies on. */
+    long interval_ms = 1000;
+    if (argc == 3) {
+        interval_ms = strtol(argv[2], &end, 10);
+        if (*end != '\0' || interval_ms < 10 || interval_ms > 60000) { fprintf(stderr, "INTERVAL_MS must be 10..60000\n"); return 1; }
+    }
+    const uint64_t interval_us = (uint64_t)interval_ms * 1000;
     signal(SIGTERM, stop);
     signal(SIGINT, stop);
     /* A closed ADB pipe terminates the collector, without touching the app. */
@@ -151,8 +163,8 @@ int main(int argc, char **argv) {
         uint64_t started = micros(CLOCK_MONOTONIC);
         if (read_counter(process_path, &process) != 0) return failure("read process");
         if (process.start != birth) { fprintf(stderr, "The target process restarted.\n"); return 1; }
-        uint64_t memory_bytes;
-        if (read_memory(memory_path, (uint64_t)page_size, &memory_bytes) != 0) return failure("read memory");
+        uint64_t memory_bytes, anon_bytes;
+        if (read_memory(memory_path, (uint64_t)page_size, &memory_bytes, &anon_bytes) != 0) return failure("read memory");
         DIR *directory = opendir(task_path);
         if (directory == NULL) return failure("read threads");
         size_t count = 0;
@@ -184,7 +196,7 @@ int main(int argc, char **argv) {
         }
         uint64_t timestamp = started;
         uint64_t collector_cpu = micros(CLOCK_PROCESS_CPUTIME_ID);
-        printf("{\"type\":\"sample\",\"timestampUs\":\"%" PRIu64 "\",\"processStart\":\"%" PRIu64 "\",\"processTicks\":\"%" PRIu64 "\",\"collectorCpuUs\":\"%" PRIu64 "\",\"memoryBytes\":%" PRIu64 ",\"threads\":[", timestamp, birth, process.ticks, collector_cpu, memory_bytes);
+        printf("{\"type\":\"sample\",\"timestampUs\":\"%" PRIu64 "\",\"processStart\":\"%" PRIu64 "\",\"processTicks\":\"%" PRIu64 "\",\"collectorCpuUs\":\"%" PRIu64 "\",\"memoryBytes\":%" PRIu64 ",\"anonBytes\":%" PRIu64 ",\"threads\":[", timestamp, birth, process.ticks, collector_cpu, memory_bytes, anon_bytes);
         for (size_t index = 0; index < count; index++) {
             Counter *thread = &threads[index];
             if (index != 0) putchar(',');
@@ -198,7 +210,7 @@ int main(int argc, char **argv) {
         uint64_t duration = now - started;
         double sampling_ms = (double)duration / 1000.0;
         mobile_dev_telemetry_timing(MOBILE_DEV_CPU_SAMPLE, sampling_ms);
-        int timeout = duration < 1000000 ? (int)((1000000 - duration + 999) / 1000) : 0;
+        int timeout = duration < interval_us ? (int)((interval_us - duration + 999) / 1000) : 0;
         struct pollfd input = { .fd = STDIN_FILENO, .events = POLLIN };
         int ready = poll(&input, 1, timeout);
         if (ready > 0) break; /* Stop command, EOF, or transport disconnect. */

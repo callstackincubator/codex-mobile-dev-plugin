@@ -271,19 +271,19 @@ test("native memory parser uses the device page size and rejects malformed or ov
 #include ${include}
 #include <assert.h>
 int main(void) {
-    uint64_t bytes = 0;
-    int result = parse_memory("1000 25 5 0 0 0 0\\n", 4096, &bytes);
-    assert(result == 0 && bytes == 102400);
-    result = parse_memory("1000\\t25 5 0 0 0 0\\n", 16384, &bytes);
+    uint64_t bytes = 0, anon = 0;
+    int result = parse_statm("1000 25 5 0 0 0 0\\n", 4096, &bytes, &anon);
+    assert(result == 0 && bytes == 102400 && anon == 81920);
+    result = parse_statm("1000\\t25 5 0 0 0 0\\n", 16384, &bytes, &anon);
     assert(result == 0 && bytes == 409600);
-    result = parse_memory("1000 0\\n", 4096, &bytes);
+    result = parse_statm("1000 0\\n", 4096, &bytes, &anon);
     assert(result == 0 && bytes == 0);
     const char *invalid[] = {"1000", "1000 -1", "1000 1.5", "1000 garbage", "1000 18446744073709551615", "18446744073709551616 1"};
     for (size_t index = 0; index < sizeof(invalid) / sizeof(invalid[0]); index++) {
-        result = parse_memory(invalid[index], 4096, &bytes);
+        result = parse_statm(invalid[index], 4096, &bytes, &anon);
         assert(result == -1);
     }
-    result = parse_memory("1000 25", 0, &bytes);
+    result = parse_statm("1000 25", 0, &bytes, &anon);
     assert(result == -1);
     return 0;
 }

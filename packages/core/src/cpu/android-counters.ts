@@ -9,6 +9,7 @@ export const androidReadySchema = z.object({
 export const androidSampleSchema = z.object({
   type: z.literal("sample"), timestampUs: ticks, processStart: ticks, processTicks: ticks, collectorCpuUs: ticks,
   memoryBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  anonBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
   threads: z.array(z.object({ tid: z.number().int().positive(), start: ticks, ticks, name: z.string().max(256) })).max(4096),
 });
 export type AndroidSample = z.infer<typeof androidSampleSchema>;
