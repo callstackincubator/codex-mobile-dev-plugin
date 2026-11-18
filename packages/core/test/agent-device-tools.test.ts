@@ -5,11 +5,37 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { agentDeviceCatalogFile, agentDeviceClient } from "../../test-support/agent-device-fixtures.ts";
 import { readAgentDeviceCatalog } from "../src/agent-device-tools.ts";
+import { claimAgentDeviceStateDirectory } from "../src/agent-device-runtime.ts";
 import { PNG } from "../../test-support/fixtures.ts";
 
 function text(result: { content: unknown }) {
   return (result.content as { text: string }[])[0].text;
 }
+
+test("the first agent-device runtime publishes one state directory for App Flow and later runtimes", async () => {
+  const env: NodeJS.ProcessEnv = {};
+  const created: string[] = [];
+  const create = async () => {
+    const directory = `/tmp/mobile-dev-agent-device-test-${created.length + 1}`;
+    created.push(directory);
+    return directory;
+  };
+  const first = await claimAgentDeviceStateDirectory(env, create);
+  const second = await claimAgentDeviceStateDirectory(env, create);
+  assert.equal(second, first);
+  assert.equal(env.AGENT_DEVICE_STATE_DIR, first);
+  assert.deepEqual(created, [first]);
+});
+
+test("App Flow's state directory wins when it is pinned during runtime setup", async () => {
+  const env: NodeJS.ProcessEnv = {};
+  const directory = await claimAgentDeviceStateDirectory(env, async () => {
+    env.AGENT_DEVICE_STATE_DIR = "/app-flow/agent-device";
+    return "/tmp/unused-agent-device-state";
+  });
+  assert.equal(directory, "/app-flow/agent-device");
+  assert.equal(env.AGENT_DEVICE_STATE_DIR, directory);
+});
 
 test("agent-device commands are device_ tools with their compact schemas, and listing them starts nothing", async t => {
   const { client, counts } = await agentDeviceClient(t);

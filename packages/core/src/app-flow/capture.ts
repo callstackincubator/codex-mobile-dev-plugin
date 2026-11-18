@@ -6,6 +6,7 @@ import { homedir } from 'node:os'
 import { basename, isAbsolute, join } from 'node:path'
 import type { AppFlowNode, AppFlowPressable, AppFlowStep, ExplorationMode } from '@mobile-dev/shared/app-flow.ts'
 import { errorMessage } from '@mobile-dev/shared/protocol.ts'
+import { ExpectedOperationError } from '@mobile-dev/shared/error-reporting.ts'
 import {
   acceptOpenInAppPrompt,
   isUrlSchemePreapproved,
@@ -387,6 +388,36 @@ async function closeExistingSession(client: AgentDeviceClient): Promise<void> {
     await client.sessions.close()
   } catch {
     // No leftover session for this name.
+  }
+}
+
+/**
+ * Transfers the selected device from an idle chat session to App Flow.
+ *
+ * The shared state directory makes both clients peers of the same daemon. Closing through that
+ * daemon waits behind work already using the session, releases its device claim, and leaves the
+ * healthy iOS runner warm for App Flow's same-state-dir takeover. Sessions on other devices are
+ * deliberately untouched.
+ */
+export async function handoffCaptureDevice(
+  client: AgentDeviceClient,
+  deviceId: string
+): Promise<void> {
+  const sessions = await client.sessions.list()
+  const owners = sessions.filter((session: { device?: { id?: string } }) => session.device?.id === deviceId)
+  for (const owner of owners) {
+    const session = owner.address ?? owner.name
+    if (typeof session !== 'string' || !session.trim()) continue
+    log('sessions.close', `handoff device=${deviceId} owner=${owner.name ?? session}`)
+    try {
+      await client.sessions.close({ session })
+    } catch (error) {
+      throw new ExpectedOperationError(
+        'resource_limit',
+        `App Flow could not take the simulator from agent-device session "${owner.name ?? session}". ` +
+        `Wait for that session to finish its current command, then retry. (${errorMessage(error)})`
+      )
+    }
   }
 }
 
@@ -1374,6 +1405,7 @@ export async function bootDevice(ctx: CaptureContext): Promise<CaptureDevice> {
 
   const bootResult = await bootPreferredDevice(client, ctx)
   log('devices.boot', `device=${bootResult.device} id=${bootResult.id}`)
+  await handoffCaptureDevice(client, bootResult.id)
 
   const setupCommands = [agentDeviceBootCommand()]
   let expoGoTarget: string | undefined
