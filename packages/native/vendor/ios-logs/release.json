@@ -34,39 +34,39 @@
       "sha256": "23cc0077e221c7d991bd0eb02150a0d49199bcca1ddf059edccee9ffd914939d"
     }
   ],
-  "openssl": "OpenSSL 3.6.2 7 Apr 2026 (Library: OpenSSL 3.6.2 7 Apr 2026)",
+  "openssl": "OpenSSL 3.6.3 9 Jun 2026 (Library: OpenSSL 3.6.3 9 Jun 2026)",
   "binaries": {
     "mobile-dev-ios-logs": {
-      "sha256": "1a78a7b6782c5c0fb9c606db89416a1181484cdba1c836980b508b31b2b43e46",
+      "sha256": "855f65e1defefb8bce260de978d325e493cd419144f501fa96bd15dccc2c8424",
       "bytes": 385024
     },
     "libimobiledevice-1.0.6.dylib": {
-      "sha256": "229bb457ff0b3b701045ed124e3fdbce0e2115daf01b163735dcfba69c765927",
+      "sha256": "4082c0c564cee1479ec0949974a53f1ed07d8bddfef6a7c1403a9062f9837bde",
       "bytes": 278608
     },
     "libimobiledevice-glue-1.0.0.dylib": {
-      "sha256": "e2fa173219ed5b6352d76232556b499cdac255cf28b0e277a8867e6b7a1615b8",
+      "sha256": "610af90e46cdc13c66ced1bf5fabeb5b561e54e4cb16a2f5f3d9f928671fc110",
       "bytes": 79568
     },
     "libplist-2.0.12.dylib": {
-      "sha256": "205279316a58b20e84495fdfdb8d9f860e5197e1602bfd7e80f75a7bcced1ee6",
+      "sha256": "36473dae1b80d6cdd3209447278793b97afb512380ddacfe30ebd912ed652150",
       "bytes": 114976
     },
     "libtatsu.0.dylib": {
-      "sha256": "3a85f550bca667dc9ff46ccb72fe716b33b9f13126d34dfb0bc88f6176fd2a1f",
+      "sha256": "7137996c7975a4d5c9d1ec3f72a14764f20c4af0f7430954221b5f9ad9ecad51",
       "bytes": 55408
     },
     "libusbmuxd-2.0.7.dylib": {
-      "sha256": "fad3c8ea428fe603b894133d64610921ddd573e7951a9670b11ea54b03fd584b",
+      "sha256": "08059c8ee01f1ba4fb3458c6251853c85ad48fa2e16c3d5b8df829e545a7d5f3",
       "bytes": 71984
     },
     "libssl.3.dylib": {
-      "sha256": "11291c1d6f0527e20448dc06d5bc93f839f33f22a552cf24d6edbd0d1160d158",
-      "bytes": 866576
+      "sha256": "a09223f79eba9e3e6db2988f7f8fb1d09b1ed5957835e26b23c427be367de152",
+      "bytes": 867008
     },
     "libcrypto.3.dylib": {
-      "sha256": "fe33b1fe402dc6f540edb1b10e5619f9ddc3dfa90d0ae977c0e0843019495eba",
-      "bytes": 4827728
+      "sha256": "5d4e849910477c9830006455fb8a632eceab8ea52eb4985afc1565e3e5a719e6",
+      "bytes": 4828048
     }
   }
 }
