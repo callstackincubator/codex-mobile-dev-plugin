@@ -3,9 +3,9 @@ import type { HostAttachmentsSource, HostBridge } from "./host-bridge.ts";
 import type { SimulatorDevice } from "@mobile-dev/shared/protocol.ts";
 import type { StackedLog } from "@mobile-dev/shared/logs.ts";
 import { formatLogContext, logKey } from "@mobile-dev/shared/logs.ts";
-import { ANNOTATION_EDIT_GUIDANCE, ANNOTATION_EDIT_PROMPT, formatAnnotationContext, formatAnnotationDraft } from "@mobile-dev/shared/screen-annotations.ts";
+import { ANNOTATION_EDIT_GUIDANCE, ANNOTATION_EDIT_PROMPT, formatAnnotationContext, formatAnnotationDraft, formatAnnotationGroups } from "@mobile-dev/shared/screen-annotations.ts";
 import type { ScreenAnnotation } from "@mobile-dev/shared/screen-annotations.ts";
-import { captureUiError, countUiEvent, recordUiTiming } from "./telemetry.ts";
+import { captureUiError, countUiEvent, getUiTelemetryAttributes, recordUiTiming } from "./telemetry.ts";
 import type { EncodedScreenshotAttachment } from "./screenshot-attachment.ts";
 
 export type ScreenshotAttachment = EncodedScreenshotAttachment & { id: string; simulator: SimulatorDevice };
@@ -114,6 +114,8 @@ export class PanelContext {
         this.revision++; this.changed();
       }
       countUiEvent("ui.annotations.send_success");
+      // Batch size shows how often edits arrive together; buckets keep the attribute low cardinality.
+      countUiEvent("ui.annotations.send_batch", 1, { ...getUiTelemetryAttributes(), notes: annotations.length === 1 ? "1" : annotations.length <= 3 ? "2-3" : "4+" });
     } catch (error) {
       if (composerUnavailable(error)) {
         countUiEvent("ui.annotations.send_composer_unavailable");
@@ -265,6 +267,7 @@ export class PanelContext {
       });
       const contextStartedAt = performance.now();
       const annotationContent = this.annotations.map(annotation => ({ type: "text" as const, text: `${this.usesHostAttachments ? "" : `Device: ${JSON.stringify(annotation.simulator.name)} (${annotation.simulator.udid})\n`}${formatAnnotationContext(annotation)}`, _meta: { "openai/title": `${annotation.component.name}: ${annotation.text.replace(/\s+/g, " ").trim()}`, "mobile-dev/annotationId": annotation.id } }));
+      const annotationGroups = formatAnnotationGroups(this.annotations);
       if (this.annotations.length) recordUiTiming("ui.annotations.context_build", performance.now() - contextStartedAt);
       const content = [{ type: "text" as const, annotations: { audience: ["assistant" as const] }, text: devices.length
         ? `Mobile Dev devices. Logs follow the active device.\n${devices.join("\n")}`
@@ -275,6 +278,7 @@ export class PanelContext {
         _meta: { "openai/title": `Screenshot of ${screenshot.simulator.name} (${screenshot.simulator.udid})`, "mobile-dev/screenshotId": screenshot.id },
       })),
       ...(this.annotations.length ? [{ type: "text" as const, annotations: { audience: ["assistant" as const] }, text: ANNOTATION_EDIT_GUIDANCE }] : []),
+      ...(annotationGroups ? [{ type: "text" as const, annotations: { audience: ["assistant" as const] }, text: annotationGroups }] : []),
       ...annotationContent];
       const params = { content, structuredContent: { selectedSimulator: selected ?? null, selectedSimulators: this.simulators, selectedLog: log ?? null, selectedLogKey: log ? logKey(log) : null, screenshotIds: this.screenshots.map(item => item.id), annotationIds: this.annotations.map(item => item.id) } };
       this.pending = true;

@@ -475,6 +475,8 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   contains(encoded, "ui.annotations.context_build.mean");
   contains(encoded, "ui.annotations.send.mean");
   contains(encoded, "ui.annotations.send_success");
+  contains(encoded, "ui.annotations.send_batch");
+  contains(encoded, '"notes":{"value":"1"');
   contains(encoded, "ui.annotations.send_timeout");
   contains(encoded, "ui.annotations.send_composer_unavailable");
   contains(encoded, "ui.annotations.send_failure");
