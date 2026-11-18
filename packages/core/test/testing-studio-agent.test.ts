@@ -120,7 +120,7 @@ const fakeTreeDevices = () => ({ read: async () => TREE, perform: async () => un
 
 async function recordHome(recordings: TestingAgentRecordings, studio: string, title = "the home screen") {
   recordings.setContext({ projectPath: studio, deviceId: "11111111-2222-3333-4444-555555555555", platform: "android", bundleId: "com.app.android" });
-  recordings.begin({ title, goal: "g" });
+  await recordings.begin({ title, goal: "g" });
   const screen = await recordings.screen();
   await recordings.step({ ref: screen.elements[0]!.ref, kind: "assertVisible" });
   return recordings.finish({ note: "n" });
@@ -160,7 +160,7 @@ test("an empty recording saves nothing", async () => {
   await withStudio(async studio => {
     const recordings = new TestingAgentRecordings(fakeTreeDevices(), new TestDraftStore(join(studio, "drafts")));
     recordings.setContext({ projectPath: studio, deviceId: "11111111-2222-3333-4444-555555555555", platform: "ios", bundleId: "com.app" });
-    recordings.begin({ title: "nothing", goal: "g" });
+    await recordings.begin({ title: "nothing", goal: "g" });
     const result = await recordings.finish({});
     assert.equal(result.saved, false);
     assert.deepEqual(await listTestFiles(studio), []);
@@ -369,13 +369,13 @@ test("a tab that stops reporting is closed: open, then stale, then refused, and 
     clock += 2_000;
     const stale = await call("mobile_testing_tests");
     assert.equal(stale.isError, true, "stale");
-    assert.match(stale.content[0].text, /Testing tab is not open/);
+    assert.match(stale.content[0].text, /Testing tab is not open.*mobile_open_simulator/);
     assert.equal(recordings.panelContext(), undefined, "the device selection goes with it");
-    assert.throws(() => recordings.begin({ title: "t", goal: "g" }), /Testing tab/, "agent_begin refuses too");
+    await assert.rejects(() => recordings.begin({ title: "t", goal: "g" }), /Call mobile_open_simulator with workspaceTool "testing" to open it, then begin again/, "agent_begin refuses too");
 
     await report();
     assert.equal((await call("mobile_testing_tests")).isError, undefined, "a heartbeat revives it");
-    assert.doesNotThrow(() => recordings.begin({ title: "t", goal: "g" }));
+    await recordings.begin({ title: "t", goal: "g" });
 
     // Beating again keeps it alive past what one report would have lasted.
     for (let beat = 0; beat < 4; beat++) { clock += 10_000; await report(); }
@@ -383,5 +383,135 @@ test("a tab that stops reporting is closed: open, then stale, then refused, and 
     // And leaving tells the server at once, without waiting out the expiry.
     await call("mobile_testing_set_context", { projectPath: "", deviceId: "", bundleId: "" });
     assert.equal((await call("mobile_testing_tests")).isError, true);
+  });
+});
+
+// ---- begin resolves what it can --------------------------------------------------------------------------------
+
+const IOS_ID = "11111111-2222-3333-4444-555555555555";
+const AUTO_OPS = (front: string | null, booted = [{ deviceId: IOS_ID, name: "iPhone 17 Pro" }]) => ({
+  bootedDevices: async (platform: string) => (platform === "ios" ? booted : []),
+  foregroundApp: async () => front,
+}) as unknown as DeviceOps;
+
+function autoRecordings(studio: string, ops: DeviceOps) {
+  return new TestingAgentRecordings(fakeTreeDevices(), new TestDraftStore(join(studio, "drafts")), { ops });
+}
+
+test("Studio begin needs only a booted device and a foreground app, and saves the test pinned to it", async () => {
+  await withStudio(async studio => {
+    const recordings = autoRecordings(studio, AUTO_OPS("com.example.notes"));
+    recordings.setPanelProject(studio);
+    const begun = await recordings.begin({ title: "open notes", goal: "g" });
+    assert.equal(begun.bundleId, "com.example.notes");
+    assert.equal(begun.deviceId, IOS_ID);
+    assert.match(begun.report ?? "", /com\.example\.notes.*foreground/);
+    const screen = await recordings.screen();
+    await recordings.step({ ref: screen.elements[0]!.ref, kind: "assertVisible" });
+    const done = await recordings.finish({});
+    assert.deepEqual(await readTestTarget(studio, done.relativePath!), { platform: "ios", bundleId: "com.example.notes" });
+  });
+});
+
+test("Studio begin ignores the home screen and says only the app is missing", async () => {
+  await withStudio(async studio => {
+    const recordings = autoRecordings(studio, AUTO_OPS("com.apple.springboard"));
+    recordings.setPanelProject(studio);
+    await assert.rejects(() => recordings.begin({ title: "t", goal: "g" }), (error: Error) => {
+      assert.match(error.message, /^Cannot start recording yet\. Open the app to record in the foreground/);
+      assert.doesNotMatch(error.message, /Boot|Testing tab|project/);
+      return true;
+    });
+  });
+});
+
+test("with nothing booted begin asks to boot a device and, in Studio, to open the app", async () => {
+  await withStudio(async studio => {
+    const recordings = autoRecordings(studio, AUTO_OPS(null, []));
+    recordings.setPanelProject(studio);
+    await assert.rejects(() => recordings.begin({ title: "t", goal: "g" }), /Boot an iOS simulator or Android emulator.* Open the app to record.* Then begin again\.$/);
+  });
+});
+
+test("two booted devices and no mirrored one is a real ambiguity, so it asks which", async () => {
+  await withStudio(async studio => {
+    const recordings = autoRecordings(studio, AUTO_OPS("com.a", [{ deviceId: IOS_ID, name: "iPhone 17 Pro" }, { deviceId: "22222222-2222-3333-4444-555555555555", name: "iPhone 16" }]));
+    recordings.setPanelProject(studio);
+    await assert.rejects(() => recordings.begin({ title: "t", goal: "g" }), /Say which device to record on: iPhone 17 Pro, iPhone 16\./);
+  });
+});
+
+async function projectWith(targets: string[]) {
+  const dir = await mkdtemp(join(tmpdir(), "e2e-project-"));
+  const { writeFile, mkdir } = await import("node:fs/promises");
+  await writeFile(join(dir, "e2e.config.ts"), `export default { targets: [\n${targets.join(",\n")}\n] };\n`);
+  // What makes it a project rather than Studio: a project-local e2e CLI and its package version.
+  await mkdir(join(dir, "node_modules", ".bin"), { recursive: true });
+  await mkdir(join(dir, "node_modules", "e2e"), { recursive: true });
+  await writeFile(join(dir, "node_modules", ".bin", "e2e"), "");
+  await writeFile(join(dir, "node_modules", "e2e", "package.json"), JSON.stringify({ name: "e2e", version: "1.0.0" }));
+  return dir;
+}
+
+test("project mode picks the config target the foreground app matches, or the only one", async () => {
+  await withStudio(async studio => {
+    const dir = await projectWith([`{ name: "app", platform: "ios", bundleId: "com.example.app" }`]);
+    try {
+      const recordings = autoRecordings(studio, AUTO_OPS("com.example.app"));
+      recordings.setPanelProject(dir);
+      const { inspectProject } = await import("../src/testing-projects.ts");
+      assert.equal((await inspectProject(dir)).runtimeMode, "project");
+      assert.equal((await recordings.begin({ title: "t", goal: "g" })).bundleId, "com.example.app");
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  });
+});
+
+test("ambiguous project mode asks which target, naming them", async () => {
+  await withStudio(async studio => {
+    const dir = await projectWith([`{ name: "alpha", platform: "ios", bundleId: "com.a" }`, `{ name: "beta", platform: "ios", bundleId: "com.b" }`]);
+    try {
+      const { inspectProject } = await import("../src/testing-projects.ts");
+      assert.equal((await inspectProject(dir)).runtimeMode, "project");
+      const recordings = autoRecordings(studio, AUTO_OPS("com.other"));
+      recordings.setPanelProject(dir);
+      await assert.rejects(() => recordings.begin({ title: "t", goal: "g" }), /Say which target to record: alpha, beta/);
+      const matching = autoRecordings(studio, AUTO_OPS("com.b"));
+      matching.setPanelProject(dir);
+      assert.equal((await matching.begin({ title: "t", goal: "g" })).bundleId, "com.b", "the foreground app picks between two targets");
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  });
+});
+
+test("a closed Testing tab is the only thing begin reports", async () => {
+  await withStudio(async studio => {
+    const recordings = autoRecordings(studio, AUTO_OPS(null, []));
+    await assert.rejects(() => recordings.begin({ title: "t", goal: "g" }), (error: Error) => error.message === "The Testing tab is not open. Call mobile_open_simulator with workspaceTool \"testing\" to open it, then begin again.");
+  });
+});
+
+test("a call made right after the tab was opened waits for its first report instead of refusing", async () => {
+  await withStudio(async studio => {
+    const { call, recordings } = setup({ ops: AUTO_OPS("com.example.notes") });
+    const auto = autoRecordings(studio, AUTO_OPS("com.example.notes"));
+    // Not opened and silent: refused at once.
+    await assert.rejects(() => auto.begin({ title: "t", goal: "g" }), /not open/);
+    assert.equal((await call("mobile_testing_tests")).isError, true);
+
+    // Opened, and the first heartbeat lands a moment later.
+    auto.expectPanel(2_000); recordings.expectPanel(2_000);
+    setTimeout(() => { auto.setPanelProject(studio); recordings.setPanelProject(studio); }, 120);
+    const begun = await auto.begin({ title: "t", goal: "g" });
+    assert.equal(begun.bundleId, "com.example.notes");
+    assert.equal((await call("mobile_testing_tests")).isError, undefined);
+  });
+});
+
+test("an opened tab that never reports is called closed once the grace period ends", async () => {
+  await withStudio(async studio => {
+    const recordings = autoRecordings(studio, AUTO_OPS("com.a"));
+    recordings.expectPanel(150);
+    const started = Date.now();
+    await assert.rejects(() => recordings.begin({ title: "t", goal: "g" }), /not open/);
+    assert.ok(Date.now() - started >= 140);
   });
 });

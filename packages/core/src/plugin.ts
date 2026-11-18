@@ -127,12 +127,13 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
   // finished, and those are the same list of unsaved recordings.
   const testDrafts = new TestDraftStore();
   // One recordings object too: it holds the panel's context, which the model-visible run tools check.
-  const testingRecordings = new TestingAgentRecordings(testingDevices, testDrafts);
+  const testingOps = systemDeviceOps({
+    simulators, android, drivers,
+    foreground: async (platform, deviceId) => (await readDeviceApps(deviceId, undefined, platform, platform === "ios" ? "simulator" : undefined, { ...deviceAppSources, simulator: simulatorForeground })).foregroundApp?.bundleId ?? null,
+  });
+  const testingRecordings = new TestingAgentRecordings(testingDevices, testDrafts, { ops: testingOps });
   const closeTestingDevices = registerTestingTools(server, new TestingProjectChoices(TESTING_DIRECTORY), testingDevices, testDrafts, {
-    ops: systemDeviceOps({
-      simulators, android, drivers,
-      foreground: async (platform, deviceId) => (await readDeviceApps(deviceId, undefined, platform, platform === "ios" ? "simulator" : undefined, { ...deviceAppSources, simulator: simulatorForeground })).foregroundApp?.bundleId ?? null,
-    }),
+    ops: testingOps,
     panel: testingRecordings,
   });
   registerTestingAgentTools(server, testingDevices, testingRecordings);
@@ -170,6 +171,8 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
   const panelOpeners: PanelOpener[] = [];
   // One place shows the panel beyond the host; the first feature that offers one wins.
   const opened: PanelOpener = async open => {
+    // The Testing tab beats a moment after it loads; calls made in between wait for it rather than refuse.
+    testingRecordings.expectPanel();
     const openings = await Promise.all(panelOpeners.map(opener => opener(open)));
     return openings.find(opening => opening !== undefined);
   };

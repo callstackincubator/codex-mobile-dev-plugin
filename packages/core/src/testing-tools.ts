@@ -19,7 +19,7 @@ import { runRecordedTest } from "./testing-run.ts";
 import type { TestRunRequest } from "./testing-run.ts";
 import { MatrixRegistry, MAX_MATRIX_LIMIT, snapshotMatrix, startMatrix } from "./testing-matrix.ts";
 import type { LaneExecutor, MatrixDevice, MatrixRun } from "./testing-matrix.ts";
-import { createLaneExecutor } from "./testing-prepare.ts";
+import { LAUNCHER_APP, createLaneExecutor } from "./testing-prepare.ts";
 import type { DeviceOps } from "./testing-prepare.ts";
 import { deviceIdSchema } from "@mobile-dev/shared/panel-target.ts";
 import type { BundledModelProvider } from "./testing-run.ts";
@@ -40,6 +40,8 @@ const sharedVisibility = { ui: { visibility: ["app", "model"] as ("app" | "model
 /** What the Testing tab has told the server; see `TestingAgentRecordings.setPanelProject`. */
 export interface PanelContext {
   panelProjectPath(): string | undefined;
+  /** Like `panelProjectPath`, but waits out the panel's first report when the tab was only just opened. */
+  awaitPanelProject?(): Promise<string | undefined>;
   panelContext?(): TestingAgentContext | undefined;
 }
 
@@ -59,8 +61,6 @@ function singleExpression(text: string): boolean {
   }
   return !quote && stack.length === 0;
 }
-
-const LAUNCHER_APP = /^com\.apple\.springboard$|^com\.android\.systemui$|launcher/i;
 
 const projectPath = z.string().min(1).max(4096);
 
@@ -98,13 +98,14 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
    * it, so the agent never needs to know where Studio lives.
    */
   const panel = matrix.panel;
-  function resolveProject(selected?: string): string {
+  async function resolveProject(selected?: string): Promise<string> {
     if (!panel) {
       if (!selected) throw new ExpectedOperationError("invalid_input", "Pass projectPath.");
       return selected;
     }
-    const current = panel.panelProjectPath();
-    if (!current) throw new ExpectedOperationError("invalid_input", "The Testing tab is not open, so there is no project to work on. Ask the user to open Mobile Dev's Testing tab, then try again.");
+    // Right after an agent opened the tab its first heartbeat may not have arrived; wait for it.
+    const current = await panel.awaitPanelProject?.() ?? panel.panelProjectPath();
+    if (!current) throw new ExpectedOperationError("invalid_input", "The Testing tab is not open, so there is no project to work on. Open it with mobile_open_simulator (workspaceTool \"testing\"), then try again.");
     return selected ?? current;
   }
   const matrixWire = (run: MatrixRun) => ({ ...snapshotMatrix(run), running: run.lanes.some(lane => !["passed", "failed", "cancelled", "error"].includes(lane.state)) });
@@ -166,7 +167,7 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
     annotations: read,
     _meta: sharedVisibility,
   }, safe(async ({ projectPath: selected }: { projectPath?: string }) =>
-    dataResult({ tests: await listTestFiles(resolveProject(selected)) })));
+    dataResult({ tests: await listTestFiles(await resolveProject(selected)) })));
 
   registerAppTool(server, "mobile_testing_read_file", {
     title: "Preview a project test",
@@ -175,7 +176,7 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
     annotations: read,
     _meta: sharedVisibility,
   }, safe(async ({ projectPath: selected, relativePath }: { projectPath?: string; relativePath: string }) =>
-    dataResult(await previewTestFile(resolveProject(selected), relativePath))));
+    dataResult(await previewTestFile(await resolveProject(selected), relativePath))));
 
   registerAppTool(server, "mobile_testing_stage_file", {
     title: "Keep project test edits temporarily",
@@ -361,7 +362,7 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
     annotations: write,
     _meta: sharedVisibility,
   }, safe(async ({ projectPath: selected, relativePath, platform, bundleId, mode }: { projectPath?: string; relativePath: string; platform: "ios" | "android"; bundleId: string; mode?: "replace" | "add" }) => {
-    const pinned = await writeTestTarget(resolveProject(selected), relativePath, { platform, bundleId }, mode);
+    const pinned = await writeTestTarget(await resolveProject(selected), relativePath, { platform, bundleId }, mode);
     return dataResult({ pinned, ...(pinned ? { added: { platform, bundleId, mode: mode ?? "replace" } } : {}) },
       pinned ? `Pinned ${platform} ${bundleId} to ${relativePath} (${mode ?? "replace"}).` : "Only Studio tests carry a pinned app; nothing was changed.");
   }));
@@ -456,7 +457,7 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
     annotations: destructive,
     _meta: sharedVisibility,
   }, safe(async (raw: Omit<RunInput, "projectPath"> & { projectPath?: string }) => {
-    const input: RunInput = { ...raw, projectPath: resolveProject(raw.projectPath) };
+    const input: RunInput = { ...raw, projectPath: await resolveProject(raw.projectPath) };
     // The release is a dependency of the run, not a step the caller is trusted to have taken: see
     // `TestRunDeps`. The panel releases too, but a caller who forgets must not break the run.
     const { request, project, platform, bundleId } = await prepareRequest(input);
@@ -502,7 +503,7 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
     annotations: destructive,
     _meta: sharedVisibility,
   }, safe(async (raw: Omit<RunInput, "projectPath" | "platform" | "bundleId" | "pin" | "target" | "configPath"> & { projectPath?: string; devices: MatrixDevice[]; apps?: { ios?: string; android?: string }; limit?: number }) => {
-    const projectPathValue = resolveProject(raw.projectPath);
+    const projectPathValue = await resolveProject(raw.projectPath);
     const stored = await readTestTarget(projectPathValue, raw.relativePath).catch(() => undefined);
     const apps: { ios?: string; android?: string } = { ...(stored ? { [stored.platform]: stored.bundleId, ...stored.apps } : {}), ...raw.apps };
     const input = { ...raw, projectPath: projectPathValue, apps };
@@ -540,7 +541,7 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
     annotations: read,
     _meta: sharedVisibility,
   }, safe(async ({ matrixId }: { matrixId?: string }) => {
-    if (panel) resolveProject();
+    if (panel) await resolveProject();
     const run = matrixId ? registry.get(matrixId) : registry.latest();
     if (matrixId && !run) throw new ExpectedOperationError("invalid_input", "That run is no longer available.");
     if (!run) return dataResult({ running: false, progress: [], lanes: [], busyDevices: registry.busyDevices() });
@@ -555,7 +556,7 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
     annotations: write,
     _meta: sharedVisibility,
   }, safe(async ({ matrixId, deviceId }: { matrixId: string; deviceId?: string }) => {
-    if (panel) resolveProject();
+    if (panel) await resolveProject();
     if (!registry.get(matrixId)) throw new ExpectedOperationError("invalid_input", "That run is no longer available.");
     const cancelled = registry.cancel(matrixId, deviceId);
     return dataResult({ cancelled: cancelled.map(lane => lane.deviceId) }, `Cancelled ${cancelled.length} lane${cancelled.length === 1 ? "" : "s"}.`);
@@ -572,7 +573,7 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
     annotations: read,
     _meta: sharedVisibility,
   }, safe(async ({ platform, timeoutMs }: { platform: "ios" | "android"; timeoutMs?: number }) => {
-    if (panel) resolveProject();
+    if (panel) await resolveProject();
     const ops = matrix.ops;
     if (!ops?.bootedDevices || !ops.foregroundApp) throw new ExpectedOperationError("unsupported_platform", "This server cannot read what is on a device's screen.");
     const deadline = Date.now() + (timeoutMs ?? 120_000);
@@ -608,7 +609,7 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
     annotations: destructive,
     _meta: sharedVisibility,
   }, safe(async ({ projectPath: selected, relativePath, line, platform, locator }: { projectPath?: string; relativePath: string; line: number; platform: "ios" | "android"; locator: string }) => {
-    const project = resolveProject(selected);
+    const project = await resolveProject(selected);
     if ((await inspectProject(project)).runtimeMode !== "bundled") throw new ExpectedOperationError("invalid_input", "Branching a line is for Studio tests; edit a project test in its own file.");
     if (!singleExpression(locator) || !locator.startsWith("screen.")) throw new ExpectedOperationError("invalid_input", "locator must be one screen.getBy… expression on a single line.");
     const source = await readTestFile(project, relativePath);

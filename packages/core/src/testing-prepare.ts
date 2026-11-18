@@ -9,6 +9,9 @@ import type { Simctl } from "./simctl.ts";
 import type { Lane, LaneExecutor, MatrixPlatform } from "./testing-matrix.ts";
 import type { TestRunProgress, TestRunResult } from "./testing-run.ts";
 
+/** Home screens and system UI, which are never the app to record. */
+export const LAUNCHER_APP = /^com\.apple\.springboard$|^com\.android\.systemui$|launcher/i;
+
 /** The per-platform app ids of a matrix request: a project may use different ones on each platform. */
 export interface MatrixAppIds { ios?: string; android?: string }
 

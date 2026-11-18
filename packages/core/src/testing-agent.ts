@@ -18,6 +18,8 @@ import { TestingDevices } from "./testing-device.ts";
 import { TestDraftStore } from "./testing-drafts.ts";
 import type { TestingDeviceTarget } from "./testing-device.ts";
 import { captureServerError, recordTestingAgentRead } from "./telemetry.ts";
+import { LAUNCHER_APP } from "./testing-prepare.ts";
+import type { DeviceOps } from "./testing-prepare.ts";
 import { inspectProject, writeTestFile, writeTestTarget } from "./testing-projects.ts";
 
 /**
@@ -53,6 +55,8 @@ const MAX_ELEMENTS = 200;
 /** How often the open Testing tab re-sends its selection, and how long silence is believed (three beats). */
 export { PANEL_HEARTBEAT_MS };
 export const PANEL_EXPIRY_MS = PANEL_HEARTBEAT_MS * 3;
+/** How long after an open a call waits for the panel's first report before calling the tab closed. */
+export const PANEL_OPEN_GRACE_MS = 15_000;
 
 /** What the panel's selection is, as the panel reports it. Nothing here is inferred. */
 export type TestingAgentContext = { projectPath: string; deviceId: string; platform: "ios" | "android"; bundleId: string };
@@ -207,20 +211,23 @@ export class TestingAgentRecordings {
   /** The project the Testing panel reports, whether or not a device is selected: proof the tab is open. */
   private panelProject = "";
   private session?: Session;
+  /** `Date.now()` until which a silent panel is believed to be loading rather than closed. */
+  private expectUntil = 0;
   private revision = 0;
 
   /** When the panel last reported, on `now`'s clock; 0 before the first report. */
   private reportedAt = 0;
   private readonly now: () => number;
   private readonly expiryMs: number;
+  private readonly options: { ops?: DeviceOps };
 
   /**
    * `expiryMs` is how long the server believes a panel that has stopped reporting: about three of
    * the panel's heartbeats (`PANEL_HEARTBEAT_MS`). Both it and the clock are injectable so tests
    * need not sleep.
    */
-  constructor(devices: TestingDevices, drafts = new TestDraftStore(), options: { now?: () => number; expiryMs?: number } = {}) {
-    this.devices = devices; this.drafts = drafts;
+  constructor(devices: TestingDevices, drafts = new TestDraftStore(), options: { now?: () => number; expiryMs?: number; ops?: DeviceOps } = {}) {
+    this.devices = devices; this.drafts = drafts; this.options = options;
     this.now = options.now ?? Date.now;
     this.expiryMs = options.expiryMs ?? PANEL_EXPIRY_MS;
   }
@@ -242,6 +249,19 @@ export class TestingAgentRecordings {
   setPanelProject(projectPath: string) { this.panelProject = projectPath; this.reportedAt = projectPath ? this.now() : 0; }
   /** The project the Testing panel has selected, or undefined when the tab has not reported one. */
   panelProjectPath(): string | undefined { this.expire(); return this.panelProject || undefined; }
+  /**
+   * Notes that the panel was just opened, so a call that finds the tab silent waits for its first
+   * report instead of refusing: a tool call returns before the iframe has loaded and beat once.
+   */
+  expectPanel(graceMs = PANEL_OPEN_GRACE_MS) { this.expectUntil = Date.now() + graceMs; }
+  /** The panel's project, waiting up to the grace period when the panel was just opened and has not reported yet. */
+  async awaitPanelProject(): Promise<string | undefined> {
+    for (;;) {
+      const project = this.panelProjectPath();
+      if (project || Date.now() >= this.expectUntil) return project;
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+  }
   /** The panel's full selection, when it has a device and an app selected. */
   panelContext(): TestingAgentContext | undefined { this.expire(); return this.context; }
 
@@ -272,27 +292,23 @@ export class TestingAgentRecordings {
   }
 
   /**
-   * Starts a recording against whatever the panel has selected.
+   * Starts a recording against what the panel has selected, filling in only what is unambiguous.
    *
-   * It never picks for the user. Choosing the project is an explicit act — the panel's picker is
-   * an OS folder dialog, which must not open inside an agent's turn — and the device is whichever
-   * one the mirror is showing. Missing either, the refusal says which, and the user fixes it in
-   * the panel where the choice lives.
+   * The Testing tab has to be open (it is the proof the user is looking, and its heartbeat is the
+   * only thing that says so). Past that, nothing is asked that the machine can answer: the device is
+   * the mirrored one, or the only one booted; in Studio the app is whichever is in the foreground;
+   * in a project it is the config target the foreground app matches, or the only target for the
+   * platform. A real ambiguity or a missing piece comes back as one refusal that names only what is
+   * missing, with one action each. The project is never picked here — choosing it is an explicit act
+   * and the panel's picker is an OS folder dialog, which must not open inside an agent's turn.
    */
-  begin(input: { title: string; goal: string }) {
+  async begin(input: { title: string; goal: string }) {
     if (this.session?.status === "recording") {
       refused(`An agent recording is already in flight: "${this.session.title}". Finish it with mobile_testing_agent_finish, or drop it with mobile_testing_agent_abort.`);
     }
-    this.expire();
-    const context = this.context;
-    const missing = [
-      context?.projectPath ? "" : "an e2e project",
-      context?.deviceId ? "" : "a booted simulator or emulator in the mirror",
-      context?.bundleId ? "" : "a target with a bundle id in the project's e2e config",
-    ].filter(Boolean);
-    if (!context || missing.length > 0) {
-      refused(`The Testing panel has no ${missing.join(", no ")} selected, so there is nothing to record against. Ask the user to open Mobile Dev's Testing tab and choose one, then begin again.`);
-    }
+    const projectPath = await this.awaitPanelProject() ?? this.context?.projectPath ?? "";
+    if (!projectPath) refused("The Testing tab is not open. Call mobile_open_simulator with workspaceTool \"testing\" to open it, then begin again.");
+    const context = await this.resolveTarget(projectPath);
     this.session = {
       target: { deviceId: context.deviceId, platform: context.platform, projectPath: context.projectPath, bundleId: context.bundleId },
       title: input.title.trim() || "a recorded flow",
@@ -308,8 +324,55 @@ export class TestingAgentRecordings {
       deviceId: context.deviceId,
       platform: context.platform,
       bundleId: context.bundleId,
+      ...(context.picked.length ? { picked: context.picked, report: `Recording on ${context.picked.join(" with ")} (chosen automatically); tell the user.` } : {}),
       next: "Call mobile_testing_agent_screen to read the screen, then mobile_testing_agent_step with one of its refs. Re-read after every step that acts.",
     };
+  }
+
+  /** The device and app to record against, from the panel's selection and then the machine. Refuses with what is missing. */
+  private async resolveTarget(projectPath: string): Promise<TestingAgentContext & { picked: string[] }> {
+    const reported = this.context;
+    const ops = this.options.ops;
+    const picked: string[] = [];
+    const bundled = (await inspectProject(projectPath).catch(() => undefined))?.runtimeMode === "bundled";
+    // A selection the panel reported whole is the user's own choice; nothing second-guesses it. In
+    // Studio the app in front is the target, so only a project's complete selection is final.
+    if (reported?.deviceId && reported.bundleId && !bundled) return { ...reported, projectPath, picked };
+    const problems: string[] = [];
+
+    let device: { deviceId: string; platform: "ios" | "android"; name?: string } | undefined;
+    if (reported?.deviceId) device = { deviceId: reported.deviceId, platform: reported.platform };
+    else if (ops?.bootedDevices) {
+      const found = (await Promise.all((["ios", "android"] as const).map(async platform =>
+        (await ops.bootedDevices!(platform).catch(() => [])).map(entry => ({ ...entry, platform }))))).flat();
+      if (found.length === 1) { device = found[0]; picked.push(`the booted ${found[0]!.name}`); }
+      else if (found.length > 1) problems.push(`Say which device to record on: ${found.map(entry => entry.name).join(", ")}.`);
+      else problems.push("Boot an iOS simulator or Android emulator and mirror it in Mobile Dev.");
+    } else problems.push("Boot an iOS simulator or Android emulator and mirror it in Mobile Dev.");
+
+    let bundleId = "";
+    if (device) {
+      const front = ops?.foregroundApp ? await ops.foregroundApp(device.platform, device.deviceId).catch(() => null) : null;
+      const foreground = front && !LAUNCHER_APP.test(front) ? front : "";
+      if (bundled) {
+        bundleId = foreground || reported?.bundleId || "";
+        if (!bundleId) problems.push("Open the app to record in the foreground on the device (or ask the user to open or install it).");
+        else if (foreground) picked.push(`${foreground}, the app in the foreground`);
+      } else {
+        const targets = ((await inspectProject(projectPath).catch(() => undefined))?.targets ?? [])
+          .filter(target => target.bundleId && (!target.platform || target.platform === device!.platform));
+        const match = targets.find(target => target.bundleId === foreground);
+        if (reported?.bundleId) bundleId = reported.bundleId;
+        else if (match) { bundleId = match.bundleId!; picked.push(`${bundleId}, the config target open in the foreground`); }
+        else if (targets.length === 1) { bundleId = targets[0]!.bundleId!; picked.push(`${bundleId}, the project's only ${device.platform} target`); }
+        else if (targets.length > 1) problems.push(`Say which target to record: ${targets.map(target => target.name).join(", ")}, or open one of them in the foreground.`);
+        else problems.push("Add a target with a bundle id for this platform to the project's e2e config.");
+      }
+    } else if (bundled) problems.push("Open the app to record in the foreground on the device (or ask the user to open or install it).");
+    if (problems.length > 0 || !device) {
+      refused(`Cannot start recording yet. ${problems.join(" ")} Then begin again.`);
+    }
+    return { projectPath, deviceId: device.deviceId, platform: device.platform, bundleId, picked };
   }
 
   /**
@@ -640,14 +703,14 @@ export function registerTestingAgentTools(server: McpServer, devices: TestingDev
   registerAppTool(server, "mobile_testing_agent_begin", {
     title: "Begin recording an e2e test",
     description:
-      "Start recording an e2e test into Mobile Dev's Testing panel, against the project, device and app the panel already has selected. Refuses, saying what is missing, when the user has not chosen them. The steps appear in the panel as you record them. In No project (Studio) mode mobile_testing_agent_finish saves the test pinned to the recorded app and returns its relativePath for mobile_testing_run_test / mobile_testing_run_matrix; in a project the steps stay unsaved for the user.",
+      "Start recording an e2e test into Mobile Dev's Testing panel, against the project the panel has selected. The Testing tab must be open. The device and app are picked automatically when unambiguous (the mirrored or only booted device; in Studio the app in the foreground, in a project the matching config target) and reported back in `picked`, so tell the user. Otherwise it refuses naming only what is missing and the one action for each; do that (boot a device, open the app) or ask the user only when they really must open or install the app, then begin again. The steps appear in the panel as you record them. In No project (Studio) mode mobile_testing_agent_finish saves the test pinned to the recorded app and returns its relativePath for mobile_testing_run_test / mobile_testing_run_matrix; in a project the steps stay unsaved for the user.",
     inputSchema: {
       title: z.string().min(1).max(200).describe("The test's title, e.g. \"the explore details screen\"."),
       goal: z.string().min(1).max(500).describe("What this flow covers, in one sentence. Shown to the user in the panel's banner."),
     },
     annotations: write,
     _meta: sharedVisibility,
-  }, safe(async (input: { title: string; goal: string }) => dataResult(recordings.begin(input))));
+  }, safe(async (input: { title: string; goal: string }) => dataResult(await recordings.begin(input))));
 
   registerAppTool(server, "mobile_testing_agent_screen", {
     title: "Read the screen being recorded",

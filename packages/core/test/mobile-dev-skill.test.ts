@@ -16,7 +16,12 @@ test("the testing skill records, hands over, and never saves or runs", async () 
   const skill = await readFile(new URL("../../skills/mobile-dev-testing/SKILL.md", import.meta.url), "utf8");
 
   assert.match(skill, /iOS or Android app/);
-  assert.match(skill, /booted iOS simulator or Android emulator in the mirror/);
+  assert.match(skill, /Testing tab must be open/);
+  assert.match(skill, /Never ask the user for a project, device or target up front/);
+  // A closed tab is the agent's to open, not the user's.
+  assert.match(skill, /mobile_open_simulator\(\{ workspaceTool: "testing" \}\)/);
+  assert.match(skill, /Do not ask the user to open it/);
+  assert.doesNotMatch(skill, /tell the user to \*\*open Mobile Dev's Testing tab\*\*/);
 
   // The loop, in the order the tools enforce it.
   assert.match(skill, /mobile_testing_agent_begin.*mobile_testing_agent_screen.*mobile_testing_agent_step.*mobile_testing_agent_finish/s);
@@ -63,8 +68,8 @@ test("the testing skill teaches Studio mode: record saves, run, add the missing 
   const skill = await readFile(new URL("../../skills/mobile-dev-testing/SKILL.md", import.meta.url), "utf8");
 
   assert.match(skill, /## Studio mode: record, run, repair/);
-  // The tab must be open, and the agent says so rather than guessing a project.
-  assert.match(skill, /tell the user to \*\*open Mobile Dev's Testing tab\*\*/);
+  // The tab must be open, and the agent opens it itself rather than guessing a project.
+  assert.match(skill, /open it yourself with `mobile_open_simulator\(\{ workspaceTool: "testing" \}\)`/);
   // Record now saves, and says where.
   assert.match(skill, /`mobile_testing_agent_finish` \*\*writes the test\*\*.*`relativePath`/s);
   // Run: one device or several, and devices that are off are the matrix's to boot.

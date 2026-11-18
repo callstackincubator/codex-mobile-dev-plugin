@@ -16,15 +16,24 @@ them are not yours to call. In **No project (Studio) mode** the flow is yours en
 
 ## Before you start
 
-The recording goes against whatever the Testing panel already has selected: an **e2e project**, a
-**booted iOS simulator or Android emulator in the mirror**, and a **target with a bundle id** in that project's
-`e2e.config.ts`. `mobile_testing_agent_begin` reads that selection and refuses, naming what is
-missing, when any of the three is unset.
+The **Testing tab must be open**; it is how Mobile Dev knows the user is looking. You open it
+yourself: whenever `begin` or a run tool says the Testing tab is not open, call
+`mobile_open_simulator({ workspaceTool: "testing" })` (it also switches an open view to that tab) and
+then call the tool again. Do not ask the user to open it; the call waits for the tab to report in.
+Past that,
+`mobile_testing_agent_begin` picks what is unambiguous and tells you in `picked`, so relay that to the
+user in a line:
 
-If it refuses, say which one is missing and ask the user to set it in Mobile Dev's Testing tab.
-**Never choose the project for them** — the picker is a system folder dialog, which must not open
-in the middle of your turn — and do not reach for another device because the chosen one is not
-booted. Open the panel with `mobile_open_simulator` if it is not open, and otherwise stop and ask.
+- **Device**: the one the mirror shows, else the only booted simulator or emulator.
+- **App**: in **No project (Studio) mode**, the app in the foreground (home screens and launchers
+  do not count); finishing saves the test pinned to it. In a **project**, the config target the
+  foreground app matches, else the project's only target for that platform.
+
+Never ask the user for a project, device or target up front, and never pass them to `begin`. If it
+refuses, the message names only what is missing, with one action each. Do those yourself when you
+can: boot a simulator (`mobile_boot_simulator`) or open the panel with `mobile_open_simulator`, then
+`begin` again. Ask the user only when the message says to: which of several devices or targets, an
+app that must be opened or installed by hand, or a decision only they can make. **Never choose the project for them** — the picker is a system folder dialog, which must not open in the middle of your turn — and do not reach for another device because the chosen one is not booted.
 
 The app should already be on screen. The recorder attaches to the running app and never relaunches
 it, so a flow recorded from a cold home screen is a flow the user will have to fix.
@@ -129,7 +138,8 @@ deliverable — the panel is showing it, live, next to the steps.
 
 No project open — the Testing tab says Studio — means tests live in Mobile Dev's own storage, each
 pinned to an app. The tab must be open: every tool below reads the tab's selection and refuses
-when it has none. Then tell the user to **open Mobile Dev's Testing tab** and stop. `projectPath`
+when it has none. Then open it yourself with `mobile_open_simulator({ workspaceTool: "testing" })` and
+call the tool again; do not ask the user. `projectPath`
 is optional on all of them; it defaults to the tab's project.
 
 ### Record, which saves
