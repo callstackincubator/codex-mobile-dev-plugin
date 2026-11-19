@@ -54,6 +54,29 @@ test.describe("MCP Apps hosts", () => {
     expect(updater).toEqual(target === "codex" ? ["mobile_check_plugin_update", "mobile_migrate_plugin_to_store"] : []);
   });
 
+  test("Codex can read the panel's selected device without a composer attachment", async ({ openView, page, server, target }) => {
+    test.skip(target !== "codex", "Exercises the native Codex panel.");
+    const deviceId = "avd:Pixel";
+    const device = { udid: deviceId, name: "Pixel", platform: "android", kind: "emulator", state: "Shutdown", runtime: "Android" };
+    const callTool = server.client.callTool.bind(server.client);
+    server.client.callTool = async (request, ...options) => {
+      if (request.name === "mobile_list_android_devices") {
+        return { content: [], structuredContent: { connected: true, managed: false, baseUrl: "", devices: [device] } };
+      }
+      return callTool(request, ...options);
+    };
+    await openView("mobile_open_simulator", { arguments: { platform: "android", deviceId } });
+    const selection = async () => {
+      const result = await callTool({ name: "mobile_read_panel_context", arguments: {} });
+      return result.structuredContent;
+    };
+    await expect.poll(selection).toMatchObject({ activeDeviceId: deviceId });
+    const attachments = await page.evaluate(() => window.harness.events.filter(event => event.method === "modelContext"));
+    expect(attachments).toEqual([]);
+    await page.evaluate(() => window.harness.teardown());
+    await expect.poll(selection).toEqual({ devices: [] });
+  });
+
   test("the workspace opens every tool without errors", async ({ openView, pageErrors, server }) => {
     test.skip(hasPanel(server) === false, "This target's server renders no panel in the chat.");
     const { view } = await openView("mobile_open_workspace");

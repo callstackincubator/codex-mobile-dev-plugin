@@ -1,11 +1,14 @@
 import type { App } from "@modelcontextprotocol/ext-apps";
+import type { SimulatorDevice } from "@mobile-dev/shared/protocol.ts";
 import type { ReactNode } from "react";
 
 /** Chrome one host adds to the shared workspace, such as Codex's update banner. */
 export type WorkspaceExtension = {
   banner?: ReactNode;
   setAvailable(available: boolean): void;
-  dispose(): void;
+  onSelectionChange?(devices: SimulatorDevice[], active?: SimulatorDevice): void;
+  resume?(): void;
+  dispose(): void | Promise<void>;
 };
 
 export type WorkspaceOptions = {
