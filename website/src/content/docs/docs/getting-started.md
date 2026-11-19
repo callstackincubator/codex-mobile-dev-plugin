@@ -59,6 +59,10 @@ claude plugin marketplace add https://github.com/callstackincubator/mobile-dev.g
 claude plugin install mobile-dev@mobile-dev
 ```
 
+Or let your agent do the setup:
+
+<button type="button" class="copy-prompt" data-copy="Install the Mobile Dev Claude Code plugin for me. Run `claude plugin marketplace add https://github.com/callstackincubator/mobile-dev.git#release/claude` and then `claude plugin install mobile-dev@mobile-dev`. Confirm with `claude plugin list` that mobile-dev is installed and enabled. Check that Node.js 22.19 or later and the full Xcode are installed (`node --version`, `xcode-select -p`), and for Android that `adb` is on PATH. Then tell me to start a new Claude Code session and ask it to open Mobile Dev. If I use T3 Code, also tell me to turn off Settings → Devices → Use devices there first.">Copy setup prompt</button>
+
 ### Claude Desktop
 
 For regular chats in the Claude desktop app, download `mobile-dev-<version>-claude-desktop-darwin-arm64.mcpb` from the [latest release](https://github.com/callstackincubator/mobile-dev/releases/latest).
@@ -125,20 +129,6 @@ For **Codex threads**, install the [Codex plugin](#codex-cli), then add one sett
 Start a **new** thread with the Claude or Codex provider, so it loads the plugin, and ask **“Open Mobile Dev.”** The agent opens the panel with T3 Code's `preview_open` tool, and T3 Code shows the page as a floating preview. To dock the panel beside the chat, click the preview's **Open in right panel** button. The first open downloads the panel's runtime once, which can take a minute.
 
 Setup worked when the panel shows Mobile Dev's device list. Choose a simulator or emulator there, and it boots and streams in the panel. Performance recordings still render as cards in the chat.
-
-### Let an agent do the setup
-
-Paste this prompt into a terminal Claude Code session, outside T3 Code:
-
-```text
-Install the Mobile Dev Claude Code plugin for me. Run
-`claude plugin marketplace add https://github.com/callstackincubator/mobile-dev.git#release/claude`
-and then `claude plugin install mobile-dev@mobile-dev`. Confirm with
-`claude plugin list` that mobile-dev is installed and enabled. Check that
-Node.js 22.19 or later and the full Xcode are installed (`node --version`,
-`xcode-select -p`), and for Android that `adb` is on PATH. Then tell me to turn off
-Settings → Devices → Use devices in T3 Code and start a new Claude thread there.
-```
 
 ## Other environments
 
