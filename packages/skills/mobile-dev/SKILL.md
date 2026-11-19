@@ -1,6 +1,6 @@
 ---
 name: mobile-dev
-description: Use when building, running, changing, or debugging local iOS, Android, Expo, React Native, or SwiftUI apps. Open the simulator beside the chat and control the app with bundled MCP tools. Also use for device streaming, screenshots, accessibility reads, logs, and interactive CPU, memory, and FPS charts. Skip web-only apps and tasks limited to planning, docs, or code review.
+description: Use when building, running, changing, or debugging local iOS, Android, Expo, React Native, or SwiftUI apps. Open the simulator beside the chat and control the app with bundled MCP tools. Also use when the user wants to operate an Android device or sign in themselves, and for device streaming, screenshots, accessibility reads, logs, and interactive CPU, memory, and FPS charts. Skip web-only apps and tasks limited to planning, docs, or code review.
 ---
 
 # Mobile Dev
@@ -139,7 +139,16 @@ Build and launch the user's app with that app project's own tools. These tools d
 
 ## Android
 
-For Android work, call `mobile_list_android_devices`; open or reuse the panel first unless the workflow is tool-only. Listing does not boot a device or start serve-emu. Use a returned serial for a running device, or `avd:<name>` for a stopped AVD. Choose an AVD using the device rules above and boot it with `mobile_boot_android_emulator` if needed. Read the returned list and use that AVD's running serial for later calls. `mobile_shutdown_android_emulator` stops an emulator; it cannot shut down a physical device.
+When the user wants to operate an Android device themselves, use the Mobile Dev panel.
+After `adc connect`, or when the user says “open the device so I can sign in”,
+refresh `mobile_list_android_devices` first. Match the connected device and use its
+ADB serial from `udid`. Reuse the panel if it already shows that serial. Otherwise
+call `mobile_open_simulator` with `platform: "android"` and that serial as `deviceId`.
+Once the panel is visible, tell the user they can sign in there and leave control
+with them. Open a separate scrcpy viewer, directly or through Terminal or AppleScript,
+only if the user explicitly requests that viewer.
+
+For other Android work, call `mobile_list_android_devices` after opening or reusing the panel. In a tool-only workflow, call it directly. Listing does not boot a device or start serve-emu. Use a returned serial for a running device, or `avd:<name>` for a stopped AVD. Choose an AVD using the device rules above and boot it with `mobile_boot_android_emulator` if needed. Read the returned list and use that AVD's running serial for later calls. `mobile_shutdown_android_emulator` stops an emulator; it cannot shut down a physical device.
 
 Physical Android discovery uses `adb devices -l` and returns `kind: "physical"`, model when available, serial in `udid`, and `transportType: "wired"` for USB or `"localNetwork"` for Wi-Fi. Emulators and stopped AVDs have `kind: "emulator"`. Authorized devices use `state: "Booted"`; offline and unauthorized devices retain their ADB state and remain visible. The Android picker groups physical devices above Emulators and refreshes every three seconds while visible. USB requires debugging authorization on the phone; Wi-Fi requires wireless debugging pairing. Selecting an authorized physical device streams it with the existing Android tools. Do not send physical serials to emulator boot or shutdown tools.
 
