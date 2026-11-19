@@ -59,24 +59,6 @@ claude plugin marketplace add https://github.com/callstackincubator/mobile-dev.g
 claude plugin install mobile-dev@mobile-dev
 ```
 
-The plugin is installed for your user, so the CLI, the desktop app's **Code** tab, and T3 Code's Claude threads all pick it up. Inside a running Claude Code session you can run the same steps as `/plugin marketplace add https://github.com/callstackincubator/mobile-dev.git#release/claude` and `/plugin install mobile-dev@mobile-dev`.
-
-1. Start a new Claude Code session in your app project.
-2. Ask **“Open Mobile Dev.”** and approve the tool calls when prompted.
-3. Claude opens the device panel in a browser beside the chat: the built-in browser pane in the desktop app's **Code** tab, or a private `127.0.0.1` link you open in your browser from the CLI. The first open downloads the panel's runtime once, which can take a minute.
-
-The plugin finds Node.js on `PATH` or where Homebrew, nvm, fnm, Nix, Volta, mise, or asdf install it. If none is found, Claude tells you at the start of a session.
-
-To update, run `claude plugin marketplace update mobile-dev`, then start a new session.
-
-To try a source build instead, first complete the repository's [Build and package setup](https://github.com/callstackincubator/mobile-dev/blob/main/CONTRIBUTING.md#build-and-package), then run from that checkout:
-
-```sh
-npm run package:claude
-claude plugin validate ./release/claude-plugin/mobile-dev
-claude --plugin-dir ./release/claude-plugin/mobile-dev
-```
-
 ### Claude Desktop
 
 For regular chats in the Claude desktop app, download `mobile-dev-<version>-claude-desktop-darwin-arm64.mcpb` from the [latest release](https://github.com/callstackincubator/mobile-dev/releases/latest).
