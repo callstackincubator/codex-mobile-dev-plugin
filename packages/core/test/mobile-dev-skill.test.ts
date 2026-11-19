@@ -1,6 +1,18 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { createPanel } from "../src/panel-tools.ts";
+
+test("the MCP instructions and skill use the panel by default for Android viewing and control", async () => {
+  const skillPath = new URL("../../skills/mobile-dev/SKILL.md", import.meta.url);
+  const skill = await readFile(skillPath, "utf8");
+  const android = skill.split("## Android\n")[1];
+  const panel = createPanel();
+  for (const guidance of [panel.instructions, android]) {
+    assert.match(guidance, /Mobile Dev panel to show or control (?:an )?Android device/);
+    assert.match(guidance, /scrcpy[^.]*?explicit/i);
+  }
+});
 
 test("App Flow opens saved and runtime-only screens without extra device verification", async () => {
   const skill = await readFile(new URL("../../skills/mobile-dev/SKILL.md", import.meta.url), "utf8");

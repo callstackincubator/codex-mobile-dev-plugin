@@ -70,7 +70,12 @@ function guarded<T>(handler: (input: T, context: ServerRequestContext) => Promis
   };
 }
 
-const INSTRUCTIONS = "For mobile app development, open mobile_open_simulator before the first device launch, or reuse the open view. Use selected device IDs. Control apps with the device_* tools when the server has them. Use mobile_generate_app_intel to create the app's screen/dependency map, then mobile_open_app_intel to show it in chat. For a specific screen's dependencies, look its ID up with mobile_app_intel and pass it as mobile_open_app_intel's appIntelScreen to render that screen's graph; use mobile_app_intel alone, without opening the panel, for a file's importers/imports or when the user wants the answer as text, not a view. When the user asks to see their devices, open or reuse the view, whose device menu lists them. If a task has ambiguous device targets, ask the user with mobile_choose_devices when it is available, otherwise in chat; proceed only after they choose. For a local CPU or React profile path, use mobile_analyze_profile to show TraceSift findings, then wait for the user to choose Investigate. See the Mobile Dev skill, when installed, for device control, logs, profiles, App Intelligence, and performance workflows.";
+const INSTRUCTIONS = "Use mobile_open_simulator before the first device launch or reuse the open panel. "
+  + "Use the Mobile Dev panel to show or control Android devices. Open a separate scrcpy window only if the user explicitly asks for one. "
+  + "When mobile_read_panel_context is available, read the panel's active device before targeting it. Use selected IDs with available device_* tools. "
+  + "Show devices in the panel menu. If targets are ambiguous, ask with mobile_choose_devices when it is available, otherwise in chat. "
+  + "Generate screen maps with mobile_generate_app_intel and show them with mobile_open_app_intel. For screen dependencies, find the ID with mobile_app_intel and pass it as appIntelScreen to mobile_open_app_intel. Use mobile_app_intel alone for file imports/importers or text answers. "
+  + "For local CPU or React profiles use mobile_analyze_profile and await the user's Investigate action. See the Mobile Dev skill.";
 
 /** Mobile Dev's own device views, which a host adds to the server it runs (see createPanel). */
 export type Panel = {
@@ -260,7 +265,7 @@ function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, sh
   });
 
   openingTool("mobile_open_simulator", {
-    description: "Open Mobile Dev alongside the chat for local mobile app development, before the first device launch unless a view is open or the workflow is tool-only. Pass established platform, kind, or discovered deviceId to select the initial device; omit undecided fields. Starts the bundled backend without booting devices.",
+    description: "Open or reuse the Mobile Dev panel alongside the chat to view and control a device. For app development, open before the first device launch unless the workflow is tool-only. Pass the requested platform, kind, or a discovered deviceId to select the device. Omit undecided fields. Starts the bundled backend without booting devices.",
     resourceUri: APP_URI, entrypoint: "thread",
   });
 
