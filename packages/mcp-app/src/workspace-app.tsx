@@ -32,6 +32,7 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
   const panels = WorkspaceTools.create(app, attachments);
   const recordingController = new RecordingController(app, { attachments, workspace: true });
   const extension = options.extension?.(app);
+  panels.context.onSelectionChange = extension?.onSelectionChange;
   const reactRoot = createRoot(document.getElementById("root")!);
   let automaticTool: ToolName | undefined;
   let automaticToolRevision = 0;
@@ -59,8 +60,8 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
       window.removeEventListener("pageshow", resumeContext);
       document.removeEventListener("visibilitychange", resumeContext);
       recordingController.dispose();
-      extension?.dispose();
-      await Promise.allSettled([devices.dispose(), panels.dispose()]);
+      panels.context.onSelectionChange = undefined;
+      await Promise.allSettled([extension?.dispose(), devices.dispose(), panels.dispose()]);
       reactRoot.unmount();
       await stopUiTelemetry();
     })();
@@ -98,6 +99,7 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
     if (document.visibilityState !== "hidden" && !disposingUI) {
       panels.context.hostChanged();
       panels.context.resume();
+      extension?.resume?.();
     }
   }
   window.addEventListener("focus", resumeContext);
@@ -142,6 +144,7 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
   void (async () => {
     try {
       await app.connect();
+      if (disposingUI) return;
       attributeHost(app);
       hostContext();
       const capabilities = app.getHostCapabilities();

@@ -1,5 +1,5 @@
 import { chatMessage } from "./chat-message.ts";
-import type { HostAttachmentsSource, HostBridge } from "./host-bridge.ts";
+import type { HostAttachments, HostAttachmentsSource, HostBridge } from "./host-bridge.ts";
 import type { SimulatorDevice } from "@mobile-dev/shared/protocol.ts";
 import type { StackedLog } from "@mobile-dev/shared/logs.ts";
 import { formatLogContext, logKey } from "@mobile-dev/shared/logs.ts";
@@ -9,6 +9,18 @@ import { captureUiError, countUiEvent, recordUiTiming } from "./telemetry.ts";
 import type { EncodedScreenshotAttachment } from "./screenshot-attachment.ts";
 
 export type ScreenshotAttachment = EncodedScreenshotAttachment & { id: string; simulator: SimulatorDevice };
+
+const deviceContextHeading = "Mobile Dev devices. Logs follow the active device.\n";
+const noDeviceContext = "Mobile Dev has no selected simulator.";
+
+function isLegacyDeviceContext(current: ReturnType<HostAttachments["getCurrent"]>) {
+  if (!current?.content?.length || current.content.length > 2) return false;
+  const [device, guidance] = current.content;
+  const hidden = device.type === "text" && !device._meta && device.annotations?.audience?.length === 1 && device.annotations.audience[0] === "assistant";
+  if (!hidden || (device.text !== noDeviceContext && !device.text.startsWith(deviceContextHeading))) return false;
+  if (!guidance) return true;
+  return guidance.type === "text" && !guidance._meta && guidance.text === ANNOTATION_EDIT_GUIDANCE && guidance.annotations?.audience?.length === 1 && guidance.annotations.audience[0] === "assistant";
+}
 
 function composerUnavailable(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
@@ -35,7 +47,6 @@ export class PanelContext {
   private annotations: ScreenAnnotation[] = [];
   private listeners = new Set<() => void>();
   private queue: Promise<void> = Promise.resolve();
-  private updateId?: string;
   private revision = 0;
   private pending = false;
   private deferred = false;
@@ -46,6 +57,7 @@ export class PanelContext {
   private readonly attachments: HostAttachmentsSource;
   private contextReady = false;
   onChange = () => {};
+  onSelectionChange?: (devices: SimulatorDevice[], active?: SimulatorDevice) => void;
 
   constructor(app: HostBridge, attachments: HostAttachmentsSource = () => undefined) { this.app = app; this.attachments = attachments; }
   get usesHostAttachments() { return !!this.attachments(); }
@@ -171,12 +183,16 @@ export class PanelContext {
     this.selectionKey = key;
     this.simulators = simulators;
     this.simulator = active;
-    void this.publish().catch(() => {});
+    this.onSelectionChange?.(simulators, active);
+    // Composer attachments represent explicit user actions. A device change
+    // must not create a pill or restore one the user has already sent.
+    if (!this.usesHostAttachments) void this.publish().catch(() => {});
   }
 
   async attach(log?: StackedLog) {
     if (!this.canAttach) throw new Error("This host does not support log attachments.");
     const previous = this.attached;
+    if (!previous && !log && this.usesHostAttachments) return;
     this.attached = log;
     const revision = ++this.revision;
     try { await this.publish(); }
@@ -196,6 +212,7 @@ export class PanelContext {
   }
 
   async clearAttachments() {
+    if (this.attachmentCount === 0 && this.usesHostAttachments) return;
     const previous = { attached: this.attached, screenshots: this.screenshots, annotations: this.annotations };
     this.attached = undefined; this.screenshots = []; this.annotations = [];
     const revision = ++this.revision;
@@ -222,16 +239,16 @@ export class PanelContext {
     }
     const current = this.attachments()?.getCurrent();
     if (current === undefined) return;
-    const logPresent = this.attached && (current?.content
-      ? current.content.some(item => item.type === "text" && item.text === formatLogContext(this.attached!))
+    const logText = this.attached && formatLogContext(this.attached);
+    const logPresent = logText && (current?.content
+      ? current.content.some(item => item.type === "text" && item.text.endsWith(logText))
       : current?.structuredContent?.selectedLogKey === this.attachedKey);
     const remaining = this.screenshots.filter(screenshot => current?.content
       ? current.content.some(item => item.type === "image" && item.data === screenshot.data && item._meta?.["mobile-dev/screenshotId"] === screenshot.id)
       : Array.isArray(current?.structuredContent?.screenshotIds) && current.structuredContent.screenshotIds.includes(screenshot.id));
     const annotations = this.annotations.filter(annotation => this.pendingAnnotations.has(annotation.id) || (current?.content
-      ? current.content.some(item => item.type === "text" && item.text === formatAnnotationContext(annotation))
+      ? current.content.some(item => item._meta?.["mobile-dev/annotationId"] === annotation.id)
       : Array.isArray(current?.structuredContent?.annotationIds) && current.structuredContent.annotationIds.includes(annotation.id)));
-    if (current !== null && current.updateId === this.updateId && (!this.attached || logPresent) && remaining.length === this.screenshots.length && annotations.length === this.annotations.length) return;
     // A clear from the host wins over a pending panel update.
     const removed = (this.attached && !logPresent) || remaining.length !== this.screenshots.length || annotations.length !== this.annotations.length;
     if (removed && (current === null || !this.pending)) {
@@ -239,6 +256,19 @@ export class PanelContext {
       this.screenshots = remaining;
       this.annotations = annotations;
       this.revision++; this.changed();
+    }
+    // A restored composer can still contain the previous plugin's device-only
+    // context, including after the last visible attachment was removed.
+    if (current && !this.pending && this.attachmentCount === 0 && isLegacyDeviceContext(current)) {
+      const revision = this.revision;
+      this.queue = this.queue.catch(() => {}).then(async () => {
+        if (this.revision !== revision) return;
+        const host = this.attachments();
+        const latest = host?.getCurrent();
+        if (host && latest?.updateId === current.updateId && isLegacyDeviceContext(latest)) {
+          await host.update({ content: [] }, { timeout: 5000 });
+        }
+      }).catch(() => {});
     }
   }
 
@@ -254,6 +284,7 @@ export class PanelContext {
       if (revision !== this.revision) return;
       const selected = this.simulator;
       const log = this.attached;
+      const host = this.attachments();
       const devices = this.simulators.map(device => {
         const role = device.udid === selected?.udid ? "Active" : "Visible";
         if (device.kind === "physical" && device.platform === "ios") {
@@ -263,27 +294,47 @@ export class PanelContext {
         if (device.kind === "physical" && device.platform === "android") return `${role} physical Android device: ${device.name}. Serial: ${device.udid}. State: ${device.state}. Transport: ${device.transportType}. Use this serial with the Mobile Dev Android tools for platform android.`;
         return `${role} ${device.platform === "android" ? "Android" : "iOS"} simulator: ${device.name}. Device ID: ${device.udid}. State: ${device.state}. Use this ${device.platform === "android" ? "serial" : "UDID"} with the Mobile Dev tools for platform ${device.platform ?? "ios"}.`;
       });
+      const deviceContext = devices.length
+        ? `${deviceContextHeading}${devices.join("\n")}`
+        : noDeviceContext;
       const contextStartedAt = performance.now();
-      const annotationContent = this.annotations.map(annotation => ({ type: "text" as const, text: `${this.usesHostAttachments ? "" : `Device: ${JSON.stringify(annotation.simulator.name)} (${annotation.simulator.udid})\n`}${formatAnnotationContext(annotation)}`, _meta: { "openai/title": `${annotation.component.name}: ${annotation.text.replace(/\s+/g, " ").trim()}`, "mobile-dev/annotationId": annotation.id } }));
+      const annotationContent = this.annotations.map(annotation => {
+        const deviceName = JSON.stringify(annotation.simulator.name);
+        const details = formatAnnotationContext(annotation);
+        const device = `Device: ${deviceName} (${annotation.simulator.udid})`;
+        const text = host ? `${ANNOTATION_EDIT_GUIDANCE}\n\n${device}\n${details}` : `${device}\n${details}`;
+        const title = annotation.text.replace(/\s+/g, " ").trim();
+        return { type: "text" as const, text, _meta: { "openai/title": `${annotation.component.name}: ${title}`, "mobile-dev/annotationId": annotation.id } };
+      });
       if (this.annotations.length) recordUiTiming("ui.annotations.context_build", performance.now() - contextStartedAt);
-      const content = [{ type: "text" as const, annotations: { audience: ["assistant" as const] }, text: devices.length
-        ? `Mobile Dev devices. Logs follow the active device.\n${devices.join("\n")}`
-        : "Mobile Dev has no selected simulator." },
-      ...(log ? [{ type: "text" as const, text: formatLogContext(log), _meta: { "openai/title": `${log.level}: ${log.message.replace(/\s+/g, " ").trim().slice(0, 70)}` } }] : []),
-      ...this.screenshots.map(screenshot => ({
-        type: "image" as const, mimeType: screenshot.mimeType, data: screenshot.data,
-        _meta: { "openai/title": `Screenshot of ${screenshot.simulator.name} (${screenshot.simulator.udid})`, "mobile-dev/screenshotId": screenshot.id },
-      })),
-      ...(this.annotations.length ? [{ type: "text" as const, annotations: { audience: ["assistant" as const] }, text: ANNOTATION_EDIT_GUIDANCE }] : []),
-      ...annotationContent];
+      const content: NonNullable<Parameters<HostBridge["updateModelContext"]>[0]["content"]> = [];
+      if (!host) content.push({ type: "text", annotations: { audience: ["assistant"] }, text: deviceContext });
+      if (log) {
+        const details = formatLogContext(log);
+        const text = host ? `${deviceContext}\n\n${details}` : details;
+        const title = log.message.replace(/\s+/g, " ").trim().slice(0, 70);
+        content.push({ type: "text", text, _meta: { "openai/title": `${log.level}: ${title}` } });
+      }
+      for (const screenshot of this.screenshots) {
+        const title = `Screenshot of ${screenshot.simulator.name} (${screenshot.simulator.udid})`;
+        content.push({
+          type: "image", mimeType: screenshot.mimeType, data: screenshot.data,
+          _meta: { "openai/title": title, "mobile-dev/screenshotId": screenshot.id },
+        });
+      }
+      if (!host && this.annotations.length) {
+        content.push({ type: "text", annotations: { audience: ["assistant"] }, text: ANNOTATION_EDIT_GUIDANCE });
+      }
+      content.push(...annotationContent);
       const params = { content, structuredContent: { selectedSimulator: selected ?? null, selectedSimulators: this.simulators, selectedLog: log ?? null, selectedLogKey: log ? logKey(log) : null, screenshotIds: this.screenshots.map(item => item.id), annotationIds: this.annotations.map(item => item.id) } };
       this.pending = true;
       try {
         await withComposer(async () => {
           if (revision !== this.revision) return;
-          const host = this.attachments();
-          if (host) this.updateId = (await host.update(params, { timeout: 5000 }))?.updateId;
-          else {
+          if (host) {
+            const replacement = content.length ? params : { content: [] };
+            await host.update(replacement, { timeout: 5000 });
+          } else {
             // Standard hosts own no composer pills. Local controls own selection
             // and removal; publish the complete replacement context each time.
             const content = params.content
