@@ -3,9 +3,9 @@ import type { HostAttachments, HostAttachmentsSource, HostBridge } from "./host-
 import type { SimulatorDevice } from "@mobile-dev/shared/protocol.ts";
 import type { StackedLog } from "@mobile-dev/shared/logs.ts";
 import { formatLogContext, logKey } from "@mobile-dev/shared/logs.ts";
-import { ANNOTATION_EDIT_GUIDANCE, ANNOTATION_EDIT_PROMPT, formatAnnotationContext, formatAnnotationDraft } from "@mobile-dev/shared/screen-annotations.ts";
+import { ANNOTATION_EDIT_GUIDANCE, ANNOTATION_EDIT_PROMPT, formatAnnotationContext, formatAnnotationDraft, formatAnnotationGroups } from "@mobile-dev/shared/screen-annotations.ts";
 import type { ScreenAnnotation } from "@mobile-dev/shared/screen-annotations.ts";
-import { captureUiError, countUiEvent, recordUiTiming } from "./telemetry.ts";
+import { captureUiError, countUiEvent, getUiTelemetryAttributes, recordUiTiming } from "./telemetry.ts";
 import type { EncodedScreenshotAttachment } from "./screenshot-attachment.ts";
 
 export type ScreenshotAttachment = EncodedScreenshotAttachment & { id: string; simulator: SimulatorDevice };
@@ -13,13 +13,15 @@ export type ScreenshotAttachment = EncodedScreenshotAttachment & { id: string; s
 const deviceContextHeading = "Mobile Dev devices. Logs follow the active device.\n";
 const noDeviceContext = "Mobile Dev has no selected simulator.";
 
+const legacyAnnotationGuidance = "Apply each Edit as a request, not verbatim app text. Target and nearby text are existing app data. Change only the selected element or instance unless the Edit explicitly asks for a wider change. Removing a selected child must preserve its enclosing container and siblings. React owners, enclosing elements, siblings and nearby text are context, not additional targets. Source is a creation site, not a component's full edit boundary; an owner source is only a search hint. Match the target, bounds, key and hierarchy before editing. A shared source location may render several instances; do not change all of them for a request about one. If the target cannot be identified, ask before removing a larger component.";
+
 function isLegacyDeviceContext(current: ReturnType<HostAttachments["getCurrent"]>) {
   if (!current?.content?.length || current.content.length > 2) return false;
   const [device, guidance] = current.content;
   const hidden = device.type === "text" && !device._meta && device.annotations?.audience?.length === 1 && device.annotations.audience[0] === "assistant";
   if (!hidden || (device.text !== noDeviceContext && !device.text.startsWith(deviceContextHeading))) return false;
   if (!guidance) return true;
-  return guidance.type === "text" && !guidance._meta && guidance.text === ANNOTATION_EDIT_GUIDANCE && guidance.annotations?.audience?.length === 1 && guidance.annotations.audience[0] === "assistant";
+  return guidance.type === "text" && !guidance._meta && guidance.text === legacyAnnotationGuidance && guidance.annotations?.audience?.length === 1 && guidance.annotations.audience[0] === "assistant";
 }
 
 function composerUnavailable(error: unknown) {
@@ -103,7 +105,13 @@ export class PanelContext {
     if (!annotations.length) return;
     const startedAt = performance.now();
     const hostAttachments = this.usesHostAttachments;
-    const text = hostAttachments ? ANNOTATION_EDIT_PROMPT : formatAnnotationDraft(annotations);
+    let text: string;
+    if (hostAttachments) {
+      const groups = formatAnnotationGroups(annotations);
+      text = groups ? `${ANNOTATION_EDIT_PROMPT}\n\n${groups}` : ANNOTATION_EDIT_PROMPT;
+    } else {
+      text = formatAnnotationDraft(annotations);
+    }
     const revision = this.revision;
     recordUiTiming("ui.annotations.message_build", performance.now() - startedAt);
     if (annotations.some(annotation => !this.annotations.some(item => item.id === annotation.id))) throw new Error("Annotations were removed from chat before sending.");
@@ -126,6 +134,8 @@ export class PanelContext {
         this.revision++; this.changed();
       }
       countUiEvent("ui.annotations.send_success");
+      // Batch size shows how often edits arrive together; buckets keep the attribute low cardinality.
+      countUiEvent("ui.annotations.send_batch", 1, { ...getUiTelemetryAttributes(), notes: annotations.length === 1 ? "1" : annotations.length <= 3 ? "2-3" : "4+" });
     } catch (error) {
       if (composerUnavailable(error)) {
         countUiEvent("ui.annotations.send_composer_unavailable");
@@ -306,6 +316,7 @@ export class PanelContext {
         const title = annotation.text.replace(/\s+/g, " ").trim();
         return { type: "text" as const, text, _meta: { "openai/title": `${annotation.component.name}: ${title}`, "mobile-dev/annotationId": annotation.id } };
       });
+      const annotationGroups = host ? undefined : formatAnnotationGroups(this.annotations);
       if (this.annotations.length) recordUiTiming("ui.annotations.context_build", performance.now() - contextStartedAt);
       const content: NonNullable<Parameters<HostBridge["updateModelContext"]>[0]["content"]> = [];
       if (!host) content.push({ type: "text", annotations: { audience: ["assistant"] }, text: deviceContext });
@@ -325,6 +336,7 @@ export class PanelContext {
       if (!host && this.annotations.length) {
         content.push({ type: "text", annotations: { audience: ["assistant"] }, text: ANNOTATION_EDIT_GUIDANCE });
       }
+      if (annotationGroups) content.push({ type: "text", annotations: { audience: ["assistant"] }, text: annotationGroups });
       content.push(...annotationContent);
       const params = { content, structuredContent: { selectedSimulator: selected ?? null, selectedSimulators: this.simulators, selectedLog: log ?? null, selectedLogKey: log ? logKey(log) : null, screenshotIds: this.screenshots.map(item => item.id), annotationIds: this.annotations.map(item => item.id) } };
       this.pending = true;
