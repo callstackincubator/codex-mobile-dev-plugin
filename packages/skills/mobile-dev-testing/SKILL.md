@@ -18,8 +18,13 @@ them are not yours to call. In **No project (Studio) mode** the flow is yours en
 
 The **Testing tab must be open**; it is how Mobile Dev knows the user is looking. You open it
 yourself: whenever `begin` or a run tool says the Testing tab is not open, call
-`mobile_open_simulator({ workspaceTool: "testing" })` (it also switches an open view to that tab) and
-then call the tool again. Do not ask the user to open it; the call waits for the tab to report in.
+`mobile_open_simulator({ workspaceTool: "testing", projectPath })` (it also switches an open view to
+that tab) and then call the tool again. Do not ask the user to open it; the call waits for the tab to
+report in. **Always pass `projectPath`: your workspace root (working directory), or `""` when the
+chat has no project.** The tab then follows the chat: a folder that is not a mobile project (a
+scratch folder, such as a Codex `Documents/Codex/<date>/...` one) selects No project, so recording
+uses the app in the foreground; a project is selected and added to the list when missing. Never
+pick a project from the tab's picker yourself, and never mention a project the chat does not have.
 Past that,
 `mobile_testing_agent_begin` picks what is unambiguous and tells you in `picked`, so relay that to the
 user in a line:
@@ -138,7 +143,7 @@ deliverable — the panel is showing it, live, next to the steps.
 
 No project open — the Testing tab says Studio — means tests live in Mobile Dev's own storage, each
 pinned to an app. The tab must be open: every tool below reads the tab's selection and refuses
-when it has none. Then open it yourself with `mobile_open_simulator({ workspaceTool: "testing" })` and
+when it has none. Then open it yourself with `mobile_open_simulator({ workspaceTool: "testing", projectPath })` and
 call the tool again; do not ask the user. `projectPath`
 is optional on all of them; it defaults to the tab's project.
 

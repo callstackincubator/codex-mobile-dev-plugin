@@ -51,8 +51,10 @@ async function sha256(url) {
 /** Reports a dependency's updates and returns the version to apply, if any. */
 function choose(group, name, current, versions, link, lane) {
   const { latest, safe } = targets(current, versions);
-  if (group === "agent-device" && name === "agent-device" && current === "0.21.33") {
-    if (latest) record(group, name, current, latest, { applied: false, reason: "manual pin: upstream #3995 breaks iOS input with a stale Xcode selection link", link });
+  // The bundled e2e runner and Mobile Dev's own client share one agent-device state directory, so
+  // the pin must match the version @e2e-dev/mobile brings in (agent-device-runtime-match.test.ts).
+  if (group === "agent-device" && name === "agent-device") {
+    if (latest) record(group, name, current, latest, { applied: false, reason: "manual pin: keep equal to the agent-device version @e2e-dev/mobile uses", link });
     return;
   }
   if (safe) record(group, name, current, safe, { link, lane });

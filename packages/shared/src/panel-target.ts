@@ -7,7 +7,9 @@ export const deviceIdSchema = z.string().min(1).max(256).regex(/^[A-Za-z0-9_.:\[
 const workspaceTool = z.enum(["logs", "performance", "storage", "app-intel", "tracesift", "testing"]).optional().describe("A workspace tool to open. Use testing to open the Testing tab, whether the panel is closed or already open. Omit for the device view.");
 const appIntelScreen = z.string().min(1).max(512).optional().describe("An App Intelligence screen ID to focus when workspaceTool is app-intel, from mobile_app_intel's search or screen result. Omit to open on whatever screen the panel last showed.");
 
-export const panelTargetSchema = z.object({ platform, kind, deviceId: deviceIdSchema.optional(), workspaceTool, appIntelScreen }).strict().superRefine((target, context) => {
+const projectPath = z.string().max(4096).optional().describe("With workspaceTool testing: the absolute path of the chat's workspace root (its working directory), so the Testing tab follows the chat. A folder that is not a project selects No project. Pass an empty string when the chat has no project. Omit only when you cannot tell.");
+
+export const panelTargetSchema = z.object({ platform, kind, deviceId: deviceIdSchema.optional(), workspaceTool, appIntelScreen, projectPath }).strict().superRefine((target, context) => {
   if (target.platform === "ios" && target.kind === "emulator" || target.platform === "android" && target.kind === "simulator") {
     context.addIssue({ code: "custom", path: ["kind"], message: "Use simulator for iOS or emulator for Android." });
   }

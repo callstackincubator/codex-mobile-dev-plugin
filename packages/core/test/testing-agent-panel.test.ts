@@ -252,3 +252,59 @@ test("an open, visible tab re-sends its selection on a heartbeat, and tells the 
   await tick();
   assert.deepEqual(context().at(-1)?.arguments, { projectPath: "", deviceId: "", bundleId: "" }, "leaving clears the context on a best-effort basis");
 });
+
+/** Waits for the panel to settle on a project, since a selection loads its config over several calls. */
+async function settled(panel: any, projectPath: string) {
+  for (let attempt = 0; attempt < 100 && panel.getSnapshot().projectPath !== projectPath; attempt++) await new Promise(resolve => setTimeout(resolve, 5));
+  assert.equal(panel.getSnapshot().projectPath, projectPath);
+}
+
+function projectScript(env: Awaited<ReturnType<typeof panelEnvironment>>) {
+  env.responses.mobile_testing_projects = () => ({ projects: [{ path: "/work/expoapp57", name: "expoapp57" }], studioPath: "/studio" });
+  env.responses.mobile_testing_choose_project = () => {
+    const request = [...env.calls].reverse().find(entry => entry.name === "mobile_testing_choose_project")!;
+    const path = String(request.arguments.projectPath);
+    return { project: { path, name: path.split("/").pop() } };
+  };
+}
+
+test("an agent's No project request beats the last-used project when the panel opens", async t => {
+  const env = await panelEnvironment(t);
+  projectScript(env);
+  env.agent.projectRequest = { id: 1, path: "/studio" };
+  env.panel.setAvailable(true);
+  await new Promise(resolve => setTimeout(resolve, 200));
+  await settled(env.panel, "/studio");
+  assert.equal(env.calls.some(entry => entry.name === "mobile_testing_choose_project"), false, "Studio is not a folder to record");
+});
+
+test("an agent's No project request switches a panel already on another project, once", async t => {
+  const env = await panelEnvironment(t);
+  projectScript(env);
+  env.panel.setAvailable(true);
+  await settled(env.panel, "/work/expoapp57");
+  env.agent.projectRequest = { id: 1, path: "/studio" };
+  await (env.panel as any).readAgentState();
+  await settled(env.panel, "/studio");
+  // The user picks a project by hand; the same request is still pending on the server.
+  await env.panel.chooseProject("/work/expoapp57");
+  await settled(env.panel, "/work/expoapp57");
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(env.panel.getSnapshot().projectPath, "/work/expoapp57", "an applied request is not applied again");
+  env.agent.projectRequest = { id: 2, path: "/studio" };
+  await (env.panel as any).readAgentState();
+  await settled(env.panel, "/studio");
+});
+
+test("an agent's project is selected and added to the list when the panel does not list it", async t => {
+  const env = await panelEnvironment(t);
+  projectScript(env);
+  env.panel.setAvailable(true);
+  await settled(env.panel, "/work/expoapp57");
+  env.agent.projectRequest = { id: 1, path: "/work/new-app" };
+  await (env.panel as any).readAgentState();
+  await settled(env.panel, "/work/new-app");
+  const added = env.calls.filter(entry => entry.name === "mobile_testing_choose_project");
+  assert.deepEqual(added.map(entry => entry.arguments), [{ projectPath: "/work/new-app" }], "added by path, never through the folder dialog");
+  assert.ok(env.panel.getSnapshot().projects.some((entry: any) => entry.path === "/work/new-app"));
+});

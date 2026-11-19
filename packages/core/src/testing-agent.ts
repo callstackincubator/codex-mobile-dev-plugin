@@ -20,7 +20,7 @@ import type { TestingDeviceTarget } from "./testing-device.ts";
 import { captureServerError, recordTestingAgentRead } from "./telemetry.ts";
 import { LAUNCHER_APP } from "./testing-prepare.ts";
 import type { DeviceOps } from "./testing-prepare.ts";
-import { inspectProject, writeTestFile, writeTestTarget } from "./testing-projects.ts";
+import { inspectProject, sameProjectPath, studioWorkspacePath, writeTestFile, writeTestTarget } from "./testing-projects.ts";
 
 /**
  * Recording an e2e test from the user's own coding agent, into the Testing panel the user is
@@ -57,6 +57,8 @@ export { PANEL_HEARTBEAT_MS };
 export const PANEL_EXPIRY_MS = PANEL_HEARTBEAT_MS * 3;
 /** How long after an open a call waits for the panel's first report before calling the tab closed. */
 export const PANEL_OPEN_GRACE_MS = 15_000;
+/** How long an agent's project request stays pending for a panel document that loads late. */
+export const PROJECT_REQUEST_TTL_MS = 60_000;
 
 /** What the panel's selection is, as the panel reports it. Nothing here is inferred. */
 export type TestingAgentContext = { projectPath: string; deviceId: string; platform: "ios" | "android"; bundleId: string };
@@ -214,6 +216,9 @@ export class TestingAgentRecordings {
   /** `Date.now()` until which a silent panel is believed to be loading rather than closed. */
   private expectUntil = 0;
   private revision = 0;
+  /** The project an agent asked the panel to show when it opened it: a folder, or Studio's workspace. */
+  private projectRequest?: { id: number; path: string; at: number };
+  private projectRequests = 0;
 
   /** When the panel last reported, on `now`'s clock; 0 before the first report. */
   private reportedAt = 0;
@@ -254,11 +259,31 @@ export class TestingAgentRecordings {
    * report instead of refusing: a tool call returns before the iframe has loaded and beat once.
    */
   expectPanel(graceMs = PANEL_OPEN_GRACE_MS) { this.expectUntil = Date.now() + graceMs; }
+  /**
+   * An agent opened the Testing tab for a chat: the panel selects this project once, however it was
+   * last used. `undefined` asks for No project. Only an agent's open sets it, so a project the user
+   * picks afterwards is theirs.
+   */
+  requestPanelProject(projectPath?: string) {
+    this.projectRequest = { id: ++this.projectRequests, path: projectPath ?? studioWorkspacePath(), at: this.now() };
+    this.expectPanel();
+  }
+  /** The pending request for the panel to apply, while it is fresh. */
+  panelProjectRequest(): { id: number; path: string } | null {
+    const request = this.projectRequest;
+    if (!request || this.now() - request.at > PROJECT_REQUEST_TTL_MS) return null;
+    return { id: request.id, path: request.path };
+  }
+  /** The requested project when the panel has not switched to it yet. */
+  unmetProjectRequest(): string | undefined {
+    const request = this.panelProjectRequest();
+    return request && !(this.panelProject && sameProjectPath(this.panelProject, request.path)) ? request.path : undefined;
+  }
   /** The panel's project, waiting up to the grace period when the panel was just opened and has not reported yet. */
   async awaitPanelProject(): Promise<string | undefined> {
     for (;;) {
       const project = this.panelProjectPath();
-      if (project || Date.now() >= this.expectUntil) return project;
+      if (project && !this.unmetProjectRequest() || Date.now() >= this.expectUntil) return project;
       await new Promise(resolve => setTimeout(resolve, 50));
     }
   }
@@ -308,6 +333,8 @@ export class TestingAgentRecordings {
     }
     const projectPath = await this.awaitPanelProject() ?? this.context?.projectPath ?? "";
     if (!projectPath) refused("The Testing tab is not open. Call mobile_open_simulator with workspaceTool \"testing\" to open it, then begin again.");
+    const unmet = this.unmetProjectRequest();
+    if (unmet) refused(`The Testing tab has not switched to ${sameProjectPath(unmet, studioWorkspacePath()) ? "No project" : unmet} yet. Try again in a moment, or call mobile_open_simulator with workspaceTool "testing" again.`);
     const context = await this.resolveTarget(projectPath);
     this.session = {
       target: { deviceId: context.deviceId, platform: context.platform, projectPath: context.projectPath, bundleId: context.bundleId },
@@ -760,7 +787,7 @@ export function registerTestingAgentTools(server: McpServer, devices: TestingDev
     inputSchema: {},
     annotations: read,
     _meta: appVisibility,
-  }, safe(() => dataResult({ ...recordings.state() })));
+  }, safe(() => dataResult({ ...recordings.state(), projectRequest: recordings.panelProjectRequest() })));
 
   registerAppTool(server, "mobile_testing_set_context", {
     title: "Report the Testing panel's selection",

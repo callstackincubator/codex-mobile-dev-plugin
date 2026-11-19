@@ -260,7 +260,7 @@ function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, sh
   });
 
   openingTool("mobile_open_simulator", {
-    description: "Open Mobile Dev alongside the chat for local mobile app development, before the first device launch unless a view is open or the workflow is tool-only. Pass established platform, kind, or discovered deviceId to select the initial device; omit undecided fields. Pass workspaceTool \"testing\" to open (or switch an open view to) the Testing tab, which e2e recording and test runs need. Starts the bundled backend without booting devices.",
+    description: "Open Mobile Dev alongside the chat for local mobile app development, before the first device launch unless a view is open or the workflow is tool-only. Pass established platform, kind, or discovered deviceId to select the initial device; omit undecided fields. Pass workspaceTool \"testing\" to open (or switch an open view to) the Testing tab, which e2e recording and test runs need; with it, pass projectPath, your workspace root (\"\" when the chat has no project), so the tab selects that project, or No project for a folder that is not one. Starts the bundled backend without booting devices.",
     resourceUri: APP_URI, entrypoint: "thread",
   });
 

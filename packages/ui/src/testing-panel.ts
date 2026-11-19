@@ -429,6 +429,8 @@ export class TestingPanel {
     if (!this.snapshot.available || this.snapshot.projectPath || this.restoreRequest) return this.restoreRequest;
     const request = (async () => {
       await this.refreshProjects();
+      // An agent that opened the panel for its chat has already said which project it wants.
+      if (await this.applyServerProjectRequest()) return;
       // No project is a state of its own: with nothing recorded against yet, Studio opens on its
       // private workspace so recording never waits for a folder to be chosen.
       const latest = this.snapshot.projects[0]?.path || this.snapshot.studioPath;
@@ -436,6 +438,37 @@ export class TestingPanel {
     })();
     this.restoreRequest = request;
     try { await request; } finally { if (this.restoreRequest === request) this.restoreRequest = undefined; }
+  }
+
+  private appliedProjectRequest = 0;
+  private projectRequestApply?: Promise<void>;
+
+  /**
+   * The project an agent chose when it opened the panel for its chat: No project, or a folder
+   * (added to the list if missing, without the folder dialog). Applied once per request, so a
+   * project the user picks afterwards is never taken back. Returns whether a request was found.
+   */
+  private async applyProjectRequest(data: Record<string, unknown>): Promise<boolean> {
+    const request = object(data.projectRequest);
+    const id = request?.id, path = text(request?.path);
+    if (typeof id !== "number" || !path) return false;
+    if (id !== this.appliedProjectRequest) {
+      this.appliedProjectRequest = id;
+      this.projectRequestApply = (async () => {
+        await this.refreshProjects();
+        if (this.disposed || path === this.snapshot.projectPath) return;
+        await this.chooseProject(path);
+      })();
+    }
+    await this.projectRequestApply;
+    return true;
+  }
+
+  private async applyServerProjectRequest(): Promise<boolean> {
+    try {
+      const response = await this.call("mobile_testing_agent_state", {}, 5_000);
+      return await this.applyProjectRequest(object(response.structuredContent) ?? {});
+    } catch { return false; }
   }
 
   private remembered(project: TestingProjectOption) {
@@ -1266,6 +1299,8 @@ export class TestingPanel {
     } catch {
       return;
     }
+    if (this.disposed) return;
+    await this.applyProjectRequest(data);
     if (this.disposed) return;
     const revision = typeof data.revision === "number" ? data.revision : 0;
     const status = data.status === "recording" || data.status === "finished" || data.status === "aborted" ? data.status : "idle";

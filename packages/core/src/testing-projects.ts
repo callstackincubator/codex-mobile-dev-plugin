@@ -90,6 +90,32 @@ export function studioWorkspacePath(): string {
   return normalize(join(stateRoot, "studio-workspace"));
 }
 
+/**
+ * Whether a chat's working directory is a mobile project the Testing panel can work in: a project
+ * the panel already lists, or a folder carrying a project marker (a package manifest, an Expo
+ * config, an e2e config, a native iOS or Android project). A scratch folder holds none of these, so
+ * it is not a project and the panel records in No project (Studio) instead.
+ */
+export async function isChatProject(directory: string, known: readonly { path: string }[] = []): Promise<boolean> {
+  const path = normalize(directory.trim());
+  if (!path || !isAbsolute(path) || !(await isDirectory(path))) return false;
+  if (same(path, studioWorkspacePath())) return false;
+  if (known.some(entry => same(entry.path, path))) return true;
+  const files = ["package.json", "app.json", "app.config.ts", "app.config.js", "app.config.json", "Package.swift", "Podfile", "pubspec.yaml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts", ...CONFIG_FILES];
+  for (const file of files) if (await isFile(join(path, file))) return true;
+  const entries = await readdir(path).catch(() => [] as string[]);
+  if (entries.some(name => name.endsWith(".xcodeproj") || name.endsWith(".xcworkspace"))) return true;
+  for (const native of ["ios", "android"]) {
+    if (!(await isDirectory(join(path, native)))) continue;
+    const inner = await readdir(join(path, native)).catch(() => [] as string[]);
+    if (inner.some(name => name.endsWith(".xcodeproj") || name.endsWith(".xcworkspace") || name.startsWith("build.gradle") || name === "Podfile")) return true;
+  }
+  return false;
+}
+
+/** Whether two project paths name the same folder. */
+export function sameProjectPath(left: string, right: string): boolean { return same(left, right); }
+
 /** The e2e config file of a project folder, or undefined when it holds none. */
 export async function findConfig(projectPath: string): Promise<string | undefined> {
   for (const file of CONFIG_FILES) {
