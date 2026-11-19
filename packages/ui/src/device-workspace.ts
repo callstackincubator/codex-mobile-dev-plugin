@@ -86,6 +86,19 @@ export class DeviceWorkspace {
     return true;
   }
 
+  /**
+   * Switches a platform's mirror to a listed, booted device, as the device picker does, and makes
+   * that platform the active one. Answers false when the layout hides the platform or the device
+   * is not listed and booted; nothing is opened or booted.
+   */
+  showDevice(platform: Platform, deviceId: string): boolean {
+    const panel = this.panels.find(entry => entry.platform === platform);
+    if (!panel || panel.root.hidden || !panel.showDevice(deviceId)) return false;
+    this.activePlatform = platform;
+    this.updateSelection();
+    return true;
+  }
+
   /** Opens the devices a tool call or host intent names. */
   open(target: PanelTarget) { return this.devices.open(target); }
   setAvailable(available: boolean) { return this.devices.setAvailable(available); }

@@ -20,7 +20,7 @@ import type { TestingDeviceTarget } from "./testing-device.ts";
 import { captureServerError, recordTestingAgentRead } from "./telemetry.ts";
 import { LAUNCHER_APP } from "./testing-prepare.ts";
 import type { DeviceOps } from "./testing-prepare.ts";
-import { inspectProject, sameProjectPath, studioWorkspacePath, writeTestFile, writeTestTarget } from "./testing-projects.ts";
+import { inspectProject, sameProjectPath, storedTestsChangeRevision, studioWorkspacePath, writeTestFile, writeTestTarget } from "./testing-projects.ts";
 
 /**
  * Recording an e2e test from the user's own coding agent, into the Testing panel the user is
@@ -54,7 +54,12 @@ const MAX_ELEMENTS = 200;
 
 /** How often the open Testing tab re-sends its selection, and how long silence is believed (three beats). */
 export { PANEL_HEARTBEAT_MS };
-export const PANEL_EXPIRY_MS = PANEL_HEARTBEAT_MS * 3;
+/**
+ * A throttled background webview may beat only about once a minute, so a quiet panel is not a
+ * closed one for a few minutes. A real close clears the context at once (unmount, pagehide); this
+ * only catches a panel that crashed.
+ */
+export const PANEL_EXPIRY_MS = 3 * 60_000;
 /** How long after an open a call waits for the panel's first report before calling the tab closed. */
 export const PANEL_OPEN_GRACE_MS = 15_000;
 /** How long an agent's project request stays pending for a panel document that loads late. */
@@ -227,8 +232,8 @@ export class TestingAgentRecordings {
   private readonly options: { ops?: DeviceOps };
 
   /**
-   * `expiryMs` is how long the server believes a panel that has stopped reporting: about three of
-   * the panel's heartbeats (`PANEL_HEARTBEAT_MS`). Both it and the clock are injectable so tests
+   * `expiryMs` is how long the server believes a panel that has stopped reporting: a few minutes,
+   * longer than a throttled background panel's heartbeat interval. Both it and the clock are injectable so tests
    * need not sleep.
    */
   constructor(devices: TestingDevices, drafts = new TestDraftStore(), options: { now?: () => number; expiryMs?: number; ops?: DeviceOps } = {}) {
@@ -259,6 +264,21 @@ export class TestingAgentRecordings {
    * report instead of refusing: a tool call returns before the iframe has loaded and beat once.
    */
   expectPanel(graceMs = PANEL_OPEN_GRACE_MS) { this.expectUntil = Date.now() + graceMs; }
+
+  private panelOpens = 0;
+  /** Counts a call that asked the host for a panel. Each one makes the host draw another view. */
+  noteOpenCall() { this.panelOpens += 1; }
+  /**
+   * What an agent that opens the panel again should be told. Hosts draw a new Mobile Dev view for
+   * every call to an opening tool and the server cannot stop that, so the only protection is to say
+   * the panel is already there: while the Testing tab reports in, or after this server was already
+   * asked for one (the tab may then be hidden or on another tab, which also silences it).
+   */
+  panelReopenNotice(): string | undefined {
+    if (this.panelProjectPath() !== undefined) return "The Mobile Dev panel was already open in this chat and the Testing tab is reporting, so this call made the host draw an extra panel. Do not call mobile_open_simulator or mobile_open_workspace again in this chat: boot, run and record with the other tools, and the open panel follows.";
+    if (this.panelOpens > 0) return "A Mobile Dev panel was already opened in this chat, so this call made the host draw another. Do not open more: if a tool says the Testing tab is not open, it may be hidden or on another tab, so ask the user to show the existing panel and its Testing tab.";
+    return undefined;
+  }
   /**
    * An agent opened the Testing tab for a chat: the panel selects this project once, however it was
    * last used. `undefined` asks for No project. Only an agent's open sets it, so a project the user
@@ -332,9 +352,9 @@ export class TestingAgentRecordings {
       refused(`An agent recording is already in flight: "${this.session.title}". Finish it with mobile_testing_agent_finish, or drop it with mobile_testing_agent_abort.`);
     }
     const projectPath = await this.awaitPanelProject() ?? this.context?.projectPath ?? "";
-    if (!projectPath) refused("The Testing tab is not open. Call mobile_open_simulator with workspaceTool \"testing\" to open it, then begin again.");
+    if (!projectPath) refused("The Testing tab is not open. If no Mobile Dev panel is showing in this chat, call mobile_open_simulator with workspaceTool \"testing\" once to open it, then begin again; if you already opened one, do not open another (each call adds a panel): ask the user to show the existing panel and its Testing tab.");
     const unmet = this.unmetProjectRequest();
-    if (unmet) refused(`The Testing tab has not switched to ${sameProjectPath(unmet, studioWorkspacePath()) ? "No project" : unmet} yet. Try again in a moment, or call mobile_open_simulator with workspaceTool "testing" again.`);
+    if (unmet) refused(`The Testing tab has not switched to ${sameProjectPath(unmet, studioWorkspacePath()) ? "No project" : unmet} yet. Try again in a moment; do not open the panel again, it is already open.`);
     const context = await this.resolveTarget(projectPath);
     this.session = {
       target: { deviceId: context.deviceId, platform: context.platform, projectPath: context.projectPath, bundleId: context.bundleId },
@@ -787,7 +807,7 @@ export function registerTestingAgentTools(server: McpServer, devices: TestingDev
     inputSchema: {},
     annotations: read,
     _meta: appVisibility,
-  }, safe(() => dataResult({ ...recordings.state(), projectRequest: recordings.panelProjectRequest() })));
+  }, safe(() => dataResult({ ...recordings.state(), storedTestsRevision: storedTestsChangeRevision(), projectRequest: recordings.panelProjectRequest() })));
 
   registerAppTool(server, "mobile_testing_set_context", {
     title: "Report the Testing panel's selection",

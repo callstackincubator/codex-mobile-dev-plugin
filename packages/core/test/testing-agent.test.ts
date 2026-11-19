@@ -76,7 +76,7 @@ test("a recording refuses to start when the panel has nothing selected", async (
   const recordings = new TestingAgentRecordings(devices);
   // No project and no device is not something to pick for the user: the project picker is an OS
   // folder dialog, which must not open inside an agent's turn.
-  await assert.rejects(() => recordings.begin({ title: "t", goal: "g" }), /The Testing tab is not open\. Call mobile_open_simulator with workspaceTool "testing"/);
+  await assert.rejects(() => recordings.begin({ title: "t", goal: "g" }), /The Testing tab is not open\. If no Mobile Dev panel is showing in this chat, call mobile_open_simulator with workspaceTool "testing" once.*do not open another/);
   recordings.setPanelProject("/project");
   await assert.rejects(() => recordings.begin({ title: "t", goal: "g" }), /Boot an iOS simulator or Android emulator and mirror it/);
   assert.equal(recordings.state().status, "idle");

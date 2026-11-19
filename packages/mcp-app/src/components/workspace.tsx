@@ -46,6 +46,8 @@ export function Workspace({ panels, recordingController, banner, displayModeCont
   const [simulatorsCollapsed, setSimulatorsCollapsed] = useState(false);
   const [layout, setLayout] = useState<DeviceLayout>(automaticLayout ?? "none");
   const manualLayout = useRef(false);
+  const layoutRef = useRef(layout);
+  layoutRef.current = layout;
   const recordingState = useSyncExternalStore(recordingController.subscribe, recordingController.getSnapshot);
   useEffect(() => {
     if (automaticLayout === undefined || manualLayout.current || recordingState.recording !== undefined) return;
@@ -69,6 +71,16 @@ export function Workspace({ panels, recordingController, banner, displayModeCont
     setTool("testing");
     setSavedVisible(false);
     panels.show("testing");
+  }), [testing]);
+  // Picking a lane in the results shows that lane's platform. Only a single-mirror layout moves,
+  // and only on the pick itself: the manual platform picker and a mirror switched back by hand
+  // are never overridden.
+  useEffect(() => testing.onLanePicked(platform => {
+    const current = layoutRef.current;
+    if (current === "both" || current === "none" || current === platform) return;
+    manualLayout.current = true;
+    setLayout(platform);
+    onLayout(platform, true);
   }), [testing]);
   const performanceState = useSyncExternalStore(performance.subscribe, performance.getSnapshot);
   const wide = useMediaQuery("(min-width: 900px)");

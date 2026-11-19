@@ -3,6 +3,7 @@ import { LoaderCircleIcon, RefreshCwIcon, SmartphoneIcon, XIcon } from "lucide-r
 import { TestingNote } from "./testing-note";
 import { platformLabel } from "../testing-panel.ts";
 import type { TestingPanel } from "../testing-panel.ts";
+import type { DeviceAppsStore } from "../device-apps.ts";
 import { MAX_MATRIX_LIMIT, isTerminalLane, laneDuration, laneLabel, matrixFinished, matrixSummary } from "../testing-matrix.ts";
 import type { MatrixDeviceOption, MatrixLane } from "../testing-matrix.ts";
 import { formatRunDuration } from "../test-recorder.ts";
@@ -72,13 +73,14 @@ const LANE_TONE: Record<MatrixLane["state"], string> = {
   failed: "bg-destructive/10 text-destructive", error: "bg-destructive/10 text-destructive", cancelled: "bg-muted text-muted-foreground",
 };
 
-function LaneRow({ panel, lane, selected, totalSteps }: { panel: TestingPanel; lane: MatrixLane; selected: boolean; totalSteps?: number }) {
+function LaneRow({ panel, lane, selected, mirrored, totalSteps }: { panel: TestingPanel; lane: MatrixLane; selected: boolean; mirrored: boolean; totalSteps?: number }) {
   const active = !isTerminalLane(lane.state);
   const duration = laneDuration(lane);
-  return <li data-matrix-lane={lane.deviceId} data-lane-state={lane.state}
-    className={`flex items-center gap-2 rounded-md px-2 py-1.5 ${selected ? "bg-muted" : "hover:bg-muted/50"}`}>
-    <button type="button" className="flex min-w-0 flex-1 items-center gap-2 text-left" aria-pressed={selected} onClick={() => panel.selectLane(lane.runId)}>
-      <SmartphoneIcon className="size-3.5 shrink-0 text-muted-foreground" />
+  return <li data-matrix-lane={lane.deviceId} data-lane-state={lane.state} data-lane-mirrored={mirrored}
+    className={`flex items-center gap-2 rounded-md px-2 py-1.5 ${mirrored ? "bg-primary/10 ring-1 ring-primary/40" : selected ? "bg-muted" : "hover:bg-muted/50"}`}>
+    <button type="button" className="flex min-w-0 flex-1 items-center gap-2 text-left" aria-pressed={selected} aria-current={mirrored ? "true" : undefined}
+      title="Show this device's steps and mirror it." onClick={() => panel.openLane(lane.runId)}>
+      <SmartphoneIcon className={`size-3.5 shrink-0 ${mirrored ? "text-primary" : "text-muted-foreground"}`} />
       <span className="min-w-0 flex-1 truncate text-sm">{lane.deviceName}</span>
       <Badge variant="ghost" className={LANE_TONE[lane.state]}>{active && lane.state !== "queued" && <LoaderCircleIcon className="animate-spin" />}{laneLabel(lane, totalSteps)}</Badge>
       <span className="w-12 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{duration === undefined ? "" : formatRunDuration(duration)}</span>
@@ -91,8 +93,11 @@ function LaneRow({ panel, lane, selected, totalSteps }: { panel: TestingPanel; l
  * One row per device while a matrix runs and after it ends. Clicking a row shows that device's steps
  * on the preview below; the summary says how many passed and failed.
  */
-export function MatrixLanes({ panel, totalSteps }: { panel: TestingPanel; totalSteps?: number }) {
+export function MatrixLanes({ panel, deviceApps, totalSteps }: { panel: TestingPanel; deviceApps: DeviceAppsStore; totalSteps?: number }) {
   const state = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
+  // Every hook before the early return: a matrix appearing mid-session (an agent's run) must not
+  // change the hook count, or React throws and the whole panel falls to its error boundary.
+  const mirroredDevice = useSyncExternalStore(deviceApps.subscribe, () => deviceApps.getSnapshot().device?.udid);
   const matrix = state.matrix;
   if (!matrix) return null;
   const finished = matrixFinished(matrix);
@@ -105,7 +110,7 @@ export function MatrixLanes({ panel, totalSteps }: { panel: TestingPanel; totalS
         {finished && <Button type="button" size="xs" variant="ghost" onClick={() => panel.dismissMatrix()}>Dismiss</Button>}
       </span>
     </header>
-    <ul className="flex flex-col">{matrix.lanes.map(lane => <LaneRow key={lane.runId} panel={panel} lane={lane} selected={lane.runId === selected?.runId} {...(totalSteps === undefined ? {} : { totalSteps })} />)}</ul>
+    <ul className="flex flex-col">{matrix.lanes.map(lane => <LaneRow key={lane.runId} panel={panel} lane={lane} selected={lane.runId === selected?.runId} mirrored={lane.deviceId === mirroredDevice} {...(totalSteps === undefined ? {} : { totalSteps })} />)}</ul>
     {selected?.error && <p className="px-2 pt-1 text-xs text-destructive" role="alert">{selected.error}</p>}
   </section>;
 }

@@ -319,7 +319,7 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
 
     <AgentRecordingBanner panel={panel} />
 
-    <MatrixLanes panel={panel} />
+    <MatrixLanes panel={panel} deviceApps={deviceApps} />
 
     <TestingRecorder panel={panel} recordable={recordable} deviceId={deviceId} platform={platform} />
   </section>;

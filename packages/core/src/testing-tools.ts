@@ -105,7 +105,7 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
     }
     // Right after an agent opened the tab its first heartbeat may not have arrived; wait for it.
     const current = await panel.awaitPanelProject?.() ?? panel.panelProjectPath();
-    if (!current) throw new ExpectedOperationError("invalid_input", "The Testing tab is not open, so there is no project to work on. Open it with mobile_open_simulator (workspaceTool \"testing\"), then try again.");
+    if (!current) throw new ExpectedOperationError("invalid_input", "The Testing tab is not open, so there is no project to work on. If no Mobile Dev panel is showing in this chat, open it once with mobile_open_simulator (workspaceTool \"testing\"), then try again; if you already opened one, do not open another (each call adds a panel) and ask the user to show the existing panel and its Testing tab.");
     return selected ?? current;
   }
   const matrixWire = (run: MatrixRun) => ({ ...snapshotMatrix(run), running: run.lanes.some(lane => !["passed", "failed", "cancelled", "error"].includes(lane.state)) });

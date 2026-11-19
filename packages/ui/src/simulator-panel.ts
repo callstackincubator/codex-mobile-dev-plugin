@@ -1071,6 +1071,15 @@ export function createSimulatorPanel(
     openingTarget = undefined;
     void action(async () => { await disconnect(); selectDevice(); await start(); });
   });
+  /** Shows a listed, booted device in this mirror exactly as choosing it in the picker does. */
+  function showDevice(udid: string): boolean {
+    const listed = status?.devices.find(device => device.udid === udid) ?? physicalDevices.find(device => device.udid === udid);
+    if (!listed || listed.state !== "Booted" && listed.state !== "connected") return false;
+    if (devices.value !== udid) devices.value = udid;
+    if (devices.value !== udid) return false;
+    if (selected?.udid !== udid) devicePickerElement.dispatchEvent(new Event("change"));
+    return true;
+  }
   element("start-device").addEventListener("click", () => { void action(start); });
   root.querySelectorAll<HTMLButtonElement>("[data-button]").forEach(button => {
     button.addEventListener("click", () => { send({ type: "button", button: button.dataset.button === "home" ? "home" : "app-switcher" }); });
@@ -1129,6 +1138,7 @@ export function createSimulatorPanel(
     root,
     platform,
     get selected() { return selected; },
+    showDevice,
     fitScreen,
     controls,
     notice,

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { deleteTestFile, discardStagedTestFile, findConfig, inspectProject, listTestFiles, parseTargets, previewTestFile, readTestFile, resolveTestRunPaths, saveStagedTestFile, stageTestFile, readTestTarget, studioWorkspacePath, TestingProjectChoices, writeTestTarget, writeTestFile } from "../src/testing-projects.ts";
+import { deleteTestFile, discardStagedTestFile, findConfig, inspectProject, listTestFiles, parseTargets, previewTestFile, readTestFile, resolveTestRunPaths, saveStagedTestFile, stageTestFile, readTestTarget, studioWorkspacePath, TestingProjectChoices, writeTestTarget, writeTestFile, storedTestsChangeRevision } from "../src/testing-projects.ts";
 
 const CONFIG = `import { mobile } from "@e2e-dev/mobile";
 import type { E2EConfig } from "e2e";
@@ -213,6 +213,33 @@ test("the Studio workspace needs no project: it is created on demand, bundled, a
     const choices = new TestingProjectChoices(join(root, "choices"));
     await choices.record(studio);
     assert.deepEqual(await choices.list(), []);
+  } finally {
+    if (previous === undefined) delete process.env.MOBILE_DEV_TESTING_DIRECTORY;
+    else process.env.MOBILE_DEV_TESTING_DIRECTORY = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("every write to a stored test or its pinned app moves the change revision the panel polls", async () => {
+  const { root } = await project();
+  const previous = process.env.MOBILE_DEV_TESTING_DIRECTORY;
+  try {
+    process.env.MOBILE_DEV_TESTING_DIRECTORY = join(root, "studio-state");
+    const studio = studioWorkspacePath();
+    let seen = storedTestsChangeRevision();
+    const moved = () => { const now = storedTestsChangeRevision(); const did = now > seen; seen = now; return did; };
+    await writeTestFile(studio, "tests/flow.e2e.ts", SOURCE);
+    assert.ok(moved(), "a new file");
+    await writeTestFile(studio, "tests/flow.e2e.ts", SOURCE, false);
+    assert.ok(!moved(), "a refused overwrite changes nothing");
+    await writeTestFile(studio, "tests/flow.e2e.ts", SOURCE + "\n", true);
+    assert.ok(moved(), "a rewrite such as branch_line");
+    await writeTestTarget(studio, "tests/flow.e2e.ts", { platform: "ios", bundleId: "com.a" });
+    assert.ok(moved(), "a pin");
+    await writeTestTarget(studio, "tests/flow.e2e.ts", { platform: "android", bundleId: "com.b" }, "add");
+    assert.ok(moved(), "an added app");
+    await deleteTestFile(studio, "tests/flow.e2e.ts");
+    assert.ok(moved(), "a delete");
   } finally {
     if (previous === undefined) delete process.env.MOBILE_DEV_TESTING_DIRECTORY;
     else process.env.MOBILE_DEV_TESTING_DIRECTORY = previous;

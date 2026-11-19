@@ -135,3 +135,26 @@ test("a host's MCP root stands in for the project path", async t => {
     assert.equal((await other.request() as { path: string }).path, studioWorkspacePath(), "a root that is not a project is No project");
   });
 });
+
+test("a repeat open tells the agent the panel is already there, because the host draws a view per call", async t => {
+  await scratch(async () => {
+    const { open, client } = await openPlugin(t);
+    const texts = (result: Awaited<ReturnType<typeof open>>) => (result.content as { type: string; text: string }[]).map(part => part.text).join("\n");
+    assert.doesNotMatch(texts(await open({ projectPath: "" })), /already/i, "the first open says nothing");
+    // The tab has not reported (hidden, or still loading): the second call is told one was opened.
+    assert.match(texts(await open({ projectPath: "" })), /already opened in this chat.*Do not open more/s);
+    // Once the tab heartbeats, the warning says it is live.
+    await client.callTool({ name: "mobile_testing_set_context", arguments: { projectPath: studioWorkspacePath(), deviceId: "", bundleId: "" } });
+    assert.match(texts(await open({ projectPath: "" })), /already open in this chat and the Testing tab is reporting/);
+  });
+});
+
+test("booting a device never opens a panel", async t => {
+  await scratch(async () => {
+    const { client } = await openPlugin(t);
+    const result = await client.callTool({ name: "mobile_boot_simulator", arguments: { udid: "00000000-0000-0000-0000-000000000000" } });
+    assert.doesNotMatch(JSON.stringify(result.content), /panel/i);
+    const state = await client.callTool({ name: "mobile_testing_agent_state", arguments: {} });
+    assert.equal(state.structuredContent?.projectRequest, null, "no open call was made, so no panel was asked for");
+  });
+});

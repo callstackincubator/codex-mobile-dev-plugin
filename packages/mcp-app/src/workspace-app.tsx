@@ -45,6 +45,7 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
 
   const devices = new DeviceWorkspace(app, panels, { onAutomaticLayout: renderWorkspace, connectionFailed });
   panels.testing.setMirrorFocus(platform => devices.focusPlatform(platform));
+  panels.testing.setMirrorDevice((platform, deviceId) => devices.showDevice(platform, deviceId));
   panels.logs.setLayout(document.documentElement.dataset.view === "workspace");
   devices.changeLayout("none");
 

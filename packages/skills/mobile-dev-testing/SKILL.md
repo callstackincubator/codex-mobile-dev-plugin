@@ -20,7 +20,10 @@ The **Testing tab must be open**; it is how Mobile Dev knows the user is looking
 yourself: whenever `begin` or a run tool says the Testing tab is not open, call
 `mobile_open_simulator({ workspaceTool: "testing", projectPath })` (it also switches an open view to
 that tab) and then call the tool again. Do not ask the user to open it; the call waits for the tab to
-report in. **Always pass `projectPath`: your workspace root (working directory), or `""` when the
+report in. **Open it once per chat.** The host draws a new Mobile Dev panel for every
+`mobile_open_simulator` call, so a second call leaves two panels. Booting devices, recording, running
+and matrix runs never need it again and never open one; if a tool still says the tab is not open after you
+opened it, it is hidden or on another tab: ask the user to show it instead of opening another. **Always pass `projectPath`: your workspace root (working directory), or `""` when the
 chat has no project.** The tab then follows the chat: a folder that is not a mobile project (a
 scratch folder, such as a Codex `Documents/Codex/<date>/...` one) selects No project, so recording
 uses the app in the foreground; a project is selected and added to the list when missing. Never
@@ -36,7 +39,7 @@ user in a line:
 
 Never ask the user for a project, device or target up front, and never pass them to `begin`. If it
 refuses, the message names only what is missing, with one action each. Do those yourself when you
-can: boot a simulator (`mobile_boot_simulator`) or open the panel with `mobile_open_simulator`, then
+can: boot a simulator (`mobile_boot_simulator`) or, if no panel is open yet, open it with `mobile_open_simulator`, then
 `begin` again. Ask the user only when the message says to: which of several devices or targets, an
 app that must be opened or installed by hand, or a decision only they can make. **Never choose the project for them** — the picker is a system folder dialog, which must not open in the middle of your turn — and do not reach for another device because the chosen one is not booted.
 
@@ -143,8 +146,8 @@ deliverable — the panel is showing it, live, next to the steps.
 
 No project open — the Testing tab says Studio — means tests live in Mobile Dev's own storage, each
 pinned to an app. The tab must be open: every tool below reads the tab's selection and refuses
-when it has none. Then open it yourself with `mobile_open_simulator({ workspaceTool: "testing", projectPath })` and
-call the tool again; do not ask the user. `projectPath`
+when it has none. Then, if you have not opened the panel yet this chat, open it yourself with `mobile_open_simulator({ workspaceTool: "testing", projectPath })` and
+call the tool again; do not ask the user, and do not open a second panel. `projectPath`
 is optional on all of them; it defaults to the tab's project.
 
 ### Record, which saves

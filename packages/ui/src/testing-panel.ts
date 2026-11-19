@@ -42,6 +42,29 @@ export type TestingAgentView = {
   savedPath: string;
 };
 
+/**
+ * What survives the panel document: the project the user was last in, and the agent's project
+ * request this panel already applied. The host rebuilds the document often (and after a crash),
+ * and a fresh one must reopen on the same project rather than on the newest folder, or replay an
+ * agent's request the user has since moved past. Best effort: storage can be blocked.
+ */
+const PROJECT_STATE_KEY = "mobile-dev.testing.project";
+type StoredProjectState = { project?: string; request?: { id: number; path: string } };
+function readProjectState(): StoredProjectState {
+  try {
+    const stored = JSON.parse(globalThis.localStorage?.getItem(PROJECT_STATE_KEY) ?? "null") as unknown;
+    const data = object(stored);
+    const request = object(data?.request);
+    return {
+      ...(typeof data?.project === "string" && data.project ? { project: data.project } : {}),
+      ...(typeof request?.id === "number" && typeof request.path === "string" ? { request: { id: request.id, path: request.path } } : {}),
+    };
+  } catch { return {}; }
+}
+function writeProjectState(change: StoredProjectState) {
+  try { globalThis.localStorage?.setItem(PROJECT_STATE_KEY, JSON.stringify({ ...readProjectState(), ...change })); } catch { /* best effort */ }
+}
+
 /** 400 ms while an agent is recording, so a step lands in the panel as it is recorded. */
 const AGENT_POLL_ACTIVE_MS = 400;
 /**
@@ -212,6 +235,8 @@ export class TestingPanel {
 
   /** The agent recording's revision the panel has already adopted; -1 before the first poll. */
   private agentRevision = -1;
+  /** The server's stored-tests revision the panel has loaded; -1 before the first poll. */
+  private storedTestsRevision = -1;
   private agentTimer?: ReturnType<typeof setTimeout>;
   private agentPolling = false;
   /** The last selection reported to the server, so the context tool is not called on every tick. */
@@ -239,18 +264,24 @@ export class TestingPanel {
 
   private heartbeatTimer?: ReturnType<typeof setInterval>;
   private readonly onPageHide = () => { void this.clearReportedContext(); };
+  private beat() { if (this.snapshot.open) void this.reportContext(true); }
+  /** Coming back from throttling: report now rather than wait for the next (late) timer tick. */
+  private readonly onWake = () => { this.beat(); };
 
   constructor(app: HostBridge, deviceApps: DeviceAppsStore, options: { heartbeatMs?: number } = {}) {
     this.app = app;
     this.deviceApps = deviceApps;
     // The server only believes a panel that keeps reporting: a closed tab or window sends nothing.
-    this.heartbeatTimer = setInterval(() => {
-      const hidden = typeof document !== "undefined" && document.visibilityState === "hidden";
-      if (this.snapshot.open && !hidden) void this.reportContext(true);
-    }, options.heartbeatMs ?? PANEL_HEARTBEAT_MS);
+    // An unfocused host window reports the page hidden and throttles its timers; that is not the tab
+    // closing, so the beat does not check visibility. `snapshot.open` is the panel's own tab state.
+    this.heartbeatTimer = setInterval(() => { this.beat(); }, options.heartbeatMs ?? PANEL_HEARTBEAT_MS);
     // An interval must not keep a host process alive on its own.
     (this.heartbeatTimer as { unref?: () => void }).unref?.();
-    if (typeof window !== "undefined") window.addEventListener("pagehide", this.onPageHide);
+    if (typeof window !== "undefined") {
+      window.addEventListener("pagehide", this.onPageHide);
+      window.addEventListener("focus", this.onWake);
+    }
+    if (typeof document !== "undefined") document.addEventListener("visibilitychange", this.onWake);
     // The device is half of what an agent recording needs and it belongs to the simulator panel,
     // so the selection is reported whenever either half moves.
     this.stopWatchingDevices = deviceApps.subscribe(() => {
@@ -433,14 +464,17 @@ export class TestingPanel {
       if (await this.applyServerProjectRequest()) return;
       // No project is a state of its own: with nothing recorded against yet, Studio opens on its
       // private workspace so recording never waits for a folder to be chosen.
-      const latest = this.snapshot.projects[0]?.path || this.snapshot.studioPath;
+      // The one the user was last in, whether that was Studio or a folder; else the newest folder.
+      const last = readProjectState().project;
+      const known = last && (last === this.snapshot.studioPath || this.snapshot.projects.some(entry => entry.path === last)) ? last : "";
+      const latest = known || this.snapshot.projects[0]?.path || this.snapshot.studioPath;
       if (latest && !this.disposed && !this.snapshot.projectPath) await this.selectProject(latest);
     })();
     this.restoreRequest = request;
     try { await request; } finally { if (this.restoreRequest === request) this.restoreRequest = undefined; }
   }
 
-  private appliedProjectRequest = 0;
+  private appliedProjectRequest = readProjectState().request;
   private projectRequestApply?: Promise<void>;
 
   /**
@@ -452,8 +486,12 @@ export class TestingPanel {
     const request = object(data.projectRequest);
     const id = request?.id, path = text(request?.path);
     if (typeof id !== "number" || !path) return false;
-    if (id !== this.appliedProjectRequest) {
-      this.appliedProjectRequest = id;
+    // A request an earlier document of this panel already applied is spent, not a new instruction.
+    const applied = this.appliedProjectRequest;
+    if (applied && applied.id === id && applied.path === path && !this.projectRequestApply) return false;
+    if (!applied || applied.id !== id || applied.path !== path) {
+      this.appliedProjectRequest = { id, path };
+      writeProjectState({ request: { id, path } });
       this.projectRequestApply = (async () => {
         await this.refreshProjects();
         if (this.disposed || path === this.snapshot.projectPath) return;
@@ -548,6 +586,7 @@ export class TestingPanel {
   async selectProject(projectPath: string) {
     const path = projectPath.trim();
     const revision = ++this.loadRevision;
+    if (path) writeProjectState({ project: path });
     this.clearTestPreview();
     // The flow on screen belongs to the project it was recorded against, so the panel lets go of
     // its draft rather than rewriting that draft under a different project's path.
@@ -837,6 +876,32 @@ export class TestingPanel {
    */
   private focusMirror: ((platform: "ios" | "android") => boolean) | undefined;
   setMirrorFocus(focus: ((platform: "ios" | "android") => boolean) | undefined) { this.focusMirror = focus; }
+
+  private mirrorDevice: ((platform: "ios" | "android", deviceId: string) => boolean) | undefined;
+  setMirrorDevice(show: ((platform: "ios" | "android", deviceId: string) => boolean) | undefined) { this.mirrorDevice = show; }
+
+  /**
+   * A click on a result row: shows that lane's steps, and mirrors its device when the device is
+   * booted. Lanes run on their own device sessions, never through the mirror, so switching it
+   * during a run (the panel's or the agent's) does not touch the run.
+   */
+  openLane(runId: string) {
+    this.selectLane(runId);
+    const lane = this.snapshot.matrix?.lanes.find(entry => entry.runId === runId);
+    if (!lane) return;
+    // A single-mirror layout first switches to the lane's platform, since a hidden mirror cannot
+    // show a device. Only on the click itself, so a platform the user switches back to stays.
+    this.onLaneSelected?.(lane.platform);
+    if (this.deviceApps.getSnapshot().device?.udid === lane.deviceId) return;
+    if (this.mirrorDevice?.(lane.platform, lane.deviceId)) countUiEvent("ui.testing.lane_mirror");
+  }
+
+  private onLaneSelected?: (platform: "ios" | "android") => void;
+  /** The host chrome's way of hearing which platform a clicked lane ran on, to show that mirror. */
+  onLanePicked(listener: (platform: "ios" | "android") => void) {
+    this.onLaneSelected = listener;
+    return () => { if (this.onLaneSelected === listener) this.onLaneSelected = undefined; };
+  }
 
   async reRecordStoredLine(line: number) {
     const platform = this.reRecord?.platform;
@@ -1290,6 +1355,35 @@ export class TestingPanel {
     }
   }
 
+  /**
+   * A test or its pinned app was written by someone else (the agent's branch_line, set_target,
+   * wait_for_app pin, a save). Reload the list, which carries the pins, and the open test's source,
+   * unless the user has unsaved edits to it.
+   */
+  private followStoredTests(revision: number) {
+    const previous = this.storedTestsRevision;
+    this.storedTestsRevision = revision;
+    if (previous < 0 || revision === previous) return;
+    const { selectedTestPath, selectedTestStaged, loadingTest } = this.snapshot;
+    void this.refreshTests().then(() => {
+      if (selectedTestPath && !selectedTestStaged && !loadingTest && this.snapshot.selectedTestPath === selectedTestPath && !this.snapshot.selectedTestStaged) void this.reloadSelectedTest();
+    });
+  }
+
+  /** Re-reads the open test's stored source in place, keeping the preview on screen meanwhile. */
+  private async reloadSelectedTest() {
+    const { projectPath, selectedTestPath: relativePath } = this.snapshot;
+    if (!projectPath || !relativePath) return;
+    const revision = ++this.testReadRevision;
+    try {
+      const response = await this.call("mobile_testing_read_file", { projectPath, relativePath }, 15_000);
+      if (this.disposed || revision !== this.testReadRevision || this.snapshot.selectedTestPath !== relativePath || this.snapshot.selectedTestStaged) return;
+      const data = object(response.structuredContent);
+      this.update({ selectedTestSource: text(data?.source), selectedTestOriginalHash: text(data?.originalHash), selectedTestStaged: data?.staged === true });
+      countUiEvent("ui.testing.test_preview_reload");
+    } catch { /* the next change reloads it */ }
+  }
+
   private async readAgentState() {
     await this.readAgentRun();
     let data: Record<string, unknown>;
@@ -1310,6 +1404,7 @@ export class TestingPanel {
       title: text(data.title), goal: text(data.goal), steps: steps.length, note: text(data.note),
       draftId: text(data.draftId), savedPath: text(data.savedPath),
     };
+    this.followStoredTests(typeof data.storedTestsRevision === "number" ? data.storedTestsRevision : 0);
     const savedPath = agent.savedPath;
     const first = this.agentRevision < 0;
     const unchanged = !first && revision === this.agentRevision;
@@ -1844,7 +1939,8 @@ export class TestingPanel {
     void this.clearReportedContext();
     this.disposed = true;
     clearInterval(this.heartbeatTimer);
-    if (typeof window !== "undefined") window.removeEventListener("pagehide", this.onPageHide);
+    if (typeof window !== "undefined") { window.removeEventListener("pagehide", this.onPageHide); window.removeEventListener("focus", this.onWake); }
+    if (typeof document !== "undefined") document.removeEventListener("visibilitychange", this.onWake);
     clearTimeout(this.agentTimer);
     clearTimeout(this.draftTimer);
     this.stopWatchingDevices();

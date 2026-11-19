@@ -196,12 +196,13 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
   const opened: PanelOpener = async open => {
     // The Testing tab beats a moment after it loads; calls made in between wait for it rather than refuse.
     testingRecordings.expectPanel();
+    testingRecordings.noteOpenCall();
     const { projectPath, ...target } = open.target;
     if (target.workspaceTool === "testing") await followChatProject(projectPath);
     const openings = await Promise.all(panelOpeners.map(opener => opener({ ...open, target })));
     return openings.find(opening => opening !== undefined);
   };
-  const closePanel = panel?.register(server, { android, cpu, fps, drivers, page, showRecording, opened });
+  const closePanel = panel?.register(server, { android, cpu, fps, drivers, page, showRecording, opened, reopenNotice: () => testingRecordings.panelReopenNotice() });
   const featureContext = { connections: options.connections, onPanelOpen: (opener: PanelOpener) => { panelOpeners.push(opener); } };
   const featureCleanups = features.flatMap(feature => feature(server, featureContext) ?? []);
 

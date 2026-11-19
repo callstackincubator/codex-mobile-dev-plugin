@@ -230,6 +230,60 @@ test("a recording the agent saved in Studio refreshes the test list instead of a
   assert.equal(testRecorder.getSnapshot().recordingDeviceId, "");
 });
 
+test("a test the agent rewrites or re-pins refreshes the open preview and the pinned apps without reselecting", async t => {
+  const { panel, agent, tick, calls, responses } = await panelEnvironment(t);
+  panel.setAvailable(true);
+  await tick();
+  let source = "old source", pinned: Record<string, unknown> | undefined;
+  responses.mobile_testing_read_file = () => ({ source, originalHash: source });
+  responses.mobile_testing_tests = () => ({ tests: [{ relativePath: "tests/a.e2e.ts", name: "a.e2e.ts", updatedAt: "", sizeBytes: 1, ...(pinned ? { target: pinned } : {}) }] });
+  (panel as any).update({ projectPath: "/studio", runtimeMode: "bundled", selectedTestPath: "tests/a.e2e.ts", selectedTestSource: source, selectedTestOriginalHash: source, tests: [{ relativePath: "tests/a.e2e.ts", name: "a.e2e.ts", updatedAt: "", sizeBytes: 1, target: { platform: "ios", bundleId: "com.app" } }] });
+  const reads = () => calls.filter(entry => entry.name === "mobile_testing_read_file").length;
+  Object.assign(agent, { storedTestsRevision: 1 });
+  await (panel as any).readAgentState();
+  await tick();
+  const baseline = reads();
+  // branch_line rewrote the file, and set_target added the Android app.
+  source = "new source";
+  pinned = { platform: "ios", bundleId: "com.app", apps: { android: "com.app.android" } };
+  Object.assign(agent, { storedTestsRevision: 2 });
+  await (panel as any).readAgentState();
+  await tick();
+  assert.equal(panel.getSnapshot().selectedTestSource, "new source");
+  assert.ok(reads() > baseline);
+  assert.deepEqual(panel.getSnapshot().tests[0].target.apps, { android: "com.app.android" });
+  assert.equal(panel.storedAppOn("android")?.bundleId, "com.app.android", "the add-the-app prompt has what it needs to clear");
+  // An unchanged revision reads nothing; unsaved edits are not overwritten.
+  const before = reads();
+  await (panel as any).readAgentState();
+  await tick();
+  assert.equal(reads(), before);
+  (panel as any).update({ selectedTestSource: "mine", selectedTestStaged: true });
+  source = "newer";
+  Object.assign(agent, { storedTestsRevision: 3 });
+  await (panel as any).readAgentState();
+  await tick();
+  assert.equal(panel.getSnapshot().selectedTestSource, "mine");
+});
+
+test("clicking a result row selects the lane and mirrors its booted device, during a run too", async t => {
+  const { panel, setDevice } = await panelEnvironment(t);
+  const lane = (runId: string, deviceId: string, platform: string, state: string) => ({ runId, deviceId, deviceName: deviceId, platform, state, progress: [] });
+  const shown: [string, string][] = [];
+  panel.setMirrorDevice((platform: string, deviceId: string) => { shown.push([platform, deviceId]); setDevice({ ...DEVICE, udid: deviceId, platform }); return true; });
+  (panel as any).update({ running: true, agentRun: true, matrix: { matrixId: "m", lanes: [lane("r1", "udid", "ios", "running"), lane("r2", "pixel", "android", "running")], limit: 3, startedAt: 1 } });
+  panel.openLane("r2");
+  assert.deepEqual(shown, [["android", "pixel"]], "the mirror moved to the lane's device");
+  assert.equal(panel.getSnapshot().selectedLane, "r2");
+  assert.equal(panel.getSnapshot().running, true, "the run is untouched");
+  panel.openLane("r2");
+  assert.equal(shown.length, 1, "the device already mirrored is not switched again");
+  // A device that is not booted yet cannot be mirrored; the steps still show.
+  panel.setMirrorDevice(() => false);
+  panel.openLane("r1");
+  assert.equal(panel.getSnapshot().selectedLane, "r1");
+});
+
 test("an open, visible tab re-sends its selection on a heartbeat, and tells the server when it goes", async t => {
   const { TestingPanel, host, deviceApps, calls, tick } = await panelEnvironment(t);
   const beating = new TestingPanel(host, deviceApps, { heartbeatMs: 10 });

@@ -366,6 +366,14 @@ export async function resolveTestRunPaths(projectPath: string, relativePath: str
  * Writes one recorded test into the project. Without `overwrite` an existing file is reported
  * rather than replaced, so the panel can ask before it destroys someone's test.
  */
+/**
+ * Moves whenever a stored test or its pinned app changes on disk, by any writer: the panel, an
+ * agent's `branch_line`, `set_target`, `wait_for_app` pins, a save. The Testing panel's poll reads it
+ * so it reloads what it shows without the user reselecting the test.
+ */
+let storedTestsRevision = 0;
+export function storedTestsChangeRevision(): number { return storedTestsRevision; }
+
 export async function writeTestFile(projectPath: string, relativePath: string, contents: string, overwrite = false): Promise<WrittenTest> {
   const { root } = await testStorage(projectPath);
   if (Buffer.byteLength(contents, "utf-8") > MAX_TEST_BYTES) throw new ExpectedOperationError("invalid_input", "That test is too large to write.");
@@ -380,6 +388,7 @@ export async function writeTestFile(projectPath: string, relativePath: string, c
   } finally {
     await unlink(temporary).catch(() => undefined);
   }
+  storedTestsRevision += 1;
   return { path: target, written: true, existed };
 }
 
@@ -461,6 +470,7 @@ export async function writeTestTarget(projectPath: string, relativePath: string,
     const kept = current?.platform === checked.platform ? current.apps : undefined;
     targets[relativePath] = { ...checked, ...(kept ? { apps: kept } : {}) };
   });
+  storedTestsRevision += 1;
   return true;
 }
 
@@ -595,5 +605,6 @@ export async function deleteTestFile(projectPath: string, relativePath: string):
   const target = await resolveTestPath(root, relativePath);
   const removed = await unlink(target).then(() => true, () => false);
   if (removed && project.runtimeMode === "bundled") await changeTargets(root, targets => { delete targets[relativePath]; }).catch(() => undefined);
+  if (removed) storedTestsRevision += 1;
   return { path: target, removed };
 }

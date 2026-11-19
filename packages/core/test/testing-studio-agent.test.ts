@@ -371,7 +371,7 @@ test("a tab that stops reporting is closed: open, then stale, then refused, and 
     assert.equal(stale.isError, true, "stale");
     assert.match(stale.content[0].text, /Testing tab is not open.*mobile_open_simulator/);
     assert.equal(recordings.panelContext(), undefined, "the device selection goes with it");
-    await assert.rejects(() => recordings.begin({ title: "t", goal: "g" }), /Call mobile_open_simulator with workspaceTool "testing" to open it, then begin again/, "agent_begin refuses too");
+    await assert.rejects(() => recordings.begin({ title: "t", goal: "g" }), /call mobile_open_simulator with workspaceTool "testing" once to open it, then begin again/, "agent_begin refuses too");
 
     await report();
     assert.equal((await call("mobile_testing_tests")).isError, undefined, "a heartbeat revives it");
@@ -383,6 +383,23 @@ test("a tab that stops reporting is closed: open, then stale, then refused, and 
     // And leaving tells the server at once, without waiting out the expiry.
     await call("mobile_testing_set_context", { projectPath: "", deviceId: "", bundleId: "" });
     assert.equal((await call("mobile_testing_tests")).isError, true);
+  });
+});
+
+test("the default expiry outlasts a throttled background panel and still reports a silent one closed", async () => {
+  await withStudio(async studio => {
+    let clock = 1_000;
+    const { server, call } = fakeServer();
+    const recordings = new TestingAgentRecordings(fakeTreeDevices(), new TestDraftStore(join(studio, "drafts")), { now: () => clock });
+    registerTestingTools(server, PROJECTS, fakeTreeDevices(), undefined, { registry: new MatrixRegistry(), panel: recordings });
+    registerTestingAgentTools(server, fakeTreeDevices(), recordings);
+    await call("mobile_testing_set_context", { projectPath: studio, deviceId: "11111111-2222-3333-4444-555555555555", platform: "ios", bundleId: "com.app" });
+    clock += 70_000; // an unfocused window beating about once a minute
+    assert.equal((await call("mobile_testing_tests")).isError, undefined, "an unfocused panel is still open");
+    clock += 70_000;
+    assert.equal((await call("mobile_testing_tests")).isError, undefined, "a missed throttled beat is tolerated");
+    clock += 120_000;
+    assert.equal((await call("mobile_testing_tests")).isError, true, "a panel silent for minutes is closed");
   });
 });
 
@@ -485,7 +502,7 @@ test("ambiguous project mode asks which target, naming them", async () => {
 test("a closed Testing tab is the only thing begin reports", async () => {
   await withStudio(async studio => {
     const recordings = autoRecordings(studio, AUTO_OPS(null, []));
-    await assert.rejects(() => recordings.begin({ title: "t", goal: "g" }), (error: Error) => error.message === "The Testing tab is not open. Call mobile_open_simulator with workspaceTool \"testing\" to open it, then begin again.");
+    await assert.rejects(() => recordings.begin({ title: "t", goal: "g" }), (error: Error) => /^The Testing tab is not open\..*do not open another/.test(error.message));
   });
 });
 
