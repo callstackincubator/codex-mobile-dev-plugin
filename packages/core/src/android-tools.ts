@@ -38,7 +38,7 @@ function guarded<T>(handler: (input: T, context: ServerRequestContext) => Promis
 export function registerAndroidTools(server: McpServer, android: ServeEmu, appUri: string, copyScreenshot: (bytes: Buffer) => Promise<void>, closeCpu: (deviceId: string) => Promise<void>) {
   const streams = new AndroidStreams(android);
   server.registerTool("mobile_list_android_devices", {
-    title: "List Android devices", description: "Discover physical Android devices over USB or Wi-Fi and list running emulators and installed AVDs through ADB. Returns device kind, serial, model when available, transport for physical devices, and device/offline/unauthorized state (authorized devices use Booted). Listing does not boot, pair, authorize, or stream a device.", inputSchema: {}, annotations: read,
+    title: "List Android devices", description: "Discover physical Android devices over USB or Wi-Fi, running emulators and installed AVDs through ADB. Returns device kind, ADB serial (udid), model when available, transport for physical devices, and state (authorized devices use Booted). Pass the serial as deviceId to select a running device in the Android panel. Listing does not boot, pair, authorize, or stream a device.", inputSchema: {}, annotations: read,
   }, guarded(async () => {
     const status = await android.list();
     const text = status.connected ? JSON.stringify(status.devices) : status.error!;

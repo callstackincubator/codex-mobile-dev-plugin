@@ -1,6 +1,6 @@
 {
   "name": "mobile-dev",
-  "version": "0.1.186",
+  "version": "0.1.187",
   "private": true,
   "workspaces": [
     "packages/shared",
@@ -65,6 +65,7 @@
     "sentry:upload": "node tooling/upload-sourcemaps.mjs",
     "typecheck:telemetry": "tsc --noEmit --strict --skipLibCheck --target ES2022 --module ESNext --moduleResolution bundler --allowImportingTsExtensions packages/shared/src/telemetry.ts packages/core/src/instrument.ts packages/core/src/telemetry.ts packages/core/src/storage-metrics.ts packages/ui/src/telemetry.ts",
     "test:codex-plugin": "node apps/codex-plugin/tooling/smoke-codex-plugin.mjs",
+    "test:android-handoff": "node apps/codex-plugin/tooling/smoke-android-handoff.mjs",
     "test:updates": "node apps/codex-plugin/tooling/smoke-plugin-updates.mjs",
     "prepare": "husky",
     "lint:commits": "commitlint",
