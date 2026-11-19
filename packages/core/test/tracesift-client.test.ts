@@ -206,7 +206,11 @@ test("TraceSift client names a service too old for the Explore endpoints", async
   const profile = join(fake.home, "profile.json"); await writeFile(profile, "{}");
   const client = new TraceSiftClient("missing-tracesift", fake.home); t.after(() => client.close());
   await client.analyze(profile, "auto");
-  for (const explore of [client.exploreTask("analysis-1", 0), client.exploreReact("analysis-1")]) {
+  const requests = [
+    () => client.exploreTask("analysis-1", 0),
+    () => client.exploreReact("analysis-1"),
+  ];
+  for (const explore of requests) {
     await assert.rejects(explore, (error: unknown) =>
       error instanceof TraceSiftError && error.kind === "version" && /Update TraceSift/.test(error.message));
   }
