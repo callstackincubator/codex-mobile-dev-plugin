@@ -1,5 +1,5 @@
 
-!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="7267652b-90f4-529e-8670-add5ffc1eea2")}catch(e){}}();
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="599034e0-ab95-5f53-97d6-2bbbaf626c5c")}catch(e){}}();
 import { createRequire as mobileDevBundleRequire } from 'node:module'; import { fileURLToPath as mobileDevFileURLToPath } from 'node:url'; import { dirname as mobileDevPathDirname } from 'node:path'; const require = mobileDevBundleRequire(import.meta.url); const __filename = mobileDevFileURLToPath(import.meta.url); const __dirname = mobileDevPathDirname(__filename);
 import {
   appIntelQueryInput,
@@ -59,7 +59,7 @@ import {
   touchInputSchema,
   udidSchema,
   withDeviceAppsDiagnostic
-} from "./chunk-WVG2ILKX.mjs";
+} from "./chunk-Z4OHYVKQ.mjs";
 import {
   ExpectedOperationError,
   FailureEpisodes,
@@ -87,7 +87,7 @@ import {
   resolveTelemetryEnvironment,
   setDiscoveryCommandDiagnostic,
   telemetryHost
-} from "./chunk-FMLGTTBD.mjs";
+} from "./chunk-GVPIAWEJ.mjs";
 import "./chunk-AV7EIOVC.mjs";
 import {
   $ZodObject,
@@ -3081,7 +3081,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve5.call(this, root, ref);
+      let _sch = resolve6.call(this, root, ref);
       if (_sch === void 0) {
         const schema2 = (_a3 = root.localRefs) === null || _a3 === void 0 ? void 0 : _a3[ref];
         const { schemaId } = this.opts;
@@ -3108,7 +3108,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve5(root, ref) {
+    function resolve6(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -3938,7 +3938,7 @@ var require_fast_uri = __commonJS({
       }
       return uri2;
     }
-    function resolve5(baseURI, relativeURI, options) {
+    function resolve6(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const {
         parsed: baseParsed,
@@ -4307,7 +4307,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize: normalize4,
-      resolve: resolve5,
+      resolve: resolve6,
       resolveComponent,
       equal,
       serialize,
@@ -7390,12 +7390,12 @@ var require_isexe = __commonJS({
         if (typeof Promise !== "function") {
           throw new TypeError("callback not provided");
         }
-        return new Promise(function(resolve5, reject) {
+        return new Promise(function(resolve6, reject) {
           isexe(path, options || {}, function(er, is) {
             if (er) {
               reject(er);
             } else {
-              resolve5(is);
+              resolve6(is);
             }
           });
         });
@@ -7461,27 +7461,27 @@ var require_which = __commonJS({
         opt = {};
       const { pathEnv, pathExt, pathExtExe } = getPathInfo(cmd, opt);
       const found = [];
-      const step = (i) => new Promise((resolve5, reject) => {
+      const step = (i) => new Promise((resolve6, reject) => {
         if (i === pathEnv.length)
-          return opt.all && found.length ? resolve5(found) : reject(getNotFoundError(cmd));
+          return opt.all && found.length ? resolve6(found) : reject(getNotFoundError(cmd));
         const ppRaw = pathEnv[i];
         const pathPart = /^".*"$/.test(ppRaw) ? ppRaw.slice(1, -1) : ppRaw;
         const pCmd = path.join(pathPart, cmd);
         const p2 = !pathPart && /^\.[\\\/]/.test(cmd) ? cmd.slice(0, 2) + pCmd : pCmd;
-        resolve5(subStep(p2, i, 0));
+        resolve6(subStep(p2, i, 0));
       });
-      const subStep = (p2, i, ii) => new Promise((resolve5, reject) => {
+      const subStep = (p2, i, ii) => new Promise((resolve6, reject) => {
         if (ii === pathExt.length)
-          return resolve5(step(i + 1));
+          return resolve6(step(i + 1));
         const ext = pathExt[ii];
         isexe(p2 + ext, { pathExt: pathExtExe }, (er, is) => {
           if (!er && is) {
             if (opt.all)
               found.push(p2 + ext);
             else
-              return resolve5(p2 + ext);
+              return resolve6(p2 + ext);
           }
-          return resolve5(subStep(p2, i, ii + 1));
+          return resolve6(subStep(p2, i, ii + 1));
         });
       });
       return cb ? step(0).then((res) => cb(null, res), cb) : step(0);
@@ -9533,12 +9533,12 @@ var StdioServerTransport = class {
     this.onclose?.();
   }
   send(message3) {
-    return new Promise((resolve5) => {
+    return new Promise((resolve6) => {
       const json3 = serializeMessage(message3);
       if (this._stdout.write(json3)) {
-        resolve5();
+        resolve6();
       } else {
-        this._stdout.once("drain", resolve5);
+        this._stdout.once("drain", resolve6);
       }
     });
   }
@@ -15536,7 +15536,7 @@ var Protocol = class {
           return;
         }
         const pollInterval = task2.pollInterval ?? this._options?.defaultTaskPollInterval ?? 1e3;
-        await new Promise((resolve5) => setTimeout(resolve5, pollInterval));
+        await new Promise((resolve6) => setTimeout(resolve6, pollInterval));
         options?.signal?.throwIfAborted();
       }
     } catch (error51) {
@@ -15553,7 +15553,7 @@ var Protocol = class {
    */
   request(request, resultSchema, options) {
     const { relatedRequestId, resumptionToken, onresumptiontoken, task, relatedTask } = options ?? {};
-    return new Promise((resolve5, reject) => {
+    return new Promise((resolve6, reject) => {
       const earlyReject = (error51) => {
         reject(error51);
       };
@@ -15631,7 +15631,7 @@ var Protocol = class {
           if (!parseResult.success) {
             reject(parseResult.error);
           } else {
-            resolve5(parseResult.data);
+            resolve6(parseResult.data);
           }
         } catch (error51) {
           reject(error51);
@@ -15892,12 +15892,12 @@ var Protocol = class {
       }
     } catch {
     }
-    return new Promise((resolve5, reject) => {
+    return new Promise((resolve6, reject) => {
       if (signal.aborted) {
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
         return;
       }
-      const timeoutId = setTimeout(resolve5, interval);
+      const timeoutId = setTimeout(resolve6, interval);
       signal.addEventListener("abort", () => {
         clearTimeout(timeoutId);
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
@@ -17206,7 +17206,7 @@ var McpServer = class {
     let task = createTaskResult.task;
     const pollInterval = task.pollInterval ?? 5e3;
     while (task.status !== "completed" && task.status !== "failed" && task.status !== "cancelled") {
-      await new Promise((resolve5) => setTimeout(resolve5, pollInterval));
+      await new Promise((resolve6) => setTimeout(resolve6, pollInterval));
       const updatedTask = await extra.taskStore.getTask(taskId);
       if (!updatedTask) {
         throw new McpError(ErrorCode.InternalError, `Task ${taskId} not found during polling`);
@@ -34002,17 +34002,17 @@ async function bootAndroidEmulator(options, launch = spawn) {
     stdio: "ignore",
     shell: false
   });
-  const failed = new Promise((resolve5) => {
-    child.once("error", (error51) => resolve5(new Error(`Cannot start Android emulator ${options.name}. ${error51.message}`)));
-    child.once("exit", (code, signal2) => resolve5(new Error(`Android emulator ${options.name} exited before booting. code=${code ?? "none"} signal=${signal2 ?? "none"}. Start this AVD in Android Studio to read its error.`)));
+  const failed = new Promise((resolve6) => {
+    child.once("error", (error51) => resolve6(new Error(`Cannot start Android emulator ${options.name}. ${error51.message}`)));
+    child.once("exit", (code, signal2) => resolve6(new Error(`Android emulator ${options.name} exited before booting. code=${code ?? "none"} signal=${signal2 ?? "none"}. Start this AVD in Android Studio to read its error.`)));
   });
-  const launched = new Promise((resolve5) => child.once("spawn", resolve5));
+  const launched = new Promise((resolve6) => child.once("spawn", resolve6));
   const controller = new AbortController();
   const signal = AbortSignal.any([options.signal, controller.signal]);
   const stoppedError = () => new Error(options.signal.aborted ? "The plugin server closed while the Android emulator was starting." : "The Android emulator did not finish booting within two minutes. Refresh its status.");
   let stop;
-  const stopped = new Promise((resolve5) => {
-    stop = () => resolve5(stoppedError());
+  const stopped = new Promise((resolve6) => {
+    stop = () => resolve6(stoppedError());
     signal.addEventListener("abort", stop, { once: true });
     if (signal.aborted) stop();
   });
@@ -34447,7 +34447,7 @@ async function listAndroidLogDevices() {
 }
 function runLogProcess(command3, args, parse4, sink, signal, readyLine) {
   if (signal.aborted) return Promise.resolve();
-  return new Promise((resolve5, reject) => {
+  return new Promise((resolve6, reject) => {
     const child = spawn2(command3, args, { stdio: ["ignore", "pipe", "pipe"], shell: false });
     const decoder = new StringDecoder("utf8");
     let pending = "";
@@ -34508,11 +34508,11 @@ function runLogProcess(command3, args, parse4, sink, signal, readyLine) {
     };
     child.once("error", (error51) => {
       cleanup();
-      signal.aborted ? resolve5() : reject(error51);
+      signal.aborted ? resolve6() : reject(error51);
     });
     child.once("close", (code, exitSignal) => {
       cleanup();
-      if (signal.aborted) resolve5();
+      if (signal.aborted) resolve6();
       else reject(new Error(diagnostics.trim() || `Log reader exited: ${code ?? exitSignal}.`));
     });
   });
@@ -35137,12 +35137,12 @@ var ServeEmu = class {
       throw new Error("Mobile Dev cannot read its bundled Android streaming backend. Reinstall Mobile Dev, then restart the app running it.");
     });
     const listener = createServer();
-    await new Promise((resolve5, reject) => {
+    await new Promise((resolve6, reject) => {
       listener.once("error", reject);
-      listener.listen(0, "127.0.0.1", resolve5);
+      listener.listen(0, "127.0.0.1", resolve6);
     });
     const address2 = listener.address();
-    await new Promise((resolve5) => listener.close(() => resolve5()));
+    await new Promise((resolve6) => listener.close(() => resolve6()));
     if (!address2 || typeof address2 === "string") throw new Error("Cannot allocate an Android stream port.");
     if (this.disposed) throw new Error("The plugin server has closed.");
     const url2 = new URL(`http://127.0.0.1:${address2.port}`);
@@ -35312,17 +35312,17 @@ import { execFile as execFile5 } from "node:child_process";
 import { access as access5, mkdtemp, readdir as readdir2, rm as rm2 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join as join5 } from "node:path";
-var run2 = (file3, args, { timeout, input, maxBuffer = 8 * 1024 * 1024 }) => new Promise((resolve5, reject) => {
+var run2 = (file3, args, { timeout, input, maxBuffer = 8 * 1024 * 1024 }) => new Promise((resolve6, reject) => {
   const child = execFile5(file3, args, { encoding: "utf8", timeout, maxBuffer }, (error51, stdout, stderr) => {
     if (error51) reject(Object.assign(error51, { stdout, stderr }));
-    else resolve5(stdout);
+    else resolve6(stdout);
   });
   if (input !== void 0) child.stdin?.end(input);
 });
-var readBinary = (file3, args, { timeout }) => new Promise((resolve5, reject) => {
+var readBinary = (file3, args, { timeout }) => new Promise((resolve6, reject) => {
   execFile5(file3, args, { encoding: "buffer", timeout, maxBuffer: 64 * 1024 * 1024 }, (error51, stdout) => {
     if (error51) reject(error51);
-    else resolve5(stdout);
+    else resolve6(stdout);
   });
 });
 var aapt2;
@@ -37242,25 +37242,25 @@ var isRecord = (value) => typeof value === "object" && value !== null && !Array.
 var uid = (value) => isRecord(value) && Object.keys(value).length === 1 && typeof value["CF$UID"] === "number" ? value["CF$UID"] : void 0;
 function unarchive(archive) {
   const objects = Array.isArray(archive.$objects) ? archive.$objects : [];
-  const resolve5 = (value, path) => {
+  const resolve6 = (value, path) => {
     const index = uid(value);
     if (index !== void 0) {
       if (path.has(index)) return "<cycle>";
       const target2 = objects[index];
-      return target2 === "$null" ? null : resolve5(target2, new Set(path).add(index));
+      return target2 === "$null" ? null : resolve6(target2, new Set(path).add(index));
     }
-    if (Array.isArray(value)) return value.map((item) => resolve5(item, path));
+    if (Array.isArray(value)) return value.map((item) => resolve6(item, path));
     if (!isRecord(value)) return value;
     const { "NS.keys": keys, "NS.objects": values, "NS.string": string5, "NS.time": time4, "NS.data": data } = value;
-    if (Array.isArray(keys) && Array.isArray(values)) return Object.fromEntries(keys.map((key, index2) => [String(resolve5(key, path)), resolve5(values[index2], path)]));
-    if (Array.isArray(values)) return resolve5(values, path);
+    if (Array.isArray(keys) && Array.isArray(values)) return Object.fromEntries(keys.map((key, index2) => [String(resolve6(key, path)), resolve6(values[index2], path)]));
+    if (Array.isArray(values)) return resolve6(values, path);
     if (typeof string5 === "string") return string5;
     if (typeof time4 === "number") return appleDate(time4);
     if (data !== void 0) return data;
-    return Object.fromEntries(Object.entries(value).filter(([key]) => key !== "$class").map(([key, child]) => [key, resolve5(child, path)]));
+    return Object.fromEntries(Object.entries(value).filter(([key]) => key !== "$class").map(([key, child]) => [key, resolve6(child, path)]));
   };
   const top = isRecord(archive.$top) ? archive.$top : {};
-  return resolve5("root" in top ? top.root : top, /* @__PURE__ */ new Set());
+  return resolve6("root" in top ? top.root : top, /* @__PURE__ */ new Set());
 }
 async function plistJson(bytes, run5) {
   const binary2 = bytes.subarray(0, 6).toString("latin1") === "bplist";
@@ -37625,11 +37625,11 @@ var CodexAppFlowDecisionProvider = class {
     if (this.state === "suspended") return { state: "suspended" };
     if (this.state === "cancelled") return { state: "cancelled" };
     if (waitMs <= 0) return { state: "waiting" };
-    await new Promise((resolve5) => {
+    await new Promise((resolve6) => {
       const done = () => {
         clearTimeout(timer);
         this.waiters.delete(done);
-        resolve5();
+        resolve6();
       };
       const timer = setTimeout(done, Math.min(waitMs, 2e4));
       this.waiters.add(done);
@@ -37696,7 +37696,7 @@ var CodexAppFlowDecisionProvider = class {
       screenshot,
       createdAt: (/* @__PURE__ */ new Date()).toISOString()
     };
-    return new Promise((resolve5, reject) => {
+    return new Promise((resolve6, reject) => {
       const timer = setTimeout(() => {
         if (this.pending?.request.requestId !== request.requestId) return;
         this.state = "suspended";
@@ -37708,7 +37708,7 @@ var CodexAppFlowDecisionProvider = class {
         this.onSuspended?.(error51);
         this.notify();
       }, this.inactivityMs);
-      this.pending = { request, resolve: resolve5, reject, timer, startedAt: Date.now() };
+      this.pending = { request, resolve: resolve6, reject, timer, startedAt: Date.now() };
       this.notify();
     });
   }
@@ -37823,8 +37823,8 @@ async function loadVendoredAgentDevice() {
 }
 async function createAppFlowHost(options = {}) {
   const [{ createAppFlowService }, { createManualRecordingService }] = await Promise.all([
-    import("./app-flow-5XMPFZHL.mjs"),
-    import("./manual-63OOCMDC.mjs")
+    import("./app-flow-KVG3IH7H.mjs"),
+    import("./manual-JNMIFSOG.mjs")
   ]);
   const listeners = /* @__PURE__ */ new Set();
   const runs = /* @__PURE__ */ new Map();
@@ -38136,7 +38136,7 @@ async function createAppFlowHost(options = {}) {
         }
         await runStore.requestResolution(selectedProjectPath, { runId: selectedRunId, promptId, resolution: selectedResolution });
         for (let attempt = 0; attempt < 40; attempt += 1) {
-          await new Promise((resolve5) => setTimeout(resolve5, 50));
+          await new Promise((resolve6) => setTimeout(resolve6, 50));
           const updated = await runStore.readRun(selectedProjectPath);
           if (!updated || updated.runId !== selectedRunId || updated.state !== "needs-user-action") return { resolved: true, relayed: true };
         }
@@ -39598,7 +39598,7 @@ async function runOnce(request, deps) {
     }
   });
   const timeoutMs = request.timeoutMs ?? 10 * 6e4;
-  const exitCode = await new Promise((resolve5, reject) => {
+  const exitCode = await new Promise((resolve6, reject) => {
     const timer = setTimeout(() => {
       child.kill("SIGTERM");
       discard();
@@ -39612,7 +39612,7 @@ async function runOnce(request, deps) {
     });
     child.on("close", (code) => {
       clearTimeout(timer);
-      resolve5(code ?? 1);
+      resolve6(code ?? 1);
     });
   });
   if (generated) await rm5(generated, { force: true });
@@ -41111,30 +41111,30 @@ var LogBuffer = class {
     }
   }
   notify() {
-    for (const resolve5 of this.waiters) resolve5();
+    for (const resolve6 of this.waiters) resolve6();
     this.waiters.clear();
   }
   close() {
     this.closed = true;
     this.notify();
-    for (const resolve5 of this.batches) resolve5();
+    for (const resolve6 of this.batches) resolve6();
     this.batches.clear();
   }
   async read(after, waitMs = 1e3) {
-    if (!this.closed && after >= this.sequence && waitMs > 0) await new Promise((resolve5) => {
+    if (!this.closed && after >= this.sequence && waitMs > 0) await new Promise((resolve6) => {
       const done = () => {
         clearTimeout(timer);
         this.waiters.delete(done);
-        resolve5();
+        resolve6();
       };
       const timer = setTimeout(done, waitMs);
       this.waiters.add(done);
     });
-    if (!this.closed && waitMs > 0 && after < this.sequence) await new Promise((resolve5) => {
+    if (!this.closed && waitMs > 0 && after < this.sequence) await new Promise((resolve6) => {
       const done = () => {
         clearTimeout(timer);
         this.batches.delete(done);
-        resolve5();
+        resolve6();
       };
       const timer = setTimeout(done, 75);
       this.batches.add(done);
@@ -41200,7 +41200,7 @@ function startMetroLogs(target2, sink) {
 }
 function receiveMetro(target2, sink, signal) {
   if (signal.aborted) return Promise.resolve();
-  return new Promise((resolve5, reject) => {
+  return new Promise((resolve6, reject) => {
     const url2 = new URL(target2.webSocketDebuggerUrl);
     const origin = new URL(url2);
     origin.protocol = "http:";
@@ -41215,7 +41215,7 @@ function receiveMetro(target2, sink, signal) {
       clearInterval(heartbeat);
       signal.removeEventListener("abort", stop);
       socket.terminate();
-      signal.aborted || !error51 ? resolve5() : reject(error51);
+      signal.aborted || !error51 ? resolve6() : reject(error51);
     };
     const stop = () => finish();
     const timeout = setTimeout(() => finish(new Error("Metro did not enable console events.")), 1e4);
@@ -41529,11 +41529,11 @@ var CpuBuffer = class {
   }
   async read(after, waitMs = 1e3) {
     if (this.closed === false && after >= this.revision && waitMs > 0) {
-      await new Promise((resolve5) => {
+      await new Promise((resolve6) => {
         const done = () => {
           clearTimeout(timer);
           this.waiters.delete(done);
-          resolve5();
+          resolve6();
         };
         const timer = setTimeout(done, waitMs);
         this.waiters.add(done);
@@ -41625,8 +41625,8 @@ var GdbConnection = class {
   lastPacket = null;
   retransmits = 0;
   finishClosed;
-  closed = new Promise((resolve5) => {
-    this.finishClosed = resolve5;
+  closed = new Promise((resolve6) => {
+    this.finishClosed = resolve6;
   });
   onProfile = () => {
   };
@@ -41692,14 +41692,14 @@ var GdbConnection = class {
       const error51 = new Error(message3);
       return Promise.reject(error51);
     }
-    return new Promise((resolve5, reject) => {
+    return new Promise((resolve6, reject) => {
       const timer = setTimeout(() => {
         const name = command3.split(";")[0];
         const error51 = new Error(`Debugserver timed out during ${name}.`);
         this.socket.destroy(error51);
       }, timeoutMs);
       const expectsStop = command3.startsWith("vAttach");
-      this.pending = { resolve: resolve5, reject, timer, expectsStop };
+      this.pending = { resolve: resolve6, reject, timer, expectsStop };
       this.send(command3);
     });
   }
@@ -41727,12 +41727,12 @@ var GdbConnection = class {
       const error51 = new Error(message3);
       return Promise.reject(error51);
     }
-    return new Promise((resolve5, reject) => {
+    return new Promise((resolve6, reject) => {
       const timer = setTimeout(() => {
         const error51 = new Error("Debugserver did not stop for detach.");
         this.socket.destroy(error51);
       }, 5e3);
-      this.pending = { resolve: resolve5, reject, timer, expectsStop: true };
+      this.pending = { resolve: resolve6, reject, timer, expectsStop: true };
       const interrupt = Buffer.from([3]);
       this.socket.write(interrupt);
     });
@@ -41974,8 +41974,8 @@ async function startIosCpuMonitor(options, openTransport = openSimulatorDebugser
   let running = false;
   let stopping;
   let end;
-  const closed = new Promise((resolve5) => {
-    end = resolve5;
+  const closed = new Promise((resolve6) => {
+    end = resolve6;
   });
   const stop = () => {
     if (stopping) return stopping;
@@ -42034,8 +42034,8 @@ async function startIosCpuMonitor(options, openTransport = openSimulatorDebugser
     };
     const sampler = new CpuCounterSampler();
     let firstSample;
-    const ready = new Promise((resolve5) => {
-      firstSample = resolve5;
+    const ready = new Promise((resolve6) => {
+      firstSample = resolve6;
     });
     gdb.onProfile = (profile) => {
       const counters = parseCpuCounters(profile);
@@ -42106,17 +42106,17 @@ async function openPhysicalDebugserver(deviceId3, signal, helper = new URL("./io
   let pending = "";
   let accept;
   let fail;
-  const ready = new Promise((resolve5, reject) => {
-    accept = resolve5;
+  const ready = new Promise((resolve6, reject) => {
+    accept = resolve6;
     fail = reject;
   });
-  const exited = new Promise((resolve5) => {
+  const exited = new Promise((resolve6) => {
     child.once("close", (code, exitSignal) => {
       const message3 = diagnostics.trim() || `The iPhone debugserver helper exited (${code ?? exitSignal}).`;
       const error51 = new Error(message3);
       fail(error51);
       if (closing === void 0) socket?.destroy(error51);
-      resolve5(code);
+      resolve6(code);
     });
   });
   const close = () => {
@@ -42171,9 +42171,9 @@ async function openPhysicalDebugserver(deviceId3, signal, helper = new URL("./io
   try {
     const port2 = await ready;
     signal.throwIfAborted();
-    const connected = new Promise((resolve5, reject) => {
+    const connected = new Promise((resolve6, reject) => {
       socket = createConnection({ host: "127.0.0.1", port: port2 });
-      socket.once("connect", resolve5);
+      socket.once("connect", resolve6);
       socket.once("error", reject);
       socket.once("close", () => {
         const error51 = new Error("The iPhone debugserver connection closed before connecting.");
@@ -42330,16 +42330,16 @@ async function startAndroidCpuMonitor(options, dependencies) {
     shell: false
   });
   let finish;
-  const closed = new Promise((resolve5) => {
-    finish = resolve5;
+  const closed = new Promise((resolve6) => {
+    finish = resolve6;
   });
   let accept;
-  const ready = new Promise((resolve5) => {
-    accept = resolve5;
+  const ready = new Promise((resolve6) => {
+    accept = resolve6;
   });
   let exited;
-  const exit = new Promise((resolve5) => {
-    exited = resolve5;
+  const exit = new Promise((resolve6) => {
+    exited = resolve6;
   });
   let sampler;
   let stopping;
@@ -43824,13 +43824,13 @@ async function parseDescriptor(path) {
   return value;
 }
 async function freePort() {
-  return new Promise((resolve5, reject) => {
+  return new Promise((resolve6, reject) => {
     const server = createServer3();
     server.once("error", reject);
     server.listen(0, "127.0.0.1", () => {
       const address2 = server.address();
       const port2 = typeof address2 === "object" && address2 ? address2.port : 0;
-      server.close((error51) => error51 ? reject(error51) : resolve5(port2));
+      server.close((error51) => error51 ? reject(error51) : resolve6(port2));
     });
   });
 }
@@ -44095,7 +44095,7 @@ var TraceSiftClient = class {
     await this.launchExplore(["explore", analysisPath, "--commit", `${rootId}.${commitIndex}`], signal);
   }
   async launchExplore(args, signal) {
-    await new Promise((resolve5, reject) => {
+    await new Promise((resolve6, reject) => {
       let diagnostics = "";
       let settled = false;
       const child = spawn9(this.command, args, {
@@ -44112,7 +44112,7 @@ var TraceSiftClient = class {
         clearTimeout(timeout);
         signal?.removeEventListener("abort", abort);
         if (error51) reject(error51);
-        else resolve5();
+        else resolve6();
       };
       const abort = () => {
         child.kill("SIGTERM");
@@ -44160,7 +44160,7 @@ var TraceSiftClient = class {
     this.child = void 0;
     this.ready = void 0;
     if (!child || child.exitCode !== null || child.signalCode !== null) return;
-    const exited = new Promise((resolve5) => child.once("exit", () => resolve5()));
+    const exited = new Promise((resolve6) => child.once("exit", () => resolve6()));
     child.kill("SIGTERM");
     await Promise.race([exited, delay5(3e3, void 0, { ref: false })]);
   }
@@ -44240,14 +44240,14 @@ function folderCommand() {
   }
 }
 function run3(file3, args) {
-  return new Promise((resolve5, reject) => {
+  return new Promise((resolve6, reject) => {
     execFile12(file3, args, { timeout: PICKER_TIMEOUT_MS, maxBuffer: 64 * 1024 }, (error51, stdout, stderr) => {
       const code = error51 && typeof error51 === "object" && "code" in error51 ? error51.code : 0;
       if (typeof code === "string") {
         reject(error51);
         return;
       }
-      resolve5({ code: typeof code === "number" ? code : 0, stdout, stderr });
+      resolve6({ code: typeof code === "number" ? code : 0, stdout, stderr });
     });
   });
 }
@@ -44601,14 +44601,14 @@ async function collectorProcess(command3, args, options) {
   let ready;
   let watchdog;
   let startedSuccessfully = false;
-  const closed = new Promise((resolve5) => {
-    end = resolve5;
+  const closed = new Promise((resolve6) => {
+    end = resolve6;
   });
-  const exit = new Promise((resolve5) => {
-    exited = resolve5;
+  const exit = new Promise((resolve6) => {
+    exited = resolve6;
   });
-  const started = new Promise((resolve5) => {
-    ready = resolve5;
+  const started = new Promise((resolve6) => {
+    ready = resolve6;
   });
   const stop = () => {
     if (stopping) return stopping;
@@ -45143,11 +45143,11 @@ var DisplayFpsSessions = class {
     if (session === void 0) throw new ExpectedOperationError("session_expired", "This Display FPS session expired or closed.");
     session.expires = Date.now() + 3e5;
     if (after >= session.revision && waitMs > 0 && session.stopping === void 0) {
-      await new Promise((resolve5) => {
+      await new Promise((resolve6) => {
         const done = () => {
           clearTimeout(timer);
           session.waiters.delete(done);
-          resolve5();
+          resolve6();
         };
         const timer = setTimeout(done, waitMs);
         session.waiters.add(done);
@@ -45448,7 +45448,7 @@ var AppIntelligenceService = class {
     const run5 = { runId: randomUUID9(), phase: "discovering", message: "Discovering project", controller };
     this.runs.set(projectPath3, run5);
     try {
-      const snapshot2 = await new Promise((resolve5, reject) => {
+      const snapshot2 = await new Promise((resolve6, reject) => {
         const worker = new Worker(workerUrl(), { workerData: { projectPath: projectPath3 } });
         run5.worker = worker;
         let settled = false;
@@ -45467,7 +45467,7 @@ var AppIntelligenceService = class {
           if (message3.type === "progress") {
             run5.phase = "analyzing";
             run5.message = message3.message;
-          } else if (message3.type === "result") finish(() => resolve5(message3.snapshot));
+          } else if (message3.type === "result") finish(() => resolve6(message3.snapshot));
           else {
             const error51 = new Error(message3.message);
             error51.name = message3.name;
@@ -46840,7 +46840,7 @@ var StdioClientTransport = class {
     if (this._process) {
       throw new Error("StdioClientTransport already started! If using Client class, note that connect() calls start() automatically.");
     }
-    return new Promise((resolve5, reject) => {
+    return new Promise((resolve6, reject) => {
       this._process = (0, import_cross_spawn.default)(this._serverParams.command, this._serverParams.args ?? [], {
         // merge default env with server env because mcp server needs some env vars
         env: {
@@ -46857,7 +46857,7 @@ var StdioClientTransport = class {
         this.onerror?.(error51);
       });
       this._process.on("spawn", () => {
-        resolve5();
+        resolve6();
       });
       this._process.on("close", (_code) => {
         this._process = void 0;
@@ -46922,22 +46922,22 @@ var StdioClientTransport = class {
     if (this._process) {
       const processToClose = this._process;
       this._process = void 0;
-      const closePromise = new Promise((resolve5) => {
+      const closePromise = new Promise((resolve6) => {
         processToClose.once("close", () => {
-          resolve5();
+          resolve6();
         });
       });
       try {
         processToClose.stdin?.end();
       } catch {
       }
-      await Promise.race([closePromise, new Promise((resolve5) => setTimeout(resolve5, 2e3).unref())]);
+      await Promise.race([closePromise, new Promise((resolve6) => setTimeout(resolve6, 2e3).unref())]);
       if (processToClose.exitCode === null) {
         try {
           processToClose.kill("SIGTERM");
         } catch {
         }
-        await Promise.race([closePromise, new Promise((resolve5) => setTimeout(resolve5, 2e3).unref())]);
+        await Promise.race([closePromise, new Promise((resolve6) => setTimeout(resolve6, 2e3).unref())]);
       }
       if (processToClose.exitCode === null) {
         try {
@@ -46949,15 +46949,15 @@ var StdioClientTransport = class {
     this._readBuffer.clear();
   }
   send(message3) {
-    return new Promise((resolve5) => {
+    return new Promise((resolve6) => {
       if (!this._process?.stdin) {
         throw new Error("Not connected");
       }
       const json3 = serializeMessage(message3);
       if (this._process.stdin.write(json3)) {
-        resolve5();
+        resolve6();
       } else {
-        this._process.stdin.once("drain", resolve5);
+        this._process.stdin.once("drain", resolve6);
       }
     });
   }
@@ -46967,10 +46967,19 @@ var StdioClientTransport = class {
 import { execFile as execFile16 } from "node:child_process";
 import { mkdtemp as mkdtemp4 } from "node:fs/promises";
 import { homedir as homedir8, tmpdir as tmpdir5 } from "node:os";
-import { join as join26 } from "node:path";
+import { join as join26, resolve as resolve5 } from "node:path";
 import { fileURLToPath as fileURLToPath9 } from "node:url";
 import { promisify as promisify15 } from "node:util";
 var run4 = promisify15(execFile16);
+async function claimAgentDeviceStateDirectory(env = process.env, create = mkdtemp4) {
+  const configured = env.AGENT_DEVICE_STATE_DIR?.trim();
+  if (configured) return resolve5(configured);
+  const directory2 = await create(join26(tmpdir5(), "mobile-dev-agent-device-"));
+  const concurrentlyConfigured = env.AGENT_DEVICE_STATE_DIR?.trim();
+  if (concurrentlyConfigured) return resolve5(concurrentlyConfigured);
+  env.AGENT_DEVICE_STATE_DIR = directory2;
+  return directory2;
+}
 var AgentDeviceRuntime = class {
   cli;
   config;
@@ -47012,7 +47021,7 @@ var AgentDeviceRuntime = class {
     return env;
   }
   async createState() {
-    const directory2 = await mkdtemp4(join26(tmpdir5(), "mobile-dev-agent-device-"));
+    const directory2 = await claimAgentDeviceStateDirectory();
     console.error(`[mobile-dev] agent-device state directory: ${directory2}`);
     const stopStorageMetrics = startStorageMetrics({ agent_device_state: directory2, apple_runner_cache: join26(homedir8(), ".agent-device/apple-runner") });
     return { directory: directory2, stopStorageMetrics };
@@ -47399,13 +47408,13 @@ var Baguette = class {
   }
   async allocatePort() {
     const socket = createServer4();
-    await new Promise((resolve5, reject) => {
+    await new Promise((resolve6, reject) => {
       socket.once("error", reject);
-      socket.listen(0, "127.0.0.1", resolve5);
+      socket.listen(0, "127.0.0.1", resolve6);
     });
     const address2 = socket.address();
     if (!address2 || typeof address2 === "string") throw new Error("Could not allocate a port for the bundled simulator backend.");
-    await new Promise((resolve5) => socket.close(() => resolve5()));
+    await new Promise((resolve6) => socket.close(() => resolve6()));
     return address2.port;
   }
   async ensureStarted() {
@@ -47742,7 +47751,7 @@ var AndroidStreams = class {
       this.notify(session);
     });
     try {
-      await new Promise((resolve5, reject) => {
+      await new Promise((resolve6, reject) => {
         const cleanup = () => {
           socket.off("open", opened);
           socket.off("error", failed);
@@ -47750,7 +47759,7 @@ var AndroidStreams = class {
         };
         const opened = () => {
           cleanup();
-          resolve5();
+          resolve6();
         };
         const failed = (error51) => {
           cleanup();
@@ -47805,11 +47814,11 @@ var AndroidStreams = class {
     const session = this.session(id2);
     await this.backend.assertDevice(session.deviceId, session.url);
     if (!session.error && !session.packets.some((packet) => packet.sequence > after)) {
-      await new Promise((resolve5) => {
+      await new Promise((resolve6) => {
         const done = () => {
           clearTimeout(timer);
           session.waiters.delete(done);
-          resolve5();
+          resolve6();
         };
         const timer = setTimeout(done, 1e3);
         session.waiters.add(done);
@@ -47921,7 +47930,7 @@ function registerAndroidTools(server, android2, appUri, copyScreenshot, closeCpu
   const streams = new AndroidStreams(android2);
   server.registerTool("mobile_list_android_devices", {
     title: "List Android devices",
-    description: "Discover physical Android devices over USB or Wi-Fi and list running emulators and installed AVDs through ADB. Returns device kind, serial, model when available, transport for physical devices, and device/offline/unauthorized state (authorized devices use Booted). Listing does not boot, pair, authorize, or stream a device.",
+    description: "Discover physical Android devices over USB or Wi-Fi, running emulators and installed AVDs through ADB. Returns device kind, ADB serial (udid), model when available, transport for physical devices, and state (authorized devices use Booted). Pass the serial as deviceId to select a running device in the Android panel. Listing does not boot, pair, authorize, or stream a device.",
     inputSchema: {},
     annotations: read10
   }, guarded(async () => {
@@ -48085,7 +48094,7 @@ var maximumReplyBytes = 16 * 1024 * 1024;
 
 // packages/core/src/ios-mirror-client.ts
 async function connect(path) {
-  return new Promise((resolve5, reject) => {
+  return new Promise((resolve6, reject) => {
     const socket = createConnection2(path);
     const timer = setTimeout(() => {
       const error51 = new Error("Shared iOS capture connection timed out.");
@@ -48095,7 +48104,7 @@ async function connect(path) {
     socket.once("connect", () => {
       clearTimeout(timer);
       socket.removeListener("error", reject);
-      resolve5(socket);
+      resolve6(socket);
     });
     socket.once("close", () => clearTimeout(timer));
   });
@@ -48191,9 +48200,9 @@ async function connectIosCapture(path, udid) {
       return Promise.reject(error51);
     }
     const id2 = ++sequence4;
-    return new Promise((resolve5, reject) => {
+    return new Promise((resolve6, reject) => {
       const timer = setTimeout(() => disconnect("Shared iOS capture request timed out."), 3e4);
-      pending.set(id2, { resolve: resolve5, reject, timer });
+      pending.set(id2, { resolve: resolve6, reject, timer });
       const encoded2 = JSON.stringify({ ...command3, id: id2 });
       socket.write(encoded2 + "\n");
     });
@@ -48845,7 +48854,7 @@ async function inspectReactNative(request, signal) {
 }
 function readSnapshot(url2, signal) {
   if (signal?.aborted) return Promise.reject(new Error("Component inspection cancelled."));
-  return new Promise((resolve5, reject) => {
+  return new Promise((resolve6, reject) => {
     const origin = new URL(url2);
     origin.protocol = "http:";
     const binding = `__mobile_dev_inspection_${randomUUID10().replaceAll("-", "")}`;
@@ -48864,7 +48873,7 @@ function readSnapshot(url2, signal) {
         if (socket.readyState === import_websocket.default.OPEN) socket.close();
         else socket.terminate();
         if (error51) reject(error51);
-        else resolve5(result4);
+        else resolve6(result4);
       };
       if (socket.readyState !== import_websocket.default.OPEN) {
         cleanup();
@@ -49100,9 +49109,9 @@ var ThrottleProxy = class {
     this.link.up.profile = profile;
   }
   listen() {
-    return new Promise((resolve5, reject) => {
+    return new Promise((resolve6, reject) => {
       this.server.once("error", reject);
-      this.server.listen(0, "127.0.0.1", () => resolve5(this.server.address().port));
+      this.server.listen(0, "127.0.0.1", () => resolve6(this.server.address().port));
     });
   }
   // Local destinations get no pacers, so they pass through at full speed.
@@ -49176,7 +49185,7 @@ var ThrottleProxy = class {
   }
   close() {
     for (const socket of this.sockets) socket.destroy();
-    return new Promise((resolve5) => this.server.close(() => resolve5()));
+    return new Promise((resolve6) => this.server.close(() => resolve6()));
   }
 };
 async function proxyToken(port2) {
@@ -49832,7 +49841,7 @@ var StreamSessions = class {
     this.expiry.unref();
   }
   notify(session) {
-    for (const resolve5 of session.waiters) resolve5();
+    for (const resolve6 of session.waiters) resolve6();
     session.waiters.clear();
   }
   async open(udid, fps) {
@@ -49906,10 +49915,10 @@ var StreamSessions = class {
       this.notify(session);
     });
     try {
-      await new Promise((resolve5, reject) => {
+      await new Promise((resolve6, reject) => {
         const opened = () => {
           cleanup();
-          resolve5();
+          resolve6();
         };
         const failed = (error51) => {
           cleanup();
@@ -50002,12 +50011,12 @@ var StreamSessions = class {
     if (session.error) throw new Error(session.error);
     this.reconnect(session);
     if (!session.error && (!session.frame || session.frame.sequence <= after)) {
-      await new Promise((resolve5) => {
+      await new Promise((resolve6) => {
         const done = () => {
           clearTimeout(timer);
           signal?.removeEventListener("abort", done);
           session.waiters.delete(done);
-          resolve5();
+          resolve6();
         };
         const timer = setTimeout(done, 1e3);
         session.waiters.add(done);
@@ -50191,7 +50200,7 @@ function guarded2(handler) {
     }
   };
 }
-var INSTRUCTIONS2 = "For mobile app development, open mobile_open_simulator before the first device launch, or reuse the open view. Use selected device IDs. Control apps with the device_* tools when the server has them. Use mobile_generate_app_intel to create the app's screen/dependency map, then mobile_open_app_intel to show it in chat. For a specific screen's dependencies, look its ID up with mobile_app_intel and pass it as mobile_open_app_intel's appIntelScreen to render that screen's graph; use mobile_app_intel alone, without opening the panel, for a file's importers/imports or when the user wants the answer as text, not a view. When the user asks to see their devices, open or reuse the view, whose device menu lists them. If a task has ambiguous device targets, ask the user with mobile_choose_devices when it is available, otherwise in chat; proceed only after they choose. For a local CPU or React profile path, use mobile_analyze_profile to show TraceSift findings, then wait for the user to choose Investigate. See the Mobile Dev skill, when installed, for device control, logs, profiles, App Intelligence, and performance workflows.";
+var INSTRUCTIONS2 = "Use mobile_open_simulator before the first device launch or reuse the open panel. Use the Mobile Dev panel to show or control Android devices. Open a separate scrcpy window only if the user explicitly asks for one. When mobile_read_panel_context is available, read the panel's active device before targeting it. Use selected IDs with available device_* tools. Show devices in the panel menu. If targets are ambiguous, ask with mobile_choose_devices when it is available, otherwise in chat. Generate screen maps with mobile_generate_app_intel and show them with mobile_open_app_intel. For screen dependencies, find the ID with mobile_app_intel and pass it as appIntelScreen to mobile_open_app_intel. Use mobile_app_intel alone for file imports/importers or text answers. For local CPU or React profiles use mobile_analyze_profile and await the user's Investigate action. See the Mobile Dev skill.";
 function createPanel({ baguette = new Baguette(), simulatorInput, copyScreenshot = copyPNGToClipboard, resourceSaving = new ResourceSaving(), inline = true } = {}) {
   return {
     inline,
@@ -50328,7 +50337,7 @@ function registerPanel(server, { android: android2, cpu, fps, drivers, page, sho
     entrypoint: "global"
   });
   openingTool("mobile_open_simulator", {
-    description: "Open Mobile Dev alongside the chat for local mobile app development, before the first device launch unless a view is open or the workflow is tool-only. Pass established platform, kind, or discovered deviceId to select the initial device; omit undecided fields. Starts the bundled backend without booting devices.",
+    description: "Open or reuse the Mobile Dev panel alongside the chat to view and control a device. For app development, open before the first device launch unless the workflow is tool-only. Pass the requested platform, kind, or a discovered deviceId to select the device. Omit undecided fields. Starts the bundled backend without booting devices.",
     resourceUri: APP_URI,
     entrypoint: "thread"
   });
@@ -50924,7 +50933,7 @@ var readBodyDirect = (request) => {
     request[bodyBufferKey] = buffered;
     return Promise.resolve(buffered);
   }
-  const promise2 = new Promise((resolve5, reject) => {
+  const promise2 = new Promise((resolve6, reject) => {
     const chunks = [];
     let settled = false;
     const finish = (callback) => {
@@ -50942,7 +50951,7 @@ var readBodyDirect = (request) => {
         else if (recovered === void 0) reject(error51 ?? normalizeAbortError(request, incoming));
         else {
           request[bodyBufferKey] = recovered;
-          resolve5(recovered);
+          resolve6(recovered);
         }
       });
       return true;
@@ -50954,7 +50963,7 @@ var readBodyDirect = (request) => {
       finish(() => {
         const buffer = chunks.length === 1 ? chunks[0] : Buffer.concat(chunks);
         request[bodyBufferKey] = buffer;
-        resolve5(buffer);
+        resolve6(buffer);
       });
     };
     const onError = (error51) => {
@@ -51501,7 +51510,7 @@ var responseViaResponseObject = async (res, outgoing, options = {}) => {
         });
         if (!chunk) {
           if (i === 1) {
-            await new Promise((resolve5) => setTimeout(resolve5));
+            await new Promise((resolve6) => setTimeout(resolve6));
             maxReadCount = 3;
             continue;
           }
@@ -52236,9 +52245,9 @@ data:
       const initRequest = messages.find((m2) => isInitializeRequest(m2));
       const clientProtocolVersion = initRequest ? initRequest.params.protocolVersion : req.headers.get("mcp-protocol-version") ?? DEFAULT_NEGOTIATED_PROTOCOL_VERSION;
       if (this._enableJsonResponse) {
-        return new Promise((resolve5) => {
+        return new Promise((resolve6) => {
           this._streamMapping.set(streamId, {
-            resolveJson: resolve5,
+            resolveJson: resolve6,
             cleanup: () => {
               this._streamMapping.delete(streamId);
             }
@@ -52682,11 +52691,11 @@ async function startPanelPage(connections, host, page = PAGE) {
       else reply(response3, 500);
     });
   });
-  await new Promise((resolve5, reject) => {
+  await new Promise((resolve6, reject) => {
     http.once("error", reject);
     http.listen(0, "127.0.0.1", () => {
       http.off("error", reject);
-      resolve5();
+      resolve6();
     });
   });
   const { port: port2 } = http.address();
@@ -52802,7 +52811,7 @@ async function startPanelPage(connections, host, page = PAGE) {
     async close() {
       closing = true;
       clearInterval(expiry);
-      const stopped = new Promise((resolve5) => http.close(() => resolve5()));
+      const stopped = new Promise((resolve6) => http.close(() => resolve6()));
       const connectionsClosing = Array.from(sessions.values(), (session) => session.transport.close());
       await Promise.allSettled(connectionsClosing);
       http.closeAllConnections();
@@ -52839,4 +52848,4 @@ content-type/index.js:
    *)
 */
 
-//# debugId=7267652b-90f4-529e-8670-add5ffc1eea2
+//# debugId=599034e0-ab95-5f53-97d6-2bbbaf626c5c

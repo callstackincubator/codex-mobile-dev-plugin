@@ -1,5 +1,5 @@
 
-!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="90f83a24-cc37-5525-89e9-3cf679b8b863")}catch(e){}}();
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="a972d5f3-e7af-5e26-b4c6-0adf96056161")}catch(e){}}();
 import { createRequire as mobileDevBundleRequire } from 'node:module'; import { fileURLToPath as mobileDevFileURLToPath } from 'node:url'; import { dirname as mobileDevPathDirname } from 'node:path'; const require = mobileDevBundleRequire(import.meta.url); const __filename = mobileDevFileURLToPath(import.meta.url); const __dirname = mobileDevPathDirname(__filename);
 import {
   captureServerError,
@@ -9,11 +9,11 @@ import {
   parseBaseUrl,
   requiresDecisionProvider,
   resolveAppFlowStart
-} from "./chunk-WVG2ILKX.mjs";
+} from "./chunk-Z4OHYVKQ.mjs";
 import {
   ExpectedOperationError,
   public_api_exports
-} from "./chunk-FMLGTTBD.mjs";
+} from "./chunk-GVPIAWEJ.mjs";
 
 // packages/core/src/app-flow/parser.ts
 import { readdir, readFile, stat } from "node:fs/promises";
@@ -3659,8 +3659,8 @@ function log(step, detail) {
 function measurePhase(ctx, phase, work) {
   return ctx.timing?.measure(phase, work) ?? work();
 }
-function agentDeviceBootCommand() {
-  return "agent-device boot --platform ios --target mobile";
+function agentDeviceBootCommand(udid) {
+  return `agent-device boot --platform ios --target mobile --udid ${quoteCliArg(udid)}`;
 }
 function agentDeviceInstallCommand(app, appPath) {
   return `agent-device install ${quoteCliArg(app)} ${quoteCliArg(appPath)} --platform ios`;
@@ -3685,6 +3685,23 @@ async function closeExistingSession(client) {
   try {
     await client.sessions.close();
   } catch {
+  }
+}
+async function handoffCaptureDevice(client, deviceId) {
+  const sessions = await client.sessions.list();
+  const owners = sessions.filter((session) => session.device?.id === deviceId);
+  for (const owner3 of owners) {
+    const session = owner3.address ?? owner3.name;
+    if (typeof session !== "string" || !session.trim()) continue;
+    log("sessions.close", `handoff device=${deviceId} owner=${owner3.name ?? session}`);
+    try {
+      await client.sessions.close({ session });
+    } catch (error) {
+      throw new ExpectedOperationError(
+        "resource_limit",
+        `App Flow could not take the simulator from agent-device session "${owner3.name ?? session}". Wait for that session to finish its current command, then retry. (${errorMessage(error)})`
+      );
+    }
   }
 }
 function detectPackageManager(projectPath) {
@@ -4009,11 +4026,20 @@ function installedAppLaunchTarget(app) {
   const formattedApp = app.match(/^.+\s+\(([A-Za-z0-9_.-]+\.[A-Za-z0-9_.-]+)\)$/);
   return formattedApp?.[1]?.trim() || app;
 }
-async function listInstalledApps(client, platform) {
-  return await client.apps.list({ platform }).catch(() => []);
+async function listInstalledApps(client, platform, deviceId) {
+  try {
+    return await client.apps.list({ platform, ...deviceSelector(platform, deviceId) });
+  } catch (error) {
+    log("apps.list", `failed \u2014 ${errorMessage(error)}`);
+    return [];
+  }
 }
-async function ensureExpoGoInstalled(client, ctx) {
-  const apps = await listInstalledApps(client, ctx.platform);
+function deviceSelector(platform, deviceId) {
+  if (!deviceId) return {};
+  return platform === "android" ? { serial: deviceId } : { udid: deviceId };
+}
+async function ensureExpoGoInstalled(client, ctx, deviceId) {
+  const apps = await listInstalledApps(client, ctx.platform, deviceId);
   const existing = matchInstalledApp(apps, [EXPO_GO_APP_NAME, "host.exp.Exponent"]);
   if (existing) {
     log("Expo Go already installed", existing);
@@ -4023,7 +4049,8 @@ async function ensureExpoGoInstalled(client, ctx) {
   log("apps.install", appPath);
   const result = await client.apps.install({
     appPath,
-    platform: ctx.platform
+    platform: ctx.platform,
+    ...deviceSelector(ctx.platform, deviceId)
   });
   return {
     launchTarget: result.app || result.appId || EXPO_GO_APP_NAME,
@@ -4055,6 +4082,7 @@ async function openAppSession(client, app, options) {
     await client.apps.open({
       app: launchTarget,
       platform: "ios",
+      ...options?.udid ? { udid: options.udid } : {},
       ...url ? { url } : {},
       ...options?.relaunch ? { relaunch: true } : {}
     });
@@ -4149,7 +4177,7 @@ async function openInstalledApp(client, ctx, mode, options) {
     });
     return { launchTarget, launchUrl, useCustomScheme: false };
   }
-  const apps = await listInstalledApps(client, ctx.platform);
+  const apps = await listInstalledApps(client, ctx.platform, options.udid);
   const nativeTarget = matchInstalledApp(apps, [ctx.bundleId, ctx.appName, ctx.slug]);
   if (!nativeTarget) {
     const lookedFor = [ctx.bundleId, ctx.appName, ctx.slug].filter(Boolean).join(", ") || "an app name";
@@ -4184,13 +4212,19 @@ async function resolveReusableNativeBuild(client, ctx, deviceId) {
     );
     return null;
   }
-  const apps = await listInstalledApps(client, ctx.platform);
+  const apps = await listInstalledApps(client, ctx.platform, deviceId);
   const installed = matchInstalledApp(apps, [recorded]);
   if (!installed) {
     log("checkInstalledBuild", `${recorded} is no longer installed \u2014 rebuilding`);
     return null;
   }
   return installed;
+}
+function selectCaptureSimulator(devices, excludedId) {
+  const simulators = devices.filter(
+    (device) => device.kind === "simulator" && device.id !== excludedId
+  );
+  return simulators.find((device) => device.booted) ?? simulators[0] ?? null;
 }
 async function bootPreferredDevice(client, ctx) {
   const preferred = await nativeBuildStore().preferredDevice(ctx.projectPath, ctx.platform);
@@ -4205,15 +4239,26 @@ async function bootPreferredDevice(client, ctx) {
     } catch (error) {
       log(
         "devices.boot",
-        `${preferred} unavailable (${errorMessage(error)}) \u2014 letting the daemon pick`
+        `${preferred} unavailable (${errorMessage(error)}) \u2014 choosing another simulator`
       );
     }
-  } else {
-    log("devices.boot", "platform=ios target=mobile");
   }
-  return await client.devices.boot({
+  const devices = await client.devices.list({
     platform: "ios",
     target: "mobile"
+  });
+  const selected = selectCaptureSimulator(devices, preferred ?? void 0);
+  if (!selected) {
+    throw new ExpectedOperationError("device_unavailable", "No iOS simulator is available for App Flow.");
+  }
+  log(
+    "devices.boot",
+    `platform=ios target=mobile udid=${selected.id} (${selected.booted ? "already booted" : "first available"})`
+  );
+  return await client.devices.boot({
+    platform: "ios",
+    target: "mobile",
+    udid: selected.id
   });
 }
 async function bootDevice(ctx) {
@@ -4230,7 +4275,8 @@ async function bootDevice(ctx) {
   await closeExistingSession(client);
   const bootResult = await bootPreferredDevice(client, ctx);
   log("devices.boot", `device=${bootResult.device} id=${bootResult.id}`);
-  const setupCommands = [agentDeviceBootCommand()];
+  await handoffCaptureDevice(client, bootResult.id);
+  const setupCommands = [agentDeviceBootCommand(bootResult.id)];
   let expoGoTarget;
   let launchProcess = null;
   let metroPort;
@@ -4256,7 +4302,7 @@ async function bootDevice(ctx) {
         }
       }
     } else {
-      const expoGo = await ensureExpoGoInstalled(client, ctx);
+      const expoGo = await ensureExpoGoInstalled(client, ctx, bootResult.id);
       expoGoTarget = expoGo.launchTarget;
       if (expoGo.installPath) {
         setupCommands.push(agentDeviceInstallCommand(expoGo.launchTarget, expoGo.installPath));
@@ -16512,4 +16558,4 @@ export {
   createAppFlowService
 };
 
-//# debugId=90f83a24-cc37-5525-89e9-3cf679b8b863
+//# debugId=a972d5f3-e7af-5e26-b4c6-0adf96056161

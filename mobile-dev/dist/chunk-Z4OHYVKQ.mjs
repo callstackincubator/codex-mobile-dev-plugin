@@ -27,7 +27,7 @@ import {
   telemetryHost,
   withIsolationScope,
   wrapMcpServerWithSentry
-} from "./chunk-FMLGTTBD.mjs";
+} from "./chunk-GVPIAWEJ.mjs";
 import {
   external_exports
 } from "./chunk-BNXJFHSV.mjs";
