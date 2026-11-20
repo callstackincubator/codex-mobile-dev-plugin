@@ -131,6 +131,12 @@ asserting text you have not seen.
   them. (Studio mode's `finish` saves for you; that is the one exception.)
 - **Never run the test** while recording. There is no file to run, and a run resets the app and
   takes the device session the recording is being read through.
+  When the user asks for a saved test to run on several devices, that is `mobile_testing_run_matrix`,
+  and it works in both modes: a Studio test runs on each device with the bundled runner, and a project
+  with its own `e2e.config.ts` runs the config's target for each device's platform (a device missing
+  the app gets it copied from another booted device that has it, and the target's engine must be a direct
+  `mobile(...)` call). It is a run, so
+  never during a recording.
 - **Never drive the device another way while recording** — not `device_*`, not `mobile_open_url`,
   not the mirror. The recorder's steps and another driver's taps interleave into a flow that does
   not describe anything. Everything the flow does goes through `mobile_testing_agent_step`, which

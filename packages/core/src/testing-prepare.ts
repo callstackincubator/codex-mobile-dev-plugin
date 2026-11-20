@@ -33,6 +33,11 @@ export interface DeviceOps {
 export interface LaneExecutorDeps {
   ops: DeviceOps;
   apps: MatrixAppIds;
+  /**
+   * Project mode: the plugin does not launch the user's app — the runner's own `app.open` starts it.
+   * A device that lacks the app gets it copied from another booted device that has it, as in bundled mode.
+   */
+  projectMode?: boolean;
   runTest(lane: Lane, deviceId: string, signal: AbortSignal, onProgress: (progress: TestRunProgress) => void): Promise<TestRunResult>;
 }
 
@@ -58,11 +63,11 @@ export function createLaneExecutor(deps: LaneExecutorDeps): LaneExecutor {
       if (!await deps.ops.hasApp(lane.platform, deviceId, appId)) {
         setState("installing");
         const source = await findSource(deps.ops, lane, lanes, deviceId, appId);
-        if (!source) throw new ExpectedOperationError("app_unavailable", `App not installed: ${appId} is not on ${lane.deviceName}, and no other device in this run has it to copy. Build and install it once, then run again.`);
+        if (!source) throw new ExpectedOperationError("app_unavailable", `App not installed: ${appId} is not on ${lane.deviceName}, and no other booted device has it to copy. Build and install it once, then run again.`);
         await deps.ops.copyApp(lane.platform, source, deviceId, appId, signal);
       }
       signal.throwIfAborted();
-      await deps.ops.launch(lane.platform, deviceId, appId);
+      if (!deps.projectMode) await deps.ops.launch(lane.platform, deviceId, appId);
       return deviceId;
     },
     run: (lane, deviceId, signal, onProgress) => deps.runTest(lane, deviceId, signal, onProgress),
@@ -70,16 +75,26 @@ export function createLaneExecutor(deps: LaneExecutorDeps): LaneExecutor {
 }
 
 /** The first other device of the same platform in the matrix that has the app installed. */
+/**
+ * A device to copy the app from: another device in this run first, then any other booted device of
+ * the platform. The app is often installed only on the device it was built for, which need not be
+ * one the user ticked; copying reads its app container and leaves that device as it is.
+ */
 async function findSource(ops: DeviceOps, lane: Lane, lanes: readonly Lane[], own: string, appId: string): Promise<string | undefined> {
+  const tried = new Set([own]);
+  // A device that is off, offline or going away cannot be a source; that is not an error here.
+  const usable = async (candidate: string) => {
+    if (tried.has(candidate)) return false;
+    tried.add(candidate);
+    try { return await ops.isBooted(lane.platform, candidate) && await ops.hasApp(lane.platform, candidate, appId); } catch { return false; }
+  };
   for (const other of lanes) {
     if (other.runId === lane.runId || other.platform !== lane.platform) continue;
     const candidate = other.resolvedDeviceId ?? other.deviceId;
-    if (candidate === own) continue;
-    // A device that is off, offline or going away cannot be a source; that is not an error here.
-    try {
-      if (await ops.isBooted(lane.platform, candidate) && await ops.hasApp(lane.platform, candidate, appId)) return candidate;
-    } catch { /* try the next one */ }
+    if (await usable(candidate)) return candidate;
   }
+  const booted = await ops.bootedDevices?.(lane.platform).catch(() => []) ?? [];
+  for (const device of booted) if (await usable(device.deviceId)) return device.deviceId;
   return undefined;
 }
 

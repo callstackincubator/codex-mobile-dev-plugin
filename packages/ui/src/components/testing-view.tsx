@@ -269,7 +269,7 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
   const devices = useSyncExternalStore(deviceApps.subscribe, deviceApps.getSnapshot);
   const device = devices.device;
   // The Run button's "N devices" needs the device list before the setup popover is ever opened.
-  useEffect(() => { if (state.available && state.projectPath && state.runtimeMode === "bundled") void panel.loadMatrixDevices(); }, [panel, state.available, state.projectPath, state.runtimeMode]);
+  useEffect(() => { if (state.available && state.projectPath) void panel.loadMatrixDevices(); }, [panel, state.available, state.projectPath, state.runtimeMode]);
   const booted = device?.state === "Booted" || device?.state === "connected";
   const target = state.targets.find(entry => entry.name === state.targetName) ?? state.targets[0];
   const mismatch = panel.targetMismatch;
@@ -406,9 +406,9 @@ function TestingControls({ panel, recordable, deviceId, platform }: { panel: Tes
           : <Button type="button" size="sm" variant="outline" data-testing-record disabled={!recordable}
             onClick={() => testRecorder.start(deviceId, platform)}><CircleIcon />Record</Button>}
     <Button type="button" size="sm" variant="outline" data-testing-run disabled={panelState.selectedTestPath ? !panel.canRunStored : !panel.canRun}
-      title={panelState.selectedTestPath && panel.storedRunHint ? panel.storedRunHint : panel.matrixRunCount > 1 ? `Run the current preview on ${panel.matrixRunCount} devices, up to ${panelState.matrixLimit} at once, without saving it.` : "Run the current preview without saving it. Recording stops because the runner needs the device to itself."}
+      title={panelState.selectedTestPath && panel.storedRunHint ? panel.storedRunHint : panel.runsOnMatrix ? `Run the current preview on ${panel.matrixRunCount === 1 ? panel.matrixSelection[0]!.name : `${panel.matrixRunCount} devices, up to ${panelState.matrixLimit} at once,`} without saving it.` : "Run the current preview without saving it. Recording stops because the runner needs the device to itself."}
       onClick={() => void (panelState.selectedTestPath ? panel.runStoredTest() : panel.runTest())}>
-      {panelState.running ? <LoaderCircleIcon className="animate-spin" /> : <FlaskConicalIcon />}{panel.matrixRunCount > 1 ? `Run on ${panel.matrixRunCount} devices` : "Run test"}
+      {panelState.running ? <LoaderCircleIcon className="animate-spin" /> : <FlaskConicalIcon />}{panel.runsOnMatrix ? (panel.matrixRunCount === 1 ? `Run on ${panel.matrixSelection[0]!.name}` : `Run on ${panel.matrixRunCount} devices`) : "Run test"}
     </Button>
     {state.resolving && <span className="flex items-center gap-1 text-xs text-muted-foreground" role="status"><LoaderCircleIcon className="animate-spin" />Reading the screen…</span>}
   </div>;

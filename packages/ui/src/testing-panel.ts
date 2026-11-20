@@ -188,6 +188,16 @@ function text(value: unknown): string { return typeof value === "string" ? value
 /** How a platform reads in the panel. */
 export function platformLabel(platform: "ios" | "android"): string { return platform === "ios" ? "iOS" : "Android"; }
 
+/**
+ * Launch app opens an app that is already installed; it never builds one, since a build is the
+ * project's own (Expo, EAS, Gradle, Xcode) and takes minutes. A missing app says so, with the way to fix it.
+ */
+export function launchErrorMessage(message: string, bundleId: string, platform: "ios" | "android"): string {
+  if (!/is not installed|Unable to find package|Unknown package/i.test(message)) return message;
+  const where = platform === "ios" ? "this simulator" : "this emulator";
+  return `${bundleId} is not installed on ${where}. Build and install it (for an Expo app, \`npx expo run:${platform}\`), then launch again.`;
+}
+
 function projectName(projectPath: string): string { return projectPath.split("/").filter(Boolean).at(-1) ?? projectPath; }
 
 /** The targets a `mobile_testing_project_config` result lists, keeping only named entries. */
@@ -710,7 +720,7 @@ export class TestingPanel {
       this.update({ appLaunched: true });
       countUiEvent("ui.testing.launch");
     } catch (error) {
-      this.update({ error: error instanceof Error ? error.message : String(error) });
+      this.update({ error: launchErrorMessage(error instanceof Error ? error.message : String(error), bundleId, recordablePlatform(device)) });
       captureUiError(error, "testing.launch", telemetryContext);
     } finally {
       if (getUiTelemetryAttributes() === telemetryContext) recordUiTiming("ui.testing.launch", performance.now() - startedAt);
@@ -1597,7 +1607,7 @@ export class TestingPanel {
     const pinned = stored && mirrored ? this.storedAppOn(mirrored) : stored;
     const runTarget = pinned ?? (stored ? undefined : this.foregroundTarget);
     if (this.snapshot.runtimeMode === "bundled" && !runTarget) return;
-    if (this.matrixRunCount > 1) { await this.runMatrix({ relativePath, source: untilSource, ...(untilLine === undefined ? {} : { untilLine }), callLines: storedTestCallLines(source) }); return; }
+    if (this.runsOnMatrix) { await this.runMatrix({ relativePath, source: untilSource, ...(untilLine === undefined ? {} : { untilLine }), callLines: storedTestCallLines(source) }); return; }
     this.update({ running: true, error: null });
     if (pinned && this.deviceApps.getSnapshot().foregroundApp?.bundleId !== pinned.bundleId) {
       try {
@@ -1682,7 +1692,7 @@ export class TestingPanel {
     const previewSource = until?.source ?? testRecorder.source;
     if (!this.hasBundledModel(previewSource, { kind: "recording", options })) return;
     const relativePath = this.relativePath;
-    if (this.matrixRunCount > 1) { await this.runMatrix({ relativePath, source: previewSource, ...(until ? { untilLine: until.untilLine } : {}) }); return; }
+    if (this.runsOnMatrix) { await this.runMatrix({ relativePath, source: previewSource, ...(until ? { untilLine: until.untilLine } : {}) }); return; }
     this.update({ running: true, error: null, pendingRun: false });
     testRecorder.clearRun();
     // A recording left armed would read the tree mid-run and take the session straight back.
@@ -1742,8 +1752,11 @@ export class TestingPanel {
 
   // ---- Test matrix: the same test on several devices at once -------------------------------------------------
 
-  /** The matrix runs on Mobile Dev's bundled runner only; a project's own config pins its own device. */
-  get matrixEnabled(): boolean { return this.snapshot.runtimeMode === "bundled"; }
+  /**
+   * Both runtimes can run on several devices: the bundled runner pins each lane's device in its own
+   * config, and a project's lanes run its own config's target with the device rewritten in a copy.
+   */
+  get matrixEnabled(): boolean { return this.snapshot.available; }
 
   /** The ticked devices that still exist. Zero when the matrix is unavailable. */
   get matrixSelection(): MatrixDeviceOption[] {
@@ -1762,18 +1775,47 @@ export class TestingPanel {
     return stored && !stored.apps?.[stored.platform === "ios" ? "android" : "ios"] ? stored.platform : undefined;
   }
 
-  /** How many devices Run would use; a single device runs the plain way. */
+  /** How many devices Run would use. */
   get matrixRunCount(): number { return this.matrixSelection.length; }
+
+  /**
+   * Whether Run goes to the ticked devices rather than the mirror. Any tick does, except one tick on
+   * the mirrored device itself, which runs the plain way there (its preview and failure marks).
+   * One ticked device that is not the mirror must run there, never on the mirror.
+   */
+  get runsOnMatrix(): boolean {
+    const selection = this.matrixSelection;
+    if (selection.length !== 1) return selection.length > 1;
+    return selection[0]!.deviceId !== this.deviceApps.getSnapshot().device?.udid;
+  }
+
+  private matrixTargetOrder(): TestingTargetOption[] {
+    const selected = this.target;
+    return selected ? [selected, ...this.snapshot.targets.filter(entry => entry !== selected)] : this.snapshot.targets;
+  }
+
+  /** Project mode: the config target each platform's lanes run, so the server uses the selected one. */
+  private matrixProjectTargets(): { ios?: string; android?: string } {
+    const targets: { ios?: string; android?: string } = {};
+    for (const entry of this.matrixTargetOrder()) {
+      const platform = entry.platform;
+      if ((platform === "ios" || platform === "android") && entry.bundleId && !targets[platform]) targets[platform] = entry.name;
+    }
+    return targets;
+  }
 
   /** The app a run would drive, per platform: the open test's own app first, then the project's targets. */
   matrixApps(): { ios?: string; android?: string } {
     // A pinned Studio test runs only the apps it has; the project's targets are not its apps.
     if (this.snapshot.runtimeMode === "bundled" && this.storedTarget) return this.storedApps;
     const apps: { ios?: string; android?: string } = {};
-    for (const entry of this.snapshot.targets) {
+    // The selected target first, so its app wins its platform; the server picks the same target.
+    for (const entry of this.matrixTargetOrder()) {
       const platform = entry.platform;
       if ((platform === "ios" || platform === "android") && entry.bundleId && !apps[platform]) apps[platform] = entry.bundleId;
     }
+    // A project's lanes run its config's targets, never the app in front on the mirror.
+    if (this.snapshot.runtimeMode !== "bundled") return apps;
     const own: StoredTestSummary["target"] = this.snapshot.selectedTestPath ? (this.storedTarget ?? this.foregroundTarget)
       : this.target?.platform && this.target.bundleId && (this.target.platform === "ios" || this.target.platform === "android") ? { platform: this.target.platform, bundleId: this.target.bundleId } : this.foregroundTarget;
     if (own) apps[own.platform] = own.bundleId;
@@ -1897,6 +1939,7 @@ export class TestingPanel {
         projectPath: this.snapshot.projectPath, relativePath: input.relativePath, untilSource: input.source,
         devices: selection.map(device => ({ deviceId: device.deviceId, platform: device.platform, name: device.name })),
         apps, limit: this.snapshot.matrixLimit,
+        ...(this.snapshot.runtimeMode === "project" ? { targets: this.matrixProjectTargets() } : {}),
         ...(this.snapshot.modelPreference ? { model: this.snapshot.modelPreference } : {}),
       }, 60_000);
       const started = parseMatrix(response.structuredContent);

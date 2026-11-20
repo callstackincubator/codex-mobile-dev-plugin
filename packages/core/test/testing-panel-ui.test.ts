@@ -160,7 +160,7 @@ test("a run marks the preview line by line, and marks nothing it was not told ab
     getSnapshot: () => panelState,
     canLaunch: true, canRun: true, canRunStored: true, dirty: true,
     noProject: false, storedTarget: undefined, foregroundTarget: undefined, storedRunHint: "", repinStoredTest: async () => {},
-    matrixEnabled: true, matrixRunCount: 0, matrixApps: () => ({}), matrixBusy: () => false, loadMatrixDevices: async () => {},
+    matrixEnabled: true, matrixRunCount: 0, runsOnMatrix: false, matrixApps: () => ({}), matrixBusy: () => false, loadMatrixDevices: async () => {},
     setMatrixSelection: () => {}, setMatrixLimit: () => {}, selectLane: () => {}, cancelMatrix: async () => {}, dismissMatrix: () => {},
     refreshProjects: async () => {}, chooseProject: async () => {}, pickProject: async () => {},
     launchApp: async () => {}, saveTest: async () => {}, runTest: async (options?: unknown) => { runs.push(options); }, selectTarget: () => {},
@@ -586,7 +586,7 @@ function panelStub(overrides: Record<string, unknown> = {}) {
     canLaunch: true, canRun: true, canRunStored: true, dirty: true,
     get noProject() { return state.projectPath === state.studioPath; }, useNoProject: async () => {},
     storedTarget: undefined, foregroundTarget: undefined, storedRunHint: "", repinStoredTest: async () => {},
-    matrixEnabled: true, matrixRunCount: 0, matrixApps: () => ({}), matrixBusy: () => false, loadMatrixDevices: async () => {},
+    matrixEnabled: true, matrixRunCount: 0, runsOnMatrix: false, matrixApps: () => ({}), matrixBusy: () => false, loadMatrixDevices: async () => {},
     setMatrixSelection: () => {}, setMatrixLimit: () => {}, selectLane: () => {}, cancelMatrix: async () => {}, dismissMatrix: () => {},
     refreshProjects: async () => {}, chooseProject: async () => {}, pickProject: async () => {},
     launchApp: async () => {}, saveTest: async () => {}, runTest: async () => {}, selectTarget: () => {},
@@ -1115,7 +1115,7 @@ test("the matrix shows its devices, one lane per device with a cancel, and Run o
     ],
     matrix: { matrixId: "m", limit: 3, startedAt: 1, lanes: [lane(0, "running", { startedAt: Date.now() }), lane(1, "queued"), lane(2, "passed", { result: { status: "passed", steps: [], durationMs: 1500 } })] },
     selectedLane: "r0",
-  }), matrixRunCount: 2, matrixApps: () => ({ ios: "com.example.app" }),
+  }), matrixRunCount: 2, runsOnMatrix: true, matrixApps: () => ({ ios: "com.example.app" }),
     cancelMatrix: async (id?: string) => { cancelled.push(id); }, setMatrixSelection: (ids: string[]) => { selected.push(ids); } };
   await act(async () => { root.render(createElement(TestingView, { panel, deviceApps: { subscribe: () => () => undefined, getSnapshot: () => DEVICE_SNAPSHOT } })); });
   const doc = dom.window.document;
@@ -1140,7 +1140,7 @@ test("the matrix shows its devices, one lane per device with a cancel, and Run o
   onTeardown(async () => { await act(async () => { root.unmount(); }); });
 });
 
-test("a project that runs from its own config shows the matrix as unavailable", async t => {
+test("a panel without the matrix shows it as unavailable", async t => {
   const { module: { TestingView }, dom, onTeardown } = await renderEnvironment<any>(t, {
     exports: 'export { TestingView } from "./packages/ui/src/components/testing-view.tsx";', slug: "testing-matrix-project",
   });
@@ -1152,7 +1152,7 @@ test("a project that runs from its own config shows the matrix as unavailable", 
   const doc = dom.window.document;
   const toggle = [...doc.querySelectorAll('[data-slot="collapsible-trigger"]')].find(el => el.textContent?.includes("Devices")) as HTMLElement;
   await act(async () => { toggle.click(); });
-  assert.match(doc.querySelector("[data-matrix-disabled]")?.textContent ?? "", /bundled runner/);
+  assert.match(doc.querySelector("[data-matrix-disabled]")?.textContent ?? "", /not available/);
   assert.equal(doc.querySelector("[data-testing-matrix]"), null);
   await act(async () => { root.render(createElement("div")); });
   await new Promise(resolve => dom.window.requestAnimationFrame(resolve));

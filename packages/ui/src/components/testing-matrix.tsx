@@ -24,7 +24,7 @@ function DeviceRow({ device, checked, busy, appMissing, onToggle }: { device: Ma
     <span className="flex shrink-0 items-center gap-1">
       {busy && <Badge variant="outline">Busy</Badge>}
       <Badge variant="ghost" className={device.booted ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-muted text-muted-foreground"}>{device.booted ? "Booted" : "Off"}</Badge>
-      {device.booted && device.installed !== undefined && <Badge variant="ghost" title={device.installed ? "The app is on this device." : "Not installed. It will be copied from another selected device that has it."}
+      {device.booted && device.installed !== undefined && <Badge variant="ghost" title={device.installed ? "The app is on this device." : "Not installed. It will be copied from another booted device that has it that has it."}
         className={device.installed ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-amber-500/10 text-amber-600 dark:text-amber-400"}>{device.installed ? "Installed" : "App missing"}</Badge>}
     </span>
   </li>;
@@ -32,7 +32,7 @@ function DeviceRow({ device, checked, busy, appMissing, onToggle }: { device: Ma
 
 /**
  * The matrix checklist in the setup popover: tick devices to run the open test on all of them.
- * It is disabled when the project uses its own e2e config, which pins its own device.
+ * A project with its own e2e config gets it too: each lane runs the config's target for the device's platform.
  */
 export function MatrixDevices({ panel }: { panel: TestingPanel }) {
   const state = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
@@ -41,7 +41,7 @@ export function MatrixDevices({ panel }: { panel: TestingPanel }) {
   const apps = panel.matrixApps();
   const selected = new Set(state.matrixSelected);
   const toggle = (id: string, value: boolean) => panel.setMatrixSelection(value ? [...state.matrixSelected, id] : state.matrixSelected.filter(entry => entry !== id));
-  if (!enabled) return <TestingNote data-matrix-disabled>Running on several devices needs the bundled runner. This project uses its own e2e config, so tests run on one device.</TestingNote>;
+  if (!enabled) return <TestingNote data-matrix-disabled>Running on several devices is not available yet.</TestingNote>;
   const only = panel.matrixPlatform;
   const groups = ([["iOS", "ios"], ["Android", "android"]] as const)
     .filter(([, platform]) => !only || platform === only)
@@ -63,7 +63,7 @@ export function MatrixDevices({ panel }: { panel: TestingPanel }) {
         <span className="text-xs text-muted-foreground">at once</span></div>
       <Button type="button" size="xs" variant="ghost" disabled={state.matrixLoading} onClick={() => void panel.loadMatrixDevices()}>{state.matrixLoading ? <LoaderCircleIcon className="animate-spin" /> : <RefreshCwIcon />}Refresh</Button>
     </div>
-    <TestingNote>{count > state.matrixLimit ? `${count - state.matrixLimit} will queue until a slot frees. ` : ""}Devices that are off are booted, and a missing app is copied from another selected device. Agent steps call the model once per device.</TestingNote>
+    <TestingNote>{count > state.matrixLimit ? `${count - state.matrixLimit} will queue until a slot frees. ` : ""}{state.runtimeMode === "project" ? "Devices that are off are booted, and a missing app is copied from another booted device that has it. Each device runs the config's target for its platform." : "Devices that are off are booted, and a missing app is copied from another booted device that has it."} Agent steps call the model once per device.</TestingNote>
   </div>;
 }
 

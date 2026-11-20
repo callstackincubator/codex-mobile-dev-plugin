@@ -47,6 +47,15 @@ test("a device without the app gets it copied from another device that has it", 
   assert.ok(ops_log.indexOf("copy A->B") < ops_log.indexOf("launch B"), "installed before launch");
 });
 
+test("a lone device without the app gets it copied from a booted device outside the run", async () => {
+  const { ops, log } = machine({ PRO: { booted: true, apps: ["com.app"] }, AIR: { booted: true, apps: [] }, OFF: { booted: false, apps: ["com.app"] } });
+  ops.bootedDevices = async () => [{ deviceId: "AIR", name: "iPhone Air" }, { deviceId: "OFF", name: "Off" }, { deviceId: "PRO", name: "iPhone 17 Pro" }];
+  const { matrix } = await run(ios("AIR"), ops);
+  assert.equal(matrix.lanes[0]!.state, "passed");
+  assert.ok(log.includes("copy PRO->AIR"), "the device the app was built on is the source though it was not ticked");
+  assert.equal(log.some(line => line.startsWith("boot")), false, "an unticked device is never booted to be a source");
+});
+
 test("a device that is off and lacks the app is booted, then installed", async () => {
   const { ops, log } = machine({ A: { booted: true, apps: ["com.app"] }, B: { booted: false, apps: [] } });
   await run(ios("A", "B"), ops);

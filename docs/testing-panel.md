@@ -796,9 +796,17 @@ E2E setup → **Devices** lists the iOS simulators and Android emulators with *B
 or none is the plain single-device run. "Run up to [3] at once" caps how many devices work at the
 same time (1–8); the rest queue. The ticked devices and the limit are saved per project.
 
-Bundled runtime only. A project with its own `e2e.config.ts` pins its own device and `mobile()`
-returns an opaque engine handle, so the Devices section is disabled with a note there and single
-runs behave exactly as before.
+A project with its own `e2e.config.ts` works too, with differences. Each lane runs the config's
+target for the device's platform (the selected target wins its platform), and the plugin neither
+installs nor launches the app: a device without it fails its lane with "App not installed", and
+the runner's own `app.open` starts it. `mobile()` returns an opaque engine handle and the e2e CLI has
+no per-run device flag, so a lane **copies the config text** and rewrites that target's
+`mobile(ARG)` into `mobile({ ...(ARG), device, session })`, which keeps the user's other options.
+The copy runs from an isolated mirror of the project (or, for a run of the file itself, as a hidden
+`.e2e.mobile-dev-lane-<pid>-<id>` file beside the config) and is removed when the lane ends; stale
+ones from a dead process are swept. A target whose engine is not a direct `mobile(...)` call is
+refused with a message saying so. This workaround is replaced by an upstream `e2e run --device`
+flag; see `items-todo.md`.
 
 ```mermaid
 flowchart LR
@@ -811,13 +819,14 @@ flowchart LR
 
 - **One `e2e run` per device**, not the runner's device pool: a pool gives *different files* to
   different devices, a matrix needs the *same* test on each with its own progress, failure and
-  cancel. Each lane gets a generated config with `mobile({ platform, device })` and a target name
+  cancel. A bundled lane gets a generated config with `mobile({ platform, device })` and a target name
   unique to the device (the engine names its agent-device session after the target), plus its own
-  `--output` directory inside its temporary workspace. Nothing is written to the project.
+  `--output` directory inside its temporary workspace. Nothing is written to the project. (A project
+  lane is described above.)
 - **Lane states:** Queued → Booting → Installing → Running → Passed / Failed / Cancelled / Error.
   A device that is off is booted (`xcrun simctl boot` + `bootstatus -b`, or the Android emulator
   through `ServeEmu`; an `avd:` id becomes the running serial). Booting counts against the limit.
-- **A missing app is copied from another device in the run that has it**: iOS with `simctl
+- **A missing app is copied from another booted device that has it**: iOS with `simctl
   get_app_container` + `install`, Android with `pm path` + `adb pull`, installed with
   `install-multiple` when the app is split. No device has it → the lane fails with "App not
   installed" and the others carry on. The request carries one app id per platform

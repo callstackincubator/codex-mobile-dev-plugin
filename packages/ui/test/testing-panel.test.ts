@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { HostBridge } from "../src/host-bridge.ts";
 import type { DeviceAppsStore } from "../src/device-apps.ts";
-import { TestingPanel } from "../src/testing-panel.ts";
+import { TestingPanel, launchErrorMessage } from "../src/testing-panel.ts";
 import { OPEN_STEP, testRecorder } from "../src/test-recorder.ts";
 import type { ScreenComponent } from "../../shared/src/screen-annotations.ts";
 
@@ -530,4 +530,11 @@ test("Run is unavailable for a Studio test with neither a pinned app nor one in 
   assert.equal(panel.canRunStored, false);
   assert.match(panel.storedRunHint, /Open the app in the mirror/);
   panel.dispose();
+});
+
+test("a launch of a missing app says to build and install it, and other launch errors pass through", () => {
+  assert.equal(launchErrorMessage("com.app is not installed or has no launcher activity.", "com.app", "android"),
+    "com.app is not installed on this emulator. Build and install it (for an Expo app, `npx expo run:android`), then launch again.");
+  assert.match(launchErrorMessage("com.app is not installed or could not open.", "com.app", "ios"), /this simulator.*npx expo run:ios/);
+  assert.equal(launchErrorMessage("The device is busy.", "com.app", "ios"), "The device is busy.");
 });

@@ -94,18 +94,25 @@ test("a run on three devices starts one matrix with the limit, polls its lanes a
   panel.dispose();
 });
 
-test("one selected device is a plain run, and a project config disables the matrix", async () => {
-  const panel = new TestingPanel(matrixHost([]), deviceApps);
+test("one selected device runs as a lane unless it is the mirrored device, and a project config runs the matrix too", async () => {
+  const mirrored = { subscribe: () => () => undefined, getSnapshot: () => ({ device: { udid: "d0" } }) } as unknown as DeviceAppsStore;
+  const panel = new TestingPanel(matrixHost([]), mirrored);
   const set = (fields: Record<string, unknown>) => (panel as unknown as { update(fields: Record<string, unknown>): void }).update(fields);
   panel.setAvailable(true);
   set({ projectPath: PROJECT, runtimeMode: "bundled", matrixDevices: [{ deviceId: "d0", name: "P", platform: "ios", runtime: "", booted: true }, { deviceId: "d1", name: "Q", platform: "ios", runtime: "", booted: true }] });
   panel.setMatrixSelection(["d0"]);
   assert.equal(panel.matrixRunCount, 1);
+  assert.equal(panel.runsOnMatrix, false, "the mirrored device alone runs the plain way");
+  panel.setMatrixSelection(["d1"]);
+  assert.equal(panel.runsOnMatrix, true, "one device that is not the mirror runs there, not on the mirror");
+  panel.setMatrixSelection([]);
+  assert.equal(panel.runsOnMatrix, false);
   panel.setMatrixSelection(["d0", "d1"]);
   assert.equal(panel.matrixRunCount, 2);
+  assert.equal(panel.runsOnMatrix, true);
   set({ runtimeMode: "project" });
-  assert.equal(panel.matrixEnabled, false);
-  assert.equal(panel.matrixRunCount, 0, "a project's own config runs on one device");
+  assert.equal(panel.matrixEnabled, true);
+  assert.equal(panel.matrixRunCount, 2, "a project's lanes run its config's targets on each device");
   panel.dispose();
 });
 

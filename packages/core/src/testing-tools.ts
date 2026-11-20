@@ -15,7 +15,7 @@ import { TestDraftStore } from "./testing-drafts.ts";
 import { MAX_DRAFT_STEPS, recordedStepSchema, testDraftIdSchema } from "@mobile-dev/shared/test-drafts.ts";
 import type { TestDraft } from "@mobile-dev/shared/test-drafts.ts";
 import { TestingDevices } from "./testing-device.ts";
-import { runRecordedTest } from "./testing-run.ts";
+import { runRecordedTest, sweepLaneFiles } from "./testing-run.ts";
 import type { TestRunRequest } from "./testing-run.ts";
 import { MatrixRegistry, MAX_MATRIX_LIMIT, snapshotMatrix, startMatrix } from "./testing-matrix.ts";
 import type { LaneExecutor, MatrixDevice, MatrixRun } from "./testing-matrix.ts";
@@ -79,6 +79,23 @@ function dataResult(data: Record<string, unknown>, message?: string): CallToolRe
   return { content: [{ type: "text", text: message ?? JSON.stringify(data) }], structuredContent: data };
 }
 
+/**
+ * The config target each platform of a project matrix runs: the named one, else the platform's first.
+ * A platform with no target, or a named target of another platform, refuses before anything boots.
+ */
+export function projectLaneTargets(targets: readonly { name: string; platform?: string; bundleId?: string }[], devices: readonly MatrixDevice[], named?: { ios?: string; android?: string }): Partial<Record<MatrixDevice["platform"], { name: string; bundleId: string }>> {
+  const chosen: Partial<Record<MatrixDevice["platform"], { name: string; bundleId: string }>> = {};
+  for (const platform of new Set(devices.map(device => device.platform))) {
+    const target = named?.[platform]
+      ? targets.find(entry => entry.name === named[platform])
+      : targets.find(entry => entry.platform === platform && entry.bundleId);
+    if (!target || target.platform !== platform || !target.bundleId)
+      throw new ExpectedOperationError("invalid_input", `The project's e2e config has no ${platform} target${named?.[platform] ? ` named "${named[platform]}"` : ""} with a bundleId, so devices of that platform cannot run it.`);
+    chosen[platform] = { name: target.name, bundleId: target.bundleId };
+  }
+  return chosen;
+}
+
 /** The Testing panel's project selection, and the device tree its recorder names selectors from. */
 /** Returns the shutdown the plugin has to run: the recorder's device session, handed back. */
 export function registerTestingTools(server: McpServer, projects: TestingProjectChoices, devices = new TestingDevices(), drafts = new TestDraftStore(), matrix: { ops?: DeviceOps; registry?: MatrixRegistry; run?: typeof runRecordedTest; panel?: PanelContext; pollMs?: number; failureReadMs?: number } = {}): () => Promise<void> {
@@ -91,6 +108,8 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
    * open for a feature whose whole output is a spinner moving down a dozen lines.
    */
   const registry = matrix.registry ?? new MatrixRegistry();
+  // Lane copies of a project's config that a crashed run left beside it. Best effort, and only files whose process is gone.
+  void projects.list().then(list => Promise.all(list.map(entry => sweepLaneFiles(entry.path)))).catch(() => undefined);
   const runTest = matrix.run ?? runRecordedTest;
   /**
    * The project a model-visible tool works on. With a panel, the Testing tab must have reported a
@@ -484,7 +503,7 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
   registerAppTool(server, "mobile_testing_run_matrix", {
     title: "Run a recorded test on several devices",
     description:
-      "Run one saved test on several devices at once, one independent lane per device (iOS and Android can be mixed), and return a matrixId immediately; read progress with mobile_testing_run_progress. At most `limit` lanes run at once (default 3, max 8); the rest are queued. Devices that are off are booted, and a device missing the app gets it installed by copying it from another device in the run that has it; otherwise that lane fails with \"App not installed\". `apps` defaults to the apps the test is pinned to; a platform with no app is refused, naming the fix. Bundled mode only. A failure on one device does not stop the others, and its lane carries `failure` (line, error, screen). projectPath defaults to the Testing tab's project.",
+      "Run one saved test on several devices at once, one independent lane per device (iOS and Android can be mixed), and return a matrixId immediately; read progress with mobile_testing_run_progress. At most `limit` lanes run at once (default 3, max 8); the rest are queued. Devices that are off are booted. In bundled mode a device missing the app gets it installed by copying it from another booted device that has it (one in the run first); otherwise that lane fails with \"App not installed\"; `apps` defaults to the apps the test is pinned to, and a platform with no app is refused, naming the fix. In a project with its own e2e config each lane runs the config's target for the device's platform (or `targets`) on that device, a device missing the app gets it copied the same way, and the target's engine must be a direct mobile(...) call. A failure on one device does not stop the others, and its lane carries `failure` (line, error, screen). projectPath defaults to the Testing tab's project.",
     inputSchema: {
       projectPath: projectPath.optional(),
       relativePath: z.string().min(1).max(512).describe("The test to run, relative to the project."),
@@ -494,7 +513,9 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
         name: z.string().min(1).max(128).optional().describe("A label for the lane."),
       })).min(1).max(16),
       apps: z.object({ ios: z.string().min(1).max(512).optional(), android: z.string().min(1).max(512).optional() }).optional()
-        .describe("The app id per platform: the iOS bundle id and the Android package name. Defaults to the apps the test is pinned to."),
+        .describe("The app id per platform: the iOS bundle id and the Android package name. Defaults to the apps the test is pinned to. Ignored for a project with its own e2e config, which uses its targets' apps."),
+      targets: z.object({ ios: z.string().min(1).max(256).optional(), android: z.string().min(1).max(256).optional() }).optional()
+        .describe("Project mode only: the config's target name per platform. Defaults to the first target of each platform."),
       limit: z.number().int().min(1).max(MAX_MATRIX_LIMIT).optional().describe("How many devices run at once. Default 3."),
       timeoutMs: z.number().int().min(10_000).max(30 * 60_000).optional(),
       model: modelSchema.optional(),
@@ -502,21 +523,32 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
     },
     annotations: destructive,
     _meta: sharedVisibility,
-  }, safe(async (raw: Omit<RunInput, "projectPath" | "platform" | "bundleId" | "pin" | "target" | "configPath"> & { projectPath?: string; devices: MatrixDevice[]; apps?: { ios?: string; android?: string }; limit?: number }) => {
+  }, safe(async (raw: Omit<RunInput, "projectPath" | "platform" | "bundleId" | "pin" | "target" | "configPath"> & { projectPath?: string; devices: MatrixDevice[]; apps?: { ios?: string; android?: string }; targets?: { ios?: string; android?: string }; limit?: number }) => {
     const projectPathValue = await resolveProject(raw.projectPath);
     const stored = await readTestTarget(projectPathValue, raw.relativePath).catch(() => undefined);
     const apps: { ios?: string; android?: string } = { ...(stored ? { [stored.platform]: stored.bundleId, ...stored.apps } : {}), ...raw.apps };
     const input = { ...raw, projectPath: projectPathValue, apps };
-    for (const platform of ["ios", "android"] as const) {
-      if (input.devices.some(device => device.platform === platform) && !apps[platform])
-        throw new ExpectedOperationError("app_unavailable", `This test has no ${platform} app yet. Ask the user to open the app on a ${platform} device, call mobile_testing_wait_for_app with platform "${platform}", pin the bundleId it returns with mobile_testing_set_target mode "add", then run again.`);
-    }
     const unique = new Set(input.devices.map(device => device.deviceId));
     if (unique.size !== input.devices.length) throw new ExpectedOperationError("invalid_input", "Each device can appear only once in a matrix.");
     if (!matrix.ops) throw new ExpectedOperationError("unsupported_platform", "This server cannot prepare devices for a matrix run.");
     const first = input.devices[0]!;
     const { request, project } = await prepareRequest({ ...input, platform: first.platform, ...(input.apps[first.platform] ? { bundleId: input.apps[first.platform]! } : {}) });
-    if (project.runtimeMode !== "bundled") throw new ExpectedOperationError("invalid_input", "Running on several devices is available for Mobile Dev's bundled runner. This project uses its own e2e config, so run it on one device.");
+    if (project.runtimeMode === "project") {
+      const lanes = projectLaneTargets(project.targets, input.devices, input.targets);
+      await devices.releaseOn(input.devices.map(device => device.deviceId)).catch(() => undefined);
+      const projectExecutor = createLaneExecutor({
+        ops: matrix.ops, projectMode: true, apps: Object.fromEntries(Object.entries(lanes).map(([platform, target]) => [platform, target.bundleId])),
+        runTest: (lane, deviceId, signal, onProgress) => runTest(
+          { ...request, configPath: project.configPath, target: lanes[lane.platform]!.name, projectLane: { target: lanes[lane.platform]!.name, device: deviceId } },
+          { release: () => devices.releaseOn([lane.deviceId, deviceId]), onProgress, signal }),
+      });
+      const { run } = launchMatrix(input.relativePath, input.devices, input.limit, projectExecutor);
+      return dataResult({ matrixId: run.matrixId, limit: run.limit, lanes: snapshotMatrix(run).lanes }, `Started ${run.lanes.length} lanes, up to ${run.limit} at once.`);
+    }
+    for (const platform of ["ios", "android"] as const) {
+      if (input.devices.some(device => device.platform === platform) && !apps[platform])
+        throw new ExpectedOperationError("app_unavailable", `This test has no ${platform} app yet. Ask the user to open the app on a ${platform} device, call mobile_testing_wait_for_app with platform "${platform}", pin the bundleId it returns with mobile_testing_set_target mode "add", then run again.`);
+    }
     // Only the devices of this matrix lose the recorder; a recorder on another device keeps its session.
     await devices.releaseOn(input.devices.map(device => device.deviceId)).catch(() => undefined);
     const executor = createLaneExecutor({

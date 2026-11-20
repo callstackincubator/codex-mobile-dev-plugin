@@ -68,7 +68,7 @@
 | `mobile_appflow_submit_decision` | Submit one role-valid JSON decision and wait briefly for the next (model only) |
 | `mobile_appflow_screenshot` | Read an authorized App Flow PNG (app only) |
 | `mobile_testing_run_test` | Run one saved Testing Studio test on the single device the runner picks and wait for its steps (app only). It is a matrix of one |
-| `mobile_testing_run_matrix` | Run one test on several devices at once, one lane per device; returns a `matrixId` immediately. `devices: {deviceId, platform}[]`, `apps: {ios?, android?}`, `limit` (default 3, max 8, the rest queue). Boots devices that are off and copies the app from another listed device when missing (app only). Bundled runner only |
+| `mobile_testing_run_matrix` | Run one test on several devices at once, one lane per device; returns a `matrixId` immediately. `devices: {deviceId, platform}[]`, `apps: {ios?, android?}`, `limit` (default 3, max 8, the rest queue). Boots devices that are off. Bundled mode copies the app from another booted device when missing (app only). A project with its own e2e config runs its target for each device's platform (`targets: {ios?, android?}` picks by name) on that device; a missing app is copied the same way and the target's engine must be a direct `mobile(...)` call |
 | `mobile_testing_run_progress` | Read a matrix's lanes: state (`queued`, `booting`, `installing`, `running`, `passed`, `failed`, `cancelled`, `error`), live steps and result per device. `matrixId` optional; without it the latest run (app only) |
 | `mobile_testing_cancel` | Cancel one device's lane (`deviceId`) or every unfinished lane of a `matrixId`; a queued lane never starts (app only) |
 

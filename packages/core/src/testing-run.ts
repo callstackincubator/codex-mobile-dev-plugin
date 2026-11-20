@@ -2,7 +2,8 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { randomBytes } from "node:crypto";
+import { dirname, extname, join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 import { APP_FLOW_DIRECTORY } from "./app-flow-host.ts";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
@@ -286,6 +287,11 @@ export interface TestRunRequest {
   runtime?: { mode: "project" | "bundled"; root: string };
   /** Required only for a bundled run, whose ephemeral config cannot read a project target. */
   bundledTarget?: BundledTarget;
+  /**
+   * A project-mode matrix lane: run the project's own config on one chosen device. See `runProjectLane`.
+   * `target` is the config's target name (its engine must be a direct `mobile(...)` call).
+   */
+  projectLane?: { target: string; device: string };
   /** Non-secret preference for a bundled test containing agent.* calls. */
   model?: { provider: BundledModelProvider; model: string; endpoint?: string };
 }
@@ -423,6 +429,7 @@ function refusedTheConfig(result: TestRunResult): boolean {
 
 export async function runRecordedTest(request: TestRunRequest, deps: TestRunDeps = {}): Promise<TestRunResult> {
   if (request.runtime?.mode === "bundled") return runBundledTest(request, deps);
+  if (request.projectLane) return runProjectLane(request, deps);
   if (request.untilSource !== undefined) return runProjectPreview(request, deps);
   const result = await runOnce(request, deps);
   if (!refusedTheConfig(result) || !request.configPath || !deps.onProgress) return result;
@@ -468,6 +475,162 @@ async function runProjectPreview(request: TestRunRequest, deps: TestRunDeps): Pr
 }
 
 function quoted(value: string): string { return JSON.stringify(value); }
+
+/*
+ * TODO(e2e-device-flag): everything from here to `runProjectLane` is a workaround and gets replaced
+ * by an upstream `e2e run --device <id>` flag, which makes `mobile()` read an override that wins over
+ * the config's `device` and adds the device to the default session name. Then a lane is just
+ * `e2e run <test> --target <name> --device <id>`: no config copy, no rewrite, no sweep. See
+ * `items-todo.md` at the repository root.
+ */
+
+/** The prefix of every file a project lane writes beside the project's config. Hidden, and swept when stale. */
+export const LANE_FILE_PREFIX = ".e2e.mobile-dev-lane-";
+
+/** The index just past the string, template literal or comment that starts at `index`, or `index` if none does. */
+function skipLiteral(source: string, index: number): number {
+  const char = source[index];
+  if (char === "/" && source[index + 1] === "/") { const end = source.indexOf("\n", index); return end < 0 ? source.length : end; }
+  if (char === "/" && source[index + 1] === "*") { const end = source.indexOf("*/", index + 2); return end < 0 ? source.length : end + 2; }
+  if (char !== '"' && char !== "'" && char !== "`") return index;
+  for (let cursor = index + 1; cursor < source.length; cursor++) {
+    if (source[cursor] === "\\") { cursor++; continue; }
+    if (source[cursor] === char) return cursor + 1;
+  }
+  return source.length;
+}
+
+/** The index of the bracket that closes the one at `open`, skipping strings and comments; -1 if unbalanced. */
+function closingBracket(source: string, open: number): number {
+  const pairs: Record<string, string> = { "(": ")", "[": "]", "{": "}" };
+  const stack: string[] = [];
+  for (let index = open; index < source.length; index++) {
+    const skipped = skipLiteral(source, index);
+    if (skipped !== index) { index = skipped - 1; continue; }
+    const char = source[index]!;
+    if (pairs[char]) stack.push(pairs[char]!);
+    else if (char === ")" || char === "]" || char === "}") {
+      if (stack.pop() !== char) return -1;
+      if (stack.length === 0) return index;
+    }
+  }
+  return -1;
+}
+
+/**
+ * Rewrites the chosen target's `mobile(ARG)` into `mobile({ ...(ARG), device, session })`.
+ *
+ * Text, not evaluation: the user's own options (`settle`, `transition`, `snapshot`, variables, spreads)
+ * stay exactly as written and only the device and session change. Only the target named `targetName`
+ * is touched, and only when its engine is a direct `mobile(` call — an engine built elsewhere (a
+ * helper, a variable) cannot be pinned by rewriting text, so that is refused rather than guessed at.
+ */
+export function rewriteLaneConfig(source: string, targetName: string, device: string, session: string): string {
+  const refuse = (reason: string) => new ExpectedOperationError("invalid_input",
+    `Cannot run target "${targetName}" on a chosen device: ${reason} Run it on one device, or write the target's engine as a direct mobile({ ... }) call in e2e.config.ts.`);
+  const list = /targets\s*:\s*\[/.exec(source);
+  if (!list) throw refuse("the config has no literal `targets: [...]` list.");
+  const listOpen = list.index + list[0].length - 1;
+  const listClose = closingBracket(source, listOpen);
+  if (listClose < 0) throw refuse("the config's targets list could not be read.");
+  // The top-level `{ ... }` entries of the list.
+  for (let index = listOpen + 1; index < listClose; index++) {
+    const skipped = skipLiteral(source, index);
+    if (skipped !== index) { index = skipped - 1; continue; }
+    if (source[index] !== "{") continue;
+    const end = closingBracket(source, index);
+    if (end < 0 || end > listClose) break;
+    const entry = source.slice(index, end + 1);
+    const name = /\bname\s*:\s*["'`]([^"'`]+)["'`]/.exec(entry)?.[1];
+    if (name !== targetName) { index = end; continue; }
+    const engine = /\bengine\s*:\s*mobile\s*\(/.exec(entry);
+    if (!engine) throw refuse("its engine is not a direct mobile(...) call.");
+    const open = index + engine.index + engine[0].length - 1;
+    const close = closingBracket(source, open);
+    if (close < 0) throw refuse("its mobile(...) call could not be read.");
+    const original = source.slice(open + 1, close).trim();
+    const pinned = `device: ${quoted(device)}, session: ${quoted(session)}`;
+    return `${source.slice(0, open + 1)}{ ${original ? `...(${original}), ` : ""}${pinned} }${source.slice(close)}`;
+  }
+  throw refuse(`the config has no target with that name.`);
+}
+
+function processAlive(pid: number): boolean {
+  try { process.kill(pid, 0); return true; } catch (error) { return (error as NodeJS.ErrnoException).code === "EPERM"; }
+}
+
+/**
+ * Removes lane files an earlier process left behind. A lane file is named after the process that wrote
+ * it, so one whose process is gone is stale and one whose process lives (another plugin instance
+ * mid-run, or this one) is never touched: no lane can delete a file another lane still uses.
+ */
+export async function sweepLaneFiles(directory: string): Promise<void> {
+  const names = await readdir(directory).catch(() => [] as string[]);
+  await Promise.all(names.filter(name => name.startsWith(LANE_FILE_PREFIX)).map(async name => {
+    const pid = Number(name.slice(LANE_FILE_PREFIX.length).split("-")[0]);
+    if (Number.isInteger(pid) && pid > 0 && processAlive(pid)) return;
+    await rm(join(directory, name), { recursive: true, force: true });
+  }));
+}
+
+/**
+ * One matrix lane of a project run: the user's config, copied with this lane's device pinned.
+ *
+ * The copy sits beside the original so its imports resolve (`@e2e-dev/mobile`, `e2e/oauth/...`,
+ * `./helpers`). Live progress comes from a second per-lane file that imports the lane copy, so the
+ * reporter wrapper and the lane's device are never shared with another lane. Each lane has its own
+ * `--output`, and the files and directory are removed when the run ends.
+ *
+ * A run of the editor's own text (`untilSource`, which is every run the panel starts) goes in an
+ * isolated symlink mirror of the project instead, as a single project preview does, so the user's
+ * folder is not written to at all and the mirror's removal takes everything away.
+ * TODO(e2e-device-flag): replaced by `e2e run --device`.
+ */
+async function runProjectLane(request: TestRunRequest, deps: TestRunDeps): Promise<TestRunResult> {
+  const lane = request.projectLane!;
+  if (!request.configPath) throw new ExpectedOperationError("invalid_input", "Open the project's e2e config before running on a chosen device.");
+  const bin = runnerBin(request.projectPath);
+  const id = `${process.pid}-${randomBytes(4).toString("hex")}`;
+  const rewritten = rewriteLaneConfig(await readFile(request.configPath, "utf8"), lane.target, lane.device, `mobile-dev-lane-${id}`);
+  await deps.release?.();
+  const configDir = dirname(request.configPath);
+  const laneName = `${LANE_FILE_PREFIX}${id}${extname(request.configPath) || ".mts"}`;
+  const laneRelative = join(relative(request.projectPath, configDir), laneName);
+  const progressName = `${LANE_FILE_PREFIX}${id}.progress.mts`;
+  const progressRelative = join(relative(request.projectPath, configDir), progressName);
+  const mirror = request.untilSource !== undefined ? await mkdtemp(join(tmpdir(), "mobile-dev-e2e-lane-run-")) : undefined;
+  const root = mirror ?? request.projectPath;
+  const laneFile = join(root, laneRelative), progressFile = join(root, progressRelative);
+  // The runner refuses an `--output` outside the project root it runs from, so the lane's output sits
+  // inside that root: in the mirror (removed with it), or as a hidden lane directory the sweep knows.
+  const output = join(root, mirror ? ".e2e-mobile-dev-lane-output" : `${LANE_FILE_PREFIX}${id}.output`);
+  if (!mirror) await sweepLaneFiles(configDir);
+  const run = (config: string, onProgress?: TestRunDeps["onProgress"]) => spawnRun({
+    command: bin, cwd: root, runPath: request.relativePath, configName: config, output,
+    target: lane.target, timeoutMs: request.timeoutMs, spawner: deps.spawner ?? spawn, onProgress, signal: deps.signal,
+  });
+  try {
+    if (mirror) {
+      await mirrorProject(request.projectPath, mirror, new Set([request.relativePath, laneRelative, progressRelative]));
+      await mkdir(dirname(join(mirror, request.relativePath)), { recursive: true, mode: 0o700 });
+      await writeFile(join(mirror, request.relativePath), request.untilSource!, { mode: 0o600 });
+    }
+    await mkdir(dirname(laneFile), { recursive: true });
+    await writeFile(laneFile, rewritten, { mode: 0o600 });
+    if (!deps.onProgress) return await run(laneFile);
+    await writeFile(progressFile, progressConfigSource(laneFile), { mode: 0o600 });
+    const result = await run(progressFile, deps.onProgress);
+    // Live progress is not worth the run: if the runner refused the wrapper, run the lane copy as it is.
+    if (!refusedTheConfig(result)) return result;
+    const retried = await run(laneFile);
+    return retried.steps.length > 0 || retried.status !== result.status ? retried : result;
+  } finally {
+    await Promise.all([
+      mirror ? rm(mirror, { recursive: true, force: true })
+        : Promise.all([rm(laneFile, { force: true }), rm(progressFile, { force: true }), rm(output, { recursive: true, force: true })]),
+    ]);
+  }
+}
 
 function bundledModelSource(model: TestRunRequest["model"]): { imports: string[]; field: string } | undefined {
   if (!model) return;

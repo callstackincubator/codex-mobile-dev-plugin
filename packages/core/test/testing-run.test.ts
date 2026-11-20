@@ -2,12 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { Readable } from "node:stream";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 import { existsSync, realpathSync } from "node:fs";
 import { readFileSync } from "node:fs";
-import { RUNNER_CWD, bundledConfigSource, bundledTargetName, parseProgressLine, parseReport, progressConfigSource, reportDuration, reportError, reportSteps, reportStatus, runRecordedTest, runnerBin, runnerEnv, untilTestPath } from "../src/testing-run.ts";
+import { RUNNER_CWD, bundledConfigSource, bundledTargetName, parseProgressLine, parseReport, progressConfigSource, reportDuration, reportError, rewriteLaneConfig, sweepLaneFiles, LANE_FILE_PREFIX, reportSteps, reportStatus, runRecordedTest, runnerBin, runnerEnv, untilTestPath } from "../src/testing-run.ts";
 import { bundledE2eRoot } from "../src/e2e-runtime.ts";
 
 const FILE = "tests/a-recorded-flow.e2e.ts";
@@ -425,4 +425,158 @@ test("aborting a run kills its process and reports it as cancelled", async () =>
   setTimeout(() => controller.abort(), 20);
   await assert.rejects(run, /cancelled/);
   assert.equal(killed, true);
+});
+
+// ---- Project-mode matrix lanes: the config text, copied with one target's device pinned -------------------
+
+const LANE_CONFIG = `import { mobile } from "@e2e-dev/mobile";
+import { chatgpt } from "e2e/oauth/chatgpt";
+const shared = { settle: 300 };
+
+export default {
+  agents: { default: { model: chatgpt("gpt-6-luna") } },
+  targets: [
+    {
+      name: "ios",
+      engine: mobile({ platform: "ios", settle: 300 }),
+      app: { bundleId: "com.example.app" },
+    },
+    {
+      name: "android",
+      engine: mobile({ platform: "android", transition: { mode: "fast" } }),
+      app: { bundleId: "com.example.app" },
+    },
+  ],
+};
+`;
+
+test("a lane pins the device and session on its own target only, keeping the other options", () => {
+  const out = rewriteLaneConfig(LANE_CONFIG, "ios", "UDID-1", "lane-1");
+  assert.match(out, /engine: mobile\(\{ \.\.\.\(\{ platform: "ios", settle: 300 \}\), device: "UDID-1", session: "lane-1" \}\)/);
+  assert.match(out, /engine: mobile\(\{ platform: "android", transition: \{ mode: "fast" \} \}\)/, "the other target is untouched");
+  assert.equal(out, LANE_CONFIG.replace('mobile({ platform: "ios", settle: 300 })', 'mobile({ ...({ platform: "ios", settle: 300 }), device: "UDID-1", session: "lane-1" })'), "nothing else changes");
+});
+
+test("the second target is the one rewritten when it is the one named", () => {
+  const out = rewriteLaneConfig(LANE_CONFIG, "android", "emulator-5554", "s");
+  assert.match(out, /mobile\(\{ \.\.\.\(\{ platform: "android", transition: \{ mode: "fast" \} \}\), device: "emulator-5554", session: "s" \}\)/);
+  assert.match(out, /mobile\(\{ platform: "ios", settle: 300 \}\)/);
+});
+
+test("a variable argument and a spread are kept by spreading them", () => {
+  const variable = rewriteLaneConfig('const opts = { platform: "ios" };\nexport default { targets: [\n{ name: "ios", engine: mobile(opts), app: {} },\n] };', "ios", "D", "s");
+  assert.match(variable, /mobile\(\{ \.\.\.\(opts\), device: "D", session: "s" \}\)/);
+  const spread = rewriteLaneConfig('export default { targets: [\n{ name: "a", engine: mobile({ ...base, platform: "android" }) },\n] };', "a", "D", "s");
+  assert.match(spread, /mobile\(\{ \.\.\.\(\{ \.\.\.base, platform: "android" \}\), device: "D", session: "s" \}\)/);
+  const none = rewriteLaneConfig('export default { targets: [{ name: "a", engine: mobile() }] };', "a", "D", "s");
+  assert.match(none, /mobile\(\{ device: "D", session: "s" \}\)/);
+});
+
+test("parentheses inside strings and comments do not end the call early", () => {
+  const out = rewriteLaneConfig('export default { targets: [{ name: "a", engine: mobile({ platform: "ios", label: ")(" /* ) */ }) }] };', "a", "D", "s");
+  assert.match(out, /session: "s" \}\) \}\] \};$/);
+});
+
+test("a target whose engine is not a direct mobile call, or that does not exist, is refused with a reason", () => {
+  assert.throws(() => rewriteLaneConfig('export default { targets: [{ name: "web", engine: playwright({}) }] };', "web", "D", "s"), /not a direct mobile\(\.\.\.\) call/);
+  assert.throws(() => rewriteLaneConfig('export default { targets: [{ name: "ios", engine: makeEngine("ios") }] };', "ios", "D", "s"), /not a direct mobile/);
+  assert.throws(() => rewriteLaneConfig('const targets = []; export default { targets };', "ios", "D", "s"), /no literal `targets/);
+  assert.throws(() => rewriteLaneConfig(LANE_CONFIG, "tvos", "D", "s"), /no target with that name/);
+});
+
+async function laneProject() {
+  const root = await project();
+  await writeFile(join(root, "e2e.config.ts"), LANE_CONFIG);
+  await mkdir(join(root, "tests"), { recursive: true });
+  return root;
+}
+
+/** A spawn that records the lane config as it is while the run is alive, then answers. */
+function laneSpawner(seen: { args?: readonly string[]; cwd?: string; config?: string; existed?: string[] }) {
+  return ((command: string, args: readonly string[], options: { cwd?: string }) => {
+    seen.args = args; seen.cwd = options.cwd;
+    const config = args[args.indexOf("--config") + 1]!;
+    seen.config = readFileSync(config.endsWith(".progress.mts") ? readFileSync(config, "utf8").match(/file:\/\/[^"]+/)![0].replace("file://", "") : config, "utf8");
+    return spawner(JSON.stringify(report([{ line: 8, status: "passed" }])))(command, args, options as never);
+  }) as never;
+}
+
+test("a project lane runs a hidden rewritten copy beside the config, with its own output, and leaves nothing behind", async () => {
+  const root = await laneProject();
+  const seen: { args?: readonly string[]; cwd?: string; config?: string } = {};
+  const result = await runRecordedTest({ projectPath: root, relativePath: FILE, configPath: join(root, "e2e.config.ts"), target: "ios",
+    projectLane: { target: "ios", device: "UDID-1" }, runtime: { mode: "project", root } }, { spawner: laneSpawner(seen), onProgress: () => undefined });
+  assert.equal(result.status, "passed");
+  const args = seen.args ?? [];
+  assert.equal(seen.cwd, root);
+  assert.equal(args[args.indexOf("--target") + 1], "ios");
+  const config = args[args.indexOf("--config") + 1]!;
+  assert.ok(config.includes(`/${LANE_FILE_PREFIX}`) && config.startsWith(root), "the lane's config sits beside the project's own");
+  assert.match(seen.config!, /device: "UDID-1", session: "mobile-dev-lane-/);
+  assert.notEqual(args[args.indexOf("--output") + 1], undefined);
+  assert.ok(args[args.indexOf("--output") + 1]!.startsWith(`${root}/`), "the runner refuses an --output outside the root it runs from");
+  assert.equal(existsSync(args[args.indexOf("--output") + 1]!), false, "the output directory is removed");
+  assert.deepEqual((await readdir(root)).filter(name => name.startsWith(LANE_FILE_PREFIX)), [], "the lane files are removed");
+  assert.equal(readFileSync(join(root, "e2e.config.ts"), "utf8"), LANE_CONFIG, "the project's own config is never touched");
+});
+
+test("two lanes at once use different files and different sessions, and one finishing removes only its own", async () => {
+  const root = await laneProject();
+  const a: { args?: readonly string[]; config?: string } = {}, b: { args?: readonly string[]; config?: string } = {};
+  const request = (device: string) => ({ projectPath: root, relativePath: FILE, configPath: join(root, "e2e.config.ts"), target: "ios", projectLane: { target: "ios", device } });
+  await Promise.all([
+    runRecordedTest(request("A"), { spawner: laneSpawner(a) }),
+    runRecordedTest(request("B"), { spawner: laneSpawner(b) }),
+  ]);
+  assert.notEqual(a.args![a.args!.indexOf("--config") + 1], b.args![b.args!.indexOf("--config") + 1]);
+  assert.notEqual(a.args![a.args!.indexOf("--output") + 1], b.args![b.args!.indexOf("--output") + 1]);
+  assert.notEqual(a.config!.match(/session: "([^"]+)"/)![1], b.config!.match(/session: "([^"]+)"/)![1]);
+  assert.match(a.config!, /device: "A"/);
+  assert.match(b.config!, /device: "B"/);
+});
+
+test("a lane of the editor's own text runs in an isolated mirror and writes nothing into the project", async () => {
+  const root = await laneProject();
+  const seen: { args?: readonly string[]; cwd?: string; config?: string } = {};
+  const before = await readdir(root);
+  await runRecordedTest({ projectPath: root, relativePath: FILE, configPath: join(root, "e2e.config.ts"), untilSource: 'test("x", async () => {});\n',
+    projectLane: { target: "android", device: "emulator-5554" } }, { spawner: laneSpawner(seen), onProgress: () => undefined });
+  assert.notEqual(seen.cwd, root);
+  assert.ok(seen.args![seen.args!.indexOf("--output") + 1]!.startsWith(`${seen.cwd}/`), "the output sits inside the mirror the runner runs from");
+  assert.ok(seen.cwd!.includes("mobile-dev-e2e-lane-run-"));
+  assert.equal(existsSync(seen.cwd!), false, "the mirror is removed");
+  assert.deepEqual(await readdir(root), before, "the project folder is exactly as it was");
+});
+
+test("a lane whose target is not a direct mobile call fails before the runner starts", async () => {
+  const root = await project();
+  await writeFile(join(root, "e2e.config.ts"), 'export default { targets: [{ name: "ios", engine: makeEngine() }] };');
+  let spawned = false;
+  await assert.rejects(runRecordedTest({ projectPath: root, relativePath: FILE, configPath: join(root, "e2e.config.ts"), projectLane: { target: "ios", device: "D" } },
+    { spawner: (() => { spawned = true; throw new Error("no"); }) as never }), /not a direct mobile/);
+  assert.equal(spawned, false);
+});
+
+test("the lane files are removed when the run is cancelled", async () => {
+  const root = await laneProject();
+  const controller = new AbortController();
+  const hanging = (() => {
+    const child = new EventEmitter() as EventEmitter & { stdout: Readable; stderr: Readable; kill: () => void };
+    child.stdout = Readable.from([""]); child.stderr = Readable.from([""]); child.kill = () => undefined;
+    queueMicrotask(() => setTimeout(() => controller.abort(), 20));
+    return child;
+  }) as never;
+  await assert.rejects(runRecordedTest({ projectPath: root, relativePath: FILE, configPath: join(root, "e2e.config.ts"), projectLane: { target: "ios", device: "D" } },
+    { spawner: hanging, signal: controller.signal, onProgress: () => undefined }), /cancelled/);
+  assert.deepEqual((await readdir(root)).filter(name => name.startsWith(LANE_FILE_PREFIX)), []);
+});
+
+test("the sweep removes lane files of a dead process and keeps those of a live one", async () => {
+  const root = await project();
+  await writeFile(join(root, `${LANE_FILE_PREFIX}999999999-dead.ts`), "");
+  await writeFile(join(root, `${LANE_FILE_PREFIX}999999999-dead.progress.mts`), "");
+  await writeFile(join(root, `${LANE_FILE_PREFIX}${process.pid}-live.ts`), "");
+  await writeFile(join(root, "e2e.config.ts"), "");
+  await sweepLaneFiles(root);
+  assert.deepEqual((await readdir(root)).filter(name => name !== "node_modules").sort(), [`${LANE_FILE_PREFIX}${process.pid}-live.ts`, "e2e.config.ts"].sort());
 });
