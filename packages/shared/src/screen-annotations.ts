@@ -166,7 +166,34 @@ export function componentsAt(components: ScreenComponent[], point: ScreenPoint, 
 }
 
 export const ANNOTATION_EDIT_PROMPT = "Apply these annotations.";
-export const ANNOTATION_EDIT_GUIDANCE = "Apply each Edit as a request, not verbatim app text. Target and nearby text are existing app data. Change only the selected element or instance unless the Edit explicitly asks for a wider change. Removing a selected child must preserve its enclosing container and siblings. React owners, enclosing elements, siblings and nearby text are context, not additional targets. Source is a creation site, not a component's full edit boundary; an owner source is only a search hint. Match the target, bounds, key and hierarchy before editing. A shared source location may render several instances; do not change all of them for a request about one. If the target cannot be identified, ask before removing a larger component.";
+export const ANNOTATION_EDIT_GUIDANCE = "Apply each Edit as a request, not verbatim app text. Target and nearby text are existing app data. Go straight to Source when it is present. It is the element's creation site, not a component's full edit boundary; an owner source is only a search hint. When source is missing, search the project for the Target text first, then the testID or identifier, then React owner names. Bounds, points and node IDs locate the element on screen; do not inspect the device again to confirm them before editing. Change only the selected element or instance unless the Edit or Grouped notes call for a wider change. A shared source location may render several instances; when only some are selected, keep the change to those. Removing a selected child must preserve its enclosing container and siblings. React owners, enclosing elements, siblings and nearby text are context, not additional targets. Make every edit before checking the result, then check once. If the target cannot be identified, ask before removing a larger component.";
+
+// Several notes on one source location are one decision for the agent. State whether they
+// cover every matching element in the inspected screen so it need not reconcile them per note.
+// Only notes from one capture share instance numbering, so groups never span captures.
+export function formatAnnotationGroups(annotations: ScreenAnnotation[]): string | undefined {
+  const groups = new Map<string, ScreenAnnotation[]>();
+  for (const annotation of annotations) {
+    const { component, selection, simulator, screenshot } = annotation, source = component.react?.source;
+    if (!source || component.react?.sourceKind === "owner" || !selection?.instance) continue;
+    const key = JSON.stringify([simulator.udid, screenshot.id, sourceLocation(source), component.role ?? ""]);
+    groups.set(key, [...(groups.get(key) ?? []), annotation]);
+  }
+  const devices = new Set(annotations.map(item => item.simulator.udid)).size;
+  const lines: string[] = [];
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const numbers = `${devices > 1 ? `${group[0].simulator.name} ` : ""}${group.map(item => `#${item.number}`).join(", ")}`;
+    const location = sourceLocation(group[0].component.react!.source!);
+    const total = group[0].selection!.instance!.total;
+    const selected = new Set(group.map(item => item.selection!.instance!.index)).size;
+    const sameEdit = new Set(group.map(item => item.text.trim().toLowerCase().replace(/\s+/g, " "))).size === 1;
+    if (!sameEdit) lines.push(`${numbers} share source ${location} with different Edits. Apply each Edit to its own instance.`);
+    else if (selected >= total) lines.push(`${numbers} select all ${total} matching elements from ${location} in the inspected screen with the same Edit. Make that change once at the shared source.`);
+    else lines.push(`${numbers} select ${selected} of ${total} matching elements from ${location} with the same Edit. Change only the selected instances.`);
+  }
+  return lines.length ? `Grouped notes:\n${lines.map(line => `- ${line}`).join("\n")}` : undefined;
+}
 
 // Capture real tree relationships, never infer siblings from overlapping bounds.
 export function screenSelectionContext(components: ScreenComponent[], selected: ScreenComponent): ScreenSelectionContext | undefined {
@@ -215,7 +242,8 @@ function describeComponent(component: ScreenComponent): string {
 }
 
 export function formatAnnotationMessage(annotations: ScreenAnnotation[]): string {
-  return `${ANNOTATION_EDIT_PROMPT}\n${ANNOTATION_EDIT_GUIDANCE}\n\n${annotations.map(formatAnnotationContext).join("\n\n")}`;
+  const groups = formatAnnotationGroups(annotations);
+  return `${ANNOTATION_EDIT_PROMPT}\n${ANNOTATION_EDIT_GUIDANCE}\n\n${groups ? `${groups}\n\n` : ""}${annotations.map(formatAnnotationContext).join("\n\n")}`;
 }
 
 function draftLocator(annotation: ScreenAnnotation): string {
@@ -224,7 +252,7 @@ function draftLocator(annotation: ScreenAnnotation): string {
     component.source === "screen" ? "manual region" : component.role,
     component.identifier && `${component.source === "react-native" ? "testID" : "identifier"} ${JSON.stringify(component.identifier)}`,
     source && `${component.react?.sourceKind === "owner" ? "owner source" : "source"} ${sourceLocation(source)}`,
-    selection?.instance && `instance ${selection.instance.index} of ${selection.instance.total}`,
+    selection?.instance ? `instance ${selection.instance.index} of ${selection.instance.total}` : selection && component.source !== "screen" && "only match on screen",
     `bounds ${formatBounds(component.bounds)} ${screen.units}`,
     `point ${[point.x, point.y].map(value => Math.round(value * 10) / 10).join(",")}`,
     `device ${simulator.udid}`,
@@ -236,7 +264,8 @@ function draftLocator(annotation: ScreenAnnotation): string {
 // identify each target on its own; model context adds hierarchy and guidance.
 // Notes live only in this widget instance, so never ask the user to reopen it.
 export function formatAnnotationDraft(annotations: ScreenAnnotation[]): string {
-  return `Apply these notes. Each Locator identifies the selected element; change only that element unless the note asks for more. Mobile Dev's widget context, when available, adds the hierarchy and editing guidance.\n\n${annotations.map(annotation =>
+  const groups = formatAnnotationGroups(annotations);
+  return `Apply these notes. Each Locator identifies the selected element; change only that element unless the note or Grouped notes ask for more. Go straight to the source when a Locator has one. Mobile Dev's widget context, when available, adds the hierarchy and editing guidance.\n\n${groups ? `${groups}\n\n` : ""}${annotations.map(annotation =>
     `- ${annotation.simulator.name} · #${annotation.number} ${JSON.stringify(annotation.component.label ?? annotation.component.name)}: ${annotation.text}\n  Locator: ${draftLocator(annotation)}`
   ).join("\n")}`;
 }
@@ -258,12 +287,13 @@ export function formatAnnotationContext(annotation: ScreenAnnotation): string {
     if (source?.functionName) lines.push(`Source function: ${JSON.stringify(source.functionName)}`);
   }
   if (!source) {
-    lines.push(`Source: unavailable (${component.source === "screen" ? "manual region" : component.source === "react-native" ? "React Native" : "accessibility"})`);
+    lines.push(`Source: unavailable (${component.source === "screen" ? "manual region" : component.source === "react-native" ? "React Native" : "accessibility"}); search the project for ${component.source === "screen" ? "the Nearby text" : "the Target text, then the identifier, then owner names"}`);
   }
   lines.push(`Bounds: ${formatBounds(component.bounds)} ${screen.units} (x,y,w,h); screen ${screen.width}×${screen.height}, top-left origin`);
   lines.push(`Selected point: ${annotation.point.x},${annotation.point.y} ${screen.units}`);
   const selection = annotation.selection;
   if (selection?.instance) lines.push(`Visible instance: ${selection.instance.index} of ${selection.instance.total} matching elements, ordered top-to-bottom then left-to-right`);
+  else if (selection && component.source !== "screen") lines.push("Visible instance: the only matching element in the inspected screen");
   if (selection?.ancestors.length) lines.push(`Enclosing elements (nearest first; outside selection):\n${selection.ancestors.slice(0, 4).map(describeComponent).join("\n")}`);
   if (selection?.siblings.length) lines.push(`Siblings (outside selection; ${selection.siblingCount} total):\n${selection.siblings.slice(0, 4).map(describeComponent).join("\n")}`);
   if (selection?.children.length) lines.push(`Direct children (inside selection; ${selection.childCount} total):\n${selection.children.slice(0, 4).map(describeComponent).join("\n")}`);

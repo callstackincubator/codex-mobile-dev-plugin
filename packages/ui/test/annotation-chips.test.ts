@@ -40,7 +40,8 @@ test("annotation chips show element and note titles while preserving full model 
   if (attachment.type !== "text") return;
   assert.match(attachment.text, /\/app\/src\/Header\.tsx:12/);
   assert.match(attachment.text, /Bounds: 20,80,200,30 points/);
-  assert.doesNotMatch(attachment.text, /Captured at|Device:/);
+  assert.doesNotMatch(attachment.text, /Captured at/);
+  assert.match(attachment.text, /Device: "iPhone" \(test-device\)/);
   assert.equal(f.updates.at(-1)!.structuredContent?.screenAnnotations, undefined);
   assert.equal(f.updates.at(-1)!.content!.some(item => item.type === "image"), false);
   await f.context.sendAnnotationsToChat(annotation.simulator.udid);
@@ -56,9 +57,9 @@ test("annotation instructions remain distinct from display text on attachment an
   assert.equal(sent.type, "text");
   if (sent.type !== "text") return;
   assert.equal(sent.text, "Apply these annotations.");
-  const guidance = f.updates.at(-1)!.content!.filter(item => item.type === "text" && item.text === ANNOTATION_EDIT_GUIDANCE);
-  assert.equal(guidance.length, 1);
-  assert.deepEqual(guidance[0].annotations?.audience, ["assistant"]);
+  const content = f.updates.at(-1)!.content!;
+  assert.equal(content.length, 1);
+  assert.ok(content[0].type === "text" && content[0].text.startsWith(ANNOTATION_EDIT_GUIDANCE));
   const details = formatAnnotationContext(note);
   assert.match(details, /Edit: "change to hi max"/);
   assert.match(details, /Target: "Interactive destination"/);
@@ -87,15 +88,17 @@ test("an unavailable composer keeps deferred chips and does not send a message w
   assert.equal(f.context.screenAnnotations.length, 1);
 });
 
-test("batch context shares hidden guidance once and bounds locator text without cutting edits", async () => {
+test("each removable annotation retains edit guidance and bounded locator text", async () => {
   const f = fixture();
   const note = { ...annotation, text: "change to hi max\n".repeat(100), nearbyText: ["Header title", "Header title", "detail".repeat(100), "second", "third", "fourth"], component: { ...annotation.component, react: { ...annotation.component.react!, owners: ["App", "Root", "Navigator", "Screen", "Card", "Header", "Text"] } } };
   await f.context.attachAnnotation(note);
   await f.context.attachAnnotation({ ...annotation, id: "second-note", number: 2 });
   const update = f.updates.at(-1)!;
-  const guidance = update.content!.filter(item => item.type === "text" && item.text === ANNOTATION_EDIT_GUIDANCE);
-  assert.equal(guidance.length, 1);
-  assert.deepEqual(guidance[0].annotations?.audience, ["assistant"]);
+  assert.equal(update.content?.length, 2);
+  for (const item of update.content!) {
+    assert.ok(item.type === "text" && item.text.startsWith(ANNOTATION_EDIT_GUIDANCE));
+    assert.ok(item._meta?.["mobile-dev/annotationId"]);
+  }
   const details = formatAnnotationContext(note);
   assert.ok(details.includes(`Edit: ${JSON.stringify(note.text)}`));
   assert.match(details, /React: Navigator > Screen > Card > Header > Text/);

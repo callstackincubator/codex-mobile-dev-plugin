@@ -86,10 +86,13 @@ claude plugin marketplace add https://github.com/callstackincubator/mobile-dev.g
 claude plugin install mobile-dev@mobile-dev
 ```
 
-Or in a session, `/plugin install mobile-dev --marketplace https://github.com/callstackincubator/mobile-dev.git#release/claude`.
+The plugin is installed for your user, so the CLI, the Claude desktop app's **Code** tab
+and T3 Code's Claude threads all load it. Inside a session, run the same steps as
+`/plugin marketplace add https://github.com/callstackincubator/mobile-dev.git#release/claude`
+and `/plugin install mobile-dev@mobile-dev`.
 Run `claude plugin marketplace update mobile-dev` to update.
 
-For Claude Desktop chats, download `mobile-dev-<version>-claude-desktop-darwin-arm64.mcpb`
+Regular Claude Desktop chats do not load Claude Code plugins. For them, download `mobile-dev-<version>-claude-desktop-darwin-arm64.mcpb`
 from the [latest release](https://github.com/callstackincubator/mobile-dev/releases/latest),
 open **Settings > Extensions > Advanced settings**, and under **Extension Developer**
 click **Install Extension…** and select the file, or open it with Claude Desktop.
@@ -121,8 +124,10 @@ profiles go only to the TraceSift service on your Mac.
 [T3 Code](https://github.com/pingdotgg/t3code) runs Claude Code and Codex, so it loads
 the Mobile Dev plugin that each of them has installed. On the Mac that runs T3 Code,
 install the [Claude Code plugin](#claude-code-and-claude-desktop) for Claude threads
+(run the two `claude plugin` commands in a terminal, then start a new Claude thread)
 and the [Codex plugin](#codex) for Codex threads. In both, the panel opens in T3 Code's
-Browser.
+Browser. See the [T3 Code setup guide](https://incubator.callstack.com/codex-mobile-dev-plugin/docs/getting-started#t3-code)
+for the settings each provider needs.
 
 Turn off T3 Code's own device integration while you use Mobile Dev. In
 **Settings → Devices**, turn off **Use devices**, which also turns off **Agents can use

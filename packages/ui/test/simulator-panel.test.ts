@@ -295,6 +295,21 @@ for (const inputFirst of [false, true]) test(`Android opening intent is applied 
   assert.deepEqual(layouts, ["android", "android"]);
 });
 
+test("opening an ADC serial streams that device even with another phone of the same model", async t => {
+  const f = fixture(t);
+  const adcPhone: PhysicalAndroidDevice = { ...androidPhone, udid: "127.0.0.1:15555", transportType: "localNetwork" };
+  f.setAndroidDevices([androidPhone, adcPhone]);
+  const workspace = new WorkspaceDevices([f.ios.panel, f.android.panel], () => {});
+  t.after(() => workspace.dispose());
+  await workspace.setAvailable(true);
+  await workspace.open({ platform: "android", deviceId: adcPhone.udid });
+
+  assert.equal(f.android.panel.selected?.udid, adcPhone.udid);
+  const streams = f.calls.filter(call => call.name === "mobile_android_stream_session");
+  const targets = streams.map(call => call.arguments);
+  assert.deepEqual(targets, [{ deviceId: adcPhone.udid }]);
+});
+
 for (const platform of ["ios", "android"] as const) test(`${platform} physical opening intent selects the phone before any simulator`, async t => {
   const f = fixture(t);
   f.setPhysicalDevices([physicalPhone]);

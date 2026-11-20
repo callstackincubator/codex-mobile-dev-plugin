@@ -530,6 +530,8 @@ Since 0.1.93, `ui.video.paint` and the platform frame counters also cover frames
 
 `ui.annotations.send` measures the host send round trip, including composer retries. Outcome counters distinguish success, a missing composer, timeout and other failures. Unexpected send failures use a fixed error message. No message content goes to Sentry. A timeout keeps notes for a manual retry; it never triggers an automatic resend, since delivery may have succeeded without acknowledgement.
 
+`ui.annotations.send_batch` counts accepted sends with a `notes` attribute of `1`, `2-3` or `4+`, so batched edits can be compared with single notes. It carries no note text, targets or source locations.
+
 The standard-host attachment bar reuses these annotation measurements. On standard hosts,
 the measured operation includes publishing selection context before preparing the
 chat draft. `ui.annotations.send_success` means the host accepted the request;

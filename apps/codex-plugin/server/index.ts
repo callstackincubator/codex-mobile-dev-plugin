@@ -5,9 +5,11 @@ import { agentDeviceTools, readAgentDeviceCatalog } from "@mobile-dev/core/agent
 import { browserPanel } from "@mobile-dev/core/browser-panel.ts";
 import { panelPlacement } from "@mobile-dev/core/panel-placement.ts";
 import { codexUpdates } from "./codex-updates.ts";
+import { panelSelection } from "./panel-selection.ts";
 
 // Codex's server: the shared server with Mobile Dev's panel and agent-device's commands, plus
 // the updater for Codex plugin installs.
 const inline = panelPlacement("inline") === "inline";
-const features = [agentDeviceTools(readAgentDeviceCatalog()), codexUpdates];
-await runStdioServer({ panel: createPanel({ inline }), features: inline ? features : [...features, browserPanel({ always: true })] });
+const panelContext = inline ? panelSelection : browserPanel({ always: true });
+const features = [agentDeviceTools(readAgentDeviceCatalog()), codexUpdates, panelContext];
+await runStdioServer({ panel: createPanel({ inline }), features });
