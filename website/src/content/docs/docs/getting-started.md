@@ -41,20 +41,42 @@ When an update is offered in the desktop app, click **Update**, then fully quit 
 
 ## Claude
 
+Claude has two places that load Mobile Dev, and each has its own installation:
+
+| Where you chat with Claude | What to install |
+| --- | --- |
+| **Claude Code**: the `claude` CLI, the **Code** tab in the Claude desktop app, IDE extensions, and hosts that run Claude Code, such as [T3 Code](#t3-code) | The [Claude Code plugin](#claude-code) |
+| **Claude Desktop chats**: the regular chat in the Claude desktop app | The [Claude Desktop extension](#claude-desktop) |
+
+Install one of them per place. Both use the same server, so avoid installing the plugin and a local connection side by side.
+
+### Claude Code
+
+The plugin is published as a Claude Code marketplace on this repository's `release/claude` branch. On an Apple Silicon Mac with Node.js 22.19 or later, run these commands in a terminal:
+
+```sh
+claude plugin marketplace add https://github.com/callstackincubator/mobile-dev.git#release/claude
+claude plugin install mobile-dev@mobile-dev
+```
+
+Or let your agent do the setup:
+
+<button type="button" class="copy-prompt" data-copy="Install the Mobile Dev Claude Code plugin for me. Run `claude plugin marketplace add https://github.com/callstackincubator/mobile-dev.git#release/claude` and then `claude plugin install mobile-dev@mobile-dev`. Confirm with `claude plugin list` that mobile-dev is installed and enabled. Check that Node.js 22.19 or later and the full Xcode are installed (`node --version`, `xcode-select -p`), and for Android that `adb` is on PATH. Then tell me to start a new Claude Code session and ask it to open Mobile Dev. If I use T3 Code, also tell me to turn off Settings → Devices → Use devices there first.">Copy setup prompt</button>
+
 ### Claude Desktop
 
-Claude Desktop currently uses a manual preview. Obtain a `mobile-dev-<version>-claude-desktop-darwin-arm64.mcpb` bundle from the person sharing it, or [build a bundle from source](https://github.com/callstackincubator/mobile-dev/blob/main/CONTRIBUTING.md#claude-desktop-local-development). The bundle is not yet published by this repository's release workflow.
+For regular chats in the Claude desktop app, download `mobile-dev-<version>-claude-desktop-darwin-arm64.mcpb` from the [latest release](https://github.com/callstackincubator/mobile-dev/releases/latest).
 
 1. Open **Settings → Desktop app** and choose **Manage** beside **Extensions**.
 2. Open **Advanced settings**. Under **Extension Developer**, choose **Install Extension…** and select the `.mcpb` file. You can also open the bundle with Claude Desktop.
 3. Fully quit and reopen Claude, start a new conversation, and ask **“Open Mobile Dev.”**
 4. Approve the connector when prompted. Choose **Expand** for the larger view when available.
 
-The bundle includes the plugin and native helpers; Claude supplies Node. Install newer bundles manually to update. Mobile Dev does not add a permanent Claude sidebar entry.
+The bundle includes the server and native helpers; Claude supplies Node. Install a newer bundle to update. Mobile Dev does not add a permanent Claude sidebar entry.
 
 See [Claude's desktop extension instructions](https://support.claude.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop) for the current custom-extension installation flow.
 
-For a local connection or bundle build, first complete the repository's [Build and package setup](https://github.com/callstackincubator/mobile-dev/blob/main/CONTRIBUTING.md#build-and-package). Then run these commands from that checkout with Node.js 22.19 or later:
+For a local connection, first complete the repository's [Build and package setup](https://github.com/callstackincubator/mobile-dev/blob/main/CONTRIBUTING.md#build-and-package). Then run these commands from that checkout with Node.js 22.19 or later:
 
 ```sh
 npm run build
@@ -62,18 +84,6 @@ npm run claude:config
 ```
 
 Merge the generated `.local-dev/claude-desktop-config.json` entry into the existing `mcpServers` configuration through **Settings → Developer → Edit Config**, preserving other servers. Restart Claude after changing the server.
-
-### Claude Code
-
-The source build can package a local Claude Code plugin:
-
-```sh
-npm run package:claude
-claude plugin validate ./release/claude-plugin/mobile-dev
-claude --plugin-dir ./release/claude-plugin/mobile-dev
-```
-
-Run these after the source-build setup above. The plugin requires Node.js 22.19 or later on `PATH`. Rich views depend on the host's MCP Apps capabilities. Use one Mobile Dev installation or local connection at a time to avoid duplicate servers.
 
 ## Cursor
 
@@ -92,17 +102,33 @@ For a local MCP connection, run `npm run build` and `npm run cursor:config` from
 
 ## T3 Code
 
-[T3 Code](https://github.com/pingdotgg/t3code) runs Claude Code and Codex, so it loads the Mobile Dev plugin that each of them has installed. On the Mac that runs T3 Code, install the [Claude Code](#claude-code) plugin for Claude threads and the [Codex](#codex-cli) plugin for Codex threads. In both, the panel opens in T3 Code's Browser.
+[T3 Code](https://github.com/pingdotgg/t3code) runs Claude Code and Codex, so it loads the Mobile Dev plugin that each of them has installed. Install the plugin for the provider you use, on the Mac that runs T3 Code. In both, the panel opens in T3 Code's Browser.
 
-Turn off T3 Code's own device integration while you use Mobile Dev. In **Settings → Devices**, turn off **Use devices**, which also turns off **Agents can use devices**. Otherwise T3 Code gives agents its own `device_*` tools, with the same names as Mobile Dev's, and tells them to prefer those tools.
+### 1. Turn off T3 Code's device tools
 
-Codex threads need one setting, because T3 Code renders Codex's panel in the chat and asks you to confirm each action that the panel takes, such as each tap:
+In **Settings → Devices**, turn off **Use devices**, which also turns off **Agents can use devices**. Otherwise T3 Code gives agents its own `device_*` tools, with the same names as Mobile Dev's, and tells them to prefer those tools.
+
+### 2. Install the plugin
+
+For **Claude threads**, run these commands in a terminal on that Mac, outside T3 Code:
+
+```sh
+claude plugin marketplace add https://github.com/callstackincubator/mobile-dev.git#release/claude
+claude plugin install mobile-dev@mobile-dev
+```
+
+Claude threads need no further setting.
+
+For **Codex threads**, install the [Codex plugin](#codex-cli), then add one setting, because T3 Code otherwise renders Codex's panel in the chat and asks you to confirm each action that the panel takes, such as each tap:
 
 1. Open **Settings → Providers**, then the Codex instance.
 2. Under **Variables**, click **Add variable**. Set `MOBILE_DEV_PANEL` to `browser`.
-3. Start a new thread.
 
-Ask **“Open Mobile Dev.”** The agent opens the panel with T3 Code's `preview_open` tool, and T3 Code shows the page as a floating preview. To dock the panel beside the chat, click the preview's **Open in right panel** button. Performance recordings still render as cards in the chat.
+### 3. Open Mobile Dev
+
+Start a **new** thread with the Claude or Codex provider, so it loads the plugin, and ask **“Open Mobile Dev.”** The agent opens the panel with T3 Code's `preview_open` tool, and T3 Code shows the page as a floating preview. To dock the panel beside the chat, click the preview's **Open in right panel** button. The first open downloads the panel's runtime once, which can take a minute.
+
+Setup worked when the panel shows Mobile Dev's device list. Choose a simulator or emulator there, and it boots and streams in the panel. Performance recordings still render as cards in the chat.
 
 ## Other environments
 
@@ -114,7 +140,7 @@ Follow your client's configuration format. Device panels and interactive recordi
 
 1. Ask **“Build and run my app in the simulator beside this chat.”** You can name iOS, Android, a simulator model, or a connected device.
 2. Choose or reuse a device. Selecting a stopped simulator or AVD boots it.
-3. Watch the app beside the conversation. Use **Select** to annotate an element, or open **App Intelligence**, **Testing Studio**, **Logs**, **Performance**, **Storage**, or **TraceSift**.
+3. Watch the app beside the conversation. Use **Select** to annotate an element, or open **Tools** and choose **App Intel**, **Testing Studio**, **Logs**, **Performance**, **Storage**, or **TraceSift**. App Intelligence requires Mobile Dev 0.1.183 or later; if **App Intel** is missing, update Mobile Dev, fully quit and reopen your host, then start a new conversation.
 
 Your app's own build tools compile, install, and launch it. Mobile Dev does not install Xcode runtimes or replace your project's build system.
 

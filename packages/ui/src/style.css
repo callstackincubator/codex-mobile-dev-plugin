@@ -310,31 +310,69 @@ html[data-theme="dark"] .tracesift-explorer { color-scheme: dark; }
 }
 .tracesift-pick-bar > span { flex: 1; min-width: 0; }
 
-/* Upload pane shown until a profile is read; ported from perf-ai `src/app/globals.css`. */
-.tracesift-upload { display: grid; align-content: start; gap: 12px; padding: 12px; color: var(--foreground); font-size: 13px; }
+/* Upload workspace shown until a profile is read; its inspector carries through to the results layout. */
+.tracesift-upload { display: grid; align-content: start; gap: 18px; width: 100%; padding: 20px; color: var(--foreground); font-size: 13px; }
 .tracesift-upload .results-header { padding-bottom: 14px; border-bottom: 1px solid var(--border); }
 .tracesift-upload .intro { min-width: 0; text-align: left; }
 .tracesift-upload .eyebrow { display: inline-block; color: var(--primary); font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
 .tracesift-upload .results-title { margin: 6px 0; font-size: 15px; line-height: 1.25; letter-spacing: -0.02em; font-weight: 600; }
 .tracesift-upload .intro p { margin: 0; font-size: 12px; line-height: 1.5; color: var(--muted-foreground); }
-.tracesift-upload .profile-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.tracesift-upload .tracesift-workspace { display: grid; grid-template-columns: minmax(0, 2.1fr) minmax(250px, .9fr); min-height: 390px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.tracesift-upload .tracesift-workflow { display: grid; align-content: start; gap: 12px; min-width: 0; padding: 18px; }
+.tracesift-upload .tracesift-workflow.is-disabled .workflow-label,
+.tracesift-upload .tracesift-workflow.is-disabled .profile-options { opacity: .58; }
+.tracesift-upload .tracesift-blocker { display: flex; align-items: center; min-height: 34px; margin: 0 0 4px; padding: 0 10px; border: 1px solid var(--ring); border-radius: 7px; background: color-mix(in srgb, var(--ring) 7%, transparent); color: var(--ring); font-size: 11.5px; font-weight: 600; }
 .tracesift-upload .workflow-label { display: flex; align-items: baseline; gap: 8px; }
 .tracesift-upload .workflow-label > span { display: grid; place-items: center; width: 18px; height: 18px; flex: none; align-self: center; border-radius: 50%; background: var(--accent); color: var(--primary); font-size: 10px; font-weight: 700; }
 .tracesift-upload .workflow-label strong { font-size: 13px; }
 .tracesift-upload .workflow-label small { color: var(--muted-foreground); font-size: 11.5px; }
-.tracesift-upload .profile-options { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.tracesift-upload .profile-chip { display: inline-flex; align-items: baseline; gap: 6px; padding: 5px 11px; background: transparent; border: 1px solid var(--border); border-radius: 999px; color: inherit; font: inherit; font-size: 12px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.tracesift-upload .profile-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.tracesift-upload .profile-chip { display: grid; gap: 4px; min-width: 0; padding: 11px 12px; background: transparent; border: 1px solid var(--border); border-radius: 9px; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.tracesift-upload .profile-chip > span { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-width: 0; }
+.tracesift-upload .profile-chip strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; }
+.tracesift-upload .profile-chip small { color: var(--muted-foreground); font-size: 11px; line-height: 1.35; }
 .tracesift-upload .profile-chip:hover { background: var(--muted); }
-.tracesift-upload .profile-chip.selected { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 14%, transparent); color: var(--primary); }
+.tracesift-upload .profile-chip.selected { border-color: var(--ring); background: color-mix(in srgb, var(--ring) 14%, transparent); color: var(--foreground); }
 .tracesift-upload .profile-chip:disabled { opacity: 0.55; cursor: not-allowed; }
 .tracesift-upload .profile-chip:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .tracesift-upload .profile-chip em { color: var(--muted-foreground); font-size: 10.5px; font-style: normal; font-weight: 500; font-family: var(--font-mono, monospace); }
-.tracesift-upload .profile-chip.selected em { color: inherit; opacity: 0.75; }
-.tracesift-upload .profile-detail { margin: -4px 0 0; color: var(--muted-foreground); font-size: 11.5px; }
+.tracesift-upload .profile-chip.selected em { color: var(--ring); }
+.tracesift-upload .tracesift-inspector { min-width: 0; padding: 18px; border-left: 1px solid var(--border); background: color-mix(in srgb, var(--card) 55%, transparent); }
+.tracesift-upload .tracesift-inspector-status { display: flex; align-items: center; gap: 7px; margin: 0; color: var(--muted-foreground); font-size: 11.5px; }
+.tracesift-upload .tracesift-inspector-status svg { width: 14px; height: 14px; }
+.tracesift-upload .tracesift-ready { display: inline-flex; align-items: center; justify-self: start; gap: 6px; margin: 0; padding: 4px 8px; border: 1px solid color-mix(in srgb, var(--ring) 48%, var(--border)); border-radius: 999px; background: color-mix(in srgb, var(--ring) 8%, transparent); color: var(--ring); font-size: 11.5px; font-weight: 600; }
+.tracesift-upload .tracesift-ready svg { width: 14px; height: 14px; }
+.tracesift-upload .tracesift-setup { display: grid; align-content: start; gap: 14px; height: 100%; }
+.tracesift-upload .tracesift-setup h2, .tracesift-upload .tracesift-setup p { margin: 0; }
+.tracesift-upload .tracesift-setup h2 { font-size: 14px; }
+.tracesift-upload .tracesift-setup p { color: var(--muted-foreground); line-height: 1.5; }
+.tracesift-upload .tracesift-action-required { display: inline-flex; margin-top: 8px !important; padding: 3px 7px; border: 1px solid color-mix(in srgb, var(--ring) 45%, var(--border)); border-radius: 999px; color: var(--ring) !important; font-size: 10.5px; font-weight: 600; }
+.tracesift-upload .tracesift-commands { display: grid; gap: 12px; }
+.tracesift-upload .tracesift-setup-step { display: grid; gap: 6px; }
+.tracesift-upload .tracesift-setup-step-label { display: flex; align-items: center; gap: 7px; font-size: 11.5px; }
+.tracesift-upload .tracesift-setup-step-label > span { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--accent); color: var(--primary); font-size: 10px; font-weight: 700; }
+.tracesift-upload .tracesift-command { display: grid; grid-template-columns: minmax(0, 1fr) 30px; align-items: center; width: 100%; border: 1px solid var(--border); border-radius: 7px; background: var(--card); overflow: hidden; }
+.tracesift-upload .tracesift-command code { min-width: 0; overflow-x: auto; padding: 8px 9px; font-family: var(--font-mono, monospace); font-size: 10.5px; white-space: nowrap; }
+.tracesift-upload .tracesift-command button { width: 30px; height: 30px; border-left: 1px solid var(--border); border-radius: 0; }
+.tracesift-upload .tracesift-command-spinner { animation: tracesift-command-spin 900ms linear infinite; }
+@keyframes tracesift-command-spin { to { transform: rotate(360deg); } }
+.tracesift-upload .tracesift-setup-actions { display: grid; gap: 10px; margin-top: auto; text-align: center; }
+.tracesift-upload .tracesift-setup-actions button { width: 100%; }
+.tracesift-upload .tracesift-setup-actions a { color: var(--ring); font-size: 12px; font-weight: 600; text-decoration: none; }
+.tracesift-upload .tracesift-setup-actions a:hover { text-decoration: underline; }
+.tracesift-upload .tracesift-setup-actions a[aria-disabled="true"] { color: var(--muted-foreground); opacity: .55; pointer-events: none; }
+.tracesift-upload .tracesift-before { display: grid; align-content: start; gap: 16px; }
+.tracesift-upload .tracesift-before h2 { margin: 0; font-size: 14px; }
+.tracesift-upload .tracesift-before dl { display: grid; margin: 0; border-top: 1px solid var(--border); }
+.tracesift-upload .tracesift-before dl > div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--border); }
+.tracesift-upload .tracesift-before dt { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 11px; font-weight: 600; }
+.tracesift-upload .tracesift-before dt svg { width: 13px; height: 13px; color: var(--muted-foreground); }
+.tracesift-upload .tracesift-before dd { min-width: 0; margin: 0; color: var(--muted-foreground); font-size: 10.5px; line-height: 1.4; text-align: right; overflow-wrap: anywhere; }
+.tracesift-upload .tracesift-before > a { color: var(--ring); font-size: 11.5px; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
 .tracesift-upload .upload-pane {
   width: 100%;
-  min-height: 170px;
-  padding: 22px 16px;
+  min-height: 150px;
+  padding: 20px 16px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -348,7 +386,7 @@ html[data-theme="dark"] .tracesift-explorer { color-scheme: dark; }
   cursor: pointer;
   transition: background 160ms ease, border-color 160ms ease;
 }
-.tracesift-upload .upload-pane:hover, .tracesift-upload .upload-pane.is-dragging { background: var(--accent); border-color: var(--primary); }
+.tracesift-upload .upload-pane:hover, .tracesift-upload .upload-pane.is-dragging { background: color-mix(in srgb, var(--ring) 14%, var(--muted)); border-color: var(--ring); }
 .tracesift-upload .upload-pane.is-disabled { opacity: 0.55; cursor: not-allowed; }
 .tracesift-upload .upload-pane.is-disabled:hover { background: var(--muted); border-color: var(--border); }
 .tracesift-upload .upload-pane:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
@@ -358,6 +396,16 @@ html[data-theme="dark"] .tracesift-explorer { color-scheme: dark; }
 .tracesift-upload .upload-detail { margin-top: 6px; color: var(--muted-foreground); font-size: 12px; }
 .tracesift-upload .browse-button { margin-top: 14px; padding: 6px 11px; color: var(--primary); background: var(--card); border: 1px solid var(--border); border-radius: 7px; font-size: 12px; font-weight: 650; }
 .tracesift-upload .upload-analyzing { padding: 10px; border: 1px dashed var(--border); border-radius: 8px; color: var(--muted-foreground); }
+@media (max-width: 760px) {
+  .tracesift-upload { padding: 14px; }
+  .tracesift-upload .tracesift-workspace { grid-template-columns: 1fr; }
+  .tracesift-upload .tracesift-inspector { border-top: 1px solid var(--border); border-left: 0; }
+}
+@media (max-width: 560px) {
+  .tracesift-upload .profile-options { grid-template-columns: 1fr; }
+  .tracesift-upload .workflow-label { flex-wrap: wrap; }
+  .tracesift-upload .workflow-label small { width: 100%; padding-left: 26px; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .tracesift-upload .upload-pane { transition: none; }

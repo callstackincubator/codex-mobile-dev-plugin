@@ -10,7 +10,7 @@ import {
 import type { AppFlowStep } from "@mobile-dev/shared/app-flow.ts";
 
 const device = {
-  setupCommands: ["agent-device boot --platform ios --target mobile"],
+  setupCommands: ["agent-device boot --platform ios --target mobile --udid ios-selected"],
   launchTarget: "xyz.blueskyweb.app",
   launchUrl: null,
 };
@@ -76,7 +76,7 @@ describe("App Flow walk command serialization", () => {
 describe("App Flow baseline launch commands", () => {
   it("preserves setup order and round trips seed and fallback URLs", () => {
     assert.deepEqual(baselineLaunchCommands(device), [
-      "agent-device boot --platform ios --target mobile",
+      "agent-device boot --platform ios --target mobile --udid ios-selected",
       "agent-device open xyz.blueskyweb.app --platform ios",
     ]);
     const [, seeded] = baselineLaunchCommands(device, "bluesky://profile/alice");

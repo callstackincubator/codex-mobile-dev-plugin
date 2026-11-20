@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { setTimeout } from "node:timers/promises";
 import { build } from "esbuild";
 import { JSDOM } from "jsdom";
+import type { PanelSelection } from "../shared/panel-selection.ts";
 
 const built = await build({
   entryPoints: ["apps/codex-plugin/ui/main.tsx"],
@@ -33,6 +34,9 @@ for (const notification of ["input", "result"] as const) test(`workspace applies
   Object.defineProperty(window.HTMLElement.prototype, "clientWidth", { get: () => 400 });
   Object.defineProperty(window.HTMLElement.prototype, "clientHeight", { get: () => 800 });
   const calls: string[] = [];
+  const reports: (Partial<PanelSelection> & { panelId: string })[] = [];
+  const nativeComposer = notification === "input";
+  let rejectDeviceSelection = true;
   let initialized = false;
   let tornDown = false;
   function send(message: object) {
@@ -42,12 +46,22 @@ for (const notification of ["input", "result"] as const) test(`workspace applies
   function result(id: number | string, value: object) { send({ id, result: value }); }
   window.postMessage = message => {
     if (message.method === "ui/initialize") {
-      result(message.id, { protocolVersion: "2026-01-26", hostInfo: { name: "test", version: "1" }, hostCapabilities: { serverTools: {}, serverResources: {} }, hostContext: {} });
+      const experimental = nativeComposer ? { "openai/modelContext": {} } : {};
+      result(message.id, { protocolVersion: "2026-01-26", hostInfo: { name: "test", version: "1" }, hostCapabilities: { serverTools: {}, serverResources: {}, experimental }, hostContext: {} });
     } else if (message.method === "ui/notifications/initialized") {
       initialized = true;
     } else if (message.method === "tools/call") {
       const name = message.params.name;
       calls.push(name);
+      if (name === "mobile_set_panel_selection") {
+        const selection = structuredClone(message.params.arguments);
+        reports.push(selection);
+        if (selection.activeDeviceId && rejectDeviceSelection) {
+          rejectDeviceSelection = false;
+          result(message.id, { content: [], isError: true });
+          return;
+        }
+      }
       if (name === "mobile_list_simulators") {
         result(message.id, { content: [], structuredContent: { connected: true, managed: false, baseUrl: "", devices: [{ udid: "iphone", name: "iPhone", state: "Booted", runtime: "iOS" }] } });
       } else if (name === "mobile_list_ios_devices") {
@@ -74,6 +88,12 @@ for (const notification of ["input", "result"] as const) test(`workspace applies
     send({ id: "teardown", method: "ui/resource-teardown", params: {} });
     await until(() => tornDown);
     window.close();
+    if (nativeComposer) {
+      const last = reports.at(-1);
+      assert.deepEqual(last, { panelId: reports[0].panelId });
+    } else {
+      assert.deepEqual(reports, []);
+    }
     if (notification === "input") {
       const captured = telemetry.join("\n");
       assert.match(captured, /"device_platform":\{"value":"android"/);
@@ -88,6 +108,10 @@ for (const notification of ["input", "result"] as const) test(`workspace applies
   await setTimeout(10);
   const earlyDiscovery = calls.filter(name => name.startsWith("mobile_list_"));
   assert.deepEqual(earlyDiscovery, []);
+  if (nativeComposer) {
+    assert.equal(reports.length, 1);
+    assert.deepEqual(reports[0].devices, []);
+  }
   const target = { platform: "android", kind: "emulator", deviceId: "avd:Pixel" };
   if (notification === "input") send({ method: "ui/notifications/tool-input", params: { arguments: target } });
   else send({ method: "ui/notifications/tool-result", params: { content: [], structuredContent: { panelTarget: target } } });
@@ -105,6 +129,27 @@ for (const notification of ["input", "result"] as const) test(`workspace applies
   assert.match(devices, /Pixel/);
   const unexpected = calls.filter(name => name.endsWith("_stream_session") || name.startsWith("mobile_boot"));
   assert.deepEqual(unexpected, []);
+  if (nativeComposer) {
+    const selected = reports.at(-1);
+    assert.equal(selected?.panelId, reports[0].panelId);
+    assert.equal(selected?.activeDeviceId, target.deviceId);
+    assert.deepEqual(selected?.devices, [{ ...target, name: "Pixel", runtime: "Android", state: "Shutdown" }]);
+    window.dispatchEvent(new window.Event("focus"));
+    window.dispatchEvent(new window.Event("pageshow"));
+    await until(() => reports.length === 3);
+    assert.deepEqual(reports[2], selected, "Simultaneous resume signals retry a failed selection once");
+    await setTimeout(0);
+    window.dispatchEvent(new window.Event("focus"));
+    await until(() => reports.length === 4);
+    assert.deepEqual(reports[3], selected, "Refocusing restores the selection even after the server restarts");
+    window.document.getElementById("platform-select")?.click();
+    await until(() => window.document.getElementById("platform-android") !== null);
+    window.document.getElementById("platform-android")?.click();
+    await until(() => reports.at(-1)?.devices?.length === 0);
+    const cleared = reports.at(-1);
+    assert.deepEqual(cleared?.devices, []);
+    assert.equal(cleared?.activeDeviceId, undefined);
+  }
 });
 
 test("mobile_open_app_intel's appIntelScreen selects that screen in the workspace", async t => {

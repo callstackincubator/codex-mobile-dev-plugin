@@ -6,6 +6,7 @@ import { homedir } from 'node:os'
 import { basename, isAbsolute, join } from 'node:path'
 import type { AppFlowNode, AppFlowPressable, AppFlowStep, ExplorationMode } from '@mobile-dev/shared/app-flow.ts'
 import { errorMessage } from '@mobile-dev/shared/protocol.ts'
+import { ExpectedOperationError } from '@mobile-dev/shared/error-reporting.ts'
 import {
   acceptOpenInAppPrompt,
   isUrlSchemePreapproved,
@@ -194,8 +195,8 @@ export function measurePhase<T>(
   return ctx.timing?.measure(phase, work) ?? work()
 }
 
-function agentDeviceBootCommand(): string {
-  return 'agent-device boot --platform ios --target mobile'
+export function agentDeviceBootCommand(udid: string): string {
+  return `agent-device boot --platform ios --target mobile --udid ${quoteCliArg(udid)}`
 }
 
 function agentDeviceInstallCommand(app: string, appPath: string): string {
@@ -209,7 +210,7 @@ function agentDeviceInstallCommand(app: string, appPath: string): string {
 export { agentDeviceOpenCommand } from './walk-commands.ts'
 
 type AgentDeviceClient = Awaited<ReturnType<import('./host.ts').AppFlowAgentDeviceModule['createAgentDeviceClient']>>
-type LaunchMode = 'native-run' | 'expo-go'
+export type LaunchMode = 'native-run' | 'expo-go'
 
 export interface CaptureDevice {
   client: AgentDeviceClient
@@ -387,6 +388,36 @@ async function closeExistingSession(client: AgentDeviceClient): Promise<void> {
     await client.sessions.close()
   } catch {
     // No leftover session for this name.
+  }
+}
+
+/**
+ * Transfers the selected device from an idle chat session to App Flow.
+ *
+ * The shared state directory makes both clients peers of the same daemon. Closing through that
+ * daemon waits behind work already using the session, releases its device claim, and leaves the
+ * healthy iOS runner warm for App Flow's same-state-dir takeover. Sessions on other devices are
+ * deliberately untouched.
+ */
+export async function handoffCaptureDevice(
+  client: AgentDeviceClient,
+  deviceId: string
+): Promise<void> {
+  const sessions = await client.sessions.list()
+  const owners = sessions.filter((session: { device?: { id?: string } }) => session.device?.id === deviceId)
+  for (const owner of owners) {
+    const session = owner.address ?? owner.name
+    if (typeof session !== 'string' || !session.trim()) continue
+    log('sessions.close', `handoff device=${deviceId} owner=${owner.name ?? session}`)
+    try {
+      await client.sessions.close({ session })
+    } catch (error) {
+      throw new ExpectedOperationError(
+        'resource_limit',
+        `App Flow could not take the simulator from agent-device session "${owner.name ?? session}". ` +
+        `Wait for that session to finish its current command, then retry. (${errorMessage(error)})`
+      )
+    }
   }
 }
 
@@ -834,18 +865,42 @@ function installedAppLaunchTarget(app: string): string {
   return formattedApp?.[1]?.trim() || app
 }
 
-async function listInstalledApps(
-  client: AgentDeviceClient,
-  platform: 'ios' | 'android'
+/**
+ * The apps installed on the sweep's device.
+ *
+ * Pass the booted device's id. Before a session is open the daemon resolves the target from the
+ * request alone, so an unscoped listing fails with AMBIGUOUS_MATCH as soon as a second simulator
+ * is booted. That failure used to be swallowed as an empty list, and the sweep then reported the
+ * freshly built app as "not installed".
+ */
+export async function listInstalledApps(
+  client: Pick<AgentDeviceClient, 'apps'>,
+  platform: 'ios' | 'android',
+  deviceId?: string
 ): Promise<string[]> {
-  return (await client.apps.list({ platform }).catch(() => [])) as string[]
+  try {
+    return (await client.apps.list({ platform, ...deviceSelector(platform, deviceId) })) as string[]
+  } catch (error) {
+    log('apps.list', `failed — ${errorMessage(error)}`)
+    return []
+  }
+}
+
+/** The request field that pins a call to one device: `udid` on iOS, `serial` on Android. */
+function deviceSelector(
+  platform: 'ios' | 'android',
+  deviceId: string | undefined
+): { udid?: string; serial?: string } {
+  if (!deviceId) return {}
+  return platform === 'android' ? { serial: deviceId } : { udid: deviceId }
 }
 
 async function ensureExpoGoInstalled(
   client: AgentDeviceClient,
-  ctx: CaptureContext
+  ctx: CaptureContext,
+  deviceId: string
 ): Promise<{ launchTarget: string; installPath: string | null }> {
-  const apps = await listInstalledApps(client, ctx.platform)
+  const apps = await listInstalledApps(client, ctx.platform, deviceId)
   const existing = matchInstalledApp(apps, [EXPO_GO_APP_NAME, 'host.exp.Exponent'])
   if (existing) {
     log('Expo Go already installed', existing)
@@ -856,7 +911,8 @@ async function ensureExpoGoInstalled(
   log('apps.install', appPath)
   const result = await client.apps.install({
     appPath,
-    platform: ctx.platform
+    platform: ctx.platform,
+    ...deviceSelector(ctx.platform, deviceId)
   })
   return {
     launchTarget: result.app || result.appId || EXPO_GO_APP_NAME,
@@ -918,7 +974,7 @@ function isMissingSessionError(error: unknown): boolean {
 }
 
 async function openAppSession(
-  client: AgentDeviceClient,
+  client: Pick<AgentDeviceClient, 'apps'>,
   app: string,
   options?: {
     url?: string | null
@@ -945,6 +1001,7 @@ async function openAppSession(
     await client.apps.open({
       app: launchTarget,
       platform: 'ios',
+      ...(options?.udid ? { udid: options.udid } : {}),
       ...(url ? { url } : {}),
       ...(options?.relaunch ? { relaunch: true } : {})
     })
@@ -1209,8 +1266,8 @@ async function launchBoundApp(device: CaptureDevice, timing?: PhaseLedger): Prom
   await dismissOpenInAppPrompt(device, device.launchUrl)
 }
 
-async function openInstalledApp(
-  client: AgentDeviceClient,
+export async function openInstalledApp(
+  client: Pick<AgentDeviceClient, 'apps'>,
   ctx: CaptureContext,
   mode: LaunchMode,
   options: {
@@ -1240,7 +1297,7 @@ async function openInstalledApp(
     return { launchTarget, launchUrl, useCustomScheme: false }
   }
 
-  const apps = await listInstalledApps(client, ctx.platform)
+  const apps = await listInstalledApps(client, ctx.platform, options.udid)
   const nativeTarget = matchInstalledApp(apps, [ctx.bundleId, ctx.appName, ctx.slug])
   if (!nativeTarget) {
     const lookedFor =
@@ -1311,7 +1368,7 @@ async function resolveReusableNativeBuild(
     )
     return null
   }
-  const apps = await listInstalledApps(client, ctx.platform)
+  const apps = await listInstalledApps(client, ctx.platform, deviceId)
   const installed = matchInstalledApp(apps, [recorded])
   if (!installed) {
     log('checkInstalledBuild', `${recorded} is no longer installed — rebuilding`)
@@ -1320,16 +1377,34 @@ async function resolveReusableNativeBuild(
   return installed
 }
 
+export interface CaptureSimulatorCandidate {
+  id: string
+  name: string
+  kind: string
+  booted?: boolean
+}
+
+/** Picks deterministically while preserving a simulator the user has already booted. */
+export function selectCaptureSimulator(
+  devices: CaptureSimulatorCandidate[],
+  excludedId?: string
+): CaptureSimulatorCandidate | null {
+  const simulators = devices.filter(
+    (device) => device.kind === 'simulator' && device.id !== excludedId
+  )
+  return simulators.find((device) => device.booted) ?? simulators[0] ?? null
+}
+
 /**
- * Boots the simulator this project was last built on, falling back to the daemon's own choice.
+ * Boots the simulator this project was last built on, falling back to a deterministic simulator.
  *
  * Asking for a specific device is what makes the build record worth keeping: the record is keyed by
  * device, so letting the daemon pick afresh each run means reuse holds only while that pick happens
  * to be stable. It is a preference and never a requirement — the remembered simulator can have been
  * deleted, renamed or be missing from a different Xcode, and none of that is a reason to fail a
- * sweep that an unpinned boot would have run fine.
+ * sweep that another installed simulator can run.
  */
-async function bootPreferredDevice(
+export async function bootPreferredDevice(
   client: AgentDeviceClient,
   ctx: CaptureContext
 ): Promise<{ device: string; id: string }> {
@@ -1345,15 +1420,28 @@ async function bootPreferredDevice(
     } catch (error) {
       log(
         'devices.boot',
-        `${preferred} unavailable (${errorMessage(error)}) — letting the daemon pick`
+        `${preferred} unavailable (${errorMessage(error)}) — choosing another simulator`
       )
     }
-  } else {
-    log('devices.boot', 'platform=ios target=mobile')
   }
-  return (await client.devices.boot({
+
+  const devices = (await client.devices.list({
     platform: 'ios',
     target: 'mobile'
+  })) as CaptureSimulatorCandidate[]
+  const selected = selectCaptureSimulator(devices, preferred ?? undefined)
+  if (!selected) {
+    throw new ExpectedOperationError('device_unavailable', 'No iOS simulator is available for App Flow.')
+  }
+
+  log(
+    'devices.boot',
+    `platform=ios target=mobile udid=${selected.id} (${selected.booted ? 'already booted' : 'first available'})`
+  )
+  return (await client.devices.boot({
+    platform: 'ios',
+    target: 'mobile',
+    udid: selected.id
   })) as { device: string; id: string }
 }
 
@@ -1374,8 +1462,9 @@ export async function bootDevice(ctx: CaptureContext): Promise<CaptureDevice> {
 
   const bootResult = await bootPreferredDevice(client, ctx)
   log('devices.boot', `device=${bootResult.device} id=${bootResult.id}`)
+  await handoffCaptureDevice(client, bootResult.id)
 
-  const setupCommands = [agentDeviceBootCommand()]
+  const setupCommands = [agentDeviceBootCommand(bootResult.id)]
   let expoGoTarget: string | undefined
   let launchProcess: ChildProcess | null = null
   let metroPort: number
@@ -1401,7 +1490,7 @@ export async function bootDevice(ctx: CaptureContext): Promise<CaptureDevice> {
         }
       }
     } else {
-      const expoGo = await ensureExpoGoInstalled(client, ctx)
+      const expoGo = await ensureExpoGoInstalled(client, ctx, bootResult.id)
       expoGoTarget = expoGo.launchTarget
       if (expoGo.installPath) {
         setupCommands.push(agentDeviceInstallCommand(expoGo.launchTarget, expoGo.installPath))

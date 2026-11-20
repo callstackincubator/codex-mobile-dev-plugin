@@ -61,6 +61,15 @@ export const test = base.extend<Fixtures>({
     const server = await startServer(target);
     const host = HOSTS[target as keyof typeof HOSTS];
     const client = new Client({ name: host.clientName, version: "1" }, { capabilities: host.clientCapabilities });
+    if (target === "codex") {
+      // Codex adds the chat ID to both model-initiated and panel-initiated tool calls.
+      const threadId = crypto.randomUUID();
+      const callTool = client.callTool.bind(client);
+      client.callTool = (params, ...options) => {
+        const _meta = { ...params._meta, threadId };
+        return callTool({ ...params, _meta }, ...options);
+      };
+    }
     try {
       await client.connect(server.transport);
       const { tools } = await client.listTools();

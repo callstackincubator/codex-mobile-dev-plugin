@@ -86,10 +86,13 @@ claude plugin marketplace add https://github.com/callstackincubator/mobile-dev.g
 claude plugin install mobile-dev@mobile-dev
 ```
 
-Or in a session, `/plugin install mobile-dev --marketplace https://github.com/callstackincubator/mobile-dev.git#release/claude`.
+The plugin is installed for your user, so the CLI, the Claude desktop app's **Code** tab
+and T3 Code's Claude threads all load it. Inside a session, run the same steps as
+`/plugin marketplace add https://github.com/callstackincubator/mobile-dev.git#release/claude`
+and `/plugin install mobile-dev@mobile-dev`.
 Run `claude plugin marketplace update mobile-dev` to update.
 
-For Claude Desktop chats, download `mobile-dev-<version>-claude-desktop-darwin-arm64.mcpb`
+Regular Claude Desktop chats do not load Claude Code plugins. For them, download `mobile-dev-<version>-claude-desktop-darwin-arm64.mcpb`
 from the [latest release](https://github.com/callstackincubator/mobile-dev/releases/latest),
 open **Settings > Extensions > Advanced settings**, and under **Extension Developer**
 click **Install Extension…** and select the file, or open it with Claude Desktop.
@@ -121,8 +124,10 @@ profiles go only to the TraceSift service on your Mac.
 [T3 Code](https://github.com/pingdotgg/t3code) runs Claude Code and Codex, so it loads
 the Mobile Dev plugin that each of them has installed. On the Mac that runs T3 Code,
 install the [Claude Code plugin](#claude-code-and-claude-desktop) for Claude threads
+(run the two `claude plugin` commands in a terminal, then start a new Claude thread)
 and the [Codex plugin](#codex) for Codex threads. In both, the panel opens in T3 Code's
-Browser.
+Browser. See the [T3 Code setup guide](https://incubator.callstack.com/codex-mobile-dev-plugin/docs/getting-started#t3-code)
+for the settings each provider needs.
 
 Turn off T3 Code's own device integration while you use Mobile Dev. In
 **Settings → Devices**, turn off **Use devices**, which also turns off **Agents can use
@@ -194,7 +199,7 @@ Desktop bundle uses Claude's Node runtime, the Cursor plugin uses Node.js from
 | Physical iOS CPU and memory | iOS 17.4 or later, a running development-signed app with `get-task-allow`, a mounted developer disk image, and Xcode/LLDB detached. |
 | Display FPS | Android 12 or later with FrameTimeline support, or a physical iOS device running iOS 17.4 or later. iOS simulators do not support Display FPS. |
 | Testing Studio | A booted iOS simulator or Android emulator, plus an existing e2e project with its dependencies installed and a target bundle ID in `e2e.config.*`. |
-| Profile analysis | A local TraceSift installation, found on `PATH` or through `TRACE_SIFT_COMMAND`. |
+| Profile analysis | The TraceSift CLI installed with `npm install -g @callstack/tracesift`, initialized once with `tracesift init`, and found on `PATH` or through `TRACE_SIFT_COMMAND`. |
 
 Simulator tools use the full Xcode installation selected by `xcode-select` (or
 `DEVELOPER_DIR`), including its Swift compatibility libraries. Custom Xcode names
@@ -224,7 +229,7 @@ Ask your agent to work with your app, for example:
 - “Show me the App Intelligence for this project.”
 - “Record an e2e test for the checkout flow.”
 
-Open App Intelligence, Testing, Logs, Performance, Storage, or TraceSift. App Intelligence analyzes a project without a device; Testing records against a simulator or emulator; the other device tools inspect the selected device. Use Screenshot to attach
+Open **Tools** and choose **App Intel**, Testing, Logs, Performance, Storage, or TraceSift. App Intelligence, shown as **App Intel** in the Tools menu, is available in Mobile Dev 0.1.183 and later and analyzes a project without a device. If **App Intel** is missing, update Mobile Dev, fully quit and reopen your host, then start a new conversation. Testing records against a simulator or emulator; the other device tools inspect the selected device. Use Screenshot to attach
 an image to your next message, or Select to annotate an element or region with an
 instruction. Physical iOS supports taps and drags; keyboard and hardware-button
 controls are unavailable.
