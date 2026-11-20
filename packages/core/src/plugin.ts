@@ -35,6 +35,7 @@ import { CpuSessions, createCpuSessions } from "./cpu/sessions.ts";
 import { registerCpuTools } from "./cpu/tools.ts";
 import { deviceAppSources, readDeviceApps } from "./device-apps/sources.ts";
 import { unknownSimulatorForeground } from "./device-apps/foreground.ts";
+import { simulatorBundleForPid } from "./device-apps/apps.ts";
 import { PerformanceRecordings } from "./performance-recordings.ts";
 import { registerRecordingTools } from "./recording-tools.ts";
 import { RECORDING_URI } from "@mobile-dev/shared/recordings.ts";
@@ -130,7 +131,12 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
   // One recordings object too: it holds the panel's context, which the model-visible run tools check.
   const testingOps = systemDeviceOps({
     simulators, android, drivers,
-    foreground: async (platform, deviceId) => (await readDeviceApps(deviceId, undefined, platform, platform === "ios" ? "simulator" : undefined, { ...deviceAppSources, simulator: simulatorForeground })).foregroundApp?.bundleId ?? null,
+    foreground: async (platform, deviceId) => {
+      const front = (await readDeviceApps(deviceId, undefined, platform, platform === "ios" ? "simulator" : undefined, { ...deviceAppSources, simulator: simulatorForeground })).foregroundApp;
+      // An Apple app in front has no bundle id in the monitoring list; Testing Studio records it all the same.
+      if (front?.bundleId || !front?.pid || platform !== "ios") return front?.bundleId ?? null;
+      return await simulatorBundleForPid(deviceId, front.pid).catch(() => undefined) ?? null;
+    },
   });
   const testingRecordings = new TestingAgentRecordings(testingDevices, testDrafts, { ops: testingOps });
   const testingProjects = new TestingProjectChoices(TESTING_DIRECTORY);

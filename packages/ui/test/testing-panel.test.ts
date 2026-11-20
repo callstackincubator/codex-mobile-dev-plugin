@@ -538,3 +538,26 @@ test("a launch of a missing app says to build and install it, and other launch e
   assert.match(launchErrorMessage("com.app is not installed or could not open.", "com.app", "ios"), /this simulator.*npx expo run:ios/);
   assert.equal(launchErrorMessage("The device is busy.", "com.app", "ios"), "The device is busy.");
 });
+
+test("an Apple app in front replaces the last app's target in No project mode instead of keeping it", async () => {
+  const listeners = new Set<() => void>();
+  let snapshot: Record<string, unknown> = { device: { udid: "sim", name: "iPhone", state: "Booted", runtime: "", platform: "ios", kind: "simulator" }, apps: [], foregroundApp: { bundleId: "com.bare.rn", pid: 2 }, ready: true };
+  const apps = { subscribe: (listener: () => void) => { listeners.add(listener); return () => listeners.delete(listener); }, getSnapshot: () => snapshot } as unknown as DeviceAppsStore;
+  const calls: { name: string; arguments: Record<string, unknown> }[] = [];
+  const panel = new TestingPanel(host({ mobile_testing_project_config: { runtimeMode: "bundled", targetSource: "foreground", targets: [{ name: "ios", platform: "ios", bundleId: "com.apple.Fitness" }] } }, calls), apps);
+  panel.setAvailable(true);
+  (panel as unknown as { update(fields: Record<string, unknown>): void }).update({ projectPath: PROJECT, studioPath: PROJECT, runtimeMode: "bundled", targetSource: "foreground", targets: [{ name: "ios", platform: "ios", bundleId: "com.bare.rn" }] });
+  // The device list names only apps it can monitor, so Fitness arrives as a pid alone.
+  snapshot = { ...snapshot, foregroundApp: { bundleId: null, pid: 9 } };
+  for (const listener of listeners) listener();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  try {
+    const read = calls.find(call => call.name === "mobile_testing_project_config");
+    assert.deepEqual(read?.arguments, { projectPath: PROJECT, foregroundPlatform: "ios", foregroundDeviceId: "sim", foregroundPid: 9 });
+    assert.equal(panel.target?.bundleId, "com.apple.Fitness", "Record attaches to the app in front, not the Bare RN app");
+    assert.deepEqual(panel.foregroundTarget, { platform: "ios", bundleId: "com.apple.Fitness" });
+    for (const listener of listeners) listener();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(calls.filter(call => call.name === "mobile_testing_project_config").length, 1, "the same unnamed app is read once");
+  } finally { panel.dispose(); }
+});

@@ -16,6 +16,11 @@ test("running app discovery excludes system services, exited apps, and malformed
   assert.deepEqual(apps, [{ bundleId: "com.example.app", pid: 123 }]);
 });
 
+test("Apple's own apps are listed only when asked for, so Testing Studio can name one in front", () => {
+  const output = "PID\tStatus\tLabel\n123\t0\tUIKitApplication:com.example.app[1]\n456\t0\tUIKitApplication:com.apple.Fitness[1]";
+  assert.deepEqual(parseRunningApps(output, true), [{ bundleId: "com.example.app", pid: 123 }, { bundleId: "com.apple.Fitness", pid: 456 }]);
+});
+
 test("CPU batches retain 150 seconds, report only new samples, and release waiting reads on close", async () => {
   const buffer = new CpuBuffer("physical-footprint");
   for (let time = 0; time <= 200; time++) buffer.push({ time, interval: 1, cpuPercent: time, memoryBytes: 104857600, threads: [] });

@@ -22,6 +22,7 @@ import type { LaneExecutor, MatrixDevice, MatrixRun } from "./testing-matrix.ts"
 import { LAUNCHER_APP, createLaneExecutor } from "./testing-prepare.ts";
 import type { DeviceOps } from "./testing-prepare.ts";
 import { deviceIdSchema } from "@mobile-dev/shared/panel-target.ts";
+import { simulatorBundleForPid } from "./device-apps/apps.ts";
 import type { BundledModelProvider } from "./testing-run.ts";
 import { answerTestingSetup, applyTestingSetup, cancelTestingSetup, inspectTestingSetup, planTestingSetup, readTestingModelPreference, saveTestingModelPreference, SETUP_PROVIDERS, startTestingLogin, testingSetupProgress } from "./testing-setup.ts";
 import type { SetupOptions } from "./testing-setup.ts";
@@ -98,7 +99,7 @@ export function projectLaneTargets(targets: readonly { name: string; platform?: 
 
 /** The Testing Studio panel's project selection, and the device tree its recorder names selectors from. */
 /** Returns the shutdown the plugin has to run: the recorder's device session, handed back. */
-export function registerTestingTools(server: McpServer, projects: TestingProjectChoices, devices = new TestingDevices(), drafts = new TestDraftStore(), matrix: { ops?: DeviceOps; registry?: MatrixRegistry; run?: typeof runRecordedTest; panel?: PanelContext; pollMs?: number; failureReadMs?: number } = {}): () => Promise<void> {
+export function registerTestingTools(server: McpServer, projects: TestingProjectChoices, devices = new TestingDevices(), drafts = new TestDraftStore(), matrix: { ops?: DeviceOps; registry?: MatrixRegistry; run?: typeof runRecordedTest; panel?: PanelContext; pollMs?: number; failureReadMs?: number; foregroundBundle?: (deviceId: string, pid: number) => Promise<string | undefined> } = {}): () => Promise<void> {
   /**
    * Every run, as a matrix of lanes; a single run is a matrix of one.
    *
@@ -306,11 +307,20 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
   registerAppTool(server, "mobile_testing_project_config", {
     title: "Read a testing project's config",
     description: "Read the targets of a project's e2e config: the target names, their platforms, and the bundle ids to launch.",
-    inputSchema: { projectPath, foregroundPlatform: z.enum(["ios", "android"]).optional(), foregroundBundleId: z.string().min(1).max(512).optional() },
+    inputSchema: {
+      projectPath, foregroundPlatform: z.enum(["ios", "android"]).optional(), foregroundBundleId: z.string().min(1).max(512).optional(),
+      foregroundDeviceId: deviceIdSchema.optional().describe("With foregroundPid, for an iOS simulator app the device's app list leaves out (Apple's own apps)."),
+      foregroundPid: z.number().int().positive().optional(),
+    },
     annotations: read,
     _meta: appVisibility,
-  }, safe(async ({ projectPath: selected, foregroundPlatform, foregroundBundleId }: { projectPath: string; foregroundPlatform?: "ios" | "android"; foregroundBundleId?: string }) => {
-    const project = await inspectProject(selected, foregroundPlatform && foregroundBundleId ? { platform: foregroundPlatform, bundleId: foregroundBundleId } : undefined);
+  }, safe(async ({ projectPath: selected, foregroundPlatform, foregroundBundleId, foregroundDeviceId, foregroundPid }: { projectPath: string; foregroundPlatform?: "ios" | "android"; foregroundBundleId?: string; foregroundDeviceId?: string; foregroundPid?: number }) => {
+    // The panel's device list names only apps that can be monitored, so an Apple app in front (Fitness,
+    // Settings) arrives as a pid alone. The home screen is never an app to record.
+    const resolved = foregroundBundleId ?? (foregroundPlatform === "ios" && foregroundDeviceId && foregroundPid
+      ? await (matrix.foregroundBundle ?? simulatorBundleForPid)(foregroundDeviceId, foregroundPid).catch(() => undefined) : undefined);
+    const bundleId = resolved && !LAUNCHER_APP.test(resolved) ? resolved : undefined;
+    const project = await inspectProject(selected, foregroundPlatform && bundleId ? { platform: foregroundPlatform, bundleId } : undefined);
     return dataResult({ ...project, setup: await inspectTestingSetup(project.path, project.configPath || undefined), modelPreference: await readTestingModelPreference(), providers: SETUP_PROVIDERS });
   }));
 

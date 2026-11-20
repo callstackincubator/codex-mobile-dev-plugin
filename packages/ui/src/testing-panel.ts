@@ -296,10 +296,14 @@ export class TestingPanel {
     // so the selection is reported whenever either half moves.
     this.stopWatchingDevices = deviceApps.subscribe(() => {
       void this.reportContext();
-      const front = deviceApps.getSnapshot().foregroundApp?.bundleId;
-      if (this.snapshot.projectPath && this.snapshot.runtimeMode === "bundled" && front) {
+      const { foregroundApp } = deviceApps.getSnapshot();
+      const front = foregroundApp?.bundleId;
+      if (this.snapshot.projectPath && this.snapshot.runtimeMode === "bundled") {
         // Only the targets: reloading the whole project here would close the test the user has open.
-        if (this.snapshot.targets.every(entry => entry.bundleId !== front)) void this.refreshStudioTargets();
+        if (front && this.snapshot.targets.every(entry => entry.bundleId !== front)) void this.refreshStudioTargets();
+        // An app the device list cannot name (Apple's own, or the home screen) is still the app in
+        // front: keeping the last app's target would have Record open that one instead.
+        else if (!front && foregroundApp?.pid && this.noProject && this.studioForegroundKey !== `pid:${foregroundApp.pid}`) void this.refreshStudioTargets();
       }
     });
     // Every change to what would be written bumps the recorder's revision, which is exactly the
@@ -577,20 +581,29 @@ export class TestingPanel {
     const { projectPath } = this.snapshot;
     const { device, foregroundApp } = this.deviceApps.getSnapshot();
     const foregroundBundleId = foregroundApp?.bundleId ?? undefined;
-    if (!projectPath || !device || !isRecordableDevice(device) || !foregroundBundleId || this.refreshingTargets === foregroundBundleId) return;
-    this.refreshingTargets = foregroundBundleId;
+    const pid = foregroundBundleId ? undefined : foregroundApp?.pid ?? undefined;
+    const key = foregroundBundleId ?? (pid ? `pid:${pid}` : "");
+    if (!projectPath || !device || !isRecordableDevice(device) || !key || this.refreshingTargets === key) return;
+    this.refreshingTargets = key;
+    this.studioForegroundKey = key;
     const revision = this.loadRevision;
     try {
-      const response = await this.call("mobile_testing_project_config", { projectPath, foregroundPlatform: recordablePlatform(device), foregroundBundleId });
+      const platform = recordablePlatform(device);
+      const response = await this.call("mobile_testing_project_config", { projectPath, foregroundPlatform: platform,
+        ...(foregroundBundleId ? { foregroundBundleId } : { foregroundDeviceId: device.udid, foregroundPid: pid }) });
       if (revision !== this.loadRevision || this.snapshot.runtimeMode !== "bundled") return;
-      const targets = parseTargets(object(response.structuredContent) ?? {});
-      const preferred = targets.find(entry => entry.platform === recordablePlatform(device)) ?? targets[0];
-      this.update({ targets, targetName: preferred?.name ?? "" });
+      const data = object(response.structuredContent) ?? {};
+      const targets = parseTargets(data);
+      const preferred = targets.find(entry => entry.platform === platform) ?? targets[0];
+      const source = text(data.targetSource);
+      this.update({ targets, targetName: preferred?.name ?? "", ...(["expo-cli", "static-expo", "foreground", "none"].includes(source) ? { targetSource: source as TestingSnapshot["targetSource"] } : {}) });
     } catch { /* the next foreground change retries */ } finally {
-      if (this.refreshingTargets === foregroundBundleId) this.refreshingTargets = "";
+      if (this.refreshingTargets === key) this.refreshingTargets = "";
     }
   }
   private refreshingTargets = "";
+  /** The foreground the Testing Studio targets were last read for, so an unnamed app is read once, not on every device update. */
+  private studioForegroundKey = "";
 
   /** Loads one project's e2e config into the panel. */
   async selectProject(projectPath: string) {
@@ -1519,7 +1532,12 @@ export class TestingPanel {
   /** The app in front on the mirrored device, as a Testing Studio target. */
   get foregroundTarget(): NonNullable<StoredTestSummary["target"]> | undefined {
     const { device, foregroundApp } = this.deviceApps.getSnapshot();
-    return device && isRecordableDevice(device) && foregroundApp?.bundleId ? { platform: recordablePlatform(device), bundleId: foregroundApp.bundleId } : undefined;
+    if (!device || !isRecordableDevice(device)) return undefined;
+    const platform = recordablePlatform(device);
+    if (foregroundApp?.bundleId) return { platform, bundleId: foregroundApp.bundleId };
+    // An Apple app in front reaches the panel as a pid alone; the server named it when it read the targets.
+    const read = this.noProject && foregroundApp?.pid && this.studioForegroundKey === `pid:${foregroundApp.pid}` && this.snapshot.targetSource === "foreground" ? this.target : undefined;
+    return read?.bundleId && read.platform === platform ? { platform, bundleId: read.bundleId } : undefined;
   }
 
   /** Why Run is unavailable for a selected Testing Studio test, or "": it needs a pinned app or one in front. */
