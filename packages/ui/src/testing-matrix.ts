@@ -14,7 +14,7 @@ export type LaneProgress = { stepIndex: number; phase: "start" | "end"; status?:
 export type LaneResult = { status: string; steps: { line: number; status: string; error?: string }[]; error?: string; output?: string; durationMs?: number };
 export type MatrixLane = {
   runId: string; deviceId: string; deviceName: string; platform: MatrixPlatform; state: LaneState;
-  progress: LaneProgress[]; result?: LaneResult; error?: string; startedAt?: number; finishedAt?: number;
+  resolvedDeviceId?: string; progress: LaneProgress[]; result?: LaneResult; error?: string; startedAt?: number; finishedAt?: number;
 };
 export type MatrixView = { matrixId: string; /** The test the lanes run, relative to the project. */ testPath?: string; lanes: MatrixLane[]; limit: number; startedAt: number; finishedAt?: number };
 
@@ -76,6 +76,7 @@ export function parseMatrix(value: unknown): MatrixView | null {
     lanes.push({
       runId: str(lane.runId), deviceId: str(lane.deviceId), deviceName: str(lane.deviceName) || str(lane.deviceId), platform: lane.platform,
       state: str(lane.state) as LaneState,
+      ...(str(lane.resolvedDeviceId) ? { resolvedDeviceId: str(lane.resolvedDeviceId) } : {}),
       progress: (Array.isArray(lane.progress) ? lane.progress : []).map(record).filter((entry): entry is Record<string, unknown> => entry !== null
         && typeof entry.stepIndex === "number" && (entry.phase === "start" || entry.phase === "end"))
         .map(entry => ({ stepIndex: entry.stepIndex as number, phase: entry.phase as "start" | "end", ...(str(entry.status) ? { status: str(entry.status) } : {}), ...(str(entry.error) ? { error: str(entry.error) } : {}) })),

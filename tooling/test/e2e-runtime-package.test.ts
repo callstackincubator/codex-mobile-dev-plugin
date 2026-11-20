@@ -22,6 +22,7 @@ test("the release metadata pins every bundled e2e runtime dependency", async () 
 test("the bundled e2e runtime ships notices and is not panel-only", async () => {
   const notices = await readFile("packages/runtimes/e2e/THIRD_PARTY_NOTICES.txt", "utf8");
   assert.ok(notices.length > 10_000);
-  assert.match(notices, /e2e 0\.17\.0/);
+  assert.match(notices, /e2e 0\.23\.1/);
+  assert.match(notices, /@ai-sdk\/gateway\/node_modules\/@ai-sdk\/provider 4\.0\.36/);
   assert.equal(PANEL_PARTS.includes("e2e"), false);
 });

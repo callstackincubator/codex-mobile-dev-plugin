@@ -33,12 +33,13 @@ test("the limit is kept between 1 and 8", () => { assert.deepEqual([clampLimit(0
 
 test("the server's lanes are read defensively", () => {
   const parsed = parseMatrix({ matrixId: "m", limit: 2, startedAt: 5, lanes: [
-    { runId: "a", deviceId: "A", deviceName: "iPhone 17", platform: "ios", state: "running", progress: [{ stepIndex: 0, phase: "start" }, { nope: 1 }] },
+    { runId: "a", deviceId: "avd:Pixel", resolvedDeviceId: "emulator-5554", deviceName: "Pixel", platform: "android", state: "running", progress: [{ stepIndex: 0, phase: "start" }, { nope: 1 }] },
     { runId: "b", deviceId: "B", platform: "android", state: "passed", progress: [], result: { status: "passed", steps: [{ line: 4, status: "passed" }, { line: 0, status: "x" }], durationMs: 12 } },
     { runId: "c", platform: "windows", state: "running" }, { runId: "d", platform: "ios", state: "weird" },
   ] });
   assert.equal(parsed?.lanes.length, 2);
   assert.equal(parsed?.lanes[0]?.progress.length, 1);
+  assert.equal(parsed?.lanes[0]?.resolvedDeviceId, "emulator-5554");
   assert.deepEqual(parsed?.lanes[1]?.result?.steps, [{ line: 4, status: "passed" }]);
   assert.equal(parseMatrix({ lanes: [] }), null);
 });

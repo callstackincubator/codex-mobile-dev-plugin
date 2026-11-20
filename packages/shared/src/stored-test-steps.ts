@@ -125,6 +125,8 @@ export function branchStoredStepLocator(source: string, line: number, platform: 
   const step = storedTestSteps(source).find(entry => entry.line === line);
   const current = step && stepLocator(step.label);
   if (!step || !current || !locator.startsWith("screen.")) return source;
+  const withFixture = withPlatformFixture(source);
+  if (withFixture === undefined) return source;
   // An action's branch is wrapped in parentheses so `.tap()` applies to it; read it without them.
   const existing = (/^\(.*\)$/.test(current) ? current.slice(1, -1) : current).match(BRANCH);
   // An action needs the branch parenthesised for `.tap()` to apply to its result; an argument does not.
@@ -135,19 +137,22 @@ export function branchStoredStepLocator(source: string, line: number, platform: 
     : existing[1] === platform ? `platform === "${platform}" ? ${locator} : ${existing[3]}`
     : `platform === "${existing[1]}" ? ${existing[2]} : ${locator}`;
   const replacement = isAction ? `(${branch})` : branch;
-  const changed = editLine(source, line, (lines, index) => {
+  const changed = editLine(withFixture, line, (lines, index) => {
     const text = lines[index]!;
     const at = text.indexOf(current);
     if (at >= 0) lines[index] = text.slice(0, at) + replacement + text.slice(at + current.length);
   });
-  return changed === source ? source : withPlatformFixture(changed);
+  return changed === withFixture ? source : changed;
 }
 
 /** Adds `platform` to the test callback's destructured fixtures when it is not there yet. */
-function withPlatformFixture(source: string): string {
-  return source.replace(/(\btest\s*\([^,]+,\s*async\s*\(\s*\{)([^}]*)(\}\s*\)\s*=>)/, (whole, open: string, fixtures: string, close: string) => {
+function withPlatformFixture(source: string): string | undefined {
+  let found = false;
+  const changed = source.replace(/(\btest\s*\(\s*(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)\s*,\s*async\s*\(\s*\{)([^}]*)(\}\s*\)\s*=>)/, (whole, open: string, fixtures: string, close: string) => {
+    found = true;
     if (/\bplatform\b/.test(fixtures)) return whole;
     const names = fixtures.trim().replace(/,$/, "");
     return `${open} ${names ? `${names}, ` : ""}platform ${close}`;
   });
+  return found ? changed : undefined;
 }

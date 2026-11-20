@@ -64,3 +64,17 @@ test("flow", async ({ app, screen }) => {
   assert.equal(branchStoredStepLocator(source, 5, "android", 'screen.getByText("Home")'), source);
   assert.equal(branchStoredStepLocator(source, 6, "android", "tapAt({ x: 1, y: 2 })"), source);
 });
+
+test("a locator branch handles commas in quoted titles and requires a platform fixture", () => {
+  const source = `import { test } from "@e2e-dev/mobile";
+test("sign in, then search", async ({ app, screen }) => {
+  await app.open();
+  await screen.getByText("Search").tap();
+});`;
+  const changed = branchStoredStepLocator(source, 4, "android", 'screen.getByTestId("search")');
+  assert.match(changed, /test\("sign in, then search", async \(\{ app, screen, platform \}\) =>/);
+  assert.match(changed, /await \(platform === "android" \? screen\.getByTestId\("search"\) : screen\.getByText\("Search"\)\)\.tap\(\);/);
+
+  const unrecognized = source.replace('test("sign in, then search",', "test(flowName,");
+  assert.equal(branchStoredStepLocator(unrecognized, 4, "android", 'screen.getByTestId("search")'), unrecognized);
+});

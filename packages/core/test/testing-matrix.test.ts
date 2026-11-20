@@ -123,6 +123,26 @@ test("cancelling every lane of a matrix", async () => {
   assert.equal(registry.busy, false);
 });
 
+test("cancelling during preparation waits for the active lane to observe the abort", async () => {
+  const preparing = Promise.withResolvers<void>();
+  const registry = new MatrixRegistry();
+  const executor: LaneExecutor = {
+    prepare: async (_lane, _lanes, signal) => {
+      signal.addEventListener("abort", () => preparing.reject(new ExpectedOperationError("cancelled", "cancelled")), { once: true });
+      await preparing.promise;
+      return "dev-0";
+    },
+    run: async () => ({ status: "passed", exitCode: 0, steps: [] }),
+  };
+  const { run, done } = startMatrix(registry, { testPath: "t", devices: devices(1) }, executor);
+  assert.ok(run.lanes[0]!.startedAt, "the lane is active even before preparation reports a phase");
+  assert.equal(run.lanes[0]!.state, "queued");
+  registry.cancel(run.matrixId, "dev-0");
+  assert.equal(run.lanes[0]!.state, "queued", "an active preparation does not appear free before it stops");
+  await done;
+  assert.equal(run.lanes[0]!.state, "cancelled");
+});
+
 test("the registry finds runs, reports busy devices and drops old finished ones", async () => {
   const registry = new MatrixRegistry(2);
   const instant: LaneExecutor = { prepare: async lane => lane.deviceId, run: async () => ({ status: "passed", exitCode: 0, steps: [] }) };

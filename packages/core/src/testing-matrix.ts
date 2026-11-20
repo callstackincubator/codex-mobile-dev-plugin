@@ -132,7 +132,7 @@ export class MatrixRegistry {
       if (deviceId !== undefined && lane.deviceId !== deviceId && lane.resolvedDeviceId !== deviceId) continue;
       entry.aborts.get(lane.runId)?.abort();
       // A lane that has not started yields at once; an active one is marked when its process ends.
-      if (lane.state === "queued") { lane.state = "cancelled"; lane.finishedAt = Date.now(); }
+      if (lane.state === "queued" && lane.startedAt === undefined) { lane.state = "cancelled"; lane.finishedAt = Date.now(); }
       cancelled.push(lane);
     }
     return cancelled;

@@ -915,8 +915,9 @@ export class TestingPanel {
     // A single-mirror layout first switches to the lane's platform, since a hidden mirror cannot
     // show a device. Only on the click itself, so a platform the user switches back to stays.
     this.onLaneSelected?.(lane.platform);
-    if (this.deviceApps.getSnapshot().device?.udid === lane.deviceId) return;
-    if (this.mirrorDevice?.(lane.platform, lane.deviceId)) countUiEvent("ui.testing.lane_mirror");
+    const deviceId = lane.resolvedDeviceId ?? lane.deviceId;
+    if (this.deviceApps.getSnapshot().device?.udid === deviceId) return;
+    if (this.mirrorDevice?.(lane.platform, deviceId)) countUiEvent("ui.testing.lane_mirror");
   }
 
   private onLaneSelected?: (platform: "ios" | "android") => void;
@@ -1842,7 +1843,7 @@ export class TestingPanel {
 
   /** Whether a lane of the run on screen still holds this device. */
   matrixBusy(deviceId: string): boolean {
-    return this.snapshot.matrix?.lanes.some(lane => !isTerminalLane(lane.state) && lane.deviceId === deviceId) ?? false;
+    return this.snapshot.matrix?.lanes.some(lane => !isTerminalLane(lane.state) && (lane.deviceId === deviceId || lane.resolvedDeviceId === deviceId)) ?? false;
   }
 
   setMatrixSelection(ids: string[]) {

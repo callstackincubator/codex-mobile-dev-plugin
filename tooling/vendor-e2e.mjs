@@ -14,7 +14,7 @@ for (const [key, metadata] of Object.entries(packages)) {
   const name = key.slice("node_modules/".length);
   // Nested transitive packages are represented by another /node_modules/ segment. Their license
   // is still included, but the lock entry's path is the unambiguous package label.
-  if (!name || name.includes("/node_modules/")) continue;
+  if (!name) continue;
   const directory = join(runtime, key);
   const files = await readdir(directory).catch(() => []);
   for (const file of files.filter(name => /^(LICENSE|LICENCE|COPYING|NOTICE)(\.|$)/i.test(name))) {

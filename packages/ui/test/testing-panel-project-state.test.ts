@@ -76,7 +76,11 @@ test("clicking a lane switches the layout and mirror to it, and a poll does not"
   storage();
   const panel = new TestingPanel(host([]), deviceApps, { heartbeatMs: 1e9 });
   t.after(() => panel.dispose?.());
-  const lane = (platform: "ios" | "android", state: string) => ({ runId: `r-${platform}`, deviceId: `d-${platform}`, deviceName: platform, platform, state, progress: [] });
+  const lane = (platform: "ios" | "android", state: string) => ({
+    runId: `r-${platform}`, deviceId: platform === "android" ? "avd:Pixel" : "d-ios",
+    ...(platform === "android" ? { resolvedDeviceId: "emulator-5554" } : {}),
+    deviceName: platform, platform, state, progress: [],
+  });
   const internals = panel as unknown as { update(fields: Record<string, unknown>): void; readMatrix(id: string): Promise<unknown> };
   internals.update({ matrix: { matrixId: "m", limit: 3, startedAt: 1, lanes: [lane("ios", "passed"), lane("android", "failed")] }, selectedLane: "r-ios" });
   const picked: string[] = [], focused: string[] = [];
@@ -84,9 +88,12 @@ test("clicking a lane switches the layout and mirror to it, and a poll does not"
   panel.setMirrorDevice((platform, deviceId) => { focused.push(`${platform}:${deviceId}`); return true; });
   panel.openLane("r-android");
   assert.deepEqual(picked, ["android"]);
-  assert.deepEqual(focused, ["android:d-android"]);
+  assert.deepEqual(focused, ["android:emulator-5554"], "the running emulator serial is mirrored instead of its requested AVD id");
+  internals.update({ matrix: { matrixId: "m", limit: 3, startedAt: 1, lanes: [lane("ios", "passed"), lane("android", "running")] } });
+  assert.equal(panel.matrixBusy("avd:Pixel"), true, "the requested checklist id stays busy");
+  assert.equal(panel.matrixBusy("emulator-5554"), true, "the resolved running id is busy too");
   panel.openLane("r-ios");
-  assert.deepEqual(focused, ["android:d-android", "ios:d-ios"]);
+  assert.deepEqual(focused, ["android:emulator-5554", "ios:d-ios"]);
   // The panel's own refresh of the run re-selects the lane quietly: it must not move the mirror.
   const before = focused.length;
   await internals.readMatrix("m").catch(() => undefined);
