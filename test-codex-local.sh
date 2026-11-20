@@ -8,6 +8,11 @@ NO_LAUNCH=0
 
 usage() {
   echo "Usage: $0 [--install] [--full] [--no-launch]" >&2
+  # The `tracesift` on PATH is often an older global install without release-build
+  # recording (no `profile` command, no `--profiler-port`). Point Mobile Dev at a newer
+  # checkout instead of reinstalling globally:
+  #   TRACE_SIFT_COMMAND=/path/to/perf-ai/packages/cli/src/cli.js
+  echo "TraceSift: set TRACE_SIFT_COMMAND to a newer tracesift CLI (for example /path/to/perf-ai/packages/cli/src/cli.js) to record release builds." >&2
 }
 
 while [[ $# -gt 0 ]]; do

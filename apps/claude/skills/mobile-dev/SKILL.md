@@ -171,6 +171,11 @@ to profile a release build and has not made one, `tracesift profile build` from 
 app root builds, installs and arms it. Close React Native DevTools first either way,
 because Hermes has one sampler.
 
+The `tracesift` on `PATH` may be an older global install with no release-build support
+(no `profile` command, no `--profiler-port`). When a tool reports the CLI is too old,
+tell the user to restart Mobile Dev with `TRACE_SIFT_COMMAND` pointing at a newer build,
+for example `TRACE_SIFT_COMMAND=/path/to/perf-ai/packages/cli/src/cli.js`.
+
 Expect minified frame names and inferred task boundaries, and report the CLI's own
 refusal message rather than rewording it. This is not `mobile_record_performance`,
 which samples native CPU and FPS.

@@ -123,7 +123,7 @@ function cliFailure(diagnostics: string, output: string, code: number | null, fa
     return new TraceSiftError("This TraceSift cannot record. Update @callstack/tracesift, run `tracesift init`, and retry.", "version");
   }
   if (/unknown option '?-{0,2}(platform|metro|target-id)'?/i.test(said)) {
-    return new TraceSiftError("This TraceSift cannot record React Native. Update @callstack/tracesift to 0.6.0 or newer, run `tracesift init`, and retry.", "version");
+    return new TraceSiftError("This TraceSift cannot record React Native. Update @callstack/tracesift to 0.6.0 or newer (or point TRACE_SIFT_COMMAND at a newer build), run `tracesift init`, and retry.", "version");
   }
   const reported = parseCliJson(output)?.error;
   if (typeof reported === "string" && reported.trim()) return new TraceSiftError(reported.trim().slice(0, 1024), "request");
@@ -439,6 +439,8 @@ export class TraceSiftClient {
   private async runCommand(args: string[], messages: {
     timeoutMs: number; signal?: AbortSignal; cancelled: string; timedOut: string; missing: string;
     failed: (code: number | null) => string;
+    /** Working directory for the child; only set where the CLI resolves project-relative paths. */
+    cwd?: string;
   }): Promise<string> {
     const { signal } = messages;
     return await new Promise<string>((resolve, reject) => {
@@ -447,6 +449,7 @@ export class TraceSiftClient {
       let settled = false;
       const child = spawn(this.command, args, {
         stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, TRACE_SIFT_HOME: this.home },
+        ...(messages.cwd ? { cwd: messages.cwd } : {}),
       });
       child.stdout?.setEncoding("utf8");
       child.stdout?.on("data", chunk => { if (output.length < MAX_CLI_STDOUT_BYTES) output += String(chunk).slice(0, MAX_CLI_STDOUT_BYTES - output.length); });
@@ -606,6 +609,30 @@ export class TraceSiftClient {
   }
 
   /**
+   * Whether the resolved CLI can record release builds, read from its own usage text.
+   *
+   * A version number cannot say: the CLI that added release support still
+   * reports 0.6.0, the same as the one that only knew Metro. The usage text
+   * names `--profiler-port` only on the newer one. A probe that fails says
+   * nothing, so it is not cached and not blamed on the CLI.
+   */
+  private releaseSupport?: Promise<boolean | undefined>;
+  private probeReleaseSupport() {
+    return this.releaseSupport ??= this.runCommand(["--help"], {
+      timeoutMs: 10_000, cancelled: "cancelled", timedOut: "timed out", missing: "missing", failed: () => "failed",
+    }).then(output => /--profiler-port/.test(output), () => undefined).then(supported => {
+      if (supported === undefined) this.releaseSupport = undefined;
+      return supported;
+    });
+  }
+
+  /** The sentence that names the fix, when the CLI in use predates release-build recording. */
+  private async staleCliHint(): Promise<string | undefined> {
+    if (await this.probeReleaseSupport() !== false) return;
+    return `The TraceSift CLI in use (${this.command}) is too old to record release builds: it has no \`profile\` command or \`--profiler-port\`. Set TRACE_SIFT_COMMAND to a newer build, for example TRACE_SIFT_COMMAND=/path/to/perf-ai/packages/cli/src/cli.js, and restart Mobile Dev.`;
+  }
+
+  /**
    * The React Native apps a recording could attach to, over either route: a
    * debug build on Metro, or a release build that dials the CLI from the
    * profiler package it carries.
@@ -647,6 +674,11 @@ export class TraceSiftClient {
       }),
     });
     if (!parsed.success) throw new TraceSiftError("TraceSift returned an invalid React Native target list.", "response");
+    // An old CLI never lists a release build, so an empty list is where it shows.
+    if (!parsed.data.targets.length) {
+      const hint = await this.staleCliHint();
+      if (hint) throw new TraceSiftError(hint, "version");
+    }
     return parsed.data;
   }
 
@@ -660,15 +692,25 @@ export class TraceSiftClient {
    * can take by path even while a TraceSift service is running.
    */
   async startReactNativeRecording(options: { metro?: string; targetId?: string } = {}, signal?: AbortSignal) {
-    await this.runCommand(["record", "start", "--platform", "rn", "--sink", "local",
-      ...(options.metro ? ["--metro", options.metro] : []),
-      ...(options.targetId ? ["--target-id", options.targetId] : [])], {
-      timeoutMs: RECORD_START_TIMEOUT_MS, signal,
-      cancelled: "Starting the recording was cancelled.",
-      timedOut: "The app did not start recording within 60 seconds.",
-      missing: "TraceSift is not installed or could not run `tracesift record`.",
-      failed: code => `TraceSift could not start recording (exit code ${code}).`,
-    });
+    // A release build has no Metro to serve a source map, so the CLI reads the
+    // Gradle one relative to its working directory: the app's project, not ours.
+    const cwd = await this.readProject().catch(() => undefined);
+    try {
+      await this.runCommand(["record", "start", "--platform", "rn", "--sink", "local",
+        ...(options.metro ? ["--metro", options.metro] : []),
+        ...(options.targetId ? ["--target-id", options.targetId] : [])], {
+        timeoutMs: RECORD_START_TIMEOUT_MS, signal, ...(cwd ? { cwd } : {}),
+        cancelled: "Starting the recording was cancelled.",
+        timedOut: "The app did not start recording within 60 seconds.",
+        missing: "TraceSift is not installed or could not run `tracesift record`.",
+        failed: code => `TraceSift could not start recording (exit code ${code}).`,
+      });
+    } catch (error) {
+      if (signal?.aborted || (error instanceof TraceSiftError && error.kind === "version")) throw error;
+      const hint = await this.staleCliHint();
+      if (hint) throw new TraceSiftError(hint, "version");
+      throw error;
+    }
   }
 
   /** Quit the launched browser and delete the throwaway profile it used. */

@@ -438,3 +438,67 @@ test("a targets command that answers with prose rather than JSON is named, not g
   await assert.rejects(client.reactNativeTargets(), error =>
     error instanceof TraceSiftError && error.kind === "response" && /other than JSON/.test(error.message));
 });
+
+test("a React Native recording runs in the saved project, so a release build finds its source map", async t => {
+  const fake = await fixture(); t.after(fake.close);
+  const project = await realpath(await mkdtemp(join(tmpdir(), "mobile-dev-rn-project-")));
+  t.after(() => rm(project, { recursive: true, force: true }));
+  const cwdPath = join(fake.home, "cwd.txt");
+  const command = await fakeRecorder(fake.home, `pwd -P >> ${JSON.stringify(cwdPath)}`);
+  const client = new TraceSiftClient(command, fake.home); t.after(() => client.close());
+
+  // No project saved: the CLI keeps the plugin's own directory, as before.
+  await client.startReactNativeRecording();
+  assert.equal((await readFile(cwdPath, "utf8")).trim(), await realpath(process.cwd()));
+
+  await client.writeProject(project);
+  await rm(cwdPath);
+  await client.startReactNativeRecording();
+  assert.equal((await readFile(cwdPath, "utf8")).trim(), project);
+
+  // A saved project that has since been deleted falls back rather than failing the spawn.
+  await rm(project, { recursive: true, force: true });
+  await rm(cwdPath);
+  await client.startReactNativeRecording();
+  assert.equal((await readFile(cwdPath, "utf8")).trim(), await realpath(process.cwd()));
+});
+
+test("web recording and the app list never move to the project folder", async t => {
+  const fake = await fixture(); t.after(fake.close);
+  const project = await realpath(await mkdtemp(join(tmpdir(), "mobile-dev-rn-project-")));
+  t.after(() => rm(project, { recursive: true, force: true }));
+  const cwdPath = join(fake.home, "cwd.txt");
+  const command = await fakeRecorder(fake.home, `pwd -P >> ${JSON.stringify(cwdPath)}\nprintf '%s' '{"apiVersion":1,"platform":"rn","metro":"http://127.0.0.1:8081","targets":[{"id":"a","title":"App"}]}'`);
+  const client = new TraceSiftClient(command, fake.home); t.after(() => client.close());
+  await client.writeProject(project);
+
+  await client.reactNativeTargets();
+  await client.startRecording();
+  const here = await realpath(process.cwd());
+  assert.deepEqual((await readFile(cwdPath, "utf8")).trim().split("\n"), [here, here]);
+});
+
+/** A recorder whose usage text does, or does not, mention release-build support. */
+async function usageRecorder(home: string, usage: string, body: string) {
+  return await fakeRecorder(home, `if [ "$1" = "--help" ]; then printf '%s' ${JSON.stringify(usage)}; exit 0; fi\n${body}`);
+}
+
+test("a CLI without release-build support names TRACE_SIFT_COMMAND when no app is found or start fails", async t => {
+  const fake = await fixture(); t.after(fake.close);
+  const old = await usageRecorder(fake.home, "tracesift record start [--platform rn]",
+    `case "$2" in targets) printf '%s' '{"apiVersion":1,"platform":"rn","metro":"http://127.0.0.1:8081","targets":[]}' ;; start) echo "tracesift: no app" >&2; exit 1 ;; esac`);
+  const client = new TraceSiftClient(old, fake.home); t.after(() => client.close());
+  const stale = (error: unknown) => error instanceof TraceSiftError && error.kind === "version"
+    && /too old to record release builds/.test(error.message) && /TRACE_SIFT_COMMAND=\/path\/to\/perf-ai\/packages\/cli\/src\/cli\.js/.test(error.message);
+  await assert.rejects(client.reactNativeTargets(), stale);
+  await assert.rejects(client.startReactNativeRecording(), stale);
+});
+
+test("a CLI with release-build support keeps its own errors and its empty list", async t => {
+  const fake = await fixture(); t.after(fake.close);
+  const current = await usageRecorder(fake.home, "tracesift record start --platform rn [--profiler-port 8089]",
+    `case "$2" in targets) printf '%s' '{"apiVersion":1,"platform":"rn","metro":"http://127.0.0.1:8081","targets":[]}' ;; start) echo "tracesift: no app" >&2; exit 1 ;; esac`);
+  const client = new TraceSiftClient(current, fake.home); t.after(() => client.close());
+  assert.deepEqual((await client.reactNativeTargets()).targets, []);
+  await assert.rejects(client.startReactNativeRecording(), error => error instanceof TraceSiftError && error.kind === "request" && error.message === "no app");
+});
