@@ -75,6 +75,7 @@ const INSTRUCTIONS = "Use mobile_open_simulator before the first device launch o
   + "When mobile_read_panel_context is available, read the panel's active device before targeting it. Use selected IDs with available device_* tools. "
   + "Show devices in the panel menu. If targets are ambiguous, ask with mobile_choose_devices when it is available, otherwise in chat. "
   + "Generate screen maps with mobile_generate_app_intel and show them with mobile_open_app_intel. For screen dependencies, find the ID with mobile_app_intel and pass it as appIntelScreen to mobile_open_app_intel. Use mobile_app_intel alone for file imports/importers or text answers. "
+  + "Before asking the user to capture or choose a TraceSift profile when no path exists yet, use mobile_tracesift_status and report any setup step. "
   + "For local CPU or React profiles use mobile_analyze_profile and await the user's Investigate action. See the Mobile Dev skill.";
 
 /** Mobile Dev's own device views, which a host adds to the server it runs (see createPanel). */

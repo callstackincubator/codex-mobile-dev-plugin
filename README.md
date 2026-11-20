@@ -199,7 +199,7 @@ Desktop bundle uses Claude's Node runtime, the Cursor plugin uses Node.js from
 | Physical iOS CPU and memory | iOS 17.4 or later, a running development-signed app with `get-task-allow`, a mounted developer disk image, and Xcode/LLDB detached. |
 | Display FPS | Android 12 or later with FrameTimeline support, or a physical iOS device running iOS 17.4 or later. iOS simulators do not support Display FPS. |
 | Testing Studio | A booted iOS simulator or Android emulator, plus an existing e2e project with its dependencies installed and a target bundle ID in `e2e.config.*`. |
-| Profile analysis | A local TraceSift installation, found on `PATH` or through `TRACE_SIFT_COMMAND`. |
+| Profile analysis | The TraceSift CLI installed with `npm install -g @callstack/tracesift`, initialized once with `tracesift init`, and found on `PATH` or through `TRACE_SIFT_COMMAND`. |
 
 Simulator tools use the full Xcode installation selected by `xcode-select` (or
 `DEVELOPER_DIR`), including its Swift compatibility libraries. Custom Xcode names

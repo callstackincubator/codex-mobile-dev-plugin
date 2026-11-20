@@ -94,7 +94,7 @@ export function recordTestingAgentRead(outcome: "success" | "failed", duration: 
   if (outcome === "success") Sentry.metrics.gauge("testing.agent.screen.elements", elements, { attributes });
 }
 
-export function recordTraceSiftOperation(operation: "ready" | "analyze" | "remember" | "restore" | "handoff" | "task" | "payload" | "pick" | "project", outcome: "success" | "failed", duration: number) {
+export function recordTraceSiftOperation(operation: "ready" | "install" | "init" | "analyze" | "remember" | "restore" | "handoff" | "task" | "payload" | "pick" | "project", outcome: "success" | "failed", duration: number) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes = { component: "server", surface: "tracesift", operation, outcome };
   Sentry.metrics.count("tracesift.operation.samples", 1, { attributes });

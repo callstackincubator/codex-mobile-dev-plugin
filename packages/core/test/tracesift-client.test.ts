@@ -181,6 +181,33 @@ test("TraceSift client validates profile paths before service startup", async ()
   await assert.rejects(client.analyze(join(home, "absent.json"), "auto"), /does not exist or is not readable/);
 });
 
+test("TraceSift readiness distinguishes a missing CLI from other startup failures", async t => {
+  const home = await mkdtemp(join(tmpdir(), "mobile-dev-tracesift-"));
+  const client = new TraceSiftClient("definitely-missing-tracesift", home); t.after(() => client.close());
+  await assert.rejects(client.readyService(), (error: unknown) =>
+    error instanceof TraceSiftError && error.setupReason === "missing_cli" && /npm install -g/.test(error.message));
+});
+
+test("TraceSift readiness identifies an installed CLI that still needs init", async t => {
+  const home = await mkdtemp(join(tmpdir(), "mobile-dev-tracesift-"));
+  const command = join(home, "tracesift-needs-init");
+  await writeFile(command, "#!/bin/sh\necho 'Run tracesift init to install the app matching this CLI release.' >&2\nexit 1\n", { mode: 0o755 });
+  await chmod(command, 0o755);
+  const client = new TraceSiftClient(command, home); t.after(() => client.close());
+  await assert.rejects(client.readyService(), (error: unknown) =>
+    error instanceof TraceSiftError && error.setupReason === "needs_init" && /tracesift init/.test(error.message));
+});
+
+test("TraceSift initialization runs the fixed init argument with its private home", async t => {
+  const home = await mkdtemp(join(tmpdir(), "mobile-dev-tracesift-"));
+  const command = join(home, "tracesift-init");
+  await writeFile(command, "#!/bin/sh\ntest \"$1\" = init || exit 2\ntouch \"$TRACE_SIFT_HOME/initialized\"\n", { mode: 0o755 });
+  await chmod(command, 0o755);
+  const client = new TraceSiftClient(command, home); t.after(() => client.close());
+  await client.initialize();
+  assert.equal((await stat(join(home, "initialized"))).isFile(), true);
+});
+
 test("TraceSift client requires health identity to match service.json", async t => {
   const fake = await fixture(0o600, "different-instance"); t.after(fake.close);
   const profile = join(fake.home, "profile.json"); await writeFile(profile, "{}");
