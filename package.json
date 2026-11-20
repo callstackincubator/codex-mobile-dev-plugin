@@ -25,6 +25,7 @@
     "vendor:baguette": "node tooling/vendor-baguette.mjs",
     "vendor:resource-saving": "node tooling/vendor-resource-saving.mjs",
     "vendor:agent-device": "npm ci --prefix packages/runtimes/agent-device --ignore-scripts --no-audit --no-fund",
+    "vendor:e2e": "node tooling/vendor-e2e.mjs",
     "catalog:agent-device": "node tooling/agent-device-catalog.mjs",
     "rebuild:baguette": "node tooling/rebuild-baguette.mjs",
     "rebuild:ios-fps": "node tooling/build-fps.mjs ios",

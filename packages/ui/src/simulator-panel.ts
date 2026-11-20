@@ -286,9 +286,9 @@ export function createSimulatorPanel(
     } finally { recordUiTiming("ui.annotations.inspection", performance.now() - startedAt); }
   };
   /**
-   * The Testing panel records from the device this panel shows, and this is how it reads it: not
+   * The Testing Studio panel records from the device this panel shows, and this is how it reads it: not
    * the inspection path the annotation overlay uses, but the e2e runner's own element tree, so a
-   * recorded selector resolves to the same element when the test runs. The Testing panel installs
+   * recorded selector resolves to the same element when the test runs. The Testing Studio panel installs
    * that source — it knows the project and the target — and this supplies the device and the
    * screen. Only iOS simulators and Android emulators are wired up; a physical device has no tree here at all.
    */
@@ -1071,6 +1071,15 @@ export function createSimulatorPanel(
     openingTarget = undefined;
     void action(async () => { await disconnect(); selectDevice(); await start(); });
   });
+  /** Shows a listed, booted device in this mirror exactly as choosing it in the picker does. */
+  function showDevice(udid: string): boolean {
+    const listed = status?.devices.find(device => device.udid === udid) ?? physicalDevices.find(device => device.udid === udid);
+    if (!listed || listed.state !== "Booted" && listed.state !== "connected") return false;
+    if (devices.value !== udid) devices.value = udid;
+    if (devices.value !== udid) return false;
+    if (selected?.udid !== udid) devicePickerElement.dispatchEvent(new Event("change"));
+    return true;
+  }
   element("start-device").addEventListener("click", () => { void action(start); });
   root.querySelectorAll<HTMLButtonElement>("[data-button]").forEach(button => {
     button.addEventListener("click", () => { send({ type: "button", button: button.dataset.button === "home" ? "home" : "app-switcher" }); });
@@ -1129,6 +1138,7 @@ export function createSimulatorPanel(
     root,
     platform,
     get selected() { return selected; },
+    showDevice,
     fitScreen,
     controls,
     notice,

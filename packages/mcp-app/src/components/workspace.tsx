@@ -31,7 +31,7 @@ const tools = {
   "app-intel": { id: "tool-app-intel", label: "App Intel", icon: NetworkIcon },
   tracesift: { id: "tool-tracesift", label: "TraceSift", icon: ChartNoAxesCombinedIcon },
   "app-flow": { id: "tool-app-flow", label: "App Flow", icon: GitForkIcon },
-  testing: { id: "tool-testing", label: "Testing", icon: FlaskConicalIcon },
+  testing: { id: "tool-testing", label: "Testing Studio", icon: FlaskConicalIcon },
 };
 type Tool = keyof typeof tools;
 const isTool = (value: string): value is Tool => value in tools;
@@ -46,6 +46,8 @@ export function Workspace({ panels, recordingController, banner, displayModeCont
   const [simulatorsCollapsed, setSimulatorsCollapsed] = useState(false);
   const [layout, setLayout] = useState<DeviceLayout>(automaticLayout ?? "none");
   const manualLayout = useRef(false);
+  const layoutRef = useRef(layout);
+  layoutRef.current = layout;
   const recordingState = useSyncExternalStore(recordingController.subscribe, recordingController.getSnapshot);
   useEffect(() => {
     if (automaticLayout === undefined || manualLayout.current || recordingState.recording !== undefined) return;
@@ -61,7 +63,7 @@ export function Workspace({ panels, recordingController, banner, displayModeCont
     onLayout("none");
     panels.hide();
   }, [recordingState.recording?.id]);
-  // An agent recording opens the Testing tab for the user: they asked their agent for a test, and
+  // An agent recording opens the Testing Studio tab for the user: they asked their agent for a test, and
   // the steps appearing one at a time are the whole point. Which tool is on screen is this
   // component's own state, so the panel asks rather than reaches.
   useEffect(() => testing.onAgentRecordingStarted(() => {
@@ -69,6 +71,16 @@ export function Workspace({ panels, recordingController, banner, displayModeCont
     setTool("testing");
     setSavedVisible(false);
     panels.show("testing");
+  }), [testing]);
+  // Picking a lane in the results shows that lane's platform. Only a single-mirror layout moves,
+  // and only on the pick itself: the manual platform picker and a mirror switched back by hand
+  // are never overridden.
+  useEffect(() => testing.onLanePicked(platform => {
+    const current = layoutRef.current;
+    if (current === "both" || current === "none" || current === platform) return;
+    manualLayout.current = true;
+    setLayout(platform);
+    onLayout(platform, true);
   }), [testing]);
   const performanceState = useSyncExternalStore(performance.subscribe, performance.getSnapshot);
   const wide = useMediaQuery("(min-width: 900px)");
@@ -89,12 +101,12 @@ export function Workspace({ panels, recordingController, banner, displayModeCont
   }, [logState.open, logState.paused, performanceState.monitoring, performanceState.fpsMonitoring]);
   const testingOpen = tool === "testing" && open === true;
   /**
-   * The Testing panel is read as three panes side by side — mirror, preview, steps — so it asks
+   * The Testing Studio panel is read as three panes side by side — mirror, preview, steps — so it asks
    * for a horizontal workspace of its own rather than inheriting `split`.
    *
    * `split` is `wide && fullscreen`, and outside the fullscreen workspace it is false: the group
    * was then vertical, the mirror kept the 60% default meant for a tool stacked under it, and the
-   * Testing panel's own two panes were left with 40% of the height between them. Recording is done
+   * Testing Studio panel's own two panes were left with 40% of the height between them. Recording is done
    * by tapping the mirror and read back beside it, which only works as a row — so wherever there
    * is width for a row, that is what this panel gets.
    */
@@ -137,7 +149,7 @@ export function Workspace({ panels, recordingController, banner, displayModeCont
         const panelIds = Object.keys(current);
         if (panelIds.length > 0) {
           workspacePending = false;
-          // The Testing panel is read as three panes — mirror, preview, steps — and the preview
+          // The Testing Studio panel is read as three panes — mirror, preview, steps — and the preview
           // and the steps split the tools pane 60/40 of their own accord. A quarter of the
           // workspace for the mirror is what makes those 45% and 30%: the mirror is tapped, while
           // the two beside it are read, and reading a generated file needs the room.
@@ -145,7 +157,7 @@ export function Workspace({ panels, recordingController, banner, displayModeCont
           workspace.setLayout({ "tools-resizable": toolsShare, "simulators-resizable": 100 - toolsShare });
           // No visible platform is the panel being collapsed, not a share of 0. A share is the
           // group's last *requested* layout, which it re-applies whenever a panel's constraints
-          // change — and the Testing panel changes them as it opens. A 0 requested while nothing
+          // change — and the Testing Studio panel changes them as it opens. A 0 requested while nothing
           // was bootable therefore outlived the device: discovery selected a simulator, the
           // platform selector read "iOS", and the mirror stayed shut until the user toggled the
           // platform off and on again. Collapsing says the same thing in the group's own terms,
@@ -162,7 +174,7 @@ export function Workspace({ panels, recordingController, banner, displayModeCont
     observer.observe(document.getElementById("workspace-panels")!);
     applyLayout();
     // And again on the next frame, because the group re-derives its own layout from the panels'
-    // defaults when their constraints change — which is what opening the Testing panel does, since
+    // defaults when their constraints change — which is what opening the Testing Studio panel does, since
     // its mirror and its tools declare sizes of their own. Asking during the commit is asking
     // before that, so the answer was thrown away; the frame after it is when it sticks.
     const frame = requestAnimationFrame(() => { workspacePending = true; simulatorsPending = layout !== "none"; applyLayout(); });
@@ -178,7 +190,7 @@ export function Workspace({ panels, recordingController, banner, displayModeCont
   const bottomToolbar = !fullscreen && layout !== "none";
   const menuSide = bottomToolbar ? "top" : "bottom";
   const ToolIcon = tools[tool].icon;
-  // The Testing panel records by tapping the mirror and reads the test it emits beside it, so the
+  // The Testing Studio panel records by tapping the mirror and reads the test it emits beside it, so the
   // mirror leads and the preview follows it — the reading order of the thing being done. Every
   // other tool is a readout the simulator is secondary to, and keeps the simulator on the right.
   // Only side by side: stacked, "left" is the top panel, which the simulator already is.

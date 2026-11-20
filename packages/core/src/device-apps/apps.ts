@@ -66,11 +66,12 @@ export async function runningPhysicalApps(deviceId: string, signal?: AbortSignal
   return parsePhysicalApps(results[0].stdout, results[1].stdout);
 }
 
-export function parseRunningApps(output: string): DeviceApp[] {
+/** The running simulator apps in `launchctl list` output. Apple's own apps are left out unless `includeSystem`. */
+export function parseRunningApps(output: string, includeSystem = false): DeviceApp[] {
   const apps: DeviceApp[] = [];
   for (const line of output.split("\n")) {
     const match = /^\s*(\d+)\s+-?\d+\s+UIKitApplication:([^\[\s]+)\[/.exec(line);
-    if (match === null || match[2].startsWith("com.apple.")) continue;
+    if (match === null || (!includeSystem && match[2].startsWith("com.apple."))) continue;
     const pid = Number(match[1]);
     if (Number.isSafeInteger(pid) && pid > 0) apps.push({ bundleId: match[2], pid });
   }
@@ -81,6 +82,17 @@ export async function runningSimulatorApps(deviceId: string, signal?: AbortSigna
   if (process.platform !== "darwin") throw new ExpectedOperationError("unsupported_platform", "iOS CPU monitoring requires macOS and Xcode.");
   const result = await runDiscoveryCommand("ios_simulator_apps", "xcrun", ["simctl", "spawn", deviceId, "launchctl", "list"], { encoding: "utf8", timeout: 5000, maxBuffer: 1024 * 1024, signal });
   return parseRunningApps(result.stdout);
+}
+
+/**
+ * The bundle id of the simulator app running as `pid`, Apple's own apps included. The app lists above
+ * leave those out because nothing can monitor them, but Testing Studio records against whatever app
+ * is in front, Fitness or Settings as much as the user's own.
+ */
+export async function simulatorBundleForPid(deviceId: string, pid: number, signal?: AbortSignal): Promise<string | undefined> {
+  if (process.platform !== "darwin") return undefined;
+  const result = await runDiscoveryCommand("ios_simulator_apps", "xcrun", ["simctl", "spawn", deviceId, "launchctl", "list"], { encoding: "utf8", timeout: 5000, maxBuffer: 1024 * 1024, signal });
+  return parseRunningApps(result.stdout, true).find(app => app.pid === pid)?.bundleId;
 }
 
 export function parseAndroidApps(packages: string, processes: string): DeviceApp[] {

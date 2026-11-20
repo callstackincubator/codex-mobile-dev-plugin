@@ -87,6 +87,13 @@ The panel UI sends nothing to Mixpanel, and its CSP is unchanged.
 
 ## Volume policy
 
+Testing setup adds `testing.setup.operation.samples`. Its attributes are limited to `component`,
+`surface`, `operation` (`plan`, `apply`, `login`, `preference`), bounded `outcome`, and a supported
+provider id (unknown values become `other`). It never includes project paths, bundle identifiers,
+model ids, endpoints, prompts, test/source text, OAuth codes, API keys or tokens. The existing UI
+Testing timings and outcome counters likewise carry no user content. Cancellation and partial failure
+are outcomes, not error payloads, and telemetry opt-out applies unchanged.
+
 Since 0.1.164, application metrics in the UI, Node servers and native helpers use
 independent 0.5% point sampling before SDK buffering and network transmission.
 This reduces metric point volume by 99.5% on average, including automatic Node
@@ -539,7 +546,7 @@ it does not confirm user submission or a model response. Notes remain until the
 user clears them. Message/context construction timings, surface attribution, and
 content scrubbing are preserved; no note text or selection evidence enters telemetry.
 
-The Testing panel's recorder measures `ui.testing.tree_read`, the read that resolves a tap into a
+The Testing Studio panel's recorder measures `ui.testing.tree_read`, the read that resolves a tap into a
 selector, and counts `ui.testing.record_start`/`record_stop`, `ui.testing.step_tap`,
 `ui.testing.step_assert`, `ui.testing.step_unresolved`, `ui.testing.hover_walk`,
 `ui.testing.menu_open`. Editing a recorded step counts `ui.testing.step_duplicate`,
@@ -603,6 +610,11 @@ as well, so a flow tried a step at a time is not read as a flow run end to end; 
 beside the verdict, not instead of it. The test's title, its path, the project path, the steps and
 the runner's output are the user's own content and are **not** sent.
 
+A run on several devices measures `ui.testing.matrix_run`, the panel's whole call from starting the
+matrix to its last lane ending, and counts `ui.testing.matrix_run` at the start and
+`ui.testing.matrix_passed` or `ui.testing.matrix_failed` at the end (passed only when every lane
+passed). Device names and ids, app ids and the number of devices are not sent.
+
 Unsaved recordings — the flows the panel keeps so one survives the panel document being rebuilt —
 measure `ui.testing.draft_save`, the autosave write, and count `ui.testing.draft_restore` when one
 is reopened into the step list and `ui.testing.draft_delete` when the user throws one away. The
@@ -633,7 +645,7 @@ while this one answers "how long is Record unusable for" — the number the over
 of. A read that fails still records the timing, because the wait happened; it carries no selector,
 element name, bundle id or project path.
 
-The Testing panel records on Android emulators as well as iOS simulators, so `ui.testing.tree_read`,
+The Testing Studio panel records on Android emulators as well as iOS simulators, so `ui.testing.tree_read`,
 `ui.testing.record_prepare` and the `testing.agent.screen.*` metrics now carry a `platform`
 attribute (`ios` or `android`; two values, no device ids). One series hid that waiting on an
 emulator is a different number from waiting on a simulator. Names, units and boundaries are

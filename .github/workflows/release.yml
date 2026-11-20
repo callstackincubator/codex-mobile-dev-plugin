@@ -44,6 +44,7 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             packages/runtimes/agent-device/package-lock.json
+            packages/runtimes/e2e/package-lock.json
             packages/runtimes/serve-emu/package-lock.json
 
       - name: Validate release version and tag
@@ -82,6 +83,7 @@ jobs:
           npm ci --no-audit --no-fund
           npm run lint:commits -- --last --verbose
           npm run vendor:agent-device
+          npm run vendor:e2e
           npm run vendor:serve-emu
 
       - name: Restore or build native helpers with matching symbols

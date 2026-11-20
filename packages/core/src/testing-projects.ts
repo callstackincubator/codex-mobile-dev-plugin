@@ -5,9 +5,13 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from "node:pat
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 import { chooseProjectFolder } from "./project-folder-dialog.ts";
 import { recordProjectDialog } from "./telemetry.ts";
+import { bundledRuntimeDescriptor, projectRuntimeDescriptor } from "./e2e-runtime.ts";
+import type { TestingRuntimeDescriptor } from "./e2e-runtime.ts";
+import { discoverTestingTargets } from "./testing-target-discovery.ts";
+import type { ForegroundTestingTarget } from "./testing-target-discovery.ts";
 
 /**
- * The projects the Testing panel can record against: folders holding an `e2e.config.ts`. The user
+ * The projects the Testing Studio panel can record against: folders holding an `e2e.config.ts`. The user
  * always picks one explicitly — the server's own cwd is never assumed to be a project, because the
  * host launches the server from wherever it likes and a wrong guess would write a test file into a
  * folder the user never chose.
@@ -40,6 +44,11 @@ export interface TestingProjectConfig {
   /** Absolute path of the config file that was read. */
   configPath: string;
   targets: TestingTarget[];
+  runtimeMode: "project" | "bundled";
+  runtime: TestingRuntimeDescriptor;
+  setupState: "configured" | "available";
+  targetSource: "project" | "expo-cli" | "static-expo" | "foreground" | "none";
+  warning?: string;
 }
 
 interface Choice { path: string; lastPickedAt: string }
@@ -70,6 +79,42 @@ async function readJson(path: string): Promise<unknown> {
 function timestamp(value: unknown): string {
   return typeof value === "string" && !Number.isNaN(Date.parse(value)) ? value : "";
 }
+
+/**
+ * The workspace Testing Studio records against when no project is open: an empty folder in Mobile Dev's
+ * private state. It has no e2e config, so the bundled runtime owns it and its tests stay in Mobile
+ * Dev. Only the host can name it, so the panel asks the server instead of guessing a path.
+ */
+export function studioWorkspacePath(): string {
+  const stateRoot = process.env.MOBILE_DEV_TESTING_DIRECTORY?.trim() || TESTING_DIRECTORY;
+  return normalize(join(stateRoot, "studio-workspace"));
+}
+
+/**
+ * Whether a chat's working directory is a mobile project the Testing Studio panel can work in: a project
+ * the panel already lists, or a folder carrying a project marker (a package manifest, an Expo
+ * config, an e2e config, a native iOS or Android project). A scratch folder holds none of these, so
+ * it is not a project and the panel records in No project (Testing Studio) instead.
+ */
+export async function isChatProject(directory: string, known: readonly { path: string }[] = []): Promise<boolean> {
+  const path = normalize(directory.trim());
+  if (!path || !isAbsolute(path) || !(await isDirectory(path))) return false;
+  if (same(path, studioWorkspacePath())) return false;
+  if (known.some(entry => same(entry.path, path))) return true;
+  const files = ["package.json", "app.json", "app.config.ts", "app.config.js", "app.config.json", "Package.swift", "Podfile", "pubspec.yaml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts", ...CONFIG_FILES];
+  for (const file of files) if (await isFile(join(path, file))) return true;
+  const entries = await readdir(path).catch(() => [] as string[]);
+  if (entries.some(name => name.endsWith(".xcodeproj") || name.endsWith(".xcworkspace"))) return true;
+  for (const native of ["ios", "android"]) {
+    if (!(await isDirectory(join(path, native)))) continue;
+    const inner = await readdir(join(path, native)).catch(() => [] as string[]);
+    if (inner.some(name => name.endsWith(".xcodeproj") || name.endsWith(".xcworkspace") || name.startsWith("build.gradle") || name === "Podfile")) return true;
+  }
+  return false;
+}
+
+/** Whether two project paths name the same folder. */
+export function sameProjectPath(left: string, right: string): boolean { return same(left, right); }
 
 /** The e2e config file of a project folder, or undefined when it holds none. */
 export async function findConfig(projectPath: string): Promise<string | undefined> {
@@ -107,15 +152,30 @@ export function parseTargets(source: string): TestingTarget[] {
   return targets;
 }
 
-/** Reads one project's e2e config. Throws when the folder is not an e2e project. */
-export async function inspectProject(projectPath: string): Promise<TestingProjectConfig> {
+/** Reads one selected project and chooses its compatible project-local or bundled runtime. */
+export async function inspectProject(projectPath: string, foreground?: ForegroundTestingTarget): Promise<TestingProjectConfig> {
   const path = normalize(projectPath.trim());
   if (!isAbsolute(path)) throw new ExpectedOperationError("invalid_input", "Choose the project folder.");
+  if (path === studioWorkspacePath()) await mkdir(path, { recursive: true, mode: 0o700 });
   if (!(await isDirectory(path))) throw new ExpectedOperationError("invalid_input", "That project folder no longer exists.");
   const configPath = await findConfig(path);
-  if (!configPath) throw new ExpectedOperationError("invalid_input", "That folder has no e2e.config.ts. Run `npx e2e init` in it first.");
-  const source = await readFile(configPath, "utf-8").catch(() => "");
-  return { path, name: basename(path) || path, configPath, targets: parseTargets(source) };
+  const source = configPath ? await readFile(configPath, "utf-8").catch(() => "") : "";
+  const configuredTargets = parseTargets(source);
+  const compatibleTargets = configuredTargets.filter(target => (target.platform === "ios" || target.platform === "android") && target.bundleId);
+  const projectRuntime = configPath && compatibleTargets.length ? await projectRuntimeDescriptor(path) : undefined;
+  if (projectRuntime) return {
+    path, name: basename(path) || path, configPath: configPath!, targets: compatibleTargets,
+    runtimeMode: "project", runtime: projectRuntime, setupState: "configured", targetSource: "project",
+  };
+  const discovered = await discoverTestingTargets(path, foreground);
+  const reason = !configPath ? "No e2e config is present."
+    : compatibleTargets.length === 0 ? "The project config has no compatible mobile target."
+      : "The project-local e2e runtime is missing or incompatible with this Mobile Dev version.";
+  return {
+    path, name: basename(path) || path, configPath: configPath ?? "", targets: discovered.targets,
+    runtimeMode: "bundled", runtime: await bundledRuntimeDescriptor(reason), setupState: "available",
+    targetSource: discovered.source, warning: [reason, discovered.warning].filter(Boolean).join(" "),
+  };
 }
 
 export class TestingProjectChoices {
@@ -174,10 +234,11 @@ export class TestingProjectChoices {
     return await next;
   }
 
-  /** Recorded folders that still exist and still hold an e2e config, newest first. */
+  /** Recorded folders that still exist, including zero-setup projects without an e2e config. */
   async list(): Promise<TestingProjectChoice[]> {
-    const projects = TestingProjectChoices.clean(await this.read());
-    const available = await Promise.all(projects.map(async entry => ((await findConfig(entry.path)) ? entry : null)));
+    const studio = studioWorkspacePath();
+    const projects = TestingProjectChoices.clean(await this.read()).filter(entry => !same(entry.path, studio));
+    const available = await Promise.all(projects.map(async entry => ((await isDirectory(entry.path)) ? entry : null)));
     return available.filter((entry): entry is TestingProjectChoice => entry !== null);
   }
 
@@ -219,6 +280,21 @@ const SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const MAX_TEST_BYTES = 256 * 1024;
 
 export interface WrittenTest { path: string; written: boolean; existed: boolean }
+
+/**
+ * Project mode stores tests in the project. Bundled mode deliberately does not: its saved tests
+ * live under Mobile Dev's private state, keyed by a digest so telemetry, logs and directory names
+ * never contain the selected project's path.
+ */
+function bundledProjectDirectory(projectPath: string): string {
+  const stateRoot = process.env.MOBILE_DEV_TESTING_DIRECTORY?.trim() || TESTING_DIRECTORY;
+  return join(stateRoot, "bundled", sourceHash(normalize(projectPath)));
+}
+
+async function testStorage(projectPath: string): Promise<{ project: TestingProjectConfig; root: string }> {
+  const project = await inspectProject(projectPath);
+  return { project, root: project.runtimeMode === "project" ? project.path : bundledProjectDirectory(project.path) };
+}
 
 /**
  * Resolves the absolute path a recorded test may be written to.
@@ -266,14 +342,14 @@ export async function resolveTestPath(projectPath: string, relativePath: string)
  * the tool boundary prevents a crafted app call from turning the runner into an arbitrary module
  * loader while leaving `runRecordedTest` independently usable by its lower-level tests.
  */
-export async function resolveTestRunPaths(projectPath: string, relativePath: string, configPath?: string): Promise<{
+export async function resolveTestRunPaths(projectPath: string, relativePath: string, configPath?: string, previewSource = false): Promise<{
   projectPath: string;
   relativePath: string;
   configPath?: string;
 }> {
-  const project = await inspectProject(projectPath);
-  const testPath = await resolveTestPath(project.path, relativePath);
-  if (!(await isFile(testPath))) throw new ExpectedOperationError("invalid_input", "That test file is no longer there.");
+  const { project, root } = await testStorage(projectPath);
+  const testPath = await resolveTestPath(root, relativePath);
+  if (!previewSource && !(await isFile(testPath))) throw new ExpectedOperationError("invalid_input", "That test file is no longer there.");
   if (configPath !== undefined) {
     const requestedConfig = normalize(configPath.trim());
     if (!isAbsolute(requestedConfig) || !same(resolve(requestedConfig), resolve(project.configPath)))
@@ -281,7 +357,7 @@ export async function resolveTestRunPaths(projectPath: string, relativePath: str
   }
   return {
     projectPath: project.path,
-    relativePath: relative(project.path, testPath).split(/[\\/]/).join("/"),
+    relativePath: [TESTS_DIRECTORY, ...relative(resolve(root, TESTS_DIRECTORY), testPath).split(/[\\/]/).filter(Boolean)].join("/"),
     ...(configPath === undefined ? {} : { configPath: project.configPath }),
   };
 }
@@ -290,8 +366,16 @@ export async function resolveTestRunPaths(projectPath: string, relativePath: str
  * Writes one recorded test into the project. Without `overwrite` an existing file is reported
  * rather than replaced, so the panel can ask before it destroys someone's test.
  */
+/**
+ * Moves whenever a stored test or its pinned app changes on disk, by any writer: the panel, an
+ * agent's `branch_line`, `set_target`, `wait_for_app` pins, a save. The Testing Studio panel's poll reads it
+ * so it reloads what it shows without the user reselecting the test.
+ */
+let storedTestsRevision = 0;
+export function storedTestsChangeRevision(): number { return storedTestsRevision; }
+
 export async function writeTestFile(projectPath: string, relativePath: string, contents: string, overwrite = false): Promise<WrittenTest> {
-  const { path: root } = await inspectProject(projectPath);
+  const { root } = await testStorage(projectPath);
   if (Buffer.byteLength(contents, "utf-8") > MAX_TEST_BYTES) throw new ExpectedOperationError("invalid_input", "That test is too large to write.");
   const target = await resolveTestPath(root, relativePath);
   const existed = await isFile(target);
@@ -304,6 +388,7 @@ export async function writeTestFile(projectPath: string, relativePath: string, c
   } finally {
     await unlink(temporary).catch(() => undefined);
   }
+  storedTestsRevision += 1;
   return { path: target, written: true, existed };
 }
 
@@ -315,6 +400,84 @@ export interface StoredTest {
   name: string;
   updatedAt: string;
   sizeBytes: number;
+  /** The app a bundled test is pinned to; absent for project tests and for tests not yet run or saved with one. */
+  target?: TestTarget;
+}
+
+/**
+ * The app a Testing Studio test runs against, kept beside the test and never inside its source.
+ * `platform` and `bundleId` are the app it was recorded or first pinned against; `apps` holds the
+ * app id the user added for the other platform, so the same test can run there too.
+ */
+export interface TestTarget { platform: "ios" | "android"; bundleId: string; apps?: { ios?: string; android?: string } }
+
+const TARGETS_FILE = "targets.json";
+
+const validAppId = (value: unknown): value is string => typeof value === "string" && value.length > 0 && value.length <= 512;
+
+function validTarget(value: unknown): TestTarget | undefined {
+  const entry = value as Partial<TestTarget> | null;
+  if (!(entry?.platform === "ios" || entry?.platform === "android") || !validAppId(entry.bundleId)) return undefined;
+  const apps: { ios?: string; android?: string } = {};
+  for (const platform of ["ios", "android"] as const) {
+    const id = entry.apps?.[platform];
+    if (platform !== entry.platform && validAppId(id)) apps[platform] = id;
+  }
+  return { platform: entry.platform, bundleId: entry.bundleId, ...(Object.keys(apps).length > 0 ? { apps } : {}) };
+}
+
+async function readTargets(root: string): Promise<Record<string, TestTarget>> {
+  const saved = await readJson(join(root, TARGETS_FILE)) as { targets?: Record<string, unknown> } | null;
+  const targets: Record<string, TestTarget> = {};
+  for (const [path, value] of Object.entries(saved?.targets ?? {})) { const target = validTarget(value); if (target) targets[path] = target; }
+  return targets;
+}
+
+async function changeTargets(root: string, change: (targets: Record<string, TestTarget>) => void): Promise<void> {
+  const targets = await readTargets(root);
+  change(targets);
+  await mkdir(root, { recursive: true, mode: 0o700 });
+  const file = join(root, TARGETS_FILE);
+  const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporary, JSON.stringify({ version: 1, targets }, null, 2), { mode: 0o600 });
+    await rename(temporary, file);
+  } finally {
+    await unlink(temporary).catch(() => undefined);
+  }
+}
+
+/**
+ * Pins a Testing Studio test to the app it was recorded or first run against. Only bundled tests carry one:
+ * a project test's app is its config's target, and nothing is written into the project for it.
+ */
+export async function writeTestTarget(projectPath: string, relativePath: string, target: TestTarget, mode: "replace" | "add" = "replace"): Promise<boolean> {
+  const { project, root } = await testStorage(projectPath);
+  if (project.runtimeMode !== "bundled") return false;
+  const file = await resolveTestPath(root, relativePath);
+  if (!(await isFile(file))) throw new ExpectedOperationError("invalid_input", "Save the test before pinning an app to it.");
+  const checked = validTarget({ platform: target.platform, bundleId: target.bundleId });
+  if (!checked) throw new ExpectedOperationError("invalid_input", "Choose an iOS or Android app identifier.");
+  await changeTargets(root, targets => {
+    const current = targets[relativePath];
+    // "add" gives the test an app on a second platform and leaves the recorded one in place.
+    if (mode === "add" && current && current.platform !== checked.platform) {
+      targets[relativePath] = { ...current, apps: { ...current.apps, [checked.platform]: checked.bundleId } };
+      return;
+    }
+    // Replacing the recorded app on its own platform keeps the one added for the other; a
+    // recorded app on another platform is a different test, so nothing of the old pin stays.
+    const kept = current?.platform === checked.platform ? current.apps : undefined;
+    targets[relativePath] = { ...checked, ...(kept ? { apps: kept } : {}) };
+  });
+  storedTestsRevision += 1;
+  return true;
+}
+
+/** The app a bundled test is pinned to, if any. */
+export async function readTestTarget(projectPath: string, relativePath: string): Promise<TestTarget | undefined> {
+  const { project, root } = await testStorage(projectPath);
+  return project.runtimeMode === "bundled" ? (await readTargets(root))[relativePath] : undefined;
 }
 
 /** How deep under `tests/` the listing walks. Deeper than a folder per feature is not a list. */
@@ -333,8 +496,9 @@ const MAX_LISTED_TESTS = 200;
  * A project with no `tests/` folder yet is an empty list, not an error: nothing has been saved.
  */
 export async function listTestFiles(projectPath: string): Promise<StoredTest[]> {
-  const { path: root } = await inspectProject(projectPath);
+  const { project, root } = await testStorage(projectPath);
   const testsRoot = resolve(root, TESTS_DIRECTORY);
+  const pinned = project.runtimeMode === "bundled" ? await readTargets(root) : {};
   const found: StoredTest[] = [];
   const walk = async (directory: string, depth: number): Promise<void> => {
     if (depth > MAX_TEST_DEPTH || found.length >= MAX_LISTED_TESTS) return;
@@ -348,11 +512,13 @@ export async function listTestFiles(projectPath: string): Promise<StoredTest[]> 
       if (!entry.isFile() || !entry.name.endsWith(".e2e.ts")) continue;
       const info = await stat(child).catch(() => undefined);
       if (!info) continue;
+      const relativePath = [TESTS_DIRECTORY, ...relative(testsRoot, child).split(/[\\/]/).filter(Boolean)].join("/");
       found.push({
-        relativePath: [TESTS_DIRECTORY, ...relative(testsRoot, child).split(/[\\/]/).filter(Boolean)].join("/"),
+        relativePath,
         name: entry.name,
         updatedAt: info.mtime.toISOString(),
         sizeBytes: info.size,
+        ...(pinned[relativePath] ? { target: pinned[relativePath] } : {}),
       });
     }
   };
@@ -362,7 +528,7 @@ export async function listTestFiles(projectPath: string): Promise<StoredTest[]> 
 
 /** Reads a listed test for the panel's read-only source preview. */
 export async function readTestFile(projectPath: string, relativePath: string): Promise<string> {
-  const { path: root } = await inspectProject(projectPath);
+  const { root } = await testStorage(projectPath);
   const target = await resolveTestPath(root, relativePath);
   const info = await stat(target).catch(() => undefined);
   if (!info?.isFile()) throw new ExpectedOperationError("invalid_input", "That test file is no longer there.");
@@ -435,8 +601,10 @@ export async function discardStagedTestFile(projectPath: string, relativePath: s
  * this removes a file from the user's repository, which nothing here can put back.
  */
 export async function deleteTestFile(projectPath: string, relativePath: string): Promise<{ path: string; removed: boolean }> {
-  const { path: root } = await inspectProject(projectPath);
+  const { project, root } = await testStorage(projectPath);
   const target = await resolveTestPath(root, relativePath);
   const removed = await unlink(target).then(() => true, () => false);
+  if (removed && project.runtimeMode === "bundled") await changeTargets(root, targets => { delete targets[relativePath]; }).catch(() => undefined);
+  if (removed) storedTestsRevision += 1;
   return { path: target, removed };
 }

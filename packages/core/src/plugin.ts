@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import type { UIResource } from "./ui-resource.ts";
 import type { PanelOpener, ServerFeature } from "./server-feature.ts";
 import type { SharedTransport } from "./shared-transport.ts";
@@ -6,7 +7,7 @@ import { LIVE_UI_URI } from "@mobile-dev/shared/live-ui.ts";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { PLUGIN_VERSION } from "@mobile-dev/shared/version.ts";
 import { SENTRY_ORIGIN } from "@mobile-dev/shared/telemetry.ts";
-import { instrumentMcpServer, setServerTelemetryHost } from "./telemetry.ts";
+import { captureServerError, instrumentMcpServer, setServerTelemetryHost } from "./telemetry.ts";
 import { instrumentProductAnalytics } from "./analytics.ts";
 import { resolveTelemetryEnvironment } from "./telemetry-environment.ts";
 import { getTelemetryIdentity } from "./telemetry-identity.ts";
@@ -19,9 +20,10 @@ import { APP_FLOW_DIRECTORY, createAppFlowHost } from "./app-flow-host.ts";
 import { AppFlowProjectChoices } from "./app-flow-projects.ts";
 import { registerAppFlowTools } from "./app-flow-tools.ts";
 import { registerTestingTools } from "./testing-tools.ts";
+import { systemDeviceOps } from "./testing-prepare.ts";
 import { registerTestingAgentTools } from "./testing-agent.ts";
 import { TestingDevices } from "./testing-device.ts";
-import { TESTING_DIRECTORY, TestingProjectChoices } from "./testing-projects.ts";
+import { TESTING_DIRECTORY, TestingProjectChoices, isChatProject } from "./testing-projects.ts";
 import { TestDraftStore } from "./testing-drafts.ts";
 import { TestingAgentRecordings } from "./testing-agent.ts";
 import { ServeEmu } from "./serve-emu.ts";
@@ -33,6 +35,7 @@ import { CpuSessions, createCpuSessions } from "./cpu/sessions.ts";
 import { registerCpuTools } from "./cpu/tools.ts";
 import { deviceAppSources, readDeviceApps } from "./device-apps/sources.ts";
 import { unknownSimulatorForeground } from "./device-apps/foreground.ts";
+import { simulatorBundleForPid } from "./device-apps/apps.ts";
 import { PerformanceRecordings } from "./performance-recordings.ts";
 import { registerRecordingTools } from "./recording-tools.ts";
 import { RECORDING_URI } from "@mobile-dev/shared/recordings.ts";
@@ -125,8 +128,23 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
   // One store for both: the panel autosaves the flow it is holding and the agent keeps the flow it
   // finished, and those are the same list of unsaved recordings.
   const testDrafts = new TestDraftStore();
-  const closeTestingDevices = registerTestingTools(server, new TestingProjectChoices(TESTING_DIRECTORY), testingDevices, testDrafts);
-  registerTestingAgentTools(server, testingDevices, new TestingAgentRecordings(testingDevices, testDrafts));
+  // One recordings object too: it holds the panel's context, which the model-visible run tools check.
+  const testingOps = systemDeviceOps({
+    simulators, android, drivers,
+    foreground: async (platform, deviceId) => {
+      const front = (await readDeviceApps(deviceId, undefined, platform, platform === "ios" ? "simulator" : undefined, { ...deviceAppSources, simulator: simulatorForeground })).foregroundApp;
+      // An Apple app in front has no bundle id in the monitoring list; Testing Studio records it all the same.
+      if (front?.bundleId || !front?.pid || platform !== "ios") return front?.bundleId ?? null;
+      return await simulatorBundleForPid(deviceId, front.pid).catch(() => undefined) ?? null;
+    },
+  });
+  const testingRecordings = new TestingAgentRecordings(testingDevices, testDrafts, { ops: testingOps });
+  const testingProjects = new TestingProjectChoices(TESTING_DIRECTORY);
+  const closeTestingDevices = registerTestingTools(server, testingProjects, testingDevices, testDrafts, {
+    ops: testingOps,
+    panel: testingRecordings,
+  });
+  registerTestingAgentTools(server, testingDevices, testingRecordings);
 
   const resource = async () => typeof html === "string" ? { html } : await html();
   const page = async () => configureUI((await resource()).html);
@@ -159,12 +177,38 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
   // Devices cards that chats saved from earlier releases say they came from one.
   registerEarlierReleases(server, "mobile-dev-devices-earlier", "devices", readCard("devices"));
   const panelOpeners: PanelOpener[] = [];
+  /**
+   * Makes the Testing Studio tab show the chat's project. The chat's workspace root comes from the agent
+   * (`projectPath`), else from the host's MCP roots when it offers them. A root that is no project
+   * (a scratch folder) selects No project; with neither signal the panel keeps its own selection.
+   */
+  async function followChatProject(given?: string) {
+    try {
+      const root = given ?? await clientRoot();
+      if (root === undefined) return;
+      const listed = await testingProjects.list().catch(() => []);
+      testingRecordings.requestPanelProject(root && await isChatProject(root, listed) ? root : undefined);
+    } catch (error) { captureServerError(error, "testing.chat_project"); }
+  }
+  async function clientRoot(): Promise<string | undefined> {
+    if (!server.server.getClientCapabilities()?.roots) return undefined;
+    try {
+      const { roots } = await server.server.listRoots(undefined, { timeout: 2000 });
+      const uri = roots.find(root => root.uri.startsWith("file:"))?.uri;
+      return uri ? fileURLToPath(uri) : "";
+    } catch { return undefined; }
+  }
   // One place shows the panel beyond the host; the first feature that offers one wins.
   const opened: PanelOpener = async open => {
-    const openings = await Promise.all(panelOpeners.map(opener => opener(open)));
+    // The Testing Studio tab beats a moment after it loads; calls made in between wait for it rather than refuse.
+    testingRecordings.expectPanel();
+    testingRecordings.noteOpenCall();
+    const { projectPath, ...target } = open.target;
+    if (target.workspaceTool === "testing") await followChatProject(projectPath);
+    const openings = await Promise.all(panelOpeners.map(opener => opener({ ...open, target })));
     return openings.find(opening => opening !== undefined);
   };
-  const closePanel = panel?.register(server, { android, cpu, fps, drivers, page, showRecording, opened });
+  const closePanel = panel?.register(server, { android, cpu, fps, drivers, page, showRecording, opened, reopenNotice: () => testingRecordings.panelReopenNotice() });
   const featureContext = { connections: options.connections, onPanelOpen: (opener: PanelOpener) => { panelOpeners.push(opener); } };
   const featureCleanups = features.flatMap(feature => feature(server, featureContext) ?? []);
 

@@ -151,12 +151,10 @@ test("a failed read still leaves the device releasable", async () => {
   assert.equal(calls.filter(entry => entry.call === "close").length, 1);
 });
 
-test("a project without the mobile engine says so instead of guessing at roles", async () => {
+test("a project whose mobile engine does not load reads the tree with the bundled projection", async () => {
   const devices = new TestingDevices(fakeAgentDevice([], () => ({ nodes: [] })) as never);
-  await assert.rejects(
-    devices.read({ ...target, projectPath: "/does/not/exist" }),
-    /@e2e-dev\/mobile/,
-  );
+  const tree = await devices.read({ ...target, projectPath: "/does/not/exist" });
+  assert.ok(Array.isArray(tree.tree));
 });
 
 test("shutting the plugin down gives the recorder's device back", async () => {
