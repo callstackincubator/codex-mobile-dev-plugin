@@ -274,7 +274,7 @@ test("recording again after a save starts a new flow rather than extending the s
   recorder.stop();
   assert.equal(recorder.getSnapshot().steps.length, 1);
 
-  // What the Testing panel passes when the steps on screen are already in a file.
+  // What the Testing Studio panel passes when the steps on screen are already in a file.
   recorder.start(UDID, "ios");
   assert.deepEqual(recorder.getSnapshot().steps, []);
 

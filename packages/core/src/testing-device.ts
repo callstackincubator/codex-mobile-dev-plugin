@@ -8,7 +8,7 @@ import { bundledE2eRoot } from "./e2e-runtime.ts";
 import { captureServerError } from "./telemetry.ts";
 
 /**
- * The element tree the Testing panel's recorder names selectors from: the one the `e2e` runner
+ * The element tree the Testing Studio panel's recorder names selectors from: the one the `e2e` runner
  * will query when it runs the recorded test.
  *
  * The recorder used to read the macOS accessibility API through Baguette and translate its role
@@ -137,7 +137,7 @@ async function loadProjection(projectPath: string): Promise<EngineProjection> {
 
 /**
  * The project's projection when it loads, else the bundled runtime's. A project on an e2e version
- * Studio was not built against still runs its tests with its own CLI; only the recorder's tree
+ * Testing Studio was not built against still runs its tests with its own CLI; only the recorder's tree
  * reading drops back to the pinned copy, so recording keeps working instead of refusing.
  */
 async function loadProjectionWithFallback(runtimeRoot: string): Promise<EngineProjection> {

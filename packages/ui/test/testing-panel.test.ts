@@ -311,8 +311,8 @@ test("a booted Android emulator is recordable and a target of the wrong platform
   assert.equal(panel.targetMismatch, "");
 });
 
-test("Studio does not flash a mirror mismatch while the switched device's app is still unknown", () => {
-  // Switching the mirror clears the foreground app and re-reads Studio's target once it is found.
+test("Testing Studio does not flash a mirror mismatch while the switched device's app is still unknown", () => {
+  // Switching the mirror clears the foreground app and re-reads Testing Studio's target once it is found.
   // In between, the target is still the other platform's: warning then makes the message flicker.
   const emulator = { udid: "emulator-5554", name: "Pixel", state: "Booted", runtime: "", platform: "android", kind: "emulator" };
   let snapshot: Record<string, unknown> = { device: emulator, apps: [], foregroundApp: null, ready: false };
@@ -331,7 +331,7 @@ test("Studio does not flash a mirror mismatch while the switched device's app is
   panel.dispose();
 });
 
-test("a Studio test with no app pins the one in front on its first run, then runs against the pin", async () => {
+test("a Testing Studio test with no app pins the one in front on its first run, then runs against the pin", async () => {
   const calls: { name: string; arguments: Record<string, unknown> }[] = [];
   const source = 'test("stored", async ({ app }) => {\n  await app.open();\n});\n';
   const panel = new TestingPanel(host({ mobile_testing_run_test: { status: "passed", exitCode: 0, steps: [] } }, calls), frontApps);
@@ -349,7 +349,7 @@ test("a Studio test with no app pins the one in front on its first run, then run
   panel.dispose();
 });
 
-test("a Studio save pins the app in front, not a stale target from an earlier app", async () => {
+test("a Testing Studio save pins the app in front, not a stale target from an earlier app", async () => {
   const calls: { name: string; arguments: Record<string, unknown> }[] = [];
   const panel = new TestingPanel(host({ mobile_testing_write_file: { written: true, existed: false, path: `${PROJECT}/tests/flow.e2e.ts` } }, calls), frontApps);
   panel.setAvailable(true);
@@ -363,10 +363,10 @@ test("a Studio save pins the app in front, not a stale target from an earlier ap
   panel.dispose();
 });
 
-test("a Studio save shows its pin at once, even when the next listing has not caught up", async () => {
+test("a Testing Studio save shows its pin at once, even when the next listing has not caught up", async () => {
   const calls: { name: string; arguments: Record<string, unknown> }[] = [];
   const listed = { relativePath: "tests/flow.e2e.ts", name: "flow.e2e.ts", updatedAt: "", sizeBytes: 1 };
-  const panel = new TestingPanel(host({ mobile_testing_write_file: { written: true, existed: false, path: "Studio/tests/flow.e2e.ts" }, mobile_testing_tests: { tests: [listed] } }, calls), frontApps);
+  const panel = new TestingPanel(host({ mobile_testing_write_file: { written: true, existed: false, path: "Testing Studio/tests/flow.e2e.ts" }, mobile_testing_tests: { tests: [listed] } }, calls), frontApps);
   const update = (panel as unknown as { update(fields: Record<string, unknown>): void }).update.bind(panel);
   panel.setAvailable(true);
   update({ projectPath: PROJECT, fileName: "flow", runtimeMode: "bundled", tests: [listed] });
@@ -383,7 +383,7 @@ test("a Studio save shows its pin at once, even when the next listing has not ca
   panel.dispose();
 });
 
-test("a Studio test pinned by its first run shows the pin while the run is still going", async () => {
+test("a Testing Studio test pinned by its first run shows the pin while the run is still going", async () => {
   const source = 'test("stored", async ({ app }) => {\n  await app.open();\n});\n';
   let duringRun: unknown;
   let panel: TestingPanel;
@@ -401,7 +401,7 @@ test("a Studio test pinned by its first run shows the pin while the run is still
   panel.dispose();
 });
 
-test("a pinned Studio test can run when its app is installed but not running", () => {
+test("a pinned Testing Studio test can run when its app is installed but not running", () => {
   const running = { subscribe: () => () => undefined, getSnapshot: () => ({ device: { udid: "udid", name: "iPhone", state: "Booted", platform: "ios", kind: "simulator" }, apps: [{ bundleId: "com.other.app", pid: 2 }], foregroundApp: { bundleId: "com.other.app", pid: 2 }, ready: true }) } as unknown as DeviceAppsStore;
   const panel = new TestingPanel(host({}, []), running);
   panel.setAvailable(true);
@@ -411,7 +411,7 @@ test("a pinned Studio test can run when its app is installed but not running", (
   panel.dispose();
 });
 
-test("a Studio test pinned to iOS only offers and runs on iOS devices", () => {
+test("a Testing Studio test pinned to iOS only offers and runs on iOS devices", () => {
   const panel = new TestingPanel(host({}, []), frontApps);
   panel.setAvailable(true);
   (panel as unknown as { update(fields: Record<string, unknown>): void }).update({
@@ -431,7 +431,7 @@ test("a Studio test pinned to iOS only offers and runs on iOS devices", () => {
 const androidFront = { subscribe: () => () => undefined, getSnapshot: () => ({ device: { udid: "emulator-5554", name: "Pixel", state: "Booted", runtime: "", platform: "android", kind: "emulator" }, apps: [], foregroundApp: { bundleId: "com.example.android", pid: 3 }, ready: true }) } as unknown as DeviceAppsStore;
 const iosOnly = { relativePath: "tests/stored.e2e.ts", name: "stored.e2e.ts", updatedAt: "", sizeBytes: 1, target: { platform: "ios", bundleId: "com.pinned.app" } };
 
-test("an iOS-only Studio test on an Android mirror says so and adds the Android app in front", async () => {
+test("an iOS-only Testing Studio test on an Android mirror says so and adds the Android app in front", async () => {
   const calls: { name: string; arguments: Record<string, unknown> }[] = [];
   const panel = new TestingPanel(host({ mobile_testing_set_target: { pinned: true } }, calls), androidFront);
   panel.setAvailable(true);
@@ -445,7 +445,7 @@ test("an iOS-only Studio test on an Android mirror says so and adds the Android 
   panel.dispose();
 });
 
-test("a Studio test with apps on both platforms runs the mirrored platform's app and offers both in the matrix", async () => {
+test("a Testing Studio test with apps on both platforms runs the mirrored platform's app and offers both in the matrix", async () => {
   const calls: { name: string; arguments: Record<string, unknown> }[] = [];
   const source = 'test("stored", async ({ app }) => {\n  await app.open();\n});\n';
   const panel = new TestingPanel(host({ mobile_testing_run_test: { status: "passed", exitCode: 0, steps: [] } }, calls), androidFront);
@@ -506,7 +506,7 @@ test("re-recording a line that failed on an Android lane brings the Android mirr
   } finally { panel.dispose(); }
 });
 
-test("opening an app on the mirror keeps the open Studio test selected", async () => {
+test("opening an app on the mirror keeps the open Testing Studio test selected", async () => {
   const listeners = new Set<() => void>();
   let snapshot: Record<string, unknown> = { device: { udid: "emulator-5554", name: "Pixel", state: "Booted", runtime: "", platform: "android", kind: "emulator" }, apps: [], foregroundApp: null, ready: true };
   const apps = { subscribe: (listener: () => void) => { listeners.add(listener); return () => listeners.delete(listener); }, getSnapshot: () => snapshot } as unknown as DeviceAppsStore;
@@ -523,7 +523,7 @@ test("opening an app on the mirror keeps the open Studio test selected", async (
   } finally { panel.dispose(); }
 });
 
-test("Run is unavailable for a Studio test with neither a pinned app nor one in front", () => {
+test("Run is unavailable for a Testing Studio test with neither a pinned app nor one in front", () => {
   const panel = new TestingPanel(host({}, []), deviceApps);
   panel.setAvailable(true);
   (panel as unknown as { update(fields: Record<string, unknown>): void }).update({ projectPath: PROJECT, runtimeMode: "bundled", selectedTestPath: "tests/stored.e2e.ts", selectedTestSource: "x" });

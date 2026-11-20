@@ -163,7 +163,7 @@ function CommandMenu({ commands, width, row, offerRow, onClose }: {
 }
 
 /**
- * The outline over the mirror while the Testing panel records: the element a tap would name, the
+ * The outline over the mirror while the Testing Studio panel records: the element a tap would name, the
  * step it would add, and — on a right-click — the menu of every step that element supports.
  *
  * It borrows the annotation store's viewport — the canvas rectangle inside the stage, which the

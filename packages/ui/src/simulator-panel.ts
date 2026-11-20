@@ -286,9 +286,9 @@ export function createSimulatorPanel(
     } finally { recordUiTiming("ui.annotations.inspection", performance.now() - startedAt); }
   };
   /**
-   * The Testing panel records from the device this panel shows, and this is how it reads it: not
+   * The Testing Studio panel records from the device this panel shows, and this is how it reads it: not
    * the inspection path the annotation overlay uses, but the e2e runner's own element tree, so a
-   * recorded selector resolves to the same element when the test runs. The Testing panel installs
+   * recorded selector resolves to the same element when the test runs. The Testing Studio panel installs
    * that source — it knows the project and the target — and this supplies the device and the
    * screen. Only iOS simulators and Android emulators are wired up; a physical device has no tree here at all.
    */

@@ -12,7 +12,7 @@ function step(id: string, label: string) {
 }
 
 /**
- * The Testing panel over a host whose tool calls are answered from a script.
+ * The Testing Studio panel over a host whose tool calls are answered from a script.
  *
  * `agent` is the state the server would report, which the test moves between polls; everything
  * else answers with the empty shape the panel copes with, so the test is about the agent recording
@@ -68,7 +68,7 @@ test("the panel reports its selection, and only when it changes", async t => {
   assert.equal(context().length, before, "an unchanged selection is not reported again");
 });
 
-test("a session the agent starts opens the Testing tab and adopts its steps live", async t => {
+test("a session the agent starts opens the Testing Studio tab and adopts its steps live", async t => {
   const { panel, agent, tick, testRecorder } = await panelEnvironment(t);
   let opened = 0;
   panel.onAgentRecordingStarted(() => { opened += 1; });
@@ -212,7 +212,7 @@ test("the panel's own run is never taken over by the poll", async t => {
   assert.equal(panel.getSnapshot().matrix, null);
 });
 
-test("a recording the agent saved in Studio refreshes the test list instead of adopting a draft", async t => {
+test("a recording the agent saved in Testing Studio refreshes the test list instead of adopting a draft", async t => {
   const { panel, agent, tick, calls, testRecorder } = await panelEnvironment(t);
   panel.setAvailable(true);
   await tick();
@@ -224,7 +224,7 @@ test("a recording the agent saved in Studio refreshes the test list instead of a
   await (panel as any).readAgentState();
   await tick();
   assert.equal(panel.getSnapshot().agent.savedPath, "tests/t.e2e.ts");
-  assert.equal(panel.getSnapshot().savedPath, "Studio/tests/t.e2e.ts");
+  assert.equal(panel.getSnapshot().savedPath, "Testing Studio/tests/t.e2e.ts");
   assert.equal(panel.getSnapshot().draftId, "", "there is no draft: the test is saved");
   assert.ok(calls.filter(entry => entry.name === "mobile_testing_tests").length > before, "the stored list is read again so the test appears");
   assert.equal(testRecorder.getSnapshot().recordingDeviceId, "");
@@ -329,7 +329,7 @@ test("an agent's No project request beats the last-used project when the panel o
   env.panel.setAvailable(true);
   await new Promise(resolve => setTimeout(resolve, 200));
   await settled(env.panel, "/studio");
-  assert.equal(env.calls.some(entry => entry.name === "mobile_testing_choose_project"), false, "Studio is not a folder to record");
+  assert.equal(env.calls.some(entry => entry.name === "mobile_testing_choose_project"), false, "Testing Studio is not a folder to record");
 });
 
 test("an agent's No project request switches a panel already on another project, once", async t => {

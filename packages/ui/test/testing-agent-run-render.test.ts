@@ -84,7 +84,7 @@ test("the panel adopts an agent run through its own polling and keeps rendering"
     device: { udid: "u", name: "Pixel", state: "Booted", platform: "android", kind: "emulator" },
     front: { bundleId: "com.example.android", pid: 1 },
     responses: {
-      mobile_testing_projects: { projects: [{ path: "/studio", name: "Studio" }], studioPath: "/studio" },
+      mobile_testing_projects: { projects: [{ path: "/studio", name: "Testing Studio" }], studioPath: "/studio" },
       mobile_testing_project_config: { runtimeMode: "bundled", targets: [], setupState: "available" },
       mobile_testing_tests: { tests: [{ relativePath: "flow.e2e.ts", name: "flow", updatedAt: new Date().toISOString(), sizeBytes: 10, target: { platform: "ios", bundleId: "com.example", apps: { android: "com.example.android" } } }] },
       mobile_testing_read_file: { source, originalHash: "h" },

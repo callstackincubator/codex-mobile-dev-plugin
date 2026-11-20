@@ -172,7 +172,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
   registerEarlierReleases(server, "mobile-dev-devices-earlier", "devices", readCard("devices"));
   const panelOpeners: PanelOpener[] = [];
   /**
-   * Makes the Testing tab show the chat's project. The chat's workspace root comes from the agent
+   * Makes the Testing Studio tab show the chat's project. The chat's workspace root comes from the agent
    * (`projectPath`), else from the host's MCP roots when it offers them. A root that is no project
    * (a scratch folder) selects No project; with neither signal the panel keeps its own selection.
    */
@@ -194,7 +194,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
   }
   // One place shows the panel beyond the host; the first feature that offers one wins.
   const opened: PanelOpener = async open => {
-    // The Testing tab beats a moment after it loads; calls made in between wait for it rather than refuse.
+    // The Testing Studio tab beats a moment after it loads; calls made in between wait for it rather than refuse.
     testingRecordings.expectPanel();
     testingRecordings.noteOpenCall();
     const { projectPath, ...target } = open.target;

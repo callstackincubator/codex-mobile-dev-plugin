@@ -178,7 +178,7 @@ test("a symlinked tests folder is refused rather than followed", async () => {
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test("a folder without project setup saves into Studio state without modifying the project", async () => {
+test("a folder without project setup saves into Testing Studio state without modifying the project", async () => {
   const { root, path } = await project();
   const previous = process.env.MOBILE_DEV_TESTING_DIRECTORY;
   try {
@@ -197,7 +197,7 @@ test("a folder without project setup saves into Studio state without modifying t
   }
 });
 
-test("the Studio workspace needs no project: it is created on demand, bundled, and not listed as a project", async () => {
+test("the Testing Studio workspace needs no project: it is created on demand, bundled, and not listed as a project", async () => {
   const { root } = await project();
   const previous = process.env.MOBILE_DEV_TESTING_DIRECTORY;
   try {
@@ -247,7 +247,7 @@ test("every write to a stored test or its pinned app moves the change revision t
   }
 });
 
-test("a Studio test is pinned to its app beside the source, listed, re-pinned and cleared on delete", async () => {
+test("a Testing Studio test is pinned to its app beside the source, listed, re-pinned and cleared on delete", async () => {
   const { root } = await project();
   const previous = process.env.MOBILE_DEV_TESTING_DIRECTORY;
   try {
@@ -278,7 +278,7 @@ test("a Studio test is pinned to its app beside the source, listed, re-pinned an
   }
 });
 
-test("bundled mode lists only private Studio tests and never leaks project tests", async () => {
+test("bundled mode lists only private Testing Studio tests and never leaks project tests", async () => {
   const root = await mkdtemp(join(tmpdir(), "testing-bundled-list-"));
   const previous = process.env.MOBILE_DEV_TESTING_DIRECTORY;
   try {
@@ -286,7 +286,7 @@ test("bundled mode lists only private Studio tests and never leaks project tests
     const selected = join(root, "selected");
     await mkdir(join(selected, "tests"), { recursive: true });
     await writeFile(join(selected, "tests", "project-only.e2e.ts"), SOURCE);
-    assert.deepEqual(await listTestFiles(selected), [], "project files are outside bundled Studio storage");
+    assert.deepEqual(await listTestFiles(selected), [], "project files are outside bundled Testing Studio storage");
 
     await writeTestFile(selected, "tests/studio-only.e2e.ts", SOURCE);
     assert.deepEqual((await listTestFiles(selected)).map(entry => entry.relativePath), ["tests/studio-only.e2e.ts"]);

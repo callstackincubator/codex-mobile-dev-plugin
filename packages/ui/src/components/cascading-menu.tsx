@@ -4,7 +4,7 @@ import { MARGIN, placeBelow, placeBeside } from "../popover-placement";
 import type { Box, Placement } from "../popover-placement";
 
 /**
- * The cascading half of the Testing panel's menus: a branch opens *beside* the row it hangs off,
+ * The cascading half of the Testing Studio panel's menus: a branch opens *beside* the row it hangs off,
  * with the menu it came from still on screen.
  *
  * A branch that replaced what it was opened from read as navigation rather than as a menu — the

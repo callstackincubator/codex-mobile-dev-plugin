@@ -20,7 +20,7 @@ import type { MatrixDeviceOption, MatrixLane, MatrixView } from "./testing-matri
  * project already holds. A saved recording moves from one to the other, which is the whole reason
  * this exists — the draft is deleted on save, so before this the test left the list entirely.
  */
-export type StoredTestSummary = { relativePath: string; name: string; updatedAt: string; sizeBytes: number; /** The app a Studio test is pinned to, and any app added for the other platform. */ target?: { platform: "ios" | "android"; bundleId: string; apps?: { ios?: string; android?: string } } };
+export type StoredTestSummary = { relativePath: string; name: string; updatedAt: string; sizeBytes: number; /** The app a Testing Studio test is pinned to, and any app added for the other platform. */ target?: { platform: "ios" | "android"; bundleId: string; apps?: { ios?: string; android?: string } } };
 
 /**
  * An agent recording, as the server reports it.
@@ -38,7 +38,7 @@ export type TestingAgentView = {
   note: string;
   /** The unsaved recording a finished session was kept as; "" while it is still recording. */
   draftId: string;
-  /** The Studio test a finished session was saved as, relative to Studio; "" when it was kept as a draft. */
+  /** The Testing Studio test a finished session was saved as, relative to Testing Studio; "" when it was kept as a draft. */
   savedPath: string;
 };
 
@@ -69,7 +69,7 @@ function writeProjectState(change: StoredProjectState) {
 const AGENT_POLL_ACTIVE_MS = 400;
 /**
  * And a slow tick otherwise, so a recording the agent starts is noticed even when the user is
- * looking at another tool. It is what opens the Testing tab for them.
+ * looking at another tool. It is what opens the Testing Studio tab for them.
  */
 const AGENT_POLL_IDLE_MS = 2_500;
 
@@ -98,7 +98,7 @@ export type TestingSnapshot = {
   available: boolean;
   projectPath: string;
   projects: TestingProjectOption[];
-  /** The private workspace Studio records against when no project is open; "" until the server says. */
+  /** The private workspace Testing Studio records against when no project is open; "" until the server says. */
   studioPath: string;
   targets: TestingTargetOption[];
   /** The target the panel records against; "" until a project with targets is loaded. */
@@ -213,7 +213,7 @@ function parseTargets(data: Record<string, unknown>): TestingTargetOption[] {
 }
 
 /**
- * The Testing panel: pick an e2e project, launch its app on the mirrored device, and (once the
+ * The Testing Studio panel: pick an e2e project, launch its app on the mirrored device, and (once the
  * recorder lands) turn taps on the mirror into a deterministic test.
  *
  * This is the walking skeleton — project selection and launch only. Tap interception, selector
@@ -269,7 +269,7 @@ export class TestingPanel {
   private draftWrite?: Promise<void>;
   /** Set while `dispose` makes its last keep, so the guards do not refuse the flush. */
   private flushing = false;
-  /** Set when a session goes active, for the host chrome to show the Testing tab. */
+  /** Set when a session goes active, for the host chrome to show the Testing Studio tab. */
   private onAgentRecording?: () => void;
 
   private heartbeatTimer?: ReturnType<typeof setInterval>;
@@ -308,7 +308,7 @@ export class TestingPanel {
   }
 
   /**
-   * The host chrome's way of being told to show the Testing tab.
+   * The host chrome's way of being told to show the Testing Studio tab.
    *
    * Which tool is on screen is the host's own state — the workspace component holds it — so the
    * panel asks rather than reaches. Opening the tab is the point of an agent recording: the user
@@ -397,7 +397,7 @@ export class TestingPanel {
     // still theirs — nothing is ever inferred from the server's working directory.
     void this.restoreProject();
     // And the poll runs from here rather than from `show`, so a recording the agent starts while
-    // the user is in another tool is what opens the Testing tab for them.
+    // the user is in another tool is what opens the Testing Studio tab for them.
     this.pollAgent();
     void this.refreshDrafts();
     void this.refreshTests();
@@ -420,7 +420,7 @@ export class TestingPanel {
     if (!device || !target?.platform) return "";
     const mirrored = recordablePlatform(device);
     if (target.platform === mirrored) return "";
-    // Studio's target follows the app in front, which is unknown for a moment after the mirror changes:
+    // Testing Studio's target follows the app in front, which is unknown for a moment after the mirror changes:
     // `selectDevice` clears it and `refreshStudioTargets` re-reads the target once it is found. Until
     // then the target is still the other mirror's, and warning about it only flashes. Say nothing until
     // the new device has answered and its target is in.
@@ -431,7 +431,7 @@ export class TestingPanel {
     }
     const shown = mirrored === "ios" ? "an iOS simulator" : "an Android emulator";
     const other = target.platform === "ios" ? "an iOS simulator" : "an Android emulator";
-    // Studio's targets are the app in front, so its only target names are internal: say what to do on the device instead.
+    // Testing Studio's targets are the app in front, so its only target names are internal: say what to do on the device instead.
     if (this.noProject) return `The mirror shows ${shown}, but the app was picked up on ${platformLabel(target.platform)}. Open the app on this device to record here, or switch the mirror to ${other}.`;
     return `The "${target.name}" target runs on ${platformLabel(target.platform)}, but the mirror shows ${shown}. Choose ${mirrored === "ios" ? "an iOS" : "an Android"} target, or switch the mirror to ${other}.`;
   }
@@ -472,9 +472,9 @@ export class TestingPanel {
       await this.refreshProjects();
       // An agent that opened the panel for its chat has already said which project it wants.
       if (await this.applyServerProjectRequest()) return;
-      // No project is a state of its own: with nothing recorded against yet, Studio opens on its
+      // No project is a state of its own: with nothing recorded against yet, Testing Studio opens on its
       // private workspace so recording never waits for a folder to be chosen.
-      // The one the user was last in, whether that was Studio or a folder; else the newest folder.
+      // The one the user was last in, whether that was Testing Studio or a folder; else the newest folder.
       const last = readProjectState().project;
       const known = last && (last === this.snapshot.studioPath || this.snapshot.projects.some(entry => entry.path === last)) ? last : "";
       const latest = known || this.snapshot.projects[0]?.path || this.snapshot.studioPath;
@@ -523,10 +523,10 @@ export class TestingPanel {
     this.update({ projects: [project, ...this.snapshot.projects.filter(entry => entry.path !== project.path)] });
   }
 
-  /** Whether Studio is on its private workspace rather than a project the user opened. */
+  /** Whether Testing Studio is on its private workspace rather than a project the user opened. */
   get noProject(): boolean { return Boolean(this.snapshot.studioPath) && this.snapshot.projectPath === this.snapshot.studioPath; }
 
-  /** Leaves the open project and records in Studio's own workspace. */
+  /** Leaves the open project and records in Testing Studio's own workspace. */
   async useNoProject() {
     await this.refreshProjects();
     if (this.snapshot.studioPath) await this.selectProject(this.snapshot.studioPath);
@@ -570,7 +570,7 @@ export class TestingPanel {
   }
 
   /**
-   * Studio derives its only target from the app in front, so when another app comes to the front
+   * Testing Studio derives its only target from the app in front, so when another app comes to the front
    * the target is re-read, in place: unlike `selectProject` it keeps drafts, tests and selection.
    */
   private async refreshStudioTargets() {
@@ -853,7 +853,7 @@ export class TestingPanel {
   }
 
   /**
-   * The line a re-record would change: the selected Studio test's first failed line, when the last
+   * The line a re-record would change: the selected Testing Studio test's first failed line, when the last
    * run failed on the other platform than the one it was recorded on and the mirror shows that one.
    * Zero when there is nothing to offer.
    */
@@ -1445,10 +1445,10 @@ export class TestingPanel {
       // a second copy of the same steps a moment later.
       this.draftRevision = testRecorder.getSnapshot().revision;
       if (savedPath) {
-        // Studio: finishing wrote the test, so there is no draft to adopt. The steps are in the
+        // Testing Studio: finishing wrote the test, so there is no draft to adopt. The steps are in the
         // stored list now, and the recorder's copy is marked saved so autosave does not keep it again.
         this.draftFlowId = "";
-        this.update({ savedRevision: testRecorder.getSnapshot().revision, savedPath: `Studio/${savedPath}` });
+        this.update({ savedRevision: testRecorder.getSnapshot().revision, savedPath: `Testing Studio/${savedPath}` });
         testRecorder.stop();
         void this.refreshTests();
         void this.refreshDrafts();
@@ -1464,7 +1464,7 @@ export class TestingPanel {
   async stopAgent() {
     if (this.snapshot.agent?.active !== true) return;
     try {
-      await this.call("mobile_testing_agent_abort", { reason: "The user stopped the recording from the Testing panel." }, 10_000);
+      await this.call("mobile_testing_agent_abort", { reason: "The user stopped the recording from the Testing Studio panel." }, 10_000);
     } catch (error) {
       this.update({ error: error instanceof Error ? error.message : String(error) });
       return;
@@ -1492,41 +1492,41 @@ export class TestingPanel {
       && !this.storedRunHint);
   }
 
-  /** The app a selected Studio test is pinned to; undefined for project tests and unpinned tests. */
+  /** The app a selected Testing Studio test is pinned to; undefined for project tests and unpinned tests. */
   get storedTarget(): NonNullable<StoredTestSummary["target"]> | undefined {
     if (this.snapshot.runtimeMode !== "bundled") return undefined;
     return this.snapshot.tests.find(test => test.relativePath === this.snapshot.selectedTestPath)?.target;
   }
 
-  /** Every app id the selected Studio test has, per platform: the recorded one and any added one. */
+  /** Every app id the selected Testing Studio test has, per platform: the recorded one and any added one. */
   get storedApps(): { ios?: string; android?: string } {
     const stored = this.storedTarget;
     return stored ? { ...stored.apps, [stored.platform]: stored.bundleId } : {};
   }
 
-  /** The selected Studio test's app on one platform, if it has one there. */
+  /** The selected Testing Studio test's app on one platform, if it has one there. */
   storedAppOn(platform: "ios" | "android"): { platform: "ios" | "android"; bundleId: string } | undefined {
     const bundleId = this.storedApps[platform];
     return bundleId ? { platform, bundleId } : undefined;
   }
 
-  /** The platform of the mirrored device, when it is one Studio can record and run on. */
+  /** The platform of the mirrored device, when it is one Testing Studio can record and run on. */
   get mirroredPlatform(): "ios" | "android" | undefined {
     const { device } = this.deviceApps.getSnapshot();
     return device && isRecordableDevice(device) ? recordablePlatform(device) : undefined;
   }
 
-  /** The app in front on the mirrored device, as a Studio target. */
+  /** The app in front on the mirrored device, as a Testing Studio target. */
   get foregroundTarget(): NonNullable<StoredTestSummary["target"]> | undefined {
     const { device, foregroundApp } = this.deviceApps.getSnapshot();
     return device && isRecordableDevice(device) && foregroundApp?.bundleId ? { platform: recordablePlatform(device), bundleId: foregroundApp.bundleId } : undefined;
   }
 
-  /** Why Run is unavailable for a selected Studio test, or "": it needs a pinned app or one in front. */
+  /** Why Run is unavailable for a selected Testing Studio test, or "": it needs a pinned app or one in front. */
   get storedRunHint(): string {
     if (this.snapshot.runtimeMode !== "bundled" || !this.snapshot.selectedTestPath) return "";
     const pinned = this.storedTarget;
-    if (!pinned) return this.foregroundTarget ? "" : "This test has no app yet. Open the app in the mirror to run it; Studio will pin it.";
+    if (!pinned) return this.foregroundTarget ? "" : "This test has no app yet. Open the app in the mirror to run it; Testing Studio will pin it.";
     const mirrored = this.mirroredPlatform;
     if (mirrored && !this.storedAppOn(mirrored)) {
       const recorded = platformLabel(pinned.platform), other = platformLabel(mirrored);
@@ -1547,16 +1547,16 @@ export class TestingPanel {
     return this.snapshot.runtimeMode === "bundled" && Boolean(pinned && front) && front!.platform !== pinned!.platform && !this.storedAppOn(front!.platform) && !this.snapshot.running;
   }
 
-  /** The platform and bundle id sent with a save, so a Studio test is pinned to the app it was recorded against. */
+  /** The platform and bundle id sent with a save, so a Testing Studio test is pinned to the app it was recorded against. */
   private pinArguments() {
-    // Studio's `targets` can lag the mirror, so the app actually in front wins.
+    // Testing Studio's `targets` can lag the mirror, so the app actually in front wins.
     const target = this.snapshot.runtimeMode === "bundled" ? this.foregroundTarget ?? this.target : this.target;
     return this.snapshot.runtimeMode === "bundled" && (target?.platform === "ios" || target?.platform === "android") && target.bundleId
       ? { platform: target.platform, bundleId: target.bundleId } : {};
   }
 
   /**
-   * Pins the selected Studio test to the app in front. On the recorded platform it replaces that
+   * Pins the selected Testing Studio test to the app in front. On the recorded platform it replaces that
    * app; on the other platform it adds the app there, so the test runs on both.
    */
   async repinStoredTest() {
@@ -1599,7 +1599,7 @@ export class TestingPanel {
     const untilSource = untilLine === undefined ? source : storedTestUntilSource(source, untilLine);
     if (untilSource === undefined) return;
     if (!this.hasBundledModel(untilSource, { kind: "stored", ...(untilLine === undefined ? {} : { untilLine }) })) return;
-    // A Studio test runs against the app it is pinned to, never whichever app is in front. A test
+    // A Testing Studio test runs against the app it is pinned to, never whichever app is in front. A test
     // with no app yet takes the one in front and keeps it, so later runs are pinned.
     // A test with an app on both platforms runs the one for the mirrored device's platform.
     const stored = this.storedTarget;
@@ -1767,7 +1767,7 @@ export class TestingPanel {
   }
 
   /**
-   * The one platform a pinned Studio test can run on: it was recorded against one app on one
+   * The one platform a pinned Testing Studio test can run on: it was recorded against one app on one
    * platform and has no app added for the other. Undefined when any platform may run.
    */
   get matrixPlatform(): "ios" | "android" | undefined {
@@ -1806,7 +1806,7 @@ export class TestingPanel {
 
   /** The app a run would drive, per platform: the open test's own app first, then the project's targets. */
   matrixApps(): { ios?: string; android?: string } {
-    // A pinned Studio test runs only the apps it has; the project's targets are not its apps.
+    // A pinned Testing Studio test runs only the apps it has; the project's targets are not its apps.
     if (this.snapshot.runtimeMode === "bundled" && this.storedTarget) return this.storedApps;
     const apps: { ios?: string; android?: string } = {};
     // The selected target first, so its app wins its platform; the server picks the same target.

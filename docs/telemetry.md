@@ -544,7 +544,7 @@ it does not confirm user submission or a model response. Notes remain until the
 user clears them. Message/context construction timings, surface attribution, and
 content scrubbing are preserved; no note text or selection evidence enters telemetry.
 
-The Testing panel's recorder measures `ui.testing.tree_read`, the read that resolves a tap into a
+The Testing Studio panel's recorder measures `ui.testing.tree_read`, the read that resolves a tap into a
 selector, and counts `ui.testing.record_start`/`record_stop`, `ui.testing.step_tap`,
 `ui.testing.step_assert`, `ui.testing.step_unresolved`, `ui.testing.hover_walk`,
 `ui.testing.menu_open`. Editing a recorded step counts `ui.testing.step_duplicate`,
@@ -643,7 +643,7 @@ while this one answers "how long is Record unusable for" — the number the over
 of. A read that fails still records the timing, because the wait happened; it carries no selector,
 element name, bundle id or project path.
 
-The Testing panel records on Android emulators as well as iOS simulators, so `ui.testing.tree_read`,
+The Testing Studio panel records on Android emulators as well as iOS simulators, so `ui.testing.tree_read`,
 `ui.testing.record_prepare` and the `testing.agent.screen.*` metrics now carry a `platform`
 attribute (`ios` or `android`; two values, no device ids). One series hid that waiting on an
 emulator is a different number from waiting on a simulator. Names, units and boundaries are

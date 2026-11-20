@@ -39,7 +39,7 @@ export type RecorderReader = {
 /**
  * Reads the runner's element tree for one device, and owns the session that read needs.
  *
- * The Testing panel installs this, because it is the panel that knows which e2e project and which
+ * The Testing Studio panel installs this, because it is the panel that knows which e2e project and which
  * target the recording is for; the simulator panel knows the device and the screen. The recorder
  * is the one object both already share, so it is where the two halves meet.
  */
@@ -291,7 +291,7 @@ export class TestRecorder {
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   getSnapshot = () => this.snapshot;
 
-  /** The Testing panel supplies the tree source; see `RecorderTreeSource`. */
+  /** The Testing Studio panel supplies the tree source; see `RecorderTreeSource`. */
   useTreeSource(source?: RecorderTreeSource) {
     if (this.treeSource === source) return;
     this.treeSource?.release();

@@ -1,5 +1,5 @@
 /**
- * The Testing panel's view of a matrix run: what the server reports for each device, which devices
+ * The Testing Studio panel's view of a matrix run: what the server reports for each device, which devices
  * the user chose, and the small pure helpers the rows are drawn from. The server owns the run
  * (`packages/core/src/testing-matrix.ts`); this only reads it.
  */

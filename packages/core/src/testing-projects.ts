@@ -11,7 +11,7 @@ import { discoverTestingTargets } from "./testing-target-discovery.ts";
 import type { ForegroundTestingTarget } from "./testing-target-discovery.ts";
 
 /**
- * The projects the Testing panel can record against: folders holding an `e2e.config.ts`. The user
+ * The projects the Testing Studio panel can record against: folders holding an `e2e.config.ts`. The user
  * always picks one explicitly — the server's own cwd is never assumed to be a project, because the
  * host launches the server from wherever it likes and a wrong guess would write a test file into a
  * folder the user never chose.
@@ -81,7 +81,7 @@ function timestamp(value: unknown): string {
 }
 
 /**
- * The workspace Studio records against when no project is open: an empty folder in Mobile Dev's
+ * The workspace Testing Studio records against when no project is open: an empty folder in Mobile Dev's
  * private state. It has no e2e config, so the bundled runtime owns it and its tests stay in Mobile
  * Dev. Only the host can name it, so the panel asks the server instead of guessing a path.
  */
@@ -91,10 +91,10 @@ export function studioWorkspacePath(): string {
 }
 
 /**
- * Whether a chat's working directory is a mobile project the Testing panel can work in: a project
+ * Whether a chat's working directory is a mobile project the Testing Studio panel can work in: a project
  * the panel already lists, or a folder carrying a project marker (a package manifest, an Expo
  * config, an e2e config, a native iOS or Android project). A scratch folder holds none of these, so
- * it is not a project and the panel records in No project (Studio) instead.
+ * it is not a project and the panel records in No project (Testing Studio) instead.
  */
 export async function isChatProject(directory: string, known: readonly { path: string }[] = []): Promise<boolean> {
   const path = normalize(directory.trim());
@@ -170,7 +170,7 @@ export async function inspectProject(projectPath: string, foreground?: Foregroun
   const discovered = await discoverTestingTargets(path, foreground);
   const reason = !configPath ? "No e2e config is present."
     : compatibleTargets.length === 0 ? "The project config has no compatible mobile target."
-      : "The project-local e2e runtime is missing or incompatible with this Studio version.";
+      : "The project-local e2e runtime is missing or incompatible with this Mobile Dev version.";
   return {
     path, name: basename(path) || path, configPath: configPath ?? "", targets: discovered.targets,
     runtimeMode: "bundled", runtime: await bundledRuntimeDescriptor(reason), setupState: "available",
@@ -368,7 +368,7 @@ export async function resolveTestRunPaths(projectPath: string, relativePath: str
  */
 /**
  * Moves whenever a stored test or its pinned app changes on disk, by any writer: the panel, an
- * agent's `branch_line`, `set_target`, `wait_for_app` pins, a save. The Testing panel's poll reads it
+ * agent's `branch_line`, `set_target`, `wait_for_app` pins, a save. The Testing Studio panel's poll reads it
  * so it reloads what it shows without the user reselecting the test.
  */
 let storedTestsRevision = 0;
@@ -405,7 +405,7 @@ export interface StoredTest {
 }
 
 /**
- * The app a Studio test runs against, kept beside the test and never inside its source.
+ * The app a Testing Studio test runs against, kept beside the test and never inside its source.
  * `platform` and `bundleId` are the app it was recorded or first pinned against; `apps` holds the
  * app id the user added for the other platform, so the same test can run there too.
  */
@@ -448,7 +448,7 @@ async function changeTargets(root: string, change: (targets: Record<string, Test
 }
 
 /**
- * Pins a Studio test to the app it was recorded or first run against. Only bundled tests carry one:
+ * Pins a Testing Studio test to the app it was recorded or first run against. Only bundled tests carry one:
  * a project test's app is its config's target, and nothing is written into the project for it.
  */
 export async function writeTestTarget(projectPath: string, relativePath: string, target: TestTarget, mode: "replace" | "add" = "replace"): Promise<boolean> {

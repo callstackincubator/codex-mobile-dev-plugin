@@ -16,13 +16,13 @@ test("the testing skill records, hands over, and never saves or runs", async () 
   const skill = await readFile(new URL("../../skills/mobile-dev-testing/SKILL.md", import.meta.url), "utf8");
 
   assert.match(skill, /iOS or Android app/);
-  assert.match(skill, /Testing tab must be open/);
+  assert.match(skill, /Testing Studio tab must be open/);
   assert.match(skill, /Never ask the user for a project, device or target up front/);
   // A closed tab is the agent's to open, not the user's.
   assert.match(skill, /mobile_open_simulator\(\{ workspaceTool: "testing", projectPath \}\)/);
   assert.match(skill, /Always pass `projectPath`: your workspace root/, "the tab follows the chat's project");
   assert.match(skill, /Do not ask the user to open it/);
-  assert.doesNotMatch(skill, /tell the user to \*\*open Mobile Dev's Testing tab\*\*/);
+  assert.doesNotMatch(skill, /tell the user to \*\*open Mobile Dev's Testing Studio tab\*\*/);
 
   // The loop, in the order the tools enforce it.
   assert.match(skill, /mobile_testing_agent_begin.*mobile_testing_agent_screen.*mobile_testing_agent_step.*mobile_testing_agent_finish/s);
@@ -37,7 +37,7 @@ test("the testing skill records, hands over, and never saves or runs", async () 
   assert.match(skill, /\*\*Never save\*\* a project's test/);
   assert.match(skill, /\*\*Never run the test\*\* while recording/);
   // And the handover, which is the whole deliverable: the user adjusts and saves.
-  assert.match(skill, /in the Testing panel, unsaved/);
+  assert.match(skill, /in the Testing Studio panel, unsaved/);
 });
 
 test("the testing skill says where a flow ends, not only where it starts", async () => {
@@ -65,10 +65,10 @@ test("the testing skill ships from every plugin that has the panel", async () =>
   assert.ok(claude.skills.includes("../../packages/skills/mobile-dev-testing"), "Claude Code");
 });
 
-test("the testing skill teaches Studio mode: record saves, run, add the missing app, repair by locator only", async () => {
+test("the testing skill teaches Testing Studio mode: record saves, run, add the missing app, repair by locator only", async () => {
   const skill = await readFile(new URL("../../skills/mobile-dev-testing/SKILL.md", import.meta.url), "utf8");
 
-  assert.match(skill, /## Studio mode: record, run, repair/);
+  assert.match(skill, /## Testing Studio mode: record, run, repair/);
   // The tab must be open, and the agent opens it itself rather than guessing a project.
   assert.match(skill, /open it yourself with `mobile_open_simulator\(\{ workspaceTool: "testing", projectPath \}\)`/);
   // Record now saves, and says where.

@@ -1,7 +1,7 @@
 /**
  * Where a popover goes, in the window's own coordinates.
  *
- * The Testing panel's element menu used to be positioned inside the stage — the box the mirror
+ * The Testing Studio panel's element menu used to be positioned inside the stage — the box the mirror
  * sits in — which clips what it contains and is often shorter than the menu itself, so a menu on
  * a bottom tab was cut off rather than moved. Placement is against the window instead, and the
  * caller draws the popover in a portal so nothing between it and the window can clip it.

@@ -1,4 +1,4 @@
-# Testing panel — record e2e tests from the mirror
+# Testing Studio panel — record e2e tests from the mirror
 
 ## Zero-setup runtime and optional project setup
 
@@ -8,27 +8,27 @@ and release metadata. A project with its own config, a compatible mobile target 
 `e2e` CLI is always authoritative, whatever its e2e version: runs use the project's own CLI. Only the
 recorder's tree reading is version-sensitive; when the project's `@e2e-dev/mobile` node projection is
 missing or does not load, the recorder reads the tree with the bundled one instead. With no config,
-no compatible mobile target, or no installed `e2e` CLI, Studio switches to **Bundled runtime** and keeps generated config plus saved tests in Mobile Dev's private state. Record,
+no compatible mobile target, or no installed `e2e` CLI, Testing Studio switches to **Bundled runtime** and keeps generated config plus saved tests in Mobile Dev's private state. Record,
 Save, Run, Play until here, manual recording and agent recording therefore do not modify the project.
 
 ### No project open
 
-Opening a project is optional. With no recorded project, Studio opens on **No project**: a private,
+Opening a project is optional. With no recorded project, Testing Studio opens on **No project**: a private,
 empty workspace in Mobile Dev's state (`testing/studio-workspace`, reported as `studioPath` by
 `mobile_testing_projects`). It has no config, so it always runs on the Bundled runtime. The user picks
 nothing up front: the target is the app in the mirror's foreground (platform from the mirrored device,
 bundle id from the foreground app), so Launch app, Record, Save and Run work as in any bundled project.
-Saved tests are listed under **In Studio**. The project picker's first entry, **No project**, returns
+Saved tests are listed under **In Testing Studio**. The project picker's first entry, **No project**, returns
 to this workspace; any recorded or newly chosen folder still switches to project behavior, and the
 workspace is never listed as a project. **Set up project** is hidden in this mode because there is
 no project to write into.
 
 ### Pinned app
 
-A Studio (bundled) test is pinned to `{ platform, bundleId }`, stored in `targets.json` beside the
+A Testing Studio (bundled) test is pinned to `{ platform, bundleId }`, stored in `targets.json` beside the
 tests in Mobile Dev's private state, never in the test source. Save pins the app being recorded
 against. Run on a test with no pin pins the app in front first (`mobile_testing_run_test` `pin`).
-A pinned test always runs against its own app: Studio opens it if it is not in front, and says so
+A pinned test always runs against its own app: Testing Studio opens it if it is not in front, and says so
 if it is not installed or the mirrored platform differs. The preview shows the pinned app with
 **Use current app** to re-pin (`mobile_testing_set_target`). With no pin and no foreground app, Run
 is disabled with a hint. Project tests keep using their config's targets.
@@ -48,7 +48,7 @@ Hosts may preselect a choice only through advertised `configuration.mobileDev.te
 the equivalent experimental capability); no host-name branch exists.
 
 The toolbar has one **E2E setup** entry (a status dot plus `Bundled`/`Project`; its tooltip explains the
-runtime, replacing the separate runtime chip, Model button and Zero-setup banner). Both runtimes open on a compact summary; **Set up project** / **Update setup** opens the form. The popover holds the
+runtime, replacing the separate runtime chip, Model button and Zero-setup banner). Both runtimes open on a compact summary; **Set up project** / **Update setup** opens the form. The summary's sections (Project, Mobile apps, Devices, Agent model) all start collapsed in both runtimes; Agent model opens by itself when a run needs a model. **Launch app** opens an installed app and never builds one; when the app is missing it says so with the build to run (for an Expo app, `npx expo run:ios` / `npx expo run:android`). The popover holds the
 agent model (provider, model id, sign-in, **Use model** for bundled runs), the mobile targets and the
 opt-in GUI equivalent of `e2e init`:
 target names, platforms, identifiers and provider are editable, then
@@ -58,7 +58,7 @@ supports cancellation and reports partial failures without pretending already-wr
 back. MCP registration is preselected and previews both `.mcp.json` and `.cursor/mcp.json`, preserving
 all other servers. Configured projects open on a read-only summary—effective
 targets/config, statically discoverable model, dependency versions, skill state and MCP registrations shown as status items—
-with mutations behind a separate **Update setup** action. Setup is the only zero-setup Studio path that
+with mutations behind a separate **Update setup** action. Setup is the only zero-setup Testing Studio path that
 writes configuration into the selected project.
 
 Status: Android emulators are supported alongside iOS simulators — the device is identified by
@@ -73,9 +73,9 @@ A test can also be recorded by the user's own coding agent, which drives the sam
 the server — see [docs/agent-recording.md](agent-recording.md).
 
 A workspace tool, **Testing**, that turns the existing simulator mirror into a
-Maestro-Studio-style recorder: pick a project, launch its app, tap the mirror, and watch the test
+Maestro-Testing Studio-style recorder: pick a project, launch its app, tap the mirror, and watch the test
 source grow one step per interaction. In project mode Save writes to the project; in bundled mode it
-writes to Studio's private state until the user explicitly runs project setup.
+writes to Testing Studio's private state until the user explicitly runs project setup.
 
 First pass targets the **iOS simulator** (and now the **Android emulator**) and the **e2e** runner (`@e2e-dev/mobile`).
 Maestro YAML is a second emitter behind the same recorder.
@@ -144,7 +144,7 @@ it holds **two groups**:
 | Group | Holds | Starts |
 |---|---|---|
 | **Not stored** | The drafts: a kept flow with its step count, how long ago it was touched and whether the user or an agent recorded it. **New recording** is at its foot | Expanded — it is what is being worked on |
-| **In the project / Studio** | Project `.e2e.ts` files in project mode; private Studio tests in bundled mode | Collapsed — it is the archive |
+| **In the project / Testing Studio** | Project `.e2e.ts` files in project mode; private Testing Studio tests in bundled mode | Collapsed — it is the archive |
 
 The second group exists because deleting the draft on save had an effect nobody asked for: the
 test the user had just saved **left the list**. There was nowhere for it to go. Now it moves from
@@ -204,7 +204,7 @@ flowchart LR
 
 ### Where the mirror sits
 
-In the Testing panel the mirror is on the **left** and the preview and step list on the right;
+In the Testing Studio panel the mirror is on the **left** and the preview and step list on the right;
 every other tool keeps the simulator on the right. Recording is done by tapping the mirror and read
 back in the preview beside it, so the mirror leads in the same direction the panel is read. It is
 one flag in `packages/mcp-app/src/components/workspace.tsx` that reverses the resizable group's
@@ -446,7 +446,7 @@ produce. The step is right; the screen behind it is not. `toBeVisible` and `scro
 nothing, because they change nothing: an assertion reads, and `scrollUntilVisible` is only offered
 for an element the user just pointed at, which is on screen already.
 
-In its place is Maestro Studio's model. **Right-click an element on the mirror and the panel offers
+In its place is Maestro Testing Studio's model. **Right-click an element on the mirror and the panel offers
 what the runner can do with it**. The selected element is named once, followed by compact actions:
 
 ```
@@ -681,7 +681,7 @@ Save behaviour:
 - The panel tracks a dirty flag: steps recorded since the last Save. Stopping or switching projects
   with unsaved steps warns.
 
-Alternative considered and rejected: debounced live-write after every tap. It is what Maestro Studio
+Alternative considered and rejected: debounced live-write after every tap. It is what Maestro Testing Studio
 feels like, but each write is an MCP tool call and so a host permission prompt — unusable in a
 recorder where a flow is thirty taps.
 
@@ -792,18 +792,21 @@ line to mark, so the panel shows the runner's own output instead of going quiet.
 #### Running on several devices (test matrix)
 
 E2E setup → **Devices** lists the iOS simulators and Android emulators with *Booted*/*Off* and
-*Installed*/*App missing* badges. Tick two or more and **Run test** becomes **Run on N devices**; one
-or none is the plain single-device run. "Run up to [3] at once" caps how many devices work at the
+*Installed*/*App missing* badges. Tick two or more and **Run test** becomes **Run on N devices**. One
+ticked device that is not the mirrored one runs there as a single lane (**Run on iPhone Air**); none,
+or only the mirrored device, is the plain single-device run on the mirror. "Run up to [3] at once" caps how many devices work at the
 same time (1–8); the rest queue. The ticked devices and the limit are saved per project.
 
 A project with its own `e2e.config.ts` works too, with differences. Each lane runs the config's
-target for the device's platform (the selected target wins its platform), and the plugin neither
-installs nor launches the app: a device without it fails its lane with "App not installed", and
-the runner's own `app.open` starts it. `mobile()` returns an opaque engine handle and the e2e CLI has
+target for the device's platform (the selected target wins its platform). The plugin does not
+launch the app — the runner's own `app.open` starts it — but a device without it gets it copied
+exactly as in bundled mode (below). `mobile()` returns an opaque engine handle and the e2e CLI has
 no per-run device flag, so a lane **copies the config text** and rewrites that target's
 `mobile(ARG)` into `mobile({ ...(ARG), device, session })`, which keeps the user's other options.
 The copy runs from an isolated mirror of the project (or, for a run of the file itself, as a hidden
-`.e2e.mobile-dev-lane-<pid>-<id>` file beside the config) and is removed when the lane ends; stale
+`.e2e.mobile-dev-lane-<pid>-<id>` file beside the config) and is removed when the lane ends. Its
+`--output` directory sits inside that same root, because the runner refuses an output outside the
+project it runs from; stale
 ones from a dead process are swept. A target whose engine is not a direct `mobile(...)` call is
 refused with a message saying so. This workaround is replaced by an upstream `e2e run --device`
 flag; see `items-todo.md`.
@@ -828,8 +831,10 @@ flowchart LR
   through `ServeEmu`; an `avd:` id becomes the running serial). Booting counts against the limit.
 - **A missing app is copied from another booted device that has it**: iOS with `simctl
   get_app_container` + `install`, Android with `pm path` + `adb pull`, installed with
-  `install-multiple` when the app is split. No device has it → the lane fails with "App not
-  installed" and the others carry on. The request carries one app id per platform
+  `install-multiple` when the app is split. A device in the run is tried first, then any other
+  booted device of the platform, so the device the app was built on need not be ticked; a device
+  that is off is never booted to be a source. No booted device has it → the lane fails with "App
+  not installed" and the others carry on. The request carries one app id per platform
   (`apps: { ios, android }`); a platform with none fails fast.
 - **The lanes view** shows a row per device (state, duration, cancel) and a summary such as
   "2 passed · 1 failed". Clicking a row puts that device's steps on the preview. The recorder is

@@ -338,7 +338,7 @@ test("the selected target reaches the runner, so an Android recording does not r
   assert.deepEqual(seen.args, ["run", FILE, "--reporter", "json", "--target", "android"]);
 });
 
-test("bundled mode runs and cleans an isolated Studio workspace", async () => {
+test("bundled mode runs and cleans an isolated Testing Studio workspace", async () => {
   const root = await project();
   const runnerCwd = join(await mkdtemp(join(tmpdir(), "testing-run-cwd-")), "e2e-runner");
   const seen: { command?: string; args?: readonly string[]; cwd?: string } = {};

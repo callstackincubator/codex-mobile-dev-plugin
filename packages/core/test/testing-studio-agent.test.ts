@@ -33,7 +33,7 @@ function fakeServer() {
   return { server, tools, call };
 }
 
-/** Runs `body` with Studio's storage in a temp folder, so nothing touches the user's own tests. */
+/** Runs `body` with Testing Studio's storage in a temp folder, so nothing touches the user's own tests. */
 async function withStudio(body: (studio: string) => Promise<void>) {
   const root = await mkdtemp(join(tmpdir(), "studio-agent-"));
   const previous = process.env.MOBILE_DEV_TESTING_DIRECTORY;
@@ -64,13 +64,13 @@ function setup(options: { ops?: DeviceOps; run?: (...args: any[]) => Promise<Tes
 const MODEL_TOOLS = ["run_test", "run_matrix", "run_progress", "cancel", "set_target", "read_file", "tests", "wait_for_app", "branch_line"];
 const APP_ONLY = ["write_file", "stage_file", "save_staged_file", "discard_staged_file", "delete_file", "release_device", "projects", "choose_project", "project_config", "read_tree", "drafts", "setup_apply"];
 
-test("the tools an agent drives Studio with are model-visible; writing and deleting files stay the panel's", () => {
+test("the tools an agent drives Testing Studio with are model-visible; writing and deleting files stay the panel's", () => {
   const { tools } = setup();
   for (const name of MODEL_TOOLS) assert.deepEqual(tools.get(`mobile_testing_${name}`)?.config._meta?.ui?.visibility, ["app", "model"], name);
   for (const name of APP_ONLY) assert.deepEqual(tools.get(`mobile_testing_${name}`)?.config._meta?.ui?.visibility, ["app"], name);
 });
 
-test("every model-visible tool refuses until the Testing tab has reported a project, then defaults to it", async () => {
+test("every model-visible tool refuses until the Testing Studio tab has reported a project, then defaults to it", async () => {
   await withStudio(async studio => {
     const { call, recordings } = setup({ ops: {} as never });
     const inputs: Record<string, Record<string, unknown>> = {
@@ -82,7 +82,7 @@ test("every model-visible tool refuses until the Testing tab has reported a proj
     for (const name of MODEL_TOOLS) {
       const result = await call(`mobile_testing_${name}`, inputs[name]);
       assert.equal(result.isError, true, name);
-      assert.match(result.content[0].text, /Testing tab is not open/, name);
+      assert.match(result.content[0].text, /Testing Studio tab is not open/, name);
     }
     await writeTestFile(studio, "tests/a.e2e.ts", SOURCE);
     recordings.setPanelProject(studio);
@@ -126,13 +126,13 @@ async function recordHome(recordings: TestingAgentRecordings, studio: string, ti
   return recordings.finish({ note: "n" });
 }
 
-test("finishing in Studio saves the test, pinned to the recorded platform and app, and returns its path", async () => {
+test("finishing in Testing Studio saves the test, pinned to the recorded platform and app, and returns its path", async () => {
   await withStudio(async studio => {
     const recordings = new TestingAgentRecordings(fakeTreeDevices(), new TestDraftStore(join(studio, "drafts")));
     const result = await recordHome(recordings, studio);
     assert.equal(result.saved, true);
     assert.equal(result.relativePath, "tests/the-home-screen.e2e.ts");
-    assert.equal(result.path, "Studio/tests/the-home-screen.e2e.ts");
+    assert.equal(result.path, "Testing Studio/tests/the-home-screen.e2e.ts");
     assert.match(result.next, /mobile_testing_run_matrix/);
     assert.equal(await readTestFile(studio, "tests/the-home-screen.e2e.ts"), result.source);
     assert.deepEqual(await readTestTarget(studio, "tests/the-home-screen.e2e.ts"), { platform: "android", bundleId: "com.app.android" });
@@ -369,7 +369,7 @@ test("a tab that stops reporting is closed: open, then stale, then refused, and 
     clock += 2_000;
     const stale = await call("mobile_testing_tests");
     assert.equal(stale.isError, true, "stale");
-    assert.match(stale.content[0].text, /Testing tab is not open.*mobile_open_simulator/);
+    assert.match(stale.content[0].text, /Testing Studio tab is not open.*mobile_open_simulator/);
     assert.equal(recordings.panelContext(), undefined, "the device selection goes with it");
     await assert.rejects(() => recordings.begin({ title: "t", goal: "g" }), /call mobile_open_simulator with workspaceTool "testing" once to open it, then begin again/, "agent_begin refuses too");
 
@@ -415,7 +415,7 @@ function autoRecordings(studio: string, ops: DeviceOps) {
   return new TestingAgentRecordings(fakeTreeDevices(), new TestDraftStore(join(studio, "drafts")), { ops });
 }
 
-test("Studio begin needs only a booted device and a foreground app, and saves the test pinned to it", async () => {
+test("Testing Studio begin needs only a booted device and a foreground app, and saves the test pinned to it", async () => {
   await withStudio(async studio => {
     const recordings = autoRecordings(studio, AUTO_OPS("com.example.notes"));
     recordings.setPanelProject(studio);
@@ -430,19 +430,19 @@ test("Studio begin needs only a booted device and a foreground app, and saves th
   });
 });
 
-test("Studio begin ignores the home screen and says only the app is missing", async () => {
+test("Testing Studio begin ignores the home screen and says only the app is missing", async () => {
   await withStudio(async studio => {
     const recordings = autoRecordings(studio, AUTO_OPS("com.apple.springboard"));
     recordings.setPanelProject(studio);
     await assert.rejects(() => recordings.begin({ title: "t", goal: "g" }), (error: Error) => {
       assert.match(error.message, /^Cannot start recording yet\. Open the app to record in the foreground/);
-      assert.doesNotMatch(error.message, /Boot|Testing tab|project/);
+      assert.doesNotMatch(error.message, /Boot|Testing Studio tab|project/);
       return true;
     });
   });
 });
 
-test("with nothing booted begin asks to boot a device and, in Studio, to open the app", async () => {
+test("with nothing booted begin asks to boot a device and, in Testing Studio, to open the app", async () => {
   await withStudio(async studio => {
     const recordings = autoRecordings(studio, AUTO_OPS(null, []));
     recordings.setPanelProject(studio);
@@ -462,7 +462,7 @@ async function projectWith(targets: string[]) {
   const dir = await mkdtemp(join(tmpdir(), "e2e-project-"));
   const { writeFile, mkdir } = await import("node:fs/promises");
   await writeFile(join(dir, "e2e.config.ts"), `export default { targets: [\n${targets.join(",\n")}\n] };\n`);
-  // What makes it a project rather than Studio: a project-local e2e CLI and its package version.
+  // What makes it a project rather than Testing Studio: a project-local e2e CLI and its package version.
   await mkdir(join(dir, "node_modules", ".bin"), { recursive: true });
   await mkdir(join(dir, "node_modules", "e2e"), { recursive: true });
   await writeFile(join(dir, "node_modules", ".bin", "e2e"), "");
@@ -499,10 +499,10 @@ test("ambiguous project mode asks which target, naming them", async () => {
   });
 });
 
-test("a closed Testing tab is the only thing begin reports", async () => {
+test("a closed Testing Studio tab is the only thing begin reports", async () => {
   await withStudio(async studio => {
     const recordings = autoRecordings(studio, AUTO_OPS(null, []));
-    await assert.rejects(() => recordings.begin({ title: "t", goal: "g" }), (error: Error) => /^The Testing tab is not open\..*do not open another/.test(error.message));
+    await assert.rejects(() => recordings.begin({ title: "t", goal: "g" }), (error: Error) => /^The Testing Studio tab is not open\..*do not open another/.test(error.message));
   });
 });
 

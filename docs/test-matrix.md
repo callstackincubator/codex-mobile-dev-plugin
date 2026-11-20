@@ -2,11 +2,11 @@
 
 Status: **bundled mode implemented** (milestones 1, 2, 3 and 5). Project mode (milestone 4) works through a text-rewritten copy of the config (`runProjectLane`, `rewriteLaneConfig` in `testing-run.ts`); the upstream `e2e run --device` flag that replaces it is tracked in `items-todo.md`. Docs: [testing-panel.md](testing-panel.md#running-on-several-devices-test-matrix), [mcp-tools.md](mcp-tools.md).
 
-Run one recorded e2e test on several devices at once — e.g. iPhone 17, iPhone 16 and a Pixel emulator — from the Testing panel, or from chat through MCP.
+Run one recorded e2e test on several devices at once — e.g. iPhone 17, iPhone 16 and a Pixel emulator — from the Testing Studio panel, or from chat through MCP.
 
 ## Goals
 
-- Pick N devices (iOS simulators, Android emulators, connected phones) in the Testing panel and run the open test on all of them in parallel.
+- Pick N devices (iOS simulators, Android emulators, connected phones) in the Testing Studio panel and run the open test on all of them in parallel.
 - One lane of live progress and one result per device; a failure on one device does not stop the others.
 - Devices that are off get booted; devices missing the app get it installed.
 - At most **3** devices run at once by default; the user can change the limit. Extra devices queue.
@@ -37,7 +37,7 @@ Run one recorded e2e test on several devices at once — e.g. iPhone 17, iPhone 
 
 ```mermaid
 flowchart LR
-  UI[Testing panel: Matrix] --> T[mobile_testing_run_matrix]
+  UI[Testing Studio panel: Matrix] --> T[mobile_testing_run_matrix]
   Chat[Chat agent via MCP] --> T
   T --> Q[Scheduler: limit 3, queue rest]
   Q --> P1[Prepare: boot → install → launch]

@@ -29,15 +29,15 @@ import type { SetupOptions } from "./testing-setup.ts";
 const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 const write = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
 const destructive = { readOnlyHint: false, destructiveHint: true, openWorldHint: false };
-/** The Testing panel drives these itself; the model has its own e2e MCP server for test work. */
+/** The Testing Studio panel drives these itself; the model has its own e2e MCP server for test work. */
 const appVisibility = { ui: { visibility: ["app"] as ("app" | "model")[] } };
 /**
- * The tools an agent drives No project (Studio) mode with: run, progress, cancel, pin an app,
+ * The tools an agent drives No project (Testing Studio) mode with: run, progress, cancel, pin an app,
  * read a test, list tests, branch a line, wait for an app. The panel calls them too.
  */
 const sharedVisibility = { ui: { visibility: ["app", "model"] as ("app" | "model")[] } };
 
-/** What the Testing tab has told the server; see `TestingAgentRecordings.setPanelProject`. */
+/** What the Testing Studio tab has told the server; see `TestingAgentRecordings.setPanelProject`. */
 export interface PanelContext {
   panelProjectPath(): string | undefined;
   /** Like `panelProjectPath`, but waits out the panel's first report when the tab was only just opened. */
@@ -96,7 +96,7 @@ export function projectLaneTargets(targets: readonly { name: string; platform?: 
   return chosen;
 }
 
-/** The Testing panel's project selection, and the device tree its recorder names selectors from. */
+/** The Testing Studio panel's project selection, and the device tree its recorder names selectors from. */
 /** Returns the shutdown the plugin has to run: the recorder's device session, handed back. */
 export function registerTestingTools(server: McpServer, projects: TestingProjectChoices, devices = new TestingDevices(), drafts = new TestDraftStore(), matrix: { ops?: DeviceOps; registry?: MatrixRegistry; run?: typeof runRecordedTest; panel?: PanelContext; pollMs?: number; failureReadMs?: number } = {}): () => Promise<void> {
   /**
@@ -112,9 +112,9 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
   void projects.list().then(list => Promise.all(list.map(entry => sweepLaneFiles(entry.path)))).catch(() => undefined);
   const runTest = matrix.run ?? runRecordedTest;
   /**
-   * The project a model-visible tool works on. With a panel, the Testing tab must have reported a
+   * The project a model-visible tool works on. With a panel, the Testing Studio tab must have reported a
    * project — that is the only proof the user has it open — and a call that names none defaults to
-   * it, so the agent never needs to know where Studio lives.
+   * it, so the agent never needs to know where Testing Studio lives.
    */
   const panel = matrix.panel;
   async function resolveProject(selected?: string): Promise<string> {
@@ -124,13 +124,13 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
     }
     // Right after an agent opened the tab its first heartbeat may not have arrived; wait for it.
     const current = await panel.awaitPanelProject?.() ?? panel.panelProjectPath();
-    if (!current) throw new ExpectedOperationError("invalid_input", "The Testing tab is not open, so there is no project to work on. If no Mobile Dev panel is showing in this chat, open it once with mobile_open_simulator (workspaceTool \"testing\"), then try again; if you already opened one, do not open another (each call adds a panel) and ask the user to show the existing panel and its Testing tab.");
+    if (!current) throw new ExpectedOperationError("invalid_input", "The Testing Studio tab is not open, so there is no project to work on. If no Mobile Dev panel is showing in this chat, open it once with mobile_open_simulator (workspaceTool \"testing\"), then try again; if you already opened one, do not open another (each call adds a panel) and ask the user to show the existing panel and its Testing Studio tab.");
     return selected ?? current;
   }
   const matrixWire = (run: MatrixRun) => ({ ...snapshotMatrix(run), running: run.lanes.some(lane => !["passed", "failed", "cancelled", "error"].includes(lane.state)) });
   registerAppTool(server, "mobile_testing_projects", {
     title: "List testing projects",
-    description: "List the e2e project folders the Testing panel can record against, most recent first, and the private Studio workspace it uses when no project is open.",
+    description: "List the e2e project folders the Testing Studio panel can record against, most recent first, and the private Testing Studio workspace it uses when no project is open.",
     inputSchema: {},
     annotations: read,
     _meta: appVisibility,
@@ -139,7 +139,7 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
   registerAppTool(server, "mobile_testing_choose_project", {
     title: "Choose a testing project",
     description:
-      "Choose the project the Testing panel records against: pass projectPath to select one the panel already lists, or nothing to open the system folder picker. The folder must hold an e2e.config.ts. The choice persists across sessions.",
+      "Choose the project the Testing Studio panel records against: pass projectPath to select one the panel already lists, or nothing to open the system folder picker. The folder must hold an e2e.config.ts. The choice persists across sessions.",
     inputSchema: { projectPath: projectPath.optional() },
     annotations: write,
     _meta: appVisibility,
@@ -157,7 +157,7 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
       relativePath: z.string().min(1).max(512).describe("Path under the project, inside tests/, ending in .e2e.ts."),
       contents: z.string().max(256 * 1024),
       overwrite: z.boolean().optional(),
-      platform: z.enum(["ios", "android"]).optional().describe("With bundleId: the app a Studio test is pinned to. Stored beside the test, never in its source."),
+      platform: z.enum(["ios", "android"]).optional().describe("With bundleId: the app a Testing Studio test is pinned to. Stored beside the test, never in its source."),
       bundleId: z.string().min(1).max(512).optional(),
     },
     // Replacing someone's test file is destructive, so the host asks before this runs.
@@ -167,7 +167,7 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
     const project = await inspectProject(selected);
     const result = await writeTestFile(selected, relativePath, contents, overwrite ?? false);
     if (result.written && platform && bundleId) await writeTestTarget(selected, relativePath, { platform, bundleId });
-    const shownPath = project.runtimeMode === "bundled" ? `Studio/${relativePath}` : result.path;
+    const shownPath = project.runtimeMode === "bundled" ? `Testing Studio/${relativePath}` : result.path;
     return dataResult({ ...result, path: shownPath, storageMode: project.runtimeMode }, result.written ? `Saved ${shownPath}` : `${shownPath} already exists.`);
   }));
 
@@ -181,7 +181,7 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
    */
   registerAppTool(server, "mobile_testing_tests", {
     title: "List the project's tests",
-    description: "List the .e2e.ts files already in the project's tests/ folder, newest first. Each carries the app it is pinned to: target.platform and target.bundleId for the app it was recorded against, and target.apps for the app added on the other platform. projectPath defaults to the Testing tab's project.",
+    description: "List the .e2e.ts files already in the project's tests/ folder, newest first. Each carries the app it is pinned to: target.platform and target.bundleId for the app it was recorded against, and target.apps for the app added on the other platform. projectPath defaults to the Testing Studio tab's project.",
     inputSchema: { projectPath: projectPath.optional() },
     annotations: read,
     _meta: sharedVisibility,
@@ -190,7 +190,7 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
 
   registerAppTool(server, "mobile_testing_read_file", {
     title: "Preview a project test",
-    description: "Read the source of one .e2e.ts file in the project's tests/ folder. Lines are numbered from 1; the line numbers in a failed run's steps and failure refer to this source. projectPath defaults to the Testing tab's project.",
+    description: "Read the source of one .e2e.ts file in the project's tests/ folder. Lines are numbered from 1; the line numbers in a failed run's steps and failure refer to this source. projectPath defaults to the Testing Studio tab's project.",
     inputSchema: { projectPath: projectPath.optional(), relativePath: z.string().min(1).max(512) },
     annotations: read,
     _meta: sharedVisibility,
@@ -375,15 +375,15 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
   }));
 
   registerAppTool(server, "mobile_testing_set_target", {
-    title: "Pin a Studio test to an app",
-    description: "Store the app (platform and bundle id) a saved Studio test runs against. Only Studio tests carry one; a project test keeps using its config's target. With mode add, the app is added for its platform and the app the test was recorded against stays: use it to give a test the app for its other platform, with the bundleId mobile_testing_wait_for_app returned. Returns the app id pinned. projectPath defaults to the Testing tab's project.",
+    title: "Pin a Testing Studio test to an app",
+    description: "Store the app (platform and bundle id) a saved Testing Studio test runs against. Only Testing Studio tests carry one; a project test keeps using its config's target. With mode add, the app is added for its platform and the app the test was recorded against stays: use it to give a test the app for its other platform, with the bundleId mobile_testing_wait_for_app returned. Returns the app id pinned. projectPath defaults to the Testing Studio tab's project.",
     inputSchema: { projectPath: projectPath.optional(), relativePath: z.string().min(1).max(512), platform: z.enum(["ios", "android"]), bundleId: z.string().min(1).max(512), mode: z.enum(["replace", "add"]).optional() },
     annotations: write,
     _meta: sharedVisibility,
   }, safe(async ({ projectPath: selected, relativePath, platform, bundleId, mode }: { projectPath?: string; relativePath: string; platform: "ios" | "android"; bundleId: string; mode?: "replace" | "add" }) => {
     const pinned = await writeTestTarget(await resolveProject(selected), relativePath, { platform, bundleId }, mode);
     return dataResult({ pinned, ...(pinned ? { added: { platform, bundleId, mode: mode ?? "replace" } } : {}) },
-      pinned ? `Pinned ${platform} ${bundleId} to ${relativePath} (${mode ?? "replace"}).` : "Only Studio tests carry a pinned app; nothing was changed.");
+      pinned ? `Pinned ${platform} ${bundleId} to ${relativePath} (${mode ?? "replace"}).` : "Only Testing Studio tests carry a pinned app; nothing was changed.");
   }));
 
   const modelSchema = z.object({
@@ -395,7 +395,7 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
   /** Everything a run needs before a device is chosen: the same for a single run and for every lane. */
   async function prepareRequest(input: RunInput) {
     const { projectPath: selected, relativePath, configPath, timeoutMs, target, pin, model, untilSource } = input;
-    // A Studio test remembers its app, so a caller that names none runs the one it was pinned to.
+    // A Testing Studio test remembers its app, so a caller that names none runs the one it was pinned to.
     let { platform, bundleId } = input;
     if (!(platform && bundleId)) {
       const stored = await readTestTarget(selected, relativePath).catch(() => undefined);
@@ -458,7 +458,7 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
   registerAppTool(server, "mobile_testing_run_test", {
     title: "Run a recorded test",
     description:
-      "Run one saved test and report each step with the line it came from. Blocks until the run ends; for a long test, or to choose the device, start it with mobile_testing_run_matrix and read mobile_testing_run_progress. Without platform and bundleId a Studio test runs the app it is pinned to. The recorder's device session is released first. A failed run carries `failure`: the failing line, its error and, when the device can be read, its screen as locator rows to pick from. projectPath defaults to the Testing tab's project.",
+      "Run one saved test and report each step with the line it came from. Blocks until the run ends; for a long test, or to choose the device, start it with mobile_testing_run_matrix and read mobile_testing_run_progress. Without platform and bundleId a Testing Studio test runs the app it is pinned to. The recorder's device session is released first. A failed run carries `failure`: the failing line, its error and, when the device can be read, its screen as locator rows to pick from. projectPath defaults to the Testing Studio tab's project.",
     inputSchema: {
       projectPath: projectPath.optional(),
       relativePath: z.string().min(1).max(512).describe("The test to run, relative to the project, e.g. tests/a-recorded-flow.e2e.ts."),
@@ -503,7 +503,7 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
   registerAppTool(server, "mobile_testing_run_matrix", {
     title: "Run a recorded test on several devices",
     description:
-      "Run one saved test on several devices at once, one independent lane per device (iOS and Android can be mixed), and return a matrixId immediately; read progress with mobile_testing_run_progress. At most `limit` lanes run at once (default 3, max 8); the rest are queued. Devices that are off are booted. In bundled mode a device missing the app gets it installed by copying it from another booted device that has it (one in the run first); otherwise that lane fails with \"App not installed\"; `apps` defaults to the apps the test is pinned to, and a platform with no app is refused, naming the fix. In a project with its own e2e config each lane runs the config's target for the device's platform (or `targets`) on that device, a device missing the app gets it copied the same way, and the target's engine must be a direct mobile(...) call. A failure on one device does not stop the others, and its lane carries `failure` (line, error, screen). projectPath defaults to the Testing tab's project.",
+      "Run one saved test on several devices at once, one independent lane per device (iOS and Android can be mixed), and return a matrixId immediately; read progress with mobile_testing_run_progress. At most `limit` lanes run at once (default 3, max 8); the rest are queued. Devices that are off are booted. In bundled mode a device missing the app gets it installed by copying it from another booted device that has it (one in the run first); otherwise that lane fails with \"App not installed\"; `apps` defaults to the apps the test is pinned to, and a platform with no app is refused, naming the fix. In a project with its own e2e config each lane runs the config's target for the device's platform (or `targets`) on that device, a device missing the app gets it copied the same way, and the target's engine must be a direct mobile(...) call. A failure on one device does not stop the others, and its lane carries `failure` (line, error, screen). projectPath defaults to the Testing Studio tab's project.",
     inputSchema: {
       projectPath: projectPath.optional(),
       relativePath: z.string().min(1).max(512).describe("The test to run, relative to the project."),
@@ -630,10 +630,10 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
   registerAppTool(server, "mobile_testing_branch_line", {
     title: "Give one line its own locator for one platform",
     description:
-      "Repair a Studio test for one platform: replace the locator on one line with `locator` on `platform` only, keeping the old locator for the other platform (`platform === \"android\" ? new : old`). The assertion or action on the line is never changed, and only the locator is. Take `locator` from a failed run's `failure.elements`, e.g. screen.getByText(\"Home\"). Writes the test and returns the new source; refuses, naming why, when the line cannot be rewritten with certainty (a multi-line call, no locator on the line). projectPath defaults to the Testing tab's project.",
+      "Repair a Testing Studio test for one platform: replace the locator on one line with `locator` on `platform` only, keeping the old locator for the other platform (`platform === \"android\" ? new : old`). The assertion or action on the line is never changed, and only the locator is. Take `locator` from a failed run's `failure.elements`, e.g. screen.getByText(\"Home\"). Writes the test and returns the new source; refuses, naming why, when the line cannot be rewritten with certainty (a multi-line call, no locator on the line). projectPath defaults to the Testing Studio tab's project.",
     inputSchema: {
       projectPath: projectPath.optional(),
-      relativePath: z.string().min(1).max(512).describe("The Studio test, e.g. tests/checkout.e2e.ts."),
+      relativePath: z.string().min(1).max(512).describe("The Testing Studio test, e.g. tests/checkout.e2e.ts."),
       line: z.number().int().min(1).max(100_000).describe("The 1-based line of the failing step, from the run's failure.line."),
       platform: z.enum(["ios", "android"]).describe("The platform whose run failed. The other platform keeps its locator."),
       locator: z.string().min(1).max(1000).describe("A single screen.getBy… locator expression."),
@@ -642,7 +642,7 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
     _meta: sharedVisibility,
   }, safe(async ({ projectPath: selected, relativePath, line, platform, locator }: { projectPath?: string; relativePath: string; line: number; platform: "ios" | "android"; locator: string }) => {
     const project = await resolveProject(selected);
-    if ((await inspectProject(project)).runtimeMode !== "bundled") throw new ExpectedOperationError("invalid_input", "Branching a line is for Studio tests; edit a project test in its own file.");
+    if ((await inspectProject(project)).runtimeMode !== "bundled") throw new ExpectedOperationError("invalid_input", "Branching a line is for Testing Studio tests; edit a project test in its own file.");
     if (!singleExpression(locator) || !locator.startsWith("screen.")) throw new ExpectedOperationError("invalid_input", "locator must be one screen.getBy… expression on a single line.");
     const source = await readTestFile(project, relativePath);
     const next = branchStoredStepLocator(source, line, platform, locator);

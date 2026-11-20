@@ -189,9 +189,9 @@ test("a run marks the preview line by line, and marks nothing it was not told ab
   const preview = () => (dom.window.document.querySelector("[data-testing-preview]") as HTMLElement).innerText
     ?? dom.window.document.querySelector("[data-testing-preview]")!.textContent!;
 
-  assert.equal(dom.window.document.querySelector("[aria-label=Testing] dl"), null,
+  assert.equal(dom.window.document.querySelector("[aria-label='Testing Studio'] dl"), null,
     "project, config, target, bundle and device metadata no longer duplicate the controls");
-  const testing = dom.window.document.querySelector("[aria-label=Testing]");
+  const testing = dom.window.document.querySelector("[aria-label='Testing Studio']");
   assert.ok(testing?.className.includes("cursor-pointer"), "testing panel buttons use a pointer cursor");
   // The title and file name fields are folded into Test Description: they are touched once per
   // recording, at the end, while the step list beside them is touched on every tap.
@@ -233,7 +233,7 @@ test("a run marks the preview line by line, and marks nothing it was not told ab
   assert.match(workspace.textContent ?? "", /Preview.*Test Description.*Steps/s,
     "the recorder is organized around preview, naming and steps");
   await act(async () => { description.click(); });
-  const header = dom.window.document.querySelector("[aria-label=Testing] > header")!;
+  const header = dom.window.document.querySelector("[aria-label='Testing Studio'] > header")!;
   assert.ok(header.contains(dom.window.document.querySelector("[data-testing-controls]")),
     "record and run controls share the project and launch bar");
 
@@ -569,6 +569,12 @@ test("the agentic branches cascade to the side, and record a sentence with its p
 });
 
 /** A `TestingPanel` stub for the view: enough snapshot for the controls, no server behind it. */
+/** Opens one E2E setup section by its title; every section starts collapsed. */
+async function openSection(act: (callback: () => Promise<void>) => Promise<void>, doc: Document, title: string) {
+  const toggle = [...doc.querySelectorAll('[data-slot="collapsible-trigger"]')].find(el => el.textContent?.startsWith(title) && el.getAttribute("data-state") !== "open") as HTMLElement | undefined;
+  if (toggle) await act(async () => { toggle.click(); });
+}
+
 function panelStub(overrides: Record<string, unknown> = {}) {
   const listeners = new Set<() => void>();
   const state: Record<string, unknown> = {
@@ -764,7 +770,7 @@ test("the list keeps what is not stored above what the project holds, and asks b
   testRecorder.clearSteps();
 });
 
-test("bundled tests are labeled In Studio and configured projects show read-only setup", async t => {
+test("bundled tests are labeled In Testing Studio and configured projects show read-only setup", async t => {
   const { module: { TestingView }, dom, onTeardown } = await renderEnvironment<any>(t, {
     exports: 'export { TestingView } from "./packages/ui/src/components/testing-view.tsx";', slug: "testing-setup-modes",
   });
@@ -778,6 +784,8 @@ test("bundled tests are labeled In Studio and configured projects show read-only
   } });
   await act(async () => { root.render(createElement(TestingView, { panel: configured, deviceApps })); });
   assert.match(dom.window.document.body.textContent ?? "", /E2E setup/);
+  await openSection(act, dom.window.document, "Project");
+  await openSection(act, dom.window.document, "Mobile apps");
   assert.match(dom.window.document.body.textContent ?? "", /chatgpt · gpt-6-luna/);
   assert.match(dom.window.document.body.textContent ?? "", /\.mcp\.json, \.cursor\/mcp\.json/);
   assert.equal(dom.window.document.querySelectorAll("[data-testing-setup]").length, 1, "model and project setup share one toolbar entry");
@@ -789,7 +797,7 @@ test("bundled tests are labeled In Studio and configured projects show read-only
     tests: [{ relativePath: "tests/studio.e2e.ts", name: "studio.e2e.ts", updatedAt: "2026-01-01T00:00:00.000Z", sizeBytes: 10 }] });
   await act(async () => { root.render(createElement(TestingView, { panel: bundled, deviceApps })); });
   await act(async () => { (dom.window.document.querySelector("[data-testing-drafts]") as HTMLElement).click(); });
-  assert.match(dom.window.document.querySelector("[data-testing-group=stored]")?.textContent ?? "", /In Studio/);
+  assert.match(dom.window.document.querySelector("[data-testing-group=stored]")?.textContent ?? "", /In Testing Studio/);
   await act(async () => { root.render(createElement("div")); });
   await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
   onTeardown(async () => { await act(async () => { root.unmount(); }); });
@@ -808,6 +816,7 @@ test("with no project open the picker says so and setup offers no project files"
   await act(async () => { root.render(createElement(TestingView, { panel, deviceApps })); });
   const trigger = dom.window.document.querySelector("[aria-label='Testing project']") as HTMLElement;
   assert.match(trigger.textContent ?? "", /No project/);
+  await openSection(act, dom.window.document, "Project");
   assert.match(dom.window.document.body.textContent ?? "", /No project open/);
   assert.doesNotMatch(dom.window.document.body.textContent ?? "", /Set up project/);
   await act(async () => { trigger.click(); });
@@ -818,7 +827,7 @@ test("with no project open the picker says so and setup offers no project files"
   onTeardown(async () => { await act(async () => { root.unmount(); }); });
 });
 
-test("a stored Studio test shows its pinned app and offers to re-pin it to the app in front", async t => {
+test("a stored Testing Studio test shows its pinned app and offers to re-pin it to the app in front", async t => {
   const { module: { TestingView }, dom, onTeardown } = await renderEnvironment<any>(t, {
     exports: 'export { TestingView } from "./packages/ui/src/components/testing-view.tsx";', slug: "testing-pinned-app",
   });
@@ -882,8 +891,11 @@ test("async project data prefills model and every discovered setup target", asyn
   const signIn = [...dom.window.document.querySelectorAll("button")].find(button => button.textContent?.includes("Sign in with")) as HTMLButtonElement;
   await act(async () => { signIn.click(); await Promise.resolve(); });
   assert.deepEqual(opened, ["https://auth.example.test/start"], "a user-started OAuth flow auto-opens its emitted URL");
+  await openSection(act, dom.window.document, "Project");
   const setUp = [...dom.window.document.querySelectorAll("button")].find(button => button.textContent?.includes("Set up project")) as HTMLButtonElement;
   await act(async () => { setUp.click(); });
+  await openSection(act, dom.window.document, "Mobile apps");
+  await openSection(act, dom.window.document, "Project");
   const identifiers = [...dom.window.document.querySelectorAll('[aria-label$="app identifier"]')] as HTMLInputElement[];
   assert.deepEqual(identifiers.map(input => input.value), ["com.anonymous.expoapp57", "com.anonymous.expoapp57"]);
   assert.deepEqual([...dom.window.document.querySelectorAll('[aria-label^="Target "][aria-label$=" name"]')].map(input => (input as HTMLInputElement).value), ["ios", "android"]);

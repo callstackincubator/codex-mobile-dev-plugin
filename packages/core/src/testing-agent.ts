@@ -23,7 +23,7 @@ import type { DeviceOps } from "./testing-prepare.ts";
 import { inspectProject, sameProjectPath, storedTestsChangeRevision, studioWorkspacePath, writeTestFile, writeTestTarget } from "./testing-projects.ts";
 
 /**
- * Recording an e2e test from the user's own coding agent, into the Testing panel the user is
+ * Recording an e2e test from the user's own coding agent, into the Testing Studio panel the user is
  * looking at.
  *
  * The manual recorder lives entirely in the iframe — `testRecorder` is a singleton there and
@@ -52,7 +52,7 @@ const RANK_LABEL: Record<string, string> = {
  */
 const MAX_ELEMENTS = 200;
 
-/** How often the open Testing tab re-sends its selection, and how long silence is believed (three beats). */
+/** How often the open Testing Studio tab re-sends its selection, and how long silence is believed (three beats). */
 export { PANEL_HEARTBEAT_MS };
 /**
  * A throttled background webview may beat only about once a minute, so a quiet panel is not a
@@ -86,13 +86,13 @@ export type TestingAgentState = {
    *
    * The server writes the draft rather than the panel, because the panel may never have been
    * looking: the user asks their agent for a test in the chat, reads the answer there, and only
-   * opens the Testing tab later. The panel adopts this id so its own autosave keeps replacing the
+   * opens the Testing Studio tab later. The panel adopts this id so its own autosave keeps replacing the
    * same draft instead of leaving a second copy of the same flow in the list.
    */
   draftId: string;
   /**
    * Where the finished session was saved as a test, or "" when it was only kept as a draft.
-   * Set in Studio (bundled) mode, where finishing writes the test; the panel refreshes its list
+   * Set in Testing Studio (bundled) mode, where finishing writes the test; the panel refreshes its list
    * from it instead of adopting a draft.
    */
   savedPath: string;
@@ -125,7 +125,7 @@ type Session = {
   identities: Set<string>;
   /** Set once the session ends and its steps are kept as an unsaved recording. */
   draftId: string;
-  /** Set once a Studio session's steps are written as a test, relative to its tests folder root. */
+  /** Set once a Testing Studio session's steps are written as a test, relative to its tests folder root. */
   savedPath: string;
 };
 
@@ -215,13 +215,13 @@ export class TestingAgentRecordings {
   private readonly devices: TestingDevices;
   private readonly drafts: TestDraftStore;
   private context?: TestingAgentContext;
-  /** The project the Testing panel reports, whether or not a device is selected: proof the tab is open. */
+  /** The project the Testing Studio panel reports, whether or not a device is selected: proof the tab is open. */
   private panelProject = "";
   private session?: Session;
   /** `Date.now()` until which a silent panel is believed to be loading rather than closed. */
   private expectUntil = 0;
   private revision = 0;
-  /** The project an agent asked the panel to show when it opened it: a folder, or Studio's workspace. */
+  /** The project an agent asked the panel to show when it opened it: a folder, or Testing Studio's workspace. */
   private projectRequest?: { id: number; path: string; at: number };
   private projectRequests = 0;
 
@@ -257,7 +257,7 @@ export class TestingAgentRecordings {
 
   /** The panel reports its project on every selection change, even with no device; empty means it has none. */
   setPanelProject(projectPath: string) { this.panelProject = projectPath; this.reportedAt = projectPath ? this.now() : 0; }
-  /** The project the Testing panel has selected, or undefined when the tab has not reported one. */
+  /** The project the Testing Studio panel has selected, or undefined when the tab has not reported one. */
   panelProjectPath(): string | undefined { this.expire(); return this.panelProject || undefined; }
   /**
    * Notes that the panel was just opened, so a call that finds the tab silent waits for its first
@@ -271,16 +271,16 @@ export class TestingAgentRecordings {
   /**
    * What an agent that opens the panel again should be told. Hosts draw a new Mobile Dev view for
    * every call to an opening tool and the server cannot stop that, so the only protection is to say
-   * the panel is already there: while the Testing tab reports in, or after this server was already
+   * the panel is already there: while the Testing Studio tab reports in, or after this server was already
    * asked for one (the tab may then be hidden or on another tab, which also silences it).
    */
   panelReopenNotice(): string | undefined {
-    if (this.panelProjectPath() !== undefined) return "The Mobile Dev panel was already open in this chat and the Testing tab is reporting, so this call made the host draw an extra panel. Do not call mobile_open_simulator or mobile_open_workspace again in this chat: boot, run and record with the other tools, and the open panel follows.";
-    if (this.panelOpens > 0) return "A Mobile Dev panel was already opened in this chat, so this call made the host draw another. Do not open more: if a tool says the Testing tab is not open, it may be hidden or on another tab, so ask the user to show the existing panel and its Testing tab.";
+    if (this.panelProjectPath() !== undefined) return "The Mobile Dev panel was already open in this chat and the Testing Studio tab is reporting, so this call made the host draw an extra panel. Do not call mobile_open_simulator or mobile_open_workspace again in this chat: boot, run and record with the other tools, and the open panel follows.";
+    if (this.panelOpens > 0) return "A Mobile Dev panel was already opened in this chat, so this call made the host draw another. Do not open more: if a tool says the Testing Studio tab is not open, it may be hidden or on another tab, so ask the user to show the existing panel and its Testing Studio tab.";
     return undefined;
   }
   /**
-   * An agent opened the Testing tab for a chat: the panel selects this project once, however it was
+   * An agent opened the Testing Studio tab for a chat: the panel selects this project once, however it was
    * last used. `undefined` asks for No project. Only an agent's open sets it, so a project the user
    * picks afterwards is theirs.
    */
@@ -339,9 +339,9 @@ export class TestingAgentRecordings {
   /**
    * Starts a recording against what the panel has selected, filling in only what is unambiguous.
    *
-   * The Testing tab has to be open (it is the proof the user is looking, and its heartbeat is the
+   * The Testing Studio tab has to be open (it is the proof the user is looking, and its heartbeat is the
    * only thing that says so). Past that, nothing is asked that the machine can answer: the device is
-   * the mirrored one, or the only one booted; in Studio the app is whichever is in the foreground;
+   * the mirrored one, or the only one booted; in Testing Studio the app is whichever is in the foreground;
    * in a project it is the config target the foreground app matches, or the only target for the
    * platform. A real ambiguity or a missing piece comes back as one refusal that names only what is
    * missing, with one action each. The project is never picked here — choosing it is an explicit act
@@ -352,9 +352,9 @@ export class TestingAgentRecordings {
       refused(`An agent recording is already in flight: "${this.session.title}". Finish it with mobile_testing_agent_finish, or drop it with mobile_testing_agent_abort.`);
     }
     const projectPath = await this.awaitPanelProject() ?? this.context?.projectPath ?? "";
-    if (!projectPath) refused("The Testing tab is not open. If no Mobile Dev panel is showing in this chat, call mobile_open_simulator with workspaceTool \"testing\" once to open it, then begin again; if you already opened one, do not open another (each call adds a panel): ask the user to show the existing panel and its Testing tab.");
+    if (!projectPath) refused("The Testing Studio tab is not open. If no Mobile Dev panel is showing in this chat, call mobile_open_simulator with workspaceTool \"testing\" once to open it, then begin again; if you already opened one, do not open another (each call adds a panel): ask the user to show the existing panel and its Testing Studio tab.");
     const unmet = this.unmetProjectRequest();
-    if (unmet) refused(`The Testing tab has not switched to ${sameProjectPath(unmet, studioWorkspacePath()) ? "No project" : unmet} yet. Try again in a moment; do not open the panel again, it is already open.`);
+    if (unmet) refused(`The Testing Studio tab has not switched to ${sameProjectPath(unmet, studioWorkspacePath()) ? "No project" : unmet} yet. Try again in a moment; do not open the panel again, it is already open.`);
     const context = await this.resolveTarget(projectPath);
     this.session = {
       target: { deviceId: context.deviceId, platform: context.platform, projectPath: context.projectPath, bundleId: context.bundleId },
@@ -383,7 +383,7 @@ export class TestingAgentRecordings {
     const picked: string[] = [];
     const bundled = (await inspectProject(projectPath).catch(() => undefined))?.runtimeMode === "bundled";
     // A selection the panel reported whole is the user's own choice; nothing second-guesses it. In
-    // Studio the app in front is the target, so only a project's complete selection is final.
+    // Testing Studio the app in front is the target, so only a project's complete selection is final.
     if (reported?.deviceId && reported.bundleId && !bundled) return { ...reported, projectPath, picked };
     const problems: string[] = [];
 
@@ -630,7 +630,7 @@ export class TestingAgentRecordings {
   /**
    * Ends the recording.
    *
-   * In Studio (bundled) mode the test is written into Studio, pinned to the recorded platform and
+   * In Testing Studio (bundled) mode the test is written into Testing Studio, pinned to the recorded platform and
    * app, and its path is returned: there is no project file for a user to review, and the agent
    * runs the test next. In a project the steps stay unsaved in the panel for the user to adjust,
    * name and save themselves. Nothing is run either way — a run resets the app and takes the
@@ -650,21 +650,21 @@ export class TestingAgentRecordings {
       steps: session.steps.length,
       source,
       ...(saved.relativePath ? {
-        saved: true, relativePath: saved.relativePath, path: `Studio/${saved.relativePath}`,
+        saved: true, relativePath: saved.relativePath, path: `Testing Studio/${saved.relativePath}`,
         platform: session.target.platform, bundleId: session.target.bundleId,
-        next: `${count} saved in Studio as ${saved.relativePath}, pinned to ${session.target.platform} ${session.target.bundleId}. Run it with mobile_testing_run_test or mobile_testing_run_matrix, passing that relativePath.`,
+        next: `${count} saved in Testing Studio as ${saved.relativePath}, pinned to ${session.target.platform} ${session.target.bundleId}. Run it with mobile_testing_run_test or mobile_testing_run_matrix, passing that relativePath.`,
       } : {
         saved: false,
         ...(saved.error ? { saveError: saved.error } : {}),
-        next: `${count} are waiting in Mobile Dev's Testing panel, unsaved. Tell the user to review them there and press Save; nothing has been written to the project and nothing has been run.${saved.error ? ` Saving to Studio failed: ${saved.error}` : ""}`,
+        next: `${count} are waiting in Mobile Dev's Testing Studio panel, unsaved. Tell the user to review them there and press Save; nothing has been written to the project and nothing has been run.${saved.error ? ` Saving to Testing Studio failed: ${saved.error}` : ""}`,
       }),
     };
   }
 
-  /** Writes a Studio session's test and its app pin. Never throws: a failed save falls back to the draft. */
+  /** Writes a Testing Studio session's test and its app pin. Never throws: a failed save falls back to the draft. */
   private async saveToStudio(session: Session, source: string): Promise<{ relativePath?: string; error?: string }> {
     if (session.steps.length === 0) return {};
-    // A project that cannot be read is not Studio; the draft path handles it as it always did.
+    // A project that cannot be read is not Testing Studio; the draft path handles it as it always did.
     const project = await inspectProject(session.target.projectPath).catch(() => undefined);
     if (project?.runtimeMode !== "bundled") return {};
     try {
@@ -750,7 +750,7 @@ export function registerTestingAgentTools(server: McpServer, devices: TestingDev
   registerAppTool(server, "mobile_testing_agent_begin", {
     title: "Begin recording an e2e test",
     description:
-      "Start recording an e2e test into Mobile Dev's Testing panel, against the project the panel has selected. The Testing tab must be open. The device and app are picked automatically when unambiguous (the mirrored or only booted device; in Studio the app in the foreground, in a project the matching config target) and reported back in `picked`, so tell the user. Otherwise it refuses naming only what is missing and the one action for each; do that (boot a device, open the app) or ask the user only when they really must open or install the app, then begin again. The steps appear in the panel as you record them. In No project (Studio) mode mobile_testing_agent_finish saves the test pinned to the recorded app and returns its relativePath for mobile_testing_run_test / mobile_testing_run_matrix; in a project the steps stay unsaved for the user.",
+      "Start recording an e2e test into Mobile Dev's Testing Studio panel, against the project the panel has selected. The Testing Studio tab must be open. The device and app are picked automatically when unambiguous (the mirrored or only booted device; in Testing Studio the app in the foreground, in a project the matching config target) and reported back in `picked`, so tell the user. Otherwise it refuses naming only what is missing and the one action for each; do that (boot a device, open the app) or ask the user only when they really must open or install the app, then begin again. The steps appear in the panel as you record them. In No project (Testing Studio) mode mobile_testing_agent_finish saves the test pinned to the recorded app and returns its relativePath for mobile_testing_run_test / mobile_testing_run_matrix; in a project the steps stay unsaved for the user.",
     inputSchema: {
       title: z.string().min(1).max(200).describe("The test's title, e.g. \"the explore details screen\"."),
       goal: z.string().min(1).max(500).describe("What this flow covers, in one sentence. Shown to the user in the panel's banner."),
@@ -787,7 +787,7 @@ export function registerTestingAgentTools(server: McpServer, devices: TestingDev
   registerAppTool(server, "mobile_testing_agent_finish", {
     title: "Finish the recording",
     description:
-      "End the recording. In No project (Studio) mode the test is saved into Studio, pinned to the recorded platform and app, and its relativePath is returned so you can run it. In a project the steps are left unsaved in the Testing panel for the user to adjust and save, and nothing is written. Nothing is run either way.",
+      "End the recording. In No project (Testing Studio) mode the test is saved into Testing Studio, pinned to the recorded platform and app, and its relativePath is returned so you can run it. In a project the steps are left unsaved in the Testing Studio panel for the user to adjust and save, and nothing is written. Nothing is run either way.",
     inputSchema: { note: z.string().max(500).optional().describe("One line on what was recorded, for the user.") },
     annotations: write,
     _meta: sharedVisibility,
@@ -795,7 +795,7 @@ export function registerTestingAgentTools(server: McpServer, devices: TestingDev
 
   registerAppTool(server, "mobile_testing_agent_abort", {
     title: "Abandon the recording",
-    description: "Drop the recording. Whatever was recorded stays in the Testing panel for the user.",
+    description: "Drop the recording. Whatever was recorded stays in the Testing Studio panel for the user.",
     inputSchema: { reason: z.string().min(1).max(500).describe("Why the recording stopped.") },
     annotations: write,
     _meta: sharedVisibility,
@@ -803,16 +803,16 @@ export function registerTestingAgentTools(server: McpServer, devices: TestingDev
 
   registerAppTool(server, "mobile_testing_agent_state", {
     title: "Read the agent recording",
-    description: "Read the agent recording's status and steps. The Testing panel polls this and adopts the steps as they arrive.",
+    description: "Read the agent recording's status and steps. The Testing Studio panel polls this and adopts the steps as they arrive.",
     inputSchema: {},
     annotations: read,
     _meta: appVisibility,
   }, safe(() => dataResult({ ...recordings.state(), storedTestsRevision: storedTestsChangeRevision(), projectRequest: recordings.panelProjectRequest() })));
 
   registerAppTool(server, "mobile_testing_set_context", {
-    title: "Report the Testing panel's selection",
+    title: "Report the Testing Studio panel's selection",
     description:
-      "Tell the server which project, device and bundle id the Testing panel has selected, so an agent recording has something to record against. The panel calls this whenever the selection changes; nothing is ever inferred from the server's own working directory.",
+      "Tell the server which project, device and bundle id the Testing Studio panel has selected, so an agent recording has something to record against. The panel calls this whenever the selection changes; nothing is ever inferred from the server's own working directory.",
     inputSchema: {
       projectPath: z.string().max(4096),
       deviceId: deviceIdSchema.or(z.literal("")),

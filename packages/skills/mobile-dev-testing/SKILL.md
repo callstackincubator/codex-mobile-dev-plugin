@@ -1,6 +1,6 @@
 ---
 name: mobile-dev-testing
-description: Use when the user asks to record, write or capture an end-to-end test for a screen or a flow of their iOS or Android app, with Mobile Dev's Testing panel. Drives the simulator or emulator through Mobile Dev's recorder one step at a time, pinning each step to a locator the e2e runner can resolve, and leaves the flow in the panel for the user to adjust, save and run. In No project (Studio) mode it also saves, runs on one or several devices, iOS and Android side by side, and repairs a failing line's locator for one platform. Skip when the user wants a test written straight into a file, or when there is no Mobile Dev panel.
+description: Use when the user asks to record, write or capture an end-to-end test for a screen or a flow of their iOS or Android app, with Mobile Dev's Testing Studio panel. Drives the simulator or emulator through Mobile Dev's recorder one step at a time, pinning each step to a locator the e2e runner can resolve, and leaves the flow in the panel for the user to adjust, save and run. In No project (Testing Studio) mode it also saves, runs on one or several devices, iOS and Android side by side, and repairs a failing line's locator for one platform. Skip when the user wants a test written straight into a file, or when there is no Mobile Dev panel.
 ---
 
 # Record an e2e test with Mobile Dev
@@ -11,13 +11,13 @@ appear in Mobile Dev's **Testing** tab as you record them, and when you stop, th
 there unsaved for the user to adjust.
 
 In a **project**, you record; the user saves and runs. Those two are theirs, and the tools to do
-them are not yours to call. In **No project (Studio) mode** the flow is yours end to end: see
-[Studio mode](#studio-mode-record-run-repair) below.
+them are not yours to call. In **No project (Testing Studio) mode** the flow is yours end to end: see
+[Testing Studio mode](#studio-mode-record-run-repair) below.
 
 ## Before you start
 
-The **Testing tab must be open**; it is how Mobile Dev knows the user is looking. You open it
-yourself: whenever `begin` or a run tool says the Testing tab is not open, call
+The **Testing Studio tab must be open**; it is how Mobile Dev knows the user is looking. You open it
+yourself: whenever `begin` or a run tool says the Testing Studio tab is not open, call
 `mobile_open_simulator({ workspaceTool: "testing", projectPath })` (it also switches an open view to
 that tab) and then call the tool again. Do not ask the user to open it; the call waits for the tab to
 report in. **Open it once per chat.** The host draws a new Mobile Dev panel for every
@@ -33,7 +33,7 @@ Past that,
 user in a line:
 
 - **Device**: the one the mirror shows, else the only booted simulator or emulator.
-- **App**: in **No project (Studio) mode**, the app in the foreground (home screens and launchers
+- **App**: in **No project (Testing Studio) mode**, the app in the foreground (home screens and launchers
   do not count); finishing saves the test pinned to it. In a **project**, the config target the
   foreground app matches, else the project's only target for that platform.
 
@@ -59,7 +59,7 @@ it, so a flow recorded from a cold home screen is a flow the user will have to f
    screen, so the refs from the last read go with it; a stale `ref` is refused rather than acted
    on. An assertion changes nothing, so several in a row need only one read.
 5. `mobile_testing_agent_finish({ note })` when the flow is complete, and tell the user the flow
-   is waiting in the Testing panel.
+   is waiting in the Testing Studio panel.
 
 Use `mobile_testing_agent_abort({ reason })` if you cannot finish — a screen you cannot reach, an
 app that crashed. Whatever you recorded stays in the panel for the user.
@@ -128,11 +128,11 @@ asserting text you have not seen.
 
 - **Never save** a project's test. There is no tool for it in your hands, and finishing is the
   handover: the steps are dirty in the panel and the user presses Save when they are happy with
-  them. (Studio mode's `finish` saves for you; that is the one exception.)
+  them. (Testing Studio mode's `finish` saves for you; that is the one exception.)
 - **Never run the test** while recording. There is no file to run, and a run resets the app and
   takes the device session the recording is being read through.
   When the user asks for a saved test to run on several devices, that is `mobile_testing_run_matrix`,
-  and it works in both modes: a Studio test runs on each device with the bundled runner, and a project
+  and it works in both modes: a Testing Studio test runs on each device with the bundled runner, and a project
   with its own `e2e.config.ts` runs the config's target for each device's platform (a device missing
   the app gets it copied from another booted device that has it, and the target's engine must be a direct
   `mobile(...)` call). It is a run, so
@@ -144,13 +144,13 @@ asserting text you have not seen.
 
 ## When you are done
 
-Tell the user what you recorded, in their terms, and that it is **in the Testing panel, unsaved**.
+Tell the user what you recorded, in their terms, and that it is **in the Testing Studio panel, unsaved**.
 Say which parts fell back to a sentence, if any, and why. Do not paste the emitted file as the
 deliverable — the panel is showing it, live, next to the steps.
 
-## Studio mode: record, run, repair
+## Testing Studio mode: record, run, repair
 
-No project open — the Testing tab says Studio — means tests live in Mobile Dev's own storage, each
+No project open — the Testing Studio tab says Testing Studio — means tests live in Mobile Dev's own storage, each
 pinned to an app. The tab must be open: every tool below reads the tab's selection and refuses
 when it has none. Then, if you have not opened the panel yet this chat, open it yourself with `mobile_open_simulator({ workspaceTool: "testing", projectPath })` and
 call the tool again; do not ask the user, and do not open a second panel. `projectPath`
@@ -158,7 +158,7 @@ is optional on all of them; it defaults to the tab's project.
 
 ### Record, which saves
 
-*"Use the opened iOS app and record a test."* Run the loop above. In Studio,
+*"Use the opened iOS app and record a test."* Run the loop above. In Testing Studio,
 `mobile_testing_agent_finish` **writes the test**, pinned to the platform and bundle id it was
 recorded on, and returns its `relativePath` (e.g. `tests/the-explore-screen.e2e.ts`). Tell the
 user the path. Nothing in the test file names a platform until you branch a line.
@@ -172,7 +172,7 @@ user the path. Nothing in the test file names a platform until you branch a line
   defaults to the apps the test is pinned to.
 - **Devices that are off are booted by the matrix**, and an app missing from a device is copied
   from another device in the run that has it. Do not boot or install first.
-- The runs show in the Testing tab as live lanes, and the tab is locked while they go.
+- The runs show in the Testing Studio tab as live lanes, and the tab is locked while they go.
 
 ### A platform has no app yet
 

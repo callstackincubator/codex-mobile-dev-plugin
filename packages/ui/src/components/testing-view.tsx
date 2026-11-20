@@ -227,7 +227,7 @@ function TestingDraftPicker({ panel }: { panel: TestingPanel }) {
 
       <div className="-mx-1 border-t" />
 
-      <ListGroup label={state.runtimeMode === "bundled" ? "In Studio" : "In the project"} count={state.tests.length} open={storedOpen}
+      <ListGroup label={state.runtimeMode === "bundled" ? "In Testing Studio" : "In the project"} count={state.tests.length} open={storedOpen}
         attributes={{ "data-testing-group": "stored" }} onToggle={() => setStoredOpen(value => !value)}>
         {state.tests.map(stored => {
           const selected = stored.relativePath === state.selectedTestPath;
@@ -246,12 +246,12 @@ function TestingDraftPicker({ panel }: { panel: TestingPanel }) {
             </Button>
             <ConfirmDelete attributes={{ "data-testing-test-delete": stored.relativePath }}
               busy={state.deletingTest === stored.relativePath}
-              title={state.runtimeMode === "bundled" ? "Delete this Studio test" : "Delete this test from the project"} label={`Delete ${stored.name}`}
-              question={state.runtimeMode === "bundled" ? `Delete ${stored.relativePath} from Studio? It cannot be brought back from here.` : `Delete ${stored.relativePath} from the project? The file is removed and cannot be brought back from here.`}
+              title={state.runtimeMode === "bundled" ? "Delete this Testing Studio test" : "Delete this test from the project"} label={`Delete ${stored.name}`}
+              question={state.runtimeMode === "bundled" ? `Delete ${stored.relativePath} from Testing Studio? It cannot be brought back from here.` : `Delete ${stored.relativePath} from the project? The file is removed and cannot be brought back from here.`}
               onConfirm={() => void panel.deleteTest(stored.relativePath)} />
           </span>;
         })}
-        {state.tests.length === 0 && <p className="px-1.5 py-1 text-xs text-muted-foreground">{panel.noProject ? "No Studio tests yet." : "No tests in this project's tests/ folder yet."}</p>}
+        {state.tests.length === 0 && <p className="px-1.5 py-1 text-xs text-muted-foreground">{panel.noProject ? "No Testing Studio tests yet." : "No tests in this project's tests/ folder yet."}</p>}
       </ListGroup>
     </PopoverContent>
   </Popover>;
@@ -277,14 +277,14 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
   const deviceId = device?.udid ?? "";
   const platform = device ? recordablePlatform(device) : "ios";
   // Why the recorder cannot start yet, in the order the user has to fix them.
-  const blocker = !state.projectPath ? "Preparing Studio…"
+  const blocker = !state.projectPath ? "Preparing Testing Studio…"
     : state.loadingProject ? ""
-      : state.targets.length === 0 ? (panel.noProject ? "Open the app you want to record in the mirror. Studio records against the app in the foreground." : "No mobile app identifier was found. Open the app in the mirror, or use E2E setup to enter one.")
+      : state.targets.length === 0 ? (panel.noProject ? "Open the app you want to record in the mirror. Testing Studio records against the app in the foreground." : "No mobile app identifier was found. Open the app in the mirror, or use E2E setup to enter one.")
         : !target?.bundleId ? `Target "${target?.name}" has no app identifier. Enter one in E2E setup.`
           : !booted ? "Boot an iOS simulator or Android emulator to record against it."
             : !isRecordableDevice(device) ? "Recording works on an iOS simulator or an Android emulator, not a physical device."
               : mismatch;
-  return <section className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4 [&_button:not(:disabled)]:cursor-pointer" aria-label="Testing">
+  return <section className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4 [&_button:not(:disabled)]:cursor-pointer" aria-label="Testing Studio">
     <header className="flex flex-wrap items-center gap-2 border-b pb-3">
       <TestingProjectPicker panel={panel} />
       {state.targets.length > 1 && <Select items={state.targets.map(entry => ({ value: entry.name, label: entry.name }))} value={state.targetName} onValueChange={value => { if (value) panel.selectTarget(value); }}>
@@ -302,20 +302,20 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
     </header>
 
     {state.error && <Alert variant="destructive">
-      <AlertTitle>Testing</AlertTitle>
+      <AlertTitle>Testing Studio</AlertTitle>
       <AlertDescription>
         <span className="min-w-0 break-words">{state.error}</span>
         <Button type="button" variant="ghost" size="sm" className="self-start" onClick={() => panel.dismissError()}>Dismiss</Button>
       </AlertDescription>
     </Alert>}
 
-    {state.projectWarning && state.runtimeMode !== "bundled" && <Alert><AlertTitle>Testing</AlertTitle><AlertDescription><span>{state.projectWarning}</span></AlertDescription></Alert>}
+    {state.projectWarning && state.runtimeMode !== "bundled" && <Alert><AlertTitle>Testing Studio</AlertTitle><AlertDescription><span>{state.projectWarning}</span></AlertDescription></Alert>}
 
     {state.selectedTestPath && panel.storedRunHint && !state.agent?.active && <TestingNote tone="warning" data-testing-run-hint
       action={panel.canAddForegroundApp ? <Button type="button" size="xs" variant="outline" data-testing-add-app onClick={() => void panel.repinStoredTest()}>
         Add {platformLabel(panel.foregroundTarget!.platform)} app</Button> : undefined}>{panel.storedRunHint}</TestingNote>}
 
-    {blocker && !state.agent?.active && !(state.selectedTestPath && panel.storedRunHint) && <TestingNote tone={blocker === "Preparing Studio…" ? "info" : "warning"} data-testing-blocker>{blocker}</TestingNote>}
+    {blocker && !state.agent?.active && !(state.selectedTestPath && panel.storedRunHint) && <TestingNote tone={blocker === "Preparing Testing Studio…" ? "info" : "warning"} data-testing-blocker>{blocker}</TestingNote>}
 
     <AgentRecordingBanner panel={panel} />
 
@@ -360,7 +360,7 @@ function AgentRecordingBanner({ panel }: { panel: TestingPanel }) {
   return <p data-testing-agent-handover className="rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground" role="status">
     {agent.status === "aborted" ? "The agent stopped recording" : "The agent finished recording"}
     {` ${agent.steps} step${agent.steps === 1 ? "" : "s"}`}{agent.note ? ` — ${agent.note}` : ""}.
-    {agent.savedPath ? ` Saved in Studio as ${agent.savedPath}.` : " Nothing has been saved or run: adjust the steps below, then press Save."}
+    {agent.savedPath ? ` Saved in Testing Studio as ${agent.savedPath}.` : " Nothing has been saved or run: adjust the steps below, then press Save."}
   </p>;
 }
 
@@ -712,10 +712,10 @@ function SourceStepMenu({ source, step, index, mode, onEdit, editable }: {
 
 /** A project file's awaited calls can be edited in a temporary working copy. */
 /**
- * The apps a Studio test runs against, one per platform, with a way to take the app in front: on
+ * The apps a Testing Studio test runs against, one per platform, with a way to take the app in front: on
  * the recorded platform it replaces that app, on the other it adds one so the test runs on both.
  */
-/** One app a Studio test runs: its platform as a tag, then its id, cut short with the whole id on hover. */
+/** One app a Testing Studio test runs: its platform as a tag, then its id, cut short with the whole id on hover. */
 function AppBadge({ platform, bundleId, title, ...attributes }: { platform: "ios" | "android"; bundleId: string; title: string } & Record<`data-${string}`, string | undefined>) {
   return <span {...attributes} title={title} className="inline-flex h-6 min-w-0 max-w-64 items-center overflow-hidden rounded-md border text-[11px]">
     <span className="flex h-full shrink-0 items-center border-r bg-muted px-1.5 font-medium text-muted-foreground">{platformLabel(platform)}</span>
@@ -753,7 +753,7 @@ function RunFailureReason({ run }: { run: { state: string; error?: string } | nu
 }
 
 /**
- * After a Studio test fails on the platform it was not recorded on: offers to pick the failed
+ * After a Testing Studio test fails on the platform it was not recorded on: offers to pick the failed
  * line's element on this platform, which keeps the recorded locator for the other one behind a
  * `platform` branch. While picking, says what to do on the mirror.
  */

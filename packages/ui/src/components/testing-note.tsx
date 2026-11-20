@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { InfoIcon, TriangleAlertIcon } from "lucide-react";
 
 /**
- * A short note in the Testing panel: "info" explains how something works, "warning" says why
+ * A short note in the Testing Studio panel: "info" explains how something works, "warning" says why
  * something cannot run as it is. Both are boxed with an icon so they do not read as body text, and
  * the one thing to do about it, if there is one, sits inside the note as its `action`.
  */

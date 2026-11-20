@@ -33,7 +33,7 @@ test("a folder is a project only when it carries a project marker", async () => 
     assert.equal(await isChatProject(empty), false, "a scratch folder is not a project");
     assert.equal(await isChatProject(join(root, "missing")), false);
     assert.equal(await isChatProject("relative/path"), false);
-    assert.equal(await isChatProject(studioWorkspacePath()), false, "Studio's own workspace is No project");
+    assert.equal(await isChatProject(studioWorkspacePath()), false, "Testing Studio's own workspace is No project");
 
     const expo = join(root, "expo"); await mkdir(expo);
     await writeFile(join(expo, "package.json"), "{}");
@@ -56,7 +56,7 @@ test("an agent's project request is held for the panel until it reports that pro
     const rec = recordings(clock);
     assert.equal(rec.panelProjectRequest(), null, "nothing asked: the panel keeps its own selection");
     rec.requestPanelProject();
-    assert.deepEqual(rec.panelProjectRequest(), { id: 1, path: studioWorkspacePath() }, "no project asks for Studio");
+    assert.deepEqual(rec.panelProjectRequest(), { id: 1, path: studioWorkspacePath() }, "no project asks for Testing Studio");
     rec.setPanelProject("/work/expoapp57");
     assert.equal(rec.unmetProjectRequest(), studioWorkspacePath(), "the old project is not the requested one");
     setTimeout(() => rec.setPanelProject(studioWorkspacePath()), 100);
@@ -92,7 +92,7 @@ async function openPlugin(t: test.TestContext, roots?: string[]) {
   return { open, request, client };
 }
 
-test("opening the Testing tab for a chat with no project asks for No project", async t => {
+test("opening the Testing Studio tab for a chat with no project asks for No project", async t => {
   await scratch(async root => {
     const folder = join(root, "Codex/2026-11-18/use"); await mkdir(folder, { recursive: true });
     const { open, request } = await openPlugin(t);
@@ -105,7 +105,7 @@ test("opening the Testing tab for a chat with no project asks for No project", a
   });
 });
 
-test("opening the Testing tab for a chat with a project asks for that project", async t => {
+test("opening the Testing Studio tab for a chat with a project asks for that project", async t => {
   await scratch(async root => {
     const project = join(root, "my-app"); await mkdir(project);
     await writeFile(join(project, "package.json"), "{}");
@@ -145,7 +145,7 @@ test("a repeat open tells the agent the panel is already there, because the host
     assert.match(texts(await open({ projectPath: "" })), /already opened in this chat.*Do not open more/s);
     // Once the tab heartbeats, the warning says it is live.
     await client.callTool({ name: "mobile_testing_set_context", arguments: { projectPath: studioWorkspacePath(), deviceId: "", bundleId: "" } });
-    assert.match(texts(await open({ projectPath: "" })), /already open in this chat and the Testing tab is reporting/);
+    assert.match(texts(await open({ projectPath: "" })), /already open in this chat and the Testing Studio tab is reporting/);
   });
 });
 

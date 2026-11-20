@@ -16,8 +16,8 @@ type SetupPlanView = { id: string; actions: { action: string; path: string; deta
 type SetupTarget = { name: string; platform: "ios" | "android"; bundleId: string };
 
 const RUNTIME_HELP = {
-  bundled: "Bundled runtime: Studio runs tests with the e2e runtime that ships with Mobile Dev. Nothing is written to your project; tests and config stay in Mobile Dev's private state.",
-  project: "Project runtime: Studio runs tests with the e2e packages installed in your project, using its own e2e config file.",
+  bundled: "Bundled runtime: Testing Studio runs tests with the e2e runtime that ships with Mobile Dev. Nothing is written to your project; tests and config stay in Mobile Dev's private state.",
+  project: "Project runtime: Testing Studio runs tests with the e2e packages installed in your project, using its own e2e config file.",
 } as const;
 
 function useOperation(panel: TestingPanel, initial: TestingSetupOperation | null, onDone?: (operation: TestingSetupOperation) => void) {
@@ -35,7 +35,7 @@ function useOperation(panel: TestingPanel, initial: TestingSetupOperation | null
 }
 
 /** A collapsible, titled group inside the setup popover; every section shares this rhythm. */
-function Section({ title, hint, action, defaultOpen = true, forceOpen = false, children }: { title: string; hint?: string; action?: ReactNode; defaultOpen?: boolean; forceOpen?: boolean; children: ReactNode }) {
+function Section({ title, hint, action, defaultOpen = false, forceOpen = false, children }: { title: string; hint?: string; action?: ReactNode; defaultOpen?: boolean; forceOpen?: boolean; children: ReactNode }) {
   const [open, setOpen] = useState(defaultOpen || forceOpen);
   // A request from outside (a run that needs this section) opens it; the user can still collapse it.
   useEffect(() => { if (forceOpen) setOpen(true); }, [forceOpen]);
@@ -113,7 +113,7 @@ function PlanPreview({ plan, projectPath, busy, onEdit, onApply }: { plan: Setup
 }
 
 /**
- * The single entry for everything e2e: which runtime Studio uses, the agent-step model, the mobile
+ * The single entry for everything e2e: which runtime Testing Studio uses, the agent-step model, the mobile
  * targets, and the optional write of a project-local setup (the GUI equivalent of e2e init).
  * Both runtimes open on a compact summary; the editable setup form only opens on request.
  */
@@ -228,14 +228,14 @@ export function TestingSetup({ panel }: { panel: TestingPanel }) {
       {needsModel && <p role="status" className="rounded-lg bg-primary/10 px-2.5 py-1.5 text-xs">An agent step needs a model. Choose one to continue.</p>}
 
       {view === "summary" ? (bundled ? <>
-        <Section title="Agent model" hint={modelHint} defaultOpen={false} forceOpen={needsModel}>
+        <Section title="Agent model" hint={modelHint} forceOpen={needsModel}>
           {modelFields}
           <div className="flex items-center justify-end gap-2">
             {saved && <span role="status" className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400"><CheckIcon className="size-3.5" />Saved</span>}
-            <Button size="sm" variant="outline" disabled={saving || provider === "none" || !model.trim() || (modelUnchanged && !saved)} onClick={() => void saveModel()} title="Use this model for agent steps in Studio runs. Nothing is written to the project.">{saving ? <LoaderCircleIcon className="animate-spin" /> : <BotIcon />}Use model</Button>
+            <Button size="sm" variant="outline" disabled={saving || provider === "none" || !model.trim() || (modelUnchanged && !saved)} onClick={() => void saveModel()} title="Use this model for agent steps in Testing Studio runs. Nothing is written to the project.">{saving ? <LoaderCircleIcon className="animate-spin" /> : <BotIcon />}Use model</Button>
           </div>
         </Section>
-        <Section key="devices" title="Devices" hint="Run the open test on several devices at once." defaultOpen={false}><MatrixDevices panel={panel} /></Section>
+        <Section key="devices" title="Devices" hint="Run the open test on several devices at once."><MatrixDevices panel={panel} /></Section>
         <Section title="Project">
           <ul className="grid grid-cols-1 gap-2"><StatusItem ok={false} label={panel.noProject ? "No project open" : "Project setup"} value={panel.noProject ? "Recording against the app in the mirror. Tests stay in Mobile Dev." : "None. Tests stay in Mobile Dev."} /></ul>
           {!panel.noProject && <div className="flex justify-end"><Button size="sm" onClick={() => setView("setup")}><WandSparklesIcon />Set up project</Button></div>}
@@ -255,10 +255,10 @@ export function TestingSetup({ panel }: { panel: TestingPanel }) {
           {state.targets.length > 0 ? <ul className="flex flex-wrap gap-1.5">{state.targets.map(target => <li key={target.name}><Badge variant="outline" className="h-auto gap-1.5 py-1 font-normal"><span className="font-medium">{target.name}</span><span className="text-muted-foreground">{target.platform ?? "unknown"} · {target.bundleId ?? "no identifier"}</span></Badge></li>)}</ul>
             : <p className="text-xs text-muted-foreground">No targets configured.</p>}
         </Section>
-        <Section key="devices" title="Devices" defaultOpen={false}><MatrixDevices panel={panel} /></Section>
+        <Section key="devices" title="Devices"><MatrixDevices panel={panel} /></Section>
         <div className="flex justify-end"><Button size="sm" variant="outline" onClick={() => setView("setup")}><WandSparklesIcon />Update setup</Button></div>
       </>) : <>
-        <Section title="Agent model" hint={modelHint} defaultOpen={false} forceOpen={needsModel}>{modelFields}</Section>
+        <Section title="Agent model" hint={modelHint} forceOpen={needsModel}>{modelFields}</Section>
 
         <Section title="Mobile apps" action={<Button size="xs" variant="ghost" onClick={() => { const platform = targets.some(target => target.platform === "ios") ? "android" : "ios"; setTargets(items => [...items, { name: platform, platform, bundleId: "" }]); dirty(); }}><PlusIcon />Add target</Button>}>
           <div className="flex flex-col gap-2">{targets.map((target, index) => <div key={`${target.platform}-${index}`} className="grid grid-cols-[minmax(0,1fr)_6.5rem_minmax(0,2fr)_auto] items-center gap-2">
