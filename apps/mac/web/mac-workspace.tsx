@@ -7,6 +7,7 @@ import { PerformanceView } from "@mobile-dev/ui/components/performance-view.tsx"
 import { SimulatorView } from "@mobile-dev/ui/components/simulator-view.tsx";
 import { StorageView } from "@mobile-dev/ui/components/storage-view.tsx";
 import { TraceSiftView } from "@mobile-dev/ui/components/tracesift-view.tsx";
+import { AppIntelligenceView } from "@mobile-dev/ui/components/app-intelligence-view.tsx";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@mobile-dev/ui/components/ui/resizable.tsx";
 
 
@@ -29,6 +30,7 @@ export function MacWorkspace({ panels, tool, layout }: { panels: WorkspaceTools;
   const toolView = tool === "logs" ? <LogsView panel={panels.logs} />
     : tool === "performance" ? <PerformanceView panel={panels.performance} />
     : tool === "storage" ? <StorageView panel={panels.storage} />
+    : tool === "app-intel" ? <AppIntelligenceView panel={panels["app-intel"]} />
     : tool === "tracesift" ? <TraceSiftView panel={panels.tracesift} />
     : <EmptyTool layout={layout} />;
   return <main className="flex h-dvh flex-col">

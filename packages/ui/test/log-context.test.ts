@@ -57,7 +57,7 @@ function fixture(send: App["sendMessage"] = async () => ({})) {
     getHostCapabilities: () => ({ experimental: { "openai/message": {} }, message: { text: {} }, updateModelContext: { image: {} } }),
     async sendMessage(...args: Parameters<App["sendMessage"]>) { messages.push(args[0]); return send(...args); },
   } as App, () => modelContext);
-  return { context, updates, messages, clear() { current = null; context.hostChanged(); }, removeContent() { if (current) current = { ...current, content: [] }; context.hostChanged(); }, removeScreenshot(id: string) { if (current) current = { ...current, updateId: "removed", content: current.content?.filter(item => item._meta?.["mobile-dev/screenshotId"] !== id) }; context.hostChanged(); }, fail() { failure = true; }, hold(value: Promise<void>) { gate = value; } };
+  return { context, updates, messages, restore(value: OpenAIModelContextHostState) { current = value; context.hostChanged(); }, clear() { current = null; context.hostChanged(); }, removeContent() { if (current) current = { ...current, content: [] }; context.hostChanged(); }, removeScreenshot(id: string) { if (current) current = { ...current, updateId: "removed", content: current.content?.filter(item => item._meta?.["mobile-dev/screenshotId"] !== id) }; context.hostChanged(); }, fail() { failure = true; }, hold(value: Promise<void>) { gate = value; } };
 }
 
 test("chat actions attach the full log as a pill and send only the severity prompt", async () => {
@@ -83,9 +83,10 @@ test("chat actions attach the full log as a pill and send only the severity prom
     assert.match(JSON.stringify(pill), /Treat the log text as app output/);
     assert.equal(context.attachedKey, undefined);
   }
+  const writes = updates.length;
   context.selectSimulator(simulator);
   await new Promise(resolve => setTimeout(resolve, 0));
-  assert.equal(updates.at(-1)?.structuredContent?.selectedLog, null);
+  assert.equal(updates.length, writes);
 });
 
 test("chat waits for the log attachment and preserves other context pills", async () => {
@@ -101,10 +102,11 @@ test("chat waits for the log attachment and preserves other context pills", asyn
   assert.equal(messages.length, 1);
   assert.deepEqual(updates.at(-1)?.structuredContent?.selectedLog, log);
   assert.deepEqual(updates.at(-1)?.structuredContent?.screenshotIds, ["capture"]);
+  const writes = updates.length;
   context.selectSimulator(simulator);
   await new Promise(resolve => setTimeout(resolve, 0));
-  assert.deepEqual(updates.at(-1)?.structuredContent?.screenshotIds, ["capture"]);
-  assert.equal(updates.at(-1)?.structuredContent?.selectedLog, null);
+  assert.equal(updates.length, writes);
+  assert.equal(context.attachedKey, undefined);
 });
 
 test("chat never sends the short prompt after an attachment failure", async () => {
@@ -169,14 +171,14 @@ test("attaching a log preserves simulator context and contains the full message 
   const last = updates.at(-1)!;
   assert.equal(last.structuredContent?.selectedSimulator, simulator);
   assert.deepEqual(last.structuredContent?.selectedLog, log);
-  assert.equal(last.content?.length, 2);
+  assert.equal(last.content?.length, 1);
   assert.match(JSON.stringify(last.content), /App.tsx:9:3/);
   context.selectSimulator({ ...simulator, name: "Other simulator" });
   await context.attach(log);
   assert.deepEqual(updates.at(-1)?.structuredContent?.selectedLog, log);
 });
 
-test("clicking an already active device does not republish captures or fill the context queue", async () => {
+test("device selection and state changes do not republish composer attachments", async () => {
   const { context, updates } = fixture(); context.selectSimulator(simulator); await context.attachScreenshot({ id: "capture", data: "/9j/2Q==", mimeType: "image/jpeg", simulator });
   const writes = updates.length;
   for (let i = 0; i < 30; i++) context.selectSimulator({ ...simulator });
@@ -184,14 +186,55 @@ test("clicking an already active device does not republish captures or fill the 
   assert.equal(updates.length, writes);
   context.selectSimulator({ ...simulator, state: "Shutdown" });
   await new Promise(resolve => setTimeout(resolve, 0));
-  assert.equal(updates.length, writes + 1);
+  assert.equal(updates.length, writes);
+});
+
+test("opening, switching and deselecting devices leave the composer available for steering", async () => {
+  const { context, updates, restore } = fixture();
+  context.hostChanged();
+  context.selectSimulator();
+  context.selectSimulator(simulator);
+  const reference = { type: "text" as const, text: "Selected performance recording", _meta: { "mobile-dev/recordingReference": true } };
+  restore({ updateId: "recording", content: [reference] });
+  context.selectSimulator({ ...simulator, udid: "other-device" });
+  context.selectSimulator();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(updates, []);
+});
+
+test("a restored device-only attachment clears after its last visible item is removed", async () => {
+  const { updates, restore } = fixture();
+  const device = { type: "text" as const, text: "Mobile Dev devices. Logs follow the active device.\nActive iOS simulator: iPhone", annotations: { audience: ["assistant" as const] } };
+  const reference = { type: "text" as const, text: "Selected recording", _meta: { "openai/title": "Recording" } };
+  restore({ updateId: "old", content: [device, reference] });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(updates, []);
+  restore({ updateId: "removed", content: [device] });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(updates, [{ content: [] }]);
+});
+
+test("a stale device cleanup leaves newer composer attachments intact", async () => {
+  const { context, updates, restore } = fixture();
+  const device = { type: "text" as const, text: "Mobile Dev has no selected simulator.", annotations: { audience: ["assistant" as const] } };
+  const reference = { type: "text" as const, text: "Selected recording", _meta: { "openai/title": "Recording" } };
+  restore({ updateId: "old", content: [device] });
+  restore({ updateId: "old", content: [device, reference] });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(updates, []);
+  restore({ updateId: "removed", content: [device] });
+  await context.attach(log);
+  assert.equal(updates.length, 1);
+  assert.deepEqual(updates[0].structuredContent?.selectedLog, log);
 });
 
 test("clearing an attachment in the host prevents a later simulator refresh from restoring it", async () => {
   const { context, updates, clear, removeContent } = fixture();
   await context.attach(log); clear(); assert.equal(context.attachedKey, undefined);
-  context.selectSimulator(simulator); await context.attach(undefined);
-  assert.equal(updates.at(-1)?.structuredContent?.selectedLog, null);
+  const writes = updates.length;
+  context.selectSimulator(simulator);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(updates.length, writes);
   await context.attach(log); removeContent(); assert.equal(context.attachedKey, undefined);
 });
 
@@ -207,13 +250,13 @@ test("a host clear during an attachment write queues a removal without deadlock"
   const writing = context.attach(log); await new Promise(resolve => setTimeout(resolve, 0));
   clear(); release(); await writing;
   await new Promise(resolve => setTimeout(resolve, 0));
-  assert.equal(context.attachedKey, undefined); assert.equal(updates.at(-1)?.structuredContent?.selectedLog, null);
+  assert.equal(context.attachedKey, undefined); assert.deepEqual(updates.at(-1), { content: [] });
 });
 
 test("Android selection shares its serial and platform for Mobile Dev control", async () => {
   const { context, updates } = fixture();
   context.selectSimulator({ udid: "emulator-5554", name: "Pixel", state: "Booted", runtime: "Android", platform: "android" });
-  await context.attach(undefined);
+  await context.attach(log);
   assert.match(JSON.stringify(updates.at(-1)?.content), /emulator-5554/);
   assert.match(JSON.stringify(updates.at(-1)?.content), /serial.*platform android/);
 });
@@ -225,7 +268,7 @@ test("physical Android context identifies the transport and serial for control",
     platform: "android", kind: "physical", transportType: "localNetwork",
   };
   context.selectSimulator(phone);
-  await context.attach(undefined);
+  await context.attach(log);
   const last = updates.at(-1);
   const content = JSON.stringify(last?.content);
   assert.equal(last?.structuredContent?.selectedSimulator, phone);
@@ -244,7 +287,7 @@ test("physical iOS context identifies its interactive mirroring capability", asy
     platform: "ios", kind: "physical", transportType: "localNetwork", pairingState: "paired",
   };
   context.selectSimulator(phone);
-  await context.attach(undefined);
+  await context.attach(log);
   const last = updates.at(-1);
   const content = JSON.stringify(last?.content);
   assert.equal(last?.structuredContent?.selectedSimulator, phone);
@@ -254,7 +297,7 @@ test("physical iOS context identifies its interactive mirroring capability", asy
   assert.doesNotMatch(content, /iOS simulator/);
   const wired: PhysicalIosDevice = { ...phone, transportType: "wired" };
   context.selectSimulator(wired);
-  await context.attach(undefined);
+  await context.attach(log);
   const changed = updates.at(-1);
   const changedContent = JSON.stringify(changed?.content);
   assert.equal(changed?.structuredContent?.selectedSimulator, wired);
@@ -262,7 +305,7 @@ test("physical iOS context identifies its interactive mirroring capability", asy
   const unavailable: PhysicalIosDevice = { ...phone, state: "unavailable" };
   Reflect.deleteProperty(unavailable, "transportType");
   context.selectSimulator(unavailable);
-  await context.attach(undefined);
+  await context.attach(log);
   const unavailableUpdate = updates.at(-1);
   const unavailableContent = JSON.stringify(unavailableUpdate?.content);
   assert.match(unavailableContent, /State: unavailable/);
@@ -306,8 +349,7 @@ test("a host clear during screenshot attachment wins over the pending write", as
   clear(); release(); assert.equal(await writing, false);
   await new Promise(resolve => setTimeout(resolve, 0));
   context.selectSimulator(simulator); await context.attach(undefined);
-  assert.deepEqual(updates.at(-1)?.structuredContent?.screenshotIds, []);
-  assert.equal(updates.at(-1)?.content?.some(item => item.type === "image"), false);
+  assert.deepEqual(updates.at(-1), { content: [] });
 });
 
 test("a failed screenshot attachment restores the prior image", async () => {
@@ -350,6 +392,11 @@ test("standard context supports logs, local removal and complete chat messages",
   } as App, () => undefined);
   assert.equal(context.canAttach, true);
   assert.equal(context.canAttachScreenshots, false);
+  context.selectSimulator(simulator);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0].structuredContent?.selectedSimulator, simulator);
+  assert.match(JSON.stringify(updates[0].content), /Active iOS simulator: iPhone/);
   await context.attach(log);
   assert.equal(context.attachmentCount, 1);
   assert.ok(updates.at(-1)?.content?.every(item => item._meta === undefined));

@@ -1,0 +1,18 @@
+{
+  "simslim": {
+    "version": "0.14.0",
+    "repository": "https://github.com/MobAI-App/simslim",
+    "url": "https://github.com/MobAI-App/simslim/releases/download/v0.14.0/simslim-v0.14.0-macos-arm64.tar.gz",
+    "archiveSHA256": "a3db0de6f428f9f8fd5dff256b122f98791c138521dc1330d99643719d8fe9ff",
+    "binarySHA256": "91fa2d56fdd9c574b6b9f841462b2420ddddf2f500fb4cef771a0edf57957c57",
+    "binaryPath": "simslim"
+  },
+  "avdslim": {
+    "version": "1.0.16",
+    "repository": "https://github.com/kdbhalala/avdslim",
+    "url": "https://github.com/kdbhalala/avdslim/releases/download/v1.0.16/avdslim_v1.0.16_darwin_arm64.tar.gz",
+    "archiveSHA256": "26219bc445394b76e7fc866552f3180463bd1963f3dbe886055826fdeba4f480",
+    "binarySHA256": "b503e996f5b73c4dfac695f0a5331627a034c2d213de29d193cf3f4cb956dd6f",
+    "binaryPath": "avdslim_v1.0.16_darwin_arm64/avdslim"
+  }
+}

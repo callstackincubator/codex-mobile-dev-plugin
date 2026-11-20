@@ -10,6 +10,8 @@ import { Input } from "./ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "./ui/base-select";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { Switch } from "./ui/switch";
+import { bindResourceSaving, ResourceSavingStore } from "../resource-saving";
+import { ResourceSaving } from "./resource-saving";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/base-tabs";
 import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
 
@@ -159,6 +161,7 @@ function LocationGroup({ platform, location, store }: { platform: "ios" | "andro
 
 export function DeviceSettings({ platform }: { platform: "ios" | "android" }) {
   const [store] = useState(() => new DeviceSettingsStore());
+  const [resourceSaving] = useState(() => new ResourceSavingStore());
   const [appTools] = useState(() => new AppToolsStore());
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const appState = useSyncExternalStore(appTools.subscribe, appTools.getSnapshot);
@@ -170,7 +173,8 @@ export function DeviceSettings({ platform }: { platform: "ios" | "android" }) {
   const disabled = state.disabled;
   useEffect(() => { if (state.disabled) setOpen(false); }, [state.disabled]);
   useEffect(() => { setOpen(false); }, [state.deviceId]);
-  return <div data-element="settings" className="ml-auto" ref={element => { if (element) { bindDeviceSettings(element, store); bindAppTools(element, appTools); } }}>
+  return <div data-element="settings" className="ml-auto flex items-center" ref={element => { if (element) { bindDeviceSettings(element, store); bindAppTools(element, appTools); bindResourceSaving(element, resourceSaving); } }}>
+    <ResourceSaving store={resourceSaving} />
     <Popover open={open} onOpenChange={value => {
       if (!value) { setOpen(false); return; }
       void appTools.load();

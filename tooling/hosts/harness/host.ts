@@ -22,6 +22,7 @@ type OpenOptions = {
   hostInfo: { name: string; version: string };
   capabilities: McpUiHostCapabilities;
   context: McpUiHostContext;
+  initiallyHidden?: boolean;
   /** The tool call that opened the view, sent to it once it initializes. */
   tool?: { arguments: Record<string, unknown>; result: CallToolResult };
 };
@@ -35,10 +36,11 @@ const events: ChatEvent[] = [];
  * the way chat hosts do, answers the view's requests through the real server and
  * records what the view sends to the chat.
  */
-async function open({ html, hostInfo, capabilities, context: initial, tool }: OpenOptions) {
+async function open({ html, hostInfo, capabilities, context: initial, tool, initiallyHidden = false }: OpenOptions) {
   context = initial;
   const frame = document.createElement("iframe");
   frame.id = "view";
+  frame.hidden = initiallyHidden;
   frame.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-downloads");
   document.body.replaceChildren(frame);
   bridge = new AppBridge(null, hostInfo, capabilities, { hostContext: initial });

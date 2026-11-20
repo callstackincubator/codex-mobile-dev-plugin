@@ -14,6 +14,17 @@ export class WorkspaceDevices {
   private loading?: Promise<void>;
   private disposed = false;
   private manualLayout = false;
+  /**
+   * The layout this chose for the user, so an unresolved one can still be finished.
+   *
+   * The automatic layout used to be decided exactly once, from the **first** device list. A list
+   * that came back before the backend had found anything — which is the ordinary case, since the
+   * opening tool starts the backend — resolved to "none", both panels stayed hidden, and nothing
+   * ever looked again: the user had a booted simulator, an empty workspace, a platform selector
+   * reading "Platforms", and a panel telling them to boot a simulator. Discovery finds the device
+   * a moment later and the panels select it, so what was missing was somebody asking again.
+   */
+  private reported?: DeviceLayout;
 
   constructor(panels: readonly [SimulatorPanel, SimulatorPanel], onLayout: (layout: DeviceLayout) => void) {
     this.panels = panels;
@@ -26,7 +37,7 @@ export class WorkspaceDevices {
     if (this.manualLayout === false) {
       for (const panel of this.panels) panel.setOpeningTarget(target);
       const platform = panelTargetPlatform(target);
-      if (platform !== undefined) this.onLayout(platform);
+      if (platform !== undefined) this.report(platform);
     }
     return this.load();
   }
@@ -40,6 +51,27 @@ export class WorkspaceDevices {
   selectLayout() {
     this.manualLayout = true;
     for (const panel of this.panels) panel.setOpeningTarget(undefined);
+  }
+
+  /**
+   * Finishes an automatic layout that resolved to "none", once a panel has a device to show.
+   *
+   * Called whenever a panel's selection changes, which is what device discovery does when it finds
+   * the simulator the first list missed. It only ever turns "none" into a platform: a layout that
+   * resolved to something, and any layout the user chose themselves, are left exactly as they are.
+   */
+  settleLayout() {
+    // An unresolved layout is one that was never reported, or was reported as "none".
+    if (this.disposed || this.manualLayout) return;
+    if (this.reported !== undefined && this.reported !== "none") return;
+    const [ios, android] = this.panels;
+    const layout = activeDeviceLayout(ios.selected, android.selected);
+    if (layout !== "none") this.report(layout);
+  }
+
+  private report(layout: DeviceLayout) {
+    this.reported = layout;
+    this.onLayout(layout);
   }
 
   dispose() { this.disposed = true; }
@@ -62,6 +94,6 @@ export class WorkspaceDevices {
     if (layout === "none" && (target.kind !== undefined || target.deviceId !== undefined)) {
       layout = ios.selected ? "ios" : android.selected ? "android" : "both";
     }
-    this.onLayout(layout);
+    this.report(layout);
   }
 }

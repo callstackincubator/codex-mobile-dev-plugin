@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { WebSocketServer } from "ws";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -13,10 +16,60 @@ import { createTestPlugin, fakeBaguette, fakeSimulatorInput, PNG } from "../../t
 import { fakeInspectionSdk } from "../../test-support/android-inspection-fixtures.ts";
 import { createPanel } from "../src/panel-tools.ts";
 import { registerAndroidTools } from "../src/android-tools.ts";
+import type { PhysicalAndroidDevice } from "@mobile-dev/shared/android-devices.ts";
 
 const ID = "emulator-5554";
 const SCREEN = { width: 1080, height: 2400 };
 const H264 = Buffer.from([0, 0, 0, 1, 0x67, 0x64, 0, 0x28, 0, 0, 0, 1, 0x65, 1]);
+
+test("Android booking names are app metadata for live ADC relays only", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "mobile-dev-adc-labels-"));
+  const previousHome = process.env.HOME;
+  process.env.HOME = directory;
+  t.after(async () => {
+    if (previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = previousHome;
+    await rm(directory, { recursive: true, force: true });
+  });
+  const labels = join(directory, ".local", "state", "agent-device-cloud", "adb-labels");
+  await mkdir(labels, { recursive: true });
+  const name = "Test <checkout> on Android 📱";
+  const model = "ADC Android 14 2 CPU 3 GiB RAM";
+  for (const port of [15555, 15556, 15557]) {
+    await writeFile(join(labels, `${port}.json`), JSON.stringify({ name, pid: process.pid }));
+  }
+  await writeFile(join(labels, "15558.json"), JSON.stringify({ name, pid: 2 ** 30 }));
+  await writeFile(join(labels, "15559.json"), "invalid JSON");
+  const adc: PhysicalAndroidDevice = { udid: "127.0.0.1:15555", name: model, model, state: "Booted", runtime: "Android", platform: "android", kind: "physical", transportType: "localNetwork" };
+  const devices: PhysicalAndroidDevice[] = [
+    adc,
+    { ...adc, udid: "127.0.0.1:15556", name: "Pixel 9", model: "Pixel 9" },
+    { ...adc, udid: "127.0.0.1:15557", state: "offline" },
+    { ...adc, udid: "127.0.0.1:15558" },
+    { ...adc, udid: "127.0.0.1:15559" },
+    { ...adc, udid: "127.0.0.1:15560" },
+  ];
+  class BookingDevices extends ServeEmu {
+    async list() { return { connected: true, managed: false, baseUrl: "", devices }; }
+  }
+  const server = new McpServer({ name: "android-booking-test", version: "1" });
+  const backend = new BookingDevices();
+  registerAndroidTools(server, backend, "ui://mobile-dev/test.html", async () => {}, async () => {});
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "android-booking-test", version: "1" });
+  t.after(async () => { await client.close(); await server.close(); backend.dispose(); });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  const listed = await client.callTool({ name: "mobile_list_android_devices", arguments: {} });
+  assert.equal(listed.isError, undefined, JSON.stringify(listed.content));
+  assert.deepEqual(listed.structuredContent?.devices, devices);
+  const text = JSON.stringify(listed.content);
+  assert.equal(text.includes(name), false);
+  assert.deepEqual(listed._meta?.bookingNames, { [adc.udid]: name });
+  await rm(join(labels, "15555.json"));
+  const released = await client.callTool({ name: "mobile_list_android_devices", arguments: {} });
+  assert.equal(released._meta?.bookingNames, undefined);
+});
 
 test("Android accessibility uses the active full-resolution display size and stream orientation", () => {
   const physical = "Physical size: 1080x2400\n";

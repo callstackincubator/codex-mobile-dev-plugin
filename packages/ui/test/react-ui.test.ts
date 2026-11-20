@@ -10,7 +10,10 @@ import { createDeviceApps } from "../../test-support/device-apps-fixtures.ts";
 import { PerformancePanel } from "../src/performance-panel.ts";
 import { StoragePanel } from "../src/storage-panel.ts";
 import { TraceSiftPanel } from "../src/tracesift-panel.ts";
+import { AppIntelligencePanel } from "../src/app-intelligence-panel.ts";
 import { RecordingController } from "../src/recording-controller.ts";
+import type { AppFlowPanel } from "../src/app-flow-panel.ts";
+import { TestingPanel } from "../src/testing-panel.ts";
 import { WorkspaceTools } from "../src/workspace-tools.ts";
 import { recordingFixture } from "../../test-support/recording-fixtures.ts";
 import type { App } from "@modelcontextprotocol/ext-apps";
@@ -59,7 +62,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   });
   const output = resolve(directory, "workspace.mjs");
   await build({ stdin: { contents: 'export { Workspace } from "./packages/mcp-app/src/components/workspace.tsx"; export { getDeviceSettings } from "./packages/ui/src/device-settings.ts"; export { getDevicePicker } from "./packages/ui/src/device-picker.ts"; export { getAppTools } from "./packages/ui/src/app-tools.ts";', resolveDir: process.cwd(), loader: "ts" }, outfile: output, bundle: true, format: "esm", platform: "node", jsx: "automatic",
-    external: ["recharts", "react", "react/*", "react-dom", "react-dom/*", "@legendapp/list/react", "radix-ui", "lucide-react", "@base-ui/react/*", "react-resizable-panels"] });
+    external: ["recharts", "react", "react/*", "react-dom", "react-dom/*", "@legendapp/list/react", "radix-ui", "lucide-react", "@base-ui/react/*", "react-resizable-panels", "@xyflow/react"] });
   const { Workspace, getDeviceSettings, getDevicePicker, getAppTools } = await import(pathToFileURL(output).href);
   const { act, createElement, Profiler } = await import("react");
   const { createRoot } = await import("react-dom/client");
@@ -115,8 +118,17 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   const storage = new StoragePanel(storageApp as unknown as App, deviceApps);
   storage.setAvailable(true);
   const tracesift = new TraceSiftPanel(storageApp as unknown as App);
+  const appIntel = new AppIntelligencePanel(storageApp as unknown as App);
   const recordingController = new RecordingController(performanceApp as unknown as App);
-  const panels = new WorkspaceTools({ context: context as PanelContext, deviceApps, logs: panel, performance, storage, tracesift });
+  const appFlowSnapshot = { open: false };
+  const appFlow = {
+    subscribe: () => () => undefined,
+    getSnapshot: () => appFlowSnapshot,
+    show() {},
+    hide() {},
+  };
+  const testing = new TestingPanel(storageApp as unknown as App, deviceApps);
+  const panels = new WorkspaceTools({ context: context as PanelContext, deviceApps, logs: panel, performance, storage, "app-intel": appIntel, tracesift, "app-flow": appFlow as unknown as AppFlowPanel, testing });
   deviceApps.selectDevice({ udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS" });
   performance.setAvailable(true);
   deviceApps.setAvailable(true);
@@ -179,6 +191,21 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   assert.equal(pickerStore.value, "iphone");
   await act(async () => { (dom.window.document.querySelector('[data-device-option="iphone"]') as HTMLButtonElement).click(); });
   assert.equal(deviceChanges, 1);
+  const androidPickerElement = dom.window.document.querySelector('#android-panel [data-element="devices"]')!;
+  const androidPicker = getDevicePicker(androidPickerElement);
+  const bookingName = "Test <checkout> on Android";
+  const deviceSpecs = "ADC Android 14 2 CPU 3 GiB RAM · Wi-Fi";
+  const deviceSerial = "127.0.0.1:15555";
+  await act(async () => {
+    androidPicker.update({ value: deviceSerial, disabled: false, items: [{ value: deviceSerial, label: bookingName, detail: deviceSpecs, running: true }] });
+  });
+  const androidTrigger = androidPickerElement.querySelector('[data-slot="select-trigger"]') as HTMLButtonElement;
+  assert.equal(androidTrigger.textContent, bookingName);
+  await act(async () => { androidTrigger.click(); });
+  const bookingOption = dom.window.document.querySelector(`[data-device-option="${deviceSerial}"]`)!;
+  assert.equal(bookingOption.textContent, bookingName + deviceSpecs);
+  assert.equal(bookingOption.querySelector("checkout"), null);
+  await act(async () => { (bookingOption as HTMLButtonElement).click(); });
   const iosSettings = getDeviceSettings(dom.window.document.querySelector('#ios-panel [data-element="settings"]'));
   const changes: unknown[] = [];
   iosSettings.request = async (change: unknown) => { changes.push(change); return { appearance: "light", contentSize: "large", increaseContrast: false, locationSupported: true }; };

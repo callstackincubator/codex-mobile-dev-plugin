@@ -1,0 +1,41 @@
+---
+import Track from './PerformanceTrack.astro';
+import Icon from './PreviewIcon.astro';
+const threads = [
+  { name: 'Thread 2579c4', live: ['0.1%', '1.2%', '2.3%', '2.8%'], range: '9.6%' },
+  { name: 'com.facebook.react.runtime.JavaScript', live: ['0.1%', '1.0%', '2.0%', '2.4%'], range: '8.1%' },
+  { name: 'Thread 2c6a3e', live: ['0.0%', '0.1%', '0.2%', '0.3%'], range: '1.1%' },
+];
+const times = [0, 1660, 2760, 3960, 8200];
+---
+
+<div class="fp-performance">
+  <div class="fp-question">Make a performance recording and swipe 3 cards</div>
+  <div class="fp-recording-card">
+    <div class="fp-recording-header">
+      <div><strong>HorseTinder card swiping</strong><span class="fp-recording-meta">iPhone 17 Pro · 30s · 16:49</span></div>
+      <span class="fp-status fp-stack"><span data-show="0:5150">Recording</span><span data-show="5150:15000" data-poster>Finished</span></span>
+    </div>
+    <div class="fp-recording-columns">
+      <div class="fp-charts"><Track kind="cpu" /><Track kind="memory" /></div>
+      <div class="fp-recording-side">
+        <div>
+          <div class="fp-stack fp-section-title"><strong data-show="0:8200">Entire recording</strong><strong data-show="8200:15000" data-poster>Selected range <span class="fp-muted">Clear</span></strong></div>
+          <div class="fp-minimap">
+            {[22, 47, 73, 81].map(left => <span class="fp-mini-change" style={`left:${left}%`} data-show="5450:15000" data-poster></span>)}
+            <span class="fp-range fp-mini-range"></span>
+          </div>
+          <div class="fp-mini-labels fp-stack"><span data-show="0:8200"><span>0.0s</span><span>30.0s</span></span><span data-show="8200:15000" data-poster><span>13.4s</span><span>17.8s</span></span></div>
+        </div>
+        <div class="fp-threads">
+          <strong>Threads</strong>
+          {threads.map(thread => <div class="fp-thread-row"><span>{thread.name}</span><span class="fp-stack">
+            {thread.live.map((value, index) => <span data-show={`${times[index]}:${times[index + 1]}`}>{value}</span>)}
+            <span data-show="8200:15000" data-poster>{thread.range}</span>
+          </span></div>)}
+        </div>
+        <span class="fp-ask fp-stack" data-feature-target="ask"><span data-show="0:8200"><Icon name="chat" />Ask about recording</span><span data-show="8200:15000" data-poster><Icon name="chat" />Ask about this range</span></span>
+      </div>
+    </div>
+  </div>
+</div>

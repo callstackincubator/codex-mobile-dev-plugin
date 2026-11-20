@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { accessibilityScreen, componentAt, componentsAt, screenComponents, screenSize, formatAnnotationContext, screenSelectionContext, ANNOTATION_EDIT_GUIDANCE } from "../../shared/src/screen-annotations.ts";
+import { accessibilityScreen, componentAt, componentsAt, screenComponents, screenSize, formatAnnotationContext, formatAnnotationDraft, formatAnnotationGroups, formatAnnotationMessage, screenSelectionContext, ANNOTATION_EDIT_GUIDANCE } from "../../shared/src/screen-annotations.ts";
 import { ScreenAnnotationsStore } from "../src/screen-annotations.ts";
 import type { InspectedTree } from "../src/screen-annotations.ts";
 import type { ScreenAnnotation } from "../../shared/src/screen-annotations.ts";
@@ -255,8 +255,51 @@ test("a child deletion identifies one repeated instance and keeps enclosing rows
   assert.match(ANNOTATION_EDIT_GUIDANCE, /Removing a selected child must preserve its enclosing container and siblings/);
   await f.store.send();
   const attached = f.updates.at(-1)!.content!.find(item => item._meta?.["mobile-dev/annotationId"] === saved.id)!;
-  assert.equal(attached.type === "text" ? attached.text : "", text);
+  assert.ok(attached.type === "text" && attached.text.endsWith(text));
   f.store.dispose();
+});
+
+test("notes on one source location say whether they cover every matching instance", async () => {
+  const source = { file: "/project/src/Card.tsx", line: 9, column: 7 };
+  const items = screenComponents([0, 1, 2].map(index => ({ ...component, name: `Title ${index}`, label: `Title ${index}`, role: "Text", nodeId: `title-${index}`, parentId: `card-${index}`, source: "react-native",
+    bounds: { x: 10, y: 20 + index * 80, width: 100, height: 20 }, react: { component: "Text", owners: ["Card"], sourceKind: "element", source } })));
+  const notes = items.map((item, index) => ({ ...annotation, id: `note-${index + 1}`, number: index + 1, text: "Make this red", component: item, selection: screenSelectionContext(items, item) }));
+  assert.match(formatAnnotationGroups(notes)!, /#1, #2, #3 select all 3 matching elements from \/project\/src\/Card\.tsx:9:7 .*Make that change once at the shared source/);
+  assert.match(formatAnnotationGroups(notes.slice(0, 2))!, /#1, #2 select 2 of 3 matching elements .*Change only the selected instances/);
+  assert.match(formatAnnotationGroups([notes[0], { ...notes[1], text: "Make this bold" }])!, /share source .* with different Edits/);
+  assert.equal(formatAnnotationGroups(notes.slice(0, 1)), undefined);
+  // Instance numbers from another capture describe another screen, so they never complete a group.
+  const recaptured = notes.map((note, index) => index ? note : { ...note, screenshot: { ...note.screenshot, id: "screen-2" } });
+  assert.match(formatAnnotationGroups(recaptured)!, /^Grouped notes:\n- #2, #3 select 2 of 3 matching elements/);
+  const otherDevice = { ...simulator, udid: "OTHER", name: "Pixel" };
+  assert.match(formatAnnotationGroups([...notes, { ...notes[0], id: "note-4", number: 1, simulator: otherDevice }])!, /- iPhone #1, #2, #3 select all 3/);
+  assert.equal(formatAnnotationGroups(notes.map(note => ({ ...note, component: { ...note.component, react: { ...note.component.react!, sourceKind: "owner" as const } } }))), undefined);
+  assert.match(formatAnnotationMessage(notes), /Grouped notes:\n- #1, #2, #3/);
+  assert.match(formatAnnotationDraft(notes), /Grouped notes:\n- #1, #2, #3/);
+  assert.match(ANNOTATION_EDIT_GUIDANCE, /when only some are selected, keep the change to those/);
+
+  const f = fixture();
+  for (const note of notes) await f.context.attachAnnotation(note);
+  const update = f.updates.at(-1);
+  assert.equal(update?.content?.length, notes.length);
+  f.remove(notes[1].id);
+  await f.context.sendAnnotationsToChat();
+  const message = f.messages[0].content[0];
+  assert.ok(message.type === "text");
+  assert.match(message.text, /#1, #3 select 2 of 3 matching elements/);
+  f.store.dispose();
+});
+
+test("notes mark a unique target and give a search order without source", () => {
+  const items = screenComponents([{ ...component, nodeId: "only" }, { ...component, name: "Other", label: "Other", identifier: "other", nodeId: "other" }]);
+  const unique = { ...annotation, component: items[0], selection: screenSelectionContext(items, items[0]) };
+  assert.match(formatAnnotationContext(unique), /Visible instance: the only matching element in the inspected screen/);
+  assert.match(formatAnnotationDraft([unique]), /only match on screen/);
+  assert.match(formatAnnotationContext(unique), /Source: unavailable \(accessibility\); search the project for the Target text, then the identifier, then owner names/);
+  const manual = { ...annotation, component: { ...component, source: "screen" as const, role: "manual-region" } };
+  assert.match(formatAnnotationContext(manual), /search the project for the Nearby text/);
+  assert.doesNotMatch(formatAnnotationContext(manual), /Visible instance/);
+  assert.match(ANNOTATION_EDIT_GUIDANCE, /search the project for the Target text first/);
 });
 
 test("flat accessibility records and manual regions never invent a parent or siblings", () => {
@@ -395,9 +438,11 @@ test("host removals clear markers and a later device selection does not reattach
   await f.context.attachAnnotation(annotation);
   await f.context.attachAnnotation({ ...annotation, id: "note-2", number: 2 });
   f.remove("note-1"); assert.equal(f.store.getSnapshot().annotations.length, 1);
-  f.clear(); assert.equal(f.store.getSnapshot().annotations.length, 0);
-  f.context.selectSimulator(simulator); await f.context.attach(undefined);
-  assert.deepEqual(f.updates.at(-1)?.structuredContent?.annotationIds, []);
+  f.remove("note-2"); assert.equal(f.store.getSnapshot().annotations.length, 0);
+  const writes = f.updates.length;
+  f.context.selectSimulator(simulator);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(f.updates.length, writes);
   f.store.dispose();
 });
 
@@ -417,9 +462,8 @@ test("a host clear during a write wins and removes the note and image", async ()
   const writing = f.context.attachAnnotation(annotation);
   await new Promise(resolve => setTimeout(resolve, 0)); f.clear(); release();
   assert.equal(await writing, false);
-  await f.context.attach(undefined);
-  assert.deepEqual(f.updates.at(-1)?.structuredContent?.annotationIds, []);
-  assert.equal(f.updates.at(-1)?.content?.some(item => item.type === "image"), false);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(f.updates.at(-1), { content: [] });
   f.store.dispose();
 });
 

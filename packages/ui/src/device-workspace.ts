@@ -16,7 +16,8 @@ type Platform = "ios" | "android";
 export class DeviceWorkspace {
   readonly panels: readonly [ReturnType<typeof createSimulatorPanel>, ReturnType<typeof createSimulatorPanel>];
   private readonly tools: Pick<WorkspaceTools, "context" | "deviceApps">;
-  private readonly devices: WorkspaceDevices;
+  /** Assigned after the panels, which call back into it only once they are listing devices. */
+  private devices!: WorkspaceDevices;
   private readonly connectionFailed: (error: unknown) => void;
   private activePlatform: Platform = "ios";
 
@@ -32,6 +33,9 @@ export class DeviceWorkspace {
       return createSimulatorPanel(app, root, platform, tools.context, (_device, active) => {
         if (active) this.activePlatform = platform;
         this.updateSelection();
+        // Discovery finding a device is also the answer to a layout that resolved to "none"
+        // because the first device list came back before the backend had found anything.
+        this.devices?.settleLayout();
       });
     };
     this.panels = [create("ios"), create("android")];

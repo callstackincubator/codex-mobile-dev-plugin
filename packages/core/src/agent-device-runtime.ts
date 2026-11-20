@@ -6,7 +6,7 @@ import * as Sentry from "@sentry/node";
 import { execFile } from "node:child_process";
 import { mkdtemp } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { startStorageMetrics } from "./storage-metrics.ts";
@@ -20,6 +20,28 @@ export type AgentDeviceBackend = {
 
 /** The runtime's state directory for this server, and the storage measurement that watches it. */
 type State = { directory: string; stopStorageMetrics: () => void };
+
+/**
+ * Claims the one agent-device state directory every subsystem in this server process shares.
+ *
+ * App Flow also starts agent-device clients and CLI commands. Publishing a newly-created directory
+ * through the process environment lets those clients join this runtime's daemon instead of
+ * becoming a second owner of the same simulator. An operator-supplied directory still wins.
+ */
+export async function claimAgentDeviceStateDirectory(
+  env: NodeJS.ProcessEnv = process.env,
+  create: (prefix: string) => Promise<string> = mkdtemp,
+): Promise<string> {
+  const configured = env.AGENT_DEVICE_STATE_DIR?.trim();
+  if (configured) return resolve(configured);
+  const directory = await create(join(tmpdir(), "mobile-dev-agent-device-"));
+  // App Flow may have pinned its directory while mkdtemp was in flight. Join that winner instead
+  // of overwriting it and splitting the two clients across daemons again.
+  const concurrentlyConfigured = env.AGENT_DEVICE_STATE_DIR?.trim();
+  if (concurrentlyConfigured) return resolve(concurrentlyConfigured);
+  env.AGENT_DEVICE_STATE_DIR = directory;
+  return directory;
+}
 
 /**
  * The bundled agent-device runtime: its CLI's MCP server in a process of its own, with a
@@ -70,7 +92,7 @@ export class AgentDeviceRuntime {
   }
 
   private async createState(): Promise<State> {
-    const directory = await mkdtemp(join(tmpdir(), "mobile-dev-agent-device-"));
+    const directory = await claimAgentDeviceStateDirectory();
     console.error(`[mobile-dev] agent-device state directory: ${directory}`);
     const stopStorageMetrics = startStorageMetrics({ agent_device_state: directory, apple_runner_cache: join(homedir(), ".agent-device/apple-runner") });
     return { directory, stopStorageMetrics };

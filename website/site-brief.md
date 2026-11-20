@@ -21,14 +21,14 @@ Status: approved homepage and 404, Starlight docs, social card, and the README b
 - **Device order:** iOS, Android; simulators/emulators, then physical devices.
 - **Frameworks:** Expo, React Native, SwiftUI, and other native mobile projects.
 - **Requirements:** Apple Silicon Mac; iOS simulator requires Xcode 26+, physical iOS discovery Xcode 27+; Android SDK/emulator or authorized device.
-- **Features:** Live devices beside chat; human and agent device control; element and region annotations; app launch, permissions, deep links and device settings; native and Metro logs; CPU/memory and supported device Display FPS; TraceSift profile analysis; app storage inspection.
+- **Features:** Live devices beside chat; human and agent device control; element and region annotations; app launch, permissions, deep links and device settings; App Intelligence and App Flow; manual and agent-driven e2e test recording on simulators and emulators; native and Metro logs; CPU/memory and supported device Display FPS; TraceSift profile analysis; app storage inspection.
 - **Limits:** Mobile Dev does not build the app itself; simulator Display FPS is unavailable; host capabilities affect panel presentation; physical iOS input and inspection have documented limits.
 - **Privacy:** Local device tooling; do not claim zero telemetry. Plugin Sentry reporting excludes screenshots, app logs, tool payloads, input content, profiles, storage contents and device performance recordings. Link to existing privacy and terms pages.
 - **Experimental:** No blanket experimental claim. Claude/Cursor distribution status is a manual preview, not a public marketplace install.
 - **FAQ:** Which environments? Which mobile frameworks? Physical devices? Requirements? Does this build my app? What telemetry is collected? Answers sourced from README and docs.
 - **Do not invent:** Adoption numbers, benchmark claims, testimonials, marketplace availability, cloud build services, universal feature parity between device kinds.
 - **Product vocabulary for scene design:** devices, streams, panels, shared screen, annotations, traces, logs, recordings, inspect, tap, type.
-- **Source:** Current local README, CONTRIBUTING, docs/devices.md, docs/agent-workflow.md, product package manifests.
+- **Source:** Current local README, CONTRIBUTING, docs/devices.md, docs/agent-workflow.md, docs/testing-panel.md, docs/agent-recording.md, and product package manifests.
 - **Links:** https://github.com/callstackincubator/mobile-dev ; support mailto:hello@callstack.com ; MIT license in the repository. Production domain not confirmed.
 - **Hosting / docs (confirmed):** Vercel; Astro with Starlight documentation, adapted from current user-facing docs. Leave contributor and implementation details in GitHub.
 - **Location (confirmed):** website/ inside the current repository. No existing website found.

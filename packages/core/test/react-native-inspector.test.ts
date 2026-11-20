@@ -407,3 +407,38 @@ test("the collector separates selected creation stacks from owner stacks and kee
   assert.deepEqual(exact.tree[0].creationStackIds, [0]);
   assert.deepEqual(exact.tree[0].ownerStackIds, [1]);
 });
+
+test("a text node holding nested text is named by the whole string, not by its component", () => {
+  // The Explore screen's copy: a <Text> whose children are strings interleaved with nested <Text>.
+  // Reading `children` directly yields nothing, so the node used to be labelled "RCTText" — and
+  // iOS accessibility does not cover React Native views, so nothing else would ever name it.
+  const element = (type: string, children: unknown) => ({ type, props: { children } });
+  const paragraph = nativeFiber("RCTText", { x: 32, y: 300, width: 327, height: 60 }, {
+    children: [
+      "This app has two screens:\n  ",
+      element("ThemedText", "src/app/index.tsx"),
+      " and ",
+      element("ThemedText", ["src/app/", element("ThemedText", "explore.tsx")]),
+      ".",
+    ],
+  });
+  const result = collectFibers({ ...nativeFiber("RCTView", { x: 0, y: 0, width: 400, height: 900 }), child: paragraph });
+  const [, text] = screenComponents(JSON.parse(JSON.stringify(result.tree)));
+  assert.equal(text.label, "This app has two screens: src/app/index.tsx and src/app/explore.tsx.");
+});
+
+test("a container is never labelled with the copy inside it", () => {
+  // Only a text component flattens nested text. A container's accessible name is accessibility's
+  // business — inventing one here would name a Pressable after the words it happens to wrap, and
+  // a recorded selector built on that name is one the runner cannot resolve.
+  const view = nativeFiber("RCTView", { x: 0, y: 0, width: 400, height: 900 }, {
+    children: [{ type: "RCTText", props: { children: "Heading" } }, { type: "Card", props: { children: "Body copy" } }],
+  });
+  const [root] = screenComponents(JSON.parse(JSON.stringify(collectFibers(view).tree)));
+  assert.equal(root.label, "RCTView", "the container keeps no label of its own");
+
+  // A text component with a single string child still reads as it always did.
+  const plain = nativeFiber("RCTText", { x: 0, y: 0, width: 100, height: 20 }, { children: "Heading" });
+  const [text] = screenComponents(JSON.parse(JSON.stringify(collectFibers(plain).tree)));
+  assert.equal(text.label, "Heading");
+});

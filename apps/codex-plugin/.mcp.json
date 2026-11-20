@@ -14,7 +14,8 @@
         "TRACE_SIFT_HOME",
         "TRACE_SIFT_COMMAND",
         "MOBILE_DEV_TELEMETRY",
-        "MOBILE_DEV_ENVIRONMENT"
+        "MOBILE_DEV_ENVIRONMENT",
+        "MOBILE_DEV_PANEL"
       ]
     }
   }

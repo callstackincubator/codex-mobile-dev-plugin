@@ -27,9 +27,14 @@ export class TraceSiftPanel {
       void this.controller.loadCapture();
     }
     this.update({ available });
+    if (available && this.state.open) void this.controller.checkReadiness();
   }
   hostChanged() { this.controller.hostChanged(); }
-  show() { this.controller.restartReadiness(); this.update({ open: true }); }
+  show() {
+    this.controller.restartReadiness();
+    this.update({ open: true });
+    if (this.state.available) void this.controller.checkReadiness();
+  }
   // Closing keeps the analysis, so reopening lands where it was left without another service round trip.
   hide() { this.update({ open: false }); }
   dispose() { this.controller.dispose(); this.listeners.clear(); }

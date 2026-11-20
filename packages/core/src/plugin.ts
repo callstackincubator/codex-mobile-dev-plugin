@@ -7,6 +7,7 @@ import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mc
 import { PLUGIN_VERSION } from "@mobile-dev/shared/version.ts";
 import { SENTRY_ORIGIN } from "@mobile-dev/shared/telemetry.ts";
 import { instrumentMcpServer, setServerTelemetryHost } from "./telemetry.ts";
+import { instrumentProductAnalytics } from "./analytics.ts";
 import { resolveTelemetryEnvironment } from "./telemetry-environment.ts";
 import { getTelemetryIdentity } from "./telemetry-identity.ts";
 import { registerAppResource, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
@@ -14,6 +15,15 @@ import { OpenAIExtensions } from "@openai/mcp-extensions/server";
 import { createDrivers, registerAppControlTools } from "./app-control/tools.ts";
 import { systemCommands } from "./app-control/commands.ts";
 import { registerAppStorageTools } from "./app-storage/tools.ts";
+import { APP_FLOW_DIRECTORY, createAppFlowHost } from "./app-flow-host.ts";
+import { AppFlowProjectChoices } from "./app-flow-projects.ts";
+import { registerAppFlowTools } from "./app-flow-tools.ts";
+import { registerTestingTools } from "./testing-tools.ts";
+import { registerTestingAgentTools } from "./testing-agent.ts";
+import { TestingDevices } from "./testing-device.ts";
+import { TESTING_DIRECTORY, TestingProjectChoices } from "./testing-projects.ts";
+import { TestDraftStore } from "./testing-drafts.ts";
+import { TestingAgentRecordings } from "./testing-agent.ts";
 import { ServeEmu } from "./serve-emu.ts";
 import { listIosDevices, registerIosDeviceTools } from "./ios-devices.ts";
 import { deviceChoiceFormSupport, registerDeviceChoiceTools } from "./device-choice-tools.ts";
@@ -36,9 +46,11 @@ import { registerDisplayFpsTools } from "./fps/tools.ts";
 import { registerEarlierReleases } from "./earlier-releases.ts";
 import { Simctl } from "./simctl.ts";
 import type { Panel } from "./panel-tools.ts";
+import { AppIntelligenceService } from "./app-intelligence/service.ts";
+import { registerAppIntelligenceTools } from "./app-intelligence/tools.ts";
 
 // Servers without the panel serve hosts that show devices themselves, when they can.
-const INSTRUCTIONS = "For mobile app development, read logs, record CPU, memory and FPS, and inspect app storage with these tools; control devices with the device_* tools when the server has them. Mobile Dev shows no device view here: when the user asks to open or see a simulator or emulator, use the host's own simulator view if it has one, such as Claude Code's iOS Simulator or Android Emulator. Use device IDs from tool results; never invent them. If a task has ambiguous device targets, ask the user with your own question tool when you have one, otherwise in chat; proceed only after they choose. Show recordings with mobile_render_performance_recording and comparisons with mobile_compare_performance_recordings. For a local CPU or React profile path, use mobile_analyze_profile to show TraceSift findings. See the Mobile Dev skill, when installed, for logs, profiles, and performance workflows.";
+const INSTRUCTIONS = "For mobile app development, read logs, record CPU, memory and FPS, inspect app storage, and query App Intelligence with these tools; control devices with the device_* tools when the server has them. Use mobile_open_app_intel when the user asks to see the app's screen/dependency map, mobile_generate_app_intel to create it, and mobile_app_intel for screen or file dependency questions. Mobile Dev shows no device view here: when the user asks to open or see a simulator or emulator, use the host's own simulator view if it has one, such as Claude Code's iOS Simulator or Android Emulator. Use device IDs from tool results; never invent them. If a task has ambiguous device targets, ask the user with your own question tool when you have one, otherwise in chat; proceed only after they choose. Show recordings with mobile_render_performance_recording and comparisons with mobile_compare_performance_recordings. Before asking the user to capture or choose a TraceSift profile when no path exists yet, use mobile_tracesift_status and report any setup step. For a local CPU or React profile path, use mobile_analyze_profile to show TraceSift findings. See the Mobile Dev skill, when installed, for logs, profiles, App Intelligence, and performance workflows.";
 
 /** Gives a served UI page the server's telemetry environment, opt-out and anonymous identity. */
 export function configureUI(content: string): string {
@@ -68,12 +80,20 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
   const { panel, simulators = new Simctl(), logs = new LogSessions(), android = new ServeEmu(), features = [] } = options;
   const cpu = options.cpu ?? await createCpuSessions();
   const fps = new DisplayFpsSessions();
-  const server = new McpServer({ name: "mobile-dev", version: PLUGIN_VERSION }, { instructions: panel?.instructions ?? INSTRUCTIONS });
+  const server = new McpServer({ name: "mobile-dev", version: PLUGIN_VERSION }, {
+    instructions: panel?.instructions ?? INSTRUCTIONS,
+    // App Flow progress arrives as logging notifications. Without this capability the SDK rejects
+    // every sendLoggingMessage, so the app-flow event channel would fail silently.
+    capabilities: { logging: {} },
+  });
   instrumentMcpServer(server);
-  addToolIcons(server, { mobile_open_workspace: PHONE_ICONS, mobile_open_simulator: PHONE_ICONS, mobile_choose_devices: PHONE_ICONS });
+  const analytics = instrumentProductAnalytics(server);
+  addToolIcons(server, { mobile_open_workspace: PHONE_ICONS, mobile_open_simulator: PHONE_ICONS, mobile_open_app_intel: PHONE_ICONS, mobile_choose_devices: PHONE_ICONS });
   const extensions = new OpenAIExtensions(server);
   server.server.oninitialized = () => {
-    setServerTelemetryHost(server.server.getClientVersion()?.name);
+    const clientName = server.server.getClientVersion()?.name;
+    setServerTelemetryHost(clientName);
+    analytics.sessionStarted(clientName);
     // The device form goes with Mobile Dev's own device views, for hosts that render one.
     const form = panel && deviceChoiceFormSupport(server.server.getClientCapabilities());
     if (form) registerDeviceChoiceTools(server, extensions, {
@@ -95,6 +115,18 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
   registerDisplayFpsTools(server, fps);
   registerAppControlTools(server, drivers);
   registerAppStorageTools(server);
+  const appIntelligence = new AppIntelligenceService();
+  registerAppIntelligenceTools(server, appIntelligence);
+  const appFlow = await createAppFlowHost();
+  const closeAppFlow = registerAppFlowTools(server, appFlow, new AppFlowProjectChoices(APP_FLOW_DIRECTORY));
+  // One device holder for both drivers. agent-device allows exactly one session per device, and an
+  // agent recording is another holder of the panel's `mobile-dev-recorder` session, never a second.
+  const testingDevices = new TestingDevices();
+  // One store for both: the panel autosaves the flow it is holding and the agent keeps the flow it
+  // finished, and those are the same list of unsaved recordings.
+  const testDrafts = new TestDraftStore();
+  const closeTestingDevices = registerTestingTools(server, new TestingProjectChoices(TESTING_DIRECTORY), testingDevices, testDrafts);
+  registerTestingAgentTools(server, testingDevices, new TestingAgentRecordings(testingDevices, testDrafts));
 
   const resource = async () => typeof html === "string" ? { html } : await html();
   const page = async () => configureUI((await resource()).html);
@@ -109,8 +141,8 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
     }) }] };
   });
   const readCard = (view: string) => async (uri: URL) => {
-    // Cards from a server with the workspace can open recordings there.
-    const content = (await page()).replace('data-view="panel"', `data-view="${view}"${panel ? " data-workspace" : ""}`);
+    // Cards from a server whose panel opens recordings in the workspace can open them there.
+    const content = (await page()).replace('data-view="panel"', `data-view="${view}"${panel?.inline ? " data-workspace" : ""}`);
     return { contents: [{ uri: uri.href, mimeType: RESOURCE_MIME_TYPE, text: content, _meta: {
       ui: { prefersBorder: true, permissions: { clipboardWrite: {} }, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } },
       "openai/ui": { preferredDisplayMode: "inline", availableDisplayModes: ["inline", "fullscreen"] },
@@ -143,8 +175,8 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), o
       stopRecordingStorageMetrics();
       // Recordings finish while the collectors they read are still open.
       await recordings.close();
-      try { await Promise.all([logs.close(), cpu.close(), fps.close(), traceSift.close(), closePanel?.()]); }
-      finally { android.dispose(); await server.close(); }
+      try { await Promise.all([logs.close(), cpu.close(), fps.close(), traceSift.close(), closeAppFlow(), closePanel?.(), closeTestingDevices()]); }
+      finally { android.dispose(); await server.close(); await analytics.close(); }
     },
   };
 }

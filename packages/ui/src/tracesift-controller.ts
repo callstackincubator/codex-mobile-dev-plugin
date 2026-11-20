@@ -2,7 +2,7 @@ import { chatMessage } from "./chat-message.ts";
 import { attachReference, cardsCallTools } from "./host-bridge.ts";
 import type { HostAttachmentsSource, HostBridge } from "./host-bridge.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { traceSiftAnalysisSchema, traceSiftCaptureSchema, traceSiftCaptureUrlSchema, traceSiftHandoffSchema, traceSiftRestoreSchema, traceSiftRnTargetsSchema, type TraceSiftAnalysis, type TraceSiftProfileType, type TraceSiftRnTarget } from "@mobile-dev/shared/tracesift.ts";
+import { traceSiftAnalysisSchema, traceSiftCaptureSchema, traceSiftCaptureUrlSchema, traceSiftHandoffSchema, traceSiftReadinessSchema, traceSiftRestoreSchema, traceSiftSetupActionResultSchema, traceSiftRnTargetsSchema, type TraceSiftAnalysis, type TraceSiftProfileType, type TraceSiftReadiness, type TraceSiftRnTarget, type TraceSiftSetupAction } from "@mobile-dev/shared/tracesift.ts";
 import { decodeTraceSiftExplorePayload, TRACE_SIFT_PAYLOAD_MAX_BYTES, traceSiftExploreEnvelopeSchema, TRACE_SIFT_PAYLOAD_TOO_LARGE, traceSiftPayloadRefused, type TraceSiftExploreKind } from "@mobile-dev/shared/tracesift-explore.ts";
 import { buildSelectionPrompt, frameSelectionEvidence, type SelectionCard } from "@mobile-dev/shared/tracesift-selection.ts";
 import { findingName } from "@mobile-dev/shared/tracesift-labels.ts";
@@ -52,6 +52,10 @@ type State = {
     error: string;
   };
   /** Which drawing every card on this analysis carries; one switch, as on the web. */
+  checkingReadiness: boolean;
+  readiness?: TraceSiftReadiness;
+  setupAction?: TraceSiftSetupAction;
+  setupNotice: string;
   chartKind: ContributionChartKind;
   /** The finding shown; kept here so returning from Explore lands on the explored finding. */
   selectedCard?: string;
@@ -82,7 +86,7 @@ function composerUnavailable(error: unknown) {
 }
 
 export class TraceSiftController {
-  private state: State = { canInvestigate: false, canCallTools: false, dark: false, error: "", notice: "", chartKind: "bar",
+  private state: State = { canInvestigate: false, canCallTools: false, dark: false, error: "", notice: "", setupNotice: "", checkingReadiness: false, chartKind: "bar",
     capture: { source: "rn", step: "idle", url: "", targets: [], targetId: "", metro: "", targetsError: "", loadingTargets: false, error: "" } };
   private listeners = new Set<() => void>();
   private disposed = false;
@@ -98,6 +102,8 @@ export class TraceSiftController {
   private rememberChain: Promise<void> = Promise.resolve();
   /** Bumped by every restore attempt; a response only applies while it still matches the latest one requested. */
   private restoreToken = 0;
+  /** Bumped by every readiness check so reopening cannot apply an older result after Retry. */
+  private readinessToken = 0;
   /** `attachments` reads the host's composer pills, where it has them. */
   constructor(app: HostBridge, { attachments = () => undefined }: { attachments?: HostAttachmentsSource } = {}) {
     this.app = app;
@@ -146,7 +152,10 @@ export class TraceSiftController {
     setUiSurface("tracesift");
     setUiGauge("ui.tracesift.cards", analysis.cards.length);
     recordUiTiming("ui.tracesift.process", performance.now() - startedAt);
-    this.update({ analysis, error: "", busyCard: undefined, copiedCard: undefined, handoffCard: undefined, openingExploreCard: undefined, explorer: undefined, selectedCard: undefined });
+    this.update({
+      analysis, readiness: { apiVersion: 1, status: "ready" }, checkingReadiness: false, error: "",
+      busyCard: undefined, copiedCard: undefined, handoffCard: undefined, openingExploreCard: undefined, explorer: undefined, selectedCard: undefined,
+    });
     // Setting the context flushes the previous context's measurements.
     setUiTelemetryContext({ tracesift_view: "cards", tracesift_profile: analysis.profileType });
     // A new analysis drops the picks; `tracesift_view` does not change here, so nothing else would reset the gauge.
@@ -572,6 +581,65 @@ export class TraceSiftController {
       countUiEvent("ui.tracesift.pick_failed");
       captureUiError(error, "tracesift.pick");
       if (!this.disposed) this.update({ error: error instanceof Error ? error.message : "That profile could not be chosen." });
+    }
+  };
+
+  /** Preflight the local service before the upload pane asks the user for a profile. */
+  checkReadiness = async () => {
+    if (this.disposed || this.state.checkingReadiness) return;
+    const token = ++this.readinessToken;
+    this.update({ checkingReadiness: true, error: "" });
+    const startedAt = performance.now();
+    try {
+      const result = await this.app.callServerTool({ name: "mobile_tracesift_status", arguments: {} });
+      if (this.disposed || token !== this.readinessToken) return;
+      recordUiTiming("ui.tracesift.readiness", performance.now() - startedAt);
+      if (result.isError) throw new Error(result.content.filter(item => item.type === "text").map(item => item.text).join("\n") || "TraceSift readiness could not be checked.");
+      const parsed = traceSiftReadinessSchema.safeParse(result.structuredContent);
+      if (!parsed.success) throw new Error("TraceSift returned an invalid readiness result.");
+      countUiEvent(parsed.data.status === "ready" ? "ui.tracesift.readiness_ready" : "ui.tracesift.readiness_setup_required");
+      this.update({ readiness: parsed.data });
+    } catch (error) {
+      if (this.disposed || token !== this.readinessToken) return;
+      countUiEvent("ui.tracesift.readiness_failed");
+      captureUiError(error, "tracesift.readiness");
+      this.update({
+        readiness: {
+          apiVersion: 1, status: "setup_required", reason: "startup_failed",
+          message: error instanceof Error ? error.message : "TraceSift readiness could not be checked.",
+        },
+      });
+    } finally {
+      if (!this.disposed && token === this.readinessToken) this.update({ checkingReadiness: false });
+    }
+  };
+
+  /** Run one fixed setup command from its explicit panel button, then re-check the service. */
+  runSetup = async (action: TraceSiftSetupAction) => {
+    if (this.disposed || this.state.setupAction || this.state.checkingReadiness) return;
+    this.update({ setupAction: action, setupNotice: "", error: "" });
+    const startedAt = performance.now();
+    try {
+      const result = await this.app.callServerTool({
+        name: action === "install" ? "mobile_install_tracesift_cli" : "mobile_initialize_tracesift",
+        arguments: {},
+      });
+      recordUiTiming(`ui.tracesift.${action}`, performance.now() - startedAt);
+      if (result.isError) throw new Error(result.content.filter(item => item.type === "text").map(item => item.text).join("\n") || `TraceSift ${action} failed.`);
+      const parsed = traceSiftSetupActionResultSchema.safeParse(result.structuredContent);
+      if (!parsed.success || parsed.data.action !== action) throw new Error("TraceSift returned an invalid setup result.");
+      countUiEvent(`ui.tracesift.${action}_success`);
+      this.update({ setupAction: undefined, setupNotice: parsed.data.message });
+      await this.checkReadiness();
+      if (!this.disposed && this.state.readiness?.status === "ready") this.update({ setupNotice: "" });
+    } catch (error) {
+      countUiEvent(`ui.tracesift.${action}_failed`);
+      // Command output is useful in the local panel but must not become telemetry.
+      captureUiError(new Error(`TraceSift ${action} action failed.`), `tracesift.${action}`);
+      if (!this.disposed) this.update({
+        setupAction: undefined,
+        error: error instanceof Error ? error.message : `TraceSift ${action} failed. Run the command in a terminal instead.`,
+      });
     }
   };
 

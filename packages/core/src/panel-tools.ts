@@ -21,6 +21,8 @@ import { registerAndroidTools } from "./android-tools.ts";
 import { registerIosMirrorTools } from "./ios-mirror-tools.ts";
 import { registerInspectionTools } from "./inspection-tools.ts";
 import { registerDeviceSettingsTools } from "./device-settings.ts";
+import { registerResourceSavingTools } from "./resource-saving-tools.ts";
+import { ResourceSaving } from "./resource-saving.ts";
 import { StreamSessions } from "./stream-sessions.ts";
 import type { CpuSessions } from "./cpu/sessions.ts";
 import type { DisplayFpsSessions } from "./fps/sessions.ts";
@@ -68,10 +70,18 @@ function guarded<T>(handler: (input: T, context: ServerRequestContext) => Promis
   };
 }
 
-const INSTRUCTIONS = "For mobile app development, open mobile_open_simulator before the first device launch, or reuse the open view. Use selected device IDs. Control apps with the device_* tools when the server has them. When the user asks to see their devices, open or reuse the view, whose device menu lists them. If a task has ambiguous device targets, ask the user with mobile_choose_devices when it is available, otherwise in chat; proceed only after they choose. For a local CPU or React profile path, use mobile_analyze_profile to show TraceSift findings, then wait for the user to choose Investigate. See the Mobile Dev skill, when installed, for device control, logs, profiles, and performance workflows.";
+const INSTRUCTIONS = "Use mobile_open_simulator before the first device launch or reuse the open panel. "
+  + "Use the Mobile Dev panel to show or control Android devices. Open a separate scrcpy window only if the user explicitly asks for one. "
+  + "When mobile_read_panel_context is available, read the panel's active device before targeting it. Use selected IDs with available device_* tools. "
+  + "Show devices in the panel menu. If targets are ambiguous, ask with mobile_choose_devices when it is available, otherwise in chat. "
+  + "Generate screen maps with mobile_generate_app_intel and show them with mobile_open_app_intel. For screen dependencies, find the ID with mobile_app_intel and pass it as appIntelScreen to mobile_open_app_intel. Use mobile_app_intel alone for file imports/importers or text answers. "
+  + "Before asking the user to capture or choose a TraceSift profile when no path exists yet, use mobile_tracesift_status and report any setup step. "
+  + "For local CPU or React profiles use mobile_analyze_profile and await the user's Investigate action. See the Mobile Dev skill.";
 
 /** Mobile Dev's own device views, which a host adds to the server it runs (see createPanel). */
 export type Panel = {
+  /** Whether the panel renders in the chat, where it can also open recordings in the workspace. */
+  readonly inline: boolean;
   instructions: string;
   simulatorForeground: SimulatorForeground;
   register(server: McpServer, shared: PanelShared): () => Promise<void>;
@@ -95,6 +105,7 @@ export type PanelOptions = {
   baguette?: Baguette;
   simulatorInput?: SimulatorInput;
   copyScreenshot?: typeof copyPNGToClipboard;
+  resourceSaving?: ResourceSaving;
   /**
    * Whether MCP Apps hosts render the panel in the chat from its opening tools. A host that
    * shows it beside the chat instead, in a browser, passes false: the tools then name their
@@ -110,18 +121,19 @@ export type PanelOptions = {
  * the workspace and asking for devices in a native form. Hosts that show devices
  * themselves, such as Claude, leave it out.
  */
-export function createPanel({ baguette = new Baguette(), simulatorInput, copyScreenshot = copyPNGToClipboard, inline = true }: PanelOptions = {}): Panel {
+export function createPanel({ baguette = new Baguette(), simulatorInput, copyScreenshot = copyPNGToClipboard, resourceSaving = new ResourceSaving(), inline = true }: PanelOptions = {}): Panel {
   return {
+    inline,
     instructions: INSTRUCTIONS,
     simulatorForeground: foregroundSimulatorPid,
     register: (server, shared) => registerPanel(server, shared, {
-      baguette, copyScreenshot, inline, simulatorInput: simulatorInput ?? new SimulatorInputService(udid => baguette.repairInput(udid)),
+      baguette, copyScreenshot, resourceSaving, inline, simulatorInput: simulatorInput ?? new SimulatorInputService(udid => baguette.repairInput(udid)),
     }),
   };
 }
 
 function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, showRecording, opened }: PanelShared,
-  { baguette, simulatorInput, copyScreenshot, inline }: Required<PanelOptions>) {
+  { baguette, simulatorInput, copyScreenshot, resourceSaving, inline }: Required<PanelOptions>) {
   const streams = new StreamSessions(baguette);
   const closeIosMirror = registerIosMirrorTools(server, APP_URI);
   const closeInspection = registerInspectionTools(server, baguette, android);
@@ -131,6 +143,7 @@ function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, sh
     await Promise.all([closeCpu, closeFps]);
   });
   const closeDeviceSettings = registerDeviceSettingsTools(server, baguette, android);
+  registerResourceSavingTools(server, baguette, android, resourceSaving);
   registerPanelAppControlTools(server, drivers);
   // Opening a recording renders the workspace in the chat; beside the chat, recordings stay cards.
   if (inline) registerOpenRecordingTool(server, showRecording, WORKSPACE_URI);
@@ -210,9 +223,10 @@ function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, sh
     }
   });
 
-  const openPanel = (tool: string) => guarded(async (panelTarget: PanelTarget) => {
-    let status;
-    try { status = await baguette.start(); }
+  const openPanel = (tool: string, defaults: Partial<PanelTarget> = {}, startBackend = true) => guarded(async (input: PanelTarget) => {
+    const panelTarget = { ...input, ...defaults };
+    let status = { connected: false, managed: false, baseUrl: "", devices: [] as Awaited<ReturnType<Baguette["status"]>>["devices"], error: undefined as string | undefined };
+    if (startBackend) try { status = { ...(await baguette.start()), error: undefined }; }
     catch (error) {
       // The start already waited on the device list, so don't wait its full timeout again.
       const fallback = await baguette.status(AbortSignal.timeout(2000));
@@ -221,20 +235,20 @@ function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, sh
     // Hosts can pass the model either form of a result, and Claude Code passes only the
     // structured one, so another place to show the panel goes into both.
     const opening = await opened({ tool, target: panelTarget });
-    const response = result({ ...status, panelTarget, ...opening ? { browserPanel: opening } : {} }, status.connected ? `Found ${status.devices.length} simulators.` : status.error ?? "The bundled simulator backend could not start.");
+    const response = result({ ...status, panelTarget, ...opening ? { browserPanel: opening } : {} }, startBackend ? (status.connected ? `Found ${status.devices.length} simulators.` : status.error ?? "The bundled simulator backend could not start.") : "Opened App Intelligence.");
     if (opening) response.content.push({ type: "text", text: opening.instructions });
     return response;
   });
 
   // Inline, the host renders each opening tool's page in the chat; otherwise the tool only
   // names it, and a host feature such as the browser panel shows it.
-  const openingTool = (name: string, config: { description: string; resourceUri: string; entrypoint: "global" | "thread" }) => {
+  const openingTool = (name: string, config: { description: string; resourceUri: string; entrypoint: "global" | "thread"; defaults?: Partial<PanelTarget>; startBackend?: boolean }) => {
     const definition = {
       title: "Mobile Dev", description: config.description,
       inputSchema: panelTargetSchema, outputSchema: { ...statusOutput, panelTarget: panelTargetSchema, browserPanel: browserPanelOutput }, annotations: write,
     };
     if (inline === false) {
-      server.registerTool(name, { ...definition, _meta: { [PANEL_PAGE_META]: { resourceUri: config.resourceUri } } }, openPanel(name));
+      server.registerTool(name, { ...definition, _meta: { [PANEL_PAGE_META]: { resourceUri: config.resourceUri } } }, openPanel(name, config.defaults, config.startBackend));
       return;
     }
     registerAppTool(server, name, {
@@ -243,7 +257,7 @@ function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, sh
         ui: { resourceUri: config.resourceUri, visibility: ["app", "model"] },
         "openai/ui": { entrypoints: [{ type: config.entrypoint }] },
       },
-    }, openPanel(name));
+    }, openPanel(name, config.defaults, config.startBackend));
   };
 
   openingTool("mobile_open_workspace", {
@@ -252,8 +266,13 @@ function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, sh
   });
 
   openingTool("mobile_open_simulator", {
-    description: "Open Mobile Dev alongside the chat for local mobile app development, before the first device launch unless a view is open or the workflow is tool-only. Pass established platform, kind, or discovered deviceId to select the initial device; omit undecided fields. Starts the bundled backend without booting devices.",
+    description: "Open or reuse the Mobile Dev panel alongside the chat to view and control a device. For app development, open before the first device launch unless the workflow is tool-only. Pass the requested platform, kind, or a discovered deviceId to select the device. Omit undecided fields. Starts the bundled backend without booting devices.",
     resourceUri: APP_URI, entrypoint: "thread",
+  });
+
+  openingTool("mobile_open_app_intel", {
+    description: "Open App Intelligence when the user asks to see or visualize the selected React Native app's screen and dependency graph, or a specific screen's dependencies. Pass appIntelScreen with a screen ID from mobile_app_intel (use operation=search first if only given a name) to focus the graph on that screen. This does not launch a device or generate a new snapshot.",
+    resourceUri: WORKSPACE_URI, entrypoint: "global", defaults: { workspaceTool: "app-intel" }, startBackend: false,
   });
 
   server.registerTool("mobile_list_simulators", {
