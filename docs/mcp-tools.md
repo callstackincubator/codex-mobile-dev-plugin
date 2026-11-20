@@ -78,15 +78,32 @@ profile. Remember writes/replaces the reference for a host view. Both declare
 `readOnlyHint: false` and `destructiveHint: true` because a previous association
 can be overwritten, even though the input profile is not edited.
 
-Explore, Explore payload, and investigation handoff declare `readOnlyHint: false`
+Readiness, Explore, Explore payload, and investigation handoff declare `readOnlyHint: false`
 and `destructiveHint: false`: they can start a local background service, and
 browser Explore also launches the explorer. The file picker shares those hints:
 it opens the host's own dialog and waits for a person, but writes nothing. The two
 restore tools only read local files and remain read-only. Reading the chosen
 project is read-only; choosing one declares `destructiveHint: true`, because it
-replaces the previously saved folder. All ten use `openWorldHint: false`;
+replaces the previously saved folder. Every non-setup tool uses `openWorldHint: false`;
 operations are confined to local files, the host's own dialogs, and the
-authenticated loopback TraceSift service.
+authenticated loopback TraceSift service. The two app-only setup actions are the
+exceptions: `mobile_install_tracesift_cli` runs only
+`npm install -g @callstack/tracesift`, and `mobile_initialize_tracesift` runs only
+`tracesift init`. Both declare destructive writes and open-world access because
+they replace installed software and may download it. They do not accept a command,
+arguments, environment, or path from the panel.
+
+`mobile_tracesift_status` is visible to both the app and model. It needs no profile:
+the TraceSift panel calls it when opened, and an agent calls it before asking for a
+new capture or file. A ready installation is reused or started automatically;
+missing CLI, initialization, compatibility, and startup states return structured
+setup guidance rather than a profile-format error.
+
+For missing CLI and initialization states, the panel shows a play button beside
+each exact command. A successful action automatically calls
+`mobile_tracesift_status` again. The buttons retain the command text and terminal
+fallback because global npm installation can require privileges and a newly
+installed executable may not enter the already-running Codex process's `PATH`.
 
 The two pickers exist because the TraceSift tool runs in a panel frame, where a
 dropped file carries no path and the analyzer reads profiles off disk. Both are
