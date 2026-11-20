@@ -668,6 +668,10 @@ export class TraceSiftClient {
           ...(string(target.deviceName) ? { deviceName: string(target.deviceName) } : {}),
           ...(string(target.deviceId) ? { deviceId: string(target.deviceId) } : {}),
           ...(string(target.vm) ? { vm: string(target.vm) } : {}),
+          // Carried through, or zod's default calls every release build Metro.
+          ...(target.transport === "release" ? { transport: "release" as const } : {}),
+          ...(typeof target.port === "number" && Number.isInteger(target.port)
+            && target.port > 0 && target.port < 65_536 ? { port: target.port } : {}),
           supportsMultipleDebuggers: target.supportsMultipleDebuggers === true,
           recommended: target.recommended === true,
         }];

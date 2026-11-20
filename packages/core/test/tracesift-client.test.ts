@@ -502,3 +502,44 @@ test("a CLI with release-build support keeps its own errors and its empty list",
   assert.deepEqual((await client.reactNativeTargets()).targets, []);
   await assert.rejects(client.startReactNativeRecording(), error => error instanceof TraceSiftError && error.kind === "request" && error.message === "no app");
 });
+
+test("a release target keeps its transport and port through the client", async t => {
+  // The sanitizer rebuilds each target field by field, and zod defaults
+  // `transport` to "metro". Dropping either field here made the panel label
+  // every release build as Metro, naming a dev server that is not running.
+  const fake = await fixture(); t.after(fake.close);
+  const targets = JSON.stringify({
+    apiVersion: 1, platform: "rn", metro: "http://127.0.0.1:8081", profilerPort: 8089,
+    targets: [{ id: "release", title: "com.example.spike (Android, release)", appId: "com.example.spike",
+      deviceName: "Google sdk_gphone16k_arm64", transport: "release", port: 8089,
+      supportsMultipleDebuggers: false, recommended: true }],
+  });
+  const command = await fakeRecorder(fake.home, [
+    `case "$2" in`,
+    `  targets) printf '%s' ${JSON.stringify(targets)} ;;`,
+    `esac`,
+  ].join("\n"));
+  const client = new TraceSiftClient(command, fake.home); t.after(() => client.close());
+
+  const listed = await client.reactNativeTargets();
+  assert.equal(listed.targets[0]?.transport, "release");
+  assert.equal(listed.targets[0]?.port, 8089);
+});
+
+test("a Metro target without a transport still reads as Metro", async t => {
+  const fake = await fixture(); t.after(fake.close);
+  const targets = JSON.stringify({
+    apiVersion: 1, platform: "rn", metro: "http://127.0.0.1:8081",
+    targets: [{ id: "device-1", title: "AwesomeApp", supportsMultipleDebuggers: true, recommended: true }],
+  });
+  const command = await fakeRecorder(fake.home, [
+    `case "$2" in`,
+    `  targets) printf '%s' ${JSON.stringify(targets)} ;;`,
+    `esac`,
+  ].join("\n"));
+  const client = new TraceSiftClient(command, fake.home); t.after(() => client.close());
+
+  const listed = await client.reactNativeTargets();
+  assert.equal(listed.targets[0]?.transport, "metro");
+  assert.equal(listed.targets[0]?.port, undefined);
+});

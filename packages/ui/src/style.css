@@ -320,6 +320,8 @@ html[data-theme="dark"] .tracesift-explorer { color-scheme: dark; }
 .tracesift-upload .tracesift-workspace { display: grid; grid-template-columns: minmax(0, 2.1fr) minmax(250px, .9fr); min-height: 390px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
 .tracesift-upload .tracesift-workflow { display: grid; align-content: start; gap: 12px; min-width: 0; padding: 18px; }
 .tracesift-upload .tracesift-workflow.is-disabled .workflow-label,
+.tracesift-upload .tracesift-workflow.is-disabled .tracesift-modes,
+.tracesift-upload .tracesift-workflow.is-disabled .capture-pane,
 .tracesift-upload .tracesift-workflow.is-disabled .profile-options { opacity: .58; }
 .tracesift-upload .tracesift-blocker { display: flex; align-items: center; min-height: 34px; margin: 0 0 4px; padding: 0 10px; border: 1px solid var(--ring); border-radius: 7px; background: color-mix(in srgb, var(--ring) 7%, transparent); color: var(--ring); font-size: 11.5px; font-weight: 600; }
 .tracesift-upload .workflow-label { display: flex; align-items: baseline; gap: 8px; }
@@ -407,13 +409,22 @@ html[data-theme="dark"] .tracesift-explorer { color-scheme: dark; }
   .tracesift-upload .workflow-label small { width: 100%; padding-left: 26px; }
 }
 
-.tracesift-upload .capture-pane { padding: 12px; background: var(--muted); border: 1px solid var(--border); border-radius: 10px; }
-.tracesift-upload .capture-sources { display: flex; gap: 6px; margin-bottom: 10px; }
+/* A segmented pair, not two buttons: one of the two is always the live mode. */
+.tracesift-upload .tracesift-modes { display: inline-flex; gap: 2px; padding: 2px; background: var(--muted); border: 1px solid var(--border); border-radius: 9px; justify-self: start; }
+.tracesift-upload .tracesift-mode { padding: 6px 14px; color: var(--muted-foreground); background: transparent; border: 0; border-radius: 7px; font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; }
+.tracesift-upload .tracesift-mode.selected { color: var(--primary); background: var(--card); box-shadow: 0 1px 2px rgb(0 0 0 / 0.08); }
+.tracesift-upload .tracesift-mode:disabled { opacity: .55; cursor: not-allowed; }
+.tracesift-upload .tracesift-mode:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+
+/* Inside the workflow card now, so it carries no frame of its own: the source
+   chips and the upload pane have to read as one column. */
+.tracesift-upload .capture-pane { display: grid; gap: 12px; }
+.tracesift-upload .capture-sources { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .tracesift-upload .capture-target { flex: 1 1 180px; min-width: 0; padding: 7px 10px; color: inherit; font: inherit; font-size: 13px; background: var(--card); border: 1px solid var(--border); border-radius: 7px; }
 .tracesift-upload .capture-target:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
 .tracesift-upload .capture-target:disabled { opacity: 0.55; cursor: not-allowed; }
 .tracesift-upload .capture-status small { color: var(--muted-foreground); font-size: 11px; }
-.tracesift-upload .capture-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tracesift-upload .capture-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px; background: var(--muted); border: 1px solid var(--border); border-radius: 10px; }
 .tracesift-upload .capture-url { flex: 1 1 200px; min-width: 0; padding: 7px 10px; color: inherit; font: inherit; font-size: 13px; background: var(--card); border: 1px solid var(--border); border-radius: 7px; }
 .tracesift-upload .capture-url:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
 .tracesift-upload .capture-status { flex: 1 1 180px; margin: 0; color: var(--muted-foreground); font-size: 12px; }
