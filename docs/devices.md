@@ -77,9 +77,19 @@ Click the camera button in either simulator toolbar to add a PNG to the chat inp
 
 ## Resource saving
 
-On Windows, emulators use the AVD's configured resources. The bundled Android optimizer (`avdslim`) is an Apple Silicon macOS binary, so the **Save resources** control is unavailable on Windows.
+On Windows x64, **Reduce emulator RAM** is available for eligible Android phone
+AVDs configured above the profile's target. It is off by default. Mobile Dev
+requests 2560 MiB for API 35–36 and 4096 MiB for API 37 or a display of at
+least three million pixels. The emulator can raise the allocation to satisfy
+its own requirements. The switch changes only the next Mobile Dev start.
+Turning it off starts the emulator with the AVD's configured RAM again.
 
-The leaf button beside device settings controls **Save resources** for the selected
+The Windows profile leaves the AVD configuration, installed packages and app
+data in place. Guest package pruning with avdslim is deferred. Its restoration
+record can disappear before Android persists re-enabled packages, and an empty
+package list can trigger a broad restore. [Windows RAM measurements and package restoration tests](performance/windows-avd-ram-profile.md)
+
+On Apple silicon Macs the leaf button beside device settings controls **Save resources** for the selected
 iOS simulator or Android emulator. It is enabled by default and is available while
 the device is stopped, so a device can opt out before its first optimized start.
 Preferences are stored on this Mac by simulator UDID or AVD name, across plugin

@@ -1,5 +1,7 @@
 export type ResourceSavingState = {
   supported?: boolean;
+  profile?: "ram";
+  ramMiB?: number;
   enabled: boolean;
   running: boolean;
   restartRequired: boolean;

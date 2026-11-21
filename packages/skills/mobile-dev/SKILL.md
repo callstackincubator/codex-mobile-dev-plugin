@@ -8,8 +8,9 @@ description: Use when building, running, changing, or debugging local iOS, Andro
 Use the Mobile Dev MCP tools for local iOS and Android work. Codex on Windows supports Android emulators and phones. An Apple Silicon Mac also supports local iOS devices with Xcode. Mobile Dev starts its bundled device backends as needed.
 
 Start stopped virtual devices through `mobile_boot_simulator` or
-`mobile_boot_android_emulator` before using agent-device. Windows emulators use
-the AVD's configured resources. On Apple Silicon Macs these start paths apply
+`mobile_boot_android_emulator` before using agent-device. Windows x64 emulators use
+the AVD's configured RAM unless the user enables **Reduce emulator RAM** for
+an eligible phone AVD. On Apple Silicon Macs these start paths apply
 the device's saved resource-saving mode, enabled by default. The leaf control
 beside device settings can opt a device out, including while it is stopped.
 Changing the mode saves it for the next start; only the user's explicit

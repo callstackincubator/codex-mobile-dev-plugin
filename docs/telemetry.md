@@ -890,6 +890,13 @@ readback. Attributes are limited to `component=server`, `surface=simulator`,
 fixed-message `resource_saving.apply` error report. Preferences have separate
 fixed-message `resource_saving.read` and `resource_saving.set` reports.
 
+On Windows x64, `android.ram_profile.boot.duration` measures a cold start with
+the optional RAM profile in milliseconds, from launching the emulator until
+Android reports boot completion or the launch fails. The distribution uses
+`outcome=booted|failed` and the fixed Android emulator/simulator-surface
+attributes. It honors telemetry opt-out. The macOS post-boot optimizer retains
+its existing measurement boundary.
+
 The UI records `ui.resource_saving.change` duration and
 `ui.resource_saving.failure` through the existing UI operation helper. All paths
 use the existing sampling, scrubbing and telemetry opt-out. No device IDs, AVD

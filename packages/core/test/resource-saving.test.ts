@@ -42,7 +42,7 @@ test("resource saving defaults on and persists opt-outs by stable device identit
   const initial = await f.saving.state(ios);
   assert.deepEqual(initial, { enabled: true, running: true, restartRequired: true });
   await f.saving.set(android, false);
-  const restarted = new ResourceSaving({ directory: f.directory });
+  const restarted = new ResourceSaving({ directory: f.directory, executable: async () => "/runtime/android" });
   const otherSerial = { ...android, id: "emulator-5560" };
   const enabled = await restarted.enabled(otherSerial);
   assert.equal(enabled, false);
@@ -54,6 +54,46 @@ test("resource saving defaults on and persists opt-outs by stable device identit
   await writeFile(filename, "invalid");
   const malformed = restarted.enabled(android);
   await assert.rejects(malformed, /JSON/);
+});
+
+test("the RAM profile is opt-in per eligible AVD and applies only at boot", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "avd-ram-test-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  let limit: number | undefined = 2560;
+  let bootId = "9353e965-eee6-4d69-b07e-2c08087d15cc";
+  const options = {
+    directory, ramLimit: async (name: string) => name === android.key ? limit : undefined,
+    adb: async () => "/sdk/adb", run: async (_file: string, args: string[]) => {
+      assert.deepEqual(args, ["-s", android.id, "shell", "cat", "/proc/sys/kernel/random/boot_id"]);
+      return { stdout: bootId };
+    },
+  };
+  const saving = new ResourceSaving(options);
+  const stopped = { ...android, id: "avd:Pixel_8", state: "Shutdown" };
+  assert.equal(saving.supports("ios"), false);
+  assert.equal(saving.supports("android"), true);
+  assert.deepEqual(await saving.state(stopped), { profile: "ram", ramMiB: 2560, enabled: false, running: false, restartRequired: false });
+  assert.deepEqual(await saving.androidBootOptions(stopped), { ramMiB: undefined });
+  assert.equal((await saving.state(android)).restartRequired, false, "an unmodified external boot is already using its own configuration");
+  assert.equal((await saving.set(android, true)).restartRequired, true);
+  const restarted = new ResourceSaving(options);
+  const launch = await restarted.androidBootOptions(stopped);
+  assert.deepEqual(launch, { ramMiB: 2560 });
+  await restarted.rememberRamBoot(android, launch.ramMiB!);
+  assert.equal((await restarted.state(android)).restartRequired, false);
+  assert.equal((await saving.state(android)).restartRequired, false, "another server recognizes the same boot");
+  bootId = "79acd8d9-186d-41c5-9417-368680c91daa";
+  assert.equal((await saving.state(android)).restartRequired, true, "a fresh external boot can reuse the same serial");
+  limit = 4096;
+  assert.equal((await restarted.state(android)).restartRequired, true);
+  limit = undefined;
+  assert.equal((await restarted.state(android)).enabled, true, "the saved opt-in remains accessible to clear");
+  assert.deepEqual(await restarted.androidBootOptions(stopped), { ramMiB: undefined });
+  await assert.rejects(restarted.set(android, true), /unavailable/);
+  await restarted.set(stopped, false);
+  assert.equal((await restarted.state(android)).supported, false);
+  limit = 2560;
+  assert.deepEqual(await saving.androidBootOptions(stopped), { ramMiB: undefined });
 });
 
 test("iOS slimming preserves required features, verifies the profile, and never silently succeeds on failure", async t => {

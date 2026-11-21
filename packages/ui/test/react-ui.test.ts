@@ -61,9 +61,9 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
     await rm(directory, { recursive: true, force: true });
   });
   const output = resolve(directory, "workspace.mjs");
-  await build({ stdin: { contents: 'export { Workspace } from "./packages/mcp-app/src/components/workspace.tsx"; export { getDeviceSettings } from "./packages/ui/src/device-settings.ts"; export { getDevicePicker } from "./packages/ui/src/device-picker.ts"; export { getAppTools } from "./packages/ui/src/app-tools.ts";', resolveDir: process.cwd(), loader: "ts" }, outfile: output, bundle: true, format: "esm", platform: "node", jsx: "automatic",
+  await build({ stdin: { contents: 'export { Workspace } from "./packages/mcp-app/src/components/workspace.tsx"; export { getDeviceSettings } from "./packages/ui/src/device-settings.ts"; export { getDevicePicker } from "./packages/ui/src/device-picker.ts"; export { getAppTools } from "./packages/ui/src/app-tools.ts"; export { getResourceSaving } from "./packages/ui/src/resource-saving.ts";', resolveDir: process.cwd(), loader: "ts" }, outfile: output, bundle: true, format: "esm", platform: "node", jsx: "automatic",
     external: ["recharts", "react", "react/*", "react-dom", "react-dom/*", "@legendapp/list/react", "radix-ui", "lucide-react", "@base-ui/react/*", "react-resizable-panels", "@xyflow/react"] });
-  const { Workspace, getDeviceSettings, getDevicePicker, getAppTools } = await import(pathToFileURL(output).href);
+  const { Workspace, getDeviceSettings, getDevicePicker, getAppTools, getResourceSaving } = await import(pathToFileURL(output).href);
   const { act, createElement, Profiler } = await import("react");
   const { createRoot } = await import("react-dom/client");
   let sentLog: StackedLog | undefined;
@@ -206,6 +206,28 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   assert.equal(bookingOption.textContent, bookingName + deviceSpecs);
   assert.equal(bookingOption.querySelector("checkout"), null);
   await act(async () => { (bookingOption as HTMLButtonElement).click(); });
+  const androidSaving = getResourceSaving(dom.window.document.querySelector('#android-panel [data-element="settings"]'));
+  let ramEnabled = false;
+  androidSaving.request = async (enabled?: boolean) => {
+    if (enabled !== undefined) ramEnabled = enabled;
+    return { profile: "ram", ramMiB: 2560, enabled: ramEnabled, running: true, restartRequired: ramEnabled };
+  };
+  await act(async () => { androidSaving.configure("Pixel", true, false); });
+  const ramButton = dom.window.document.querySelector<HTMLButtonElement>('#android-panel [aria-label="Emulator RAM profile"]')!;
+  assert.equal(ramButton.title, "Emulator RAM profile off");
+  await act(async () => { ramButton.click(); });
+  const ramPopover = dom.window.document.querySelector('[data-slot="popover-content"][aria-label="Emulator RAM profile"]')!;
+  assert.match(ramPopover.textContent!, /2560 MiB of guest RAM/);
+  assert.match(ramPopover.textContent!, /next time Mobile Dev starts/);
+  assert.doesNotMatch(ramPopover.textContent!, /background services|enabled by default/);
+  const ramSwitch = ramPopover.querySelector<HTMLButtonElement>('[role="switch"]')!;
+  assert.equal(ramSwitch.getAttribute("aria-checked"), "false");
+  await act(async () => { ramSwitch.click(); });
+  assert.equal(ramEnabled, true);
+  assert.equal(ramButton.title, "Emulator RAM profile on");
+  assert.match(ramPopover.textContent!, /Running apps will close/);
+  assert.match(ramPopover.textContent!, /Restart to apply/);
+  await act(async () => { ramButton.click(); });
   const iosSettings = getDeviceSettings(dom.window.document.querySelector('#ios-panel [data-element="settings"]'));
   const changes: unknown[] = [];
   iosSettings.request = async (change: unknown) => { changes.push(change); return { appearance: "light", contentSize: "large", increaseContrast: false, locationSupported: true }; };
