@@ -82,9 +82,11 @@ function fakeScrcpy() {
 
 test("Node Android server preserves HTTP, WebSocket video, input acknowledgements, and cleanup", async t => {
   const scrcpy = fakeScrcpy();
+  let captures = 0;
   const backend = await runtime.startServer({ serial: "emulator-5554", port: 0 }, {
     openScrcpy: async () => scrcpy.session,
     createInputQueue: () => scrcpy.inputQueue,
+    loadAccessibility: async () => ({ ok: true, capturedAt: String(++captures), nodes: [] }),
   });
   t.after(() => backend.stop());
   const base = `http://127.0.0.1:${backend.server.port}`;
@@ -96,6 +98,12 @@ test("Node Android server preserves HTTP, WebSocket video, input acknowledgement
   const page = await fetch(base);
   assert.match(page.headers.get("content-type") ?? "", /text\/html/);
   assert.equal(await page.text(), "<html>Android</html>");
+  const tree = async (fresh = false) => {
+    const response = await fetch(`${base}/api/accessibility`, { headers: fresh ? { "Cache-Control": "no-cache" } : {} });
+    return response.json();
+  };
+  assert.equal((await tree()).capturedAt, "1");
+  assert.equal((await tree()).capturedAt, "1");
 
   const socket = new WebSocket(`ws://127.0.0.1:${backend.server.port}/ws?frame-meta=1`);
   t.after(() => socket.terminate());
@@ -108,6 +116,7 @@ test("Node Android server preserves HTTP, WebSocket video, input acknowledgement
   assert.equal(parsedReply.ok, true);
   assert.equal(parsedReply.requestId, "input-1");
   assert.ok(scrcpy.packets.length > 0);
+  assert.equal((await tree(true)).capturedAt, "2", "element selection reads the screen after input");
   const video = once(socket, "message");
   const data = Buffer.from([0, 0, 0, 1, 0x65, 0x80]);
   scrcpy.frame({ type: "frame", data, pts: 1000n, isKey: true, isConfig: false });
