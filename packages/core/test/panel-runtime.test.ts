@@ -146,8 +146,9 @@ test("a prerelease pins and installs its runtime like a release", async t => {
   assert.equal((await readdir(data)).length, 2);
 });
 
-test("Claude Code's plugin data folder holds the runtime when it provides one", () => {
+test("the host's plugin data folder holds the runtime when it provides one", () => {
   assert.equal(panelRuntimeDirectory({ CLAUDE_PLUGIN_DATA: "/data/mobile-dev" }), join("/data/mobile-dev", "panel-runtime"));
+  assert.equal(panelRuntimeDirectory({ PLUGIN_DATA: "/data/antigravity" }), join("/data/antigravity", "panel-runtime"));
   const cache = process.platform === "win32" ? join("AppData", "Local") : join("Library", "Caches");
   assert.ok(panelRuntimeDirectory({}).endsWith(join(cache, "mobile-dev", "panel-runtime")));
 });

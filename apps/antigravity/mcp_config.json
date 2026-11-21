@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "mobile-dev": {
+      "command": "/bin/sh",
+      "args": [
+        "${PLUGIN_ROOT}/scripts/launch-node.sh",
+        "${PLUGIN_ROOT}/dist/server.mjs"
+      ]
+    }
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "command": "node",
+  "args": [
+    "../launch.mjs",
+    "device-panel"
+  ],
+  "env": {
+    "MOBILE_DEV_SIDECAR": "1"
+  },
+  "restart_policy": "always",
+  "display_name": "Mobile Dev",
+  "description": "Live iOS Simulator, Android Emulator, and physical iPhone panel with native/Metro logs, app storage inspection, and CPU, memory, and FPS profiling.",
+  "has_web_ui": true,
+  "ui_config": {
+    "display_name": "Mobile Dev",
+    "views": [
+      {
+        "title": "Mobile Dev",
+        "path": "/",
+        "entrypoint": "SIDECAR_UI_ENTRYPOINT_AUX_PANE"
+      }
+    ]
+  }
+}

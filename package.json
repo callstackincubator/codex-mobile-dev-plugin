@@ -9,6 +9,7 @@
     "packages/mcp-app",
     "packages/test-support",
     "apps/codex-plugin",
+    "apps/antigravity",
     "apps/claude",
     "apps/cursor",
     "apps/mac"
@@ -48,6 +49,9 @@
     "test:ios-cpu": "node tooling/smoke-ios-cpu.mjs",
     "package": "node apps/codex-plugin/tooling/package.mjs",
     "package:release": "node apps/codex-plugin/tooling/package.mjs --release",
+    "antigravity:config": "node tooling/plugin-config.mjs antigravity",
+    "package:antigravity": "node tooling/package-plugin.mjs antigravity",
+    "test:antigravity": "node tooling/smoke-plugin.mjs antigravity",
     "claude:config": "node tooling/plugin-config.mjs claude",
     "package:claude": "node tooling/package-plugin.mjs claude",
     "test:claude": "node tooling/smoke-plugin.mjs claude",
