@@ -60,6 +60,7 @@ jobs:
         run: >
           node --test
           apps/codex-plugin/test/mcp-launch.test.ts apps/codex-plugin/test/plugin-updates.test.ts
+          packages/core/test/agent-device-runtime.test.ts
           packages/core/test/android-sdk.test.ts packages/core/test/android.test.ts packages/core/test/android-emulator.test.ts
           packages/core/test/app-storage.test.ts packages/core/test/testing-run.test.ts packages/core/test/windows-adb-trace.test.ts
           packages/core/test/app-flow-presentations-bindings.test.ts packages/core/test/app-flow-typescript-runtime.test.ts
