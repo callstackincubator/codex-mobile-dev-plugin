@@ -53,6 +53,8 @@ $sdk = Join-Path $env:LOCALAPPDATA 'Android\Sdk'
 
 The first command should show a connected phone as `device`. For `unauthorized`, unlock the phone and accept its debugging prompt. The second command applies to emulators and should print the AVD name. If the AVD fails to boot, start it once in Device Manager to see the emulator's error and check [hardware acceleration on Windows](https://developer.android.com/studio/run/emulator-acceleration). SDK Build-Tools provide `aapt2` for reading APK labels and icons.
 
+On Windows, Mobile Dev cold boots AVDs it starts and skips Quick Boot snapshot saving. Headless snapshot restores can leave adb offline or unable to run shell commands. Installed apps and AVD user data persist across these cold boots. To use Android Studio’s own boot settings, start the AVD in Device Manager and select the running emulator in Mobile Dev.
+
 The iOS tab stays available on Windows for future cloud devices. Local iOS simulation and physical iOS mirroring require macOS and Xcode.
 
 ## Android

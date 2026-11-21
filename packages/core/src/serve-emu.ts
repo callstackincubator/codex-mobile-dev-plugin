@@ -7,6 +7,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import { bootAndroidEmulator, parseAvdName } from "./android-emulator.ts";
 import { adbPath } from "./native-logs.ts";
+import { systemCommands } from "./app-control/commands.ts";
 import { errorMessage, parseBaseUrl } from "@mobile-dev/shared/protocol.ts";
 import type { SimulatorDevice, Status } from "@mobile-dev/shared/protocol.ts";
 import { annotateDeviceCommand, backendCommand } from "@mobile-dev/shared/device-command-diagnostics.ts";
@@ -165,8 +166,8 @@ export class ServeEmu {
     const running = status.devices.find(item => item.kind === "emulator" && matches(item));
     if (running?.state === "unauthorized") await this.reconnectEmulator(running.udid, trigger);
     if (running?.state !== "Booted") return;
-    const response = await execute(await adbPath(), ["-s", running.udid, "shell", "getprop", "sys.boot_completed"], { timeout: 3000 }).catch(() => undefined);
-    if (response?.stdout.trim() === "1") return status;
+    const response = await systemCommands.run(await adbPath(), ["-s", running.udid, "shell", "getprop", "sys.boot_completed"], { timeout: 3000 }).catch(() => undefined);
+    if (response?.trim() === "1") return status;
   }
 
   // A quick-boot snapshot can restore an emulator after adb has marked it unauthorized, and adb
@@ -196,12 +197,12 @@ export class ServeEmu {
     const startedAt = performance.now();
     let waited = false;
     while (!signal.aborted) {
-      const response = await execute(await adbPath(), ["-s", serial, "shell", "getprop", "sys.boot_completed"], { timeout: 3000 }).catch((error: unknown) => {
+      const response = await systemCommands.run(await adbPath(), ["-s", serial, "shell", "getprop", "sys.boot_completed"], { timeout: 3000 }).catch((error: unknown) => {
         const stderr = String((error as { stderr?: unknown }).stderr ?? "");
         if (/\b(?:not found|no devices|offline|unauthorized)\b/.test(stderr)) throw new SimulatorUnavailableError("The Android device is stopped or offline. Press Start or reconnect it.");
         return undefined;
       });
-      if (response?.stdout.trim() === "1") {
+      if (response?.trim() === "1") {
         if (waited) recordAndroidBootWait(performance.now() - startedAt, "booted");
         return;
       }
@@ -219,18 +220,21 @@ export class ServeEmu {
     const before = await this.list();
     if (!before.connected) throw new Error(before.error);
     if (!before.devices.some(device => device.udid === id)) return before;
-    await execute(await adbPath(), ["-s", id, "emu", "kill"], { timeout: 5000 });
+    const adb = await adbPath();
+    await execute(adb, ["-s", id, "emu", "kill"], { timeout: 5000 });
     const backend = this.backends.get(id);
     if (backend) this.stopBackend(backend);
     this.backends.delete(id);
-    const signal = AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(15000)]);
-    while (true) {
-      signal.throwIfAborted();
-      const status = await this.list();
-      if (!status.connected) throw new Error(status.error);
-      if (!status.devices.some(device => device.udid === id)) return status;
-      await delay(250, undefined, { signal });
+    // On Windows Quick Boot can keep the serial listed as offline while saving the snapshot.
+    // The AVD is available to boot again only after that transport has gone away.
+    const signal = AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(120_000)]);
+    while (!signal.aborted) {
+      const { stdout } = await execute(adb, ["devices"], { timeout: 5000, signal: this.lifetime.signal, windowsHide: true });
+      if (!stdout.split(/\r?\n/).some(line => line.split(/\s+/, 1)[0] === id)) return this.list();
+      await delay(500, undefined, { signal }).catch(() => {});
     }
+    this.lifetime.signal.throwIfAborted();
+    throw new SimulatorUnavailableError("The Android emulator is still shutting down after two minutes. Check its status in Android Studio’s Device Manager.");
   }
 
   async json(url: URL, path: string, options: RequestInit = {}) {
@@ -404,9 +408,9 @@ export class ServeEmu {
       // The tree must line up with the current screen even immediately after an input.
       this.json(backend.url, "/api/accessibility", { headers: { "Cache-Control": "no-cache" } }),
       this.health(backend.url),
-      execute(adb, ["-s", id, "shell", "wm", "size"], { timeout: 3000, maxBuffer: 4096 }),
+      systemCommands.run(adb, ["-s", id, "shell", "wm", "size"], { timeout: 3000, maxBuffer: 4096 }),
     ]);
-    return { tree, screen: androidDisplaySize(display.stdout, health.size) };
+    return { tree, screen: androidDisplaySize(display, health.size) };
   }
 
   dispose() {

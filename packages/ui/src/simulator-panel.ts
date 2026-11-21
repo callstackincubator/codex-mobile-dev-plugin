@@ -917,7 +917,7 @@ export function createSimulatorPanel(
     controls();
     try {
       if (wasSelected) await disconnect();
-      const result = await call(platform === "android" ? "mobile_shutdown_android_emulator" : "mobile_shutdown_simulator", platform === "android" ? { deviceId: id } : { udid: id }, { timeout: 30000 });
+      const result = await call(platform === "android" ? "mobile_shutdown_android_emulator" : "mobile_shutdown_simulator", platform === "android" ? { deviceId: id } : { udid: id }, { timeout: platform === "android" ? 150_000 : 30_000 });
       if (platform === "android") updateBookingNames(result._meta?.bookingNames);
       const next = result.structuredContent as Status;
       const selectedId = wasSelected && platform === "android" ? next.devices.find(item => item.kind !== "physical" && item.name === device.name)?.udid : selected?.udid;
