@@ -400,7 +400,8 @@ export class ServeEmu {
     const backend = await this.start(id);
     const adb = await adbPath();
     const [tree, health, display] = await Promise.all([
-      this.json(backend.url, "/api/accessibility"),
+      // The tree must line up with the current screen even immediately after an input.
+      this.json(backend.url, "/api/accessibility", { headers: { "Cache-Control": "no-cache" } }),
       this.health(backend.url),
       execute(adb, ["-s", id, "shell", "wm", "size"], { timeout: 3000, maxBuffer: 4096 }),
     ]);
