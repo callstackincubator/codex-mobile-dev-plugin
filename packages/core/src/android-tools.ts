@@ -41,7 +41,7 @@ export function registerAndroidTools(server: McpServer, android: ServeEmu, appUr
     title: "List Android devices", description: "Discover physical Android devices over USB or Wi-Fi, running emulators and installed AVDs through ADB. Returns device kind, ADB serial (udid), model when available, transport for physical devices, and state (authorized devices use Booted). Pass the serial as deviceId to select a running device in the Android panel. Listing does not boot, pair, authorize, or stream a device.", inputSchema: {}, annotations: read,
   }, guarded(async () => {
     const status = await android.list();
-    const text = status.connected ? JSON.stringify(status.devices) : status.error!;
+    const text = status.error ?? status.setupHint ?? JSON.stringify(status.devices);
     return deviceListResult(status, text);
   }));
   for (const action of ["boot", "shutdown"] as const) server.registerTool(`mobile_${action}_android_emulator`, {

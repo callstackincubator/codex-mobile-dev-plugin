@@ -30,7 +30,9 @@ For source development, `npm run vendor:baguette` downloads the pinned official 
 
 ## Android setup
 
-The package also contains a checked-in Node.js fork of serve-emu 0.0.6, its Node dependencies, and scrcpy 4.0. Android uses the same Node runtime as the server and needs Android SDK platform-tools and emulator, and an AVD or authorized attached device. Check connectivity with `mobile_list_android_devices`. The SDK lookup checks `ANDROID_HOME`, `ANDROID_SDK_ROOT`, `~/Library/Android/sdk`, then PATH.
+The package contains serve-emu 0.0.6 and scrcpy 4.0. Call `mobile_list_android_devices` and use its setup guidance when the list is empty. If adb is missing, direct the user to **Android Studio → SDK Manager → SDK Tools → Android SDK Platform-Tools**. For an emulator, also install **Android Emulator**, then create an AVD with a system image in **Device Manager**. For a phone, enable USB debugging and accept the authorization prompt, or pair it for wireless debugging.
+
+The plugin checks `ANDROID_HOME`, then `ANDROID_SDK_ROOT`, then the default SDK folder, and finally executables on `PATH`. The default it checks is `%LOCALAPPDATA%\Android\Sdk` on Windows, `~/Library/Android/sdk` on macOS and `~/Android/Sdk` on Linux. For a custom location, set `ANDROID_HOME` to the SDK root shown by SDK Manager and restart the host.
 
 Open or reuse the panel for Android work. Call `mobile_list_android_devices` to discover devices; listing does not boot them. Follow the user's choice or reuse a compatible device shared by the panel. For app development, reuse a suitable running emulator or choose an installed AVD and call `mobile_boot_android_emulator` if needed. Pick among equivalent AVDs yourself; ask only when the choice changes what the task needs. The user can also enable Android in the panel toolbar and select an AVD to boot and stream it. Use the returned running serial with the Mobile Dev Android tools. The panel needs WebCodecs H.264 support. Do not install a global serve-emu package or start a second app dev server.
 

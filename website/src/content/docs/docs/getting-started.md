@@ -13,7 +13,7 @@ Mobile Dev runs on an **Apple Silicon Mac**. Install the platform tools for the 
 | --- | --- |
 | iOS simulator | Xcode 26 or later, with an installed simulator runtime |
 | Physical iPhone or iPad | Xcode 27 or later, a paired device, Developer Mode, and USB or Wi-Fi connectivity |
-| Android | Android SDK platform-tools and emulator, plus an AVD or a physical device with authorized debugging |
+| Android | Android SDK Platform-Tools for physical devices. For AVDs, also install Android Emulator and a system image |
 | Android screen streaming | A host with H.264 WebCodecs decoding |
 | Physical iOS screen mirroring | A host with HEVC WebCodecs decoding |
 | Metro logs and React Native inspection | An existing local Metro server with a compatible app inspector target |
@@ -21,6 +21,12 @@ Mobile Dev runs on an **Apple Silicon Mac**. Install the platform tools for the 
 | Profile analysis | A local TraceSift installation, available on `PATH` or through `TRACE_SIFT_COMMAND` |
 
 Select the full Xcode installation in **Xcode Settings → Locations → Command Line Tools**. Command Line Tools alone do not provide the required simulator tools.
+
+### Set up Android
+
+1. In [Android Studio](https://developer.android.com/studio), open **SDK Manager → SDK Tools** and install **Android SDK Platform-Tools**. Note the **Android SDK Location** shown in SDK Manager.
+2. For an emulator, also install **Android Emulator**, then create an AVD in **Device Manager** and choose a system image. For a phone, enable **USB debugging** and accept the authorization prompt, or pair it for wireless debugging. [Virtual device setup](https://developer.android.com/studio/run/managing-avds) · [Physical device setup](https://developer.android.com/studio/run/device)
+3. If you use a custom SDK location, set `ANDROID_HOME` to that folder and fully restart your host app. Mobile Dev checks `%LOCALAPPDATA%\Android\Sdk` on Windows, `~/Library/Android/sdk` on macOS and `~/Android/Sdk` on Linux by default. [Android SDK environment variables](https://developer.android.com/tools/variables)
 
 ## ChatGPT and Codex
 

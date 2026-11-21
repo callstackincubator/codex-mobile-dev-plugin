@@ -2,8 +2,6 @@ import { execFile, spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
 import { access } from "node:fs/promises";
-import { constants } from "node:fs";
-import { dirname, join } from "node:path";
 import { createServer } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
@@ -17,7 +15,7 @@ import { isMissingFile, MissingRuntimeError } from "./install-integrity.ts";
 import { recordAndroidEmulatorReconnect, recordAndroidBootWait, recordAndroidBackendStartup, recordAndroidStartupStages, recordAndroidStartupContext, recordAndroidStartupDeviceState, recordAndroidBackendStop } from "./telemetry.ts";
 import { androidStartupMessageSchema, androidDeviceState, setAndroidStartupDiagnostic } from "@mobile-dev/shared/android-startup-diagnostics.ts";
 import type { AndroidStartupContext, AndroidStartupFailure, AndroidStartupSummary } from "@mobile-dev/shared/android-startup-diagnostics.ts";
-import { androidSdkRoots } from "./android-sdk.ts";
+import { androidToolPath, missingAdbMessage, sdkToolPath } from "./android-sdk.ts";
 import { panelRuntimePath } from "./panel-runtime.ts";
 import type { ResourceSaving } from "./resource-saving.ts";
 
@@ -56,24 +54,20 @@ export class ServeEmu {
     if (baseUrl) this.external = parseBaseUrl(baseUrl, "SERVE_EMU_URL");
   }
 
-  private async emulatorPath() {
-    for (const root of androidSdkRoots()) {
-      const path = join(root, "emulator/emulator");
-      try { await access(path, constants.X_OK); return path; } catch { /* Try PATH next. */ }
-    }
-    return "emulator";
-  }
-
-  async list(): Promise<Status> {
+  async list(run: (file: string, args: string[], options: { timeout: number; maxBuffer?: number; windowsHide?: boolean }) => Promise<{ stdout: string }> = execute): Promise<Status> {
     try {
       const adb = await adbPath();
-      const emulator = await this.emulatorPath();
+      const emulator = await sdkToolPath("emulator");
       const [devices, avds] = await Promise.all([
-        execute(adb, ["devices", "-l"], { timeout: 5000, maxBuffer: 1024 * 1024 }),
-        execute(emulator, ["-list-avds"], { timeout: 5000, maxBuffer: 1024 * 1024 }).catch(error => {
-          if (error.code === "ENOENT") return { stdout: "" };
-          throw error;
-        }),
+        run(adb, ["devices", "-l"], { timeout: 5000, maxBuffer: 1024 * 1024, windowsHide: true }),
+        run(emulator, ["-list-avds"], { timeout: 5000, maxBuffer: 1024 * 1024, windowsHide: true })
+          .then(({ stdout }): { stdout: string; hint?: string } => ({ stdout }))
+          .catch(error => ({
+            stdout: "",
+            hint: isMissingFile(error)
+              ? "To use a virtual device, install Android Emulator in Android Studio’s SDK Manager, then create an AVD in Device Manager."
+              : `Android Emulator could not list AVDs. Run emulator -list-avds to check the installation. ${errorMessage(error)}`,
+          })),
       ]);
       const deviceLines = devices.stdout.split(/\r?\n/);
       const runningReads = deviceLines.flatMap(line => {
@@ -88,7 +82,7 @@ export class ServeEmu {
           const emulatorDevice = /^emulator-\d+$/.test(match[1]);
           // The emulator console names the AVD before adb authorizes the device.
           if (emulatorDevice) {
-            const response = await execute(adb, ["-s", match[1], "emu", "avd", "name"], { timeout: 3000 }).catch(() => undefined);
+            const response = await run(adb, ["-s", match[1], "emu", "avd", "name"], { timeout: 3000, windowsHide: true }).catch(() => undefined);
             const avdName = parseAvdName(response?.stdout);
             if (avdName) this.avdNames.set(match[1], avdName);
             name = avdName ?? this.avdNames.get(match[1]) ?? name;
@@ -111,9 +105,16 @@ export class ServeEmu {
         return parsedId.success && !runningAvd;
       });
       const stopped = stoppedNames.map(name => ({ udid: `avd:${name}`, name, state: "Shutdown", runtime: "Android", platform: "android" as const, kind: "emulator" as const }));
-      return { connected: true, managed: [...this.backends.values()].some(backend => !!backend.child), baseUrl: this.external?.origin ?? "", devices: [...running, ...stopped] };
+      const discovered = [...running, ...stopped];
+      const setupHint = discovered.length === 0
+        ? `${avds.hint ?? "No Android virtual devices found. Create an AVD in Android Studio’s Device Manager."} Or connect an Android device with USB debugging enabled and authorize this computer.`
+        : undefined;
+      return { connected: true, managed: [...this.backends.values()].some(backend => !!backend.child), baseUrl: this.external?.origin ?? "", devices: discovered, ...(setupHint && { setupHint }) };
     } catch (error) {
-      return { connected: false, managed: false, baseUrl: "", devices: [], error: `Cannot list Android devices. Install Android SDK platform-tools and emulator. ${errorMessage(error)}` };
+      const message = isMissingFile(error)
+        ? missingAdbMessage
+        : `Cannot list Android devices. Run adb devices -l to check the connection. ${errorMessage(error)}`;
+      return { connected: false, managed: false, baseUrl: "", devices: [], error: message };
     }
   }
 
@@ -147,7 +148,7 @@ export class ServeEmu {
     const target = { platform: "android" as const, id, key: device.name, state: device.state };
     const resourceSaving = await this.resourceSaving?.enabled(target);
     const status = await bootAndroidEmulator({
-      name: device.name, executable: await this.emulatorPath(), signal: this.lifetime.signal,
+      name: device.name, executable: await sdkToolPath("emulator"), signal: this.lifetime.signal,
       ready: () => this.emulatorReady(item => item.name === device.name, "boot"),
       resourceSaving,
     });
@@ -310,8 +311,8 @@ export class ServeEmu {
     recordAndroidStartupContext(context);
     const adb = await adbPath();
     const child = spawn(process.execPath, [cli, "--host", "127.0.0.1", "--port", url.port, "--serial", id, "--max-fps", "30"], {
-      stdio: ["ignore", "pipe", "pipe", "ipc"], shell: false,
-      env: { ...process.env, PATH: `${dirname(adb)}:${process.env.PATH ?? ""}`, SERVE_EMU_UPDATE_CHECK: "0" },
+      stdio: ["ignore", "pipe", "pipe", "ipc"], shell: false, windowsHide: true,
+      env: { ...process.env, PATH: androidToolPath([adb, await sdkToolPath("emulator")]), SERVE_EMU_UPDATE_CHECK: "0" },
     });
     this.backendContexts.set(child, context);
     let stage: AndroidStartupFailure["stage"] = "process-launch";

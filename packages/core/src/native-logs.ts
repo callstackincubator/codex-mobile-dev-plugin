@@ -2,11 +2,11 @@ import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { StringDecoder } from "node:string_decoder";
 import { setTimeout as delay } from "node:timers/promises";
-import { access } from "node:fs/promises";
-import { join } from "node:path";
 import type { LogRecord, LogSourceStatus, NativeLogTarget } from "@mobile-dev/shared/logs.ts";
 import { errorMessage } from "@mobile-dev/shared/protocol.ts";
-import { androidSdkRoots } from "./android-sdk.ts";
+import { missingAdbMessage, sdkToolPath } from "./android-sdk.ts";
+import { isMissingFile } from "./install-integrity.ts";
+import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 import { parseIOSLog, parseLogcat } from "./log-parsers.ts";
 import { physicalIosLogCommand } from "./physical-ios-logs.ts";
 import { IOSLogProcessingTelemetry } from "./telemetry.ts";
@@ -15,16 +15,13 @@ const execute = promisify(execFile);
 export type LogSink = { log: (log: LogRecord) => void; status: (status: LogSourceStatus) => void };
 export type StopLogSource = () => Promise<void>;
 
-export async function adbPath(): Promise<string> {
-  for (const root of androidSdkRoots()) {
-    const path = join(root, "platform-tools/adb");
-    try { await access(path); return path; } catch { /* Try the next SDK, then PATH. */ }
-  }
-  return "adb";
-}
+export const adbPath = () => sdkToolPath("adb");
 
 export async function listAndroidLogDevices(): Promise<{ id: string; name: string }[]> {
-  const { stdout } = await execute(await adbPath(), ["devices", "-l"], { timeout: 5000, maxBuffer: 1024 * 1024 });
+  const { stdout } = await execute(await adbPath(), ["devices", "-l"], { timeout: 5000, maxBuffer: 1024 * 1024 }).catch(error => {
+    if (isMissingFile(error)) throw new ExpectedOperationError("unsupported_platform", missingAdbMessage);
+    throw error;
+  });
   return stdout.split("\n").flatMap(line => {
     const match = line.match(/^(\S+)\s+device(?:\s|$)(.*)/);
     return match ? [{ id: match[1], name: match[2].match(/model:(\S+)/)?.[1].replace(/_/g, " ") ?? match[1] }] : [];
