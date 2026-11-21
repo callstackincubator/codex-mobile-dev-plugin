@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { constants } from "node:fs";
 import { access, mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -41,7 +42,7 @@ async function findAapt2(): Promise<string | null> {
     versions.sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
     for (const version of versions) {
       const path = join(root, "build-tools", version, sdkExecutable("aapt2"));
-      if (await access(path).then(() => true, () => false)) return aapt2 = path;
+      if (await access(path, constants.X_OK).then(() => true, () => false)) return aapt2 = path;
     }
   }
   return null;

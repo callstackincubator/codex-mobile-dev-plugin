@@ -28,5 +28,6 @@ export async function sdkToolPath(name: "adb" | "emulator" | "sqlite3") {
 
 /** serve-emu and agent-device start SDK tools by name. Preserve PATH when a tool was found there. */
 export function androidToolPath(tools: string[], path = process.env.PATH ?? "") {
-  return [...new Set([...tools.filter(isAbsolute).map(tool => dirname(tool)), ...path.split(delimiter)])].join(delimiter);
+  const inherited = path ? path.split(delimiter) : [];
+  return [...new Set([...tools.filter(isAbsolute).map(tool => dirname(tool)), ...inherited])].join(delimiter);
 }

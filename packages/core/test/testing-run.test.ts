@@ -60,7 +60,7 @@ test("a retried test is read from the attempt that decided it", () => {
   assert.deepEqual(reportSteps(raw, FILE).map(step => step.status), ["passed"]);
 });
 
-test("the final Windows runner report retains step indexes for the selected test", () => {
+test("the final runner report retains step indexes for one selected test without source locations", () => {
   const raw = report([{ line: 1, status: "passed" }, { line: 1, status: "failed" }]);
   const result = raw.run.results[0]!;
   Object.assign(result, { file: FILE.replaceAll("/", "\\") });
@@ -68,6 +68,8 @@ test("the final Windows runner report retains step indexes for the selected test
   assert.deepEqual(reportSteps(raw, FILE).map(step => [step.stepIndex, step.line, step.status]),
     [[0, undefined, "passed"], [1, undefined, "failed"]]);
   assert.deepEqual(reportSteps(raw, "tests/another.e2e.ts"), []);
+  Object.assign(result, { file: FILE });
+  assert.deepEqual(reportSteps(raw, FILE).map(step => step.stepIndex), [0, 1]);
   raw.run.results.push(result);
   assert.deepEqual(reportSteps(raw, FILE), [], "step indexes restart for each test");
 });
@@ -281,6 +283,20 @@ test("a test that really failed is not retried into a different answer", async (
 
   assert.equal(calls.length, 1, "there are steps, so the config was fine and the failure is the test's");
   assert.equal(result.status, "failed");
+});
+
+test("a passing test with no source locations runs only once when its output mentions config", async () => {
+  const root = await project();
+  const output = JSON.stringify({ ...report([]), config: "e2e.config.ts" });
+  let runs = 0;
+  const spawn = ((command: string, args: readonly string[], options: { cwd?: string }) => {
+    runs++;
+    return spawner(output)(command, args, options as never);
+  }) as never;
+  const result = await runRecordedTest({ projectPath: root, relativePath: FILE, configPath: join(root, "e2e.config.ts") },
+    { spawner: spawn, onProgress: () => undefined });
+  assert.equal(result.status, "passed");
+  assert.equal(runs, 1);
 });
 
 test("the generated config is syntactically whole, line by line", () => {

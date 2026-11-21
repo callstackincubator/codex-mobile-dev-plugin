@@ -61,7 +61,7 @@ See [storage privacy and review checks](docs/storage-privacy.md).
 **[Add Mobile Dev to Codex](https://chatgpt.com/plugins/plugins_6ac4c117f76881918d3676e851fa4005)**
 from the plugin directory, then open a new chat.
 
-On Windows, choose **Android** to connect an emulator or phone. The iOS tab stays visible for future cloud devices. [Set up Android on Windows](https://github.com/callstackincubator/mobile-dev/blob/main/docs/devices.md#android-on-windows)
+On Windows, choose **Android** to connect an emulator or phone. The iOS tab stays visible for future cloud devices. [Set up Android on Windows](docs/devices.md#android-on-windows)
 
 To install the prebuilt plugin from this repository instead, see
 [Install from the GitHub marketplace](CONTRIBUTING.md#install-from-the-github-marketplace).

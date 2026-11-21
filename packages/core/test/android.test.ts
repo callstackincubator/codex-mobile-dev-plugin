@@ -29,8 +29,8 @@ test("Android discovery distinguishes a missing SDK, missing emulator, and empty
   const unavailable = await backend.list(async () => { throw missing; });
   assert.equal(unavailable.connected, false);
   assert.match(unavailable.error!, /Platform-Tools \(adb\).*SDK Manager.*ANDROID_HOME.*PATH/);
-  const physicalOnly = async (deviceList: string) => backend.list(async (_file, args) => {
-    if (args[0] === "-list-avds") throw missing;
+  const physicalOnly = async (deviceList: string, emulatorError: Error = missing) => backend.list(async (_file, args) => {
+    if (args[0] === "-list-avds") throw emulatorError;
     return { stdout: deviceList };
   });
   const noEmulator = await physicalOnly("List of devices attached\r\n");
@@ -40,6 +40,13 @@ test("Android discovery distinguishes a missing SDK, missing emulator, and empty
   assert.equal(phone.connected, true);
   assert.equal(phone.devices[0].udid, "serial");
   assert.equal(phone.setupHint, undefined);
+  const brokenEmulator = new Error("failed to read the AVD directory");
+  const connected = await physicalOnly("serial device model:Pixel\r\n", brokenEmulator);
+  assert.deepEqual(connected.devices, phone.devices);
+  assert.equal(connected.setupHint, undefined);
+  const broken = await physicalOnly("", brokenEmulator);
+  assert.equal(broken.connected, true);
+  assert.match(broken.setupHint!, /emulator -list-avds.*failed to read the AVD directory/);
   const noAvds = await backend.list(async () => ({ stdout: "" }));
   assert.equal(noAvds.connected, true);
   assert.match(noAvds.setupHint!, /Create an AVD.*Device Manager.*USB debugging/);

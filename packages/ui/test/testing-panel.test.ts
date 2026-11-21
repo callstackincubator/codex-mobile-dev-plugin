@@ -159,6 +159,27 @@ test("a project test polls live progress against its own source lines", async ()
   panel.dispose();
 });
 
+test("step indexes in an edited recording use the saved source's awaited calls", async () => {
+  const panel = new TestingPanel(host({
+    mobile_testing_write_file: { written: true, existed: false, path: `${PROJECT}/tests/flow.e2e.ts` },
+    mobile_testing_run_test: { status: "failed", steps: [
+      { stepIndex: 1, status: "failed", error: "Button missing" }, { stepIndex: 0, status: "passed" },
+    ] },
+  }, []), deviceApps);
+  panel.setAvailable(true);
+  (panel as unknown as { update(fields: Record<string, unknown>): void }).update({ projectPath: PROJECT, fileName: "flow" });
+  testRecorder.editSource('test("flow", async ({ app, screen }) => {\n  await app.open();\n\n  await screen.getByText("Done").tap();\n});');
+  try {
+    await panel.runTest();
+    assert.deepEqual(testRecorder.getSnapshot().run?.lines, { 2: "passed", 4: "failed" });
+    assert.equal(testRecorder.getSnapshot().run?.error, "Button missing");
+  } finally {
+    testRecorder.clearRun();
+    testRecorder.clearSteps();
+    panel.dispose();
+  }
+});
+
 test("Play until here runs the flow cut short, and never writes the test", async () => {
   const calls: { name: string; arguments: Record<string, unknown> }[] = [];
   const panel = new TestingPanel(host({
