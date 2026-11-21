@@ -12,7 +12,7 @@ Discovery preserves remembered disconnected and unavailable devices. Their `tran
 
 The native panel targets Codex desktop, iOS simulators, and Android emulators or attached devices. The active Mobile Dev MCP server also works through stdio in a local MCP client. Use the selected UDID for iOS tools and the selected running serial for Android tools. This plugin does not build the user's app. Codex's permission and confirmation rules still apply to tool calls.
 
-Android logs need `adb` from an installed Android SDK. The reader checks `ANDROID_HOME`, `ANDROID_SDK_ROOT`, `~/Library/Android/sdk`, then PATH. Metro logs need an existing local Metro server and an app with an inspector target. The log tools connect to that server without starting it.
+Android tools look for the SDK in `ANDROID_HOME`, `ANDROID_SDK_ROOT`, and the default SDK location, then check `PATH` for executables. Metro logs need an existing local Metro server and an app with an inspector target. The log tools connect to that server without starting it.
 
 ## Device panel
 
@@ -38,7 +38,11 @@ You can request fullscreen or a tool-only workflow. Planning, docs, code review,
 
 ## Android
 
-Install Android SDK platform-tools and emulator. Create an AVD in Android Studio or connect an Android device and authorize adb access. The Android panel lists devices without booting one. Selecting an AVD boots it if needed, then starts the bundled Node.js serve-emu CLI on a private loopback port. Home, Back, Recents, Lock, pointer gestures, and typing use scrcpy's control socket. Closing the panel leaves the emulator running. AVDs start without a separate emulator window. A failed emulator process reports its exit right away instead of waiting for the boot timeout.
+Install **Android SDK Platform-Tools** in Android Studio's **SDK Manager → SDK Tools**. For a virtual device, also install **Android Emulator**, then create an AVD with a system image in **Device Manager**. For a physical phone, enable USB or wireless debugging and authorize your computer. [Virtual device setup](https://developer.android.com/studio/run/managing-avds) · [Physical device setup](https://developer.android.com/studio/run/device)
+
+For a custom SDK, set `ANDROID_HOME` to the **Android SDK Location** shown in SDK Manager. The default SDK paths checked on macOS and Linux are `~/Library/Android/sdk` and `~/Android/Sdk`, respectively. On either system, verify a phone with `"$ANDROID_HOME/platform-tools/adb" devices -l` or list configured AVDs with `"$ANDROID_HOME/emulator/emulator" -list-avds` after setting that variable. [Android SDK environment variables](https://developer.android.com/tools/variables)
+
+The Android panel lists devices without booting one. Selecting an AVD boots it if needed, then starts the bundled Node.js serve-emu CLI on a private loopback port. Home, Back, Recents, Lock, pointer gestures, and typing use scrcpy's control socket. Closing the panel leaves the emulator running. AVDs start without a separate emulator window. A failed emulator process reports its exit right away instead of waiting for the boot timeout.
 
 The Android dropdown shows **Connected devices** first, with USB or Wi-Fi labels, then **Emulators**. It refreshes every three seconds while the Android panel is visible, and when opening the dropdown. Physical devices use ADB discovery: enable USB debugging and authorize the computer, or pair the device for wireless debugging. Offline and unauthorized devices remain visible with their state. Emulators keep their AVD name while unauthorized. An emulator restored from a quick-boot snapshot can stay unauthorized because adb does not repeat the key exchange; the panel reconnects adb at most every 5 seconds while an AVD boots, and for up to 15 seconds after you select an already running emulator. Selecting an authorized phone connects its screen and shares its serial and transport with the chat. Bundled scrcpy mirrors and controls the phone without installing a companion app. Physical Android devices support the existing screen, input, screenshot, native log, and performance tools; emulator boot and stop controls do not apply to them.
 

@@ -47,8 +47,8 @@ calls when prompted. Run `claude plugin marketplace update mobile-dev` to update
   [nodejs.org](https://nodejs.org), then restart Claude.
 - **iOS:** Xcode 26 or later with an installed simulator runtime. Physical iPhone
   logs need Xcode 27 or later.
-- **Android:** Android SDK platform-tools and emulator, and an AVD or a device with
-  USB or wireless debugging authorized.
+- **Android:** Android SDK Platform-Tools for an authorized USB or wireless device.
+  For a virtual device, also install Android Emulator and create an AVD with a system image.
 
 ## What it runs on your Mac
 

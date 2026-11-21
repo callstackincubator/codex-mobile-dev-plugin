@@ -22,6 +22,36 @@ const ID = "emulator-5554";
 const SCREEN = { width: 1080, height: 2400 };
 const H264 = Buffer.from([0, 0, 0, 1, 0x67, 0x64, 0, 0x28, 0, 0, 0, 1, 0x65, 1]);
 
+test("Android discovery distinguishes a missing SDK, missing emulator, and empty AVD list", async t => {
+  const backend = new ServeEmu();
+  t.after(() => backend.dispose());
+  const missing = Object.assign(new Error("not found"), { code: "ENOENT" });
+  const unavailable = await backend.list(async () => { throw missing; });
+  assert.equal(unavailable.connected, false);
+  assert.match(unavailable.error!, /Platform-Tools \(adb\).*SDK Manager.*ANDROID_HOME.*PATH/);
+  const physicalOnly = async (deviceList: string, emulatorError: Error = missing) => backend.list(async (_file, args) => {
+    if (args[0] === "-list-avds") throw emulatorError;
+    return { stdout: deviceList };
+  });
+  const noEmulator = await physicalOnly("List of devices attached\r\n");
+  assert.equal(noEmulator.connected, true);
+  assert.match(noEmulator.setupHint!, /install Android Emulator.*Device Manager/i);
+  const phone = await physicalOnly("List of devices attached\r\nserial device model:Pixel\r\n");
+  assert.equal(phone.connected, true);
+  assert.equal(phone.devices[0].udid, "serial");
+  assert.equal(phone.setupHint, undefined);
+  const brokenEmulator = new Error("failed to read the AVD directory");
+  const connected = await physicalOnly("serial device model:Pixel\r\n", brokenEmulator);
+  assert.deepEqual(connected.devices, phone.devices);
+  assert.equal(connected.setupHint, undefined);
+  const broken = await physicalOnly("", brokenEmulator);
+  assert.equal(broken.connected, true);
+  assert.match(broken.setupHint!, /emulator -list-avds.*failed to read the AVD directory/);
+  const noAvds = await backend.list(async () => ({ stdout: "" }));
+  assert.equal(noAvds.connected, true);
+  assert.match(noAvds.setupHint!, /Create an AVD.*Device Manager.*USB debugging/);
+});
+
 test("Android booking names are app metadata for live ADC relays only", async t => {
   const directory = await mkdtemp(join(tmpdir(), "mobile-dev-adc-labels-"));
   const previousHome = process.env.HOME;

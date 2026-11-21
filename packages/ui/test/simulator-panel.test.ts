@@ -566,6 +566,17 @@ test("Android refresh connects an arriving phone once and closes its stream when
   assert.equal(lifecycle.length, 0);
 });
 
+test("the Android panel shows the server's emulator setup hint when adb is available but the device list is empty", async t => {
+  const { android } = fixture(t);
+  android.panel.setOpeningTarget({ platform: "android" });
+  const setupHint = "Install Android Emulator in SDK Manager, then create an AVD in Device Manager.";
+  android.panel.acceptStatus({ connected: true, managed: false, baseUrl: "", devices: [], setupHint });
+  assert.equal(android.element("empty").textContent, "No Android devices.");
+  assert.equal(android.element("empty-description").textContent, setupHint);
+  assert.equal(android.element("empty-description").hidden, false);
+  assert.equal(android.element("start-device").disabled, true);
+});
+
 test("Android discovery polls visible panels, shares refreshes, and removes disconnected phones", async t => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const f = fixture(t);

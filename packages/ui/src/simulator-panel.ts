@@ -585,7 +585,9 @@ export function createSimulatorPanel(
       placeholder: available.length ? "Select a device" : next.connected ? "No devices" : "Devices unavailable",
     });
     selectDevice();
-    if (!next.connected && physicalDevices.length === 0) {
+    if (platform === "android" && !available.length && (next.setupHint || !next.connected)) {
+      empty(next.connected ? "No Android devices." : "Android devices unavailable.", next.setupHint ?? next.error);
+    } else if (!next.connected && physicalDevices.length === 0) {
       empty("Could not start the simulator backend.");
       notice(next.error);
     }
