@@ -61,6 +61,8 @@ See [storage privacy and review checks](docs/storage-privacy.md).
 **[Add Mobile Dev to Codex](https://chatgpt.com/plugins/plugins_6ac4c117f76881918d3676e851fa4005)**
 from the plugin directory, then open a new chat.
 
+On Windows, choose **Android** to connect an emulator or phone. The iOS tab stays visible for future cloud devices. [Set up Android on Windows](https://github.com/callstackincubator/mobile-dev/blob/main/docs/devices.md#android-on-windows)
+
 To install the prebuilt plugin from this repository instead, see
 [Install from the GitHub marketplace](CONTRIBUTING.md#install-from-the-github-marketplace).
 
@@ -185,7 +187,7 @@ open "release/mac/Mobile Dev.app"
 
 ## Requirements
 
-Codex desktop supports Android on Windows and Apple Silicon Macs. Local iOS devices require an Apple Silicon Mac. See [setting up Android on Windows](docs/devices.md#android-on-windows). The prebuilt Codex plugin
+Codex desktop supports Android on Windows and Apple Silicon Macs. Local iOS devices require an Apple Silicon Mac. The prebuilt Codex plugin
 uses Codex's bundled Node runtime from its workspace dependency cache; the Claude
 Desktop bundle uses Claude's Node runtime, the Cursor plugin uses Node.js from
 `PATH`, and the Mac app bundles its own. Install the tools for the platforms you use:

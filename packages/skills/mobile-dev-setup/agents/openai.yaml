@@ -1,10 +1,10 @@
 interface:
   display_name: "Set up Mobile Dev"
-  short_description: "Check the bundled simulator backend"
-  default_prompt: "Set up Mobile Dev and open my iOS simulator."
+  short_description: "Check local iOS and Android device setup"
+  default_prompt: "Set up Mobile Dev and show the devices available on this computer."
 
 dependencies:
   tools:
     - type: "mcp"
       value: "mobile-dev"
-      description: "Bundled Baguette simulator tools and native panel"
+      description: "iOS and Android device discovery and panel"

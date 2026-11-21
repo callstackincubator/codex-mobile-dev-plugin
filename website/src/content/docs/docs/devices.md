@@ -43,6 +43,8 @@ Close Device Hub's mirroring window while using Mobile Dev's physical iOS mirror
 
 On Windows, Mobile Dev cold boots AVDs it starts. Installed apps and AVD user data persist. To use Android Studio’s Quick Boot, start the AVD in Device Manager and select the running emulator in Mobile Dev.
 
+Windows uses the AVD's configured memory and CPU settings. The **Save resources** control uses the Apple Silicon macOS helper `avdslim` and is unavailable on Windows. The iOS tab remains visible. Local iOS simulators and physical iOS mirroring require macOS and Xcode. [Set up Android](/docs/getting-started#set-up-android)
+
 ## Physical Android devices
 
 Enable USB debugging and authorize your computer, or pair the device for wireless debugging. Choose it under **Connected devices**. Offline or unauthorized devices remain visible with their connection state.

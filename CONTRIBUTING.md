@@ -291,7 +291,7 @@ codex plugin add mobile-dev@mobile-dev-local
 
 Open a new chat after installing, then open Mobile Dev from the sidebar.
 
-`npm run package` writes the local ZIP to `release/mobile-dev-<version>-darwin-arm64.zip`. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
+`npm run package` writes the local ZIP to `release/mobile-dev-<version>-windows.zip` on Windows and `release/mobile-dev-<version>-darwin-arm64.zip` on Apple Silicon Macs. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
 
 ### Claude Desktop local development
 
