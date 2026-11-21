@@ -56,7 +56,8 @@ describe("App Flow TypeScript runtime", () => {
     }
     assert.ok(error instanceof ExpectedOperationError);
     assert.equal(error.outcome, "invalid_input");
-    assert.match(error.message, new RegExp(`${root}[\\s\\S]*npm install --save-dev typescript`));
+    assert.ok(error.message.includes(root));
+    assert.match(error.message, /npm install --save-dev typescript/);
   });
 
   it("prefers the project copy over the one the bundle would otherwise fall back to", async () => {
