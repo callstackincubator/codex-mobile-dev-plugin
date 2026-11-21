@@ -90,12 +90,12 @@ function updateFailure(error: unknown): UpdateFailure | "unknown" {
 
 export async function resolveCodexCli(parentPid = process.ppid, cwd = homedir()): Promise<string> {
   const windows = process.platform === "win32";
-  const options = { cwd, timeout: 5000, maxBuffer: 4096, windowsHide: true };
+  const options = { cwd, timeout: windows ? 15_000 : 5000, maxBuffer: 4096, windowsHide: true };
   // On Windows Codex runs the packaged .cmd launcher in cmd.exe. Cross only that
   // wrapper, so an unrelated shell or a Codex executable on PATH cannot select a CLI.
   const launcher = fileURLToPath(new URL("../scripts/launch-mcp.cmd", import.meta.url));
-  const result = windows
-    ? await execute(join(process.env.SystemRoot ?? "C:\\Windows", "System32/WindowsPowerShell/v1.0/powershell.exe"), [
+  const lookup = windows
+    ? execute(join(process.env.SystemRoot ?? "C:\\Windows", "System32/WindowsPowerShell/v1.0/powershell.exe"), [
       "-NoProfile", "-NonInteractive", "-Command", [
         "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8",
         "$p = Get-CimInstance Win32_Process -Filter ('ProcessId = ' + $env:MOBILE_DEV_PARENT_PID)",
@@ -104,8 +104,8 @@ export async function resolveCodexCli(parentPid = process.ppid, cwd = homedir())
         "$p.ExecutablePath",
       ].join("; "),
     ], { ...options, env: { ...process.env, MOBILE_DEV_PARENT_PID: String(parentPid), MOBILE_DEV_LAUNCHER: launcher } })
-    : await execute("/bin/ps", ["-p", String(parentPid), "-o", "comm="], options);
-  const path = result.stdout.trim();
+    : execute("/bin/ps", ["-p", String(parentPid), "-o", "comm="], options);
+  const path = await lookup.then(result => result.stdout.trim(), () => "");
   const absolute = isAbsolute(path);
   const name = basename(path);
   if (!absolute || (windows ? name.toLowerCase() !== "codex.exe" : name !== "codex")) throw new PluginUpdateError("Could not locate the Codex executable that launched Mobile Dev.", "codex-not-found");
