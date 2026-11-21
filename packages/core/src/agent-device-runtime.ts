@@ -4,7 +4,7 @@ import type { RequestOptions } from "@modelcontextprotocol/sdk/shared/protocol.j
 import { CallToolResultSchema, type CallToolRequest, type CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import * as Sentry from "@sentry/node";
 import { execFile } from "node:child_process";
-import { mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -51,7 +51,7 @@ export async function claimAgentDeviceStateDirectory(
 export class AgentDeviceRuntime {
   private readonly cli: string;
   private readonly config: string;
-  private state?: Promise<State>;
+  private state?: State;
   private starting?: Promise<Client>;
   /** The connected client; only its unexpected exit restarts the runtime. */
   private client?: Client;
@@ -93,6 +93,8 @@ export class AgentDeviceRuntime {
 
   private async createState(): Promise<State> {
     const directory = await claimAgentDeviceStateDirectory();
+    // App Flow and Testing can pin this as the daemon's working directory before it exists.
+    await mkdir(directory, { recursive: true, mode: 0o700 });
     console.error(`[mobile-dev] agent-device state directory: ${directory}`);
     const stopStorageMetrics = startStorageMetrics({ agent_device_state: directory, apple_runner_cache: join(homedir(), ".agent-device/apple-runner") });
     return { directory, stopStorageMetrics };
@@ -100,7 +102,7 @@ export class AgentDeviceRuntime {
 
   private async start() {
     const startedAt = performance.now();
-    const { directory } = await (this.state ??= this.createState());
+    const { directory } = this.state ??= await this.createState();
     const client = new Client({ name: "mobile-dev-agent-device", version: "1" });
     const transport = new StdioClientTransport({ command: process.execPath, args: [this.cli, "mcp"], cwd: directory, env: this.environment(directory), stderr: "inherit" });
     // A start that fails closes its client too; connect reports that instead.
@@ -119,7 +121,8 @@ export class AgentDeviceRuntime {
   async close() {
     if (this.closing) return;
     this.closing = true;
-    const [client, state] = await Promise.all([this.starting?.catch(() => undefined), this.state?.catch(() => undefined)]);
+    const client = await this.starting?.catch(() => undefined);
+    const state = this.state;
     try { await client?.close(); }
     finally {
       state?.stopStorageMetrics();
