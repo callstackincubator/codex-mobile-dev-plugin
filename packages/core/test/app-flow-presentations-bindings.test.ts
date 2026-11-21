@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
+import { join, resolve } from 'node:path'
 import { describe, it } from 'node:test'
+import { pathToFileURL } from 'node:url'
 import type { AppFlowPresentationAction, AppFlowStateSite } from '@mobile-dev/shared/app-flow.ts'
 import { bindPresentationSites } from '../src/app-flow/presentations-bindings.ts'
 import type { AppFlowBindingStats, AppFlowPresentationBinding } from '../src/app-flow/presentations-bindings.ts'
@@ -27,6 +29,15 @@ function metro(map: (frame: { lineNumber: number; column: number }, index: numbe
 const at = (line: number, column = 4) => () => ({ file: `${root}/src/Screen.tsx`, lineNumber: line, column })
 
 describe('App Flow presentation binding symbolication', () => {
+  it('joins a Metro file URL with a project-relative source site', async () => {
+    const project = resolve('my project')
+    const file = pathToFileURL(join(project, 'src', 'Screen.tsx')).href
+    const { fetch } = metro(() => ({ file, lineNumber: 1, column: 0 }))
+    const binding = { id: 'button', owner: 'Screen', stack: `    at Screen (${bundle}:1:1)` }
+    const matches = await bindPresentationSites(project, [binding], { states: [state({ id: 'site' })], actions: [] }, { metroOrigin, fetch })
+    assert.deepEqual(matches, [{ binding: 'button', site: 'site' }])
+  })
+
   it('parses both stack frame formats and resolves each against Metro', async () => {
     const bindings: AppFlowPresentationBinding[] = [
       { id: 'a', owner: 'Screen', stack: `    at Screen (${bundle}:10:21)` },
