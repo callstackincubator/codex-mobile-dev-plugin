@@ -995,6 +995,21 @@ export class TestingPanel {
       && !this.snapshot.loadingTest && !this.snapshot.agent?.active && !this.snapshot.running && !this.snapshot.saving);
   }
 
+  private finishRun(data: Record<string, unknown>, calls: readonly number[]) {
+    const steps = (Array.isArray(data.steps) ? data.steps : []).flatMap(item => {
+      const step = object(item);
+      if (!step) return [];
+      const line = typeof step.line === "number" ? step.line : typeof step.stepIndex === "number" ? calls[step.stepIndex] : undefined;
+      if (line === undefined || line <= 0) return [];
+      return [{ line, status: text(step.status), ...(text(step.error) ? { error: text(step.error) } : {}) }];
+    });
+    const status = text(data.status) || "failed";
+    testRecorder.finishRun({ status, steps,
+      ...(text(data.output) ? { output: text(data.output) } : {}),
+      ...(typeof data.durationMs === "number" && Number.isFinite(data.durationMs) ? { durationMs: data.durationMs } : {}) });
+    countUiEvent(status === "passed" ? "ui.testing.run_passed" : "ui.testing.run_failed");
+  }
+
   /** Runs a temporary sibling copy so Play and Run never save the working copy implicitly. */
   async runStoredTest(untilLine?: number) {
     if (!this.canRunStored) return;
@@ -1018,15 +1033,7 @@ export class TestingPanel {
         ...(this.snapshot.configPath ? { configPath: this.snapshot.configPath } : {}),
         ...(this.snapshot.targetName ? { target: this.snapshot.targetName } : {}),
       }, 15 * 60_000);
-      const data = object(response.structuredContent) ?? {};
-      const steps = (Array.isArray(data.steps) ? data.steps : []).map(entry => object(entry))
-        .filter((entry): entry is Record<string, unknown> => entry !== null)
-        .map(entry => ({ line: typeof entry.line === "number" ? entry.line : 0, status: text(entry.status), ...(text(entry.error) ? { error: text(entry.error) } : {}) }))
-        .filter(step => step.line > 0);
-      testRecorder.finishRun({ status: text(data.status) || "failed", steps,
-        ...(text(data.output) ? { output: text(data.output) } : {}),
-        ...(typeof data.durationMs === "number" ? { durationMs: data.durationMs } : {}) });
-      countUiEvent(text(data.status) === "passed" ? "ui.testing.run_passed" : "ui.testing.run_failed");
+      this.finishRun(object(response.structuredContent) ?? {}, callLines);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       testRecorder.failRun(message);
@@ -1090,7 +1097,9 @@ export class TestingPanel {
     const startedAt = performance.now(), telemetryContext = getUiTelemetryAttributes();
     // The run's own tool call is one request and one response, so progress comes from polling a
     // second tool while it is in flight. See `mobile_testing_run_progress`.
-    const poll = setInterval(() => { void this.pollRunProgress(); }, 400);
+    const callLines = testRecorder.getSnapshot().sourceOverride !== undefined
+      ? storedTestCallLines(testRecorder.source) : testRecorder.emitted.calls;
+    const poll = setInterval(() => { void this.pollRunProgress(callLines); }, 400);
     try {
       const response = await this.call("mobile_testing_run_test", {
         projectPath: this.snapshot.projectPath, relativePath,
@@ -1098,24 +1107,7 @@ export class TestingPanel {
         ...(this.snapshot.targetName ? { target: this.snapshot.targetName } : {}),
         ...(until ? { untilSource: until.source } : {}),
       }, 15 * 60_000);
-      const data = object(response.structuredContent) ?? {};
-      const steps = (Array.isArray(data.steps) ? data.steps : []).map(entry => object(entry))
-        .filter((entry): entry is Record<string, unknown> => entry !== null)
-        .map(entry => ({
-          line: typeof entry.line === "number" ? entry.line : 0,
-          status: text(entry.status),
-          ...(text(entry.error) ? { error: text(entry.error) } : {}),
-        }))
-        .filter(step => step.line > 0);
-      // The runner's own number for the run, which is not the timing below: that one brackets the
-      // whole call, spawning the CLI and resolving the project included.
-      const durationMs = typeof data.durationMs === "number" && Number.isFinite(data.durationMs) ? data.durationMs : undefined;
-      testRecorder.finishRun({
-        status: text(data.status) || "failed", steps,
-        ...(text(data.output) ? { output: text(data.output) } : {}),
-        ...(durationMs === undefined ? {} : { durationMs }),
-      });
-      countUiEvent(text(data.status) === "passed" ? "ui.testing.run_passed" : "ui.testing.run_failed");
+      this.finishRun(object(response.structuredContent) ?? {}, callLines);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       testRecorder.failRun(message);
