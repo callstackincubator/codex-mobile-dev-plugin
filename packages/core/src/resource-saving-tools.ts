@@ -16,8 +16,8 @@ const targetSchema = z.discriminatedUnion("platform", [
 type Target = z.infer<typeof targetSchema>;
 
 export function registerResourceSavingTools(server: McpServer, baguette: Baguette, android: ServeEmu, saving = new ResourceSaving()) {
-  baguette.resourceSaving = saving;
-  android.resourceSaving = saving;
+  baguette.resourceSaving = saving.supported ? saving : undefined;
+  android.resourceSaving = saving.supported ? saving : undefined;
   const device = async (target: Target): Promise<ResourceSavingDevice> => {
     const found = target.platform === "ios" ? await baguette.device(target.id) : await android.device(target.id);
     if (found.kind === "physical") throw new ExpectedOperationError("invalid_input", "Resource saving is available only for simulators and emulators.");
@@ -38,12 +38,14 @@ export function registerResourceSavingTools(server: McpServer, baguette: Baguett
     inputSchema: { target: targetSchema }, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }, _meta: { ui: { visibility: ["app"] } },
   }, guarded("read", async target => {
     const selected = await device(target);
+    if (!saving.supported) return { supported: false, enabled: false, running: selected.state === "Booted", restartRequired: false };
     return saving.state(selected);
   }));
   registerAppTool(server, "mobile_set_resource_saving", {
     title: "Set resource saving", description: "Save resource saving for one existing simulator or emulator. The preference applies on the next start; it never restarts a running device.",
     inputSchema: { target: targetSchema, enabled: z.boolean() }, annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false }, _meta: { ui: { visibility: ["app"] } },
   }, guarded("set", async (target, enabled) => {
+    if (!saving.supported) throw new ExpectedOperationError("unsupported_platform", "The bundled resource-saving tools require an Apple silicon Mac.");
     const selected = await device(target);
     return saving.set(selected, enabled!);
   }));

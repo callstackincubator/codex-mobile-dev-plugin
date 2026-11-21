@@ -78,12 +78,10 @@ keep it. Restart the server from **View › Restart Server** (⇧⌘R).
 
 ## Development requirements
 
-- An Apple Silicon Mac with Xcode 27 and Swift 6.4 or later selected as the active
-  developer tools, plus an installed iOS simulator runtime.
+- For Apple helpers and release builds, an Apple Silicon Mac with Xcode 27, Swift 6.4 or later selected as the active developer tools, and an installed iOS simulator runtime. Windows development builds use the checked-in Android collectors.
 - Node.js 22.19 or later, npm, Git, and network access to fetch pinned dependencies.
-- Rust and Cargo for the iOS native helpers. The release workflow uses Rust 1.98.1.
-- CMake, Ninja, pkg-config, OpenSSL 3, Autoconf, Automake, and Libtool for native
-  builds. With Homebrew, install them using:
+- For the iOS native helpers, Rust and Cargo. The release workflow uses Rust 1.98.1.
+- CMake, Ninja, pkg-config, OpenSSL 3, Autoconf, Automake, and Libtool for rebuilding native helpers. With Homebrew, install them using:
 
   ```sh
   brew install cmake ninja pkgconf openssl@3 autoconf automake libtool
@@ -110,8 +108,26 @@ titles for squash merges. Git-generated merge messages are exempt. Existing
 history does not need rewriting. Make the `commitlint` check required in the
 repository's branch rules to block merging a failed check.
 
-From the repository root, prepare the JavaScript runtimes and native helpers,
-then build and verify the package:
+For a local Windows build, install the Android SDK platform-tools and emulator. Set
+`ANDROID_HOME` if the SDK is outside `%LOCALAPPDATA%\Android\Sdk`. In PowerShell, run
+the following from the repository root.
+
+```powershell
+npm ci
+npm run vendor:agent-device
+npm run vendor:serve-emu
+npm run build
+npm run package
+$env:MOBILE_DEV_TELEMETRY = 'off'
+npm run test:package
+```
+
+This produces a local marketplace under `release/marketplace` and
+`release/mobile-dev-<version>-windows.zip`. To test installation with the Codex CLI,
+run `npm run test:codex-plugin`.
+
+For the full macOS build, prepare the JavaScript runtimes and native helpers from
+the repository root.
 
 ```sh
 npm ci
@@ -132,7 +148,7 @@ npm run test:codex-plugin
 npm run check:mcp-budget
 ```
 
-Native rebuilds are required on a fresh checkout. Repeat the affected rebuild when
+The full macOS build requires native rebuilds on a fresh checkout. Repeat the affected rebuild when
 changing native code or shared native telemetry; the build validates source and
 binary hashes. For UI or server edits with unchanged native sources, run the build,
 relevant checks, and packaging steps again.
@@ -143,11 +159,11 @@ relevant checks, and packaging steps again.
 
 agent-device is held at 0.21.33 in the weekly dependency updater. Versions 0.21.34 and 0.21.35 reject iOS input when an obsolete Xcode selection link points at a deleted installation, even when `xcode-select -p` and `xcrun` resolve the installed Xcode. See [upstream #3995](https://github.com/callstack/agent-device/pull/3995). Verify that case before raising the pin and removing the updater hold.
 
-`build` also bundles JavaScript and CSS with esbuild and copies Baguette into `dist/baguette`. It does not run TypeScript, lint, Biome, visual checks, or React Doctor.
+`build` also bundles JavaScript and CSS with esbuild and includes Baguette in macOS builds under `dist/baguette`. It does not run TypeScript, lint, Biome, visual checks, or React Doctor.
 
-`package` copies built files into `release/marketplace/plugins/mobile-dev` and creates the ZIP. It includes agent-device's runtime `node_modules`, licenses, and Apple runner source. The Codex compatibility manifest lives at `apps/codex-plugin/.codex-plugin/plugin.json` and declares `.mcp.json`. The MCP entry invokes `apps/codex-plugin/scripts/launch-mcp.sh` (`scripts/launch-mcp.sh` inside the package) through `/bin/sh` and explicitly forwards `HOME` and the telemetry settings. The launcher directly executes Codex's bundled Node at `$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node`. `npm start` uses the same launcher. The `build-codex-native-plugins` skill in `.agents/skills` helps agents working on this repository and is not shipped.
+`package` copies built files into `release/marketplace/plugins/mobile-dev` and creates the ZIP. It includes agent-device's runtime `node_modules`, licenses, and Apple runner source. The Codex compatibility manifest lives at `apps/codex-plugin/.codex-plugin/plugin.json` and declares `.mcp.json`. The MCP entry runs `./scripts/launch-mcp` from the plugin directory. Unix uses the executable shell script and Windows resolves its `.cmd` sibling. Both launch the Node runtime in the Codex cache under the user profile. The manifest forwards the profile, Android SDK and telemetry settings. For a development build, `npm start` runs the built server with the Node executable on PATH. The `build-codex-native-plugins` skill in `.agents/skills` helps agents working on this repository and is not shipped.
 
-`test` checks MCP contracts, frame reads, input validation, and capture cleanup against a local fixture, plus runtime selection and argument forwarding with Node absent from PATH or another Node present. `test:package` copies the release package into a temporary directory and uses its actual MCP launch configuration with a system-only PATH. The smoke-test caller supplies an isolated home with the Codex runtime cache layout and its test Node executable; the MCP process has a system-only PATH. Run these checks with the Codex bundled Node executable to verify the packaged runtime. It checks native addon loading, sidebar/chat entrypoints, UI resources, and telemetry attribution, starts bundled Baguette, reads the real device list, and checks shutdown. It does not boot or change a simulator. Run it on an Apple Silicon Mac with Xcode.
+`test` checks MCP contracts, frame reads, input validation, and capture cleanup against a local fixture, plus runtime selection and argument forwarding with Node absent from PATH or another Node present. `test:package` copies the release package into a temporary directory and uses its actual MCP launch configuration with a system-only PATH. The test creates an isolated Codex cache using the Node executable running the test. It checks sidebar and chat entrypoints, resources, telemetry attribution or opt-out, and the bundled device runtime. On an Apple Silicon Mac with Xcode, it also loads the iOS native addon, starts Baguette, lists simulators and verifies shutdown.
 
 `test:codex-plugin` requires the Codex CLI (`codex` on PATH or `CODEX_CLI_PATH`). It installs the package into a temporary Codex profile, asks Codex to resolve the installed MCP configuration, then starts that exact command and working directory with no Node on MCP PATH. It checks the sidebar resource and telemetry opt-out without changing the user's plugins or devices. Pass an extracted ZIP directory to test the shipped artifact. The compatibility manifest uses `cwd: "."`; `${PLUGIN_ROOT}` is not expanded in this format and would become a nonexistent subdirectory of the installed cache.
 
@@ -159,8 +175,7 @@ The host installs a cache copy. After changing source, rebuild and package, then
 
 ## Host regression and visual tests
 
-Pull requests run [CI](.github/workflows/ci.yml) on Linux: the unit tests (macOS-only paths
-skip themselves), Codex and Claude regression jobs and a Codex visual regression job. The
+Pull requests run Android, launcher and package checks on Windows. Linux CI runs the unit suite, the Codex and Claude host regressions and the Codex visual suite. See the [CI workflow](.github/workflows/ci.yml). The
 `mac` regression project runs locally until that target ships. The host jobs need no Mac, simulator or host app. `build:hosts` builds
 each target's real server and page without the native helpers, and Playwright drives
 them in [`tooling/hosts`](tooling/hosts):
@@ -276,7 +291,7 @@ codex plugin add mobile-dev@mobile-dev-local
 
 Open a new chat after installing, then open Mobile Dev from the sidebar.
 
-`npm run package` writes the local ZIP to `release/mobile-dev-<version>-darwin-arm64.zip`. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
+`npm run package` writes the local ZIP to `release/mobile-dev-<version>-windows.zip` on Windows and `release/mobile-dev-<version>-darwin-arm64.zip` on Apple Silicon Macs. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
 
 ### Claude Desktop local development
 

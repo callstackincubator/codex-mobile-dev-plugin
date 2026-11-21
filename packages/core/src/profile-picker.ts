@@ -21,13 +21,15 @@ POSIX path of chosen`;
 const APPLESCRIPT_FOLDER = `set chosen to choose folder with prompt "Choose a project folder"
 POSIX path of chosen`;
 
-const POWERSHELL = `Add-Type -AssemblyName System.Windows.Forms
+const POWERSHELL = `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+Add-Type -AssemblyName System.Windows.Forms
 $dialog = New-Object System.Windows.Forms.OpenFileDialog
 $dialog.Filter = 'Profiles (*.json;*.cpuprofile)|*.json;*.cpuprofile|All files (*.*)|*.*'
 $dialog.Title = 'Choose a CPU or React profile'
 if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dialog.FileName }`;
 
-const POWERSHELL_FOLDER = `Add-Type -AssemblyName System.Windows.Forms
+const POWERSHELL_FOLDER = `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+Add-Type -AssemblyName System.Windows.Forms
 $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
 $dialog.Description = 'Choose a project folder'
 if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dialog.SelectedPath }`;
@@ -51,7 +53,7 @@ function folderCommand(): { file: string; args: string[] } {
 
 function run(file: string, args: string[]) {
   return new Promise<{ code: number; stdout: string; stderr: string }>((resolve, reject) => {
-    execFile(file, args, { timeout: PICKER_TIMEOUT_MS, maxBuffer: 64 * 1024 }, (error, stdout, stderr) => {
+    execFile(file, args, { timeout: PICKER_TIMEOUT_MS, maxBuffer: 64 * 1024, windowsHide: true }, (error, stdout, stderr) => {
       // A non-zero exit is how every one of these dialogs reports Cancel, so it
       // is read rather than thrown; only a missing binary is a real failure.
       const code = error && typeof error === "object" && "code" in error ? error.code : 0;

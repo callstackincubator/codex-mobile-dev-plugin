@@ -181,6 +181,21 @@ test("snapshots read every store, cap values, and only clear files of a store th
   await assert.rejects(clearStore(container, "mmkv:../../etc/passwd"), error => expectedOutcome(error) === "invalid_input");
 });
 
+test("SQLite copies use host-safe names and keep the guest database paired with its WAL", async () => {
+  const guest = "databases/cache:notes.db";
+  const container = new MemoryContainer({ [guest]: "fixture", [guest + "-wal"]: "wal" });
+  const snapshot = await readStorage(container, {
+    bundleId: "com.example", entries: 10, valueLength: 100,
+    run: async (_tool, [, database]) => {
+      assert.equal(await readFile(database, "utf8"), "fixture");
+      assert.equal(await readFile(database + "-wal", "utf8"), "wal");
+      return "[]";
+    },
+  });
+  assert.equal(snapshot.stores[0].name, "cache:notes.db");
+  assert.equal(snapshot.stores[0].status, "ok");
+});
+
 test("Android run-as failures explain release builds and missing apps", () => {
   assert.equal(expectedOutcome(runAsError({ stderr: "run-as: package not debuggable: com.example" }, "Listing app data", "com.example")), "unsupported_platform");
   assert.match(runAsError({ stderr: "run-as: package not debuggable: com.example" }, "Listing app data", "com.example").message, /release build/);
@@ -266,10 +281,15 @@ test("the change feed hides SDK changes until the toggle shows them", async () =
   panel.dispose();
 });
 
-test("database tables are read page by page with blobs redacted, and unknown tables are rejected", { skip: process.platform !== "darwin" && "needs sqlite3" }, async () => {
+test("database tables are read page by page with blobs redacted, and unknown tables are rejected", async t => {
   const { mkdtemp, mkdir, rm } = await import("node:fs/promises");
   const { tmpdir } = await import("node:os");
-  const { execFileSync } = await import("node:child_process");
+  const { execFileSync, spawnSync } = await import("node:child_process");
+  const { sdkToolPath } = await import("../src/android-sdk.ts");
+  const sqlite = process.platform === "win32" ? await sdkToolPath("sqlite3") : "sqlite3";
+  const version = spawnSync(sqlite, ["-version"], { windowsHide: true });
+  if ((version.error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") return t.skip("needs sqlite3");
+  assert.equal(version.status, 0, version.error?.message);
   const { SimulatorContainer } = await import("../src/app-storage/container.ts");
   const { readTable } = await import("../src/app-storage/reader.ts");
   const { systemCommands } = await import("../src/app-control/commands.ts");
@@ -277,7 +297,7 @@ test("database tables are read page by page with blobs redacted, and unknown tab
   try {
     await mkdir(join(root, "Documents"), { recursive: true });
     const file = join(root, "Documents/app.db");
-    execFileSync("/usr/bin/sqlite3", [file, "CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT, data BLOB); WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 250) INSERT INTO items SELECT i, 'item ' || i, CASE WHEN i = 1 THEN x'CAFE' END FROM n;"]);
+    execFileSync(sqlite, [file, "CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT, data BLOB); WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 250) INSERT INTO items SELECT i, 'item ' || i, CASE WHEN i = 1 THEN x'CAFE' END FROM n;"]);
     const container = new SimulatorContainer(root, "B5C969F6-58A4-4C31-AB12-FB9E56D681DE", systemCommands);
     const options = { limit: 100, valueLength: 80, run: systemCommands.run };
     const first = await readTable(container, "sqlite:Documents/app.db", "items", { ...options, offset: 0 });
@@ -289,7 +309,7 @@ test("database tables are read page by page with blobs redacted, and unknown tab
     assert.deepEqual([last.offset, last.rows.length, last.rows[0][0]], [200, 50, 201]);
     await assert.rejects(readTable(container, "sqlite:Documents/app.db", "items\"; DROP TABLE items; --", { ...options, offset: 0 }), error => expectedOutcome(error) === "invalid_input");
     await assert.rejects(readTable(container, "sqlite:../outside.db", "items", { ...options, offset: 0 }), error => expectedOutcome(error) === "invalid_input");
-    assert.equal(execFileSync("/usr/bin/sqlite3", [file, "SELECT count(*) FROM items"], { encoding: "utf8" }).trim(), "250");
+    assert.equal(execFileSync(sqlite, [file, "SELECT count(*) FROM items"], { encoding: "utf8" }).trim(), "250");
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

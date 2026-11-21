@@ -1,9 +1,7 @@
-import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
 const runtime = "packages/runtimes/serve-emu";
-execFileSync("npm", ["ci", "--prefix", runtime, "--ignore-scripts", "--no-audit", "--no-fund"], { stdio: "inherit" });
 const upstreamText = await readFile(`${runtime}/upstream.json`, "utf8");
 const upstream = JSON.parse(upstreamText);
 const server = await readFile(`${runtime}/vendor/scrcpy-server-v4.0`);

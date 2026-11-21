@@ -59,22 +59,54 @@ test.describe("MCP Apps hosts", () => {
     const deviceId = "avd:Pixel";
     const device = { udid: deviceId, name: "Pixel", platform: "android", kind: "emulator", state: "Shutdown", runtime: "Android" };
     const callTool = server.client.callTool.bind(server.client);
+    let readResourceSaving = false;
     server.client.callTool = async (request, ...options) => {
       if (request.name === "mobile_list_android_devices") {
         return { content: [], structuredContent: { connected: true, managed: false, baseUrl: "", devices: [device] } };
       }
+      if (request.name === "mobile_resource_saving") {
+        readResourceSaving = true;
+        return { content: [], structuredContent: { state: { supported: false, enabled: false, running: false, restartRequired: false } } };
+      }
       return callTool(request, ...options);
     };
-    await openView("mobile_open_simulator", { arguments: { platform: "android", deviceId } });
+    const { view } = await openView("mobile_open_simulator", { arguments: { platform: "android", deviceId } });
     const selection = async () => {
       const result = await callTool({ name: "mobile_read_panel_context", arguments: {} });
       return result.structuredContent;
     };
     await expect.poll(selection).toMatchObject({ activeDeviceId: deviceId });
+    await expect.poll(() => readResourceSaving).toBe(true);
+    await expect(view.locator("#android-panel").getByRole("button", { name: "Resource saving" })).toHaveCount(0);
     const attachments = await page.evaluate(() => window.harness.events.filter(event => event.method === "modelContext"));
     expect(attachments).toEqual([]);
     await page.evaluate(() => window.harness.teardown());
     await expect.poll(selection).toEqual({ devices: [] });
+  });
+
+  test("a host without local iOS opens Android setup and keeps the iOS panel selectable", async ({ openView, page, server, target }) => {
+    test.skip(target !== "codex", "Exercises the native Codex panel.");
+    // The Windows server runs against the fixture's fresh profile and empty PATH. On other
+    // systems substitute its iOS capability, so the same panel behavior is exercised on CI.
+    if (process.platform !== "win32") {
+      const empty = { connected: false, managed: false, baseUrl: "", devices: [] };
+      const callTool = server.client.callTool.bind(server.client);
+      server.client.callTool = async (request, ...options) => {
+        if (request.name === "mobile_list_simulators") return { content: [], structuredContent: { ...empty, localIosSupported: false } };
+        if (request.name === "mobile_list_ios_devices") return { content: [], structuredContent: { physicalDevices: [] } };
+        return callTool(request, ...options);
+      };
+    }
+    const { view } = await openView("mobile_open_simulator");
+    const android = view.locator("#android-panel");
+    await expect(android.getByText(/Install Android SDK Platform-Tools.*SDK Manager/)).toBeVisible();
+    await expect(view.locator("#platform-select")).toContainText("Android");
+    await view.locator("#platform-select").click();
+    await view.getByRole("option", { name: "iOS" }).click();
+    await page.keyboard.press("Escape");
+    const ios = view.locator("#ios-panel");
+    await expect(ios.getByText("Local iOS devices require macOS.")).toBeVisible();
+    await expect(ios.getByRole("button", { name: "iOS device", exact: true })).toBeDisabled();
   });
 
   test("the workspace opens every tool without errors", async ({ openView, pageErrors, server }) => {
@@ -131,6 +163,11 @@ test.describe("MCP Apps hosts", () => {
     // selects a simulator a moment later. The mirror used to stay shut through that — the panel
     // asked for its own shares during the commit that changed its panels' constraints, where the
     // group discards them and keeps what it last requested, which was a mirror of nothing.
+    // Both platforms must be available to reproduce the unresolved automatic layout.
+    const callTool = server.client.callTool.bind(server.client);
+    server.client.callTool = (request, ...options) => request.name === "mobile_list_simulators"
+      ? Promise.resolve({ content: [], structuredContent: { connected: true, managed: false, baseUrl: "", devices: [] } })
+      : callTool(request, ...options);
     await page.setViewportSize({ width: 1280, height: 800 });
     const { view } = await openView("mobile_open_workspace", { displayMode: "fullscreen" });
     await view.locator("#tool-select").click();

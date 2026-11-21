@@ -1,2 +1,10 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+# Unix executes this file by its shebang. Codex resolves the .cmd sibling on Windows.
+apps/codex-plugin/scripts/launch-mcp text eol=lf
+# Source bytes used to verify the checked-in Android collectors.
+packages/native/android-cpu/collector.c text eol=lf
+packages/native/android-fps/collector.cpp text eol=lf
+packages/native/android-fps/perfetto/perfetto.* text eol=lf
+packages/native/telemetry/telemetry.[ch] text eol=lf
+tooling/native-telemetry.mjs text eol=lf

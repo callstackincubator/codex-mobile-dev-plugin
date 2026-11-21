@@ -16,7 +16,7 @@ test("the first agent-device runtime publishes one state directory for App Flow 
   const env: NodeJS.ProcessEnv = {};
   const created: string[] = [];
   const create = async () => {
-    const directory = `/tmp/mobile-dev-agent-device-test-${created.length + 1}`;
+    const directory = join(tmpdir(), `mobile-dev-agent-device-test-${created.length + 1}`);
     created.push(directory);
     return directory;
   };
@@ -29,11 +29,12 @@ test("the first agent-device runtime publishes one state directory for App Flow 
 
 test("App Flow's state directory wins when it is pinned during runtime setup", async () => {
   const env: NodeJS.ProcessEnv = {};
+  const pinned = join(tmpdir(), "app-flow", "agent-device");
   const directory = await claimAgentDeviceStateDirectory(env, async () => {
-    env.AGENT_DEVICE_STATE_DIR = "/app-flow/agent-device";
-    return "/tmp/unused-agent-device-state";
+    env.AGENT_DEVICE_STATE_DIR = pinned;
+    return join(tmpdir(), "unused-agent-device-state");
   });
-  assert.equal(directory, "/app-flow/agent-device");
+  assert.equal(directory, pinned);
   assert.equal(env.AGENT_DEVICE_STATE_DIR, directory);
 });
 

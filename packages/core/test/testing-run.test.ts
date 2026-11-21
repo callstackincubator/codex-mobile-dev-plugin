@@ -84,13 +84,21 @@ async function project(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "testing-run-"));
   await mkdir(join(root, "node_modules/.bin"), { recursive: true });
   await writeFile(join(root, "node_modules/.bin/e2e"), "#!/bin/sh\n");
+  await mkdir(join(root, "node_modules/e2e"), { recursive: true });
+  await writeFile(join(root, "node_modules/e2e/package.json"), JSON.stringify({ bin: { e2e: "cli.js" } }));
+  await writeFile(join(root, "node_modules/e2e/cli.js"), "");
   return root;
 }
 
 /** A spawn that answers with one canned stdout, and records how it was called. */
 function spawner(stdout: string, exitCode = 0, seen: { command?: string; args?: readonly string[]; cwd?: string } = {}) {
   return ((command: string, args: readonly string[], options: { cwd?: string }) => {
-    seen.command = command; seen.args = args; seen.cwd = options.cwd;
+    if (process.platform === "win32") {
+      assert.equal(command, process.execPath);
+      assert.equal(args[0], join(options.cwd!, "node_modules/e2e/cli.js"));
+      seen.command = args[0]; seen.args = args.slice(1);
+    } else { seen.command = command; seen.args = args; }
+    seen.cwd = options.cwd;
     const child = new EventEmitter() as EventEmitter & { stdout: Readable; stderr: Readable; kill: () => void };
     child.stdout = Readable.from([stdout]);
     child.stderr = Readable.from([""]);
@@ -105,7 +113,7 @@ test("the project's own runner is spawned, never a downloaded one", async () => 
   const seen: { command?: string; args?: readonly string[]; cwd?: string } = {};
   const result = await runRecordedTest({ projectPath: root, relativePath: FILE },
     { spawner: spawner(JSON.stringify(report([{ line: 8, status: "passed" }])), 0, seen) });
-  assert.equal(seen.command, join(root, "node_modules/.bin/e2e"), "npx would go to the network for a missing package");
+  assert.equal(seen.command, join(root, process.platform === "win32" ? "node_modules/e2e/cli.js" : "node_modules/.bin/e2e"), "npx would go to the network for a missing package");
   assert.deepEqual(seen.args, ["run", FILE, "--reporter", "json"]);
   assert.equal(seen.cwd, root);
   assert.equal(result.status, "passed");

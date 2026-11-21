@@ -1,5 +1,3 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
@@ -13,8 +11,7 @@ import { errorMessage, udidSchema } from "@mobile-dev/shared/protocol.ts";
 import { accessibilityScreen, screenComponents } from "@mobile-dev/shared/screen-annotations.ts";
 import type { ScreenSize } from "@mobile-dev/shared/screen-annotations.ts";
 import { adbPath } from "./native-logs.ts";
-
-const execute = promisify(execFile);
+import { systemCommands } from "./app-control/commands.ts";
 
 type NativeSnapshot = {
   native: unknown;
@@ -51,7 +48,7 @@ async function androidAliases(deviceId: string): Promise<string[]> {
   try {
     const adb = await adbPath();
     const properties = await Promise.all(["ro.product.model", "ro.build.version.release", "ro.build.version.sdk"].map(property =>
-      execute(adb, ["-s", deviceId, "shell", "getprop", property], { timeout: 3000, maxBuffer: 4096 }).then(result => result.stdout.trim())));
+      systemCommands.run(adb, ["-s", deviceId, "shell", "getprop", property], { timeout: 3000, maxBuffer: 4096 }).then(output => output.trim())));
     return properties.every(Boolean) ? [properties[0], `${properties[0]} - ${properties[1]} - API ${properties[2]}`] : [];
   } catch {
     // The backend's device name remains available for matching.

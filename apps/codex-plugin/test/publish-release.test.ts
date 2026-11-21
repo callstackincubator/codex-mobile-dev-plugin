@@ -22,13 +22,14 @@ async function fixture(t: TestContext) {
   git(directory, ["init", "--bare", remote]);
   await mkdir(`${plugin}/dist/runtime/node_modules/dependency`, { recursive: true });
   await mkdir(`${plugin}/scripts`, { recursive: true });
-  await writeFile(`${plugin}/scripts/launch-mcp.sh`, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+  await writeFile(`${plugin}/scripts/launch-mcp`, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+  await writeFile(`${plugin}/scripts/launch-mcp.cmd`, "@echo off\n");
   await writeFile(`${plugin}/dist/runtime/node_modules/dependency/index.js`, "export const bundled = true;\n");
   await writeFile(`${plugin}/dist/server.mjs`, "console.log('bundled server');\n");
   await chmod(`${plugin}/dist/server.mjs`, 0o755);
   await writeFile(`${plugin}/dist/telemetry-environment.json`, '{"environment":"release"}');
   await writeFile(`${plugin}/dist/app.html`, '<meta name="mobile-dev-environment" content="release">');
-  await writeFile(`${plugin}/.mcp.json`, '{"mcpServers":{"mobile-dev":{"command":"/bin/sh","args":["./scripts/launch-mcp.sh","./dist/server.mjs"],"cwd":".","env_vars":["HOME"]}}}');
+  await writeFile(`${plugin}/.mcp.json`, '{"mcpServers":{"mobile-dev":{"command":"./scripts/launch-mcp","args":["./dist/server.mjs"],"cwd":".","env_vars":["HOME"]}}}');
   await mkdir(`${plugin}/.codex-plugin`, { recursive: true });
   async function version(value: string) {
     const manifest = {
@@ -65,10 +66,13 @@ test("publishing creates an independent branch with built files, runtime depende
   const filesText = git(remote, ["ls-tree", "-r", "--name-only", "release/latest"]);
   assert.match(filesText, /plugins\/mobile-dev\/dist\/runtime\/node_modules\/dependency\/index.js/);
   assert.doesNotMatch(filesText, /source-only|\.gitignore/);
-  const executable = git(remote, ["ls-tree", "release/latest", "plugins/mobile-dev/dist/server.mjs"]);
-  assert.match(executable, /^100755/);
-  const launcher = git(remote, ["ls-tree", "release/latest", "plugins/mobile-dev/scripts/launch-mcp.sh"]);
-  assert.match(launcher, /^100755/);
+  assert.ok(filesText.includes("plugins/mobile-dev/scripts/launch-mcp.cmd"));
+  // The release runs on Unix, where chmod sets the mode Git records. NTFS lacks this bit.
+  if (process.platform !== "win32") {
+    for (const path of ["dist/server.mjs", "scripts/launch-mcp"]) {
+      assert.match(git(remote, ["ls-tree", "release/latest", `plugins/mobile-dev/${path}`]), /^100755/);
+    }
+  }
   const commits = git(remote, ["rev-list", "--count", "release/latest"]);
   assert.equal(commits.trim(), "1");
   const currentSourceHead = git(remote, ["rev-parse", "main"]);

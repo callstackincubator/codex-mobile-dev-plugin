@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { agentDeviceCatalog, compactAgentDeviceTool } from "../src/agent-device-catalog.ts";
 import { agentDeviceCatalogFile, agentDeviceGuideFile, runtimeUrl, upstreamCatalog } from "../../test-support/agent-device-fixtures.ts";
@@ -118,6 +119,6 @@ test("a new agent-device command must be classified before it is served", () => 
 test("the agent-device skill's workflow guide is the pinned runtime's own", async () => {
   // Regenerate it with npm run catalog:agent-device after changing the pin.
   const env = { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", AGENT_DEVICE_NO_UPDATE_NOTIFIER: "1" };
-  const help = execFileSync(process.execPath, [runtimeUrl.pathname, "help", "workflow"], { env, encoding: "utf8" });
+  const help = execFileSync(process.execPath, [fileURLToPath(runtimeUrl), "help", "workflow"], { env, encoding: "utf8" });
   assert.equal(await readFile(agentDeviceGuideFile, "utf8"), help);
 });

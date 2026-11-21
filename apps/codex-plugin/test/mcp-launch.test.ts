@@ -1,15 +1,13 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test, type TestContext } from "node:test";
-import { createLaunchHome } from "../tooling/mcp-launch-fixture.mjs";
+import { createLaunchHome, probeLauncher, systemPath } from "../tooling/mcp-launch-fixture.mjs";
 import mcp from "../.mcp.json" with { type: "json" };
 
 const config = mcp.mcpServers["mobile-dev"];
-const launcher = resolve("apps/codex-plugin", config.args[0]);
-const systemPath = "/usr/bin:/bin:/usr/sbin:/sbin";
+const plugin = resolve("apps/codex-plugin");
 
 async function fixture(t: TestContext) {
   const parent = tmpdir();
@@ -20,8 +18,8 @@ async function fixture(t: TestContext) {
 }
 
 function launch(fixtureHome: string, args: string[], path = systemPath) {
-  const env = { PATH: path, HOME: fixtureHome, SHELL: "/missing/user-shell" };
-  return spawnSync(config.command, [launcher, ...args], { env, encoding: "utf8" });
+  const env = { PATH: path, HOME: fixtureHome, USERPROFILE: fixtureHome, SYSTEMROOT: process.env.SystemRoot, SHELL: "/missing/user-shell" };
+  return probeLauncher(config.command, args, { env, cwd: plugin, encoding: "utf8" });
 }
 
 test("the launcher uses Codex's cached Node with spaces, no Node on PATH, and no usable shell", async t => {
@@ -34,28 +32,35 @@ test("the launcher uses Codex's cached Node with spaces, no Node on PATH, and no
   const profileForwarded = config.env_vars.includes("CODEX_HOME");
   const panelForwarded = config.env_vars.includes("MOBILE_DEV_PANEL");
   assert.ok(homeForwarded);
+  for (const name of ["USERPROFILE", "LOCALAPPDATA", "ANDROID_HOME", "ANDROID_SDK_ROOT", "ANDROID_AVD_HOME", "ANDROID_USER_HOME"]) assert.ok(config.env_vars.includes(name));
   assert.ok(telemetryForwarded);
   assert.ok(traceSiftHomeForwarded);
   assert.ok(traceSiftCommandForwarded);
   assert.ok(profileForwarded);
   assert.ok(panelForwarded);
-  const script = 'const args = process.argv.slice(1); const text = JSON.stringify(args); console.log(text);';
-  const result = launch(fixtureHome, ["--eval", script, "a b", "literal$argument"]);
+  const entry = join(directory, "server probe.cjs");
+  await writeFile(entry, "console.log(JSON.stringify({ cwd: process.cwd(), args: process.argv.slice(2) }));");
+  const args = process.platform === "win32" ? [] : ["a b", "literal$argument"];
+  const result = launch(fixtureHome, [entry, ...args]);
   assert.equal(result.error, undefined);
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stderr, "");
-  const args = JSON.parse(result.stdout);
-  assert.deepEqual(args, ["a b", "literal$argument"]);
+  const probe = JSON.parse(result.stdout);
+  assert.deepEqual(probe.args, args);
+  assert.equal(probe.cwd, process.platform === "win32" ? fixtureHome : plugin);
 });
 
 test("the launcher uses Codex's cached Node even when PATH contains another runtime", async t => {
   const directory = await fixture(t);
   const fixtureHome = await createLaunchHome(directory, process.execPath);
-  const pathRuntime = join(directory, "node");
-  await writeFile(pathRuntime, "#!/bin/sh\nprintf 'wrong runtime started\\n'\n", { mode: 0o755 });
-  const result = launch(fixtureHome, ["--eval", 'console.log("Codex runtime started")'], directory);
+  const windows = process.platform === "win32";
+  const pathRuntime = join(directory, windows ? "node.cmd" : "node");
+  await writeFile(pathRuntime, windows ? "@echo wrong runtime started\r\n" : "#!/bin/sh\nprintf 'wrong runtime started\\n'\n", { mode: 0o755 });
+  const entry = join(directory, "version.cjs");
+  await writeFile(entry, "console.log(process.version);");
+  const result = launch(fixtureHome, [entry], directory);
   assert.equal(result.error, undefined);
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(result.stdout, "Codex runtime started\n");
+  assert.equal(result.stdout.trim(), process.version);
   assert.equal(result.stderr, "");
 });

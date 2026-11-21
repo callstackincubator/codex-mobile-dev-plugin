@@ -19,8 +19,18 @@ env:
 
 jobs:
   unit:
-    name: Unit tests
-    runs-on: ubuntu-latest
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: Unit tests
+          - os: windows-latest
+            name: Windows Android and package
+          - os: macos-latest
+            name: macOS Android and launcher
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -42,8 +52,27 @@ jobs:
           npm run vendor:agent-device
           npm run vendor:serve-emu
 
-      # macOS-only paths skip themselves here; the release build runs the full suite on macOS.
-      - run: npm test
+      # The release workflow also runs the full suite on a Mac with Xcode and native helpers.
+      - if: runner.os == 'Linux'
+        run: npm test
+      - if: runner.os != 'Linux'
+        name: Android, source analysis, and launcher regressions
+        run: >
+          node --test
+          apps/codex-plugin/test/mcp-launch.test.ts apps/codex-plugin/test/plugin-updates.test.ts
+          packages/core/test/agent-device-runtime.test.ts
+          packages/core/test/android-sdk.test.ts packages/core/test/android.test.ts packages/core/test/android-emulator.test.ts
+          packages/core/test/app-storage.test.ts packages/core/test/testing-run.test.ts packages/core/test/windows-adb-trace.test.ts
+          packages/core/test/app-flow-presentations-bindings.test.ts packages/core/test/app-flow-typescript-runtime.test.ts
+          packages/runtimes/test/serve-emu-node.test.ts packages/ui/test/simulator-panel.test.ts packages/ui/test/testing-panel.test.ts
+      - if: runner.os == 'Windows'
+        run: npm run build
+      - if: runner.os == 'Windows'
+        run: npm run package
+      - if: runner.os == 'Windows'
+        run: npm run test:package
+        env:
+          MOBILE_DEV_TELEMETRY: 'off'
       - run: npm run typecheck:telemetry
 
   # Codex and Claude ship from main. Add mac here once it ships.

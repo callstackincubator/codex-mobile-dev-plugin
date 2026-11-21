@@ -211,16 +211,17 @@ async function main() {
     })();
     return stopping;
   };
-  process.once("SIGINT", () => {
+  const shutdown = () => {
     void stop()
       .catch((err) => console.error("Shutdown cleanup failed:", err))
       .finally(() => exitAfterDiagnostics(0));
-  });
-  process.once("SIGTERM", () => {
-    void stop()
-      .catch((err) => console.error("Shutdown cleanup failed:", err))
-      .finally(() => exitAfterDiagnostics(0));
-  });
+  };
+  process.once("SIGINT", shutdown);
+  process.once("SIGTERM", shutdown);
+  if (process.send) {
+    process.once("disconnect", shutdown);
+    if (!process.connected) { shutdown(); return; }
+  }
 
   let initialStartup = true;
   const report: StartupReporter = message => {

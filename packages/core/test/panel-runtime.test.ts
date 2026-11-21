@@ -21,7 +21,7 @@ async function archive(t: test.TestContext, extra?: (root: string) => Promise<st
   await writeFile(join(root, "baguette/Baguette"), "#!/bin/sh\necho baguette\n");
   await chmod(join(root, "baguette/Baguette"), 0o755);
   await mkdir(join(root, "serve-emu/src"), { recursive: true });
-  await writeFile(join(root, "serve-emu/src/cli.mjs"), "");
+  await writeFile(join(root, "serve-emu/src/cli.mjs"), 'console.log("serve-emu");');
   await mkdir(join(root, "ios-mirror"));
   await writeFile(join(root, "ios-mirror/darwin-arm64.node"), "addon");
   await writeFile(join(root, "ios-mirror-service.mjs"), "");
@@ -67,7 +67,8 @@ test("the runtime downloads once, verifies, and is shared by later servers", asy
   const [root, again] = await Promise.all([first(), first()]);
   assert.equal(root, again);
   assert.equal(root, join(data, `1.2.3-${release.sha256.slice(0, 12)}`));
-  assert.equal(execFileSync(join(root, "baguette/Baguette"), { encoding: "utf8" }), "baguette\n");
+  assert.equal(execFileSync(process.execPath, [join(root, "serve-emu/src/cli.mjs")], { encoding: "utf8" }).trim(), "serve-emu");
+  if (process.platform !== "win32") assert.equal(execFileSync(join(root, "baguette/Baguette"), { encoding: "utf8" }), "baguette\n");
   assert.equal(server.requests(), 1);
   // Another server, as another session starts, finds the complete folder.
   assert.equal(await downloadedPanelRuntime(pinned, data)(), root);
@@ -89,10 +90,18 @@ test("an archive that does not match its pin is refused and leaves nothing behin
   assert.deepEqual(await readdir(data), []);
 });
 
-test("an archive with files outside the parts or with links is refused", async t => {
+test("an archive with files outside the parts is refused", async t => {
   const outside = await archive(t, async root => { await writeFile(join(root, "payload.sh"), ""); return ["payload.sh"]; });
   await assert.rejects(downloadedPanelRuntime(outside.release, outside.data)(), /outside the device runtime/);
-  const linked = await archive(t, async root => { await symlink("/etc/hosts", join(root, "ios-mirror/hosts")); return []; });
+});
+
+test("an archive with links is refused", async t => {
+  const linked = await archive(t, async root => { await symlink("../ios-mirror-service.mjs", join(root, "ios-mirror/hosts")); return []; })
+    .catch(error => {
+      if (process.platform === "win32" && error.code === "EPERM") { t.skip("Creating symlinks requires Developer Mode on Windows."); return; }
+      throw error;
+    });
+  if (!linked) return;
   await assert.rejects(downloadedPanelRuntime(linked.release, linked.data)(), /links or special files/);
   assert.deepEqual(await readdir(linked.data), []);
 });
@@ -138,6 +147,7 @@ test("a prerelease pins and installs its runtime like a release", async t => {
 });
 
 test("Claude Code's plugin data folder holds the runtime when it provides one", () => {
-  assert.equal(panelRuntimeDirectory({ CLAUDE_PLUGIN_DATA: "/data/mobile-dev" }), "/data/mobile-dev/panel-runtime");
-  assert.match(panelRuntimeDirectory({}), /Library\/Caches\/mobile-dev\/panel-runtime$/);
+  assert.equal(panelRuntimeDirectory({ CLAUDE_PLUGIN_DATA: "/data/mobile-dev" }), join("/data/mobile-dev", "panel-runtime"));
+  const cache = process.platform === "win32" ? join("AppData", "Local") : join("Library", "Caches");
+  assert.ok(panelRuntimeDirectory({}).endsWith(join(cache, "mobile-dev", "panel-runtime")));
 });

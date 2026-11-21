@@ -54,11 +54,12 @@ test("Android discovery distinguishes a missing SDK, missing emulator, and empty
 
 test("Android booking names are app metadata for live ADC relays only", async t => {
   const directory = await mkdtemp(join(tmpdir(), "mobile-dev-adc-labels-"));
-  const previousHome = process.env.HOME;
-  process.env.HOME = directory;
+  const homeKey = process.platform === "win32" ? "USERPROFILE" : "HOME";
+  const previousHome = process.env[homeKey];
+  process.env[homeKey] = directory;
   t.after(async () => {
-    if (previousHome === undefined) delete process.env.HOME;
-    else process.env.HOME = previousHome;
+    if (previousHome === undefined) delete process.env[homeKey];
+    else process.env[homeKey] = previousHome;
     await rm(directory, { recursive: true, force: true });
   });
   const labels = join(directory, ".local", "state", "agent-device-cloud", "adb-labels");
@@ -245,6 +246,14 @@ test("Android MCP flow lists without booting, captures, streams, and closes", as
   await plugin.server.connect(serverTransport); await client.connect(clientTransport);
   const listed = await client.callTool({ name: "mobile_list_android_devices", arguments: {} });
   assert.equal((listed.structuredContent?.devices as { udid: string }[])[0].udid, ID);
+  if (process.platform === "win32") {
+    assert.equal(fake.backend.resourceSaving, undefined, "a Windows boot must leave snapshot/RAM settings to the AVD");
+    const target = { platform: "android", id: ID };
+    const saving = await client.callTool({ name: "mobile_resource_saving", arguments: { target } });
+    assert.deepEqual(saving.structuredContent?.state, { supported: false, enabled: false, running: true, restartRequired: false });
+    const setting = await client.callTool({ name: "mobile_set_resource_saving", arguments: { target, enabled: true } });
+    assert.equal(setting.isError, true);
+  }
   assert.deepEqual(fake.backend.boots, []); assert.equal(fake.sockets.clients.size, 0);
   const captured = await client.callTool({ name: "mobile_android_capture_screenshot", arguments: { deviceId: ID } });
   assert.deepEqual(captured.content[0], { type: "image", mimeType: "image/png", data: PNG.toString("base64") });
@@ -271,12 +280,14 @@ test("Android MCP flow lists without booting, captures, streams, and closes", as
 
 test("a missing serve-emu runtime tells the user to reinstall and stops the panel's retries", async t => {
   await fakeInspectionSdk(t);
+  // Keep a developer's existing serve-emu on the default port out of this missing-runtime case.
+  t.mock.method(globalThis, "fetch", async () => new Response(null, { status: 503 }));
   // Running from source, serve-emu is never beside this module, so starting a stream finds it missing.
   class Unbundled extends ServeEmu {
     async list() { return { connected: true, managed: false, baseUrl: "", devices: [{ udid: ID, name: "Pixel", state: "Booted", runtime: "Android", platform: "android" as const }] }; }
   }
   const server = new McpServer({ name: "android-runtime-test", version: "1" });
-  const backend = new Unbundled();
+  const backend = new Unbundled("");
   registerAndroidTools(server, backend, "ui://mobile-dev/test.html", async () => {}, async () => {});
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "android-runtime-test", version: "1" });
@@ -284,7 +295,7 @@ test("a missing serve-emu runtime tells the user to reinstall and stops the pane
   await server.connect(serverTransport); await client.connect(clientTransport);
   const session = await client.callTool({ name: "mobile_android_stream_session", arguments: { deviceId: ID } });
   assert.equal(session.isError, true);
-  assert.equal(session._meta?.retryable, false);
+  assert.equal(session._meta?.retryable, false, JSON.stringify(session.content));
   assert.deepEqual(session.content, [{ type: "text", text: "This Mobile Dev installation is missing its Android streaming backend. Reinstall Mobile Dev, then restart the app running it." }]);
 });
 

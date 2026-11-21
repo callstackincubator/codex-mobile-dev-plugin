@@ -2,19 +2,21 @@ import { execFile } from "node:child_process";
 import { stat } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 import { promisify } from "node:util";
+import { pickProjectFolder } from "./profile-picker.ts";
 
 const execute = promisify(execFile);
 const PROMPT = "Choose your React Native project folder";
 
 /**
- * The macOS folder picker, so App Flow's project choice is a real selector rather than a path the
- * user has to type. The dialog belongs to the server process: the panel is a webview the plugin
- * does not own, and `osascript` is the one folder picker available to a plain Node process (the
- * clipboard helper uses the same interpreter).
+ * Open a native folder picker on the machine that runs the MCP server.
  *
  * Returns the chosen folder without its trailing slash, or `undefined` when the user cancels.
  */
 export async function chooseProjectFolder(): Promise<string | undefined> {
+  if (process.platform === "win32") {
+    const folder = await pickProjectFolder();
+    return folder.picked ? folder.path : undefined;
+  }
   if (process.platform !== "darwin") throw new Error("Choosing a folder needs macOS.");
   const { stdout } = await execute("/usr/bin/osascript", ["-e", `on run argv
   try

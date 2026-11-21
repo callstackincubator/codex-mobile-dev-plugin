@@ -62,7 +62,7 @@ function codexHome(version: "before" | "after") {
     .replace(/^model_catalog_json = .*$/m, `model_catalog_json = ${JSON.stringify(join(home, "opencodex-catalog.json"))}`);
   let config = `${settings.trim()}\napproval_policy = "never"\n`;
   if (device) {
-    config += `\n[mcp_servers.mobile-dev]\ncommand = "/bin/sh"\nargs = ["./scripts/launch-mcp.sh", "./dist/server.mjs"]\ncwd = ${JSON.stringify(plugin)}\nenv_vars = ["HOME", "DEVELOPER_DIR"]\nstartup_timeout_sec = 60\ntool_timeout_sec = 180\n\n[mcp_servers.mobile-dev.env]\nMOBILE_DEV_TELEMETRY = "off"\n`;
+    config += `\n[mcp_servers.mobile-dev]\ncommand = "./scripts/launch-mcp"\nargs = ["./dist/server.mjs"]\ncwd = ${JSON.stringify(plugin)}\nenv_vars = ["HOME", "DEVELOPER_DIR"]\nstartup_timeout_sec = 60\ntool_timeout_sec = 180\n\n[mcp_servers.mobile-dev.env]\nMOBILE_DEV_TELEMETRY = "off"\n`;
     for (const skill of ["mobile-dev", "agent-device"]) {
       cpSync(join(repo, "packages/skills", skill), join(home, "skills", skill), { recursive: true });
       if (version === "before") writeFileSync(join(home, "skills", skill, "SKILL.md"), atRef(`packages/skills/${skill}/SKILL.md`));

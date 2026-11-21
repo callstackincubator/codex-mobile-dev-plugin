@@ -46,6 +46,7 @@ export type Status = {
   devices: SimulatorDevice[];
   error?: string;
   setupHint?: string;
+  localIosSupported?: boolean;
 };
 
 export function normalizeDevices(payload: unknown): SimulatorDevice[] {

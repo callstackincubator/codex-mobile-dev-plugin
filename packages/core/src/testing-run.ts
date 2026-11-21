@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -307,12 +307,22 @@ export interface TestRunDeps {
  * not ask for in the middle of a test run.
  */
 export function runnerBin(projectPath: string): string {
-  const bin = join(projectPath, "node_modules/.bin/e2e");
-  if (!existsSync(bin)) {
-    throw new ExpectedOperationError("invalid_input",
-      "This project has no e2e CLI installed, so the panel cannot run the test. Install the project's dependencies, then run it again.");
+  if (process.platform === "win32") {
+    // npm's .cmd shim needs a shell, which would reinterpret the user-selected target and paths.
+    // Invoke the project's installed JS entry point with this Node runtime instead.
+    const directory = join(projectPath, "node_modules", "e2e");
+    const manifest = join(directory, "package.json");
+    if (existsSync(manifest)) {
+      const { bin } = JSON.parse(readFileSync(manifest, "utf8"));
+      const entry = typeof bin === "string" ? bin : bin?.e2e;
+      if (typeof entry === "string" && existsSync(join(directory, entry))) return join(directory, entry);
+    }
+  } else {
+    const bin = join(projectPath, "node_modules/.bin/e2e");
+    if (existsSync(bin)) return bin;
   }
-  return bin;
+  throw new ExpectedOperationError("invalid_input",
+    "This project has no e2e CLI installed, so the panel cannot run the test. Install the project's dependencies, then run it again.");
 }
 
 /**
@@ -380,7 +390,8 @@ async function runOnce(request: TestRunRequest, deps: TestRunDeps): Promise<Test
     if (generated) void rm(generated, { force: true });
     if (partial) void rm(partial, { force: true });
   };
-  const child = spawner(bin, [
+  const child = spawner(process.platform === "win32" ? process.execPath : bin, [
+    ...(process.platform === "win32" ? [bin] : []),
     "run", runPath, "--reporter", "json",
     ...(request.target ? ["--target", request.target] : []),
     ...(generated ? ["--config", PROGRESS_CONFIG] : []),

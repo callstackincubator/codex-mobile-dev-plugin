@@ -94,6 +94,7 @@ export class WorkspaceDevices {
     if (layout === "none" && (target.kind !== undefined || target.deviceId !== undefined)) {
       layout = ios.selected ? "ios" : android.selected ? "android" : "both";
     }
+    if (layout === "none" && ios.localIosSupported === false) layout = "android";
     this.report(layout);
   }
 }
