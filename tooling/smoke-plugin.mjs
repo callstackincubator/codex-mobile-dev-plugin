@@ -90,7 +90,7 @@ async function smokePanelRuntime(plugin, launch) {
   // The published release may not exist yet, so the copy pins this archive by its file.
   await writeFile(join(plugin, "dist/panel-runtime.json"), JSON.stringify({ ...pin, url: pathToFileURL(archive).href }));
   const data = join(temporary, "plugin data");
-  await launch({ CLAUDE_PLUGIN_DATA: data }, async client => {
+  await launch({ [host.data ?? "CLAUDE_PLUGIN_DATA"]: data }, async client => {
     const started = await client.callTool({ name: "mobile_start_baguette", arguments: {} });
     assert.notEqual(started.isError, true, JSON.stringify(started.content));
     const installed = await readdir(join(data, "panel-runtime"));
@@ -157,7 +157,8 @@ try {
   assert.equal(manifest.version, version);
   assert.equal(manifest.license, "MIT");
   await access(join(plugin, manifest.logo ?? manifest.icon));
-  const server = manifest.mcpServers["mobile-dev"];
+  const mcpConfig = host.mcpConfig ? JSON.parse(await readFile(join(plugin, host.mcpConfig), "utf8")) : manifest;
+  const server = mcpConfig.mcpServers["mobile-dev"];
   // The server runs with Node from PATH, or through the host's launcher, which also
   // finds Node where version managers install it.
   const launcher = server.command !== "node";
@@ -181,9 +182,10 @@ try {
   const PATH = `${dirname(process.execPath)}:/usr/bin:/bin:/usr/sbin:/sbin`;
   if (launcher) {
     // Its session check stays silent when Node is usable.
-    const hooks = JSON.parse(await readFile(join(plugin, "hooks/hooks.json"), "utf8"));
-    const [check] = hooks.hooks.SessionStart[0].hooks;
-    assert.equal(execFileSync("/bin/sh", ["-c", check.command], { env: { PATH, HOME: home, [host.root]: plugin }, encoding: "utf8" }), "");
+    const hooksPath = host.hooks ?? "hooks/hooks.json";
+    const hooks = JSON.parse(await readFile(join(plugin, hooksPath), "utf8"));
+    const [check] = hooks.hooks ? hooks.hooks.SessionStart[0].hooks : Object.values(hooks)[0].SessionStart;
+    assert.equal(execFileSync("/bin/sh", ["-c", check.command], { cwd: plugin, env: { PATH, HOME: home, [host.root]: plugin }, encoding: "utf8" }), "");
   }
   for (const environment of ["development", "release"]) {
     const env = { MOBILE_DEV_ENVIRONMENT: environment, [host.root]: plugin, ...launcher ? { PATH } : {} };
