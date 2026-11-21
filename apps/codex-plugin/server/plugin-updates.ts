@@ -94,18 +94,23 @@ export async function resolveCodexCli(parentPid = process.ppid, cwd = homedir())
   // On Windows Codex runs the packaged .cmd launcher in cmd.exe. Cross only that
   // wrapper, so an unrelated shell or a Codex executable on PATH cannot select a CLI.
   const launcher = fileURLToPath(new URL("../scripts/launch-mcp.cmd", import.meta.url));
-  const lookup = windows
-    ? execute(join(process.env.SystemRoot ?? "C:\\Windows", "System32/WindowsPowerShell/v1.0/powershell.exe"), [
-      "-NoProfile", "-NonInteractive", "-Command", [
-        "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8",
-        "$p = Get-CimInstance Win32_Process -Filter ('ProcessId = ' + $env:MOBILE_DEV_PARENT_PID)",
-        `$launch = ' /c ""' + $env:MOBILE_DEV_LAUNCHER + '" ./dist/server.mjs"'`,
-        "if ($p.Name -eq 'cmd.exe' -and $p.CommandLine.EndsWith($launch, [StringComparison]::OrdinalIgnoreCase)) { $p = Get-CimInstance Win32_Process -Filter ('ProcessId = ' + $p.ParentProcessId) }",
-        "$p.ExecutablePath",
-      ].join("; "),
-    ], { ...options, env: { ...process.env, MOBILE_DEV_PARENT_PID: String(parentPid), MOBILE_DEV_LAUNCHER: launcher } })
-    : execute("/bin/ps", ["-p", String(parentPid), "-o", "comm="], options);
-  const path = await lookup.then(result => result.stdout.trim(), () => "");
+  let path: string;
+  try {
+    const result = windows
+      ? await execute(join(process.env.SystemRoot ?? "C:\\Windows", "System32/WindowsPowerShell/v1.0/powershell.exe"), [
+        "-NoProfile", "-NonInteractive", "-Command", [
+          "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8",
+          "$p = Get-CimInstance Win32_Process -Filter ('ProcessId = ' + $env:MOBILE_DEV_PARENT_PID)",
+          `$launch = ' /c ""' + $env:MOBILE_DEV_LAUNCHER + '" ./dist/server.mjs"'`,
+          "if ($p.Name -eq 'cmd.exe' -and $p.CommandLine.EndsWith($launch, [StringComparison]::OrdinalIgnoreCase)) { $p = Get-CimInstance Win32_Process -Filter ('ProcessId = ' + $p.ParentProcessId) }",
+          "$p.ExecutablePath",
+        ].join("; "),
+      ], { ...options, env: { ...process.env, MOBILE_DEV_PARENT_PID: String(parentPid), MOBILE_DEV_LAUNCHER: launcher } })
+      : await execute("/bin/ps", ["-p", String(parentPid), "-o", "comm="], options);
+    path = result.stdout.trim();
+  } catch {
+    path = "";
+  }
   const absolute = isAbsolute(path);
   const name = basename(path);
   if (!absolute || (windows ? name.toLowerCase() !== "codex.exe" : name !== "codex")) throw new PluginUpdateError("Could not locate the Codex executable that launched Mobile Dev.", "codex-not-found");
