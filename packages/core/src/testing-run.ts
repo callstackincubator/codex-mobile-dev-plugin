@@ -29,7 +29,9 @@ import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 /** One step of the run, as the panel shows it against a line of the preview. */
 export interface TestRunStep {
   /** The 1-based line in the test file the step came from. */
-  line: number;
+  line?: number;
+  /** Position among this test's awaited calls when its runner couldn't locate the source file. */
+  stepIndex?: number;
   /** The runner's own name for the call, e.g. `locator.tap`. */
   api: string;
   label: string;
@@ -88,7 +90,9 @@ function errorMessageOf(value: unknown): string | undefined {
 export function reportSteps(report: unknown, file: string): TestRunStep[] {
   const run = record(record(report)?.run);
   const steps: TestRunStep[] = [];
-  for (const entry of list(run?.results)) {
+  const results = list(run?.results);
+  const requestedFile = file.replaceAll("\\", "/");
+  for (const entry of results) {
     const result = record(entry);
     if (!result) continue;
     const attempts = list(result.attempts);
@@ -97,11 +101,18 @@ export function reportSteps(report: unknown, file: string): TestRunStep[] {
       const step = record(item);
       const source = record(step?.source);
       const line = typeof source?.line === "number" ? source.line : 0;
-      // A step the runner attributes to another file is another test's; `app.open` has no line.
-      if (!step || line <= 0 || (str(source?.file) && str(source?.file) !== file)) continue;
+      const sourceFile = str(source?.file).replaceAll("\\", "/");
+      if (!step) continue;
+      // On Windows e2e can attribute every call to "unknown:1". Its index still identifies
+      // the call in a single test, just as it does for the panel's live progress.
+      const location = sourceFile === "unknown" && results.length === 1
+        && str(result.file).replaceAll("\\", "/") === requestedFile && typeof step.index === "number"
+        ? { stepIndex: step.index }
+        : line > 0 && (!sourceFile || sourceFile === requestedFile) ? { line } : undefined;
+      if (!location) continue;
       const error = errorMessageOf(step.error);
       steps.push({
-        line, api: str(step.api), label: str(step.label), status: str(step.status) || "unknown",
+        ...location, api: str(step.api), label: str(step.label), status: str(step.status) || "unknown",
         ...(typeof step.durationMs === "number" ? { durationMs: step.durationMs } : {}),
         ...(error ? { error } : {}),
       });
@@ -335,7 +346,7 @@ export function runnerEnv(environment: NodeJS.ProcessEnv = process.env): NodeJS.
  * progress spinner must never be the reason Run stopped working.
  */
 function refusedTheConfig(result: TestRunResult): boolean {
-  return result.steps.length === 0 && /config/i.test(result.output ?? "");
+  return result.status !== "passed" && result.steps.length === 0 && /config/i.test(result.output ?? "");
 }
 
 export async function runRecordedTest(request: TestRunRequest, deps: TestRunDeps = {}): Promise<TestRunResult> {
