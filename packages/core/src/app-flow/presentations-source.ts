@@ -1,4 +1,4 @@
-import { relative } from 'node:path'
+import { relativeSourcePath } from './source-path.ts'
 import ts from 'typescript'
 import type { AppFlowOpeningData, AppFlowPresentationAction, AppFlowPresentations, AppFlowStateSite, AppFlowUiCondition } from '@mobile-dev/shared/app-flow.ts'
 import { fnName, jsxAttributes, ownerFn, sourceHash, unwrap } from './source-units.ts'
@@ -136,7 +136,7 @@ export function scanPresentations(units: Map<string, Unit>, root: string, symbol
     const start = unit.ast.getLineAndCharacterOfPosition(call.getStart()), end = unit.ast.getLineAndCharacterOfPosition(call.getEnd())
     states.push({
       unit, fn, value: value.name.text, setter: setter.name.text, setterNode: setter.name,
-      site: { id: key(`${relative(root, unit.file)}:${call.pos}`), file: relative(root, unit.file), line: start.line + 1, column: start.character, endLine: end.line + 1, owner: functionName(fn), paths: [], hook: 'useState', valueName: value.name.text }
+      site: { id: key(`${relativeSourcePath(root, unit.file)}:${call.pos}`), file: relativeSourcePath(root, unit.file), line: start.line + 1, column: start.character, endLine: end.line + 1, owner: functionName(fn), paths: [], hook: 'useState', valueName: value.name.text }
     })
   })
   function known(unit: Unit, node: ts.Node | undefined, env: Map<string, unknown>, depth = 0): boolean {
@@ -453,7 +453,7 @@ export function scanPresentations(units: Map<string, Unit>, root: string, symbol
         const value = a.initializer && ts.isStringLiteralLike(a.initializer) ? a.initializer.text : constant(unit, expression(a))
         if (['string', 'number', 'boolean'].includes(typeof value)) trigger[a.name.getText()] = value as string | number | boolean
       }
-      const base = { source: { line: start.line + 1, column: start.character, endLine: end.line + 1, endColumn: end.character }, trigger: Object.keys(trigger).length ? trigger : undefined, handler: exp && ts.isIdentifier(exp) ? exp.text : undefined, id: key(`${relative(root, unit.file)}:${attribute.pos}`), file: relative(root, unit.file), line: loc.line + 1, owner: own, component, prop }
+      const base = { source: { line: start.line + 1, column: start.character, endLine: end.line + 1, endColumn: end.character }, trigger: Object.keys(trigger).length ? trigger : undefined, handler: exp && ts.isIdentifier(exp) ? exp.text : undefined, id: key(`${relativeSourcePath(root, unit.file)}:${attribute.pos}`), file: relativeSourcePath(root, unit.file), line: loc.line + 1, owner: own, component, prop }
       // An unconditional presentation call may be extracted from a handler that
       // also emits analytics. Prop guards must hold in the mounted owner.
       const props = new Map<string, string[]>()

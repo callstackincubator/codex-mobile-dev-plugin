@@ -181,6 +181,21 @@ test("snapshots read every store, cap values, and only clear files of a store th
   await assert.rejects(clearStore(container, "mmkv:../../etc/passwd"), error => expectedOutcome(error) === "invalid_input");
 });
 
+test("SQLite copies use host-safe names and keep the guest database paired with its WAL", async () => {
+  const guest = "databases/cache:notes.db";
+  const container = new MemoryContainer({ [guest]: "fixture", [guest + "-wal"]: "wal" });
+  const snapshot = await readStorage(container, {
+    bundleId: "com.example", entries: 10, valueLength: 100,
+    run: async (_tool, [, database]) => {
+      assert.equal(await readFile(database, "utf8"), "fixture");
+      assert.equal(await readFile(database + "-wal", "utf8"), "wal");
+      return "[]";
+    },
+  });
+  assert.equal(snapshot.stores[0].name, "cache:notes.db");
+  assert.equal(snapshot.stores[0].status, "ok");
+});
+
 test("Android run-as failures explain release builds and missing apps", () => {
   assert.equal(expectedOutcome(runAsError({ stderr: "run-as: package not debuggable: com.example" }, "Listing app data", "com.example")), "unsupported_platform");
   assert.match(runAsError({ stderr: "run-as: package not debuggable: com.example" }, "Listing app data", "com.example").message, /release build/);

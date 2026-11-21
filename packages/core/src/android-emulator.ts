@@ -22,7 +22,7 @@ export async function bootAndroidEmulator(options: BootOptions, launch: typeof s
   if (options.resourceSaving !== undefined) args.push("-no-snapshot-load", "-no-snapshot-save");
   if (options.resourceSaving) args.push("-lowram", "-memory", "1536");
   const child = launch(options.executable, args, {
-    detached: true, stdio: "ignore", shell: false,
+    detached: true, stdio: "ignore", shell: false, windowsHide: true,
   });
   // The failure promise stays resolved after an early exit, including during an adb read.
   const failed = new Promise<Error>(resolve => {

@@ -30,7 +30,7 @@ export const pluginHosts = Object.fromEntries(readdirSync("apps")
   .map(name => [name, JSON.parse(readFileSync(`apps/${name}/plugin-host.json`, "utf8"))]));
 
 // Codex-only files would load the Codex launcher or manifest.
-export const codexOnlyPaths = [".mcp.json", "mcp.json", ".codex-plugin", "scripts/launch-mcp.sh"];
+export const codexOnlyPaths = [".mcp.json", "mcp.json", ".codex-plugin", "scripts/launch-mcp", "scripts/launch-mcp.cmd"];
 
 export const sharedSkills = ["packages/skills/mobile-dev", "packages/skills/mobile-dev-setup", "packages/skills/mobile-dev-testing", "packages/skills/agent-device"];
 

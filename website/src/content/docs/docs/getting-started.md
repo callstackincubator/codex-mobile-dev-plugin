@@ -7,18 +7,18 @@ Install Mobile Dev for your development environment, open a new conversation, an
 
 ## Requirements
 
-Mobile Dev runs on an **Apple Silicon Mac**. Install the platform tools for the devices and features you use.
+Codex desktop supports Android on Windows and Apple Silicon Macs. Local iOS tools require an Apple Silicon Mac. Install the platform tools for the devices and features you use.
 
 | Target or feature | Requirement |
 | --- | --- |
 | iOS simulator | Xcode 26 or later, with an installed simulator runtime |
 | Physical iPhone or iPad | Xcode 27 or later, a paired device, Developer Mode, and USB or Wi-Fi connectivity |
-| Android | Android SDK platform-tools and emulator, plus an AVD or a physical device with authorized debugging |
+| Android | Android SDK Platform-Tools for physical devices. For AVDs, also install Android Emulator and a system image |
 | Android screen streaming | A host with H.264 WebCodecs decoding |
 | Physical iOS screen mirroring | A host with HEVC WebCodecs decoding |
 | Metro logs and React Native inspection | An existing local Metro server with a compatible app inspector target |
 | Physical iOS CPU and memory | iOS 17.4 or later, a running development-signed app with `get-task-allow`, a mounted developer disk image, and Xcode/LLDB detached |
-| Profile analysis | A local TraceSift installation, available on `PATH` or through `TRACE_SIFT_COMMAND` |
+| TraceSift profile analysis (macOS or Linux) | A local TraceSift installation, available on `PATH` or through `TRACE_SIFT_COMMAND` |
 
 Select the full Xcode installation in **Xcode Settings → Locations → Command Line Tools**. Command Line Tools alone do not provide the required simulator tools.
 
@@ -26,7 +26,7 @@ Select the full Xcode installation in **Xcode Settings → Locations → Command
 
 [Open Mobile Dev in the ChatGPT plugin store](https://chatgpt.com/plugins/plugins_6ac4c117f76881918d3676e851fa4005). ChatGPT and Codex share the same listing. Install the plugin in the desktop app, then start a new chat and ask **“Open Mobile Dev.”**
 
-Mobile Dev's local tools require the desktop app on an Apple Silicon Mac. The prebuilt plugin uses the app's bundled Node runtime. See [OpenAI's plugin installation guide](https://learn.chatgpt.com/docs/plugins) for the shared directory and installation flow.
+For Codex on Windows, install Platform-Tools in Android Studio's SDK Manager and create an AVD in Device Manager or authorize your phone. The default SDK location is `%LOCALAPPDATA%\Android\Sdk`. For a different location, set `ANDROID_HOME` to the SDK root and restart Codex. The prebuilt plugin uses the app's bundled Node runtime. See [OpenAI's plugin installation guide](https://learn.chatgpt.com/docs/plugins) for the shared directory and installation flow.
 
 ### Codex CLI
 

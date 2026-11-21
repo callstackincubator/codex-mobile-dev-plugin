@@ -22,13 +22,37 @@ const ID = "emulator-5554";
 const SCREEN = { width: 1080, height: 2400 };
 const H264 = Buffer.from([0, 0, 0, 1, 0x67, 0x64, 0, 0x28, 0, 0, 0, 1, 0x65, 1]);
 
+test("Android discovery distinguishes a missing SDK, missing emulator, and empty AVD list", async t => {
+  const backend = new ServeEmu();
+  t.after(() => backend.dispose());
+  const missing = Object.assign(new Error("not found"), { code: "ENOENT" });
+  const unavailable = await backend.list(async () => { throw missing; });
+  assert.equal(unavailable.connected, false);
+  assert.match(unavailable.error!, /Platform-Tools \(adb\).*SDK Manager.*ANDROID_HOME.*PATH/);
+  const physicalOnly = async (deviceList: string) => backend.list(async (_file, args) => {
+    if (args[0] === "-list-avds") throw missing;
+    return { stdout: deviceList };
+  });
+  const noEmulator = await physicalOnly("List of devices attached\r\n");
+  assert.equal(noEmulator.connected, true);
+  assert.match(noEmulator.setupHint!, /install Android Emulator.*Device Manager/i);
+  const phone = await physicalOnly("List of devices attached\r\nserial device model:Pixel\r\n");
+  assert.equal(phone.connected, true);
+  assert.equal(phone.devices[0].udid, "serial");
+  assert.equal(phone.setupHint, undefined);
+  const noAvds = await backend.list(async () => ({ stdout: "" }));
+  assert.equal(noAvds.connected, true);
+  assert.match(noAvds.setupHint!, /Create an AVD.*Device Manager.*USB debugging/);
+});
+
 test("Android booking names are app metadata for live ADC relays only", async t => {
   const directory = await mkdtemp(join(tmpdir(), "mobile-dev-adc-labels-"));
-  const previousHome = process.env.HOME;
-  process.env.HOME = directory;
+  const homeKey = process.platform === "win32" ? "USERPROFILE" : "HOME";
+  const previousHome = process.env[homeKey];
+  process.env[homeKey] = directory;
   t.after(async () => {
-    if (previousHome === undefined) delete process.env.HOME;
-    else process.env.HOME = previousHome;
+    if (previousHome === undefined) delete process.env[homeKey];
+    else process.env[homeKey] = previousHome;
     await rm(directory, { recursive: true, force: true });
   });
   const labels = join(directory, ".local", "state", "agent-device-cloud", "adb-labels");
@@ -215,6 +239,14 @@ test("Android MCP flow lists without booting, captures, streams, and closes", as
   await plugin.server.connect(serverTransport); await client.connect(clientTransport);
   const listed = await client.callTool({ name: "mobile_list_android_devices", arguments: {} });
   assert.equal((listed.structuredContent?.devices as { udid: string }[])[0].udid, ID);
+  if (process.platform === "win32") {
+    assert.equal(fake.backend.resourceSaving, undefined, "a Windows boot must leave snapshot/RAM settings to the AVD");
+    const target = { platform: "android", id: ID };
+    const saving = await client.callTool({ name: "mobile_resource_saving", arguments: { target } });
+    assert.deepEqual(saving.structuredContent?.state, { supported: false, enabled: false, running: true, restartRequired: false });
+    const setting = await client.callTool({ name: "mobile_set_resource_saving", arguments: { target, enabled: true } });
+    assert.equal(setting.isError, true);
+  }
   assert.deepEqual(fake.backend.boots, []); assert.equal(fake.sockets.clients.size, 0);
   const captured = await client.callTool({ name: "mobile_android_capture_screenshot", arguments: { deviceId: ID } });
   assert.deepEqual(captured.content[0], { type: "image", mimeType: "image/png", data: PNG.toString("base64") });

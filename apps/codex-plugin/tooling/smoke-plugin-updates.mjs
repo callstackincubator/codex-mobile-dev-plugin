@@ -25,7 +25,7 @@ let http;
 let repositoryChecks = 0;
 let repositoryRedirects = 0;
 
-async function git(args) { await execute("/usr/bin/git", args, { cwd: repo, env }); }
+async function git(args) { await execute("git", args, { cwd: repo, env }); }
 async function writeJson(path, data) {
   const text = JSON.stringify(data);
   await writeFile(path, text);
@@ -53,7 +53,7 @@ try {
   const catalogPath = join(catalog, "marketplace.json");
   await writeJson(catalogPath, { name: "mobile-dev", plugins: [{ name: "mobile-dev", source: { source: "local", path: "./plugins/mobile-dev" } }] });
   const mcpPath = join(plugin, ".mcp.json");
-  await writeJson(mcpPath, { mcpServers: { "mobile-dev": { command: "/bin/echo", args: ["update fixture"], cwd: "." } } });
+  await writeJson(mcpPath, { mcpServers: { "mobile-dev": { command: process.execPath, args: ["--version"], cwd: "." } } });
   await release("0.1.167");
   http = createServer(async (request, response) => {
     try {
@@ -111,7 +111,8 @@ try {
   };
   const options = { enabled: true, profile, pluginRoot: installedCwd, currentVersion: "0.1.167", run, readStore, readRepository };
   const updates = new PluginUpdates(options);
-  process.chdir(installedCwd);
+  // Match launch-mcp.cmd, which releases the cache directory before starting Node.
+  process.chdir(process.platform === "win32" ? fixtureHome : installedCwd);
   const available = await updates.check();
   assert.equal(available.status, "migration");
   const migrated = await updates.migrate();
@@ -136,7 +137,7 @@ try {
   assert.equal(current.status, "current");
   assert.ok(repositoryChecks > 0);
   assert.equal(repositoryRedirects, repositoryChecks);
-  console.log("Verified real Codex CLI Git plugin and marketplace removal from the deleted working directory, repository redirects and identity verification, store-package preservation, retries, and restart notices. Store catalog/install state and GitHub metadata use fixtures.");
+  console.log("Verified real Codex CLI Git plugin and marketplace removal, repository redirects and identity verification, store-package preservation, retries, and restart notices. Store catalog/install state and GitHub metadata use fixtures.");
 } finally {
   process.chdir(originalCwd);
   if (http) http.close();

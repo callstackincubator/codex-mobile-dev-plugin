@@ -366,6 +366,21 @@ test("agent-device tools continue traces and report failures without native tool
   assert.equal(afterErrors.length, errors.length, "Expected unavailable devices must not produce Sentry issues");
 });
 
+test("Windows SDK and share paths are scrubbed while stack frames still match their source maps", () => {
+  const bundle = "file:///C:/Users/private%20user/plugin/dist/server.mjs";
+  const filtered = scrubErrorEvent({
+    message: "Failed to open D:\\Android Projects\\private project",
+    exception: { values: [{ value: "Missing \\\\private-host\\shared folder\\SDK", stacktrace: { frames: [
+      { filename: bundle, abs_path: "C:\\Users\\private user\\plugin\\dist\\server.mjs" },
+    ] } }] },
+    debug_meta: { images: [{ type: "sourcemap", code_file: bundle, debug_id: "example" }] },
+  });
+  assert.ok(filtered);
+  assert.doesNotMatch(JSON.stringify(filtered), /private|Android Projects/i);
+  assert.equal(filtered.exception?.values?.[0].stacktrace?.frames?.[0].abs_path, "app:///server.mjs");
+  assert.equal(filtered.debug_meta?.images?.[0].code_file, "app:///server.mjs");
+});
+
 test("error and streamed-span filters remove app payloads and local identifiers", () => {
   const traceId = "1".repeat(32);
   const spanId = "2".repeat(16);

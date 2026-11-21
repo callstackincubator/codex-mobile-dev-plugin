@@ -521,7 +521,7 @@ export function createSimulatorPanel(
       empty(`${selected.name} · ${selected.state}`, description);
     } else if (selected === undefined && (openingTarget?.platform !== undefined || openingTarget?.kind !== undefined || openingTarget?.deviceId !== undefined)) {
       empty("Requested device unavailable.", "The requested device could not be found. Connect it or choose another device from the picker.");
-    } else if (!reconnect.active && !stoppedDisplay) empty(selected ? "Select a device to open its screen." : (platform === "android" ? "No Android devices. Create an AVD in Android Studio or connect a device." : "No iOS devices. Connect an iPhone or add a simulator in Xcode."));
+    } else if (!reconnect.active && !stoppedDisplay) empty(selected || status?.devices.length ? "Select a device to open its screen." : (platform === "android" ? "No Android devices. Create an AVD in Android Studio or connect a device." : "No iOS devices. Connect an iPhone or add a simulator in Xcode."));
     controls();
   }
 
@@ -585,7 +585,11 @@ export function createSimulatorPanel(
       placeholder: available.length ? "Select a device" : next.connected ? "No devices" : "Devices unavailable",
     });
     selectDevice();
-    if (!next.connected && physicalDevices.length === 0) {
+    if (platform === "android" && !available.length && (next.setupHint || !next.connected)) {
+      empty(next.connected ? "No Android devices." : "Android devices unavailable.", next.setupHint ?? next.error);
+    } else if (next.localIosSupported === false && !available.length) {
+      empty("Local iOS devices require macOS.", "Choose Android to use a local emulator or connected Android device.");
+    } else if (!next.connected && physicalDevices.length === 0) {
       empty("Could not start the simulator backend.");
       notice(next.error);
     }
@@ -1129,6 +1133,7 @@ export function createSimulatorPanel(
     root,
     platform,
     get selected() { return selected; },
+    get localIosSupported() { return status?.localIosSupported; },
     fitScreen,
     controls,
     notice,

@@ -34,6 +34,11 @@ function processAlive(pid: number) {
   try { process.kill(pid, 0); return true; } catch (error) { return error instanceof Error && "code" in error && error.code === "EPERM"; }
 }
 
+// The published @callstack/tracesift CLI declares macOS and Linux as its supported OSes.
+function requireTraceSiftHost() {
+  if (process.platform === "win32") throw new TraceSiftError("TraceSift profile analysis requires a macOS or Linux host.", "version", "unsupported");
+}
+
 async function parseDescriptor(path: string): Promise<Descriptor | undefined> {
   let raw: unknown;
   try {
@@ -102,6 +107,7 @@ export class TraceSiftClient {
   }
 
   private async start(signal?: AbortSignal): Promise<Descriptor> {
+    requireTraceSiftHost();
     const reusable = await this.existing(signal);
     if (reusable) return reusable;
     const port = await freePort();
@@ -186,10 +192,12 @@ export class TraceSiftClient {
   }
 
   async installCli(signal?: AbortSignal) {
+    requireTraceSiftHost();
     await this.runSetupCommand("npm", ["install", "-g", "@callstack/tracesift"], "TraceSift installation", signal);
   }
 
   async initialize(signal?: AbortSignal) {
+    requireTraceSiftHost();
     await this.runSetupCommand(this.command, ["init"], "TraceSift initialization", signal,
       { ...process.env, TRACE_SIFT_HOME: this.home });
   }

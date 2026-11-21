@@ -4,12 +4,11 @@ import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { setImmediate as flushTasks } from "node:timers/promises";
 import type { App } from "@modelcontextprotocol/ext-apps";
-import type { PanelContext } from "../src/model-context.ts";
+import { PanelContext } from "../src/model-context.ts";
 import { createSimulatorPanel } from "../src/simulator-panel.ts";
 import { getDeviceSettings } from "../src/device-settings.ts";
 import { getScreenAnnotations } from "../src/screen-annotations.ts";
 import type { PhysicalIosDevice } from "../../shared/src/ios-devices.ts";
-import type { PhysicalAndroidDevice } from "../../shared/src/android-devices.ts";
 import type { SimulatorDevice } from "../../shared/src/protocol.ts";
 import type { AndroidBookingNames, PhysicalAndroidDevice } from "../../shared/src/android-devices.ts";
 import type { ScreenAnnotation } from "../../shared/src/screen-annotations.ts";
@@ -564,6 +563,17 @@ test("Android refresh connects an arriving phone once and closes its stream when
   assert.equal(f.android.root.buttons[0].disabled, true);
   const lifecycle = f.calls.filter(call => call.name.startsWith("mobile_boot") || call.name.startsWith("mobile_shutdown"));
   assert.equal(lifecycle.length, 0);
+});
+
+test("the Android panel shows the server's emulator setup hint when adb is available but the device list is empty", async t => {
+  const { android } = fixture(t);
+  android.panel.setOpeningTarget({ platform: "android" });
+  const setupHint = "Install Android Emulator in SDK Manager, then create an AVD in Device Manager.";
+  android.panel.acceptStatus({ connected: true, managed: false, baseUrl: "", devices: [], setupHint });
+  assert.equal(android.element("empty").textContent, "No Android devices.");
+  assert.equal(android.element("empty-description").textContent, setupHint);
+  assert.equal(android.element("empty-description").hidden, false);
+  assert.equal(android.element("start-device").disabled, true);
 });
 
 test("Android discovery polls visible panels, shares refreshes, and removes disconnected phones", async t => {
@@ -1344,7 +1354,7 @@ for (const platform of ["ios", "android"] as const) test(`failed inspection on $
   assert.equal(f.calls.some(call => call.name.endsWith("_stream_input")), false);
 });
 
-test("Android fallback selection scales physical accessibility bounds to the captured video", async t => {
+test("Android selection attaches a scaled accessibility element to the composer and sends its note to chat", async t => {
   const f = fixture(t), panel = f.android;
   f.failInspection();
   f.setAndroidAccessibility({ screen: { width: 1080, height: 2160 }, tree: { nodes: [
@@ -1352,6 +1362,15 @@ test("Android fallback selection scales physical accessibility bounds to the cap
   ] } });
   await panel.panel.load(); await waitFor(() => panel.element("screen").draws > 0);
   const store = getScreenAnnotations(panel.element("stage") as unknown as HTMLElement);
+  const updates: Parameters<App["updateModelContext"]>[0][] = [];
+  const messages: Parameters<App["sendMessage"]>[0][] = [];
+  store.connect(new PanelContext({
+    getHostCapabilities: () => ({ message: { text: {} } }),
+    async sendMessage(message) { messages.push(message); return {}; },
+  } as App, () => ({
+    getCurrent: () => undefined,
+    async update(params) { updates.push(params); return { updateId: String(updates.length) }; },
+  })));
   await store.toggle();
   dispatch(panel.element("screen"), "pointermove", { pointerId: 1, clientX: 75, clientY: 165 });
   assert.equal(store.getSnapshot().hovered?.name, "Continue");
@@ -1359,6 +1378,17 @@ test("Android fallback selection scales physical accessibility bounds to the cap
   dispatch(panel.element("screen"), "pointerup", { button: 0, pointerId: 1, clientX: 75, clientY: 165 });
   assert.deepEqual(store.getSnapshot().draft?.component.bounds, { x: 100, y: 400, width: 200, height: 80 });
   assert.equal(store.getSnapshot().draft?.component.identifier, "app:id/continue");
+  store.setText("Make this button wider");
+  await store.save();
+  const attachment = updates.at(-1)?.content?.[0];
+  assert.equal(attachment?.type, "text");
+  assert.equal(attachment._meta?.["openai/title"], "Continue: Make this button wider");
+  assert.match(attachment.text, /emulator-5554/);
+  assert.match(attachment.text, /app:id\/continue/);
+  assert.match(attachment.text, /100,400,200,80 pixels/);
+  await store.send();
+  assert.equal(messages.length, 1);
+  assert.equal(store.getSnapshot().annotations.length, 0);
   assert.equal(f.calls.some(call => call.name.endsWith("_stream_input")), false);
 });
 

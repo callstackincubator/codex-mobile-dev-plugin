@@ -150,8 +150,10 @@ test("a project test polls live progress against its own source lines", async ()
   assert.ok(calls.some(call => call.name === "mobile_testing_run_progress"), "project runs poll while the runner is in flight");
   assert.deepEqual(testRecorder.getSnapshot().run?.lines, { 2: "passed", 3: "running" },
     "runner indexes map to the awaited calls in the saved project's source");
-  finishRun({ status: "passed", exitCode: 0, steps: [{ line: 2, status: "passed" }, { line: 3, status: "passed" }] });
+  finishRun({ status: "passed", exitCode: 0, steps: [{ stepIndex: 0, status: "passed" }, { stepIndex: 1, status: "passed" }] });
   await running;
+  assert.deepEqual(testRecorder.getSnapshot().run?.lines, { 2: "passed", 3: "passed" },
+    "a runner that omitted source locations still marks the final result against its awaited calls");
 
   testRecorder.clearRun();
   panel.dispose();

@@ -55,7 +55,7 @@ export function mcpDeviceChoiceForm(input: DeviceChoiceInput, devices: DeviceCho
 
 async function statusDevices(read: () => Promise<Status>) {
   const status = await read();
-  if (status.connected === false) throw new SimulatorUnavailableError(status.error ?? "Device discovery is unavailable.");
+  if (!status.connected && status.localIosSupported !== false) throw new SimulatorUnavailableError(status.error ?? "Device discovery is unavailable.");
   return status;
 }
 

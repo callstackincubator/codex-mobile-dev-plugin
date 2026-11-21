@@ -1,4 +1,5 @@
 import type { TestContext } from "node:test";
+import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -12,7 +13,7 @@ import { installTracePropagation, instrumentMcpServer } from "../core/src/teleme
 const catalogClient = new Client({ name: "agent-device-schema-test", version: "1" });
 export const runtimeUrl = new URL("../runtimes/agent-device/node_modules/agent-device/bin/agent-device.mjs", import.meta.url);
 const runtimeTransport = new StdioClientTransport({
-  command: process.execPath, args: [runtimeUrl.pathname, "mcp"], stderr: "pipe",
+  command: process.execPath, args: [fileURLToPath(runtimeUrl), "mcp"], stderr: "pipe",
   env: { AGENT_DEVICE_NO_UPDATE_NOTIFIER: "1" },
 });
 await catalogClient.connect(runtimeTransport);

@@ -21,9 +21,9 @@ The agent reuses a suitable selected or running device when the task establishes
 
 Click the device screen to focus it, then tap, drag, or type where supported. Home and app-switcher controls are in the toolbar; Android also provides Back, Recents, and Lock.
 
-On iOS simulators and Android screens, **Command-V** pastes up to 4,096 printable US-ASCII characters. Unsupported characters or line breaks show a notice without sending partial text. Paste is unavailable while **Select** is active or the stream is not ready.
+On iOS simulators and Android screens, **Ctrl+V** on Windows or **Command-V** on macOS pastes up to 4,096 printable US-ASCII characters. Unsupported characters or line breaks show a notice without sending partial text. Paste is unavailable while **Select** is active or the stream is not ready.
 
-Use **Screenshot** to attach a PNG to your next message and copy it to the macOS clipboard. Capturing a screenshot does not send a message.
+Use **Screenshot** to attach a PNG to your next message and copy it to the system clipboard. Capturing a screenshot does not send a message.
 
 ## Inspect and annotate
 

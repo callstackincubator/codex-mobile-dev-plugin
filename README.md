@@ -185,7 +185,7 @@ open "release/mac/Mobile Dev.app"
 
 ## Requirements
 
-Mobile Dev runs on an Apple Silicon Mac. In Codex desktop, the prebuilt plugin
+Codex desktop supports Android on Windows and Apple Silicon Macs. Local iOS devices require an Apple Silicon Mac. See [setting up Android on Windows](docs/devices.md#android-on-windows). The prebuilt Codex plugin
 uses Codex's bundled Node runtime from its workspace dependency cache; the Claude
 Desktop bundle uses Claude's Node runtime, the Cursor plugin uses Node.js from
 `PATH`, and the Mac app bundles its own. Install the tools for the platforms you use:
@@ -194,12 +194,12 @@ Desktop bundle uses Claude's Node runtime, the Cursor plugin uses Node.js from
 | --- | --- |
 | iOS simulators | Xcode 26 or later with an installed simulator runtime. |
 | Physical iPhones and iPads | Xcode 27 or later, a paired device with Developer Mode enabled, and USB or Wi-Fi connectivity. Screen mirroring requires HEVC WebCodecs support in the host. |
-| Android | Android SDK platform-tools and emulator, and an AVD or a physical device with authorized USB or wireless debugging. Screen streaming requires H.264 WebCodecs support in the host. |
+| Android | Android SDK Platform-Tools for an authorized USB or wireless device. For an AVD, also install Android Emulator and a system image. Screen streaming requires H.264 WebCodecs support in the host. |
 | Metro logs and React Native inspection | An existing local Metro server with a compatible app inspector target. |
 | Physical iOS CPU and memory | iOS 17.4 or later, a running development-signed app with `get-task-allow`, a mounted developer disk image, and Xcode/LLDB detached. |
 | Display FPS | Android 12 or later with FrameTimeline support, or a physical iOS device running iOS 17.4 or later. iOS simulators do not support Display FPS. |
 | Testing Studio | A booted iOS simulator or Android emulator, plus an existing e2e project with its dependencies installed and a target bundle ID in `e2e.config.*`. |
-| Profile analysis | The TraceSift CLI installed with `npm install -g @callstack/tracesift`, initialized once with `tracesift init`, and found on `PATH` or through `TRACE_SIFT_COMMAND`. |
+| TraceSift profile analysis (macOS or Linux) | The TraceSift CLI installed with `npm install -g @callstack/tracesift`, initialized once with `tracesift init`, and found on `PATH` or through `TRACE_SIFT_COMMAND`. |
 
 Simulator tools use the full Xcode installation selected by `xcode-select` (or
 `DEVELOPER_DIR`), including its Swift compatibility libraries. Custom Xcode names
@@ -216,7 +216,7 @@ open Mobile Dev from the sidebar; in Cursor, ask **"Open Mobile Dev"** in an age
 Pick a device from the toolbar; selecting a stopped simulator or AVD
 boots it. Use the iOS and Android toggles to show either platform or both.
 
-Click an iOS simulator or Android screen to focus it, then press **Command-V** to
+Click an iOS simulator or Android screen to focus it, then press **Ctrl+V** on Windows or **Command-V** on macOS to
 paste text into the device. Paste accepts up to 4,096 printable US-ASCII characters;
 line breaks and other characters show a notice without sending partial text.
 

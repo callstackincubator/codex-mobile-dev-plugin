@@ -4,7 +4,7 @@ import type { RequestOptions } from "@modelcontextprotocol/sdk/shared/protocol.j
 import { CallToolResultSchema, type CallToolRequest, type CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import * as Sentry from "@sentry/node";
 import { execFile } from "node:child_process";
-import { mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -93,6 +93,8 @@ export class AgentDeviceRuntime {
 
   private async createState(): Promise<State> {
     const directory = await claimAgentDeviceStateDirectory();
+    // A recorder or the host can supply a state path before the daemon has created it.
+    await mkdir(directory, { recursive: true, mode: 0o700 });
     console.error(`[mobile-dev] agent-device state directory: ${directory}`);
     const stopStorageMetrics = startStorageMetrics({ agent_device_state: directory, apple_runner_cache: join(homedir(), ".agent-device/apple-runner") });
     return { directory, stopStorageMetrics };

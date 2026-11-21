@@ -1,4 +1,5 @@
 export type ResourceSavingState = {
+  supported?: boolean;
   enabled: boolean;
   running: boolean;
   restartRequired: boolean;

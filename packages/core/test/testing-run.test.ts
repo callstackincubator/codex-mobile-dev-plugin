@@ -60,6 +60,18 @@ test("a retried test is read from the attempt that decided it", () => {
   assert.deepEqual(reportSteps(raw, FILE).map(step => step.status), ["passed"]);
 });
 
+test("the final Windows runner report retains step indexes for the selected test", () => {
+  const raw = report([{ line: 1, status: "passed" }, { line: 1, status: "failed" }]);
+  const result = raw.run.results[0]!;
+  Object.assign(result, { file: FILE.replaceAll("/", "\\") });
+  for (const step of result.attempts[0]!.steps) step.source.file = "unknown";
+  assert.deepEqual(reportSteps(raw, FILE).map(step => [step.stepIndex, step.line, step.status]),
+    [[0, undefined, "passed"], [1, undefined, "failed"]]);
+  assert.deepEqual(reportSteps(raw, "tests/another.e2e.ts"), []);
+  raw.run.results.push(result);
+  assert.deepEqual(reportSteps(raw, FILE), [], "step indexes restart for each test");
+});
+
 test("the report is found even when something else wrote to the same stream", () => {
   const document = JSON.stringify(report([{ line: 8, status: "passed" }]));
   assert.notEqual(parseReport(`npm warn exec something\n${document}\n`), undefined);
@@ -70,13 +82,21 @@ async function project(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "testing-run-"));
   await mkdir(join(root, "node_modules/.bin"), { recursive: true });
   await writeFile(join(root, "node_modules/.bin/e2e"), "#!/bin/sh\n");
+  await mkdir(join(root, "node_modules/e2e"), { recursive: true });
+  await writeFile(join(root, "node_modules/e2e/package.json"), JSON.stringify({ bin: { e2e: "cli.js" } }));
+  await writeFile(join(root, "node_modules/e2e/cli.js"), "");
   return root;
 }
 
 /** A spawn that answers with one canned stdout, and records how it was called. */
 function spawner(stdout: string, exitCode = 0, seen: { command?: string; args?: readonly string[]; cwd?: string } = {}) {
   return ((command: string, args: readonly string[], options: { cwd?: string }) => {
-    seen.command = command; seen.args = args; seen.cwd = options.cwd;
+    if (process.platform === "win32") {
+      assert.equal(command, process.execPath);
+      assert.equal(args[0], join(options.cwd!, "node_modules/e2e/cli.js"));
+      seen.command = args[0]; seen.args = args.slice(1);
+    } else { seen.command = command; seen.args = args; }
+    seen.cwd = options.cwd;
     const child = new EventEmitter() as EventEmitter & { stdout: Readable; stderr: Readable; kill: () => void };
     child.stdout = Readable.from([stdout]);
     child.stderr = Readable.from([""]);
@@ -91,7 +111,7 @@ test("the project's own runner is spawned, never a downloaded one", async () => 
   const seen: { command?: string; args?: readonly string[]; cwd?: string } = {};
   const result = await runRecordedTest({ projectPath: root, relativePath: FILE },
     { spawner: spawner(JSON.stringify(report([{ line: 8, status: "passed" }])), 0, seen) });
-  assert.equal(seen.command, join(root, "node_modules/.bin/e2e"), "npx would go to the network for a missing package");
+  assert.equal(seen.command, join(root, process.platform === "win32" ? "node_modules/e2e/cli.js" : "node_modules/.bin/e2e"), "npx would go to the network for a missing package");
   assert.deepEqual(seen.args, ["run", FILE, "--reporter", "json"]);
   assert.equal(seen.cwd, root);
   assert.equal(result.status, "passed");
@@ -177,7 +197,7 @@ test("the runner is not handed the app's pinned agent-device state directory", (
 test("the generated config adds a reporter and changes nothing else", () => {
   const source = progressConfigSource("/app/e2e.config.ts");
   // The project's own config is spread, so its targets, agents and workers all stand.
-  assert.match(source, /import base from "file:\/\/\/app\/e2e\.config\.ts";/);
+  assert.match(source, /import base from "file:\/\/\/(?:[A-Za-z]:\/)?app\/e2e\.config\.ts";/);
   assert.match(source, /\.\.\.resolved,/);
   // A config can export a function; the runner resolves one, so the generated config does too.
   assert.match(source, /typeof base === "function" \? await base\(\) : base/);
