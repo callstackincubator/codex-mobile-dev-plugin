@@ -302,6 +302,7 @@ function TraceSiftUpload({ controller, available }: { controller: TraceSiftContr
           {analyzing
             ? <p className="upload-analyzing" role="status">Analyzing {analyzing.name} with TraceSift…</p>
             : <CapturePane controller={controller} busy={!ready} />}
+          <p className="tracesift-notice">Source maps are generated automatically on iOS. On Android they are only produced if the app is configured for it.</p>
         </>}
       </section>
 
