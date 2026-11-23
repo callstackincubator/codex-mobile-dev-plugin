@@ -8,6 +8,7 @@ import { DevicePicker, EmptyDeviceTabBar } from "@mobile-dev/ui/components/devic
 import { DevicePanes } from "@mobile-dev/ui/components/device-panes.tsx";
 import { StorageView } from "@mobile-dev/ui/components/storage-view.tsx";
 import { TraceSiftView } from "@mobile-dev/ui/components/tracesift-view.tsx";
+import { AppIntelligenceView } from "@mobile-dev/ui/components/app-intelligence-view.tsx";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@mobile-dev/ui/components/ui/resizable.tsx";
 
 export function MacWorkspace({ panels, tool, devices }: { panels: WorkspaceTools; tool?: ToolName; devices: DeviceWorkspace }) {
@@ -21,6 +22,7 @@ export function MacWorkspace({ panels, tool, devices }: { panels: WorkspaceTools
   const toolView = tool === "logs" ? <LogsView panel={panels.logs} />
     : tool === "performance" ? <PerformanceView panel={panels.performance} />
     : tool === "storage" ? <StorageView panel={panels.storage} />
+    : tool === "app-intel" ? <AppIntelligenceView panel={panels["app-intel"]} />
     : tool === "tracesift" ? <TraceSiftView panel={panels.tracesift} /> : null;
   return <DevicePicker workspace={devices}><main className="mac-workspace flex h-dvh flex-col">
     {!hasDevices && <EmptyDeviceTabBar />}

@@ -86,6 +86,8 @@ test("App Flow uses adaptive capture and offers AI only for actionable misses", 
   assert.match(guideText, /release build/, "the guide explains what a release build costs");
   assert.match(guideText, /deep link/, "the guide explains the deep-link fallback");
   assert.match(guideText, /Structure only.+Screen UI \+ Structure/s, "the guide explains both capture modes");
+  assert.match(guideText, /If the app requires sign-in, sign in to it first/,
+    "the guide makes clear that sign-in belongs to the app and is conditional");
 
   // The AI continuation is no longer one click: it lists the eligible screens and starts only the
   // ones the user ticks, so a model walk is never spent on a screen nobody asked about.

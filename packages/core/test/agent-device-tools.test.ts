@@ -5,11 +5,38 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { agentDeviceCatalogFile, agentDeviceClient } from "../../test-support/agent-device-fixtures.ts";
 import { readAgentDeviceCatalog } from "../src/agent-device-tools.ts";
+import { claimAgentDeviceStateDirectory } from "../src/agent-device-runtime.ts";
 import { PNG } from "../../test-support/fixtures.ts";
 
 function text(result: { content: unknown }) {
   return (result.content as { text: string }[])[0].text;
 }
+
+test("the first agent-device runtime publishes one state directory for App Flow and later runtimes", async () => {
+  const env: NodeJS.ProcessEnv = {};
+  const created: string[] = [];
+  const create = async () => {
+    const directory = join(tmpdir(), `mobile-dev-agent-device-test-${created.length + 1}`);
+    created.push(directory);
+    return directory;
+  };
+  const first = await claimAgentDeviceStateDirectory(env, create);
+  const second = await claimAgentDeviceStateDirectory(env, create);
+  assert.equal(second, first);
+  assert.equal(env.AGENT_DEVICE_STATE_DIR, first);
+  assert.deepEqual(created, [first]);
+});
+
+test("App Flow's state directory wins when it is pinned during runtime setup", async () => {
+  const env: NodeJS.ProcessEnv = {};
+  const pinned = join(tmpdir(), "app-flow", "agent-device");
+  const directory = await claimAgentDeviceStateDirectory(env, async () => {
+    env.AGENT_DEVICE_STATE_DIR = pinned;
+    return join(tmpdir(), "unused-agent-device-state");
+  });
+  assert.equal(directory, pinned);
+  assert.equal(env.AGENT_DEVICE_STATE_DIR, directory);
+});
 
 test("agent-device commands are device_ tools with their compact schemas, and listing them starts nothing", async t => {
   const { client, counts } = await agentDeviceClient(t);
@@ -18,7 +45,7 @@ test("agent-device commands are device_ tools with their compact schemas, and li
   for (const name of ["device_open", "device_snapshot", "device_press", "device_fill", "device_batch", "device_devices"]) assert.ok(names.includes(name), name);
   for (const name of ["device_logs", "device_perf", "open", "logs"]) assert.equal(names.includes(name), false, name);
   const press = tools.find(tool => tool.name === "device_press");
-  assert.deepEqual(press?.inputSchema.required?.toSorted(), ["session", "target"]);
+  assert.deepEqual(press?.inputSchema.required?.toSorted(), ["session"]);
   assert.equal(counts().connections, 0);
 });
 
@@ -27,8 +54,7 @@ test("forwarding preserves named sessions, metadata and native results without r
   const metadata = { "sentry-trace": "1234567890abcdef1234567890abcdef-1234567890abcdef-0" };
   await client.callTool({ name: "device_open", arguments: { session: "ios-task", app: "Example", platform: "ios", udid: "selected-ios" } });
   await client.callTool({ name: "device_open", arguments: { session: "android-task", app: "Example", platform: "android", serial: "selected-android" } });
-  const target = { kind: "ref", ref: "@e1" };
-  const input = { session: "android-task", target, settle: true };
+  const input = { session: "android-task", ref: "@e1", settle: true };
   const returned = await client.callTool({ name: "device_press", arguments: input, _meta: metadata });
   assert.deepEqual(returned, result);
   assert.deepEqual(calls[2], { name: "press", arguments: input, _meta: metadata });
@@ -135,7 +161,7 @@ test("batch steps obey each command's schema and inherit the outer session", asy
     const rejected = await client.callTool({ name: "device_batch", arguments: { session: "task", steps: [{ command: "snapshot", input }] } });
     assert.equal(rejected.isError, true);
   }
-  const press = await client.callTool({ name: "device_batch", arguments: { session: "task", steps: [{ command: "press", input: {} }] } });
+  const press = await client.callTool({ name: "device_batch", arguments: { session: "task", steps: [{ command: "press", input: { ref: 1 } }] } });
   assert.match(text(press), /Batch step 1: Invalid press arguments/);
   const omitted = await client.callTool({ name: "device_batch", arguments: { session: "task", steps: [{ command: "logs", input: {} }] } });
   assert.match(text(omitted), /Unknown Agent Device command: logs/);

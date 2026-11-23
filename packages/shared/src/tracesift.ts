@@ -8,6 +8,22 @@ export const traceSiftProfileInputSchema = z.object({
   path: z.string().min(1).max(16_384), profileType: traceSiftProfileTypeSchema.default("auto"),
 });
 
+export const traceSiftSetupReasonSchema = z.enum(["missing_cli", "needs_init", "unsupported", "startup_failed"]);
+export const traceSiftReadinessSchema = z.discriminatedUnion("status", [
+  z.object({ apiVersion: z.literal(1), status: z.literal("ready") }),
+  z.object({
+    apiVersion: z.literal(1), status: z.literal("setup_required"),
+    reason: traceSiftSetupReasonSchema, message: z.string().min(1),
+  }),
+]);
+export type TraceSiftSetupReason = z.infer<typeof traceSiftSetupReasonSchema>;
+export type TraceSiftReadiness = z.infer<typeof traceSiftReadinessSchema>;
+export const traceSiftSetupActionSchema = z.enum(["install", "init"]);
+export const traceSiftSetupActionResultSchema = z.object({
+  apiVersion: z.literal(1), action: traceSiftSetupActionSchema, completed: z.literal(true), message: z.string().min(1),
+});
+export type TraceSiftSetupAction = z.infer<typeof traceSiftSetupActionSchema>;
+
 const finite = z.number().finite().nonnegative();
 const taskCulpritSchema = z.object({
   name: z.string(), location: z.string().optional(), frameClass: z.string(), selfMs: finite,

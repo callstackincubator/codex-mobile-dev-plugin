@@ -89,12 +89,31 @@ function updateFailure(error: unknown): UpdateFailure | "unknown" {
 }
 
 export async function resolveCodexCli(parentPid = process.ppid, cwd = homedir()): Promise<string> {
-  const pid = String(parentPid);
-  const result = await execute("/bin/ps", ["-p", pid, "-o", "comm="], { cwd, timeout: 5000, maxBuffer: 4096 });
-  const path = result.stdout.trim();
+  const windows = process.platform === "win32";
+  const options = { cwd, timeout: windows ? 15_000 : 5000, maxBuffer: 4096, windowsHide: true };
+  // On Windows Codex runs the packaged .cmd launcher in cmd.exe. Cross only that
+  // wrapper, so an unrelated shell or a Codex executable on PATH cannot select a CLI.
+  const launcher = fileURLToPath(new URL("../scripts/launch-mcp.cmd", import.meta.url));
+  let path: string;
+  try {
+    const result = windows
+      ? await execute(join(process.env.SystemRoot ?? "C:\\Windows", "System32/WindowsPowerShell/v1.0/powershell.exe"), [
+        "-NoProfile", "-NonInteractive", "-Command", [
+          "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8",
+          "$p = Get-CimInstance Win32_Process -Filter ('ProcessId = ' + $env:MOBILE_DEV_PARENT_PID)",
+          `$launch = ' /c ""' + $env:MOBILE_DEV_LAUNCHER + '" ./dist/server.mjs"'`,
+          "if ($p.Name -eq 'cmd.exe' -and $p.CommandLine.EndsWith($launch, [StringComparison]::OrdinalIgnoreCase)) { $p = Get-CimInstance Win32_Process -Filter ('ProcessId = ' + $p.ParentProcessId) }",
+          "$p.ExecutablePath",
+        ].join("; "),
+      ], { ...options, env: { ...process.env, MOBILE_DEV_PARENT_PID: String(parentPid), MOBILE_DEV_LAUNCHER: launcher } })
+      : await execute("/bin/ps", ["-p", String(parentPid), "-o", "comm="], options);
+    path = result.stdout.trim();
+  } catch {
+    path = "";
+  }
   const absolute = isAbsolute(path);
   const name = basename(path);
-  if (absolute === false || name !== "codex") throw new PluginUpdateError("Could not locate the Codex executable that launched Mobile Dev.", "codex-not-found");
+  if (!absolute || (windows ? name.toLowerCase() !== "codex.exe" : name !== "codex")) throw new PluginUpdateError("Could not locate the Codex executable that launched Mobile Dev.", "codex-not-found");
   return path;
 }
 
@@ -105,7 +124,7 @@ export function createCodexRunner(cwd: string, options: { path?: string; env?: N
     const path = options.path ?? await resolveCodexCli(process.ppid, cwd);
     let stdout: string;
     try {
-      const result = await execute(path, args, { cwd, timeout: 120000, maxBuffer: 1024 * 1024, env, signal: options.signal });
+      const result = await execute(path, args, { cwd, timeout: 120000, maxBuffer: 1024 * 1024, env, signal: options.signal, windowsHide: true });
       stdout = result.stdout;
     } catch {
       throw new PluginUpdateError("Codex could not complete the Mobile Dev update command. Try again.", "command-failed");

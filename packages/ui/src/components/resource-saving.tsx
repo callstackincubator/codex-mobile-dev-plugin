@@ -8,7 +8,7 @@ import { Switch } from "./ui/switch";
 export function ResourceSaving({ store }: { store: ResourceSavingStore }) {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const id = useId();
-  if (state.visible === false) return null;
+  if (!state.visible || state.value?.supported === false) return null;
   const disabled = state.disabled || state.loading || state.busy || state.value === undefined;
   const enabled = state.value?.enabled ?? true;
   return <Popover onOpenChange={open => { if (open) void store.load(); }}>

@@ -1,19 +1,38 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { access, cp, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { access, cp, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { pathToFileURL } from "node:url";
+import { setTimeout as delay } from "node:timers/promises";
+import { testingRuntimeArchive } from "../../../tooling/panel-runtime.mjs";
 import { join, resolve } from "node:path";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
-import { createLaunchHome } from "./mcp-launch-fixture.mjs";
+import { createLaunchHome, probeLauncher, systemPath } from "./mcp-launch-fixture.mjs";
 
 const source = resolve(process.argv[2] ?? "release/marketplace/plugins/mobile-dev");
 const temporary = await mkdtemp(join(tmpdir(), "mobile-dev-package-test-"));
 const plugin = join(temporary, "mobile-dev");
+const windows = process.platform === "win32";
 let transport;
 let runtimeTransport;
 let browserTransport;
+
+async function prepareTestingRuntime(client) {
+  const deadline = Date.now() + 60_000;
+  let name = "mobile_testing_prepare_runtime";
+  for (;;) {
+    const response = await client.callTool({ name, arguments: {} });
+    assert.ok(!response.isError, JSON.stringify(response.content));
+    const progress = response.structuredContent.progress;
+    assert.notEqual(progress.phase, "failed", progress.message);
+    if (progress.phase === "ready") return;
+    assert.ok(Date.now() < deadline, "Testing Studio installation timed out");
+    name = "mobile_testing_runtime_progress";
+    await delay(100);
+  }
+}
 
 function uiIdentity(text) {
   const user = text.match(/name="mobile-dev-user-id" content="(anon_[a-f0-9]{32})"/);
@@ -37,8 +56,8 @@ try {
   const serverNames = Object.keys(mcp.mcpServers);
   assert.deepEqual(serverNames, ["mobile-dev"]);
   const serverConfig = mcp.mcpServers["mobile-dev"];
-  assert.equal(serverConfig.command, "/bin/sh");
-  assert.deepEqual(serverConfig.args, ["./scripts/launch-mcp.sh", "./dist/server.mjs"]);
+  assert.equal(serverConfig.command, "./scripts/launch-mcp");
+  assert.deepEqual(serverConfig.args, ["./dist/server.mjs"]);
   assert.equal(serverConfig.cwd, ".");
   assert.ok(serverConfig.env_vars.includes("HOME"));
   assert.ok(serverConfig.env_vars.includes("TRACE_SIFT_HOME"));
@@ -48,48 +67,68 @@ try {
   const serverCwd = resolve(plugin, serverConfig.cwd);
   // Supply the Codex runtime cache layout with no Node on MCP PATH.
   const fixtureHome = await createLaunchHome(temporary, process.execPath);
-  const serverEnv = { ...process.env, HOME: fixtureHome, PATH: "/usr/bin:/bin:/usr/sbin:/sbin" };
+  const serverEnv = { ...process.env, HOME: fixtureHome, USERPROFILE: fixtureHome, PATH: systemPath };
   // These checks expect the default inline panel, even from a host set up for the browser panel.
   delete serverEnv.MOBILE_DEV_PANEL;
-  const launcher = serverConfig.args[0];
-  const nodeVersion = spawnSync(serverConfig.command, [launcher, "--version"], { cwd: serverCwd, env: serverEnv, encoding: "utf8" });
+  const probe = join(temporary, "version probe.cjs");
+  await writeFile(probe, "console.log(process.version);");
+  const nodeVersion = probeLauncher(serverConfig.command, [probe], { cwd: serverCwd, env: serverEnv, encoding: "utf8" });
   assert.equal(nodeVersion.error, undefined);
   assert.equal(nodeVersion.status, 0, nodeVersion.stderr);
   assert.equal(nodeVersion.stdout.trim(), process.version);
   for (const path of ["SKILL.md", "agents/openai.yaml", "references/workflow.md"]) await access(join(plugin, "skills/agent-device", path));
-  await access(join(plugin, "dist/baguette/Baguette"));
-  await access(join(plugin, "dist/baguette/Baguette_Baguette.bundle/Web"));
-  const baguetteBundle = join(plugin, "dist/baguette/Baguette_Baguette.bundle");
-  const baguetteResources = await readdir(baguetteBundle);
-  const has3DModels = baguetteResources.includes("Models3D");
-  assert.equal(has3DModels, false);
-  const mirrorServicePath = join(plugin, "dist/ios-mirror-service.mjs");
-  await access(mirrorServicePath);
-  const mirrorPath = join(plugin, "dist/ios-mirror/darwin-arm64.node");
-  const mirrorProbe = "const mirror = require(process.argv[1]); if (typeof mirror.openDevice !== 'function') process.exit(1);";
-  const mirror = spawnSync(serverConfig.command, [launcher, "-e", mirrorProbe, mirrorPath], { cwd: serverCwd, env: serverEnv, encoding: "utf8" });
-  assert.equal(mirror.error, undefined);
-  assert.equal(mirror.status, 0, mirror.stderr);
-  await access(join(plugin, "dist/ios-mirror/third-party-licenses.txt"));
-  const iosLogsPath = join(plugin, "dist/ios-logs/mobile-dev-ios-logs");
-  const iosLogsReleasePath = join(plugin, "dist/ios-logs/release.json");
-  const iosLogsReleaseText = await readFile(iosLogsReleasePath, "utf8");
-  const iosLogsRelease = JSON.parse(iosLogsReleaseText);
-  const iosLogsLicensePath = join(plugin, "dist/ios-logs/third-party-licenses.txt");
-  await access(iosLogsLicensePath);
-  for (const dependency of iosLogsRelease.sources) {
-    const archivePath = join(plugin, `dist/ios-logs/sources/${dependency.name}-${dependency.version}.tar.bz2`);
-    await access(archivePath);
+  if (!windows) {
+    await access(join(plugin, "dist/baguette/Baguette"));
+    await access(join(plugin, "dist/baguette/Baguette_Baguette.bundle/Web"));
+    const baguetteBundle = join(plugin, "dist/baguette/Baguette_Baguette.bundle");
+    const baguetteResources = await readdir(baguetteBundle);
+    const has3DModels = baguetteResources.includes("Models3D");
+    assert.equal(has3DModels, false);
+    const mirrorServicePath = join(plugin, "dist/ios-mirror-service.mjs");
+    await access(mirrorServicePath);
+    const mirrorPath = join(plugin, "dist/ios-mirror/darwin-arm64.node");
+    const mirrorProbe = "const mirror = require(process.argv[1]); if (typeof mirror.openDevice !== 'function') process.exit(1);";
+    const mirror = probeLauncher(serverConfig.command, ["-e", mirrorProbe, mirrorPath], { cwd: serverCwd, env: serverEnv, encoding: "utf8" });
+    assert.equal(mirror.error, undefined);
+    assert.equal(mirror.status, 0, mirror.stderr);
+    await access(join(plugin, "dist/ios-mirror/third-party-licenses.txt"));
+    const iosLogsPath = join(plugin, "dist/ios-logs/mobile-dev-ios-logs");
+    const iosLogsReleasePath = join(plugin, "dist/ios-logs/release.json");
+    const iosLogsReleaseText = await readFile(iosLogsReleasePath, "utf8");
+    const iosLogsRelease = JSON.parse(iosLogsReleaseText);
+    const iosLogsLicensePath = join(plugin, "dist/ios-logs/third-party-licenses.txt");
+    await access(iosLogsLicensePath);
+    for (const dependency of iosLogsRelease.sources) {
+      const archivePath = join(plugin, `dist/ios-logs/sources/${dependency.name}-${dependency.version}.tar.bz2`);
+      await access(archivePath);
+    }
+    const unavailablePhone = spawnSync(iosLogsPath, ["--device", "00000000-0000000000000000", "usb"], { encoding: "utf8", timeout: 5000 });
+    assert.equal(unavailablePhone.error, undefined);
+    assert.equal(unavailablePhone.status, 1);
+    assert.match(unavailablePhone.stderr, /unavailable to libimobiledevice/);
+    console.log("The relocated physical iOS log reader loads its bundled libraries and dependency sources.");
   }
-  const unavailablePhone = spawnSync(iosLogsPath, ["--device", "00000000-0000000000000000", "usb"], { encoding: "utf8", timeout: 5000 });
-  assert.equal(unavailablePhone.error, undefined);
-  assert.equal(unavailablePhone.status, 1);
-  assert.match(unavailablePhone.stderr, /unavailable to libimobiledevice/);
-  console.log("The relocated physical iOS log reader loads its bundled libraries and dependency sources.");
   const manifestPath = join(plugin, ".codex-plugin/plugin.json");
   const manifestText = await readFile(manifestPath, "utf8");
   const manifest = JSON.parse(manifestText);
   assert.equal(manifest.name, "mobile-dev");
+  const runtimeName = testingRuntimeArchive(manifest.version);
+  const archive = resolve("release", runtimeName);
+  const pinPath = join(plugin, "dist/testing-runtime.json");
+  const pin = JSON.parse(await readFile(pinPath, "utf8"));
+  const bytes = await readFile(archive);
+  assert.equal(pin.bytes, bytes.length);
+  assert.equal(pin.sha256, createHash("sha256").update(bytes).digest("hex"));
+  assert.equal(pin.version, manifest.version);
+  if (telemetryConfig.environment === "release") {
+    const repository = process.env.GITHUB_REPOSITORY || "callstackincubator/codex-mobile-dev-plugin";
+    assert.equal(pin.url, `https://github.com/${repository}/releases/download/v${manifest.version}/${runtimeName}`);
+  }
+  // Serve the exact release bytes from a local file before the GitHub release exists.
+  const localPin = { ...pin, url: pathToFileURL(archive).href };
+  await writeFile(pinPath, JSON.stringify(localPin));
+  delete serverEnv.MOBILE_DEV_E2E_RUNTIME;
+  serverEnv.LOCALAPPDATA = fixtureHome;
   transport = new StdioClientTransport({
     command: serverConfig.command, args: serverConfig.args, cwd: serverCwd, stderr: "pipe", env: serverEnv,
   });
@@ -114,13 +153,30 @@ try {
   assert.equal(comparisonUri, `ui://mobile-dev/${manifest.version}/comparison.html`);
   const comparisonResource = await client.readResource({ uri: comparisonUri });
   assert.match(comparisonResource.contents[0].text, /data-view="comparison"/);
-  await access(join(plugin, "dist/ios-fps/mobile-dev-ios-fps"));
-  await access(join(plugin, "dist/ios-fps/third-party-licenses.txt"));
+  if (!windows) {
+    await access(join(plugin, "dist/ios-fps/mobile-dev-ios-fps"));
+    await access(join(plugin, "dist/ios-fps/third-party-licenses.txt"));
+  }
   for (const abi of ["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]) await access(join(plugin, `dist/android-fps/${abi}/mobile-dev-fps`));
   for (const name of ["mobile_display_fps_session", "mobile_read_display_fps", "mobile_display_fps_close", "mobile_read_performance_frames"]) assert.ok(tools.tools.some(tool => tool.name === name));
   for (const name of ["mobile_list_ios_devices", "mobile_list_android_devices", "mobile_boot_android_emulator", "mobile_android_stream_session", "mobile_ios_mirror_session", "mobile_ios_mirror_reset", "mobile_ios_mirror_close"]) assert.ok(tools.tools.some(tool => tool.name === name));
   for (const name of ["device_open", "device_snapshot", "device_press", "device_screenshot"]) assert.ok(tools.tools.some(tool => tool.name === name), name);
   await access(join(plugin, "dist/agent-device/tools.json"));
+  await assert.rejects(access(join(plugin, "dist/e2e")), { code: "ENOENT" });
+  const testingConfig = () => client.callTool({ name: "mobile_testing_project_config", arguments: { projectPath: temporary } });
+  const cold = await testingConfig();
+  assert.equal(cold.isError, undefined, JSON.stringify(cold.content));
+  assert.equal(cold.structuredContent.needsRuntime, true);
+  const runtimeRoot = cold.structuredContent.runtime.root;
+  await assert.rejects(access(runtimeRoot), { code: "ENOENT" });
+  await prepareTestingRuntime(client);
+  const warm = await testingConfig();
+  assert.equal(warm.structuredContent.needsRuntime, false);
+  for (const path of ["node_modules/e2e/dist/cli/bin.js", "node_modules/@e2e-dev/mobile/dist/nodes.js", "release.json", "THIRD_PARTY_NOTICES.txt"]) {
+    await access(join(runtimeRoot, path));
+  }
+  const runner = join(runtimeRoot, "node_modules/e2e/dist/cli/bin.js");
+  execFileSync(process.execPath, [runner, "--version"], { encoding: "utf8", timeout: 15_000 });
   const physicalMirror = tools.tools.find(tool => tool.name === "mobile_ios_mirror_session");
   assert.deepEqual(physicalMirror._meta.ui.visibility, ["app"]);
   await access(join(plugin, "dist/serve-emu/src/cli.mjs"));
@@ -160,12 +216,15 @@ try {
     assert.ok(tools.tools.some(tool => tool.name === name), `Missing developer tool: ${name}`);
   }
   const panel = await client.callTool({ name: "mobile_open_simulator", arguments: {} }, undefined, { timeout: 30000 });
-  if (panel.isError || !panel.structuredContent?.connected) {
-    throw new Error(`Bundled backend failed: ${JSON.stringify(panel.content)}\n${diagnostics}`);
+  assert.ok(!panel.isError, JSON.stringify(panel.content));
+  const baseUrl = panel.structuredContent?.baseUrl;
+  if (windows) {
+    assert.equal(panel.structuredContent?.localIosSupported, false);
+  } else {
+    assert.ok(panel.structuredContent?.connected, diagnostics);
+    assert.equal(panel.structuredContent.managed, true);
+    assert.notEqual(new URL(baseUrl).port, "8421");
   }
-  assert.equal(panel.structuredContent.managed, true);
-  assert.notEqual(new URL(panel.structuredContent.baseUrl).port, "8421");
-  const baseUrl = panel.structuredContent.baseUrl;
   const entrypoint = tools.tools.find(tool => tool.name === "mobile_open_simulator");
   for (const tool of [entrypoint, workspace]) {
     assert.deepEqual(Object.keys(tool._meta["openai/ui"]), ["entrypoints"]);
@@ -176,7 +235,7 @@ try {
   assert.equal(resource.contents[0].mimeType, "text/html;profile=mcp-app");
   assert.ok(resource.contents[0].text.includes('id="root"'));
   // React creates these controls from the bundled script after the app mounts.
-  for (const control of ["canvas", "logs-drawer", "log-chat", "tool-select", "tool-performance", "tool-tracesift", "performance-drawer", "performance-app", "data-device-add", "simulator-panels"]) {
+  for (const control of ["canvas", "logs-drawer", "log-chat", "tool-select", "tool-performance", "tool-app-intel", "app-intelligence-panel", "tool-tracesift", "performance-drawer", "performance-app", "data-device-add", "simulator-panels"]) {
     assert.ok(resource.contents[0].text.includes(control), `Missing bundled UI control: ${control}`);
   }
   assert.ok(!resource.contents[0].text.includes("<!-- APP_SCRIPT -->"));
@@ -196,9 +255,14 @@ try {
   assert.equal(workspace._meta.ui.resourceUri, `ui://mobile-dev/${manifest.version}/workspace.html`);
   assert.deepEqual(resource.contents[0]._meta.ui.csp.connectDomains, ["https://o4512180958068736.ingest.de.sentry.io"]);
   assert.deepEqual(resource.contents[0]._meta.ui.csp.resourceDomains, []);
+  // A fresh MCP process must be able to use the cached runner with the release unavailable.
+  const offlineArchive = join(temporary, "unavailable.tar.gz");
+  const offlinePin = { ...pin, url: pathToFileURL(offlineArchive).href };
+  await writeFile(pinPath, JSON.stringify(offlinePin));
   runtimeTransport = new StdioClientTransport({ command: serverConfig.command, args: serverConfig.args, cwd: serverCwd, stderr: "pipe", env: serverEnv });
   const runtime = new Client({ name: "mobile-dev-package-runtime", version: "1" });
   await runtime.connect(runtimeTransport);
+  await prepareTestingRuntime(runtime);
   const runtimeResource = await runtime.readResource({ uri: entrypoint._meta.ui.resourceUri });
   if (process.env.MOBILE_DEV_TELEMETRY === "off") {
     assert.deepEqual(runtimeResource.contents[0], resource.contents[0]);
@@ -230,21 +294,23 @@ try {
   console.log("Cached side-tab UI addresses from earlier releases return the current panel.");
   const listed = await client.callTool({ name: "mobile_list_simulators", arguments: {} });
   assert.equal(listed.structuredContent?.baseUrl, baseUrl);
-  console.log(`Copied package started its bundled Baguette and returned ${panel.structuredContent.devices.length} simulators.`);
+  if (!windows) console.log(`Copied package started its bundled Baguette and returned ${panel.structuredContent.devices.length} simulators.`);
   // agent-device's runtime starts from the package's own copy on the first command.
-  const devices = await client.callTool({ name: "device_devices", arguments: { platform: "ios" } }, undefined, { timeout: 60000 });
+  const devices = await client.callTool({ name: "device_devices", arguments: { platform: windows ? "android" : "ios" } }, undefined, { timeout: 60000 });
   assert.doesNotMatch(devices.content[0].text, /Agent Device could not/);
   console.log("Copied package started its bundled agent-device runtime.");
   await client.close();
-  const deadline = Date.now() + 5000;
-  let stopped = false;
-  while (Date.now() < deadline) {
-    try { await fetch(`${baseUrl}/simulators.json`, { signal: AbortSignal.timeout(200) }); }
-    catch { stopped = true; break; }
-    await new Promise(resolve => setTimeout(resolve, 50));
+  if (!windows) {
+    const deadline = Date.now() + 5000;
+    let stopped = false;
+    while (Date.now() < deadline) {
+      try { await fetch(`${baseUrl}/simulators.json`, { signal: AbortSignal.timeout(200) }); }
+      catch { stopped = true; break; }
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    assert.equal(stopped, true, "The bundled backend should stop when MCP closes.");
+    console.log("MCP shutdown stopped the bundled backend. No simulator was booted or changed.");
   }
-  assert.equal(stopped, true, "The bundled backend should stop when MCP closes.");
-  console.log("MCP shutdown stopped the bundled backend. No simulator was booted or changed.");
   // T3 Code users set MOBILE_DEV_PANEL=browser, so the panel opens on a loopback page beside the chat.
   browserTransport = new StdioClientTransport({
     command: serverConfig.command, args: serverConfig.args, cwd: serverCwd, stderr: "pipe", env: { ...serverEnv, MOBILE_DEV_PANEL: "browser" },

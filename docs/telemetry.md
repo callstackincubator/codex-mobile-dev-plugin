@@ -4,6 +4,11 @@
 
 ## Hosts
 
+On Windows, SDK and project paths in error messages are redacted. Stack frames for
+packaged server bundles use the same path as their source-map debug image after
+redaction, retaining the release's debug ID. Android FPS, input acknowledgement,
+screen inspection and chat attachment measurements use the existing boundaries.
+
 Since 0.1.165, UI and server telemetry carry a `host` tag and attribute with one of
 `codex`, `claude`, `cursor`, `mac` or `other`. Codex, Claude, Cursor and other MCP
 Apps hosts load the same panel and server; the Mac app runs the same server and shared UI.
@@ -30,13 +35,17 @@ Behavior never depends on this value; it only attributes measurements and errors
   model context updates by `outcome` (`stored`, `invalid` or `too_large`), and
   `browser_panel.context_bytes` records the size of stored updates in bytes; the
   context's text and images are never sent.
-- Packages that download the panel's native parts, such as Claude's, measure that
-  step. `panel_runtime.ready` records, in milliseconds, how long the runtime took to be
-  ready on a panel's first backend start in a server, by `outcome`: `cached` when a
+- Codex measures its Testing Studio runtime download. Claude measures its combined
+  device and Testing Studio runtime download. `panel_runtime.ready` records, in milliseconds, how long the runtime took to be
+  ready on its first use in a server, by `outcome`: `cached` when a
   complete folder was already there, `downloaded` for a download, checksum check and
   extraction, or `failed` with a bounded `reason` (`network`, `http`, `checksum`,
   `archive` or `filesystem`). `panel_runtime.download_bytes` records the archive size
-  of each download. A failure surfaces as the expected `download_failed` outcome;
+  of each download. Claude includes Testing Studio since 0.1.191. Codex reports its
+  standalone archive since 0.1.192. Both metrics identify the archive with `runtime`
+  (`testing` or `panel`). The UI’s installation progress polls are excluded
+  from MCP traces and product analytics. A failure
+  surfaces as the expected `download_failed` outcome;
   checksum, archive and filesystem failures are also captured as
   `panel_runtime.prepare` errors with a `panel_runtime_failure` tag, while offline
   machines and unreachable releases are not. URLs, paths and versions are never
@@ -55,8 +64,9 @@ shell has no native Sentry SDK.
 
 ## Product analytics
 
-Since 0.1.177, release MCP servers send basic product analytics to Mixpanel's EU
-project to count installations and feature use. `instrumentProductAnalytics`
+Starting with 0.1.191, release MCP servers send basic product analytics to the
+Mobile Dev project in Anal to count installations and feature use. Earlier
+releases from 0.1.177 send to Mixpanel's EU endpoint. `instrumentProductAnalytics`
 (`packages/core/src/analytics.ts`) wraps the `tools/call` handler and reports
 `Tool Called` with the tool name and a `success` or `error` outcome; the chat
 client's initialization reports `Session Started`. Every event carries only
@@ -64,13 +74,13 @@ client's initialization reports `Session Started`. Every event carries only
 the server-owned installation ID as `distinct_id`. Tools `isFrequentTool` lists are
 skipped. Events are batched (50 per request, at most 500 queued), sent every 30
 seconds and when the plugin closes; failed batches are dropped. Requests go to
-`api-eu.mixpanel.com/track?ip=0&verbose=1`: Mixpanel neither stores nor geolocates
-the IP, and reports rejected batches in its reply.
+`https://anal.margelo.com/track?ip=0&verbose=1`. Anal skips IP-derived location
+enrichment and reports batch acceptance in its JSON reply.
 
 Each connected session also queues an installation profile with the same
 `distinct_id`, `host`, `plugin_version` and `os`. Profiles are sent through
-`api-eu.mixpanel.com/engage?ip=0&verbose=1` with `$ip: "0"`, so they appear in
-Mixpanel's Users view without IP-derived location, names or account details.
+`https://anal.margelo.com/engage?ip=0&verbose=1` with `$ip: "0"`, so they appear
+in Anal's Users view without IP-derived location, names or account details.
 Existing events join the profile by installation ID. Profiles are pseudonymous,
 not a guarantee of anonymisation under data protection law. A failed profile
 update stays pending until the next flush; closing makes one final attempt and
@@ -79,13 +89,20 @@ discards any pending update. Profile failures do not prevent event delivery.
 Development builds send nothing, and neither does the iOS mirror service. The
 choice is made when the server starts: `MOBILE_DEV_TELEMETRY=off` turns analytics
 off along with Sentry; `MOBILE_DEV_ANALYTICS=off` or `DO_NOT_TRACK=1` turns off only
-analytics, including profile updates. `analytics.flush` counts each Mixpanel request
-with `component=server` and `outcome=success` only when Mixpanel accepted the batch.
+analytics, including profile updates. `analytics.flush` counts each ingestion request
+with `component=server` and `outcome=success` only when the service accepts the batch.
 The bounded `endpoint` attribute distinguishes `track` event batches from `engage`
 profile updates; before installation profiles, the metric counted only event batches.
-The panel UI sends nothing to Mixpanel, and its CSP is unchanged.
+The MCP server handles all product analytics requests.
 
 ## Volume policy
+
+Testing setup adds `testing.setup.operation.samples`. Its attributes are limited to `component`,
+`surface`, `operation` (`plan`, `apply`, `login`, `preference`), bounded `outcome`, and a supported
+provider id (unknown values become `other`). It never includes project paths, bundle identifiers,
+model ids, endpoints, prompts, test/source text, OAuth codes, API keys or tokens. The existing UI
+Testing timings and outcome counters likewise carry no user content. Cancellation and partial failure
+are outcomes, not error payloads, and telemetry opt-out applies unchanged.
 
 Since 0.1.164, application metrics in the UI, Node servers and native helpers use
 independent 0.5% point sampling before SDK buffering and network transmission.
@@ -526,11 +543,13 @@ Since 0.1.69, inspection timing also includes the bounded Metro source-map looku
 
 Since 0.1.92, Android inspection timing also includes the full-resolution display-size read and bounds scaling. Existing inspection, fallback and tree-processing coverage stays on the active selection path. Display sizes and element bounds remain local.
 
-The device workspace records the number of visible screens in the numeric gauge `ui.devices.visible`. Since 0.1.183 this counts the selected tab in each split. A background tab suspends its stream and frame measurements until it becomes visible. The layout attribute describes the platforms shown. Workspaces with multiple screens omit device platform and kind attributes because their timing windows can contain work from several devices. Platform-specific frame counters continue to count each painted frame.
+The device workspace records the number of visible screens in the numeric gauge `ui.devices.visible`. Since 0.1.193 this counts the selected tab in each split. A background tab suspends its stream and frame measurements until it becomes visible. The layout attribute describes the platforms shown. Workspaces with multiple screens omit device platform and kind attributes because their timing windows can contain work from several devices. Platform-specific frame counters continue to count each painted frame.
 
 Since 0.1.93, `ui.video.paint` and the platform frame counters also cover frames drawn to the local buffer while Select freezes the visible screen. These remain bounded plugin processing measurements, not device FPS. Recovery uses the same surface attribution and timing units; screenshots and element details remain local.
 
 `ui.annotations.send` measures the host send round trip, including composer retries. Outcome counters distinguish success, a missing composer, timeout and other failures. Unexpected send failures use a fixed error message. No message content goes to Sentry. A timeout keeps notes for a manual retry; it never triggers an automatic resend, since delivery may have succeeded without acknowledgement.
+
+`ui.annotations.send_batch` counts accepted sends with a `notes` attribute of `1`, `2-3` or `4+`, so batched edits can be compared with single notes. It carries no note text, targets or source locations.
 
 The standard-host attachment bar reuses these annotation measurements. On standard hosts,
 the measured operation includes publishing selection context before preparing the
@@ -538,6 +557,111 @@ chat draft. `ui.annotations.send_success` means the host accepted the request;
 it does not confirm user submission or a model response. Notes remain until the
 user clears them. Message/context construction timings, surface attribution, and
 content scrubbing are preserved; no note text or selection evidence enters telemetry.
+
+The Testing Studio panel's recorder measures `ui.testing.tree_read`, the read that resolves a tap into a
+selector, and counts `ui.testing.record_start`/`record_stop`, `ui.testing.step_tap`,
+`ui.testing.step_assert`, `ui.testing.step_unresolved`, `ui.testing.hover_walk`,
+`ui.testing.menu_open`. Editing a recorded step counts `ui.testing.step_duplicate`,
+`ui.testing.step_reorder`, and `ui.testing.step_recommand_action`/`ui.testing.step_recommand_assert`
+when a step is pointed at another command — the same action/assertion split the recording counters
+use, so a flow's shape stays readable whether a step was recorded or edited into place. They are
+counts of an edit, carrying no selector, element name, command text or position. Pressing Record
+on a flow that already has steps counts `ui.testing.record_resume` or `ui.testing.record_new`
+alongside `ui.testing.record_start`, and only where there was a question to answer — it says
+whether that choice is carrying its weight, and carries nothing about the flow itself.
+Recording an agentic step counts `ui.testing.step_agent_act`, `ui.testing.step_agent_assert` or
+`ui.testing.step_agent_wait`,
+kept apart from `ui.testing.step_tap`/`step_assert` because the two answer different questions:
+whether the recorder can pin a step, and whether a user reached for the agent instead. They are
+counts only — the instruction the user wrote is free text about their own app, so it is never
+sent, and neither is the `vision` mode chosen for an `agent.assert`. `ui.testing.agent_params`
+gauges how many params an `act` step was recorded with, which is what says whether the editor is
+reached for at all; it is a count of rows, never a key, a value or the text they were typed into.
+A recorded `swipe` counts `ui.testing.step_action` like every other non-tap pinned command, so the
+action/assertion split stays the boundary it was; the direction and the gesture's coordinates are
+not sent.
+`ui.testing.step_assert` now covers every assertion the menu can record, not only `toBeVisible`
+and `toHaveText`; it is the same boundary — a step recorded that reads the screen rather than
+acting on it — so counts stay comparable across the release. Selectors, element names and the
+recorded source are not sent; these are counts only. **The timing's
+meaning changed when the recorder moved to the test runner's own element tree**: it now measures an
+agent-device snapshot of the device projected by the project's `@e2e-dev/mobile` (around a tenth of
+a second against a booted iPhone 17 Pro), where it previously measured a Baguette `describe-ui`
+loopback of tens of milliseconds. It is the same boundary — the wait a tap pays before its step is
+named — so the measurement stays comparable in purpose, but not in magnitude; read a step across
+that release as a change of read path, not a regression. The recorder caches the tree for 1.5 s and
+invalidates it on every input, so a warm hover or wheel walk is answered locally and not measured.
+`ui.testing.tree_chrome_only` is gone with the Baguette path, since the runner's snapshot is rooted
+at the application and cannot report only the simulator's chrome; `ui.testing.tree_empty` replaces
+it and counts a tree with no elements at all. Handled failures of the read and of releasing the
+device go through `captureServerError` as `testing.tool` and `testing.release`. No element names,
+labels, placeholders, testIDs, roles, bounds, bundle ids, project paths, device identifiers or
+emitted test source are attached to any of these.
+
+An **agent recording** — the user's own coding agent writing the flow through
+`mobile_testing_agent_*`, see [docs/agent-recording.md](agent-recording.md) — is measured on both
+sides of the one boundary it crosses. In the server, `testing.agent.screen.duration` times the
+element read an agent asks for before each step, `testing.agent.screen.samples` counts those reads
+by outcome, and `testing.agent.screen.elements` gauges how big the screen it answered with was.
+That read is the only thing in an agent recording that costs anything — a flow is ten to twenty of
+them — and the element count is a size, never content. In the panel,
+`ui.testing.agent_session_start` counts a session the panel adopted,
+`ui.testing.agent_step_adopted` counts each step as it arrives, `ui.testing.agent_session_abort`
+counts the user pressing Stop on the banner, and `ui.testing.agent_adopt` times the adopt that
+makes a step appear. The goal sentence, the test's title, the instruction of an agent step and
+every element name the read answered with are the user's own content about their own app and are
+**not** sent; these are counts, durations and sizes only. Handled failures of the agent tools go
+through `captureServerError` as `testing.agent`, beside `testing.tool` and `testing.release`.
+
+Running a recorded test measures `ui.testing.run`, which brackets the panel's whole call — the
+runner spawned, the project resolved and the report read — and counts `ui.testing.run_passed` or
+`ui.testing.run_failed` from the verdict. It is deliberately not the duration shown beside that
+verdict: that one is the runner's own number from the report, and the two answer different
+questions. Play until here, the run a line of the preview offers, counts `ui.testing.run_until`
+as well, so a flow tried a step at a time is not read as a flow run end to end; it is counted
+beside the verdict, not instead of it. The test's title, its path, the project path, the steps and
+the runner's output are the user's own content and are **not** sent.
+
+A run on several devices measures `ui.testing.matrix_run`, the panel's whole call from starting the
+matrix to its last lane ending, and counts `ui.testing.matrix_run` at the start and
+`ui.testing.matrix_passed` or `ui.testing.matrix_failed` at the end (passed only when every lane
+passed). Device names and ids, app ids and the number of devices are not sent.
+
+Unsaved recordings — the flows the panel keeps so one survives the panel document being rebuilt —
+measure `ui.testing.draft_save`, the autosave write, and count `ui.testing.draft_restore` when one
+is reopened into the step list and `ui.testing.draft_delete` when the user throws one away. The
+measurement brackets the panel's call and the list refresh that follows it, so it says what the
+keep costs the user between one edit and the next; the keep the panel makes as it is torn down is
+not measured, because the document it would be attributed to is going away. The title, the file name, the project path, the
+steps and everything they name are the user's own content and are **not** sent; these are counts
+and a duration. An autosave that fails is silent on screen and goes through `captureUiError` as
+`testing.draft_save`; the server's own keep of a finished agent recording goes through
+`captureServerError` as `testing.agent.draft`. Deleting one of the project's own stored tests
+counts `ui.testing.test_delete`, beside `ui.testing.draft_delete`: they are the two halves of the
+panel's list and answer different questions — a recording thrown away before it was ever saved, and
+a test removed from the repository. The file name, its path and the project path are not sent, and
+listing the stored tests is not measured: it is a folder read the panel does on open, not a wait
+the user sits through.
+Selecting a stored test counts `ui.testing.test_preview` and measures that same name from the
+read request through its response. A failed read goes through `captureUiError` as
+`testing.test_preview`. The test source and path are not sent.
+Editing a project test counts `ui.testing.test_edit` and measures `ui.testing.test_stage` around
+the temporary write. Save counts and measures `ui.testing.test_save`; Undo counts and measures
+`ui.testing.test_undo`. Handled staging, save and undo failures go through `captureUiError` as
+`testing.test_stage`, `testing.test_save` and `testing.test_undo`. The source, path, and command are not sent.
+
+`ui.testing.record_prepare` times the warm tree read Record now does before the mirror can resolve
+an element, which is the wait the `preparing...` overlay is explaining. It is deliberately **not**
+folded into `ui.testing.tree_read`: that one covers every read, warm and cold, during a recording,
+while this one answers "how long is Record unusable for" — the number the overlay exists because
+of. A read that fails still records the timing, because the wait happened; it carries no selector,
+element name, bundle id or project path.
+
+The Testing Studio panel records on Android emulators as well as iOS simulators, so `ui.testing.tree_read`,
+`ui.testing.record_prepare` and the `testing.agent.screen.*` metrics now carry a `platform`
+attribute (`ios` or `android`; two values, no device ids). One series hid that waiting on an
+emulator is a different number from waiting on a simulator. Names, units and boundaries are
+unchanged, and no span or per-frame event was added.
 
 Since 0.1.99, `ui.logs.foreground_change` counts automatic app-filter changes applied while Logs is active, including selected-device and process-lifetime changes. From 0.1.103, these changes update the visible query and local process identity mapping instead of restarting a scoped collector. `ui.logs.app_identity` measures batch insertion with native PID-to-app joins and discovery updates in milliseconds, using bounded aggregate windows. Hidden or closed log views defer row processing until reopened. Shared `ui.device_apps.discovery` timing and handled discovery-error coverage remain in place, including Android's foreground PID lookup; native session operations retain MCP tracing, Node runtime coverage, and `logs.ios.parse` timings. No app IDs, PIDs, package names, device IDs, or query text are attached to these measurements. Native helper telemetry and symbols are unchanged.
 
@@ -551,7 +675,7 @@ Since 0.1.99, `ui.logs.query_parse` measures query compilation in milliseconds o
 
 Since 0.1.165 the projects are named `mobile-dev-ui`, `mobile-dev-server` and `mobile-dev-native`; they were `codex-mobile-dev-*` before. Project IDs and DSNs are unchanged, so history and incoming events continue in the same projects. The React UI reports to `mobile-dev-ui` (project `4512181027471440`). The main Node MCP server and the iOS mirroring service report to `mobile-dev-server`, distinguished by the `component` attribute. The `agent-device-wrapper` component no longer reports, because the plugin servers run agent-device themselves. Native helpers report to `mobile-dev-native`: Baguette, physical iOS mirroring, iOS FPS and logs, and Android CPU and FPS collectors. All three projects use release `mobile-dev@<plugin version>`.
 
-TraceSift cards use the `tracesift` surface, which is also the workspace tool of the same name: the tool's upload pane, cards and explorer are the same surface the inline card reports, so its measurements stay comparable across the two entry points and the server's metadata validation accepts `tracesift` as both a surface and a view. `tracesift.operation.duration` measures local service readiness as part of analysis, profile upload and analysis, stable host-view registration when the host supplies it, persisted-analysis restoration from either a host view or replayed tool input, handoff generation, and invoking `tracesift explore` with a persisted compact analysis, in milliseconds; `tracesift.operation.samples` records the bounded operation and success/failure outcome. `ui.tracesift.pick` measures the app-to-server round trip that opens the host's file dialog and waits for a choice, so a slow dialog is told apart from a slow analysis; `ui.tracesift.pick_cancelled` counts dialogs closed without a file and `ui.tracesift.pick_failed` counts hosts with no dialog at all, and `tracesift.operation` adds a `pick` operation for the same call on the server. `ui.tracesift.analyze` measures the panel-initiated analysis round trip, counted by `ui.tracesift.analyze` and `ui.tracesift.analyze_failed`; the server's existing `analyze` and `ready` operations still measure the service side of that same work, whether the model or the panel started it. The card no longer asks for a project folder: Investigate hands the finding to the chat as written, because the chat already works in the reader's project. The `ui.tracesift.project_*` measurements stopped with that change; the server's `project` operation remains only for the folder tools, which nothing in the card calls. The card shows one finding at a time, and `ui.tracesift.finding_selected` counts moving to another one from the sidebar's list or timeline, which says whether readers look past the first finding. `ui.tracesift.reset` counts returning to the upload pane, which also sets `tracesift_view` to `upload` and clears the card gauge so a dropped reading's figures are not read against the next one. `ui.tracesift.process` measures result validation, `ui.tracesift.remember` measures the app-to-server registration round trip for a live card, `ui.tracesift.restore` measures the app-to-server restore round trip after a card view is recreated, `ui.tracesift.handoff` measures the app-to-server handoff round trip, and `ui.tracesift.message_ack` ends when the host acknowledges the investigation message. On hosts with composer pills, Investigate and investigating picks put the hand-off in a pill and send a one-line message, and `ui.tracesift.context_attach` measures that attachment round trip in milliseconds, including failed writes, which count as send failures. `ui.tracesift.explore` counts opening the embedded explorer, and `ui.tracesift.payload` measures that app-to-server round trip, which carries the finding's full call tree or commit timeline through MCP; `ui.tracesift.payload_bytes` records how large those delivered payloads are, and `tracesift.operation` adds a `payload` operation for the same fetch on the server. Since Explore renders in-panel, the older meaning of `ui.tracesift.explore` (a successful CLI browser launch) now belongs to the `ui.tracesift.explore_browser` counter and its `ui.tracesift.explore_browser` timing and `ui.tracesift.explore_browser_failed` counter. `ui.tracesift.explore_too_large` counts the findings the bridge refused on size or serialization depth, which Explore then opens in the browser window instead of reporting as a failure; those opens are counted and timed by the `ui.tracesift.explore_browser` measurements like any other browser launch, so a rise in panel refusals is read against them rather than against `ui.tracesift.explore_failed`. Explorer readiness reuses `ui.surface.ready`, which the tool restarts from the moment it is opened rather than from the workspace frame that holds it, and `tracesift_view` distinguishes `cards`, `explorer` and the tool's `upload` pane so explorer work is not attributed to the card list; navigating back resets that context. `tracesift_profile` distinguishes a `cpu` recording from a `react` one, taken from the analysis when it arrives, so the two explorers' payload and processing timings are not read as one figure; it is set with the analysis and never derived from the device, the profile's contents or its path. Picking inside the explorer counts `ui.tracesift.pick_on` and `pick_off` for the mode, `ui.tracesift.frame_add` and `frame_remove` per click, and `pick_clear` for emptying the set, which switching picking off with picks standing also counts; `ui.tracesift.selected_frames` gauges how many picks the open reading holds and is reset to zero whenever that set is dropped — emptying it, switching picking off, closing the explorer, or taking a new analysis — so one reading's picks are never read against another's. The same counters and gauge cover both explorers: since 0.1.157 a React recording's components are picked the same way a CPU task's frames are, told apart by `tracesift_profile` rather than by counter names, so the measurement boundaries stay comparable across releases. Sending them counts `ui.tracesift.pick_investigate`, with `pick_investigate_empty` when the reader sent nothing placeable and `pick_investigate_failed` when the description could not be built at all; delivery reuses the existing `ui.tracesift.message_ack` timing and the composer and delivery counters. A card-count gauge and bounded counters cover registration successes and failures, restore hits, misses and failures, Investigate actions, Explore openings and failures, hand-off copies and copy failures, handoff failures, composer unavailability, send failures, and unconfirmed delivery. Readiness, shared interaction, visibility, and cleanup measurements use the existing UI aggregation. The chosen file's name is shown in the pane while analysis runs and is never sent as telemetry. Profile paths and contents, filenames, card text, frame, component and file names, selected frame and component names and their node, fiber and commit identifiers, task, root, and commit indices, analysis/card/host-view identifiers, handoffs, service URLs, process identifiers, tokens, and TraceSift diagnostics are never added to telemetry; replayed profile inputs are hashed only for local lookup. Expected setup, validation, expiry, cancellation, and version outcomes use existing expected-error classification; unexpected transport and malformed-response failures retain handled server/UI error coverage. These measurements describe plugin and local-service work, not the profiled app's performance.
+TraceSift cards use the `tracesift` surface, which is also the workspace tool of the same name: the tool's upload pane, cards and explorer are the same surface the inline card reports, so its measurements stay comparable across the two entry points and the server's metadata validation accepts `tracesift` as both a surface and a view. `tracesift.operation.duration` measures local service readiness when the panel or model explicitly checks setup and as part of analysis, the fixed CLI installation and initialization actions, profile upload and analysis, stable host-view registration when the host supplies it, persisted-analysis restoration from either a host view or replayed tool input, handoff generation, and invoking `tracesift explore` with a persisted compact analysis, in milliseconds; `tracesift.operation.samples` records the bounded operation and success/failure outcome. `ui.tracesift.readiness` measures the panel-to-server preflight when the TraceSift tool opens; bounded ready, setup-required and unexpected-failure counters separate expected local setup from bridge failures without sending the setup message or CLI diagnostics. `ui.tracesift.install` and `ui.tracesift.init` measure their explicit panel-button round trips, with bounded success/failure counters; the server records matching `install` and `init` operations. Command output is shown only in the local panel on failure and is replaced by a fixed error before UI error capture. `ui.tracesift.pick` measures the app-to-server round trip that opens the host's file dialog and waits for a choice, so a slow dialog is told apart from a slow analysis; `ui.tracesift.pick_cancelled` counts dialogs closed without a file and `ui.tracesift.pick_failed` counts hosts with no dialog at all, and `tracesift.operation` adds a `pick` operation for the same call on the server. `ui.tracesift.analyze` measures the panel-initiated analysis round trip, counted by `ui.tracesift.analyze` and `ui.tracesift.analyze_failed`; the server's existing `analyze` and `ready` operations still measure the service side of that same work, whether the model or the panel started it. The card no longer asks for a project folder: Investigate hands the finding to the chat as written, because the chat already works in the reader's project. The `ui.tracesift.project_*` measurements stopped with that change; the server's `project` operation remains only for the folder tools, which nothing in the card calls. The card shows one finding at a time, and `ui.tracesift.finding_selected` counts moving to another one from the sidebar's list or timeline, which says whether readers look past the first finding. `ui.tracesift.reset` counts returning to the upload pane, which also sets `tracesift_view` to `upload` and clears the card gauge so a dropped reading's figures are not read against the next one. `ui.tracesift.process` measures result validation, `ui.tracesift.remember` measures the app-to-server registration round trip for a live card, `ui.tracesift.restore` measures the app-to-server restore round trip after a card view is recreated, `ui.tracesift.handoff` measures the app-to-server handoff round trip, and `ui.tracesift.message_ack` ends when the host acknowledges the investigation message. On hosts with composer pills, Investigate and investigating picks put the hand-off in a pill and send a one-line message, and `ui.tracesift.context_attach` measures that attachment round trip in milliseconds, including failed writes, which count as send failures. `ui.tracesift.explore` counts opening the embedded explorer, and `ui.tracesift.payload` measures that app-to-server round trip, which carries the finding's full call tree or commit timeline through MCP; `ui.tracesift.payload_bytes` records how large those delivered payloads are, and `tracesift.operation` adds a `payload` operation for the same fetch on the server. Since Explore renders in-panel, the older meaning of `ui.tracesift.explore` (a successful CLI browser launch) now belongs to the `ui.tracesift.explore_browser` counter and its `ui.tracesift.explore_browser` timing and `ui.tracesift.explore_browser_failed` counter. `ui.tracesift.explore_too_large` counts the findings the bridge refused on size or serialization depth, which Explore then opens in the browser window instead of reporting as a failure; those opens are counted and timed by `ui.tracesift.explore_browser` like any other browser launch, so a rise in panel refusals is read against them rather than against `ui.tracesift.explore_failed`. Explorer readiness reuses `ui.surface.ready`, which the tool restarts from the moment it is opened rather than from the workspace frame that holds it, and `tracesift_view` distinguishes `cards`, `explorer` and the tool's `upload` pane so explorer work is not attributed to the card list; navigating back resets that context. `tracesift_profile` distinguishes a `cpu` recording from a `react` one, taken from the analysis when it arrives, so the two explorers' payload and processing timings are not read as one figure; it is set with the analysis and never derived from the device, the profile's contents or its path. Picking inside the explorer counts `ui.tracesift.pick_on` and `pick_off` for the mode, `ui.tracesift.frame_add` and `frame_remove` per click, and `pick_clear` for emptying the set, which switching picking off with picks standing also counts; `ui.tracesift.selected_frames` gauges how many picks the open reading holds and is reset to zero whenever that set is dropped — emptying it, switching picking off, closing the explorer, or taking a new analysis — so one reading's picks are never read against another's. The same counters and gauge cover both explorers: since 0.1.157 a React recording's components are picked the same way a CPU task's frames are, told apart by `tracesift_profile` rather than by counter names, so the measurement boundaries stay comparable across releases. Sending them counts `ui.tracesift.pick_investigate`, with `pick_investigate_empty` when the reader sent nothing placeable and `pick_investigate_failed` when the description could not be built at all; delivery reuses the existing `ui.tracesift.message_ack` timing and the composer and delivery counters. A card-count gauge and bounded counters cover registration successes and failures, restore hits, misses and failures, Investigate actions, Explore openings and failures, hand-off copies and copy failures, handoff failures, composer unavailability, send failures, and unconfirmed delivery. Readiness, shared interaction, visibility, and cleanup measurements use the existing UI aggregation. The chosen file's name is shown in the pane while analysis runs and is never sent as telemetry. Profile paths and contents, filenames, card text, frame, component and file names, selected frame and component names and their node, fiber and commit identifiers, task, root, and commit indices, analysis/card/host-view identifiers, handoffs, service URLs, process identifiers, tokens, TraceSift setup messages and diagnostics are never added to telemetry; replayed profile inputs are hashed only for local lookup. Expected setup, validation, expiry, cancellation, and version outcomes use existing expected-error classification; unexpected transport and malformed-response failures retain handled server/UI error coverage. These measurements describe plugin and local-service work, not the profiled app's performance.
 
 The environments are `development` and `release`. `npm run build` and `npm run package` default to `development`, including local installed packages. For a public release, run `npm run build:release` followed by `npm run package:release`. Packaging rejects a build from the other environment. The package stores its environment in `dist/telemetry-environment.json`; Node telemetry, native helpers and the served UI use that setting. Live reload does not determine the environment. Set `MOBILE_DEV_ENVIRONMENT=development` or `MOBILE_DEV_ENVIRONMENT=release` in the MCP launch environment to override explicitly, then restart the MCP processes and reopen the panel.
 
@@ -649,7 +773,7 @@ The plugin servers for Codex, Claude and Cursor serve agent-device's commands as
 | Node responsiveness | Automatic event-loop delay, utilization and process uptime. |
 | UI JavaScript heap | `ui.memory.heap_used`, `ui.memory.heap_total` and `ui.memory.heap_limit` in bytes at startup and every 30 seconds while visible, when Chromium's `performance.memory` is available. `ui.memory.supported` distinguishes unsupported contexts. These estimates do not measure total renderer or GPU memory. |
 | UI responsiveness | Browser tracing captures available web vitals. Custom metrics record visible animation-frame intervals, intervals over 50 ms, Event Timing interaction durations, long tasks and long animation frames where supported. |
-| Product surfaces | Metrics carry `surface=app-flow`, `simulator`, `logs`, `performance`, `recording` or `comparison`, plus view, visible device layout and monitoring state. App Flow readiness/graph work, log filter time, buffered/filtered rows, performance batch processing, canvas draw time and time to first video frame help explain slow surfaces. |
+| Product surfaces | Metrics carry `surface=app-flow`, `simulator`, `logs`, `performance`, `storage`, `app-intel`, `tracesift`, `recording` or `comparison`, plus view, visible device layout and monitoring state. App Flow readiness/graph work, log filter time, buffered/filtered rows, performance batch processing, App Intelligence generation and graph size, canvas draw time and time to first video frame help explain slow surfaces. |
 | Frame capture | `ui.screenshot.capture` measures synchronous canvas PNG encoding and base64 extraction in milliseconds for Select captures and physical iOS screenshots. `ui.screenshot.encode` measures PNG decoding, bounded JPEG encoding, and base64 extraction for chat attachments in milliseconds. Screenshot tools retain sampled MCP traces and report handled capture, attachment, and clipboard failures without image content. |
 | Pasted input | Command-V paste uses the existing ordered device input queue and `ui.device_input.round_trip` timing through MCP acknowledgement. It retains simulator surface/device context and existing input failure reporting. Clipboard content and validation failures are not sent to Sentry. |
 | Storage | Every five minutes, a server with agent-device measures its session state directory and the shared Apple runner cache in bytes, from the runtime's first start. It skips symlinks and sends only the storage kind and size. |
@@ -708,6 +832,29 @@ logs, arbitrary names and credentials remain excluded. Collection uses the
 existing centralized Sentry initialization, environment and telemetry opt-out.
 Native rebuilds retain matching Baguette dSYMs, and release uploads continue to
 upload those symbols with the plugin release.
+
+App Intelligence uses the `app-intel` surface. `app_intel.operation.duration` and
+`.samples` measure bounded generation, query, snapshot, clear and folder-picker
+operations by success, failure or cancellation. The UI records generation/load/picker round
+trips, surface readiness, and gauges only the counts of files and screens in the
+displayed snapshot. `ui.app_intel.flow_layout` times building and placing the
+per-screen dependency graph — the hop layering, its boundary grouping and the
+geometry for the chosen reading direction — and `ui.app_intel.flow_nodes` gauges
+how many cards it drew, which is what drives that cost. The panel no longer has a
+directory treemap, so the Atlas measurements `ui.app_intel.atlas_layout`,
+`ui.app_intel.atlas_cells`, `ui.app_intel.view_switch` and `ui.app_intel.zoom` are
+gone rather than renamed; `flow_layout` and `flow_nodes` keep their meaning and
+units, so their history stays comparable even though they now cover grouping and
+placement as well. `ui.app_intel.group_collapse`, `.group_expand` and
+`.group_show_all` count folding a boundary away, bringing it back and opening one
+past its row cap, `ui.app_intel.boundary_highlight` counts lighting one boundary's
+connectors up, `ui.app_intel.project_switch` counts picking a remembered
+project instead of the host folder picker, `ui.app_intel.clear` counts throwing a
+saved graph away, and `ui.app_intel.boundary_filter`
+counts how often the entry-point filter is changed. All of these count the change
+only; which boundary, project or direction was picked is not an attribute. Project paths, source paths, screen and package names, source
+contents, queries, diagnostics, graph edges and snapshot identifiers remain local
+and are never telemetry attributes.
 
 A Fast screen sweep now runs with no decision provider unless the panel's per-project "Judge unclear screens with AI" switch is on, so the judge path described above is reachable in Fast only when that switch asked for it; with it off, a screen whose runtime evidence is incomplete is recorded unreached instead of being sent to the judge, and `app_flow.runtime.verify` emits no `judge` arrivals for that run. The series, its unit and its attributes are unchanged — the runtime/judge split simply shifts further towards `runtime` for Fast runs started with the switch off. The panel adds one UI count beside `ui.app_flow.capture_ui_states_start` and with the same shape, `ui.app_flow.judge_unclear_screens_start`, once per user-started run that has the switch on, so how often Fast pays for the decision loop is visible; it carries nothing beyond the shared surface attributes — no project path, screen, route or verdict. A Fast run with the switch off is also started straight from the panel rather than through a chat message, so it records `ui.app_flow.start` where a chat-started sweep records none; that is the existing split between the two start paths, not a new measurement.
 

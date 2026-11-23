@@ -13,6 +13,7 @@ import { ContextAttachments } from "./components/context-attachments";
 import { panelTargetSchema } from "@mobile-dev/shared/panel-target.ts";
 import { DeviceWorkspace } from "@mobile-dev/ui/device-workspace.ts";
 import { WorkspaceTools } from "@mobile-dev/ui/workspace-tools.ts";
+import type { ToolName } from "@mobile-dev/ui/workspace-tools.ts";
 import { startLiveReload } from "./live-reload.ts";
 import { ErrorBoundary, captureUiError, startUiTelemetry, stopUiTelemetry } from "@mobile-dev/ui/telemetry.ts";
 import { PLUGIN_VERSION } from "@mobile-dev/shared/version.ts";
@@ -30,16 +31,21 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
   const panels = WorkspaceTools.create(app, attachments);
   const recordingController = new RecordingController(app, { attachments, workspace: true });
   const extension = options.extension?.(app);
+  panels.context.onSelectionChange = extension?.onSelectionChange;
   const reactRoot = createRoot(document.getElementById("root")!);
+  let automaticTool: ToolName | undefined;
+  let automaticToolRevision = 0;
   const devices = new DeviceWorkspace(app, panels);
   function renderWorkspace() {
     const workspace = <ErrorBoundary fallback={<p role="alert">Mobile Dev could not render. Reopen the panel to try again.</p>}>
-      <Workspace panels={panels} recordingController={recordingController} banner={extension?.banner} displayModeControl={options.displayModeControl === false ? undefined : <DisplayModeButton app={app} />} contextControl={<ContextAttachments context={panels.context} />} devices={devices} />
+      <Workspace panels={panels} recordingController={recordingController} banner={extension?.banner} displayModeControl={options.displayModeControl === false ? undefined : <DisplayModeButton app={app} />} contextControl={<ContextAttachments context={panels.context} />} devices={devices} automaticTool={automaticTool} automaticToolRevision={automaticToolRevision} />
     </ErrorBoundary>;
     reactRoot.render(workspace);
   }
   flushSync(() => { renderWorkspace(); });
 
+  panels.testing.setMirrorFocus(platform => devices.focusPlatform(platform));
+  panels.testing.setMirrorDevice((platform, deviceId) => devices.showDevice(platform, deviceId));
   panels.logs.setLayout(document.documentElement.dataset.view === "workspace");
 
   let stopLiveReload = () => {};
@@ -52,8 +58,8 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
       window.removeEventListener("pageshow", resumeContext);
       document.removeEventListener("visibilitychange", resumeContext);
       recordingController.dispose();
-      extension?.dispose();
-      await Promise.allSettled([devices.dispose(), panels.dispose()]);
+      panels.context.onSelectionChange = undefined;
+      await Promise.allSettled([extension?.dispose(), devices.dispose(), panels.dispose()]);
       reactRoot.unmount();
       await stopUiTelemetry();
     })();
@@ -91,6 +97,7 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
     if (document.visibilityState !== "hidden" && !disposingUI) {
       panels.context.hostChanged();
       panels.context.resume();
+      extension?.resume?.();
     }
   }
   window.addEventListener("focus", resumeContext);
@@ -108,6 +115,9 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
       connectionFailed(error);
       return;
     }
+    if (target.data.workspaceTool) { automaticTool = target.data.workspaceTool; automaticToolRevision++; renderWorkspace(); }
+    if (target.data.workspaceTool === "app-intel" && target.data.appIntelScreen) panels["app-intel"].selectScreen(target.data.appIntelScreen);
+    if (target.data.workspaceTool === "app-intel") return;
     void devices.open(target.data).catch(connectionFailed);
   }
   app.ontoolinput = input => {
@@ -132,6 +142,7 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
   void (async () => {
     try {
       await app.connect();
+      if (disposingUI) return;
       attributeHost(app);
       hostContext();
       const capabilities = app.getHostCapabilities();

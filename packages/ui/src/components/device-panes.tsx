@@ -15,7 +15,7 @@ function DeviceScreen({ api }: IDockviewPanelProps) {
   const key = Number(api.id);
   const pane = panes.find(item => item.key === key);
   if (!pane) return null;
-  return <SimulatorView workspace={workspace} paneKey={key} platform={pane.platform} name={pane.last.name} active={active === key} />;
+  return <SimulatorView workspace={workspace} paneKey={key} deviceId={pane.device?.udid} platform={pane.platform} name={pane.last.name} active={active === key} />;
 }
 
 function DeviceTab(props: IDockviewPanelHeaderProps) {
@@ -38,7 +38,7 @@ const components = { device: DeviceScreen };
 function DeviceDock({ workspace }: { workspace: DeviceWorkspace }) {
   const [dock, setDock] = useState<DockviewApi>();
   const container = useRef<HTMLDivElement>(null);
-  const { panes } = useSyncExternalStore(workspace.subscribe, workspace.getSnapshot);
+  const { panes, active } = useSyncExternalStore(workspace.subscribe, workspace.getSnapshot);
 
   useLayoutEffect(() => {
     if (!dock) return;
@@ -98,6 +98,12 @@ function DeviceDock({ workspace }: { workspace: DeviceWorkspace }) {
       dock.addPanel({ id, component: "device", title: pane.last.name, minimumWidth: 220, minimumHeight: 180, position });
     }
   }, [dock, panes]);
+
+  useLayoutEffect(() => {
+    if (!dock || active === undefined) return;
+    const id = String(active);
+    if (dock.activePanel?.id !== id) dock.getPanel(id)?.api.setActive();
+  }, [dock, active]);
 
   return <WorkspaceContext.Provider value={workspace}>
     <DockviewReact ref={container} components={components} defaultTabComponent={DeviceTab} leftHeaderActionsComponent={GroupActions} theme={theme} defaultRenderer="always"

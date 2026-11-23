@@ -30,6 +30,23 @@ html:is([data-view="recording"], [data-view="comparison"], [data-view="tracesift
 .recording-track[data-reveal="pending"] .recording-change-highlight { opacity: 0; }
 .recording-track[data-reveal="finished"] .recording-change-highlight { animation: recording-highlight-reveal 150ms ease-out 250ms both; }
 @keyframes recording-highlight-reveal { from { opacity: 0; } to { opacity: 1; } }
+.app-intel-area-node { animation: app-intel-area-prompt 7s ease-in-out infinite; will-change: transform; }
+.app-intel-area-node:hover, .app-intel-area-node:focus-visible { animation: none; transform: translateY(-2px) scale(1.03); }
+@keyframes app-intel-area-prompt {
+  0%, 8%, 100% { transform: scale(1); }
+  4% { transform: scale(1.07); }
+}
+.app-intel-project-orbit { opacity: 0; transform-box: fill-box; transform-origin: center; animation: app-intel-orbit-expand 4.8s cubic-bezier(.22,.75,.25,1) infinite; }
+@keyframes app-intel-orbit-expand {
+  0% { opacity: 0; transform: scale(.15); }
+  16% { opacity: .13; }
+  65% { opacity: .055; transform: scale(1); }
+  78%, 100% { opacity: 0; transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-intel-area-node { animation: none; }
+  .app-intel-project-orbit { animation: none; opacity: .06; transform: none; }
+}
 .recording-sidebar { display: flex; flex-direction: column; min-width: 0; padding: 16px; border-top: 1px solid var(--border); gap: 16px; }
 .recording-overview { border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
 .recording-overview-bar { position: relative; height: 18px; margin-top: 14px; border-radius: 5px; background: var(--muted); overflow: hidden; }
@@ -293,31 +310,69 @@ html[data-theme="dark"] .tracesift-explorer { color-scheme: dark; }
 }
 .tracesift-pick-bar > span { flex: 1; min-width: 0; }
 
-/* Upload pane shown until a profile is read; ported from perf-ai `src/app/globals.css`. */
-.tracesift-upload { display: grid; align-content: start; gap: 12px; padding: 12px; color: var(--foreground); font-size: 13px; }
+/* Upload workspace shown until a profile is read; its inspector carries through to the results layout. */
+.tracesift-upload { display: grid; align-content: start; gap: 18px; width: 100%; padding: 20px; color: var(--foreground); font-size: 13px; }
 .tracesift-upload .results-header { padding-bottom: 14px; border-bottom: 1px solid var(--border); }
 .tracesift-upload .intro { min-width: 0; text-align: left; }
 .tracesift-upload .eyebrow { display: inline-block; color: var(--primary); font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
 .tracesift-upload .results-title { margin: 6px 0; font-size: 15px; line-height: 1.25; letter-spacing: -0.02em; font-weight: 600; }
 .tracesift-upload .intro p { margin: 0; font-size: 12px; line-height: 1.5; color: var(--muted-foreground); }
-.tracesift-upload .profile-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.tracesift-upload .tracesift-workspace { display: grid; grid-template-columns: minmax(0, 2.1fr) minmax(250px, .9fr); min-height: 390px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.tracesift-upload .tracesift-workflow { display: grid; align-content: start; gap: 12px; min-width: 0; padding: 18px; }
+.tracesift-upload .tracesift-workflow.is-disabled .workflow-label,
+.tracesift-upload .tracesift-workflow.is-disabled .profile-options { opacity: .58; }
+.tracesift-upload .tracesift-blocker { display: flex; align-items: center; min-height: 34px; margin: 0 0 4px; padding: 0 10px; border: 1px solid var(--ring); border-radius: 7px; background: color-mix(in srgb, var(--ring) 7%, transparent); color: var(--ring); font-size: 11.5px; font-weight: 600; }
 .tracesift-upload .workflow-label { display: flex; align-items: baseline; gap: 8px; }
 .tracesift-upload .workflow-label > span { display: grid; place-items: center; width: 18px; height: 18px; flex: none; align-self: center; border-radius: 50%; background: var(--accent); color: var(--primary); font-size: 10px; font-weight: 700; }
 .tracesift-upload .workflow-label strong { font-size: 13px; }
 .tracesift-upload .workflow-label small { color: var(--muted-foreground); font-size: 11.5px; }
-.tracesift-upload .profile-options { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.tracesift-upload .profile-chip { display: inline-flex; align-items: baseline; gap: 6px; padding: 5px 11px; background: transparent; border: 1px solid var(--border); border-radius: 999px; color: inherit; font: inherit; font-size: 12px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.tracesift-upload .profile-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.tracesift-upload .profile-chip { display: grid; gap: 4px; min-width: 0; padding: 11px 12px; background: transparent; border: 1px solid var(--border); border-radius: 9px; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.tracesift-upload .profile-chip > span { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-width: 0; }
+.tracesift-upload .profile-chip strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; }
+.tracesift-upload .profile-chip small { color: var(--muted-foreground); font-size: 11px; line-height: 1.35; }
 .tracesift-upload .profile-chip:hover { background: var(--muted); }
-.tracesift-upload .profile-chip.selected { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 14%, transparent); color: var(--primary); }
+.tracesift-upload .profile-chip.selected { border-color: var(--ring); background: color-mix(in srgb, var(--ring) 14%, transparent); color: var(--foreground); }
 .tracesift-upload .profile-chip:disabled { opacity: 0.55; cursor: not-allowed; }
 .tracesift-upload .profile-chip:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .tracesift-upload .profile-chip em { color: var(--muted-foreground); font-size: 10.5px; font-style: normal; font-weight: 500; font-family: var(--font-mono, monospace); }
-.tracesift-upload .profile-chip.selected em { color: inherit; opacity: 0.75; }
-.tracesift-upload .profile-detail { margin: -4px 0 0; color: var(--muted-foreground); font-size: 11.5px; }
+.tracesift-upload .profile-chip.selected em { color: var(--ring); }
+.tracesift-upload .tracesift-inspector { min-width: 0; padding: 18px; border-left: 1px solid var(--border); background: color-mix(in srgb, var(--card) 55%, transparent); }
+.tracesift-upload .tracesift-inspector-status { display: flex; align-items: center; gap: 7px; margin: 0; color: var(--muted-foreground); font-size: 11.5px; }
+.tracesift-upload .tracesift-inspector-status svg { width: 14px; height: 14px; }
+.tracesift-upload .tracesift-ready { display: inline-flex; align-items: center; justify-self: start; gap: 6px; margin: 0; padding: 4px 8px; border: 1px solid color-mix(in srgb, var(--ring) 48%, var(--border)); border-radius: 999px; background: color-mix(in srgb, var(--ring) 8%, transparent); color: var(--ring); font-size: 11.5px; font-weight: 600; }
+.tracesift-upload .tracesift-ready svg { width: 14px; height: 14px; }
+.tracesift-upload .tracesift-setup { display: grid; align-content: start; gap: 14px; height: 100%; }
+.tracesift-upload .tracesift-setup h2, .tracesift-upload .tracesift-setup p { margin: 0; }
+.tracesift-upload .tracesift-setup h2 { font-size: 14px; }
+.tracesift-upload .tracesift-setup p { color: var(--muted-foreground); line-height: 1.5; }
+.tracesift-upload .tracesift-action-required { display: inline-flex; margin-top: 8px !important; padding: 3px 7px; border: 1px solid color-mix(in srgb, var(--ring) 45%, var(--border)); border-radius: 999px; color: var(--ring) !important; font-size: 10.5px; font-weight: 600; }
+.tracesift-upload .tracesift-commands { display: grid; gap: 12px; }
+.tracesift-upload .tracesift-setup-step { display: grid; gap: 6px; }
+.tracesift-upload .tracesift-setup-step-label { display: flex; align-items: center; gap: 7px; font-size: 11.5px; }
+.tracesift-upload .tracesift-setup-step-label > span { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--accent); color: var(--primary); font-size: 10px; font-weight: 700; }
+.tracesift-upload .tracesift-command { display: grid; grid-template-columns: minmax(0, 1fr) 30px; align-items: center; width: 100%; border: 1px solid var(--border); border-radius: 7px; background: var(--card); overflow: hidden; }
+.tracesift-upload .tracesift-command code { min-width: 0; overflow-x: auto; padding: 8px 9px; font-family: var(--font-mono, monospace); font-size: 10.5px; white-space: nowrap; }
+.tracesift-upload .tracesift-command button { width: 30px; height: 30px; border-left: 1px solid var(--border); border-radius: 0; }
+.tracesift-upload .tracesift-command-spinner { animation: tracesift-command-spin 900ms linear infinite; }
+@keyframes tracesift-command-spin { to { transform: rotate(360deg); } }
+.tracesift-upload .tracesift-setup-actions { display: grid; gap: 10px; margin-top: auto; text-align: center; }
+.tracesift-upload .tracesift-setup-actions button { width: 100%; }
+.tracesift-upload .tracesift-setup-actions a { color: var(--ring); font-size: 12px; font-weight: 600; text-decoration: none; }
+.tracesift-upload .tracesift-setup-actions a:hover { text-decoration: underline; }
+.tracesift-upload .tracesift-setup-actions a[aria-disabled="true"] { color: var(--muted-foreground); opacity: .55; pointer-events: none; }
+.tracesift-upload .tracesift-before { display: grid; align-content: start; gap: 16px; }
+.tracesift-upload .tracesift-before h2 { margin: 0; font-size: 14px; }
+.tracesift-upload .tracesift-before dl { display: grid; margin: 0; border-top: 1px solid var(--border); }
+.tracesift-upload .tracesift-before dl > div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--border); }
+.tracesift-upload .tracesift-before dt { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 11px; font-weight: 600; }
+.tracesift-upload .tracesift-before dt svg { width: 13px; height: 13px; color: var(--muted-foreground); }
+.tracesift-upload .tracesift-before dd { min-width: 0; margin: 0; color: var(--muted-foreground); font-size: 10.5px; line-height: 1.4; text-align: right; overflow-wrap: anywhere; }
+.tracesift-upload .tracesift-before > a { color: var(--ring); font-size: 11.5px; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
 .tracesift-upload .upload-pane {
   width: 100%;
-  min-height: 170px;
-  padding: 22px 16px;
+  min-height: 150px;
+  padding: 20px 16px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -331,7 +386,7 @@ html[data-theme="dark"] .tracesift-explorer { color-scheme: dark; }
   cursor: pointer;
   transition: background 160ms ease, border-color 160ms ease;
 }
-.tracesift-upload .upload-pane:hover, .tracesift-upload .upload-pane.is-dragging { background: var(--accent); border-color: var(--primary); }
+.tracesift-upload .upload-pane:hover, .tracesift-upload .upload-pane.is-dragging { background: color-mix(in srgb, var(--ring) 14%, var(--muted)); border-color: var(--ring); }
 .tracesift-upload .upload-pane.is-disabled { opacity: 0.55; cursor: not-allowed; }
 .tracesift-upload .upload-pane.is-disabled:hover { background: var(--muted); border-color: var(--border); }
 .tracesift-upload .upload-pane:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
@@ -341,6 +396,16 @@ html[data-theme="dark"] .tracesift-explorer { color-scheme: dark; }
 .tracesift-upload .upload-detail { margin-top: 6px; color: var(--muted-foreground); font-size: 12px; }
 .tracesift-upload .browse-button { margin-top: 14px; padding: 6px 11px; color: var(--primary); background: var(--card); border: 1px solid var(--border); border-radius: 7px; font-size: 12px; font-weight: 650; }
 .tracesift-upload .upload-analyzing { padding: 10px; border: 1px dashed var(--border); border-radius: 8px; color: var(--muted-foreground); }
+@media (max-width: 760px) {
+  .tracesift-upload { padding: 14px; }
+  .tracesift-upload .tracesift-workspace { grid-template-columns: 1fr; }
+  .tracesift-upload .tracesift-inspector { border-top: 1px solid var(--border); border-left: 0; }
+}
+@media (max-width: 560px) {
+  .tracesift-upload .profile-options { grid-template-columns: 1fr; }
+  .tracesift-upload .workflow-label { flex-wrap: wrap; }
+  .tracesift-upload .workflow-label small { width: 100%; padding-left: 26px; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .tracesift-upload .upload-pane { transition: none; }
@@ -370,3 +435,251 @@ html[data-theme="dark"] .tracesift-explorer { color-scheme: dark; }
 .device-dock .dv-active-group .dv-active-tab { box-shadow: inset 0 2px var(--foreground); }
 .device-dock .dv-default-tab { cursor: grab; }
 .device-dock .dv-default-tab-content { max-width: 24ch; overflow: hidden; text-overflow: ellipsis; }
+/*
+ * The recorded test's preview. A step is added by tapping the mirror, where the user is looking —
+ * not at the preview — so the new lines announce themselves: they settle in, hold a tint long
+ * enough to be caught out of the corner of the eye, and fade back into the rest of the file.
+ */
+.testing-preview-line {
+  display: grid;
+  /* The line number, the gutter, then the code. All fixed, so nothing moves when a run marks a
+     line: the number column is wide enough for a three-figure file and does not grow at 100. */
+  grid-template-columns: 3ch 1.35em minmax(0, 1fr);
+  align-items: start;
+  min-height: 1lh;
+  border-radius: 3px;
+  margin-inline: -2px;
+  padding-inline: 2px;
+  /* Air between one line and the next. The file is read down a narrow pane beside the mirror, and
+     a wrapped call run together with the one below it is the hardest thing in the panel to scan.
+     It is padding rather than a margin so the hover highlight and the arrival tint cover it too,
+     and `.testing-play-until` offsets by the same amount to stay level with its line. */
+  padding-block: 2px;
+  /* The hover highlight is painted as a layer over the line; see below. */
+  position: relative;
+}
+/*
+ * The line numbers. Out of the selection, because the preview is there to be copied into a file:
+ * dragging over it has to give the code and nothing else. `tabular-nums` keeps the column from
+ * shifting under the eye as a 1 follows a 0 down the file.
+ */
+.testing-preview-number {
+  height: 1lh;
+  padding-inline-end: 0.5ch;
+  color: var(--muted-foreground);
+  opacity: 0.55;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+  -webkit-user-select: none;
+}
+/* The line's own text wraps inside its column; the gutter is not part of the wrap. */
+.testing-preview-code { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* The editable layer shares the preview tokenizer. Its transparent text leaves the highlighted
+   code visible while the native textarea supplies selection, a caret, input and scrolling. */
+.testing-source-editor-code {
+  position: relative;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  line-height: 1.625;
+  tab-size: 2;
+}
+.testing-source-editor-code:focus-within { outline: 2px solid color-mix(in oklab, var(--ring) 50%, transparent); outline-offset: -2px; }
+.testing-source-editor-code > pre,
+.testing-source-editor-input {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  border: 0;
+  padding: 0.5rem;
+  font: inherit;
+  line-height: inherit;
+  tab-size: inherit;
+  white-space: pre;
+}
+.testing-source-editor-code > pre { overflow: hidden; pointer-events: none; }
+.testing-source-editor-line { display: block; min-height: 1lh; }
+.testing-source-editor-number {
+  display: inline-block;
+  width: 3ch;
+  margin-right: 2ch;
+  color: var(--muted-foreground);
+  opacity: 0.55;
+  text-align: right;
+  user-select: none;
+}
+.testing-source-editor-input {
+  overflow: auto;
+  resize: none;
+  padding-left: calc(0.5rem + 5ch);
+  background: transparent;
+  color: transparent;
+  caret-color: var(--foreground);
+  outline: none;
+}
+.testing-source-editor-input::selection { background: color-mix(in oklab, var(--primary) 25%, transparent); }
+.testing-source-suggestions {
+  position: absolute;
+  z-index: 3;
+  display: flex;
+  width: min(240px, calc(100% - 12px));
+  max-height: 168px;
+  flex-direction: column;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  background: var(--popover);
+  padding: 4px;
+  color: var(--popover-foreground);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 16%);
+}
+.testing-source-suggestion {
+  display: block;
+  width: 100%;
+  border-radius: 0.25rem;
+  padding: 4px 6px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.testing-source-suggestion[aria-selected="true"],
+.testing-source-suggestion:hover { background: var(--accent); color: var(--accent-foreground); }
+.testing-preview-line.is-new { animation: testing-preview-line-in 1400ms ease-out both; }
+/*
+ * The hover highlight: a layer of its own, not the line's own `background`.
+ *
+ * It used to be a background plus `animation: none`, which was a bug with a long tail. The arrival
+ * animation above holds its end state on the lines a step added, and those lines keep `is-new` for
+ * as long as the file does not change — so suppressing the animation while a step was hovered
+ * *cancelled* it, and letting it back on mouse-leave **restarted it from the beginning**. Leaving
+ * a step lit its lines up again and faded them out over 1400ms, which is what a highlight must
+ * never do: it has to go the moment the pointer does.
+ *
+ * As a layer there is nothing to suppress. The animation keeps running underneath, the highlight
+ * appears and disappears with the class, and the two never touch the same property.
+ */
+.testing-preview-line.is-step-highlighted::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 3px;
+  background: color-mix(in oklab, var(--primary) 16%, transparent);
+  box-shadow: inset 2px 0 var(--primary);
+  pointer-events: none;
+}
+/* Positioned too, so the number, the code and the run mark paint above that layer rather than
+   under it. */
+.testing-preview-number, .testing-run-mark, .testing-preview-code { position: relative; }
+@keyframes testing-preview-line-in {
+  from { background: color-mix(in oklab, var(--primary) 26%, transparent); opacity: 0.4; }
+  18% { background: color-mix(in oklab, var(--primary) 26%, transparent); opacity: 1; }
+  60% { background: color-mix(in oklab, var(--primary) 20%, transparent); }
+  to { background: transparent; opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* No movement, but the line still has to be findable, so the tint is simply held and dropped. */
+  .testing-preview-line.is-new { animation: testing-preview-line-hold 1400ms steps(1, end) both; }
+  @keyframes testing-preview-line-hold {
+    from { background: color-mix(in oklab, var(--primary) 20%, transparent); }
+    to { background: transparent; }
+  }
+}
+
+/*
+ * A run's per-line marks. The mark occupies a fixed gutter whether or not it is showing, so the
+ * code never shifts sideways when a run starts or ends — the preview is read while the run is
+ * happening, and text that moves under the eye is worse than no mark at all.
+ *
+ * A passing run holds its checkmarks and then fades them: the test is the thing on screen, not the
+ * scoreboard. A failure keeps its mark until the next run.
+ */
+.testing-run-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Exactly one line box tall, so the mark centres on the line it belongs to rather than drifting
+     with the icon's own box — and so a wrapped line keeps its mark level with the first row. */
+  height: 1lh;
+  opacity: 0;
+  transition: opacity 240ms ease-out;
+}
+.testing-run-mark.is-running { opacity: 1; color: var(--muted-foreground); }
+.testing-run-mark.is-passed { opacity: 1; color: light-dark(oklch(0.6 0.13 157), oklch(0.77 0.14 157)); }
+.testing-run-mark.is-failed { opacity: 1; color: light-dark(oklch(0.58 0.2 25), oklch(0.7 0.19 25)); }
+/* Only ever set on a passing tick; a failing mark is never given this class. */
+.testing-run-mark.is-fading { opacity: 0; transition-duration: 600ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  /* The marks still come and go; they just stop easing, so nothing animates on screen. */
+  .testing-run-mark { transition: none; }
+  .testing-run-mark.is-fading { transition: none; }
+}
+
+/*
+ * Play until here: the gutter's other occupant.
+ *
+ * It sits *over* the gutter rather than in it, so the column stays exactly as wide as it was and
+ * no line of code moves when a play appears — the same reason the mark has a fixed column at all.
+ * Pointing at a line swaps its mark for the play, and the mark comes back when the pointer leaves;
+ * the two never show together, because a gutter that says both "passed" and "run to here" says
+ * neither. Nothing is rendered at all while a run is in flight, so a spinner is never hidden by a
+ * pointer resting on its line.
+ */
+.testing-play-until {
+  position: absolute;
+  /* The line's own padding, so this lands on the gutter column rather than beside it, and level
+     with the mark it stands in for rather than 2px above it. See `padding-block` above. */
+  inset-inline-start: calc(2px + 3ch);
+  top: 2px;
+  display: flex;
+  width: 1.35em;
+  height: 1lh;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  color: var(--muted-foreground);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 120ms ease-out, color 120ms ease-out;
+  /* Hidden until the line is pointed at, and unreachable by the pointer until then: an invisible
+     button that still swallows clicks is worse than no button. */
+  pointer-events: none;
+}
+.testing-preview-line:hover .testing-play-until,
+.testing-play-until:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+.testing-play-until:hover, .testing-play-until:focus-visible { color: var(--primary); }
+/* Saved project tests keep the play control beside the run mark without showing it until hover. */
+[data-testing-stored-preview] .testing-preview-line { grid-template-columns: 3ch 1.35em 1.35em minmax(0, 1fr); }
+[data-testing-stored-preview] .testing-preview-code { grid-column: 4; }
+[data-testing-stored-preview] .testing-play-until {
+  position: relative;
+  grid-column: 3;
+  inset: auto;
+}
+[data-testing-stored-preview] .testing-preview-line:hover .testing-play-until,
+[data-testing-stored-preview] .testing-play-until:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+/* The mark steps aside for the play, and only on a line that has one. */
+.testing-preview-line:hover:has(.testing-play-until) .testing-run-mark,
+.testing-preview-line:has(.testing-play-until:focus-visible) .testing-run-mark { opacity: 0; }
+[data-testing-stored-preview] .testing-preview-line:hover:has(.testing-play-until) .testing-run-mark,
+[data-testing-stored-preview] .testing-preview-line:has(.testing-play-until:focus-visible) .testing-run-mark { opacity: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  .testing-play-until { transition: none; }
+}

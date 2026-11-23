@@ -10,7 +10,7 @@ const jsonLd = {
   '@graph':[
     {'@type':'WebSite',name:site.name,url:homeUrl,description:site.description},
     {'@type':'Organization',name:'Callstack',url:'https://callstack.com/'},
-    {'@type':'SoftwareApplication',name:site.name,description:site.description,applicationCategory:'DeveloperApplication',operatingSystem:'macOS',license:site.license.spdx,offers:{'@type':'Offer',price:'0',priceCurrency:'USD'}},
+    {'@type':'SoftwareApplication',name:site.name,description:site.description,applicationCategory:'DeveloperApplication',operatingSystem:['macOS','Windows'],license:site.license.spdx,offers:{'@type':'Offer',price:'0',priceCurrency:'USD'}},
     {'@type':'SoftwareSourceCode',name:site.name,codeRepository:site.repo,programmingLanguage:site.language},
     {'@type':'FAQPage',mainEntity:faq.map(({q,a}) => ({'@type':'Question',name:q,acceptedAnswer:{'@type':'Answer',text:a}}))},
   ],

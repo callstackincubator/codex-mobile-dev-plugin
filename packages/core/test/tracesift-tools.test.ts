@@ -5,6 +5,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { registerTraceSiftTools } from "../src/tracesift-tools.ts";
 import type { TraceSiftClient } from "../src/tracesift-client.ts";
+import { TraceSiftError } from "../src/tracesift-client.ts";
 
 /** Crosses the boundary the card's frame will: the SDK validates the envelope on both sides. */
 function deepTree(depth: number) {
@@ -24,6 +25,46 @@ async function connect(client: Partial<TraceSiftClient>) {
   await mcp.connect(clientTransport);
   return { mcp, close: async () => { await mcp.close(); await server.close(); } };
 }
+
+test("the TraceSift status tool starts or reuses a ready service", async t => {
+  let checks = 0;
+  const { mcp, close } = await connect({ async readyService() { checks++; } });
+  t.after(close);
+  const result = await mcp.callTool({ name: "mobile_tracesift_status", arguments: {} });
+  assert.equal(checks, 1);
+  assert.equal(result.isError, undefined);
+  assert.deepEqual(result.structuredContent, { apiVersion: 1, status: "ready" });
+});
+
+test("the TraceSift status tool returns setup guidance as structured data", async t => {
+  const { mcp, close } = await connect({
+    async readyService() { throw new TraceSiftError("Run `tracesift init`.", "setup", "needs_init"); },
+  });
+  t.after(close);
+  const result = await mcp.callTool({ name: "mobile_tracesift_status", arguments: {} });
+  assert.equal(result.isError, undefined);
+  assert.deepEqual(result.structuredContent, {
+    apiVersion: 1, status: "setup_required", reason: "needs_init", message: "Run `tracesift init`.",
+  });
+});
+
+test("the TraceSift setup tools run only their fixed client operations", async t => {
+  const calls: string[] = [];
+  const { mcp, close } = await connect({
+    async installCli() { calls.push("install"); },
+    async initialize() { calls.push("init"); },
+  });
+  t.after(close);
+  const installed = await mcp.callTool({ name: "mobile_install_tracesift_cli", arguments: {} });
+  const initialized = await mcp.callTool({ name: "mobile_initialize_tracesift", arguments: {} });
+  assert.deepEqual(calls, ["install", "init"]);
+  assert.deepEqual(installed.structuredContent, {
+    apiVersion: 1, action: "install", completed: true, message: "TraceSift CLI installed. Checking setup…",
+  });
+  assert.deepEqual(initialized.structuredContent, {
+    apiVersion: 1, action: "init", completed: true, message: "TraceSift initialized. Checking readiness…",
+  });
+});
 
 test("the Explore payload tool carries a full task tree as one JSON text item", async t => {
   const requested: unknown[] = [];
@@ -142,6 +183,9 @@ test("published TraceSift annotations distinguish saved references, service star
   t.after(close);
   const { tools } = await mcp.listTools();
   const expected = {
+    mobile_tracesift_status: [false, false],
+    mobile_install_tracesift_cli: [false, true],
+    mobile_initialize_tracesift: [false, true],
     mobile_analyze_profile: [false, true],
     mobile_pick_profile_file: [false, false],
     mobile_get_tracesift_project: [true, false],
@@ -157,6 +201,15 @@ test("published TraceSift annotations distinguish saved references, service star
   for (const [name, [readOnlyHint, destructiveHint]] of Object.entries(expected)) {
     const tool = tools.find(tool => tool.name === name);
     assert.ok(tool, `Missing ${name}`);
-    assert.deepEqual(tool.annotations, { readOnlyHint, destructiveHint, openWorldHint: false }, name);
+    assert.deepEqual(tool.annotations, {
+      readOnlyHint, destructiveHint,
+      openWorldHint: name === "mobile_install_tracesift_cli" || name === "mobile_initialize_tracesift",
+    }, name);
+  }
+  const status = tools.find(tool => tool.name === "mobile_tracesift_status");
+  assert.deepEqual((status?._meta as { ui: { visibility: string[] } }).ui.visibility, ["app", "model"]);
+  for (const name of ["mobile_install_tracesift_cli", "mobile_initialize_tracesift"]) {
+    const tool = tools.find(entry => entry.name === name);
+    assert.deepEqual((tool?._meta as { ui: { visibility: string[] } }).ui.visibility, ["app"]);
   }
 });

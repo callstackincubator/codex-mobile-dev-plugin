@@ -36,6 +36,19 @@ export async function renderEnvironment<T = Record<string, unknown>>(
   const w = dom.window;
   const ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
   const DOMMatrixReadOnly = class { m22 = 1; constructor() {} };
+  // JSDOM has no `DOMRect`, and a layout-measuring component constructs one. Measurements in this
+  // environment are all zero anyway: the point of these tests is the DOM that is rendered.
+  const DOMRectStub = w.DOMRect ?? class {
+    x: number; y: number; width: number; height: number;
+    constructor(x = 0, y = 0, width = 0, height = 0) {
+      this.x = x; this.y = y; this.width = width; this.height = height;
+    }
+    get top() { return this.y; }
+    get left() { return this.x; }
+    get right() { return this.x + this.width; }
+    get bottom() { return this.y + this.height; }
+    toJSON() { return { ...this }; }
+  };
   const globals: Record<string, unknown> = {
     window: w, document: w.document, navigator: w.navigator,
     HTMLElement: w.HTMLElement, HTMLFormElement: w.HTMLFormElement, HTMLButtonElement: w.HTMLButtonElement,
@@ -44,7 +57,7 @@ export async function renderEnvironment<T = Record<string, unknown>>(
     Element: w.Element, DocumentFragment: w.DocumentFragment, MutationObserver: w.MutationObserver,
     localStorage: w.localStorage, getComputedStyle: w.getComputedStyle.bind(w),
     requestAnimationFrame: w.requestAnimationFrame.bind(w), cancelAnimationFrame: w.cancelAnimationFrame.bind(w),
-    ResizeObserver, IS_REACT_ACT_ENVIRONMENT: true,
+    ResizeObserver, DOMRect: DOMRectStub, IS_REACT_ACT_ENVIRONMENT: true,
     ...(options.graph ? { DOMMatrixReadOnly } : {}),
     ...options.extraGlobals,
   };
@@ -54,8 +67,11 @@ export async function renderEnvironment<T = Record<string, unknown>>(
     previous.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
     Object.defineProperty(globalThis, key, { value, configurable: true, writable: true });
   }
+  // On the window as well as on the global: a component that reads `window.ResizeObserver` — the
+  // resizable panel group does — finds nothing on a JSDOM window, which has none of its own.
+  Object.defineProperty(w, "ResizeObserver", { value: ResizeObserver, configurable: true });
+  Object.defineProperty(w, "DOMRect", { value: DOMRectStub, configurable: true });
   if (options.graph) {
-    Object.defineProperty(w, "ResizeObserver", { value: ResizeObserver, configurable: true });
     Object.defineProperty(w, "DOMMatrixReadOnly", { value: DOMMatrixReadOnly, configurable: true });
   }
 
@@ -76,7 +92,10 @@ export async function renderEnvironment<T = Record<string, unknown>>(
   await build({
     stdin: { contents: options.exports, resolveDir: process.cwd(), loader: "ts" },
     outfile, bundle: true, format: "esm", platform: "node", jsx: "automatic",
-    external: ["react", "react/*", "react-dom", "react-dom/*", "radix-ui", "lucide-react", "@base-ui/react/*", "@xyflow/react"],
+    // `react-resizable-panels` ships a CJS build whose `require("react/jsx-runtime")` cannot be
+    // resolved once React itself is external to an ESM bundle. Left external, Node loads the
+    // package's own ESM entry and the require never happens.
+    external: ["react", "react/*", "react-dom", "react-dom/*", "radix-ui", "lucide-react", "@base-ui/react/*", "@xyflow/react", "react-resizable-panels"],
   });
   return {
     module: (await import(pathToFileURL(outfile).href)) as T,

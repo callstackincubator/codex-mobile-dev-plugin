@@ -214,14 +214,18 @@ export class AndroidDriver implements AppDriver {
       const parts = ["AndroidManifest.xml", "resources.arsc"];
       await Promise.all(parts.map(async part => writeFile(join(directory, part), await entry(part))));
       const partial = join(directory, "partial.apk");
-      await this.commands.run("zip", ["-q", "-0", "-j", partial, ...parts.map(part => join(directory, part))], { timeout: 10000 });
+      if (process.platform === "win32") {
+        await this.commands.run("tar.exe", ["--format", "zip", "-cf", partial, "-C", directory, ...parts], { timeout: 10000 });
+      } else {
+        await this.commands.run("zip", ["-q", "-0", "-j", partial, ...parts.map(part => join(directory, part))], { timeout: 10000 });
+      }
       const badging = parseAndroidBadging(await this.commands.run(aapt2, ["dump", "badging", partial], { timeout: 15000 }));
       const name = badging.label ?? undefined;
       const file = badging.icon && pickAndroidIconFile(await this.commands.run(aapt2, ["dump", "resources", partial], { timeout: 15000, maxBuffer: 64 * 1024 * 1024 }), badging.icon);
       if (!file) return { name };
       const source = join(directory, `icon${file.slice(file.lastIndexOf("."))}`);
       await writeFile(source, await entry(file));
-      return { name, icon: await pngDataUrl(this.commands.run, source, directory) };
+      return { name, icon: await pngDataUrl(this.commands.run, source, directory).catch(() => undefined) };
     }));
   }
 

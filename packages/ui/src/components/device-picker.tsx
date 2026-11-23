@@ -52,6 +52,8 @@ export function DevicePicker({ workspace, children }: { workspace: DeviceWorkspa
 
   function column(platform: Platform) {
     const { items, status, error: discoveryError } = workspace.inventory[platform];
+    const setupHint = status?.setupHint || (platform === "android" ? status?.error : undefined);
+    const emptyMessage = status?.localIosSupported === false ? "Local iOS devices require macOS." : setupHint || (status ? "No devices found" : "Finding devices…");
     const label = platform === "ios" ? "iOS" : "Android";
     const missing = state.panes.filter(pane => pane.platform === platform && !pane.device);
     return <section key={platform} aria-label={label} className="min-w-0 p-2">
@@ -64,7 +66,7 @@ export function DevicePicker({ workspace, children }: { workspace: DeviceWorkspa
           <div className="flex items-center rounded-md hover:bg-accent has-[[aria-pressed=true]]:bg-accent">
             <PopoverClose asChild><Button variant="ghost" data-device-option={item.value} aria-pressed={selected} className="h-auto min-h-9 min-w-0 flex-1 justify-start gap-2 px-2 py-1.5 text-left" onClick={() => toggle(platform, item.device)}>
               <span className="relative shrink-0 text-muted-foreground"><Icon />{item.running && <span role="img" aria-label={item.statusLabel} className="absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-green-500 ring-2 ring-popover" />}</span>
-              <span className="min-w-0 flex-1 whitespace-normal [overflow-wrap:anywhere]">{item.device.name}{item.detail && <span className="block text-xs font-normal text-muted-foreground">{item.detail}</span>}</span>
+              <span className="min-w-0 flex-1 whitespace-normal [overflow-wrap:anywhere]">{item.title}{item.detail && <span className="block text-xs font-normal text-muted-foreground">{item.detail}</span>}</span>
               {selected && <CheckIcon className="size-3.5 shrink-0" />}
             </Button></PopoverClose>
             {item.canStop && <Button variant="ghost" size="icon" className="mr-1 size-6 shrink-0 text-muted-foreground" disabled={!!state.stopping} aria-label={`Stop ${item.label}`} title={`Stop ${item.label}`} onClick={async () => {
@@ -76,8 +78,8 @@ export function DevicePicker({ workspace, children }: { workspace: DeviceWorkspa
         </Fragment>;
       })}
       {missing.map(pane => <PopoverClose asChild key={pane.key}><Button variant="ghost" aria-pressed="true" className="w-full justify-between" onClick={() => workspace.remove(pane.key)}>{pane.last.name} · Offline<CheckIcon /></Button></PopoverClose>)}
-      {!items.length && !missing.length && <p className="px-2 py-3 text-xs text-muted-foreground">{status ? "No devices found" : "Finding devices…"}</p>}
-      {discoveryError && <details className="mt-1 px-2 text-xs text-muted-foreground"><summary className="cursor-pointer">Discovery details</summary><p className="mt-1 break-words">{discoveryError}</p></details>}
+      {!items.length && !missing.length && <p className="px-2 py-3 text-xs text-muted-foreground">{emptyMessage}</p>}
+      {discoveryError && discoveryError !== emptyMessage && <details className="mt-1 px-2 text-xs text-muted-foreground"><summary className="cursor-pointer">Discovery details</summary><p className="mt-1 break-words">{discoveryError}</p></details>}
     </section>;
   }
 

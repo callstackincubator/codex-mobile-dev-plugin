@@ -8,7 +8,7 @@ import type { Theme } from "./profiles.ts";
 // match CI: refresh them with `npm run test:visual:docker -- --update-snapshots`, then review the diff.
 
 const themes: Theme[] = ["light", "dark"];
-const tools = [["performance", "Performance"], ["storage", "Storage"], ["tracesift", "TraceSift"]] as const;
+const tools = [["performance", "Performance"], ["storage", "Storage"], ["app-intel", "App Intel"], ["tracesift", "TraceSift"]] as const;
 
 for (const theme of themes) test.describe(`${theme}`, { tag: "@visual" }, () => {
   test(`workspace`, async ({ openView }) => {
@@ -37,6 +37,25 @@ for (const theme of themes) test.describe(`${theme}`, { tag: "@visual" }, () => 
     const picker = view.getByRole("dialog", { name: "Choose devices" });
     await expect(picker.getByText("iPhone 17 Pro")).toBeVisible();
     await expect.soft(picker).toHaveScreenshot(`device-picker-${theme}.png`);
+  });
+
+  test("Testing Studio runtime download", async ({ openView, server }) => {
+    const callTool = server.client.callTool.bind(server.client);
+    server.client.callTool = async (request, ...options) => {
+      if (request.name === "mobile_testing_project_config") {
+        return { content: [], structuredContent: { runtimeMode: "bundled", targets: [], needsRuntime: true } };
+      }
+      if (request.name === "mobile_testing_prepare_runtime" || request.name === "mobile_testing_runtime_progress") {
+        return { content: [], structuredContent: { progress: { phase: "downloading", received: 5_000_000, total: 25_000_000 } } };
+      }
+      return callTool(request, ...options);
+    };
+    const { view } = await openView("mobile_open_workspace", { theme, width: 480 });
+    await view.locator("#tool-select").click();
+    await view.getByRole("option", { name: "Testing Studio" }).click();
+    const studio = view.getByRole("region", { name: "Testing Studio", exact: true });
+    await expect(studio.getByRole("progressbar")).toBeVisible();
+    await expect(studio).toHaveScreenshot(`testing-runtime-${theme}.png`);
   });
 
   test(`panel beside the chat`, async ({ openView }) => {

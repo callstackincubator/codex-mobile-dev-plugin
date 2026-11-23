@@ -226,6 +226,25 @@ mobile-starlight-toc a[aria-current='true'] {
   color: #0a0a0a !important;
 }
 
+/* Copy buttons in docs Markdown (data-copy), styled as a primary link button. */
+.sl-markdown-content .copy-prompt {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--accent);
+  border-radius: 999rem;
+  background: var(--accent);
+  color: #0a0a0a;
+  font-family: var(--cs-font-mono);
+  font-size: 0.8125rem;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.sl-markdown-content .copy-prompt:hover { filter: brightness(1.1); }
+.sl-markdown-content .copy-prompt:focus-visible { outline: 2px solid var(--sl-color-white); outline-offset: 2px; }
+
 .sl-badge {
   font-family: var(--cs-font-mono);
   letter-spacing: 0.04em;

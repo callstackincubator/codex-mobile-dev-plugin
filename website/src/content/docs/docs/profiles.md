@@ -7,7 +7,7 @@ Use **TraceSift** in Mobile Dev to analyze a local CPU profile or a React DevToo
 
 ## Requirements
 
-Install and configure TraceSift locally. Mobile Dev finds it on `PATH` or through `TRACE_SIFT_COMMAND`. If setup is missing, follow the installation or `tracesift init` guidance returned by the tool.
+TraceSift profile analysis requires a macOS or Linux host. Install and configure TraceSift locally. Mobile Dev finds it on `PATH` or through `TRACE_SIFT_COMMAND`. If setup is missing, follow the installation or `tracesift init` guidance returned by the tool.
 
 This workflow analyzes an existing profile. Mobile Dev's [CPU, memory, and Display FPS recordings](/docs/performance) are a separate kind of measurement.
 

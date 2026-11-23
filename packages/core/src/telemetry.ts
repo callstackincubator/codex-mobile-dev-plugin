@@ -38,11 +38,11 @@ export function recordBrowserPanelContext(outcome: "stored" | "invalid" | "too_l
  * How long the panel's downloaded runtime took to be ready, by outcome: found complete,
  * downloaded and extracted, or failed with a bounded reason. Sizes only for downloads.
  */
-export function recordPanelRuntime(outcome: "cached" | "downloaded" | "failed", duration: number, bytes?: number, reason?: string) {
+export function recordPanelRuntime(runtime: "panel" | "testing", outcome: "cached" | "downloaded" | "failed", duration: number, bytes?: number, reason?: string) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
-  const attributes = { component: "server", outcome, ...reason ? { reason } : {} };
+  const attributes = { component: "server", runtime, outcome, ...reason ? { reason } : {} };
   Sentry.metrics.distribution("panel_runtime.ready", duration, { attributes, unit: "millisecond" });
-  if (bytes !== undefined) Sentry.metrics.distribution("panel_runtime.download_bytes", bytes, { attributes: { component: "server" }, unit: "byte" });
+  if (bytes !== undefined) Sentry.metrics.distribution("panel_runtime.download_bytes", bytes, { attributes: { component: "server", runtime }, unit: "byte" });
 }
 
 export function recordIosMirrorSharing(captures: number, subscribers: number, dropped: number) {
@@ -61,6 +61,13 @@ export function recordAppStorageOperation(operation: AppStorageOperation, platfo
   Sentry.metrics.gauge("app_storage.operation.duration", duration, { unit: "millisecond", attributes });
 }
 
+export function recordAppIntelOperation(operation: "generate" | "query" | "snapshot" | "pick" | "clear", outcome: "success" | "failed" | "cancelled", duration: number) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = { component: "server", surface: "app-intel", operation, outcome };
+  Sentry.metrics.count("app_intel.operation.samples", 1, { attributes });
+  Sentry.metrics.gauge("app_intel.operation.duration", duration, { unit: "millisecond", attributes });
+}
+
 /**
  * Time the App Flow project dialog stayed open. Like the sweep's decision wait, this is a person
  * deciding rather than plugin work, so it is reported on its own and never folded into a UI timing.
@@ -72,7 +79,33 @@ export function recordProjectDialog(outcome: "chosen" | "cancelled" | "failed", 
   Sentry.metrics.distribution("app_flow.project_dialog.duration", Math.max(0, duration), { unit: "millisecond", attributes });
 }
 
-export function recordTraceSiftOperation(operation: "ready" | "analyze" | "remember" | "restore" | "handoff" | "task" | "payload" | "pick" | "project", outcome: "success" | "failed", duration: number) {
+/**
+ * How long an agent recording's screen read took, and how much of a screen it answered with.
+ *
+ * The read is the only thing in an agent recording that costs anything — a flow is ten to twenty
+ * of them — so it is the boundary worth measuring. The element count is a size, never content:
+ * no names, no text and nothing the user's app put on screen is sent.
+ */
+export function recordTestingAgentRead(outcome: "success" | "failed", duration: number, elements: number, platform: "ios" | "android") {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = { component: "server", surface: "testing", platform, outcome };
+  Sentry.metrics.count("testing.agent.screen.samples", 1, { attributes });
+  Sentry.metrics.distribution("testing.agent.screen.duration", Math.max(0, duration), { unit: "millisecond", attributes });
+  if (outcome === "success") Sentry.metrics.gauge("testing.agent.screen.elements", elements, { attributes });
+}
+
+/**
+ * Setup telemetry is deliberately structural: operation, bounded outcome and provider id only.
+ * It never includes prompts, source, project paths, app identifiers, model ids, URLs or tokens.
+ */
+export function recordTestingSetupOperation(operation: "plan" | "apply" | "login" | "preference", outcome: "started" | "succeeded" | "failed" | "cancelled", provider: string = "none") {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const allowed = ["none", "vercel", "openrouter", "openai-compatible", "chatgpt", "copilot", "opencode-console", "grok"];
+  const attributes = { component: "server", surface: "testing", operation, outcome, provider: allowed.includes(provider) ? provider : "other" };
+  Sentry.metrics.count("testing.setup.operation.samples", 1, { attributes });
+}
+
+export function recordTraceSiftOperation(operation: "ready" | "install" | "init" | "analyze" | "remember" | "restore" | "handoff" | "task" | "payload" | "pick" | "project", outcome: "success" | "failed", duration: number) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes = { component: "server", surface: "tracesift", operation, outcome };
   Sentry.metrics.count("tracesift.operation.samples", 1, { attributes });
@@ -89,7 +122,7 @@ export function recordTraceSiftPayload(kind: "task" | "react", bytes: number) {
   Sentry.metrics.gauge("tracesift.explore.payload_bytes", bytes, { unit: "byte", attributes });
 }
 
-/** Counts each batch sent to Mixpanel by whether Mixpanel accepted it. */
+/** Counts each product analytics batch by whether ingestion accepted it. */
 export function recordAnalyticsFlush(outcome: "success" | "failed", endpoint: "track" | "engage") {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   Sentry.metrics.count("analytics.flush", 1, { attributes: { component: "server", outcome, endpoint } });
@@ -307,7 +340,7 @@ const resourceKinds: Record<string, string> = {
   "android-stream:": "android_video", "ios-video:": "ios_video", "ui:": "ui",
 };
 const allowedContext: Record<string, readonly string[]> = {
-  surface: ["app-flow", "logs", "performance", "storage", "simulator", "recording", "comparison", "tracesift"], view: ["panel", "workspace", "recording", "comparison", "tracesift"], layout: ["ios", "android", "both", "none"],
+  surface: ["app-flow", "logs", "performance", "storage", "simulator", "recording", "comparison", "tracesift", "app-intel"], view: ["panel", "workspace", "recording", "comparison", "tracesift"], layout: ["ios", "android", "both", "none"],
   device_platform: ["ios", "android", "mixed"], device_kind: ["physical", "simulator", "emulator", "none"], host: TELEMETRY_HOSTS,
 };
 

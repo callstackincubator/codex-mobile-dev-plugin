@@ -11,6 +11,7 @@ export type HostBridge = Pick<App,
   | "getHostContext"
   | "sendMessage"
   | "updateModelContext"
+  | "openLink"
   | "requestDisplayMode">;
 
 /**

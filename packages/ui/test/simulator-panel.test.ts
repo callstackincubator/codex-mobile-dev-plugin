@@ -7,13 +7,13 @@ import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { setImmediate as flushTasks } from "node:timers/promises";
 import type { App } from "@modelcontextprotocol/ext-apps";
-import type { PanelContext } from "../src/model-context.ts";
+import { PanelContext } from "../src/model-context.ts";
 import { createSimulatorPanel } from "../src/simulator-panel.ts";
 import { getDeviceSettings } from "../src/device-settings.ts";
 import { getScreenAnnotations } from "../src/screen-annotations.ts";
 import type { PhysicalIosDevice } from "../../shared/src/ios-devices.ts";
-import type { PhysicalAndroidDevice } from "../../shared/src/android-devices.ts";
 import type { SimulatorDevice } from "../../shared/src/protocol.ts";
+import type { AndroidBookingNames, PhysicalAndroidDevice } from "../../shared/src/android-devices.ts";
 import type { ScreenAnnotation } from "../../shared/src/screen-annotations.ts";
 import type { ScreenshotAttachment } from "../src/model-context.ts";
 
@@ -86,6 +86,7 @@ function fixture(t: TestContext) {
   let delayedDiscovery: Promise<void> | undefined;
   let androidDevices: SimulatorDevice[] | undefined;
   let iosDevices: SimulatorDevice[] | undefined;
+  let bookingNames: AndroidBookingNames | undefined;
   const stoppedPlatforms = new Set<string>();
   let failedInputPlatform: "ios" | "android" | undefined;
   let inspectionFailure = false;
@@ -166,7 +167,7 @@ function fixture(t: TestContext) {
       calls.push(call);
       if (call.name === "mobile_list_android_devices") {
         await delayedDiscovery;
-        if (androidDevices) return { content: [], structuredContent: { connected: true, devices: androidDevices } };
+        if (androidDevices) return { content: [], structuredContent: { connected: true, devices: androidDevices }, _meta: { bookingNames } };
       }
       if (call.name === "mobile_list_ios_devices") {
         await delayedDiscovery;
@@ -287,7 +288,7 @@ function fixture(t: TestContext) {
     for (const { panel } of panels) await panel.dispose();
     for (const reset of restore) reset();
   });
-  return { workspace, get activeDevice() { return activeDevice; }, setIosDevices(devices: SimulatorDevice[]) { iosDevices = devices; }, calls, closed, selections, failInspection() { inspectionFailure = true; }, setAndroidAccessibility(value: NonNullable<typeof androidAccessibility>) { androidAccessibility = value; }, screenshots, attachedAnnotations, ios: panels[0], android: panels[1], failClipboard() { screenshotCopied = false; }, setAndroidDevices(devices: SimulatorDevice[]) { androidDevices = devices; }, setPhysicalDevices(devices: PhysicalIosDevice[]) { physicalDevices = devices; }, failDiscovery(message: string) { physicalError = message; }, failSimulators(message: string) { simulatorError = message; }, delayDiscovery(value: Promise<void>) { delayedDiscovery = value; }, failInput(platform: "ios" | "android") { failedInputPlatform = platform; }, delayOpen(value: Promise<void>) { delayedOpen = value; }, blockIos() { blockedIos = true; }, stopDevices() { stopped = true; },
+  return { workspace, get activeDevice() { return activeDevice; }, setIosDevices(devices: SimulatorDevice[]) { iosDevices = devices; }, calls, closed, selections, failInspection() { inspectionFailure = true; }, setAndroidAccessibility(value: NonNullable<typeof androidAccessibility>) { androidAccessibility = value; }, screenshots, attachedAnnotations, ios: panels[0], android: panels[1], failClipboard() { screenshotCopied = false; }, setAndroidDevices(devices: SimulatorDevice[], names?: AndroidBookingNames) { androidDevices = devices; bookingNames = names; }, setPhysicalDevices(devices: PhysicalIosDevice[]) { physicalDevices = devices; }, failDiscovery(message: string) { physicalError = message; }, failSimulators(message: string) { simulatorError = message; }, delayDiscovery(value: Promise<void>) { delayedDiscovery = value; }, failInput(platform: "ios" | "android") { failedInputPlatform = platform; }, delayOpen(value: Promise<void>) { delayedOpen = value; }, blockIos() { blockedIos = true; }, stopDevices() { stopped = true; },
     visibility(value: string) { document.visibilityState = value; document.dispatchEvent(new Event("visibilitychange")); },
     frame(platform: "ios" | "android", sequence: number, options: { generation?: number; empty?: boolean } = {}) {
       const id = [...pendingReads.keys()].find(id => id.startsWith(platform)); assert.ok(id);
@@ -529,6 +530,41 @@ test("physical Android devices appear above emulators and stream without emulato
   const wireless = picker.getSnapshot();
   assert.equal(wireless.value, androidPhone.udid);
   assert.equal(wireless.items[0].label, "Pixel 9 · Wi-Fi");
+});
+
+test("opening an ADC serial streams that device even with another phone of the same model", async t => {
+  const f = fixture(t);
+  const adcPhone: PhysicalAndroidDevice = { ...androidPhone, udid: "127.0.0.1:15555", transportType: "localNetwork" };
+  f.setAndroidDevices([androidPhone, adcPhone]);
+  await f.workspace.setAvailable(true);
+  await f.workspace.open({ platform: "android", deviceId: adcPhone.udid });
+  const [pane] = f.workspace.getSnapshot().panes;
+  assert.equal(pane.device?.udid, adcPhone.udid);
+  const root = createPanelRoot();
+  f.workspace.mount(pane.key, root as unknown as HTMLElement);
+  await waitFor(() => root.elements.get("screen")!.draws > 0);
+  const streams = f.calls.filter(call => call.name === "mobile_android_stream_session");
+  const targets = streams.map(call => call.arguments);
+  assert.deepEqual(targets, [{ deviceId: adcPhone.udid }]);
+});
+
+test("the Android picker shows an ADC booking name above the device specs for the active connection", async t => {
+  const f = fixture(t);
+  const name = "Test checkout on Android";
+  const model = "ADC Android 14 2 CPU 3 GiB RAM";
+  const device: PhysicalAndroidDevice = { ...androidPhone, udid: "127.0.0.1:15555", name: model, model, transportType: "localNetwork" };
+  f.setAndroidDevices([device], { [device.udid]: name });
+  await f.android.load();
+  const picker = f.android.picker;
+  const option = picker.getSnapshot().items[0];
+  assert.equal(option.label, name);
+  assert.equal(option.detail, `${model} · Wi-Fi`);
+  assert.equal(f.android.panel.selected?.name, model);
+  f.setAndroidDevices([device]);
+  await picker.refresh?.();
+  const released = picker.getSnapshot().items[0];
+  assert.equal(released.label, `${model} · Wi-Fi`);
+  assert.equal(released.detail, "Wi-Fi");
 });
 
 for (const state of ["unauthorized", "offline"]) test(`physical Android ${state} devices remain discoverable without booting or streaming`, async t => {
@@ -1319,7 +1355,7 @@ for (const platform of ["ios", "android"] as const) test(`failed inspection on $
   assert.equal(f.calls.some(call => call.name.endsWith("_stream_input")), false);
 });
 
-test("Android fallback selection scales physical accessibility bounds to the captured video", async t => {
+test("Android selection attaches a scaled accessibility element to the composer and sends its note to chat", async t => {
   const f = fixture(t), panel = f.android;
   f.failInspection();
   f.setAndroidAccessibility({ screen: { width: 1080, height: 2160 }, tree: { nodes: [
@@ -1327,6 +1363,15 @@ test("Android fallback selection scales physical accessibility bounds to the cap
   ] } });
   await panel.load(); await waitFor(() => panel.element("screen").draws > 0);
   const store = getScreenAnnotations(panel.element("stage") as unknown as HTMLElement);
+  const updates: Parameters<App["updateModelContext"]>[0][] = [];
+  const messages: Parameters<App["sendMessage"]>[0][] = [];
+  store.connect(new PanelContext({
+    getHostCapabilities: () => ({ message: { text: {} } }),
+    async sendMessage(message) { messages.push(message); return {}; },
+  } as App, () => ({
+    getCurrent: () => undefined,
+    async update(params) { updates.push(params); return { updateId: String(updates.length) }; },
+  })));
   await store.toggle();
   dispatch(panel.element("screen"), "pointermove", { pointerId: 1, clientX: 75, clientY: 165 });
   assert.equal(store.getSnapshot().hovered?.name, "Continue");
@@ -1334,6 +1379,17 @@ test("Android fallback selection scales physical accessibility bounds to the cap
   dispatch(panel.element("screen"), "pointerup", { button: 0, pointerId: 1, clientX: 75, clientY: 165 });
   assert.deepEqual(store.getSnapshot().draft?.component.bounds, { x: 100, y: 400, width: 200, height: 80 });
   assert.equal(store.getSnapshot().draft?.component.identifier, "app:id/continue");
+  store.setText("Make this button wider");
+  await store.save();
+  const attachment = updates.at(-1)?.content?.[0];
+  assert.equal(attachment?.type, "text");
+  assert.equal(attachment._meta?.["openai/title"], "Continue: Make this button wider");
+  assert.match(attachment.text, /emulator-5554/);
+  assert.match(attachment.text, /app:id\/continue/);
+  assert.match(attachment.text, /100,400,200,80 pixels/);
+  await store.send();
+  assert.equal(messages.length, 1);
+  assert.equal(store.getSnapshot().annotations.length, 0);
   assert.equal(f.calls.some(call => call.name.endsWith("_stream_input")), false);
 });
 

@@ -1,11 +1,12 @@
 import { execFile } from "node:child_process";
+import { constants } from "node:fs";
 import { access, mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ExpectedOperationError, expectedOutcome } from "@mobile-dev/shared/error-reporting.ts";
 import { annotateDeviceCommand, classifyCommandFailure } from "@mobile-dev/shared/device-command-diagnostics.ts";
 import { adbPath } from "../native-logs.ts";
-import { androidSdkRoots } from "../android-sdk.ts";
+import { androidSdkRoots, sdkExecutable } from "../android-sdk.ts";
 
 export type CommandOptions = { timeout: number; input?: string; maxBuffer?: number };
 export type CommandRunner = (file: string, args: string[], options: CommandOptions) => Promise<string>;
@@ -40,8 +41,8 @@ async function findAapt2(): Promise<string | null> {
     const versions = await readdir(join(root, "build-tools")).catch(() => []);
     versions.sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
     for (const version of versions) {
-      const path = join(root, "build-tools", version, "aapt2");
-      if (await access(path).then(() => true, () => false)) return aapt2 = path;
+      const path = join(root, "build-tools", version, sdkExecutable("aapt2"));
+      if (await access(path, constants.X_OK).then(() => true, () => false)) return aapt2 = path;
     }
   }
   return null;
@@ -69,7 +70,10 @@ export function commandError(error: unknown, action: string, command?: string): 
   const message = output.split("\n").map(line => line.trim()).filter(line => line && !/^Underlying error|^An error was encountered/.test(line)).slice(0, 3).join(" ");
   const text = `${action} failed${message ? `: ${message}` : "."}`;
   if (unavailable.test(output)) return new ExpectedOperationError("device_unavailable", text);
-  if (error !== null && typeof error === "object" && "code" in error && error.code === "ENOENT") return new ExpectedOperationError("unsupported_platform", `${action} needs ${process.platform === "darwin" ? "Xcode or the Android SDK" : "macOS and Xcode"}.`);
+  if (error !== null && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+    const requirement = command?.startsWith("adb_") ? "Android SDK Platform-Tools" : "macOS and Xcode";
+    return new ExpectedOperationError("unsupported_platform", `${action} needs ${requirement}.`);
+  }
   const failure = new Error(text, { cause: error });
   // Reports name the command and how it ended instead of repeating its output.
   return command === undefined ? failure : annotateDeviceCommand(failure, command, classifyCommandFailure(error));

@@ -25,6 +25,12 @@ Change the running device's appearance, text size, rotation, location, and statu
 ### App Flow
 Build a visual map of your app's screens and the navigation between them, for Expo Router and React Navigation projects. **Structure only** reads the navigation out of your source in seconds and needs no device; **Screen UI + Structure** also walks the app on an iOS simulator and photographs every screen it reaches, optionally opening each screen's sheets, modals, and dialogs. The walk runs your project's own `ios` script and reaches each screen through in-app navigation, a deep link, or a path you recorded; record one by hand on the live wireframe for a screen it cannot reach. Explore with AI lists the screens the deterministic pass missed and retries only the ones you pick. Maps, captures, and recorded paths are stored per project under `~/Library/Application Support/mobile-dev/app-flow`.
 
+### App Intelligence
+Trace each Expo Router or React Navigation screen through the source files, assets, and packages it depends on, without building or running the app. Choose a project and generate its static iOS and Android graph, then browse entry points by area, fold or highlight dependency groups, and see which dependencies are platform-specific. Ask your agent what a screen depends on, which screens reach a file, or to show one screen's graph. Saved snapshots live under `~/Library/Application Support/mobile-dev/app-intelligence`; project paths and graph contents are excluded from Sentry telemetry.
+
+### Testing Studio
+Record deterministic e2e tests against a booted iOS simulator or Android emulator. Choose a project with an existing e2e setup, launch the configured target, and right-click elements in the mirror to add taps, text entry, gestures, and assertions. The generated TypeScript and editable step list stay beside the app; save only when the flow is ready, then run the whole test or play to one step with per-line results. Unsaved recordings are kept in Mobile Dev and stored tests remain in the project's `tests/` folder. You can also ask your coding agent to record a flow: its steps appear live in the same panel for you to review, adjust, and save.
+
 ### Native and JavaScript logs
 Read iOS unified logs, Android logcat, and Metro console messages together. Follow the foreground app, search and filter logs, and send an error and its stack trace to chat.
 
@@ -55,6 +61,8 @@ See [storage privacy and review checks](docs/storage-privacy.md).
 **[Add Mobile Dev to Codex](https://chatgpt.com/plugins/plugins_6ac4c117f76881918d3676e851fa4005)**
 from the plugin directory, then open a new chat.
 
+On Windows, choose **Android** to connect an emulator or phone. The iOS tab stays visible for future cloud devices. [Set up Android on Windows](docs/devices.md#android-on-windows)
+
 To install the prebuilt plugin from this repository instead, see
 [Install from the GitHub marketplace](CONTRIBUTING.md#install-from-the-github-marketplace).
 
@@ -80,10 +88,13 @@ claude plugin marketplace add https://github.com/callstackincubator/mobile-dev.g
 claude plugin install mobile-dev@mobile-dev
 ```
 
-Or in a session, `/plugin install mobile-dev --marketplace https://github.com/callstackincubator/mobile-dev.git#release/claude`.
+The plugin is installed for your user, so the CLI, the Claude desktop app's **Code** tab
+and T3 Code's Claude threads all load it. Inside a session, run the same steps as
+`/plugin marketplace add https://github.com/callstackincubator/mobile-dev.git#release/claude`
+and `/plugin install mobile-dev@mobile-dev`.
 Run `claude plugin marketplace update mobile-dev` to update.
 
-For Claude Desktop chats, download `mobile-dev-<version>-claude-desktop-darwin-arm64.mcpb`
+Regular Claude Desktop chats do not load Claude Code plugins. For them, download `mobile-dev-<version>-claude-desktop-darwin-arm64.mcpb`
 from the [latest release](https://github.com/callstackincubator/mobile-dev/releases/latest),
 open **Settings > Extensions > Advanced settings**, and under **Extension Developer**
 click **Install Extension…** and select the file, or open it with Claude Desktop.
@@ -115,8 +126,10 @@ profiles go only to the TraceSift service on your Mac.
 [T3 Code](https://github.com/pingdotgg/t3code) runs Claude Code and Codex, so it loads
 the Mobile Dev plugin that each of them has installed. On the Mac that runs T3 Code,
 install the [Claude Code plugin](#claude-code-and-claude-desktop) for Claude threads
+(run the two `claude plugin` commands in a terminal, then start a new Claude thread)
 and the [Codex plugin](#codex) for Codex threads. In both, the panel opens in T3 Code's
-Browser.
+Browser. See the [T3 Code setup guide](https://incubator.callstack.com/codex-mobile-dev-plugin/docs/getting-started#t3-code)
+for the settings each provider needs.
 
 Turn off T3 Code's own device integration while you use Mobile Dev. In
 **Settings → Devices**, turn off **Use devices**, which also turns off **Agents can use
@@ -174,7 +187,7 @@ open "release/mac/Mobile Dev.app"
 
 ## Requirements
 
-Mobile Dev runs on an Apple Silicon Mac. In Codex desktop, the prebuilt plugin
+Codex desktop supports Android on Windows and Apple Silicon Macs. Local iOS devices require an Apple Silicon Mac. The prebuilt Codex plugin
 uses Codex's bundled Node runtime from its workspace dependency cache; the Claude
 Desktop bundle uses Claude's Node runtime, the Cursor plugin uses Node.js from
 `PATH`, and the Mac app bundles its own. Install the tools for the platforms you use:
@@ -183,11 +196,12 @@ Desktop bundle uses Claude's Node runtime, the Cursor plugin uses Node.js from
 | --- | --- |
 | iOS simulators | Xcode 26 or later with an installed simulator runtime. |
 | Physical iPhones and iPads | Xcode 27 or later, a paired device with Developer Mode enabled, and USB or Wi-Fi connectivity. Screen mirroring requires HEVC WebCodecs support in the host. |
-| Android | Android SDK platform-tools and emulator, and an AVD or a physical device with authorized USB or wireless debugging. Screen streaming requires H.264 WebCodecs support in the host. |
+| Android | Android SDK Platform-Tools for an authorized USB or wireless device. For an AVD, also install Android Emulator and a system image. Screen streaming requires H.264 WebCodecs support in the host. |
 | Metro logs and React Native inspection | An existing local Metro server with a compatible app inspector target. |
 | Physical iOS CPU and memory | iOS 17.4 or later, a running development-signed app with `get-task-allow`, a mounted developer disk image, and Xcode/LLDB detached. |
 | Display FPS | Android 12 or later with FrameTimeline support, or a physical iOS device running iOS 17.4 or later. iOS simulators do not support Display FPS. |
-| Profile analysis | A local TraceSift installation, found on `PATH` or through `TRACE_SIFT_COMMAND`. |
+| Testing Studio | A booted iOS simulator or Android emulator, plus an existing e2e project with its dependencies installed and a target bundle ID in `e2e.config.*`. |
+| TraceSift profile analysis (macOS or Linux) | The TraceSift CLI installed with `npm install -g @callstack/tracesift`, initialized once with `tracesift init`, and found on `PATH` or through `TRACE_SIFT_COMMAND`. |
 
 Simulator tools use the full Xcode installation selected by `xcode-select` (or
 `DEVELOPER_DIR`), including its Swift compatibility libraries. Custom Xcode names
@@ -204,7 +218,7 @@ open Mobile Dev from the sidebar; in Cursor, ask **"Open Mobile Dev"** in an age
 Pick a device from the toolbar; selecting a stopped simulator or AVD
 boots it. Choose additional iOS or Android devices from **+ Add device** in the tab strip to open them side by side. Drag a device tab to an edge to split the view, or into another group to collect its tabs.
 
-Click an iOS simulator or Android screen to focus it, then press **Command-V** to
+Click an iOS simulator or Android screen to focus it, then press **Ctrl+V** on Windows or **Command-V** on macOS to
 paste text into the device. Paste accepts up to 4,096 printable US-ASCII characters;
 line breaks and other characters show a notice without sending partial text.
 
@@ -214,8 +228,10 @@ Ask your agent to work with your app, for example:
 - “Read the app logs and help me fix this error.”
 - “Record CPU and memory for 30 seconds while I scroll checkout.”
 - “Compare these two performance recordings.”
+- “Show me the App Intelligence for this project.”
+- “Record an e2e test for the checkout flow.”
 
-Open Logs, Performance, Storage, or TraceSift to inspect the selected device. Use Screenshot to attach
+Open **Tools** and choose **App Intel**, Testing, Logs, Performance, Storage, or TraceSift. App Intelligence, shown as **App Intel** in the Tools menu, is available in Mobile Dev 0.1.183 and later and analyzes a project without a device. If **App Intel** is missing, update Mobile Dev, fully quit and reopen your host, then start a new conversation. Testing records against a simulator or emulator; the other device tools inspect the selected device. Use Screenshot to attach
 an image to your next message, or Select to annotate an element or region with an
 instruction. Physical iOS supports taps and drags; keyboard and hardware-button
 controls are unavailable.
@@ -226,6 +242,8 @@ Detailed guides are available for
 [devices](https://github.com/callstackincubator/mobile-dev/blob/main/docs/devices.md),
 [logs](https://github.com/callstackincubator/mobile-dev/blob/main/docs/logs.md),
 [performance](https://github.com/callstackincubator/mobile-dev/blob/main/docs/performance.md),
+[App Intelligence](https://incubator.callstack.com/codex-mobile-dev-plugin/docs/app-intelligence),
+[Testing](https://incubator.callstack.com/codex-mobile-dev-plugin/docs/testing),
 and [MCP tools](https://github.com/callstackincubator/mobile-dev/blob/main/docs/mcp-tools.md).
 [Architecture](https://github.com/callstackincubator/mobile-dev/blob/main/docs/architecture.md) explains how the hosts share the server
 and panel.

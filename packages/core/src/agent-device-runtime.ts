@@ -4,9 +4,9 @@ import type { RequestOptions } from "@modelcontextprotocol/sdk/shared/protocol.j
 import { CallToolResultSchema, type CallToolRequest, type CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import * as Sentry from "@sentry/node";
 import { execFile } from "node:child_process";
-import { mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { startStorageMetrics } from "./storage-metrics.ts";
@@ -22,6 +22,28 @@ export type AgentDeviceBackend = {
 type State = { directory: string; stopStorageMetrics: () => void };
 
 /**
+ * Claims the one agent-device state directory every subsystem in this server process shares.
+ *
+ * App Flow also starts agent-device clients and CLI commands. Publishing a newly-created directory
+ * through the process environment lets those clients join this runtime's daemon instead of
+ * becoming a second owner of the same simulator. An operator-supplied directory still wins.
+ */
+export async function claimAgentDeviceStateDirectory(
+  env: NodeJS.ProcessEnv = process.env,
+  create: (prefix: string) => Promise<string> = mkdtemp,
+): Promise<string> {
+  const configured = env.AGENT_DEVICE_STATE_DIR?.trim();
+  if (configured) return resolve(configured);
+  const directory = await create(join(tmpdir(), "mobile-dev-agent-device-"));
+  // App Flow may have pinned its directory while mkdtemp was in flight. Join that winner instead
+  // of overwriting it and splitting the two clients across daemons again.
+  const concurrentlyConfigured = env.AGENT_DEVICE_STATE_DIR?.trim();
+  if (concurrentlyConfigured) return resolve(concurrentlyConfigured);
+  env.AGENT_DEVICE_STATE_DIR = directory;
+  return directory;
+}
+
+/**
  * The bundled agent-device runtime: its CLI's MCP server in a process of its own, with a
  * state directory for this server. It starts on the first command and again after an
  * unexpected exit; `close` stops its daemon and releases its runner leases.
@@ -29,7 +51,7 @@ type State = { directory: string; stopStorageMetrics: () => void };
 export class AgentDeviceRuntime {
   private readonly cli: string;
   private readonly config: string;
-  private state?: Promise<State>;
+  private state?: State;
   private starting?: Promise<Client>;
   /** The connected client; only its unexpected exit restarts the runtime. */
   private client?: Client;
@@ -70,7 +92,9 @@ export class AgentDeviceRuntime {
   }
 
   private async createState(): Promise<State> {
-    const directory = await mkdtemp(join(tmpdir(), "mobile-dev-agent-device-"));
+    const directory = await claimAgentDeviceStateDirectory();
+    // App Flow and Testing can pin this as the daemon's working directory before it exists.
+    await mkdir(directory, { recursive: true, mode: 0o700 });
     console.error(`[mobile-dev] agent-device state directory: ${directory}`);
     const stopStorageMetrics = startStorageMetrics({ agent_device_state: directory, apple_runner_cache: join(homedir(), ".agent-device/apple-runner") });
     return { directory, stopStorageMetrics };
@@ -78,7 +102,7 @@ export class AgentDeviceRuntime {
 
   private async start() {
     const startedAt = performance.now();
-    const { directory } = await (this.state ??= this.createState());
+    const { directory } = this.state ??= await this.createState();
     const client = new Client({ name: "mobile-dev-agent-device", version: "1" });
     const transport = new StdioClientTransport({ command: process.execPath, args: [this.cli, "mcp"], cwd: directory, env: this.environment(directory), stderr: "inherit" });
     // A start that fails closes its client too; connect reports that instead.
@@ -97,7 +121,8 @@ export class AgentDeviceRuntime {
   async close() {
     if (this.closing) return;
     this.closing = true;
-    const [client, state] = await Promise.all([this.starting?.catch(() => undefined), this.state?.catch(() => undefined)]);
+    const client = await this.starting?.catch(() => undefined);
+    const state = this.state;
     try { await client?.close(); }
     finally {
       state?.stopStorageMetrics();

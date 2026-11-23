@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 import { downloadedPanelRuntime, PANEL_RUNTIME_PARTS, panelRuntimeDirectory, panelRuntimeReleaseSchema, panelRuntimePath, PanelRuntimeUnavailableError, usePanelRuntime, type PanelRuntimeRelease } from "../src/panel-runtime.ts";
-import { PANEL_PARTS } from "../../../tooling/host-runtime.mjs";
+import { DOWNLOADED_RUNTIME_PARTS } from "../../../tooling/host-runtime.mjs";
 
 /** A runtime archive laid out like dist/, with extra entries a tampered archive might hold. */
 async function archive(t: test.TestContext, extra?: (root: string) => Promise<string[]>) {
@@ -21,7 +21,7 @@ async function archive(t: test.TestContext, extra?: (root: string) => Promise<st
   await writeFile(join(root, "baguette/Baguette"), "#!/bin/sh\necho baguette\n");
   await chmod(join(root, "baguette/Baguette"), 0o755);
   await mkdir(join(root, "serve-emu/src"), { recursive: true });
-  await writeFile(join(root, "serve-emu/src/cli.mjs"), "");
+  await writeFile(join(root, "serve-emu/src/cli.mjs"), 'console.log("serve-emu");');
   await mkdir(join(root, "ios-mirror"));
   await writeFile(join(root, "ios-mirror/darwin-arm64.node"), "addon");
   await writeFile(join(root, "ios-mirror-service.mjs"), "");
@@ -32,6 +32,9 @@ async function archive(t: test.TestContext, extra?: (root: string) => Promise<st
     await writeFile(executable, "#!/bin/sh\n");
     await chmod(executable, 0o755);
   }
+  const cliDirectory = join(root, "e2e/node_modules/e2e/dist/cli");
+  await mkdir(cliDirectory, { recursive: true });
+  await writeFile(join(cliDirectory, "bin.js"), 'console.log("e2e");');
   const members = [...PANEL_RUNTIME_PARTS, ...await extra?.(root) ?? []];
   const file = join(directory, "runtime.tar.gz");
   execFileSync("tar", ["-czf", file, "-C", root, ...members], { env: { ...process.env, COPYFILE_DISABLE: "1" } });
@@ -56,7 +59,7 @@ async function serve(t: test.TestContext, respond: () => { status: number; body?
 }
 
 test("the runtime parts match the parts packaging leaves out", () => {
-  assert.deepEqual([...PANEL_RUNTIME_PARTS], PANEL_PARTS);
+  assert.deepEqual([...PANEL_RUNTIME_PARTS], DOWNLOADED_RUNTIME_PARTS);
 });
 
 test("the runtime downloads once, verifies, and is shared by later servers", async t => {
@@ -64,23 +67,26 @@ test("the runtime downloads once, verifies, and is shared by later servers", asy
   const server = await serve(t, () => ({ status: 200, body: bytes }));
   const pinned = { ...release, url: server.url };
   const first = downloadedPanelRuntime(pinned, data);
-  const [root, again] = await Promise.all([first(), first()]);
+  const [root, again] = await Promise.all([first.ensure(), first.ensure()]);
   assert.equal(root, again);
   assert.equal(root, join(data, `1.2.3-${release.sha256.slice(0, 12)}`));
-  assert.equal(execFileSync(join(root, "baguette/Baguette"), { encoding: "utf8" }), "baguette\n");
+  assert.equal(execFileSync(process.execPath, [join(root, "serve-emu/src/cli.mjs")], { encoding: "utf8" }).trim(), "serve-emu");
+  if (process.platform !== "win32") assert.equal(execFileSync(join(root, "baguette/Baguette"), { encoding: "utf8" }), "baguette\n");
   assert.equal(server.requests(), 1);
   // Another server, as another session starts, finds the complete folder.
-  assert.equal(await downloadedPanelRuntime(pinned, data)(), root);
+  assert.equal(await downloadedPanelRuntime(pinned, data).ensure(), root);
   assert.equal(server.requests(), 1);
   assert.deepEqual(await readdir(data), [`1.2.3-${release.sha256.slice(0, 12)}`]);
-  usePanelRuntime(first);
+  usePanelRuntime(first.ensure);
   assert.equal(await panelRuntimePath("serve-emu/src/cli.mjs"), join(root, "serve-emu/src/cli.mjs"));
+  const e2e = await panelRuntimePath("e2e");
+  assert.equal(e2e, join(root, "e2e"));
 });
 
 test("an archive that does not match its pin is refused and leaves nothing behind", async t => {
   const { release, data } = await archive(t);
   for (const pinned of [{ ...release, sha256: "0".repeat(64) }, { ...release, bytes: release.bytes - 1 }]) {
-    await assert.rejects(downloadedPanelRuntime(pinned, data)(), (error: Error) => {
+    await assert.rejects(downloadedPanelRuntime(pinned, data).ensure(), (error: Error) => {
       assert.ok(error instanceof PanelRuntimeUnavailableError);
       assert.match(error.message, /does not match|larger than/);
       return true;
@@ -89,11 +95,19 @@ test("an archive that does not match its pin is refused and leaves nothing behin
   assert.deepEqual(await readdir(data), []);
 });
 
-test("an archive with files outside the parts or with links is refused", async t => {
+test("an archive with files outside the parts is refused", async t => {
   const outside = await archive(t, async root => { await writeFile(join(root, "payload.sh"), ""); return ["payload.sh"]; });
-  await assert.rejects(downloadedPanelRuntime(outside.release, outside.data)(), /outside the device runtime/);
-  const linked = await archive(t, async root => { await symlink("/etc/hosts", join(root, "ios-mirror/hosts")); return []; });
-  await assert.rejects(downloadedPanelRuntime(linked.release, linked.data)(), /links or special files/);
+  await assert.rejects(downloadedPanelRuntime(outside.release, outside.data).ensure(), /outside the device runtime/);
+});
+
+test("an archive with links is refused", async t => {
+  const linked = await archive(t, async root => { await symlink("../ios-mirror-service.mjs", join(root, "ios-mirror/hosts")); return []; })
+    .catch(error => {
+      if (process.platform === "win32" && error.code === "EPERM") { t.skip("Creating symlinks requires Developer Mode on Windows."); return; }
+      throw error;
+    });
+  if (!linked) return;
+  await assert.rejects(downloadedPanelRuntime(linked.release, linked.data).ensure(), /links or special files/);
   assert.deepEqual(await readdir(linked.data), []);
 });
 
@@ -102,14 +116,14 @@ test("an unreachable release is an expected failure that the next open retries",
   let status = 404;
   const server = await serve(t, () => ({ status, body: status === 200 ? bytes : undefined }));
   const runtime = downloadedPanelRuntime({ ...release, url: server.url }, data);
-  await assert.rejects(runtime(), (error: Error) => {
+  await assert.rejects(runtime.ensure(), (error: Error) => {
     assert.ok(error instanceof ExpectedOperationError);
     assert.equal(error.outcome, "download_failed");
     assert.match(error.message, /HTTP 404/);
     return true;
   });
   status = 200;
-  assert.match(await runtime(), /1\.2\.3-/);
+  assert.match(await runtime.ensure(), /1\.2\.3-/);
   assert.equal(server.requests(), 2);
 });
 
@@ -123,7 +137,7 @@ test("a new version keeps the newest other version and removes older ones", asyn
     const time = new Date(Date.now() - age * 60 * 60_000);
     await utimes(path, time, time);
   }
-  await downloadedPanelRuntime(release, data)();
+  await downloadedPanelRuntime(release, data).ensure();
   // Pruning runs after the runtime is ready; give it time on a loaded machine.
   await t.waitFor(async () => assert.deepEqual((await readdir(data)).sort(), ["1.1.0-bbbbbbbbbbbb", `1.2.3-${release.sha256.slice(0, 12)}`]), { timeout: 15_000 });
 });
@@ -131,13 +145,14 @@ test("a new version keeps the newest other version and removes older ones", asyn
 test("a prerelease pins and installs its runtime like a release", async t => {
   const { release, data } = await archive(t);
   const pinned = panelRuntimeReleaseSchema.parse({ ...release, version: "0.1.172-test.1" });
-  assert.equal(await downloadedPanelRuntime(pinned, data)(), join(data, `0.1.172-test.1-${release.sha256.slice(0, 12)}`));
+  assert.equal(await downloadedPanelRuntime(pinned, data).ensure(), join(data, `0.1.172-test.1-${release.sha256.slice(0, 12)}`));
   // A later release replaces it like any other version.
-  await downloadedPanelRuntime({ ...release, version: "0.1.172" }, data)();
+  await downloadedPanelRuntime({ ...release, version: "0.1.172" }, data).ensure();
   assert.equal((await readdir(data)).length, 2);
 });
 
 test("Claude Code's plugin data folder holds the runtime when it provides one", () => {
-  assert.equal(panelRuntimeDirectory({ CLAUDE_PLUGIN_DATA: "/data/mobile-dev" }), "/data/mobile-dev/panel-runtime");
-  assert.match(panelRuntimeDirectory({}), /Library\/Caches\/mobile-dev\/panel-runtime$/);
+  assert.equal(panelRuntimeDirectory({ CLAUDE_PLUGIN_DATA: "/data/mobile-dev" }), join("/data/mobile-dev", "panel-runtime"));
+  const cache = process.platform === "win32" ? join("AppData", "Local") : join("Library", "Caches");
+  assert.ok(panelRuntimeDirectory({}).endsWith(join(cache, "mobile-dev", "panel-runtime")));
 });

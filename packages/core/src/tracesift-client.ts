@@ -6,21 +6,26 @@ import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { createServer } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
-import { traceSiftAnalysisSchema, traceSiftHandoffSchema, type TraceSiftAnalysis, type TraceSiftProfileType, type TraceSiftReactHandoff, type TraceSiftTaskHandoff } from "@mobile-dev/shared/tracesift.ts";
+import { traceSiftAnalysisSchema, traceSiftHandoffSchema, type TraceSiftAnalysis, type TraceSiftProfileType, type TraceSiftReactHandoff, type TraceSiftSetupReason, type TraceSiftTaskHandoff } from "@mobile-dev/shared/tracesift.ts";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 
 const STARTUP_TIMEOUT_MS = 60_000;
 const REQUEST_TIMEOUT_MS = 10 * 60_000;
 const EXPLORE_TIMEOUT_MS = 15_000;
+const SETUP_TIMEOUT_MS = 5 * 60_000;
+const SETUP_DIAGNOSTICS_MAX_BYTES = 16_384;
 /** Health only proves integration API v1, which predates the Explore endpoints. */
 const EXPLORE_UNSUPPORTED = "This TraceSift service cannot open findings in the panel. Update TraceSift and restart it, or use Open in browser.";
 type Descriptor = { version: string; apiVersion: 1; pid: number; childPid: number; instance: string; baseUrl: string; token: string; startedAt: number };
 
 export class TraceSiftError extends ExpectedOperationError {
   readonly kind: "setup" | "version" | "startup" | "request" | "response";
-  constructor(message: string, kind: "setup" | "version" | "startup" | "request" | "response") {
+  readonly setupReason?: TraceSiftSetupReason;
+  constructor(message: string, kind: "setup" | "version" | "startup" | "request" | "response",
+    setupReason?: TraceSiftSetupReason) {
     super("invalid_input", message);
     this.kind = kind;
+    this.setupReason = setupReason;
   }
 }
 
@@ -29,24 +34,29 @@ function processAlive(pid: number) {
   try { process.kill(pid, 0); return true; } catch (error) { return error instanceof Error && "code" in error && error.code === "EPERM"; }
 }
 
+// The published @callstack/tracesift CLI declares macOS and Linux as its supported OSes.
+function requireTraceSiftHost() {
+  if (process.platform === "win32") throw new TraceSiftError("TraceSift profile analysis requires a macOS or Linux host.", "version", "unsupported");
+}
+
 async function parseDescriptor(path: string): Promise<Descriptor | undefined> {
   let raw: unknown;
   try {
     const metadata = await stat(path);
-    if ((metadata.mode & 0o077) !== 0) throw new TraceSiftError("TraceSift service.json permissions are unsafe. Restart TraceSift so it recreates the file with mode 0600.", "setup");
+    if ((metadata.mode & 0o077) !== 0) throw new TraceSiftError("TraceSift service.json permissions are unsafe. Restart TraceSift so it recreates the file with mode 0600.", "setup", "startup_failed");
     raw = JSON.parse(await readFileAsync(path, "utf8"));
   } catch (error) {
     if (error instanceof TraceSiftError) throw error;
     if (error instanceof Error && "code" in error && error.code === "ENOENT") return;
-    throw new TraceSiftError("TraceSift service.json could not be read. Stop TraceSift, remove the stale file if no process is running, and retry.", "setup");
+    throw new TraceSiftError("TraceSift service.json could not be read. Stop TraceSift, remove the stale file if no process is running, and retry.", "setup", "startup_failed");
   }
-  if (typeof raw !== "object" || raw === null) throw new TraceSiftError("TraceSift service.json is invalid. Restart TraceSift.", "setup");
+  if (typeof raw !== "object" || raw === null) throw new TraceSiftError("TraceSift service.json is invalid. Restart TraceSift.", "setup", "startup_failed");
   const value = raw as Record<string, unknown>;
-  if (value.apiVersion !== 1) throw new TraceSiftError("This TraceSift service uses an incompatible integration API. Update TraceSift and restart it.", "version");
+  if (value.apiVersion !== 1) throw new TraceSiftError("This TraceSift service uses an incompatible integration API. Update TraceSift and restart it.", "version", "unsupported");
   if (typeof value.baseUrl !== "string" || !/^http:\/\/127\.0\.0\.1:\d+$/.test(value.baseUrl)
     || typeof value.token !== "string" || value.token.length < 16 || typeof value.instance !== "string"
     || typeof value.version !== "string" || typeof value.pid !== "number" || typeof value.childPid !== "number"
-    || typeof value.startedAt !== "number") throw new TraceSiftError("TraceSift service.json is invalid. Restart TraceSift.", "setup");
+    || typeof value.startedAt !== "number") throw new TraceSiftError("TraceSift service.json is invalid. Restart TraceSift.", "setup", "startup_failed");
   return value as Descriptor;
 }
 
@@ -97,6 +107,7 @@ export class TraceSiftClient {
   }
 
   private async start(signal?: AbortSignal): Promise<Descriptor> {
+    requireTraceSiftHost();
     const reusable = await this.existing(signal);
     if (reusable) return reusable;
     const port = await freePort();
@@ -105,7 +116,7 @@ export class TraceSiftClient {
       child = spawn(this.command, ["start", "--port", String(port), "--no-open"], {
         stdio: ["ignore", "ignore", "pipe"], env: { ...process.env, TRACE_SIFT_HOME: this.home },
       });
-    } catch { throw new TraceSiftError("TraceSift is not installed. Install @callstack/tracesift, run `tracesift init`, and retry.", "setup"); }
+    } catch { throw new TraceSiftError("TraceSift is not installed. Run `npm install -g @callstack/tracesift`, then `tracesift init`.", "setup", "missing_cli"); }
     this.child = child;
     let spawnError: unknown;
     let exited = false;
@@ -117,16 +128,23 @@ export class TraceSiftClient {
     const deadline = Date.now() + STARTUP_TIMEOUT_MS;
     while (Date.now() < deadline) {
       signal?.throwIfAborted();
-      if (spawnError) throw new TraceSiftError("TraceSift could not start. Install @callstack/tracesift, run `tracesift init`, and retry.", "setup");
+      if (spawnError) {
+        const missing = spawnError instanceof Error && "code" in spawnError && spawnError.code === "ENOENT";
+        if (missing) throw new TraceSiftError("TraceSift is not installed or is not available to Mobile Dev. Run `npm install -g @callstack/tracesift`, then `tracesift init`.", "setup", "missing_cli");
+        throw new TraceSiftError("TraceSift could not start. Check the installation and retry.", "startup", "startup_failed");
+      }
       const descriptor = await this.existing(signal);
       if (descriptor) return descriptor;
       if (exited && /another tracesift operation/i.test(diagnostics) === false) {
-        if (/node\.js|unsupported|platform|architecture/i.test(diagnostics)) throw new TraceSiftError("This TraceSift installation does not support the current Node.js version or platform. Update Node and TraceSift, then retry.", "version");
-        throw new TraceSiftError("TraceSift could not start. Run `tracesift init`, then retry or start `tracesift start --no-open` manually.", "setup");
+        if (/node\.js|unsupported|platform|architecture/i.test(diagnostics)) throw new TraceSiftError("This TraceSift installation does not support the current Node.js version or platform. Update Node and TraceSift, run `tracesift init`, then retry.", "version", "unsupported");
+        if (/tracesift init|install the app|installation is incomplete|matching this cli release/i.test(diagnostics)) {
+          throw new TraceSiftError("TraceSift is installed, but its app is missing or does not match this CLI. Run `tracesift init`, then retry.", "setup", "needs_init");
+        }
+        throw new TraceSiftError("TraceSift could not start. Retry, or run `tracesift start --no-open` in a terminal to see its startup error.", "startup", "startup_failed");
       }
       await delay(200, undefined, { signal });
     }
-    throw new TraceSiftError("TraceSift did not become ready within 60 seconds. Run `tracesift init`, then retry or start `tracesift start --no-open` manually.", "startup");
+    throw new TraceSiftError("TraceSift did not become ready within 60 seconds. Retry, or run `tracesift start --no-open` in a terminal to see its startup error.", "startup", "startup_failed");
   }
 
   private service(signal?: AbortSignal) {
@@ -134,6 +152,55 @@ export class TraceSiftClient {
   }
 
   async readyService(signal?: AbortSignal) { await this.service(signal); }
+
+  private runSetupCommand(command: string, args: string[], label: string, signal?: AbortSignal,
+    env: NodeJS.ProcessEnv = process.env) {
+    return new Promise<void>((resolve, reject) => {
+      let child: ChildProcess;
+      try { child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], env }); }
+      catch { reject(new TraceSiftError(`${label} could not start because ${command} is not available to Mobile Dev. Run the command in a terminal instead.`, "setup", "missing_cli")); return; }
+      let diagnostics = "";
+      let settled = false;
+      const append = (chunk: unknown) => {
+        if (diagnostics.length < SETUP_DIAGNOSTICS_MAX_BYTES) diagnostics += String(chunk).slice(0, SETUP_DIAGNOSTICS_MAX_BYTES - diagnostics.length);
+      };
+      child.stdout?.setEncoding("utf8");
+      child.stderr?.setEncoding("utf8");
+      child.stdout?.on("data", append);
+      child.stderr?.on("data", append);
+      const finish = (error?: Error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        signal?.removeEventListener("abort", abort);
+        if (error) reject(error); else resolve();
+      };
+      const abort = () => { child.kill("SIGTERM"); finish(signal?.reason instanceof Error ? signal.reason : new Error(`${label} was cancelled.`)); };
+      const timeout = setTimeout(() => { child.kill("SIGTERM"); finish(new TraceSiftError(`${label} did not finish within five minutes. Run the command in a terminal to continue.`, "setup", "startup_failed")); }, SETUP_TIMEOUT_MS);
+      child.once("error", error => {
+        const missing = "code" in error && error.code === "ENOENT";
+        finish(missing
+          ? new TraceSiftError(`${label} could not start because ${command} is not available to Mobile Dev. Run the command in a terminal instead.`, "setup", "missing_cli")
+          : new TraceSiftError(`${label} could not start.`, "setup", "startup_failed"));
+      });
+      child.once("exit", code => {
+        const detail = diagnostics.trim();
+        finish(code === 0 ? undefined : new TraceSiftError(detail || `${label} exited with code ${code}.`, "setup", "startup_failed"));
+      });
+      if (signal?.aborted) abort(); else signal?.addEventListener("abort", abort, { once: true });
+    });
+  }
+
+  async installCli(signal?: AbortSignal) {
+    requireTraceSiftHost();
+    await this.runSetupCommand("npm", ["install", "-g", "@callstack/tracesift"], "TraceSift installation", signal);
+  }
+
+  async initialize(signal?: AbortSignal) {
+    requireTraceSiftHost();
+    await this.runSetupCommand(this.command, ["init"], "TraceSift initialization", signal,
+      { ...process.env, TRACE_SIFT_HOME: this.home });
+  }
 
   private analysisPath(analysisId: string) {
     return join(this.home, "integrations", "mobile-dev", `${createHash("sha256").update(analysisId).digest("hex")}.json`);

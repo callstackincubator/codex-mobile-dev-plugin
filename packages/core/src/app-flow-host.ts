@@ -544,16 +544,18 @@ interface MutableRun extends AppFlowRunSnapshot {
   event?: AppFlowHostEvent;
 }
 
-function vendoredAgentDeviceRoot(): string | undefined {
+export function vendoredAgentDeviceRoot(): string | undefined {
   const roots = [
     join(dirname(fileURLToPath(import.meta.url)), "agent-device/node_modules/agent-device"),
     resolve(process.cwd(), "runtimes/agent-device/node_modules/agent-device"),
     resolve(process.cwd(), "../ai-harness/node_modules/agent-device"),
+    // Running from source rather than from a packaged dist/, where the vendored runtime is a workspace.
+    resolve(process.cwd(), "packages/runtimes/agent-device/node_modules/agent-device"),
   ];
   return roots.find(root => existsSync(join(root, "dist/src/index.js")));
 }
 
-async function loadVendoredAgentDevice(): Promise<{ createAgentDeviceClient(config?: Record<string, unknown>): any }> {
+export async function loadVendoredAgentDevice(): Promise<{ createAgentDeviceClient(config?: Record<string, unknown>): any }> {
   const root = vendoredAgentDeviceRoot();
   const entry = root ? join(root, "dist/src/index.js") : undefined;
   if (!entry) throw new Error("The bundled agent-device runtime is unavailable. Reinstall or rebuild Mobile Dev.");

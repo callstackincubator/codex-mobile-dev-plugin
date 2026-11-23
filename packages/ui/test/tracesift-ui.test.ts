@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { gzipSync } from "node:zlib";
 import { TraceSiftController } from "../src/tracesift-controller.ts";
+import { TraceSiftPanel } from "../src/tracesift-panel.ts";
 import { getUiTelemetryAttributes } from "../src/telemetry.ts";
 
 const analysis = {
@@ -16,6 +17,63 @@ const analysis = {
 };
 
 const hostContext = { theme: "light", availableDisplayModes: ["inline", "fullscreen"] };
+
+test("opening the TraceSift panel checks readiness before a profile is chosen", async () => {
+  const calls: unknown[] = [];
+  const app = {
+    getHostCapabilities: () => ({ serverTools: {} }), getHostContext: () => hostContext,
+    async callServerTool(input: unknown) {
+      calls.push(input);
+      return { content: [], structuredContent: { apiVersion: 1, status: "ready" } };
+    },
+  };
+  const panel = new TraceSiftPanel(app as never);
+  panel.show();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(calls, [{ name: "mobile_tracesift_status", arguments: {} }]);
+  assert.deepEqual(panel.controller.getSnapshot().readiness, { apiVersion: 1, status: "ready" });
+  panel.dispose();
+});
+
+test("TraceSift readiness keeps setup guidance separate from analysis errors", async () => {
+  const app = {
+    getHostCapabilities: () => ({ serverTools: {} }), getHostContext: () => hostContext,
+    async callServerTool() {
+      return { content: [], structuredContent: {
+        apiVersion: 1, status: "setup_required", reason: "missing_cli",
+        message: "Install TraceSift, then initialize it.",
+      } };
+    },
+  };
+  const controller = new TraceSiftController(app as never);
+  await controller.checkReadiness();
+  assert.equal(controller.getSnapshot().readiness?.status, "setup_required");
+  assert.equal(controller.getSnapshot().error, "");
+  controller.dispose();
+});
+
+test("TraceSift setup actions run from the panel and re-check readiness", async () => {
+  const calls: unknown[] = [];
+  const app = {
+    getHostCapabilities: () => ({ serverTools: {} }), getHostContext: () => hostContext,
+    async callServerTool(input: { name: string }) {
+      calls.push(input);
+      if (input.name === "mobile_initialize_tracesift") return { content: [], structuredContent: {
+        apiVersion: 1, action: "init", completed: true, message: "TraceSift initialized. Checking readiness…",
+      } };
+      return { content: [], structuredContent: { apiVersion: 1, status: "ready" } };
+    },
+  };
+  const controller = new TraceSiftController(app as never);
+  await controller.runSetup("init");
+  assert.deepEqual(calls, [
+    { name: "mobile_initialize_tracesift", arguments: {} },
+    { name: "mobile_tracesift_status", arguments: {} },
+  ]);
+  assert.equal(controller.getSnapshot().readiness?.status, "ready");
+  assert.equal(controller.getSnapshot().setupAction, undefined);
+  controller.dispose();
+});
 
 test("TraceSift Investigate fetches one authoritative handoff and sends it to the active chat", async () => {
   const calls: unknown[] = []; const messages: unknown[] = [];

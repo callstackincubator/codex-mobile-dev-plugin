@@ -2,6 +2,9 @@ import type { TestContext } from "node:test";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import assert from "node:assert/strict";
+import { sdkExecutable } from "../core/src/android-sdk.ts";
+import { systemCommands } from "../core/src/app-control/commands.ts";
 
 export async function fakeInspectionSdk(t: TestContext) {
   const sdk = await mkdtemp(join(tmpdir(), "mobile-dev-inspection-sdk-"));
@@ -14,13 +17,20 @@ export async function fakeInspectionSdk(t: TestContext) {
   });
   const tools = join(sdk, "platform-tools");
   await mkdir(tools);
-  await writeFile(join(tools, "adb"), `#!${process.execPath}
-const args = process.argv.slice(2);
-if (args[0] !== "-s" || args[1] !== "emulator-5554" || args[2] !== "shell") process.exit(1);
-if (args[3] === "wm" && args[4] === "size") console.log("Physical size: 1080x2400");
-else if (args[3] === "getprop") {
-  const properties = { "sys.boot_completed": "1", "ro.product.model": "sdk_gphone64_arm64", "ro.build.version.release": "16", "ro.build.version.sdk": "36" };
-  console.log(properties[args[4]] || "");
-} else process.exit(1);
-`, { mode: 0o755 });
+  const replies: Record<string, string> = {
+    "wm size": "Physical size: 1080x2400",
+    "getprop sys.boot_completed": "1",
+    "getprop ro.product.model": "sdk_gphone64_arm64",
+    "getprop ro.build.version.release": "16",
+    "getprop ro.build.version.sdk": "36",
+  };
+  const adb = join(tools, sdkExecutable("adb"));
+  await writeFile(adb, "", { mode: 0o755 });
+  t.mock.method(systemCommands, "run", async (file: string, args: string[]) => {
+    assert.equal(file, adb);
+    assert.deepEqual(args.slice(0, 3), ["-s", "emulator-5554", "shell"]);
+    const command = args.slice(3).join(" ");
+    assert.ok(Object.hasOwn(replies, command), `Unexpected adb shell command: ${command}`);
+    return replies[command] + "\n";
+  });
 }

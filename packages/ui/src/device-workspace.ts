@@ -1,6 +1,6 @@
 import { panelTargetPlatform, type PanelTarget } from "@mobile-dev/shared/panel-target.ts";
 import type { SimulatorDevice } from "@mobile-dev/shared/protocol.ts";
-import { initialPanelDevice } from "./device-layout.ts";
+import { initialPanelDevice, isDeviceActive } from "./device-layout.ts";
 import { DeviceInventory, platforms, type Platform } from "./device-inventory.ts";
 import type { HostBridge } from "./host-bridge.ts";
 import { createSimulatorPanel } from "./simulator-panel.ts";
@@ -104,11 +104,16 @@ export class DeviceWorkspace {
       }
     }
     const target = this.opening;
+    let message: string | undefined;
     if (target.deviceId || target.platform || target.kind) {
       const platform = panelTargetPlatform(target);
       const label = platform === "ios" ? "iOS device" : platform === "android" ? "Android device" : "device";
-      this.notice(`Requested ${label} unavailable. Connect it or choose another device.`);
-    } else this.opening = undefined;
+      message = `Requested ${label} unavailable. Connect it or choose another device.`;
+    } else if (this.inventory.ios.status?.localIosSupported === false) {
+      const android = this.inventory.android;
+      message = android.status?.setupHint || android.error;
+    }
+    if (message && message !== this.state.message) this.notice(message);
   }
 
   private add(platform: Platform, device: SimulatorDevice, boot: boolean, beside = this.state.active) {
@@ -184,6 +189,26 @@ export class DeviceWorkspace {
     if (key === this.state.active) return;
     this.update({ active: key });
     this.publishSelection();
+  }
+
+  focusPlatform(platform: Platform): boolean {
+    const { panes, visible, active } = this.state;
+    const matches = panes.filter(pane => pane.platform === platform && pane.device && visible.includes(pane.key));
+    const pane = matches.find(item => item.key === active) ?? matches[0];
+    if (!pane) return false;
+    this.activate(pane.key);
+    return true;
+  }
+
+  showDevice(platform: Platform, deviceId: string): boolean {
+    const { panes } = this.state;
+    if (panes.length === 0) return false;
+    const device = this.inventory[platform].status?.devices.find(item => item.udid === deviceId);
+    if (!device || !isDeviceActive(device)) return false;
+    const pane = panes.find(item => item.platform === platform && item.device?.udid === deviceId);
+    if (pane) this.activate(pane.key);
+    else this.add(platform, device, false);
+    return true;
   }
 
   setDockSelection(visible: number[], active: number) {

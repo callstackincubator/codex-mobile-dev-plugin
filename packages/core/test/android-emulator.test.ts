@@ -30,7 +30,8 @@ test("emulator boot launches headlessly and leaves the process running after rea
   const fake = fakeLauncher(); const controller = new AbortController();
   const result = await bootAndroidEmulator({ name: "Pixel_8", executable: "/sdk/emulator", signal: controller.signal, ready: async () => status }, fake.launch);
   assert.equal(result, status); assert.equal(fake.unrefs, 1);
-  assert.deepEqual(fake.calls[0], ["/sdk/emulator", ["-avd", "Pixel_8", "-no-window", "-no-boot-anim", "-gpu", "host"], { detached: true, stdio: "ignore", shell: false }]);
+  const snapshotArgs = process.platform === "win32" ? ["-no-snapshot-load", "-no-snapshot-save"] : [];
+  assert.deepEqual(fake.calls[0], ["/sdk/emulator", ["-avd", "Pixel_8", "-no-window", "-no-boot-anim", "-gpu", "host", ...snapshotArgs], { detached: true, stdio: "ignore", shell: false, windowsHide: true }]);
   controller.abort();
 });
 

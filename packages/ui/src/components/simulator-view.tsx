@@ -7,6 +7,7 @@ import type { Platform } from "../device-inventory";
 import { DeviceSettings } from "./device-settings";
 import { bindScreenAnnotations, ScreenAnnotationsStore } from "../screen-annotations";
 import { ScreenAnnotationOverlay, ScreenSelectButton } from "./screen-annotations";
+import { TestRecorderOverlay } from "./test-recorder-overlay";
 
 const deviceButtons: { action: string; icon: LucideIcon; label: string }[] = [
   { action: "home", icon: HouseIcon, label: "Home" },
@@ -14,7 +15,7 @@ const deviceButtons: { action: string; icon: LucideIcon; label: string }[] = [
 ];
 
 // The stream controller owns the canvas after mount; keep this subtree stable so log batches never reset a live device.
-export const SimulatorView = memo(function SimulatorView({ workspace, paneKey, platform, name, active }: { workspace: DeviceWorkspace; paneKey: number; platform: Platform; name: string; active: boolean }) {
+export const SimulatorView = memo(function SimulatorView({ workspace, paneKey, deviceId, platform, name, active }: { workspace: DeviceWorkspace; paneKey: number; deviceId?: string; platform: Platform; name: string; active: boolean }) {
   const [annotations] = useState(() => new ScreenAnnotationsStore());
   const label = platform === "ios" ? "iOS" : "Android";
   const sidebar = document.documentElement.dataset.view !== "workspace";
@@ -38,6 +39,7 @@ export const SimulatorView = memo(function SimulatorView({ workspace, paneKey, p
       </div>
       <div data-element="stopped" className="absolute inset-0 z-10 bg-background/70" hidden><Empty><EmptyHeader><EmptyMedia variant="icon"><PowerIcon /></EmptyMedia><EmptyTitle>Device stopped</EmptyTitle></EmptyHeader><EmptyContent><Button data-element="start-device" size="sm">Start device</Button></EmptyContent></Empty></div>
       <ScreenAnnotationOverlay store={annotations} />
+      <TestRecorderOverlay store={annotations} deviceId={deviceId} platform={platform} />
     </section>
     <footer className={sidebar ? "absolute bottom-2 right-2 z-30 flex items-center text-[10px] text-muted-foreground" : "flex h-11 shrink-0 items-center gap-x-3 border-t px-2 text-[10px] text-muted-foreground"}>
       <span data-element="notice" className="max-w-48 truncate rounded bg-background/90 px-1 text-xs" role="status" hidden><span data-element="notice-message" /></span>

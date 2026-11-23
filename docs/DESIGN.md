@@ -123,7 +123,7 @@ The README banner uses copy on the left and the large dithered workspace-and-pho
 - `website/src/components/home/HeroDemo.astro` and `annotation/`: the native dark annotation hero and responsive choreography.
 - `website/src/components/home/HomeSections.astro`: mobile tools (“A mobile IDE in your ADE”), environment setup, performance recording, storage inspection, and FAQ, in that order.
 - `website/src/pages/404.astro`: the approved empty-workspace message, requested address, recovery links, and hollow scene.
-- `website/src/content/docs/docs/`: Starlight guides for installation, devices, controls, logs, performance, profiles, storage, privacy, and terms.
+- `website/src/content/docs/docs/`: Starlight guides for installation, devices, controls, App Intelligence, App Flow, testing, logs, performance, profiles, storage, privacy, and terms.
 - `website/src/styles/theme.css` and `docs.css`: the dark docs palette, shared fonts, square controls, readable code, hairline sections, and navigation. `website/src/components/starlight/Head.astro` preloads the four fonts used above the fold to avoid a late font swap shifting the page.
 - `website/src/components/site/dither.ts`, `dither-host.ts`, and `dither.worker.ts`: scene geometry, visibility, sizing, and the worker renderer.
 - `.github/workflows/website.yml`: GitHub Pages builds and production publishing. `SITE_URL` sets the origin and `SITE_BASE` sets the repository path for navigation, Markdown, assets, and metadata. `website/vercel.json` hosts the same static output for previews.

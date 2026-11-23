@@ -8,14 +8,14 @@ export const SENTRY_SERVER_DSN = "https://2ee03a9449e1f1b48e3e7c7606b6f562@o4512
 export const SENTRY_NATIVE_DSN = "https://1deeefda39022a67df902c638dcf3c8f@o4512180958068736.ingest.de.sentry.io/4512181036318800";
 export const SENTRY_ORIGIN = "https://o4512180958068736.ingest.de.sentry.io";
 export const SENTRY_RELEASE = `mobile-dev@${PLUGIN_VERSION}`;
-/** Public token of the EU-resident Mixpanel project for product analytics. */
-export const MIXPANEL_TOKEN = "780e4817b73c1234479ad8d418d34e89";
+/** Public token of the Mobile Dev project in Anal. */
+export const ANALYTICS_TOKEN = "8f6bad25f85f55b745a41843c257a3c6";
 /**
- * Mixpanel's EU ingestion endpoint. `ip=0` stops Mixpanel from storing or geolocating the sender's IP;
- * `verbose=1` makes rejected batches say so, since Mixpanel answers them with HTTP 200 too.
+ * Anal's Mixpanel-compatible ingestion endpoints. `ip=0` disables IP-derived
+ * location enrichment, and `verbose=1` requests a structured JSON reply.
  */
-export const MIXPANEL_TRACK_URL = "https://api-eu.mixpanel.com/track?ip=0&verbose=1";
-export const MIXPANEL_ENGAGE_URL = "https://api-eu.mixpanel.com/engage?ip=0&verbose=1";
+export const ANALYTICS_TRACK_URL = "https://anal.margelo.com/track?ip=0&verbose=1";
+export const ANALYTICS_ENGAGE_URL = "https://anal.margelo.com/engage?ip=0&verbose=1";
 export const TELEMETRY_META_KEY = "mobile-dev/telemetry";
 export const TELEMETRY_INTERVAL_MS = 30_000;
 export const TELEMETRY_HOSTS = ["codex", "claude", "cursor", "mac", "other"] as const;
@@ -41,7 +41,7 @@ export function validateTelemetryEnvironment(value: unknown): TelemetryEnvironme
   throw new Error("Sentry environment must be development or release.");
 }
 
-export type Surface = "app-flow" | "logs" | "performance" | "storage" | "simulator" | "recording" | "comparison" | "tracesift";
+export type Surface = "app-flow" | "logs" | "performance" | "storage" | "simulator" | "recording" | "comparison" | "tracesift" | "app-intel" | "testing";
 export type TelemetryAttributes = Record<string, string | number | boolean>;
 type Options = NonNullable<Parameters<typeof init>[0]>;
 type ErrorEvent = Parameters<NonNullable<Options["beforeSend"]>>[0];
@@ -52,7 +52,7 @@ type Metric = Parameters<NonNullable<Options["beforeSendMetric"]>>[0];
 const frequentTools = new Set([
   "mobile_stream_input", "mobile_android_stream_input", "mobile_ios_mirror_input", "mobile_read_logs", "mobile_read_cpu",
   "mobile_read_display_fps", "mobile_logs_keep_alive", "mobile_log_sources", "mobile_performance_sources",
-  "mobile_read_performance_recording",
+  "mobile_read_performance_recording", "mobile_testing_runtime_progress",
   "mobile_appflow_status", "mobile_appflow_next_decision", "mobile_appflow_result",
   "mobile_list_simulators", "mobile_list_ios_devices", "mobile_list_android_devices",
   // agent-device's discovery and state lookups, as the plugin servers serve them.
@@ -77,8 +77,18 @@ export function scrubText(text: string): string {
   scrubbed = scrubbed.replace(/\b[A-Fa-f0-9]{24,}\b/g, "[identifier]");
   scrubbed = scrubbed.replace(/\b[^\s@]+@[^\s@]+\.[^\s@]+\b/g, "[email]");
   scrubbed = scrubbed.replace(/(?:\/Users\/|\/home\/)[^\s"')]+/g, "[local path]");
+  // An unquoted SDK or project path can contain spaces. Keep the error prefix
+  // and drop the rest of that line rather than guessing where the path ends.
+  scrubbed = scrubbed.replace(/(?:\b[a-z]:[\\/]|\\\\|file:\/\/)[^\r\n]*/gi, "[local path]");
   scrubbed = scrubbed.replace(/https?:\/\/[^\s"')]+/g, "[url]");
   return scrubbed.slice(0, 512);
+}
+
+function scrubWindowsFrame(path: string) {
+  if (!/^(?:(?:file:\/\/)?\/?[a-z]:[\\/]|\\\\|file:\/\/[^/])/i.test(path)) return path;
+  const file = path.split(/[\\/]/).at(-1);
+  return file && ["server.mjs", "app-intelligence-worker.mjs", "ios-mirror-service.mjs"].includes(file)
+    ? "app:///" + file : "[local path]";
 }
 
 export function errorReportSignature(error: unknown, tags: Record<string, string>): string {
@@ -118,11 +128,16 @@ export function scrubErrorEvent(event: ErrorEvent, hint?: ErrorHint): ErrorEvent
     if (exception.value) exception.value = scrubText(exception.value);
     if (exception.mechanism) delete exception.mechanism.data;
     for (const frame of exception.stacktrace?.frames ?? []) {
+      if (frame.filename) frame.filename = scrubWindowsFrame(frame.filename);
+      if (frame.abs_path) frame.abs_path = scrubWindowsFrame(frame.abs_path);
       delete frame.vars;
       delete frame.pre_context;
       delete frame.post_context;
       delete frame.context_line;
     }
+  }
+  for (const image of event.debug_meta?.images ?? []) {
+    if (image.type === "sourcemap") image.code_file = scrubWindowsFrame(image.code_file);
   }
   if (event.contexts) {
     delete event.contexts.device;

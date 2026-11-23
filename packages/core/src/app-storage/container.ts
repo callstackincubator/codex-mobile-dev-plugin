@@ -174,7 +174,7 @@ export class AndroidContainer implements AppContainer {
   async reset() {
     let output: string;
     try { output = await this.commands.run(await this.commands.adb(), ["-s", this.serial, "shell", `pm clear ${this.bundleId}`], { timeout: 30000 }); }
-    catch (error) { throw commandError(error, "Clearing app data"); }
+    catch (error) { throw commandError(error, "Clearing app data", "adb_shell"); }
     if (!/Success/.test(output)) throw new ExpectedOperationError("invalid_input", `Clearing app data failed: ${output.trim().split("\n")[0] || "pm clear did not succeed."}`);
   }
 }
@@ -183,5 +183,5 @@ export function runAsError(error: unknown, action: string, bundleId: string): Er
   const output = commandOutput(error);
   if (/not debuggable/.test(output)) return new ExpectedOperationError("unsupported_platform", `${bundleId} is a release build. Android only allows reading app data of debuggable builds; Reset app data still works.`);
   if (/unknown package|Unknown package|is unknown/.test(output)) return new ExpectedOperationError("invalid_input", `${bundleId} is not installed on this device.`);
-  return commandError(error, action);
+  return commandError(error, action, "adb_shell");
 }

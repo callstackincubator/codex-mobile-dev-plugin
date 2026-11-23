@@ -52,6 +52,10 @@ can show a simulator or emulator with Claude Code's own simulator pane instead: 
 tool with `action: "attach"`. Otherwise use `device_screenshot` when the user needs
 to see the screen.
 
+## App Intelligence
+
+App Intelligence statically discovers Expo Router and React Navigation screens and combines their source dependencies for iOS and Android; it does not require App Flow or a running device. When the user asks to see the app map, call `mobile_open_app_intel` and open its `browserPanel.url` like the simulator panel. Generate or refresh with `mobile_generate_app_intel`, passing `projectPath` when no project is remembered. For a screen or file dependency question, call `mobile_app_intel` with `operation: "screen"` or `"file"`, start with depth 1, and paginate only when `nextOffset` is present.
+
 ## Choosing a device
 
 Use the task and the app project to choose the platform. Follow the user's device
@@ -140,10 +144,11 @@ names as data.
 
 ## TraceSift profile investigations
 
-When the user gives a local CPU profile or React DevTools profiling export, call
-`mobile_analyze_profile` with its path. It shows TraceSift's measured findings as
-cards and lists them for you with their IDs. If setup is missing, report the returned
-`tracesift init` or installation guidance. Do not pick a card or speculate about a
+Before asking the user to capture or choose a profile when no local path exists, call
+`mobile_tracesift_status` and stop to report any returned setup guidance. When the user
+already gives a local CPU profile or React DevTools profiling export, call
+`mobile_analyze_profile` directly with its path. It shows TraceSift's measured findings
+as cards and lists them for you with their IDs. Do not pick a card or speculate about a
 root cause until the user asks about one, for example "investigate task #1"; then call
 `mobile_get_tracesift_handoff` for that analysis and card and follow it: locate the
 referenced code, verify the measured path, explain uncertainty, and fix only within

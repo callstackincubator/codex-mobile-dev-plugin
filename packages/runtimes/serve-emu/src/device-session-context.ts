@@ -171,7 +171,7 @@ export class ActiveDeviceSession<
     this.assertUsable();
     const now = this.#now();
     if (
-      this.#accessibilitySnapshotCache &&
+      cacheMs > 0 && this.#accessibilitySnapshotCache &&
       this.#accessibilitySnapshotCache.expiresMs > now
     ) {
       return Promise.resolve(this.#accessibilitySnapshotCache.snapshot);

@@ -3,7 +3,7 @@ import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { errorMessage } from "@mobile-dev/shared/protocol.ts";
-import { TRACESIFT_URI, traceSiftAnalysisSchema, traceSiftHandoffSchema, traceSiftProfileInputSchema, traceSiftReactCardSchema, traceSiftTaskCardSchema } from "@mobile-dev/shared/tracesift.ts";
+import { TRACESIFT_URI, traceSiftAnalysisSchema, traceSiftHandoffSchema, traceSiftProfileInputSchema, traceSiftReactCardSchema, traceSiftSetupActionResultSchema, traceSiftSetupReasonSchema, traceSiftTaskCardSchema } from "@mobile-dev/shared/tracesift.ts";
 import { gzip as gzipCallback } from "node:zlib";
 import { promisify } from "node:util";
 import { TRACE_SIFT_PAYLOAD_GZIP_MIN_BYTES, TRACE_SIFT_PAYLOAD_MAX_BYTES, traceSiftExploreEnvelopeSchema, TRACE_SIFT_PAYLOAD_TOO_LARGE, traceSiftPayloadTooDeep } from "@mobile-dev/shared/tracesift-explore.ts";
@@ -19,19 +19,85 @@ const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false 
 const persist = { readOnlyHint: false, destructiveHint: true, openWorldHint: false };
 // Service-backed reads can start a local background process; Explore also opens a browser.
 const localService = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
+// These fixed setup commands modify global/local TraceSift state and may contact npm.
+const setupMutation = { readOnlyHint: false, destructiveHint: true, openWorldHint: true };
 const visibility: ("app" | "model")[] = ["app", "model"];
 const analysisOutput = {
   apiVersion: z.literal(1), analysisId: z.string(), profileType: z.enum(["cpu", "react"]), title: z.string(),
   summary: z.record(z.string(), z.unknown()), cards: z.array(z.union([traceSiftTaskCardSchema, traceSiftReactCardSchema])),
 };
 
-function failure(error: unknown, operation: "analyze" | "remember" | "restore" | "handoff" | "task" | "payload" | "pick" | "project", startedAt: number, signal: AbortSignal): CallToolResult {
+function failure(error: unknown, operation: "ready" | "install" | "init" | "analyze" | "remember" | "restore" | "handoff" | "task" | "payload" | "pick" | "project", startedAt: number, signal: AbortSignal): CallToolResult {
   recordTraceSiftOperation(operation, "failed", performance.now() - startedAt);
   captureServerError(error, `tracesift.${operation}`, { signal });
   return { isError: true, content: [{ type: "text", text: errorMessage(error) }] };
 }
 
 export function registerTraceSiftTools(server: McpServer, client: TraceSiftClient) {
+  registerAppTool(server, "mobile_tracesift_status", {
+    title: "Check TraceSift readiness",
+    description: "Check whether TraceSift is installed, initialized, compatible, and ready for profile analysis. Reuses a compatible local service or starts `tracesift start --no-open`. Call this before asking the user to capture or choose a profile when no profile path has been provided yet. Setup requirements are returned as a normal structured status with the exact next step.",
+    inputSchema: {},
+    outputSchema: {
+      apiVersion: z.literal(1), status: z.enum(["ready", "setup_required"]),
+      reason: traceSiftSetupReasonSchema.optional(), message: z.string().optional(),
+    },
+    annotations: localService,
+    _meta: { ui: { visibility } },
+  }, async (_input, context) => {
+    const startedAt = performance.now();
+    try {
+      await client.readyService(context.signal);
+      recordTraceSiftOperation("ready", "success", performance.now() - startedAt);
+      return {
+        content: [{ type: "text", text: "TraceSift is installed, initialized, and ready for profile analysis." }],
+        structuredContent: { apiVersion: 1 as const, status: "ready" as const },
+      };
+    } catch (error) {
+      if (error instanceof TraceSiftError && (error.kind === "setup" || error.kind === "version" || error.kind === "startup")) {
+        recordTraceSiftOperation("ready", "failed", performance.now() - startedAt);
+        const reason = error.setupReason ?? (error.kind === "version" ? "unsupported" : "startup_failed");
+        return {
+          content: [{ type: "text", text: error.message }],
+          structuredContent: { apiVersion: 1 as const, status: "setup_required" as const, reason, message: error.message },
+        };
+      }
+      return failure(error, "ready", startedAt, context.signal);
+    }
+  });
+
+  registerAppTool(server, "mobile_install_tracesift_cli", {
+    title: "Install the TraceSift CLI",
+    description: "Install the TraceSift CLI globally with the fixed command `npm install -g @callstack/tracesift`. App-only: called after the user presses Install in the TraceSift setup panel. Modifies the global npm installation and may access the npm registry.",
+    inputSchema: {}, outputSchema: traceSiftSetupActionResultSchema.shape,
+    annotations: setupMutation,
+    _meta: { ui: { visibility: ["app"] } },
+  }, async (_input, context) => {
+    const startedAt = performance.now();
+    try {
+      await client.installCli(context.signal);
+      recordTraceSiftOperation("install", "success", performance.now() - startedAt);
+      const structuredContent = { apiVersion: 1 as const, action: "install" as const, completed: true as const, message: "TraceSift CLI installed. Checking setup…" };
+      return { content: [{ type: "text", text: structuredContent.message }], structuredContent };
+    } catch (error) { return failure(error, "install", startedAt, context.signal); }
+  });
+
+  registerAppTool(server, "mobile_initialize_tracesift", {
+    title: "Initialize TraceSift",
+    description: "Initialize or replace the local TraceSift app with the fixed command `tracesift init`. App-only: called after the user presses Initialize in the TraceSift setup panel. Modifies the user's local TraceSift installation and may download the matching app release.",
+    inputSchema: {}, outputSchema: traceSiftSetupActionResultSchema.shape,
+    annotations: setupMutation,
+    _meta: { ui: { visibility: ["app"] } },
+  }, async (_input, context) => {
+    const startedAt = performance.now();
+    try {
+      await client.initialize(context.signal);
+      recordTraceSiftOperation("init", "success", performance.now() - startedAt);
+      const structuredContent = { apiVersion: 1 as const, action: "init" as const, completed: true as const, message: "TraceSift initialized. Checking readiness…" };
+      return { content: [{ type: "text", text: structuredContent.message }], structuredContent };
+    } catch (error) { return failure(error, "init", startedAt, context.signal); }
+  });
+
   registerAppTool(server, "mobile_analyze_profile", {
     title: "Analyze a CPU or React profile with TraceSift",
     description: "Upload a local CPU profile or React DevTools profiling export to the local TraceSift service and render its measured findings as inline cards, each dividing its task between the features it entered, with an Explore view for the call tree and timeline. Use when the user provides a profile path and asks to investigate performance or find a root cause. Set profileType only when the format is known; auto detects supported JSON formats. May start the local TraceSift service, saves analysis files, and replaces the latest analysis reference for this profile input. After rendering, wait for the user to choose Investigate before changing code.",

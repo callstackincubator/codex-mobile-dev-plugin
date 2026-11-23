@@ -8,7 +8,7 @@ import { pathToFileURL } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { PANEL_PARTS, releaseVersion } from "./host-runtime.mjs";
+import { DOWNLOADED_RUNTIME_PARTS, PANEL_PARTS, releaseVersion } from "./host-runtime.mjs";
 import { panelRuntimeArchive } from "./panel-runtime.mjs";
 import { codexOnlyPaths, pluginHost, pluginHosts } from "./plugin-hosts.mjs";
 
@@ -27,6 +27,8 @@ const panelTools = ["mobile_open_workspace", "mobile_open_simulator", "mobile_li
 // Every host's agent controls apps with agent-device's commands.
 const expectedTools = [...panels ? panelTools : ["mobile_render_performance_recording", "mobile_logs_session"], "device_open", "device_snapshot"];
 const panelFiles = PANEL_PARTS.map(part => `dist/${part}`);
+const omittedParts = panels ? DOWNLOADED_RUNTIME_PARTS : PANEL_PARTS;
+const omittedFiles = omittedParts.map(part => `dist/${part}`);
 // Packages that leave the panel's parts out pin their archive instead.
 const bundled = host.bundlesPanel;
 const packagedFiles = panels ? bundled ? panelFiles : ["dist/panel-runtime.json", "dist/browser-panel.html"] : [];
@@ -90,11 +92,25 @@ async function smokePanelRuntime(plugin, launch) {
   // The published release may not exist yet, so the copy pins this archive by its file.
   await writeFile(join(plugin, "dist/panel-runtime.json"), JSON.stringify({ ...pin, url: pathToFileURL(archive).href }));
   const data = join(temporary, "plugin data");
+  const testingProject = join(temporary, "empty testing project");
+  await mkdir(testingProject);
   await launch({ CLAUDE_PLUGIN_DATA: data }, async client => {
+    const config = await client.callTool({ name: "mobile_testing_project_config", arguments: { projectPath: testingProject } });
+    const configContent = JSON.stringify(config.content);
+    assert.notEqual(config.isError, true, configContent);
+    const cache = join(data, "panel-runtime");
+    const installed = await readdir(cache);
+    const hashPrefix = pin.sha256.slice(0, 12);
+    const folder = `${version}-${hashPrefix}`;
+    assert.deepEqual(installed, [folder]);
+    const runtime = join(cache, folder, "e2e");
+    assert.equal(config.structuredContent.runtime.root, runtime);
+    const cli = join(runtime, "node_modules/e2e/dist/cli/bin.js");
+    const cliVersion = execFileSync(process.execPath, [cli, "--version"], { encoding: "utf8" });
+    const reportedVersion = cliVersion.trim();
+    assert.equal(reportedVersion, config.structuredContent.runtime.e2eVersion);
     const started = await client.callTool({ name: "mobile_start_baguette", arguments: {} });
     assert.notEqual(started.isError, true, JSON.stringify(started.content));
-    const installed = await readdir(join(data, "panel-runtime"));
-    assert.deepEqual(installed, [`${version}-${pin.sha256.slice(0, 12)}`]);
     await smokeBrowserPanel(client);
   });
 }
@@ -132,7 +148,7 @@ async function smokeDesktopBundle() {
   for (const path of [manifest.server.entry_point, "dist/app.html", "dist/agent-device/tools.json", ...packagedFiles]) {
     await access(join(directory, path));
   }
-  if (bundled === false) for (const path of panelFiles) await assert.rejects(access(join(directory, path)), path);
+  if (bundled === false) for (const path of omittedFiles) await assert.rejects(access(join(directory, path)), path);
   // No Codex installation, no PATH Node lookup, and no dependency on package cwd.
   const args = manifest.server.mcp_config.args.map(arg => arg.replaceAll("${__dirname}", directory));
   for (const [environment, forms] of [["development", false], ["release", false], ["development", true]]) {
@@ -166,7 +182,7 @@ try {
   for (const path of ["LICENSE", "README.md", "PRIVACY.md", "dist/app.html", ...host.skills.map(skill => `skills/${basename(skill)}/SKILL.md`), "skills/agent-device/references/workflow.md", ...packagedFiles]) {
     await access(join(plugin, path));
   }
-  if (bundled === false) for (const path of panelFiles) await assert.rejects(access(join(plugin, path)), path);
+  if (bundled === false) for (const path of omittedFiles) await assert.rejects(access(join(plugin, path)), path);
   if (host.readme) assert.equal(await readFile(join(plugin, "README.md"), "utf8"), await readFile(host.readme, "utf8"));
   // Plugin directories reject symlinks, and agents/openai.yaml is Codex's skill metadata.
   for (const entry of await readdir(plugin, { recursive: true, withFileTypes: true })) {

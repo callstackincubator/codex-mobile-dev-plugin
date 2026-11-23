@@ -366,6 +366,21 @@ test("agent-device tools continue traces and report failures without native tool
   assert.equal(afterErrors.length, errors.length, "Expected unavailable devices must not produce Sentry issues");
 });
 
+test("Windows SDK and share paths are scrubbed while stack frames still match their source maps", () => {
+  const bundle = "file:///C:/Users/private%20user/plugin/dist/server.mjs";
+  const filtered = scrubErrorEvent({
+    message: "Failed to open D:\\Android Projects\\private project",
+    exception: { values: [{ value: "Missing \\\\private-host\\shared folder\\SDK", stacktrace: { frames: [
+      { filename: bundle, abs_path: "C:\\Users\\private user\\plugin\\dist\\server.mjs" },
+    ] } }] },
+    debug_meta: { images: [{ type: "sourcemap", code_file: bundle, debug_id: "example" }] },
+  });
+  assert.ok(filtered);
+  assert.doesNotMatch(JSON.stringify(filtered), /private|Android Projects/i);
+  assert.equal(filtered.exception?.values?.[0].stacktrace?.frames?.[0].abs_path, "app:///server.mjs");
+  assert.equal(filtered.debug_meta?.images?.[0].code_file, "app:///server.mjs");
+});
+
 test("error and streamed-span filters remove app payloads and local identifiers", () => {
   const traceId = "1".repeat(32);
   const spanId = "2".repeat(16);
@@ -477,6 +492,13 @@ test("UI trace context crosses the MCP bridge and handled server errors exclude 
   assert.equal(observedTags?.surface, "tracesift");
   assert.equal(observedTags?.view, "tracesift");
   assert.equal(observedTags?.profilePath, undefined);
+  await client.callTool({ name: "test_action", arguments: { secret: "PRIVATE_APP_INTEL_QUERY" }, _meta: {
+    [TELEMETRY_META_KEY]: { surface: "app-intel", view: "workspace", projectPath: "/Users/alice/private-app", screen: "PRIVATE_SCREEN" },
+  } });
+  assert.equal(observedTags?.surface, "app-intel");
+  assert.equal(observedTags?.view, "workspace");
+  assert.equal(observedTags?.projectPath, undefined);
+  assert.equal(observedTags?.screen, undefined);
   // Every host shares this server, so a known host value survives the allowlist; anything else is dropped.
   await client.callTool({ name: "test_action", arguments: { secret: "PRIVATE_HOST_ARGUMENT" }, _meta: {
     [TELEMETRY_META_KEY]: { surface: "logs", view: "workspace", host: "claude" },
@@ -494,14 +516,15 @@ test("UI trace context crosses the MCP bridge and handled server errors exclude 
   contains(encoded, "Handled tool failed");
   const eventItems = envelopes.flatMap(envelope => envelope[1]);
   const errors = eventItems.filter(item => item[0].type === "event");
-  // One handled failure per tool call above: logs, recording, comparison, App Flow, TraceSift and two host checks.
-  assert.equal(errors.length, 7);
+  // One handled failure per tool call above: logs, recording, comparison, App Flow,
+  // TraceSift, App Intelligence and two host checks.
+  assert.equal(errors.length, 8);
   const unavailable = new SimulatorUnavailableError("Expected stopped simulator");
   captureServerError(unavailable, "expected");
   await Sentry.flush();
   const afterItems = envelopes.flatMap(envelope => envelope[1]);
   const afterErrors = afterItems.filter(item => item[0].type === "event");
-  assert.equal(afterErrors.length, 7);
+  assert.equal(afterErrors.length, 8);
 });
 
 test("error filters retain only generated identity while metrics and spans omit user dimensions", async () => {
@@ -610,7 +633,7 @@ test("physical iOS discovery accepts an unreported transport and reports malform
   registerIosDeviceTools(server, async () => {
     const stdout = JSON.stringify(payload);
     const run = async () => ({ stdout });
-    return listIosDevices(undefined, run);
+    return listIosDevices(undefined, run, async () => []);
   });
   const client = new Client({ name: "test", version: "1" });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -1422,8 +1445,8 @@ test("browser session counts describe plugin resources and honor telemetry opt-o
   recordBrowserPanelSessions(0);
   recordBrowserPanelContext("stored", 2048);
   recordBrowserPanelContext("too_large");
-  recordPanelRuntime("downloaded", 1200, 7_000_000);
-  recordPanelRuntime("failed", 30, undefined, "network");
+  recordPanelRuntime("testing", "downloaded", 1200, 7_000_000);
+  recordPanelRuntime("panel", "failed", 30, undefined, "network");
   recordResourceSaving("ios", true, "success", 2500);
   recordResourceSaving("android", false, "failed", 100);
   await Sentry.flush();
@@ -1434,6 +1457,7 @@ test("browser session counts describe plugin resources and honor telemetry opt-o
   contains(sent, '"outcome":{"value":"too_large"');
   contains(sent, "panel_runtime.ready");
   contains(sent, "panel_runtime.download_bytes");
+  contains(sent, '"runtime":{"value":"testing"');
   contains(sent, "resource_saving.apply");
   contains(sent, "resource_saving.duration");
   contains(sent, '"reason":{"value":"network"');
@@ -1442,7 +1466,7 @@ test("browser session counts describe plugin resources and honor telemetry opt-o
   process.env.MOBILE_DEV_TELEMETRY = "off";
   recordBrowserPanelSessions(3);
   recordBrowserPanelContext("stored", 10);
-  recordPanelRuntime("cached", 5);
+  recordPanelRuntime("panel", "cached", 5);
   recordResourceSaving("ios", false, "success", 10);
   await Sentry.flush();
   assert.equal(JSON.stringify(envelopes), sent);
