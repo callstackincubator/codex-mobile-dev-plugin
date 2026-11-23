@@ -21,6 +21,12 @@ export function recordResourceSaving(platform: "ios" | "android", enabled: boole
   Sentry.metrics.distribution("resource_saving.duration", duration, { unit: "millisecond", attributes });
 }
 
+export function recordAndroidRamProfileBoot(duration: number, outcome: "booted" | "failed") {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = { component: "server", surface: "simulator", device_platform: "android", device_kind: "emulator", outcome };
+  Sentry.metrics.distribution("android.ram_profile.boot.duration", duration, { unit: "millisecond", attributes });
+}
+
 export function recordBrowserPanelSessions(active: number) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   Sentry.metrics.gauge("browser_panel.sessions", active, { attributes: { component: "server" } });

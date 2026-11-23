@@ -15,6 +15,7 @@ import { Baguette } from "../src/baguette.ts";
 import { createTestPlugin, fakeBaguette, fakeSimulatorInput, PNG } from "../../test-support/fixtures.ts";
 import { fakeInspectionSdk } from "../../test-support/android-inspection-fixtures.ts";
 import { createPanel } from "../src/panel-tools.ts";
+import { ResourceSaving } from "../src/resource-saving.ts";
 import { registerAndroidTools } from "../src/android-tools.ts";
 import type { PhysicalAndroidDevice } from "@mobile-dev/shared/android-devices.ts";
 
@@ -239,21 +240,19 @@ test("Android streams relay video, validate batches, and refuse a device switch"
 
 test("Android MCP flow lists without booting, captures, streams, and closes", async t => {
   const fake = await fakeAndroid(); const ios = await fakeBaguette();
-  const plugin = await createTestPlugin("<canvas></canvas>", { panel: createPanel({ baguette: new Baguette(ios.url), simulatorInput: fakeSimulatorInput(), copyScreenshot: async bytes => { assert.deepEqual(bytes, PNG); } }), android: fake.backend });
+  const resourceSaving = new ResourceSaving({ ramLimit: async () => undefined });
+  const plugin = await createTestPlugin("<canvas></canvas>", { panel: createPanel({ baguette: new Baguette(ios.url), resourceSaving, simulatorInput: fakeSimulatorInput(), copyScreenshot: async bytes => { assert.deepEqual(bytes, PNG); } }), android: fake.backend });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "android-test", version: "1" });
   t.after(async () => { await client.close(); await plugin.close(); await fake.close(); await ios.close(); });
   await plugin.server.connect(serverTransport); await client.connect(clientTransport);
   const listed = await client.callTool({ name: "mobile_list_android_devices", arguments: {} });
   assert.equal((listed.structuredContent?.devices as { udid: string }[])[0].udid, ID);
-  if (process.platform === "win32") {
-    assert.equal(fake.backend.resourceSaving, undefined, "a Windows boot must leave snapshot/RAM settings to the AVD");
-    const target = { platform: "android", id: ID };
-    const saving = await client.callTool({ name: "mobile_resource_saving", arguments: { target } });
-    assert.deepEqual(saving.structuredContent?.state, { supported: false, enabled: false, running: true, restartRequired: false });
-    const setting = await client.callTool({ name: "mobile_set_resource_saving", arguments: { target, enabled: true } });
-    assert.equal(setting.isError, true);
-  }
+  const target = { platform: "android", id: ID };
+  const saving = await client.callTool({ name: "mobile_resource_saving", arguments: { target } });
+  assert.deepEqual(saving.structuredContent?.state, { supported: false, enabled: false, running: true, restartRequired: false });
+  const setting = await client.callTool({ name: "mobile_set_resource_saving", arguments: { target, enabled: true } });
+  assert.equal(setting.isError, true, "an ineligible AVD cannot enable the RAM profile");
   assert.deepEqual(fake.backend.boots, []); assert.equal(fake.sockets.clients.size, 0);
   const captured = await client.callTool({ name: "mobile_android_capture_screenshot", arguments: { deviceId: ID } });
   assert.deepEqual(captured.content[0], { type: "image", mimeType: "image/png", data: PNG.toString("base64") });

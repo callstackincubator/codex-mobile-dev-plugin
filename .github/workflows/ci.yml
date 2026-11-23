@@ -64,6 +64,7 @@ jobs:
           apps/codex-plugin/test/mcp-launch.test.ts apps/codex-plugin/test/plugin-updates.test.ts
           packages/core/test/agent-device-runtime.test.ts
           packages/core/test/android-sdk.test.ts packages/core/test/android.test.ts packages/core/test/android-emulator.test.ts
+          packages/core/test/android-avd-ram.test.ts packages/core/test/resource-saving.test.ts
           packages/core/test/app-storage.test.ts packages/core/test/testing-run.test.ts packages/core/test/windows-adb-trace.test.ts
           packages/core/test/app-flow-presentations-bindings.test.ts packages/core/test/app-flow-typescript-runtime.test.ts
           packages/runtimes/test/serve-emu-node.test.ts packages/ui/test/simulator-panel.test.ts packages/ui/test/testing-panel.test.ts

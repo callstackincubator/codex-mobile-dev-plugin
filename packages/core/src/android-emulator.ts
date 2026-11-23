@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import type { Status } from "@mobile-dev/shared/protocol.ts";
+import { recordAndroidRamProfileBoot } from "./telemetry.ts";
 
 export function parseAvdName(stdout: string | undefined): string | undefined {
   const lines = stdout?.split(/\r?\n/).map(line => line.trim()).filter(Boolean) ?? [];
@@ -14,14 +15,30 @@ type BootOptions = {
   signal: AbortSignal;
   ready: () => Promise<Status | undefined>;
   resourceSaving?: boolean;
+  ramMiB?: number;
 };
 
 export async function bootAndroidEmulator(options: BootOptions, launch: typeof spawn = spawn): Promise<Status> {
   options.signal.throwIfAborted();
+  if (options.ramMiB === undefined) return launchAndWait(options, launch);
+  if (!Number.isSafeInteger(options.ramMiB) || options.ramMiB < 1536 || options.ramMiB > 8192) {
+    throw new Error("Android emulator RAM must be an integer between 1536 and 8192 MiB.");
+  }
+  const started = performance.now();
+  let outcome: "booted" | "failed" = "failed";
+  try {
+    const status = await launchAndWait(options, launch);
+    outcome = "booted";
+    return status;
+  } finally { recordAndroidRamProfileBoot(performance.now() - started, outcome); }
+}
+
+async function launchAndWait(options: BootOptions, launch: typeof spawn): Promise<Status> {
   const args = ["-avd", options.name, "-no-window", "-no-boot-anim", "-gpu", "host"];
   // Headless Quick Boot on Windows can leave adb offline or hang shell commands after restore.
   if (process.platform === "win32" || options.resourceSaving !== undefined) args.push("-no-snapshot-load", "-no-snapshot-save");
-  if (options.resourceSaving) args.push("-lowram", "-memory", "1536");
+  if (options.ramMiB !== undefined) args.push("-memory", String(options.ramMiB));
+  else if (options.resourceSaving) args.push("-lowram", "-memory", "1536");
   const child = launch(options.executable, args, {
     detached: true, stdio: "ignore", shell: false, windowsHide: true,
   });

@@ -147,15 +147,19 @@ export class ServeEmu {
     if (!id.startsWith("avd:")) throw new SimulatorUnavailableError("Reconnect and authorize this Android device through adb.");
     // Launch separately from serve-emu so closing the panel never stops the AVD.
     const target = { platform: "android" as const, id, key: device.name, state: device.state };
-    const resourceSaving = await this.resourceSaving?.enabled(target);
+    const profile = await this.resourceSaving?.androidBootOptions(target);
     const status = await bootAndroidEmulator({
       name: device.name, executable: await sdkToolPath("emulator"), signal: this.lifetime.signal,
       ready: () => this.emulatorReady(item => item.name === device.name, "boot"),
-      resourceSaving,
+      ...profile,
     });
     const running = status.devices.find(item => item.kind === "emulator" && item.name === device.name && item.state === "Booted");
     if (running === undefined) throw new Error("The started Android emulator is no longer available.");
-    await this.resourceSaving?.apply({ ...target, id: running.udid, state: running.state }, this.lifetime.signal, resourceSaving);
+    if (profile?.resourceSaving !== undefined) {
+      await this.resourceSaving?.apply({ ...target, id: running.udid, state: running.state }, this.lifetime.signal, profile.resourceSaving);
+    } else if (profile?.ramMiB !== undefined) {
+      await this.resourceSaving?.rememberRamBoot({ ...target, id: running.udid }, profile.ramMiB);
+    }
     return status;
   }
 

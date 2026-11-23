@@ -55,6 +55,19 @@ test("resource-saving launches bypass snapshots and only the enabled mode change
   }
 });
 
+test("the RAM-only profile passes a single override and keeps the emulator's image minimum", async () => {
+  const fake = fakeLauncher();
+  const opts = { name: "API_37", executable: "emulator", signal: new AbortController().signal, ready: async () => status };
+  await bootAndroidEmulator({ ...opts, ramMiB: 4096 }, fake.launch);
+  const args = fake.calls[0][1] as string[];
+  assert.deepEqual(args.slice(-2), ["-memory", "4096"]);
+  assert.equal(args.includes("-lowram"), false);
+  for (const ramMiB of [0, Infinity, 1999.5, 8193]) {
+    await assert.rejects(bootAndroidEmulator({ ...opts, ramMiB }, fake.launch), /RAM must be an integer/);
+  }
+  assert.equal(fake.calls.length, 1);
+});
+
 test("an early emulator exit interrupts an in-flight adb check", async () => {
   const fake = fakeLauncher(); let release!: () => void;
   const polling = new Promise<void>(resolve => { release = resolve; });
