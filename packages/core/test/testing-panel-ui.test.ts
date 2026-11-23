@@ -603,6 +603,22 @@ function panelStub(overrides: Record<string, unknown> = {}) {
   };
 }
 
+test("the recording blocker explains how to show an already-running device", async t => {
+  const { module: { TestingView }, dom } = await renderEnvironment<any>(t, {
+    exports: 'export { TestingView } from "./packages/ui/src/components/testing-view.tsx";', slug: "testing-mirror-guidance",
+  });
+  const { act, createElement } = await import("react");
+  const { createRoot } = await import("react-dom/client");
+  const root = createRoot(dom.window.document.getElementById("root")!);
+  const emptyDeviceSnapshot = { device: undefined };
+  const deviceApps = { subscribe: () => () => undefined, getSnapshot: () => emptyDeviceSnapshot };
+
+  await act(async () => { root.render(createElement(TestingView, { panel: panelStub(), deviceApps })); });
+
+  assert.match(dom.window.document.querySelector("[data-testing-blocker]")?.textContent ?? "", /choose Platforms → iOS or Android to show it/);
+  await act(async () => { root.unmount(); });
+});
+
 test("a step's commands open beside it, and Clear asks before it throws the flow away", async t => {
   const { module: { TestingView, testRecorder }, dom, onTeardown } = await renderEnvironment<any>(t, {
     exports: 'export { TestingView } from "./packages/ui/src/components/testing-view.tsx";\n'
@@ -1119,7 +1135,7 @@ test("the matrix shows its devices, one lane per device with a cancel, and Run o
   const lane = (n: number, state: string, extra: object = {}) => ({ runId: `r${n}`, deviceId: `d${n}`, deviceName: `Phone ${n}`, platform: "ios", state, progress: [], ...extra });
   const panel = { ...panelStub({
     runtimeMode: "bundled", setupState: "available", setupOpen: true, targets: [{ name: "ios", platform: "ios", bundleId: "com.example.app" }],
-    matrixLimit: 3, matrixSelected: ["d0", "d1"],
+    matrixLimit: 3, matrixSelected: ["d0", "d1", "d2"],
     matrixDevices: [
       { deviceId: "d0", name: "iPhone 17", platform: "ios", runtime: "iOS 26", booted: true, installed: true },
       { deviceId: "d1", name: "iPhone 16", platform: "ios", runtime: "iOS 18", booted: false },
@@ -1144,9 +1160,12 @@ test("the matrix shows its devices, one lane per device with a cancel, and Run o
   const text = doc.querySelector("[data-testing-matrix]")?.textContent ?? "";
   assert.match(text, /iPhone 17/); assert.match(text, /Installed/); assert.match(text, /App missing/); assert.match(text, /Off/);
   assert.match(text, /No Android app id/, "a platform without an app id says so");
-  assert.equal((doc.querySelector('[data-matrix-device="d2"] input') as HTMLInputElement).disabled, true);
+  const incompatible = doc.querySelector('[data-matrix-device="d2"] input') as HTMLInputElement;
+  assert.equal(incompatible.disabled, false, "an incompatible device that was already checked can still be unchecked");
+  await act(async () => { incompatible.click(); });
+  assert.deepEqual(selected, [["d0", "d1"]]);
   await act(async () => { (doc.querySelector('[data-matrix-device="d0"] input') as HTMLInputElement).click(); });
-  assert.deepEqual(selected, [["d1"]]);
+  assert.deepEqual(selected, [["d0", "d1"], ["d1", "d2"]]);
   await act(async () => { root.render(createElement("div")); });
   await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
   onTeardown(async () => { await act(async () => { root.unmount(); }); });

@@ -117,7 +117,7 @@ test("one selected device runs as a lane unless it is the mirrored device, and a
   panel.dispose();
 });
 
-test("the choice is saved per project", () => {
+test("the concurrency limit is saved per project but device choices are not", () => {
   const store = new Map<string, string>();
   (globalThis as { localStorage?: unknown }).localStorage = { getItem: (key: string) => store.get(key) ?? null, setItem: (key: string, value: string) => { store.set(key, value); } };
   try {
@@ -128,7 +128,24 @@ test("the choice is saved per project", () => {
     set(first, { projectPath: "/b" });
     assert.deepEqual([first.getSnapshot().matrixSelected, first.getSnapshot().matrixLimit], [[], 3]);
     set(first, { projectPath: "/a" });
-    assert.deepEqual([first.getSnapshot().matrixSelected, first.getSnapshot().matrixLimit], [["x", "y"], 4]);
+    assert.deepEqual([first.getSnapshot().matrixSelected, first.getSnapshot().matrixLimit], [[], 4]);
+    const second = new TestingPanel(matrixHost([]), deviceApps);
+    set(second, { projectPath: "/a" });
+    assert.deepEqual([second.getSnapshot().matrixSelected, second.getSnapshot().matrixLimit], [[], 4], "a new panel restores only concurrency");
+    second.dispose();
     first.dispose();
   } finally { delete (globalThis as { localStorage?: unknown }).localStorage; }
+});
+
+test("opening another test clears the device choice", async () => {
+  const panel = new TestingPanel(matrixHost([]), deviceApps);
+  const set = (fields: Record<string, unknown>) => (panel as unknown as { update(fields: Record<string, unknown>): void }).update(fields);
+  panel.setAvailable(true);
+  set({ projectPath: PROJECT, matrixDevices: [{ deviceId: "d0", name: "Phone", platform: "ios", runtime: "", booted: true }] });
+  panel.setMatrixSelection(["d0"]);
+
+  await panel.openTest("tests/next.e2e.ts");
+
+  assert.deepEqual(panel.getSnapshot().matrixSelected, []);
+  panel.dispose();
 });

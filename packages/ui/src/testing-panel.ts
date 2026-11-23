@@ -141,7 +141,7 @@ export type TestingSnapshot = {
   /** Devices the matrix checklist can offer, with whether each is booted and has the app. */
   matrixDevices: MatrixDeviceOption[];
   matrixLoading: boolean;
-  /** The devices the user ticked, saved per project. */
+  /** The devices the user ticked for the current test in this panel session. */
   matrixSelected: string[];
   /** How many devices run at once; the rest queue. Saved per project. */
   matrixLimit: number;
@@ -327,10 +327,10 @@ export class TestingPanel {
   getSnapshot = () => this.snapshot;
 
   private update(fields: Partial<TestingSnapshot>) {
-    // The matrix choice is saved per project, so it follows the project.
+    // A device choice belongs to one test in one panel session. Only concurrency follows the project.
     if (fields.projectPath !== undefined && fields.projectPath !== this.snapshot.projectPath) {
       const saved = readMatrixPreferences(fields.projectPath);
-      fields = { ...fields, matrixSelected: saved.selected, matrixLimit: saved.limit, matrix: null, selectedLane: "" };
+      fields = { ...fields, matrixSelected: [], matrixLimit: saved.limit, matrix: null, selectedLane: "" };
     }
     this.snapshot = { ...this.snapshot, ...fields };
     for (const listener of this.listeners) listener();
@@ -825,7 +825,7 @@ export class TestingPanel {
     if (this.disposed || this.snapshot.projectPath !== projectPath || revision !== this.testReadRevision) return;
     testRecorder.stop();
     testRecorder.clearRun();
-    this.update({ selectedTestPath: relativePath, selectedTestSource: "", loadingTest: true, error: null });
+    this.update({ selectedTestPath: relativePath, selectedTestSource: "", loadingTest: true, matrixSelected: [], error: null });
     const startedAt = performance.now(), telemetryContext = getUiTelemetryAttributes();
     try {
       const response = await this.call("mobile_testing_read_file", { projectPath, relativePath }, 15_000);
@@ -1126,7 +1126,7 @@ export class TestingPanel {
       // and the draft is pinned to the flow it came back as.
       this.draftRevision = testRecorder.getSnapshot().revision;
       this.draftFlowId = testRecorder.getSnapshot().flowId;
-      this.update({ draftId: text(draft.id), fileName: text(draft.fileName), savedRevision: -1, savedPath: "", overwritePath: "" });
+      this.update({ draftId: text(draft.id), fileName: text(draft.fileName), savedRevision: -1, savedPath: "", overwritePath: "", matrixSelected: [] });
     } catch (error) {
       this.update({ error: error instanceof Error ? error.message : String(error) });
     } finally {
@@ -1182,7 +1182,7 @@ export class TestingPanel {
     testRecorder.setTitle("");
     this.draftRevision = testRecorder.getSnapshot().revision;
     this.draftFlowId = "";
-    this.update({ draftId: "", fileName: "", savedRevision: -1, savedPath: "", overwritePath: "" });
+    this.update({ draftId: "", fileName: "", savedRevision: -1, savedPath: "", overwritePath: "", matrixSelected: [] });
   }
 
   setFileName(fileName: string) { this.update({ fileName: fileName.trim(), overwritePath: "" }); }
@@ -1839,13 +1839,12 @@ export class TestingPanel {
 
   setMatrixSelection(ids: string[]) {
     this.update({ matrixSelected: ids });
-    writeMatrixPreferences(this.snapshot.projectPath, { selected: ids, limit: this.snapshot.matrixLimit });
   }
 
   setMatrixLimit(limit: number) {
     const next = clampLimit(limit);
     this.update({ matrixLimit: next });
-    writeMatrixPreferences(this.snapshot.projectPath, { selected: this.snapshot.matrixSelected, limit: next });
+    writeMatrixPreferences(this.snapshot.projectPath, { limit: next });
   }
 
   /** Lists the simulators and emulators, and for each booted one whether the app is on it. */

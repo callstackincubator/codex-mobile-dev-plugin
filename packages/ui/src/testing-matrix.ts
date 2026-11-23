@@ -113,16 +113,15 @@ export function parseMatrixDevices(platform: MatrixPlatform, value: unknown): Ma
     }));
 }
 
-export type MatrixPreferences = { selected: string[]; limit: number };
+export type MatrixPreferences = { limit: number };
 const STORAGE_PREFIX = "mobile-dev.testing.matrix:";
 
-/** The saved choice for one project. Storage can be blocked in a sandboxed host, so every access is best effort. */
+/** The saved concurrency limit for one project. Device choices are deliberately per test and per panel session. */
 export function readMatrixPreferences(projectPath: string): MatrixPreferences {
   try {
     const stored = record(JSON.parse(globalThis.localStorage?.getItem(STORAGE_PREFIX + projectPath) ?? "null"));
-    const selected = Array.isArray(stored?.selected) ? stored.selected.filter((id): id is string => typeof id === "string") : [];
-    return { selected, limit: typeof stored?.limit === "number" ? clampLimit(stored.limit) : DEFAULT_MATRIX_LIMIT };
-  } catch { return { selected: [], limit: DEFAULT_MATRIX_LIMIT }; }
+    return { limit: typeof stored?.limit === "number" ? clampLimit(stored.limit) : DEFAULT_MATRIX_LIMIT };
+  } catch { return { limit: DEFAULT_MATRIX_LIMIT }; }
 }
 
 export function writeMatrixPreferences(projectPath: string, preferences: MatrixPreferences): void {

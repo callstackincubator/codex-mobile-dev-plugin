@@ -16,7 +16,7 @@ import { Label } from "./ui/label.tsx";
 function DeviceRow({ device, checked, busy, appMissing, onToggle }: { device: MatrixDeviceOption; checked: boolean; busy: boolean; appMissing: boolean; onToggle: (value: boolean) => void }) {
   const id = `matrix-${device.deviceId}`;
   return <li className="flex items-center gap-2 py-1.5" data-matrix-device={device.deviceId}>
-    <input id={id} type="checkbox" className="size-3.5 shrink-0 accent-primary" checked={checked} disabled={busy || appMissing} onChange={event => onToggle(event.target.checked)} />
+    <input id={id} type="checkbox" className="size-3.5 shrink-0 accent-primary" checked={checked} disabled={busy || (appMissing && !checked)} onChange={event => onToggle(event.target.checked)} />
     <Label htmlFor={id} className="flex min-w-0 flex-1 items-baseline gap-1.5 text-sm font-normal">
       <span className="truncate">{device.name}</span>
       {device.runtime && <span className="shrink-0 text-xs text-muted-foreground">{device.runtime}</span>}
