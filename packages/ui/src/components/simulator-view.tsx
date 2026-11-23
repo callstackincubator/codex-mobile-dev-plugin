@@ -21,9 +21,9 @@ export const SimulatorView = memo(function SimulatorView({ workspace, paneKey, p
   const root = useRef<HTMLElement>(null);
   useLayoutEffect(() => { if (root.current) return workspace.mount(paneKey, root.current); }, [workspace, paneKey]);
   return <section ref={root} data-device-pane={paneKey} data-active={active} className="simulator-panel group/simulator @container relative flex h-full min-w-0 flex-1 flex-col" data-platform={platform} aria-label={name}>
-    <header className="panel-toolbar flex h-[49px] shrink-0 items-center border-b px-2 group-data-[multiple=true]/devices:group-data-[active=true]/simulator:border-b-primary">
+    <header className="panel-toolbar flex h-9 shrink-0 items-center border-b px-2">
       <div className="flex w-full min-w-0 items-center gap-1" role="toolbar" aria-label={`${label} controls`}>
-        <div className="min-w-0 flex-1 leading-tight" title={name}><h2 className="truncate text-sm font-medium">{name}</h2><p className="text-xs text-muted-foreground">{label}</p></div>
+        <span className="min-w-0 flex-1 text-xs text-muted-foreground">{label}</span>
         {deviceButtons.map(({ action, icon: Icon, label }) => <Button key={action} variant="ghost" size="icon" className="shrink-0 data-[unsupported=true]:text-muted-foreground data-[unsupported=true]:cursor-not-allowed data-[unsupported=true]:disabled:pointer-events-auto data-[unsupported=true]:hover:bg-transparent data-[unsupported=true]:hover:text-muted-foreground" data-button={action} title={label} aria-label={label} disabled><Icon /></Button>)}
         <Button variant="ghost" size="icon" className="shrink-0" data-element="screenshot" title="Screenshot to chat and clipboard" aria-label="Screenshot to chat and clipboard" disabled><CameraIcon /></Button>
         <ScreenSelectButton store={annotations} />

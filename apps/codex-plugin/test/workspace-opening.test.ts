@@ -94,7 +94,7 @@ for (const notification of ["input", "result"] as const) test(`workspace applies
   else send({ method: "ui/notifications/tool-result", params: { content: [], structuredContent: { panelTarget: target } } });
   await until(() => calls.includes("mobile_list_android_devices"));
   await until(() => {
-    const label = window.document.querySelector('[data-platform="android"] h2')?.textContent;
+    const label = window.document.querySelector('[data-device-pane][data-platform="android"]')?.getAttribute("aria-label");
     return label === "Pixel";
   });
   assert.equal(window.document.querySelectorAll("[data-device-pane]").length, 1);

@@ -4,7 +4,7 @@ import type { ToolName, WorkspaceTools } from "@mobile-dev/ui/workspace-tools.ts
 import type { DeviceWorkspace } from "@mobile-dev/ui/device-workspace.ts";
 import { LogsView } from "@mobile-dev/ui/components/logs-view.tsx";
 import { PerformanceView } from "@mobile-dev/ui/components/performance-view.tsx";
-import { DevicePicker } from "@mobile-dev/ui/components/device-picker.tsx";
+import { DevicePicker, EmptyDeviceTabBar } from "@mobile-dev/ui/components/device-picker.tsx";
 import { DevicePanes } from "@mobile-dev/ui/components/device-panes.tsx";
 import { StorageView } from "@mobile-dev/ui/components/storage-view.tsx";
 import { TraceSiftView } from "@mobile-dev/ui/components/tracesift-view.tsx";
@@ -14,7 +14,7 @@ export function MacWorkspace({ panels, tool, devices }: { panels: WorkspaceTools
   const workspaceGroup = useGroupRef();
   const state = useSyncExternalStore(devices.subscribe, devices.getSnapshot);
   const hasDevices = state.panes.length > 0;
-  const size = tool === undefined ? 100 : Math.min(80, state.panes.length * 40);
+  const size = tool === undefined ? 100 : Math.min(80, state.visible.length * 40);
   useEffect(() => {
     workspaceGroup.current?.setLayout({ "mac-tools": 100 - size, "mac-devices": size });
   }, [size]);
@@ -22,12 +22,12 @@ export function MacWorkspace({ panels, tool, devices }: { panels: WorkspaceTools
     : tool === "performance" ? <PerformanceView panel={panels.performance} />
     : tool === "storage" ? <StorageView panel={panels.storage} />
     : tool === "tracesift" ? <TraceSiftView panel={panels.tracesift} /> : null;
-  return <main className="flex h-dvh flex-col">
-    <header className="mac-device-toolbar flex h-12 shrink-0 items-center justify-end border-b px-2"><DevicePicker workspace={devices} /></header>
+  return <DevicePicker workspace={devices}><main className="mac-workspace flex h-dvh flex-col">
+    {!hasDevices && <EmptyDeviceTabBar />}
     <ResizablePanelGroup id="mac-workspace" groupRef={workspaceGroup} orientation="horizontal" className="min-h-0 flex-1">
       <ResizablePanel id="mac-tools" defaultSize="60%" minSize="0px" collapsible collapsedSize="0px">{toolView}</ResizablePanel>
       <ResizableHandle hidden={!hasDevices || tool === undefined} aria-label="Resize tool and devices" />
       <ResizablePanel id="mac-devices" defaultSize="40%" minSize="0px" collapsible collapsedSize="0px"><DevicePanes workspace={devices} /></ResizablePanel>
     </ResizablePanelGroup>
-  </main>;
+  </main></DevicePicker>;
 }

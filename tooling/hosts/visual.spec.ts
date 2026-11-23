@@ -33,7 +33,7 @@ for (const theme of themes) test.describe(`${theme}`, { tag: "@visual" }, () => 
       android: [{ ...device, name: "Pixel 9", udid: "avd:Pixel_9", runtime: "Android" }],
     };
     const { view } = await openView("mobile_open_simulator", { theme, displayMode: "inline", width: 480, inventory });
-    await view.getByRole("button", { name: "Choose devices" }).click();
+    await view.getByRole("button", { name: "Add device" }).click();
     const picker = view.getByRole("dialog", { name: "Choose devices" });
     await expect(picker.getByText("iPhone 17 Pro")).toBeVisible();
     await expect.soft(picker).toHaveScreenshot(`device-picker-${theme}.png`);

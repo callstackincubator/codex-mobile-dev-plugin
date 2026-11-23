@@ -279,11 +279,14 @@ function fixture(t: TestContext) {
       },
     };
   });
-  t.after(async () => { await Promise.all(panels.map(({ panel }) => panel.dispose())); for (const reset of restore) reset(); });
   let activeDevice: SimulatorDevice | undefined;
   const context = { screenAnnotations: [], subscribe: () => () => {}, selectSimulators(_devices: SimulatorDevice[], active?: SimulatorDevice) { activeDevice = active; } } as unknown as PanelContext;
   const workspace = new DeviceWorkspace(app, { context, deviceApps: { selectDevice() {} } } as ConstructorParameters<typeof DeviceWorkspace>[1]);
-  t.after(() => workspace.dispose());
+  t.after(async () => {
+    await workspace.dispose();
+    for (const { panel } of panels) await panel.dispose();
+    for (const reset of restore) reset();
+  });
   return { workspace, get activeDevice() { return activeDevice; }, setIosDevices(devices: SimulatorDevice[]) { iosDevices = devices; }, calls, closed, selections, failInspection() { inspectionFailure = true; }, setAndroidAccessibility(value: NonNullable<typeof androidAccessibility>) { androidAccessibility = value; }, screenshots, attachedAnnotations, ios: panels[0], android: panels[1], failClipboard() { screenshotCopied = false; }, setAndroidDevices(devices: SimulatorDevice[]) { androidDevices = devices; }, setPhysicalDevices(devices: PhysicalIosDevice[]) { physicalDevices = devices; }, failDiscovery(message: string) { physicalError = message; }, failSimulators(message: string) { simulatorError = message; }, delayDiscovery(value: Promise<void>) { delayedDiscovery = value; }, failInput(platform: "ios" | "android") { failedInputPlatform = platform; }, delayOpen(value: Promise<void>) { delayedOpen = value; }, blockIos() { blockedIos = true; }, stopDevices() { stopped = true; },
     visibility(value: string) { document.visibilityState = value; document.dispatchEvent(new Event("visibilitychange")); },
     frame(platform: "ios" | "android", sequence: number, options: { generation?: number; empty?: boolean } = {}) {
@@ -399,7 +402,10 @@ test("two same-platform screens and an Android screen route input independently 
   await f.workspace.open({});
   f.workspace.toggle("ios", ipad);
   f.workspace.toggle("android", androidPhone);
-  const screens = f.workspace.getSnapshot().panes.map(pane => {
+  const { panes, active } = f.workspace.getSnapshot();
+  const split = panes.map(pane => pane.key);
+  f.workspace.setDockSelection(split, active!);
+  const screens = panes.map(pane => {
     const root = createPanelRoot();
     const unmount = f.workspace.mount(pane.key, root as unknown as HTMLElement)!;
     return { root, unmount };
@@ -421,6 +427,38 @@ test("two same-platform screens and an Android screen route input independently 
   assert.equal(f.calls.some(call => call.name.startsWith("mobile_shutdown")), false);
   screens[0].unmount();
   screens[2].unmount();
+});
+
+test("background tabs suspend their streams and visible splits survive tab switches", async t => {
+  const f = fixture(t);
+  const iphone: SimulatorDevice = { udid: "iphone-1", name: "iPhone", runtime: "iOS", state: "Booted" };
+  const ipad = { ...iphone, udid: "ipad-2", name: "iPad" };
+  f.setIosDevices([iphone, ipad]);
+  f.setAndroidDevices([androidPhone]);
+  await f.workspace.setAvailable(true);
+  await f.workspace.open({});
+  f.workspace.toggle("ios", ipad);
+  f.workspace.toggle("android", androidPhone);
+  const [phone, tablet, android] = f.workspace.getSnapshot().panes;
+  f.workspace.setDockSelection([phone.key, android.key], android.key);
+  for (const pane of [phone, tablet, android]) {
+    const root = createPanelRoot();
+    f.workspace.mount(pane.key, root as unknown as HTMLElement);
+  }
+  const sessions = () => f.calls.filter(call => call.name.endsWith("_stream_session"));
+  await waitFor(() => sessions().length === 2);
+  assert.deepEqual(sessions().map(call => call.arguments.udid ?? call.arguments.deviceId), [iphone.udid, androidPhone.udid]);
+
+  f.workspace.setDockSelection([tablet.key, android.key], tablet.key);
+  await f.workspace.inventory.ios.refresh();
+  await waitFor(() => f.closed.length === 1 && sessions().length === 3);
+  assert.equal(sessions()[2].arguments.udid, ipad.udid);
+  assert.equal(f.activeDevice?.udid, ipad.udid);
+  f.workspace.setDockSelection([android.key, tablet.key], android.key);
+  await f.workspace.inventory.ios.refresh();
+  assert.equal(f.activeDevice?.udid, androidPhone.udid);
+  assert.equal(sessions().length, 3);
+  assert.equal(f.closed.length, 1);
 });
 
 test("late discovery cannot overwrite a manual selection", async t => {

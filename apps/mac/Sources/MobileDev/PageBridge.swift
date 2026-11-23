@@ -40,8 +40,8 @@ final class PageBridge: NSObject, WKScriptMessageHandler {
     webView.evaluateJavaScript("window.mobileDevShell?.selectTool(\(argument))", completionHandler: nil)
   }
 
-  func setTitlebarInset(_ size: CGSize) {
-    webView.evaluateJavaScript("window.mobileDevShell?.setTitlebarInset(\(size.width), \(size.height))", completionHandler: nil)
+  func setTitlebarHeight(_ height: CGFloat) {
+    webView.evaluateJavaScript("window.mobileDevShell?.setTitlebarHeight(\(height))", completionHandler: nil)
   }
 
   func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {

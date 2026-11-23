@@ -1,5 +1,2 @@
-/* Leave the native traffic lights and sidebar toggle clear when the sidebar is collapsed. */
-.mac-device-toolbar {
-  min-height: var(--mac-titlebar-height, 0px);
-  padding-left: calc(var(--mac-titlebar-inset, 0px) + 0.5rem);
-}
+/* Keep the tab strip clear of native window controls when the sidebar collapses. */
+.mac-workspace { padding-top: var(--mac-titlebar-height, 0px); }

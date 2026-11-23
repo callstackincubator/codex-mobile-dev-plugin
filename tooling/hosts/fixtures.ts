@@ -34,6 +34,9 @@ export async function startServer(target: Target) {
   return { transport, stderr, async close() { await transport.close(); await rm(home, { recursive: true, force: true }); } };
 }
 
+export const hasPanel = (server: { tools: { name: string; _meta?: Record<string, unknown> }[] }) =>
+  server.tools.some(tool => tool.name === "mobile_open_workspace" && (tool._meta?.ui as { resourceUri?: string } | undefined)?.resourceUri !== undefined);
+
 type Inventory = { ios: SimulatorDevice[]; android: SimulatorDevice[] };
 
 type Opened = { view: FrameLocator; result: CallToolResult };

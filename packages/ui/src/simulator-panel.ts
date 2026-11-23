@@ -73,6 +73,7 @@ export function createSimulatorPanel(
   let busy = false;
   let resumeRequested = false;
   let toolsAvailable = false;
+  let visible = true;
   let disposed = false;
   let disposing: Promise<void> | undefined;
   let screenshotAttachmentError = "";
@@ -438,7 +439,7 @@ export function createSimulatorPanel(
     if (reconnect.active && (changed || !active)) void disconnect();
     selected = device;
     if (device === undefined) {
-      empty("Device unavailable", "Reconnect this device or choose another from Devices.");
+      empty("Device unavailable", "Reconnect this device or choose another with Add device.");
     } else if (device.kind === "physical" && !active) {
       const description = device.state === "unauthorized"
         ? "Unlock the device and allow USB debugging, or pair it for wireless debugging."
@@ -460,11 +461,11 @@ export function createSimulatorPanel(
   }
 
   async function connect() {
-    if (disposed || !toolsAvailable || !selected) return;
+    if (disposed || !visible || !toolsAvailable || !selected) return;
     const connected = selected.kind === "physical" && selected.platform === "ios" ? selected.state === "connected" : selected.state === "Booted";
     if (connected === false) return;
     await disconnect();
-    if (document.visibilityState === "hidden" || disposed) return;
+    if (!visible || document.visibilityState === "hidden" || disposed) return;
     if (frame.hidden) empty("Connecting…", "Opening the device screen.");
     const sessionEpoch = epoch;
     const udid = selected.udid;
@@ -830,12 +831,13 @@ export function createSimulatorPanel(
   root.addEventListener("pointerdown", activate, { capture: true });
   root.addEventListener("focusin", activate);
   function resume() {
+    if (!visible || document.visibilityState === "hidden") return Promise.resolve();
     if (busy) { resumeRequested = true; return Promise.resolve(); }
     return action(connect);
   }
   function onVisibility() {
     const connected = selectedDeviceConnected();
-    if (document.visibilityState === "hidden") void disconnect();
+    if (!visible || document.visibilityState === "hidden") void disconnect();
     else if (toolsAvailable && connected && !ready && !disposed) void resume();
   }
   document.addEventListener("visibilitychange", onVisibility);
@@ -855,6 +857,11 @@ export function createSimulatorPanel(
     acceptDevice,
     start: () => action(start),
     stop,
+    setVisible(value: boolean) {
+      if (visible === value) return;
+      visible = value;
+      onVisibility();
+    },
     setAvailable(value: boolean) { toolsAvailable = value; controls(); },
     dispose() {
       if (disposing) return disposing;

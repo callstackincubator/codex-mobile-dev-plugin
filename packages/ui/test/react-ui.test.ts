@@ -156,20 +156,24 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   };
   await act(async () => { renderWorkspace(); });
   const canvas = dom.window.document.querySelector("canvas");
-  const picker = dom.window.document.getElementById("device-select") as HTMLButtonElement;
-  await act(async () => { picker.click(); });
+  const picker = dom.window.document.querySelector("[data-device-add]") as HTMLButtonElement;
   async function toggleDevice(id: string) {
+    await act(async () => { picker.click(); });
     const button = dom.window.document.querySelector(`[data-device-option="${id}"]`) as HTMLButtonElement;
     await act(async () => { button.click(); });
+    assert.equal(picker.getAttribute("aria-expanded"), "false");
   }
   await toggleDevice(ipad.udid);
   await toggleDevice(pixel.udid);
   assert.equal(dom.window.document.querySelectorAll("canvas").length, 3);
+  await act(async () => { picker.click(); });
   assert.equal(dom.window.document.querySelectorAll('[data-device-option][aria-pressed="true"]').length, 3);
+  await act(async () => { picker.click(); });
   await toggleDevice(ipad.udid);
   await toggleDevice(pixel.udid);
   assert.equal(dom.window.document.querySelector("canvas"), canvas);
-  await act(async () => { picker.click(); });
+  const closedDialog = dom.window.document.querySelector('[aria-label="Choose devices"]');
+  assert.equal(closedDialog, null);
   const iosSettings = getDeviceSettings(dom.window.document.querySelector('[data-platform="ios"] [data-element="settings"]'));
   const changes: unknown[] = [];
   iosSettings.request = async (change: unknown) => { changes.push(change); return { appearance: "light", contentSize: "large", increaseContrast: false, locationSupported: true }; };
@@ -299,7 +303,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   assert.equal(dom.window.document.querySelectorAll("[data-log-row]").length, 1);
   await act(async () => { levelFilter.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
   assert.equal(dom.window.document.querySelector("canvas"), canvas);
-  assert.equal(dom.window.document.getElementById("device-select"), picker);
+  assert.equal(dom.window.document.querySelector("[data-device-add]"), picker);
   assert.equal(dom.window.document.querySelector('[data-element="screenshot"] svg')?.getAttribute("viewBox"), "0 0 24 24");
   await act(async () => { (dom.window.document.querySelector('[aria-label="Log sources"]') as HTMLButtonElement).click(); });
   assert.ok(dom.window.document.getElementById("logs-native"));
@@ -460,7 +464,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
     threadOrder.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
   });
   assert.equal(dom.window.document.querySelector("canvas"), canvas);
-  assert.equal(dom.window.document.getElementById("device-select"), picker);
+  assert.equal(dom.window.document.querySelector("[data-device-add]"), picker);
   await selectTool("logs");
   assert.equal(panel.getSnapshot().open, true);
   assert.equal(dom.window.document.getElementById("performance-drawer"), null);

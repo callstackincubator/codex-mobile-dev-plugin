@@ -4,18 +4,13 @@ import Ajv2020 from "ajv/dist/2020.js";
 import { codexToolBudget } from "../../apps/codex-plugin/tooling/codex-tool-limits.mjs";
 import { oversizedFiles, PANEL_PARTS } from "../host-runtime.mjs";
 import { pluginHost, pluginHosts } from "../plugin-hosts.mjs";
-import { expect, test } from "./fixtures.ts";
+import { expect, hasPanel, test } from "./fixtures.ts";
 
 const root = join(import.meta.dirname, "../..");
 
 // Regression checks for each shipped target, against its real server and page
 // in a stand-in for its host. Device-backed behavior needs a simulator or emulator
 // and is covered by the smoke scripts instead.
-
-// Claude shows devices in its own simulator views, so its server has no panel.
-// A panel that renders in the chat; Claude's shows beside it, in a browser (browser-panel.spec.ts).
-const hasPanel = (server: { tools: { name: string; _meta?: Record<string, unknown> }[] }) =>
-  server.tools.some(tool => tool.name === "mobile_open_workspace" && (tool._meta?.ui as { resourceUri?: string } | undefined)?.resourceUri !== undefined);
 
 test.describe("MCP Apps hosts", () => {
   test("every tool schema compiles as JSON Schema 2020-12", async ({ server }) => {
@@ -76,7 +71,7 @@ test.describe("MCP Apps hosts", () => {
   test("the panel beside the chat opens inline", async ({ openView, pageErrors, server }) => {
     test.skip(hasPanel(server) === false, "This target's server renders no panel in the chat.");
     const { view } = await openView("mobile_open_simulator", { displayMode: "inline" });
-    await expect(view.getByRole("button", { name: "Choose devices" })).toBeAttached();
+    await expect(view.getByRole("button", { name: "Add device" })).toBeAttached();
     expect(pageErrors).toEqual([]);
   });
 
@@ -90,7 +85,7 @@ test.describe("MCP Apps hosts", () => {
     const frame = page.locator("#view");
     await frame.evaluate(element => { element.removeAttribute("hidden"); });
     await expect(empty).toBeVisible();
-    await expect(view.getByRole("button", { name: "Choose devices" })).toBeVisible();
+    await expect(view.getByRole("button", { name: "Add device" })).toBeVisible();
     const toolsPanel = view.locator("#tools-resizable");
     await expect.poll(async () => (await toolsPanel.boundingBox())?.height).toBe(0);
     await expect(view.locator("#tool-select")).toContainText("Tools");
@@ -132,7 +127,7 @@ test.describe("Mac app", { tag: "@mac" }, () => {
       await expect(page.getByText("Choose a tool in the sidebar"), tool).toHaveCount(0);
     }
     await page.evaluate(() => window.mobileDevShell!.selectTool(null));
-    await page.getByRole("button", { name: "Choose devices" }).click();
+    await page.getByRole("button", { name: "Add device" }).click();
     await expect(page.getByRole("heading", { name: "iOS", exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Android", exact: true })).toBeVisible();
     expect(pageErrors).toEqual([]);

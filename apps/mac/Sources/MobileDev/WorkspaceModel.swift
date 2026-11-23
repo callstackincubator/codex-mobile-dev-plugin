@@ -31,7 +31,7 @@ final class WorkspaceModel {
   /// Moves the page's top-left controls clear of the window controls while the sidebar is collapsed.
   func setSidebarVisible(_ visible: Bool) {
     sidebarVisible = visible
-    page.setTitlebarInset(visible ? .zero : CGSize(width: WindowControls.width, height: WindowControls.height))
+    page.setTitlebarHeight(visible ? 0 : WindowControls.height)
   }
 
   /// Restarts the server and reloads the page, for example after the server exits.

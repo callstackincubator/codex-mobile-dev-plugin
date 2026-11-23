@@ -45,13 +45,12 @@ function selectTool(next: ToolName | undefined) {
 declare global {
   interface Window {
     /** The native sidebar drives the content area through these calls. */
-    mobileDevShell?: { selectTool(tool: string | null): void; setTitlebarInset(width: number, height: number): void };
+    mobileDevShell?: { selectTool(tool: string | null): void; setTitlebarHeight(height: number): void };
   }
 }
 window.mobileDevShell = {
   selectTool: value => selectTool(isToolName(value) ? value : undefined),
-  setTitlebarInset: (width, height) => {
-    document.documentElement.style.setProperty("--mac-titlebar-inset", `${Math.max(0, width)}px`);
+  setTitlebarHeight: height => {
     document.documentElement.style.setProperty("--mac-titlebar-height", `${Math.max(0, height)}px`);
   },
 };

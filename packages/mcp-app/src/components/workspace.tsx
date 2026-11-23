@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import type { WorkspaceTools } from "@mobile-dev/ui/workspace-tools.ts";
 import { PerformanceView } from "@mobile-dev/ui/components/performance-view.tsx";
 import { DevicePanes } from "@mobile-dev/ui/components/device-panes.tsx";
-import { DevicePicker } from "@mobile-dev/ui/components/device-picker.tsx";
+import { DevicePicker, EmptyDeviceTabBar } from "@mobile-dev/ui/components/device-picker.tsx";
 import { LogsView } from "@mobile-dev/ui/components/logs-view.tsx";
 import { StorageView } from "@mobile-dev/ui/components/storage-view.tsx";
 import { TraceSiftView } from "@mobile-dev/ui/components/tracesift-view.tsx";
@@ -75,7 +75,7 @@ export function Workspace({ panels, recordingController, banner, displayModeCont
   };
   const logsRef = usePanelRef();
   const showDevices = deviceState.panes.length > 0 || !!deviceState.message || !open;
-  const deviceShare = split ? Math.min(80, 36 * Math.max(1, deviceState.panes.length)) : 60;
+  const deviceShare = split ? Math.min(80, 36 * Math.max(1, deviceState.visible.length)) : 60;
   const workspaceGroupRef = useGroupRef();
   const resizedLayout = useRef<Layout>(undefined);
   useEffect(() => { if (open) logsRef.current?.expand(); else logsRef.current?.collapse(); }, [open, split]);
@@ -118,7 +118,6 @@ export function Workspace({ panels, recordingController, banner, displayModeCont
         {Object.entries(tools).map(([value, { id, label, icon: Icon }]) => <SelectItem key={value} id={id} value={value}><Icon />{label}</SelectItem>)}
       </SelectGroup></SelectContent>
     </Select>
-    <DevicePicker workspace={devices} side={menuSide} />
   </nav>;
   const simulatorPanel = <ResizablePanel key="simulators" id="simulators-resizable" minSize="0%" maxSize="100%" collapsible collapsedSize="0px" defaultSize={split ? "36%" : "60%"} onResize={size => setSimulatorsCollapsed(size.inPixels < 1)}>
     <DevicePanes workspace={devices} />
@@ -126,10 +125,11 @@ export function Workspace({ panels, recordingController, banner, displayModeCont
   // A collapsed simulator area would put the handle's line against the toolbar's border, doubling it.
   // The handle stays draggable so the simulators can be pulled back open.
   const divider = <ResizableHandle key="divider" hidden={!showDevices || (!fullscreen && !open)} disabled={!showDevices || (!fullscreen && !open)} className={simulatorsCollapsed ? "bg-transparent" : undefined} aria-label="Resize tools and simulators" />;
-  return <main className="flex flex-col" style={{ height: "var(--workspace-height, 100dvh)", paddingBottom: "var(--workspace-bottom-inset, 0px)" }}>
+  return <DevicePicker workspace={devices}><main className="flex flex-col" style={{ height: "var(--workspace-height, 100dvh)", paddingBottom: "var(--workspace-bottom-inset, 0px)" }}>
     {banner}
     {contextControl}
     {toolbar}
+    {deviceState.panes.length === 0 && <EmptyDeviceTabBar />}
     <ResizablePanelGroup id="workspace-panels" groupRef={workspaceGroupRef} orientation={split ? "horizontal" : "vertical"} className="min-h-0 flex-1" data-split={split} onLayoutChanged={(layout, meta) => {
       if (!meta.isUserInteraction) return;
       resizedLayout.current = meta.requestedLayout ?? layout;
@@ -139,5 +139,5 @@ export function Workspace({ panels, recordingController, banner, displayModeCont
     }}>
       {split ? [toolPanel, divider, simulatorPanel] : [simulatorPanel, divider, toolPanel]}
     </ResizablePanelGroup>
-  </main>;
+  </main></DevicePicker>;
 }

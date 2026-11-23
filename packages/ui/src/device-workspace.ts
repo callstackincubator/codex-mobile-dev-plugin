@@ -7,8 +7,8 @@ import { createSimulatorPanel } from "./simulator-panel.ts";
 import { setUiGauge, setUiTelemetryContext } from "./telemetry.ts";
 import type { WorkspaceTools } from "./workspace-tools.ts";
 
-export type DevicePane = { key: number; platform: Platform; last: SimulatorDevice; device?: SimulatorDevice };
-type Snapshot = { panes: DevicePane[]; active?: number; available: boolean; message: string; stopping?: string };
+export type DevicePane = { key: number; beside?: number; platform: Platform; last: SimulatorDevice; device?: SimulatorDevice };
+type Snapshot = { panes: DevicePane[]; visible: number[]; active?: number; available: boolean; message: string; stopping?: string };
 
 /** A stopped AVD has an avd: ID and acquires a serial while running. Keep the same screen across that transition. */
 export function resolvePaneDevice(devices: SimulatorDevice[], last: SimulatorDevice, platform: Platform) {
@@ -26,7 +26,7 @@ export class DeviceWorkspace {
   private panels = new Map<number, ReturnType<typeof createSimulatorPanel>>();
   private listeners = new Set<() => void>();
   private closing = new Set<Promise<void>>();
-  private state: Snapshot = { panes: [], available: false, message: "" };
+  private state: Snapshot = { panes: [], visible: [], available: false, message: "" };
   private opening?: PanelTarget;
   private opened = false;
   private pickerOpen = false;
@@ -51,21 +51,28 @@ export class DeviceWorkspace {
 
   private update(patch: Partial<Snapshot>) {
     this.state = { ...this.state, ...patch };
+    if (patch.visible) {
+      for (const [key, panel] of this.panels) {
+        const visible = patch.visible.includes(key);
+        panel.setVisible(visible);
+      }
+    }
     for (const listener of this.listeners) listener();
   }
 
   private publishSelection() {
-    const { panes, active } = this.state;
+    const { panes, active, visible } = this.state;
+    const displayed = panes.filter(item => visible.includes(item.key));
     const pane = panes.find(item => item.key === active);
     const device = pane?.device;
-    const ios = panes.some(item => item.platform === "ios");
-    const android = panes.some(item => item.platform === "android");
+    const ios = displayed.some(item => item.platform === "ios");
+    const android = displayed.some(item => item.platform === "android");
     const layout = ios && android ? "both" : ios ? "ios" : android ? "android" : "none";
     const kind = device?.kind ?? (pane?.platform === "android" ? "emulator" : "simulator");
-    const single = panes.length === 1 && device !== undefined;
+    const single = displayed.length === 1 && device !== undefined;
     setUiTelemetryContext({ layout, device_platform: single ? pane?.platform : undefined, device_kind: single ? kind : undefined });
-    setUiGauge("ui.devices.visible", panes.length);
-    const selected = panes.flatMap(item => item.device ? [item.device] : []);
+    setUiGauge("ui.devices.visible", displayed.length);
+    const selected = displayed.flatMap(item => item.device ? [item.device] : []);
     this.tools.context.selectSimulators(selected, device);
     this.tools.deviceApps.selectDevice(device);
   }
@@ -104,11 +111,12 @@ export class DeviceWorkspace {
     } else this.opening = undefined;
   }
 
-  private add(platform: Platform, device: SimulatorDevice, boot: boolean) {
+  private add(platform: Platform, device: SimulatorDevice, boot: boolean, beside = this.state.active) {
     const key = ++this.nextKey;
     if (boot && device.kind !== "physical" && device.state === "Shutdown") this.bootOnMount.add(key);
-    const panes = [...this.state.panes, { key, platform, last: device, device }];
-    this.update({ panes, active: key, message: "" });
+    const panes = [...this.state.panes, { key, beside, platform, last: device, device }];
+    const visible = [...this.state.visible, key];
+    this.update({ panes, visible, active: key, message: "" });
     this.publishSelection();
   }
 
@@ -145,20 +153,21 @@ export class DeviceWorkspace {
     if (open && this.state.available) for (const platform of platforms) void this.inventory[platform].refresh();
   }
 
-  toggle(platform: Platform, device: SimulatorDevice) {
+  toggle(platform: Platform, device: SimulatorDevice, beside?: number) {
     this.opened = true;
     this.opening = undefined;
     void this.initialize();
     const pane = this.state.panes.find(item => item.platform === platform && item.last.udid === device.udid);
     if (pane) this.remove(pane.key);
-    else this.add(platform, device, true);
+    else this.add(platform, device, true, beside);
   }
 
   remove(key: number) {
     this.bootOnMount.delete(key);
     const panes = this.state.panes.filter(pane => pane.key !== key);
     const active = this.state.active === key ? panes.at(-1)?.key : this.state.active;
-    this.update({ panes, active });
+    const visible = this.state.visible.filter(item => item !== key);
+    this.update({ panes, visible, active });
     this.publishSelection();
   }
 
@@ -167,7 +176,7 @@ export class DeviceWorkspace {
     this.opening = undefined;
     this.bootOnMount.clear();
     void this.initialize();
-    this.update({ panes: [], active: undefined, message: "" });
+    this.update({ panes: [], visible: [], active: undefined, message: "" });
     this.publishSelection();
   }
 
@@ -177,11 +186,20 @@ export class DeviceWorkspace {
     this.publishSelection();
   }
 
+  setDockSelection(visible: number[], active: number) {
+    const current = this.state.visible;
+    if (active === this.state.active && visible.length === current.length && visible.every(key => current.includes(key))) return;
+    this.update({ visible, active });
+    this.publishSelection();
+  }
+
   mount(key: number, root: HTMLElement) {
     const pane = this.state.panes.find(item => item.key === key);
     if (!pane || this.disposed) return;
     const panel = createSimulatorPanel(this.app, root, this.inventory[pane.platform], this.tools.context, () => this.activate(key));
     this.panels.set(key, panel);
+    const visible = this.state.visible.includes(key);
+    panel.setVisible(visible);
     panel.setAvailable(this.state.available);
     panel.acceptDevice(pane.device);
     if (this.bootOnMount.delete(key)) void panel.start();
