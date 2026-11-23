@@ -76,36 +76,29 @@ test.describe("MCP Apps hosts", () => {
   test("the panel beside the chat opens inline", async ({ openView, pageErrors, server }) => {
     test.skip(hasPanel(server) === false, "This target's server renders no panel in the chat.");
     const { view } = await openView("mobile_open_simulator", { displayMode: "inline" });
-    await expect(view.locator("#ios-panel, #android-panel").first()).toBeAttached();
+    await expect(view.getByRole("button", { name: "Choose devices" })).toBeAttached();
     expect(pageErrors).toEqual([]);
   });
 
-  test("an Android panel initialized while hidden shows its device controls and keeps tools collapsed", async ({ openView, page, pageErrors, target }) => {
+  test("a targeted panel initialized while hidden shows the device picker and keeps tools collapsed", async ({ openView, page, pageErrors, target }) => {
     test.skip(target !== "codex", "Codex retains inactive panels before displaying them.");
     const { view } = await openView("mobile_open_simulator", {
       arguments: { platform: "android" }, displayMode: "inline", initiallyHidden: true,
     });
-    await expect(view.locator("#platform-select")).toContainText("Android");
-    await expect(view.locator("#android-panel")).toHaveJSProperty("hidden", false);
+    const empty = view.locator('[role="status"]').filter({ hasText: "Requested Android device unavailable" });
+    await expect(empty).toBeAttached();
     const frame = page.locator("#view");
     await frame.evaluate(element => { element.removeAttribute("hidden"); });
-
-    await expect(view.locator("#android-panel")).toBeVisible();
-    await expect(view.getByRole("toolbar", { name: "Android controls" })).toBeVisible();
-    await expect(view.locator("#android-devices")).toBeVisible();
-    const android = await view.locator("#android-resizable").boundingBox();
-    const ios = await view.locator("#ios-resizable").boundingBox();
-    const tools = await view.locator("#tools-resizable").boundingBox();
-    expect(android?.width).toBeGreaterThan(0);
-    expect(ios?.width).toBe(0);
-    expect(tools?.height).toBe(0);
+    await expect(empty).toBeVisible();
+    await expect(view.getByRole("button", { name: "Choose devices" })).toBeVisible();
+    const toolsPanel = view.locator("#tools-resizable");
+    await expect.poll(async () => (await toolsPanel.boundingBox())?.height).toBe(0);
     await expect(view.locator("#tool-select")).toContainText("Tools");
 
     const toolSelect = view.locator("#tool-select");
     await toolSelect.click();
     const logsOption = view.getByRole("option", { name: "Logs" });
     await logsOption.click();
-    const toolsPanel = view.locator("#tools-resizable");
     await expect(toolsPanel).toBeVisible();
     const initialTools = await toolsPanel.boundingBox();
     const divider = view.getByRole("separator", { name: "Resize tools and simulators" });
@@ -121,18 +114,17 @@ test.describe("MCP Apps hosts", () => {
     expect(resizedTools?.height).toBeLessThan(initialTools.height - 50);
 
     await frame.evaluate(element => { element.setAttribute("hidden", ""); });
-    await expect(view.locator("#android-panel")).toBeHidden();
+    await expect(empty).toBeHidden();
     await frame.evaluate(element => { element.removeAttribute("hidden"); });
-    await expect(view.locator("#android-panel")).toBeVisible();
-    const restoredTools = await toolsPanel.boundingBox();
-    expect(restoredTools?.height).toBeCloseTo(resizedTools!.height, 1);
+    await expect(empty).toBeVisible();
+    await expect.poll(async () => (await toolsPanel.boundingBox())?.height).toBeCloseTo(resizedTools!.height, 1);
     await expect(toolSelect).toContainText("Logs");
     expect(pageErrors).toEqual([]);
   });
 });
 
 test.describe("Mac app", { tag: "@mac" }, () => {
-  test("the sidebar switches tools and platforms", async ({ openMac, pageErrors }) => {
+  test("the sidebar switches tools and the workspace offers both device inventories", async ({ openMac, pageErrors }) => {
     const page = await openMac();
     await page.waitForFunction(() => window.mobileDevShell !== undefined);
     for (const tool of ["logs", "performance", "storage", "tracesift"]) {
@@ -140,8 +132,9 @@ test.describe("Mac app", { tag: "@mac" }, () => {
       await expect(page.getByText("Choose a tool in the sidebar"), tool).toHaveCount(0);
     }
     await page.evaluate(() => window.mobileDevShell!.selectTool(null));
-    await page.evaluate(() => window.mobileDevShell!.selectLayout("ios"));
-    await expect(page.locator("#ios-panel")).toBeVisible();
+    await page.getByRole("button", { name: "Choose devices" }).click();
+    await expect(page.getByRole("heading", { name: "iOS", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Android", exact: true })).toBeVisible();
     expect(pageErrors).toEqual([]);
   });
 });

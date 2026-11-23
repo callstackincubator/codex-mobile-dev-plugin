@@ -7,8 +7,6 @@ import os
 @Observable
 final class WorkspaceModel {
   private(set) var tool: Tool? = .logs
-  /// The page chooses the first layout from the devices it finds and reports it.
-  private(set) var layout: DeviceLayout = .none
   private(set) var status: ServerStatus = .starting {
     didSet { log.info("Status: \(self.status.label, privacy: .public)") }
   }
@@ -36,9 +34,6 @@ final class WorkspaceModel {
     page.setTitlebarInset(visible ? .zero : CGSize(width: WindowControls.width, height: WindowControls.height))
   }
 
-  func setShowsIOS(_ shows: Bool) { select(layout: DeviceLayout(showsIOS: shows, showsAndroid: layout.showsAndroid)) }
-  func setShowsAndroid(_ shows: Bool) { select(layout: DeviceLayout(showsIOS: layout.showsIOS, showsAndroid: shows)) }
-
   /// Restarts the server and reloads the page, for example after the server exits.
   func restart() {
     server?.stop()
@@ -47,12 +42,6 @@ final class WorkspaceModel {
   }
 
   func stop() { server?.stop() }
-
-  private func select(layout: DeviceLayout) {
-    guard layout != self.layout else { return }
-    self.layout = layout
-    page.select(layout: layout)
-  }
 
   private func start() {
     status = .starting
@@ -98,9 +87,6 @@ final class WorkspaceModel {
       page.select(tool: tool)
       setSidebarVisible(sidebarVisible)
       SmokeSnapshot.capture(page.webView)
-    case .layout(let layout):
-      // The page already applied this layout; reflect it without sending it back.
-      self.layout = layout
     case .error(let message):
       status = .failed(message)
     }

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { activeDeviceLayout, initialPanelDevice } from "../src/device-layout.ts";
+import { isDeviceActive, initialPanelDevice } from "../src/device-layout.ts";
 import { panelTargetSchema } from "../../shared/src/panel-target.ts";
 import type { SimulatorDevice } from "../../shared/src/protocol.ts";
 import type { PanelTarget } from "../../shared/src/panel-target.ts";
@@ -13,27 +13,12 @@ const iosPhone: SimulatorDevice = {
 };
 const androidPhone: SimulatorDevice = { udid: "phone", name: "Pixel", model: "Pixel", state: "Booted", runtime: "Android", platform: "android", kind: "physical", transportType: "wired" };
 
-test("one active platform opens by default, preferring iOS when both have active devices", () => {
-  for (const ios of [iosSimulator, iosPhone]) {
-    assert.equal(activeDeviceLayout(ios), "ios");
-    for (const android of [androidEmulator, androidPhone]) {
-      assert.equal(activeDeviceLayout(undefined, android), "android");
-      assert.equal(activeDeviceLayout(ios, android), "ios");
-    }
+test("only booted virtual devices and connected physical devices are active", () => {
+  for (const device of [iosSimulator, androidEmulator, iosPhone, androidPhone]) assert.ok(isDeviceActive(device));
+  for (const state of ["Shutdown", "disconnected", "offline", "unauthorized"]) {
+    assert.equal(isDeviceActive({ ...androidPhone, state }), false);
   }
-});
-
-test("stopped, disconnected, offline, and unauthorized devices do not activate a platform", () => {
-  const inactiveIos: SimulatorDevice[] = [{ ...iosSimulator, state: "Shutdown" }, { ...iosPhone, state: "disconnected" }];
-  const inactiveAndroid: SimulatorDevice[] = [{ ...androidEmulator, state: "Shutdown" }, { ...androidPhone, state: "offline" }, { ...androidPhone, state: "unauthorized" }];
-  assert.equal(activeDeviceLayout(), "none");
-  for (const ios of inactiveIos) {
-    assert.equal(activeDeviceLayout(ios, androidPhone), "android");
-    for (const android of inactiveAndroid) {
-      assert.equal(activeDeviceLayout(iosPhone, android), "ios");
-      assert.equal(activeDeviceLayout(ios, android), "none");
-    }
-  }
+  assert.equal(isDeviceActive(undefined), false);
 });
 
 test("opening targets validate platform and kind without filling in undecided choices", () => {

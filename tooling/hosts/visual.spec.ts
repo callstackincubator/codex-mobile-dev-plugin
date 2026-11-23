@@ -26,9 +26,22 @@ for (const theme of themes) test.describe(`${theme}`, { tag: "@visual" }, () => 
     }
   });
 
+  test("device picker", async ({ openView }) => {
+    const device = { state: "Shutdown", runtime: "iOS 27.0" };
+    const inventory = {
+      ios: [{ ...device, name: "iPhone 17 Pro", udid: "iphone" }, { ...device, name: "iPad Air", udid: "ipad" }],
+      android: [{ ...device, name: "Pixel 9", udid: "avd:Pixel_9", runtime: "Android" }],
+    };
+    const { view } = await openView("mobile_open_simulator", { theme, displayMode: "inline", width: 480, inventory });
+    await view.getByRole("button", { name: "Choose devices" }).click();
+    const picker = view.getByRole("dialog", { name: "Choose devices" });
+    await expect(picker.getByText("iPhone 17 Pro")).toBeVisible();
+    await expect.soft(picker).toHaveScreenshot(`device-picker-${theme}.png`);
+  });
+
   test(`panel beside the chat`, async ({ openView }) => {
     const { view } = await openView("mobile_open_simulator", { theme, displayMode: "inline", width: 480, arguments: { platform: "ios" } });
-    await expect(view.locator("#ios-panel")).toBeVisible();
+    await expect(view.getByText("Requested iOS device unavailable.", { exact: false })).toBeVisible();
     await expect.soft(view.locator("body")).toHaveScreenshot(`panel-${theme}.png`);
   });
 });

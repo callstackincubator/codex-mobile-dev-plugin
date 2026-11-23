@@ -5,12 +5,13 @@ import { test as base, expect, type FrameLocator, type Page } from "@playwright/
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { CallToolResult, JSONRPCMessage, Tool } from "@modelcontextprotocol/sdk/types.js";
+import type { SimulatorDevice } from "../../packages/shared/src/protocol.ts";
 import { HOSTS, type Target, type Theme } from "./profiles.ts";
 
 declare global {
   interface Window {
     /** The Mac page's entry points for the native sidebar, from apps/mac/web/main.tsx. */
-    mobileDevShell?: { selectTool(tool: string | null): void; selectLayout(layout: string): void };
+    mobileDevShell?: { selectTool(tool: string | null): void };
     /** Where Swift delivers the server's messages, from apps/mac/web/mac-bridge.ts. */
     __mobileDevReceive?: (message: JSONRPCMessage) => void;
   }
@@ -33,6 +34,8 @@ export async function startServer(target: Target) {
   return { transport, stderr, async close() { await transport.close(); await rm(home, { recursive: true, force: true }); } };
 }
 
+type Inventory = { ios: SimulatorDevice[]; android: SimulatorDevice[] };
+
 type Opened = { view: FrameLocator; result: CallToolResult };
 
 type Fixtures = {
@@ -42,7 +45,7 @@ type Fixtures = {
   /** An MCP client for the target's server, as the host's MCP client. */
   server: { client: Client; tools: Tool[] };
   /** Opens the view a tool renders, as an MCP Apps host would after the model calls it. */
-  openView(tool: string, options?: { arguments?: Record<string, unknown>; theme?: Theme; displayMode?: "inline" | "fullscreen"; width?: number; initiallyHidden?: boolean }): Promise<Opened>;
+  openView(tool: string, options?: { arguments?: Record<string, unknown>; theme?: Theme; displayMode?: "inline" | "fullscreen"; width?: number; initiallyHidden?: boolean; inventory?: Inventory }): Promise<Opened>;
   /** Loads the Mac app's page with a stand-in for the WebKit relay to its server. */
   openMac(options?: { theme?: Theme }): Promise<Page>;
 };
@@ -79,9 +82,21 @@ export const test = base.extend<Fixtures>({
       const name = new URL(route.request().url()).pathname.slice(1) || "host.html";
       await route.fulfill({ path: join(build, "harness", name) });
     });
-    await page.exposeFunction("mcpRequest", (method: string, params: never) =>
-      method === "tools/call" ? server.client.callTool(params) : server.client.readResource(params));
-    await use(async (name, { arguments: args = {}, theme = "light", displayMode = "fullscreen", width, initiallyHidden } = {}) => {
+    let inventory: Inventory | undefined;
+    await page.exposeFunction("mcpRequest", (method: string, params: never) => {
+      if (method === "resources/read") return server.client.readResource(params);
+      const { name } = params as { name: string };
+      if (inventory) {
+        if (name === "mobile_list_ios_devices") return { content: [], structuredContent: { physicalDevices: [] } };
+        if (name === "mobile_list_simulators" || name === "mobile_list_android_devices") {
+          const devices = name === "mobile_list_simulators" ? inventory.ios : inventory.android;
+          return { content: [], structuredContent: { connected: true, managed: false, baseUrl: "", devices } };
+        }
+      }
+      return server.client.callTool(params);
+    });
+    await use(async (name, { arguments: args = {}, theme = "light", displayMode = "fullscreen", width, initiallyHidden, inventory: devices } = {}) => {
+      inventory = devices;
       const tool = server.tools.find(candidate => candidate.name === name);
       const uri = (tool?._meta?.ui as { resourceUri?: string } | undefined)?.resourceUri;
       if (uri === undefined) throw new Error(`${name} has no UI resource.`);

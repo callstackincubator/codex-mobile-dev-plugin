@@ -13,7 +13,7 @@ Ask your agent to open the simulator beside chat, or open Mobile Dev from the Co
 - “Open the iPad simulator beside this chat.”
 - “Test this on my physical iPhone.”
 
-Use the platform menu to show iOS, Android, or both. Pick a device from each panel's dropdown. Selecting a stopped simulator or AVD boots it and starts its stream. Opening the panel by itself does not boot a device.
+Open **Devices** and select the iOS and Android devices you want to see side by side. You can select several devices from either column. Drag the divider to resize a device view, or scroll horizontally to see more devices. Selecting a stopped simulator or AVD boots it and starts its stream. Opening the workspace by itself does not boot a device.
 
 The agent reuses a suitable selected or running device when the task establishes the target. It may ask you to choose when the choice affects the task.
 
