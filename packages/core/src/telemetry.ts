@@ -122,7 +122,7 @@ export function recordTraceSiftPayload(kind: "task" | "react", bytes: number) {
   Sentry.metrics.gauge("tracesift.explore.payload_bytes", bytes, { unit: "byte", attributes });
 }
 
-/** Counts each batch sent to Mixpanel by whether Mixpanel accepted it. */
+/** Counts each batch sent to the analytics service by whether it accepted it. */
 export function recordAnalyticsFlush(outcome: "success" | "failed", endpoint: "track" | "engage") {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   Sentry.metrics.count("analytics.flush", 1, { attributes: { component: "server", outcome, endpoint } });

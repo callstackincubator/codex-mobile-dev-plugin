@@ -1,6 +1,6 @@
 # Mobile Dev Privacy Policy
 
-Last updated: 3 November 2026
+Last updated: 19 November 2026
 
 ## 1. Who we are and what this policy covers
 
@@ -62,8 +62,8 @@ Use test data, scope requests to the relevant app, and review content before
 sharing it. Do not provide passwords, API keys, payment-card data, health records,
 or government identifiers through these workflows.
 
-Mobile Dev does not upload this development content to Callstack's Sentry or
-Mixpanel projects as telemetry. This exclusion does not prevent a tool result from reaching the
+Mobile Dev does not upload this development content to Callstack's Sentry project or
+analytics service as telemetry. This exclusion does not prevent a tool result from reaching the
 host or content you deliberately email to support from reaching Callstack.
 
 ### Diagnostics and usage telemetry
@@ -96,7 +96,7 @@ not a reason to put secrets into your test data.
 
 ### Product analytics
 
-Release builds send basic product analytics to Mixpanel so we can see how many
+Release builds send basic product analytics to our own analytics service so we can see how many
 installations use Mobile Dev and which tools they use most. Events record that a
 host session started or that a tool was called, with the tool's name, whether it
 succeeded, the host (Codex, Claude, Cursor, the Mac app or other), the plugin
@@ -105,7 +105,7 @@ described above. Frequent polling and input tools are not recorded.
 
 Analytics events never contain MCP arguments or results, app or device content,
 device names or identifiers, project paths, or account details. They go to
-Mixpanel's EU ingestion endpoint with IP collection turned off, so Mixpanel does
+our analytics service at anal.margelo.com with IP collection turned off, so it does
 not store your IP address or derive a location from it. We do not create user
 profiles, combine analytics with other data about you, or use them for advertising.
 
@@ -141,8 +141,12 @@ telemetry controls and the right to object.
   Callstack. The configured ingestion endpoints are in Sentry's German region.
   This alone is not a promise that every support, subprocessor, or administrative
   operation takes place exclusively in Germany.
-- **Mixpanel:** processes the product analytics described above for Callstack,
-  in its EU data residency region.
+- **Vercel and MotherDuck:** host and store the product analytics described
+  above for Callstack, in the United States: the service runs in Vercel's
+  Washington, D.C. region and stores analytics in MotherDuck's AWS US East region.
+- **Mixpanel:** processes the product analytics that releases up to 0.1.189 send,
+  for Callstack, in its EU data residency region. A copy of their history up to
+  19 November 2026 is also kept in our analytics service.
 - **OpenAI or another host you use:** receives tool results and content supplied
   through that host. Its processing and retention are governed by your relationship
   with that provider, not the Sentry opt-out.
@@ -158,6 +162,8 @@ Where personal data is transferred outside the EEA, applicable transfer
 requirements must be met, such as an adequacy decision or appropriate contractual
 safeguards. Contact us for information about safeguards applicable to your data.
 See also [Sentry's privacy policy](https://sentry.io/privacy/),
+[Vercel's privacy policy](https://vercel.com/legal/privacy-policy),
+[MotherDuck's privacy policy](https://motherduck.com/privacy-policy/),
 [Mixpanel's privacy policy](https://mixpanel.com/legal/privacy-policy/),
 [GitHub's privacy statement](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement),
 and [OpenAI's privacy policy](https://openai.com/policies/privacy-policy/).
@@ -168,7 +174,7 @@ and [OpenAI's privacy policy](https://openai.com/policies/privacy-policy/).
 | --- | --- |
 | Sentry errors/crashes | 90 days under our Sentry Team plan. |
 | Sentry performance spans and Application Metrics | 30 days under our Sentry Team plan. |
-| Mixpanel product analytics | Up to 24 months, then deleted. |
+| Product analytics | Up to 24 months, then deleted. |
 | Local live logs | Held in bounded memory buffers. A server log session expires after five minutes without reads or keep-alives; closing the session stops collection. Copies already attached to the host follow the host's retention. |
 | Saved performance recordings | Stored under `~/Library/Application Support/mobile-dev/recordings` until you remove them; the recording store has no automatic age-based expiry. |
 | TraceSift integration results/references and the chosen project folder | Stored under `~/.tracesift/integrations/mobile-dev` by default, or the corresponding `TRACE_SIFT_HOME` directory, until removed. Original profiles and the TraceSift service's own data are separate. |
@@ -193,7 +199,7 @@ operating system, and your own backup tools manage their copies separately.
   components and prevents creation of a new installation ID. It does not delete
   reports already sent or disable GitHub update checks or host processing.
 - **Disable product analytics only:** set `MOBILE_DEV_ANALYTICS=off` (or
-  `DO_NOT_TRACK=1`) in the same environment and restart. Mixpanel events stop;
+  `DO_NOT_TRACK=1`) in the same environment and restart. Product analytics stop;
   Sentry error and performance reporting continues unless you also turn it off.
 - **Reset the installation ID:** stop Mobile Dev processes and remove only the
   `anonymous-user-id` file listed above. A new ID is generated on the next start

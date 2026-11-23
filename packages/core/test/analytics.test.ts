@@ -6,7 +6,7 @@ import type { Envelope } from "@sentry/core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { MIXPANEL_TRACK_URL, MIXPANEL_ENGAGE_URL, TELEMETRY_INTERVAL_MS } from "../../shared/src/telemetry.ts";
+import { ANALYTICS_TRACK_URL, ANALYTICS_ENGAGE_URL, TELEMETRY_INTERVAL_MS } from "../../shared/src/telemetry.ts";
 import { PLUGIN_VERSION } from "../../shared/src/version.ts";
 import { instrumentProductAnalytics } from "../src/analytics.ts";
 import type { AnalyticsOptions } from "../src/analytics.ts";
@@ -22,14 +22,14 @@ function mixpanel(status = 1) {
     return Response.json({ error: status === 1 ? "" : "rejected", status });
   };
   function events() {
-    const batches = requests.filter(request => request.url === MIXPANEL_TRACK_URL);
+    const batches = requests.filter(request => request.url === ANALYTICS_TRACK_URL);
     return batches.flatMap(request => {
       const batch: SentEvent[] = JSON.parse(request.body);
       return batch;
     });
   }
   function profiles() {
-    const batches = requests.filter(request => request.url === MIXPANEL_ENGAGE_URL);
+    const batches = requests.filter(request => request.url === ANALYTICS_ENGAGE_URL);
     return batches.flatMap(request => {
       const batch: SentProfile[] = JSON.parse(request.body);
       return batch;
@@ -71,10 +71,10 @@ test("product analytics joins EU installation profiles to events without IPs or 
   await client.close();
   await analytics.close();
   assert.equal(requests.length, 2);
-  assert.equal(requests[0].url, MIXPANEL_ENGAGE_URL);
-  assert.equal(requests[1].url, MIXPANEL_TRACK_URL);
-  assert.match(MIXPANEL_TRACK_URL, /^https:\/\/api-eu\.mixpanel\.com\/track\?(?=.*\bip=0\b)(?=.*\bverbose=1\b)/);
-  assert.match(MIXPANEL_ENGAGE_URL, /^https:\/\/api-eu\.mixpanel\.com\/engage\?(?=.*\bip=0\b)(?=.*\bverbose=1\b)/);
+  assert.equal(requests[0].url, ANALYTICS_ENGAGE_URL);
+  assert.equal(requests[1].url, ANALYTICS_TRACK_URL);
+  assert.match(ANALYTICS_TRACK_URL, /^https:\/\/anal\.margelo\.com\/track\?(?=.*\bip=0\b)(?=.*\bverbose=1\b)/);
+  assert.match(ANALYTICS_ENGAGE_URL, /^https:\/\/anal\.margelo\.com\/engage\?(?=.*\bip=0\b)(?=.*\bverbose=1\b)/);
   const sentProfiles = profiles();
   assert.deepEqual(sentProfiles, [{
     $token: "token", $distinct_id: "anon_1", $ip: "0",
@@ -135,7 +135,7 @@ test("product analytics batches at Mixpanel's limit and counts batches Mixpanel 
   const closing = analytics.close();
   delivery.resolve();
   await closing;
-  const eventRequests = requests.filter(request => request.url === MIXPANEL_TRACK_URL);
+  const eventRequests = requests.filter(request => request.url === ANALYTICS_TRACK_URL);
   const batchSizes = eventRequests.map(request => {
     const batch: SentEvent[] = JSON.parse(request.body);
     return batch.length;
@@ -163,7 +163,7 @@ test("a rejected profile retries on the existing timer without blocking events o
   let profileAttempts = 0;
   const send = async (url: string, init: RequestInit) => {
     const response = await recorded.send(url, init);
-    if (url === MIXPANEL_ENGAGE_URL) {
+    if (url === ANALYTICS_ENGAGE_URL) {
       profileAttempts += 1;
       if (profileAttempts === 1) return Response.json({ status: 0, error: "rejected" });
     }
@@ -200,7 +200,7 @@ test("closing waits for an in-flight profile and flushes queued events", async (
   const gate = Promise.withResolvers<Response>();
   const send = async (url: string, init: RequestInit) => {
     const response = await recorded.send(url, init);
-    if (url === MIXPANEL_ENGAGE_URL) return gate.promise;
+    if (url === ANALYTICS_ENGAGE_URL) return gate.promise;
     return response;
   };
   const { client, analytics } = await connect({ send });
