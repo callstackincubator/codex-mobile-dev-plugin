@@ -384,7 +384,8 @@ test("bundled mode runs and cleans an isolated Testing Studio workspace", async 
     bundledTarget: { platform: "ios", bundleId: "com.example.app" },
   }, { spawner: spawner(JSON.stringify(report([{ line: 1, status: "passed" }])), 0, seen), runnerCwd });
   assert.equal(result.status, "passed");
-  assert.match((seen.args?.[0] ?? "").replaceAll("\\", "/"), /e2e\/dist\/cli\/bin\.js$/);
+  const bundledCli = process.platform === "win32" ? seen.command : seen.args?.[0];
+  assert.match((bundledCli ?? "").replaceAll("\\", "/"), /e2e\/dist\/cli\/bin\.js$/);
   assert.ok(seen.args?.some((value, index) => value === "--target" && seen.args?.[index + 1] === "ios"));
   const config = seen.args![seen.args!.indexOf("--config") + 1];
   assert.ok(isAbsolute(config) && dirname(config).includes("mobile-dev-e2e-run-"), "the CLI gets the workspace's config by absolute path");
