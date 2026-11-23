@@ -390,7 +390,9 @@ test("bundled mode runs and cleans an isolated Testing Studio workspace", async 
   const config = seen.args![seen.args!.indexOf("--config") + 1];
   assert.ok(isAbsolute(config) && dirname(config).includes("mobile-dev-e2e-run-"), "the CLI gets the workspace's config by absolute path");
   // macOS's tmpdir is a symlink; a linked config path makes the runner report every step at "unknown".
-  assert.ok(config.startsWith(realpathSync(tmpdir())), "the workspace is given by its real path");
+  // Compare against the native resolver, as the workspace uses: the JS one keeps Windows 8.3 short
+  // names (C:\Users\RUNNER~1) that the native one expands.
+  assert.ok(config.startsWith(realpathSync.native(tmpdir())), "the workspace is given by its real path");
   assert.equal(existsSync(dirname(config)), false, "temporary config, test and node_modules link are cleaned");
   assert.equal(seen.cwd, runnerCwd, "the daemon a run starts must not inherit the workspace it outlives");
   assert.equal(existsSync(seen.cwd!), true, "the spawn cwd survives the workspace's removal");
