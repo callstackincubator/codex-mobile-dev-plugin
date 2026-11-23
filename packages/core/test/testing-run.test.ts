@@ -380,7 +380,7 @@ test("bundled mode runs and cleans an isolated Testing Studio workspace", async 
   const seen: { command?: string; args?: readonly string[]; cwd?: string } = {};
   const result = await runRecordedTest({
     projectPath: root, relativePath: FILE, untilSource: 'test("x", async () => {});\n',
-    runtime: { mode: "bundled", root: bundledE2eRoot() },
+    runtime: { mode: "bundled", root: await bundledE2eRoot() },
     bundledTarget: { platform: "ios", bundleId: "com.example.app" },
   }, { spawner: spawner(JSON.stringify(report([{ line: 1, status: "passed" }])), 0, seen), runnerCwd });
   assert.equal(result.status, "passed");
@@ -402,7 +402,7 @@ test("a bundled run spawns from the app's stable runner folder by default", asyn
   const seen: { command?: string; args?: readonly string[]; cwd?: string } = {};
   await runRecordedTest({
     projectPath: await project(), relativePath: FILE, untilSource: 'test("x", async () => {});\n',
-    runtime: { mode: "bundled", root: bundledE2eRoot() }, bundledTarget: { platform: "ios", bundleId: "com.example.app" },
+    runtime: { mode: "bundled", root: await bundledE2eRoot() }, bundledTarget: { platform: "ios", bundleId: "com.example.app" },
   }, { spawner: spawner(JSON.stringify(report([{ line: 1, status: "passed" }])), 0, seen) });
   assert.equal(seen.cwd, RUNNER_CWD);
   assert.ok(!seen.cwd.startsWith(tmpdir()));
@@ -413,7 +413,7 @@ test("bundled deterministic tests need no model and agent tests request one", as
   assert.doesNotMatch(bundledConfigSource({ platform: "android", bundleId: "com.example.app" }), /agents:/);
   await assert.rejects(runRecordedTest({
     projectPath: "/unused", relativePath: FILE, untilSource: 'test("x", async ({ agent }) => { await agent.extract("title"); });\n',
-    runtime: { mode: "bundled", root: bundledE2eRoot() }, bundledTarget: { platform: "android", bundleId: "com.example.app" },
+    runtime: { mode: "bundled", root: await bundledE2eRoot() }, bundledTarget: { platform: "android", bundleId: "com.example.app" },
   }), /Choose a provider and model/);
 });
 
@@ -435,7 +435,7 @@ test("a pinned bundled run passes its own target and output directory, removed a
   const seen: { command?: string; args?: readonly string[]; cwd?: string } = {};
   await runRecordedTest({
     projectPath: root, relativePath: FILE, untilSource: 'test("x", async () => {});\n',
-    runtime: { mode: "bundled", root: bundledE2eRoot() },
+    runtime: { mode: "bundled", root: await bundledE2eRoot() },
     bundledTarget: { platform: "android", bundleId: "com.example.app", device: "emulator-5554" },
   }, { spawner: spawner(JSON.stringify(report([{ line: 1, status: "passed" }])), 0, seen) });
   const args = seen.args ?? [];
@@ -459,7 +459,7 @@ test("aborting a run kills its process and reports it as cancelled", async () =>
   }) as never;
   const run = runRecordedTest({
     projectPath: root, relativePath: FILE, untilSource: 'test("x", async () => {});\n',
-    runtime: { mode: "bundled", root: bundledE2eRoot() }, bundledTarget: { platform: "ios", bundleId: "a.b" },
+    runtime: { mode: "bundled", root: await bundledE2eRoot() }, bundledTarget: { platform: "ios", bundleId: "a.b" },
   }, { spawner: hanging, signal: controller.signal });
   setTimeout(() => controller.abort(), 20);
   await assert.rejects(run, /cancelled/);

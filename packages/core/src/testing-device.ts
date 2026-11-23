@@ -145,7 +145,7 @@ async function loadProjectionWithFallback(runtimeRoot: string): Promise<EnginePr
     return await loadProjection(runtimeRoot);
   } catch (error) {
     let bundled: string;
-    try { bundled = bundledE2eRoot(); } catch { throw error; }
+    try { bundled = await bundledE2eRoot(); } catch { throw error; }
     if (bundled === runtimeRoot) throw error;
     return await loadProjection(bundled).catch(() => { throw error; });
   }

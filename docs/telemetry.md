@@ -35,13 +35,14 @@ Behavior never depends on this value; it only attributes measurements and errors
   model context updates by `outcome` (`stored`, `invalid` or `too_large`), and
   `browser_panel.context_bytes` records the size of stored updates in bytes; the
   context's text and images are never sent.
-- Packages that download the panel's native parts, such as Claude's, measure that
+- Packages that download the device and Testing Studio runtime, such as Claude's, measure that
   step. `panel_runtime.ready` records, in milliseconds, how long the runtime took to be
-  ready on a panel's first backend start in a server, by `outcome`: `cached` when a
+  ready on its first use in a server, by `outcome`: `cached` when a
   complete folder was already there, `downloaded` for a download, checksum check and
   extraction, or `failed` with a bounded `reason` (`network`, `http`, `checksum`,
   `archive` or `filesystem`). `panel_runtime.download_bytes` records the archive size
-  of each download. A failure surfaces as the expected `download_failed` outcome;
+  of each download, including the Testing Studio runtime since 0.1.191. A failure
+  surfaces as the expected `download_failed` outcome;
   checksum, archive and filesystem failures are also captured as
   `panel_runtime.prepare` errors with a `panel_runtime_failure` tag, while offline
   machines and unreachable releases are not. URLs, paths and versions are never
@@ -60,7 +61,7 @@ shell has no native Sentry SDK.
 
 ## Product analytics
 
-Starting with 0.1.190, release MCP servers send basic product analytics to the
+Starting with 0.1.191, release MCP servers send basic product analytics to the
 Mobile Dev project in Anal to count installations and feature use. Earlier
 releases from 0.1.177 send to Mixpanel's EU endpoint. `instrumentProductAnalytics`
 (`packages/core/src/analytics.ts`) wraps the `tools/call` handler and reports

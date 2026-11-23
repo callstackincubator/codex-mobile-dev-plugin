@@ -330,15 +330,15 @@ Claude plugin folder `release/claude-plugin/mobile-dev` with its ZIP, and a loca
 Claude's server (`apps/claude/server`), with the panel and agent-device's commands as
 `device_*` tools, the skill in `apps/claude/skills` and the shared agent-device skill.
 Packaging fails if a file exceeds the Claude plugin directory's 5 MiB limit, so the
-packages leave out the panel's native parts (`PANEL_PARTS` in
-`tooling/host-runtime.mjs`: Baguette, serve-emu, the iOS mirror addon and its
-service), as `"panelRuntime": "download"` in `apps/claude/plugin-host.json` asks.
+packages use `"panelRuntime": "download"` in `apps/claude/plugin-host.json`. The archive
+includes the native panel parts and the Testing Studio runner
+(`DOWNLOADED_RUNTIME_PARTS` in `tooling/host-runtime.mjs`).
 Packaging packs those parts from `dist/` into
 `release/mobile-dev-<version>-panel-runtime-darwin-arm64.tar.gz` and pins it in
 `dist/panel-runtime.json` with its size and SHA-256. A local build pins the archive by
 its `file:` URL; `--release` pins it on the GitHub release `v<version>`, which the
 release workflow creates with every `release/mobile-dev-<version>-*` file, this archive
-included. On the first panel open, the server downloads the archive, checks its size
+included. On first use of a component in the archive, the server downloads it, checks its size
 and checksum, refuses entries outside the parts and links, and extracts it into
 `${CLAUDE_PLUGIN_DATA}/panel-runtime/<version>-<checksum>` (or
 `~/Library/Caches/mobile-dev/panel-runtime` without it). The folder appears only once

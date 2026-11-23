@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { cp, copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { telemetryBuildEnvironment } from "./telemetry-build.mjs";
-import { assertRuntime, oversizedFiles, RELEASE_DOCUMENTS as documents, releaseVersion, stageRuntime } from "./host-runtime.mjs";
+import { assertRuntime, DOWNLOADED_RUNTIME_PARTS, oversizedFiles, PANEL_PARTS, RELEASE_DOCUMENTS as documents, releaseVersion, stageRuntime } from "./host-runtime.mjs";
 import { pluginHost } from "./plugin-hosts.mjs";
 import { pluginMarketplace } from "./plugin-marketplace.mjs";
 import { packPanelRuntime } from "./panel-runtime.mjs";
@@ -21,9 +21,10 @@ const version = await releaseVersion();
 // the same Sentry debug IDs.
 const runtime = resolve(`release/${name}-runtime`);
 await rm(runtime, { recursive: true, force: true });
-await stageRuntime(runtime, { panel: host.bundlesPanel });
-// A host that downloads the panel's parts pins their archive, which releases attach.
-if (host.panel && host.bundlesPanel === false) {
+const downloadsRuntime = host.panel && host.panelRuntime === "download";
+const excludedParts = host.bundlesPanel ? [] : PANEL_PARTS;
+await stageRuntime(runtime, { exclude: downloadsRuntime ? DOWNLOADED_RUNTIME_PARTS : excludedParts });
+if (downloadsRuntime) {
   const { archive, pin } = await packPanelRuntime(version, { release: environment === "release" });
   await writeFile(`${runtime}/panel-runtime.json`, JSON.stringify(pin, null, 2) + "\n");
   console.log(`Panel runtime archive: ${archive}`);

@@ -56,15 +56,15 @@ The plugin bundles most of its runtimes and native helpers, so no `npm install`,
 account, or hosted service is needed. Your project's own tools build the app. Besides
 its Node.js server, it runs:
 
-- **The device panel's runtime, downloaded once.** The first time you open the panel,
+- **The device and Testing Studio runtime, downloaded once.** On first use,
   Mobile Dev downloads one archive from this project's GitHub release for the
   installed version (`mobile-dev-<version>-panel-runtime-darwin-arm64.tar.gz`, from
   `github.com/callstackincubator/codex-mobile-dev-plugin/releases`). The plugin pins
   the archive's size and SHA-256 checksum and refuses any other file. It holds
   [Baguette](https://github.com/tddworks/baguette), which streams and controls iOS
   simulators, serve-emu with scrcpy for Android streaming, and the physical iPhone
-  mirroring addon and its service, built from the source and versions this
-  repository pins. It is unpacked into Claude Code's data folder for the plugin
+  mirroring addon and its service, plus the Testing Studio runner. The repository
+  pins their versions. The archive is unpacked into Claude Code's plugin data folder
   (`~/.claude/plugins/data/`), or `~/Library/Caches/mobile-dev` elsewhere, and kept
   across sessions; an update downloads its own version and removes older ones.
   Nothing is downloaded until you open the panel, and the other tools work without it.

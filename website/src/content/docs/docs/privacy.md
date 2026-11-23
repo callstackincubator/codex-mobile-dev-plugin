@@ -106,7 +106,7 @@ not a reason to put secrets into your test data.
 
 ### Product analytics
 
-Starting with version 0.1.190, release builds send basic product analytics to Anal
+Starting with version 0.1.191, release builds send basic product analytics to Anal
 at `anal.margelo.com` so we can see how many installations use Mobile Dev and which
 tools they use most. Events record that a host session started or that a tool
 was called, with the tool's name, whether it succeeded, the host (Codex, Claude,

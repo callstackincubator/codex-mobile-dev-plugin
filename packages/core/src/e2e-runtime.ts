@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
+import { panelRuntimePath } from "./panel-runtime.ts";
 
 export type TestingRuntimeMode = "project" | "bundled";
 
@@ -15,18 +16,20 @@ export interface TestingRuntimeDescriptor {
   reason?: string;
 }
 
-const sourceRuntime = resolve("packages/runtimes/e2e");
+const modulePath = fileURLToPath(import.meta.url);
+const moduleDirectory = dirname(modulePath);
 
 /** The runner a project run executes (`runnerBin`); its presence is what makes a project's own setup usable. */
 export const PROJECT_CLI = "node_modules/.bin/e2e";
 
-/** The shipped runtime beside server.mjs, with the source tree fallback used by unit tests. */
-export function bundledE2eRoot(): string {
+/** Resolves the E2E runtime from the source tree or the packaged host's runtime. */
+export async function bundledE2eRoot(): Promise<string> {
   const configured = process.env.MOBILE_DEV_E2E_RUNTIME?.trim();
-  const besideServer = join(dirname(fileURLToPath(import.meta.url)), "e2e");
-  for (const candidate of [configured, besideServer, sourceRuntime]) {
-    if (candidate && existsSync(join(candidate, "node_modules/e2e/package.json"))) return candidate;
-  }
+  const root = configured || (modulePath.endsWith(".ts")
+    ? resolve(moduleDirectory, "../../runtimes/e2e")
+    : await panelRuntimePath("e2e"));
+  const manifest = join(root, "node_modules/e2e/package.json");
+  if (existsSync(manifest)) return root;
   throw new ExpectedOperationError("app_unavailable", "The bundled e2e runtime is missing. Reinstall Mobile Dev.");
 }
 
@@ -36,7 +39,7 @@ async function version(root: string, name: string): Promise<string> {
 }
 
 export async function bundledRuntimeDescriptor(reason?: string): Promise<TestingRuntimeDescriptor> {
-  const root = bundledE2eRoot();
+  const root = await bundledE2eRoot();
   return {
     mode: "bundled",
     root,
@@ -65,7 +68,7 @@ export async function projectRuntimeDescriptor(projectPath: string): Promise<Tes
 }
 
 export async function verifyBundledE2eRuntime(): Promise<void> {
-  const root = bundledE2eRoot();
+  const root = await bundledE2eRoot();
   const lock = await readFile(join(root, "package-lock.json"), "utf8");
   const release = JSON.parse(await readFile(join(root, "release.json"), "utf8"));
   const actual = createHash("sha256").update(lock).digest("hex");
