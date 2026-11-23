@@ -4,7 +4,14 @@ import { readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 const runtime = "packages/runtimes/e2e";
-execFileSync("npm", ["install", "--prefix", runtime, "--ignore-scripts", "--no-audit", "--no-fund", "--package-lock-only=false"], { stdio: "inherit" });
+const installArgs = ["install", "--prefix", runtime, "--ignore-scripts", "--no-audit", "--no-fund", "--package-lock-only=false"];
+const npmCli = process.env.npm_execpath;
+if (npmCli) execFileSync(process.execPath, [npmCli, ...installArgs], { stdio: "inherit" });
+else execFileSync(process.platform === "win32" ? "npm.cmd" : "npm", installArgs, {
+  stdio: "inherit",
+  // A directly invoked script has no npm_execpath. Windows command shims need cmd.exe in that case.
+  shell: process.platform === "win32",
+});
 
 const lock = await readFile(join(runtime, "package-lock.json"), "utf8");
 const packages = JSON.parse(lock).packages;

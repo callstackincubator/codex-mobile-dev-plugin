@@ -736,8 +736,11 @@ async function runBundledTest(request: TestRunRequest, deps: TestRunDeps): Promi
 
 async function spawnRun(input: { command: string; commandArgs?: string[]; cwd: string; runPath: string; configName?: string; target?: string; output?: string; stateDir?: string; timeoutMs?: number; spawner: Spawner; signal?: AbortSignal; onProgress?: (progress: TestRunProgress) => void }): Promise<TestRunResult> {
   input.signal?.throwIfAborted();
-  const child = input.spawner(input.command, [
-    ...(input.commandArgs ?? []), "run", input.runPath, "--reporter", "json",
+  // Project runners are JavaScript entry points on Windows: invoking the .cmd shim needs a shell,
+  // which would reinterpret user-selected paths and targets. Run the entry point with this Node.
+  const wrapsProjectRunner = process.platform === "win32" && !input.commandArgs;
+  const child = input.spawner(wrapsProjectRunner ? process.execPath : input.command, [
+    ...(wrapsProjectRunner ? [input.command] : input.commandArgs ?? []), "run", input.runPath, "--reporter", "json",
     ...(input.output ? ["--output", input.output] : []),
     ...(input.target ? ["--target", input.target] : []), ...(input.configName ? ["--config", input.configName] : []),
   ], { cwd: input.cwd, stdio: ["ignore", "pipe", "pipe"], env: runnerEnv(process.env, input.stateDir) });

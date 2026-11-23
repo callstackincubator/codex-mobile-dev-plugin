@@ -4,7 +4,8 @@ import { EventEmitter } from "node:events";
 import { Readable } from "node:stream";
 import { mkdtemp, mkdir, writeFile, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, isAbsolute, join } from "node:path";
+import { basename, dirname, isAbsolute, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { existsSync, realpathSync } from "node:fs";
 import { readFileSync } from "node:fs";
 import { RUNNER_CWD, bundledConfigSource, bundledTargetName, parseProgressLine, parseReport, progressConfigSource, reportDuration, reportError, rewriteLaneConfig, sweepLaneFiles, LANE_FILE_PREFIX, reportSteps, reportStatus, runRecordedTest, runnerBin, runnerEnv, untilTestPath } from "../src/testing-run.ts";
@@ -115,7 +116,6 @@ function spawner(stdout: string, exitCode = 0, seen: { command?: string; args?: 
   return ((command: string, args: readonly string[], options: { cwd?: string }) => {
     if (process.platform === "win32") {
       assert.equal(command, process.execPath);
-      assert.equal(args[0], join(options.cwd!, "node_modules/e2e/cli.js"));
       seen.command = args[0]; seen.args = args.slice(1);
     } else { seen.command = command; seen.args = args; }
     seen.cwd = options.cwd;
@@ -384,7 +384,7 @@ test("bundled mode runs and cleans an isolated Testing Studio workspace", async 
     bundledTarget: { platform: "ios", bundleId: "com.example.app" },
   }, { spawner: spawner(JSON.stringify(report([{ line: 1, status: "passed" }])), 0, seen), runnerCwd });
   assert.equal(result.status, "passed");
-  assert.match(seen.args?.[0] ?? "", /e2e\/dist\/cli\/bin\.js$/);
+  assert.match((seen.args?.[0] ?? "").replaceAll("\\", "/"), /e2e\/dist\/cli\/bin\.js$/);
   assert.ok(seen.args?.some((value, index) => value === "--target" && seen.args?.[index + 1] === "ios"));
   const config = seen.args![seen.args!.indexOf("--config") + 1];
   assert.ok(isAbsolute(config) && dirname(config).includes("mobile-dev-e2e-run-"), "the CLI gets the workspace's config by absolute path");
@@ -532,7 +532,8 @@ function laneSpawner(seen: { args?: readonly string[]; cwd?: string; config?: st
   return ((command: string, args: readonly string[], options: { cwd?: string }) => {
     seen.args = args; seen.cwd = options.cwd;
     const config = args[args.indexOf("--config") + 1]!;
-    seen.config = readFileSync(config.endsWith(".progress.mts") ? readFileSync(config, "utf8").match(/file:\/\/[^"]+/)![0].replace("file://", "") : config, "utf8");
+    const imported = config.endsWith(".progress.mts") ? readFileSync(config, "utf8").match(/file:\/\/[^"]+/)![0] : undefined;
+    seen.config = readFileSync(imported ? fileURLToPath(imported) : config, "utf8");
     return spawner(JSON.stringify(report([{ line: 8, status: "passed" }])))(command, args, options as never);
   }) as never;
 }
@@ -547,10 +548,11 @@ test("a project lane runs a hidden rewritten copy beside the config, with its ow
   assert.equal(seen.cwd, root);
   assert.equal(args[args.indexOf("--target") + 1], "ios");
   const config = args[args.indexOf("--config") + 1]!;
-  assert.ok(config.includes(`/${LANE_FILE_PREFIX}`) && config.startsWith(root), "the lane's config sits beside the project's own");
+  assert.equal(dirname(config), root, "the lane's config sits beside the project's own");
+  assert.ok(basename(config).startsWith(LANE_FILE_PREFIX));
   assert.match(seen.config!, /device: "UDID-1", session: "mobile-dev-lane-/);
   assert.notEqual(args[args.indexOf("--output") + 1], undefined);
-  assert.ok(args[args.indexOf("--output") + 1]!.startsWith(`${root}/`), "the runner refuses an --output outside the root it runs from");
+  assert.equal(dirname(args[args.indexOf("--output") + 1]!), root, "the runner refuses an --output outside the root it runs from");
   assert.equal(existsSync(args[args.indexOf("--output") + 1]!), false, "the output directory is removed");
   assert.deepEqual((await readdir(root)).filter(name => name.startsWith(LANE_FILE_PREFIX)), [], "the lane files are removed");
   assert.equal(readFileSync(join(root, "e2e.config.ts"), "utf8"), LANE_CONFIG, "the project's own config is never touched");
@@ -578,7 +580,7 @@ test("a lane of the editor's own text runs in an isolated mirror and writes noth
   await runRecordedTest({ projectPath: root, relativePath: FILE, configPath: join(root, "e2e.config.ts"), untilSource: 'test("x", async () => {});\n',
     projectLane: { target: "android", device: "emulator-5554" } }, { spawner: laneSpawner(seen), onProgress: () => undefined });
   assert.notEqual(seen.cwd, root);
-  assert.ok(seen.args![seen.args!.indexOf("--output") + 1]!.startsWith(`${seen.cwd}/`), "the output sits inside the mirror the runner runs from");
+  assert.equal(dirname(seen.args![seen.args!.indexOf("--output") + 1]!), seen.cwd, "the output sits inside the mirror the runner runs from");
   assert.ok(seen.cwd!.includes("mobile-dev-e2e-lane-run-"));
   assert.equal(existsSync(seen.cwd!), false, "the mirror is removed");
   assert.deepEqual(await readdir(root), before, "the project folder is exactly as it was");
