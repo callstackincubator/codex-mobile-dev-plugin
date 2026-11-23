@@ -28,6 +28,7 @@ export async function startServer(target: Target) {
     // No device tools on PATH or in the home directory: the tests see no devices on any machine.
     env: {
       PATH: "/usr/bin:/bin", HOME: home, MOBILE_DEV_TELEMETRY: "off",
+      MOBILE_DEV_E2E_RUNTIME: join(root, "packages/runtimes/e2e"),
       ...(process.platform === "win32" ? { PATH: home, USERPROFILE: home, LOCALAPPDATA: home, APPDATA: home } : {}),
       ...(target === "mac" ? { MOBILE_DEV_HOST: "mac" } : {}),
     },

@@ -1,3 +1,4 @@
+import type { TestingRuntimeProgress } from "@mobile-dev/shared/testing-runtime.ts";
 import type { HostBridge } from "./host-bridge.ts";
 import type { DeviceAppsStore } from "./device-apps.ts";
 import { captureUiError, countUiEvent, getUiTelemetryAttributes, recordUiTiming } from "./telemetry.ts";
@@ -113,6 +114,7 @@ export type TestingSnapshot = {
   providers: TestingProviderOption[];
   modelPickerOpen: boolean;
   setupOpen: boolean;
+  needsRuntime?: boolean;
   loadingProject: boolean;
   pickingProject: boolean;
   launching: boolean;
@@ -349,7 +351,7 @@ export class TestingPanel {
   private syncTreeSource() {
     const projectPath = this.snapshot.projectPath;
     const bundleId = this.target?.bundleId ?? "";
-    const key = this.disposed || !projectPath || !bundleId ? "" : `${projectPath}\u0000${bundleId}`;
+    const key = this.disposed || this.snapshot.needsRuntime || !projectPath || !bundleId ? "" : `${projectPath}\u0000${bundleId}`;
     if (key === this.treeSourceKey) return;
     this.treeSourceKey = key;
     testRecorder.useTreeSource(key ? this.treeSource(projectPath, bundleId) : undefined);
@@ -617,7 +619,7 @@ export class TestingPanel {
     this.draftRevision = testRecorder.getSnapshot().revision;
     this.draftFlowId = "";
     this.pendingModelAction = undefined;
-    this.update({ projectPath: path, targets: [], targetName: "", configPath: "", runtimeMode: "bundled", setupState: "available", setupDetails: undefined, targetSource: "none", projectWarning: "", appLaunched: false,
+    this.update({ projectPath: path, needsRuntime: false, targets: [], targetName: "", configPath: "", runtimeMode: "bundled", setupState: "available", setupDetails: undefined, targetSource: "none", projectWarning: "", appLaunched: false,
       overwritePath: "", savedRevision: -1, savedPath: "", draftId: "", drafts: [], tests: [], error: null });
     void this.refreshDrafts();
     void this.refreshTests();
@@ -647,12 +649,24 @@ export class TestingPanel {
         loginStatus: Object.fromEntries(Object.entries(loginData).map(([key, value]) => [key, value === true])),
       } : undefined;
       const providers = (Array.isArray(data.providers) ? data.providers : []).map(entry => object(entry)).filter((entry): entry is Record<string, unknown> => entry !== null).map(entry => ({ id: text(entry.id), label: text(entry.label), ...(text(entry.subscription) ? { subscription: text(entry.subscription) } : {}), ...(text(entry.defaultModel) ? { defaultModel: text(entry.defaultModel) } : {}) })).filter(entry => entry.id && entry.label);
-      this.update({ targets, targetName: preferred?.name ?? "", configPath: text(data.configPath), runtimeMode: data.runtimeMode === "project" ? "project" : "bundled", setupState: data.setupState === "configured" ? "configured" : "available", setupDetails, targetSource: ["project", "expo-cli", "static-expo", "foreground"].includes(text(data.targetSource)) ? text(data.targetSource) as TestingSnapshot["targetSource"] : "none", projectWarning: text(data.warning), modelPreference, providers });
+      this.update({ targets, targetName: preferred?.name ?? "", needsRuntime: data.needsRuntime === true, configPath: text(data.configPath), runtimeMode: data.runtimeMode === "project" ? "project" : "bundled", setupState: data.setupState === "configured" ? "configured" : "available", setupDetails, targetSource: ["project", "expo-cli", "static-expo", "foreground"].includes(text(data.targetSource)) ? text(data.targetSource) as TestingSnapshot["targetSource"] : "none", projectWarning: text(data.warning), modelPreference, providers });
     } catch (error) {
       if (revision === this.loadRevision) this.update({ error: error instanceof Error ? error.message : String(error) });
     } finally {
       if (revision === this.loadRevision) this.update({ loadingProject: false });
     }
+  }
+
+  async runtimeProgress(projectPath: string, start?: { retry: boolean }) {
+    const revision = this.loadRevision;
+    const tool = start ? "mobile_testing_prepare_runtime" : "mobile_testing_runtime_progress";
+    const response = await this.call(tool, start ?? {});
+    const data = response.structuredContent as { progress: TestingRuntimeProgress; loginStatus?: Record<string, boolean> };
+    if (data.progress.phase === "ready" && !this.disposed && revision === this.loadRevision && projectPath === this.snapshot.projectPath) {
+      const setupDetails = this.snapshot.setupDetails;
+      this.update({ needsRuntime: false, ...(setupDetails && data.loginStatus ? { setupDetails: { ...setupDetails, loginStatus: data.loginStatus } } : {}) });
+    }
+    return data.progress;
   }
 
   /** Records against another target the config declares. */

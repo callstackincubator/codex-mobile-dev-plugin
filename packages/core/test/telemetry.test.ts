@@ -1445,8 +1445,8 @@ test("browser session counts describe plugin resources and honor telemetry opt-o
   recordBrowserPanelSessions(0);
   recordBrowserPanelContext("stored", 2048);
   recordBrowserPanelContext("too_large");
-  recordPanelRuntime("downloaded", 1200, 7_000_000);
-  recordPanelRuntime("failed", 30, undefined, "network");
+  recordPanelRuntime("testing", "downloaded", 1200, 7_000_000);
+  recordPanelRuntime("panel", "failed", 30, undefined, "network");
   recordResourceSaving("ios", true, "success", 2500);
   recordResourceSaving("android", false, "failed", 100);
   await Sentry.flush();
@@ -1457,6 +1457,7 @@ test("browser session counts describe plugin resources and honor telemetry opt-o
   contains(sent, '"outcome":{"value":"too_large"');
   contains(sent, "panel_runtime.ready");
   contains(sent, "panel_runtime.download_bytes");
+  contains(sent, '"runtime":{"value":"testing"');
   contains(sent, "resource_saving.apply");
   contains(sent, "resource_saving.duration");
   contains(sent, '"reason":{"value":"network"');
@@ -1465,7 +1466,7 @@ test("browser session counts describe plugin resources and honor telemetry opt-o
   process.env.MOBILE_DEV_TELEMETRY = "off";
   recordBrowserPanelSessions(3);
   recordBrowserPanelContext("stored", 10);
-  recordPanelRuntime("cached", 5);
+  recordPanelRuntime("panel", "cached", 5);
   recordResourceSaving("ios", false, "success", 10);
   await Sentry.flush();
   assert.equal(JSON.stringify(envelopes), sent);

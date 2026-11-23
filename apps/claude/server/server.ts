@@ -12,5 +12,10 @@ import { downloadedPanelRuntime, panelRuntimeReleaseSchema, usePanelRuntime } fr
 // applies to the panel's native parts and the Testing Studio runner. The package pins
 // their release archive in panel-runtime.json, which the server downloads on first use.
 const pinned = await readFile(new URL("./panel-runtime.json", import.meta.url), "utf8").catch(() => undefined);
-if (pinned !== undefined) usePanelRuntime(downloadedPanelRuntime(panelRuntimeReleaseSchema.parse(JSON.parse(pinned))));
+if (pinned !== undefined) {
+  const metadata: unknown = JSON.parse(pinned);
+  const release = panelRuntimeReleaseSchema.parse(metadata);
+  const download = downloadedPanelRuntime(release);
+  usePanelRuntime(download.ensure);
+}
 await runStdioServer({ panel: createPanel({ inline: false }), features: [agentDeviceTools(readAgentDeviceCatalog()), browserPanel({ always: true })] });

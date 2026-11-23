@@ -4,7 +4,15 @@ import { readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
-import { panelRuntimePath } from "./panel-runtime.ts";
+import { downloadedPanelRuntime, panelRuntimeDirectory, panelRuntimePath, type PanelRuntimeRelease } from "./panel-runtime.ts";
+import pinnedRuntime from "../../runtimes/e2e/package.json" with { type: "json" };
+
+export let testingRuntimeDownload: ReturnType<typeof downloadedPanelRuntime> | undefined;
+
+export function useDownloadedTestingRuntime(release: PanelRuntimeRelease) {
+  const directory = panelRuntimeDirectory(process.env, "testing-runtime");
+  testingRuntimeDownload = downloadedPanelRuntime(release, directory, true);
+}
 
 export type TestingRuntimeMode = "project" | "bundled";
 
@@ -24,6 +32,10 @@ export const PROJECT_CLI = "node_modules/.bin/e2e";
 
 /** Resolves the E2E runtime from the source tree or the packaged host's runtime. */
 export async function bundledE2eRoot(): Promise<string> {
+  if (testingRuntimeDownload) {
+    const directory = await testingRuntimeDownload.ensure();
+    return join(directory, "e2e");
+  }
   const configured = process.env.MOBILE_DEV_E2E_RUNTIME?.trim();
   const root = configured || (modulePath.endsWith(".ts")
     ? resolve(moduleDirectory, "../../runtimes/e2e")
@@ -39,6 +51,15 @@ async function version(root: string, name: string): Promise<string> {
 }
 
 export async function bundledRuntimeDescriptor(reason?: string): Promise<TestingRuntimeDescriptor> {
+  // Project discovery also runs behind the device panel. Reading its metadata must stay offline.
+  if (testingRuntimeDownload) {
+    const root = join(testingRuntimeDownload.target, "e2e");
+    return {
+      mode: "bundled", root, reason,
+      e2eVersion: pinnedRuntime.dependencies.e2e,
+      mobileVersion: pinnedRuntime.dependencies["@e2e-dev/mobile"],
+    };
+  }
   const root = await bundledE2eRoot();
   return {
     mode: "bundled",

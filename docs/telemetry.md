@@ -35,13 +35,16 @@ Behavior never depends on this value; it only attributes measurements and errors
   model context updates by `outcome` (`stored`, `invalid` or `too_large`), and
   `browser_panel.context_bytes` records the size of stored updates in bytes; the
   context's text and images are never sent.
-- Packages that download the device and Testing Studio runtime, such as Claude's, measure that
-  step. `panel_runtime.ready` records, in milliseconds, how long the runtime took to be
+- Codex measures its Testing Studio runtime download. Claude measures its combined
+  device and Testing Studio runtime download. `panel_runtime.ready` records, in milliseconds, how long the runtime took to be
   ready on its first use in a server, by `outcome`: `cached` when a
   complete folder was already there, `downloaded` for a download, checksum check and
   extraction, or `failed` with a bounded `reason` (`network`, `http`, `checksum`,
   `archive` or `filesystem`). `panel_runtime.download_bytes` records the archive size
-  of each download, including the Testing Studio runtime since 0.1.191. A failure
+  of each download. Claude includes Testing Studio since 0.1.191. Codex reports its
+  standalone archive since 0.1.192. Both metrics identify the archive with `runtime`
+  (`testing` or `panel`). The UI’s installation progress polls are excluded
+  from MCP traces and product analytics. A failure
   surfaces as the expected `download_failed` outcome;
   checksum, archive and filesystem failures are also captured as
   `panel_runtime.prepare` errors with a `panel_runtime_failure` tag, while offline

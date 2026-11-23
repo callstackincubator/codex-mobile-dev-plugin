@@ -5,6 +5,7 @@ import { telemetryBuildEnvironment } from "../../../tooling/telemetry-build.mjs"
 import { pluginMarketplace } from "./plugin-marketplace.mjs";
 import { buildCodexHost } from "./build.mjs";
 import { assertRuntime, RELEASE_DOCUMENTS, releaseVersion, stageRuntime } from "../../../tooling/host-runtime.mjs";
+import { packPanelRuntime } from "../../../tooling/panel-runtime.mjs";
 import { sharedSkills } from "../../../tooling/plugin-hosts.mjs";
 
 const telemetryEnvironment = telemetryBuildEnvironment();
@@ -20,7 +21,10 @@ await rm(plugin, { recursive: true, force: true });
 await mkdir(plugin, { recursive: true });
 await copyFile(`${source}/.mcp.json`, `${plugin}/.mcp.json`);
 for (const path of RELEASE_DOCUMENTS) await copyFile(path, `${plugin}/${path}`);
-await stageRuntime(`${plugin}/dist`);
+await stageRuntime(`${plugin}/dist`, { exclude: ["e2e"] });
+const runtime = await packPanelRuntime(manifest.version, { release: telemetryEnvironment === "release", testingOnly: true });
+const runtimePin = JSON.stringify(runtime.pin, null, 2);
+await writeFile(`${plugin}/dist/testing-runtime.json`, runtimePin + "\n");
 await buildCodexHost(telemetryEnvironment, `${plugin}/dist`);
 for (const path of [".codex-plugin", "assets"]) await cp(`${source}/${path}`, `${plugin}/${path}`, { recursive: true, verbatimSymlinks: true });
 for (const skill of sharedSkills) await cp(skill, `${plugin}/skills/${basename(skill)}`, { recursive: true, verbatimSymlinks: true });
@@ -42,4 +46,8 @@ const files = await readdir(plugin);
 if (windows) execFileSync("tar.exe", ["-a", "-cf", archive, ...files], { cwd: plugin });
 else execFileSync("zip", ["-qr", archive, ...files], { cwd: plugin });
 if ((await stat(archive)).size > 100_000_000) throw new Error("The plugin ZIP exceeds the 100 MB upload limit.");
+const tar = windows ? "tar.exe" : "/usr/bin/tar";
+const members = execFileSync(tar, ["-tf", archive], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
+const entries = members.trimEnd().split("\n").length;
+if (entries > 5000) throw new Error(`The plugin ZIP has ${entries} entries. The upload limit is 5000.`);
 console.log(`Plugin: ${plugin}\nMarketplace: ${marketplace}\nZIP: ${archive}`);

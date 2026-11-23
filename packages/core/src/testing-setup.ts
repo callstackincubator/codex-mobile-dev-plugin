@@ -5,7 +5,7 @@ import { lstat, mkdir, readFile, readdir, rename, symlink, unlink, writeFile } f
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
-import { bundledE2eRoot } from "./e2e-runtime.ts";
+import { bundledE2eRoot, testingRuntimeDownload } from "./e2e-runtime.ts";
 import { TESTING_DIRECTORY } from "./testing-projects.ts";
 import type { BundledModelProvider } from "./testing-run.ts";
 
@@ -74,7 +74,8 @@ const SUBSCRIPTION_IDS = ["openai", "github-copilot", "opencode-console", "space
 export async function readTestingLoginStatus(): Promise<TestingLoginStatus> {
   const status = Object.fromEntries(SUBSCRIPTION_IDS.map(id => [id, false])) as TestingLoginStatus;
   try {
-    const root = await bundledE2eRoot();
+    // Reading login status is part of background project discovery.
+    const root = testingRuntimeDownload ? join(testingRuntimeDownload.target, "e2e") : await bundledE2eRoot();
     const store = join(root, "node_modules/e2e/dist/oauth/store.js");
     const url = pathToFileURL(store);
     const module = await import(url.href) as {

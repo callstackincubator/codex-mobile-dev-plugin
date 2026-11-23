@@ -2,6 +2,9 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { access, cp, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { pathToFileURL } from "node:url";
+import { setTimeout as delay } from "node:timers/promises";
+import { testingRuntimeArchive } from "../../../tooling/panel-runtime.mjs";
 import { join, resolve } from "node:path";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -15,6 +18,21 @@ const windows = process.platform === "win32";
 let transport;
 let runtimeTransport;
 let browserTransport;
+
+async function prepareTestingRuntime(client) {
+  const deadline = Date.now() + 60_000;
+  let name = "mobile_testing_prepare_runtime";
+  for (;;) {
+    const response = await client.callTool({ name, arguments: {} });
+    assert.ok(!response.isError, JSON.stringify(response.content));
+    const progress = response.structuredContent.progress;
+    assert.notEqual(progress.phase, "failed", progress.message);
+    if (progress.phase === "ready") return;
+    assert.ok(Date.now() < deadline, "Testing Studio installation timed out");
+    name = "mobile_testing_runtime_progress";
+    await delay(100);
+  }
+}
 
 function uiIdentity(text) {
   const user = text.match(/name="mobile-dev-user-id" content="(anon_[a-f0-9]{32})"/);
@@ -94,6 +112,23 @@ try {
   const manifestText = await readFile(manifestPath, "utf8");
   const manifest = JSON.parse(manifestText);
   assert.equal(manifest.name, "mobile-dev");
+  const runtimeName = testingRuntimeArchive(manifest.version);
+  const archive = resolve("release", runtimeName);
+  const pinPath = join(plugin, "dist/testing-runtime.json");
+  const pin = JSON.parse(await readFile(pinPath, "utf8"));
+  const bytes = await readFile(archive);
+  assert.equal(pin.bytes, bytes.length);
+  assert.equal(pin.sha256, createHash("sha256").update(bytes).digest("hex"));
+  assert.equal(pin.version, manifest.version);
+  if (telemetryConfig.environment === "release") {
+    const repository = process.env.GITHUB_REPOSITORY || "callstackincubator/codex-mobile-dev-plugin";
+    assert.equal(pin.url, `https://github.com/${repository}/releases/download/v${manifest.version}/${runtimeName}`);
+  }
+  // Serve the exact release bytes from a local file before the GitHub release exists.
+  const localPin = { ...pin, url: pathToFileURL(archive).href };
+  await writeFile(pinPath, JSON.stringify(localPin));
+  delete serverEnv.MOBILE_DEV_E2E_RUNTIME;
+  serverEnv.LOCALAPPDATA = fixtureHome;
   transport = new StdioClientTransport({
     command: serverConfig.command, args: serverConfig.args, cwd: serverCwd, stderr: "pipe", env: serverEnv,
   });
@@ -127,10 +162,21 @@ try {
   for (const name of ["mobile_list_ios_devices", "mobile_list_android_devices", "mobile_boot_android_emulator", "mobile_android_stream_session", "mobile_ios_mirror_session", "mobile_ios_mirror_reset", "mobile_ios_mirror_close"]) assert.ok(tools.tools.some(tool => tool.name === name));
   for (const name of ["device_open", "device_snapshot", "device_press", "device_screenshot"]) assert.ok(tools.tools.some(tool => tool.name === name), name);
   await access(join(plugin, "dist/agent-device/tools.json"));
-  await access(join(plugin, "dist/e2e/node_modules/e2e/dist/cli/bin.js"));
-  await access(join(plugin, "dist/e2e/node_modules/@e2e-dev/mobile/dist/nodes.js"));
-  await access(join(plugin, "dist/e2e/release.json"));
-  await access(join(plugin, "dist/e2e/THIRD_PARTY_NOTICES.txt"));
+  await assert.rejects(access(join(plugin, "dist/e2e")), { code: "ENOENT" });
+  const testingConfig = () => client.callTool({ name: "mobile_testing_project_config", arguments: { projectPath: temporary } });
+  const cold = await testingConfig();
+  assert.equal(cold.isError, undefined, JSON.stringify(cold.content));
+  assert.equal(cold.structuredContent.needsRuntime, true);
+  const runtimeRoot = cold.structuredContent.runtime.root;
+  await assert.rejects(access(runtimeRoot), { code: "ENOENT" });
+  await prepareTestingRuntime(client);
+  const warm = await testingConfig();
+  assert.equal(warm.structuredContent.needsRuntime, false);
+  for (const path of ["node_modules/e2e/dist/cli/bin.js", "node_modules/@e2e-dev/mobile/dist/nodes.js", "release.json", "THIRD_PARTY_NOTICES.txt"]) {
+    await access(join(runtimeRoot, path));
+  }
+  const runner = join(runtimeRoot, "node_modules/e2e/dist/cli/bin.js");
+  execFileSync(process.execPath, [runner, "--version"], { encoding: "utf8", timeout: 15_000 });
   const physicalMirror = tools.tools.find(tool => tool.name === "mobile_ios_mirror_session");
   assert.deepEqual(physicalMirror._meta.ui.visibility, ["app"]);
   await access(join(plugin, "dist/serve-emu/src/cli.mjs"));
@@ -209,9 +255,14 @@ try {
   assert.equal(workspace._meta.ui.resourceUri, `ui://mobile-dev/${manifest.version}/workspace.html`);
   assert.deepEqual(resource.contents[0]._meta.ui.csp.connectDomains, ["https://o4512180958068736.ingest.de.sentry.io"]);
   assert.deepEqual(resource.contents[0]._meta.ui.csp.resourceDomains, []);
+  // A fresh MCP process must be able to use the cached runner with the release unavailable.
+  const offlineArchive = join(temporary, "unavailable.tar.gz");
+  const offlinePin = { ...pin, url: pathToFileURL(offlineArchive).href };
+  await writeFile(pinPath, JSON.stringify(offlinePin));
   runtimeTransport = new StdioClientTransport({ command: serverConfig.command, args: serverConfig.args, cwd: serverCwd, stderr: "pipe", env: serverEnv });
   const runtime = new Client({ name: "mobile-dev-package-runtime", version: "1" });
   await runtime.connect(runtimeTransport);
+  await prepareTestingRuntime(runtime);
   const runtimeResource = await runtime.readResource({ uri: entrypoint._meta.ui.resourceUri });
   if (process.env.MOBILE_DEV_TELEMETRY === "off") {
     assert.deepEqual(runtimeResource.contents[0], resource.contents[0]);

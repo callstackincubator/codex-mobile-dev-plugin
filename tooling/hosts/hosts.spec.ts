@@ -121,6 +121,43 @@ test.describe("MCP Apps hosts", () => {
     expect(pageErrors).toEqual([]);
   });
 
+  test("Testing Studio downloads on open and recovers from a failed installation", async ({ openView, server, target, pageErrors }) => {
+    test.skip(target !== "codex");
+    let phase = "downloading";
+    let configReads = 0;
+    let polls = 0;
+    const callTool = server.client.callTool.bind(server.client);
+    server.client.callTool = async (request, ...options) => {
+      if (request.name === "mobile_testing_project_config") {
+        configReads++;
+        return { content: [], structuredContent: { runtimeMode: "bundled", targets: [], needsRuntime: true } };
+      }
+      if (request.name === "mobile_testing_prepare_runtime" || request.name === "mobile_testing_runtime_progress") {
+        polls++;
+        if (request.arguments?.retry) phase = "installing";
+        const progress = { phase, received: 5_000_000, total: 25_000_000, message: "The download was interrupted." };
+        return { content: [], structuredContent: { progress } };
+      }
+      return callTool(request, ...options);
+    };
+    const { view } = await openView("mobile_open_workspace");
+    await expect.poll(() => configReads).toBeGreaterThan(0);
+    expect(polls).toBe(0);
+    await view.locator("#tool-select").click();
+    await view.getByRole("option", { name: "Testing Studio" }).click();
+    await expect(view.getByRole("progressbar")).toHaveAttribute("value", "5000000");
+    await expect(view.getByText("5.0 of 25.0 MB")).toBeVisible();
+    phase = "failed";
+    await expect(view.getByText("The download was interrupted.")).toBeVisible();
+    await view.getByRole("button", { name: "Retry download" }).click();
+    await expect(view.getByText("Installing the Testing Studio runtime")).toBeVisible();
+    phase = "ready";
+    await expect(view.getByText("Installing the Testing Studio runtime")).toHaveCount(0);
+    await expect(view.getByRole("button", { name: "Retry download" })).toHaveCount(0);
+    await expect(view.locator("[data-testing-blocker]")).toBeVisible();
+    expect(pageErrors).toEqual([]);
+  });
+
   test("the Testing panel puts the mirror, the preview and the steps side by side", async ({ openView, page, server }) => {
     test.skip(hasPanel(server) === false, "This target's server renders no panel in the chat.");
     // Recording is done by tapping the mirror and read back in the preview beside it, so the three

@@ -14,6 +14,7 @@ import type { TestingAgentContext } from "./testing-agent.ts";
 import { TestDraftStore } from "./testing-drafts.ts";
 import { MAX_DRAFT_STEPS, recordedStepSchema, testDraftIdSchema } from "@mobile-dev/shared/test-drafts.ts";
 import type { TestDraft } from "@mobile-dev/shared/test-drafts.ts";
+import { bundledE2eRoot, testingRuntimeDownload } from "./e2e-runtime.ts";
 import { TestingDevices } from "./testing-device.ts";
 import { runRecordedTest, sweepLaneFiles } from "./testing-run.ts";
 import type { TestRunRequest } from "./testing-run.ts";
@@ -24,7 +25,7 @@ import type { DeviceOps } from "./testing-prepare.ts";
 import { deviceIdSchema } from "@mobile-dev/shared/panel-target.ts";
 import { simulatorBundleForPid } from "./device-apps/apps.ts";
 import type { BundledModelProvider } from "./testing-run.ts";
-import { answerTestingSetup, applyTestingSetup, cancelTestingSetup, inspectTestingSetup, planTestingSetup, readTestingModelPreference, saveTestingModelPreference, SETUP_PROVIDERS, startTestingLogin, testingSetupProgress } from "./testing-setup.ts";
+import { answerTestingSetup, applyTestingSetup, cancelTestingSetup, inspectTestingSetup, planTestingSetup, readTestingLoginStatus, readTestingModelPreference, saveTestingModelPreference, SETUP_PROVIDERS, startTestingLogin, testingSetupProgress } from "./testing-setup.ts";
 import type { SetupOptions } from "./testing-setup.ts";
 
 const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
@@ -321,8 +322,36 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
       ? await (matrix.foregroundBundle ?? simulatorBundleForPid)(foregroundDeviceId, foregroundPid).catch(() => undefined) : undefined);
     const bundleId = resolved && !LAUNCHER_APP.test(resolved) ? resolved : undefined;
     const project = await inspectProject(selected, foregroundPlatform && bundleId ? { platform: foregroundPlatform, bundleId } : undefined);
-    return dataResult({ ...project, setup: await inspectTestingSetup(project.path, project.configPath || undefined), modelPreference: await readTestingModelPreference(), providers: SETUP_PROVIDERS });
+    const needsRuntime = project.runtimeMode === "bundled" && testingRuntimeDownload && testingRuntimeDownload.progress.phase !== "ready";
+    return dataResult({ ...project, needsRuntime: Boolean(needsRuntime), setup: await inspectTestingSetup(project.path, project.configPath || undefined), modelPreference: await readTestingModelPreference(), providers: SETUP_PROVIDERS });
   }));
+
+  const download = testingRuntimeDownload;
+  if (download) {
+    const currentProgress = async () => {
+      const loginStatus = download.progress.phase === "ready" ? await readTestingLoginStatus() : undefined;
+      return dataResult({ progress: { ...download.progress }, loginStatus });
+    };
+    registerAppTool(server, "mobile_testing_prepare_runtime", {
+      title: "Prepare the Testing Studio runtime",
+      description: "Start the pinned Testing Studio download on first use, or retry a failed installation.",
+      inputSchema: { retry: z.boolean().optional() },
+      annotations: { ...write, openWorldHint: true },
+      _meta: appVisibility,
+    }, safe(async ({ retry }: { retry?: boolean }) => {
+      const phase = download.progress.phase;
+      if (phase === "idle" || (phase === "failed" && retry)) {
+        // Polls report the terminal error without holding the initial MCP request open.
+        void download.ensure().catch(() => {});
+      }
+      return currentProgress();
+    }));
+    registerAppTool(server, "mobile_testing_runtime_progress", {
+      title: "Read Testing Studio download progress",
+      description: "Read the current download and installation status.",
+      inputSchema: {}, annotations: read, _meta: appVisibility,
+    }, safe(currentProgress));
+  }
 
   const setupTarget = z.object({ name: z.string().min(1).max(128), platform: z.enum(["ios", "android"]), bundleId: z.string().min(1).max(512) });
   const setupOptions = z.object({
@@ -380,7 +409,8 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
     const project = await inspectProject(selected, { platform, bundleId });
     // The refs go no further than the server: the panel records selectors and drives the mirror,
     // so an agent-device handle per element would be a few kilobytes a read that nothing reads.
-    const { tree, screen } = await devices.read({ deviceId, platform, projectPath: selected, runtimeRoot: project.runtime.root, bundleId });
+    const runtimeRoot = project.runtimeMode === "bundled" ? await bundledE2eRoot() : project.runtime.root;
+    const { tree, screen } = await devices.read({ deviceId, platform, projectPath: selected, runtimeRoot, bundleId });
     return dataResult({ tree, ...(screen ? { screen } : {}) });
   }));
 
@@ -418,8 +448,9 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
       ?? project.targets.find(entry => entry.platform === platform && (!bundleId || entry.bundleId === bundleId))
       ?? project.targets[0];
     const bundledSource = project.runtimeMode === "bundled" ? (untilSource ?? await readTestFile(selected, relativePath)) : untilSource;
+    const runtimeRoot = project.runtimeMode === "bundled" ? await bundledE2eRoot() : project.runtime.root;
     const request: TestRunRequest = { ...paths, ...(timeoutMs === undefined ? {} : { timeoutMs }), ...(target ? { target } : {}),
-      ...(bundledSource === undefined ? {} : { untilSource: bundledSource }), runtime: { mode: project.runtimeMode, root: project.runtime.root },
+      ...(bundledSource === undefined ? {} : { untilSource: bundledSource }), runtime: { mode: project.runtimeMode, root: runtimeRoot },
       ...(project.runtimeMode === "bundled" && platform && bundleId ? { bundledTarget: { platform, bundleId } }
         : project.runtimeMode === "bundled" && selectedTarget?.platform && selectedTarget.bundleId ? { bundledTarget: { platform: selectedTarget.platform as "ios" | "android", bundleId: selectedTarget.bundleId } } : {}),
       ...(model ? { model } : {}) };
