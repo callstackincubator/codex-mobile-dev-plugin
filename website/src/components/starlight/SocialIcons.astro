@@ -1,8 +1,8 @@
 ---
 // Header links: mono, uppercase, text only. The nav links from content.ts that leave the docs.
-import { nav } from '../../site/content';
+import { docs, nav } from '../../site/content';
 
-const externalNav = nav.filter(({ href }) => href.startsWith('/docs') === false);
+const externalNav = nav.filter(({ href }) => href !== docs.intro);
 const links = externalNav.map(({ text, href }) => ({ label: text, href, external: /^https?:/.test(href) }));
 ---
 

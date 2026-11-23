@@ -1,19 +1,31 @@
 import { useState, useSyncExternalStore, type DragEvent } from "react";
-import { UploadIcon } from "lucide-react";
+import { CheckCircle2Icon, FileJson2Icon, HardDriveIcon, LoaderCircleIcon, PlayIcon, UploadIcon } from "lucide-react";
 import type { TraceSiftPanel } from "../tracesift-panel.ts";
 import type { TraceSiftCaptureSource, TraceSiftController } from "../tracesift-controller.ts";
 import type { TraceSiftProfileType, TraceSiftRnTarget } from "@mobile-dev/shared/tracesift.ts";
 import { TraceSiftCards } from "./tracesift-cards.tsx";
+import { Button } from "./ui/button.tsx";
 
 const options: { value: Extract<TraceSiftProfileType, "cpu" | "react">; title: string; detail: string; accepts: string; drop: string }[] = [
-  { value: "cpu", title: "JavaScript CPU", detail: "Find slow functions and heavy execution paths", accepts: ".json", drop: "Choose a Chrome Performance .json" },
-  { value: "react", title: "React components", detail: "Find expensive commits, wasted re-renders and cascades", accepts: "React DevTools JSON", drop: "Choose a React DevTools profiling .json" },
+  { value: "cpu", title: "JavaScript CPU", detail: "Find slow functions and heavy execution paths", accepts: ".json", drop: "Chrome Performance .json" },
+  { value: "react", title: "React components", detail: "Find expensive commits, wasted re-renders and cascades", accepts: "React DevTools JSON", drop: "React DevTools profiling .json" },
 ];
 
 /** React Native first: it is the one an agent can also drive, and the common case here. */
 const sources: { value: TraceSiftCaptureSource; title: string }[] = [
   { value: "rn", title: "React Native" },
   { value: "chrome", title: "Web app" },
+];
+
+/**
+ * Recording and uploading are two ways to reach the same cards, so they share
+ * the one panel rather than stacking: only one is in use at a time, and the
+ * second half of the page was easy to miss below the fold.
+ */
+type WorkMode = "record" | "upload";
+const modes: { value: WorkMode; title: string; detail: string }[] = [
+  { value: "record", title: "Record", detail: "Profile an app that is running now" },
+  { value: "upload", title: "Upload", detail: "Analyze a profile you already have" },
 ];
 
 type CaptureState = ReturnType<TraceSiftController["getSnapshot"]>["capture"];
@@ -48,9 +60,9 @@ function UploadPane({ controller, profileType, busy }: { controller: TraceSiftCo
       onClick={() => { setDropNotice(""); void controller.pickAndAnalyze(profileType); }}
     >
       <span className="upload-icon"><UploadIcon /></span>
-      <span className="upload-title">{option.title} profile</span>
+      <span className="upload-title">Drop a {option.title} profile</span>
       <span className="upload-detail">{option.drop}</span>
-      <span className="browse-button">Browse files</span>
+      <span className="browse-button">Choose file</span>
     </button>
     {dropNotice && <p className="tracesift-notice" role="status">{dropNotice}</p>}
   </>;
@@ -207,50 +219,141 @@ function CapturePane({ controller, busy }: { controller: TraceSiftController; bu
 function TraceSiftUpload({ controller, available }: { controller: TraceSiftController; available: boolean }) {
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
   const [profileType, setProfileType] = useState<TraceSiftProfileType>("cpu");
+  const [mode, setMode] = useState<WorkMode>("record");
   const analyzing = state.analyzing;
+  const capturing = state.capture.step !== "idle";
+  const ready = state.readiness?.status === "ready";
+  const setup = state.readiness?.status === "setup_required" ? state.readiness : undefined;
+  const setupBusy = state.setupAction !== undefined;
+
+  const controlsDisabled = setupBusy || state.checkingReadiness;
+  const profileOption = options.find(option => option.value === profileType) ?? options[0];
+  const command = (step: number, title: string, text: string, action: "install" | "init", label: string) => <div className="tracesift-setup-step">
+    <div className="tracesift-setup-step-label"><span>{step}</span><strong>{title}</strong></div>
+    <div className="tracesift-command">
+      <code>{text}</code>
+      <Button
+        type="button" size="icon-sm" variant="ghost"
+        aria-label={label} title={label}
+        disabled={controlsDisabled}
+        onClick={() => void controller.runSetup(action)}
+      >
+        {state.setupAction === action ? <LoaderCircleIcon className="tracesift-command-spinner" /> : <PlayIcon />}
+      </Button>
+    </div>
+  </div>;
 
   return <main className="tracesift-upload">
     <div className="results-header">
       <div className="intro">
         <span className="eyebrow">TraceSift</span>
         <h1 className="results-title">Analyze a profile</h1>
-        <p>Profiles are read by the local TraceSift service. Nothing leaves this machine.</p>
+        <p>Profiles are processed locally. Nothing leaves this machine.</p>
       </div>
     </div>
 
-    {!available && <p className="tracesift-error" role="status">This host cannot call the plugin's TraceSift tools.</p>}
+    <div className="tracesift-workspace">
+      <section className={`tracesift-workflow${ready ? "" : " is-disabled"}`} aria-label="Profile analysis">
+        {setup && <p className="tracesift-blocker" role="status">Finish setup to add a profile</p>}
+        {!available && <p className="tracesift-error" role="status">This host cannot call the plugin's TraceSift tools.</p>}
 
-    <div className="profile-row">
-      <div className="workflow-label"><span>1</span><strong>Choose a profile type</strong></div>
-      <div className="profile-options" role="radiogroup" aria-label="Profile type">
-        {options.map(option => <button
-          key={option.value}
-          type="button"
-          role="radio"
-          aria-checked={profileType === option.value}
-          disabled={Boolean(analyzing)}
-          title={option.detail}
-          className={`profile-chip${profileType === option.value ? " selected" : ""}`}
-          onClick={() => setProfileType(option.value)}
-        >
-          {option.title}<em>{option.accepts}</em>
-        </button>)}
-      </div>
+        <div className="tracesift-modes" role="radiogroup" aria-label="How to add a profile">
+          {modes.map(option => <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={mode === option.value}
+            // Switching away mid-recording would strand a live recorder.
+            disabled={!ready || Boolean(analyzing) || (capturing && option.value !== mode)}
+            title={option.detail}
+            className={`tracesift-mode${mode === option.value ? " selected" : ""}`}
+            onClick={() => setMode(option.value)}
+          >
+            {option.title}
+          </button>)}
+        </div>
+
+        {mode === "upload" ? <>
+          <div className="workflow-label"><span>1</span><strong>Choose a profile type</strong></div>
+          <div className="profile-options" role="radiogroup" aria-label="Profile type">
+            {options.map(option => <button
+              key={option.value}
+              type="button"
+              role="radio"
+              aria-checked={profileType === option.value}
+              disabled={!ready || Boolean(analyzing)}
+              title={option.detail}
+              className={`profile-chip${profileType === option.value ? " selected" : ""}`}
+              onClick={() => setProfileType(option.value)}
+            >
+              <span><strong>{option.title}</strong><em>{option.accepts}</em></span>
+              <small>{option.detail}</small>
+            </button>)}
+          </div>
+
+          <div className="workflow-label"><span>2</span><strong>Add a profile</strong><small>Processed locally, never uploaded.</small></div>
+          {analyzing
+            ? <p className="upload-analyzing" role="status">Analyzing {analyzing.name} with TraceSift…</p>
+            : <UploadPane controller={controller} profileType={profileType} busy={!ready} />}
+        </> : <>
+          {/* Recording yields JS CPU samples only: a React profile comes out of
+              React DevTools, which this cannot drive. */}
+          <div className="workflow-label"><span>1</span><strong>Choose what to record</strong><small>JavaScript CPU, captured locally.</small></div>
+          {analyzing
+            ? <p className="upload-analyzing" role="status">Analyzing {analyzing.name} with TraceSift…</p>
+            : <CapturePane controller={controller} busy={!ready} />}
+        </>}
+      </section>
+
+      <aside className="tracesift-inspector" aria-live="polite">
+        {available && state.checkingReadiness && <div className="tracesift-inspector-status" role="status">
+          <LoaderCircleIcon className="tracesift-command-spinner" /> Checking TraceSift setup…
+        </div>}
+        {available && !state.checkingReadiness && setup && <section className="tracesift-setup" aria-labelledby="tracesift-setup-heading">
+          <div>
+            <h2 id="tracesift-setup-heading">TraceSift setup</h2>
+            <p className="tracesift-action-required">Action required</p>
+          </div>
+          <p>{setup.message}</p>
+          <div className="tracesift-commands">
+            {setup.reason === "missing_cli" && command(1, "Install TraceSift", "npm install -g @callstack/tracesift", "install", "Install the TraceSift CLI")}
+            {(setup.reason === "missing_cli" || setup.reason === "needs_init") && command(2, "Initialize service", "tracesift init", "init", "Initialize TraceSift")}
+          </div>
+          {state.setupNotice && <p className="tracesift-notice" role="status">{state.setupNotice}</p>}
+          <div className="tracesift-setup-actions">
+            <Button type="button" size="sm" disabled={controlsDisabled} onClick={() => void controller.checkReadiness()}>Check again</Button>
+            <a
+              href="https://github.com/callstackincubator/tracesift#usage"
+              target="_blank"
+              rel="noreferrer"
+              aria-disabled={controlsDisabled}
+              tabIndex={controlsDisabled ? -1 : undefined}
+              onClick={event => { if (controlsDisabled) event.preventDefault(); }}
+            >Installation guide</a>
+          </div>
+        </section>}
+        {available && !state.checkingReadiness && ready && <section className="tracesift-before" aria-labelledby="tracesift-before-heading">
+          <p className="tracesift-ready" role="status"><CheckCircle2Icon /> TraceSift ready</p>
+          <h2 id="tracesift-before-heading">{mode === "record" ? "Before you record" : "Before you add a profile"}</h2>
+          <dl>
+            <div><dt><HardDriveIcon /> Local processing</dt><dd>Profiles stay on this machine.</dd></div>
+            {mode === "record"
+              ? <>
+                <div><dt><FileJson2Icon /> Captured</dt><dd>JavaScript CPU samples</dd></div>
+                <div><dt><CheckCircle2Icon /> Needs</dt><dd>The app already running</dd></div>
+              </>
+              : <>
+                <div><dt><FileJson2Icon /> Supported file</dt><dd>{profileOption.accepts}</dd></div>
+                <div><dt><CheckCircle2Icon /> Profile type</dt><dd>{profileOption.title}</dd></div>
+              </>}
+          </dl>
+          <a href="https://github.com/callstackincubator/tracesift" target="_blank" rel="noreferrer">Read about TraceSift</a>
+        </section>}
+        {!available && <p className="tracesift-inspector-status">TraceSift tools unavailable</p>}
+      </aside>
     </div>
-    <p className="profile-detail">{options.find(option => option.value === profileType)?.detail}</p>
 
-    <div className="workflow-label"><span>2</span><strong>Add your profile</strong><small>Processed locally, never uploaded.</small></div>
-    {analyzing
-      ? <p className="upload-analyzing" role="status">Analyzing {analyzing.name} with TraceSift…</p>
-      : <UploadPane controller={controller} profileType={profileType} busy={!available} />}
-
-    {/* Only for CPU: a React profile comes out of React DevTools, which this
-        cannot drive. */}
-    {!analyzing && profileType === "cpu" && <>
-      <div className="workflow-label"><span>or</span><strong>Record a running app</strong><small>Captured locally, never uploaded.</small></div>
-      <CapturePane controller={controller} busy={!available} />
-    </>}
-
+    {state.setupNotice && !setup && <p className="tracesift-notice" role="status">{state.setupNotice}</p>}
     {state.error && <p className="tracesift-error" role="alert">{state.error}</p>}
   </main>;
 }

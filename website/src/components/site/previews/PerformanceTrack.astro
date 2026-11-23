@@ -1,0 +1,47 @@
+---
+interface Props { kind: 'cpu' | 'memory'; }
+const { kind } = Astro.props;
+const cpu = kind === 'cpu';
+const samples = cpu
+  ? [0.2, 0.1, 0.2, 0.3, 0.1, 0.2, 0.4, 9.8, 6.1, 1.2, 0.4, 0.3, 0.2, 0.5, 13.4, 22.7, 8.2, 3.1, 0.6, 0.4, 0.3, 0.2, 18.9, 11.6, 2.4, 0.5, 0.3, 0.2, 0.2, 0.1, 0.2]
+  : [266, 266, 266, 266, 266, 266, 266, 265, 260, 259.5, 260.5, 261, 261, 261, 260.5, 257, 256, 257.5, 258, 258, 257.5, 258, 258.5, 260, 259, 255.5, 255, 255, 255, 255, 255];
+const ticks = cpu ? ['100%', '75%', '50%', '25%', '0%'] : ['267', '263', '259', '255', '251'];
+const spans = cpu ? [[6.6, 8.4], [14.2, 16.3], [21.8, 23.4]] : [[7.2, 8.6], [14.6, 16.2], [24.4, 25.6]];
+const metrics = cpu ? ['0.4%', '9.8%', '22.7%', '22.7%'] : ['0 MiB', '−6 MiB', '−10 MiB', '−11 MiB'];
+const times = [0, 1660, 2760, 3960, 15000];
+let line = '';
+for (let index = 0; index < samples.length; index += 1) {
+  const x = index / 30 * 400;
+  const value = samples[index];
+  const y = cpu ? 100 - value : 100 - (value - 251) / 16 * 100;
+  if (index === 0) line = `M${x},${y}`;
+  else line += cpu ? `H${x}V${y}` : `L${x},${y}`;
+}
+const area = `${line}V100H0Z`;
+---
+
+<div class="fp-track">
+  <div class="fp-track-head">
+    <strong>{cpu ? 'CPU' : 'Memory (MiB)'}</strong>
+    <span class="fp-muted">· {cpu ? 'Peak' : 'Δ'}</span>
+    <span class="fp-stack fp-metric">
+      {metrics.map((metric, index) => <strong data-show={`${times[index]}:${times[index + 1]}`} data-poster={index === 3}>{metric}</strong>)}
+    </span>
+  </div>
+  <div class="fp-chart">
+    <div class="fp-y-axis">{ticks.map(tick => <span>{tick}</span>)}</div>
+    <div class="fp-plot" data-feature-target={cpu ? 'plot' : undefined}>
+      <svg viewBox="0 0 400 100" preserveAspectRatio="none">
+        <g class="fp-spans" data-show="5450:15000" data-poster>
+          {spans.map(([from, to]) => <rect x={from / 30 * 400} y="0" width={(to - from) / 30 * 400} height="100" />)}
+        </g>
+        <g class:list={["fp-chart-line", { "fp-chart-line-memory": cpu === false }]}>
+          <path d={area} class="fp-chart-area" />
+          <path d={line} class="fp-chart-stroke" vector-effect="non-scaling-stroke" />
+        </g>
+        <rect class="fp-range" x={13.4 / 30 * 400} y="0" width={4.4 / 30 * 400} height="100" />
+      </svg>
+    </div>
+    <div class="fp-x-axis">{['0.0s', '8.0s', '16.0s', '24.0s', '30.0s'].map(tick => <span>{tick}</span>)}</div>
+  </div>
+</div>

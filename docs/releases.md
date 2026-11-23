@@ -165,6 +165,16 @@ the store installation again afterward. Local development marketplaces and user
 data are preserved. Cleanup can be retried after partial completion. A running
 GitHub process retains its restart notice across chats until Codex restarts.
 
+Since 0.1.178, the official Git marketplace is verified against GitHub repository
+ID `1398055406`, rather than a list of repository names. HTTPS and SSH clone URLs
+are resolved through GitHub's public repository API, following rename and transfer
+redirects. No GitHub credentials are used. A different repository, including one
+that reuses an old name, cannot pass verification. API failures leave the check
+unavailable and prevent cleanup; requests have a twenty-second deadline and abort
+when the updater closes. Store installations without the Git marketplace make no
+GitHub requests. GitHub is used only for migration identity checks, never as an
+update source.
+
 CLI discovery and commands use the stable Codex profile directory because
 removing the GitHub plugin deletes its installation directory. `CODEX_HOME` is
 forwarded by the MCP manifest. The plugin never restarts Codex automatically.
@@ -192,11 +202,11 @@ prematurely announcing a store update or allowing a migration downgrade.
 `npm run test:updates` exercises the real Codex CLI's Git installation and removal
 in a temporary profile using a local Git mirror, with a fixture for the store
 catalog and package. It does not install or remove plugins in the user's account.
-It requires `codex` on PATH or `CODEX_CLI_PATH`.
+Repository verification uses a local HTTP fixture with a real redirect. It
+requires `codex` on PATH or `CODEX_CLI_PATH`.
 
-The repository was renamed from `codex-mobile-dev-plugin` to `mobile-dev` before
-this transition release. Version 0.1.163's GitHub update check rejects the redirect
-from the old release API URL. Existing GitHub users can receive the transition
-build by running `codex plugin marketplace upgrade mobile-dev`, then fully quitting
-and reopening Codex. Git follows the repository redirect. Migration recognizes
-both official repository URLs when verifying the legacy marketplace.
+Older builds such as 0.1.163 reject redirects from their hardcoded GitHub release
+API URL. After a repository rename, users of those builds can receive the
+transition build by running `codex plugin marketplace upgrade mobile-dev`, then
+fully quitting and reopening Codex. Git follows the repository redirect. Updating
+the current source cannot repair the updater in an already-installed older build.

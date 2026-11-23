@@ -3,8 +3,8 @@ import Site from './Site.astro';
 import Nav from '../components/site/Nav.astro';
 import Closing from '../components/site/Closing.astro';
 import Footer from '../components/site/Footer.astro';
-import { faq, site } from '../site/content';
-const homeUrl = new URL('/', Astro.site).href;
+import { at, faq, site } from '../site/content';
+const homeUrl = new URL(at('/'), Astro.site).href;
 const jsonLd = {
   '@context':'https://schema.org',
   '@graph':[

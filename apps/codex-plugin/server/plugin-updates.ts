@@ -25,7 +25,7 @@ export function recordPluginUpdate(operation: "check" | "migrate", outcome: "dis
 }
 
 const execute = promisify(execFile);
-const repositories = ["callstackincubator/codex-mobile-dev-plugin", "callstackincubator/mobile-dev"];
+export const RELEASE_REPOSITORY_ID = 1398055406;
 const storeMarketplace = "openai-curated-remote";
 const githubPlugin = "mobile-dev@mobile-dev";
 const storePlugin = "mobile-dev@openai-curated-remote";
@@ -67,10 +67,11 @@ const publishedReleaseSchema = z.object({ version: releaseVersionSchema });
 const enabledStatusSchema = z.literal("ENABLED");
 const storeResponseSchema = z.object({ id: storeIdSchema, name: pluginNameSchema, status: enabledStatusSchema, release: publishedReleaseSchema });
 export type StorePlugin = z.infer<typeof storeSummarySchema>;
-type Catalog = z.infer<typeof pluginsSchema> & { store: StorePlugin & { localVersion: string | null; installed: boolean; enabled: boolean } };
+type Catalog = z.infer<typeof pluginsSchema> & { releaseRepositories: Set<string>; store: StorePlugin & { localVersion: string | null; installed: boolean; enabled: boolean } };
 export type ReadStore = () => Promise<unknown>;
+export type ReadRepository = (source: string) => Promise<boolean>;
 export type RunCodex = (args: string[]) => Promise<unknown>;
-type UpdateFailure = "codex-not-found" | "command-failed" | "invalid-response" | "store-unavailable" | "foreign-marketplace" | "not-removed" | "not-verified" | "cache-write";
+type UpdateFailure = "codex-not-found" | "command-failed" | "invalid-response" | "store-unavailable" | "repository-unavailable" | "foreign-marketplace" | "not-removed" | "not-verified" | "cache-write";
 type MigrationStep = "catalog" | "remove-plugin" | "remove-marketplace" | "verify" | "save";
 class PluginUpdateError extends Error {
   readonly failure: UpdateFailure;
@@ -143,15 +144,46 @@ export async function readPluginStore(options: { fetch?: typeof globalThis.fetch
   }
 }
 
-function isReleaseRepository(source: string): boolean {
-  return repositories.some(repository => source === `https://github.com/${repository}` || source === `https://github.com/${repository}.git`
-    || source === `git@github.com:${repository}.git` || source === `ssh://git@github.com/${repository}.git`);
+const integerSchema = numberSchema.int();
+const repositoryIdSchema = integerSchema.positive();
+const repositorySchema = z.object({ id: repositoryIdSchema });
+
+export async function isReleaseRepository(source: string, options: { fetch?: typeof globalThis.fetch; signal?: AbortSignal } = {}): Promise<boolean> {
+  const match = /^(?:https:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([a-z\d-]+\/[\w.-]+?)(?:\.git)?\/?$/i.exec(source);
+  if (match === null) return false;
+  const request = options.fetch ?? globalThis.fetch;
+  const timeout = AbortSignal.timeout(20000);
+  const signals = [timeout];
+  if (options.signal !== undefined) signals.push(options.signal);
+  const signal = AbortSignal.any(signals);
+  const url = `https://api.github.com/repos/${match[1]}`;
+  let response: Response;
+  try {
+    response = await request(url, {
+      headers: { Accept: "application/vnd.github+json" },
+      credentials: "omit", redirect: "follow", signal,
+    });
+  } catch {
+    throw new PluginUpdateError("Could not verify the Mobile Dev GitHub repository.", "repository-unavailable");
+  }
+  if (response.ok === false) {
+    await response.body?.cancel();
+    if (response.status === 404) return false;
+    throw new PluginUpdateError("Could not verify the Mobile Dev GitHub repository.", "repository-unavailable");
+  }
+  try {
+    const data: unknown = await response.json();
+    const repository = repositorySchema.parse(data);
+    return repository.id === RELEASE_REPOSITORY_ID;
+  } catch {
+    throw new PluginUpdateError("GitHub returned an invalid repository response.", "invalid-response");
+  }
 }
 
 function githubInstalled(catalog: Catalog): boolean {
   return catalog.installed.some(plugin => {
     const source = plugin.marketplaceSource;
-    return plugin.pluginId === githubPlugin && plugin.installed && source?.sourceType === "git" && isReleaseRepository(source.source);
+    return plugin.pluginId === githubPlugin && plugin.installed && source?.sourceType === "git" && catalog.releaseRepositories.has(source.source);
   });
 }
 
@@ -159,7 +191,7 @@ function githubConfigured(catalog: Catalog): boolean {
   const plugins = [...catalog.installed, ...catalog.available];
   return plugins.some(plugin => {
     const source = plugin.marketplaceSource;
-    return plugin.pluginId === githubPlugin && source?.sourceType === "git" && isReleaseRepository(source.source);
+    return plugin.pluginId === githubPlugin && source?.sourceType === "git" && catalog.releaseRepositories.has(source.source);
   });
 }
 
@@ -171,12 +203,13 @@ export class PluginUpdates {
   private readonly cachePath: string;
   private readonly run: RunCodex;
   private readonly readStore: ReadStore;
+  private readonly readRepository: ReadRepository;
   private readonly now: () => number;
   private checking?: Promise<PluginUpdate>;
   private migrating?: Promise<PluginUpdate>;
   private readonly abort = new AbortController();
 
-  constructor(options: { enabled?: boolean; currentVersion?: string; profile?: string; pluginRoot?: string; run?: RunCodex; readStore?: ReadStore; now?: () => number } = {}) {
+  constructor(options: { enabled?: boolean; currentVersion?: string; profile?: string; pluginRoot?: string; run?: RunCodex; readStore?: ReadStore; readRepository?: ReadRepository; now?: () => number } = {}) {
     this.enabled = options.enabled ?? resolveTelemetryEnvironment() === "release";
     this.currentVersion = options.currentVersion ?? PLUGIN_VERSION;
     const home = homedir();
@@ -191,6 +224,7 @@ export class PluginUpdates {
     this.cachePath = join(this.profile, "mobile-dev", "updates.json");
     this.run = options.run ?? createCodexRunner(this.profile, { signal: this.abort.signal });
     this.readStore = options.readStore ?? (() => readPluginStore({ signal: this.abort.signal }));
+    this.readRepository = options.readRepository ?? (source => isReleaseRepository(source, { signal: this.abort.signal }));
     this.now = options.now ?? Date.now;
   }
 
@@ -246,8 +280,18 @@ export class PluginUpdates {
       && plugin.marketplaceName === storeMarketplace && plugin.source.source === "remote" && plugin.source.id === PLUGIN_STORE_ID);
     const localVersion = entry?.version ?? null;
     if (localVersion !== null) releaseVersionSchema.parse(localVersion);
+    const sources = new Set<string>();
+    for (const plugin of [...catalog.installed, ...catalog.available]) {
+      const source = plugin.marketplaceSource;
+      if (plugin.pluginId === githubPlugin && source?.sourceType === "git") sources.add(source.source);
+    }
+    const releaseRepositories = new Set<string>();
+    for (const source of sources) {
+      if (await this.readRepository(source)) releaseRepositories.add(source);
+    }
     return {
       ...catalog,
+      releaseRepositories,
       store: { ...summary, localVersion, installed: entry?.installed ?? false, enabled: entry?.enabled ?? false },
     };
   }
@@ -339,7 +383,7 @@ export class PluginUpdates {
       const marketplace = marketplaceResult.marketplaces.find(item => item.name === "mobile-dev");
       if (marketplace !== undefined) {
         const source = marketplace.marketplaceSource;
-        if (source?.sourceType !== "git" || isReleaseRepository(source.source) === false) {
+        if (source?.sourceType !== "git" || await this.readRepository(source.source) === false) {
           throw new PluginUpdateError("The mobile-dev marketplace belongs to another source and cannot be removed here.", "foreign-marketplace");
         }
         const result = await this.run(["plugin", "marketplace", "remove", "mobile-dev", "--json"]);

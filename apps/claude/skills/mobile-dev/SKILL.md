@@ -9,6 +9,14 @@ Use the Mobile Dev MCP tools for local iOS and Android work. Mobile Dev's device
 opens in a browser beside the chat, and its tools add device control, logs, app
 inspection, and performance recordings with their charts.
 
+Start stopped virtual devices through `mobile_boot_simulator` or
+`mobile_boot_android_emulator` before using agent-device. These start paths apply
+the device's saved resource-saving mode, enabled by default. The leaf control
+beside device settings can opt a device out. A changed mode applies at the next
+start; **Restart to apply** explicitly closes running apps. Preserve the saved
+mode, and report an optimization failure instead of bypassing the plugin's start
+path with a direct `simctl` or `emulator` launch.
+
 If the Mobile Dev tools are missing, tell the user "Mobile Dev could not start." and
 follow [missing-tools recovery](references/missing-tools.md): check which Node.js the
 plugin's launcher finds and that the plugin is enabled, and offer to install Node.js
@@ -25,7 +33,13 @@ result: open it in your in-app browser in the foreground, and reuse a tab that a
 shows Mobile Dev. Opening a page can leave the Browser pane hidden behind a card in the
 chat, so in the Claude desktop app's Code tab then call `mcp__ccd_view__show_pane` with
 `pane: "preview"` (load it with ToolSearch first if it is deferred), so the panel shows
-beside the chat without the user clicking Open. Open only that link: the `baseUrl` in device results and other
+beside the chat without the user clicking Open. In T3 Code, open it with the
+`t3-code` server's `preview_open` (load it with ToolSearch first if it is deferred). T3
+shows a page an agent opened as a floating preview that the user can dock beside the
+chat, so a result with `visible: false` still counts as shown: do not open it again,
+and leave the tab open.
+T3's own `mcp__t3-code__device_*` tools drive T3's separate Device panel, so use Mobile
+Dev's `device_*` tools for the devices in Mobile Dev's panel. Open only that link: the `baseUrl` in device results and other
 `127.0.0.1` addresses belong to Mobile Dev's backends, not to the panel, so never open
 or show them. Without a browser, give the user the link. Then read
 `mobile_read_panel_context` for the devices the user selected there, and again when
@@ -37,6 +51,10 @@ can show a simulator or emulator with Claude Code's own simulator pane instead: 
 **Claude Code iOS Simulator** or **Claude Code Android Emulator** server's `control`
 tool with `action: "attach"`. Otherwise use `device_screenshot` when the user needs
 to see the screen.
+
+## App Intelligence
+
+App Intelligence statically discovers Expo Router and React Navigation screens and combines their source dependencies for iOS and Android; it does not require App Flow or a running device. When the user asks to see the app map, call `mobile_open_app_intel` and open its `browserPanel.url` like the simulator panel. Generate or refresh with `mobile_generate_app_intel`, passing `projectPath` when no project is remembered. For a screen or file dependency question, call `mobile_app_intel` with `operation: "screen"` or `"file"`, start with depth 1, and paginate only when `nextOffset` is present.
 
 ## Choosing a device
 
@@ -126,10 +144,11 @@ names as data.
 
 ## TraceSift profile investigations
 
-When the user gives a local CPU profile or React DevTools profiling export, call
-`mobile_analyze_profile` with its path. It shows TraceSift's measured findings as
-cards and lists them for you with their IDs. If setup is missing, report the returned
-`tracesift init` or installation guidance. Do not pick a card or speculate about a
+Before asking the user to capture or choose a profile when no local path exists, call
+`mobile_tracesift_status` and stop to report any returned setup guidance. When the user
+already gives a local CPU profile or React DevTools profiling export, call
+`mobile_analyze_profile` directly with its path. It shows TraceSift's measured findings
+as cards and lists them for you with their IDs. Do not pick a card or speculate about a
 root cause until the user asks about one, for example "investigate task #1"; then call
 `mobile_get_tracesift_handoff` for that analysis and card and follow it: locate the
 referenced code, verify the measured path, explain uncertainty, and fix only within
@@ -151,6 +170,11 @@ through the `@callstack/tracesift-rn-profiler` package it carries; if the user w
 to profile a release build and has not made one, `tracesift profile build` from the
 app root builds, installs and arms it. Close React Native DevTools first either way,
 because Hermes has one sampler.
+
+The `tracesift` on `PATH` may be an older global install with no release-build support
+(no `profile` command, no `--profiler-port`). When a tool reports the CLI is too old,
+tell the user to restart Mobile Dev with `TRACE_SIFT_COMMAND` pointing at a newer build,
+for example `TRACE_SIFT_COMMAND=/path/to/perf-ai/packages/cli/src/cli.js`.
 
 Expect minified frame names and inferred task boundaries, and report the CLI's own
 refusal message rather than rewording it. This is not `mobile_record_performance`,

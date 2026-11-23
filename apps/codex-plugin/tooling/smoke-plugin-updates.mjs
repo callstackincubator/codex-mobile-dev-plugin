@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { PLUGIN_STORE_ID } from "../shared/plugin-updates.ts";
-import { createCodexRunner, PluginUpdates, resolveCodexCli } from "../server/plugin-updates.ts";
+import { createCodexRunner, PluginUpdates, resolveCodexCli, isReleaseRepository, RELEASE_REPOSITORY_ID } from "../server/plugin-updates.ts";
 
 const execute = promisify(execFile);
 const parent = tmpdir();
@@ -22,6 +22,8 @@ const repositoryUrl = "https://github.com/callstackincubator/codex-mobile-dev-pl
 const originalCwd = process.cwd();
 const codex = createCodexRunner(profile, { path: codexCli, env });
 let http;
+let repositoryChecks = 0;
+let repositoryRedirects = 0;
 
 async function git(args) { await execute("/usr/bin/git", args, { cwd: repo, env }); }
 async function writeJson(path, data) {
@@ -56,6 +58,19 @@ try {
   http = createServer(async (request, response) => {
     try {
       const url = new URL(request.url, "http://localhost");
+      if (url.pathname === "/repos/callstackincubator/codex-mobile-dev-plugin") {
+        repositoryChecks++;
+        response.writeHead(301, { Location: `/repositories/${RELEASE_REPOSITORY_ID}` });
+        response.end();
+        return;
+      }
+      if (url.pathname === `/repositories/${RELEASE_REPOSITORY_ID}`) {
+        repositoryRedirects++;
+        const body = JSON.stringify({ id: RELEASE_REPOSITORY_ID, full_name: "callstackincubator/mobile-dev-plugin" });
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(body);
+        return;
+      }
       const path = join(repo, ".git", url.pathname);
       const bytes = await readFile(path);
       response.end(bytes);
@@ -86,7 +101,15 @@ try {
   const readStore = async () => ({
     remotePluginId: PLUGIN_STORE_ID, name: "mobile-dev", version: "0.1.167",
   });
-  const options = { enabled: true, profile, pluginRoot: installedCwd, currentVersion: "0.1.167", run, readStore };
+  const readRepository = source => {
+    const request = (url, options) => {
+      const upstream = new URL(url);
+      const local = new URL(upstream.pathname, mirrorUrl);
+      return fetch(local, options);
+    };
+    return isReleaseRepository(source, { fetch: request });
+  };
+  const options = { enabled: true, profile, pluginRoot: installedCwd, currentVersion: "0.1.167", run, readStore, readRepository };
   const updates = new PluginUpdates(options);
   process.chdir(installedCwd);
   const available = await updates.check();
@@ -111,7 +134,9 @@ try {
   const restarted = new PluginUpdates({ ...options, pluginRoot: storeRoot });
   const current = await restarted.check();
   assert.equal(current.status, "current");
-  console.log("Verified real Codex CLI Git plugin and marketplace removal from the deleted working directory, store-package preservation, retries, and restart notices. Store catalog/install state uses a fixture.");
+  assert.ok(repositoryChecks > 0);
+  assert.equal(repositoryRedirects, repositoryChecks);
+  console.log("Verified real Codex CLI Git plugin and marketplace removal from the deleted working directory, repository redirects and identity verification, store-package preservation, retries, and restart notices. Store catalog/install state and GitHub metadata use fixtures.");
 } finally {
   process.chdir(originalCwd);
   if (http) http.close();

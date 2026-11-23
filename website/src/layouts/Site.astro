@@ -9,7 +9,7 @@ import geistMono from '../fonts/GeistMono-Regular.woff2?url';
 import switzerMedium from '../fonts/Switzer-Medium.woff2?url';
 import switzerRegular from '../fonts/Switzer-Regular.woff2?url';
 import { brandCss } from '../site/brand';
-import { site } from '../site/content';
+import { at, site } from '../site/content';
 import { fullTitle } from '../site/meta';
 import InstallPicker from '../components/site/InstallPicker.astro';
 
@@ -37,7 +37,7 @@ const extensionlessPath = pagePath.replace(/\.html$/, '');
 const directoryPath = extensionlessPath.replace(/(^|\/)index$/, '$1');
 const path = directoryPath.replace(/(.)\/$/, '$1');
 const canonical = new URL(path, Astro.site).href;
-const ogImage = new URL('/og-image.jpg', Astro.site).href;
+const ogImage = new URL(at('/og-image.jpg'), Astro.site).href;
 ---
 
 <!doctype html>
@@ -52,10 +52,10 @@ const ogImage = new URL('/og-image.jpg', Astro.site).href;
     <meta name="color-scheme" content="dark" />
     <style is:inline set:html={brandCss}></style>
     <meta name="theme-color" content="#0a0a0a" />
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <link rel="sitemap" href="/sitemap-index.xml" />
+    <link rel="icon" href={at('/favicon.svg')} type="image/svg+xml" />
+    <link rel="icon" href={at('/favicon-32.png')} type="image/png" sizes="32x32" />
+    <link rel="apple-touch-icon" href={at('/apple-touch-icon.png')} />
+    <link rel="sitemap" href={at('/sitemap-index.xml')} />
 
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content={site.name} />
@@ -74,7 +74,7 @@ const ogImage = new URL('/og-image.jpg', Astro.site).href;
     <meta name="twitter:image" content={ogImage} />
     <meta name="twitter:image:alt" content={site.ogAlt} />
 
-    <link rel="alternate" type="text/plain" title="llms.txt" href="/llms.txt" />
+    <link rel="alternate" type="text/plain" title="llms.txt" href={at('/llms.txt')} />
 
     <link rel="preload" href={switzerMedium} as="font" type="font/woff2" crossorigin />
     <link rel="preload" href={switzerRegular} as="font" type="font/woff2" crossorigin />

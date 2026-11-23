@@ -10,3 +10,32 @@ const fonts = [switzerRegular, switzerMedium, geistMonoRegular, geistMonoMedium]
 
 {fonts.map(href => <link rel="preload" href={href} as="font" type="font/woff2" crossorigin />)}
 <Default />
+
+<script>
+  // Buttons with data-copy in docs Markdown copy their text, e.g. an agent setup prompt.
+  document.addEventListener('click', async (event) => {
+    const button = (event.target as Element | null)?.closest<HTMLButtonElement>('button[data-copy]');
+    if (button === null || button === undefined) return;
+    const label = button.dataset.label ?? button.textContent ?? '';
+    button.dataset.label = label;
+    const text = button.dataset.copy ?? '';
+    let copied = false;
+    try {
+      await navigator.clipboard.writeText(text);
+      copied = true;
+    } catch {
+      // Some embedded browsers deny the async Clipboard API; fall back to a selected textarea.
+      const area = document.createElement('textarea');
+      area.value = text;
+      area.setAttribute('readonly', '');
+      area.style.position = 'fixed';
+      area.style.opacity = '0';
+      document.body.append(area);
+      area.select();
+      copied = document.execCommand('copy');
+      area.remove();
+    }
+    button.textContent = copied ? 'Copied' : 'Copy failed';
+    window.setTimeout(() => { button.textContent = label; }, 2000);
+  });
+</script>

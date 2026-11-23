@@ -181,6 +181,33 @@ test("TraceSift client validates profile paths before service startup", async ()
   await assert.rejects(client.analyze(join(home, "absent.json"), "auto"), /does not exist or is not readable/);
 });
 
+test("TraceSift readiness distinguishes a missing CLI from other startup failures", async t => {
+  const home = await mkdtemp(join(tmpdir(), "mobile-dev-tracesift-"));
+  const client = new TraceSiftClient("definitely-missing-tracesift", home); t.after(() => client.close());
+  await assert.rejects(client.readyService(), (error: unknown) =>
+    error instanceof TraceSiftError && error.setupReason === "missing_cli" && /npm install -g/.test(error.message));
+});
+
+test("TraceSift readiness identifies an installed CLI that still needs init", async t => {
+  const home = await mkdtemp(join(tmpdir(), "mobile-dev-tracesift-"));
+  const command = join(home, "tracesift-needs-init");
+  await writeFile(command, "#!/bin/sh\necho 'Run tracesift init to install the app matching this CLI release.' >&2\nexit 1\n", { mode: 0o755 });
+  await chmod(command, 0o755);
+  const client = new TraceSiftClient(command, home); t.after(() => client.close());
+  await assert.rejects(client.readyService(), (error: unknown) =>
+    error instanceof TraceSiftError && error.setupReason === "needs_init" && /tracesift init/.test(error.message));
+});
+
+test("TraceSift initialization runs the fixed init argument with its private home", async t => {
+  const home = await mkdtemp(join(tmpdir(), "mobile-dev-tracesift-"));
+  const command = join(home, "tracesift-init");
+  await writeFile(command, "#!/bin/sh\ntest \"$1\" = init || exit 2\ntouch \"$TRACE_SIFT_HOME/initialized\"\n", { mode: 0o755 });
+  await chmod(command, 0o755);
+  const client = new TraceSiftClient(command, home); t.after(() => client.close());
+  await client.initialize();
+  assert.equal((await stat(join(home, "initialized"))).isFile(), true);
+});
+
 test("TraceSift client requires health identity to match service.json", async t => {
   const fake = await fixture(0o600, "different-instance"); t.after(fake.close);
   const profile = join(fake.home, "profile.json"); await writeFile(profile, "{}");
@@ -206,7 +233,11 @@ test("TraceSift client names a service too old for the Explore endpoints", async
   const profile = join(fake.home, "profile.json"); await writeFile(profile, "{}");
   const client = new TraceSiftClient("missing-tracesift", fake.home); t.after(() => client.close());
   await client.analyze(profile, "auto");
-  for (const explore of [client.exploreTask("analysis-1", 0), client.exploreReact("analysis-1")]) {
+  const requests = [
+    () => client.exploreTask("analysis-1", 0),
+    () => client.exploreReact("analysis-1"),
+  ];
+  for (const explore of requests) {
     await assert.rejects(explore, (error: unknown) =>
       error instanceof TraceSiftError && error.kind === "version" && /Update TraceSift/.test(error.message));
   }
@@ -406,4 +437,109 @@ test("a targets command that answers with prose rather than JSON is named, not g
 
   await assert.rejects(client.reactNativeTargets(), error =>
     error instanceof TraceSiftError && error.kind === "response" && /other than JSON/.test(error.message));
+});
+
+test("a React Native recording runs in the saved project, so a release build finds its source map", async t => {
+  const fake = await fixture(); t.after(fake.close);
+  const project = await realpath(await mkdtemp(join(tmpdir(), "mobile-dev-rn-project-")));
+  t.after(() => rm(project, { recursive: true, force: true }));
+  const cwdPath = join(fake.home, "cwd.txt");
+  const command = await fakeRecorder(fake.home, `pwd -P >> ${JSON.stringify(cwdPath)}`);
+  const client = new TraceSiftClient(command, fake.home); t.after(() => client.close());
+
+  // No project saved: the CLI keeps the plugin's own directory, as before.
+  await client.startReactNativeRecording();
+  assert.equal((await readFile(cwdPath, "utf8")).trim(), await realpath(process.cwd()));
+
+  await client.writeProject(project);
+  await rm(cwdPath);
+  await client.startReactNativeRecording();
+  assert.equal((await readFile(cwdPath, "utf8")).trim(), project);
+
+  // A saved project that has since been deleted falls back rather than failing the spawn.
+  await rm(project, { recursive: true, force: true });
+  await rm(cwdPath);
+  await client.startReactNativeRecording();
+  assert.equal((await readFile(cwdPath, "utf8")).trim(), await realpath(process.cwd()));
+});
+
+test("web recording and the app list never move to the project folder", async t => {
+  const fake = await fixture(); t.after(fake.close);
+  const project = await realpath(await mkdtemp(join(tmpdir(), "mobile-dev-rn-project-")));
+  t.after(() => rm(project, { recursive: true, force: true }));
+  const cwdPath = join(fake.home, "cwd.txt");
+  const command = await fakeRecorder(fake.home, `pwd -P >> ${JSON.stringify(cwdPath)}\nprintf '%s' '{"apiVersion":1,"platform":"rn","metro":"http://127.0.0.1:8081","targets":[{"id":"a","title":"App"}]}'`);
+  const client = new TraceSiftClient(command, fake.home); t.after(() => client.close());
+  await client.writeProject(project);
+
+  await client.reactNativeTargets();
+  await client.startRecording();
+  const here = await realpath(process.cwd());
+  assert.deepEqual((await readFile(cwdPath, "utf8")).trim().split("\n"), [here, here]);
+});
+
+/** A recorder whose usage text does, or does not, mention release-build support. */
+async function usageRecorder(home: string, usage: string, body: string) {
+  return await fakeRecorder(home, `if [ "$1" = "--help" ]; then printf '%s' ${JSON.stringify(usage)}; exit 0; fi\n${body}`);
+}
+
+test("a CLI without release-build support names TRACE_SIFT_COMMAND when no app is found or start fails", async t => {
+  const fake = await fixture(); t.after(fake.close);
+  const old = await usageRecorder(fake.home, "tracesift record start [--platform rn]",
+    `case "$2" in targets) printf '%s' '{"apiVersion":1,"platform":"rn","metro":"http://127.0.0.1:8081","targets":[]}' ;; start) echo "tracesift: no app" >&2; exit 1 ;; esac`);
+  const client = new TraceSiftClient(old, fake.home); t.after(() => client.close());
+  const stale = (error: unknown) => error instanceof TraceSiftError && error.kind === "version"
+    && /too old to record release builds/.test(error.message) && /TRACE_SIFT_COMMAND=\/path\/to\/perf-ai\/packages\/cli\/src\/cli\.js/.test(error.message);
+  await assert.rejects(client.reactNativeTargets(), stale);
+  await assert.rejects(client.startReactNativeRecording(), stale);
+});
+
+test("a CLI with release-build support keeps its own errors and its empty list", async t => {
+  const fake = await fixture(); t.after(fake.close);
+  const current = await usageRecorder(fake.home, "tracesift record start --platform rn [--profiler-port 8089]",
+    `case "$2" in targets) printf '%s' '{"apiVersion":1,"platform":"rn","metro":"http://127.0.0.1:8081","targets":[]}' ;; start) echo "tracesift: no app" >&2; exit 1 ;; esac`);
+  const client = new TraceSiftClient(current, fake.home); t.after(() => client.close());
+  assert.deepEqual((await client.reactNativeTargets()).targets, []);
+  await assert.rejects(client.startReactNativeRecording(), error => error instanceof TraceSiftError && error.kind === "request" && error.message === "no app");
+});
+
+test("a release target keeps its transport and port through the client", async t => {
+  // The sanitizer rebuilds each target field by field, and zod defaults
+  // `transport` to "metro". Dropping either field here made the panel label
+  // every release build as Metro, naming a dev server that is not running.
+  const fake = await fixture(); t.after(fake.close);
+  const targets = JSON.stringify({
+    apiVersion: 1, platform: "rn", metro: "http://127.0.0.1:8081", profilerPort: 8089,
+    targets: [{ id: "release", title: "com.example.spike (Android, release)", appId: "com.example.spike",
+      deviceName: "Google sdk_gphone16k_arm64", transport: "release", port: 8089,
+      supportsMultipleDebuggers: false, recommended: true }],
+  });
+  const command = await fakeRecorder(fake.home, [
+    `case "$2" in`,
+    `  targets) printf '%s' ${JSON.stringify(targets)} ;;`,
+    `esac`,
+  ].join("\n"));
+  const client = new TraceSiftClient(command, fake.home); t.after(() => client.close());
+
+  const listed = await client.reactNativeTargets();
+  assert.equal(listed.targets[0]?.transport, "release");
+  assert.equal(listed.targets[0]?.port, 8089);
+});
+
+test("a Metro target without a transport still reads as Metro", async t => {
+  const fake = await fixture(); t.after(fake.close);
+  const targets = JSON.stringify({
+    apiVersion: 1, platform: "rn", metro: "http://127.0.0.1:8081",
+    targets: [{ id: "device-1", title: "AwesomeApp", supportsMultipleDebuggers: true, recommended: true }],
+  });
+  const command = await fakeRecorder(fake.home, [
+    `case "$2" in`,
+    `  targets) printf '%s' ${JSON.stringify(targets)} ;;`,
+    `esac`,
+  ].join("\n"));
+  const client = new TraceSiftClient(command, fake.home); t.after(() => client.close());
+
+  const listed = await client.reactNativeTargets();
+  assert.equal(listed.targets[0]?.transport, "metro");
+  assert.equal(listed.targets[0]?.port, undefined);
 });

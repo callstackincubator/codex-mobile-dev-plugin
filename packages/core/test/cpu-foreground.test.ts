@@ -4,19 +4,21 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { usePanelRuntime } from "../src/panel-runtime.ts";
 import { foregroundPhysicalPid, foregroundSimulatorPid, foregroundAndroidApp, parseAndroidForegroundPackage, unknownSimulatorForeground } from "../src/device-apps/foreground.ts";
 import { deviceAppSources, readDeviceApps } from "../src/device-apps/sources.ts";
 import type { DeviceApp } from "../../shared/src/device-apps.ts";
 
 const udid = "00008150-001068280AE8C01C";
 
-test("simulator foreground detection passes the selected Xcode library environment to Baguette", async t => {
+test("simulator foreground detection runs the panel runtime's Baguette with the selected Xcode library environment", async t => {
   const temporary = tmpdir();
   const prefix = join(temporary, "mobile-dev-simulator-foreground-");
   const root = await mkdtemp(prefix);
   t.after(() => rm(root, { recursive: true, force: true }));
-  const path = join(root, "helper.cjs");
-  const url = pathToFileURL(path);
+  await mkdir(join(root, "baguette"));
+  const path = join(root, "baguette", "Baguette");
+  usePanelRuntime(async () => root);
   const script = `#!${process.execPath}
 if (process.argv[2] !== 'foreground' || process.argv[3] !== '--udid') process.exit(2);
 if (process.env.DYLD_LIBRARY_PATH !== '/selected/libraries') process.exit(3);
@@ -24,7 +26,7 @@ process.stdout.write('{"pid":123}');
 `;
   await writeFile(path, script, { mode: 0o700 });
   const controller = new AbortController();
-  const pid = await foregroundSimulatorPid(udid, controller.signal, url, async (executable, signal) => {
+  const pid = await foregroundSimulatorPid(udid, controller.signal, async (executable, signal) => {
     assert.equal(executable, path);
     assert.equal(signal, controller.signal);
     return { DYLD_LIBRARY_PATH: "/selected/libraries" };

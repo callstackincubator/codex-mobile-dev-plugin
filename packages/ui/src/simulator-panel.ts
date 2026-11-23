@@ -2,12 +2,16 @@ import { androidNinePatchSkin } from "./android-nine-patch.ts";
 import { androidFrameGeometry, androidChromeScale } from "./android-frame-geometry.ts";
 import { getDevicePicker } from "./device-picker.ts";
 import { getDeviceSettings } from "./device-settings.ts";
+import { getResourceSaving } from "./resource-saving.ts";
+import type { ResourceSavingState } from "@mobile-dev/shared/resource-saving.ts";
 import { getAppTools } from "./app-tools.ts";
 import type { DeviceSettings } from "@mobile-dev/shared/device-settings.ts";
 import { bezelGeometrySchema } from "@mobile-dev/shared/bezel.ts";
 import type { Bezel } from "@mobile-dev/shared/bezel.ts";
 import type { SimulatorDevice, Status, TouchInput } from "@mobile-dev/shared/protocol.ts";
 import { inputSchema } from "@mobile-dev/shared/protocol.ts";
+import { androidBookingNamesSchema } from "@mobile-dev/shared/android-devices.ts";
+import type { AndroidBookingNames } from "@mobile-dev/shared/android-devices.ts";
 import { physicalConnectionLabel } from "@mobile-dev/shared/ios-devices.ts";
 import type { PhysicalIosDevice } from "@mobile-dev/shared/ios-devices.ts";
 import type { DeviceOption } from "./device-picker.ts";
@@ -16,8 +20,9 @@ import { captureUiError, countUiEvent, recordUiTiming } from "./telemetry.ts";
 import type { PanelContext } from "./model-context.ts";
 import { encodeScreenshotAttachment } from "./screenshot-attachment.ts";
 import { getScreenAnnotations } from "./screen-annotations.ts";
+import { testRecorder } from "./test-recorder.ts";
 import type { ScreenAnnotation } from "@mobile-dev/shared/screen-annotations.ts";
-import { accessibilityScreen, screenComponents, screenSize } from "@mobile-dev/shared/screen-annotations.ts";
+import { accessibilityScreen, scaledComponents, screenComponents, screenSize } from "@mobile-dev/shared/screen-annotations.ts";
 import { AndroidVideo } from "./android-video.ts";
 import { PhysicalIosVideo } from "./ios-mirror-video.ts";
 import { iosVideoBatchSchema } from "@mobile-dev/shared/ios-video.ts";
@@ -30,6 +35,7 @@ import type { StreamMessage } from "./stream-input.ts";
 import { IosVideo } from "./ios-video.ts";
 import type { AndroidVideoBatch } from "./android-video.ts";
 import type { HostBridge } from "./host-bridge.ts";
+import { isRecordableDevice, recordablePlatform } from "@mobile-dev/shared/panel-target.ts";
 import type { PanelTarget } from "@mobile-dev/shared/panel-target.ts";
 import { initialPanelDevice } from "./device-layout.ts";
 
@@ -44,6 +50,7 @@ export function createSimulatorPanel(
   const devicePickerElement = element("devices");
   const devices = getDevicePicker(devicePickerElement);
   const settings = getDeviceSettings(element("settings"));
+  const resourceSaving = getResourceSaving(element("settings"));
   const appTools = getAppTools(element("settings"));
   const canvas = element<HTMLCanvasElement>("screen");
   const context = canvas.getContext("2d")!;
@@ -99,6 +106,8 @@ export function createSimulatorPanel(
     const deviceToolsUnavailable = busy || !toolsAvailable || selected?.state !== "Booted" || disposed;
     settings.configure(selected?.udid ?? "", deviceToolsUnavailable);
     settings.prefetch();
+    const resourceDeviceId = selected?.kind === "emulator" ? `avd:${selected.name}` : selected?.udid ?? "";
+    resourceSaving.configure(resourceDeviceId, selected !== undefined && selected.kind !== "physical", busy || !toolsAvailable || disposed);
     // App tools use simctl and adb, which do not reach paired iPhones.
     appTools.configure(platform, selected?.udid ?? "", deviceToolsUnavailable || selected?.kind === "physical" && platform === "ios");
     element<HTMLButtonElement>("start-device").disabled = busy || !toolsAvailable || !selected || selected.kind === "physical" || selected.state === "Booted" || disposed;
@@ -135,6 +144,9 @@ export function createSimulatorPanel(
 
   function send(message: StreamMessage) {
     if (!ready || !stream || inputBlocked) return;
+    // Every input can change the screen, so a tree read before it no longer describes what the
+    // next tap lands on. Typing and the hardware buttons go through here too, not just touches.
+    if (isRecordingSelected()) testRecorder.invalidate();
     stream.input?.send(message);
   }
 
@@ -273,6 +285,54 @@ export function createSimulatorPanel(
       }
     } finally { recordUiTiming("ui.annotations.inspection", performance.now() - startedAt); }
   };
+  /**
+   * The Testing panel records from the device this panel shows, and this is how it reads it: not
+   * the inspection path the annotation overlay uses, but the e2e runner's own element tree, so a
+   * recorded selector resolves to the same element when the test runs. The Testing panel installs
+   * that source — it knows the project and the target — and this supplies the device and the
+   * screen. Only iOS simulators and Android emulators are wired up; a physical device has no tree here at all.
+   */
+  const recorderReader = {
+    readComponents: async () => {
+      if (!selected) return [];
+      const { tree, screen } = await testRecorder.readTree(selected.udid, recordablePlatform(selected));
+      // `screen` is the space the runner measured in; `points` is the space the mirror maps
+      // pointer events into. They agree on an iOS simulator and do not on Android, where scrcpy
+      // caps the stream's longest edge while the tree stays in device pixels.
+      return screen ? scaledComponents(tree, screen, points) : tree;
+    },
+    screen: () => points,
+    release: () => testRecorder.releaseTree(),
+    // Taking the step the menu recorded. `tap` and `type` are the panel's own input messages, so
+    // the app advances exactly as a user's own tap would, and the next step is resolved against
+    // the screen the test will be on.
+    perform: (action:
+      | { kind: "tap"; point: { x: number; y: number } }
+      | { kind: "type"; text: string }
+      | { kind: "swipe"; from: { x: number; y: number }; to: { x: number; y: number } }) => {
+      if (action.kind === "tap") send({ type: "tap", x: action.point.x, y: action.point.y, ...points });
+      // The stream carries a swipe of its own, so a recorded `swipe` is taken as the gesture it
+      // emits rather than merely written down. `duration` is in seconds here, and a third of one
+      // is a deliberate drag: fast enough not to be read as a long press, slow enough that the
+      // app sees the intermediate touches rather than a jump.
+      else if (action.kind === "swipe") {
+        send({ type: "swipe", startX: action.from.x, startY: action.from.y, endX: action.to.x, endY: action.to.y, ...points, duration: 0.3 });
+      }
+      // The runner's `fill` replaces the field's contents; typing on the mirror appends to them, and
+      // there is no input message that clears a field. So a `fill` recorded into a field that
+      // already has text leaves the app showing something the test will not produce — the step is
+      // still right, the screen behind it is not. Non-ASCII is refused by the input schema.
+      else if (action.text) send({ type: "type", text: action.text });
+    },
+  };
+  function isRecordingSelected() {
+    return selected ? testRecorder.isRecording(selected.udid, recordablePlatform(selected)) : false;
+  }
+  function syncRecorder() {
+    if (selected && isRecordableDevice(selected)) testRecorder.attach(selected.udid, recordablePlatform(selected), recorderReader);
+    else if (selected) testRecorder.detach(selected.udid, recordablePlatform(selected));
+  }
+
   const stopObservingAnnotations = annotations.subscribe(() => {
     const state = annotations.getSnapshot();
     canvas.dataset.selecting = String(state.selecting || !!state.draft);
@@ -293,6 +353,27 @@ export function createSimulatorPanel(
     return (result.structuredContent as { settings: Partial<DeviceSettings> }).settings;
   };
   settings.setFrame = visible => { showFrame = visible; setBezel(sourceBezel); fitScreen(); };
+  resourceSaving.request = async enabled => {
+    if (selected === undefined || selected.kind === "physical" || disposed) throw new Error("Select a simulator or emulator first.");
+    const target = { platform, id: selected.udid };
+    const args = enabled === undefined ? { target } : { target, enabled };
+    const name = enabled === undefined ? "mobile_resource_saving" : "mobile_set_resource_saving";
+    const result = await call(name, args, { timeout: 10000 });
+    const content = result.structuredContent as { state: ResourceSavingState };
+    return content.state;
+  };
+  resourceSaving.restart = async () => {
+    if (selected === undefined || selected.kind === "physical" || disposed) throw new Error("Select a simulator or emulator first.");
+    const id = selected.udid;
+    const stop = devices.stop;
+    if (stop === undefined) throw new Error("Device controls are not available.");
+    await stop(id);
+    busy = true;
+    controls();
+    notice();
+    try { await start(); }
+    finally { busy = false; controls(); }
+  };
   appTools.call = async (name, args) => {
     if (!selected || disposed) throw new Error("Select a running device first.");
     return (await call(name, args, { timeout: 60000 })).structuredContent;
@@ -429,6 +510,7 @@ export function createSimulatorPanel(
     selected = status?.devices.find(device => device.udid === devices.value);
     if (selected === undefined) selected = physicalDevices.find(device => device.udid === devices.value);
     selectionChanged(selected);
+    syncRecorder();
     if (selected?.kind === "physical" && selected.platform === "ios") {
       const connection = physicalConnectionLabel(selected.transportType);
       if (reconnect.active === false) empty(`${selected.name} · ${connection}`, "Opening the physical device screen…");
@@ -441,6 +523,13 @@ export function createSimulatorPanel(
       empty("Requested device unavailable.", "The requested device could not be found. Connect it or choose another device from the picker.");
     } else if (!reconnect.active && !stoppedDisplay) empty(selected ? "Select a device to open its screen." : (platform === "android" ? "No Android devices. Create an AVD in Android Studio or connect a device." : "No iOS devices. Connect an iPhone or add a simulator in Xcode."));
     controls();
+  }
+
+  let bookingNames: AndroidBookingNames = {};
+
+  function updateBookingNames(metadata: unknown) {
+    const parsed = androidBookingNamesSchema.safeParse(metadata);
+    bookingNames = parsed.success ? parsed.data : {};
   }
 
   function renderStatus(next: Status, previous = selected?.udid) {
@@ -468,12 +557,15 @@ export function createSimulatorPanel(
     });
     const virtualDevices = next.devices.filter(device => device.kind !== "physical");
     const androidPhysicalOptions: DeviceOption[] = next.devices.flatMap(device => {
-      if (device.kind !== "physical") return [];
+      if (device.kind !== "physical" || device.platform !== "android") return [];
       const connection = physicalConnectionLabel(device.transportType);
       const running = device.state === "Booted";
       const stateLabel = device.state === "unauthorized" ? "Unauthorized" : "Offline";
+      const deviceLabel = `${device.name} · ${connection}${running ? "" : ` · ${stateLabel}`}`;
+      const bookingName = running && Object.hasOwn(bookingNames, device.udid) ? bookingNames[device.udid] : undefined;
       return [{
-        value: device.udid, label: `${device.name} · ${connection}${running ? "" : ` · ${stateLabel}`}`,
+        value: device.udid, label: bookingName ?? deviceLabel,
+        ...(bookingName !== undefined ? { detail: deviceLabel } : {}),
         group: "Connected devices", kind: /tablet|pixel.*tab/i.test(device.name) ? "tablet" : "phone",
         running, statusLabel: "Connected", canStop: false,
       }];
@@ -742,6 +834,7 @@ export function createSimulatorPanel(
     if (platform === "android") {
       const result = await simulatorRead;
       if (revision === statusRevision && !disposed) {
+        updateBookingNames(result._meta?.bookingNames);
         renderStatus(result.structuredContent as Status);
         if (!busy && !reconnect.active) await connect();
       }
@@ -797,7 +890,8 @@ export function createSimulatorPanel(
       empty("Starting simulator…", "The screen will appear when the device is ready.");
       const before = selected;
       const result = await call(platform === "android" ? "mobile_boot_android_emulator" : "mobile_boot_simulator",
-        platform === "android" ? { deviceId: before.udid } : { udid: before.udid }, { timeout: 150000 });
+        platform === "android" ? { deviceId: before.udid } : { udid: before.udid }, { timeout: 300000 });
+      if (platform === "android") updateBookingNames(result._meta?.bookingNames);
       renderStatus(result.structuredContent as Status);
       if (platform === "android") {
         const booted = status?.devices.find(device => device.kind !== "physical" && device.name === before.name && device.state === "Booted");
@@ -820,6 +914,7 @@ export function createSimulatorPanel(
     try {
       if (wasSelected) await disconnect();
       const result = await call(platform === "android" ? "mobile_shutdown_android_emulator" : "mobile_shutdown_simulator", platform === "android" ? { deviceId: id } : { udid: id }, { timeout: 30000 });
+      if (platform === "android") updateBookingNames(result._meta?.bookingNames);
       const next = result.structuredContent as Status;
       const selectedId = wasSelected && platform === "android" ? next.devices.find(item => item.kind !== "physical" && item.name === device.name)?.udid : selected?.udid;
       if (wasSelected && next.connected) stoppedDisplay = true;
@@ -863,20 +958,72 @@ export function createSimulatorPanel(
       return;
     }
     if (annotations.getSnapshot().draft) return;
+    // A click outside the element menu dismisses it rather than recording through it; the menu
+    // stops its own pointer events from reaching the canvas at all.
+    if (testRecorder.getSnapshot().menu) { testRecorder.closeMenu(); return; }
+    // While an agent is recording, the mirror is its screen: a tap landing between the agent's
+    // read and its step would resolve that step against a screen that has already moved. Two
+    // drivers on one screen is solved by locking, not by hoping.
+    if (testRecorder.isAgentRecording(selected?.udid)) return;
     if (!ready || inputBlocked || busy || event.button !== 0 || pointer) return;
     const position = mappedPoint(event);
-    const edge = position.y > points.height - 14 ? "bottom" : position.y < 14 ? "top" : undefined;
+    const edge: TouchInput["edge"] = position.y > points.height - 14 ? "bottom" : position.y < 14 ? "top" : undefined;
+    const touch = { ...position, ...points, ...(edge ? { edge } : {}) };
+    // A left click only drives the app, recording or not. Recording a step from it meant every
+    // stray tap while finding the next screen became a step the user then had to delete, and it
+    // made "tap to drive" and "tap to record" the same gesture. Steps come from the element menu.
     pointer = { id: event.pointerId, ...position, edge };
     canvas.setPointerCapture(event.pointerId); canvas.focus();
-    send({ type: "touch1-down", ...position, ...points, ...(edge ? { edge } : {}) });
+    send({ type: "touch1-down", ...touch });
   });
   canvas.addEventListener("pointermove", event => {
     if (annotations.getSnapshot().selecting) { if (annotationPointer === undefined || annotationPointer === event.pointerId) annotations.hover(mappedPoint(event)); return; }
+    // While recording, the pointer previews what it would record. Not during a drag: the touch is
+    // already going to the device, and the screen under it is no longer the one that was read.
+    if (testRecorder.isAgentRecording(selected?.udid)) return;
+    if (isRecordingSelected() && !pointer) { void testRecorder.hover(mappedPoint(event)); return; }
     if (!pointer || pointer.id !== event.pointerId) return;
     Object.assign(pointer, mappedPoint(event));
     send({ type: "touch1-move", x: pointer.x, y: pointer.y, ...points, ...(pointer.edge ? { edge: pointer.edge } : {}) });
   });
-  canvas.addEventListener("pointerleave", () => { if (annotationPointer === undefined) annotations.hover(); });
+  canvas.addEventListener("pointerleave", () => { if (annotationPointer === undefined) annotations.hover(); void testRecorder.hover(); });
+  // Right-click asks what can be done with the element the outline is on, instead of the browser's
+  // own menu over a canvas that has nothing in it to copy. The menu itself is drawn by the
+  // recorder overlay, which already has the outline's rectangle to anchor to.
+  // Escape closes the element menu. On the window and in the capture phase, so it beats the
+  // canvas's own key handling, which would otherwise forward the key to the device.
+  window.addEventListener("keydown", event => {
+    if (disposed || event.key !== "Escape" || !testRecorder.getSnapshot().menu) return;
+    event.preventDefault();
+    event.stopPropagation();
+    testRecorder.closeMenu();
+  }, { capture: true });
+  canvas.addEventListener("contextmenu", event => {
+    if (!isRecordingSelected() || annotations.getSnapshot().selecting) return;
+    event.preventDefault();
+    // The element menu records a step and takes it, which is exactly the second driver the lock
+    // exists to stop. The browser's own menu is still suppressed, so the lock is not a regression
+    // to a canvas context menu with nothing in it.
+    if (testRecorder.isAgentRecording(selected?.udid)) return;
+    void testRecorder.openMenu(mappedPoint(event));
+  });
+  // While recording, the wheel walks the outline out to the enclosing element and back in — the
+  // label inside the row, the row inside the card. The mirror has no other use for the wheel.
+  // A trackpad sends a burst of small deltas per flick, so steps are accumulated rather than
+  // taken per event — otherwise one flick walks straight out to the root.
+  let wheelTravel = 0;
+  const WHEEL_STEP = 60;
+  canvas.addEventListener("wheel", event => {
+    if (!isRecordingSelected() || annotations.getSnapshot().selecting) return;
+    event.preventDefault();
+    if (testRecorder.isAgentRecording(selected?.udid)) return;
+    if (wheelTravel !== 0 && Math.sign(event.deltaY) !== Math.sign(wheelTravel)) wheelTravel = 0;
+    wheelTravel += event.deltaY;
+    while (Math.abs(wheelTravel) >= WHEEL_STEP) {
+      testRecorder.walkHover(wheelTravel > 0);
+      wheelTravel -= Math.sign(wheelTravel) * WHEEL_STEP;
+    }
+  }, { passive: false });
   canvas.addEventListener("pointerup", event => {
     if (annotationPointer === event.pointerId) {
       annotations.endSelection(mappedPoint(event));
@@ -1001,6 +1148,7 @@ export function createSimulatorPanel(
       devices.stop = undefined;
       devices.refresh = undefined;
       settings.dispose();
+      resourceSaving.dispose();
       appTools.dispose();
       stopObservingAnnotations();
       annotations.dispose();

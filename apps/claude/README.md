@@ -15,6 +15,9 @@ SwiftUI, and other native mobile projects.
   [agent-device](https://agent-device.dev/) runtime.
 - **App control:** install, launch, and stop apps, open deep links, send test pushes,
   and set permissions and languages.
+- **App Flow:** a visual map of your app's screens and the navigation between them,
+  read from your Expo Router or React Navigation source and optionally captured by
+  walking the app on an iOS simulator.
 - **Logs:** iOS unified logs, Android logcat, physical iPhone logs, and Metro console
   messages.
 - **Performance:** CPU, memory, and FPS recordings shown as interactive charts in

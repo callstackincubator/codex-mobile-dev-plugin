@@ -14,7 +14,7 @@
   },
   "panelRuntime": "download",
   "build": "tooling/build.mjs",
-  "skills": ["skills/mobile-dev", "../../packages/skills/agent-device"],
+  "skills": ["skills/mobile-dev", "../../packages/skills/mobile-dev-testing", "../../packages/skills/agent-device"],
   "folders": ["scripts", "hooks"],
   "readme": "README.md",
   "maxFileBytes": 5242880

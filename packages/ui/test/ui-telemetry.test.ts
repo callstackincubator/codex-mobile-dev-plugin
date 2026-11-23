@@ -436,6 +436,9 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   assert.equal(mirrorContext.surface, "simulator");
   assert.equal(mirrorContext.device_platform, "ios");
   assert.equal(mirrorContext.device_kind, "physical");
+  api.setUiSurface("app-flow");
+  api.recordUiTiming("ui.app_flow.graph_process", 4);
+  api.setUiSurface("simulator");
   Object.defineProperty(window.document, "visibilityState", { configurable: true, value: "hidden" });
   const visibilityChange = new window.Event("visibilitychange");
   window.document.dispatchEvent(visibilityChange);
@@ -472,6 +475,8 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   contains(encoded, "ui.annotations.context_build.mean");
   contains(encoded, "ui.annotations.send.mean");
   contains(encoded, "ui.annotations.send_success");
+  contains(encoded, "ui.annotations.send_batch");
+  contains(encoded, '"notes":{"value":"1"');
   contains(encoded, "ui.annotations.send_timeout");
   contains(encoded, "ui.annotations.send_composer_unavailable");
   contains(encoded, "ui.annotations.send_failure");
@@ -510,6 +515,8 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   contains(encoded, '"surface":{"value":"performance"');
   contains(encoded, '"surface":{"value":"simulator"');
   contains(encoded, '"surface":{"value":"recording"');
+  contains(encoded, '"surface":{"value":"app-flow"');
+  contains(encoded, "ui.app_flow.graph_process.mean");
   contains(encoded, "ui.frame_interval.mean");
   contains(encoded, "UI failure");
   contains(encoded, '"action":{"value":"mobile_ios_mirror_session"');
@@ -718,4 +725,50 @@ test("UI telemetry attributes each call to the host that renders the page", asyn
       }
     }
   }
+});
+
+test("App Intelligence layout measurements carry counts only, never paths", async t => {
+  const root = process.cwd();
+  const built = await build({
+    stdin: { contents: 'export * from "./packages/ui/src/telemetry.ts";', resolveDir: root, loader: "ts" },
+    bundle: true, write: false, format: "iife", globalName: "Telemetry", platform: "browser", target: "chrome120",
+    define: { "process.env.NODE_ENV": '"production"' },
+  });
+  const html = `<html data-view="workspace"><head><meta name="mobile-dev-environment" content="development">${identityMeta}</head><body></body></html>`;
+  const dom = new JSDOM(html, { pretendToBeVisual: true, runScripts: "outside-only", url: "https://mobile-dev.test/" });
+  t.after(() => dom.window.close());
+  const window = dom.window;
+  window.Math.random = () => 0;
+  const bodies: string[] = [];
+  window.fetch = async (_url, options) => { bodies.push(String(options?.body ?? "")); return new Response("", { status: 200 }); };
+  Object.defineProperty(window.performance, "getEntriesByType", { value: () => [] });
+  Object.defineProperty(window.performance, "getEntries", { value: () => [] });
+  window.eval(built.outputFiles[0].text);
+  const api = window.Telemetry;
+  api.startUiTelemetry({ async callServerTool() { return { content: [] }; } });
+  api.setUiSurface("app-intel");
+  api.recordUiTiming("ui.app_intel.flow_layout", 4);
+  api.setUiGauge("ui.app_intel.flow_nodes", 37);
+  api.countUiEvent("ui.app_intel.group_collapse");
+  api.countUiEvent("ui.app_intel.group_expand");
+  api.countUiEvent("ui.app_intel.group_show_all");
+  api.countUiEvent("ui.app_intel.boundary_highlight");
+  api.countUiEvent("ui.app_intel.project_switch");
+  api.countUiEvent("ui.app_intel.clear");
+  api.countUiEvent("ui.app_intel.boundary_filter");
+  await api.stopUiTelemetry();
+
+  const encoded = bodies.join("\n");
+  contains(encoded, "ui.app_intel.flow_layout.mean");
+  contains(encoded, "ui.app_intel.flow_nodes");
+  contains(encoded, "ui.app_intel.group_collapse");
+  contains(encoded, "ui.app_intel.group_expand");
+  contains(encoded, "ui.app_intel.group_show_all");
+  contains(encoded, "ui.app_intel.boundary_highlight");
+  contains(encoded, "ui.app_intel.project_switch");
+  contains(encoded, "ui.app_intel.clear");
+  contains(encoded, "ui.app_intel.boundary_filter");
+  contains(encoded, "app-intel");
+  contains(encoded, "/Users/", false);
+  contains(encoded, ".tsx", false);
 });

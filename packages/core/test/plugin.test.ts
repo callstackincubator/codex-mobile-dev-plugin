@@ -18,8 +18,12 @@ import { parseBaseUrl } from "../../shared/src/protocol.ts";
 import { createTestPlugin, fakeBaguette, fakeSimulatorInput, UDID, PNG } from "../../test-support/fixtures.ts";
 import { getTelemetryIdentity } from "../src/telemetry-identity.ts";
 import manifest from "../../../package.json" with { type: "json" };
+import { ResourceSaving } from "../src/resource-saving.ts";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-test("both opening tools accept optional device intent and preserve it in their results", async t => {
+test("opening tools accept optional intent and preserve it in their results", async t => {
   const fake = await fakeBaguette();
   const plugin = await createTestPlugin("<html></html>", { panel: createPanel({ baguette: new Baguette(fake.url), simulatorInput: fakeSimulatorInput() }) });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -36,6 +40,10 @@ test("both opening tools accept optional device intent and preserve it in their 
     const invalid = await client.callTool({ name, arguments: { platform: "android", kind: "simulator" } });
     assert.equal(invalid.isError, true);
   }
+  const appIntel = await client.callTool({ name: "mobile_open_app_intel", arguments: {} });
+  assert.equal(appIntel.isError, undefined);
+  assert.deepEqual(appIntel.structuredContent?.panelTarget, { workspaceTool: "app-intel" });
+  assert.equal(appIntel.structuredContent?.connected, false);
   const boots = fake.requests.filter(request => request.path.endsWith("/boot"));
   assert.equal(boots.length, 0);
 });
@@ -217,7 +225,13 @@ test("cached side tabs and saved cards load the current UI through old resource 
 
 test("MCP tools expose native entrypoints and complete the simulator workflow", async t => {
   const fake = await fakeBaguette();
-  const plugin = await createTestPlugin('<!doctype html><html data-view="panel" data-layout="stacked"><title>Mobile Dev</title></html>', { panel: createPanel({ baguette: new Baguette(fake.url), simulatorInput: fakeSimulatorInput() }) });
+  const temporaryRoot = tmpdir();
+  const prefix = join(temporaryRoot, "resource-saving-plugin-test-");
+  const directory = await mkdtemp(prefix);
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const optimizationCalls: string[][] = [];
+  const resourceSaving = new ResourceSaving({ directory, executable: async () => "/fake/simslim", run: async (_file, args) => { optimizationCalls.push(args); return { stdout: "{}" }; } });
+  const plugin = await createTestPlugin('<!doctype html><html data-view="panel" data-layout="stacked"><title>Mobile Dev</title></html>', { panel: createPanel({ baguette: new Baguette(fake.url), simulatorInput: fakeSimulatorInput(), resourceSaving }) });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "test", version: "1" });
   t.after(async () => { await client.close(); await plugin.close(); await fake.close(); });
@@ -231,7 +245,11 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
   const workspace = tools.tools.find(tool => tool.name === "mobile_open_workspace")!;
   const workspaceMetadata = OpenAIUiToolMetadataSchema.parse(workspace._meta?.["openai/ui"]);
   assert.deepEqual(workspaceMetadata.entrypoints?.map(item => item.type), ["global"]);
-  for (const tool of [open, workspace]) {
+  const appIntel = tools.tools.find(tool => tool.name === "mobile_open_app_intel")!;
+  const appIntelMetadata = OpenAIUiToolMetadataSchema.parse(appIntel._meta?.["openai/ui"]);
+  assert.deepEqual(appIntelMetadata.entrypoints?.map(item => item.type), ["global"]);
+  assert.deepEqual(tools.tools.find(tool => tool.name === "mobile_clear_app_intel")?.annotations, { readOnlyHint: false, destructiveHint: true, openWorldHint: false });
+  for (const tool of [open, workspace, appIntel]) {
     // The desktop host rejects unknown openai/ui keys, unlike the SDK parser.
     assert.deepEqual(Object.keys(tool._meta?.["openai/ui"] as object), ["entrypoints"]);
     assert.equal(tool.icons?.[0].mimeType, "image/svg+xml");
@@ -245,6 +263,17 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
   const recordingResource = await client.readResource({ uri: RECORDING_URI });
   // Cards from a server with the workspace can open recordings there.
   assert.match(recordingResource.contents[0].text as string, /data-view="recording" data-workspace/);
+  // A panel beside the chat opens no recordings, so its cards offer no workspace.
+  const besideChat = await createTestPlugin('<html data-view="panel"></html>', { panel: createPanel({ inline: false }) });
+  const [besideChatClientTransport, besideChatServerTransport] = InMemoryTransport.createLinkedPair();
+  const besideChatClient = new Client({ name: "browser-panel-host", version: "1" });
+  t.after(async () => { await besideChatClient.close(); await besideChat.close(); });
+  await besideChat.server.connect(besideChatServerTransport);
+  await besideChatClient.connect(besideChatClientTransport);
+  for (const [uri, view] of [[RECORDING_URI, "recording"], [COMPARISON_URI, "comparison"]]) {
+    const card = String((await besideChatClient.readResource({ uri })).contents[0].text);
+    assert.equal(card, `<html data-view="${view}"></html>`);
+  }
   assert.equal(recordingResource.contents[0].mimeType, "text/html;profile=mcp-app");
   assert.deepEqual(recordingResource.contents[0]._meta?.["openai/ui"], { preferredDisplayMode: "inline", availableDisplayModes: ["inline", "fullscreen"] });
   assert.deepEqual(recordingResource.contents[0]._meta?.ui, { prefersBorder: true, permissions: { clipboardWrite: {} }, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } });
@@ -339,6 +368,7 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
   assert.equal(noStream.isError, true);
   assert.equal(noStream._meta?.retryable, false);
   const booted = await client.callTool({ name: "mobile_boot_simulator", arguments: { udid: UDID } });
+  assert.deepEqual(optimizationCalls.map(args => args[0]), ["on", "verify"]);
   assert.equal((booted.structuredContent?.devices as { state: string; udid: string }[]).find(item => item.udid === UDID)?.state, "Booted");
   const unknown = await client.callTool({ name: "mobile_boot_simulator", arguments: { udid: "810F8795-62F8-4B9D-A3D2-6AC9FDF585A2" } });
   assert.equal(unknown.isError, true);
@@ -465,6 +495,40 @@ test("a stale accessibility bridge restarts once before reading the UI again", a
   responses = [{ ok: false, error: "describe failed" }];
   await assert.rejects(baguette.describeUi(UDID), /describe failed/);
   assert.equal(restarts.length, 1);
+});
+
+test("a stale bridge that answers ok is recovered too, and a healthy read is never retried", async t => {
+  let now = 0;
+  t.mock.method(Date, "now", () => now);
+  let responses: unknown[] = [];
+  const reads: number[] = [];
+  const server = createServer((_request, response) => { reads.push(1); response.end(JSON.stringify(responses.shift() ?? { ok: true, tree: { label: "HorseTinder" } })); });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => server.close());
+  const restarts: string[] = [];
+  const baguette = new Baguette(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, async udid => { restarts.push(udid); });
+  t.after(() => baguette.dispose());
+
+  // The bridge goes stale without failing: it answers with the simulator's chrome under a root
+  // that has no app name. Downstream this looks like an app with nothing accessible in it.
+  responses = [{ ok: true, tree: { label: null } }, { ok: true, tree: { label: "HorseTinder" } }];
+  assert.equal((await baguette.describeUi(UDID)).tree?.label, "HorseTinder");
+  assert.deepEqual(restarts, [UDID]);
+
+  // A healthy read costs one request and never restarts anything.
+  now = 20000;
+  reads.length = 0;
+  responses = [{ ok: true, tree: { label: "HorseTinder" } }];
+  assert.equal((await baguette.describeUi(UDID)).tree?.label, "HorseTinder");
+  assert.equal(reads.length, 1);
+  assert.equal(restarts.length, 1);
+
+  // Still unnamed after a restart, or too soon to restart again: the caller gets what there is
+  // rather than an error, so the panel can say what it sees.
+  now = 40000;
+  responses = [{ ok: true, tree: { label: null } }, { ok: true, tree: { label: null } }];
+  assert.equal((await baguette.describeUi(UDID)).tree?.label, null);
+  assert.equal(restarts.length, 2);
 });
 
 test("panel input reaches the native socket during a pending refresh and blocks after it reports Device Hub", { timeout: 2000 }, async t => {

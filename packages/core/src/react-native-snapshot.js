@@ -16,6 +16,33 @@ export function collectReactNativeTree(complete) {
   }
   const clean = value => typeof value === "string" ? value.slice(0, 256) : undefined;
   const componentName = type => clean(typeof type === "string" ? type : type?.displayName ?? type?.name ?? type?.render?.displayName ?? type?.render?.name ?? type?.type?.displayName ?? type?.type?.name);
+  // A <Text> holding nested <Text> has no string child of its own: `children` is an array of
+  // strings and elements, so reading it directly yields nothing and the node falls back to its
+  // component name. iOS accessibility does not cover React Native views, so this string is the
+  // only name such an element will ever have — flatten it. Only text components are entered, so a
+  // View never collects its whole subtree's copy.
+  const TEXTUAL = /Text$/;
+  function flattenText(value, depth) {
+    if (typeof value === "string") return value;
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+    if (depth >= 6 || !value) return "";
+    if (Array.isArray(value)) {
+      let joined = "";
+      for (const item of value) {
+        joined += flattenText(item, depth + 1);
+        if (joined.length > 512) break;
+      }
+      return joined;
+    }
+    const name = value.type === undefined ? undefined : componentName(value.type);
+    return name && TEXTUAL.test(name) ? flattenText(value.props?.children, depth + 1) : "";
+  }
+  function childText(children) {
+    try {
+      const flat = flattenText(children, 0).replace(/\s+/g, " ").trim();
+      return flat ? clean(flat) : undefined;
+    } catch { return undefined; }
+  }
   const sourceUrls = [], sourceStacks = [], stackIds = new Map();
   function creationStack(fiber) {
     const error = fiber?._debugStack ?? fiber?.debugStack;
@@ -73,8 +100,12 @@ export function collectReactNativeTree(complete) {
     const name = componentName(type);
     let node = parent;
     if (name && fiber.tag !== 10 && fiber.tag !== 9) {
-      const childText = typeof props?.children === "number" && Number.isFinite(props.children) ? String(props.children) : clean(props?.children);
-      node = { source: "react-native", role: name, label: clean(props?.accessibilityLabel) ?? childText ?? name, identifier: clean(props?.testID), nodeId: `rn-${nodes.length}`, parentId: parent?.nodeId, depth, children: [], ...reactInfo(fiber, name) };
+      // Only a text component flattens its nested text. A Pressable holding a <Text> keeps no
+      // label of its own: its accessible name is accessibility's business, and inventing one here
+      // would name a container after the copy inside it.
+      const text = TEXTUAL.test(name) ? childText(props?.children) : clean(props?.children)
+        ?? (typeof props?.children === "number" && Number.isFinite(props.children) ? String(props.children) : undefined);
+      node = { source: "react-native", role: name, label: clean(props?.accessibilityLabel) ?? text ?? name, identifier: clean(props?.testID), nodeId: `rn-${nodes.length}`, parentId: parent?.nodeId, depth, children: [], ...reactInfo(fiber, name) };
       parent?.children.push(node);
       nodes.push(node);
       if (instance) readNativeChildren(instance.ownerDocument?.documentElement ?? instance);

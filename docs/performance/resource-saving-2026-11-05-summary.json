@@ -1,0 +1,114 @@
+{
+  "host": {
+    "model": "Apple M2 Pro",
+    "cores": 12,
+    "memoryBytes": 34359738368,
+    "os": "macOS 27.0.1 (26A434)"
+  },
+  "ios": {
+    "device": "iPhone 18 Pro",
+    "runtime": "iOS 27.0"
+  },
+  "android": {
+    "device": "Pixel_8_API_35",
+    "image": "AOSP Android 15 / API 35 / arm64-v8a",
+    "configuredRam": "2 GiB stock; 1536 MiB optimized"
+  },
+  "rounds": 3,
+  "settleSeconds": 30,
+  "sampleSeconds": 30,
+  "results": {
+    "ios": {
+      "stock": {
+        "means": {
+          "memoryMiB": 1503.4122347267728,
+          "cpuPercent": 0.8414497008134498,
+          "processes": 169.36559139784944
+        },
+        "ranges": {
+          "memoryMiB": [
+            1491.4951988958544,
+            1519.1748423422537
+          ],
+          "cpuPercent": [
+            0.6555525611403162,
+            0.9946254699742647
+          ],
+          "processes": [
+            168,
+            170.6451612903226
+          ]
+        }
+      },
+      "optimized": {
+        "means": {
+          "memoryMiB": 814.8899013560307,
+          "cpuPercent": 0.12751125064188862,
+          "processes": 98
+        },
+        "ranges": {
+          "memoryMiB": [
+            806.9473010647681,
+            819.9787742860856
+          ],
+          "cpuPercent": [
+            0.10054003346661108,
+            0.15975051198895035
+          ],
+          "processes": [
+            97,
+            99
+          ]
+        }
+      },
+      "memoryReductionPercent": 45.797308114621856,
+      "cpuReductionPercent": 84.84624208450958
+    },
+    "android": {
+      "stock": {
+        "means": {
+          "memoryMiB": 3366.9908161778603,
+          "cpuPercent": 0.23848857720927094,
+          "processes": 1
+        },
+        "ranges": {
+          "memoryMiB": [
+            3323.063412081811,
+            3398.9751377720986
+          ],
+          "cpuPercent": [
+            0.2051551997302851,
+            0.2909863263785037
+          ],
+          "processes": [
+            1,
+            1
+          ]
+        }
+      },
+      "optimized": {
+        "means": {
+          "memoryMiB": 2813.906628680485,
+          "cpuPercent": 0.18330518952661246,
+          "processes": 1
+        },
+        "ranges": {
+          "memoryMiB": [
+            2786.8651004914313,
+            2835.7350815803775
+          ],
+          "cpuPercent": [
+            0.12499822983152761,
+            0.2208977662397662
+          ],
+          "processes": [
+            1,
+            1
+          ]
+        }
+      },
+      "memoryReductionPercent": 16.426661600616576,
+      "cpuReductionPercent": 23.138796972332855
+    }
+  }
+}

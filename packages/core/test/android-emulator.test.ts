@@ -40,6 +40,20 @@ test("an emulator spawn error fails before adb polling", async () => {
   assert.equal(polls, 0);
 });
 
+test("resource-saving launches bypass snapshots and only the enabled mode changes guest RAM", async () => {
+  for (const resourceSaving of [true, false]) {
+    const fake = fakeLauncher();
+    const controller = new AbortController();
+    await bootAndroidEmulator({ name: "Pixel_8", executable: "/sdk/emulator", signal: controller.signal, resourceSaving, ready: async () => status }, fake.launch);
+    const args = fake.calls[0][1] as string[];
+    assert.equal(args.includes("-no-snapshot-load"), true);
+    assert.equal(args.includes("-no-snapshot-save"), true);
+    assert.equal(args.includes("-lowram"), resourceSaving);
+    assert.equal(args.includes("1536"), resourceSaving);
+    controller.abort();
+  }
+});
+
 test("an early emulator exit interrupts an in-flight adb check", async () => {
   const fake = fakeLauncher(); let release!: () => void;
   const polling = new Promise<void>(resolve => { release = resolve; });
