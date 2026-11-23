@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { BotIcon, CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleIcon, CircleXIcon, CopyIcon, FileCode2Icon, FilePlus2Icon, FlaskConicalIcon, FolderOpenIcon, GripVerticalIcon, HistoryIcon, LoaderCircleIcon, MoreHorizontalIcon, MousePointerClickIcon, PlayIcon, SaveIcon, SquareIcon, Trash2Icon, UserIcon, WandSparklesIcon, XIcon } from "lucide-react";
+import type { TestingRuntimeProgress } from "@mobile-dev/shared/testing-runtime.ts";
 import { TestingNote } from "./testing-note";
 import type { DeviceAppsStore } from "../device-apps.ts";
 import { platformLabel } from "../testing-panel.ts";
@@ -270,6 +271,10 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
   const device = devices.device;
   // The Run button's "N devices" needs the device list before the setup popover is ever opened.
   useEffect(() => { if (state.available && state.projectPath) void panel.loadMatrixDevices(); }, [panel, state.available, state.projectPath, state.runtimeMode]);
+  if (state.needsRuntime) return <section className="flex h-full flex-col gap-4 p-4" aria-label="Testing Studio">
+    <TestingProjectPicker panel={panel} />
+    <TestingRuntimeInstall key={state.projectPath} panel={panel} projectPath={state.projectPath} />
+  </section>;
   const booted = device?.state === "Booted" || device?.state === "connected";
   const target = state.targets.find(entry => entry.name === state.targetName) ?? state.targets[0];
   const mismatch = panel.targetMismatch;
@@ -323,6 +328,55 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
 
     <TestingRecorder panel={panel} recordable={recordable} deviceId={deviceId} platform={platform} />
   </section>;
+}
+
+function TestingRuntimeInstall({ panel, projectPath }: { panel: TestingPanel; projectPath: string }) {
+  const [attempt, setAttempt] = useState(0);
+  const [progress, setProgress] = useState<TestingRuntimeProgress>();
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let active = true;
+    let timer: ReturnType<typeof setTimeout>;
+    let start: { retry: boolean } | undefined = { retry: attempt > 0 };
+    async function poll() {
+      if (document.hidden) {
+        document.addEventListener("visibilitychange", poll, { once: true });
+        return;
+      }
+      try {
+        const next = await panel.runtimeProgress(projectPath, start);
+        if (!active) return;
+        start = undefined;
+        setProgress(next);
+        if (next.phase === "failed") setError(next.message ?? "The download failed.");
+        else if (next.phase !== "ready") timer = setTimeout(poll, 500);
+      } catch (failure) {
+        if (active) setError(failure instanceof Error ? failure.message : String(failure));
+      }
+    }
+    void poll();
+    return () => {
+      active = false;
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", poll);
+    };
+  }, [panel, projectPath, attempt]);
+
+  if (error) return <Alert variant="destructive">
+    <AlertTitle>Testing Studio setup failed</AlertTitle>
+    <AlertDescription>{error}
+      <Button variant="outline" size="sm" onClick={() => { setError(""); setProgress(undefined); setAttempt(attempt + 1); }}>Retry download</Button>
+    </AlertDescription>
+  </Alert>;
+  const downloading = progress?.phase === "downloading";
+  const installing = progress?.phase === "installing";
+  const title = downloading ? "Downloading the Testing Studio runtime" : installing ? "Installing the Testing Studio runtime" : "Checking the Testing Studio runtime";
+  return <div className="flex flex-col gap-2 rounded-md border p-3 text-sm">
+    <span role="status" className="flex items-center gap-2 font-medium"><LoaderCircleIcon className="size-4 animate-spin" />{title}</span>
+    {downloading && <><progress aria-label="Testing Studio runtime download" className="h-1.5 w-full accent-primary" max={progress.total} value={progress.received} />
+      <span className="text-xs tabular-nums text-muted-foreground">{(progress.received / 1e6).toFixed(1)} of {(progress.total / 1e6).toFixed(1)} MB</span></>}
+    {(downloading || installing) && <p className="text-xs text-muted-foreground">This version downloads once. Testing Studio opens automatically when it’s ready.</p>}
+  </div>;
 }
 
 /**

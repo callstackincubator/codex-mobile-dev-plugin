@@ -67,17 +67,17 @@ test("the runtime downloads once, verifies, and is shared by later servers", asy
   const server = await serve(t, () => ({ status: 200, body: bytes }));
   const pinned = { ...release, url: server.url };
   const first = downloadedPanelRuntime(pinned, data);
-  const [root, again] = await Promise.all([first(), first()]);
+  const [root, again] = await Promise.all([first.ensure(), first.ensure()]);
   assert.equal(root, again);
   assert.equal(root, join(data, `1.2.3-${release.sha256.slice(0, 12)}`));
   assert.equal(execFileSync(process.execPath, [join(root, "serve-emu/src/cli.mjs")], { encoding: "utf8" }).trim(), "serve-emu");
   if (process.platform !== "win32") assert.equal(execFileSync(join(root, "baguette/Baguette"), { encoding: "utf8" }), "baguette\n");
   assert.equal(server.requests(), 1);
   // Another server, as another session starts, finds the complete folder.
-  assert.equal(await downloadedPanelRuntime(pinned, data)(), root);
+  assert.equal(await downloadedPanelRuntime(pinned, data).ensure(), root);
   assert.equal(server.requests(), 1);
   assert.deepEqual(await readdir(data), [`1.2.3-${release.sha256.slice(0, 12)}`]);
-  usePanelRuntime(first);
+  usePanelRuntime(first.ensure);
   assert.equal(await panelRuntimePath("serve-emu/src/cli.mjs"), join(root, "serve-emu/src/cli.mjs"));
   const e2e = await panelRuntimePath("e2e");
   assert.equal(e2e, join(root, "e2e"));
@@ -86,7 +86,7 @@ test("the runtime downloads once, verifies, and is shared by later servers", asy
 test("an archive that does not match its pin is refused and leaves nothing behind", async t => {
   const { release, data } = await archive(t);
   for (const pinned of [{ ...release, sha256: "0".repeat(64) }, { ...release, bytes: release.bytes - 1 }]) {
-    await assert.rejects(downloadedPanelRuntime(pinned, data)(), (error: Error) => {
+    await assert.rejects(downloadedPanelRuntime(pinned, data).ensure(), (error: Error) => {
       assert.ok(error instanceof PanelRuntimeUnavailableError);
       assert.match(error.message, /does not match|larger than/);
       return true;
@@ -97,7 +97,7 @@ test("an archive that does not match its pin is refused and leaves nothing behin
 
 test("an archive with files outside the parts is refused", async t => {
   const outside = await archive(t, async root => { await writeFile(join(root, "payload.sh"), ""); return ["payload.sh"]; });
-  await assert.rejects(downloadedPanelRuntime(outside.release, outside.data)(), /outside the device runtime/);
+  await assert.rejects(downloadedPanelRuntime(outside.release, outside.data).ensure(), /outside the device runtime/);
 });
 
 test("an archive with links is refused", async t => {
@@ -107,7 +107,7 @@ test("an archive with links is refused", async t => {
       throw error;
     });
   if (!linked) return;
-  await assert.rejects(downloadedPanelRuntime(linked.release, linked.data)(), /links or special files/);
+  await assert.rejects(downloadedPanelRuntime(linked.release, linked.data).ensure(), /links or special files/);
   assert.deepEqual(await readdir(linked.data), []);
 });
 
@@ -116,14 +116,14 @@ test("an unreachable release is an expected failure that the next open retries",
   let status = 404;
   const server = await serve(t, () => ({ status, body: status === 200 ? bytes : undefined }));
   const runtime = downloadedPanelRuntime({ ...release, url: server.url }, data);
-  await assert.rejects(runtime(), (error: Error) => {
+  await assert.rejects(runtime.ensure(), (error: Error) => {
     assert.ok(error instanceof ExpectedOperationError);
     assert.equal(error.outcome, "download_failed");
     assert.match(error.message, /HTTP 404/);
     return true;
   });
   status = 200;
-  assert.match(await runtime(), /1\.2\.3-/);
+  assert.match(await runtime.ensure(), /1\.2\.3-/);
   assert.equal(server.requests(), 2);
 });
 
@@ -137,7 +137,7 @@ test("a new version keeps the newest other version and removes older ones", asyn
     const time = new Date(Date.now() - age * 60 * 60_000);
     await utimes(path, time, time);
   }
-  await downloadedPanelRuntime(release, data)();
+  await downloadedPanelRuntime(release, data).ensure();
   // Pruning runs after the runtime is ready; give it time on a loaded machine.
   await t.waitFor(async () => assert.deepEqual((await readdir(data)).sort(), ["1.1.0-bbbbbbbbbbbb", `1.2.3-${release.sha256.slice(0, 12)}`]), { timeout: 15_000 });
 });
@@ -145,9 +145,9 @@ test("a new version keeps the newest other version and removes older ones", asyn
 test("a prerelease pins and installs its runtime like a release", async t => {
   const { release, data } = await archive(t);
   const pinned = panelRuntimeReleaseSchema.parse({ ...release, version: "0.1.172-test.1" });
-  assert.equal(await downloadedPanelRuntime(pinned, data)(), join(data, `0.1.172-test.1-${release.sha256.slice(0, 12)}`));
+  assert.equal(await downloadedPanelRuntime(pinned, data).ensure(), join(data, `0.1.172-test.1-${release.sha256.slice(0, 12)}`));
   // A later release replaces it like any other version.
-  await downloadedPanelRuntime({ ...release, version: "0.1.172" }, data)();
+  await downloadedPanelRuntime({ ...release, version: "0.1.172" }, data).ensure();
   assert.equal((await readdir(data)).length, 2);
 });
 

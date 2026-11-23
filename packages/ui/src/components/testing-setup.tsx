@@ -16,7 +16,7 @@ type SetupPlanView = { id: string; actions: { action: string; path: string; deta
 type SetupTarget = { name: string; platform: "ios" | "android"; bundleId: string };
 
 const RUNTIME_HELP = {
-  bundled: "Bundled runtime: Testing Studio runs tests with the e2e runtime that ships with Mobile Dev. Nothing is written to your project; tests and config stay in Mobile Dev's private state.",
+  bundled: "Bundled runtime: Testing Studio runs tests with the e2e runtime provided by Mobile Dev. Nothing is written to your project; tests and config stay in Mobile Dev's private state.",
   project: "Project runtime: Testing Studio runs tests with the e2e packages installed in your project, using its own e2e config file.",
 } as const;
 

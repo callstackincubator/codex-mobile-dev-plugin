@@ -52,7 +52,7 @@ type Metric = Parameters<NonNullable<Options["beforeSendMetric"]>>[0];
 const frequentTools = new Set([
   "mobile_stream_input", "mobile_android_stream_input", "mobile_ios_mirror_input", "mobile_read_logs", "mobile_read_cpu",
   "mobile_read_display_fps", "mobile_logs_keep_alive", "mobile_log_sources", "mobile_performance_sources",
-  "mobile_read_performance_recording",
+  "mobile_read_performance_recording", "mobile_testing_runtime_progress",
   "mobile_appflow_status", "mobile_appflow_next_decision", "mobile_appflow_result",
   "mobile_list_simulators", "mobile_list_ios_devices", "mobile_list_android_devices",
   // agent-device's discovery and state lookups, as the plugin servers serve them.

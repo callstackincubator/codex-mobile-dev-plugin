@@ -16,6 +16,8 @@ You don't need an e2e project to start. Testing Studio works in two modes, and t
 | **No project** | Nothing is open, or the folder has no usable `e2e.config.ts` | Mobile Dev's bundled e2e runtime | Mobile Dev's private storage, listed under **In Testing Studio** |
 | **Project** | A folder with an `e2e.config.ts`, a mobile target with a bundle ID, and the project's own `e2e` CLI installed | The project's own e2e CLI and `@e2e-dev/mobile` | The project's `tests/` directory |
 
+In Codex, opening Testing Studio in **No project** mode downloads the runner once for this plugin version. You can follow the download in the tab and retry there if it fails. Later sessions use the cached runner offline.
+
 In **No project** mode the test runs against the app in front of the mirror, and each saved test remembers that app, so later runs open the same one. Nothing is written to any of your folders.
 
 In **Project** mode Mobile Dev never installs or replaces your test runner, and a run never downloads a CLI with `npx`.
