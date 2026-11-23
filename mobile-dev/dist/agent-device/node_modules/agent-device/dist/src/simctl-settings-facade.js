@@ -1,1 +1,0 @@
-import{t as e}from"./simctl-settings.js";export{e as applySimctlSetting};

@@ -144,10 +144,11 @@ names as data.
 
 ## TraceSift profile investigations
 
-When the user gives a local CPU profile or React DevTools profiling export, call
-`mobile_analyze_profile` with its path. It shows TraceSift's measured findings as
-cards and lists them for you with their IDs. If setup is missing, report the returned
-`tracesift init` or installation guidance. Do not pick a card or speculate about a
+Before asking the user to capture or choose a profile when no local path exists, call
+`mobile_tracesift_status` and stop to report any returned setup guidance. When the user
+already gives a local CPU profile or React DevTools profiling export, call
+`mobile_analyze_profile` directly with its path. It shows TraceSift's measured findings
+as cards and lists them for you with their IDs. Do not pick a card or speculate about a
 root cause until the user asks about one, for example "investigate task #1"; then call
 `mobile_get_tracesift_handoff` for that analysis and card and follow it: locate the
 referenced code, verify the measured path, explain uncertainty, and fix only within
