@@ -449,21 +449,21 @@ test("a pinned bundled run passes its own target and output directory, removed a
 
 test("aborting a run kills its process and reports it as cancelled", async () => {
   const root = await project();
-  let killed = false;
+  let killSignal: NodeJS.Signals | undefined;
   const controller = new AbortController();
   const hanging = (() => {
-    const child = new EventEmitter() as EventEmitter & { stdout: Readable; stderr: Readable; kill: () => void };
+    const child = new EventEmitter() as EventEmitter & { stdout: Readable; stderr: Readable; kill: (signal: NodeJS.Signals) => void };
     child.stdout = Readable.from([]); child.stderr = Readable.from([]);
-    child.kill = () => { killed = true; };
+    child.kill = signal => { killSignal = signal; };
+    queueMicrotask(() => controller.abort());
     return child;
   }) as never;
   const run = runRecordedTest({
     projectPath: root, relativePath: FILE, untilSource: 'test("x", async () => {});\n',
     runtime: { mode: "bundled", root: await bundledE2eRoot() }, bundledTarget: { platform: "ios", bundleId: "a.b" },
   }, { spawner: hanging, signal: controller.signal });
-  setTimeout(() => controller.abort(), 20);
-  await assert.rejects(run, /cancelled/);
-  assert.equal(killed, true);
+  await assert.rejects(run, { outcome: "cancelled", message: /cancelled/ });
+  assert.equal(killSignal, "SIGTERM");
 });
 
 // ---- Project-mode matrix lanes: the config text, copied with one target's device pinned -------------------
