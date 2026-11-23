@@ -521,7 +521,7 @@ export function createSimulatorPanel(
       empty(`${selected.name} · ${selected.state}`, description);
     } else if (selected === undefined && (openingTarget?.platform !== undefined || openingTarget?.kind !== undefined || openingTarget?.deviceId !== undefined)) {
       empty("Requested device unavailable.", "The requested device could not be found. Connect it or choose another device from the picker.");
-    } else if (!reconnect.active && !stoppedDisplay) empty(selected ? "Select a device to open its screen." : (platform === "android" ? "No Android devices. Create an AVD in Android Studio or connect a device." : "No iOS devices. Connect an iPhone or add a simulator in Xcode."));
+    } else if (!reconnect.active && !stoppedDisplay) empty(selected || status?.devices.length ? "Select a device to open its screen." : (platform === "android" ? "No Android devices. Create an AVD in Android Studio or connect a device." : "No iOS devices. Connect an iPhone or add a simulator in Xcode."));
     controls();
   }
 
@@ -585,7 +585,11 @@ export function createSimulatorPanel(
       placeholder: available.length ? "Select a device" : next.connected ? "No devices" : "Devices unavailable",
     });
     selectDevice();
-    if (!next.connected && physicalDevices.length === 0) {
+    if (platform === "android" && !available.length && (next.setupHint || !next.connected)) {
+      empty(next.connected ? "No Android devices." : "Android devices unavailable.", next.setupHint ?? next.error);
+    } else if (next.localIosSupported === false && !available.length) {
+      empty("Local iOS devices require macOS.", "Choose Android to use a local emulator or connected Android device.");
+    } else if (!next.connected && physicalDevices.length === 0) {
       empty("Could not start the simulator backend.");
       notice(next.error);
     }
@@ -913,7 +917,7 @@ export function createSimulatorPanel(
     controls();
     try {
       if (wasSelected) await disconnect();
-      const result = await call(platform === "android" ? "mobile_shutdown_android_emulator" : "mobile_shutdown_simulator", platform === "android" ? { deviceId: id } : { udid: id }, { timeout: 30000 });
+      const result = await call(platform === "android" ? "mobile_shutdown_android_emulator" : "mobile_shutdown_simulator", platform === "android" ? { deviceId: id } : { udid: id }, { timeout: platform === "android" ? 150_000 : 30_000 });
       if (platform === "android") updateBookingNames(result._meta?.bookingNames);
       const next = result.structuredContent as Status;
       const selectedId = wasSelected && platform === "android" ? next.devices.find(item => item.kind !== "physical" && item.name === device.name)?.udid : selected?.udid;
@@ -1139,6 +1143,7 @@ export function createSimulatorPanel(
     platform,
     get selected() { return selected; },
     showDevice,
+    get localIosSupported() { return status?.localIosSupported; },
     fitScreen,
     controls,
     notice,

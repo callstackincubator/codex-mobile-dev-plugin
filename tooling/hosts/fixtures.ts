@@ -26,7 +26,11 @@ export async function startServer(target: Target) {
   const transport = new StdioClientTransport({
     command: process.execPath, args: [join(build, target, "server.mjs")], cwd: join(build, target), stderr: "pipe",
     // No device tools on PATH or in the home directory: the tests see no devices on any machine.
-    env: { PATH: "/usr/bin:/bin", HOME: home, MOBILE_DEV_TELEMETRY: "off", ...(target === "mac" ? { MOBILE_DEV_HOST: "mac" } : {}) },
+    env: {
+      PATH: "/usr/bin:/bin", HOME: home, MOBILE_DEV_TELEMETRY: "off",
+      ...(process.platform === "win32" ? { PATH: home, USERPROFILE: home, LOCALAPPDATA: home, APPDATA: home } : {}),
+      ...(target === "mac" ? { MOBILE_DEV_HOST: "mac" } : {}),
+    },
   });
   const stderr: string[] = [];
   transport.stderr?.on("data", chunk => { stderr.push(String(chunk)); });

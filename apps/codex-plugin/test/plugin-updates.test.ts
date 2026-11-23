@@ -354,6 +354,13 @@ test("CLI resolution rejects processes other than the launching Codex executable
   await assert.rejects(resolution, /Could not locate the Codex executable/);
 });
 
+test("a failed CLI process lookup reports the same bounded update error", async () => {
+  // A file cannot serve as the working directory for the process lookup.
+  await assert.rejects(resolveCodexCli(process.pid, import.meta.filename), {
+    message: "Could not locate the Codex executable that launched Mobile Dev.", failure: "codex-not-found",
+  });
+});
+
 test("published versions are read directly without user authentication or installation state", async () => {
   const request: typeof fetch = async (url, options) => {
     assert.equal(url, `https://chatgpt.com/backend-api/ps/plugins/${PLUGIN_STORE_ID}`);

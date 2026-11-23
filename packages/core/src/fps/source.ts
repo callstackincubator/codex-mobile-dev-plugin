@@ -9,6 +9,7 @@ import type { CpuMonitor } from "../cpu/monitor.ts";
 import { collectorProcess } from "./process.ts";
 import { deployFpsHelper } from "./android-helper.ts";
 import { FrameTimeline } from "./frame-timeline.ts";
+import { WindowsAdbTrace } from "./windows-adb-trace.ts";
 import type { FrameReading } from "./frame-timeline.ts";
 import { nativeCollectorCommand } from "../native-telemetry.ts";
 
@@ -66,9 +67,10 @@ async function startAndroid(options: FpsMonitorOptions, root: URL): Promise<CpuM
   const remote = await deployFpsHelper(adb, options.target.deviceId, options.signal, root);
   let firstReady: (() => void) | undefined;
   const timeline = new FrameTimeline(reading => { options.onSample(reading); firstReady?.(); });
+  const windowsTrace = process.platform === "win32" ? new WindowsAdbTrace() : undefined;
   const command = nativeCollectorCommand(remote);
   return collectorProcess(adb, [...prefix, "shell", "-T", command], {
     signal: options.signal,
-    data(chunk, ready) { firstReady = ready; timeline.push(chunk); },
+    data(chunk, ready) { firstReady = ready; timeline.push(windowsTrace ? windowsTrace.decode(chunk) : chunk); },
   });
 }

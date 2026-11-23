@@ -11,18 +11,21 @@ export const RELEASE_DOCUMENTS = ["README.md", "LICENSE", "THIRD_PARTY_NOTICES.m
  */
 export const PANEL_PARTS = ["baguette", "serve-emu", "ios-mirror", "ios-mirror-service.mjs", "resource-saving"];
 
-const RUNTIME_FILES = [
-  "server.mjs", "app-intelligence-worker.mjs", "ios-mirror-service.mjs", "app.html", "browser-panel.html", "baguette/Baguette", "baguette/Baguette_Baguette.bundle",
+const APPLE_RUNTIME_FILES = [
+  "baguette/Baguette", "baguette/Baguette_Baguette.bundle",
   "ios-fps/mobile-dev-ios-fps",
-  ...["arm64-v8a", "armeabi-v7a", "x86", "x86_64"].map(abi => `android-fps/${abi}/mobile-dev-fps`),
   "ios-mirror/darwin-arm64.node", "ios-mirror/third-party-licenses.txt", "ios-logs/mobile-dev-ios-logs", "ios-logs/third-party-licenses.txt",
+  "resource-saving/simslim", "resource-saving/avdslim", "resource-saving/simslim-LICENSE", "resource-saving/avdslim-LICENSE", "resource-saving/release.json",
+];
+const RUNTIME_FILES = [
+  "server.mjs", "app-intelligence-worker.mjs", "ios-mirror-service.mjs", "app.html", "browser-panel.html",
+  ...["arm64-v8a", "armeabi-v7a", "x86", "x86_64"].map(abi => `android-fps/${abi}/mobile-dev-fps`),
   ...["arm64-v8a", "armeabi-v7a", "x86", "x86_64"].map(abi => `android-cpu/${abi}/mobile-dev-cpu`),
   "android-cpu/LICENSE", "serve-emu/src/cli.mjs", "serve-emu/vendor/scrcpy-server-v4.0",
   "agent-device/node_modules/agent-device/dist/apple/runner/AgentDeviceRunner/AgentDeviceRunner.xcodeproj/project.pbxproj",
   "agent-device/tools.json",
   "e2e/node_modules/e2e/dist/cli/bin.js", "e2e/node_modules/@e2e-dev/mobile/dist/nodes.js",
   "e2e/package-lock.json", "e2e/release.json", "e2e/THIRD_PARTY_NOTICES.txt",
-  "resource-saving/simslim", "resource-saving/avdslim", "resource-saving/simslim-LICENSE", "resource-saving/avdslim-LICENSE", "resource-saving/release.json",
 ];
 
 export async function stageRuntime(directory, { panel = true } = {}) {
@@ -48,7 +51,7 @@ export async function releaseVersion() {
   return metadata.version;
 }
 
-export async function assertRuntime(environment) {
+export async function assertRuntime(environment, { appleHelpers = true } = {}) {
   await assertBuildEnvironment("dist", environment);
-  for (const path of RUNTIME_FILES) await access(`dist/${path}`);
+  for (const path of [...RUNTIME_FILES, ...(appleHelpers ? APPLE_RUNTIME_FILES : [])]) await access(`dist/${path}`);
 }

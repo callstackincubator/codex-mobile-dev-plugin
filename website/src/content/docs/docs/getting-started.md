@@ -7,26 +7,32 @@ Install Mobile Dev for your development environment, open a new conversation, an
 
 ## Requirements
 
-Mobile Dev runs on an **Apple Silicon Mac**. Install the platform tools for the devices and features you use.
+Codex desktop supports Android on Windows and Apple Silicon Macs. Local iOS tools require an Apple Silicon Mac. Install the platform tools for the devices and features you use.
 
 | Target or feature | Requirement |
 | --- | --- |
 | iOS simulator | Xcode 26 or later, with an installed simulator runtime |
 | Physical iPhone or iPad | Xcode 27 or later, a paired device, Developer Mode, and USB or Wi-Fi connectivity |
-| Android | Android SDK platform-tools and emulator, plus an AVD or a physical device with authorized debugging |
+| Android | Android SDK Platform-Tools for physical devices. For AVDs, also install Android Emulator and a system image |
 | Android screen streaming | A host with H.264 WebCodecs decoding |
 | Physical iOS screen mirroring | A host with HEVC WebCodecs decoding |
 | Metro logs and React Native inspection | An existing local Metro server with a compatible app inspector target |
 | Physical iOS CPU and memory | iOS 17.4 or later, a running development-signed app with `get-task-allow`, a mounted developer disk image, and Xcode/LLDB detached |
-| Profile analysis | A local TraceSift installation, available on `PATH` or through `TRACE_SIFT_COMMAND` |
+| TraceSift profile analysis (macOS or Linux) | A local TraceSift installation, available on `PATH` or through `TRACE_SIFT_COMMAND` |
 
-Select the full Xcode installation in **Xcode Settings → Locations → Command Line Tools**. Command Line Tools alone do not provide the required simulator tools.
+For local iOS devices, select the full Xcode installation in **Xcode Settings → Locations → Command Line Tools**.
+
+### Set up Android
+
+1. In [Android Studio](https://developer.android.com/studio), open **SDK Manager → SDK Tools** and install **Android SDK Platform-Tools**. Note the **Android SDK Location** shown in SDK Manager.
+2. For an emulator, also install **Android Emulator**, then create an AVD in **Device Manager** and choose a system image. For a phone, enable **USB debugging** and accept the authorization prompt, or pair it for wireless debugging. [Virtual device setup](https://developer.android.com/studio/run/managing-avds) · [Physical device setup](https://developer.android.com/studio/run/device)
+3. If you use a custom SDK location, set `ANDROID_HOME` to that folder and fully restart your host app. Mobile Dev checks `%LOCALAPPDATA%\Android\Sdk` on Windows, `~/Library/Android/sdk` on macOS and `~/Android/Sdk` on Linux by default. [Android SDK environment variables](https://developer.android.com/tools/variables)
 
 ## ChatGPT and Codex
 
 [Open Mobile Dev in the ChatGPT plugin store](https://chatgpt.com/plugins/plugins_6ac4c117f76881918d3676e851fa4005). ChatGPT and Codex share the same listing. Install the plugin in the desktop app, then start a new chat and ask **“Open Mobile Dev.”**
 
-Mobile Dev's local tools require the desktop app on an Apple Silicon Mac. The prebuilt plugin uses the app's bundled Node runtime. See [OpenAI's plugin installation guide](https://learn.chatgpt.com/docs/plugins) for the shared directory and installation flow.
+The prebuilt Codex plugin uses the app's bundled Node runtime. On Windows, follow [Set up Android](#set-up-android), then open the Android tab and choose your emulator or phone. [OpenAI's plugin installation guide](https://learn.chatgpt.com/docs/plugins)
 
 ### Codex CLI
 
@@ -61,7 +67,7 @@ claude plugin install mobile-dev@mobile-dev
 
 Or let your agent do the setup:
 
-<button type="button" class="copy-prompt" data-copy="Install the Mobile Dev Claude Code plugin for me. Run `claude plugin marketplace add https://github.com/callstackincubator/mobile-dev.git#release/claude` and then `claude plugin install mobile-dev@mobile-dev`. Confirm with `claude plugin list` that mobile-dev is installed and enabled. Check that Node.js 22.19 or later and the full Xcode are installed (`node --version`, `xcode-select -p`), and for Android that `adb` is on PATH. Then tell me to start a new Claude Code session and ask it to open Mobile Dev. If I use T3 Code, also tell me to turn off Settings → Devices → Use devices there first.">Copy setup prompt</button>
+<button type="button" class="copy-prompt" data-copy="Install the Mobile Dev Claude Code plugin for me on my Apple Silicon Mac. Run `claude plugin marketplace add https://github.com/callstackincubator/mobile-dev.git#release/claude` and then `claude plugin install mobile-dev@mobile-dev`. Confirm with `claude plugin list` that mobile-dev is installed and enabled. Check Node.js with `node --version` (22.19 or later). For Android, check that the SDK provides adb. For iOS, check the selected Xcode with `xcode-select -p`. Then tell me to start a new Claude Code session and ask it to open Mobile Dev. If I use T3 Code, also tell me to turn off Settings → Devices → Use devices there first.">Copy setup prompt</button>
 
 ### Claude Desktop
 
@@ -87,7 +93,7 @@ Merge the generated `.local-dev/claude-desktop-config.json` entry into the exist
 
 ## Cursor
 
-Cursor currently uses a manual preview, not a Cursor Marketplace listing. It requires Node.js 22.19 or later on `PATH`.
+The Cursor plugin is a manual preview for Apple Silicon Macs. It requires Node.js 22.19 or later on `PATH`.
 
 1. Obtain the `mobile-dev` Cursor plugin folder from the person sharing the preview, or [build it from source](https://github.com/callstackincubator/mobile-dev/blob/main/CONTRIBUTING.md#cursor-local-development).
 2. Copy it to `~/.cursor/plugins/local/mobile-dev`.

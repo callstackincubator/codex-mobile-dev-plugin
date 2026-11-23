@@ -8,7 +8,7 @@ reports, or privacy requests.
 
 Use "Mobile Dev support" in the email subject, or open a
 [GitHub issue](https://github.com/callstackincubator/mobile-dev/issues).
-Include the plugin and host versions, macOS/device OS versions, the feature
+Include the plugin and host app versions, the operating systems and versions of your computer and device, the feature
 involved, expected and actual behavior, and minimal reproduction steps.
 
 Review any log or screenshot before sharing it. Do not include passwords, API

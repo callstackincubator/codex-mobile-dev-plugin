@@ -140,7 +140,7 @@ test("App Intelligence treats a workspace package behind a node_modules symlink 
     await writeFile(join(root, "package.json"), JSON.stringify({ name: "workspace-fixture" }));
     await writeFile(join(root, "modules", "ui", "package.json"), JSON.stringify({ name: "ui", main: "src/index.ts" }));
     await writeFile(join(root, "modules", "ui", "src", "index.ts"), "export const button = 1\n");
-    await symlink(join(root, "modules", "ui"), join(root, "node_modules", "ui"), "dir");
+    await symlink(join(root, "modules", "ui"), join(root, "node_modules", "ui"), process.platform === "win32" ? "junction" : "dir");
     await writeFile(join(root, "app", "index.tsx"), "import { button } from 'ui'; export default function Home(){ return button }\n");
 
     const snapshot = await analyzeApp(root);

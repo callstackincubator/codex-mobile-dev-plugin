@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { createLaunchHome } from "./mcp-launch-fixture.mjs";
+import { createLaunchHome, systemPath } from "./mcp-launch-fixture.mjs";
 
 const source = resolve(process.argv[2] ?? "release/marketplace/plugins/mobile-dev");
 const parent = tmpdir();
@@ -31,7 +31,7 @@ try {
   const catalogPath = join(catalogDirectory, "marketplace.json");
   await writeFile(catalogPath, catalogText);
   const fixtureHome = await createLaunchHome(temporary, process.execPath);
-  const env = { ...process.env, CODEX_HOME: profile, HOME: fixtureHome, MOBILE_DEV_TELEMETRY: "off" };
+  const env = { ...process.env, CODEX_HOME: profile, HOME: fixtureHome, USERPROFILE: fixtureHome, MOBILE_DEV_TELEMETRY: "off" };
   // These checks expect the default inline panel, even from a host set up for the browser panel.
   delete env.MOBILE_DEV_PANEL;
   function codex(args) {
@@ -45,7 +45,7 @@ try {
   const resolvedCwd = resolve(server.transport.cwd);
   assert.equal(resolvedCwd, expectedCwd, "Codex must resolve the plugin working directory to its installed cache.");
   const config = server.transport;
-  const serverEnv = { PATH: "/usr/bin:/bin:/usr/sbin:/sbin", MOBILE_DEV_TELEMETRY: "off" };
+  const serverEnv = { PATH: systemPath, MOBILE_DEV_TELEMETRY: "off" };
   for (const name of config.env_vars) {
     if (env[name] !== undefined) serverEnv[name] = env[name];
   }

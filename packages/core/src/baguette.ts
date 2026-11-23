@@ -11,6 +11,7 @@ import type { Status } from "@mobile-dev/shared/protocol.ts";
 import { buttonMarginsSchema } from "@mobile-dev/shared/bezel.ts";
 import { definitionDeviceState, getDefinitionDiagnostic, parseDefinitionDiagnostic, setDefinitionDiagnostic } from "@mobile-dev/shared/simulator-definition-diagnostics.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
+import { unavailableLocalIosStatus } from "./simctl.ts";
 import { isMissingFile, MissingRuntimeError } from "./install-integrity.ts";
 import { deferEpisodeReport, ExpectedOperationError, FailureEpisodes } from "@mobile-dev/shared/error-reporting.ts";
 import { annotateDeviceCommand, backendCommand, inheritDeviceCommand } from "@mobile-dev/shared/device-command-diagnostics.ts";
@@ -179,6 +180,12 @@ export class Baguette {
       listFailures.set(status, error);
       return status;
     }
+  }
+
+  /** Opening the panel also discovers Android, even on a host without a local iOS backend. */
+  async list(): Promise<Status> {
+    if (process.platform === "win32" && this.embedded) return unavailableLocalIosStatus();
+    return this.start();
   }
 
   async start(): Promise<Status> {

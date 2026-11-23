@@ -12,9 +12,10 @@ service. No Mobile Dev account or test credentials are required.
 ## Reproduce the setup
 
 1. Use an Apple Silicon Mac, Codex desktop with plugin access, Xcode 26+ selected
-   with an installed iOS 18+ simulator, and the submitted Mobile Dev ZIP. Check
-   `uname -m`, `xcodebuild -version`, and `xcode-select -p`. Android cases require
-   Android SDK platform-tools/emulator and an AVD or authorized development device.
+   with an installed iOS 18+ simulator for the iOS cases, and the submitted Mobile Dev ZIP. Check
+   `uname -m`, `xcodebuild -version`, and `xcode-select -p` on that Mac. To check Android on
+   Windows, use Codex desktop and [set up the Android SDK](../devices.md#android-on-windows)
+   for an AVD or authorized development device.
    A missing Android SDK should produce an actionable explanation, not a fake list.
 2. Install the **submitted ZIP** through the confirmed organization's local-MCP
    upload/install route. Open a fresh chat and run the Mobile Dev setup skill.

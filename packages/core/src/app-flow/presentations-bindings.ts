@@ -1,4 +1,6 @@
-import { isAbsolute, relative } from 'node:path'
+import { isAbsolute } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { relativeSourcePath } from './source-path.ts'
 import { parseBaseUrl } from '@mobile-dev/shared/protocol.ts'
 import type { AppFlowPresentationAction, AppFlowPresentations } from '@mobile-dev/shared/app-flow.ts'
 
@@ -189,12 +191,16 @@ export async function bindPresentationSites(
   const matchFrame = (binding: AppFlowPresentationBinding, frame: AppFlowSymbolicatedFrame) => {
     const line = frame.lineNumber
     if (!frame.file || line === undefined || !Number.isInteger(line)) return
+    let sourceFile = frame.file
+    if (sourceFile.startsWith('file://')) {
+      try { sourceFile = fileURLToPath(sourceFile) } catch { return }
+    }
+    const file = relativeSourcePath(root, sourceFile)
+    if (!isProjectFile(file)) return
     if (binding.kind === 'portal' || binding.kind === 'ui-effect') {
-      deferred.push({ binding: binding.id, frame })
+      deferred.push({ binding: binding.id, frame: { ...frame, file: sourceFile } })
       return
     }
-    const file = relative(root, frame.file.replace(/^file:\/\//, ''))
-    if (!isProjectFile(file)) return
     stats.projectFrames += 1
     const column = frame.column
 
@@ -278,7 +284,7 @@ export async function bindPresentationSites(
     if (frame) matchFrame(reference.owner, frame)
   }
 
-  await resolveDeferred(root, bindings, deferred, matches, ports)
+  await resolveDeferred(bindings, deferred, matches, ports)
   stats.placed = new Set(matches.map(match => match.binding)).size
   stats.entryPlaced = new Set(matches.filter(match => entryIds.has(match.binding)).map(match => match.binding)).size
   ports.report?.(stats)
@@ -347,7 +353,6 @@ async function symbolicate(
  * supplied by the caller, so an unported stage leaves the leg inert.
  */
 async function resolveDeferred(
-  root: string,
   bindings: AppFlowPresentationBinding[],
   deferred: { binding: string; frame: AppFlowSymbolicatedFrame }[],
   matches: AppFlowPresentationBindingMatch[],
@@ -359,8 +364,7 @@ async function resolveDeferred(
   for (const { binding, frame } of deferred) {
     if (matched.has(binding)) continue
     try {
-      const file = frame.file!.replace(/^file:\/\//, '')
-      if (!isProjectFile(relative(root, file))) continue
+      const file = frame.file!
       if (!sources.has(file)) sources.set(file, await ports.readSource(file))
       const source = sources.get(file)
       if (source === undefined || source.length > sourceLimit) continue

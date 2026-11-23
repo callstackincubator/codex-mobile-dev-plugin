@@ -96,7 +96,10 @@ export function createSourceUnit(file: string, text: string): AppFlowSourceUnit 
 /** Parse a set of `{file, text}` entries, keyed by absolute path. */
 export function createSourceUnits(sources: { file: string; text: string }[]): Map<string, AppFlowSourceUnit> {
   const units = new Map<string, AppFlowSourceUnit>()
-  for (const source of sources) units.set(source.file, createSourceUnit(source.file, source.text))
+  for (const source of sources) {
+    const file = resolve(source.file)
+    units.set(file, createSourceUnit(file, source.text))
+  }
   return units
 }
 

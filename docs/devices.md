@@ -4,7 +4,7 @@
 
 ## Platform setup
 
-The plugin uses Codex's bundled Node runtime. iOS needs an Apple Silicon Mac with Xcode 26 or later and an installed simulator runtime. Baguette uses Apple's simulator frameworks. agent-device builds its bundled XCTest runner with Xcode on its first interaction and caches it under `~/.agent-device/apple-runner`. The plugin carries all three runtimes, their npm dependencies, and the Apple runner source. It does not download code at runtime.
+The Codex plugin uses Codex's bundled Node runtime. Local iOS simulators need an Apple Silicon Mac with Xcode 26 or later and an installed simulator runtime. Baguette uses Apple's simulator frameworks. agent-device builds its bundled XCTest runner with Xcode on its first interaction and caches it under `~/.agent-device/apple-runner`. Android on Windows uses the bundled serve-emu and agent-device runtimes with the local Android SDK.
 
 Physical iOS discovery requires Xcode 27 or later. It reads device metadata and pairing state from `xcrun devicectl` and checks current USB and Wi-Fi connections through macOS's `usbmuxd`. A connected phone is listed before opening a developer tunnel. Pair the phone with Xcode and enable wireless connectivity there to discover it over Wi-Fi.
 
@@ -12,7 +12,7 @@ Discovery preserves remembered disconnected and unavailable devices. Their `tran
 
 The native panel targets Codex desktop, iOS simulators, and Android emulators or attached devices. The active Mobile Dev MCP server also works through stdio in a local MCP client. Use the selected UDID for iOS tools and the selected running serial for Android tools. This plugin does not build the user's app. Codex's permission and confirmation rules still apply to tool calls.
 
-Android logs need `adb` from an installed Android SDK. The reader checks `ANDROID_HOME`, `ANDROID_SDK_ROOT`, `~/Library/Android/sdk`, then PATH. Metro logs need an existing local Metro server and an app with an inspector target. The log tools connect to that server without starting it.
+Android tools look for the SDK in `ANDROID_HOME`, `ANDROID_SDK_ROOT`, and the default SDK location, then check `PATH` for executables. Metro logs need an existing local Metro server and an app with an inspector target. The log tools connect to that server without starting it.
 
 ## Device panel
 
@@ -20,7 +20,7 @@ Open a new chat after installing. Open Mobile Dev in the sidebar or call `mobile
 
 Enable both platforms from the platform menu to show the panels side by side. Each panel has a device dropdown, Home, App Switcher, and Screenshot. Pick a device in each panel. In the sidebar panel, the bar under the simulators holds the tools menu on the left and the platform menu on the right; fullscreen shows them above the tools. Use the platform menu to show either, both, or neither simulator. Selecting a device boots it if needed, then connects its screen. A selected running device connects automatically. The panel uses Apple’s device bezel and screen mask from the installed DeviceKit assets, with a simple frame as a fallback when assets are unavailable. Use the settings button at the bottom right for appearance, text size, location, and the device frame. iOS also offers contrast; Android offers rotation. The menu shows only settings supported by the bundled backend. Click the screen to type or drag. Closing the panel closes its stream.
 
-Click an iOS simulator or Android screen to focus it, then press **Command-V** to paste text into the device. Paste accepts up to 4,096 printable US-ASCII characters. Empty or non-text clipboard content sends nothing; line breaks, other characters, and oversized text show a notice without sending partial text. Paste is disabled during Select, while input is blocked, and until the stream is ready. Physical iOS keyboard input remains unavailable.
+Click an iOS simulator or Android screen to focus it, then press **Ctrl+V** on Windows or **Command-V** on macOS to paste text into the device. Paste accepts up to 4,096 printable US-ASCII characters. Empty or non-text clipboard content sends nothing; line breaks, other characters, and oversized text show a notice without sending partial text. Paste is disabled during Select, while input is blocked, and until the stream is ready. Physical iOS keyboard input remains unavailable.
 
 Use Select in the simulator toolbar to pause the screen. Hover to outline a component, then click to add a note. React Native development apps can supply runtime elements when accessibility omits a view. Drag to mark a region when neither source exposes it. Saved notes leave numbered blue bubbles. Notes attach text and available element details to your next chat message. The captured screen stays local for editing; annotations never attach screenshots. Click a bubble to edit or remove a note, or use Send to chat to send all notes for that device. If chat is unavailable, the panel keeps the notes and retries when you return. A sent or cleared batch starts again at 1.
 
@@ -36,9 +36,34 @@ For mobile app development, the bundled skill tells the agent to open the panel 
 
 You can request fullscreen or a tool-only workflow. Planning, docs, code review, and compilation-only requests do not need a panel. Skill matching depends on the prompt and project context; [the workflow cases](agent-workflow.md) cover the expected behavior in fresh chats.
 
+## Android on Windows
+
+1. Install [Android Studio](https://developer.android.com/studio). Open **SDK Manager → SDK Tools**, select **Android SDK Platform-Tools**, then **Apply**. Note the **Android SDK Location** shown in SDK Manager.
+2. For an emulator, also install **Android Emulator**, then open **Device Manager → Create Virtual Device**, choose a phone, download a system image, and finish creating the AVD. For a physical phone, enable **USB debugging**, connect it and accept the authorization prompt, or pair it for wireless debugging. Windows may need the manufacturer's USB driver. [Virtual device setup](https://developer.android.com/studio/run/managing-avds) · [Physical device setup](https://developer.android.com/studio/run/device)
+3. Codex finds the default SDK at `%LOCALAPPDATA%\Android\Sdk`. For a custom location, set the Windows user environment variable `ANDROID_HOME` to the SDK root shown by SDK Manager. Fully quit and reopen Codex after changing environment variables.
+4. Open **Mobile Dev → Android** and choose the device. With your app visible, click **Select**, click an outlined element, add a note and use **Send to chat**. The note includes the selected element's available accessibility details.
+
+To check a default installation in PowerShell, run the following. Substitute your SDK location on the first line for a custom installation.
+
+```powershell
+$sdk = Join-Path $env:LOCALAPPDATA 'Android\Sdk'
+& "$sdk\platform-tools\adb.exe" devices -l
+& "$sdk\emulator\emulator.exe" -list-avds
+```
+
+The first command should show a connected phone as `device`. For `unauthorized`, unlock the phone and accept its debugging prompt. The second command applies to emulators and should print the AVD name. If the AVD fails to boot, start it once in Device Manager to see the emulator's error and check [hardware acceleration on Windows](https://developer.android.com/studio/run/emulator-acceleration). SDK Build-Tools provide `aapt2` for reading APK labels and icons.
+
+On Windows, Mobile Dev cold boots AVDs it starts and skips Quick Boot snapshot saving. Headless snapshot restores can leave adb offline or unable to run shell commands. Installed apps and AVD user data persist across these cold boots. To use Android Studio’s own boot settings, start the AVD in Device Manager and select the running emulator in Mobile Dev.
+
+The iOS tab stays available on Windows for future cloud devices. Local iOS simulation and physical iOS mirroring require macOS and Xcode.
+
 ## Android
 
-Install Android SDK platform-tools and emulator. Create an AVD in Android Studio or connect an Android device and authorize adb access. The Android panel lists devices without booting one. Selecting an AVD boots it if needed, then starts the bundled Node.js serve-emu CLI on a private loopback port. Home, Back, Recents, Lock, pointer gestures, and typing use scrcpy's control socket. Closing the panel leaves the emulator running. AVDs start without a separate emulator window. A failed emulator process reports its exit right away instead of waiting for the boot timeout.
+Install **Android SDK Platform-Tools** in Android Studio's **SDK Manager → SDK Tools**. For a virtual device, also install **Android Emulator**, then create an AVD with a system image in **Device Manager**. For a physical phone, enable USB or wireless debugging and authorize your computer. [Virtual device setup](https://developer.android.com/studio/run/managing-avds) · [Physical device setup](https://developer.android.com/studio/run/device)
+
+For a custom SDK, set `ANDROID_HOME` to the **Android SDK Location** shown in SDK Manager. The default SDK paths checked on macOS and Linux are `~/Library/Android/sdk` and `~/Android/Sdk`, respectively. On either system, verify a phone with `"$ANDROID_HOME/platform-tools/adb" devices -l` or list configured AVDs with `"$ANDROID_HOME/emulator/emulator" -list-avds` after setting that variable. [Android SDK environment variables](https://developer.android.com/tools/variables)
+
+The Android panel lists devices without booting one. Selecting an AVD boots it if needed, then starts the bundled Node.js serve-emu CLI on a private loopback port. Home, Back, Recents, Lock, pointer gestures, and typing use scrcpy's control socket. Closing the panel leaves the emulator running. AVDs start without a separate emulator window. A failed emulator process reports its exit right away instead of waiting for the boot timeout.
 
 The Android dropdown shows **Connected devices** first, with USB or Wi-Fi labels, then **Emulators**. It refreshes every three seconds while the Android panel is visible, and when opening the dropdown. Physical devices use ADB discovery: enable USB debugging and authorize the computer, or pair the device for wireless debugging. Offline and unauthorized devices remain visible with their state. Emulators keep their AVD name while unauthorized. An emulator restored from a quick-boot snapshot can stay unauthorized because adb does not repeat the key exchange; the panel reconnects adb at most every 5 seconds while an AVD boots, and for up to 15 seconds after you select an already running emulator. Selecting an authorized phone connects its screen and shares its serial and transport with the chat. Bundled scrcpy mirrors and controls the phone without installing a companion app. Physical Android devices support the existing screen, input, screenshot, native log, and performance tools; emulator boot and stop controls do not apply to them.
 
@@ -48,9 +73,11 @@ For tool use, call `mobile_list_android_devices`. It returns serials for connect
 
 `vendor:serve-emu` installs the source fork’s pinned Node.js dependencies with package scripts disabled and checks the bundled scrcpy 4.0 server's SHA-256. `build` compiles the checked-in CLI for Node.js, copies the runtime, and records package integrity, lockfile hash, CLI hash, and scrcpy hash in `dist/serve-emu/release.json`. Starting Android requires no npm install or runtime download.
 
-Click the camera button in either simulator toolbar to add a PNG to the chat input and copy it to the macOS clipboard. Each click adds another screenshot and keeps any attached log. Remove screenshots from the chat input to clear them. The button works while the selected simulator runs, including when the stream is paused. Physical iOS captures the displayed mirrored frame and requires a ready stream. It does not send a message.
+Click the camera button in either simulator toolbar to add a PNG to the chat input and copy the image to the system clipboard. Each click adds another screenshot and keeps any attached log. Remove screenshots from the chat input to clear them. The button works while the selected simulator runs, including when the stream is paused. Physical iOS captures the displayed mirrored frame and requires a ready stream. It does not send a message.
 
 ## Resource saving
+
+On Windows, emulators use the AVD's configured resources. The bundled Android optimizer (`avdslim`) is an Apple Silicon macOS binary, so the **Save resources** control is unavailable on Windows.
 
 The leaf button beside device settings controls **Save resources** for the selected
 iOS simulator or Android emulator. It is enabled by default and is available while

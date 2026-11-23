@@ -4,6 +4,11 @@
 
 ## Hosts
 
+On Windows, SDK and project paths in error messages are redacted. Stack frames for
+packaged server bundles use the same path as their source-map debug image after
+redaction, retaining the release's debug ID. Android FPS, input acknowledgement,
+screen inspection and chat attachment measurements use the existing boundaries.
+
 Since 0.1.165, UI and server telemetry carry a `host` tag and attribute with one of
 `codex`, `claude`, `cursor`, `mac` or `other`. Codex, Claude, Cursor and other MCP
 Apps hosts load the same panel and server; the Mac app runs the same server and shared UI.

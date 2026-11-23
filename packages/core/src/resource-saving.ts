@@ -41,6 +41,7 @@ async function executable(platform: "ios" | "android") {
 
 export class ResourceSaving {
   readonly directory: string;
+  readonly supported: boolean;
   private readonly run: Run;
   private readonly locate: typeof executable;
   private readonly adb: () => Promise<string>;
@@ -48,6 +49,8 @@ export class ResourceSaving {
   private readonly pending = new Map<string, Promise<void>>();
 
   constructor(options: Options = {}) {
+    // Both packaged optimizers are macOS arm64 executables.
+    this.supported = options.executable !== undefined || (process.platform === "darwin" && process.arch === "arm64");
     this.directory = options.directory ?? directory;
     this.run = options.run ?? execute;
     this.locate = options.executable ?? executable;

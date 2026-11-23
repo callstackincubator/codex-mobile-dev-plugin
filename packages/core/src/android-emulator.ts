@@ -19,10 +19,11 @@ type BootOptions = {
 export async function bootAndroidEmulator(options: BootOptions, launch: typeof spawn = spawn): Promise<Status> {
   options.signal.throwIfAborted();
   const args = ["-avd", options.name, "-no-window", "-no-boot-anim", "-gpu", "host"];
-  if (options.resourceSaving !== undefined) args.push("-no-snapshot-load", "-no-snapshot-save");
+  // Headless Quick Boot on Windows can leave adb offline or hang shell commands after restore.
+  if (process.platform === "win32" || options.resourceSaving !== undefined) args.push("-no-snapshot-load", "-no-snapshot-save");
   if (options.resourceSaving) args.push("-lowram", "-memory", "1536");
   const child = launch(options.executable, args, {
-    detached: true, stdio: "ignore", shell: false,
+    detached: true, stdio: "ignore", shell: false, windowsHide: true,
   });
   // The failure promise stays resolved after an early exit, including during an adb read.
   const failed = new Promise<Error>(resolve => {

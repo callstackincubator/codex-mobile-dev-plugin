@@ -1,4 +1,5 @@
-import { relative } from 'node:path'
+import { resolve } from 'node:path'
+import { relativeSourcePath } from './source-path.ts'
 import ts from 'typescript'
 import type { AppFlowSourceView, AppFlowStateSite } from '@mobile-dev/shared/app-flow.ts'
 import { fnName, jsxAttributes, ownerFn, sourceHash, unwrap } from './source-units.ts'
@@ -88,7 +89,7 @@ export function scanSourceViews(units: Map<string, Unit>, root: string, symbol: 
       const call = unwrap(n.initializer), fn = owner(n)
       if (!fn || !ts.isCallExpression(call) || !/^react#use(?:State|Reducer)$/.test(symbol(unit, call.expression.getText()))) continue
       const value = n.name.elements[0], loc = location(unit, call)
-      const site: AppFlowStateSite = { id: sourceHash(`${relative(root, unit.file)}:${call.pos}`), file: relative(root, unit.file), ...loc, owner: name(fn), paths: [], hook: symbol(unit, call.expression.getText()).endsWith('useReducer') ? 'useReducer' : 'useState', valueName: value && ts.isBindingElement(value) && ts.isIdentifier(value.name) ? value.name.text : undefined }
+      const site: AppFlowStateSite = { id: sourceHash(`${relativeSourcePath(root, unit.file)}:${call.pos}`), file: relativeSourcePath(root, unit.file), ...loc, owner: name(fn), paths: [], hook: symbol(unit, call.expression.getText()).endsWith('useReducer') ? 'useReducer' : 'useState', valueName: value && ts.isBindingElement(value) && ts.isIdentifier(value.name) ? value.name.text : undefined }
       states.push(site)
       const v = { 0: { site, path: [] } }
       stateCalls.set(call, v)
@@ -100,7 +101,7 @@ export function scanSourceViews(units: Map<string, Unit>, root: string, symbol: 
       const fn = owner(n)
       if (!fn) continue
       const loc = location(unit, n)
-      const site: AppFlowStateSite = { id: sourceHash(`${relative(root, unit.file)}:${n.pos}`), file: relative(root, unit.file), ...loc, owner: name(fn), paths: [], hook: symbol(unit, n.expression.getText()).endsWith('useReducer') ? 'useReducer' : 'useState' }
+      const site: AppFlowStateSite = { id: sourceHash(`${relativeSourcePath(root, unit.file)}:${n.pos}`), file: relativeSourcePath(root, unit.file), ...loc, owner: name(fn), paths: [], hook: symbol(unit, n.expression.getText()).endsWith('useReducer') ? 'useReducer' : 'useState' }
       states.push(site)
       stateCalls.set(n, { 0: { site, path: [] } })
       calls.set(site.id, { unit, call: n })
@@ -138,7 +139,7 @@ export function scanSourceViews(units: Map<string, Unit>, root: string, symbol: 
     if (sources.length) for (const v of sources) {
       const owners = v.site.owners ??= []
       if (!owners.includes(own)) owners.push(own)
-      const ownerSites = v.site.ownerSites ??= [], file = relative(root, fnUnits.get(fn)?.file ?? fn.getSourceFile().fileName)
+      const ownerSites = v.site.ownerSites ??= [], file = relativeSourcePath(root, fnUnits.get(fn)?.file ?? fn.getSourceFile().fileName)
       if (!ownerSites.some(site => site.file === file && site.owner === own)) ownerSites.push({ file, owner: own })
     }
     else for (const v of Object.values(value)) consumers(v, fn, depth + 1)
@@ -237,7 +238,7 @@ export function scanSourceViews(units: Map<string, Unit>, root: string, symbol: 
     // required callbacks/data cannot be filled with made-up values.
     const optional = (type: ts.TypeNode | ts.InterfaceDeclaration | undefined, seen = new Set<string>()): boolean => {
       if (!type) return false
-      const context = units.get(type.getSourceFile().fileName)
+      const context = units.get(resolve(type.getSourceFile().fileName))
       if (!context) return false
       if (ts.isTypeReferenceNode(type)) {
         const key = symbol(context, type.typeName.getText())
@@ -365,7 +366,7 @@ export function scanSourceViews(units: Map<string, Unit>, root: string, symbol: 
                 ts.isBinaryExpression(parent) && parent.right === p && parent.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken ? parent.left : undefined
               if (condition && truth(unit, condition, ref, state!.value) === undefined) guards++
             }
-            const item = { file: relative(root, resolved.slice(0, split)), component: resolved.slice(split + 1), entry: { file: relative(root, unit.file), source: location(unit, n) }, ...(ref ? { guards } : {}) }, previous = result.get(resolved)
+            const item = { file: relativeSourcePath(root, resolved.slice(0, split)), component: resolved.slice(split + 1), entry: { file: relativeSourcePath(root, unit.file), source: location(unit, n) }, ...(ref ? { guards } : {}) }, previous = result.get(resolved)
             if (!previous || (item.guards ?? 0) < (previous.guards ?? 0)) result.set(resolved, item)
           }
         }
@@ -381,7 +382,7 @@ export function scanSourceViews(units: Map<string, Unit>, root: string, symbol: 
     let jsx = false
     walk(body, n => { if (ts.isJsxElement(n) || ts.isJsxOpeningElement(n) || ts.isJsxSelfClosingElement(n)) jsx = true })
     if (!jsx) return
-    const components = parts(unit, body, extra.state), file = relative(root, unit.file), own = name(fn)
+    const components = parts(unit, body, extra.state), file = relativeSourcePath(root, unit.file), own = name(fn)
     const identity = extra.state ? ['state', extra.state] : [file, own, loc, kind, extra.control, extra.branch]
     const id = hash(identity), existing = views.get(id)
     const renderBody = ts.isCaseClause(body) || ts.isReturnStatement(body) || ts.isBlock(body) && body.statements.some(ts.isReturnStatement) || (() => { for (let p = body; p.parent && !ts.isFunctionLike(p.parent); p = p.parent) { if (ts.isReturnStatement(p.parent)) return true; if (ts.isJsxElement(p.parent) || ts.isJsxFragment(p.parent)) return false } return false })()
@@ -465,15 +466,15 @@ export function scanSourceViews(units: Map<string, Unit>, root: string, symbol: 
     if (callee) target = `${fnUnits.get(callee)!.file}#${name(callee)}`
     if (!fn) continue
     const list = entries.get(target) ?? [], source = location(unit, n)
-    list.push({ file: relative(root, unit.file), line: source.line, owner: name(fn), source })
+    list.push({ file: relativeSourcePath(root, unit.file), line: source.line, owner: name(fn), source })
     entries.set(target, list)
   }
-  for (const view of views.values()) if (view.kind === 'component') view.entries = entries.get(`${root}/${view.file}#${view.owner}`) ?? []
+  for (const view of views.values()) if (view.kind === 'component') view.entries = entries.get(`${resolve(root, view.file)}#${view.owner}`) ?? []
   // Private functions cannot be found through module exports. Their actual JSX
   // callers let the bundler prove the function before runtime forces a hook render.
   for (const site of states) {
     const sources = [{ file: site.file, owner: site.owner }, ...(site.ownerSites ?? [])]
-    const callers = sources.flatMap(source => (entries.get(`${root}/${source.file}#${source.owner}`) ?? [])
+    const callers = sources.flatMap(source => (entries.get(`${resolve(root, source.file)}#${source.owner}`) ?? [])
       .flatMap(entry => entry.source ? [{ component: source.owner, file: entry.file, owner: entry.owner, source: entry.source }] : []))
     if (callers.length) site.ownerEntries = [...new Map(callers.map(entry => [JSON.stringify(entry), entry])).values()]
   }

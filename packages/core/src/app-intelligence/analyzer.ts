@@ -12,7 +12,7 @@ const assetPattern = /\.(?:png|jpe?g|gif|webp|svg)$/i;
 const extensions = (platform: IntelPlatform) => ["js", "jsx", "json", "ts", "tsx", "mjs", "cjs", "mts", "cts"].flatMap(ext => [`.${platform}.${ext}`, `.native.${ext}`, `.${ext}`]);
 const fingerprint = (value: string | Buffer) => createHash("sha256").update(value).digest("hex");
 const portable = (root: string, path: string) => relative(root, path).split(sep).join("/");
-const inside = (root: string, path: string) => { const rel = relative(root, path); return rel !== ".." && !rel.startsWith(`..${sep}`) && !rel.startsWith("/"); };
+const inside = (root: string, path: string) => { const rel = relative(root, path); return rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel); };
 const packageName = (specifier: string) => specifier.startsWith("@") ? specifier.split("/").slice(0, 2).join("/") : specifier.split("/")[0];
 
 type Registration = { name: string; local?: string; specifier?: string };

@@ -82,7 +82,7 @@ export const faq = [
   { q: 'Which environments can I use?', a: 'Codex, Claude, and Cursor have host packages. Other compatible MCP clients can connect to the server; embedded device panels require MCP Apps support.' },
   { q: 'Is this only for React Native?', a: 'No. Use Mobile Dev with Expo, React Native, SwiftUI, and other native mobile apps. React Native inspection connects to an existing Metro server.' },
   { q: 'Can I use a real phone?', a: 'Yes. Connect iPhones and iPads through Xcode, or Android devices through authorized USB or wireless debugging. Available controls depend on the platform and device.' },
-  { q: 'What do I need installed?', a: 'An Apple Silicon Mac, plus Xcode for iOS or Android SDK tools for Android. iOS simulators need Xcode 26 or later; physical iOS discovery needs Xcode 27 or later.' },
+  { q: 'What do I need installed?', a: 'For Android in Codex desktop, use Windows or an Apple Silicon Mac with Android SDK Platform-Tools. Emulators also need Android Emulator and a system image. For local iOS devices, use an Apple Silicon Mac with Xcode 26 or later for simulators, or Xcode 27 or later for physical devices.' },
   { q: 'Does Mobile Dev build my app?', a: 'Your agent uses the project’s existing build tools. Mobile Dev supplies the device view, app controls, inspection, logs, performance, and storage tools.' },
   { q: 'What telemetry is collected?', a: 'Plugin telemetry includes errors and aggregate plugin performance. App logs, screenshots, input, storage contents, and device recordings are excluded. Read the privacy guide for details and opt-out.' },
 ];

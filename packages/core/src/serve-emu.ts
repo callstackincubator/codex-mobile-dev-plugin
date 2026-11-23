@@ -2,13 +2,12 @@ import { execFile, spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
 import { access } from "node:fs/promises";
-import { constants } from "node:fs";
-import { dirname, join } from "node:path";
 import { createServer } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import { bootAndroidEmulator, parseAvdName } from "./android-emulator.ts";
 import { adbPath } from "./native-logs.ts";
+import { systemCommands } from "./app-control/commands.ts";
 import { errorMessage, parseBaseUrl } from "@mobile-dev/shared/protocol.ts";
 import type { SimulatorDevice, Status } from "@mobile-dev/shared/protocol.ts";
 import { annotateDeviceCommand, backendCommand } from "@mobile-dev/shared/device-command-diagnostics.ts";
@@ -17,7 +16,7 @@ import { isMissingFile, MissingRuntimeError } from "./install-integrity.ts";
 import { recordAndroidEmulatorReconnect, recordAndroidBootWait, recordAndroidBackendStartup, recordAndroidStartupStages, recordAndroidStartupContext, recordAndroidStartupDeviceState, recordAndroidBackendStop } from "./telemetry.ts";
 import { androidStartupMessageSchema, androidDeviceState, setAndroidStartupDiagnostic } from "@mobile-dev/shared/android-startup-diagnostics.ts";
 import type { AndroidStartupContext, AndroidStartupFailure, AndroidStartupSummary } from "@mobile-dev/shared/android-startup-diagnostics.ts";
-import { androidSdkRoots } from "./android-sdk.ts";
+import { androidToolPath, missingAdbMessage, sdkToolPath } from "./android-sdk.ts";
 import { panelRuntimePath } from "./panel-runtime.ts";
 import type { ResourceSaving } from "./resource-saving.ts";
 
@@ -56,24 +55,20 @@ export class ServeEmu {
     if (baseUrl) this.external = parseBaseUrl(baseUrl, "SERVE_EMU_URL");
   }
 
-  private async emulatorPath() {
-    for (const root of androidSdkRoots()) {
-      const path = join(root, "emulator/emulator");
-      try { await access(path, constants.X_OK); return path; } catch { /* Try PATH next. */ }
-    }
-    return "emulator";
-  }
-
-  async list(): Promise<Status> {
+  async list(run: (file: string, args: string[], options: { timeout: number; maxBuffer?: number; windowsHide?: boolean }) => Promise<{ stdout: string }> = execute): Promise<Status> {
     try {
       const adb = await adbPath();
-      const emulator = await this.emulatorPath();
+      const emulator = await sdkToolPath("emulator");
       const [devices, avds] = await Promise.all([
-        execute(adb, ["devices", "-l"], { timeout: 5000, maxBuffer: 1024 * 1024 }),
-        execute(emulator, ["-list-avds"], { timeout: 5000, maxBuffer: 1024 * 1024 }).catch(error => {
-          if (error.code === "ENOENT") return { stdout: "" };
-          throw error;
-        }),
+        run(adb, ["devices", "-l"], { timeout: 5000, maxBuffer: 1024 * 1024, windowsHide: true }),
+        run(emulator, ["-list-avds"], { timeout: 5000, maxBuffer: 1024 * 1024, windowsHide: true })
+          .then(({ stdout }): { stdout: string; hint?: string } => ({ stdout }))
+          .catch(error => ({
+            stdout: "",
+            hint: isMissingFile(error)
+              ? "To use a virtual device, install Android Emulator in Android Studio’s SDK Manager, then create an AVD in Device Manager."
+              : `Android Emulator could not list AVDs. Run emulator -list-avds to check the installation. ${errorMessage(error)}`,
+          })),
       ]);
       const deviceLines = devices.stdout.split(/\r?\n/);
       const runningReads = deviceLines.flatMap(line => {
@@ -88,7 +83,7 @@ export class ServeEmu {
           const emulatorDevice = /^emulator-\d+$/.test(match[1]);
           // The emulator console names the AVD before adb authorizes the device.
           if (emulatorDevice) {
-            const response = await execute(adb, ["-s", match[1], "emu", "avd", "name"], { timeout: 3000 }).catch(() => undefined);
+            const response = await run(adb, ["-s", match[1], "emu", "avd", "name"], { timeout: 3000, windowsHide: true }).catch(() => undefined);
             const avdName = parseAvdName(response?.stdout);
             if (avdName) this.avdNames.set(match[1], avdName);
             name = avdName ?? this.avdNames.get(match[1]) ?? name;
@@ -111,9 +106,16 @@ export class ServeEmu {
         return parsedId.success && !runningAvd;
       });
       const stopped = stoppedNames.map(name => ({ udid: `avd:${name}`, name, state: "Shutdown", runtime: "Android", platform: "android" as const, kind: "emulator" as const }));
-      return { connected: true, managed: [...this.backends.values()].some(backend => !!backend.child), baseUrl: this.external?.origin ?? "", devices: [...running, ...stopped] };
+      const discovered = [...running, ...stopped];
+      const setupHint = discovered.length === 0
+        ? `${avds.hint ?? "No Android virtual devices found. Create an AVD in Android Studio’s Device Manager."} Or connect an Android device with USB debugging enabled and authorize this computer.`
+        : undefined;
+      return { connected: true, managed: [...this.backends.values()].some(backend => !!backend.child), baseUrl: this.external?.origin ?? "", devices: discovered, ...(setupHint && { setupHint }) };
     } catch (error) {
-      return { connected: false, managed: false, baseUrl: "", devices: [], error: `Cannot list Android devices. Install Android SDK platform-tools and emulator. ${errorMessage(error)}` };
+      const message = isMissingFile(error)
+        ? missingAdbMessage
+        : `Cannot list Android devices. Run adb devices -l to check the connection. ${errorMessage(error)}`;
+      return { connected: false, managed: false, baseUrl: "", devices: [], error: message };
     }
   }
 
@@ -147,7 +149,7 @@ export class ServeEmu {
     const target = { platform: "android" as const, id, key: device.name, state: device.state };
     const resourceSaving = await this.resourceSaving?.enabled(target);
     const status = await bootAndroidEmulator({
-      name: device.name, executable: await this.emulatorPath(), signal: this.lifetime.signal,
+      name: device.name, executable: await sdkToolPath("emulator"), signal: this.lifetime.signal,
       ready: () => this.emulatorReady(item => item.name === device.name, "boot"),
       resourceSaving,
     });
@@ -164,8 +166,8 @@ export class ServeEmu {
     const running = status.devices.find(item => item.kind === "emulator" && matches(item));
     if (running?.state === "unauthorized") await this.reconnectEmulator(running.udid, trigger);
     if (running?.state !== "Booted") return;
-    const response = await execute(await adbPath(), ["-s", running.udid, "shell", "getprop", "sys.boot_completed"], { timeout: 3000 }).catch(() => undefined);
-    if (response?.stdout.trim() === "1") return status;
+    const response = await systemCommands.run(await adbPath(), ["-s", running.udid, "shell", "getprop", "sys.boot_completed"], { timeout: 3000 }).catch(() => undefined);
+    if (response?.trim() === "1") return status;
   }
 
   // A quick-boot snapshot can restore an emulator after adb has marked it unauthorized, and adb
@@ -195,12 +197,12 @@ export class ServeEmu {
     const startedAt = performance.now();
     let waited = false;
     while (!signal.aborted) {
-      const response = await execute(await adbPath(), ["-s", serial, "shell", "getprop", "sys.boot_completed"], { timeout: 3000 }).catch((error: unknown) => {
+      const response = await systemCommands.run(await adbPath(), ["-s", serial, "shell", "getprop", "sys.boot_completed"], { timeout: 3000 }).catch((error: unknown) => {
         const stderr = String((error as { stderr?: unknown }).stderr ?? "");
         if (/\b(?:not found|no devices|offline|unauthorized)\b/.test(stderr)) throw new SimulatorUnavailableError("The Android device is stopped or offline. Press Start or reconnect it.");
         return undefined;
       });
-      if (response?.stdout.trim() === "1") {
+      if (response?.trim() === "1") {
         if (waited) recordAndroidBootWait(performance.now() - startedAt, "booted");
         return;
       }
@@ -218,18 +220,21 @@ export class ServeEmu {
     const before = await this.list();
     if (!before.connected) throw new Error(before.error);
     if (!before.devices.some(device => device.udid === id)) return before;
-    await execute(await adbPath(), ["-s", id, "emu", "kill"], { timeout: 5000 });
+    const adb = await adbPath();
+    await execute(adb, ["-s", id, "emu", "kill"], { timeout: 5000 });
     const backend = this.backends.get(id);
     if (backend) this.stopBackend(backend);
     this.backends.delete(id);
-    const signal = AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(15000)]);
-    while (true) {
-      signal.throwIfAborted();
-      const status = await this.list();
-      if (!status.connected) throw new Error(status.error);
-      if (!status.devices.some(device => device.udid === id)) return status;
-      await delay(250, undefined, { signal });
+    // On Windows Quick Boot can keep the serial listed as offline while saving the snapshot.
+    // The AVD is available to boot again only after that transport has gone away.
+    const signal = AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(120_000)]);
+    while (!signal.aborted) {
+      const { stdout } = await execute(adb, ["devices"], { timeout: 5000, signal: this.lifetime.signal, windowsHide: true });
+      if (!stdout.split(/\r?\n/).some(line => line.split(/\s+/, 1)[0] === id)) return this.list();
+      await delay(500, undefined, { signal }).catch(() => {});
     }
+    this.lifetime.signal.throwIfAborted();
+    throw new SimulatorUnavailableError("The Android emulator is still shutting down after two minutes. Check its status in Android Studio’s Device Manager.");
   }
 
   async json(url: URL, path: string, options: RequestInit = {}) {
@@ -302,7 +307,7 @@ export class ServeEmu {
     const startedAt = performance.now();
     const context: AndroidStartupContext = {
       deviceKind: device.kind === "physical" ? "physical" : "emulator",
-      transport: device.kind === "physical" ? device.transportType ?? "unknown" : "emulator",
+      transport: device.kind !== "physical" ? "emulator" : device.platform === "android" ? device.transportType : "unknown",
       stateBefore: "online", activeBackends: 0, stoppingBackends: this.stopping.size,
       startingBackends: this.starting.size,
     };
@@ -310,8 +315,8 @@ export class ServeEmu {
     recordAndroidStartupContext(context);
     const adb = await adbPath();
     const child = spawn(process.execPath, [cli, "--host", "127.0.0.1", "--port", url.port, "--serial", id, "--max-fps", "30"], {
-      stdio: ["ignore", "pipe", "pipe", "ipc"], shell: false,
-      env: { ...process.env, PATH: `${dirname(adb)}:${process.env.PATH ?? ""}`, SERVE_EMU_UPDATE_CHECK: "0" },
+      stdio: ["ignore", "pipe", "pipe", "ipc"], shell: false, windowsHide: true,
+      env: { ...process.env, PATH: androidToolPath([adb, await sdkToolPath("emulator")]), SERVE_EMU_UPDATE_CHECK: "0" },
     });
     this.backendContexts.set(child, context);
     let stage: AndroidStartupFailure["stage"] = "process-launch";
@@ -400,11 +405,12 @@ export class ServeEmu {
     const backend = await this.start(id);
     const adb = await adbPath();
     const [tree, health, display] = await Promise.all([
-      this.json(backend.url, "/api/accessibility"),
+      // The tree must line up with the current screen even immediately after an input.
+      this.json(backend.url, "/api/accessibility", { headers: { "Cache-Control": "no-cache" } }),
       this.health(backend.url),
-      execute(adb, ["-s", id, "shell", "wm", "size"], { timeout: 3000, maxBuffer: 4096 }),
+      systemCommands.run(adb, ["-s", id, "shell", "wm", "size"], { timeout: 3000, maxBuffer: 4096 }),
     ]);
-    return { tree, screen: androidDisplaySize(display.stdout, health.size) };
+    return { tree, screen: androidDisplaySize(display, health.size) };
   }
 
   dispose() {
@@ -416,17 +422,19 @@ export class ServeEmu {
 
   private stopBackend(backend: Backend) {
     const child = backend.child;
-    if (child === undefined) return;
+    if (!child || this.stopping.has(child) || child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return;
     const context = this.backendContexts.get(child);
-    if (context && child.pid !== undefined && child.exitCode === null && child.signalCode === null && this.stopping.has(child) === false && process.env.MOBILE_DEV_TELEMETRY !== "off") {
-      this.stopping.add(child);
-      const started = performance.now();
-      child.once("exit", () => {
-        this.stopping.delete(child);
-        const duration = performance.now() - started;
-        recordAndroidBackendStop(duration, context);
-      });
-    }
-    child.kill("SIGTERM");
+    const started = performance.now();
+    this.stopping.add(child);
+    // On Windows SIGTERM terminates the child immediately. Closing its IPC channel gives
+    // serve-emu time to release the adb forward and stop its device-side scrcpy session.
+    const deadline = setTimeout(() => child.kill("SIGKILL"), 15000).unref();
+    child.once("exit", () => {
+      clearTimeout(deadline);
+      this.stopping.delete(child);
+      if (context && process.env.MOBILE_DEV_TELEMETRY !== "off") recordAndroidBackendStop(performance.now() - started, context);
+    });
+    if (process.platform === "win32" && child.connected) child.disconnect();
+    else child.kill("SIGTERM");
   }
 }

@@ -77,8 +77,18 @@ export function scrubText(text: string): string {
   scrubbed = scrubbed.replace(/\b[A-Fa-f0-9]{24,}\b/g, "[identifier]");
   scrubbed = scrubbed.replace(/\b[^\s@]+@[^\s@]+\.[^\s@]+\b/g, "[email]");
   scrubbed = scrubbed.replace(/(?:\/Users\/|\/home\/)[^\s"')]+/g, "[local path]");
+  // An unquoted SDK or project path can contain spaces. Keep the error prefix
+  // and drop the rest of that line rather than guessing where the path ends.
+  scrubbed = scrubbed.replace(/(?:\b[a-z]:[\\/]|\\\\|file:\/\/)[^\r\n]*/gi, "[local path]");
   scrubbed = scrubbed.replace(/https?:\/\/[^\s"')]+/g, "[url]");
   return scrubbed.slice(0, 512);
+}
+
+function scrubWindowsFrame(path: string) {
+  if (!/^(?:(?:file:\/\/)?\/?[a-z]:[\\/]|\\\\|file:\/\/[^/])/i.test(path)) return path;
+  const file = path.split(/[\\/]/).at(-1);
+  return file && ["server.mjs", "app-intelligence-worker.mjs", "ios-mirror-service.mjs"].includes(file)
+    ? "app:///" + file : "[local path]";
 }
 
 export function errorReportSignature(error: unknown, tags: Record<string, string>): string {
@@ -118,11 +128,16 @@ export function scrubErrorEvent(event: ErrorEvent, hint?: ErrorHint): ErrorEvent
     if (exception.value) exception.value = scrubText(exception.value);
     if (exception.mechanism) delete exception.mechanism.data;
     for (const frame of exception.stacktrace?.frames ?? []) {
+      if (frame.filename) frame.filename = scrubWindowsFrame(frame.filename);
+      if (frame.abs_path) frame.abs_path = scrubWindowsFrame(frame.abs_path);
       delete frame.vars;
       delete frame.pre_context;
       delete frame.post_context;
       delete frame.context_line;
     }
+  }
+  for (const image of event.debug_meta?.images ?? []) {
+    if (image.type === "sourcemap") image.code_file = scrubWindowsFrame(image.code_file);
   }
   if (event.contexts) {
     delete event.contexts.device;

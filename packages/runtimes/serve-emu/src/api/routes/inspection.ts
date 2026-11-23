@@ -88,11 +88,12 @@ export function inspectionRoutes(): ApiRoute<ApiDependencies>[] {
     {
       method: "GET",
       path: "/api/accessibility",
-      handler: async ({ deps }) => {
+      handler: async ({ deps, request }) => {
         const { readAccessibilitySnapshot, requestContext, errorResponse } =
           deps;
         try {
-          return Response.json(await readAccessibilitySnapshot(requestContext));
+          const cacheMs = request.headers.get("cache-control") === "no-cache" ? 0 : undefined;
+          return Response.json(await readAccessibilitySnapshot(requestContext, cacheMs));
         } catch (err) {
           return errorResponse(err);
         }
