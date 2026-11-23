@@ -10,6 +10,7 @@ export const RELEASE_DOCUMENTS = ["README.md", "LICENSE", "THIRD_PARTY_NOTICES.m
  * server has no panel leave them out.
  */
 export const PANEL_PARTS = ["baguette", "serve-emu", "ios-mirror", "ios-mirror-service.mjs", "resource-saving"];
+export const DOWNLOADED_RUNTIME_PARTS = [...PANEL_PARTS, "e2e"];
 
 const APPLE_RUNTIME_FILES = [
   "baguette/Baguette", "baguette/Baguette_Baguette.bundle",
@@ -28,10 +29,14 @@ const RUNTIME_FILES = [
   "e2e/package-lock.json", "e2e/release.json", "e2e/THIRD_PARTY_NOTICES.txt",
 ];
 
-export async function stageRuntime(directory, { panel = true } = {}) {
+export async function stageRuntime(directory, { exclude = [] } = {}) {
   await cp("dist", directory, {
     recursive: true, verbatimSymlinks: true,
-    filter: source => panel || PANEL_PARTS.includes(relative("dist", source).split(sep)[0]) === false,
+    filter(source) {
+      const path = relative("dist", source);
+      const [part] = path.split(sep);
+      return exclude.includes(part) === false;
+    },
   });
 }
 

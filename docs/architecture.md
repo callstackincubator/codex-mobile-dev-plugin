@@ -34,7 +34,7 @@ A host adds to the shared pieces without changing them:
 - **Runtime:** a host's `plugin-host.json` can leave out the panel's parts of `dist/`
   (`"panel": false`, see `PANEL_PARTS` in `tooling/host-runtime.mjs`), download them
   instead (`"panelRuntime": "download"`), and name a server build of its own. Claude
-  downloads Baguette, serve-emu and the iOS mirror from a release archive its package
+  downloads the native helpers and Testing Studio runner from a release archive its package
   pins (`packages/core/src/panel-runtime.ts`), and its server loads after telemetry as
   a separate module, so esbuild splits it into chunks beside `server.mjs`, keeping
   every file under the Claude plugin directory's 5 MiB limit.

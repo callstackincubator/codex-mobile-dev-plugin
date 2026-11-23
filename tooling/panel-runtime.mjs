@@ -3,13 +3,13 @@ import { createHash } from "node:crypto";
 import { readFile, rm, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { PANEL_PARTS } from "./host-runtime.mjs";
+import { DOWNLOADED_RUNTIME_PARTS } from "./host-runtime.mjs";
 
 /** The panel runtime archive each release attaches beside its packages. */
 export const panelRuntimeArchive = version => `mobile-dev-${version}-panel-runtime-darwin-arm64.tar.gz`;
 
 /**
- * Packs the panel's parts from dist/ into the release archive and returns the pin a
+ * Packs the downloadable runtime from dist/ into the release archive and returns the pin a
  * package ships as panel-runtime.json. A release pins the archive on its GitHub
  * release, under the tag `v<version>`; a local build pins the file it just wrote, so
  * development packages work before anything is published.
@@ -17,8 +17,11 @@ export const panelRuntimeArchive = version => `mobile-dev-${version}-panel-runti
 export async function packPanelRuntime(version, { release = false, repository = defaultRepository() } = {}) {
   const archive = resolve("release", panelRuntimeArchive(version));
   await rm(archive, { force: true });
-  // No AppleDouble files or extended attributes: the server accepts only the parts.
-  execFileSync("tar", ["-czf", archive, "--no-mac-metadata", "--exclude", ".DS_Store", "-C", "dist", ...PANEL_PARTS], {
+  // The runtime accepts plain files. Testing Studio invokes the runner directly.
+  execFileSync("tar", [
+    "-czf", archive, "--no-mac-metadata", "--exclude", ".DS_Store",
+    "--exclude", "e2e/node_modules/.bin", "-C", "dist", ...DOWNLOADED_RUNTIME_PARTS,
+  ], {
     env: { ...process.env, COPYFILE_DISABLE: "1" },
   });
   const bytes = await readFile(archive);

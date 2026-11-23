@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { PANEL_PARTS } from "../host-runtime.mjs";
+import { DOWNLOADED_RUNTIME_PARTS, PANEL_PARTS } from "../host-runtime.mjs";
 
 test("the release metadata pins every bundled e2e runtime dependency", async () => {
   const root = "packages/runtimes/e2e";
@@ -19,10 +19,11 @@ test("the release metadata pins every bundled e2e runtime dependency", async () 
   }
 });
 
-test("the bundled e2e runtime ships notices and is not panel-only", async () => {
+test("e2e ships notices and is included in the downloadable runtime", async () => {
   const notices = await readFile("packages/runtimes/e2e/THIRD_PARTY_NOTICES.txt", "utf8");
   assert.ok(notices.length > 10_000);
   assert.match(notices, /e2e 0\.23\.1/);
   assert.match(notices, /@ai-sdk\/gateway\/node_modules\/@ai-sdk\/provider 4\.0\.36/);
   assert.equal(PANEL_PARTS.includes("e2e"), false);
+  assert.ok(DOWNLOADED_RUNTIME_PARTS.includes("e2e"));
 });

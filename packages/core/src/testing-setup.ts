@@ -74,7 +74,10 @@ const SUBSCRIPTION_IDS = ["openai", "github-copilot", "opencode-console", "space
 export async function readTestingLoginStatus(): Promise<TestingLoginStatus> {
   const status = Object.fromEntries(SUBSCRIPTION_IDS.map(id => [id, false])) as TestingLoginStatus;
   try {
-    const module = await import(pathToFileURL(join(bundledE2eRoot(), "node_modules/e2e/dist/oauth/store.js")).href) as {
+    const root = await bundledE2eRoot();
+    const store = join(root, "node_modules/e2e/dist/oauth/store.js");
+    const url = pathToFileURL(store);
+    const module = await import(url.href) as {
       defaultCredentialStore(): { list(): Promise<string[]> };
     };
     const stored = new Set(await module.defaultCredentialStore().list());
@@ -200,7 +203,8 @@ function packageManager(root: string, manifest: Record<string, unknown>): SetupP
 }
 
 async function skillFiles(): Promise<{ relative: string; content: string }[]> {
-  const root = join(bundledE2eRoot(), "node_modules/e2e/skills/e2e");
+  const runtime = await bundledE2eRoot();
+  const root = join(runtime, "node_modules/e2e/skills/e2e");
   const files: { relative: string; content: string }[] = [];
   const walk = async (directory: string) => {
     for (const entry of await readdir(directory, { withFileTypes: true })) {
@@ -372,7 +376,10 @@ type OAuthProvider = "openai" | "github-copilot" | "opencode-console" | "spacexa
 type LoginCallbacks = { signal: AbortSignal; onAuth(auth: { url: string; instructions: string; userCode?: string }): void; onProgress(message: string): void; onPrompt(prompt: { message: string; placeholder?: string }): Promise<string> };
 type LoginRunner = (provider: OAuthProvider, callbacks: LoginCallbacks) => Promise<unknown>;
 async function e2eLogin(providerId: OAuthProvider, callbacks: LoginCallbacks) {
-  const module = await import(pathToFileURL(join(bundledE2eRoot(), "node_modules/e2e/dist/oauth/login.js")).href) as { login(provider: string, input: Record<string, unknown>): Promise<unknown> };
+  const root = await bundledE2eRoot();
+  const login = join(root, "node_modules/e2e/dist/oauth/login.js");
+  const url = pathToFileURL(login);
+  const module = await import(url.href) as { login(provider: string, input: Record<string, unknown>): Promise<unknown> };
   return module.login(providerId, { callbacks });
 }
 export function startTestingLogin(id: OAuthProvider, runLogin: LoginRunner = e2eLogin): SetupOperation {

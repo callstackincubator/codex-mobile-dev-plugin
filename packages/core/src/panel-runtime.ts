@@ -12,9 +12,10 @@ import { z } from "zod";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 import { captureServerError, recordPanelRuntime } from "./telemetry.ts";
 
-/** The panel's native parts, as the runtime archive and dist/ lay them out (tooling's PANEL_PARTS). */
-export const PANEL_RUNTIME_PARTS = ["baguette", "serve-emu", "ios-mirror", "ios-mirror-service.mjs", "resource-saving"] as const;
-export type PanelRuntimeFile = "baguette/Baguette" | "serve-emu/src/cli.mjs" | "ios-mirror-service.mjs" | "resource-saving/simslim" | "resource-saving/avdslim";
+/** The parts in the downloadable runtime, as laid out in dist/. */
+export const PANEL_RUNTIME_PARTS = ["baguette", "serve-emu", "ios-mirror", "ios-mirror-service.mjs", "resource-saving", "e2e"] as const;
+export type PanelRuntimeFile = "baguette/Baguette" | "serve-emu/src/cli.mjs" | "ios-mirror-service.mjs" | "resource-saving/simslim" | "resource-saving/avdslim" | "e2e";
+const E2E_CLI = "e2e/node_modules/e2e/dist/cli/bin.js";
 
 // Bundled, this module is server.mjs or a chunk in dist/, beside the parts.
 let locate: () => Promise<string> = async () => fileURLToPath(new URL("./", import.meta.url));
@@ -40,7 +41,7 @@ export type PanelRuntimeRelease = z.infer<typeof panelRuntimeReleaseSchema>;
 
 export class PanelRuntimeUnavailableError extends ExpectedOperationError {
   constructor(detail: string) {
-    super("download_failed", `Mobile Dev could not download its device runtime: ${detail} Check the internet connection, then open Mobile Dev again.`);
+    super("download_failed", `Mobile Dev could not download its device and testing runtime: ${detail} Check the internet connection, then try again.`);
   }
 }
 
@@ -123,6 +124,8 @@ async function complete(target: string, release: PanelRuntimeRelease) {
     const marker: unknown = JSON.parse(await readFile(join(target, "panel-runtime.json"), "utf8"));
     if (typeof marker !== "object" || marker === null || ("sha256" in marker && marker.sha256 === release.sha256) === false) return false;
     await access(join(target, "baguette/Baguette"), constants.X_OK);
+    const e2eCli = join(target, E2E_CLI);
+    await access(e2eCli);
     for (const name of ["simslim", "avdslim"]) {
       const executable = join(target, "resource-saving", name);
       await access(executable, constants.X_OK);
@@ -181,6 +184,10 @@ async function extract(archive: string, staging: string) {
   }
   await access(join(staging, "baguette/Baguette"), constants.X_OK).catch(() => {
     throw new RuntimeFailure("archive", "the simulator backend in the archive is not executable.");
+  });
+  const e2eCli = join(staging, E2E_CLI);
+  await access(e2eCli).catch(() => {
+    throw new RuntimeFailure("archive", "the archive is missing the Testing Studio runner.");
   });
   for (const name of ["simslim", "avdslim"]) {
     const executable = join(staging, "resource-saving", name);

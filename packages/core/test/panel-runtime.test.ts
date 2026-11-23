@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 import { downloadedPanelRuntime, PANEL_RUNTIME_PARTS, panelRuntimeDirectory, panelRuntimeReleaseSchema, panelRuntimePath, PanelRuntimeUnavailableError, usePanelRuntime, type PanelRuntimeRelease } from "../src/panel-runtime.ts";
-import { PANEL_PARTS } from "../../../tooling/host-runtime.mjs";
+import { DOWNLOADED_RUNTIME_PARTS } from "../../../tooling/host-runtime.mjs";
 
 /** A runtime archive laid out like dist/, with extra entries a tampered archive might hold. */
 async function archive(t: test.TestContext, extra?: (root: string) => Promise<string[]>) {
@@ -32,6 +32,9 @@ async function archive(t: test.TestContext, extra?: (root: string) => Promise<st
     await writeFile(executable, "#!/bin/sh\n");
     await chmod(executable, 0o755);
   }
+  const cliDirectory = join(root, "e2e/node_modules/e2e/dist/cli");
+  await mkdir(cliDirectory, { recursive: true });
+  await writeFile(join(cliDirectory, "bin.js"), 'console.log("e2e");');
   const members = [...PANEL_RUNTIME_PARTS, ...await extra?.(root) ?? []];
   const file = join(directory, "runtime.tar.gz");
   execFileSync("tar", ["-czf", file, "-C", root, ...members], { env: { ...process.env, COPYFILE_DISABLE: "1" } });
@@ -56,7 +59,7 @@ async function serve(t: test.TestContext, respond: () => { status: number; body?
 }
 
 test("the runtime parts match the parts packaging leaves out", () => {
-  assert.deepEqual([...PANEL_RUNTIME_PARTS], PANEL_PARTS);
+  assert.deepEqual([...PANEL_RUNTIME_PARTS], DOWNLOADED_RUNTIME_PARTS);
 });
 
 test("the runtime downloads once, verifies, and is shared by later servers", async t => {
@@ -76,6 +79,8 @@ test("the runtime downloads once, verifies, and is shared by later servers", asy
   assert.deepEqual(await readdir(data), [`1.2.3-${release.sha256.slice(0, 12)}`]);
   usePanelRuntime(first);
   assert.equal(await panelRuntimePath("serve-emu/src/cli.mjs"), join(root, "serve-emu/src/cli.mjs"));
+  const e2e = await panelRuntimePath("e2e");
+  assert.equal(e2e, join(root, "e2e"));
 });
 
 test("an archive that does not match its pin is refused and leaves nothing behind", async t => {
