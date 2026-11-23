@@ -45,7 +45,7 @@ test("agent-device commands are device_ tools with their compact schemas, and li
   for (const name of ["device_open", "device_snapshot", "device_press", "device_fill", "device_batch", "device_devices"]) assert.ok(names.includes(name), name);
   for (const name of ["device_logs", "device_perf", "open", "logs"]) assert.equal(names.includes(name), false, name);
   const press = tools.find(tool => tool.name === "device_press");
-  assert.deepEqual(press?.inputSchema.required?.toSorted(), ["session", "target"]);
+  assert.deepEqual(press?.inputSchema.required?.toSorted(), ["session"]);
   assert.equal(counts().connections, 0);
 });
 
@@ -54,8 +54,7 @@ test("forwarding preserves named sessions, metadata and native results without r
   const metadata = { "sentry-trace": "1234567890abcdef1234567890abcdef-1234567890abcdef-0" };
   await client.callTool({ name: "device_open", arguments: { session: "ios-task", app: "Example", platform: "ios", udid: "selected-ios" } });
   await client.callTool({ name: "device_open", arguments: { session: "android-task", app: "Example", platform: "android", serial: "selected-android" } });
-  const target = { kind: "ref", ref: "@e1" };
-  const input = { session: "android-task", target, settle: true };
+  const input = { session: "android-task", ref: "@e1", settle: true };
   const returned = await client.callTool({ name: "device_press", arguments: input, _meta: metadata });
   assert.deepEqual(returned, result);
   assert.deepEqual(calls[2], { name: "press", arguments: input, _meta: metadata });
@@ -162,7 +161,7 @@ test("batch steps obey each command's schema and inherit the outer session", asy
     const rejected = await client.callTool({ name: "device_batch", arguments: { session: "task", steps: [{ command: "snapshot", input }] } });
     assert.equal(rejected.isError, true);
   }
-  const press = await client.callTool({ name: "device_batch", arguments: { session: "task", steps: [{ command: "press", input: {} }] } });
+  const press = await client.callTool({ name: "device_batch", arguments: { session: "task", steps: [{ command: "press", input: { ref: 1 } }] } });
   assert.match(text(press), /Batch step 1: Invalid press arguments/);
   const omitted = await client.callTool({ name: "device_batch", arguments: { session: "task", steps: [{ command: "logs", input: {} }] } });
   assert.match(text(omitted), /Unknown Agent Device command: logs/);

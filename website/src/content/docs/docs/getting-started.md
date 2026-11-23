@@ -146,7 +146,7 @@ Follow your client's configuration format. Device panels and interactive recordi
 
 1. Ask **“Build and run my app in the simulator beside this chat.”** You can name iOS, Android, a simulator model, or a connected device.
 2. Choose or reuse a device. Selecting a stopped simulator or AVD boots it.
-3. Watch the app beside the conversation. Use **Select** to annotate an element, or open **Tools** and choose **App Intel**, **Testing**, **Logs**, **Performance**, **Storage**, or **TraceSift**. App Intelligence requires Mobile Dev 0.1.183 or later; if **App Intel** is missing, update Mobile Dev, fully quit and reopen your host, then start a new conversation.
+3. Watch the app beside the conversation. Use **Select** to annotate an element, or open **Tools** and choose **App Intel**, **Testing Studio**, **Logs**, **Performance**, **Storage**, or **TraceSift**. App Intelligence requires Mobile Dev 0.1.183 or later; if **App Intel** is missing, update Mobile Dev, fully quit and reopen your host, then start a new conversation.
 
 Your app's own build tools compile, install, and launch it. Mobile Dev does not install Xcode runtimes or replace your project's build system.
 

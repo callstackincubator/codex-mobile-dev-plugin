@@ -144,7 +144,8 @@ test("opening the panel links the browser page only for hosts without MCP Apps",
     await host.connect(hostSide);
     for (const name of ["mobile_open_simulator", "mobile_open_workspace", "mobile_open_app_intel"]) {
       const result = await host.callTool({ name, arguments: { platform: "android", ...(name === "mobile_open_app_intel" ? { appIntelScreen: "navigation:Profile" } : {}) } });
-      const texts = (result.content as Array<{ text: string }>).map(item => item.text);
+      // A repeat open adds a warning that the panel is already there; it is not part of the host link.
+      const texts = (result.content as Array<{ text: string }>).map(item => item.text).filter(text => !/Mobile Dev panel was already open/.test(text));
       const structured = result.structuredContent as { browserPanel?: { url: string } };
       if (ui) { assert.equal(texts.length, 1); assert.equal(structured.browserPanel, undefined); continue; }
       assert.equal(texts.length, 2);

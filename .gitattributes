@@ -8,3 +8,5 @@ packages/native/android-fps/collector.cpp text eol=lf
 packages/native/android-fps/perfetto/perfetto.* text eol=lf
 packages/native/telemetry/telemetry.[ch] text eol=lf
 tooling/native-telemetry.mjs text eol=lf
+# build.mjs and the shipped runtime hash these bytes against release.json.
+packages/runtimes/e2e/package-lock.json text eol=lf

@@ -28,7 +28,9 @@ test("the runtime can retry and start in a newly configured state directory", as
   const client = await runtime.connect();
   const state = await client.callTool({ name: "session", arguments: { action: "state-dir" } }, {});
   assert.equal(state.isError, false);
-  assert.equal(state.structuredContent?.stateDir, directory);
+  const reported = state.structuredContent?.stateDir
+    ?? state.content.find(item => item.type === "text")?.text;
+  assert.equal(reported, directory);
   assert.equal(process.env.AGENT_DEVICE_STATE_DIR, directory);
   await runtime.close();
   assert.ok((await stat(directory)).isDirectory(), "Closing the runtime keeps the configured state directory");

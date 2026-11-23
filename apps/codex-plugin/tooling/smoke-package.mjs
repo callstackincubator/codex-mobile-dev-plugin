@@ -127,6 +127,10 @@ try {
   for (const name of ["mobile_list_ios_devices", "mobile_list_android_devices", "mobile_boot_android_emulator", "mobile_android_stream_session", "mobile_ios_mirror_session", "mobile_ios_mirror_reset", "mobile_ios_mirror_close"]) assert.ok(tools.tools.some(tool => tool.name === name));
   for (const name of ["device_open", "device_snapshot", "device_press", "device_screenshot"]) assert.ok(tools.tools.some(tool => tool.name === name), name);
   await access(join(plugin, "dist/agent-device/tools.json"));
+  await access(join(plugin, "dist/e2e/node_modules/e2e/dist/cli/bin.js"));
+  await access(join(plugin, "dist/e2e/node_modules/@e2e-dev/mobile/dist/nodes.js"));
+  await access(join(plugin, "dist/e2e/release.json"));
+  await access(join(plugin, "dist/e2e/THIRD_PARTY_NOTICES.txt"));
   const physicalMirror = tools.tools.find(tool => tool.name === "mobile_ios_mirror_session");
   assert.deepEqual(physicalMirror._meta.ui.visibility, ["app"]);
   await access(join(plugin, "dist/serve-emu/src/cli.mjs"));

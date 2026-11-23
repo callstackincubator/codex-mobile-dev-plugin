@@ -99,6 +99,8 @@ export type PanelShared = {
   showRecording: ShowRecording;
   /** Lets host features add to an opening tool's result, such as a browser panel's link. */
   opened: PanelOpener;
+  /** A warning for the agent when the call comes while a panel is already open, or was opened before. */
+  reopenNotice?: () => string | undefined;
 };
 
 /** Services the panel runs on; tests replace them with fakes. */
@@ -133,7 +135,7 @@ export function createPanel({ baguette = new Baguette(), simulatorInput, copyScr
   };
 }
 
-function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, showRecording, opened }: PanelShared,
+function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, showRecording, opened, reopenNotice }: PanelShared,
   { baguette, simulatorInput, copyScreenshot, resourceSaving, inline }: Required<PanelOptions>) {
   const streams = new StreamSessions(baguette);
   const closeIosMirror = registerIosMirrorTools(server, APP_URI);
@@ -235,6 +237,7 @@ function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, sh
     }
     // Hosts can pass the model either form of a result, and Claude Code passes only the
     // structured one, so another place to show the panel goes into both.
+    const reopened = reopenNotice?.();
     const opening = await opened({ tool, target: panelTarget });
     let message = "Opened App Intelligence.";
     if (startBackend) {
@@ -244,6 +247,7 @@ function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, sh
     }
     const response = result({ ...status, panelTarget, ...opening ? { browserPanel: opening } : {} }, message);
     if (opening) response.content.push({ type: "text", text: opening.instructions });
+    if (reopened) response.content.push({ type: "text", text: reopened });
     return response;
   });
 
@@ -273,7 +277,7 @@ function registerPanel(server: McpServer, { android, cpu, fps, drivers, page, sh
   });
 
   openingTool("mobile_open_simulator", {
-    description: "Open or reuse the Mobile Dev panel alongside the chat to view and control a device. For app development, open before the first device launch unless the workflow is tool-only. Pass the requested platform, kind, or a discovered deviceId to select the device. Omit undecided fields. Starts the bundled backend without booting devices.",
+    description: "Open or reuse the Mobile Dev panel alongside the chat to view and control a device. For app development, open before the first device launch unless the workflow is tool-only. Pass the requested platform, kind, or a discovered deviceId to select the device; omit undecided fields. Pass workspaceTool \"testing\" to open or switch the reused panel to Testing Studio, which e2e recording and test runs need; with it, pass projectPath, your workspace root (\"\" when the chat has no project), so the tab selects that project, or No project for a folder that is not one. Starts the bundled backend without booting devices.",
     resourceUri: APP_URI, entrypoint: "thread",
   });
 

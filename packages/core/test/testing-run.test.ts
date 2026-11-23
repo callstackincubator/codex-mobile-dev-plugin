@@ -2,12 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { Readable } from "node:stream";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { existsSync } from "node:fs";
+import { basename, dirname, isAbsolute, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { existsSync, realpathSync } from "node:fs";
 import { readFileSync } from "node:fs";
-import { parseProgressLine, parseReport, progressConfigSource, reportDuration, reportSteps, reportStatus, runRecordedTest, runnerBin, runnerEnv, untilTestPath } from "../src/testing-run.ts";
+import { RUNNER_CWD, bundledConfigSource, bundledTargetName, parseProgressLine, parseReport, progressConfigSource, reportDuration, reportError, rewriteLaneConfig, sweepLaneFiles, LANE_FILE_PREFIX, reportSteps, reportStatus, runRecordedTest, runnerBin, runnerEnv, untilTestPath } from "../src/testing-run.ts";
+import { bundledE2eRoot } from "../src/e2e-runtime.ts";
 
 const FILE = "tests/a-recorded-flow.e2e.ts";
 
@@ -49,6 +51,25 @@ test("a step with no line of its own is not attributed to one", () => {
     source: { file: "", line: 0, column: 0 },
   } as never);
   assert.deepEqual(reportSteps(raw, FILE).map(step => step.line), [8]);
+});
+
+test("a failure no line can carry is still the run's reason", () => {
+  // `app.open` failing on a device has no source line, so no mark can show it; the reason must not
+  // be lost with the mark.
+  const raw = report([], "failed");
+  raw.run.results[0].attempts[0].steps.push({
+    id: "a:open", index: 0, kind: "app", api: "app.open", label: "", status: "failed", durationMs: 90,
+    source: { file: "", line: 0, column: 0 }, error: { message: "App com.example.android is not installed\nstack" },
+  } as never);
+  assert.equal(reportError(raw, FILE), "App com.example.android is not installed");
+  // With no failing step, the attempt's own error is the reason, then the run's.
+  const attempt = report([], "failed");
+  (attempt.run.results[0].attempts[0] as Record<string, unknown>).error = { message: "Device disconnected" };
+  assert.equal(reportError(attempt, FILE), "Device disconnected");
+  const run = report([], "failed");
+  (run.run as Record<string, unknown>).errors = [{ message: "No target matched android" }];
+  assert.equal(reportError(run, FILE), "No target matched android");
+  assert.equal(reportError(report([{ line: 8, status: "passed" }], "passed"), FILE), undefined);
 });
 
 test("a retried test is read from the attempt that decided it", () => {
@@ -95,7 +116,6 @@ function spawner(stdout: string, exitCode = 0, seen: { command?: string; args?: 
   return ((command: string, args: readonly string[], options: { cwd?: string }) => {
     if (process.platform === "win32") {
       assert.equal(command, process.execPath);
-      assert.equal(args[0], join(options.cwd!, "node_modules/e2e/cli.js"));
       seen.command = args[0]; seen.args = args.slice(1);
     } else { seen.command = command; seen.args = args; }
     seen.cwd = options.cwd;
@@ -121,28 +141,31 @@ test("the project's own runner is spawned, never a downloaded one", async () => 
   assert.equal(result.output, undefined, "there are lines to mark, so the raw output is not needed");
 });
 
-test("play until here runs a truncated copy beside the test, and takes it away again", async () => {
+test("a preview run uses an isolated temporary project and leaves the project untouched", async () => {
   const root = await project();
   await mkdir(join(root, "tests"), { recursive: true });
   await writeFile(join(root, FILE), "the whole flow\n");
-  const until = untilTestPath(FILE);
-  assert.equal(until, "tests/a-recorded-flow.mobile-dev-until.e2e.ts", "a sibling, and still a test the project's own patterns discover");
-  // The report names the file the runner ran, which is the copy; its lines are the real file's.
-  const document = JSON.stringify(report([{ line: 8, status: "passed" }])).replaceAll(FILE, until);
+  const configPath = join(root, "e2e.config.ts");
+  await writeFile(configPath, "export default { targets: [] };\n");
+  const document = JSON.stringify(report([{ line: 8, status: "passed" }]));
   const seen: { command?: string; args?: readonly string[]; cwd?: string } = {};
   let copy: string | undefined;
-  const result = await runRecordedTest({ projectPath: root, relativePath: FILE, untilSource: "the flow, cut short\n" }, {
+  let workspace: string | undefined;
+  const result = await runRecordedTest({ projectPath: root, relativePath: FILE, configPath, untilSource: "the current preview\n" }, {
     spawner: ((command: string, args: readonly string[], options: { cwd?: string }) => {
-      // Read while the run is in flight: afterwards it is gone, which is the other half of this.
-      copy = readFileSync(join(root, until), "utf8");
+      workspace = dirname(args[args.indexOf("--config") + 1]);
+      copy = readFileSync(join(workspace, FILE), "utf8");
       return spawner(document, 0, seen)(command, args, options as never);
     }) as never,
   });
-  assert.deepEqual(seen.args, ["run", until, "--reporter", "json"]);
-  assert.equal(copy, "the flow, cut short\n");
-  assert.deepEqual(result.steps.map(step => step.line), [8], "the copy's lines are the file's lines, so no mark has to be translated");
-  assert.equal(existsSync(join(root, until)), false, "the copy belongs to one run and nothing else");
-  assert.equal(readFileSync(join(root, FILE), "utf8"), "the whole flow\n", "a partial run must never cut the saved test down to the part that was tried");
+  assert.deepEqual(seen.args, ["run", FILE, "--reporter", "json", "--config", join(workspace!, "e2e.config.mts")]);
+  assert.notEqual(workspace, root);
+  assert.equal(seen.cwd, root, "a daemon the run starts inherits a folder that outlives the run");
+  assert.equal(copy, "the current preview\n");
+  assert.deepEqual(result.steps.map(step => step.line), [8]);
+  assert.equal(existsSync(workspace!), false, "the isolated workspace is removed after the run");
+  assert.equal(existsSync(root), true);
+  assert.equal(readFileSync(join(root, FILE), "utf8"), "the whole flow\n");
 });
 
 test("a run that produced no report explains itself with the runner's own words", async () => {
@@ -194,6 +217,12 @@ test("the runner is not handed the app's pinned agent-device state directory", (
   assert.equal(environment.PATH, "/usr/bin", "everything else the project needs is still there");
   assert.equal(environment.HOME, "/home/someone");
   assert.equal(environment.NO_COLOR, "1", "the json reporter's output must not carry escape codes");
+});
+
+test("a bundled run gets the app's own state directory, never agent-device's shared default", () => {
+  const environment = runnerEnv({ PATH: "/usr/bin", AGENT_DEVICE_STATE_DIR: "/elsewhere" }, "/app/own-state");
+  assert.equal(environment.AGENT_DEVICE_STATE_DIR, "/app/own-state");
+  assert.equal(environment.PATH, "/usr/bin");
 });
 
 test("the generated config adds a reporter and changes nothing else", () => {
@@ -343,4 +372,252 @@ test("the selected target reaches the runner, so an Android recording does not r
   await runRecordedTest({ projectPath: root, relativePath: FILE, target: "android" },
     { spawner: spawner(JSON.stringify(report([{ line: 8, status: "passed" }])), 0, seen) });
   assert.deepEqual(seen.args, ["run", FILE, "--reporter", "json", "--target", "android"]);
+});
+
+test("bundled mode runs and cleans an isolated Testing Studio workspace", async () => {
+  const root = await project();
+  const runnerCwd = join(await mkdtemp(join(tmpdir(), "testing-run-cwd-")), "e2e-runner");
+  const seen: { command?: string; args?: readonly string[]; cwd?: string } = {};
+  const result = await runRecordedTest({
+    projectPath: root, relativePath: FILE, untilSource: 'test("x", async () => {});\n',
+    runtime: { mode: "bundled", root: bundledE2eRoot() },
+    bundledTarget: { platform: "ios", bundleId: "com.example.app" },
+  }, { spawner: spawner(JSON.stringify(report([{ line: 1, status: "passed" }])), 0, seen), runnerCwd });
+  assert.equal(result.status, "passed");
+  const bundledCli = process.platform === "win32" ? seen.command : seen.args?.[0];
+  assert.match((bundledCli ?? "").replaceAll("\\", "/"), /e2e\/dist\/cli\/bin\.js$/);
+  assert.ok(seen.args?.some((value, index) => value === "--target" && seen.args?.[index + 1] === "ios"));
+  const config = seen.args![seen.args!.indexOf("--config") + 1];
+  assert.ok(isAbsolute(config) && dirname(config).includes("mobile-dev-e2e-run-"), "the CLI gets the workspace's config by absolute path");
+  // macOS's tmpdir is a symlink; a linked config path makes the runner report every step at "unknown".
+  // Compare against the native resolver, as the workspace uses: the JS one keeps Windows 8.3 short
+  // names (C:\Users\RUNNER~1) that the native one expands.
+  assert.ok(config.startsWith(realpathSync.native(tmpdir())), "the workspace is given by its real path");
+  assert.equal(existsSync(dirname(config)), false, "temporary config, test and node_modules link are cleaned");
+  assert.equal(seen.cwd, runnerCwd, "the daemon a run starts must not inherit the workspace it outlives");
+  assert.equal(existsSync(seen.cwd!), true, "the spawn cwd survives the workspace's removal");
+});
+
+test("a bundled run spawns from the app's stable runner folder by default", async () => {
+  const seen: { command?: string; args?: readonly string[]; cwd?: string } = {};
+  await runRecordedTest({
+    projectPath: await project(), relativePath: FILE, untilSource: 'test("x", async () => {});\n',
+    runtime: { mode: "bundled", root: bundledE2eRoot() }, bundledTarget: { platform: "ios", bundleId: "com.example.app" },
+  }, { spawner: spawner(JSON.stringify(report([{ line: 1, status: "passed" }])), 0, seen) });
+  assert.equal(seen.cwd, RUNNER_CWD);
+  assert.ok(!seen.cwd.startsWith(tmpdir()));
+  assert.equal(existsSync(RUNNER_CWD), true);
+});
+
+test("bundled deterministic tests need no model and agent tests request one", async () => {
+  assert.doesNotMatch(bundledConfigSource({ platform: "android", bundleId: "com.example.app" }), /agents:/);
+  await assert.rejects(runRecordedTest({
+    projectPath: "/unused", relativePath: FILE, untilSource: 'test("x", async ({ agent }) => { await agent.extract("title"); });\n',
+    runtime: { mode: "bundled", root: bundledE2eRoot() }, bundledTarget: { platform: "android", bundleId: "com.example.app" },
+  }), /Choose a provider and model/);
+});
+
+test("a device-pinned bundled config names the device and gives the target its own name", () => {
+  const source = bundledConfigSource({ platform: "ios", bundleId: "com.example.app", device: "A1B2-C3" });
+  assert.match(source, /name: "ios-A1B2-C3"/);
+  assert.match(source, /mobile\(\{ platform: "ios", device: "A1B2-C3" \}\)/);
+  assert.match(source, /workers: 1/);
+  assert.equal(bundledTargetName({ platform: "android", bundleId: "x", device: "emulator-5554" }), "android-emulator-5554");
+  assert.equal(bundledTargetName({ platform: "android", bundleId: "x", device: "avd:Pixel 8" }), "android-avd-Pixel-8");
+  // Without a device nothing changes from a single run.
+  const plain = bundledConfigSource({ platform: "ios", bundleId: "com.example.app" });
+  assert.match(plain, /name: "ios"/);
+  assert.doesNotMatch(plain, /device:/);
+});
+
+test("a pinned bundled run passes its own target and output directory, removed afterwards", async () => {
+  const root = await project();
+  const seen: { command?: string; args?: readonly string[]; cwd?: string } = {};
+  await runRecordedTest({
+    projectPath: root, relativePath: FILE, untilSource: 'test("x", async () => {});\n',
+    runtime: { mode: "bundled", root: bundledE2eRoot() },
+    bundledTarget: { platform: "android", bundleId: "com.example.app", device: "emulator-5554" },
+  }, { spawner: spawner(JSON.stringify(report([{ line: 1, status: "passed" }])), 0, seen) });
+  const args = seen.args ?? [];
+  assert.equal(args[args.indexOf("--target") + 1], "android-emulator-5554");
+  const output = args[args.indexOf("--output") + 1];
+  const workspace = dirname(args[args.indexOf("--config") + 1]);
+  assert.ok(output?.startsWith(workspace), "the output lives inside the lane's own workspace");
+  assert.notEqual(seen.cwd, workspace);
+  assert.equal(existsSync(output!), false);
+});
+
+test("aborting a run kills its process and reports it as cancelled", async () => {
+  const root = await project();
+  let killed = false;
+  const controller = new AbortController();
+  const hanging = (() => {
+    const child = new EventEmitter() as EventEmitter & { stdout: Readable; stderr: Readable; kill: () => void };
+    child.stdout = Readable.from([]); child.stderr = Readable.from([]);
+    child.kill = () => { killed = true; };
+    return child;
+  }) as never;
+  const run = runRecordedTest({
+    projectPath: root, relativePath: FILE, untilSource: 'test("x", async () => {});\n',
+    runtime: { mode: "bundled", root: bundledE2eRoot() }, bundledTarget: { platform: "ios", bundleId: "a.b" },
+  }, { spawner: hanging, signal: controller.signal });
+  setTimeout(() => controller.abort(), 20);
+  await assert.rejects(run, /cancelled/);
+  assert.equal(killed, true);
+});
+
+// ---- Project-mode matrix lanes: the config text, copied with one target's device pinned -------------------
+
+const LANE_CONFIG = `import { mobile } from "@e2e-dev/mobile";
+import { chatgpt } from "e2e/oauth/chatgpt";
+const shared = { settle: 300 };
+
+export default {
+  agents: { default: { model: chatgpt("gpt-6-luna") } },
+  targets: [
+    {
+      name: "ios",
+      engine: mobile({ platform: "ios", settle: 300 }),
+      app: { bundleId: "com.example.app" },
+    },
+    {
+      name: "android",
+      engine: mobile({ platform: "android", transition: { mode: "fast" } }),
+      app: { bundleId: "com.example.app" },
+    },
+  ],
+};
+`;
+
+test("a lane pins the device and session on its own target only, keeping the other options", () => {
+  const out = rewriteLaneConfig(LANE_CONFIG, "ios", "UDID-1", "lane-1");
+  assert.match(out, /engine: mobile\(\{ \.\.\.\(\{ platform: "ios", settle: 300 \}\), device: "UDID-1", session: "lane-1" \}\)/);
+  assert.match(out, /engine: mobile\(\{ platform: "android", transition: \{ mode: "fast" \} \}\)/, "the other target is untouched");
+  assert.equal(out, LANE_CONFIG.replace('mobile({ platform: "ios", settle: 300 })', 'mobile({ ...({ platform: "ios", settle: 300 }), device: "UDID-1", session: "lane-1" })'), "nothing else changes");
+});
+
+test("the second target is the one rewritten when it is the one named", () => {
+  const out = rewriteLaneConfig(LANE_CONFIG, "android", "emulator-5554", "s");
+  assert.match(out, /mobile\(\{ \.\.\.\(\{ platform: "android", transition: \{ mode: "fast" \} \}\), device: "emulator-5554", session: "s" \}\)/);
+  assert.match(out, /mobile\(\{ platform: "ios", settle: 300 \}\)/);
+});
+
+test("a variable argument and a spread are kept by spreading them", () => {
+  const variable = rewriteLaneConfig('const opts = { platform: "ios" };\nexport default { targets: [\n{ name: "ios", engine: mobile(opts), app: {} },\n] };', "ios", "D", "s");
+  assert.match(variable, /mobile\(\{ \.\.\.\(opts\), device: "D", session: "s" \}\)/);
+  const spread = rewriteLaneConfig('export default { targets: [\n{ name: "a", engine: mobile({ ...base, platform: "android" }) },\n] };', "a", "D", "s");
+  assert.match(spread, /mobile\(\{ \.\.\.\(\{ \.\.\.base, platform: "android" \}\), device: "D", session: "s" \}\)/);
+  const none = rewriteLaneConfig('export default { targets: [{ name: "a", engine: mobile() }] };', "a", "D", "s");
+  assert.match(none, /mobile\(\{ device: "D", session: "s" \}\)/);
+});
+
+test("parentheses inside strings and comments do not end the call early", () => {
+  const out = rewriteLaneConfig('export default { targets: [{ name: "a", engine: mobile({ platform: "ios", label: ")(" /* ) */ }) }] };', "a", "D", "s");
+  assert.match(out, /session: "s" \}\) \}\] \};$/);
+});
+
+test("a target whose engine is not a direct mobile call, or that does not exist, is refused with a reason", () => {
+  assert.throws(() => rewriteLaneConfig('export default { targets: [{ name: "web", engine: playwright({}) }] };', "web", "D", "s"), /not a direct mobile\(\.\.\.\) call/);
+  assert.throws(() => rewriteLaneConfig('export default { targets: [{ name: "ios", engine: makeEngine("ios") }] };', "ios", "D", "s"), /not a direct mobile/);
+  assert.throws(() => rewriteLaneConfig('const targets = []; export default { targets };', "ios", "D", "s"), /no literal `targets/);
+  assert.throws(() => rewriteLaneConfig(LANE_CONFIG, "tvos", "D", "s"), /no target with that name/);
+});
+
+async function laneProject() {
+  const root = await project();
+  await writeFile(join(root, "e2e.config.ts"), LANE_CONFIG);
+  await mkdir(join(root, "tests"), { recursive: true });
+  return root;
+}
+
+/** A spawn that records the lane config as it is while the run is alive, then answers. */
+function laneSpawner(seen: { args?: readonly string[]; cwd?: string; config?: string; existed?: string[] }) {
+  return ((command: string, args: readonly string[], options: { cwd?: string }) => {
+    seen.args = args; seen.cwd = options.cwd;
+    const config = args[args.indexOf("--config") + 1]!;
+    const imported = config.endsWith(".progress.mts") ? readFileSync(config, "utf8").match(/file:\/\/[^"]+/)![0] : undefined;
+    seen.config = readFileSync(imported ? fileURLToPath(imported) : config, "utf8");
+    return spawner(JSON.stringify(report([{ line: 8, status: "passed" }])))(command, args, options as never);
+  }) as never;
+}
+
+test("a project lane runs a hidden rewritten copy beside the config, with its own output, and leaves nothing behind", async () => {
+  const root = await laneProject();
+  const seen: { args?: readonly string[]; cwd?: string; config?: string } = {};
+  const result = await runRecordedTest({ projectPath: root, relativePath: FILE, configPath: join(root, "e2e.config.ts"), target: "ios",
+    projectLane: { target: "ios", device: "UDID-1" }, runtime: { mode: "project", root } }, { spawner: laneSpawner(seen), onProgress: () => undefined });
+  assert.equal(result.status, "passed");
+  const args = seen.args ?? [];
+  assert.equal(seen.cwd, root);
+  assert.equal(args[args.indexOf("--target") + 1], "ios");
+  const config = args[args.indexOf("--config") + 1]!;
+  assert.equal(dirname(config), root, "the lane's config sits beside the project's own");
+  assert.ok(basename(config).startsWith(LANE_FILE_PREFIX));
+  assert.match(seen.config!, /device: "UDID-1", session: "mobile-dev-lane-/);
+  assert.notEqual(args[args.indexOf("--output") + 1], undefined);
+  assert.equal(dirname(args[args.indexOf("--output") + 1]!), root, "the runner refuses an --output outside the root it runs from");
+  assert.equal(existsSync(args[args.indexOf("--output") + 1]!), false, "the output directory is removed");
+  assert.deepEqual((await readdir(root)).filter(name => name.startsWith(LANE_FILE_PREFIX)), [], "the lane files are removed");
+  assert.equal(readFileSync(join(root, "e2e.config.ts"), "utf8"), LANE_CONFIG, "the project's own config is never touched");
+});
+
+test("two lanes at once use different files and different sessions, and one finishing removes only its own", async () => {
+  const root = await laneProject();
+  const a: { args?: readonly string[]; config?: string } = {}, b: { args?: readonly string[]; config?: string } = {};
+  const request = (device: string) => ({ projectPath: root, relativePath: FILE, configPath: join(root, "e2e.config.ts"), target: "ios", projectLane: { target: "ios", device } });
+  await Promise.all([
+    runRecordedTest(request("A"), { spawner: laneSpawner(a) }),
+    runRecordedTest(request("B"), { spawner: laneSpawner(b) }),
+  ]);
+  assert.notEqual(a.args![a.args!.indexOf("--config") + 1], b.args![b.args!.indexOf("--config") + 1]);
+  assert.notEqual(a.args![a.args!.indexOf("--output") + 1], b.args![b.args!.indexOf("--output") + 1]);
+  assert.notEqual(a.config!.match(/session: "([^"]+)"/)![1], b.config!.match(/session: "([^"]+)"/)![1]);
+  assert.match(a.config!, /device: "A"/);
+  assert.match(b.config!, /device: "B"/);
+});
+
+test("a lane of the editor's own text runs in an isolated mirror and writes nothing into the project", async () => {
+  const root = await laneProject();
+  const seen: { args?: readonly string[]; cwd?: string; config?: string } = {};
+  const before = await readdir(root);
+  await runRecordedTest({ projectPath: root, relativePath: FILE, configPath: join(root, "e2e.config.ts"), untilSource: 'test("x", async () => {});\n',
+    projectLane: { target: "android", device: "emulator-5554" } }, { spawner: laneSpawner(seen), onProgress: () => undefined });
+  assert.notEqual(seen.cwd, root);
+  assert.equal(dirname(seen.args![seen.args!.indexOf("--output") + 1]!), seen.cwd, "the output sits inside the mirror the runner runs from");
+  assert.ok(seen.cwd!.includes("mobile-dev-e2e-lane-run-"));
+  assert.equal(existsSync(seen.cwd!), false, "the mirror is removed");
+  assert.deepEqual(await readdir(root), before, "the project folder is exactly as it was");
+});
+
+test("a lane whose target is not a direct mobile call fails before the runner starts", async () => {
+  const root = await project();
+  await writeFile(join(root, "e2e.config.ts"), 'export default { targets: [{ name: "ios", engine: makeEngine() }] };');
+  let spawned = false;
+  await assert.rejects(runRecordedTest({ projectPath: root, relativePath: FILE, configPath: join(root, "e2e.config.ts"), projectLane: { target: "ios", device: "D" } },
+    { spawner: (() => { spawned = true; throw new Error("no"); }) as never }), /not a direct mobile/);
+  assert.equal(spawned, false);
+});
+
+test("the lane files are removed when the run is cancelled", async () => {
+  const root = await laneProject();
+  const controller = new AbortController();
+  const hanging = (() => {
+    const child = new EventEmitter() as EventEmitter & { stdout: Readable; stderr: Readable; kill: () => void };
+    child.stdout = Readable.from([""]); child.stderr = Readable.from([""]); child.kill = () => undefined;
+    queueMicrotask(() => setTimeout(() => controller.abort(), 20));
+    return child;
+  }) as never;
+  await assert.rejects(runRecordedTest({ projectPath: root, relativePath: FILE, configPath: join(root, "e2e.config.ts"), projectLane: { target: "ios", device: "D" } },
+    { spawner: hanging, signal: controller.signal, onProgress: () => undefined }), /cancelled/);
+  assert.deepEqual((await readdir(root)).filter(name => name.startsWith(LANE_FILE_PREFIX)), []);
+});
+
+test("the sweep removes lane files of a dead process and keeps those of a live one", async () => {
+  const root = await project();
+  await writeFile(join(root, `${LANE_FILE_PREFIX}999999999-dead.ts`), "");
+  await writeFile(join(root, `${LANE_FILE_PREFIX}999999999-dead.progress.mts`), "");
+  await writeFile(join(root, `${LANE_FILE_PREFIX}${process.pid}-live.ts`), "");
+  await writeFile(join(root, "e2e.config.ts"), "");
+  await sweepLaneFiles(root);
+  assert.deepEqual((await readdir(root)).filter(name => name !== "node_modules").sort(), [`${LANE_FILE_PREFIX}${process.pid}-live.ts`, "e2e.config.ts"].sort());
 });

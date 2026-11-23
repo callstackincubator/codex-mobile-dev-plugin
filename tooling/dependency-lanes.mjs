@@ -7,8 +7,8 @@
  * so the later lanes rebuild only their own.
  */
 export const dependencyLanes = [
-  { name: "js", label: "npm packages, device runtimes and GitHub Actions", groups: ["npm", "agent-device", "serve-emu", "github-actions"],
-    commands: ["npm ci --no-audit --no-fund", "npm run vendor:agent-device", "npm run catalog:agent-device", "npm run vendor:serve-emu"] },
+  { name: "js", label: "npm packages, device runtimes and GitHub Actions", groups: ["npm", "agent-device", "e2e", "serve-emu", "github-actions"],
+    commands: ["npm ci --no-audit --no-fund", "npm run vendor:agent-device", "npm run catalog:agent-device", "npm run vendor:e2e", "npm run vendor:serve-emu"] },
   { name: "sentry-native", label: "sentry-native", helpers: "all" },
   { name: "baguette", label: "Baguette", helpers: ["baguette"] },
   { name: "libimobiledevice", label: "libimobiledevice", helpers: ["ios-logs"] },
@@ -28,7 +28,7 @@ export function laneHelpers(lane, helperNames) {
   return lane.helpers ?? [];
 }
 
-const groups = { npm: "npm", "agent-device": "agent-device runtime", "serve-emu": "serve-emu runtime", "github-actions": "GitHub Actions", native: "Native", forked: "Forks and vendored sources" };
+const groups = { npm: "npm", "agent-device": "agent-device runtime", e2e: "e2e Studio runtime", "serve-emu": "serve-emu runtime", "github-actions": "GitHub Actions", native: "Native", forked: "Forks and vendored sources" };
 
 /** Markdown tables of applied and held-back updates. */
 export function renderUpdates(updates, { apply = true, cargoChanges = 0 } = {}) {

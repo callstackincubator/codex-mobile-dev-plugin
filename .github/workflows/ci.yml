@@ -44,12 +44,14 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             packages/runtimes/agent-device/package-lock.json
+            packages/runtimes/e2e/package-lock.json
             packages/runtimes/serve-emu/package-lock.json
 
       - name: Install dependencies and device runtimes
         run: |
           npm ci --no-audit --no-fund
           npm run vendor:agent-device
+          npm run vendor:e2e
           npm run vendor:serve-emu
 
       # The release workflow also runs the full suite on a Mac with Xcode and native helpers.

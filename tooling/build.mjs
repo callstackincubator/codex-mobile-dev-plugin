@@ -106,6 +106,19 @@ await writeFile("dist/agent-device/release.json", JSON.stringify({
 }, null, 2) + "\n");
 // The commands the plugin servers register without starting the runtime (npm run catalog:agent-device).
 await copyFile(`${runtime}/tools.json`, "dist/agent-device/tools.json");
+const e2eRuntime = "packages/runtimes/e2e";
+const e2eLock = await readFile(`${e2eRuntime}/package-lock.json`, "utf8");
+const e2eRelease = JSON.parse(await readFile(`${e2eRuntime}/release.json`, "utf8"));
+if (createHash("sha256").update(e2eLock).digest("hex") !== e2eRelease.lockfileSHA256)
+  throw new Error("Run npm run vendor:e2e after changing the pinned e2e runtime.");
+for (const name of Object.keys(e2eRelease.packages ?? {})) {
+  const installed = JSON.parse(await readFile(`${e2eRuntime}/node_modules/${name}/package.json`, "utf8"));
+  if (installed.version !== e2eRelease.packages[name]?.version)
+    throw new Error(`Run npm run vendor:e2e: ${name} does not match release.json.`);
+}
+await cp(`${e2eRuntime}/node_modules`, "dist/e2e/node_modules", { recursive: true, verbatimSymlinks: true });
+for (const file of ["package.json", "package-lock.json", "release.json", "THIRD_PARTY_NOTICES.txt"])
+  await copyFile(`${e2eRuntime}/${file}`, `dist/e2e/${file}`);
 await buildServeEmu("dist/serve-emu");
 // The host-neutral runtime: the shared server, its services and the MCP Apps panel
 // as hosts without their own chrome load it. A host that adds to them builds its

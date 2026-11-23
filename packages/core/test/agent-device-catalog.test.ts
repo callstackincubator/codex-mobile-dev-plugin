@@ -32,11 +32,11 @@ test("compact catalog keeps all official operations, output contracts and typed 
   const press = tool("press");
   const upstreamPress = upstreamCatalog.tools.find(candidate => candidate.name === "press");
   assert.ok(upstreamPress);
-  const target = press.inputSchema.properties?.target;
-  assert.ok(target && "oneOf" in target);
-  const originalTarget = upstreamPress.inputSchema.properties?.target;
-  assert.ok(originalTarget && "oneOf" in originalTarget);
-  assert.deepEqual(target.oneOf, originalTarget.oneOf);
+  // 0.21.37 names the element with one of ref, selector or x+y instead of a typed target union.
+  for (const name of ["ref", "selector", "x", "y"]) {
+    assert.ok(press.inputSchema.properties?.[name], `press takes ${name}`);
+    assert.deepEqual(press.inputSchema.properties?.[name], upstreamPress.inputSchema.properties?.[name]);
+  }
   assert.deepEqual(press.inputSchema.properties?.timeoutMs, upstreamPress.inputSchema.properties?.timeoutMs);
 });
 
@@ -64,12 +64,12 @@ test("device selection belongs to setup and discovery while interactions require
 test("packaged defaults do not bypass native session device binding", async () => {
   const configUrl = new URL("../../runtimes/agent-device/config.json", import.meta.url);
   const cliConfigUrl = new URL("../../runtimes/agent-device/node_modules/agent-device/dist/src/cli-config.js", import.meta.url);
-  // These exports belong to the pinned 0.21.33 runtime; keep this check with its version update.
+  // These exports belong to the pinned 0.21.37 runtime; keep this check with its version update.
   const configuration = await import(cliConfigUrl.href);
-  assert.equal(typeof configuration.t, "function");
+  assert.equal(typeof configuration.r, "function");
   for (const command of ["snapshot", "press", "close"]) {
-    const defaults = configuration.t({ command, cwd: "/", cliFlags: { session: "android-task" }, env: { AGENT_DEVICE_CONFIG: configUrl.pathname } });
-    assert.deepEqual(defaults, {}, `${command} defaults must reuse the existing native session`);
+    const defaults = configuration.r({ command, cwd: "/", cliFlags: { session: "android-task" }, env: { AGENT_DEVICE_CONFIG: configUrl.pathname } });
+    assert.deepEqual(defaults, { flags: {} }, `${command} defaults must reuse the existing native session`);
   }
 });
 

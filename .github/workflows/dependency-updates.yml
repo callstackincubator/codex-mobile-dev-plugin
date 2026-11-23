@@ -77,6 +77,7 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             packages/runtimes/agent-device/package-lock.json
+            packages/runtimes/e2e/package-lock.json
             packages/runtimes/serve-emu/package-lock.json
 
       # Same toolchain as the release build, so rebuilt helpers match what ships.
@@ -94,6 +95,7 @@ jobs:
         run: |
           npm ci --no-audit --no-fund
           npm run vendor:agent-device
+          npm run vendor:e2e
           npm run vendor:serve-emu
 
       # Applies, prepares and commits each lane on the update branch, then runs the

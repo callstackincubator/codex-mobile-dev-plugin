@@ -67,7 +67,7 @@ async function started(screens: TestingDeviceTree[] = [EXPLORE]) {
   const drafts = new TestDraftStore(await mkdtemp(join(tmpdir(), "mobile-dev-agent-drafts-")));
   const recordings = new TestingAgentRecordings(device.devices, drafts);
   recordings.setContext(CONTEXT);
-  recordings.begin({ title: "the explore details screen", goal: "cover the Explore Details landmarks" });
+  await recordings.begin({ title: "the explore details screen", goal: "cover the Explore Details landmarks" });
   return { ...device, recordings, drafts };
 }
 
@@ -76,15 +76,15 @@ test("a recording refuses to start when the panel has nothing selected", async (
   const recordings = new TestingAgentRecordings(devices);
   // No project and no device is not something to pick for the user: the project picker is an OS
   // folder dialog, which must not open inside an agent's turn.
-  assert.throws(() => recordings.begin({ title: "t", goal: "g" }), /an e2e project, no a booted simulator/);
-  recordings.setContext({ ...CONTEXT, bundleId: "" });
-  assert.throws(() => recordings.begin({ title: "t", goal: "g" }), /bundle id/);
+  await assert.rejects(() => recordings.begin({ title: "t", goal: "g" }), /The Testing Studio tab is not open\. If no Mobile Dev panel is showing in this chat, call mobile_open_simulator with workspaceTool "testing" once.*do not open another/);
+  recordings.setPanelProject("/project");
+  await assert.rejects(() => recordings.begin({ title: "t", goal: "g" }), /Boot an iOS simulator or Android emulator and mirror it/);
   assert.equal(recordings.state().status, "idle");
 });
 
 test("a second recording is refused rather than stomping on the first", async () => {
   const { recordings } = await started();
-  assert.throws(() => recordings.begin({ title: "another", goal: "g" }), /already in flight/);
+  await assert.rejects(() => recordings.begin({ title: "another", goal: "g" }), /already in flight/);
   assert.equal(recordings.state().title, "the explore details screen");
 });
 
@@ -233,18 +233,18 @@ test("aborting keeps what was recorded and lets the next recording start", async
   assert.equal(recordings.state().steps.length, 1, "whatever was recorded is the user's to keep");
   // Aborting an idle recorder is not an error; the panel's Stop button can always be pressed.
   assert.deepEqual(await recordings.abort({ reason: "again" }), { ok: true, steps: 1, wasRecording: false });
-  recordings.begin({ title: "another", goal: "g" });
+  await recordings.begin({ title: "another", goal: "g" });
   assert.deepEqual(recordings.state().steps, []);
 });
 
-test("a selection the panel cannot act on clears the context rather than half-setting it", () => {
+test("a selection the panel cannot act on clears the context rather than half-setting it", async () => {
   const { devices } = fakeDevices([EXPLORE]);
   const recordings = new TestingAgentRecordings(devices);
   const server = { registerTool: () => undefined, registerResource: () => undefined } as never;
   registerTestingAgentTools(server, devices, recordings);
   recordings.setContext(CONTEXT);
   recordings.clearContext();
-  assert.throws(() => recordings.begin({ title: "t", goal: "g" }), /Testing tab/);
+  await assert.rejects(() => recordings.begin({ title: "t", goal: "g" }), /Testing Studio tab/);
 });
 
 test("the five model tools are visible to the model and the panel's two are not", () => {
@@ -326,7 +326,7 @@ test("the read a step already took is the read the next screen call answers with
   const device = fakeDevices([EXPLORE, LIST]);
   const recordings = new TestingAgentRecordings(device.devices);
   recordings.setContext(CONTEXT);
-  recordings.begin({ title: "t", goal: "g" });
+  await recordings.begin({ title: "t", goal: "g" });
 
   const screen = await recordings.screen();
   assert.equal(device.reads(), 1);

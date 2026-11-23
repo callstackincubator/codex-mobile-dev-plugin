@@ -37,7 +37,7 @@ export const SimulatorView = memo(function SimulatorView({ platform, visible }: 
       </div>
       <div data-element="stopped" className="absolute inset-0 z-10 bg-background/70" hidden><Empty><EmptyHeader><EmptyMedia variant="icon"><PowerIcon /></EmptyMedia><EmptyTitle>Device stopped</EmptyTitle></EmptyHeader><EmptyContent><Button data-element="start-device" size="sm">Start device</Button></EmptyContent></Empty></div>
       <ScreenAnnotationOverlay store={annotations} />
-      <TestRecorderOverlay store={annotations} />
+      <TestRecorderOverlay store={annotations} platform={platform} />
     </section>
     <footer className={sidebar ? "absolute bottom-2 right-2 z-30 flex items-center text-[10px] text-muted-foreground" : "flex h-11 shrink-0 items-center gap-x-3 border-t px-2 text-[10px] text-muted-foreground"}>
       <span data-element="notice" className="sr-only" hidden><span data-element="notice-message" /></span>

@@ -24,6 +24,8 @@ const RUNTIME_FILES = [
   "android-cpu/LICENSE", "serve-emu/src/cli.mjs", "serve-emu/vendor/scrcpy-server-v4.0",
   "agent-device/node_modules/agent-device/dist/apple/runner/AgentDeviceRunner/AgentDeviceRunner.xcodeproj/project.pbxproj",
   "agent-device/tools.json",
+  "e2e/node_modules/e2e/dist/cli/bin.js", "e2e/node_modules/@e2e-dev/mobile/dist/nodes.js",
+  "e2e/package-lock.json", "e2e/release.json", "e2e/THIRD_PARTY_NOTICES.txt",
 ];
 
 export async function stageRuntime(directory, { panel = true } = {}) {
