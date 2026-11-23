@@ -3537,10 +3537,11 @@ function inspectionRoutes() {
     {
       method: "GET",
       path: "/api/accessibility",
-      handler: async ({ deps }) => {
+      handler: async ({ deps, request }) => {
         const { readAccessibilitySnapshot, requestContext, errorResponse } = deps;
         try {
-          return Response.json(await readAccessibilitySnapshot(requestContext));
+          const cacheMs = request.headers.get("cache-control") === "no-cache" ? 0 : void 0;
+          return Response.json(await readAccessibilitySnapshot(requestContext, cacheMs));
         } catch (err) {
           return errorResponse(err);
         }
@@ -5848,7 +5849,7 @@ var ActiveDeviceSession = class {
   readAccessibilitySnapshot(load, cacheMs = 2500) {
     this.assertUsable();
     const now = this.#now();
-    if (this.#accessibilitySnapshotCache && this.#accessibilitySnapshotCache.expiresMs > now) {
+    if (cacheMs > 0 && this.#accessibilitySnapshotCache && this.#accessibilitySnapshotCache.expiresMs > now) {
       return Promise.resolve(this.#accessibilitySnapshotCache.snapshot);
     }
     if (this.#accessibilitySnapshotInFlight) {
@@ -9427,12 +9428,18 @@ async function main() {
     })();
     return stopping;
   };
-  process.once("SIGINT", () => {
+  const shutdown = () => {
     void stop().catch((err) => console.error("Shutdown cleanup failed:", err)).finally(() => exitAfterDiagnostics(0));
-  });
-  process.once("SIGTERM", () => {
-    void stop().catch((err) => console.error("Shutdown cleanup failed:", err)).finally(() => exitAfterDiagnostics(0));
-  });
+  };
+  process.once("SIGINT", shutdown);
+  process.once("SIGTERM", shutdown);
+  if (process.send) {
+    process.once("disconnect", shutdown);
+    if (!process.connected) {
+      shutdown();
+      return;
+    }
+  }
   let initialStartup = true;
   const report = (message) => {
     if (process.connected === false || process.send === void 0) return;

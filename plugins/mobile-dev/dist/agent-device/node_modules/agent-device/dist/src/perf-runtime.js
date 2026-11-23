@@ -1,0 +1,1 @@
+const e=`perf-capture`;function t(e){return Object.freeze({perfFrames:e.frames,perfMemorySample:e.memorySample,perfMemorySnapshot:e.memorySnapshot,perfNativeCaptureStart:e.nativeCapture,perfNativeCaptureReattach:e.nativeCapture,perfNativeCaptureCleanup:e.nativeCapture,perfProfileReport:e.profileReport})}export{t as n,e as t};

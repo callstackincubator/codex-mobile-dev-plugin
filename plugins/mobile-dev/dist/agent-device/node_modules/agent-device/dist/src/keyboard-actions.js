@@ -1,1 +1,0 @@
-const e=[`status`,`get`,`dismiss`,`enter`,`return`];function t(t){return e.includes(t)}export{t};

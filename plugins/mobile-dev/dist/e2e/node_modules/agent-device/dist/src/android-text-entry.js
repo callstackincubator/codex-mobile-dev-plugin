@@ -1,0 +1,1 @@
+function e(e){return async t=>{if(t.action!==`fill`){await e.setText(t.target,t.text);return}t.target&&await e.tap(t.target),await e.pressKey(`a`,[`ctrl`]),await e.pressKey(`del`),t.text.length>0&&await e.setText(void 0,t.text)}}export{e as createLimrunAndroidTextInjector};

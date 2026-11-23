@@ -1,0 +1,45 @@
+{
+  "name": "sisteransi",
+  "version": "2.0.0",
+  "description": "ANSI escape codes for some terminal swag",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "license": "MIT",
+  "author": {
+    "name": "Terkel Gjervig",
+    "email": "terkel@terkel.com",
+    "url": "https://terkel.com"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "node --test",
+    "prepublishOnly": "npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/terkelg/sisteransi"
+  },
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "ansi",
+    "escape codes",
+    "escape",
+    "terminal",
+    "style"
+  ],
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}

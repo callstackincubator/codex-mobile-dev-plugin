@@ -1,7 +1,7 @@
 {
   "name": "agent-device",
-  "version": "0.21.33",
-  "url": "https://registry.npmjs.org/agent-device/-/agent-device-0.21.33.tgz",
-  "integrity": "sha512-MNCJLSOQLnqAmWU3IsLBBij55aZDgFAPPsos6817C1OSx3k/FHN6XaKUNz8OYyMKXme3PRYFqephrbW2KlRAoQ==",
-  "lockfileSHA256": "a0a349b05157f0f1914d77f5138ed866f753d8e7d81a70619c20b8a2ffe577da"
+  "version": "0.21.37",
+  "url": "https://registry.npmjs.org/agent-device/-/agent-device-0.21.37.tgz",
+  "integrity": "sha512-IepPH4OtF3rrf51bxAACGCCaHX4Uj7xt5vlbG3sQyNAVzYnSJpOXpn3INQ1gZhZV/tiCIxI3Z+KAIGeiULKc1A==",
+  "lockfileSHA256": "5e34bc5c369a4e9bb10e55ceb1978ee4ec51a8fc86c9da691ea36bec3d214664"
 }

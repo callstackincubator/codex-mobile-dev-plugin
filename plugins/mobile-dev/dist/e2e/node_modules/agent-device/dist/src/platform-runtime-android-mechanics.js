@@ -1,0 +1,1 @@
+import{r as e}from"./rolldown-runtime.js";var t=e({loadAndroidMechanics:()=>r});let n;async function r(){return n??=import(`./platform-runtime-android-adb-host.js`).then(e=>e.t).then(async()=>await import(`./mechanics.js`).then(e=>e.r)),await n}export{t as n,r as t};

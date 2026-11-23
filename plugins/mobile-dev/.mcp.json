@@ -1,14 +1,19 @@
 {
   "mcpServers": {
     "mobile-dev": {
-      "command": "/bin/sh",
+      "command": "./scripts/launch-mcp",
       "args": [
-        "./scripts/launch-mcp.sh",
         "./dist/server.mjs"
       ],
       "cwd": ".",
       "env_vars": [
         "HOME",
+        "USERPROFILE",
+        "LOCALAPPDATA",
+        "ANDROID_HOME",
+        "ANDROID_SDK_ROOT",
+        "ANDROID_AVD_HOME",
+        "ANDROID_USER_HOME",
         "CODEX_HOME",
         "DEVELOPER_DIR",
         "TRACE_SIFT_HOME",

@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "packages": {
+    "@ai-sdk/anthropic": {
+      "version": "4.0.58",
+      "resolved": "https://registry.npmjs.org/@ai-sdk/anthropic/-/anthropic-4.0.58.tgz",
+      "integrity": "sha512-vhXKBz7jnIhBlOoj2d0joyHicWISuIxDNha65SLrAnagAkVgulLoZBRLZRazstxlO/BtXU+cDERe1opVKte2OQ=="
+    },
+    "@ai-sdk/google": {
+      "version": "4.0.77",
+      "resolved": "https://registry.npmjs.org/@ai-sdk/google/-/google-4.0.77.tgz",
+      "integrity": "sha512-7s1Gy6PL/KRk12s31g+LMMY5v1D80AQT6Lm+HUGXvCXw5T5WCxzbUuxOrBegXhhLPfIXTRunkYgSIjcRys37Zw=="
+    },
+    "@ai-sdk/openai": {
+      "version": "4.0.109",
+      "resolved": "https://registry.npmjs.org/@ai-sdk/openai/-/openai-4.0.109.tgz",
+      "integrity": "sha512-N20L44ztSicqEWpB0LfV54Ee1iq6IjGfOFTcRfeTD/bRH0v/VDI1uHve7RFOhP2oi1eAluliBhgmurplaOBuVw=="
+    },
+    "@ai-sdk/openai-compatible": {
+      "version": "3.0.53",
+      "resolved": "https://registry.npmjs.org/@ai-sdk/openai-compatible/-/openai-compatible-3.0.53.tgz",
+      "integrity": "sha512-uOeghHYcF+CHP/dOCAtdfKesuKLKqDFtkq79bJFNSx4YOqpiP734TdJAZDA8KIWH7mdGNQ0a4N9238HG4FN2Rg=="
+    },
+    "@ai-sdk/xai": {
+      "version": "5.0.4",
+      "resolved": "https://registry.npmjs.org/@ai-sdk/xai/-/xai-5.0.4.tgz",
+      "integrity": "sha512-Cg3xUB0H6OA4fvcX+uamkZXuzxdjhi7HH15glxpE8boZUijFmfz3YPM3Y/HvQkuCb6D/ixCe7lpcwVjidLhw9w=="
+    },
+    "@e2e-dev/mobile": {
+      "version": "0.12.7",
+      "resolved": "https://registry.npmjs.org/@e2e-dev/mobile/-/mobile-0.12.7.tgz",
+      "integrity": "sha512-xssZhb7kQhA0tGqM+kPgm1dguW1HwnIhN8wnvRHh+90hENsl1WufxUEU45mEgyBVa1/ltKYtjZlYQA+lFr+x+g=="
+    },
+    "@openrouter/ai-sdk-provider": {
+      "version": "3.1.0",
+      "resolved": "https://registry.npmjs.org/@openrouter/ai-sdk-provider/-/ai-sdk-provider-3.1.0.tgz",
+      "integrity": "sha512-BQy1TA9fKrh47s9ivsO6FY5QimN7GUF0i8Qon3pkxQclEgShso0dClpcWn8OIyPLEZZPFaFKgI8TW4S/O0p0Dw=="
+    },
+    "ai": {
+      "version": "7.0.163",
+      "resolved": "https://registry.npmjs.org/ai/-/ai-7.0.163.tgz",
+      "integrity": "sha512-nm8+qn36NQXO4Hjfj7SlbcNRhUyNXKtdoS9xhXr/z92lvdGFuPkzHmA2tFzhaUQy13IitNYrcw2QSNpEJC/iSA=="
+    },
+    "e2e": {
+      "version": "0.23.1",
+      "resolved": "https://registry.npmjs.org/e2e/-/e2e-0.23.1.tgz",
+      "integrity": "sha512-s4jTPadzzOt9OC2q1vKP80CfOvwLw5lvkFw5uvZnlh+pB5u7Rosx8yazK9Y/TbzSyRXzQr4t2FwQpQMXHlYZLg=="
+    },
+    "zod": {
+      "version": "4.6.7",
+      "resolved": "https://registry.npmjs.org/zod/-/zod-4.6.7.tgz",
+      "integrity": "sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg=="
+    }
+  },
+  "lockfileSHA256": "ba98f2453302f13563bdb90af28472ba524c0d562aa60379307d1e17abd72bc5"
+}

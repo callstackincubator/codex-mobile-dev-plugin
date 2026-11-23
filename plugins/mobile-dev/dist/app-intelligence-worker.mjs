@@ -1,5 +1,5 @@
 
-!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="4aefcbfc-9c77-5ccb-b97b-f46941343090")}catch(e){}}();
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="de5d6b40-8f12-5ad9-85b9-b5f0c052f494")}catch(e){}}();
 ;(function(){var g=globalThis.__SENTRY_ORCHESTRION__=globalThis.__SENTRY_ORCHESTRION__||{};g.bundler=g.bundler||new Set();})();import { createRequire as mobileDevBundleRequire } from 'node:module'; import { fileURLToPath as mobileDevFileURLToPath } from 'node:url'; import { dirname as mobileDevPathDirname } from 'node:path'; const require = mobileDevBundleRequire(import.meta.url); const __filename = mobileDevFileURLToPath(import.meta.url); const __dirname = mobileDevPathDirname(__filename);
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -43338,7 +43338,7 @@ var fingerprint = (value) => createHash("sha256").update(value).digest("hex");
 var portable = (root, path) => relative(root, path).split(sep).join("/");
 var inside = (root, path) => {
   const rel = relative(root, path);
-  return rel !== ".." && !rel.startsWith(`..${sep}`) && !rel.startsWith("/");
+  return rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
 };
 var packageName = (specifier) => specifier.startsWith("@") ? specifier.split("/").slice(0, 2).join("/") : specifier.split("/")[0];
 function walkAst(node2, visit2) {
@@ -43675,4 +43675,4 @@ try {
   });
 }
 
-//# debugId=4aefcbfc-9c77-5ccb-b97b-f46941343090
+//# debugId=de5d6b40-8f12-5ad9-85b9-b5f0c052f494

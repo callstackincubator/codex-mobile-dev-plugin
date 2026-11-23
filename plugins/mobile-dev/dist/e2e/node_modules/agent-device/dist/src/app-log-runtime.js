@@ -1,0 +1,1 @@
+const e=`app-log`;export{e as t};

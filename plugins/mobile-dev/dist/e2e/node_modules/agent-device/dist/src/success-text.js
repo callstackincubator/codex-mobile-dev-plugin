@@ -1,0 +1,1 @@
+function e(e){return e?{message:e}:{}}function t(e,t){return t?{...e,message:t}:e}function n(e){return typeof e?.message==`string`&&e.message.length>0?e.message:null}function r(e){let t=e?.warnings;return Array.isArray(t)?t.filter(e=>typeof e==`string`):[]}export{t as i,r as n,e as r,n as t};

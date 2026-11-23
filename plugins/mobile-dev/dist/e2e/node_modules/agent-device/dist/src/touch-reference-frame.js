@@ -1,0 +1,1 @@
+import{h as e}from"./scroll-gesture.js";const t=new WeakMap;function n(e){if(!e)return;let n=t.get(e);if(n)return n;let r=i(e.nodes??[]);if(r)return t.set(e,r),r}function r(e){return n({nodes:e,createdAt:0})}const i=e;export{r as n,n as t};

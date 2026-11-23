@@ -1,0 +1,1 @@
+function e(e={}){return{allowLocalInputPaths:!0,allowLocalOutputPaths:!0,maxImagePixels:2e7,...e}}function t(e={}){return{allowLocalInputPaths:!1,allowLocalOutputPaths:!1,maxImagePixels:2e7,...e}}export{t as n,e as t};

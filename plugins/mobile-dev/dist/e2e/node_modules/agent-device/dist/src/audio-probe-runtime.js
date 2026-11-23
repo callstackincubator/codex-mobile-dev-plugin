@@ -1,0 +1,1 @@
+const e=`audio-probe`;function t(e){return Object.freeze({audioProbeStart:e.capture,audioProbeReattach:e.capture,audioProbeCleanup:e.capture,audioProbeQuery:e.query})}export{t as n,e as t};

@@ -1,0 +1,881 @@
+#import "RunnerAXSnapshotBridge.h"
+
+#import <CoreGraphics/CoreGraphics.h>
+#import <objc/message.h>
+#import <stdatomic.h>
+
+static NSString *const RunnerAXSnapshotOkKey = @"ok";
+static NSString *const RunnerAXSnapshotErrorKey = @"error";
+static NSString *const RunnerAXSnapshotRootKey = @"root";
+static NSString *const RunnerAXSnapshotTruncatedKey = @"truncated";
+
+NSString *const RunnerAXSnapshotDeepExtensionKey = @"deepExtension";
+NSString *const RunnerAXSnapshotDeepExtensionCallsKey = @"calls";
+NSString *const RunnerAXSnapshotDeepExtensionNodesAddedKey = @"nodesAdded";
+NSString *const RunnerAXSnapshotDeepExtensionPendingKey = @"pendingFrontiers";
+NSString *const RunnerAXSnapshotDeepExtensionMissedKey = @"missedFrontiers";
+
+NSString *const RunnerAXSnapshotCustomActionsKey = @"customActions";
+NSString *const RunnerAXSnapshotCustomActionsReadKey = @"read";
+NSString *const RunnerAXSnapshotCustomActionsCandidatesKey = @"candidates";
+NSString *const RunnerAXSnapshotCustomActionsTruncatedKey = @"truncated";
+NSString *const RunnerAXSnapshotCustomActionsBlockedKey = @"blocked";
+
+// The AX server's name for UIAccessibilityCustomActions (React Native's `accessibilityActions`
+// prop lands here too).
+static NSString *const RunnerAXCustomActionsAttribute = @"XC_kAXXCAttributeCustomActions";
+
+// Bounds one read. It exists for the unresponsive case: without it one wedged element would
+// swallow the whole capture's budget and starve every remaining candidate.
+static const NSTimeInterval RunnerAXCustomActionReadTimeout = 1.0;
+
+// The AX call is a synchronous XPC round trip that cannot be cancelled once issued, so the
+// timeout above only frees the caller — the call keeps running. Containment needs both parts:
+// every read runs on this one serial queue because the shared XCAXClient has no concurrent user,
+// and the single-flight guard refuses to dispatch while an abandoned read is outstanding. Reads
+// resume by themselves once the hung call returns; nothing has to be reset by hand.
+static dispatch_queue_t RunnerAXCustomActionReadQueue(void)
+{
+  static dispatch_queue_t queue;
+  static dispatch_once_t onceToken;
+  dispatch_once(&onceToken, ^{
+    queue = dispatch_queue_create("com.callstack.agentdevice.runner.ax-custom-actions",
+                                  DISPATCH_QUEUE_SERIAL);
+  });
+  return queue;
+}
+
+// Reads dispatched but not yet returned. Non-zero after a read blew its deadline, which is the
+// condition the single-flight guard refuses on.
+static atomic_int RunnerAXCustomActionReadsInFlight = 0;
+
+// Total dispatches. The invariant "a blocked capture adds no work" is observable only as this
+// counter staying put, so it is recorded rather than inferred.
+static atomic_long RunnerAXCustomActionReadDispatches = 0;
+
+// Total single-flight admission refusals.
+static atomic_long RunnerAXCustomActionReadBlocked = 0;
+
+// Output caps. The element budget bounds how many elements are read; these bound ONE element's
+// action list, so a pathological app cannot spend the whole snapshot on one node's list.
+static const NSUInteger RunnerAXCustomActionsMaxPerElement = 8;
+static const NSUInteger RunnerAXCustomActionNameMaxLength = 80;
+
+typedef id (*RunnerAXObjectMsgSend)(id, SEL);
+typedef NSInteger (*RunnerAXIntegerMsgSend)(id, SEL);
+typedef id (*RunnerAXSnapshotMsgSend)(id, SEL, id, id, id, NSError **);
+
+@implementation RunnerAXSnapshotFrontier
+@end
+
+@implementation RunnerAXSnapshotBridge
+
++ (NSDictionary<NSString *, id> *)snapshotTreeForApplication:(XCUIApplication *)application
+                                                    maxDepth:(NSInteger)maxDepth
+                                                    maxNodes:(NSInteger)maxNodes
+                                      deepExtensionCallLimit:(NSInteger)deepExtensionCallLimit
+                                           customActionLimit:(NSInteger)customActionLimit
+                                                    deadline:(nullable NSDate *)deadline
+{
+  @try {
+    id axClient = [self accessibilityClient];
+    if (nil == axClient) {
+      return [self failure:@"XCUIDevice accessibilityInterface is unavailable"];
+    }
+
+    id target = [self accessibilityApplicationForApplication:application axClient:axClient];
+    if (nil == target) {
+      return [self failure:@"Could not match active AX application for XCTest application"];
+    }
+    return [self snapshotTreeWithClient:axClient
+                                 target:target
+                               maxDepth:maxDepth
+                               maxNodes:maxNodes
+                 deepExtensionCallLimit:deepExtensionCallLimit
+                      customActionLimit:customActionLimit
+                               deadline:deadline];
+  } @catch (NSException *exception) {
+    return [self failure:exception.reason ?: exception.name ?: @"AX snapshot bridge exception"];
+  }
+}
+
++ (NSDictionary<NSString *, id> *)snapshotTreeWithClient:(id)axClient
+                                                  target:(id)target
+                                                maxDepth:(NSInteger)maxDepth
+                                                maxNodes:(NSInteger)maxNodes
+                                  deepExtensionCallLimit:(NSInteger)deepExtensionCallLimit
+                                       customActionLimit:(NSInteger)customActionLimit
+                                                deadline:(nullable NSDate *)deadline
+{
+  @try {
+    NSArray *attributes = [self snapshotAttributes];
+    NSError *error = nil;
+    id root = [self requestSnapshotFromClient:axClient
+                                      target:target
+                                  attributes:attributes
+                                    maxDepth:maxDepth
+                                    maxNodes:maxNodes
+                                       error:&error];
+    if (nil == root) {
+      return [self failure:error.localizedDescription ?: @"AX snapshot request returned nil"];
+    }
+
+    BOOL truncated = NO;
+    NSInteger nodeCount = 0;
+    // nil disables candidate collection entirely — exact --depth captures pay zero extension
+    // bookkeeping.
+    NSMutableArray<RunnerAXSnapshotFrontier *> *candidates =
+        deepExtensionCallLimit > 0 ? [NSMutableArray array] : nil;
+    NSMutableArray<RunnerAXSnapshotFrontier *> *merged =
+        customActionLimit > 0 ? [NSMutableArray array] : nil;
+    NSMutableDictionary *rootNode = [self dictionaryForSnapshot:root
+                                                          depth:0
+                                                       maxDepth:maxDepth
+                                                       maxNodes:maxNodes
+                                                      nodeCount:&nodeCount
+                                                      truncated:&truncated
+                                                      frontiers:candidates
+                                                    mergedLeaves:merged];
+    if (nil == rootNode) {
+      return [self failure:@"AX snapshot root could not be serialized"];
+    }
+
+    NSMutableArray<RunnerAXSnapshotFrontier *> *frontiers =
+        [self cappedFrontiersFromCandidates:candidates ?: @[] maxDepth:maxDepth];
+    NSDictionary *deepExtension = [self extendSnapshotFrontiers:frontiers
+                                                       axClient:axClient
+                                                     attributes:attributes
+                                                       maxDepth:maxDepth
+                                                       maxNodes:maxNodes
+                                                      nodeCount:&nodeCount
+                                                      truncated:&truncated
+                                                   callsAllowed:deepExtensionCallLimit
+                                                   mergedLeaves:merged
+                                                       deadline:deadline];
+    CGRect rootFrame = CGRectZero;
+    NSDictionary *rootFrameValue = rootNode[@"frame"];
+    if ([rootFrameValue isKindOfClass:NSDictionary.class]) {
+      rootFrame = CGRectMake(
+        [rootFrameValue[@"x"] doubleValue], [rootFrameValue[@"y"] doubleValue],
+        [rootFrameValue[@"width"] doubleValue], [rootFrameValue[@"height"] doubleValue]);
+    }
+    NSDictionary *customActions = [self annotateCustomActionsOnMergedLeaves:merged
+                                                                   axClient:axClient
+                                                                      limit:customActionLimit
+                                                                  rootFrame:rootFrame
+                                                                   deadline:deadline];
+
+    NSMutableDictionary *response = [NSMutableDictionary dictionaryWithDictionary:@{
+      RunnerAXSnapshotOkKey: @YES,
+      RunnerAXSnapshotRootKey: rootNode,
+      RunnerAXSnapshotTruncatedKey: @(truncated),
+    }];
+    if (nil != deepExtension) {
+      response[RunnerAXSnapshotDeepExtensionKey] = deepExtension;
+    }
+    if (customActions.count > 0) {
+      response[RunnerAXSnapshotCustomActionsKey] = customActions;
+    }
+    return response.copy;
+  } @catch (NSException *exception) {
+    return [self failure:exception.reason ?: exception.name ?: @"AX snapshot bridge exception"];
+  }
+}
+
+// Chains element-rooted snapshot requests from depth-capped frontier nodes. The AX server's depth
+// limit is per-request (kAXErrorIllegalArgument above a tree-size-dependent value), so re-rooting
+// the same request at a frontier node's live element reaches content the app-rooted request could
+// not, without passing a larger depth parameter. Bounded by call count, the shared node budget,
+// and the capture deadline checked between requests.
++ (nullable NSDictionary *)extendSnapshotFrontiers:(NSMutableArray<RunnerAXSnapshotFrontier *> *)frontiers
+                                          axClient:(id)axClient
+                                        attributes:(NSArray *)attributes
+                                          maxDepth:(NSInteger)maxDepth
+                                          maxNodes:(NSInteger)maxNodes
+                                         nodeCount:(NSInteger *)nodeCount
+                                         truncated:(BOOL *)truncated
+                                      callsAllowed:(NSInteger)callsAllowed
+                                      mergedLeaves:(nullable NSMutableArray<RunnerAXSnapshotFrontier *> *)mergedLeaves
+                                          deadline:(nullable NSDate *)deadline
+{
+  if (callsAllowed <= 0 || frontiers.count == 0) {
+    return nil;
+  }
+  NSInteger callsUsed = 0;
+  NSInteger nodesAdded = 0;
+  // A frontier whose live element vanished or whose re-rooted request failed leaves its subtree
+  // unresolved, so it must count as missed, never as drained.
+  NSInteger missedFrontiers = 0;
+  while (frontiers.count > 0) {
+    if (callsUsed >= callsAllowed || *nodeCount >= maxNodes
+        || (nil != deadline && deadline.timeIntervalSinceNow <= 0)) {
+      *truncated = YES;
+      break;
+    }
+    RunnerAXSnapshotFrontier *frontier = frontiers.firstObject;
+    [frontiers removeObjectAtIndex:0];
+    id element = [self accessibilityElementForSnapshot:frontier.snapshot];
+    if (nil == element) {
+      missedFrontiers += 1;
+      NSLog(@"AGENT_DEVICE_RUNNER_PRIVATE_AX_DEEP_EXTENSION_MISS=element unavailable");
+      continue;
+    }
+    callsUsed += 1;
+    NSError *error = nil;
+    id subRoot = [self requestSnapshotFromClient:axClient
+                                          target:element
+                                      attributes:attributes
+                                        maxDepth:maxDepth
+                                        maxNodes:maxNodes - *nodeCount
+                                           error:&error];
+    if (nil == subRoot) {
+      missedFrontiers += 1;
+      NSLog(@"AGENT_DEVICE_RUNNER_PRIVATE_AX_DEEP_EXTENSION_MISS=%@",
+            error.localizedDescription ?: @"nil subtree");
+      continue;
+    }
+    // The re-rooted snapshot's root IS the frontier element captured again; splice only its
+    // children so the frontier node is not duplicated.
+    NSInteger before = *nodeCount;
+    NSMutableArray<RunnerAXSnapshotFrontier *> *subCandidates = [NSMutableArray array];
+    NSMutableArray *children = [NSMutableArray array];
+    for (id child in [self childrenForSnapshot:subRoot]) {
+      NSMutableDictionary *childNode = [self dictionaryForSnapshot:child
+                                                             depth:1
+                                                          maxDepth:maxDepth
+                                                          maxNodes:maxNodes
+                                                         nodeCount:nodeCount
+                                                         truncated:truncated
+                                                         frontiers:subCandidates
+                                                      mergedLeaves:mergedLeaves];
+      if (nil != childNode) {
+        [children addObject:childNode];
+      }
+      if (*nodeCount >= maxNodes) {
+        *truncated = YES;
+        break;
+      }
+    }
+    frontier.node[@"children"] = children;
+    nodesAdded += *nodeCount - before;
+    [frontiers addObjectsFromArray:[self cappedFrontiersFromCandidates:subCandidates
+                                                              maxDepth:maxDepth]];
+  }
+  NSLog(@"AGENT_DEVICE_RUNNER_PRIVATE_AX_DEEP_EXTENSION calls=%ld nodes=%ld pending=%ld missed=%ld",
+        (long)callsUsed, (long)nodesAdded, (long)frontiers.count, (long)missedFrontiers);
+  return @{
+    RunnerAXSnapshotDeepExtensionCallsKey: @(callsUsed),
+    RunnerAXSnapshotDeepExtensionNodesAddedKey: @(nodesAdded),
+    RunnerAXSnapshotDeepExtensionPendingKey: @(frontiers.count),
+    RunnerAXSnapshotDeepExtensionMissedKey: @(missedFrontiers),
+  };
+}
+
+// Keeps only candidates at the deepest observed level, and only when that level sits at the
+// request's cap: the server emits maxDepth node LEVELS, so the deepest possible level is
+// maxDepth - 1. A tree that ended naturally above the cap yields no frontiers.
++ (NSMutableArray<RunnerAXSnapshotFrontier *> *)cappedFrontiersFromCandidates:
+    (NSArray<RunnerAXSnapshotFrontier *> *)candidates
+                                                                      maxDepth:(NSInteger)maxDepth
+{
+  NSMutableArray<RunnerAXSnapshotFrontier *> *frontiers = [NSMutableArray array];
+  NSInteger deepest = -1;
+  for (RunnerAXSnapshotFrontier *candidate in candidates) {
+    deepest = MAX(deepest, candidate.depth);
+  }
+  if (deepest < maxDepth - 1) {
+    return frontiers;
+  }
+  for (RunnerAXSnapshotFrontier *candidate in candidates) {
+    if (candidate.depth == deepest) {
+      [frontiers addObject:candidate];
+    }
+  }
+  return frontiers;
+}
+
++ (nullable id)requestSnapshotFromClient:(id)axClient
+                                  target:(id)target
+                              attributes:(NSArray *)attributes
+                                maxDepth:(NSInteger)maxDepth
+                                maxNodes:(NSInteger)maxNodes
+                                   error:(NSError **)error
+{
+  return [self rootSnapshotFromClient:axClient
+                               target:target
+                           attributes:attributes
+                           parameters:[self snapshotParametersForClient:axClient maxDepth:maxDepth maxNodes:maxNodes]
+                                error:error];
+}
+
++ (NSMutableDictionary *)snapshotParametersForClient:(id)axClient
+                                            maxDepth:(NSInteger)maxDepth
+                                            maxNodes:(NSInteger)maxNodes
+{
+  NSMutableDictionary *parameters = [NSMutableDictionary dictionary];
+  id defaults = [self objectFrom:axClient selectorName:@"defaultParameters"];
+  if ([defaults isKindOfClass:NSDictionary.class]) {
+    [parameters addEntriesFromDictionary:(NSDictionary *)defaults];
+  }
+  parameters[@"maxDepth"] = @(MAX(0, maxDepth));
+  parameters[@"maxChildren"] = @(MAX(1, maxNodes));
+  parameters[@"maxArrayCount"] = @(MAX(1, maxNodes));
+  parameters[@"traverseFromParentsToChildren"] = @YES;
+  return parameters;
+}
+
++ (nullable id)rootSnapshotFromClient:(id)axClient
+                               target:(id)target
+                           attributes:(NSArray *)attributes
+                           parameters:(NSDictionary *)parameters
+                                error:(NSError **)error
+{
+  SEL requestSelector = NSSelectorFromString(@"requestSnapshotForElement:attributes:parameters:error:");
+  if (![axClient respondsToSelector:requestSelector]) {
+    if (NULL != error) {
+      *error = [NSError errorWithDomain:@"agent-device.runner"
+                                   code:1
+                               userInfo:@{
+                                 NSLocalizedDescriptionKey:
+                                     @"AX client does not support requestSnapshotForElement"
+                               }];
+    }
+    return nil;
+  }
+  RunnerAXSnapshotMsgSend send = (RunnerAXSnapshotMsgSend)objc_msgSend;
+  id result = send(axClient, requestSelector, target, attributes, parameters.copy, error);
+  if (nil == result) {
+    return nil;
+  }
+  id root = nil;
+  @try {
+    root = [result valueForKey:@"_rootElementSnapshot"];
+  } @catch (NSException *exception) {
+    root = nil;
+  }
+  return root ?: result;
+}
+
++ (NSArray *)snapshotAttributes
+{
+  // The mapper expands keypaths with extra attributes that are disproportionately expensive for
+  // the AX server to compute on large trees. Keep only what is consumed here.
+  // `hasKeyboardFocus` is not requested: the mapper adds no attribute for it, and the snapshot
+  // answers it anyway (#4112).
+  return [self attributesForKeyPaths:@[
+    @"elementType",
+    @"identifier",
+    @"label",
+    @"value",
+    @"placeholderValue",
+    @"frame",
+    @"enabled",
+    @"selected",
+    @"hasFocus",
+    @"children",
+  ]
+                    consumedSuffixes:@[ @"ElementType", @"Identifier", @"Label", @"Value",
+                                        @"PlaceholderValue", @"Frame", @"Enabled", @"Selected",
+                                        @"Focus" ]];
+}
+
++ (NSArray *)attributesForKeyPaths:(NSArray<NSString *> *)keyPaths
+                  consumedSuffixes:(NSArray<NSString *> *)consumedSuffixes
+{
+  // The AX server expects real accessibility attribute identifiers, not snapshot keypath strings;
+  // raw keypaths silently drop attributes (frame came back zeroed). XCElementSnapshot owns the
+  // keypath -> AX attribute mapping.
+  NSArray *attributes = keyPaths;
+  Class snapshotClass = NSClassFromString(@"XCElementSnapshot");
+  SEL mapSelector = NSSelectorFromString(@"axAttributesForElementSnapshotKeyPaths:isMacOS:");
+  if ([snapshotClass respondsToSelector:mapSelector]) {
+    typedef id (*RunnerAXMapMsgSend)(id, SEL, id, BOOL);
+    RunnerAXMapMsgSend mapSend = (RunnerAXMapMsgSend)objc_msgSend;
+    id mapped = mapSend(snapshotClass, mapSelector, keyPaths, NO);
+    if ([mapped isKindOfClass:NSSet.class]) {
+      mapped = [(NSSet *)mapped allObjects];
+    }
+    if ([mapped isKindOfClass:NSArray.class] && [(NSArray *)mapped count] > 0) {
+      NSMutableArray *filtered = [NSMutableArray array];
+      for (id attribute in (NSArray *)mapped) {
+        NSString *name = [attribute description];
+        for (NSString *suffix in consumedSuffixes) {
+          if ([name hasSuffix:suffix]) {
+            [filtered addObject:attribute];
+            break;
+          }
+        }
+      }
+      attributes = filtered.count > 0 ? filtered : mapped;
+    }
+  }
+  return attributes;
+}
+
+// Reads custom actions for the merged leaves in traversal order until the limit or the deadline is
+// spent; each read is its own AX round trip, so this is strictly opt-in and strictly bounded.
+// The counts exist so the response can disclose an incomplete pass: an unread element is
+// byte-identical to one with no actions. `candidates` counts only elements still eligible at read
+// time; a leaf whose live element vanished stays counted and unread. On-screen candidates are read
+// first: the budget is smaller than a long feed's card count, so the order decides which elements
+// an agent can act on, and scrolling changes the on-screen set so a re-run reaches what the
+// previous pass could not. `--scope` is deliberately not the ordering key: the Swift walk applies
+// it long after this pass, so it cannot narrow the read budget without duplicating the predicate.
++ (NSDictionary<NSString *, NSNumber *> *)
+    annotateCustomActionsOnMergedLeaves:(nullable NSArray<RunnerAXSnapshotFrontier *> *)leaves
+                               axClient:(id)axClient
+                                  limit:(NSInteger)limit
+                              rootFrame:(CGRect)rootFrame
+                               deadline:(nullable NSDate *)deadline
+{
+  if (limit <= 0 || leaves.count == 0) {
+    return @{};
+  }
+  NSMutableArray<RunnerAXSnapshotFrontier *> *onScreen = [NSMutableArray array];
+  NSMutableArray<RunnerAXSnapshotFrontier *> *offScreen = [NSMutableArray array];
+  for (RunnerAXSnapshotFrontier *leaf in leaves) {
+    if ([leaf.node[@"children"] isKindOfClass:NSArray.class]
+        && [(NSArray *)leaf.node[@"children"] count] > 0) {
+      continue;
+    }
+    [([self isFrameOnScreen:leaf.node[@"frame"] rootFrame:rootFrame] ? onScreen : offScreen)
+        addObject:leaf];
+  }
+  NSInteger candidates = onScreen.count + offScreen.count;
+  NSInteger attempts = 0;
+  NSInteger reads = 0;
+  NSInteger annotated = 0;
+  NSInteger truncatedElements = 0;
+  BOOL blocked = NO;
+  for (RunnerAXSnapshotFrontier *leaf in [onScreen arrayByAddingObjectsFromArray:offScreen]) {
+    if (attempts >= limit || (nil != deadline && deadline.timeIntervalSinceNow <= 0)) {
+      break;
+    }
+    // An abandoned read from an earlier capture is still outstanding: stop here rather than spend
+    // a deadline per element on reads that will all be refused, and record why.
+    if ([self customActionReadsInFlight] > 0) {
+      blocked = YES;
+      break;
+    }
+    id element = [self accessibilityElementForSnapshot:leaf.snapshot];
+    if (nil == element) {
+      continue;
+    }
+    // The budget buys attempts; only a completed read counts as read, so a timed-out element stays
+    // in the undisclosed remainder.
+    attempts += 1;
+    BOOL completed = NO;
+    NSArray<NSString *> *names = [self customActionNamesForElement:element
+                                                          axClient:axClient
+                                                         completed:&completed];
+    if (!completed) {
+      continue;
+    }
+    reads += 1;
+    BOOL truncated = NO;
+    NSArray<NSString *> *capped = [self cappedActionNames:names ?: @[] truncated:&truncated];
+    if (truncated) {
+      truncatedElements += 1;
+    }
+    if (capped.count > 0) {
+      leaf.node[@"actions"] = capped;
+      annotated += 1;
+    }
+  }
+  NSLog(
+    @"AGENT_DEVICE_RUNNER_PRIVATE_AX_CUSTOM_ACTIONS reads=%ld attempts=%ld annotated=%ld "
+     "candidates=%ld onScreen=%ld truncated=%ld blocked=%d dispatches=%ld",
+    (long)reads, (long)attempts, (long)annotated, (long)candidates, (long)onScreen.count,
+    (long)truncatedElements, (int)blocked, (long)[self customActionReadDispatchCount]);
+  return @{
+    RunnerAXSnapshotCustomActionsReadKey: @(reads),
+    RunnerAXSnapshotCustomActionsCandidatesKey: @(candidates),
+    RunnerAXSnapshotCustomActionsTruncatedKey: @(truncatedElements),
+    RunnerAXSnapshotCustomActionsBlockedKey: @(blocked),
+  };
+}
+
+// An empty root frame means the capture has no viewport to judge against, so every candidate
+// counts as on-screen and the order stays document order.
++ (BOOL)isFrameOnScreen:(id)frameValue rootFrame:(CGRect)rootFrame
+{
+  if (CGRectIsEmpty(rootFrame)) {
+    return YES;
+  }
+  if (![frameValue isKindOfClass:NSDictionary.class]) {
+    return NO;
+  }
+  NSDictionary *frame = (NSDictionary *)frameValue;
+  CGRect rect = CGRectMake(
+    [frame[@"x"] doubleValue], [frame[@"y"] doubleValue],
+    [frame[@"width"] doubleValue], [frame[@"height"] doubleValue]);
+  return !CGRectIsEmpty(rect) && CGRectIntersectsRect(rect, rootFrame);
+}
+
++ (nullable NSArray<NSString *> *)customActionNamesForElement:(id)element
+                                                    axClient:(id)axClient
+                                                   completed:(BOOL *)completed
+{
+  if (NULL != completed) {
+    *completed = NO;
+  }
+  if (nil == element || nil == axClient) {
+    return nil;
+  }
+  SEL selector = NSSelectorFromString(@"attributesForElement:attributes:error:");
+  if (![axClient respondsToSelector:selector]) {
+    return nil;
+  }
+  int expectedReadsInFlight = 0;
+  if (!atomic_compare_exchange_strong(
+        &RunnerAXCustomActionReadsInFlight, &expectedReadsInFlight, 1)) {
+    atomic_fetch_add(&RunnerAXCustomActionReadBlocked, 1);
+    return nil;
+  }
+  // The AX call is a synchronous XPC round trip with no timeout of its own, so it runs off-thread
+  // behind a bounded wait. On timeout the result box is never read, so a late-returning wedged
+  // call cannot race this thread.
+  atomic_fetch_add(&RunnerAXCustomActionReadDispatches, 1);
+  NSMutableArray *box = [NSMutableArray array];
+  dispatch_semaphore_t finished = dispatch_semaphore_create(0);
+  dispatch_async(RunnerAXCustomActionReadQueue(), ^{
+    typedef id (*RunnerAXAttributesMsgSend)(id, SEL, id, id, NSError **);
+    RunnerAXAttributesMsgSend send = (RunnerAXAttributesMsgSend)objc_msgSend;
+    NSError *error = nil;
+    id result = nil;
+    @try {
+      result = send(axClient, selector, element, @[ RunnerAXCustomActionsAttribute ], &error);
+    } @catch (NSException *exception) {
+      result = nil;
+    }
+    if (nil != result) {
+      [box addObject:result];
+    }
+    // Clear in-flight BEFORE signalling, so a waiter that wakes here never observes its own
+    // completed read as still outstanding.
+    atomic_store(&RunnerAXCustomActionReadsInFlight, 0);
+    dispatch_semaphore_signal(finished);
+  });
+  long waited = dispatch_semaphore_wait(
+    finished,
+    dispatch_time(DISPATCH_TIME_NOW, (int64_t)(RunnerAXCustomActionReadTimeout * NSEC_PER_SEC)));
+  if (waited != 0) {
+    NSLog(@"AGENT_DEVICE_RUNNER_PRIVATE_AX_CUSTOM_ACTIONS_READ_TIMEOUT");
+    return nil;
+  }
+  if (NULL != completed) {
+    *completed = YES;
+  }
+  id values = box.firstObject;
+  if (![values isKindOfClass:NSDictionary.class]) {
+    return nil;
+  }
+  id actions = ((NSDictionary *)values)[RunnerAXCustomActionsAttribute];
+  if (![actions isKindOfClass:NSArray.class]) {
+    return nil;
+  }
+  NSMutableArray<NSString *> *names = [NSMutableArray array];
+  for (id action in (NSArray *)actions) {
+    if (![action isKindOfClass:NSDictionary.class]) {
+      continue;
+    }
+    id name = ((NSDictionary *)action)[@"CustomActionName"];
+    if ([name isKindOfClass:NSString.class] && [(NSString *)name length] > 0) {
+      [names addObject:name];
+    }
+  }
+  return names.count > 0 ? names.copy : nil;
+}
+
+// Bounds what one element can contribute to the response. The names come from the app, so their
+// count and length are the app's choice; truncation is reported, never silent, because a clipped
+// list is as misleading as an unread element if it looks complete.
++ (NSArray<NSString *> *)cappedActionNames:(NSArray<NSString *> *)names
+                                 truncated:(BOOL *)truncated
+{
+  if (NULL != truncated) {
+    *truncated = NO;
+  }
+  NSMutableArray<NSString *> *capped = [NSMutableArray array];
+  for (NSString *name in names) {
+    if (capped.count >= RunnerAXCustomActionsMaxPerElement) {
+      if (NULL != truncated) {
+        *truncated = YES;
+      }
+      break;
+    }
+    if (name.length > RunnerAXCustomActionNameMaxLength) {
+      // Clip on composed character boundaries so a truncated name stays a
+      // valid string rather than a split grapheme.
+      NSRange clip = [name rangeOfComposedCharacterSequencesForRange:
+                             NSMakeRange(0, RunnerAXCustomActionNameMaxLength)];
+      [capped addObject:[[name substringWithRange:clip] stringByAppendingString:@"…"]];
+      if (NULL != truncated) {
+        *truncated = YES;
+      }
+      continue;
+    }
+    [capped addObject:name];
+  }
+  return capped.copy;
+}
+
++ (NSInteger)customActionReadsInFlight
+{
+  return atomic_load(&RunnerAXCustomActionReadsInFlight);
+}
+
++ (NSInteger)customActionReadDispatchCount
+{
+  return (NSInteger)atomic_load(&RunnerAXCustomActionReadDispatches);
+}
+
++ (NSInteger)customActionReadBlockedCount
+{
+  return (NSInteger)atomic_load(&RunnerAXCustomActionReadBlocked);
+}
+
++ (nullable id)accessibilityClient
+{
+  return [self objectFrom:XCUIDevice.sharedDevice selectorName:@"accessibilityInterface"];
+}
+
++ (nullable id)accessibilityElementForSnapshot:(id)snapshot
+{
+  id element = nil;
+  @try {
+    element = [snapshot valueForKey:@"accessibilityElement"];
+  } @catch (NSException *exception) {
+    element = nil;
+  }
+  return element;
+}
+
++ (NSDictionary<NSString *, id> *)failure:(NSString *)message
+{
+  return @{
+    RunnerAXSnapshotOkKey: @NO,
+    RunnerAXSnapshotErrorKey: message,
+  };
+}
+
++ (id)objectFrom:(id)target selectorName:(NSString *)selectorName
+{
+  SEL selector = NSSelectorFromString(selectorName);
+  if (![target respondsToSelector:selector]) {
+    return nil;
+  }
+  RunnerAXObjectMsgSend send = (RunnerAXObjectMsgSend)objc_msgSend;
+  return send(target, selector);
+}
+
++ (NSInteger)integerFrom:(id)target selectorName:(NSString *)selectorName
+{
+  SEL selector = NSSelectorFromString(selectorName);
+  if (![target respondsToSelector:selector]) {
+    return 0;
+  }
+  // processID/processIdentifier return pid_t (int32); reading them through an NSInteger-returning
+  // cast is not upper-32-bit safe on arm64. Use the method signature to pick the sized call.
+  NSMethodSignature *signature = [target methodSignatureForSelector:selector];
+  const char *returnType = signature.methodReturnType;
+  if (returnType != NULL && strcmp(returnType, @encode(int)) == 0) {
+    typedef int (*RunnerAXIntMsgSend)(id, SEL);
+    RunnerAXIntMsgSend send = (RunnerAXIntMsgSend)objc_msgSend;
+    return (NSInteger)send(target, selector);
+  }
+  RunnerAXIntegerMsgSend send = (RunnerAXIntegerMsgSend)objc_msgSend;
+  return send(target, selector);
+}
+
++ (NSInteger)processIdentifierForApplication:(XCUIApplication *)application
+{
+  return [self integerFrom:application selectorName:@"processID"];
+}
+
++ (NSArray<NSNumber *> *)activeApplicationProcessIdentifiers
+{
+  id axClient = [self accessibilityClient];
+  if (nil == axClient) {
+    return @[];
+  }
+  id activeApplications = [self objectFrom:axClient selectorName:@"activeApplications"];
+  if (![activeApplications isKindOfClass:NSArray.class]) {
+    return @[];
+  }
+  NSMutableArray<NSNumber *> *processIdentifiers = [NSMutableArray array];
+  for (id candidate in (NSArray *)activeApplications) {
+    NSInteger processIdentifier = [self integerFrom:candidate selectorName:@"processIdentifier"];
+    if (processIdentifier > 0) {
+      [processIdentifiers addObject:@(processIdentifier)];
+    }
+  }
+  return processIdentifiers;
+}
+
++ (id)accessibilityApplicationForApplication:(XCUIApplication *)application axClient:(id)axClient
+{
+  NSInteger targetProcessID = [self integerFrom:application selectorName:@"processID"];
+  id activeApplications = [self objectFrom:axClient selectorName:@"activeApplications"];
+  if (![activeApplications isKindOfClass:NSArray.class]) {
+    return nil;
+  }
+
+  for (id candidate in (NSArray *)activeApplications) {
+    NSInteger candidateProcessID = [self integerFrom:candidate selectorName:@"processIdentifier"];
+    if (targetProcessID > 0 && candidateProcessID == targetProcessID) {
+      return candidate;
+    }
+  }
+  return nil;
+}
+
++ (nullable NSMutableDictionary *)dictionaryForSnapshot:(id)snapshot
+                                                  depth:(NSInteger)depth
+                                               maxDepth:(NSInteger)maxDepth
+                                               maxNodes:(NSInteger)maxNodes
+                                              nodeCount:(NSInteger *)nodeCount
+                                              truncated:(BOOL *)truncated
+                                              frontiers:(NSMutableArray<RunnerAXSnapshotFrontier *> *)frontiers
+                                           mergedLeaves:(NSMutableArray<RunnerAXSnapshotFrontier *> *)mergedLeaves
+{
+  if (nil == snapshot || *nodeCount >= maxNodes) {
+    *truncated = YES;
+    return nil;
+  }
+
+  *nodeCount += 1;
+  NSMutableDictionary *result = [NSMutableDictionary dictionary];
+  result[@"type"] = [self numberValueForKey:@"elementType" snapshot:snapshot] ?: @0;
+  result[@"identifier"] = [self stringValueForKey:@"identifier" snapshot:snapshot] ?: @"";
+  result[@"label"] = [self stringValueForKey:@"label" snapshot:snapshot] ?: @"";
+  result[@"value"] = [self stringValueForKey:@"value" snapshot:snapshot] ?: @"";
+  result[@"placeholder"] = [self stringValueForKey:@"placeholderValue" snapshot:snapshot] ?: @"";
+  result[@"frame"] = [self frameValueForSnapshot:snapshot];
+  result[@"enabled"] = [self boolNumberForKey:@"enabled" snapshot:snapshot defaultValue:YES];
+  result[@"selected"] = [self boolNumberForKey:@"selected" snapshot:snapshot defaultValue:NO];
+  BOOL keyboardFocused = [[self boolNumberForKey:@"hasKeyboardFocus" snapshot:snapshot defaultValue:NO] boolValue];
+  BOOL engineFocused = [[self boolNumberForKey:@"hasFocus" snapshot:snapshot defaultValue:NO] boolValue];
+  result[@"focused"] = @(keyboardFocused || engineFocused);
+
+  NSMutableArray *children = [NSMutableArray array];
+  if (depth < maxDepth) {
+    for (id child in [self childrenForSnapshot:snapshot]) {
+      NSMutableDictionary *childNode = [self dictionaryForSnapshot:child
+                                                             depth:depth + 1
+                                                          maxDepth:maxDepth
+                                                          maxNodes:maxNodes
+                                                         nodeCount:nodeCount
+                                                         truncated:truncated
+                                                         frontiers:frontiers
+                                                      mergedLeaves:mergedLeaves];
+      if (nil != childNode) {
+        [children addObject:childNode];
+      }
+      if (*nodeCount >= maxNodes) {
+        *truncated = YES;
+        break;
+      }
+    }
+  }
+  if (children.count == 0 && nil != mergedLeaves
+      && [result[@"label"] isKindOfClass:NSString.class]
+      && [(NSString *)result[@"label"] length] > 0) {
+    // A labelled childless node is the shape a merged card takes: the container is marked
+    // accessible, so its real controls never appear as children. Only these are worth an action
+    // read — unlabelled leaves are decoration.
+    RunnerAXSnapshotFrontier *candidate = [[RunnerAXSnapshotFrontier alloc] init];
+    candidate.snapshot = snapshot;
+    candidate.node = result;
+    candidate.depth = depth;
+    [mergedLeaves addObject:candidate];
+  }
+  if (children.count == 0 && nil != frontiers && depth >= maxDepth - 1) {
+    // Childless node at the cap boundary: either a real leaf or a branch whose children the AX
+    // server withheld. The two are indistinguishable here, so boundary childless nodes become
+    // candidates; shallower childless nodes are provably real leaves and are never collected.
+    RunnerAXSnapshotFrontier *frontier = [[RunnerAXSnapshotFrontier alloc] init];
+    frontier.snapshot = snapshot;
+    frontier.node = result;
+    frontier.depth = depth;
+    [frontiers addObject:frontier];
+  }
+  result[@"children"] = children;
+  return result;
+}
+
++ (NSArray *)childrenForSnapshot:(id)snapshot
+{
+  id children = nil;
+  @try {
+    children = [snapshot valueForKey:@"children"];
+  } @catch (NSException *exception) {
+    children = nil;
+  }
+  return [children isKindOfClass:NSArray.class] ? children : @[];
+}
+
++ (nullable NSNumber *)numberValueForKey:(NSString *)key snapshot:(id)snapshot
+{
+  id value = nil;
+  @try {
+    value = [snapshot valueForKey:key];
+  } @catch (NSException *exception) {
+    return nil;
+  }
+  return [value isKindOfClass:NSNumber.class] ? value : nil;
+}
+
++ (nullable NSString *)stringValueForKey:(NSString *)key snapshot:(id)snapshot
+{
+  id value = nil;
+  @try {
+    value = [snapshot valueForKey:key];
+  } @catch (NSException *exception) {
+    return nil;
+  }
+  if (nil == value || value == NSNull.null) {
+    return nil;
+  }
+  if ([value isKindOfClass:NSString.class]) {
+    return [(NSString *)value stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+  }
+  return [[value description] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+}
+
++ (NSNumber *)boolNumberForKey:(NSString *)key snapshot:(id)snapshot defaultValue:(BOOL)defaultValue
+{
+  NSNumber *value = [self numberValueForKey:key snapshot:snapshot];
+  return nil == value ? @(defaultValue) : @([value boolValue]);
+}
+
++ (NSDictionary *)frameValueForSnapshot:(id)snapshot
+{
+  CGRect frame = [self frameForSnapshot:snapshot];
+  return @{
+    @"x": @(CGRectGetMinX(frame)),
+    @"y": @(CGRectGetMinY(frame)),
+    @"width": @(CGRectGetWidth(frame)),
+    @"height": @(CGRectGetHeight(frame)),
+  };
+}
+
++ (CGRect)frameForSnapshot:(id)snapshot
+{
+  CGRect frame = CGRectZero;
+  @try {
+    id value = [snapshot valueForKey:@"frame"];
+    if ([value isKindOfClass:NSValue.class]
+        && strcmp([(NSValue *)value objCType], @encode(CGRect)) == 0) {
+      [(NSValue *)value getValue:&frame];
+    }
+  } @catch (NSException *exception) {
+    frame = CGRectZero;
+  }
+  if (CGRectIsNull(frame) || CGRectIsInfinite(frame)) {
+    frame = CGRectZero;
+  }
+  return frame;
+}
+
+@end
