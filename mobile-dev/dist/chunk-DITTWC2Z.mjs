@@ -1,5 +1,5 @@
 
-!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="1d1d5bbb-6f7b-5cab-b410-63ad7dbf6a56")}catch(e){}}();
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="62df4e60-ff4d-584d-b464-22c27f0e7336")}catch(e){}}();
 import { createRequire as mobileDevBundleRequire } from 'node:module'; import { fileURLToPath as mobileDevFileURLToPath } from 'node:url'; import { dirname as mobileDevPathDirname } from 'node:path'; const require = mobileDevBundleRequire(import.meta.url); const __filename = mobileDevFileURLToPath(import.meta.url); const __dirname = mobileDevPathDirname(__filename);
 import {
   ExpectedOperationError,
@@ -27,7 +27,7 @@ import {
   telemetryHost,
   withIsolationScope,
   wrapMcpServerWithSentry
-} from "./chunk-TUED2DWA.mjs";
+} from "./chunk-SLZ5BVUZ.mjs";
 import {
   external_exports
 } from "./chunk-BNXJFHSV.mjs";
@@ -4369,11 +4369,11 @@ function recordBrowserPanelContext(outcome, bytes) {
   public_api_exports.count("browser_panel.context_update", 1, { attributes });
   if (bytes !== void 0) public_api_exports.distribution("browser_panel.context_bytes", bytes, { attributes: { component: "server" }, unit: "byte" });
 }
-function recordPanelRuntime(outcome, duration2, bytes, reason) {
+function recordPanelRuntime(runtime2, outcome, duration2, bytes, reason) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
-  const attributes = { component: "server", outcome, ...reason ? { reason } : {} };
+  const attributes = { component: "server", runtime: runtime2, outcome, ...reason ? { reason } : {} };
   public_api_exports.distribution("panel_runtime.ready", duration2, { attributes, unit: "millisecond" });
-  if (bytes !== void 0) public_api_exports.distribution("panel_runtime.download_bytes", bytes, { attributes: { component: "server" }, unit: "byte" });
+  if (bytes !== void 0) public_api_exports.distribution("panel_runtime.download_bytes", bytes, { attributes: { component: "server", runtime: runtime2 }, unit: "byte" });
 }
 function recordAppStorageOperation(operation, platform2, outcome, duration2) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
@@ -4777,4 +4777,4 @@ export {
   import_websocket
 };
 
-//# debugId=1d1d5bbb-6f7b-5cab-b410-63ad7dbf6a56
+//# debugId=62df4e60-ff4d-584d-b464-22c27f0e7336

@@ -1,5 +1,5 @@
 
-!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="e3cfc234-aad7-5836-872a-d72347887704")}catch(e){}}();
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="a2b3b5d9-0845-5d59-b945-2791a5409d77")}catch(e){}}();
 import { createRequire as mobileDevBundleRequire } from 'node:module'; import { fileURLToPath as mobileDevFileURLToPath } from 'node:url'; import { dirname as mobileDevPathDirname } from 'node:path'; const require = mobileDevBundleRequire(import.meta.url); const __filename = mobileDevFileURLToPath(import.meta.url); const __dirname = mobileDevPathDirname(__filename);
 import {
   appIntelQueryInput,
@@ -60,7 +60,7 @@ import {
   touchInputSchema,
   udidSchema,
   withDeviceAppsDiagnostic
-} from "./chunk-BXB4EBDJ.mjs";
+} from "./chunk-DITTWC2Z.mjs";
 import {
   ANALYTICS_ENGAGE_URL,
   ANALYTICS_TOKEN,
@@ -88,7 +88,7 @@ import {
   resolveTelemetryEnvironment,
   setDiscoveryCommandDiagnostic,
   telemetryHost
-} from "./chunk-TUED2DWA.mjs";
+} from "./chunk-SLZ5BVUZ.mjs";
 import "./chunk-AV7EIOVC.mjs";
 import {
   $ZodObject,
@@ -34787,8 +34787,9 @@ var panelRuntimeReleaseSchema = external_exports.object({
   bytes: external_exports.number().int().positive()
 });
 var PanelRuntimeUnavailableError = class extends ExpectedOperationError {
-  constructor(detail) {
-    super("download_failed", `Mobile Dev could not download its device and testing runtime: ${detail} Check the internet connection, then try again.`);
+  constructor(detail, testingOnly) {
+    const runtime = testingOnly ? "Testing Studio runtime" : "device and testing runtime";
+    super("download_failed", `Mobile Dev could not install its ${runtime}: ${detail} Check the internet connection, then try again.`);
   }
 };
 var RuntimeFailure = class extends Error {
@@ -34802,67 +34803,83 @@ var DOWNLOAD_TIMEOUT_MS = 10 * 6e4;
 var STALE_MS = 60 * 6e4;
 var installed = /^\d+\.\d+\.\d+(?:-[\da-zA-Z.-]+)?-[0-9a-f]{12}$/;
 var run2 = promisify3(execFile4);
-function panelRuntimeDirectory(env = process.env) {
-  if (env.CLAUDE_PLUGIN_DATA) return join3(env.CLAUDE_PLUGIN_DATA, "panel-runtime");
+function panelRuntimeDirectory(env = process.env, folder = "panel-runtime") {
+  if (folder === "panel-runtime" && env.CLAUDE_PLUGIN_DATA) return join3(env.CLAUDE_PLUGIN_DATA, "panel-runtime");
   const cache = process.platform === "win32" ? env.LOCALAPPDATA || join3(homedir2(), "AppData", "Local") : join3(homedir2(), "Library", "Caches");
-  return join3(cache, "mobile-dev", "panel-runtime");
+  return join3(cache, "mobile-dev", folder);
 }
-function downloadedPanelRuntime(release, directory2 = panelRuntimeDirectory()) {
+function downloadedPanelRuntime(release, directory2 = panelRuntimeDirectory(), testingOnly = false) {
   const target2 = join3(directory2, `${release.version}-${release.sha256.slice(0, 12)}`);
   let ready;
-  return () => {
-    ready ??= prepare(release, directory2, target2).catch((error51) => {
+  const progress = { phase: "idle", received: 0, total: release.bytes };
+  function ensure() {
+    if (ready) return ready;
+    progress.phase = "checking";
+    progress.received = 0;
+    delete progress.message;
+    ready = prepare(release, directory2, target2, testingOnly, progress).then((root) => {
+      progress.phase = "ready";
+      return root;
+    }, (error51) => {
+      progress.phase = "failed";
+      progress.message = errorText(error51);
       ready = void 0;
       throw error51;
     });
     return ready;
-  };
+  }
+  return { target: target2, ensure, progress };
 }
-async function prepare(release, directory2, target2) {
+async function prepare(release, directory2, target2, testingOnly, progress) {
   const startedAt = performance.now();
-  if (await complete(target2, release)) {
-    recordPanelRuntime("cached", performance.now() - startedAt);
+  const runtime = testingOnly ? "testing" : "panel";
+  if (await complete(target2, release, testingOnly)) {
+    recordPanelRuntime(runtime, "cached", performance.now() - startedAt);
     return target2;
   }
   try {
-    await install(release, directory2, target2);
+    await install(release, directory2, target2, testingOnly, progress);
   } catch (error51) {
     const failure3 = error51 instanceof RuntimeFailure ? error51 : new RuntimeFailure("filesystem", errorText(error51));
-    recordPanelRuntime("failed", performance.now() - startedAt, void 0, failure3.reason);
+    recordPanelRuntime(runtime, "failed", performance.now() - startedAt, void 0, failure3.reason);
     if (failure3.reason !== "network" && failure3.reason !== "http") captureServerError(failure3, "panel_runtime.prepare", { tags: { panel_runtime_failure: failure3.reason } });
-    throw new PanelRuntimeUnavailableError(failure3.message);
+    throw new PanelRuntimeUnavailableError(failure3.message, testingOnly);
   }
-  recordPanelRuntime("downloaded", performance.now() - startedAt, release.bytes);
+  recordPanelRuntime(runtime, "downloaded", performance.now() - startedAt, release.bytes);
   void removeOtherVersions(directory2, target2).catch(() => {
   });
   return target2;
 }
-async function install(release, directory2, target2) {
+async function install(release, directory2, target2, testingOnly, progress) {
   const suffix = randomBytes(6).toString("hex");
   const archive = join3(directory2, `.download-${suffix}.tar.gz`);
   const staging = join3(directory2, `.staging-${suffix}`);
   try {
     await mkdir(directory2, { recursive: true });
-    await download(new URL(release.url), archive, release);
-    await extract(archive, staging);
+    progress.phase = "downloading";
+    const url2 = new URL(release.url);
+    await download(url2, archive, release, progress);
+    progress.phase = "installing";
+    await extract(archive, staging, testingOnly);
     await writeFile(join3(staging, "panel-runtime.json"), JSON.stringify(release) + "\n");
     try {
       await rename(staging, target2);
     } catch (error51) {
-      if (await complete(target2, release) === false) throw error51;
+      if (await complete(target2, release, testingOnly) === false) throw error51;
     }
   } finally {
     await rm2(archive, { force: true });
     await rm2(staging, { recursive: true, force: true });
   }
 }
-async function complete(target2, release) {
+async function complete(target2, release, testingOnly) {
   try {
     const marker2 = JSON.parse(await readFile2(join3(target2, "panel-runtime.json"), "utf8"));
     if (typeof marker2 !== "object" || marker2 === null || ("sha256" in marker2 && marker2.sha256 === release.sha256) === false) return false;
-    await access4(join3(target2, "baguette/Baguette"), constants4.X_OK);
     const e2eCli = join3(target2, E2E_CLI);
     await access4(e2eCli);
+    if (testingOnly) return true;
+    await access4(join3(target2, "baguette/Baguette"), constants4.X_OK);
     for (const name of ["simslim", "avdslim"]) {
       const executable3 = join3(target2, "resource-saving", name);
       await access4(executable3, constants4.X_OK);
@@ -34872,7 +34889,7 @@ async function complete(target2, release) {
     return false;
   }
 }
-async function download(url2, destination, release) {
+async function download(url2, destination, release, progress) {
   let body;
   if (url2.protocol === "file:") body = createReadStream(fileURLToPath3(url2));
   else {
@@ -34891,6 +34908,7 @@ async function download(url2, destination, release) {
     transform(chunk, _encoding, callback) {
       size += chunk.byteLength;
       if (size > release.bytes) return callback(new RuntimeFailure("checksum", "the archive is larger than the release it pins."));
+      progress.received = size;
       hash3.update(chunk);
       callback(null, chunk);
     }
@@ -34903,14 +34921,15 @@ async function download(url2, destination, release) {
   }
   if (size !== release.bytes || hash3.digest("hex") !== release.sha256) throw new RuntimeFailure("checksum", "the archive does not match the release it pins.");
 }
-async function extract(archive, staging) {
+async function extract(archive, staging, testingOnly) {
+  const parts = testingOnly ? ["e2e"] : PANEL_RUNTIME_PARTS;
   const tar = process.platform === "win32" ? "tar.exe" : "/usr/bin/tar";
   const { stdout } = await run2(tar, ["-tzf", archive], { maxBuffer: 16 * 1024 * 1024 }).catch((error51) => {
     throw new RuntimeFailure("archive", `the archive could not be read (${errorText(error51)}).`);
   });
   for (const member of stdout.split(/\r?\n/).filter(Boolean)) {
     const segments = member.replace(/^\.\//, "").split("/");
-    if (/[\\:]/.test(member) || member.startsWith("/") || segments.includes("..") || PANEL_RUNTIME_PARTS.includes(segments[0]) === false) {
+    if (/[\\:]/.test(member) || member.startsWith("/") || segments.includes("..") || parts.includes(segments[0]) === false) {
       throw new RuntimeFailure("archive", "the archive holds files outside the device runtime.");
     }
   }
@@ -34919,17 +34938,18 @@ async function extract(archive, staging) {
     throw new RuntimeFailure("archive", `the archive could not be extracted (${errorText(error51)}).`);
   });
   await assertPlainFiles(staging);
-  for (const part of PANEL_RUNTIME_PARTS) {
+  for (const part of parts) {
     await access4(join3(staging, part)).catch(() => {
       throw new RuntimeFailure("archive", `the archive is missing ${part}.`);
     });
   }
-  await access4(join3(staging, "baguette/Baguette"), constants4.X_OK).catch(() => {
-    throw new RuntimeFailure("archive", "the simulator backend in the archive is not executable.");
-  });
   const e2eCli = join3(staging, E2E_CLI);
   await access4(e2eCli).catch(() => {
     throw new RuntimeFailure("archive", "the archive is missing the Testing Studio runner.");
+  });
+  if (testingOnly) return;
+  await access4(join3(staging, "baguette/Baguette"), constants4.X_OK).catch(() => {
+    throw new RuntimeFailure("archive", "the simulator backend in the archive is not executable.");
   });
   for (const name of ["simslim", "avdslim"]) {
     const executable3 = join3(staging, "resource-saving", name);
@@ -37880,8 +37900,8 @@ async function loadVendoredAgentDevice() {
 }
 async function createAppFlowHost(options = {}) {
   const [{ createAppFlowService }, { createManualRecordingService }] = await Promise.all([
-    import("./app-flow-EIASFBXQ.mjs"),
-    import("./manual-7GGFTSKW.mjs")
+    import("./app-flow-Y7JUM2SB.mjs"),
+    import("./manual-2EP6ALLR.mjs")
   ]);
   const listeners = /* @__PURE__ */ new Set();
   const runs = /* @__PURE__ */ new Map();
@@ -38797,10 +38817,38 @@ import { existsSync as existsSync3 } from "node:fs";
 import { readFile as readFile8 } from "node:fs/promises";
 import { dirname as dirname7, join as join14, resolve as resolve3 } from "node:path";
 import { fileURLToPath as fileURLToPath7 } from "node:url";
+
+// packages/runtimes/e2e/package.json
+var package_default = {
+  name: "@mobile-dev/e2e-runtime",
+  version: "0.1.0",
+  private: true,
+  description: "Pinned zero-setup e2e Studio runtime.",
+  type: "module",
+  dependencies: {
+    "@ai-sdk/anthropic": "4.0.58",
+    "@ai-sdk/google": "4.0.77",
+    "@ai-sdk/openai": "4.0.109",
+    "@ai-sdk/openai-compatible": "3.0.53",
+    "@ai-sdk/xai": "5.0.4",
+    "@e2e-dev/mobile": "0.12.7",
+    "@openrouter/ai-sdk-provider": "3.1.0",
+    ai: "7.0.163",
+    e2e: "0.23.1",
+    zod: "4.6.7"
+  }
+};
+
+// packages/core/src/e2e-runtime.ts
+var testingRuntimeDownload;
 var modulePath = fileURLToPath7(import.meta.url);
 var moduleDirectory = dirname7(modulePath);
 var PROJECT_CLI = "node_modules/.bin/e2e";
 async function bundledE2eRoot() {
+  if (testingRuntimeDownload) {
+    const directory2 = await testingRuntimeDownload.ensure();
+    return join14(directory2, "e2e");
+  }
   const configured = process.env.MOBILE_DEV_E2E_RUNTIME?.trim();
   const root = configured || (modulePath.endsWith(".ts") ? resolve3(moduleDirectory, "../../runtimes/e2e") : await panelRuntimePath("e2e"));
   const manifest = join14(root, "node_modules/e2e/package.json");
@@ -38812,6 +38860,16 @@ async function version3(root, name) {
   return typeof metadata4.version === "string" ? metadata4.version : "unknown";
 }
 async function bundledRuntimeDescriptor(reason) {
+  if (testingRuntimeDownload) {
+    const root2 = join14(testingRuntimeDownload.target, "e2e");
+    return {
+      mode: "bundled",
+      root: root2,
+      reason,
+      e2eVersion: package_default.dependencies.e2e,
+      mobileVersion: package_default.dependencies["@e2e-dev/mobile"]
+    };
+  }
   const root = await bundledE2eRoot();
   return {
     mode: "bundled",
@@ -41375,7 +41433,7 @@ var SUBSCRIPTION_IDS = ["openai", "github-copilot", "opencode-console", "spacexa
 async function readTestingLoginStatus() {
   const status = Object.fromEntries(SUBSCRIPTION_IDS.map((id2) => [id2, false]));
   try {
-    const root = await bundledE2eRoot();
+    const root = testingRuntimeDownload ? join21(testingRuntimeDownload.target, "e2e") : await bundledE2eRoot();
     const store2 = join21(root, "node_modules/e2e/dist/oauth/store.js");
     const url2 = pathToFileURL4(store2);
     const module = await import(url2.href);
@@ -41983,8 +42041,37 @@ function registerTestingTools(server, projects, devices3 = new TestingDevices(),
     const resolved = foregroundBundleId ?? (foregroundPlatform === "ios" && foregroundDeviceId && foregroundPid ? await (matrix.foregroundBundle ?? simulatorBundleForPid)(foregroundDeviceId, foregroundPid).catch(() => void 0) : void 0);
     const bundleId3 = resolved && !LAUNCHER_APP.test(resolved) ? resolved : void 0;
     const project = await inspectProject(selected, foregroundPlatform && bundleId3 ? { platform: foregroundPlatform, bundleId: bundleId3 } : void 0);
-    return dataResult2({ ...project, setup: await inspectTestingSetup(project.path, project.configPath || void 0), modelPreference: await readTestingModelPreference(), providers: SETUP_PROVIDERS });
+    const needsRuntime = project.runtimeMode === "bundled" && testingRuntimeDownload && testingRuntimeDownload.progress.phase !== "ready";
+    return dataResult2({ ...project, needsRuntime: Boolean(needsRuntime), setup: await inspectTestingSetup(project.path, project.configPath || void 0), modelPreference: await readTestingModelPreference(), providers: SETUP_PROVIDERS });
   }));
+  const download2 = testingRuntimeDownload;
+  if (download2) {
+    const currentProgress = async () => {
+      const loginStatus = download2.progress.phase === "ready" ? await readTestingLoginStatus() : void 0;
+      return dataResult2({ progress: { ...download2.progress }, loginStatus });
+    };
+    K3(server, "mobile_testing_prepare_runtime", {
+      title: "Prepare the Testing Studio runtime",
+      description: "Start the pinned Testing Studio download on first use, or retry a failed installation.",
+      inputSchema: { retry: external_exports.boolean().optional() },
+      annotations: { ...write2, openWorldHint: true },
+      _meta: appVisibility2
+    }, safe2(async ({ retry }) => {
+      const phase = download2.progress.phase;
+      if (phase === "idle" || phase === "failed" && retry) {
+        void download2.ensure().catch(() => {
+        });
+      }
+      return currentProgress();
+    }));
+    K3(server, "mobile_testing_runtime_progress", {
+      title: "Read Testing Studio download progress",
+      description: "Read the current download and installation status.",
+      inputSchema: {},
+      annotations: read2,
+      _meta: appVisibility2
+    }, safe2(currentProgress));
+  }
   const setupTarget = external_exports.object({ name: external_exports.string().min(1).max(128), platform: external_exports.enum(["ios", "android"]), bundleId: external_exports.string().min(1).max(512) });
   const setupOptions = external_exports.object({
     targets: external_exports.array(setupTarget).min(1).max(100),
@@ -42082,7 +42169,8 @@ function registerTestingTools(server, projects, devices3 = new TestingDevices(),
     _meta: appVisibility2
   }, safe2(async ({ deviceId: deviceId3, platform: platform5, projectPath: selected, bundleId: bundleId3 }) => {
     const project = await inspectProject(selected, { platform: platform5, bundleId: bundleId3 });
-    const { tree, screen } = await devices3.read({ deviceId: deviceId3, platform: platform5, projectPath: selected, runtimeRoot: project.runtime.root, bundleId: bundleId3 });
+    const runtimeRoot = project.runtimeMode === "bundled" ? await bundledE2eRoot() : project.runtime.root;
+    const { tree, screen } = await devices3.read({ deviceId: deviceId3, platform: platform5, projectPath: selected, runtimeRoot, bundleId: bundleId3 });
     return dataResult2({ tree, ...screen ? { screen } : {} });
   }));
   K3(server, "mobile_testing_set_target", {
@@ -42115,12 +42203,13 @@ function registerTestingTools(server, projects, devices3 = new TestingDevices(),
     const paths = await resolveTestRunPaths(selected, relativePath, project.runtimeMode === "project" ? configPath : void 0, untilSource !== void 0);
     const selectedTarget = project.targets.find((entry2) => entry2.name === target2) ?? project.targets.find((entry2) => entry2.platform === platform5 && (!bundleId3 || entry2.bundleId === bundleId3)) ?? project.targets[0];
     const bundledSource = project.runtimeMode === "bundled" ? untilSource ?? await readTestFile(selected, relativePath) : untilSource;
+    const runtimeRoot = project.runtimeMode === "bundled" ? await bundledE2eRoot() : project.runtime.root;
     const request = {
       ...paths,
       ...timeoutMs === void 0 ? {} : { timeoutMs },
       ...target2 ? { target: target2 } : {},
       ...bundledSource === void 0 ? {} : { untilSource: bundledSource },
-      runtime: { mode: project.runtimeMode, root: project.runtime.root },
+      runtime: { mode: project.runtimeMode, root: runtimeRoot },
       ...project.runtimeMode === "bundled" && platform5 && bundleId3 ? { bundledTarget: { platform: platform5, bundleId: bundleId3 } } : project.runtimeMode === "bundled" && selectedTarget?.platform && selectedTarget.bundleId ? { bundledTarget: { platform: selectedTarget.platform, bundleId: selectedTarget.bundleId } } : {},
       ...model ? { model } : {}
     };
@@ -55165,7 +55254,12 @@ function reply(response3, status, headers = {}) {
 
 // apps/claude/server/server.ts
 var pinned = await readFile24(new URL("./panel-runtime.json", import.meta.url), "utf8").catch(() => void 0);
-if (pinned !== void 0) usePanelRuntime(downloadedPanelRuntime(panelRuntimeReleaseSchema.parse(JSON.parse(pinned))));
+if (pinned !== void 0) {
+  const metadata4 = JSON.parse(pinned);
+  const release = panelRuntimeReleaseSchema.parse(metadata4);
+  const download2 = downloadedPanelRuntime(release);
+  usePanelRuntime(download2.ensure);
+}
 await runStdioServer({ panel: createPanel({ inline: false }), features: [agentDeviceTools(readAgentDeviceCatalog()), browserPanel({ always: true })] });
 /*! Bundled license information:
 
@@ -55177,4 +55271,4 @@ content-type/index.js:
    *)
 */
 
-//# debugId=e3cfc234-aad7-5836-872a-d72347887704
+//# debugId=a2b3b5d9-0845-5d59-b945-2791a5409d77

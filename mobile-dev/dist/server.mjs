@@ -16,7 +16,7 @@ import {
   setAttribute,
   setTag,
   tagInstallIntegrity
-} from "./chunk-TUED2DWA.mjs";
+} from "./chunk-SLZ5BVUZ.mjs";
 import "./chunk-WNUFIJT5.mjs";
 
 // packages/core/src/instrument.ts
@@ -74,6 +74,6 @@ client?.on("spanStart", (span) => {
 });
 
 // apps/claude/server/index.ts
-await import("./server-ENAGB6CN.mjs");
+await import("./server-ACP2QV7B.mjs");
 
 //# debugId=2273c02e-4ed0-581a-b757-57804fe1dd20
