@@ -1,1 +1,0 @@
-function e(e){process.stdout.write(`${JSON.stringify(e,null,2)}\n`)}export{e as printJson};

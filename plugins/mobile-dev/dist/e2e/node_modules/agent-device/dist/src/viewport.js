@@ -1,1 +1,0 @@
-import{P as e}from"./sdk-contracts.js";function t(t,n){let r=t===void 0?NaN:Number(t);if(!Number.isInteger(r)||r<1)throw new e(`INVALID_ARGS`,`viewport ${n} must be a positive integer`);return r}function n(n){if(n.length!==2)throw new e(`INVALID_ARGS`,`viewport requires exactly two arguments: <width> <height>`);return{width:t(n[0],`width`),height:t(n[1],`height`)}}export{n as t};

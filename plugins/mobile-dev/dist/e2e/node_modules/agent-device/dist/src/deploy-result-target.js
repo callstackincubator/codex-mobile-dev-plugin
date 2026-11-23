@@ -1,1 +1,0 @@
-function e(e){return e.bundleId??e.package??e.app}function t(e){return e.appName??e.bundleId??e.packageName??e.launchTarget}export{t as n,e as t};

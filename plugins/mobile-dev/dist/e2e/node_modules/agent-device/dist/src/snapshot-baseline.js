@@ -1,1 +1,0 @@
-function e(e){return{nodes:e?.nodes??[],...e?.iosSystemSurfaceBundleId?{surfaceBundleId:e.iosSystemSurfaceBundleId}:{},...e?.presentedSurface?{presentedSurface:e.presentedSurface}:{}}}export{e as t};

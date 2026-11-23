@@ -1,1 +1,0 @@
-function e(e){return{discover:async()=>t(e)}}function t(e){return e.hostOs===`linux`?[{platform:`linux`,id:`local`,name:e.hostName,kind:`device`,target:`desktop`,booted:!0}]:[]}export{e as createLinuxInventory};

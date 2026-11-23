@@ -1,1 +1,0 @@
-import"./remote-config-core.js";export{};

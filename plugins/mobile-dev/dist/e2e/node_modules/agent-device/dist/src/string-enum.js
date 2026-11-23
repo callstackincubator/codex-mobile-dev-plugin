@@ -1,1 +1,0 @@
-import{P as e}from"./sdk-contracts.js";function t(t,n={message:e=>`Invalid value: ${e}`}){let r=new Set(t),i=n.normalize??(e=>e);return{is:e=>typeof e==`string`&&r.has(e),parse:t=>{let a=i(t??``);if(r.has(a))return a;throw new e(`INVALID_ARGS`,n.message(t??``))}}}export{t};

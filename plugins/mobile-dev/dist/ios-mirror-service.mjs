@@ -1,5 +1,5 @@
 
-!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="6eb71d24-5fc6-5e27-ba1c-435c3ea5a1fd")}catch(e){}}();
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="a6700f28-45a4-5f0b-ab75-0e7be987aa1b")}catch(e){}}();
 ;(function(){var g=globalThis.__SENTRY_ORCHESTRION__=globalThis.__SENTRY_ORCHESTRION__||{};g.bundler=g.bundler||new Set();})();import { createRequire as mobileDevBundleRequire } from 'node:module'; import { fileURLToPath as mobileDevFileURLToPath } from 'node:url'; import { dirname as mobileDevPathDirname } from 'node:path'; const require = mobileDevBundleRequire(import.meta.url); const __filename = mobileDevFileURLToPath(import.meta.url); const __dirname = mobileDevPathDirname(__filename);
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -62157,7 +62157,7 @@ var nodeRuntimeMetricsIntegration = defineIntegration((options = {}) => {
 });
 
 // packages/shared/src/version.ts
-var PLUGIN_VERSION = "0.1.191";
+var PLUGIN_VERSION = "0.1.192";
 
 // packages/shared/src/telemetry-identity.ts
 function isAnonymousUserId(value) {
@@ -62253,6 +62253,7 @@ var frequentTools = /* @__PURE__ */ new Set([
   "mobile_log_sources",
   "mobile_performance_sources",
   "mobile_read_performance_recording",
+  "mobile_testing_runtime_progress",
   "mobile_appflow_status",
   "mobile_appflow_next_decision",
   "mobile_appflow_result",
@@ -82962,4 +82963,4 @@ undici/lib/web/websocket/frame.js:
   (*! ws. MIT License. Einar Otto Stangvik <einaros@gmail.com> *)
 */
 
-//# debugId=6eb71d24-5fc6-5e27-ba1c-435c3ea5a1fd
+//# debugId=a6700f28-45a4-5f0b-ab75-0e7be987aa1b
