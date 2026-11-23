@@ -4,7 +4,10 @@ import { readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 const runtime = "packages/runtimes/e2e";
-const installArgs = ["install", "--prefix", runtime, "--ignore-scripts", "--no-audit", "--no-fund", "--package-lock-only=false"];
+// Install exactly the checked-in lock. `npm install` rewrites it in the format of whichever npm runs
+// (npm 10 drops the `libc` fields npm 11 writes), so CI re-pinned a different lock than the one
+// committed. Pin updates go through tooling/update-dependencies.mjs (--package-lock-only).
+const installArgs = ["ci", "--prefix", runtime, "--ignore-scripts", "--no-audit", "--no-fund"];
 const npmCli = process.env.npm_execpath;
 if (npmCli) execFileSync(process.execPath, [npmCli, ...installArgs], { stdio: "inherit" });
 else execFileSync(process.platform === "win32" ? "npm.cmd" : "npm", installArgs, {
