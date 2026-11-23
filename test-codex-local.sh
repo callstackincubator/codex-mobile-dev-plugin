@@ -6,13 +6,14 @@ INSTALL=0
 FULL_CHECK=0
 NO_LAUNCH=0
 
+# Run scripts/test-codex-local.sh in the perf-ai checkout first. It serves that tree's
+# app and CLI and leaves two pointer files in $TMPDIR (tracesift-codex-test-home and
+# tracesift-codex-test-cli). This script reads them and launches the desktop app binary
+# directly with TRACE_SIFT_HOME and TRACE_SIFT_COMMAND set, because `open` drops the
+# environment. Without the pointer files the app launches via `open -na` and uses the
+# default ~/.tracesift home and the `tracesift` on PATH.
 usage() {
   echo "Usage: $0 [--install] [--full] [--no-launch]" >&2
-  # The `tracesift` on PATH is often an older global install without release-build
-  # recording (no `profile` command, no `--profiler-port`). Point Mobile Dev at a newer
-  # checkout instead of reinstalling globally:
-  #   TRACE_SIFT_COMMAND=/path/to/perf-ai/packages/cli/src/cli.js
-  echo "TraceSift: set TRACE_SIFT_COMMAND to a newer tracesift CLI (for example /path/to/perf-ai/packages/cli/src/cli.js) to record release builds." >&2
 }
 
 while [[ $# -gt 0 ]]; do
@@ -100,20 +101,72 @@ fi
 
 codex plugin add mobile-dev@mobile-dev-local --json
 
-APP_NAME="${CODEX_DESKTOP_APP:-Codex}"
+if [[ -n "${CODEX_DESKTOP_APP:-}" ]]; then
+  APP_NAME="$CODEX_DESKTOP_APP"
+elif [[ -d /Applications/Codex.app ]]; then
+  APP_NAME="Codex"
+else
+  APP_NAME="ChatGPT"
+fi
 VERSION="$(node -p 'require("./package.json").version')"
 echo
 echo "Mobile Dev $VERSION from this App Intelligence worktree is installed."
 
+# Pick up a TraceSift working tree served by perf-ai/scripts/test-codex-local.sh.
+TS_HOME_FILE="${TMPDIR%/}/tracesift-codex-test-home"
+TS_CLI_FILE="${TMPDIR%/}/tracesift-codex-test-cli"
+TS_HOME=""
+TS_CLI=""
+if [[ -f "$TS_HOME_FILE" && -f "$TS_CLI_FILE" ]]; then
+  TS_HOME="$(cat "$TS_HOME_FILE")"
+  TS_CLI="$(cat "$TS_CLI_FILE")"
+  if [[ ! -f "$TS_HOME/service.json" || ! -x "$TS_CLI" ]]; then
+    echo "Ignoring stale TraceSift pointer files (perf-ai/scripts/test-codex-local.sh is no longer running)." >&2
+    TS_HOME=""
+    TS_CLI=""
+  fi
+fi
+
+APP_BIN=""
+if [[ -n "$TS_HOME" ]]; then
+  APP_PLIST="/Applications/$APP_NAME.app/Contents/Info.plist"
+  EXEC_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP_PLIST" 2>/dev/null || true)"
+  if [[ -n "$EXEC_NAME" && -x "/Applications/$APP_NAME.app/Contents/MacOS/$EXEC_NAME" ]]; then
+    APP_BIN="/Applications/$APP_NAME.app/Contents/MacOS/$EXEC_NAME"
+  else
+    echo "Could not find the $APP_NAME binary under /Applications; falling back to open -na without TraceSift variables." >&2
+    TS_HOME=""
+  fi
+fi
+
+launch_command() {
+  if [[ -n "$APP_BIN" ]]; then
+    printf 'TRACE_SIFT_COMMAND=%q TRACE_SIFT_HOME=%q %q' "$TS_CLI" "$TS_HOME" "$APP_BIN"
+  else
+    printf 'open -na %q' "$APP_NAME"
+  fi
+}
+
+if [[ -n "$APP_BIN" ]]; then
+  echo "TraceSift: using the working tree. home=$TS_HOME cli=$TS_CLI"
+else
+  echo "TraceSift: no working-tree pointer files; the panel will use ~/.tracesift and the tracesift on PATH."
+fi
+
 if [[ $NO_LAUNCH -eq 1 || ! -t 0 ]]; then
   echo "Fully quit the desktop app, then run:"
-  printf 'open -na %q\n' "$APP_NAME"
+  echo "$(launch_command)"
   exit 0
 fi
 
 echo "Fully quit $APP_NAME with Cmd-Q before continuing."
 read -r -p "Press Enter to relaunch it... "
-open -na "$APP_NAME"
+if [[ -n "$APP_BIN" ]]; then
+  TRACE_SIFT_COMMAND="$TS_CLI" TRACE_SIFT_HOME="$TS_HOME" nohup "$APP_BIN" >/dev/null 2>&1 &
+  disown
+else
+  open -na "$APP_NAME"
+fi
 
 echo "Open a new chat, open Mobile Dev, choose App Intelligence from the feature menu, select a React Native project, and generate its graph."
 echo "In chat, also try: Show me the App Intelligence for this app."
