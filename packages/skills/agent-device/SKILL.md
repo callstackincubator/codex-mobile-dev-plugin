@@ -5,7 +5,7 @@ description: Drive apps on a local iOS simulator or Android device with Mobile D
 
 # agent-device
 
-Mobile Dev bundles agent-device 0.20.9 and serves each of its commands as a `device_<command>` tool: `device_open` is its `open` command, and so on. No global CLI install, npx download, or separate server is needed. Follow the Mobile Dev skill to choose the device and to build, install, and launch the app; this skill covers driving it.
+Mobile Dev bundles agent-device 0.21.37 and serves each of its commands as a `device_<command>` tool: `device_open` is its `open` command, and so on. No global CLI install, npx download, or separate server is needed. Follow the Mobile Dev skill to choose the device and to build, install, and launch the app; this skill covers driving it.
 
 Read [the workflow guide](references/workflow.md) before the first task. It is this agent-device version's own `help workflow`, written for its CLI. With the tools:
 
@@ -18,7 +18,7 @@ Read [the workflow guide](references/workflow.md) before the first task. It is t
 2. Read the refs `device_open` returns, or call `device_snapshot` with `interactiveOnly: true`. Use actual refs from the latest result, or a known selector; prefer them to coordinates.
 3. Call `device_press`, `device_fill`, or `device_scroll` with `settle: true`, and continue from the settled diff. `device_fill` replaces text; `device_type` appends to the focused field and has no settle option. Run stateful commands in order within one session.
 4. Verify the requested result with a named expectation through `device_wait`, `device_is`, `device_get`, or `device_find`. Give `device_find` a read-only `action` such as `exists` or `getText`; without one it taps the match. A screenshot or snapshot alone is not verification, and an accepted input does not prove the app changed. `device_screenshot` returns the image when you need to look at the screen.
-5. Call `device_close` when finished. Leave `shutdown` unset to keep the device running. Closing can close the active app; skip it if the user wants that app left open.
+5. Release control when finished with `device_close({ session: "<your-session>" })`, omitting both `app` and `shutdown`. On local iOS and Android devices, this ends the session and releases its device claim while keeping the app running in its current foreground state and the device booted, so another session can acquire it. Pass `app` only when intentionally closing that app; set `shutdown: true` only when the simulator or emulator should also stop. If cleanup fails, retry closing the same session; do not force-release another session's claim.
 
 A selector that matches several elements fails with `AMBIGUOUS_MATCH` and lists the candidates: retry with one of their refs or a narrower selector.
 

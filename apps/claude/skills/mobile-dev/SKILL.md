@@ -92,8 +92,11 @@ The `device_*` tools are the bundled agent-device runtime's commands; follow the
 agent-device skill to drive the app. In short: call `device_open` with the app, the
 device's `platform` and `udid` (iOS) or `serial` (Android), a short `session` name, and
 `foreground: true`; act on refs from the latest snapshot with `settle: true`; verify
-the requested result with a named expectation; and call `device_close` without
-`shutdown` to leave the device running. Claude Code's simulator `control` tool can
+the requested result with a named expectation; and call `device_close` with only
+the `session` to release control while keeping the app running in its current
+foreground state and the device booted. Omit both `app` and `shutdown` for that
+handoff. Pass `app` only to intentionally close it, or `shutdown: true` to also stop
+the simulator or emulator. Claude Code's simulator `control` tool can
 also tap and read the screen it shows; use one of the two for a flow rather than
 mixing them.
 
