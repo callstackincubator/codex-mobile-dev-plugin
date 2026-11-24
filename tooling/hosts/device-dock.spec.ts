@@ -47,6 +47,28 @@ for (const theme of ["light", "dark"] as const) {
   });
 }
 
+test("rounded dock overlays do not resize a device that fits", async ({ openView, server }) => {
+  test.skip(hasPanel(server) === false, "This target opens the workspace in a separate browser tab.");
+  const { view } = await openView("mobile_open_simulator", { arguments: { deviceId: iphone.udid }, displayMode: "inline", width: 720, inventory });
+  const dock = view.locator("#simulator-panels");
+  await dock.getByRole("tab", { name: iphone.name }).waitFor();
+  await dock.evaluate(element => { element.style.width = "706.67px"; });
+  // A rounded Dockview layer can extend past its shell at fractional host zoom.
+  await dock.locator(".dv-render-overlay").evaluate(element => {
+    element.style.boxSizing = "content-box";
+    element.style.paddingRight = "1px";
+    element.style.paddingBottom = "1px";
+  });
+  const fits = await dock.evaluate(async element => {
+    for (let frame = 0; frame < 12; frame++) {
+      await new Promise(requestAnimationFrame);
+      if (element.scrollWidth > element.clientWidth || element.scrollHeight > element.clientHeight) return false;
+    }
+    return true;
+  });
+  expect(fits).toBe(true);
+});
+
 test("choosing a device dismisses the picker and keeps Add device centered in narrow groups", async ({ openView, server }) => {
   test.skip(hasPanel(server) === false, "This target opens the workspace in a separate browser tab.");
   const { view } = await openView("mobile_open_simulator", { displayMode: "inline", width: 360, inventory });

@@ -424,6 +424,8 @@ html[data-theme="dark"] .tracesift-explorer { color-scheme: dark; }
 }
 
 #simulator-panels .device-dock {
+  /* Only the dock’s minimum size should make its parent scroll. Dockview rounds overlay bounds to whole pixels. */
+  overflow: clip;
   color-scheme: inherit;
   background: var(--border);
   --dv-group-view-background-color: var(--background);
