@@ -901,7 +901,7 @@ The server measures Instruments startup and finalization with
 `ios.hitches.operation.duration` in milliseconds. Operation (`connect` or
 `finish`), outcome, recording surface, and platform describe collector overhead.
 Hitch events, app identity, and trace contents stay local. Existing
-`ui.recording.derive` timing includes the selected range's hitch summary.
+`ui.recording.derive` timing includes matching hitches to recorded FPS intervals and summarizing the selected range.
 
 ## Resource-saving operations
 

@@ -188,7 +188,7 @@ sends the exact recording ID and range as a user message. Retrieve those samples
 `mobile_read_performance_recording` before answering. Thread CPU summaries are
 weighted by measured interval overlap; they show activity, not code-level causes.
 For completed physical iPhone runs, use `summary.hitchStats` for visible hitches
-and time lost in the selected range. Selectable chart markers show the frame’s
+and time lost in the selected range. Diamonds on the Display FPS graph show the frame’s
 refresh interval and presentation delay. The monitored app contributed content
 to those frames. Determining the cause requires commit and render-phase evidence.
 A null summary means the capture has no coverage for that range.

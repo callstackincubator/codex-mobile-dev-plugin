@@ -26,8 +26,18 @@ html:is([data-view="recording"], [data-view="comparison"], [data-view="tracesift
 .recording-track-metric strong { color: var(--foreground); font-weight: 600; font-variant-numeric: tabular-nums; }
 .recording-info { width: 22px; height: 22px; border-radius: 50%; color: var(--muted-foreground); }
 .recording-info-content { width: min(280px, calc(100vw - 24px)); font-size: 12px; line-height: 1.5; }
-.recording-hitch-chart { display: block; width: calc(100% - 64px); height: 28px; margin: 8px 12px 0 52px; border-radius: 4px; background: var(--muted); cursor: crosshair; }
-.recording-hitch-chart:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.recording-fps-legend, .recording-fps-inspector { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; color: var(--muted-foreground); font-size: 12px; }
+.recording-fps-legend { margin: 6px 0; }
+.recording-fps-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.recording-fps-legend span::before { content: ""; width: 14px; height: 2px; background: #36a269; }
+.recording-fps-legend span + span::before { width: 7px; height: 7px; transform: rotate(45deg); background: var(--destructive); }
+.recording-hitch-marker { fill: var(--destructive); cursor: pointer; }
+.recording-hitch-marker text { font-size: 11px; fill: var(--foreground); paint-order: stroke; stroke: var(--background); stroke-width: 3px; }
+.recording-chart:has(.recording-hitch-marker:hover) .recharts-tooltip-wrapper { visibility: hidden !important; }
+.recording-fps-inspector { padding-top: 8px; border-top: 1px solid var(--border); }
+.recording-fps-inspector label { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; }
+.recording-fps-inspector select { min-width: 0; background: var(--background); color: var(--foreground); border: 1px solid var(--border); border-radius: 6px; padding: 3px 4px; }
+.recording-fps-inspector p { font-variant-numeric: tabular-nums; }
 .recording-chart { width: 100%; touch-action: pan-y; user-select: none; cursor: crosshair; }
 .recording-track[data-reveal="pending"] .recording-change-highlight { opacity: 0; }
 .recording-track[data-reveal="finished"] .recording-change-highlight { animation: recording-highlight-reveal 150ms ease-out 250ms both; }

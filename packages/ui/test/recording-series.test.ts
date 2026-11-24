@@ -1,7 +1,33 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createRecordingCpuSeries, createRecordingFpsSeries, findRecordingChangeRanges } from "../src/recording-series.ts";
+import { createRecordingCpuSeries, createRecordingFpsSeries, createRecordingHitchOverlay, findRecordingChangeRanges } from "../src/recording-series.ts";
 import { recordingFixture } from "../../test-support/recording-fixtures.ts";
+
+test("hitches join the displayed FPS intervals across boundaries, missing samples and partial capture", () => {
+  const recording = recordingFixture();
+  recording.fps.samples = [
+    { time: 1, interval: 1, fps: 60 },
+    { time: 2, interval: 1.1, fps: 50 },
+    { time: 3, interval: 1, fps: null },
+    { time: 5, interval: 1, fps: 0 },
+    { time: 6, interval: 1, fps: 60 },
+  ];
+  const events = [0.99, 1, 2.5, 3.5, 4.5].map(time => ({ time, lateMs: 8.33, refreshIntervalMs: 8.33 }));
+  const curve = createRecordingFpsSeries(recording);
+  const overlay = createRecordingHitchOverlay({ status: "finished", end: 5.5, events }, curve);
+  assert.ok(overlay);
+  const readings = overlay.hitches.map(hitch => hitch.sample?.fps);
+  const counts = overlay.samples.map(sample => sample.hitchCount);
+  assert.deepEqual(readings, [60, 50, undefined, undefined, 0]);
+  assert.deepEqual(counts, [1, 1, 1, null]);
+  const idle = createRecordingHitchOverlay({ status: "finished", end: 6, events: [] }, curve);
+  assert.equal(idle?.samples[1].hitchCount, 0);
+  const missing = createRecordingHitchOverlay({ status: "unavailable", error: "No trace" }, curve);
+  assert.equal(missing, undefined);
+  const onlyHitches = createRecordingHitchOverlay({ status: "finished", end: 6, events }, []);
+  assert.equal(onlyHitches?.hitches.length, 5);
+  assert.equal(onlyHitches?.samples.length, 0);
+});
 
 test("CPU readings cover their preceding measured intervals starting at zero", () => {
   const recording = recordingFixture();

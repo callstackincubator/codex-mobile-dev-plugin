@@ -157,8 +157,8 @@ duration (1–10 seconds); changing intervals within 80% of the highest density 
 highlighted. Flat or uniformly changing series have no distinct highlights, and
 missing readings and large delivery gaps are excluded. These regions describe
 changes, not their cause or absolute CPU/memory/FPS levels.
-Drag across any chart to select the same interval on CPU, memory, and FPS; click
-a chart to clear the selection. The selected thread list shows average
+Drag across any chart to select the same interval on CPU, memory, and FPS.
+Use **Clear** in the range overview to clear the selection. The selected thread list shows average
 CPU weighted by measured interval overlap. CPU and FPS chart readings span their measured
 intervals, so the first complete interval begins at zero; missing readings remain
 gaps. Memory labels, tooltips and changes use whole MiB, while saved samples retain
@@ -170,9 +170,12 @@ FPS range averages weight measured interval overlap; zero is valid, and missing
 readings remain gaps.
 
 On a paired physical iPhone, timed recordings also start Xcode’s Frame Lifetimes
-instrument. The **Visible hitches** track becomes available after export finishes.
-Select a marker to see presentation time, refresh rate for that frame, and the
-delay in milliseconds and refresh intervals. The recording includes a late frame
+instrument. After export finishes, **Display FPS** shows each visible hitch as
+a diamond at its presentation time and the height of its device-wide FPS sample.
+Select a diamond to see the frame’s refresh rate and delay in milliseconds and
+refresh intervals. Click the plot to inspect an FPS sample and its hitch count.
+The **Inspect** menu also lists overlapping hitches and frames in FPS sampling gaps.
+A frame in a gap shows its timing with no FPS reading. The recording includes a late frame
 when its Core Animation contexts include the monitored app’s PID. App commits,
 the render server, or GPU work can contribute to the delay.
 

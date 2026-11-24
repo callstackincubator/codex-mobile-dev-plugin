@@ -1,64 +1,77 @@
-import { useMemo, useState } from "react";
-import type { KeyboardEvent, MouseEvent } from "react";
+import { memo } from "react";
+import { DefaultZIndexes, usePlotArea, useXAxisScale, useYAxisScale, ZIndexLayer } from "recharts";
 import type { IosHitch } from "@mobile-dev/shared/ios-hitches.ts";
-import type { RecordingRange } from "@mobile-dev/shared/recordings.ts";
-import { InfoPopover } from "./card-parts";
+import type { RecordingHitchOverlay } from "../recording-series.ts";
 
-function describeHitch(event: IosHitch) {
+export type FpsInspection = { kind: "hitch" | "sample"; index: number };
+
+function frameTiming(event: IosHitch) {
   const hz = Math.round(1000 / event.refreshIntervalMs);
-  const intervals = event.lateMs / event.refreshIntervalMs;
-  const rounded = Math.round(intervals * 100) / 100;
-  const unit = rounded === 1 ? "refresh interval" : "refresh intervals";
-  return `${event.time.toFixed(3)} s · ${hz} Hz · ${event.lateMs.toFixed(2)} ms late · ${rounded} ${unit}`;
+  const fraction = event.lateMs / event.refreshIntervalMs;
+  const intervals = Math.round(fraction * 100) / 100;
+  const unit = intervals === 1 ? "refresh interval" : "refresh intervals";
+  return `${event.time.toFixed(3)} s · ${hz} Hz · ${event.lateMs.toFixed(2)} ms late · ${intervals} ${unit}`;
 }
 
-export function RecordingHitches({ events, duration, range }: { events: IosHitch[]; duration: number; range?: RecordingRange }) {
-  const [index, setIndex] = useState(0);
-  const event = events[index];
-  const paths = useMemo(() => {
-    const lines = [];
-    for (const hitch of events) {
-      const x = 1000 * hitch.time / duration;
-      lines.push(`M${x},6v16`);
-    }
-    return lines.join(" ");
-  }, [events, duration]);
-  function pick(click: MouseEvent<SVGSVGElement>) {
-    const bounds = click.currentTarget.getBoundingClientRect();
-    const time = duration * (click.clientX - bounds.left) / bounds.width;
-    let closest = 0;
-    let distance = Math.abs(events[0].time - time);
-    for (let i = 1; i < events.length; i++) {
-      const next = Math.abs(events[i].time - time);
-      if (next >= distance) continue;
-      distance = next;
-      closest = i;
-    }
-    setIndex(closest);
+export const HitchMarkers = memo(function HitchMarkers({ overlay, selected }: { overlay: RecordingHitchOverlay; selected?: number }) {
+  const x = useXAxisScale();
+  const y = useYAxisScale();
+  const plot = usePlotArea();
+  if (x === undefined || y === undefined || plot === undefined) return null;
+  const diamond = (index: number, active: boolean) => {
+    const { event, sample } = overlay.hitches[index];
+    if (sample === undefined) return null;
+    const cx = x(event.time);
+    const cy = y(sample.fps);
+    if (cx === undefined || cy === undefined) return null;
+    const radius = active ? 6 : 4;
+    const maxLabelX = plot.x + plot.width - 25 - cx;
+    const rightBound = Math.min(0, maxLabelX);
+    const labelX = Math.max(plot.x + 25 - cx, rightBound);
+    return <g key={index} data-hitch-index={index} transform={`translate(${cx} ${cy})`} className="recording-hitch-marker">
+      {active && <text x={labelX} y={-11} textAnchor="middle" pointerEvents="none">{event.time.toFixed(3)} s</text>}
+      <circle r={7} fill="transparent" />
+      <path d={`M0,${-radius} L${radius},0 0,${radius} ${-radius},0Z`} stroke={active ? "var(--background)" : "none"} strokeWidth={1.5} />
+      <title>{frameTiming(event)}</title>
+    </g>;
+  };
+  return <ZIndexLayer zIndex={DefaultZIndexes.scatter}>
+    {overlay.hitches.map((_, index) => index === selected ? null : diamond(index, false))}
+    {selected !== undefined && overlay.hitches[selected] && diamond(selected, true)}
+  </ZIndexLayer>;
+});
+
+const InspectionOptions = memo(function InspectionOptions({ overlay }: { overlay: RecordingHitchOverlay }) {
+  return <>
+    {overlay.hitches.length > 0 && <optgroup label="Visible hitches">
+      {overlay.hitches.map(({ event }, i) => <option key={i} value={`hitch-${i}`}>{event.time.toFixed(3)} s · hitch</option>)}
+    </optgroup>}
+    {overlay.samples.length > 0 && <optgroup label="FPS sample intervals">
+      {overlay.samples.map((sample, i) => <option key={i} value={`sample-${i}`}>{sample.start.toFixed(3)}–{sample.end.toFixed(3)} s · {sample.fps.toFixed(1)} FPS</option>)}
+    </optgroup>}
+  </>;
+});
+
+export function FpsInspector({ overlay, inspection, onInspect }: {
+  overlay: RecordingHitchOverlay; inspection: FpsInspection; onInspect: (next: FpsInspection) => void;
+}) {
+  const hitch = inspection.kind === "hitch" ? overlay.hitches[inspection.index] : undefined;
+  const sample = inspection.kind === "sample" ? overlay.samples[inspection.index] : hitch?.sample;
+  let detail = "No visible hitches in the captured interval.";
+  if (hitch) {
+    const fps = sample ? `${sample.fps.toFixed(1)} FPS in this sample` : "No FPS sample at this time";
+    detail = `${frameTiming(hitch.event)} · ${fps}`;
+  } else if (sample) {
+    const count = sample.hitchCount;
+    const unit = count === 1 ? "visible hitch" : "visible hitches";
+    const timing = count === null ? "Hitch count unavailable for the full sample" : `${count} ${unit}`;
+    detail = `${sample.fps.toFixed(1)} FPS · ${timing}`;
   }
-  function step(key: KeyboardEvent<SVGSVGElement>) {
-    let next = index;
-    switch (key.key) {
-      case "ArrowLeft": next = Math.max(0, index - 1); break;
-      case "ArrowRight": next = Math.min(events.length - 1, index + 1); break;
-      case "Home": next = 0; break;
-      case "End": next = events.length - 1; break;
-      default: return;
-    }
-    key.preventDefault();
-    setIndex(next);
-  }
-  const description = event && describeHitch(event);
-  return <section className="recording-track" aria-label="Visible hitches">
-    <div className="recording-track-heading"><h3>Visible hitches</h3><InfoPopover label="visible hitches">Frames presented late with this app’s content. The delay can occur in the app or the render server. Select a marker or use the arrow keys to inspect a frame.</InfoPopover></div>
-    {event ? <>
-      <svg className="recording-hitch-chart" viewBox="0 0 1000 28" preserveAspectRatio="none" role="slider" tabIndex={0}
-        aria-label="Inspect hitch" aria-valuemin={1} aria-valuemax={events.length} aria-valuenow={index + 1} aria-valuetext={description} onKeyDown={step} onClick={pick}>
-        {range && <rect x={1000 * range.start / duration} width={1000 * (range.end - range.start) / duration} height={28} fill="var(--recording-range-fill, #2583ff29)" />}
-        <path d={paths} stroke="var(--destructive)" strokeWidth={2} vectorEffect="non-scaling-stroke" />
-        <line x1={1000 * event.time / duration} x2={1000 * event.time / duration} y1={1} y2={27} stroke="var(--foreground)" strokeWidth={3} vectorEffect="non-scaling-stroke" />
-      </svg>
-      <p className="recording-footnote" aria-live="polite">{description}</p>
-    </> : <p className="recording-footnote">No visible hitches in the captured interval.</p>}
-  </section>;
+  return <div className="recording-fps-inspector">
+    {(hitch || sample) && <label>Inspect <select value={`${inspection.kind}-${inspection.index}`} onChange={event => {
+      const [kind, index] = event.target.value.split("-");
+      onInspect({ kind: kind === "hitch" ? "hitch" : "sample", index: Number(index) });
+    }}><InspectionOptions overlay={overlay} /></select></label>}
+    <p aria-live="polite">{detail}</p>
+  </div>;
 }
