@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 import { GaugeIcon } from "lucide-react";
 import type { CpuPhase } from "@mobile-dev/shared/cpu.ts";
 import type { DisplayFpsSample } from "@mobile-dev/shared/display-fps.ts";
@@ -11,12 +11,13 @@ import { createFpsSeries } from "./fpsSeries";
 
 const colors = { stroke: "#22c55e", fillStart: "#22c55e", fillEnd: "#166534" };
 type Props = {
+  children?: ReactNode;
   samples: DisplayFpsSample[]; phase: CpuPhase; error: string; supported: boolean; platform: "ios" | "android";
   zoomState: ZoomState; onZoomChange: (state: ZoomState) => void; onZoomOut: () => void; onRetry: () => void;
 };
 function format(value: number | null) { return value === null ? "—" : value.toFixed(1); }
 
-export function DisplayFpsTrack({ samples, phase, error, supported, platform, zoomState, onZoomChange, onZoomOut, onRetry }: Props) {
+export function DisplayFpsTrack({ samples, phase, error, supported, platform, zoomState, onZoomChange, onZoomOut, onRetry, children }: Props) {
   const series = useMemo(() => createFpsSeries(samples), [samples]);
   const current = format(phase === "failed" ? null : series.current);
   const average = format(series.average);
@@ -39,7 +40,7 @@ export function DisplayFpsTrack({ samples, phase, error, supported, platform, zo
     <TrackLabel label="Display FPS" icon={<GaugeIcon className="size-4 text-green-500" />} metrics={metrics} title={title} />
     <div className="relative h-full min-w-0 flex-1 border-b border-border">
       <PerformanceAreaChart data={series.data} zoomState={zoomState} onZoomChange={onZoomChange} onZoomOut={onZoomOut}
-        chartColors={colors} gradientId="displayFpsGradient" tooltipPostfix="FPS" curveType="linear" />
+        chartColors={colors} gradientId="displayFpsGradient" tooltipPostfix="FPS" curveType="linear">{children}</PerformanceAreaChart>
       {showMessage && <div role={error ? "alert" : "status"} className="absolute inset-0 flex items-center justify-center gap-2 bg-background/90 px-4 text-xs text-muted-foreground">
         <span>{message}</span>{phase === "failed" && <button className="shrink-0 text-green-500" onClick={onRetry}>Retry FPS</button>}
       </div>}

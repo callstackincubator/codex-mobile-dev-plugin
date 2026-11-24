@@ -1,35 +1,7 @@
 import type { PerformanceRecording, RecordingRange } from "@mobile-dev/shared/recordings.ts";
 import type { DisplayFpsSample } from "@mobile-dev/shared/display-fps.ts";
-import type { IosHitch, IosHitches } from "@mobile-dev/shared/ios-hitches.ts";
 
 export type RecordingPoint = { time: number; value: number | null };
-export type FpsInterval = RecordingRange & { fps: number; hitchCount: number | null };
-export type RecordingHitchOverlay = {
-  samples: FpsInterval[];
-  hitches: { event: IosHitch; sample?: FpsInterval }[];
-};
-
-export function createRecordingHitchOverlay(capture: IosHitches | undefined, fps: RecordingPoint[]): RecordingHitchOverlay | undefined {
-  if (capture?.status !== "finished") return;
-  const samples: FpsInterval[] = [];
-  // The FPS curve contains a start/end pair per clipped interval, including gaps.
-  for (let i = 0; i < fps.length; i += 2) {
-    const first = fps[i];
-    if (first.value === null) continue;
-    const end = fps[i + 1].time;
-    samples.push({ start: first.time, end, fps: first.value, hitchCount: end <= capture.end ? 0 : null });
-  }
-  let index = 0;
-  const hitches = capture.events.map(event => {
-    while (index < samples.length && samples[index].end <= event.time) index++;
-    const sample = samples[index];
-    if (sample === undefined || event.time < sample.start) return { event };
-    if (sample.hitchCount !== null) sample.hitchCount++;
-    return { event, sample };
-  });
-  return { samples, hitches };
-}
-
 export function createRecordingCpuSeries(recording: PerformanceRecording): RecordingPoint[] {
   return createIntervalSeries(recording.samples, recording.durationSeconds);
 }

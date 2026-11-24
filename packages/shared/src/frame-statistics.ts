@@ -31,9 +31,31 @@ export const nullableDisplayFrameStatsSchema = displayFrameStatsSchema.nullable(
 export type DisplayFrameStats = z.infer<typeof displayFrameStatsSchema>;
 
 const JANK_NONE = 1;
-// UNKNOWN (256), unspecified (0), and future bits do not identify a classified frame.
-const JANK_REASONS = 2 | 4 | 8 | 16 | 32 | 64 | 128 | 512 | 1024;
+const JANK_UNKNOWN = 256;
+const jankReasons: [number, string][] = [
+  [2, "SurfaceFlinger scheduling"], [4, "Prediction error"], [8, "Display HAL"],
+  [16, "SurfaceFlinger CPU deadline missed"], [32, "SurfaceFlinger GPU deadline missed"],
+  [64, "App deadline missed"], [128, "Buffer stuffing"],
+  [512, "SurfaceFlinger stuffing"], [1024, "Dropped frame"],
+];
+const JANK_REASONS = jankReasons.reduce((mask, [bit]) => mask | bit, 0);
 const CLASSIFIED_JANK_BITS = JANK_NONE | JANK_REASONS;
+
+export function classifyDisplayJank(bits: number | undefined) {
+  if (bits === undefined || bits === 0 || (bits & ~CLASSIFIED_JANK_BITS) !== 0) return "unknown";
+  return (bits & JANK_REASONS) === 0 ? "none" : "janky";
+}
+
+export function describeDisplayJank(bits = 0) {
+  const labels = [];
+  for (const [bit, label] of jankReasons) {
+    if ((bits & bit) !== 0) labels.push(label);
+  }
+  if ((bits & JANK_UNKNOWN) !== 0) labels.push("Unknown reason");
+  if ((bits & ~(CLASSIFIED_JANK_BITS | JANK_UNKNOWN)) !== 0) labels.push("Unrecognized jank flags");
+  if (labels.length > 0) return labels.join(", ");
+  return bits === JANK_NONE ? "No classified jank" : "Jank classification unavailable";
+}
 
 function percentile(sorted: number[], fraction: number) {
   const rank = Math.ceil(sorted.length * fraction);
@@ -88,11 +110,10 @@ export function summarizeDisplayFrames(samples: DisplayFpsSample[], duration: nu
         continue;
       }
       stats.presentedFrameCount++;
-      const jank = frame.jankType;
-      const classified = jank !== undefined && jank !== 0 && (jank & ~CLASSIFIED_JANK_BITS) === 0;
-      if (classified) {
+      const jank = classifyDisplayJank(frame.jankType);
+      if (jank !== "unknown") {
         stats.classifiedPresentedFrameCount++;
-        if ((jank & JANK_REASONS) !== 0) stats.jankyPresentedFrameCount++;
+        if (jank === "janky") stats.jankyPresentedFrameCount++;
       } else stats.unclassifiedPresentedFrameCount++;
       const presentation = BigInt(frame.endTimeNs);
       if (previousPresentation !== undefined && presentation > previousPresentation) {

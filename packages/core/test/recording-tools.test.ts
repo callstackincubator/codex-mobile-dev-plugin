@@ -95,11 +95,11 @@ test("recording tools distinguish data, inline rendering, workspace opening and 
       assert.equal(result.structuredContent?.title, recording.title);
       const text = result.content.map(item => item.type === "text" ? item.text : "").join("");
       assert.match(text, new RegExp(`recordingId ${recording.id}`));
-      // A preview for cards that cannot read the recording: every sample, no thread or frame detail.
+      // Small Android recordings carry exact frame timings for preview-only hosts.
       const preview = result.structuredContent?.preview as typeof recording | undefined;
       assert.equal(preview?.samples.length, recording.samples.length);
       assert.ok(preview?.samples.every(sample => sample.threads.length === 0));
-      assert.ok(preview?.fps.samples.every(sample => sample.frameTimeline === undefined));
+      assert.deepEqual(preview?.fps, recording.fps);
       assert.ok(JSON.stringify(result).length < 45_000, `${name} fits a host's tool result cap`);
     }
     assert.deepEqual(result.structuredContent?.range, { start: 12, end: 18 });
@@ -204,6 +204,11 @@ test("results that show recordings fit a host's result limit, leaving out previe
   const directory = await mkdtemp(join(tmpdir(), "mobile-dev-recording-tools-"));
   const store = new RecordingStore(directory);
   const longest = longestRecordingFixture();
+  const frames = Array.from({ length: 900 }, (_, index) => {
+    const time = String(index + 1);
+    return { token: time, startTimeNs: time, endTimeNs: time, presentType: 2, jankType: 2 };
+  });
+  longest.fps.samples[0].frameTimeline = { clock: "boottime", intervalEndNs: "1000000000", frames };
   const second = { ...longestRecordingFixture(), id: "44b7030b-a74e-466f-aeb0-bcd3ae8af972" };
   const short = { ...recordingFixture(), id: "27cfecab-d99c-4533-90dd-e14a7cb0087b" };
   const shortSecond = { ...recordingFixture(), id: "5d1f3c0e-8a4b-4e2a-9c61-0f7e2b9d4a13" };
@@ -219,7 +224,9 @@ test("results that show recordings fit a host's result limit, leaving out previe
   const bytes = (result: unknown) => Buffer.byteLength(JSON.stringify(result));
   // The longest recording still carries its preview, for cards that cannot read it.
   const shown = await client.callTool({ name: "mobile_render_performance_recording", arguments: { recordingId: longest.id } });
-  assert.ok(shown.structuredContent?.preview);
+  const preview = shown.structuredContent?.preview as typeof longest;
+  assert.equal(preview.fps.samples.length, longest.fps.samples.length);
+  assert.equal(preview.fps.samples[0].frameTimeline, undefined);
   assert.ok(bytes(shown) <= RESULT_BYTES, `${bytes(shown)} bytes`);
   const compared = await client.callTool({ name: "mobile_compare_performance_recordings", arguments: { recordingIds: [longest.id, second.id] } });
   assert.equal(compared.structuredContent?.previews, undefined);

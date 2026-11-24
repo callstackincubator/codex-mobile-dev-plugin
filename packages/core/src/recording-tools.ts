@@ -156,13 +156,28 @@ export function registerRecordingTools(server: McpServer, recordings: Performanc
     const result = { content: [{ type: "text" as const, text: describeRecording(recording, summary, range) }], structuredContent };
     const preview = recordingPreview(recording);
     const response = withinResultBytes(result, { preview });
-    if (response === result || recording.iosHitches === undefined) return response;
-    const withHitches = { ...preview, iosHitches: recording.iosHitches };
-    return withinResultBytes(response, { preview: withHitches });
+    if (response === result) return response;
+    if (recording.iosHitches) {
+      const withHitches = { ...preview, iosHitches: recording.iosHitches };
+      return withinResultBytes(response, { preview: withHitches });
+    }
+    if (recording.target.platform === "android") {
+      let frameCount = 0;
+      let captured = false;
+      for (const sample of recording.fps.samples) {
+        if (sample.frameTimeline === undefined) continue;
+        captured = true;
+        frameCount += sample.frameTimeline.frames.length;
+        // Even a frame with one-digit values takes over 60 JSON bytes.
+        if (frameCount * 60 > RESULT_BYTES) return response;
+      }
+      if (captured) return withinResultBytes(response, { preview: { ...preview, fps: recording.fps } });
+    }
+    return response;
   });
   registerAppTool(server, "mobile_render_performance_recording", {
     title: "Show an interactive performance chart in chat",
-    description: "Show a saved CPU/memory/FPS recording as an inline interactive chart with shared drag selection, thread breakdown and Ask. Completed physical iOS recordings overlay hitch markers on Display FPS, with per-sample hitch counts and range totals. Android frame data adds jank rate, classification coverage, dropped frames and frame-interval P50/P95/P99, updating with the selected range. Call this when reporting scrolling FPS/jank or comparing implementations so the user sees the chart alongside the analysis. The full timeline stays visible; automatic change highlights do not select or limit a range. Omit range unless the user requested a selection. Pass recording.id from mobile_record_performance or mobile_list_performance_recordings. Active runs update until finished. Data tools return measurements without rendering a chart. Returns the recording ID and summary numbers; the chart reads the samples itself, so use mobile_read_performance_recording for sample-level detail.",
+    description: "Show a saved CPU/memory/FPS recording as an inline interactive chart with shared drag selection, thread breakdown and Ask. Completed physical iOS recordings overlay hitch markers on Display FPS, with per-sample hitch counts and range totals. Android FrameTimeline marks late, dropped and janky device-wide display frames. Range statistics include jank rate, classification coverage, dropped frames and frame-interval P50/P95/P99. Call this when reporting scrolling FPS/jank or comparing implementations so the user sees the chart alongside the analysis. The full timeline stays visible; automatic change highlights do not select or limit a range. Omit range unless the user requested a selection. Pass recording.id from mobile_record_performance or mobile_list_performance_recordings. Active runs update until finished. Data tools return measurements without rendering a chart. Returns the recording ID and summary numbers; the chart reads the samples itself, so use mobile_read_performance_recording for sample-level detail.",
     inputSchema, outputSchema: referenceOutputSchema, annotations: read, _meta: { ui: { resourceUri: RECORDING_URI, visibility } },
   }, showRecording);
   const comparisonTitle = comparisonTitleSchema.default("Performance comparison");

@@ -214,7 +214,10 @@ the same interaction and duration. Use `summary.frameStats` from
 frames and pacing percentiles alongside FPS. Show each run with
 `mobile_render_performance_recording` when reporting FPS/jank, including when the
 analysis uses the frame-read tool. The existing chart card includes Android jank
-statistics and updates them for the selected range. Do not infer jank from average
+statistics and updates them for the selected range. The live and saved FPS charts
+mark each late, dropped or janky display frame once. Select a diamond for its
+timestamp and SurfaceFlinger reasons, or inspect a sample for its flagged-frame
+count. These events cover the whole device. Do not infer jank from average
 FPS or count unknown classifications as smooth frames. If `frameStats` is null,
 report that per-frame statistics were not captured.
 

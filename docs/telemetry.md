@@ -905,6 +905,11 @@ The server measures Instruments startup and finalization with
 Hitch events, app identity, and trace contents stay local. Existing
 `ui.recording.derive` timing includes matching hitches to recorded FPS intervals and summarizing the selected range.
 
+Since 0.1.195, `ui.performance.frame_markers` measures the time in milliseconds
+to derive Android markers when the live FPS history changes. It uses the existing
+bounded UI timing windows. Saved Android marker processing is included in
+`ui.recording.derive`. Frame times, tokens and jank reasons stay local.
+
 ## Resource-saving operations
 
 Since 0.1.179, `resource_saving.apply` counts successful and failed applications of
