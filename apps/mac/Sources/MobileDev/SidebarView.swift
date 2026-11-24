@@ -10,14 +10,6 @@ struct SidebarView: View {
           Label(tool.title, systemImage: tool.systemImage).tag(tool)
         }
       }
-      Section("Devices") {
-        Toggle(isOn: Binding(get: { model.layout.showsIOS }, set: { model.setShowsIOS($0) })) {
-          Label("iOS", systemImage: "iphone")
-        }
-        Toggle(isOn: Binding(get: { model.layout.showsAndroid }, set: { model.setShowsAndroid($0) })) {
-          Label("Android", systemImage: "candybarphone")
-        }
-      }
     }
     .listStyle(.sidebar)
     .safeAreaInset(edge: .bottom) { ServerStatusView(model: model) }

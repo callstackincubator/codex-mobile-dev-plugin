@@ -22,7 +22,8 @@ import { logKey } from "../../shared/src/logs.ts";
 import type { StackedLog } from "../../shared/src/logs.ts";
 import type { CpuBatch } from "../../shared/src/cpu.ts";
 import { UDID } from "../../test-support/fixtures.ts";
-import type { DeviceLayout } from "../src/device-layout.ts";
+import { DeviceWorkspace } from "../src/device-workspace.ts";
+import type { SimulatorDevice } from "../../shared/src/protocol.ts";
 
 test("React log controls filter virtual rows, attach full logs, and preserve simulator DOM", async t => {
   const dom = new JSDOM('<html><body><div id="root"></div></body></html>', { pretendToBeVisual: true, url: "http://localhost" });
@@ -61,9 +62,9 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
     await rm(directory, { recursive: true, force: true });
   });
   const output = resolve(directory, "workspace.mjs");
-  await build({ stdin: { contents: 'export { Workspace } from "./packages/mcp-app/src/components/workspace.tsx"; export { getDeviceSettings } from "./packages/ui/src/device-settings.ts"; export { getDevicePicker } from "./packages/ui/src/device-picker.ts"; export { getAppTools } from "./packages/ui/src/app-tools.ts";', resolveDir: process.cwd(), loader: "ts" }, outfile: output, bundle: true, format: "esm", platform: "node", jsx: "automatic",
+  await build({ stdin: { contents: 'export { Workspace } from "./packages/mcp-app/src/components/workspace.tsx"; export { getDeviceSettings } from "./packages/ui/src/device-settings.ts"; export { getAppTools } from "./packages/ui/src/app-tools.ts";', resolveDir: process.cwd(), loader: "ts" }, outfile: output, bundle: true, format: "esm", platform: "node", jsx: "automatic",
     external: ["recharts", "react", "react/*", "react-dom", "react-dom/*", "@legendapp/list/react", "radix-ui", "lucide-react", "@base-ui/react/*", "react-resizable-panels", "@xyflow/react"] });
-  const { Workspace, getDeviceSettings, getDevicePicker, getAppTools } = await import(pathToFileURL(output).href);
+  const { Workspace, getDeviceSettings, getAppTools } = await import(pathToFileURL(output).href);
   const { act, createElement, Profiler } = await import("react");
   const { createRoot } = await import("react-dom/client");
   let sentLog: StackedLog | undefined;
@@ -134,79 +135,56 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   deviceApps.setAvailable(true);
   const root = createRoot(dom.window.document.getElementById("root")!);
   cleanupView = async () => { recordingController.dispose(); await act(async () => { root.unmount(); await panel.dispose(); deviceApps.dispose(); storage.dispose(); tracesift.dispose(); await performance.dispose(); }); };
-  const layouts: string[] = [];
+  const iphone: SimulatorDevice = { udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS" };
+  const ipad: SimulatorDevice = { ...iphone, udid: "ipad", name: "iPad" };
+  const pixel: SimulatorDevice = { ...iphone, udid: "emulator-5554", name: "Pixel", platform: "android", kind: "emulator" };
+  const bookedPhone: SimulatorDevice = { ...pixel, kind: "physical", udid: "booked-phone", name: "Pixel 9", state: "connected", transportType: "localNetwork" };
+  const discovery = {
+    async callServerTool({ name }: { name: string }) {
+      if (name === "mobile_list_ios_devices") return { structuredContent: { physicalDevices: [] } };
+      if (name === "mobile_list_android_devices") return { structuredContent: { connected: true, devices: [pixel, bookedPhone] }, _meta: { bookingNames: { [bookedPhone.udid]: "Test <checkout>" } } };
+      return { structuredContent: { connected: true, devices: [iphone, ipad] } };
+    },
+  };
+  const devices = new DeviceWorkspace(discovery as unknown as App, {
+    context: { selectSimulators() {} } as unknown as PanelContext, deviceApps,
+  });
+  // This view test drives the settings and app stores directly. Stream sessions have separate controller tests.
+  devices.mount = () => undefined;
+  t.after(() => devices.dispose());
+  await devices.setAvailable(true);
+  await devices.open({});
   let commits = 0;
-  const onLayout = (layout: string) => { layouts.push(layout); };
-  const renderWorkspace = (automaticLayout?: DeviceLayout) => {
-    const workspace = createElement(Workspace, { panels, recordingController, automaticLayout, onLayout });
+  const renderWorkspace = () => {
+    const workspace = createElement(Workspace, { panels, recordingController, devices });
     const profiled = createElement(Profiler, { id: "workspace", onRender() { commits++; } }, workspace);
     root.render(profiled);
   };
   await act(async () => { renderWorkspace(); });
-  const canvas = dom.window.document.querySelector('canvas');
-  const iosPanel = dom.window.document.getElementById("ios-panel") as HTMLElement;
-  const androidPanel = dom.window.document.getElementById("android-panel") as HTMLElement;
-  for (const layout of ["android", "both", "none", "ios"] as const) {
-    await act(async () => { renderWorkspace(layout); });
-    assert.equal(iosPanel.hidden, layout === "android" || layout === "none");
-    assert.equal(androidPanel.hidden, layout === "ios" || layout === "none");
-    assert.equal(dom.window.document.querySelector("canvas"), canvas, "Device discovery preserves the mounted stream canvas.");
-    assert.equal(layouts.at(-1), layout);
-    const platformLabel = layout === "both" ? "Both" : layout === "none" ? "Platforms" : layout === "ios" ? "iOS" : "Android";
-    const triggerText = dom.window.document.getElementById("platform-select")?.textContent ?? "";
-    assert.ok(triggerText.startsWith(platformLabel));
-    // The sidebar shows the tools and platform selects in one bar under the simulators.
-    const toolbars = dom.window.document.querySelectorAll('nav[aria-label="Developer tools"]');
-    assert.equal(toolbars.length, 1);
-    const simulators = dom.window.document.getElementById("simulator-panels")!;
-    assert.equal(toolbars[0].previousElementSibling === simulators, layout !== "none");
-    assert.deepEqual([...toolbars[0].querySelectorAll("button")].map(button => button.id), ["tool-select", "platform-select"]);
-    assert.equal(dom.window.document.querySelector('[role="toolbar"] #tool-select'), null);
+  const canvas = dom.window.document.querySelector("canvas");
+  const picker = dom.window.document.querySelector("[data-device-add]") as HTMLButtonElement;
+  async function toggleDevice(id: string) {
+    await act(async () => { picker.click(); });
+    const button = dom.window.document.querySelector(`[data-device-option="${id}"]`) as HTMLButtonElement;
+    await act(async () => { button.click(); });
+    assert.equal(picker.getAttribute("aria-expanded"), "false");
   }
-  layouts.length = 0;
-  const picker = dom.window.document.querySelector('[data-element="devices"] [data-slot="select-trigger"]');
-  assert.ok(picker);
-  const pickerElement = dom.window.document.querySelector('#ios-panel [data-element="devices"]')!;
-  const pickerStore = getDevicePicker(pickerElement);
-  let pickerRefreshes = 0;
-  pickerStore.refresh = async () => { pickerRefreshes++; };
-  let deviceChanges = 0;
-  pickerElement.addEventListener("change", () => { deviceChanges++; });
-  await act(async () => { pickerStore.update({ value: "iphone", disabled: false, items: [{ value: "iphone", label: "iPhone", running: true, canStop: true }, { value: "ipad", label: "iPad", running: false, canStop: false }] }); });
-  await act(async () => { (picker as HTMLButtonElement).click(); });
-  await act(async () => { (dom.window.document.querySelector('[data-device-option="iphone"]') as HTMLButtonElement).click(); });
-  assert.equal(deviceChanges, 1, "Reselecting a running device retries its connection.");
-  assert.equal(pickerRefreshes, 1);
-  deviceChanges = 0;
-  let stoppedDevice = "";
-  pickerStore.stop = async (id: string) => { stoppedDevice = id; pickerStore.update({ items: [{ value: "iphone", label: "iPhone", running: false, canStop: false }, { value: "ipad", label: "iPad", running: false, canStop: false }] }); };
-  await act(async () => { (picker as HTMLButtonElement).click(); });
-  const stopButton = dom.window.document.querySelector('[aria-label="Stop iPhone"]') as HTMLButtonElement;
-  assert.ok(stopButton);
-  assert.equal(dom.window.document.querySelector('[aria-label="Stop iPad"]'), null);
-  assert.equal(stopButton.querySelector("svg")?.classList.contains("fill-current"), true);
-  await act(async () => { stopButton.click(); });
-  assert.equal(stoppedDevice, "iphone");
-  assert.equal(deviceChanges, 0);
-  assert.equal(pickerStore.value, "iphone");
-  await act(async () => { (dom.window.document.querySelector('[data-device-option="iphone"]') as HTMLButtonElement).click(); });
-  assert.equal(deviceChanges, 1);
-  const androidPickerElement = dom.window.document.querySelector('#android-panel [data-element="devices"]')!;
-  const androidPicker = getDevicePicker(androidPickerElement);
-  const bookingName = "Test <checkout> on Android";
-  const deviceSpecs = "ADC Android 14 2 CPU 3 GiB RAM · Wi-Fi";
-  const deviceSerial = "127.0.0.1:15555";
-  await act(async () => {
-    androidPicker.update({ value: deviceSerial, disabled: false, items: [{ value: deviceSerial, label: bookingName, detail: deviceSpecs, running: true }] });
-  });
-  const androidTrigger = androidPickerElement.querySelector('[data-slot="select-trigger"]') as HTMLButtonElement;
-  assert.equal(androidTrigger.textContent, bookingName);
-  await act(async () => { androidTrigger.click(); });
-  const bookingOption = dom.window.document.querySelector(`[data-device-option="${deviceSerial}"]`)!;
-  assert.equal(bookingOption.textContent, bookingName + deviceSpecs);
-  assert.equal(bookingOption.querySelector("checkout"), null);
-  await act(async () => { (bookingOption as HTMLButtonElement).click(); });
-  const iosSettings = getDeviceSettings(dom.window.document.querySelector('#ios-panel [data-element="settings"]'));
+  await toggleDevice(ipad.udid);
+  await toggleDevice(pixel.udid);
+  assert.equal(dom.window.document.querySelectorAll("canvas").length, 3);
+  await act(async () => { picker.click(); });
+  assert.equal(dom.window.document.querySelectorAll('[data-device-option][aria-pressed="true"]').length, 3);
+  const booking = dom.window.document.querySelector('[data-device-option="booked-phone"]');
+  assert.ok(booking?.textContent?.includes("Test <checkout>"));
+  assert.ok(booking.textContent.includes("Pixel 9 · Wi-Fi"));
+  assert.equal(booking.querySelector("checkout"), null);
+  await act(async () => { picker.click(); });
+  await toggleDevice(ipad.udid);
+  await toggleDevice(pixel.udid);
+  assert.equal(dom.window.document.querySelector("canvas"), canvas);
+  const closedDialog = dom.window.document.querySelector('[aria-label="Choose devices"]');
+  assert.equal(closedDialog, null);
+  const iosSettings = getDeviceSettings(dom.window.document.querySelector('[data-platform="ios"] [data-element="settings"]'));
   const changes: unknown[] = [];
   iosSettings.request = async (change: unknown) => { changes.push(change); return { appearance: "light", contentSize: "large", increaseContrast: false, locationSupported: true }; };
   await act(async () => { iosSettings.configure("iphone", false); });
@@ -241,7 +219,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   assert.equal(iosSettings.getSnapshot().frame, false);
   await act(async () => { settingsButton.click(); });
   assert.equal(dom.window.document.querySelector("canvas"), canvas);
-  const appTools = getAppTools(dom.window.document.querySelector('#ios-panel [data-element="settings"]'));
+  const appTools = getAppTools(dom.window.document.querySelector('[data-platform="ios"] [data-element="settings"]'));
   const appCalls: { name: string; args: Record<string, unknown> }[] = [];
   appTools.call = async (name: string, args: Record<string, unknown>) => {
     appCalls.push({ name, args });
@@ -335,7 +313,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   assert.equal(dom.window.document.querySelectorAll("[data-log-row]").length, 1);
   await act(async () => { levelFilter.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
   assert.equal(dom.window.document.querySelector("canvas"), canvas);
-  assert.equal(dom.window.document.querySelector('[data-element="devices"] [data-slot="select-trigger"]'), picker);
+  assert.equal(dom.window.document.querySelector("[data-device-add]"), picker);
   assert.equal(dom.window.document.querySelector('[data-element="screenshot"] svg')?.getAttribute("viewBox"), "0 0 24 24");
   await act(async () => { (dom.window.document.querySelector('[aria-label="Log sources"]') as HTMLButtonElement).click(); });
   assert.ok(dom.window.document.getElementById("logs-native"));
@@ -496,7 +474,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
     threadOrder.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
   });
   assert.equal(dom.window.document.querySelector("canvas"), canvas);
-  assert.equal(dom.window.document.querySelector('[data-element="devices"] [data-slot="select-trigger"]'), picker);
+  assert.equal(dom.window.document.querySelector("[data-device-add]"), picker);
   await selectTool("logs");
   assert.equal(panel.getSnapshot().open, true);
   assert.equal(dom.window.document.getElementById("performance-drawer"), null);
@@ -525,25 +503,6 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   await act(async () => { collapseCpu.click(); });
   assert.equal(dom.window.document.querySelectorAll("[data-cpu-thread]").length, 0);
   await selectTool("logs");
-  async function togglePlatform(platform: "ios" | "android") {
-    if (!dom.window.document.getElementById(`platform-${platform}`)) {
-      await act(async () => { (dom.window.document.getElementById("platform-select") as HTMLButtonElement).click(); });
-    }
-    await act(async () => { (dom.window.document.getElementById(`platform-${platform}`) as HTMLElement).click(); });
-  }
-  assert.equal((dom.window.document.getElementById("android-panel") as HTMLElement).hidden, true);
-  await togglePlatform("android");
-  await togglePlatform("ios");
-  await togglePlatform("android");
-  assert.deepEqual(layouts, ["both", "android", "none"]);
-  await act(async () => { renderWorkspace("both"); });
-  assert.equal(iosPanel.hidden, true);
-  assert.equal(androidPanel.hidden, true);
-  assert.deepEqual(layouts, ["both", "android", "none"], "Late discovery preserves a manual platform choice.");
-  await togglePlatform("ios");
-  await togglePlatform("android");
-  assert.deepEqual(layouts, ["both", "android", "none", "ios", "both"]);
-  assert.equal(dom.window.document.querySelector("canvas"), canvas);
   await selectTool("storage");
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
   assert.deepEqual(storageCalls, ["mobile_list_apps", "mobile_app_icons", "mobile_app_storage"]);
@@ -582,9 +541,9 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   assert.ok(showsPerformance);
   assert.equal(dom.window.document.querySelector(".recording-overview-bar")?.getAttribute("aria-label"), "Selected range: 12.0s–18.0s");
   assert.ok(dom.window.document.body.textContent?.includes("Checkout scroll · Run 1"));
-  assert.equal(layouts.at(-1), "none", "Opening a saved run gives the detailed chart the workspace.");
-  await act(async () => { renderWorkspace("android"); });
-  assert.equal(layouts.at(-1), "none", "Device discovery does not interrupt a saved recording.");
+  assert.deepEqual(devices.getSnapshot().panes, [], "Opening a saved run gives the detailed chart the workspace.");
+  await act(async () => { await devices.open({ platform: "android" }); });
+  assert.deepEqual(devices.getSnapshot().panes, [], "Device discovery does not interrupt a saved recording.");
   assert.equal(cpuSessionsOpened, sessionsBeforeOpening, "Opening a saved recording does not start another collector.");
-  assert.equal(dom.window.document.querySelector("canvas"), canvas, "Saved recordings preserve the existing device DOM.");
+  assert.equal(dom.window.document.querySelector("[data-device-pane]"), null);
 });

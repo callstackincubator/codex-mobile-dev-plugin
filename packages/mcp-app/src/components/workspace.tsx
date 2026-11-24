@@ -3,7 +3,8 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import type { ToolName, WorkspaceTools } from "@mobile-dev/ui/workspace-tools.ts";
 import { PerformanceView } from "@mobile-dev/ui/components/performance-view.tsx";
-import { SimulatorView } from "@mobile-dev/ui/components/simulator-view.tsx";
+import { DevicePanes } from "@mobile-dev/ui/components/device-panes.tsx";
+import { DevicePicker, EmptyDeviceTabBar } from "@mobile-dev/ui/components/device-picker.tsx";
 import { LogsView } from "@mobile-dev/ui/components/logs-view.tsx";
 import { StorageView } from "@mobile-dev/ui/components/storage-view.tsx";
 import { TraceSiftView } from "@mobile-dev/ui/components/tracesift-view.tsx";
@@ -11,7 +12,7 @@ import { AppIntelligenceView } from "@mobile-dev/ui/components/app-intelligence-
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@mobile-dev/ui/components/ui/base-select.tsx";
 import { Button } from "@mobile-dev/ui/components/ui/button.tsx";
 
-import { usePanelRef, useGroupRef } from "react-resizable-panels";
+import { usePanelRef, useGroupRef, type Layout } from "react-resizable-panels";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@mobile-dev/ui/components/ui/resizable.tsx";
 import { useMediaQuery } from "@mobile-dev/ui/components/use-media-query.ts";
 import { setUiSurface, setUiTelemetryContext } from "@mobile-dev/ui/telemetry.ts";
@@ -20,8 +21,7 @@ import { RecordingCard } from "@mobile-dev/ui/components/recording-card.tsx";
 import { AppFlowView } from "@mobile-dev/ui/components/app-flow-view.tsx";
 import { TestingView } from "@mobile-dev/ui/components/testing-view.tsx";
 
-import type { DeviceLayout } from "@mobile-dev/ui/device-layout.ts";
-export type { DeviceLayout } from "@mobile-dev/ui/device-layout.ts";
+import type { DeviceWorkspace } from "@mobile-dev/ui/device-workspace.ts";
 
 // Menu item IDs stay literal so tests and the package smoke check can find them in the bundle.
 const tools = {
@@ -36,7 +36,7 @@ const tools = {
 type Tool = keyof typeof tools;
 const isTool = (value: string): value is Tool => value in tools;
 
-export function Workspace({ panels, recordingController, banner, displayModeControl, contextControl, automaticLayout, automaticTool, automaticToolRevision = 0, onLayout }: { panels: WorkspaceTools; recordingController: RecordingController; banner?: ReactNode; displayModeControl?: ReactNode; contextControl?: ReactNode; automaticLayout?: DeviceLayout; automaticTool?: ToolName; automaticToolRevision?: number; onLayout: (layout: DeviceLayout, manual?: boolean) => void }) {
+export function Workspace({ panels, recordingController, banner, displayModeControl, contextControl, automaticTool, automaticToolRevision = 0, devices }: { panels: WorkspaceTools; recordingController: RecordingController; banner?: ReactNode; displayModeControl?: ReactNode; contextControl?: ReactNode; automaticTool?: ToolName; automaticToolRevision?: number; devices: DeviceWorkspace }) {
   const { logs, performance, storage, tracesift } = panels;
   const appIntel = panels["app-intel"];
   const appFlow = panels["app-flow"];
@@ -44,43 +44,22 @@ export function Workspace({ panels, recordingController, banner, displayModeCont
   const [tool, setTool] = useState<Tool>("logs");
   const [savedVisible, setSavedVisible] = useState(false);
   const [simulatorsCollapsed, setSimulatorsCollapsed] = useState(false);
-  const [layout, setLayout] = useState<DeviceLayout>(automaticLayout ?? "none");
-  const manualLayout = useRef(false);
-  const layoutRef = useRef(layout);
-  layoutRef.current = layout;
+  const deviceState = useSyncExternalStore(devices.subscribe, devices.getSnapshot);
   const recordingState = useSyncExternalStore(recordingController.subscribe, recordingController.getSnapshot);
   useEffect(() => {
-    if (automaticLayout === undefined || manualLayout.current || recordingState.recording !== undefined) return;
-    setLayout(automaticLayout);
-    onLayout(automaticLayout);
-  }, [automaticLayout]);
-  useEffect(() => {
     if (recordingState.recording === undefined) return;
-    manualLayout.current = true;
     setTool("performance");
     setSavedVisible(true);
-    setLayout("none");
-    onLayout("none");
+    devices.clear();
     panels.hide();
   }, [recordingState.recording?.id]);
   // An agent recording opens the Testing Studio tab for the user: they asked their agent for a test, and
   // the steps appearing one at a time are the whole point. Which tool is on screen is this
   // component's own state, so the panel asks rather than reaches.
   useEffect(() => testing.onAgentRecordingStarted(() => {
-    manualLayout.current = true;
     setTool("testing");
     setSavedVisible(false);
     panels.show("testing");
-  }), [testing]);
-  // Picking a lane in the results shows that lane's platform. Only a single-mirror layout moves,
-  // and only on the pick itself: the manual platform picker and a mirror switched back by hand
-  // are never overridden.
-  useEffect(() => testing.onLanePicked(platform => {
-    const current = layoutRef.current;
-    if (current === "both" || current === "none" || current === platform) return;
-    manualLayout.current = true;
-    setLayout(platform);
-    onLayout(platform, true);
   }), [testing]);
   const performanceState = useSyncExternalStore(performance.subscribe, performance.getSnapshot);
   const wide = useMediaQuery("(min-width: 900px)");
@@ -126,76 +105,43 @@ export function Workspace({ panels, recordingController, banner, displayModeCont
   useEffect(() => { if (automaticTool) { setTool(automaticTool); setSavedVisible(false); panels.show(automaticTool); } }, [automaticTool, automaticToolRevision]);
   const logsRef = usePanelRef();
   const simulatorsRef = usePanelRef();
-  const simulatorGroupRef = useGroupRef();
+  const showDevices = deviceState.panes.length > 0 || !!deviceState.message || !open;
+  const deviceShare = testingOpen ? 25 : split ? Math.min(80, 36 * Math.max(1, deviceState.visible.length)) : 60;
   const workspaceGroupRef = useGroupRef();
-  useEffect(() => { if (open) logsRef.current?.expand(); else logsRef.current?.collapse(); }, [open, split, layout]);
+  const resizedLayout = useRef<Layout>(undefined);
+  useEffect(() => { if (open) logsRef.current?.expand(); else logsRef.current?.collapse(); }, [open, split]);
   useEffect(() => {
-    let simulatorsPending = layout !== "none";
-    let workspacePending = true;
-    // Hidden hosts defer group initialization; retain the request until the groups are measurable.
+    // Hidden hosts defer group initialization until the page becomes measurable.
+    const container = document.getElementById("workspace-panels")!;
+    let pending = true;
+    resizedLayout.current = undefined;
     const applyLayout = () => {
-      const simulators = simulatorGroupRef.current;
-      if (simulatorsPending && simulators) {
-        const current = simulators.getLayout();
-        const panelIds = Object.keys(current);
-        if (panelIds.length > 0) {
-          simulatorsPending = false;
-          simulators.setLayout({ "ios-resizable": layout === "android" ? 0 : layout === "both" ? 50 : 100, "android-resizable": layout === "ios" ? 0 : layout === "both" ? 50 : 100 });
-        }
-      }
+      if (!container.clientWidth || !container.clientHeight) { pending = true; return; }
+      if (!pending) return;
       const workspace = workspaceGroupRef.current;
-      if (workspacePending && workspace) {
-        const current = workspace.getLayout();
-        const panelIds = Object.keys(current);
-        if (panelIds.length > 0) {
-          workspacePending = false;
-          // The Testing Studio panel is read as three panes — mirror, preview, steps — and the preview
-          // and the steps split the tools pane 60/40 of their own accord. A quarter of the
-          // workspace for the mirror is what makes those 45% and 30%: the mirror is tapped, while
-          // the two beside it are read, and reading a generated file needs the room.
-          const toolsShare = testingOpen ? 75 : split ? 64 : 40;
-          workspace.setLayout({ "tools-resizable": toolsShare, "simulators-resizable": 100 - toolsShare });
-          // No visible platform is the panel being collapsed, not a share of 0. A share is the
-          // group's last *requested* layout, which it re-applies whenever a panel's constraints
-          // change — and the Testing Studio panel changes them as it opens. A 0 requested while nothing
-          // was bootable therefore outlived the device: discovery selected a simulator, the
-          // platform selector read "iOS", and the mirror stayed shut until the user toggled the
-          // platform off and on again. Collapsing says the same thing in the group's own terms,
-          // so expanding it is all that finding a device has to do.
-          if (layout === "none") simulatorsRef.current?.collapse();
-          else simulatorsRef.current?.expand();
-          if (isOpen() === false) logsRef.current?.collapse();
-        }
-      }
-      if (simulatorsPending === false && workspacePending === false) observer.disconnect();
+      if (!workspace) return;
+      const current = workspace.getLayout();
+      if (Object.keys(current).length === 0) return;
+      pending = false;
+      const share = showDevices ? deviceShare : 0;
+      workspace.setLayout(resizedLayout.current ?? { "tools-resizable": 100 - share, "simulators-resizable": share });
+      if (showDevices) simulatorsRef.current?.expand();
+      else simulatorsRef.current?.collapse();
+      if (isOpen() === false) logsRef.current?.collapse();
     };
     const observer = new ResizeObserver(applyLayout);
-    observer.observe(document.getElementById("simulator-panels")!);
-    observer.observe(document.getElementById("workspace-panels")!);
+    observer.observe(container);
     applyLayout();
-    // And again on the next frame, because the group re-derives its own layout from the panels'
-    // defaults when their constraints change — which is what opening the Testing Studio panel does, since
-    // its mirror and its tools declare sizes of their own. Asking during the commit is asking
-    // before that, so the answer was thrown away; the frame after it is when it sticks.
-    const frame = requestAnimationFrame(() => { workspacePending = true; simulatorsPending = layout !== "none"; applyLayout(); });
+    // Testing Studio changes the panel constraints during layout. Reapply the split once they settle.
+    const frame = requestAnimationFrame(() => { pending = true; applyLayout(); });
     return () => { cancelAnimationFrame(frame); observer.disconnect(); };
-  }, [layout, split, sideBySide, tool, testingOpen]);
-  const toolPanel = <ResizablePanel key="tools" id="tools-resizable" panelRef={logsRef} defaultSize={testingOpen ? "75%" : split ? "64%" : "40%"} minSize={sideBySide ? "240px" : "25%"} maxSize="100%" collapsible collapsedSize={`${collapsedToolSize}px`} onResize={(size, _id, previous) => {
-    if (!previous) return;
-    if (size.inPixels <= collapsedToolSize + 1 && isOpen()) closeTools();
-    else if (size.inPixels > 80 && isOpen() === false) showTool(tool);
-  }}>{tool === "logs" && <LogsView panel={logs} />}{tool === "storage" && <StorageView panel={storage} />}{tool === "app-intel" && <AppIntelligenceView panel={appIntel} />}{tool === "tracesift" && <TraceSiftView panel={tracesift} />}{tool === "app-flow" && open && <AppFlowView panel={appFlow} />}{tool === "testing" && open && <TestingView panel={testing} deviceApps={panels.deviceApps} />}{tool === "performance" && open && (savedVisible ? <div className="recording-workspace"><Button variant="outline" size="sm" onClick={() => { setSavedVisible(false); performance.show(); }}>Live performance</Button><RecordingCard controller={recordingController} detailed /></div> : <PerformanceView panel={performance} />)}</ResizablePanel>;
-  // The sidebar keeps these controls under its simulators. Fullscreen, or no visible
-  // platform, moves them above the tools.
-  const bottomToolbar = !fullscreen && layout !== "none";
+  }, [showDevices, sideBySide, testingOpen, tool, deviceShare]);
+  const bottomToolbarClosed = !fullscreen && !open;
+  const toolPanel = <ResizablePanel key="tools" id="tools-resizable" panelRef={logsRef} defaultSize={testingOpen ? "75%" : split ? "64%" : "40%"} minSize={bottomToolbarClosed ? "0px" : sideBySide ? "240px" : "25%"} maxSize={bottomToolbarClosed ? "0px" : "100%"} collapsible collapsedSize={`${collapsedToolSize}px`}>{tool === "logs" && <LogsView panel={logs} />}{tool === "storage" && <StorageView panel={storage} />}{tool === "app-intel" && <AppIntelligenceView panel={appIntel} />}{tool === "testing" && open && <TestingView panel={testing} deviceApps={panels.deviceApps} />}{tool === "tracesift" && <TraceSiftView panel={tracesift} />}{tool === "app-flow" && open && <AppFlowView panel={appFlow} />}{tool === "performance" && open && (savedVisible ? <div className="recording-workspace"><Button variant="outline" size="sm" onClick={() => { setSavedVisible(false); performance.show(); }}>Live performance</Button><RecordingCard controller={recordingController} detailed /></div> : <PerformanceView panel={performance} />)}</ResizablePanel>;
+  const bottomToolbar = !fullscreen;
   const menuSide = bottomToolbar ? "top" : "bottom";
   const ToolIcon = tools[tool].icon;
-  // The Testing Studio panel records by tapping the mirror and reads the test it emits beside it, so the
-  // mirror leads and the preview follows it — the reading order of the thing being done. Every
-  // other tool is a readout the simulator is secondary to, and keeps the simulator on the right.
-  // Only side by side: stacked, "left" is the top panel, which the simulator already is.
-  const mirrorFirst = testingOpen && sideBySide;
-  const toolbar = <nav className={`workspace-toolbar @container flex h-12 shrink-0 items-center justify-between gap-2 px-2 ${bottomToolbar ? "border-t" : "border-y"}`} aria-label="Developer tools">
+  const toolbar = <nav className={`workspace-toolbar @container flex h-12 shrink-0 items-center justify-between gap-2 px-2 ${bottomToolbar ? "order-last border-t" : "border-y"}`} aria-label="Developer tools">
     {displayModeControl}
     <Select items={[{ value: "none", label: "Tools" }, ...Object.entries(tools).map(([value, { label }]) => ({ value, label }))]} value={open ? tool : "none"} onValueChange={value => {
       if (value === "none") closeTools();
@@ -207,37 +153,26 @@ export function Workspace({ panels, recordingController, banner, displayModeCont
         {Object.entries(tools).map(([value, { id, label, icon: Icon }]) => <SelectItem key={value} id={id} value={value}><Icon />{label}</SelectItem>)}
       </SelectGroup></SelectContent>
     </Select>
-    <Select multiple items={[{ value: "ios", label: "iOS" }, { value: "android", label: "Android" }]} value={layout === "both" ? ["ios", "android"] : layout === "none" ? [] : [layout]} onValueChange={values => {
-      const next: DeviceLayout = values.length === 0 ? "none" : values.length === 2 ? "both" : values[0] === "ios" ? "ios" : "android";
-      manualLayout.current = true;
-      setLayout(next); onLayout(next, true);
-    }}>
-      <SelectTrigger id="platform-select" size="sm" className="shrink-0" aria-label="Visible platforms"><SelectValue>{layout === "both" ? "Both" : layout === "none" ? "Platforms" : layout === "ios" ? "iOS" : "Android"}</SelectValue></SelectTrigger>
-      <SelectContent side={menuSide} align="end" alignItemWithTrigger={false}><SelectGroup>
-        <SelectItem id="platform-ios" value="ios">iOS</SelectItem>
-        <SelectItem id="platform-android" value="android">Android</SelectItem>
-      </SelectGroup></SelectContent>
-    </Select>
   </nav>;
   const simulatorPanel = <ResizablePanel key="simulators" id="simulators-resizable" panelRef={simulatorsRef} minSize="0%" maxSize="100%" collapsible collapsedSize="0px" defaultSize={testingOpen ? "25%" : split ? "36%" : "60%"} onResize={size => setSimulatorsCollapsed(size.inPixels < 1)}>
-    <div className="flex h-full min-h-0 flex-col">
-      <ResizablePanelGroup id="simulator-panels" groupRef={simulatorGroupRef} orientation="horizontal" className="min-h-0 flex-1" aria-label="Simulators">
-        <ResizablePanel id="ios-resizable" defaultSize="100%" minSize="0px" maxSize="100%" collapsible collapsedSize="0px"><SimulatorView platform="ios" visible={layout === "ios" || layout === "both"} /></ResizablePanel>
-        <ResizableHandle hidden={layout !== "both"} disabled={layout !== "both"} aria-label="Resize iOS and Android simulators" />
-        <ResizablePanel id="android-resizable" defaultSize="0%" minSize="0px" maxSize="100%" collapsible collapsedSize="0px"><SimulatorView platform="android" visible={layout === "android" || layout === "both"} /></ResizablePanel>
-      </ResizablePanelGroup>
-      {bottomToolbar && toolbar}
-    </div>
+    <DevicePanes workspace={devices} />
   </ResizablePanel>;
   // A collapsed simulator area would put the handle's line against the toolbar's border, doubling it.
   // The handle stays draggable so the simulators can be pulled back open.
-  const divider = <ResizableHandle key="divider" hidden={layout === "none" || (!fullscreen && !open)} disabled={layout === "none" || (!fullscreen && !open)} className={simulatorsCollapsed ? "bg-transparent" : undefined} aria-label="Resize tools and simulators" />;
-  return <main className="flex flex-col" style={{ height: "var(--workspace-height, 100dvh)", paddingBottom: "var(--workspace-bottom-inset, 0px)" }}>
+  const divider = <ResizableHandle key="divider" hidden={!showDevices || (!fullscreen && !open)} disabled={!showDevices || (!fullscreen && !open)} className={simulatorsCollapsed ? "bg-transparent" : undefined} aria-label="Resize tools and simulators" />;
+  return <DevicePicker workspace={devices}><main className="flex flex-col" style={{ height: "var(--workspace-height, 100dvh)", paddingBottom: "var(--workspace-bottom-inset, 0px)" }}>
     {banner}
     {contextControl}
-    {!bottomToolbar && toolbar}
-    <ResizablePanelGroup id="workspace-panels" groupRef={workspaceGroupRef} orientation={sideBySide ? "horizontal" : "vertical"} className="min-h-0 flex-1" data-split={sideBySide}>
-      {sideBySide ? (mirrorFirst ? [simulatorPanel, divider, toolPanel] : [toolPanel, divider, simulatorPanel]) : [simulatorPanel, divider, toolPanel]}
+    {toolbar}
+    {deviceState.panes.length === 0 && <EmptyDeviceTabBar />}
+    <ResizablePanelGroup id="workspace-panels" groupRef={workspaceGroupRef} orientation={sideBySide ? "horizontal" : "vertical"} className="min-h-0 flex-1" data-split={sideBySide} onLayoutChanged={(layout, meta) => {
+      if (!meta.isUserInteraction) return;
+      resizedLayout.current = meta.requestedLayout ?? layout;
+      const collapsed = logsRef.current?.isCollapsed();
+      if (collapsed && isOpen()) closeTools();
+      else if (collapsed === false && !isOpen()) showTool(tool);
+    }}>
+      {sideBySide && !testingOpen ? [toolPanel, divider, simulatorPanel] : [simulatorPanel, divider, toolPanel]}
     </ResizablePanelGroup>
-  </main>;
+  </main></DevicePicker>;
 }

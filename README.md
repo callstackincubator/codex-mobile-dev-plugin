@@ -170,7 +170,7 @@ to avoid duplicate Mobile Dev servers. See [Cursor's plugin guide](https://curso
 ### Mac app
 
 The Mac app shows the devices and tools in their own window, without a chat. Pick
-a tool and the visible platforms in the sidebar. It runs the same server as the
+a tool in the sidebar and devices from **+ Add device** in the tab strip. It runs the same server as the
 plugins, so the device panels, logs, performance, storage, and TraceSift work the
 same way. Chat actions such as Send to chat and annotations are hidden because
 there is no chat to send to.
@@ -216,7 +216,7 @@ its device panel, inspection, logs, and performance tools.
 Ask your agent to open the simulator beside this chat. In Codex, you can also
 open Mobile Dev from the sidebar; in Cursor, ask **"Open Mobile Dev"** in an agent chat.
 Pick a device from the toolbar; selecting a stopped simulator or AVD
-boots it. Use the iOS and Android toggles to show either platform or both.
+boots it. Choose additional iOS or Android devices from **+ Add device** in the tab strip to open them side by side. Drag a device tab to an edge to split the view, or into another group to collect its tabs.
 
 Click an iOS simulator or Android screen to focus it, then press **Ctrl+V** on Windows or **Command-V** on macOS to
 paste text into the device. Paste accepts up to 4,096 printable US-ASCII characters;

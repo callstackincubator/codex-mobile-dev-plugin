@@ -27,3 +27,25 @@ export class FrameArrivals {
 
   clear() { this.arrivals.clear(); }
 }
+
+// MCP replies from all simulators arrive on the same host window. Each stream
+// consumes only its own resource timestamps from this bounded collection.
+export const frameArrivals = new FrameArrivals();
+let observers = 0;
+function observeFrame(event: MessageEvent) {
+  if (event.source !== window.parent) return;
+  const arrivedAt = performance.timeOrigin + performance.now();
+  frameArrivals.record(event.data, arrivedAt);
+}
+
+export function observeFrameArrivals() {
+  if (observers === 0) window.addEventListener("message", observeFrame);
+  observers++;
+  return () => {
+    observers--;
+    if (observers === 0) {
+      window.removeEventListener("message", observeFrame);
+      frameArrivals.clear();
+    }
+  };
+}

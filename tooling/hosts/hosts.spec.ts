@@ -4,18 +4,13 @@ import Ajv2020 from "ajv/dist/2020.js";
 import { codexToolBudget } from "../../apps/codex-plugin/tooling/codex-tool-limits.mjs";
 import { oversizedFiles, PANEL_PARTS } from "../host-runtime.mjs";
 import { pluginHost, pluginHosts } from "../plugin-hosts.mjs";
-import { expect, test } from "./fixtures.ts";
+import { expect, hasPanel, test } from "./fixtures.ts";
 
 const root = join(import.meta.dirname, "../..");
 
 // Regression checks for each shipped target, against its real server and page
 // in a stand-in for its host. Device-backed behavior needs a simulator or emulator
 // and is covered by the smoke scripts instead.
-
-// Claude shows devices in its own simulator views, so its server has no panel.
-// A panel that renders in the chat; Claude's shows beside it, in a browser (browser-panel.spec.ts).
-const hasPanel = (server: { tools: { name: string; _meta?: Record<string, unknown> }[] }) =>
-  server.tools.some(tool => tool.name === "mobile_open_workspace" && (tool._meta?.ui as { resourceUri?: string } | undefined)?.resourceUri !== undefined);
 
 test.describe("MCP Apps hosts", () => {
   test("every tool schema compiles as JSON Schema 2020-12", async ({ server }) => {
@@ -77,7 +72,7 @@ test.describe("MCP Apps hosts", () => {
     };
     await expect.poll(selection).toMatchObject({ activeDeviceId: deviceId });
     await expect.poll(() => readResourceSaving).toBe(true);
-    await expect(view.locator("#android-panel").getByRole("button", { name: "Resource saving" })).toHaveCount(0);
+    await expect(view.locator('[data-device-pane][data-platform="android"]').getByRole("button", { name: "Resource saving" })).toHaveCount(0);
     const attachments = await page.evaluate(() => window.harness.events.filter(event => event.method === "modelContext"));
     expect(attachments).toEqual([]);
     await page.evaluate(() => window.harness.teardown());
@@ -98,15 +93,11 @@ test.describe("MCP Apps hosts", () => {
       };
     }
     const { view } = await openView("mobile_open_simulator");
-    const android = view.locator("#android-panel");
-    await expect(android.getByText(/Install Android SDK Platform-Tools.*SDK Manager/)).toBeVisible();
-    await expect(view.locator("#platform-select")).toContainText("Android");
-    await view.locator("#platform-select").click();
-    await view.getByRole("option", { name: "iOS" }).click();
-    await page.keyboard.press("Escape");
-    const ios = view.locator("#ios-panel");
-    await expect(ios.getByText("Local iOS devices require macOS.")).toBeVisible();
-    await expect(ios.getByRole("button", { name: "iOS device", exact: true })).toBeDisabled();
+    await expect(view.locator("#simulator-panels")).toContainText(/Install Android SDK Platform-Tools.*SDK Manager/);
+    await view.getByRole("button", { name: "Add device" }).click();
+    const picker = view.getByRole("dialog", { name: "Choose devices" });
+    await expect(picker.getByText("Local iOS devices require macOS.")).toBeVisible();
+    await expect(picker.getByText(/Install Android SDK Platform-Tools.*SDK Manager/)).toBeVisible();
   });
 
   test("the workspace opens every tool without errors", async ({ openView, pageErrors, server }) => {
@@ -167,12 +158,9 @@ test.describe("MCP Apps hosts", () => {
     // preview and the steps were left sharing the height below it.
     for (const displayMode of ["fullscreen", "inline"] as const) {
       await page.setViewportSize({ width: 1280, height: 800 });
-      const { view } = await openView("mobile_open_workspace", { displayMode });
-      // A mirror needs a platform to show: with none the pane is collapsed, which is the point of
-      // the shares below. These hosts see no devices, so the platform is chosen here.
-      await view.locator("#platform-select").click();
-      await view.getByRole("option", { name: "iOS" }).click();
-      await page.keyboard.press("Escape");
+      const device = { udid: "phone", name: "iPhone", runtime: "iOS", state: "Shutdown" };
+      const inventory = { ios: [device], android: [] };
+      const { view } = await openView("mobile_open_workspace", { displayMode, inventory, arguments: { deviceId: device.udid } });
       await view.locator("#tool-select").click();
       await view.getByRole("option", { name: "Testing" }).click();
       await view.locator("[data-testing-recorder-workspace]").waitFor();
@@ -200,22 +188,16 @@ test.describe("MCP Apps hosts", () => {
     // selects a simulator a moment later. The mirror used to stay shut through that — the panel
     // asked for its own shares during the commit that changed its panels' constraints, where the
     // group discards them and keeps what it last requested, which was a mirror of nothing.
-    // Both platforms must be available to reproduce the unresolved automatic layout.
-    const callTool = server.client.callTool.bind(server.client);
-    server.client.callTool = (request, ...options) => request.name === "mobile_list_simulators"
-      ? Promise.resolve({ content: [], structuredContent: { connected: true, managed: false, baseUrl: "", devices: [] } })
-      : callTool(request, ...options);
+    const device = { udid: "phone", name: "iPhone", runtime: "iOS", state: "Booted" };
+    const inventory = { ios: [] as typeof device[], android: [] };
     await page.setViewportSize({ width: 1280, height: 800 });
-    const { view } = await openView("mobile_open_workspace", { displayMode: "fullscreen" });
+    const { view } = await openView("mobile_open_workspace", { displayMode: "fullscreen", inventory });
     await view.locator("#tool-select").click();
     await view.getByRole("option", { name: "Testing" }).click();
     await view.locator("[data-testing-recorder-workspace]").waitFor();
     const mirror = view.locator("#simulators-resizable");
-    // Nothing to mirror yet, so the pane is collapsed rather than an empty quarter of the window.
     await expect.poll(async () => Math.round((await mirror.boundingBox())?.width ?? 0)).toBe(0);
-    await page.keyboard.press("Escape");
-    await view.locator("#platform-select").click();
-    await view.getByRole("option", { name: "iOS" }).click();
+    inventory.ios.push(device);
     await expect.poll(async () => Math.round((await mirror.boundingBox())?.width ?? 0)).toBe(320);
   });
 
@@ -229,36 +211,29 @@ test.describe("MCP Apps hosts", () => {
   test("the panel beside the chat opens inline", async ({ openView, pageErrors, server }) => {
     test.skip(hasPanel(server) === false, "This target's server renders no panel in the chat.");
     const { view } = await openView("mobile_open_simulator", { displayMode: "inline" });
-    await expect(view.locator("#ios-panel, #android-panel").first()).toBeAttached();
+    await expect(view.getByRole("button", { name: "Add device" })).toBeAttached();
     expect(pageErrors).toEqual([]);
   });
 
-  test("an Android panel initialized while hidden shows its device controls and keeps tools collapsed", async ({ openView, page, pageErrors, target }) => {
+  test("a targeted panel initialized while hidden shows the device picker and keeps tools collapsed", async ({ openView, page, pageErrors, target }) => {
     test.skip(target !== "codex", "Codex retains inactive panels before displaying them.");
     const { view } = await openView("mobile_open_simulator", {
       arguments: { platform: "android" }, displayMode: "inline", initiallyHidden: true,
     });
-    await expect(view.locator("#platform-select")).toContainText("Android");
-    await expect(view.locator("#android-panel")).toHaveJSProperty("hidden", false);
+    const empty = view.locator('[role="status"]').filter({ hasText: "Requested Android device unavailable" });
+    await expect(empty).toBeAttached();
     const frame = page.locator("#view");
     await frame.evaluate(element => { element.removeAttribute("hidden"); });
-
-    await expect(view.locator("#android-panel")).toBeVisible();
-    await expect(view.getByRole("toolbar", { name: "Android controls" })).toBeVisible();
-    await expect(view.locator("#android-devices")).toBeVisible();
-    const android = await view.locator("#android-resizable").boundingBox();
-    const ios = await view.locator("#ios-resizable").boundingBox();
-    const tools = await view.locator("#tools-resizable").boundingBox();
-    expect(android?.width).toBeGreaterThan(0);
-    expect(ios?.width).toBe(0);
-    expect(tools?.height).toBe(0);
+    await expect(empty).toBeVisible();
+    await expect(view.getByRole("button", { name: "Add device" })).toBeVisible();
+    const toolsPanel = view.locator("#tools-resizable");
+    await expect.poll(async () => (await toolsPanel.boundingBox())?.height).toBe(0);
     await expect(view.locator("#tool-select")).toContainText("Tools");
 
     const toolSelect = view.locator("#tool-select");
     await toolSelect.click();
     const logsOption = view.getByRole("option", { name: "Logs" });
     await logsOption.click();
-    const toolsPanel = view.locator("#tools-resizable");
     await expect(toolsPanel).toBeVisible();
     const initialTools = await toolsPanel.boundingBox();
     const divider = view.getByRole("separator", { name: "Resize tools and simulators" });
@@ -274,18 +249,17 @@ test.describe("MCP Apps hosts", () => {
     expect(resizedTools?.height).toBeLessThan(initialTools.height - 50);
 
     await frame.evaluate(element => { element.setAttribute("hidden", ""); });
-    await expect(view.locator("#android-panel")).toBeHidden();
+    await expect(empty).toBeHidden();
     await frame.evaluate(element => { element.removeAttribute("hidden"); });
-    await expect(view.locator("#android-panel")).toBeVisible();
-    const restoredTools = await toolsPanel.boundingBox();
-    expect(restoredTools?.height).toBeCloseTo(resizedTools!.height, 1);
+    await expect(empty).toBeVisible();
+    await expect.poll(async () => (await toolsPanel.boundingBox())?.height).toBeCloseTo(resizedTools!.height, 1);
     await expect(toolSelect).toContainText("Logs");
     expect(pageErrors).toEqual([]);
   });
 });
 
 test.describe("Mac app", { tag: "@mac" }, () => {
-  test("the sidebar switches tools and platforms", async ({ openMac, pageErrors }) => {
+  test("the sidebar switches tools and the workspace offers both device inventories", async ({ openMac, pageErrors }) => {
     const page = await openMac();
     await page.waitForFunction(() => window.mobileDevShell !== undefined);
     for (const tool of ["logs", "performance", "storage", "tracesift"]) {
@@ -293,8 +267,9 @@ test.describe("Mac app", { tag: "@mac" }, () => {
       await expect(page.getByText("Choose a tool in the sidebar"), tool).toHaveCount(0);
     }
     await page.evaluate(() => window.mobileDevShell!.selectTool(null));
-    await page.evaluate(() => window.mobileDevShell!.selectLayout("ios"));
-    await expect(page.locator("#ios-panel")).toBeVisible();
+    await page.getByRole("button", { name: "Add device" }).click();
+    await expect(page.getByRole("heading", { name: "iOS", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Android", exact: true })).toBeVisible();
     expect(pageErrors).toEqual([]);
   });
 });

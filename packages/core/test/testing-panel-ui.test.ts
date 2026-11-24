@@ -35,7 +35,9 @@ test("the element menu renders the runner's own steps over the mirror and record
   testRecorder.start("udid", "ios");
 
   const root = createRoot(dom.window.document.getElementById("root")!);
-  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations, platform: "ios" })); });
+  const firstMirror = createElement(TestRecorderOverlay, { store: annotations, platform: "ios", deviceId: "udid" });
+  const secondMirror = createElement(TestRecorderOverlay, { store: annotations, platform: "ios", deviceId: "another-iphone" });
+  await act(async () => { root.render(createElement("div", null, firstMirror, secondMirror)); });
   onTeardown(async () => {
     await act(async () => { root.unmount(); });
     await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
@@ -45,6 +47,7 @@ test("the element menu renders the runner's own steps over the mirror and record
 
   await act(async () => { await testRecorder.openMenu({ x: 150, y: 420 }); });
   assert.ok(menu(), "the right-click opens the menu over the outline");
+  assert.equal(dom.window.document.querySelectorAll("[data-element=recorder-menu]").length, 1, "only the recording device shows the menu");
   // The selector is named once and rows stay compact; exact code is still available as a tooltip.
   assert.match(menu()?.textContent ?? "", /Selected element"Go To Explore List" \(button\)/);
   assert.deepEqual(rows().map(row => row.textContent), [
@@ -109,7 +112,7 @@ test("a row that needs a value asks for it instead of emitting an empty string",
   });
   testRecorder.start("udid", "ios");
   const root = createRoot(dom.window.document.getElementById("root")!);
-  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations, platform: "ios" })); });
+  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations, platform: "ios", deviceId: "udid" })); });
   onTeardown(async () => {
     await act(async () => { root.unmount(); });
     await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
@@ -329,7 +332,7 @@ test("the element menu survives a tree invalidation that takes the hover outline
   testRecorder.attach("udid", "ios", { readComponents: async () => [button], screen: () => SCREEN, release: () => undefined });
   testRecorder.start("udid", "ios");
   const root = createRoot(dom.window.document.getElementById("root")!);
-  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations, platform: "ios" })); });
+  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations, platform: "ios", deviceId: "udid" })); });
   onTeardown(async () => {
     await act(async () => { root.unmount(); });
     await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
@@ -363,7 +366,7 @@ test("a coordinate gets the tap row and is told why that is all", async t => {
   testRecorder.attach("udid", "ios", { readComponents: async () => [button], screen: () => SCREEN, release: () => undefined });
   testRecorder.start("udid", "ios");
   const root = createRoot(dom.window.document.getElementById("root")!);
-  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations, platform: "ios" })); });
+  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations, platform: "ios", deviceId: "udid" })); });
   onTeardown(async () => {
     await act(async () => { root.unmount(); });
     await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
@@ -413,7 +416,7 @@ test("the command list is a submenu of its own, opened by pointing at its row", 
   testRecorder.attach("udid", "ios", { readComponents: async () => [button], screen: () => SCREEN, release: () => undefined });
   testRecorder.start("udid", "ios");
   const root = createRoot(dom.window.document.getElementById("root")!);
-  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations, platform: "ios" })); });
+  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations, platform: "ios", deviceId: "udid" })); });
   onTeardown(async () => {
     await act(async () => { root.unmount(); });
     await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
@@ -481,7 +484,7 @@ test("the agentic branches cascade to the side, and record a sentence with its p
   });
   testRecorder.start("udid", "ios");
   const root = createRoot(dom.window.document.getElementById("root")!);
-  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations, platform: "ios" })); });
+  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations, platform: "ios", deviceId: "udid" })); });
   onTeardown(async () => {
     await act(async () => { root.unmount(); });
     await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
@@ -615,7 +618,7 @@ test("the recording blocker explains how to show an already-running device", asy
 
   await act(async () => { root.render(createElement(TestingView, { panel: panelStub(), deviceApps })); });
 
-  assert.match(dom.window.document.querySelector("[data-testing-blocker]")?.textContent ?? "", /choose Platforms → iOS or Android to show it/);
+  assert.match(dom.window.document.querySelector("[data-testing-blocker]")?.textContent ?? "", /choose it from Add device/);
   await act(async () => { root.unmount(); });
 });
 
@@ -698,7 +701,7 @@ test("Record says the mirror is not ready yet, until selection actually is", asy
   testRecorder.attach("udid", "ios", { readComponents: () => tree, screen: () => SCREEN, release: () => undefined });
 
   const root = createRoot(dom.window.document.getElementById("root")!);
-  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations, platform: "ios" })); });
+  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations, platform: "ios", deviceId: "udid" })); });
   onTeardown(async () => {
     await act(async () => { root.unmount(); });
     await new Promise(resolve => dom.window.requestAnimationFrame(resolve));

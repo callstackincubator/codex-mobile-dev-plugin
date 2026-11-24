@@ -13,7 +13,7 @@ Ask your agent to open the simulator beside chat, or open Mobile Dev from the Co
 - “Open the iPad simulator beside this chat.”
 - “Test this on my physical iPhone.”
 
-Use the platform menu to show iOS, Android, or both. Pick a device from each panel's dropdown. Selecting a stopped simulator or AVD boots it and starts its stream. Opening the panel by itself does not boot a device.
+Choose **+ Add device** in a tab strip and pick an iOS or Android device. The picker closes and the device opens beside that group. Open the picker again to add another device. Drag a tab to any edge of a view to split it, or to the center of another view to join its group. Drag tabs along the tab strip to reorder them and drag dividers to resize the views. Drag the empty part of a tab strip to move the whole group. Selecting a stopped simulator or AVD boots it and starts its stream. Opening the workspace by itself does not boot a device.
 
 The agent reuses a suitable selected or running device when the task establishes the target. It may ask you to choose when the choice affects the task.
 

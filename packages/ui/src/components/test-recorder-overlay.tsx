@@ -204,9 +204,9 @@ function PickMenu({ label, locator, width, anchor }: { label: string; locator?: 
   </div>, document.body);
 }
 
-export function TestRecorderOverlay({ store, platform }: { store: ScreenAnnotationsStore; platform: "ios" | "android" }) {
+export function TestRecorderOverlay({ store, deviceId, platform }: { store: ScreenAnnotationsStore; deviceId?: string; platform: "ios" | "android" }) {
   const { viewport: v } = useSyncExternalStore(store.subscribe, store.getSnapshot);
-  const { hover, menu, preparing, recordingPlatform } = useSyncExternalStore(testRecorder.subscribe, testRecorder.getSnapshot);
+  const { hover, menu, preparing, recordingPlatform, recordingDeviceId } = useSyncExternalStore(testRecorder.subscribe, testRecorder.getSnapshot);
   // State rather than a ref: the menu is a child, and a child's layout effect runs before the
   // parent's ref is attached, so a ref here is still null the first time the menu measures itself.
   const [host, setHost] = useState<HTMLDivElement | null>(null);
@@ -231,8 +231,9 @@ export function TestRecorderOverlay({ store, platform }: { store: ScreenAnnotati
   }, [host, bounds, screen, v]);
   // The canvas closes the menu when it is clicked through, but the menu is no longer inside the
   // stage and the rest of the panel is not the canvas: a click anywhere else closes it too.
+  const recordingHere = deviceId === recordingDeviceId && recorderShowsOn(recordingPlatform, platform);
   useEffect(() => {
-    if (!menu) return;
+    if (!menu || !recordingHere) return;
     const dismiss = (event: PointerEvent) => {
       const target = event.target as Element | null;
       if (target?.closest("[data-element=recorder-menu],[data-element=recorder-commands]")) return;
@@ -240,9 +241,8 @@ export function TestRecorderOverlay({ store, platform }: { store: ScreenAnnotati
     };
     window.addEventListener("pointerdown", dismiss);
     return () => window.removeEventListener("pointerdown", dismiss);
-  }, [menu]);
-  // Both mirrors mount this overlay and share one recorder snapshot, so each draws only what is about its own device.
-  if (!recorderShowsOn(recordingPlatform, platform)) return null;
+  }, [menu, recordingHere]);
+  if (!recordingHere) return null;
   if (!v.width || !v.height) return null;
   // Record arms the recorder at once, but nothing on the mirror can be selected until the runner's
   // element tree has been read, and that takes a second or two. Without this the panel said

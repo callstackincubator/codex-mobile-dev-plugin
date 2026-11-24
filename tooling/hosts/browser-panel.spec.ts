@@ -30,9 +30,9 @@ test.describe("Browser panels", { tag: "@browser" }, () => {
     const response = await initialized;
     const session = response.headers()["mcp-session-id"];
     const view = page.frameLocator("iframe");
-    await expect(view.locator("#ios-panel")).toBeVisible();
+    await expect(view.getByRole("button", { name: "Add device" })).toBeVisible();
     await page.reload();
-    await expect(view.locator("#ios-panel")).toBeVisible();
+    await expect(view.getByRole("button", { name: "Add device" })).toBeVisible();
     const endpoint = new URL("mcp", browserPanel.url);
     await expect.poll(async () => {
       const probe = await request.post(endpoint.href, { headers: { "mcp-session-id": session } });
@@ -49,7 +49,7 @@ test.describe("Browser panels", { tag: "@browser" }, () => {
     };
     expect(await read()).toContain("No Mobile Dev browser panel");
     await page.goto(browserPanel.url);
-    await expect(page.frameLocator("iframe").locator("#ios-panel")).toBeVisible();
+    await expect(page.frameLocator("iframe").getByRole("button", { name: "Add device" })).toBeVisible();
     await expect.poll(read).toContain("Mobile Dev browser panel.");
     await page.close();
     await expect.poll(read).toContain("No Mobile Dev browser panel");
@@ -61,10 +61,10 @@ test.describe("Browser panels", { tag: "@browser" }, () => {
     try {
       await other.goto(browserPanel.url);
       const view = other.frameLocator("iframe");
-      await expect(view.locator("#ios-panel")).toBeVisible();
+      await expect(view.getByRole("button", { name: "Add device" })).toBeVisible();
       await page.close();
       await other.reload();
-      await expect(view.locator("#ios-panel")).toBeVisible();
+      await expect(view.getByRole("button", { name: "Add device" })).toBeVisible();
       await browserPanel.host.ping();
     } finally { await other.close(); }
   });
@@ -73,7 +73,7 @@ test.describe("Browser panels", { tag: "@browser" }, () => {
     await page.clock.install();
     await page.goto(browserPanel.url);
     const view = page.frameLocator("iframe");
-    await expect(view.locator("#ios-panel")).toBeVisible();
+    await expect(view.getByRole("button", { name: "Add device" })).toBeVisible();
     await browserPanel.close();
     await page.clock.runFor(30_000);
     await expect(page.getByRole("alert")).toContainText("Mobile Dev disconnected from its chat session");
@@ -90,7 +90,7 @@ test.describe("Browser panels", { tag: "@browser" }, () => {
       const url = JSON.stringify(result.content).match(/http:\/\/127\.0\.0\.1:\d+\/[\w-]+\/\?[^"\s\\]+/)?.[0];
       expect(url, "The link to show beside the chat").toBeDefined();
       await page.goto(url!);
-      await expect(page.frameLocator("iframe").locator("#ios-panel")).toBeVisible();
+      await expect(page.frameLocator("iframe").getByRole("button", { name: "Add device" })).toBeVisible();
     } finally {
       await host.close();
       await server.close();

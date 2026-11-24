@@ -7,7 +7,6 @@ import { PLUGIN_VERSION } from "@mobile-dev/shared/version.ts";
 
 type ShellMessage =
   | { type: "ready" }
-  | { type: "layout"; layout: string }
   | { type: "tool"; tool: string }
   | { type: "error"; message: string };
 

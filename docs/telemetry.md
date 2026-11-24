@@ -543,6 +543,8 @@ Since 0.1.69, inspection timing also includes the bounded Metro source-map looku
 
 Since 0.1.92, Android inspection timing also includes the full-resolution display-size read and bounds scaling. Existing inspection, fallback and tree-processing coverage stays on the active selection path. Display sizes and element bounds remain local.
 
+The device workspace records the number of visible screens in the numeric gauge `ui.devices.visible`. Since 0.1.194 this counts the selected tab in each split. A background tab suspends its stream and frame measurements until it becomes visible. The layout attribute describes the platforms shown. Workspaces with multiple screens omit device platform and kind attributes because their timing windows can contain work from several devices. Platform-specific frame counters continue to count each painted frame.
+
 Since 0.1.93, `ui.video.paint` and the platform frame counters also cover frames drawn to the local buffer while Select freezes the visible screen. These remain bounded plugin processing measurements, not device FPS. Recovery uses the same surface attribution and timing units; screenshots and element details remain local.
 
 `ui.annotations.send` measures the host send round trip, including composer retries. Outcome counters distinguish success, a missing composer, timeout and other failures. Unexpected send failures use a fixed error message. No message content goes to Sentry. A timeout keeps notes for a manual retry; it never triggers an automatic resend, since delivery may have succeeded without acknowledgement.

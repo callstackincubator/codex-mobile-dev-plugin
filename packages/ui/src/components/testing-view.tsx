@@ -286,7 +286,7 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
     : state.loadingProject ? ""
       : state.targets.length === 0 ? (panel.noProject ? "Open the app you want to record in the mirror. Testing Studio records against the app in the foreground." : "No mobile app identifier was found. Open the app in the mirror, or use E2E setup to enter one.")
         : !target?.bundleId ? `Target "${target?.name}" has no app identifier. Enter one in E2E setup.`
-          : !booted ? "Recording needs a booted simulator or emulator in the mirror. If one is already running, choose Platforms → iOS or Android to show it."
+          : !booted ? "Recording needs a booted simulator or emulator in the mirror. If one is already running, choose it from Add device."
             : !isRecordableDevice(device) ? "Recording works on an iOS simulator or an Android emulator, not a physical device."
               : mismatch;
   return <section className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4 [&_button:not(:disabled)]:cursor-pointer" aria-label="Testing Studio">
@@ -952,7 +952,7 @@ function TestingRecorder({ panel, recordable, deviceId }: { panel: TestingPanel;
   if (panelState.selectedTestPath) return <StoredTestPreview key={panelState.selectedTestPath} panel={panel} source={panelState.selectedTestSource}
     path={panelState.selectedTestPath} loading={panelState.loadingTest} />;
   return <div className="flex min-h-0 flex-1 flex-col gap-3">
-    {!recordable && !recording && !panelState.agent?.active && <p className="text-xs text-muted-foreground">Recording needs a booted iOS simulator or Android emulator in the mirror. If one is already running, choose Platforms → iOS or Android to show it.</p>}
+    {!recordable && !recording && !panelState.agent?.active && <p className="text-xs text-muted-foreground">Recording needs a booted iOS simulator or Android emulator in the mirror. If one is already running, choose it from Add device.</p>}
     {panelState.agent?.active && <p className="text-xs text-muted-foreground">
       The mirror is the agent's while it records, so clicking it does nothing. Press Stop to take it back.
     </p>}

@@ -1,6 +1,6 @@
 {
   "name": "mobile-dev",
-  "version": "0.1.193",
+  "version": "0.1.194",
   "private": true,
   "workspaces": [
     "packages/shared",
@@ -89,6 +89,7 @@
     "ajv": "8.20.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "dockview-react": "^8.9.1",
     "enhanced-resolve": "^5.26.1",
     "lucide-react": "^1.49.0",
     "radix-ui": "^1.6.7",

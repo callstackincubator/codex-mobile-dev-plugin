@@ -96,6 +96,7 @@ for (const notification of ["input", "result"] as const) test(`workspace applies
     }
     if (notification === "input") {
       const captured = telemetry.join("\n");
+      assert.match(captured, /ui\.devices\.visible/);
       assert.match(captured, /"device_platform":\{"value":"android"/);
       assert.match(captured, /"device_kind":\{"value":"emulator"/);
       assert.match(captured, /"layout":\{"value":"android"/);
@@ -117,16 +118,11 @@ for (const notification of ["input", "result"] as const) test(`workspace applies
   else send({ method: "ui/notifications/tool-result", params: { content: [], structuredContent: { panelTarget: target } } });
   await until(() => calls.includes("mobile_list_android_devices"));
   await until(() => {
-    const label = window.document.getElementById("platform-select")?.textContent ?? "";
-    return label.includes("Android");
+    const label = window.document.querySelector('[data-device-pane][data-platform="android"]')?.getAttribute("aria-label");
+    return label === "Pixel";
   });
-  await setTimeout(10);
-  const ios = window.document.getElementById("ios-panel");
-  const android = window.document.getElementById("android-panel");
-  assert.equal(ios?.hidden, true);
-  assert.equal(android?.hidden, false);
-  const devices = android?.querySelector('[data-element="devices"]')?.textContent ?? "";
-  assert.match(devices, /Pixel/);
+  assert.equal(window.document.querySelectorAll("[data-device-pane]").length, 1);
+  assert.equal(window.document.querySelector('[data-platform="ios"]'), null);
   const unexpected = calls.filter(name => name.endsWith("_stream_session") || name.startsWith("mobile_boot"));
   assert.deepEqual(unexpected, []);
   if (nativeComposer) {
@@ -142,9 +138,9 @@ for (const notification of ["input", "result"] as const) test(`workspace applies
     window.dispatchEvent(new window.Event("focus"));
     await until(() => reports.length === 4);
     assert.deepEqual(reports[3], selected, "Refocusing restores the selection even after the server restarts");
-    window.document.getElementById("platform-select")?.click();
-    await until(() => window.document.getElementById("platform-android") !== null);
-    window.document.getElementById("platform-android")?.click();
+    const closeTab = window.document.querySelector<HTMLElement>('[role="tab"] [role="button"], [role="tab"] button');
+    assert.ok(closeTab);
+    closeTab.click();
     await until(() => reports.at(-1)?.devices?.length === 0);
     const cleared = reports.at(-1);
     assert.deepEqual(cleared?.devices, []);

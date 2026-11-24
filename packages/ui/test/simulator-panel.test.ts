@@ -1,4 +1,7 @@
-import { getDevicePicker } from "../src/device-picker.ts";
+import { DeviceInventory } from "../src/device-inventory.ts";
+import { initialPanelDevice } from "../src/device-layout.ts";
+import { DeviceWorkspace, resolvePaneDevice } from "../src/device-workspace.ts";
+import type { PanelTarget } from "../../shared/src/panel-target.ts";
 import test from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
@@ -13,8 +16,6 @@ import type { SimulatorDevice } from "../../shared/src/protocol.ts";
 import type { AndroidBookingNames, PhysicalAndroidDevice } from "../../shared/src/android-devices.ts";
 import type { ScreenAnnotation } from "../../shared/src/screen-annotations.ts";
 import type { ScreenshotAttachment } from "../src/model-context.ts";
-import { WorkspaceDevices } from "../src/workspace-devices.ts";
-import type { DeviceLayout } from "../src/device-layout.ts";
 
 const physicalBezel = { rect: { x: 27, y: 18, width: 400, height: 872 }, viewport: { width: 454, height: 908 }, clipRadius: 62, image: "data:image/png;base64,AQID", mask: "data:image/png;base64,BAUG" };
 
@@ -54,6 +55,14 @@ class Element extends EventTarget {
   querySelectorAll() { return this.buttons; }
 }
 
+function createPanelRoot() {
+  const root = new Element();
+  for (const name of ["settings", "screen", "device-frame", "stage", "device-bezel", "screenshot", "notice", "notice-message", "empty", "empty-description", "stopped", "start-device", "screenshot-status"]) root.elements.set(name, new Element());
+  root.elements.get("device-frame")!.hidden = true;
+  for (const button of ["home", "app-switcher"]) { const element = new Element(); element.dataset.button = button; root.buttons.push(element); }
+  return root;
+}
+
 function fixture(t: TestContext) {
   const calls: { name: string; arguments: Record<string, unknown> }[] = [];
   const reads = new Set<string>();
@@ -76,6 +85,7 @@ function fixture(t: TestContext) {
   let simulatorError = "";
   let delayedDiscovery: Promise<void> | undefined;
   let androidDevices: SimulatorDevice[] | undefined;
+  let iosDevices: SimulatorDevice[] | undefined;
   let bookingNames: AndroidBookingNames | undefined;
   const stoppedPlatforms = new Set<string>();
   let failedInputPlatform: "ios" | "android" | undefined;
@@ -164,6 +174,7 @@ function fixture(t: TestContext) {
         if (physicalError) return { isError: true, content: [{ type: "text", text: physicalError }] };
         return { content: [], structuredContent: { physicalDevices } };
       }
+      if (call.name === "mobile_list_simulators" && iosDevices) return { content: [], structuredContent: { connected: true, devices: iosDevices } };
       if (call.name === "mobile_list_simulators" && simulatorError) return { isError: true, content: [{ type: "text", text: simulatorError }] };
       const inputTool = failedInputPlatform === "android" ? "mobile_android_stream_input" : "mobile_stream_input";
       if (failedInputPlatform && call.name === inputTool) {
@@ -225,10 +236,7 @@ function fixture(t: TestContext) {
     },
   } as unknown as App;
   const panels = (["ios", "android"] as const).map(platform => {
-    const root = new Element();
-    for (const name of ["devices", "settings", "screen", "device-frame", "stage", "device-bezel", "screenshot", "notice", "notice-message", "empty", "empty-description", "stopped", "start-device", "screenshot-status"]) root.elements.set(name, new Element());
-    root.elements.get("device-frame")!.hidden = true;
-    for (const button of ["home", "app-switcher"]) { const element = new Element(); element.dataset.button = button; root.buttons.push(element); }
+    const root = createPanelRoot();
     const panelContext = {
       canAttach: true, canAttachScreenshots: true, screenAnnotations: attachedAnnotations, subscribe: () => () => {},
       async attachScreenshot(screenshot: ScreenshotAttachment) {
@@ -238,12 +246,49 @@ function fixture(t: TestContext) {
       },
       async attachAnnotation(annotation: ScreenAnnotation) { attachedAnnotations.push(annotation); return true; },
     } as unknown as PanelContext;
-    const panel = createSimulatorPanel(app, root as unknown as HTMLElement, platform, panelContext, (_device, active) => selections.push({ platform, active }));
+    const inventory = new DeviceInventory(app, platform);
+    const panel = createSimulatorPanel(app, root as unknown as HTMLElement, inventory, panelContext, () => selections.push({ platform, active: true }));
     panel.setAvailable(true);
-    return { panel, root, element: (name: string) => root.elements.get(name)! };
+    let last: SimulatorDevice | undefined;
+    let target: PanelTarget | undefined;
+    const sync = () => {
+      const devices = inventory.status?.devices ?? [];
+      const device = last ? resolvePaneDevice(devices, last, platform) : initialPanelDevice(devices, platform, undefined, target);
+      if (device) last = device;
+      panel.acceptDevice(device);
+    };
+    inventory.subscribe(sync);
+    const picker = {
+      get value() { return panel.selected?.udid ?? ""; },
+      getSnapshot() { return { items: inventory.items, value: panel.selected?.udid }; },
+      refresh: () => inventory.refresh(),
+      choose(id: string) {
+        const device = inventory.status?.devices.find(item => item.udid === id);
+        last = device;
+        panel.acceptDevice(device);
+        if (device?.state === "Shutdown") void panel.start();
+      },
+      async stopDevice(id: string) {
+        const option = inventory.items.find(item => item.value === id);
+        if (option?.canStop) await panel.stop();
+      },
+    };
+    return { panel, picker, inventory, root, element: (name: string) => root.elements.get(name)!,
+      load(opening?: PanelTarget) {
+        if (opening) { target = opening; last = undefined; }
+        return inventory.refresh();
+      },
+    };
   });
-  t.after(async () => { await Promise.all(panels.map(({ panel }) => panel.dispose())); for (const reset of restore) reset(); });
-  return { calls, closed, selections, failInspection() { inspectionFailure = true; }, setAndroidAccessibility(value: NonNullable<typeof androidAccessibility>) { androidAccessibility = value; }, screenshots, attachedAnnotations, ios: panels[0], android: panels[1], failClipboard() { screenshotCopied = false; }, setAndroidDevices(devices: SimulatorDevice[], names?: AndroidBookingNames) { androidDevices = devices; bookingNames = names; }, setPhysicalDevices(devices: PhysicalIosDevice[]) { physicalDevices = devices; }, failDiscovery(message: string) { physicalError = message; }, failSimulators(message: string) { simulatorError = message; }, delayDiscovery(value: Promise<void>) { delayedDiscovery = value; }, failInput(platform: "ios" | "android") { failedInputPlatform = platform; }, delayOpen(value: Promise<void>) { delayedOpen = value; }, blockIos() { blockedIos = true; }, stopDevices() { stopped = true; },
+  let activeDevice: SimulatorDevice | undefined;
+  const context = { screenAnnotations: [], subscribe: () => () => {}, selectSimulators(_devices: SimulatorDevice[], active?: SimulatorDevice) { activeDevice = active; } } as unknown as PanelContext;
+  const workspace = new DeviceWorkspace(app, { context, deviceApps: { selectDevice() {} } } as ConstructorParameters<typeof DeviceWorkspace>[1]);
+  t.after(async () => {
+    await workspace.dispose();
+    for (const { panel } of panels) await panel.dispose();
+    for (const reset of restore) reset();
+  });
+  return { workspace, get activeDevice() { return activeDevice; }, setIosDevices(devices: SimulatorDevice[]) { iosDevices = devices; }, calls, closed, selections, failInspection() { inspectionFailure = true; }, setAndroidAccessibility(value: NonNullable<typeof androidAccessibility>) { androidAccessibility = value; }, screenshots, attachedAnnotations, ios: panels[0], android: panels[1], failClipboard() { screenshotCopied = false; }, setAndroidDevices(devices: SimulatorDevice[], names?: AndroidBookingNames) { androidDevices = devices; bookingNames = names; }, setPhysicalDevices(devices: PhysicalIosDevice[]) { physicalDevices = devices; }, failDiscovery(message: string) { physicalError = message; }, failSimulators(message: string) { simulatorError = message; }, delayDiscovery(value: Promise<void>) { delayedDiscovery = value; }, failInput(platform: "ios" | "android") { failedInputPlatform = platform; }, delayOpen(value: Promise<void>) { delayedOpen = value; }, blockIos() { blockedIos = true; }, stopDevices() { stopped = true; },
     visibility(value: string) { document.visibilityState = value; document.dispatchEvent(new Event("visibilitychange")); },
     frame(platform: "ios" | "android", sequence: number, options: { generation?: number; empty?: boolean } = {}) {
       const id = [...pendingReads.keys()].find(id => id.startsWith(platform)); assert.ok(id);
@@ -273,167 +318,181 @@ const androidPhone: PhysicalAndroidDevice = {
   platform: "android", kind: "physical", transportType: "wired",
 };
 
-for (const inputFirst of [false, true]) test(`Android opening intent is applied before streams start, input first: ${inputFirst}`, async t => {
+for (const inputFirst of [false, true]) test(`opening an exact Android target waits for the host and intent, input first: ${inputFirst}`, async t => {
   const f = fixture(t);
-  f.setAndroidDevices([androidPhone, { udid: "emulator-5554", name: "Pixel AVD", state: "Booted", runtime: "Android", platform: "android", kind: "emulator" }]);
-  const layouts: DeviceLayout[] = [];
-  const workspace = new WorkspaceDevices([f.ios.panel, f.android.panel], layout => { layouts.push(layout); });
-  t.after(() => workspace.dispose());
-  const target = { platform: "android", kind: "emulator" } as const;
-  if (inputFirst) await workspace.open(target);
-  else await workspace.setAvailable(true);
-  assert.equal(f.calls.length, 0, "Discovery waits for both the host and the opening intent.");
-  if (inputFirst) await workspace.setAvailable(true);
-  else await workspace.open(target);
-  assert.equal(f.ios.panel.selected, undefined);
-  assert.equal(f.android.panel.selected?.udid, "emulator-5554");
-  const streams = f.calls.filter(call => call.name.endsWith("_stream_session") || call.name === "mobile_ios_mirror_session");
-  assert.equal(streams.length, 1);
-  assert.equal(streams[0].name, "mobile_android_stream_session");
-  assert.deepEqual(streams[0].arguments, { deviceId: "emulator-5554" });
-  assert.deepEqual(layouts, ["android", "android"]);
-});
-
-test("opening an ADC serial streams that device even with another phone of the same model", async t => {
-  const f = fixture(t);
-  const adcPhone: PhysicalAndroidDevice = { ...androidPhone, udid: "127.0.0.1:15555", transportType: "localNetwork" };
-  f.setAndroidDevices([androidPhone, adcPhone]);
-  const workspace = new WorkspaceDevices([f.ios.panel, f.android.panel], () => {});
-  t.after(() => workspace.dispose());
-  await workspace.setAvailable(true);
-  await workspace.open({ platform: "android", deviceId: adcPhone.udid });
-
-  assert.equal(f.android.panel.selected?.udid, adcPhone.udid);
-  const streams = f.calls.filter(call => call.name === "mobile_android_stream_session");
-  const targets = streams.map(call => call.arguments);
-  assert.deepEqual(targets, [{ deviceId: adcPhone.udid }]);
-});
-
-for (const platform of ["ios", "android"] as const) test(`${platform} physical opening intent selects the phone before any simulator`, async t => {
-  const f = fixture(t);
-  f.setPhysicalDevices([physicalPhone]);
-  f.setAndroidDevices([{ udid: "emulator-5554", name: "Pixel AVD", state: "Booted", runtime: "Android", kind: "emulator" }, androidPhone]);
-  const layouts: DeviceLayout[] = [];
-  const workspace = new WorkspaceDevices([f.ios.panel, f.android.panel], layout => { layouts.push(layout); });
-  t.after(() => workspace.dispose());
-  await workspace.setAvailable(true);
-  await workspace.open({ platform, kind: "physical" });
-  const panel = platform === "ios" ? f.ios.panel : f.android.panel;
-  assert.equal(panel.selected?.kind, "physical");
-  const streams = f.calls.filter(call => call.name.endsWith("_stream_session") || call.name === "mobile_ios_mirror_session");
-  assert.equal(streams.length, 1);
-  assert.equal(streams[0].name, platform === "ios" ? "mobile_ios_mirror_session" : "mobile_android_stream_session");
-  const layout = layouts.at(-1);
-  assert.equal(layout, platform);
+  const target = { platform: "android", kind: "physical", deviceId: androidPhone.udid } as const;
+  f.setAndroidDevices([androidPhone]);
+  if (inputFirst) await f.workspace.open(target);
+  else await f.workspace.setAvailable(true);
+  assert.equal(f.calls.length, 0);
+  if (inputFirst) await f.workspace.setAvailable(true);
+  else await f.workspace.open(target);
+  const panes = f.workspace.getSnapshot().panes;
+  assert.deepEqual(panes.map(pane => pane.device?.udid), [androidPhone.udid]);
 });
 
 test("missing exact target remains unselected through refreshes, then connects when it arrives", async t => {
   const f = fixture(t);
-  f.ios.panel.setOpeningTarget({ platform: "ios", kind: "physical", deviceId: physicalPhone.udid });
-  await f.ios.panel.load();
+  await f.ios.load({ platform: "ios", kind: "physical", deviceId: physicalPhone.udid });
   assert.equal(f.ios.panel.selected, undefined);
   const emptyState = f.ios.element("empty");
-  assert.equal(emptyState.textContent, "Requested device unavailable.");
-  const pickerElement = f.ios.element("devices");
-  const picker = getDevicePicker(pickerElement as unknown as HTMLElement);
-  await picker.refresh?.();
+  assert.equal(emptyState.textContent, "Device unavailable");
+  const picker = f.ios.picker;
+  await picker.refresh();
   const initialStreams = f.calls.filter(call => call.name === "mobile_stream_session" || call.name === "mobile_ios_mirror_session");
   assert.equal(initialStreams.length, 0);
   f.setPhysicalDevices([physicalPhone]);
-  await picker.refresh?.();
+  await picker.refresh();
   await waitFor(() => f.calls.some(call => call.name === "mobile_ios_mirror_session"));
   assert.equal(f.ios.panel.selected?.udid, physicalPhone.udid);
   f.setPhysicalDevices([]);
-  await picker.refresh?.();
+  await picker.refresh();
   assert.equal(f.ios.panel.selected, undefined, "Disconnecting the requested phone does not select a simulator.");
-  picker.value = "iphone-1";
-  dispatch(pickerElement, "change");
+  picker.choose("iphone-1");
   await waitFor(() => f.calls.some(call => call.name === "mobile_stream_session"));
-  await picker.refresh?.();
-  assert.equal(f.ios.panel.selected?.udid, "iphone-1", "The user's later device choice replaces the opening constraint.");
+  await picker.refresh();
+  assert.equal(f.ios.panel.selected?.udid, "iphone-1");
 });
 
-test("automatic opening retains iOS precedence and later manual layout survives duplicate results", async t => {
+test("manual same-platform and mixed selections survive repeated opening notifications", async t => {
   const f = fixture(t);
-  const layouts: DeviceLayout[] = [];
-  const workspace = new WorkspaceDevices([f.ios.panel, f.android.panel], layout => { layouts.push(layout); });
-  t.after(() => workspace.dispose());
-  await workspace.open({});
-  await workspace.setAvailable(true);
-  const automaticLayout = layouts.at(-1);
-  assert.equal(automaticLayout, "ios");
-  workspace.selectLayout();
-  layouts.push("android");
-  const count = f.calls.length;
-  await workspace.open({ platform: "ios" });
-  assert.equal(f.calls.length, count);
-  const manualLayout = layouts.at(-1);
-  assert.equal(manualLayout, "android");
+  f.setPhysicalDevices([physicalPhone]);
+  f.setAndroidDevices([androidPhone]);
+  await f.workspace.open({});
+  await f.workspace.setAvailable(true);
+  const [first] = f.workspace.getSnapshot().panes;
+  assert.equal(first.device?.udid, "iphone-1");
+  f.workspace.toggle("ios", physicalPhone);
+  f.workspace.toggle("android", androidPhone);
+  await f.workspace.open({ platform: "android" });
+  const panes = f.workspace.getSnapshot().panes;
+  assert.deepEqual(panes.map(pane => pane.device?.udid), ["iphone-1", physicalPhone.udid, androidPhone.udid]);
+  f.workspace.activate(first.key);
+  f.workspace.toggle("ios", physicalPhone);
+  assert.equal(f.workspace.getSnapshot().active, first.key);
+  assert.deepEqual(f.workspace.getSnapshot().panes.map(pane => pane.key), [first.key, panes[2].key]);
 });
 
 test("targeted stopped AVD opens without booting and tracks its running serial after boot", async t => {
   const f = fixture(t);
   f.setAndroidDevices([{ udid: "avd:Pixel", name: "Pixel", state: "Shutdown", runtime: "Android", platform: "android", kind: "emulator" }]);
-  f.android.panel.setOpeningTarget({ platform: "android", kind: "emulator", deviceId: "avd:Pixel" });
-  await f.android.panel.load();
+  await f.android.load({ platform: "android", kind: "emulator", deviceId: "avd:Pixel" });
   assert.equal(f.android.panel.selected?.state, "Shutdown");
   const startButton = f.android.element("start-device");
   assert.equal(startButton.disabled, false);
   const lifecycle = f.calls.filter(call => call.name.startsWith("mobile_boot"));
   assert.equal(lifecycle.length, 0);
-  const pickerElement = f.android.element("devices");
-  const picker = getDevicePicker(pickerElement as unknown as HTMLElement);
+  const picker = f.android.picker;
   f.setAndroidDevices([]);
-  await picker.refresh?.();
+  await picker.refresh();
   assert.equal(f.android.panel.selected, undefined);
   f.setAndroidDevices([{ udid: "emulator-5554", name: "Pixel", state: "Booted", runtime: "Android", platform: "android", kind: "emulator" }]);
-  await picker.refresh?.();
+  await picker.refresh();
   assert.equal(f.android.panel.selected?.udid, "emulator-5554");
-  await picker.refresh?.();
+  await picker.refresh();
   assert.equal(f.android.panel.selected?.udid, "emulator-5554");
 });
 
-test("a platform chosen during discovery is not overwritten when startup finishes", async t => {
+test("two same-platform screens and an Android screen route input independently and release only the removed stream", async t => {
   const f = fixture(t);
-  let finishDiscovery: () => void = () => {};
-  const discovery = new Promise<void>(resolve => { finishDiscovery = resolve; });
-  f.delayDiscovery(discovery);
-  const layouts: DeviceLayout[] = [];
-  const workspace = new WorkspaceDevices([f.ios.panel, f.android.panel], layout => { layouts.push(layout); });
-  t.after(() => workspace.dispose());
-  await workspace.setAvailable(true);
-  const opening = workspace.open({ platform: "android" });
-  workspace.selectLayout();
-  layouts.push("ios");
-  finishDiscovery();
+  const iphone: SimulatorDevice = { udid: "iphone-1", name: "iPhone", runtime: "iOS", state: "Booted" };
+  const ipad = { ...iphone, udid: "ipad-2", name: "iPad" };
+  f.setIosDevices([iphone, ipad]);
+  f.setAndroidDevices([androidPhone]);
+  await f.workspace.setAvailable(true);
+  await f.workspace.open({});
+  f.workspace.toggle("ios", ipad);
+  f.workspace.toggle("android", androidPhone);
+  const { panes, active } = f.workspace.getSnapshot();
+  const split = panes.map(pane => pane.key);
+  f.workspace.setDockSelection(split, active!);
+  const screens = panes.map(pane => {
+    const root = createPanelRoot();
+    const unmount = f.workspace.mount(pane.key, root as unknown as HTMLElement)!;
+    return { root, unmount };
+  });
+  await waitFor(() => screens.every(screen => screen.root.elements.get("screen")!.draws > 0));
+  const open = f.calls.filter(call => call.name.endsWith("_stream_session"));
+  assert.deepEqual(open.map(call => call.arguments.udid ?? call.arguments.deviceId), [iphone.udid, ipad.udid, androidPhone.udid]);
+  for (const screen of screens) dispatch(screen.root.buttons[0], "click");
+  await waitFor(() => f.calls.filter(call => call.name.endsWith("_stream_input")).length === 3);
+  const inputs = f.calls.filter(call => call.name.endsWith("_stream_input"));
+  assert.equal(new Set(inputs.map(call => call.arguments.sessionId)).size, 3);
+  dispatch(screens[0].root, "pointerdown");
+  assert.equal(f.activeDevice?.udid, iphone.udid);
+  f.workspace.toggle("ios", ipad);
+  screens[1].unmount();
+  await waitFor(() => f.closed.length === 1);
+  assert.equal(f.closed[0], inputs[1].arguments.sessionId);
+  assert.equal(f.activeDevice?.udid, iphone.udid);
+  assert.equal(f.calls.some(call => call.name.startsWith("mobile_shutdown")), false);
+  screens[0].unmount();
+  screens[2].unmount();
+});
+
+test("background tabs suspend their streams and visible splits survive tab switches", async t => {
+  const f = fixture(t);
+  const iphone: SimulatorDevice = { udid: "iphone-1", name: "iPhone", runtime: "iOS", state: "Booted" };
+  const ipad = { ...iphone, udid: "ipad-2", name: "iPad" };
+  f.setIosDevices([iphone, ipad]);
+  f.setAndroidDevices([androidPhone]);
+  await f.workspace.setAvailable(true);
+  await f.workspace.open({});
+  f.workspace.toggle("ios", ipad);
+  f.workspace.toggle("android", androidPhone);
+  const [phone, tablet, android] = f.workspace.getSnapshot().panes;
+  f.workspace.setDockSelection([phone.key, android.key], android.key);
+  for (const pane of [phone, tablet, android]) {
+    const root = createPanelRoot();
+    f.workspace.mount(pane.key, root as unknown as HTMLElement);
+  }
+  const sessions = () => f.calls.filter(call => call.name.endsWith("_stream_session"));
+  await waitFor(() => sessions().length === 2);
+  assert.deepEqual(sessions().map(call => call.arguments.udid ?? call.arguments.deviceId), [iphone.udid, androidPhone.udid]);
+
+  f.workspace.setDockSelection([tablet.key, android.key], tablet.key);
+  await f.workspace.inventory.ios.refresh();
+  await waitFor(() => f.closed.length === 1 && sessions().length === 3);
+  assert.equal(sessions()[2].arguments.udid, ipad.udid);
+  assert.equal(f.activeDevice?.udid, ipad.udid);
+  f.workspace.setDockSelection([android.key, tablet.key], android.key);
+  await f.workspace.inventory.ios.refresh();
+  assert.equal(f.activeDevice?.udid, androidPhone.udid);
+  assert.equal(sessions().length, 3);
+  assert.equal(f.closed.length, 1);
+});
+
+test("late discovery cannot overwrite a manual selection", async t => {
+  const f = fixture(t);
+  const discovery = Promise.withResolvers<void>();
+  f.delayDiscovery(discovery.promise);
+  await f.workspace.setAvailable(true);
+  const opening = f.workspace.open({ platform: "android" });
+  f.workspace.toggle("ios", physicalPhone);
+  discovery.resolve();
   await opening;
-  const layout = layouts.at(-1);
-  assert.equal(layout, "ios");
+  assert.deepEqual(f.workspace.getSnapshot().panes.map(pane => pane.last.udid), [physicalPhone.udid]);
 });
 
 test("an exact Android target keeps the same AVD selected through Stop and Start", async t => {
   const f = fixture(t);
-  f.android.panel.setOpeningTarget({ platform: "android", kind: "emulator", deviceId: "emulator-5554" });
-  await f.android.panel.load();
-  const pickerElement = f.android.element("devices");
-  const picker = getDevicePicker(pickerElement as unknown as HTMLElement);
+  await f.android.load({ platform: "android", kind: "emulator", deviceId: "emulator-5554" });
+  const picker = f.android.picker;
   await picker.stopDevice("emulator-5554");
   assert.equal(f.android.panel.selected?.udid, "avd:Pixel");
   const startButton = f.android.element("start-device");
   assert.equal(startButton.disabled, false);
   dispatch(startButton, "click");
   await waitFor(() => f.android.panel.selected?.state === "Booted" && startButton.disabled);
-  await picker.refresh?.();
+  await picker.refresh();
   assert.equal(f.android.panel.selected?.udid, "emulator-5554");
 });
 
 test("disposing the workspace before host readiness does not start device work", async t => {
   const f = fixture(t);
-  const layouts: DeviceLayout[] = [];
-  const workspace = new WorkspaceDevices([f.ios.panel, f.android.panel], layout => { layouts.push(layout); });
-  await workspace.open({ platform: "android" });
-  workspace.dispose();
-  await workspace.setAvailable(true);
+  await f.workspace.open({ platform: "android" });
+  await f.workspace.dispose();
+  await f.workspace.setAvailable(true);
   assert.equal(f.calls.length, 0);
 });
 
@@ -443,19 +502,16 @@ test("physical Android devices appear above emulators and stream without emulato
     { udid: "emulator-5554", name: "Pixel AVD", state: "Booted", runtime: "Android", platform: "android", kind: "emulator" },
     androidPhone,
   ]);
-  await f.android.panel.load();
-  const pickerElement = f.android.element("devices");
-  const picker = getDevicePicker(pickerElement as unknown as HTMLElement);
+  await f.android.load();
+  const picker = f.android.picker;
   const state = picker.getSnapshot();
   const groups = state.items.map(item => item.group);
   assert.deepEqual(groups, ["Connected devices", "Emulators"]);
   assert.equal(state.items[0].label, "Pixel 9 · USB");
   assert.equal(state.items[0].canStop, false);
-  picker.value = androidPhone.udid;
-  dispatch(pickerElement, "change");
+  picker.choose(androidPhone.udid);
   await waitFor(() => {
-    const state = picker.getSnapshot();
-    return f.android.panel.selected?.udid === androidPhone.udid && state.disabled === false && f.android.element("screen").draws > 0;
+    return f.android.panel.selected?.udid === androidPhone.udid && f.android.element("screen").draws > 0;
   });
   const session = f.calls.findLast(call => call.name === "mobile_android_stream_session");
   assert.deepEqual(session?.arguments, { deviceId: androidPhone.udid });
@@ -470,10 +526,26 @@ test("physical Android devices appear above emulators and stream without emulato
   const lifecycle = f.calls.filter(call => call.name.startsWith("mobile_boot") || call.name.startsWith("mobile_shutdown"));
   assert.equal(lifecycle.length, 0);
   f.setAndroidDevices([{ ...androidPhone, transportType: "localNetwork" }]);
-  await picker.refresh?.();
+  await picker.refresh();
   const wireless = picker.getSnapshot();
   assert.equal(wireless.value, androidPhone.udid);
   assert.equal(wireless.items[0].label, "Pixel 9 · Wi-Fi");
+});
+
+test("opening an ADC serial streams that device even with another phone of the same model", async t => {
+  const f = fixture(t);
+  const adcPhone: PhysicalAndroidDevice = { ...androidPhone, udid: "127.0.0.1:15555", transportType: "localNetwork" };
+  f.setAndroidDevices([androidPhone, adcPhone]);
+  await f.workspace.setAvailable(true);
+  await f.workspace.open({ platform: "android", deviceId: adcPhone.udid });
+  const [pane] = f.workspace.getSnapshot().panes;
+  assert.equal(pane.device?.udid, adcPhone.udid);
+  const root = createPanelRoot();
+  f.workspace.mount(pane.key, root as unknown as HTMLElement);
+  await waitFor(() => root.elements.get("screen")!.draws > 0);
+  const streams = f.calls.filter(call => call.name === "mobile_android_stream_session");
+  const targets = streams.map(call => call.arguments);
+  assert.deepEqual(targets, [{ deviceId: adcPhone.udid }]);
 });
 
 test("the Android picker shows an ADC booking name above the device specs for the active connection", async t => {
@@ -482,9 +554,8 @@ test("the Android picker shows an ADC booking name above the device specs for th
   const model = "ADC Android 14 2 CPU 3 GiB RAM";
   const device: PhysicalAndroidDevice = { ...androidPhone, udid: "127.0.0.1:15555", name: model, model, transportType: "localNetwork" };
   f.setAndroidDevices([device], { [device.udid]: name });
-  await f.android.panel.load();
-  const pickerElement = f.android.element("devices");
-  const picker = getDevicePicker(pickerElement as unknown as HTMLElement);
+  await f.android.load();
+  const picker = f.android.picker;
   const option = picker.getSnapshot().items[0];
   assert.equal(option.label, name);
   assert.equal(option.detail, `${model} · Wi-Fi`);
@@ -493,32 +564,29 @@ test("the Android picker shows an ADC booking name above the device specs for th
   await picker.refresh?.();
   const released = picker.getSnapshot().items[0];
   assert.equal(released.label, `${model} · Wi-Fi`);
-  assert.equal(released.detail, undefined);
+  assert.equal(released.detail, "Wi-Fi");
 });
 
 for (const state of ["unauthorized", "offline"]) test(`physical Android ${state} devices remain discoverable without booting or streaming`, async t => {
   const f = fixture(t);
   f.setAndroidDevices([{ ...androidPhone, state }]);
-  await f.android.panel.load();
-  const pickerElement = f.android.element("devices");
-  const picker = getDevicePicker(pickerElement as unknown as HTMLElement);
+  await f.android.load();
+  const picker = f.android.picker;
   const snapshot = picker.getSnapshot();
   assert.equal(snapshot.items.length, 1);
   assert.equal(snapshot.items[0].running, false);
   assert.equal(snapshot.items[0].canStop, false);
   assert.match(snapshot.items[0].label, state === "unauthorized" ? /Unauthorized/ : /Offline/);
-  picker.value = androidPhone.udid;
-  dispatch(pickerElement, "change");
+  picker.choose(androidPhone.udid);
   await waitFor(() => {
-    const snapshot = picker.getSnapshot();
-    return f.android.panel.selected?.udid === androidPhone.udid && snapshot.disabled === false;
+    return f.android.panel.selected?.udid === androidPhone.udid;
   });
   assert.equal(f.android.element("start-device").disabled, true);
   assert.equal(f.android.element("screenshot").disabled, true);
   const actions = f.calls.filter(call => call.name.startsWith("mobile_boot") || call.name.endsWith("_stream_session"));
   assert.equal(actions.length, 0);
   f.setAndroidDevices([androidPhone]);
-  await picker.refresh?.();
+  await picker.refresh();
   await waitFor(() => f.android.element("screen").draws > 0);
 });
 
@@ -528,7 +596,7 @@ test("Android stream opening waits through device boot and backend readiness", a
   let release!: () => void;
   const opening = new Promise<void>(resolve => { release = resolve; });
   f.delayOpen(opening);
-  await f.android.panel.load();
+  await f.android.load();
   t.mock.timers.tick(155000);
   await flushTasks();
   const notice = f.android.element("notice");
@@ -546,18 +614,17 @@ test("Android stream opening waits through device boot and backend readiness", a
 test("Android refresh connects an arriving phone once and closes its stream when it disconnects", async t => {
   const f = fixture(t);
   f.setAndroidDevices([]);
-  await f.android.panel.load();
-  const pickerElement = f.android.element("devices");
-  const picker = getDevicePicker(pickerElement as unknown as HTMLElement);
+  await f.android.load();
+  const picker = f.android.picker;
   f.setAndroidDevices([androidPhone]);
-  await picker.refresh?.();
+  await picker.refresh();
   await waitFor(() => f.android.element("screen").draws > 0);
-  await picker.refresh?.();
+  await picker.refresh();
   const streams = f.calls.filter(call => call.name === "mobile_android_stream_session");
   assert.equal(streams.length, 1);
   assert.equal(f.android.panel.selected?.udid, androidPhone.udid);
   f.setAndroidDevices([]);
-  await picker.refresh?.();
+  await picker.refresh();
   await waitFor(() => f.closed.length === 1);
   assert.equal(f.android.panel.selected, undefined);
   assert.equal(f.android.root.buttons[0].disabled, true);
@@ -565,57 +632,11 @@ test("Android refresh connects an arriving phone once and closes its stream when
   assert.equal(lifecycle.length, 0);
 });
 
-test("the Android panel shows the server's emulator setup hint when adb is available but the device list is empty", async t => {
-  const { android } = fixture(t);
-  android.panel.setOpeningTarget({ platform: "android" });
-  const setupHint = "Install Android Emulator in SDK Manager, then create an AVD in Device Manager.";
-  android.panel.acceptStatus({ connected: true, managed: false, baseUrl: "", devices: [], setupHint });
-  assert.equal(android.element("empty").textContent, "No Android devices.");
-  assert.equal(android.element("empty-description").textContent, setupHint);
-  assert.equal(android.element("empty-description").hidden, false);
-  assert.equal(android.element("start-device").disabled, true);
-});
-
-test("Android discovery polls visible panels, shares refreshes, and removes disconnected phones", async t => {
-  t.mock.timers.enable({ apis: ["setTimeout"] });
-  const f = fixture(t);
-  f.setAndroidDevices([]);
-  await f.android.panel.load();
-  const pickerElement = f.android.element("devices");
-  const picker = getDevicePicker(pickerElement as unknown as HTMLElement);
-  f.android.root.hidden = true;
-  t.mock.timers.tick(3000);
-  const hiddenReads = f.calls.filter(call => call.name === "mobile_list_android_devices");
-  assert.equal(hiddenReads.length, 1);
-  f.android.root.hidden = false;
-  let release!: () => void;
-  const gate = new Promise<void>(resolve => { release = resolve; });
-  f.delayDiscovery(gate);
-  f.setAndroidDevices([{ ...androidPhone, state: "unauthorized" }]);
-  t.mock.timers.tick(3000);
-  const refreshing = picker.refresh?.();
-  const sharedReads = f.calls.filter(call => call.name === "mobile_list_android_devices");
-  assert.equal(sharedReads.length, 2);
-  release();
-  await refreshing;
-  const connected = picker.getSnapshot();
-  assert.equal(connected.items[0].value, androidPhone.udid);
-  f.setAndroidDevices([]);
-  await picker.refresh?.();
-  const disconnected = picker.getSnapshot();
-  assert.equal(disconnected.items.length, 0);
-  await f.android.panel.dispose();
-  t.mock.timers.tick(10000);
-  const disposedReads = f.calls.filter(call => call.name === "mobile_list_android_devices");
-  assert.equal(disposedReads.length, 3);
-});
-
 test("physical iOS devices mirror above simulators and route touches to their own session", async t => {
   const f = fixture(t);
   f.setPhysicalDevices([physicalPhone]);
-  await f.ios.panel.load();
-  const pickerElement = f.ios.element("devices");
-  const picker = getDevicePicker(pickerElement as unknown as HTMLElement);
+  await f.ios.load();
+  const picker = f.ios.picker;
   const state = picker.getSnapshot();
   const items = state.items;
   const groups = items.map(item => item.group);
@@ -624,11 +645,9 @@ test("physical iOS devices mirror above simulators and route touches to their ow
   assert.equal(items[0].statusLabel, "Connected");
   assert.equal(items[0].canStop, false);
   const previousStreams = f.calls.filter(call => call.name === "mobile_stream_session");
-  picker.value = physicalPhone.udid;
-  dispatch(pickerElement, "change");
+  picker.choose(physicalPhone.udid);
   await waitFor(() => {
-    const state = picker.getSnapshot();
-    return f.ios.panel.selected?.kind === "physical" && state.disabled === false;
+    return f.ios.panel.selected?.kind === "physical";
   });
   const empty = f.ios.element("empty");
   const description = f.ios.element("empty-description");
@@ -676,7 +695,7 @@ test("physical iOS devices mirror above simulators and route touches to their ow
   const shutdowns = f.calls.filter(call => call.name.startsWith("mobile_shutdown"));
   assert.equal(shutdowns.length, 0);
   f.setPhysicalDevices([{ ...physicalPhone, transportType: "wired" }]);
-  await picker.refresh?.();
+  await picker.refresh();
   assert.equal(picker.value, physicalPhone.udid);
   const wiredState = picker.getSnapshot();
   assert.equal(wiredState.items[0].label, "Physical iPhone · USB");
@@ -696,12 +715,11 @@ test("physical iOS devices mirror above simulators and route touches to their ow
   const unavailablePhone = { ...physicalPhone, state: "unavailable" };
   Reflect.deleteProperty(unavailablePhone, "transportType");
   f.setPhysicalDevices([unavailablePhone]);
-  await picker.refresh?.();
+  await picker.refresh();
   const disconnectedState = picker.getSnapshot();
   const phonePresent = disconnectedState.items.some(item => item.value === physicalPhone.udid);
   assert.equal(phonePresent, false);
-  picker.value = "iphone-1";
-  dispatch(pickerElement, "change");
+  picker.choose("iphone-1");
   await waitFor(() => {
     const buttonsEnabled = f.ios.root.buttons.every(button => !button.disabled);
     return f.ios.panel.selected?.kind !== "physical" && buttonsEnabled;
@@ -714,11 +732,9 @@ test("physical iOS devices mirror above simulators and route touches to their ow
 test("another panel's held touch does not reconnect the physical video stream", async t => {
   const f = fixture(t);
   f.setPhysicalDevices([physicalPhone]);
-  await f.ios.panel.load();
-  const pickerElement = f.ios.element("devices");
-  const picker = getDevicePicker(pickerElement as unknown as HTMLElement);
-  picker.value = physicalPhone.udid;
-  dispatch(pickerElement, "change");
+  await f.ios.load();
+  const picker = f.ios.picker;
+  picker.choose(physicalPhone.udid);
   await waitFor(() => f.ios.element("screenshot").disabled === false);
   const screen = f.ios.element("screen");
   f.busyPhysicalInput();
@@ -739,15 +755,13 @@ test("another panel's held touch does not reconnect the physical video stream", 
 test("physical iOS capture errors stay visible and clear when mirroring recovers", async t => {
   const f = fixture(t);
   f.setPhysicalDevices([physicalPhone]);
-  await f.ios.panel.load();
-  await f.android.panel.load();
+  await f.ios.load();
+  await f.android.load();
   await waitFor(() => f.android.element("screen").draws > 0);
   const message = "A phone or VoIP call is currently in progress on the device.";
   f.failPhysicalCapture(message);
-  const pickerElement = f.ios.element("devices");
-  const picker = getDevicePicker(pickerElement as unknown as HTMLElement);
-  picker.value = physicalPhone.udid;
-  dispatch(pickerElement, "change");
+  const picker = f.ios.picker;
+  picker.choose(physicalPhone.udid);
   await waitFor(() => f.ios.element("empty-description").textContent === message);
   assert.equal(f.ios.element("empty").hidden, false);
   assert.equal(f.ios.element("empty").textContent, "Screen unavailable");
@@ -766,7 +780,7 @@ test("screenshot attachment failures remain visible until the next action on bot
   const f = fixture(t);
   f.holdInitialFrames();
   for (const platform of [f.ios, f.android]) {
-    await platform.panel.load();
+    await platform.load();
     const screenshot = platform.element("screenshot");
     const notice = platform.element("notice");
     const message = platform.element("notice-message");
@@ -785,9 +799,8 @@ test("screenshot attachment failures remain visible until the next action on bot
     await waitFor(() => screen.draws > 0);
     assert.equal(notice.hidden, false);
     assert.match(message.textContent, /screenshot.*not.*attached.*chat/i);
-    const pickerElement = platform.element("devices");
-    const picker = getDevicePicker(pickerElement as unknown as HTMLElement);
-    await picker.refresh?.();
+    const picker = platform.picker;
+    await picker.refresh();
     assert.equal(notice.hidden, false);
     assert.match(message.textContent, /screenshot.*not.*attached.*chat/i);
     f.failScreenshotAttachment("");
@@ -801,7 +814,7 @@ test("screenshot attachment failures remain visible until the next action on bot
 
 test("JPEG encoding failures keep chat empty, show a notice and allow another screenshot", async t => {
   const f = fixture(t);
-  await f.ios.panel.load();
+  await f.ios.load();
   const screenshot = f.ios.element("screenshot");
   await waitFor(() => screenshot.disabled === false);
   f.failScreenshotEncoding("JPEG encoder failed");
@@ -823,7 +836,7 @@ test("physical iOS screenshots capture the displayed frame without a simulator b
   const f = fixture(t);
   f.setPhysicalDevices([physicalPhone]);
   f.failSimulators("Simulator backend unavailable");
-  await f.ios.panel.load();
+  await f.ios.load();
   const screenshot = f.ios.element("screenshot");
   f.ios.root.elements.delete("screenshot-status");
   await waitFor(() => screenshot.disabled === false);
@@ -851,7 +864,7 @@ test("physical iOS Select annotates screen regions in pixels without simulator a
   const f = fixture(t);
   f.setPhysicalDevices([physicalPhone]);
   f.failSimulators("Simulator backend unavailable");
-  await f.ios.panel.load();
+  await f.ios.load();
   const stage = f.ios.element("stage");
   const store = getScreenAnnotations(stage as unknown as HTMLElement);
   await waitFor(() => store.getSnapshot().disabled === false);
@@ -891,7 +904,7 @@ test("physical iOS Screenshot and Select wait for video and disable when the pho
   let release!: () => void;
   const pending = new Promise<void>(resolve => { release = resolve; });
   f.delayOpen(pending);
-  await f.ios.panel.load();
+  await f.ios.load();
   const store = getScreenAnnotations(f.ios.element("stage") as unknown as HTMLElement);
   const screenshot = f.ios.element("screenshot");
   assert.equal(screenshot.disabled, true);
@@ -900,8 +913,8 @@ test("physical iOS Screenshot and Select wait for video and disable when the pho
   await waitFor(() => screenshot.disabled === false);
   assert.equal(store.getSnapshot().disabled, false);
   f.setPhysicalDevices([]);
-  const picker = getDevicePicker(f.ios.element("devices") as unknown as HTMLElement);
-  await picker.refresh?.();
+  const picker = f.ios.picker;
+  await picker.refresh();
   assert.equal(screenshot.disabled, true);
   assert.equal(store.getSnapshot().disabled, true);
 });
@@ -909,17 +922,14 @@ test("physical iOS Screenshot and Select wait for video and disable when the pho
 test("physical discovery failure stays visible while simulator discovery remains usable", async t => {
   const f = fixture(t);
   f.failDiscovery("Physical discovery requires Xcode 27");
-  await f.ios.panel.load();
+  await f.ios.load();
   assert.equal(f.ios.panel.selected?.udid, "iphone-1");
-  const pickerElement = f.ios.element("devices");
-  const picker = getDevicePicker(pickerElement as unknown as HTMLElement);
-  const state = picker.getSnapshot();
-  assert.equal(state.disabled, false);
+  const picker = f.ios.picker;
   await waitFor(() => f.ios.element("screen").draws > 0);
   const notice = f.ios.element("notice-message");
   assert.match(notice.textContent, /Physical discovery requires Xcode 27/);
   f.failDiscovery("");
-  await picker.refresh?.();
+  await picker.refresh();
   assert.equal(notice.textContent, "");
 });
 
@@ -927,11 +937,9 @@ test("physical devices remain selectable when the simulator backend is unavailab
   const f = fixture(t);
   f.setPhysicalDevices([physicalPhone]);
   f.failSimulators("Baguette unavailable");
-  await f.ios.panel.load();
-  const element = f.ios.element("devices");
-  const picker = getDevicePicker(element as unknown as HTMLElement);
+  await f.ios.load();
+  const picker = f.ios.picker;
   const state = picker.getSnapshot();
-  assert.equal(state.disabled, false);
   assert.equal(state.value, physicalPhone.udid);
   const groups = state.items.map(item => item.group);
   assert.deepEqual(groups, ["Connected devices"]);
@@ -940,35 +948,29 @@ test("physical devices remain selectable when the simulator backend is unavailab
   assert.equal(sessions.length, 0);
 });
 
-test("discovery polls only visible panels, shares an in-flight refresh, and stops on disposal", async t => {
-  t.mock.timers.enable({ apis: ["setTimeout"] });
+test("discovery shares one poll per visible platform and stops on teardown", async t => {
+  t.mock.timers.enable({ apis: ["setInterval"] });
   const f = fixture(t);
   f.setPhysicalDevices([physicalPhone]);
-  f.failSimulators("Baguette unavailable");
-  await f.ios.panel.load();
-  const element = f.ios.element("devices");
-  const picker = getDevicePicker(element as unknown as HTMLElement);
-  f.ios.root.hidden = true;
+  await f.workspace.open({});
+  await f.workspace.setAvailable(true);
+  f.workspace.toggle("ios", physicalPhone);
+  const count = (name: string) => f.calls.filter(call => call.name === name).length;
+  f.visibility("hidden");
   t.mock.timers.tick(3000);
-  const hiddenReads = f.calls.filter(call => call.name === "mobile_list_ios_devices");
-  assert.equal(hiddenReads.length, 1);
-  f.ios.root.hidden = false;
-  let release!: () => void;
-  const gate = new Promise<void>(resolve => { release = resolve; });
-  f.delayDiscovery(gate);
-  f.setPhysicalDevices([]);
+  assert.equal(count("mobile_list_simulators"), 1);
+  f.visibility("visible");
+  const gate = Promise.withResolvers<void>();
+  f.delayDiscovery(gate.promise);
   t.mock.timers.tick(3000);
-  const refreshing = picker.refresh?.();
-  const sharedReads = f.calls.filter(call => call.name === "mobile_list_ios_devices");
-  assert.equal(sharedReads.length, 2);
-  release();
-  await refreshing;
-  const state = picker.getSnapshot();
-  assert.equal(state.items.length, 0);
-  await f.ios.panel.dispose();
+  const reading = f.workspace.inventory.ios.refresh();
+  assert.equal(count("mobile_list_simulators"), 2);
+  assert.equal(count("mobile_list_android_devices"), 1);
+  gate.resolve();
+  await reading;
+  await f.workspace.dispose();
   t.mock.timers.tick(10000);
-  const disposedReads = f.calls.filter(call => call.name === "mobile_list_ios_devices");
-  assert.equal(disposedReads.length, 2);
+  assert.equal(count("mobile_list_simulators"), 2);
 });
 
 async function waitFor(predicate: () => boolean) {
@@ -980,14 +982,14 @@ async function waitFor(predicate: () => boolean) {
 }
 
 test("missing timing observations do not disconnect valid iOS frames", async t => {
-  const f = fixture(t); f.missTiming(); await f.ios.panel.load();
+  const f = fixture(t); f.missTiming(); await f.ios.load();
   await waitFor(() => f.ios.element("screen").draws > 0);
   assert.equal(f.calls.filter(call => call.name === "mobile_stream_session").length, 1);
   assert.equal(f.closed.length, 0);
 });
 
 for (const platform of ["ios", "android"] as const) test(`leaving Select restores the latest ${platform} frame even when the device is quiet`, async t => {
-  const f = fixture(t); const target = f[platform]; await target.panel.load();
+  const f = fixture(t); const target = f[platform]; await target.load();
   await waitFor(() => target.element("screen").draws > 0);
   const store = getScreenAnnotations(target.element("stage") as unknown as HTMLElement);
   await store.toggle();
@@ -1000,7 +1002,7 @@ for (const platform of ["ios", "android"] as const) test(`leaving Select restore
 });
 
 test("returning to a hidden chat reopens its streams and preserves the note input", async t => {
-  const f = fixture(t); await Promise.all([f.ios.panel.load(), f.android.panel.load()]);
+  const f = fixture(t); await Promise.all([f.ios.load(), f.android.load()]);
   await waitFor(() => f.ios.element("screen").draws > 0 && f.android.element("screen").draws > 0);
   const store = getScreenAnnotations(f.ios.element("stage") as unknown as HTMLElement);
   await store.toggle(); store.select({ x: 50, y: 40 }); store.setText("Keep this note");
@@ -1015,7 +1017,7 @@ test("returning to a hidden chat reopens its streams and preserves the note inpu
 });
 
 test("a stopped receive loop retries when its chat becomes visible again", async t => {
-  const f = fixture(t); f.invalidFrame(); await f.ios.panel.load();
+  const f = fixture(t); f.invalidFrame(); await f.ios.load();
   await waitFor(() => f.ios.element("notice-message").textContent.includes("invalid frame metadata"));
   f.visibility("visible");
   await waitFor(() => f.ios.element("screen").draws > 0);
@@ -1025,12 +1027,12 @@ test("a stopped receive loop retries when its chat becomes visible again", async
 test("status arriving during startup still connects the selected device", async t => {
   const f = fixture(t);
   const starting = f.ios.panel.resume();
-  f.ios.panel.acceptStatus({ connected: true, managed: true, baseUrl: "http://localhost/", devices: [{ udid: "iphone-1", name: "iPhone", state: "Booted", runtime: "" }] });
+  f.ios.inventory.apply({ connected: true, managed: true, baseUrl: "http://localhost/", devices: [{ udid: "iphone-1", name: "iPhone", state: "Booted", runtime: "" }] });
   await starting;
   await waitFor(() => f.ios.element("screen").draws > 0);
   assert.equal(f.ios.element("empty").hidden, true);
   assert.equal(f.calls.filter(call => call.name === "mobile_stream_session").length, 1);
-  f.ios.panel.acceptStatus({ connected: true, managed: true, baseUrl: "http://localhost/", devices: [{ udid: "iphone-1", name: "iPhone", state: "Booted", runtime: "" }] });
+  f.ios.inventory.apply({ connected: true, managed: true, baseUrl: "http://localhost/", devices: [{ udid: "iphone-1", name: "iPhone", state: "Booted", runtime: "" }] });
   await new Promise(resolve => setTimeout(resolve, 10));
   assert.equal(f.calls.filter(call => call.name === "mobile_stream_session").length, 1);
   assert.equal(f.closed.length, 0);
@@ -1038,10 +1040,10 @@ test("status arriving during startup still connects the selected device", async 
 
 for (const platform of ["ios", "android"] as const) test(`stopping the selected ${platform} device leaves the other stream open and allows restarting it`, async t => {
   const f = fixture(t);
-  await Promise.all([f.ios.panel.load(), f.android.panel.load()]);
+  await Promise.all([f.ios.load(), f.android.load()]);
   await waitFor(() => f.ios.element("screen").draws > 0 && f.android.element("screen").draws > 0);
   const target = f[platform];
-  const picker = getDevicePicker(target.element("devices") as unknown as HTMLElement);
+  const picker = target.picker;
   await picker.stopDevice(picker.value);
   const shutdown = f.calls.find(call => call.name === (platform === "ios" ? "mobile_shutdown_simulator" : "mobile_shutdown_android_emulator"));
   assert.deepEqual(shutdown?.arguments, platform === "ios" ? { udid: "iphone-1" } : { deviceId: "emulator-5554" });
@@ -1063,11 +1065,11 @@ for (const platform of ["ios", "android"] as const) test(`stopping the selected 
 
 test("refreshing the picker removes stop controls for devices stopped outside the panel", async t => {
   const f = fixture(t);
-  await f.ios.panel.load();
+  await f.ios.load();
   await waitFor(() => f.ios.element("screen").draws > 0);
-  const picker = getDevicePicker(f.ios.element("devices") as unknown as HTMLElement);
+  const picker = f.ios.picker;
   f.stopDevices();
-  await picker.refresh!();
+  await picker.refresh();
   assert.equal(picker.getSnapshot().items[0].running, false);
   assert.equal(picker.getSnapshot().items[0].canStop, false);
   await picker.stopDevice("iphone-1");
@@ -1077,7 +1079,7 @@ test("refreshing the picker removes stop controls for devices stopped outside th
 
 test("device settings target each selected simulator and leave both streams open", async t => {
   const f = fixture(t);
-  await Promise.all([f.ios.panel.load(), f.android.panel.load()]);
+  await Promise.all([f.ios.load(), f.android.load()]);
   await waitFor(() => f.ios.element("screen").draws > 0 && f.android.element("screen").draws > 0);
   const ios = getDeviceSettings(f.ios.element("settings") as unknown as HTMLElement);
   const android = getDeviceSettings(f.android.element("settings") as unknown as HTMLElement);
@@ -1107,7 +1109,7 @@ function pasteText(target: Element, text: string) {
 
 for (const platform of ["ios", "android"] as const) test(`Command-V on ${platform} preserves paste and subsequent typing order in its own session`, async t => {
   const f = fixture(t);
-  await Promise.all([f.ios.panel.load(), f.android.panel.load()]);
+  await Promise.all([f.ios.load(), f.android.load()]);
   await waitFor(() => f.ios.element("screen").draws > 0 && f.android.element("screen").draws > 0);
   const screen = f[platform].element("screen");
   const shortcut = new Event("keydown", { cancelable: true });
@@ -1132,7 +1134,7 @@ for (const platform of ["ios", "android"] as const) test(`Command-V on ${platfor
 for (const platform of ["ios", "android"] as const) test(`${platform} paste rejects unsupported text without sending partial content`, async t => {
   const f = fixture(t);
   const panel = f[platform];
-  await panel.panel.load();
+  await panel.load();
   await waitFor(() => panel.element("screen").draws > 0);
   const screen = panel.element("screen");
   const empty = pasteText(screen, "");
@@ -1161,7 +1163,7 @@ for (const platform of ["ios", "android"] as const) test(`${platform} paste wait
   const screen = panel.element("screen");
   const beforeReady = pasteText(screen, "before ready");
   assert.equal(beforeReady.defaultPrevented, false);
-  await panel.panel.load();
+  await panel.load();
   await waitFor(() => screen.draws > 0);
   const stage = panel.element("stage");
   const store = getScreenAnnotations(stage as unknown as HTMLElement);
@@ -1186,14 +1188,13 @@ for (const platform of ["ios", "android"] as const) test(`${platform} paste wait
 test("blocked iOS and physical iOS streams do not accept pasted text", async t => {
   const f = fixture(t);
   f.blockIos();
-  await f.ios.panel.load();
+  await f.ios.load();
   await waitFor(() => f.ios.element("screen").draws > 0);
   const screen = f.ios.element("screen");
   const blocked = pasteText(screen, "blocked");
   assert.equal(blocked.defaultPrevented, false);
   f.setPhysicalDevices([physicalPhone]);
-  f.ios.panel.setOpeningTarget({ platform: "ios", kind: "physical", deviceId: physicalPhone.udid });
-  await f.ios.panel.load();
+  await f.ios.load({ platform: "ios", kind: "physical", deviceId: physicalPhone.udid });
   await waitFor(() => f.calls.some(call => call.name === "mobile_ios_mirror_session") && f.ios.root.buttons[0].disabled);
   const physical = pasteText(screen, "physical");
   assert.equal(physical.defaultPrevented, false);
@@ -1203,7 +1204,7 @@ test("blocked iOS and physical iOS streams do not accept pasted text", async t =
 
 test("both platforms stream at once and each routes input to its own session", async t => {
   const f = fixture(t);
-  await Promise.all([f.ios.panel.load(), f.android.panel.load()]);
+  await Promise.all([f.ios.load(), f.android.load()]);
   await waitFor(() => f.ios.element("screen").draws > 0 && f.android.element("screen").draws > 0);
   dispatch(f.ios.root.buttons[0], "click");
   dispatch(f.android.root.buttons[0], "click");
@@ -1218,9 +1219,9 @@ test("both platforms stream at once and each routes input to its own session", a
 
 test("changing one device leaves the other stream and controls active", async t => {
   const f = fixture(t);
-  await Promise.all([f.ios.panel.load(), f.android.panel.load()]);
+  await Promise.all([f.ios.load(), f.android.load()]);
   await waitFor(() => f.android.element("screen").draws > 0);
-  dispatch(f.ios.element("devices"), "change");
+  await f.ios.panel.resume();
   await waitFor(() => f.calls.filter(call => call.name === "mobile_stream_session").length === 2);
   assert.equal(f.calls.filter(call => call.name === "mobile_android_stream_session").length, 1);
   assert.ok(f.closed.some(id => id.startsWith("ios-")));
@@ -1238,7 +1239,7 @@ for (const platform of ["ios", "android"] as const) test(`${platform} input fail
   const other = platform === "ios" ? f.android : f.ios;
   const sessionTool = platform === "ios" ? "mobile_stream_session" : "mobile_android_stream_session";
   const inputTool = platform === "ios" ? "mobile_stream_input" : "mobile_android_stream_input";
-  await Promise.all([panel.panel.load(), other.panel.load()]);
+  await Promise.all([panel.load(), other.load()]);
   await waitFor(() => panel.element("screen").draws > 0 && other.element("screen").draws > 0);
   f.failInput(platform);
   dispatch(panel.root.buttons[0], "click");
@@ -1251,7 +1252,7 @@ for (const platform of ["ios", "android"] as const) test(`${platform} input fail
 
 test("blocked iOS input leaves Android controls working", async t => {
   const f = fixture(t); f.blockIos();
-  await Promise.all([f.ios.panel.load(), f.android.panel.load()]);
+  await Promise.all([f.ios.load(), f.android.load()]);
   await waitFor(() => f.ios.element("screen").draws > 0 && f.android.element("screen").draws > 0);
   assert.equal(f.ios.root.buttons[1].disabled, true);
   assert.match(f.ios.element("notice-message").textContent, /input is blocked/);
@@ -1263,7 +1264,7 @@ test("teardown closes both streams and closes sessions that finish opening late"
   const f = fixture(t);
   let release!: () => void;
   f.delayOpen(new Promise<void>(resolve => { release = resolve; }));
-  await Promise.all([f.ios.panel.load(), f.android.panel.load()]);
+  await Promise.all([f.ios.load(), f.android.load()]);
   await waitFor(() => f.calls.filter(call => call.name.endsWith("_stream_session")).length === 2);
   await Promise.all([f.ios.panel.dispose(), f.android.panel.dispose()]);
   release();
@@ -1276,7 +1277,7 @@ test("teardown closes both streams and closes sessions that finish opening late"
 
 for (const platform of ["ios", "android"] as const) test(`select mode on ${platform} maps screen coordinates without sending device input`, async t => {
   const f = fixture(t); const panel = f[platform];
-  await panel.panel.load(); await waitFor(() => panel.element("screen").draws > 0);
+  await panel.load(); await waitFor(() => panel.element("screen").draws > 0);
   const store = getScreenAnnotations(panel.element("stage") as unknown as HTMLElement);
   await store.toggle();
   assert.equal(store.getSnapshot().selecting, true);
@@ -1301,7 +1302,7 @@ for (const platform of ["ios", "android"] as const) test(`select mode on ${platf
 
 for (const recovery of ["generation", "decoder"] as const) test(`Android ${recovery} recovery keeps Select and its frozen capture active`, async t => {
   const f = fixture(t), panel = f.android;
-  await panel.panel.load();
+  await panel.load();
   const store = getScreenAnnotations(panel.element("stage") as unknown as HTMLElement);
   await waitFor(() => !store.getSnapshot().disabled && f.waitingForFrame("android"));
   await store.toggle();
@@ -1341,7 +1342,7 @@ for (const recovery of ["generation", "decoder"] as const) test(`Android ${recov
 for (const platform of ["ios", "android"] as const) test(`failed inspection on ${platform} falls back to native elements and accepts clicks`, async t => {
   const f = fixture(t), panel = f[platform];
   f.failInspection();
-  await panel.panel.load(); await waitFor(() => panel.element("screen").draws > 0);
+  await panel.load(); await waitFor(() => panel.element("screen").draws > 0);
   const store = getScreenAnnotations(panel.element("stage") as unknown as HTMLElement);
   await store.toggle();
   dispatch(panel.element("screen"), "pointermove", { pointerId: 1, clientX: 20, clientY: 30 });
@@ -1360,7 +1361,7 @@ test("Android selection attaches a scaled accessibility element to the composer 
   f.setAndroidAccessibility({ screen: { width: 1080, height: 2160 }, tree: { nodes: [
     { text: "Continue", resourceId: "app:id/continue", className: "android.widget.Button", bounds: { left: 270, top: 1080, right: 810, bottom: 1296 } },
   ] } });
-  await panel.panel.load(); await waitFor(() => panel.element("screen").draws > 0);
+  await panel.load(); await waitFor(() => panel.element("screen").draws > 0);
   const store = getScreenAnnotations(panel.element("stage") as unknown as HTMLElement);
   const updates: Parameters<App["updateModelContext"]>[0][] = [];
   const messages: Parameters<App["sendMessage"]>[0][] = [];
@@ -1395,11 +1396,10 @@ test("Android selection attaches a scaled accessibility element to the composer 
 for (const platform of ["ios", "android"] as const) test(`selecting a stopped ${platform} device boots and streams it without Start`, async t => {
   const f = fixture(t); f.stopDevices();
   const panel = f[platform];
-  await panel.panel.load();
-  assert.equal(getDevicePicker(panel.element("devices") as unknown as HTMLElement).value, "");
+  await panel.load();
+  assert.equal(panel.picker.value, "");
   assert.equal(f.calls.some(call => call.name.startsWith("mobile_boot")), false);
-  getDevicePicker(panel.element("devices") as unknown as HTMLElement).value = platform === "ios" ? "iphone-1" : "emulator-5554";
-  dispatch(panel.element("devices"), "change");
+  panel.picker.choose(platform === "ios" ? "iphone-1" : "emulator-5554");
   await waitFor(() => panel.element("screen").draws > 0);
   assert.equal(f.calls.filter(call => call.name === (platform === "ios" ? "mobile_boot_simulator" : "mobile_boot_android_emulator")).length, 1);
   assert.equal(panel.root.buttons[0].disabled, false);
