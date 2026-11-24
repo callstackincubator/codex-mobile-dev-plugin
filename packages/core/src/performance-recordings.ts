@@ -6,6 +6,7 @@ import type { CpuSample, CpuTarget } from "@mobile-dev/shared/cpu.ts";
 import { recordingIdSchema, recordingSchema } from "@mobile-dev/shared/recordings.ts";
 import type { PerformanceRecording } from "@mobile-dev/shared/recordings.ts";
 import { errorMessage } from "@mobile-dev/shared/protocol.ts";
+import { startIosHitchTrace } from "./fps/ios-hitch-trace.ts";
 import { captureServerError } from "./telemetry.ts";
 import type { CpuSessions } from "./cpu/sessions.ts";
 import type { DisplayFpsSessions } from "./fps/sessions.ts";
@@ -70,20 +71,22 @@ export class RecordingStore {
 
 type FpsCollection = { sessionId?: string; cursor: number; pending: DisplayFpsSample[] };
 
-type ActiveRecording = { recording: PerformanceRecording; stop: boolean; interrupted: boolean; job: Promise<void> };
+type ActiveRecording = { recording: PerformanceRecording; stop: boolean; interrupted: boolean; hitchAbort: AbortController; pid?: number; job: Promise<void> };
 
 export class PerformanceRecordings {
   private active = new Map<string, ActiveRecording>();
   private disposed = false;
   private readonly cpu: Pick<CpuSessions, "open" | "read" | "closeSession">;
   private readonly fps: Pick<DisplayFpsSessions, "open" | "read" | "closeSession">;
+  private readonly startHitches: typeof startIosHitchTrace;
   readonly store: RecordingStore;
 
   constructor(cpu: Pick<CpuSessions, "open" | "read" | "closeSession">,
-    fps: Pick<DisplayFpsSessions, "open" | "read" | "closeSession">, store = new RecordingStore()) {
+    fps: Pick<DisplayFpsSessions, "open" | "read" | "closeSession">, store = new RecordingStore(), startHitches = startIosHitchTrace) {
     this.cpu = cpu;
     this.fps = fps;
     this.store = store;
+    this.startHitches = startHitches;
   }
 
   start(target: CpuTarget, title: string, durationSeconds: number, deviceName: string): PerformanceRecording {
@@ -95,8 +98,9 @@ export class PerformanceRecordings {
       fps: { status: "connecting", samples: [] },
     };
     recordingSchema.parse(recording);
-    const sessionId = this.cpu.open(target);
-    const active: ActiveRecording = { recording, stop: false, interrupted: false, job: Promise.resolve() };
+    const hitchAbort = new AbortController();
+    const active: ActiveRecording = { recording, stop: false, interrupted: false, hitchAbort, job: Promise.resolve() };
+    const sessionId = this.cpu.open(target, pid => { active.pid = pid; });
     this.active.set(recording.id, active);
     active.job = this.collect(active, sessionId);
     return { ...recording, samples: [], fps: { ...recording.fps, samples: [] } };
@@ -154,6 +158,20 @@ export class PerformanceRecordings {
     const recording = active.recording;
     const connectingAt = performance.now();
     const fps: FpsCollection = { cursor: 0, pending: [] };
+    const physical = recording.target.platform === "ios" && recording.target.kind === "physical";
+    const signal = active.hitchAbort.signal;
+    let trace: Awaited<ReturnType<typeof startIosHitchTrace>> | undefined;
+    let hitchAttempted = false;
+    let traceReadyAt = 0;
+    function hitchError(error: unknown, stage: "start" | "export") {
+      const message = stage === "start"
+        ? "Xcode could not start Frame Lifetimes on this iPhone."
+        : "Xcode could not export complete Core Animation hitch timings.";
+      recording.iosHitches = { status: "unavailable", error: message };
+      const reportAs = new Error(message);
+      captureServerError(error, "recording.ios_hitches", { signal, reportAs });
+    }
+    let hitchResult: Promise<void> | undefined;
     let origin: number | undefined;
     let latestCpu: CpuSample | undefined;
     let cpuOrigin: number | undefined;
@@ -174,8 +192,10 @@ export class PerformanceRecordings {
       while (active.stop === false) {
         const now = performance.now();
         if (origin !== undefined && now / 1000 - origin >= recording.durationSeconds) break;
-        const timedOut = origin === undefined && now - connectingAt > 60000;
-        if (timedOut && latestCpu === undefined) throw new Error("The CPU collector did not become ready within 60 seconds.");
+        const lastConnection = Math.max(connectingAt, traceReadyAt * 1000);
+        const timedOut = origin === undefined && now - lastConnection > 60000;
+        const cpuReady = latestCpu !== undefined && cpuOrigin !== undefined && cpuOrigin + latestCpu.time >= traceReadyAt;
+        if (timedOut && cpuReady === false) throw new Error("The CPU collector did not become ready within 60 seconds.");
         if (timedOut && recording.fps.status === "connecting") {
           recording.fps.status = "unavailable";
           recording.fps.error = "The Display FPS collector did not become ready within 60 seconds.";
@@ -197,6 +217,15 @@ export class PerformanceRecordings {
         }
         await this.readFps(recording, fps, origin, recording.durationSeconds);
         if (origin === undefined && latestCpu !== undefined && cpuOrigin !== undefined && recording.fps.status !== "connecting") {
+          if (physical && hitchAttempted === false) {
+            hitchAttempted = true;
+            try {
+              trace = await this.startHitches(recording.target.deviceId, recording.durationSeconds, signal);
+              traceReadyAt = performance.now() / 1000;
+            } catch (error) { hitchError(error, "start"); }
+            continue;
+          }
+          if (cpuOrigin + latestCpu.time < traceReadyAt) continue;
           origin = cpuOrigin + latestCpu.time;
           recording.startedAt = new Date().toISOString();
           recording.status = "recording";
@@ -218,6 +247,11 @@ export class PerformanceRecordings {
       const elapsed = performance.now() / 1000 - origin;
       const end = Math.min(recording.durationSeconds, elapsed);
       recording.status = "finishing";
+      if (trace && active.pid !== undefined) {
+        const originMs = performance.timeOrigin + origin * 1000;
+        const exporting = trace.finish(active.pid, originMs, end);
+        hitchResult = exporting.then(result => { recording.iosHitches = result; }, error => hitchError(error, "export"));
+      }
       await this.cpu.closeSession(sessionId);
       const drainMs = recording.target.platform === "android" ? 5000 : 1500;
       const drainUntil = performance.now() + drainMs;
@@ -226,6 +260,12 @@ export class PerformanceRecordings {
         const waitMs = Math.max(0, Math.min(1000, remaining));
         await this.readFps(recording, fps, origin, end, waitMs);
       }
+      if (fps.sessionId !== undefined) {
+        const id = fps.sessionId;
+        fps.sessionId = undefined;
+        await this.fps.closeSession(id);
+      }
+      await hitchResult;
       if (active.interrupted) throw new Error("Recording interrupted because the plugin server closed.");
       if (recording.fps.status === "recording") recording.fps.status = "finished";
       recording.status = "finished";
@@ -234,7 +274,16 @@ export class PerformanceRecordings {
       recording.error = errorMessage(error);
       captureServerError(error, "recording.collect");
     } finally {
+      active.hitchAbort.abort();
+      await hitchResult;
       const closing = [this.cpu.closeSession(sessionId)];
+      if (trace) {
+        const cleanup = trace.close().catch(error => {
+          const reportAs = new Error("Could not clean up the temporary Instruments trace.");
+          captureServerError(error, "recording.ios_hitches.close", { reportAs });
+        });
+        closing.push(cleanup);
+      }
       if (fps.sessionId !== undefined) {
         const closeFps = this.fps.closeSession(fps.sessionId);
         closing.push(closeFps);
@@ -269,7 +318,11 @@ export class PerformanceRecordings {
 
   async finish(id: string) {
     const active = this.active.get(id);
-    if (active) { active.stop = true; await active.job; }
+    if (active) {
+      active.stop = true;
+      if (active.recording.status === "connecting") active.hitchAbort.abort();
+      await active.job;
+    }
     return this.read(id);
   }
 
@@ -284,7 +337,7 @@ export class PerformanceRecordings {
   async close() {
     this.disposed = true;
     const pending = [...this.active.values()];
-    for (const active of pending) { active.interrupted = true; active.stop = true; }
+    for (const active of pending) { active.interrupted = true; active.stop = true; active.hitchAbort.abort(); }
     const jobs = pending.map(active => active.job);
     await Promise.all(jobs);
   }

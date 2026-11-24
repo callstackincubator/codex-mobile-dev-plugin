@@ -897,6 +897,12 @@ values; the route and the reason a dispatch was refused appear only in the local
 console line and in the error shown on the node, neither of which leaves the
 machine. No new data is collected.
 
+The server measures Instruments startup and finalization with
+`ios.hitches.operation.duration` in milliseconds. Operation (`connect` or
+`finish`), outcome, recording surface, and platform describe collector overhead.
+Hitch events, app identity, and trace contents stay local. Existing
+`ui.recording.derive` timing includes matching hitches to recorded FPS intervals and summarizing the selected range.
+
 ## Resource-saving operations
 
 Since 0.1.179, `resource_saving.apply` counts successful and failed applications of

@@ -180,6 +180,7 @@ export class RecordingController {
     if (summary.firstMemoryBytes !== null) metrics.push("memory");
     if (summary.averageFps !== null) metrics.push("device-wide Display FPS");
     if (summary.frameStats !== null) metrics.push("Android display jank rate, classification coverage, dropped frames, and frame pacing");
+    if (summary.hitchStats) metrics.push("visible iOS hitches and time lost from summary.hitchStats");
     const metricNames = metrics.join(", ");
     const hasDisplayData = summary.averageFps !== null || summary.frameStats !== null;
     const displayContext = hasDisplayData ? "; device-wide display data cannot attribute a slowdown to this app alone" : "";
