@@ -1,5 +1,5 @@
 import { expect, test } from "./fixtures.ts";
-import { recordingFixture } from "../../packages/test-support/recording-fixtures.ts";
+import { recordingFixture, recordingWithFramesFixture } from "../../packages/test-support/recording-fixtures.ts";
 import type { Theme } from "./profiles.ts";
 
 // Screenshots of the Codex panel with no device attached, in light and dark. The
@@ -76,9 +76,9 @@ for (const theme of themes) test.describe(`${theme}`, { tag: "@visual" }, () => 
     const { view } = await openView("mobile_render_performance_recording", { theme, arguments: { recordingId: recording.id } });
     const track = view.getByRole("region", { name: "Display FPS", exact: true });
     const picker = track.getByRole("combobox", { name: "Inspect" });
-    const marker = track.locator('[data-hitch-index="1"]');
+    const marker = track.locator('[data-frame-index="1"]');
     await marker.click();
-    await expect(picker).toHaveValue("hitch-1");
+    await expect(picker).toHaveValue("marker-1");
     await expect(track).toContainText("12.500 s · 60 Hz · 33.33 ms late · 2 refresh intervals · 30.0 FPS in this sample");
     const summary = view.getByRole("region", { name: "Hitch statistics" });
     await expect(summary).toContainText("33.33 ms");
@@ -99,11 +99,37 @@ for (const theme of themes) test.describe(`${theme}`, { tag: "@visual" }, () => 
     const overview = view.getByRole("region", { name: "Recording range overview" });
     await expect(overview).toContainText("16.0s");
     await overview.getByRole("button", { name: "Clear" }).click();
-    await picker.selectOption("hitch-0");
+    await picker.selectOption("marker-0");
     await expect(track).toContainText("120 Hz · 8.33 ms late · 1 refresh interval · 60.0 FPS");
-    await expect(track.locator('[data-hitch-index="0"] text')).toHaveText("3.450 s");
+    await expect(track.locator('[data-frame-index="0"] text')).toHaveText("3.450 s");
     await picker.blur();
     await expect(track).toHaveScreenshot(`recording-hitches-${theme}.png`);
+  });
+
+  test("Android display-frame markers", async ({ openView, server }) => {
+    const recording = recordingWithFramesFixture();
+    const callTool = server.client.callTool.bind(server.client);
+    server.client.callTool = (request, ...options) => {
+      if (request.name === "mobile_render_performance_recording") {
+        return Promise.resolve({ content: [], structuredContent: { recording } });
+      }
+      return callTool(request, ...options);
+    };
+    const { view } = await openView("mobile_render_performance_recording", { theme, arguments: { recordingId: recording.id } });
+    const track = view.getByRole("region", { name: "Display FPS", exact: true });
+    const picker = track.getByRole("combobox", { name: "Inspect" });
+    await expect(track.locator("[data-frame-index]")).toHaveCount(2);
+    await track.locator('[data-frame-index="1"]').click();
+    await expect(track).toContainText("Dropped display frame");
+    await picker.selectOption("sample-12");
+    await expect(track).toContainText("30.0 FPS · 2 flagged display frames");
+    await picker.selectOption("sample-1");
+    await expect(track).toContainText("FrameTimeline unavailable for this sample");
+    await picker.selectOption("marker-0");
+    await expect(track).toContainText("Late display frame · SurfaceFlinger scheduling");
+    await picker.blur();
+    await track.getByRole("heading").hover();
+    await expect(track).toHaveScreenshot(`android-frame-markers-${theme}.png`);
   });
 
   test(`panel beside the chat`, async ({ openView }) => {

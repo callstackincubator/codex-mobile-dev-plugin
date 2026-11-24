@@ -1,4 +1,4 @@
-import React, { memo, useCallback, useContext, useMemo, type ComponentProps } from "react";
+import React, { memo, useCallback, useContext, useMemo, useRef, type ComponentProps } from "react";
 import {
   AreaChart,
   Area,
@@ -26,6 +26,7 @@ import { ChartToolTip } from "./ChartToolTip";
 import { Button } from "../ui/button";
 
 type PerformanceAreaChartProps = {
+  children?: React.ReactNode;
   data: CpuPoint[];
   zoomState: ZoomState;
   onZoomChange: (state: ZoomState) => void;
@@ -48,6 +49,7 @@ const defaultChartColors = {
 };
 
 export const PerformanceAreaChart = memo(function PerformanceAreaChart({
+  children,
   data,
   zoomState,
   onZoomChange,
@@ -59,6 +61,7 @@ export const PerformanceAreaChart = memo(function PerformanceAreaChart({
   curveType = "step",
 }: PerformanceAreaChartProps) {
   const chartWidth = useContext(TimelineChartWidth);
+  const markerPress = useRef<{ x: number; time: number } | undefined>(undefined);
   const { refAreaLeft, refAreaRight, left, right, viewDuration } = zoomState;
   const yDomain = useMemo(() => {
     const domain = getAxisYDomain(data, left, right, 10);
@@ -73,6 +76,10 @@ export const PerformanceAreaChart = memo(function PerformanceAreaChart({
   const tooltipPosition = useMemo(() => ({ y: trackHeight / 2 }), [trackHeight]);
 
   const zoom = useCallback(() => {
+    if (markerPress.current) {
+      markerPress.current = undefined;
+      return;
+    }
     const { refAreaLeft, refAreaRight } = zoomState;
 
     if (
@@ -105,16 +112,29 @@ export const PerformanceAreaChart = memo(function PerformanceAreaChart({
   }, [zoomState, onZoomChange]);
 
   const onMouseDown = useCallback(
-    (e: MouseHandlerDataParam) => {
-      if (typeof e.activeLabel === "number") {
-        onZoomChange({ ...zoomState, refAreaLeft: e.activeLabel });
+    (e: MouseHandlerDataParam, event: React.MouseEvent) => {
+      markerPress.current = undefined;
+      const marker = event.target instanceof Element ? event.target.closest<SVGGElement>("[data-frame-time]") : null;
+      if (marker) {
+        markerPress.current = { x: event.clientX, time: Number(marker.dataset.frameTime) };
+        return;
       }
+      if (typeof e.activeLabel === "number") onZoomChange({ ...zoomState, refAreaLeft: e.activeLabel });
     },
     [zoomState, onZoomChange]
   );
 
   const onMouseMove = useCallback(
-    (e: MouseHandlerDataParam) => {
+    (e: MouseHandlerDataParam, event: React.MouseEvent) => {
+      const press = markerPress.current;
+      if (press) {
+        if (event.buttons !== 1 || typeof e.activeLabel !== "number") return;
+        const distance = Math.abs(event.clientX - press.x);
+        if (distance <= 3) return;
+        markerPress.current = undefined;
+        onZoomChange({ ...zoomState, refAreaLeft: press.time, refAreaRight: e.activeLabel });
+        return;
+      }
       if (
         zoomState.refAreaLeft !== undefined &&
         typeof e.activeLabel === "number"
@@ -213,6 +233,7 @@ export const PerformanceAreaChart = memo(function PerformanceAreaChart({
             shape={renderSelectionReferenceArea}
           />
         ) : null}
+        {children}
       </AreaChart>
     </div>
   );

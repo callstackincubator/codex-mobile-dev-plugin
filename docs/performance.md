@@ -81,7 +81,11 @@ The Memory track shows the main process's current usage, sampled average, maximu
 
 The green **Display FPS** track shares the CPU and memory timeline, cursor, zoom and 150-second history. It records independently of the selected app, with current, average, maximum and minimum FPS. It includes other apps and system UI; a quiet or locked screen can report zero. This measures display updates rather than the panel's refresh rate, and does not identify which app caused a drop. Missing measurements remain gaps.
 
-Android 12+ uses only Perfetto FrameTimeline's presented actual display frames, excluding dropped frames and individual app/layer frames. A bundled external native consumer reads a bounded 4 MiB trace buffer once per second over ADB without creating a trace file, attaching a debugger, requiring root or installing an app SDK. Readback adds roughly three seconds of delay. SurfaceFlinger can report a frame later; the chart updates that frame's original interval. Devices without FrameTimeline and Android versions below 12 report an explicit limitation.
+On Android 12+, the FPS counter counts presented display frames from Perfetto FrameTimeline. A bundled external native consumer reads a bounded 4 MiB trace buffer once per second over ADB without creating a trace file, attaching a debugger, requiring root or installing an app SDK. Readback adds roughly three seconds of delay. SurfaceFlinger can report a frame later; the chart updates that frame's original interval. Devices without FrameTimeline and Android versions below 12 report an explicit limitation.
+
+Diamonds on the live and saved **Display FPS** graphs mark frames SurfaceFlinger reported as late, dropped or janky. A frame with multiple reasons gets one diamond. Select it to see its time, presentation status and reported reasons. For a dropped frame the time is the end of the frame event. The **Inspect** menu also lists FPS samples with their flagged-frame counts and distinguishes a captured interval with zero flags from one without FrameTimeline data. An idle interval adds no markers by itself. These events cover the whole display, including system UI.
+
+In chat hosts that can only show a recording preview, the diamonds appear when the frame data fits the tool result. Open the full recording in Mobile Dev to inspect larger runs.
 
 Android FPS intervals also retain `frameTimeline`: its `clock` is `boottime`,
 `intervalEndNs` identifies the device interval endpoint, and `frames` contains

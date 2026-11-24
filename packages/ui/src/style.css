@@ -31,9 +31,9 @@ html:is([data-view="recording"], [data-view="comparison"], [data-view="tracesift
 .recording-fps-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .recording-fps-legend span::before { content: ""; width: 14px; height: 2px; background: #36a269; }
 .recording-fps-legend span + span::before { width: 7px; height: 7px; transform: rotate(45deg); background: var(--destructive); }
-.recording-hitch-marker { fill: var(--destructive); cursor: pointer; }
-.recording-hitch-marker text { font-size: 11px; fill: var(--foreground); paint-order: stroke; stroke: var(--background); stroke-width: 3px; }
-.recording-chart:has(.recording-hitch-marker:hover) .recharts-tooltip-wrapper { visibility: hidden !important; }
+.fps-frame-marker { fill: var(--destructive); cursor: pointer; }
+.fps-frame-marker text { font-size: 11px; fill: var(--foreground); paint-order: stroke; stroke: var(--background); stroke-width: 3px; }
+.recharts-wrapper:has(.fps-frame-marker:hover) .recharts-tooltip-wrapper { visibility: hidden !important; }
 .recording-fps-inspector { padding-top: 8px; border-top: 1px solid var(--border); }
 .recording-fps-inspector label { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; }
 .recording-fps-inspector select { min-width: 0; background: var(--background); color: var(--foreground); border: 1px solid var(--border); border-radius: 6px; padding: 3px 4px; }
