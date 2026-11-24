@@ -53,6 +53,12 @@ export function recordIosMirrorSharing(captures: number, subscribers: number, dr
   if (dropped > 0) Sentry.metrics.count("ios.mirror.shared.queue_dropped", dropped, { attributes });
 }
 
+export function recordIosHitchOperation(operation: "connect" | "finish", outcome: "success" | "failed", duration: number) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = { component: "server", surface: "recording", device_platform: "ios", operation, outcome };
+  Sentry.metrics.distribution("ios.hitches.operation.duration", duration, { unit: "millisecond", attributes });
+}
+
 export type AppStorageOperation = "read" | "clear" | "reset" | "table" | "file";
 export function recordAppStorageOperation(operation: AppStorageOperation, platform: "ios" | "android", outcome: "success" | "failed", duration: number) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;

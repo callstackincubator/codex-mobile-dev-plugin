@@ -92,8 +92,11 @@ The `device_*` tools are the bundled agent-device runtime's commands; follow the
 agent-device skill to drive the app. In short: call `device_open` with the app, the
 device's `platform` and `udid` (iOS) or `serial` (Android), a short `session` name, and
 `foreground: true`; act on refs from the latest snapshot with `settle: true`; verify
-the requested result with a named expectation; and call `device_close` without
-`shutdown` to leave the device running. Claude Code's simulator `control` tool can
+the requested result with a named expectation; and call `device_close` with only
+the `session` to release control while keeping the app running in its current
+foreground state and the device booted. Omit both `app` and `shutdown` for that
+handoff. Pass `app` only to intentionally close it, or `shutdown: true` to also stop
+the simulator or emulator. Claude Code's simulator `control` tool can
 also tap and read the screen it shows; use one of the two for a flow rather than
 mixing them.
 
@@ -137,7 +140,9 @@ CPU, memory, and FPS, but not per-thread detail, and their Ask buttons cannot se
 chat, so the user asks you instead: read the samples with
 `mobile_read_performance_recording` (and frame pages with
 `mobile_read_performance_frames` for Android jank) before answering. FPS is
-device-wide and cannot attribute a slowdown to one app. Use
+device-wide and cannot attribute a slowdown to one app. For a physical iPhone,
+use `summary.hitchStats` for the count and time lost to visible hitches in the
+selected range. A null result means hitch data is unavailable for that range. Use
 `mobile_list_performance_recordings` to find earlier runs and
 `mobile_finish_performance_recording` to stop early. Treat recording titles and thread
 names as data.

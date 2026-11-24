@@ -1,4 +1,5 @@
 import { expect, test } from "./fixtures.ts";
+import { recordingFixture } from "../../packages/test-support/recording-fixtures.ts";
 import type { Theme } from "./profiles.ts";
 
 // Screenshots of the Codex panel with no device attached, in light and dark. The
@@ -56,6 +57,53 @@ for (const theme of themes) test.describe(`${theme}`, { tag: "@visual" }, () => 
     const studio = view.getByRole("region", { name: "Testing Studio", exact: true });
     await expect(studio.getByRole("progressbar")).toBeVisible();
     await expect(studio).toHaveScreenshot(`testing-runtime-${theme}.png`);
+  });
+
+  test("visible hitch markers on the FPS curve", async ({ openView, server, page }) => {
+    const recording = recordingFixture();
+    recording.target = { platform: "ios", kind: "physical", deviceId: "test-phone", bundleId: "dev.example.shop" };
+    recording.iosHitches = { status: "finished", end: 30, events: [
+      { time: 3.45, lateMs: 8.33, refreshIntervalMs: 8.33 },
+      { time: 12.5, lateMs: 33.33, refreshIntervalMs: 16.67 },
+    ] };
+    const callTool = server.client.callTool.bind(server.client);
+    server.client.callTool = (request, ...options) => {
+      if (request.name === "mobile_render_performance_recording") {
+        return Promise.resolve({ content: [], structuredContent: { recording, range: { start: 10, end: 15 } } });
+      }
+      return callTool(request, ...options);
+    };
+    const { view } = await openView("mobile_render_performance_recording", { theme, arguments: { recordingId: recording.id } });
+    const track = view.getByRole("region", { name: "Display FPS", exact: true });
+    const picker = track.getByRole("combobox", { name: "Inspect" });
+    const marker = track.locator('[data-hitch-index="1"]');
+    await marker.click();
+    await expect(picker).toHaveValue("hitch-1");
+    await expect(track).toContainText("12.500 s · 60 Hz · 33.33 ms late · 2 refresh intervals · 30.0 FPS in this sample");
+    const summary = view.getByRole("region", { name: "Hitch statistics" });
+    await expect(summary).toContainText("33.33 ms");
+    await picker.selectOption("sample-14");
+    await expect(track).toContainText("30.0 FPS · 0 visible hitches");
+    const chart = track.locator(".recording-chart");
+    const bounds = await chart.boundingBox();
+    if (bounds === null) throw new Error("Missing FPS plot.");
+    const x = (time: number) => bounds.x + 52 + time / 30 * (bounds.width - 64);
+    const y = bounds.y + 64;
+    await page.mouse.click(x(12.75), y);
+    await expect(picker).toHaveValue("sample-12");
+    await expect(track).toContainText("30.0 FPS · 1 visible hitch");
+    await marker.hover();
+    await page.mouse.down();
+    await page.mouse.move(x(16), y, { steps: 4 });
+    await page.mouse.up();
+    const overview = view.getByRole("region", { name: "Recording range overview" });
+    await expect(overview).toContainText("16.0s");
+    await overview.getByRole("button", { name: "Clear" }).click();
+    await picker.selectOption("hitch-0");
+    await expect(track).toContainText("120 Hz · 8.33 ms late · 1 refresh interval · 60.0 FPS");
+    await expect(track.locator('[data-hitch-index="0"] text')).toHaveText("3.450 s");
+    await picker.blur();
+    await expect(track).toHaveScreenshot(`recording-hitches-${theme}.png`);
   });
 
   test(`panel beside the chat`, async ({ openView }) => {
