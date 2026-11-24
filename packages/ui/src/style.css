@@ -26,6 +26,8 @@ html:is([data-view="recording"], [data-view="comparison"], [data-view="tracesift
 .recording-track-metric strong { color: var(--foreground); font-weight: 600; font-variant-numeric: tabular-nums; }
 .recording-info { width: 22px; height: 22px; border-radius: 50%; color: var(--muted-foreground); }
 .recording-info-content { width: min(280px, calc(100vw - 24px)); font-size: 12px; line-height: 1.5; }
+.recording-hitch-chart { display: block; width: calc(100% - 64px); height: 28px; margin: 8px 12px 0 52px; border-radius: 4px; background: var(--muted); cursor: crosshair; }
+.recording-hitch-chart:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .recording-chart { width: 100%; touch-action: pan-y; user-select: none; cursor: crosshair; }
 .recording-track[data-reveal="pending"] .recording-change-highlight { opacity: 0; }
 .recording-track[data-reveal="finished"] .recording-change-highlight { animation: recording-highlight-reveal 150ms ease-out 250ms both; }

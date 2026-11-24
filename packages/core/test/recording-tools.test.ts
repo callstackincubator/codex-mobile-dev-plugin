@@ -160,10 +160,17 @@ test("recording tools distinguish data, inline rendering, workspace opening and 
   assert.equal(conflict.isError, true);
 });
 
-test("recordings show in chat cards; opening them in the workspace is the panel's tool", async t => {
+test("iPhone recordings show hitch markers and selected-range totals in chat cards", async t => {
   const directory = await mkdtemp(join(tmpdir(), "mobile-dev-recording-tools-"));
   const store = new RecordingStore(directory);
   const recording = recordingFixture();
+  recording.target = { platform: "ios", kind: "physical", deviceId: "iphone", bundleId: recording.target.bundleId };
+  recording.deviceName = "iPhone";
+  recording.memoryMetric = "physical-footprint";
+  recording.iosHitches = { status: "finished", end: 30, events: [
+    { time: 12.5, lateMs: 125, refreshIntervalMs: 1000 / 120 },
+    { time: 17, lateMs: 250, refreshIntervalMs: 1000 / 60 },
+  ] };
   await store.save(recording);
   const recordings = new PerformanceRecordings({ open() { throw new Error("Not used"); }, async read() { throw new Error("Not running"); }, async closeSession() {} }, unavailableFps, store);
   const server = new McpServer({ name: "recordings-test", version: "1" });
@@ -177,8 +184,20 @@ test("recordings show in chat cards; opening them in the workspace is the panel'
   assert.equal(tools.some(tool => tool.name === "mobile_open_performance_recording"), false);
   const rendering = tools.find(tool => tool.name === "mobile_render_performance_recording");
   assert.doesNotMatch(rendering?.description ?? "", /Open in Mobile Dev/);
-  const shown = await client.callTool({ name: "mobile_render_performance_recording", arguments: { recordingId: recording.id } });
+  const args = { recordingId: recording.id, range: { start: 12, end: 13 } };
+  const shown = await client.callTool({ name: "mobile_render_performance_recording", arguments: args });
   assert.equal(shown.structuredContent?.recordingId, recording.id);
+  const preview = shown.structuredContent?.preview as typeof recording;
+  assert.deepEqual(preview.iosHitches, recording.iosHitches);
+  const summary = shown.structuredContent?.summary;
+  assert.ok(summary && typeof summary === "object" && "hitchStats" in summary);
+  assert.deepEqual(summary.hitchStats, { count: 1, lateMs: 125 });
+  const read = await client.callTool({ name: "mobile_read_performance_recording", arguments: args });
+  assert.deepEqual(read.structuredContent?.summary, summary);
+  const listing = await client.callTool({ name: "mobile_list_performance_recordings", arguments: {} });
+  const items = listing.structuredContent?.recordings;
+  assert.ok(Array.isArray(items));
+  assert.deepEqual(items[0].iosHitches, { status: "finished" });
 });
 
 test("results that show recordings fit a host's result limit, leaving out previews that do not", async t => {

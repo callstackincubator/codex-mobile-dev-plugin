@@ -1,6 +1,6 @@
 {
   "name": "mobile-dev",
-  "version": "0.1.192",
+  "version": "0.1.193",
   "private": true,
   "workspaces": [
     "packages/shared",
@@ -96,6 +96,7 @@
     "react-dom": "^19.3.0",
     "react-resizable-panels": "^4.14.1",
     "recharts": "^3.10.1",
+    "saxes": "6.0.0",
     "tailwind-merge": "^3.7.0",
     "undici": "8.12.1",
     "ws": "8.22.0",

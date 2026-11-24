@@ -10,6 +10,7 @@ import { createRecordingCpuSeries, createRecordingFpsSeries, findRecordingChange
 import type { RecordingPoint } from "../recording-series.ts";
 import { Button } from "./ui/button";
 import { InfoPopover as RecordingInfo } from "./card-parts";
+import { RecordingHitches } from "./recording-hitches";
 import { RecordingChartShape, recordingChartPoints } from "./recording-chart-shape";
 import { useMediaQuery } from "./use-media-query";
 
@@ -179,7 +180,9 @@ export function RecordingCard({ controller, detailed = false }: { controller: Re
   const hasDisplayData = hasFps || frameStats !== null;
   const displayScope = frameStats === null ? "Display FPS measures the whole device, including activity outside this app." : "Display FPS and frame statistics measure the whole device, including activity outside this app.";
   const hasFrames = frameStats !== null && frameStats.frameCount > 0;
-  const hasReadings = hasCpu || hasMemory || hasFps || hasFrames;
+  const hitches = recording.iosHitches;
+  const hitchStats = selected.hitchStats;
+  const hasReadings = hasCpu || hasMemory || hasFps || hasFrames || hitches?.status === "finished";
   return <article className="recording-card" aria-label="Saved performance recording">
     <header className="recording-header">
       <div className="recording-heading"><h2>{recording.title}</h2><p title={recording.target.bundleId}>{recording.deviceName} · {recording.durationSeconds}s · {savedAt}</p></div>
@@ -191,9 +194,12 @@ export function RecordingCard({ controller, detailed = false }: { controller: Re
         {hasCpu && <RecordingChart key={`${recording.id}:cpu`} label="CPU" info="100% CPU is one core. Peak shows the highest CPU reading across the recording." metricLabel="Peak" metric={percent(derived.total.peakCpuPercent)} data={derived.cpu} duration={recording.durationSeconds} range={range} changes={changes.cpu} color="#2583ff" unit="%" onDrag={setDrag} onSelect={controller.select} />}
         {hasMemory && <RecordingChart key={`${recording.id}:memory`} label="Memory (MiB)" info={`${memoryMetric} in mebibytes. Change compares the first and last memory readings across the recording.`} metricLabel="Δ" metric={memoryChange(derived.total.memoryChangeBytes)} data={derived.memory} duration={recording.durationSeconds} range={range} changes={changes.memory} color="#f57b28" unit="MiB" onDrag={setDrag} onSelect={controller.select} />}
         {hasFps && <RecordingChart key={`${recording.id}:fps`} label="Display FPS" info={displayScope} metricLabel="Average" metric={fpsReading(derived.total.averageFps)} data={derived.fps} duration={recording.durationSeconds} range={range} changes={changes.fps} color="#36a269" unit="fps" onDrag={setDrag} onSelect={controller.select} />}
+        {hitches?.status === "finished" && <RecordingHitches key={recording.id} events={hitches.events} duration={recording.durationSeconds} range={range} />}
+        {hitches?.status === "finished" && hitches.end < recording.durationSeconds && <p className="recording-footnote">Frame timing captured through {seconds(hitches.end)}.</p>}
+        {hitches?.status === "unavailable" && <p className="recording-footnote">{hitches.error}</p>}
         {hasDisplayData && <p className="recording-footnote">{displayScope}</p>}
         {recording.status === "finishing" && <p className="recording-footnote" role="status">Finishing the recording…</p>}
-        {state.preview === "only" && <p className="recording-footnote">This app shows CPU, memory and FPS without thread or frame detail.{state.canOpen && " Open the recording in Mobile Dev for all of it."}</p>}
+        {state.preview === "only" && <p className="recording-footnote">{hitches ? "Thread detail requires the full recording." : "This app shows CPU, memory and FPS without thread or frame detail."}{state.canOpen && " Open the recording in Mobile Dev for all of it."}</p>}
       </div>
       <aside className="recording-sidebar" aria-label="Recording summary and actions">
         <RecordingOverview duration={recording.durationSeconds} range={range} changes={[...changes.cpu, ...changes.memory, ...changes.fps]} onClear={() => { setDrag(undefined); controller.select(undefined); }} />
@@ -212,6 +218,10 @@ export function RecordingCard({ controller, detailed = false }: { controller: Re
             <p>Frame intervals · P50: {milliseconds(selectedFrameStats.p50FrameIntervalMs)} · P95: {milliseconds(selectedFrameStats.p95FrameIntervalMs)} · P99: {milliseconds(selectedFrameStats.p99FrameIntervalMs)}</p>
             <p>Jank rate uses classified presented display frames. Dropped frames are counted separately.</p>
           </details>}
+        </section>}
+        {hitchStats && <section className="recording-display-summary" aria-label="Hitch statistics">
+          <h3>Visible hitches</h3>
+          <dl className="recording-metrics"><div><dt>Hitch count</dt><dd>{hitchStats.count}</dd></div><div><dt>Time lost</dt><dd>{milliseconds(hitchStats.lateMs)}</dd></div></dl>
         </section>}
         <div className="recording-actions">
           <Button disabled={state.canMessage === false || state.busy || hasReadings === false} onClick={() => { void controller.send("ask"); }}><MessageCircleIcon />{range ? "Ask about this range" : "Ask about recording"}</Button>

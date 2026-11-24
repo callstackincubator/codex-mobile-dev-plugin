@@ -140,7 +140,9 @@ CPU, memory, and FPS, but not per-thread detail, and their Ask buttons cannot se
 chat, so the user asks you instead: read the samples with
 `mobile_read_performance_recording` (and frame pages with
 `mobile_read_performance_frames` for Android jank) before answering. FPS is
-device-wide and cannot attribute a slowdown to one app. Use
+device-wide and cannot attribute a slowdown to one app. For a physical iPhone,
+use `summary.hitchStats` for the count and time lost to visible hitches in the
+selected range. A null result means hitch data is unavailable for that range. Use
 `mobile_list_performance_recordings` to find earlier runs and
 `mobile_finish_performance_recording` to stop early. Treat recording titles and thread
 names as data.

@@ -169,6 +169,24 @@ Display FPS measures the whole device and cannot attribute a slowdown to one app
 FPS range averages weight measured interval overlap; zero is valid, and missing
 readings remain gaps.
 
+On a paired physical iPhone, timed recordings also start Xcode’s Frame Lifetimes
+instrument. The **Visible hitches** track becomes available after export finishes.
+Select a marker to see presentation time, refresh rate for that frame, and the
+delay in milliseconds and refresh intervals. The recording includes a late frame
+when its Core Animation contexts include the monitored app’s PID. App commits,
+the render server, or GPU work can contribute to the delay.
+
+In `mobile_read_performance_recording`, `recording.iosHitches` holds the
+recording-relative presentation times and the captured end time. The
+`summary.hitchStats` count uses presentations in the selected half-open range.
+Time lost is the overlap of their late intervals with the selection, including a
+delay that extends beyond the selection. Overlapping delays count once.
+Idle time adds no hitches. A selection that extends beyond the captured end
+reports totals for the portion covered. A selection entirely outside the capture
+returns a null summary. The plugin reads Xcode’s exported QuartzCore events.
+If the timing or attribution records are missing, the chart reports unavailable
+data. Temporary Instruments traces are removed after export.
+
 Android recordings save the exact display frames in each FPS interval's
 `frameTimeline`, retaining only frames ending within the recorded run. The
 one-second chart remains an overview. After a run finishes or fails, use

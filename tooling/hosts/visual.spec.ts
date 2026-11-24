@@ -1,4 +1,5 @@
 import { expect, test } from "./fixtures.ts";
+import { recordingFixture } from "../../packages/test-support/recording-fixtures.ts";
 import type { Theme } from "./profiles.ts";
 
 // Screenshots of the Codex panel with no device attached, in light and dark. The
@@ -43,6 +44,30 @@ for (const theme of themes) test.describe(`${theme}`, { tag: "@visual" }, () => 
     const studio = view.getByRole("region", { name: "Testing Studio", exact: true });
     await expect(studio.getByRole("progressbar")).toBeVisible();
     await expect(studio).toHaveScreenshot(`testing-runtime-${theme}.png`);
+  });
+
+  test("visible hitch markers", async ({ openView, server }) => {
+    const recording = recordingFixture();
+    recording.target = { platform: "ios", kind: "physical", deviceId: "test-phone", bundleId: "dev.example.shop" };
+    recording.iosHitches = { status: "finished", end: 30, events: [
+      { time: 3.45, lateMs: 8.33, refreshIntervalMs: 8.33 },
+      { time: 12.5, lateMs: 33.33, refreshIntervalMs: 16.67 },
+    ] };
+    const callTool = server.client.callTool.bind(server.client);
+    server.client.callTool = (request, ...options) => {
+      if (request.name === "mobile_render_performance_recording") {
+        return Promise.resolve({ content: [], structuredContent: { recording, range: { start: 10, end: 15 } } });
+      }
+      return callTool(request, ...options);
+    };
+    const { view } = await openView("mobile_render_performance_recording", { theme, arguments: { recordingId: recording.id } });
+    const track = view.getByRole("region", { name: "Visible hitches", exact: true });
+    const marker = track.getByRole("slider");
+    await marker.press("End");
+    await expect(marker).toHaveAttribute("aria-valuetext", /12.500 s · 60 Hz · 33.33 ms late/);
+    const summary = view.getByRole("region", { name: "Hitch statistics" });
+    await expect(summary).toContainText("33.33 ms");
+    await expect(track).toHaveScreenshot(`recording-hitches-${theme}.png`);
   });
 
   test(`panel beside the chat`, async ({ openView }) => {
