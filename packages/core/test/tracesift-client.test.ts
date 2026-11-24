@@ -543,3 +543,43 @@ test("a Metro target without a transport still reads as Metro", async t => {
   assert.equal(listed.targets[0]?.transport, "metro");
   assert.equal(listed.targets[0]?.port, undefined);
 });
+
+test("a project is set up when the profiler package is in its node_modules, and the install command follows its lockfile", async t => {
+  const root = await mkdtemp(join(tmpdir(), "mobile-dev-profiler-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const client = new TraceSiftClient("missing-tracesift", root);
+  await assert.rejects(client.profilerSetup(join(root, "nope")), /does not exist/);
+  await assert.rejects(client.profilerSetup(root), /no package.json/);
+  await writeFile(join(root, "package.json"), "{}");
+  await writeFile(join(root, "yarn.lock"), "");
+  const { mkdir } = await import("node:fs/promises");
+  await mkdir(join(root, "ios")); await writeFile(join(root, "ios", "Podfile"), "");
+  assert.deepEqual(await client.profilerSetup(root), {
+    installed: false, manager: "yarn", command: "yarn add --dev @callstack/tracesift-rn-profiler", platforms: ["ios"],
+  });
+  await mkdir(join(root, "node_modules", "@callstack", "tracesift-rn-profiler"), { recursive: true });
+  assert.equal((await client.profilerSetup(root)).installed, true);
+});
+
+test("profile devices are parsed from the CLI's rows, and a failing build reports the CLI's last verdict", async t => {
+  const home = await mkdtemp(join(tmpdir(), "mobile-dev-profile-cli-"));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  const command = join(home, "tracesift");
+  await writeFile(command, `#!/bin/sh
+if [ "$2" = devices ]; then
+  printf 'device     00008150-AAA  Hur iPhone  (USB, tunnel up)\\nsimulator  UUID-1  iPhone 17 Pro  (booted)\\nnoise\\n'
+else
+  echo 'xcodebuild chatter' >&2
+  echo 'tracesift: No provisioning profile covers this phone.' >&2
+  exit 1
+fi
+`, { mode: 0o755 });
+  await chmod(command, 0o755);
+  await writeFile(join(home, "package.json"), "{}");
+  const client = new TraceSiftClient(command, home);
+  assert.deepEqual(await client.profileDevices(), [
+    { kind: "device", id: "00008150-AAA", name: "Hur iPhone", note: "USB, tunnel up" },
+    { kind: "simulator", id: "UUID-1", name: "iPhone 17 Pro", note: "booted" },
+  ]);
+  await assert.rejects(client.profileBuild({ projectPath: home, platform: "ios" }), /No provisioning profile covers this phone\./);
+});

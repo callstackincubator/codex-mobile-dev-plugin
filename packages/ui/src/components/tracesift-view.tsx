@@ -1,10 +1,12 @@
 import { useState, useSyncExternalStore, type DragEvent } from "react";
-import { CheckCircle2Icon, FileJson2Icon, HardDriveIcon, LoaderCircleIcon, PlayIcon, UploadIcon } from "lucide-react";
+import { CheckCircle2Icon, ChevronLeftIcon, ChevronRightIcon, CircleDotIcon, FileJson2Icon, FolderOpenIcon, HardDriveIcon, LoaderCircleIcon, MonitorSmartphoneIcon, PlayIcon, RocketIcon, SmartphoneIcon, UploadIcon } from "lucide-react";
 import type { TraceSiftPanel } from "../tracesift-panel.ts";
-import type { TraceSiftCaptureSource, TraceSiftController } from "../tracesift-controller.ts";
+import type { TraceSiftCaptureSource, TraceSiftController, TraceSiftRunTarget } from "../tracesift-controller.ts";
 import type { TraceSiftProfileType, TraceSiftRnTarget } from "@mobile-dev/shared/tracesift.ts";
 import { TraceSiftCards } from "./tracesift-cards.tsx";
 import { Button } from "./ui/button.tsx";
+import { Tabs, TabsList, TabsTrigger } from "./ui/base-tabs.tsx";
+import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover.tsx";
 
 const options: { value: Extract<TraceSiftProfileType, "cpu" | "react">; title: string; detail: string; accepts: string; drop: string }[] = [
   { value: "cpu", title: "JavaScript CPU", detail: "Find slow functions and heavy execution paths", accepts: ".json", drop: "Chrome Performance .json" },
@@ -16,6 +18,11 @@ const sources: { value: TraceSiftCaptureSource; title: string }[] = [
   { value: "rn", title: "React Native" },
   { value: "chrome", title: "Web app" },
 ];
+
+/** Whether the "Before you record" details are collapsed. localStorage can be blocked, so this is best effort. */
+const DETAILS_HIDDEN_KEY = "tracesift.detailsHidden";
+function readDetailsHidden() { try { return globalThis.localStorage?.getItem(DETAILS_HIDDEN_KEY) === "1"; } catch { return false; } }
+function writeDetailsHidden(hidden: boolean) { try { globalThis.localStorage?.setItem(DETAILS_HIDDEN_KEY, hidden ? "1" : "0"); } catch { /* Keep the in-memory value. */ } }
 
 /**
  * Recording and uploading are two ways to reach the same cards, so they share
@@ -73,7 +80,25 @@ function UploadPane({ controller, profileType, busy }: { controller: TraceSiftCo
  * inspector did not name.
  */
 function targetLabel(target: TraceSiftRnTarget) {
-  return [target.title, target.deviceName].filter(Boolean).join(" — ");
+  const kind = target.deviceKind === "simulator" ? "Simulator" : target.deviceKind === "device" ? "Device" : target.deviceKind === "emulator" ? "Emulator" : "";
+  const where = [kind, target.deviceName].filter(Boolean).join(" ");
+  return [target.title, where].filter(Boolean).join(" — ");
+}
+
+const DEVICE_KINDS: Record<string, string> = { simulator: "Simulator", device: "Device", emulator: "Emulator" };
+
+/** The device is what a row is chosen by, so it leads; the app id is the detail under it. */
+function deviceTitle(target: TraceSiftRnTarget) {
+  const kind = target.deviceKind ? DEVICE_KINDS[target.deviceKind] : undefined;
+  return [target.deviceName, kind].filter(Boolean).join(" · ") || target.title;
+}
+
+/** The app on that device, and which build it is: a release build and a Metro one record differently. */
+function appLine(target: TraceSiftRnTarget, metro: string) {
+  const build = target.transport === "release"
+    ? target.port ? `release build on port ${target.port}` : "release build"
+    : metro ? `Metro on ${metro}` : "Metro";
+  return [target.appId ?? target.title, build].filter(Boolean).join(" · ");
 }
 
 /**
@@ -124,24 +149,38 @@ function ReactNativePane({ controller, capture, busy }: { controller: TraceSiftC
     </div>;
   }
 
-  return <div className="capture-row">
-    {targets.length > 1
-      ? <select
-        className="capture-target"
-        aria-label="React Native app to record"
-        value={selected?.id ?? ""}
-        disabled={busy || working}
-        onChange={event => controller.setCaptureTarget(event.target.value)}
-      >
-        {targets.map(target => <option key={target.id} value={target.id}>{targetLabel(target)}</option>)}
-      </select>
-      : <p className="capture-status">{selected ? targetLabel(selected) : ""}<small>{targetWhere(selected, metro)}</small></p>}
-    <button type="button" className="capture-button" disabled={busy || working} onClick={() => void controller.startReactNativeCapture()}>
-      {step === "starting" ? "Starting…" : "Start profile"}
-    </button>
-    <button type="button" className="capture-close" disabled={busy || working || loadingTargets} onClick={() => void controller.loadReactNativeTargets()}>
-      {loadingTargets ? "Looking…" : "Refresh"}
-    </button>
+  // One row per place the app is running, device first: the Hermes sampler is
+  // process-global, so exactly one of them can be recorded at a time.
+  return <div className="capture-pick">
+    <div className="capture-devices" role="radiogroup" aria-label="Device to profile">
+      {targets.map(target => {
+        const chosen = target.id === selected?.id;
+        return <button
+          key={target.id}
+          type="button"
+          role="radio"
+          aria-checked={chosen}
+          data-capture-target={target.id}
+          className={`capture-device${chosen ? " selected" : ""}`}
+          disabled={busy || working}
+          onClick={() => controller.setCaptureTarget(target.id)}
+        >
+          <span className="capture-device-mark" aria-hidden="true" />
+          <span className="capture-device-text">
+            <strong>{deviceTitle(target)}</strong>
+            <small>{appLine(target, metro)}</small>
+          </span>
+        </button>;
+      })}
+    </div>
+    <div className="capture-actions">
+      <button type="button" className="capture-button" disabled={busy || working || !selected} onClick={() => void controller.startReactNativeCapture()}>
+        {step === "starting" ? "Starting…" : "Start profile"}
+      </button>
+      <button type="button" className="capture-close" disabled={busy || working || loadingTargets} onClick={() => void controller.loadReactNativeTargets()}>
+        {loadingTargets ? "Looking…" : "Refresh"}
+      </button>
+    </div>
   </div>;
 }
 
@@ -216,10 +255,80 @@ function CapturePane({ controller, busy }: { controller: TraceSiftController; bu
   </div>;
 }
 
+const folderName = (path: string) => path.split("/").filter(Boolean).at(-1) || path;
+
+const runTargetIcon = (target: TraceSiftRunTarget) => target.kind === "device" ? <SmartphoneIcon /> : <MonitorSmartphoneIcon />;
+
+/**
+ * "Run with TraceSift": make a profiling build from the panel instead of from
+ * a terminal. The popup asks for the project, then where to run it, and shows
+ * the one install command only when the project still needs it.
+ */
+function RunWithTraceSift({ controller, busy }: { controller: TraceSiftController; busy: boolean }) {
+  const { run } = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
+  const { setup } = run;
+  const working = run.checking || run.installing || run.pickingProject;
+  return <div className="tracesift-run">
+    <Popover open={run.open} onOpenChange={open => { if (open) void controller.openRun(); else controller.closeRun(); }}>
+      <PopoverTrigger asChild>
+        <Button type="button" variant="outline" size="sm" disabled={busy || Boolean(run.building)} title="Build and launch a release build with the profiler on">
+          {run.building ? <LoaderCircleIcon className="tracesift-command-spinner" /> : <RocketIcon />}
+          {run.building ? "Building…" : "Run with TraceSift"}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="tracesift-run-popup flex w-96 max-w-(--radix-popover-content-available-width) flex-col gap-2 p-3" aria-label="Run with TraceSift">
+        <div className="flex items-center gap-1">
+          <Button type="button" variant="outline" size="sm" className="min-w-0 max-w-72 justify-start gap-1.5 font-normal" data-project-picker
+            aria-label="TraceSift project" title={run.projectPath || "Choose a React Native project"}
+            disabled={working || Boolean(run.building)} onClick={() => void controller.pickRunProject()}>
+            <FolderOpenIcon /><span className="min-w-0 truncate">{run.projectPath ? folderName(run.projectPath) : "Choose project"}</span>
+          </Button>
+          {run.pickingProject && <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground" role="status"><LoaderCircleIcon className="tracesift-command-spinner" />Choose a folder…</span>}
+        </div>
+        {!run.projectPath && !run.pickingProject && <p className="text-xs text-muted-foreground">Choose the React Native app to build.</p>}
+        {run.checking && <p className="flex items-center gap-1 text-xs text-muted-foreground" role="status"><LoaderCircleIcon className="tracesift-command-spinner" />Checking the project…</p>}
+
+        {setup && !setup.installed && <div className="tracesift-setup-step">
+          <div className="tracesift-setup-step-label"><span>1</span><strong>Install the profiler</strong></div>
+          <div className="tracesift-command">
+            <code>{setup.command}</code>
+            <Button type="button" size="icon-sm" variant="ghost" aria-label="Install the profiler package" title="Install the profiler package"
+              disabled={working} onClick={() => void controller.installRunProfiler()}>
+              {run.installing ? <LoaderCircleIcon className="tracesift-command-spinner" /> : <PlayIcon />}
+            </Button>
+          </div>
+        </div>}
+
+        {setup?.installed && !run.checking && <>
+          <p className="text-xs font-medium text-muted-foreground">Run on</p>
+          {run.targets.length === 0 && <p className="text-xs text-muted-foreground">No iOS or Android target found in this project. Boot a simulator and reopen this.</p>}
+          {run.targets.map(target => <Button key={`${target.platform}:${target.id ?? target.kind}`} type="button" variant="ghost"
+            className="h-auto min-h-7 justify-start gap-2 px-1.5 py-1 text-left font-normal" data-run-target={target.id ?? target.kind}
+            disabled={Boolean(run.building)} onClick={() => void controller.buildForTarget(target)}>
+            {runTargetIcon(target)}
+            <span className="flex min-w-0 flex-col">
+              <span className="truncate">{target.name}</span>
+              <span className="truncate text-xs text-muted-foreground">{target.kind === "device" ? "Device" : target.kind === "simulator" ? "Simulator" : "Android"} · {target.note}</span>
+            </span>
+          </Button>)}
+          {setup.platforms.includes("ios") && !run.targets.some(target => target.platform === "ios") && <p className="text-xs text-muted-foreground">No booted iOS simulator or connected iPhone.</p>}
+        </>}
+
+        {run.building && <p className="flex items-center gap-1 text-xs text-muted-foreground" role="status"><LoaderCircleIcon className="tracesift-command-spinner" />Building for {run.building.name}. This can take several minutes.</p>}
+        {run.error && <p className="tracesift-error whitespace-pre-wrap break-words" role="alert">{run.error}</p>}
+      </PopoverContent>
+    </Popover>
+    {!run.open && run.notice && <p className="tracesift-notice" role="status">{run.notice}</p>}
+    {!run.open && !run.building && run.error && <p className="tracesift-error" role="alert">{run.error}</p>}
+  </div>;
+}
+
 function TraceSiftUpload({ controller, available }: { controller: TraceSiftController; available: boolean }) {
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
   const [profileType, setProfileType] = useState<TraceSiftProfileType>("cpu");
   const [mode, setMode] = useState<WorkMode>("record");
+  const [detailsHidden, setDetailsHidden] = useState(readDetailsHidden);
+  const toggleDetails = () => setDetailsHidden(hidden => { writeDetailsHidden(!hidden); return !hidden; });
   const analyzing = state.analyzing;
   const capturing = state.capture.step !== "idle";
   const ready = state.readiness?.status === "ready";
@@ -252,26 +361,37 @@ function TraceSiftUpload({ controller, available }: { controller: TraceSiftContr
       </div>
     </div>
 
-    <div className="tracesift-workspace">
+    <div className="tracesift-workspace" data-inspector={detailsHidden ? "hidden" : "shown"}>
+      <button
+        type="button"
+        className="tracesift-inspector-toggle"
+        aria-expanded={!detailsHidden}
+        aria-controls="tracesift-inspector"
+        aria-label={detailsHidden ? "Show the side panel" : "Hide the side panel"}
+        title={detailsHidden ? "Show the side panel" : "Hide the side panel"}
+        onClick={toggleDetails}
+      >
+        {detailsHidden ? <ChevronLeftIcon /> : <ChevronRightIcon />}
+      </button>
       <section className={`tracesift-workflow${ready ? "" : " is-disabled"}`} aria-label="Profile analysis">
         {setup && <p className="tracesift-blocker" role="status">Finish setup to add a profile</p>}
         {!available && <p className="tracesift-error" role="status">This host cannot call the plugin's TraceSift tools.</p>}
 
-        <div className="tracesift-modes" role="radiogroup" aria-label="How to add a profile">
-          {modes.map(option => <button
-            key={option.value}
-            type="button"
-            role="radio"
-            aria-checked={mode === option.value}
-            // Switching away mid-recording would strand a live recorder.
-            disabled={!ready || Boolean(analyzing) || (capturing && option.value !== mode)}
-            title={option.detail}
-            className={`tracesift-mode${mode === option.value ? " selected" : ""}`}
-            onClick={() => setMode(option.value)}
-          >
-            {option.title}
-          </button>)}
-        </div>
+        <Tabs value={mode} onValueChange={value => setMode(value as WorkMode)}>
+          <TabsList aria-label="How to add a profile" className="h-11 w-full">
+            {modes.map(option => <TabsTrigger
+              key={option.value}
+              value={option.value}
+              // Switching away mid-recording would strand a live recorder.
+              disabled={!ready || Boolean(analyzing) || (capturing && option.value !== mode)}
+              title={option.detail}
+              className="gap-2 text-sm font-semibold"
+            >
+              {option.value === "record" ? <CircleDotIcon /> : <UploadIcon />}
+              {option.title}
+            </TabsTrigger>)}
+          </TabsList>
+        </Tabs>
 
         {mode === "upload" ? <>
           <div className="workflow-label"><span>1</span><strong>Choose a profile type</strong></div>
@@ -302,11 +422,12 @@ function TraceSiftUpload({ controller, available }: { controller: TraceSiftContr
           {analyzing
             ? <p className="upload-analyzing" role="status">Analyzing {analyzing.name} with TraceSift…</p>
             : <CapturePane controller={controller} busy={!ready} />}
+          {!analyzing && state.capture.source === "rn" && state.capture.step === "idle" && <RunWithTraceSift controller={controller} busy={!ready} />}
           <p className="tracesift-notice">Source maps are generated automatically on iOS. On Android they are only produced if the app is configured for it.</p>
         </>}
       </section>
 
-      <aside className="tracesift-inspector" aria-live="polite">
+      <aside id="tracesift-inspector" className="tracesift-inspector" aria-live="polite" aria-hidden={detailsHidden}>
         {available && state.checkingReadiness && <div className="tracesift-inspector-status" role="status">
           <LoaderCircleIcon className="tracesift-command-spinner" /> Checking TraceSift setup…
         </div>}
@@ -336,7 +457,7 @@ function TraceSiftUpload({ controller, available }: { controller: TraceSiftContr
         {available && !state.checkingReadiness && ready && <section className="tracesift-before" aria-labelledby="tracesift-before-heading">
           <p className="tracesift-ready" role="status"><CheckCircle2Icon /> TraceSift ready</p>
           <h2 id="tracesift-before-heading">{mode === "record" ? "Before you record" : "Before you add a profile"}</h2>
-          <dl>
+          <div id="tracesift-details"><dl>
             <div><dt><HardDriveIcon /> Local processing</dt><dd>Profiles stay on this machine.</dd></div>
             {mode === "record"
               ? <>
@@ -348,7 +469,7 @@ function TraceSiftUpload({ controller, available }: { controller: TraceSiftContr
                 <div><dt><CheckCircle2Icon /> Profile type</dt><dd>{profileOption.title}</dd></div>
               </>}
           </dl>
-          <a href="https://github.com/callstackincubator/tracesift" target="_blank" rel="noreferrer">Read about TraceSift</a>
+          <a href="https://github.com/callstackincubator/tracesift" target="_blank" rel="noreferrer">Read about TraceSift</a></div>
         </section>}
         {!available && <p className="tracesift-inspector-status">TraceSift tools unavailable</p>}
       </aside>

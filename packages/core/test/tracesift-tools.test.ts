@@ -195,6 +195,10 @@ test("published TraceSift annotations distinguish saved references, service star
     mobile_tracesift_close_browser: [false, true],
     mobile_tracesift_list_react_native_targets: [true, false],
     mobile_tracesift_record_react_native: [false, false],
+    mobile_tracesift_profiler_setup: [true, false],
+    mobile_tracesift_install_profiler: [false, true],
+    mobile_tracesift_profile_devices: [true, false],
+    mobile_tracesift_profile_build: [false, true],
     mobile_get_tracesift_project: [true, false],
     mobile_pick_tracesift_project: [false, true],
     mobile_remember_tracesift_analysis: [false, true],
@@ -210,7 +214,7 @@ test("published TraceSift annotations distinguish saved references, service star
     assert.ok(tool, `Missing ${name}`);
     assert.deepEqual(tool.annotations, {
       readOnlyHint, destructiveHint,
-      openWorldHint: name === "mobile_install_tracesift_cli" || name === "mobile_initialize_tracesift",
+      openWorldHint: ["mobile_install_tracesift_cli", "mobile_initialize_tracesift", "mobile_tracesift_install_profiler", "mobile_tracesift_profile_build"].includes(name),
     }, name);
   }
   const status = tools.find(tool => tool.name === "mobile_tracesift_status");

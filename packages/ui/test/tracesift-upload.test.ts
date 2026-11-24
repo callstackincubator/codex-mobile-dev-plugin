@@ -51,7 +51,10 @@ test("TraceSift keeps one workspace while readiness changes its inspector", asyn
   assert.match(workspace.textContent ?? "", /TraceSift setup/);
   assert.equal(dom.window.document.querySelectorAll(".tracesift-workspace").length, 1);
   // The panel opens on Record, so the mode pair is what readiness gates here.
-  assert.equal(dom.window.document.querySelectorAll<HTMLButtonElement>(".tracesift-modes .tracesift-mode:disabled").length, 2);
+  const tabs = () => [...dom.window.document.querySelectorAll<HTMLElement>('[role="tab"]')];
+  const disabled = (tab: HTMLElement) => tab.hasAttribute("disabled") || tab.getAttribute("aria-disabled") === "true";
+  assert.equal(tabs().length, 2);
+  assert.equal(tabs().filter(disabled).length, 2);
 
   status = "ready";
   await mounted.panel.controller.checkReadiness();
@@ -61,5 +64,19 @@ test("TraceSift keeps one workspace while readiness changes its inspector", asyn
   assert.match(workspace.textContent ?? "", /Before you record/);
   assert.match(workspace.textContent ?? "", /Read about TraceSift/);
   assert.doesNotMatch(workspace.textContent ?? "", /How to export a profile/);
-  assert.equal(dom.window.document.querySelectorAll(".tracesift-mode:disabled").length, 0);
+  assert.deepEqual(tabs().map(tab => tab.textContent?.trim()), ["Record", "Upload"]);
+  assert.equal(tabs().filter(disabled).length, 0);
+
+  // The side panel closes to the right rather than unmounting, so what it holds
+  // stays in the document; the choice is remembered for the next time the panel opens.
+  const toggle = dom.window.document.querySelector<HTMLButtonElement>(".tracesift-inspector-toggle");
+  assert.ok(toggle);
+  assert.equal(toggle.getAttribute("aria-expanded"), "true");
+  assert.equal(workspace.getAttribute("data-inspector"), "shown");
+  mounted.flushSync(() => toggle.click());
+  assert.equal(workspace.getAttribute("data-inspector"), "hidden");
+  assert.equal(toggle.getAttribute("aria-expanded"), "false");
+  assert.equal(dom.window.document.querySelector("#tracesift-inspector")?.getAttribute("aria-hidden"), "true");
+  assert.match(workspace.textContent ?? "", /TraceSift ready/);
+  assert.equal(dom.window.localStorage.getItem("tracesift.detailsHidden"), "1");
 });

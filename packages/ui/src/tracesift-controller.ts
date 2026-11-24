@@ -12,6 +12,31 @@ import { captureUiError, countUiEvent, markUiSurfaceReady, recordUiTiming, setUi
 
 export type TraceSiftCaptureSource = "rn" | "chrome";
 
+/** One place a profiling build can go. `device` is what `profile build --device` takes. */
+export type TraceSiftRunTarget = { platform: "ios" | "android"; kind: "simulator" | "device" | "android"; id?: string; name: string; note: string };
+
+/**
+ * "Run with TraceSift": produce a profiling build from the panel.
+ *
+ * `setup` is what the CLI itself reads to decide whether the profiler package
+ * still has to be installed, so a project that has it goes straight to targets.
+ */
+type RunState = {
+  open: boolean;
+  /** The folder the build runs in; the same one the server saved for recording. */
+  projectPath: string;
+  pickingProject: boolean;
+  checking: boolean;
+  setup?: { installed: boolean; command: string; platforms: ("ios" | "android")[] };
+  installing: boolean;
+  targets: TraceSiftRunTarget[];
+  /** The target being built for, while a build is running. */
+  building?: TraceSiftRunTarget;
+  error: string;
+  /** The end of the last successful build's log. */
+  notice: string;
+};
+
 type State = {
   analysis?: TraceSiftAnalysis;
   canInvestigate: boolean;
@@ -51,6 +76,7 @@ type State = {
     loadingTargets: boolean;
     error: string;
   };
+  run: RunState;
   /** Which drawing every card on this analysis carries; one switch, as on the web. */
   checkingReadiness: boolean;
   readiness?: TraceSiftReadiness;
@@ -87,7 +113,8 @@ function composerUnavailable(error: unknown) {
 
 export class TraceSiftController {
   private state: State = { canInvestigate: false, canCallTools: false, dark: false, error: "", notice: "", setupNotice: "", checkingReadiness: false, chartKind: "bar",
-    capture: { source: "rn", step: "idle", url: "", targets: [], targetId: "", metro: "", targetsError: "", loadingTargets: false, error: "" } };
+    capture: { source: "rn", step: "idle", url: "", targets: [], targetId: "", metro: "", targetsError: "", loadingTargets: false, error: "" },
+    run: { open: false, projectPath: "", pickingProject: false, checking: false, installing: false, targets: [], error: "", notice: "" } };
   private listeners = new Set<() => void>();
   private disposed = false;
   private readyAt = performance.now();
@@ -761,6 +788,125 @@ export class TraceSiftController {
       countUiEvent("ui.tracesift.capture_rn_start_failed");
       captureUiError(error, "tracesift.capture");
       if (!this.disposed) this.captureUpdate({ step: "idle", error: error instanceof Error ? error.message : "TraceSift could not start recording." });
+    }
+  };
+
+  private runUpdate(next: Partial<RunState>) { this.update({ run: { ...this.state.run, ...next } }); }
+
+  /** The folder the server saved last time, so the picker opens on it. */
+  loadRunProject = async () => {
+    try {
+      const path = (await this.captureTool("mobile_get_tracesift_project", {}, "The saved project could not be read.") as { path?: unknown } | undefined)?.path;
+      if (this.disposed || typeof path !== "string" || this.state.run.projectPath) return;
+      this.runUpdate({ projectPath: path });
+    } catch (error) { captureUiError(error, "tracesift.run"); }
+  };
+
+  /** Open the popup. A project that is already chosen is checked at once, so the person only ever sees what is left to do. */
+  openRun = async () => {
+    if (this.disposed || this.state.run.building) return;
+    this.runUpdate({ open: true, error: "", notice: "" });
+    if (!this.state.run.projectPath) await this.loadRunProject();
+    if (this.state.run.projectPath) await this.checkRun();
+  };
+
+  closeRun = () => { if (!this.state.run.building) this.runUpdate({ open: false }); };
+
+  /** The host's folder dialog; the choice is saved server-side, which is also where recording reads its working directory. */
+  pickRunProject = async () => {
+    if (this.disposed || this.state.run.pickingProject || this.state.run.building) return;
+    this.runUpdate({ pickingProject: true, error: "" });
+    try {
+      const picked = await this.captureTool("mobile_pick_tracesift_project", {}, "This host could not open a folder dialog.") as { picked?: unknown; path?: unknown } | undefined;
+      if (this.disposed) return;
+      if (picked?.picked !== true || typeof picked.path !== "string") { countUiEvent("ui.tracesift.run_project_cancelled"); return; }
+      this.runUpdate({ projectPath: picked.path, setup: undefined, targets: [] });
+      await this.checkRun();
+    } catch (error) {
+      captureUiError(error, "tracesift.run");
+      if (!this.disposed) this.runUpdate({ error: error instanceof Error ? error.message : "That project could not be chosen." });
+    } finally { if (!this.disposed) this.runUpdate({ pickingProject: false }); }
+  };
+
+  /** Is the profiler installed, and where can a build go. Both are reads. */
+  checkRun = async () => {
+    const { projectPath } = this.state.run;
+    if (this.disposed || !projectPath || this.state.run.checking) return;
+    this.runUpdate({ checking: true, error: "" });
+    const startedAt = performance.now();
+    try {
+      const setup = await this.captureTool("mobile_tracesift_profiler_setup", { projectPath }, "The project could not be checked.") as { installed?: unknown; command?: unknown; platforms?: unknown } | undefined;
+      if (this.disposed || projectPath !== this.state.run.projectPath) return;
+      if (typeof setup?.installed !== "boolean" || typeof setup.command !== "string" || !Array.isArray(setup.platforms)) throw new Error("TraceSift returned an invalid project check.");
+      const platforms = setup.platforms.filter((value): value is "ios" | "android" => value === "ios" || value === "android");
+      this.runUpdate({ setup: { installed: setup.installed, command: setup.command, platforms } });
+      if (setup.installed) await this.loadRunTargets(platforms);
+      recordUiTiming("ui.tracesift.run_check", performance.now() - startedAt);
+    } catch (error) {
+      countUiEvent("ui.tracesift.run_check_failed");
+      captureUiError(error, "tracesift.run");
+      if (!this.disposed) this.runUpdate({ setup: undefined, targets: [], error: error instanceof Error ? error.message : "The project could not be checked." });
+    } finally { if (!this.disposed) this.runUpdate({ checking: false }); }
+  };
+
+  private async loadRunTargets(platforms: ("ios" | "android")[]) {
+    const targets: TraceSiftRunTarget[] = [];
+    let iosError = "";
+    if (platforms.includes("ios")) {
+      try {
+        const listed = await this.captureTool("mobile_tracesift_profile_devices", {}, "The iOS targets could not be listed.") as { devices?: unknown } | undefined;
+        for (const entry of Array.isArray(listed?.devices) ? listed.devices : []) {
+          const device = entry as { kind?: unknown; id?: unknown; name?: unknown; note?: unknown };
+          if ((device.kind !== "device" && device.kind !== "simulator") || typeof device.id !== "string" || typeof device.name !== "string") continue;
+          targets.push({ platform: "ios", kind: device.kind, id: device.id, name: device.name, note: typeof device.note === "string" ? device.note : "" });
+        }
+      } catch (error) { iosError = error instanceof Error ? error.message : "The iOS targets could not be listed."; }
+    }
+    // adb picks the one attached emulator or phone itself, so Android needs no id here.
+    if (platforms.includes("android")) targets.push({ platform: "android", kind: "android", name: "Android emulator or device", note: "the one adb sees" });
+    if (!this.disposed) this.runUpdate({ targets, ...(iosError ? { error: iosError } : {}) });
+  }
+
+  /** Add the package with the project's own package manager: the command the popup shows beside its run button. */
+  installRunProfiler = async () => {
+    const { projectPath, setup } = this.state.run;
+    if (this.disposed || !projectPath || !setup || this.state.run.installing) return;
+    this.runUpdate({ installing: true, error: "" });
+    const startedAt = performance.now();
+    try {
+      await this.captureTool("mobile_tracesift_install_profiler", { projectPath }, "The profiler package could not be installed.");
+      if (this.disposed) return;
+      recordUiTiming("ui.tracesift.run_install", performance.now() - startedAt);
+      countUiEvent("ui.tracesift.run_install");
+      this.runUpdate({ installing: false });
+      await this.checkRun();
+    } catch (error) {
+      countUiEvent("ui.tracesift.run_install_failed");
+      // Command output is useful in the local panel but must not become telemetry.
+      captureUiError(new Error("TraceSift profiler install failed."), "tracesift.run");
+      if (!this.disposed) this.runUpdate({ installing: false, error: error instanceof Error ? error.message : "The install failed. Run the command in a terminal instead." });
+    }
+  };
+
+  /** Build, install and launch for one target. Minutes long; the popup stays open and says so. */
+  buildForTarget = async (target: TraceSiftRunTarget) => {
+    const { projectPath } = this.state.run;
+    if (this.disposed || !projectPath || this.state.run.building) return;
+    this.runUpdate({ building: target, error: "", notice: "" });
+    const startedAt = performance.now();
+    try {
+      await this.captureTool("mobile_tracesift_profile_build",
+        { projectPath, platform: target.platform, ...(target.id ? { device: target.id } : {}) }, "The profiling build failed.");
+      if (this.disposed) return;
+      recordUiTiming("ui.tracesift.run_build", performance.now() - startedAt);
+      countUiEvent("ui.tracesift.run_build");
+      this.runUpdate({ building: undefined, notice: `Launched on ${target.name}. Use the app, then press Refresh and Start profile.`, error: "" });
+      // The build's own app is now running, so the recorder can see it.
+      void this.loadReactNativeTargets();
+    } catch (error) {
+      countUiEvent("ui.tracesift.run_build_failed");
+      captureUiError(new Error("TraceSift profiling build failed."), "tracesift.run");
+      if (!this.disposed) this.runUpdate({ building: undefined, error: error instanceof Error ? error.message : "The profiling build failed." });
     }
   };
 

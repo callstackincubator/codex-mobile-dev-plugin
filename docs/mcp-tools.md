@@ -105,6 +105,19 @@ each exact command. A successful action automatically calls
 fallback because global npm installation can require privileges and a newly
 installed executable may not enter the already-running Codex process's `PATH`.
 
+"Run with TraceSift" builds a profiling build from the panel through four app-only
+tools: `mobile_tracesift_profiler_setup` (read-only: whether
+`@callstack/tracesift-rn-profiler` is in the project's `node_modules`, the same check
+`tracesift profile build` makes, plus the install command for the lockfile's package
+manager), `mobile_tracesift_install_profiler` (that one add command, run in the project
+folder), `mobile_tracesift_profile_devices` (`tracesift profile devices`) and
+`mobile_tracesift_profile_build` (`tracesift profile build --platform <ios|android>
+[--device <id>]` in the project folder). The install and build tools declare destructive
+writes and open-world access, take only a project path, platform and device id, and are
+not visible to the model. The project is the one `mobile_pick_tracesift_project` saved.
+Progress is a busy state; the build log's tail returns when it ends, and a failure
+returns the CLI's own last `tracesift:` line.
+
 The two pickers exist because the TraceSift tool runs in a panel frame, where a
 dropped file carries no path and the analyzer reads profiles off disk. Both are
 app-only: the model never calls them. The chosen profile path reaches

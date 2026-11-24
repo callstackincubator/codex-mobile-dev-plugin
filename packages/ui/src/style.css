@@ -317,7 +317,8 @@ html[data-theme="dark"] .tracesift-explorer { color-scheme: dark; }
 .tracesift-upload .eyebrow { display: inline-block; color: var(--primary); font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
 .tracesift-upload .results-title { margin: 6px 0; font-size: 15px; line-height: 1.25; letter-spacing: -0.02em; font-weight: 600; }
 .tracesift-upload .intro p { margin: 0; font-size: 12px; line-height: 1.5; color: var(--muted-foreground); }
-.tracesift-upload .tracesift-workspace { display: grid; grid-template-columns: minmax(0, 2.1fr) minmax(250px, .9fr); min-height: 390px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.tracesift-upload .tracesift-workspace { position: relative; display: grid; grid-template-columns: minmax(0, 2.1fr) minmax(250px, .9fr); min-height: 390px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; transition: grid-template-columns .22s ease; }
+.tracesift-upload .tracesift-workspace[data-inspector="hidden"] { grid-template-columns: minmax(0, 1fr) 0px; }
 .tracesift-upload .tracesift-workflow { display: grid; align-content: start; gap: 12px; min-width: 0; padding: 18px; }
 .tracesift-upload .tracesift-workflow.is-disabled .workflow-label,
 .tracesift-upload .tracesift-workflow.is-disabled .tracesift-modes,
@@ -339,7 +340,13 @@ html[data-theme="dark"] .tracesift-explorer { color-scheme: dark; }
 .tracesift-upload .profile-chip:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .tracesift-upload .profile-chip em { color: var(--muted-foreground); font-size: 10.5px; font-style: normal; font-weight: 500; font-family: var(--font-mono, monospace); }
 .tracesift-upload .profile-chip.selected em { color: var(--ring); }
-.tracesift-upload .tracesift-inspector { min-width: 0; padding: 18px; border-left: 1px solid var(--border); background: color-mix(in srgb, var(--card) 55%, transparent); }
+.tracesift-upload .tracesift-inspector { min-width: 0; padding: 18px; border-left: 1px solid var(--border); background: color-mix(in srgb, var(--card) 55%, transparent);overflow: hidden; transition: opacity .18s ease, padding .22s ease; }
+.tracesift-upload .tracesift-workspace[data-inspector="hidden"] .tracesift-inspector { padding-inline: 0; border-left: 0; opacity: 0; pointer-events: none; }
+/* The one control that survives the close, pinned to the workspace edge. */
+.tracesift-upload .tracesift-inspector-toggle { position: absolute; top: 10px; right: 10px; z-index: 1; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; color: var(--muted-foreground); background: var(--card); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; }
+.tracesift-upload .tracesift-inspector-toggle:hover { color: var(--foreground); background: var(--muted); }
+.tracesift-upload .tracesift-inspector-toggle svg { width: 14px; height: 14px; }
+.tracesift-upload .tracesift-inspector-toggle:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .tracesift-upload .tracesift-inspector-status { display: flex; align-items: center; gap: 7px; margin: 0; color: var(--muted-foreground); font-size: 11.5px; }
 .tracesift-upload .tracesift-inspector-status svg { width: 14px; height: 14px; }
 .tracesift-upload .tracesift-ready { display: inline-flex; align-items: center; justify-self: start; gap: 6px; margin: 0; padding: 4px 8px; border: 1px solid color-mix(in srgb, var(--ring) 48%, var(--border)); border-radius: 999px; background: color-mix(in srgb, var(--ring) 8%, transparent); color: var(--ring); font-size: 11.5px; font-weight: 600; }
@@ -349,14 +356,14 @@ html[data-theme="dark"] .tracesift-explorer { color-scheme: dark; }
 .tracesift-upload .tracesift-setup h2 { font-size: 14px; }
 .tracesift-upload .tracesift-setup p { color: var(--muted-foreground); line-height: 1.5; }
 .tracesift-upload .tracesift-action-required { display: inline-flex; margin-top: 8px !important; padding: 3px 7px; border: 1px solid color-mix(in srgb, var(--ring) 45%, var(--border)); border-radius: 999px; color: var(--ring) !important; font-size: 10.5px; font-weight: 600; }
-.tracesift-upload .tracesift-commands { display: grid; gap: 12px; }
-.tracesift-upload .tracesift-setup-step { display: grid; gap: 6px; }
-.tracesift-upload .tracesift-setup-step-label { display: flex; align-items: center; gap: 7px; font-size: 11.5px; }
-.tracesift-upload .tracesift-setup-step-label > span { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--accent); color: var(--primary); font-size: 10px; font-weight: 700; }
-.tracesift-upload .tracesift-command { display: grid; grid-template-columns: minmax(0, 1fr) 30px; align-items: center; width: 100%; border: 1px solid var(--border); border-radius: 7px; background: var(--card); overflow: hidden; }
-.tracesift-upload .tracesift-command code { min-width: 0; overflow-x: auto; padding: 8px 9px; font-family: var(--font-mono, monospace); font-size: 10.5px; white-space: nowrap; }
-.tracesift-upload .tracesift-command button { width: 30px; height: 30px; border-left: 1px solid var(--border); border-radius: 0; }
-.tracesift-upload .tracesift-command-spinner { animation: tracesift-command-spin 900ms linear infinite; }
+.tracesift-upload .tracesift-commands, .tracesift-run-popup .tracesift-commands { display: grid; gap: 12px; }
+.tracesift-upload .tracesift-setup-step, .tracesift-run-popup .tracesift-setup-step { display: grid; gap: 6px; }
+.tracesift-upload .tracesift-setup-step-label, .tracesift-run-popup .tracesift-setup-step-label { display: flex; align-items: center; gap: 7px; font-size: 11.5px; }
+.tracesift-upload .tracesift-setup-step-label > span, .tracesift-run-popup .tracesift-setup-step-label > span { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--accent); color: var(--primary); font-size: 10px; font-weight: 700; }
+.tracesift-upload .tracesift-command, .tracesift-run-popup .tracesift-command { display: grid; grid-template-columns: minmax(0, 1fr) 30px; align-items: center; width: 100%; border: 1px solid var(--border); border-radius: 7px; background: var(--card); overflow: hidden; }
+.tracesift-upload .tracesift-command code, .tracesift-run-popup .tracesift-command code { min-width: 0; overflow-x: auto; padding: 8px 9px; font-family: var(--font-mono, monospace); font-size: 10.5px; white-space: nowrap; }
+.tracesift-upload .tracesift-command button, .tracesift-run-popup .tracesift-command button { width: 30px; height: 30px; border-left: 1px solid var(--border); border-radius: 0; }
+.tracesift-upload .tracesift-command-spinner, .tracesift-run-popup .tracesift-command-spinner { animation: tracesift-command-spin 900ms linear infinite; }
 @keyframes tracesift-command-spin { to { transform: rotate(360deg); } }
 .tracesift-upload .tracesift-setup-actions { display: grid; gap: 10px; margin-top: auto; text-align: center; }
 .tracesift-upload .tracesift-setup-actions button { width: 100%; }
@@ -409,7 +416,6 @@ html[data-theme="dark"] .tracesift-explorer { color-scheme: dark; }
   .tracesift-upload .workflow-label small { width: 100%; padding-left: 26px; }
 }
 
-/* A segmented pair, not two buttons: one of the two is always the live mode. */
 .tracesift-upload .tracesift-modes { display: inline-flex; gap: 2px; padding: 2px; background: var(--muted); border: 1px solid var(--border); border-radius: 9px; justify-self: start; }
 .tracesift-upload .tracesift-mode { padding: 6px 14px; color: var(--muted-foreground); background: transparent; border: 0; border-radius: 7px; font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; }
 .tracesift-upload .tracesift-mode.selected { color: var(--primary); background: var(--card); box-shadow: 0 1px 2px rgb(0 0 0 / 0.08); }
@@ -424,6 +430,19 @@ html[data-theme="dark"] .tracesift-explorer { color-scheme: dark; }
 .tracesift-upload .capture-target:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
 .tracesift-upload .capture-target:disabled { opacity: 0.55; cursor: not-allowed; }
 .tracesift-upload .capture-status small { color: var(--muted-foreground); font-size: 11px; }
+.tracesift-upload .capture-pick { display: grid; gap: 10px; padding: 12px; background: var(--muted); border: 1px solid var(--border); border-radius: 10px; }
+.tracesift-upload .capture-devices { display: grid; gap: 6px; }
+.tracesift-upload .capture-device { display: flex; align-items: flex-start; gap: 9px; min-width: 0; padding: 9px 11px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.tracesift-upload .capture-device:hover { border-color: color-mix(in srgb, var(--ring) 40%, var(--border)); }
+.tracesift-upload .capture-device.selected { border-color: var(--ring); background: color-mix(in srgb, var(--ring) 12%, var(--card)); }
+.tracesift-upload .capture-device:disabled { opacity: .55; cursor: not-allowed; }
+.tracesift-upload .capture-device:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.tracesift-upload .capture-device-mark { flex: none; width: 13px; height: 13px; margin-top: 2px; border: 1px solid color-mix(in srgb, var(--muted-foreground) 70%, transparent); border-radius: 50%; }
+.tracesift-upload .capture-device.selected .capture-device-mark { border-color: var(--ring); border-width: 4px; }
+.tracesift-upload .capture-device-text { display: grid; gap: 2px; min-width: 0; }
+.tracesift-upload .capture-device-text strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; font-weight: 650; }
+.tracesift-upload .capture-device-text small { color: var(--muted-foreground); font-size: 11px; overflow-wrap: anywhere; }
+.tracesift-upload .capture-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
 .tracesift-upload .capture-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px; background: var(--muted); border: 1px solid var(--border); border-radius: 10px; }
 .tracesift-upload .capture-url { flex: 1 1 200px; min-width: 0; padding: 7px 10px; color: inherit; font: inherit; font-size: 13px; background: var(--card); border: 1px solid var(--border); border-radius: 7px; }
 .tracesift-upload .capture-url:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
@@ -688,3 +707,6 @@ html[data-theme="dark"] .tracesift-explorer { color-scheme: dark; }
 @media (prefers-reduced-motion: reduce) {
   .testing-play-until { transition: none; }
 }
+
+.tracesift-run { display: grid; gap: 8px; justify-items: start; margin-top: 10px; }
+.tracesift-run-popup .tracesift-error { padding: 8px; font-size: 12px; }

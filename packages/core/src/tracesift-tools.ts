@@ -27,7 +27,7 @@ const analysisOutput = {
   summary: z.record(z.string(), z.unknown()), cards: z.array(z.union([traceSiftTaskCardSchema, traceSiftReactCardSchema])),
 };
 
-function failure(error: unknown, operation: "ready" | "install" | "init" | "analyze" | "remember" | "restore" | "handoff" | "task" | "payload" | "pick" | "project" | "record", startedAt: number, signal: AbortSignal): CallToolResult {
+function failure(error: unknown, operation: "ready" | "install" | "init" | "analyze" | "remember" | "restore" | "handoff" | "task" | "payload" | "pick" | "project" | "record" | "profile", startedAt: number, signal: AbortSignal): CallToolResult {
   recordTraceSiftOperation(operation, "failed", performance.now() - startedAt);
   captureServerError(error, `tracesift.${operation}`, { signal });
   return { isError: true, content: [{ type: "text", text: errorMessage(error) }] };
@@ -253,6 +253,72 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
       recordTraceSiftOperation("record", "success", performance.now() - startedAt);
       return { content: [{ type: "text", text: "Recording. Use the app, then stop the recording." }], structuredContent: { recording: true as const } };
     } catch (error) { return failure(error, "record", startedAt, context.signal); }
+  });
+
+  // Producing a profiling build. App-only: it builds, installs and launches an
+  // app on a device, which a person chooses and a model should not decide.
+  registerAppTool(server, "mobile_tracesift_profiler_setup", {
+    title: "Check whether a project carries the TraceSift profiler",
+    description: "Report whether the chosen React Native project already has @callstack/tracesift-rn-profiler installed (the check `tracesift profile build` makes), which platforms it has, and the exact install command for its package manager. Reads the project folder only.",
+    inputSchema: { projectPath: z.string().min(1).max(4096) },
+    outputSchema: { installed: z.boolean(), manager: z.enum(["npm", "yarn", "pnpm", "bun"]), command: z.string(), platforms: z.array(z.enum(["ios", "android"])) },
+    annotations: read,
+    _meta: { ui: { visibility: ["app"] } },
+  }, async ({ projectPath }, context) => {
+    const startedAt = performance.now();
+    try {
+      const setup = await client.profilerSetup(projectPath);
+      recordTraceSiftOperation("profile", "success", performance.now() - startedAt);
+      return { content: [{ type: "text", text: setup.installed ? "The profiler package is installed." : `The profiler package is not installed. Run: ${setup.command}` }], structuredContent: setup };
+    } catch (error) { return failure(error, "profile", startedAt, context.signal); }
+  });
+
+  registerAppTool(server, "mobile_tracesift_install_profiler", {
+    title: "Install the TraceSift profiler package in a project",
+    description: "Add @callstack/tracesift-rn-profiler as a dev dependency of the chosen project with its own package manager, the command mobile_tracesift_profiler_setup reports. App-only: called after the user presses the run button beside that command. Modifies the project's package.json and lockfile and contacts the package registry.",
+    inputSchema: { projectPath: z.string().min(1).max(4096) },
+    outputSchema: { installed: z.literal(true) },
+    annotations: setupMutation,
+    _meta: { ui: { visibility: ["app"] } },
+  }, async ({ projectPath }, context) => {
+    const startedAt = performance.now();
+    try {
+      await client.installProfiler(projectPath, context.signal);
+      recordTraceSiftOperation("profile", "success", performance.now() - startedAt);
+      return { content: [{ type: "text", text: "The profiler package is installed." }], structuredContent: { installed: true as const } };
+    } catch (error) { return failure(error, "profile", startedAt, context.signal); }
+  });
+
+  registerAppTool(server, "mobile_tracesift_profile_devices", {
+    title: "List the iOS targets a profiling build can go to",
+    description: "Return the booted iOS simulators and USB-attached iPhones `tracesift profile devices` reports, each with the id `mobile_tracesift_profile_build` takes as its device. Starts nothing.",
+    inputSchema: {},
+    outputSchema: { devices: z.array(z.object({ kind: z.enum(["device", "simulator"]), id: z.string(), name: z.string(), note: z.string() })) },
+    annotations: read,
+    _meta: { ui: { visibility: ["app"] } },
+  }, async (_input, context) => {
+    const startedAt = performance.now();
+    try {
+      const devices = await client.profileDevices(context.signal);
+      recordTraceSiftOperation("profile", "success", performance.now() - startedAt);
+      return { content: [{ type: "text", text: `${devices.length} iOS target(s) found.` }], structuredContent: { devices } };
+    } catch (error) { return failure(error, "profile", startedAt, context.signal); }
+  });
+
+  registerAppTool(server, "mobile_tracesift_profile_build", {
+    title: "Build and launch a profiling build",
+    description: "Run `tracesift profile build` in the chosen project for iOS or Android: build a release variant with the profiler armed, install it on the target and launch it. App-only: called after the user chooses a project and a run target. Takes minutes, writes build output under the project's ios/ or android/ folder, and installs an app on the chosen simulator, emulator or device. Returns the end of the build log.",
+    inputSchema: { projectPath: z.string().min(1).max(4096), platform: z.enum(["ios", "android"]), device: z.string().min(1).max(256).optional() },
+    outputSchema: { built: z.literal(true), log: z.string() },
+    annotations: setupMutation,
+    _meta: { ui: { visibility: ["app"] } },
+  }, async ({ projectPath, platform, device }, context) => {
+    const startedAt = performance.now();
+    try {
+      const { log } = await client.profileBuild({ projectPath, platform, device }, context.signal);
+      recordTraceSiftOperation("profile", "success", performance.now() - startedAt);
+      return { content: [{ type: "text", text: "The profiling build is installed and launched." }], structuredContent: { built: true as const, log } };
+    } catch (error) { return failure(error, "profile", startedAt, context.signal); }
   });
 
   registerAppTool(server, "mobile_get_tracesift_project", {

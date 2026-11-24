@@ -48,6 +48,8 @@ export const traceSiftRnTargetSchema = z.object({
    * field, and everything they do report is a Metro target.
    */
   transport: z.enum(["metro", "release"]).default("metro"),
+  /** What kind of device a release build is running on, when the CLI could tell. */
+  deviceKind: z.enum(["simulator", "device", "emulator"]).optional(),
   /** The loopback port a release build dialled in on. */
   port: z.number().optional(),
   supportsMultipleDebuggers: z.boolean().default(false),

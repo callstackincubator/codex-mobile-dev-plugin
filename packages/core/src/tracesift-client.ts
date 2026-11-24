@@ -17,6 +17,8 @@ const RECORD_START_TIMEOUT_MS = 60_000;
 /** Chrome writes the whole trace through the protocol before `record stop` returns. */
 const RECORD_STOP_TIMEOUT_MS = 4 * 60_000;
 const RECORD_CLOSE_TIMEOUT_MS = 30_000;
+/** A cold Gradle or xcodebuild release build, with pods, is many minutes. */
+const PROFILE_BUILD_TIMEOUT_MS = 30 * 60_000;
 /**
  * Listing React Native targets is one `/json/list` fetch behind a 5s timeout
  * of its own, and then — only when Metro showed nothing — a short window held
@@ -130,6 +132,21 @@ function cliFailure(diagnostics: string, output: string, code: number | null, fa
   return said ? new TraceSiftError(said, "request") : new Error(failed(code));
 }
 
+type PackageManager = "npm" | "yarn" | "pnpm" | "bun";
+
+/** The lockfile decides, as it does in `tracesift profile build`: the wrong manager leaves two lockfiles. */
+async function detectManager(present: (path: string) => Promise<boolean>): Promise<PackageManager> {
+  for (const [lockfile, manager] of [["pnpm-lock.yaml", "pnpm"], ["yarn.lock", "yarn"], ["bun.lockb", "bun"], ["package-lock.json", "npm"]] as const) {
+    if (await present(lockfile)) return manager;
+  }
+  return "npm";
+}
+
+function profilerInstallArgs(manager: PackageManager) {
+  const flag = manager === "yarn" || manager === "bun" ? "--dev" : "--save-dev";
+  return [manager === "npm" ? "install" : "add", flag, "@callstack/tracesift-rn-profiler"];
+}
+
 export class TraceSiftClient {
   private ready?: Promise<Descriptor>;
   private child?: ChildProcess;
@@ -192,10 +209,10 @@ export class TraceSiftClient {
   async readyService(signal?: AbortSignal) { await this.service(signal); }
 
   private runSetupCommand(command: string, args: string[], label: string, signal?: AbortSignal,
-    env: NodeJS.ProcessEnv = process.env) {
+    env: NodeJS.ProcessEnv = process.env, cwd?: string) {
     return new Promise<void>((resolve, reject) => {
       let child: ChildProcess;
-      try { child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], env }); }
+      try { child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], env, ...(cwd ? { cwd } : {}) }); }
       catch { reject(new TraceSiftError(`${label} could not start because ${command} is not available to Mobile Dev. Run the command in a terminal instead.`, "setup", "missing_cli")); return; }
       let diagnostics = "";
       let settled = false;
@@ -441,6 +458,8 @@ export class TraceSiftClient {
     failed: (code: number | null) => string;
     /** Working directory for the child; only set where the CLI resolves project-relative paths. */
     cwd?: string;
+    /** Keep the end of the output, not the start: a long build reports its failure last. */
+    maxOutputTail?: boolean;
   }): Promise<string> {
     const { signal } = messages;
     return await new Promise<string>((resolve, reject) => {
@@ -452,9 +471,16 @@ export class TraceSiftClient {
         ...(messages.cwd ? { cwd: messages.cwd } : {}),
       });
       child.stdout?.setEncoding("utf8");
-      child.stdout?.on("data", chunk => { if (output.length < MAX_CLI_STDOUT_BYTES) output += String(chunk).slice(0, MAX_CLI_STDOUT_BYTES - output.length); });
+      const tail = messages.maxOutputTail === true;
+      child.stdout?.on("data", chunk => {
+        if (tail) output = (output + String(chunk)).slice(-MAX_CLI_STDOUT_BYTES);
+        else if (output.length < MAX_CLI_STDOUT_BYTES) output += String(chunk).slice(0, MAX_CLI_STDOUT_BYTES - output.length);
+      });
       child.stderr?.setEncoding("utf8");
-      child.stderr?.on("data", chunk => { if (diagnostics.length < 16_384) diagnostics += String(chunk).slice(0, 16_384 - diagnostics.length); });
+      child.stderr?.on("data", chunk => {
+        if (tail) diagnostics = (diagnostics + String(chunk)).slice(-16_384);
+        else if (diagnostics.length < 16_384) diagnostics += String(chunk).slice(0, 16_384 - diagnostics.length);
+      });
       const finish = (error?: Error) => {
         if (settled) return;
         settled = true;
@@ -467,7 +493,9 @@ export class TraceSiftClient {
       child.once("error", () => finish(new TraceSiftError(messages.missing, "setup")));
       child.once("exit", code => {
         if (code === 0) { finish(); return; }
-        finish(cliFailure(diagnostics, output, code, messages.failed));
+        // The CLI's own verdict is its last `tracesift:` line; what precedes it is build noise.
+        const verdict = tail ? [...diagnostics.matchAll(/^tracesift:.*$/gm)].at(-1)?.[0] : undefined;
+        finish(cliFailure(verdict ?? (tail ? diagnostics.slice(-1024) : diagnostics), output, code, messages.failed));
       });
       if (signal?.aborted) abort(); else signal?.addEventListener("abort", abort, { once: true });
     });
@@ -669,6 +697,7 @@ export class TraceSiftClient {
           ...(string(target.deviceId) ? { deviceId: string(target.deviceId) } : {}),
           ...(string(target.vm) ? { vm: string(target.vm) } : {}),
           // Carried through, or zod's default calls every release build Metro.
+          ...(target.deviceKind === "simulator" || target.deviceKind === "device" || target.deviceKind === "emulator" ? { deviceKind: target.deviceKind } : {}),
           ...(target.transport === "release" ? { transport: "release" as const } : {}),
           ...(typeof target.port === "number" && Number.isInteger(target.port)
             && target.port > 0 && target.port < 65_536 ? { port: target.port } : {}),
@@ -709,6 +738,81 @@ export class TraceSiftClient {
         missing: "TraceSift is not installed or could not run `tracesift record`.",
         failed: code => `TraceSift could not start recording (exit code ${code}).`,
       });
+    } catch (error) {
+      if (signal?.aborted || (error instanceof TraceSiftError && error.kind === "version")) throw error;
+      const hint = await this.staleCliHint();
+      if (hint) throw new TraceSiftError(hint, "version");
+      throw error;
+    }
+  }
+
+  /**
+   * Whether a project already carries the profiler, and the command that adds it if not.
+   *
+   * The same signal `tracesift profile build` reads: the package directory in
+   * the project's `node_modules`. The package manager comes from the lockfile,
+   * as it does there, so the command shown is the one the build would run.
+   * Native linking (pod install, autolinking) is left to the build, which
+   * redoes it itself and needs no confirmation.
+   */
+  async profilerSetup(projectPath: string): Promise<{ installed: boolean; manager: PackageManager; command: string; platforms: ("ios" | "android")[] }> {
+    const root = await this.projectRoot(projectPath);
+    const present = (path: string) => stat(join(root, path)).then(() => true, () => false);
+    const manager = await detectManager(present);
+    return {
+      installed: await present(join("node_modules", "@callstack", "tracesift-rn-profiler")),
+      manager, command: `${manager} ${profilerInstallArgs(manager).join(" ")}`,
+      platforms: [...(await present(join("ios", "Podfile")) ? ["ios" as const] : []), ...(await present(join("android", "gradlew")) ? ["android" as const] : [])],
+    };
+  }
+
+  private async projectRoot(path: string) {
+    const directory = await stat(path).catch(() => undefined);
+    if (!directory?.isDirectory()) throw new TraceSiftError("That project folder does not exist.", "request");
+    const root = await realpath(path);
+    if (!await stat(join(root, "package.json")).then(() => true, () => false)) {
+      throw new TraceSiftError("That folder has no package.json. Choose the root of a React Native app.", "request");
+    }
+    return root;
+  }
+
+  /** Run the package manager's own add command in the project: the one the panel displays. */
+  async installProfiler(projectPath: string, signal?: AbortSignal) {
+    const { manager } = await this.profilerSetup(projectPath);
+    await this.runSetupCommand(manager, profilerInstallArgs(manager), "Installing the profiler package", signal, process.env, await this.projectRoot(projectPath));
+  }
+
+  /** What `tracesift profile devices` can build for, parsed from its one-row-per-device output. */
+  async profileDevices(signal?: AbortSignal): Promise<{ kind: "device" | "simulator"; id: string; name: string; note: string }[]> {
+    const output = await this.runCommand(["profile", "devices"], {
+      timeoutMs: 30_000, signal, cancelled: "Listing devices was cancelled.", timedOut: "Listing devices took longer than 30 seconds.",
+      missing: "TraceSift is not installed or could not run `tracesift profile`.",
+      failed: code => `TraceSift could not list devices (exit code ${code}).`,
+    });
+    return output.split("\n").flatMap(line => {
+      const row = /^(device|simulator)\s+(\S+)\s{2}(.+?)\s{2}\((.+)\)\s*$/.exec(line);
+      return row ? [{ kind: row[1] as "device" | "simulator", id: row[2], name: row[3], note: row[4] }] : [];
+    }).slice(0, 50);
+  }
+
+  /**
+   * Build, install and launch a profiling build through the CLI.
+   *
+   * Run in the app's own directory because that is how the CLI finds the
+   * project. The CLI streams Gradle and xcodebuild output on stdout, which is
+   * returned as a bounded tail: a failing build's useful line is the last one.
+   */
+  async profileBuild(options: { projectPath: string; platform: "ios" | "android"; device?: string }, signal?: AbortSignal): Promise<{ log: string }> {
+    const cwd = await this.projectRoot(options.projectPath);
+    const args = ["profile", "build", "--platform", options.platform, ...(options.device ? ["--device", options.device] : [])];
+    try {
+      const output = await this.runCommand(args, {
+        timeoutMs: PROFILE_BUILD_TIMEOUT_MS, signal, cwd, maxOutputTail: true,
+        cancelled: "The build was cancelled.", timedOut: "The build did not finish within 30 minutes.",
+        missing: "TraceSift is not installed or could not run `tracesift profile build`.",
+        failed: code => `The profiling build failed (exit code ${code}).`,
+      });
+      return { log: output.slice(-4096) };
     } catch (error) {
       if (signal?.aborted || (error instanceof TraceSiftError && error.kind === "version")) throw error;
       const hint = await this.staleCliHint();

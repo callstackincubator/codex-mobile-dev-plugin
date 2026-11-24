@@ -25,6 +25,7 @@ export class TraceSiftPanel {
     if (available && !this.captureLoaded) {
       this.captureLoaded = true;
       void this.controller.loadCapture();
+      void this.controller.loadRunProject();
     }
     this.update({ available });
     if (available && this.state.open) void this.controller.checkReadiness();
