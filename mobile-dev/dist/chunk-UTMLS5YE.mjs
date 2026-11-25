@@ -1,5 +1,5 @@
 
-!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="62df4e60-ff4d-584d-b464-22c27f0e7336")}catch(e){}}();
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="ea37f8fd-a2e9-5acb-a447-da9eb8254d04")}catch(e){}}();
 import { createRequire as mobileDevBundleRequire } from 'node:module'; import { fileURLToPath as mobileDevFileURLToPath } from 'node:url'; import { dirname as mobileDevPathDirname } from 'node:path'; const require = mobileDevBundleRequire(import.meta.url); const __filename = mobileDevFileURLToPath(import.meta.url); const __dirname = mobileDevPathDirname(__filename);
 import {
   ExpectedOperationError,
@@ -27,7 +27,7 @@ import {
   telemetryHost,
   withIsolationScope,
   wrapMcpServerWithSentry
-} from "./chunk-SLZ5BVUZ.mjs";
+} from "./chunk-BY7E6YJU.mjs";
 import {
   external_exports
 } from "./chunk-BNXJFHSV.mjs";
@@ -4375,6 +4375,16 @@ function recordPanelRuntime(runtime2, outcome, duration2, bytes, reason) {
   public_api_exports.distribution("panel_runtime.ready", duration2, { attributes, unit: "millisecond" });
   if (bytes !== void 0) public_api_exports.distribution("panel_runtime.download_bytes", bytes, { attributes: { component: "server", runtime: runtime2 }, unit: "byte" });
 }
+function recordBaguetteDiscoveryTime(operation, duration2) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = { component: "server", operation };
+  public_api_exports.distribution("baguette.runtime.command.duration", duration2, { unit: "millisecond", attributes });
+}
+function recordIosHitchOperation(operation, outcome, duration2) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = { component: "server", surface: "recording", device_platform: "ios", operation, outcome };
+  public_api_exports.distribution("ios.hitches.operation.duration", duration2, { unit: "millisecond", attributes });
+}
 function recordAppStorageOperation(operation, platform2, outcome, duration2) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes = { component: "server", surface: "storage", operation, device_platform: platform2, outcome };
@@ -4747,6 +4757,8 @@ export {
   recordBrowserPanelSessions,
   recordBrowserPanelContext,
   recordPanelRuntime,
+  recordBaguetteDiscoveryTime,
+  recordIosHitchOperation,
   recordAppStorageOperation,
   recordAppIntelOperation,
   recordProjectDialog,
@@ -4777,4 +4789,4 @@ export {
   import_websocket
 };
 
-//# debugId=62df4e60-ff4d-584d-b464-22c27f0e7336
+//# debugId=ea37f8fd-a2e9-5acb-a447-da9eb8254d04

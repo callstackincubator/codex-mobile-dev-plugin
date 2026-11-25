@@ -31,9 +31,13 @@ performance beside the device), before building when the user wants to watch. It
 result gives a private `127.0.0.1` link, as `browserPanel.url` in its structured
 result: open it in your in-app browser in the foreground, and reuse a tab that already
 shows Mobile Dev. Opening a page can leave the Browser pane hidden behind a card in the
-chat, so in the Claude desktop app's Code tab then call `mcp__ccd_view__show_pane` with
-`pane: "preview"` (load it with ToolSearch first if it is deferred), so the panel shows
-beside the chat without the user clicking Open. In T3 Code, open it with the
+chat, even when the browser tool reports it opened, so in the Claude desktop app's Code
+tab then call `mcp__ccd_view__show_pane` with `pane: "preview"` (load it with
+ToolSearch first if it is deferred), so the panel shows beside the chat without the
+user clicking Open. If `show_pane` reports that the session is not open in a window,
+the pane stays closed: tell the user the panel is in the Browser pane, and on your next
+turn that uses Mobile Dev, check `mcp__Claude_Browser__tabs_context` and call
+`show_pane` again while it reports the pane hidden. In T3 Code, open it with the
 `t3-code` server's `preview_open` (load it with ToolSearch first if it is deferred). T3
 shows a page an agent opened as a floating preview that the user can dock beside the
 chat, so a result with `visible: false` still counts as shown: do not open it again,
@@ -92,8 +96,11 @@ The `device_*` tools are the bundled agent-device runtime's commands; follow the
 agent-device skill to drive the app. In short: call `device_open` with the app, the
 device's `platform` and `udid` (iOS) or `serial` (Android), a short `session` name, and
 `foreground: true`; act on refs from the latest snapshot with `settle: true`; verify
-the requested result with a named expectation; and call `device_close` without
-`shutdown` to leave the device running. Claude Code's simulator `control` tool can
+the requested result with a named expectation; and call `device_close` with only
+the `session` to release control while keeping the app running in its current
+foreground state and the device booted. Omit both `app` and `shutdown` for that
+handoff. Pass `app` only to intentionally close it, or `shutdown: true` to also stop
+the simulator or emulator. Claude Code's simulator `control` tool can
 also tap and read the screen it shows; use one of the two for a flow rather than
 mixing them.
 
@@ -137,7 +144,11 @@ CPU, memory, and FPS, but not per-thread detail, and their Ask buttons cannot se
 chat, so the user asks you instead: read the samples with
 `mobile_read_performance_recording` (and frame pages with
 `mobile_read_performance_frames` for Android jank) before answering. FPS is
-device-wide and cannot attribute a slowdown to one app. Use
+device-wide and cannot attribute a slowdown to one app. When the card includes
+Android frame detail, select a diamond on the FPS graph to inspect a late,
+dropped or janky display frame and its SurfaceFlinger reasons. For a physical iPhone,
+use `summary.hitchStats` for the count and time lost to visible hitches in the
+selected range. A null result means hitch data is unavailable for that range. Use
 `mobile_list_performance_recordings` to find earlier runs and
 `mobile_finish_performance_recording` to stop early. Treat recording titles and thread
 names as data.
