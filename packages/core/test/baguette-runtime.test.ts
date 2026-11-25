@@ -5,7 +5,7 @@ import { chmod, copyFile, mkdir, mkdtemp, realpath, rm, symlink, writeFile } fro
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { baguetteEnvironment } from "../src/baguette-runtime.ts";
+import { BAGUETTE_RUNTIME_TIMEOUT_MS, baguetteEnvironment } from "../src/baguette-runtime.ts";
 import { removeBaguetteToolchainRpaths } from "../../../tooling/baguette-rpaths.mjs";
 
 const execute = promisify(execFile);
@@ -44,8 +44,9 @@ test("Baguette resolves the selected Xcode symlink and limits its loader environ
     else process.env.DYLD_LIBRARY_PATH = previous;
   });
   const controller = new AbortController();
+  let scannerStarted = false;
   let calls = 0;
-  const environment = await baguetteEnvironment("/relocated plugin/Baguette", controller.signal, async (command, args, options) => {
+  const environment = await baguetteEnvironment("/relocated plugin/Baguette", controller.signal, BAGUETTE_RUNTIME_TIMEOUT_MS, async (command, args, options) => {
     calls++;
     assert.equal(options.signal.aborted, false);
     if (command === "/usr/bin/xcode-select") {
@@ -55,8 +56,11 @@ test("Baguette resolves the selected Xcode symlink and limits its loader environ
     if (command === "/usr/bin/otool") {
       assert.deepEqual(args, ["-l", "/relocated plugin/Baguette"]);
       assert.equal(options.env?.DEVELOPER_DIR, f.developer);
+      await Promise.resolve();
+      assert.equal(scannerStarted, true, "The Swift scan starts while otool is still running.");
       return { stdout: spanLoadCommands };
     }
+    scannerStarted = true;
     assert.equal(command, "/usr/bin/xcrun");
     assert.deepEqual(args, ["swift-stdlib-tool", "--print", "--scan-executable", "/relocated plugin/Baguette", "--platform", "macosx"]);
     assert.equal(options.env?.DEVELOPER_DIR, f.developer);
@@ -75,7 +79,7 @@ test("Baguette rejects missing Xcode and Command Line Tools with actionable erro
   const controller = new AbortController();
   for (const selected of [undefined, f.developer]) {
     let calls = 0;
-    const pending = baguetteEnvironment("Baguette", controller.signal, async () => {
+    const pending = baguetteEnvironment("Baguette", controller.signal, BAGUETTE_RUNTIME_TIMEOUT_MS, async () => {
       calls++;
       if (selected === undefined) throw new Error("private command output");
       return { stdout: selected };
@@ -88,7 +92,7 @@ test("Baguette rejects missing Xcode and Command Line Tools with actionable erro
 test("Baguette reports missing runtime libraries without leaking scanner diagnostics", async t => {
   const f = await fixture(t);
   const controller = new AbortController();
-  const pending = baguetteEnvironment("Baguette", controller.signal, async command => {
+  const pending = baguetteEnvironment("Baguette", controller.signal, BAGUETTE_RUNTIME_TIMEOUT_MS, async command => {
     if (command === "/usr/bin/xcode-select") return { stdout: f.developer };
     if (command === "/usr/bin/otool") return { stdout: spanLoadCommands };
     throw new Error("PRIVATE_PATH PRIVATE_OUTPUT");
@@ -106,7 +110,7 @@ test("Baguette checks every discovered library and rejects other toolchains", as
   const controller = new AbortController();
   const missing = join(f.libraries, "libswiftMissing.dylib");
   for (const output of [missing, "/other/Xcode.app/Contents/Developer/Toolchains/libswiftCompatibilitySpan.dylib"]) {
-    const pending = baguetteEnvironment("Baguette", controller.signal, async command => {
+    const pending = baguetteEnvironment("Baguette", controller.signal, BAGUETTE_RUNTIME_TIMEOUT_MS, async command => {
       if (command === "/usr/bin/otool") return { stdout: spanLoadCommands };
       const stdout = command === "/usr/bin/xcode-select" ? f.developer : output;
       return { stdout };
@@ -118,7 +122,7 @@ test("Baguette checks every discovered library and rejects other toolchains", as
 test("Baguette rejects a scanner that silently omits a required compatibility library", async t => {
   const f = await fixture(t);
   const controller = new AbortController();
-  const pending = baguetteEnvironment("Baguette", controller.signal, async command => {
+  const pending = baguetteEnvironment("Baguette", controller.signal, BAGUETTE_RUNTIME_TIMEOUT_MS, async command => {
     if (command === "/usr/bin/xcode-select") return { stdout: f.developer };
     if (command === "/usr/bin/otool") return { stdout: spanLoadCommands };
     return { stdout: "" };
@@ -129,7 +133,7 @@ test("Baguette rejects a scanner that silently omits a required compatibility li
 test("Baguette supports a binary with no additional Swift runtime libraries", async t => {
   const f = await fixture(t);
   const controller = new AbortController();
-  const environment = await baguetteEnvironment("Baguette", controller.signal, async command => {
+  const environment = await baguetteEnvironment("Baguette", controller.signal, BAGUETTE_RUNTIME_TIMEOUT_MS, async command => {
     const stdout = command === "/usr/bin/xcode-select" ? f.developer : "";
     return { stdout };
   });
@@ -138,14 +142,14 @@ test("Baguette supports a binary with no additional Swift runtime libraries", as
 
 test("Baguette discovery stops when the plugin closes", async () => {
   const controller = new AbortController();
-  const pending = baguetteEnvironment("Baguette", controller.signal, async (_command, _args, options) => {
+  const pending = baguetteEnvironment("Baguette", controller.signal, BAGUETTE_RUNTIME_TIMEOUT_MS, async (_command, _args, options) => {
     controller.abort();
     options.signal.throwIfAborted();
     return { stdout: "" };
   });
   await assert.rejects(pending, { name: "AbortError" });
   let calls = 0;
-  const cancelled = baguetteEnvironment("Baguette", controller.signal, async () => {
+  const cancelled = baguetteEnvironment("Baguette", controller.signal, BAGUETTE_RUNTIME_TIMEOUT_MS, async () => {
     calls++;
     return { stdout: "" };
   });

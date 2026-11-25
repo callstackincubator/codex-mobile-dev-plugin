@@ -45,6 +45,12 @@ export function recordPanelRuntime(runtime: "panel" | "testing", outcome: "cache
   if (bytes !== undefined) Sentry.metrics.distribution("panel_runtime.download_bytes", bytes, { attributes: { component: "server", runtime }, unit: "byte" });
 }
 
+export function recordBaguetteDiscoveryTime(operation: "xcode-select" | "otool" | "swift-stdlib-tool", duration: number) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = { component: "server", operation };
+  Sentry.metrics.distribution("baguette.runtime.command.duration", duration, { unit: "millisecond", attributes });
+}
+
 export function recordIosMirrorSharing(captures: number, subscribers: number, dropped: number) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes = { component: "ios-mirror-service", surface: "simulator", device_platform: "ios", device_kind: "physical" };
